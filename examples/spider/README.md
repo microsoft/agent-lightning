@@ -22,5 +22,5 @@ Setting:
 * RL algorithm is GRPO with learning rate 1e-6.
 * Uses random 500 samples from the test set for validation.
 
-For the base setting, the performance on validation set boosted from 62.4% to 76.2% in 400 training steps.
+Under the base setting, the performance on validation set boosted from 62.4% to 76.2% in 400 training steps.
 The W&B report is available [here](https://api.wandb.ai/links/ultmaster/agnice3m).
