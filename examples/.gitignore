@@ -1,0 +1,6 @@
+data/
+wandb/
+outputs/
+checkpoints/
+calc-x-data.zip
+agentops.log

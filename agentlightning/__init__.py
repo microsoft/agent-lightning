@@ -1,3 +1,5 @@
+__version__ = '0.1'
+
 from .client import VerlAgentClient, SamplingParameters, TaskData
 from .config import lightning_cli
 from .logging import configure_logger
