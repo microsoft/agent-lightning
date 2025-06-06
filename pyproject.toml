@@ -19,7 +19,6 @@ dev = [
   "hatch",
 ]
 experiment = [
-  "graphviz",
   "random-word",
 ]
 

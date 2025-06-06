@@ -423,7 +423,7 @@ class LitSQLAgent(agentlightning.LitAgent):
     ) -> None:
         super().__init__(trained_agents=trained_agents)
         self.val_temperature = val_temperature
-        self.spider_dir = os.environ.get("VERL_SPIDER_DATA_DIR", "data/spider")
+        self.spider_dir = os.environ.get("VERL_SPIDER_DATA_DIR", "data")
         self.max_turns = max_turns
         self.table_info_truncate = table_info_truncate
         self.execution_truncate = execution_truncate

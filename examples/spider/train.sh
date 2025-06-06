@@ -17,7 +17,7 @@ python -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.chat_scheduler=agentlightning.instrumentation.verl_chat_scheduler.NaiveChatCompletionScheduler \
     algorithm.adv_estimator=grpo \
     actor_rollout_ref.model.path=${BASE_MODEL} \
-    data.train_files=${DATA_DIR}/train.parquet \
+    data.train_files=${DATA_DIR}/train_spider.parquet \
     data.val_files=${DATA_DIR}/test_dev_500.parquet \
     actor_rollout_ref.rollout.tensor_model_parallel_size=$ROLLOUT_TP_SIZE \
     trainer.n_gpus_per_node=${N_GPUS} \
