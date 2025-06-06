@@ -1,23 +1,18 @@
-import asyncio
 import math
 import string
-import os
 import re
-import sys
+from typing import Any
 
+from agentlightning.client import SamplingParameters
 import sympy
 from autogen_agentchat.agents import AssistantAgent
-from autogen_agentchat.messages import TextMessage
 from autogen_core.models import ModelFamily
 from autogen_ext.models.openai import OpenAIChatCompletionClient
 from autogen_ext.tools.mcp import McpWorkbench, StdioServerParams
 
-import agentops
-from agentops.sdk.decorators import agent
-from agentlightning import VerlAgentClient, reward, lightning_span_processor
-from agentlightning.instrumentation import instrument_all
-import aiohttp
+from agentlightning import Trainer, LitAgent, SamplingParameters, reward, configure_logger
 
+configure_logger()
 
 calculator_mcp_server = StdioServerParams(command="uvx", args=["mcp-server-calculator"])
 
@@ -103,60 +98,42 @@ def get_agent(model, openai_base_url, temperature, workbench):
     return calc_agent
 
 
-async def main() -> None:
-    client = VerlAgentClient("http://localhost:9999/")
-    train_information = await client.poll_sampling_parameters_async()
-    model = train_information["model"]
-    train_temperature = train_information["temperature"]
+class CalcAgent(LitAgent):
 
-    while True:
-        data = await client.poll_next_task_async()
-        rollout_id = data["rollout_id"]
-        is_train = data["is_train"]
-        try:
-
-            processor = lightning_span_processor()
-            with processor:
-                async with McpWorkbench(calculator_mcp_server) as workbench:
-                    calc_agent = get_agent(
-                        model,
-                        client.openai_endpoint,
-                        train_temperature if is_train else 0,
-                        workbench,
-                    )
-                    try:
-                        output_format = "Output the answer when you are ready. The answer should be surrounded by three sharps (`###`), in the form of ### ANSWER: <answer> ###."
-                        task = data["question"] + " " + output_format
-                        result = await calc_agent.run(task=task)
-                        # evaluate
-                        answer = re.search(
-                            r"###\s*ANSWER:\s*(.+?)(\s*###|$)", result.messages[-1].content
-                        )
-                        if answer:
-                            answer = answer.group(1)
-                        else:
-                            answer = result.messages[-1].content
-                    except Exception as e:
-                        print("Failure:", str(e))
-                        answer = "None"
-                    reward = await eval(answer, str(data["result"]))
-                    print(
-                        "answer: {} ground_truth: {} reward: {}".format(
-                            answer, data["result"], reward
-                        )
-                    )
-            await client.post_trajectory_async(
-                rollout_id, processor.last_trace().to_trajectory(final_reward=reward)
+    async def training_rollout_async(
+        self, sample: Any, *, sampling_parameters: SamplingParameters | None = None, rollout_id: str | None = None
+    ) -> Any:
+        assert sampling_parameters is not None
+        async with McpWorkbench(calculator_mcp_server) as workbench:
+            calc_agent = get_agent(
+                sampling_parameters["model"],
+                self.trainer.get_openai_endpoint(),
+                sampling_parameters["temperature"],
+                workbench,
             )
-        except Exception as e:
-            print("Failure:", str(e))
-            await asyncio.sleep(5)
+            try:
+                output_format = "Output the answer when you are ready. The answer should be surrounded by three sharps (`###`), in the form of ### ANSWER: <answer> ###."
+                task = sample["question"] + " " + output_format
+                result = await calc_agent.run(task=task)
+                # evaluate
+                answer = re.search(r"###\s*ANSWER:\s*(.+?)(\s*###|$)", result.messages[-1].content)
+                if answer:
+                    answer = answer.group(1)
+                else:
+                    answer = result.messages[-1].content
+            except Exception as e:
+                print("Failure:", str(e))
+                answer = "None"
+            reward = await eval(answer, str(sample["result"]))  # reward is tracked with the decorator
+            print("answer: {} ground_truth: {} reward: {}".format(answer, sample["result"], reward))
+
+    async def validation_rollout_async(
+        self, sample: Any, *, sampling_parameters: SamplingParameters | None = None, rollout_id: str | None = None
+    ) -> Any:
+        return await self.training_rollout_async(
+            sample, sampling_parameters={"temperature": 0, "model": sampling_parameters["model"]}, rollout_id=rollout_id
+        )
 
 
 if __name__ == "__main__":
-    import dotenv
-
-    dotenv.load_dotenv()
-    agentops.init(os.environ["AGENTOPS_API_KEY"])
-    instrument_all()
-    asyncio.get_event_loop().run_until_complete(main())
+    Trainer(n_workers=4).fit(CalcAgent(), "http://localhost:9999/")

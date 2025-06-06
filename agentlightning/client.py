@@ -87,7 +87,7 @@ class VerlAgentClient:
         url = urllib.parse.urljoin(self.endpoint, "next_data_sample")
         while True:
             data = await self.request_json_async(url)
-            if data.get("is_available"):
+            if data and data.get("is_available"):
                 task_data = data["data"]
                 self.task_count += 1
                 logger.info("[Task %d Received] %s", self.task_count, task_data)
