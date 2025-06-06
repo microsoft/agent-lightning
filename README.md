@@ -1,68 +1,105 @@
 # Agent Lightning
 
+Welcome to Agent Lightning! This guide will walk you through setting up and running the project.
+
 ## Installation
 
-The `/path/to/agentlightning` refers to the directory where this README file is located.
+First, let's get your environment set up. We'll be using `/path/to/agentlightning` to refer to the directory containing this README file.
 
-1. We recommend creating a new virtual / conda environment with Python 3.10 or higher.
-2. Install uv (required for some MCP agents): `curl -LsSf https://astral.sh/uv/install.sh | sh`
-3. Install PyTorch, FlashAttention and VLLM. The following versions and setup orders are tested to work.
-   ```bash
-   pip install torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cu124
-   pip install flash-attn --no-build-isolation
-   pip install vllm==v0.8.5.post1
-   ```
-4. Install the patched VERL. You must use the commit below and install our patch to ensure compatibility. Uninstall any existing VERL first.
-   ```bash
-   git clone https://github.com/volcengine/verl /path/to/your/verl
-   cd /path/to/your/verl
-   git checkout 2dc3e0ebadb479bb3f2b48cfc7f28a3b70d5ce60
-   pip install -e .
-   cd /path/to/agentlightning
-   bash scripts/verl_git_apply.sh /path/to/your/verl
-   ```
-5. Install AgentLightning.
-   ```bash
-   cd /path/to/agentlightning
-   pip install -e .
-   ```
-6. Install Agent frameworks and utils (optional). You can skip this step if you don't need them.
-   ```bash
-   # Install AutoGen (recommended to do this first)
-   pip install "autogen-agentchat" "autogen-ext[openai]"
+### 1. Set Up Your Environment
 
-   # Install LiteLLM
-   pip install "litellm[proxy]"
-   
-   # Install MCP
-   pip install mcp
+We strongly recommend creating a new virtual environment to avoid conflicts with other packages. You can use either `conda` or `venv`. **Python 3.10 or later** is recommended.
 
-   # Install OpenAI Agents
-   pip install openai-agents
+### 2. Install Core Dependencies
 
-   # Install LangChain
-   pip install langgraph "langchain[openai]" langchain-community langchain-text-splitters
+Next, let's install the essential packages: `uv`, `PyTorch`, `FlashAttention`, and `vLLM`.
 
-   # Install SQL-related dependencies
-   pip install sqlparse nltk
-   ```
+  * **Install `uv`** (This is required for some MCP agents):
 
-## Quickstart
+    ```bash
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    ```
 
-The core of Agent Lightning consists of two parts: one training server and one to mulitple agents.
-The server is responsible for iterating over the data, preparing the sample, and providing the LLM endpoint.
-The agent retrieves from the sample queue, processing the sample (optionally iteracting with the provided LLM endpoint), and sending the result back to the server.
-The results are list of prompts and responses sent and received from the LLM endpoints.
-The server collects the result (aka trajectories) and computes the loss to optimize the LLMs.
+  * **Install `PyTorch`, `FlashAttention`, and `vLLM`**:
+    The following versions and installation order have been tested and are confirmed to work.
 
-See the `examples` folder for more complete examples.
+    ```bash
+    pip install torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cu124
+    pip install flash-attn --no-build-isolation
+    pip install vllm==v0.8.5.post1
+    ```
 
-*Coming soon:* a short demonstration code snippet.
+### 3. Install Patched VERL
 
-## General Caveats
+Agent Lightning requires a patched version of VERL for full compatibility. If you have a different version of VERL installed, please uninstall it first.
 
-1. Our current implementation uses [AgentOps](https://github.com/AgentOps-AI/agentops) to track the agents. By default, the usage of AgentOps (init and trace) is managed by AgentLightning. If you have used AgentOps in your own code, you will need to switch of `agentops_managed` in Trainer and figure out the integration yourself.
-2. As the trace can sometimes be problematic, you can use `processor.last_trace()._tree_visualize("tree_graph")` to verify whether the trace is correct. Note that this API is not stable and may change in the future.
-3. The current implementation does not support launching agent clients and training server in one command. You will need to launch them in two separate terminals or launch one of them in the background. The order does not matter in most cases.
-4. The environment variables and working directory of `ray init` matters. In case of file not found errors, try to restart the ray in your current working directory.
-5. Currently the training server will hang when some samples fail or timeout on the agent side. Therefore, it's always recommended to limit the prompt length and response length to avoid such issues, as it accounts for most of these failures.
+```bash
+# Clone the specific commit of VERL
+git clone https://github.com/volcengine/verl /path/to/your/verl
+cd /path/to/your/verl
+git checkout 2dc3e0ebadb479bb3f2b48cfc7f28a3b70d5ce60
+
+# Install the patched version
+pip install -e .
+
+# Apply the patch from Agent Lightning
+cd /path/to/agentlightning
+bash scripts/verl_git_apply.sh /path/to/your/verl
+```
+
+### 4. Install Agent Lightning
+
+Now, you're ready to install Agent Lightning itself.
+
+```bash
+cd /path/to/agentlightning
+pip install -e .
+```
+
+### 5. Install Optional Frameworks
+
+If you plan to use other agent frameworks, you can install them with the following commands. If you don't need these, feel free to skip this step.
+
+```bash
+# AutoGen (Recommended to install first)
+pip install "autogen-agentchat" "autogen-ext[openai]"
+
+# LiteLLM
+pip install "litellm[proxy]"
+
+# MCP
+pip install mcp
+
+# OpenAI Agents
+pip install openai-agents
+
+# LangChain
+pip install langgraph "langchain[openai]" langchain-community langchain-text-splitters
+
+# SQL-related dependencies
+pip install sqlparse nltk
+```
+
+Don't worry if dependency conflicts arise during this step. Follow the installation order above and the conflicts generally do not matter.
+
+## Architecture and Quickstart
+
+Currently, Agent Lightning is built around a **training server** and one or multiple **agents**.
+
+  * The **server** manages the training data, prepares samples for the agents, and provides the LLM endpoint.
+  * **Agents** retrieve samples from the server, process them (which may involve interacting with the LLM), and send the results back. These results, or "trajectories," are lists of prompts and responses from the LLM.
+  * The **server** then collects these trajectories and computes the loss to optimize the language models.
+
+For more detailed examples, please see the `examples` folder.
+
+## Important Caveats
+
+1.  **AgentOps Integration**: Agent Lightning uses [AgentOps](https://github.com/AgentOps-AI/agentops) for agent tracking by default. If you're already using AgentOps in your own code, you'll need to disable our managed AgentOps client by setting `agentops_managed` to `False` in the `Trainer` and handle your integration by yourself.
+
+2.  **Debugging Traces**: If you encounter issues with tracing, you can visualize the trace tree using `processor.last_trace()._tree_visualize("tree_graph")`. Please note that this API is experimental and may change in future releases.
+
+3.  **Launching the Server and Agents**: Currently, the training server and agent clients must be launched in separate processes. You can open two terminal windows or run one of them in the background. The order in which you launch them generally doesn't matter.
+
+4.  **Environment Variables**: The environment variables and working directory at the time of `ray init` are important. If you run into "file not found" errors, try restarting Ray from your current working directory.
+
+5.  **Handling Timeouts**: The training server may hang if samples fail or time out on the agent side. To prevent this, we recommend setting limits on the prompt and response lengths, as this is the most common cause of failures.
