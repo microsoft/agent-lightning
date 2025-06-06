@@ -1,5 +1,7 @@
 # Agent Lightning
 
+**Warning: This project is currently in a research preview stage. The APIs are not stable and the functionalities are not well tested.**
+
 Welcome to Agent Lightning! This guide will walk you through setting up and running the project.
 
 ## Installation
@@ -82,13 +84,15 @@ pip install sqlparse nltk
 
 Don't worry if dependency conflicts arise during this step. Follow the installation order above and the conflicts generally do not matter.
 
-## Architecture and Quickstart
+## Architecture
 
 Currently, Agent Lightning is built around a **training server** and one or multiple **agents**.
 
   * The **server** manages the training data, prepares samples for the agents, and provides the LLM endpoint.
   * **Agents** retrieve samples from the server, process them (which may involve interacting with the LLM), and send the results back. These results, or "trajectories," are lists of prompts and responses from the LLM.
   * The **server** then collects these trajectories and computes the loss to optimize the language models.
+
+## Examples
 
 For more detailed examples, please see the `examples` folder.
 
