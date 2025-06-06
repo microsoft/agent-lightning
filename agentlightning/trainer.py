@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import multiprocessing
@@ -11,7 +12,7 @@ import agentops
 from .client import SamplingParameters, VerlAgentClient
 from .instrumentation import instrument_all
 from .instrumentation.agentops import AgentOpsServerManager
-from .trace import LightningSpanProcessor, lightning_span_processor
+from .trace import LightningSpanProcessor, Transition, lightning_span_processor
 
 if TYPE_CHECKING:
     from agentops.integration.callbacks.langchain import LangchainCallbackHandler
@@ -70,7 +71,7 @@ class LitAgent:
         :param rollout_id: Optional unique identifier for the current task, useful for tracking.
         :return: The result of the training rollout, typically the final reward.
         """
-        raise NotImplementedError("Subclasses should implement this method.")
+        raise NotImplementedError("Subclasses should implement this method for synchronous execution.")
 
     def validation_rollout(
         self,
@@ -89,6 +90,41 @@ class LitAgent:
         :return: The result of the validation rollout, typically the final reward.
         """
         return self.training_rollout(sample, sampling_parameters=sampling_parameters, rollout_id=rollout_id)
+
+    async def training_rollout_async(
+        self,
+        sample: Any,
+        *,
+        sampling_parameters: SamplingParameters | None = None,
+        rollout_id: str | None = None,
+    ) -> Any:
+        """
+        Perform a single asynchronous training rollout on the provided sample.
+
+        :param sample: The input data for the training rollout.
+        :param sampling_parameters: Optional parameters for LLM sampling.
+        :param rollout_id: Optional unique identifier for the current task.
+        :return: The result of the training rollout, typically the final reward.
+        """
+        raise NotImplementedError("Async agents must implement this method.")
+
+    async def validation_rollout_async(
+        self,
+        sample: Any,
+        *,
+        sampling_parameters: SamplingParameters | None = None,
+        rollout_id: str | None = None,
+    ) -> Any:
+        """
+        Perform a single asynchronous validation rollout on the provided sample.
+        Redirects to `training_rollout_async` by default.
+
+        :param sample: The input data for the validation rollout.
+        :param sampling_parameters: Optional parameters for LLM sampling.
+        :param rollout_id: Optional unique identifier for the current task.
+        :return: The result of the validation rollout, typically the final reward.
+        """
+        return await self.training_rollout_async(sample, sampling_parameters=sampling_parameters, rollout_id=rollout_id)
 
 
 class Trainer:
@@ -218,91 +254,145 @@ class Trainer:
         # Do nothing for now.
         logger.info(f"[Worker {worker_id}] Environment cleanup complete.")
 
+    def _handle_rollout_completion(
+        self,
+        *,
+        worker_id: int,
+        rollout_id: str,
+        reward: Any,
+        start_time: float,
+        processor: LightningSpanProcessor,
+        agent: LitAgent,
+    ) -> List[Transition] | None:
+        """Process results after a rollout, handling logging, timing, and trace conversion."""
+        end_time = time.time()
+        logger.info(
+            f"[Worker {worker_id}] (Rollout {rollout_id}) Completed in {end_time - start_time:.2f} "
+            f"seconds with reward: {reward}"
+        )
+
+        last_trace = processor.last_trace()
+        last_trajectory = last_trace.to_trajectory(agent_match=agent.trained_agents, final_reward=reward)
+
+        if len(last_trajectory) > 0:
+            return last_trajectory
+        else:
+            logger.error(f"[Worker {worker_id}] (Rollout {rollout_id}) Empty trace found. Skipping post.")
+            return None
+
     def _execute_rollout_loop(self, agent: LitAgent, worker_id: int) -> int:
+        """Executes the synchronous polling and rollout loop."""
         client = self.get_verl_client()
         processor = lightning_span_processor()
         num_tasks_processed = 0
 
-        logger.info(
-            f"[Worker {worker_id}] Started rollouts. Polling for tasks "
-            f"(max: {self.max_tasks if self.max_tasks is not None else 'unlimited'})."
-        )
-        loop_count = 0
-        while True:
-            if self.max_tasks is not None and loop_count >= self.max_tasks:
-                logger.info(f"[Worker {worker_id}] Max tasks ({self.max_tasks}) for this worker reached. Exiting loop.")
-                break
-
+        logger.info(f"[Worker {worker_id}] Started rollouts (max: {self.max_tasks or 'unlimited'}).")
+        while num_tasks_processed < (self.max_tasks or float("inf")):
             sample = client.poll_next_task()
             if sample is None:
-                logger.info(f"[Worker {worker_id}] No more tasks available from endpoint. Exiting loop.")
+                logger.info(f"[Worker {worker_id}] No more tasks available. Exiting.")
                 break
 
             rollout_id = sample["rollout_id"]
             sampling_parameters = client.poll_sampling_parameters()
-            logger.info(
-                f"[Worker {worker_id}] (Rollout {rollout_id}) "
-                f"Sampling parameters: {sampling_parameters}  "
-                f"Sample: {sample} "
-            )
+            logger.info(f"[Worker {worker_id}] (Rollout {rollout_id}) Starting task. Sample: {sample}")
 
             try:
                 with processor:
                     start_time = time.time()
-                    if sample["is_train"]:
-                        reward = agent.training_rollout(
-                            sample, sampling_parameters=sampling_parameters, rollout_id=rollout_id
-                        )
-                    else:
-                        reward = agent.validation_rollout(
-                            sample, sampling_parameters=sampling_parameters, rollout_id=rollout_id
-                        )
-                    end_time = time.time()
-                    logger.info(
-                        f"[Worker {worker_id}] (Rollout {rollout_id}) Completed in {end_time - start_time:.2f} "
-                        f"seconds with reward: {reward}"
+                    reward = (agent.training_rollout if sample["is_train"] else agent.validation_rollout)(
+                        sample, sampling_parameters=sampling_parameters, rollout_id=rollout_id
                     )
 
-                last_trace = processor.last_trace()
-                last_trajectory = last_trace.to_trajectory(agent_match=agent.trained_agents, final_reward=reward)
-                if len(last_trajectory) > 0:
-                    client.post_trajectory(rollout_id, last_trajectory)
-                else:
-                    logger.warning(
-                        f"[Worker {worker_id}] (Rollout {rollout_id}) Empty trace found. Skipping post_trajectory."
-                    )
-            except Exception as e:
-                logger.exception(
-                    f"[Worker {worker_id}] (Rollout {rollout_id}) Exception during rollout Continuing to next task."
+                trajectory = self._handle_rollout_completion(
+                    worker_id=worker_id,
+                    rollout_id=rollout_id,
+                    reward=reward,
+                    start_time=start_time,
+                    processor=processor,
+                    agent=agent,
                 )
+                if trajectory:
+                    client.post_trajectory(rollout_id, trajectory)
+
+            except Exception:
+                logger.exception(f"[Worker {worker_id}] (Rollout {rollout_id}) Exception during rollout. Continuing.")
 
             num_tasks_processed += 1
-            loop_count += 1
-            if loop_count % 10 == 0 or loop_count == 1:
-                logger.info(
-                    f"[Worker {worker_id}] Completed task {rollout_id}. Progress: {loop_count}/{self.max_tasks if self.max_tasks is not None else 'unlimited'}"
-                )
+            if num_tasks_processed % 10 == 0 or num_tasks_processed == 1:
+                logger.info(f"[Worker {worker_id}] Progress: {num_tasks_processed}/{self.max_tasks or 'unlimited'}")
 
         logger.info(f"[Worker {worker_id}] Finished rollouts. Processed {num_tasks_processed} tasks.")
         return num_tasks_processed
 
-    def _worker_main_loop(
-        self, agent: LitAgent, worker_id: int
-    ) -> int:
-        """Orchestrates worker setup, execution, and teardown. Target for multiprocessing or direct call."""
+    async def _execute_rollout_loop_async(self, agent: LitAgent, worker_id: int) -> int:
+        """Executes the asynchronous polling and rollout loop."""
+        client = self.get_verl_client()
+        processor = lightning_span_processor()
+        num_tasks_processed = 0
+
+        logger.info(f"[Worker {worker_id}] Started async rollouts (max: {self.max_tasks or 'unlimited'}).")
+        while num_tasks_processed < (self.max_tasks or float("inf")):
+            sample = await client.poll_next_task_async()
+            if sample is None:
+                logger.info(f"[Worker {worker_id}] No more tasks available. Exiting.")
+                break
+
+            rollout_id = sample["rollout_id"]
+            sampling_parameters = await client.poll_sampling_parameters_async()
+            logger.info(f"[Worker {worker_id}] (Rollout {rollout_id}) Starting async task. Sample: {sample}")
+
+            try:
+                with processor:
+                    start_time = time.time()
+                    rollout_method = (
+                        agent.training_rollout_async if sample["is_train"] else agent.validation_rollout_async
+                    )
+                    reward = await rollout_method(
+                        sample, sampling_parameters=sampling_parameters, rollout_id=rollout_id
+                    )
+
+                trajectory = self._handle_rollout_completion(
+                    worker_id=worker_id,
+                    rollout_id=rollout_id,
+                    reward=reward,
+                    start_time=start_time,
+                    processor=processor,
+                    agent=agent,
+                )
+                if trajectory:
+                    await client.post_trajectory_async(rollout_id, trajectory)
+
+            except Exception:
+                logger.exception(
+                    f"[Worker {worker_id}] (Rollout {rollout_id}) Exception during async rollout. Continuing."
+                )
+
+            num_tasks_processed += 1
+            if num_tasks_processed % 10 == 0 or num_tasks_processed == 1:
+                logger.info(f"[Worker {worker_id}] Progress: {num_tasks_processed}/{self.max_tasks or 'unlimited'}")
+
+        logger.info(f"[Worker {worker_id}] Finished async rollouts. Processed {num_tasks_processed} tasks.")
+        return num_tasks_processed
+
+    def _worker_main_loop(self, agent: LitAgent, worker_id: int, is_async: bool) -> int:
+        """Orchestrates worker setup, execution, and teardown for both sync and async modes."""
         if self.n_workers > 1:
             import setproctitle
             signal.signal(signal.SIGINT, signal.SIG_IGN)  # Ignore SIGINT in worker processes
             setproctitle.setproctitle(multiprocessing.current_process().name)
-        logger.info(
-            f"[Worker {worker_id}] Worker main loop started."
-        )  # worker_id included in process name via logger format
+
+        mode = "Async" if is_async else "Sync"
+        logger.info(f"[Worker {worker_id}] {mode} worker main loop started.")
         self._initialize_worker_env(worker_id)
         num_processed = 0
         try:
-            num_processed = self._execute_rollout_loop(agent, worker_id)
-        except Exception as e:
-            logger.exception(f"[Worker {worker_id}] Unhandled exception in worker main loop execution phase.")
+            if is_async:
+                num_processed = asyncio.run(self._execute_rollout_loop_async(agent, worker_id))
+            else:
+                num_processed = self._execute_rollout_loop(agent, worker_id)
+        except Exception:
+            logger.exception(f"[Worker {worker_id}] Unhandled exception in {mode.lower()} worker loop.")
         finally:
             self._teardown_worker_env(worker_id)
         return num_processed
@@ -351,7 +441,7 @@ class Trainer:
 
         for proc in psutil.process_iter():
             # check whether the process name matches
-            if proc.name().startswith('AgentLightning-'):
+            if proc.name().startswith("AgentLightning-"):
                 proc.kill()
 
     def fit(self, agent: LitAgent, endpoint: str) -> None:
@@ -359,23 +449,26 @@ class Trainer:
         self.init(endpoint)
         processes: List[multiprocessing.Process] = []
 
+        # Determine if the agent is asynchronous.
+        is_async = (
+            hasattr(agent, "training_rollout_async")
+            and agent.__class__.training_rollout_async is not LitAgent.training_rollout_async
+        )
+
+        mode = "asynchronous" if is_async else "synchronous"
+
         try:
             if self.n_workers == 1:
-                logger.info(f"Running with n_workers=1 (synchronous in main process).")
-                # For n_workers=1, worker_id is 0, process name will be 'MainProcess' or similar
-                num_tasks = self._worker_main_loop(agent, 0)
+                logger.info(f"Running with n_workers=1 ({mode} in main process).")
+                num_tasks = self._worker_main_loop(agent, 0, is_async)
                 logger.info(f"Single worker mode finished. Tasks processed: {num_tasks}")
             else:
-                logger.info(f"Running with n_workers={self.n_workers} (multiprocessing).")
-
+                logger.info(f"Running with n_workers={self.n_workers} ({mode} multiprocessing).")
                 for i in range(self.n_workers):
                     process_name = f"AgentLightning-Worker-{i}"
-                    # 'self' (Trainer instance) is pickled here.
-                    # __getstate__ ensures _agentops_server_manager (and its live process) is not pickled.
-                    # Child process gets a Trainer copy with _agentops_server_manager=None, but _agentops_server_port_val is present.
                     p = multiprocessing.Process(
-                        target=self._worker_main_loop,  # Instance method as target
-                        args=(agent, i),
+                        target=self._worker_main_loop,
+                        args=(agent, i, is_async),
                         daemon=self.daemon,
                         name=process_name,
                     )
@@ -401,6 +494,7 @@ class Trainer:
                     # A hack to stop the main process from waiting for child processes to finish.
                     time.sleep(1)  # Give workers time to start
                     import multiprocessing.process as multiprocessing_process
+
                     multiprocessing_process._children.clear()
 
         except KeyboardInterrupt:
@@ -411,7 +505,9 @@ class Trainer:
                         logger.info(f"Terminating worker {i} (name: {p.name}, PID: {p.pid})...")
                         p.terminate()
                     else:
-                        logger.info(f"Worker {i} (name: {p.name}, PID: {p.pid}) is not alive or has already terminated.")
+                        logger.info(
+                            f"Worker {i} (name: {p.name}, PID: {p.pid}) is not alive or has already terminated."
+                        )
                 for i, p in enumerate(processes):
                     if p.is_alive():
                         p.join(timeout=10)  # Give some time to terminate
