@@ -68,3 +68,16 @@ This platform-like diffs in that the optimization algorithm in the original prop
 - Communication Overhead and Latency: Every command from the algorithm (e.g., update_resources, queue_task) now involves a network round-trip to the platform server instead of a local function call.
 - Reduced Flexibility: The platform's API becomes a rigid contract. In the original model, a user could modify the server's behavior directly to suit a novel experiment. In a platform model, they are constrained by the features the platform API exposes. Implementing a non-standard communication pattern would require a feature request and a platform update.
 - More Complex Debugging: When something goes wrong, it can be harder to diagnose the issue. The problem could lie with the algorithm script, the network connection, the platform server, or the agent client. In the original design, the algorithm and server run in the same process, which is often easier to debug with standard tools.
+
+### Comparison with traditional AutoML paradigm.
+
+AutoML: computation-light algorithms with computation-heavy model trainings.
+Agent lightning: computation-light agents. LLM computations are mainly done and served by the server (sometimes by third-party  APIs, even within the algorithm in RL cases).
+
+Initate connection from client to server is possible. Initiate connection from server to client requires hack in most cases.
+
+#### Commons
+
+- Stateful algorithm and stateless *trials*
+
+[elaborate this]
