@@ -8,7 +8,7 @@ async def example_apo():
     """
     An example of how a prompt optimization works.
     """
-    server = AgentLightningServer(host="127.0.0.1", port=8080)
+    server = AgentLightningServer(host="127.0.0.1", port=9997)
     await server.start()
 
     prompt_candidates = [
@@ -35,7 +35,8 @@ async def example_apo():
         trajectory = await server.poll_completed_rollout(task_id, timeout=30)
         assert trajectory, "Expected a completed trajectory from the client."
         print(f"[Algo] Received Result: {trajectory}")
-        reward = trajectory["transitions"][-1].reward if trajectory["transitions"] else 0
+        # FIXME: trajectory is dict here, typing is wrong
+        reward = trajectory["transitions"][-1]["reward"] if trajectory["transitions"] else 0
         prompt_and_rewards.append((prompt, reward))
 
     print(f"\n[Algo] All prompts and their rewards: {prompt_and_rewards}")

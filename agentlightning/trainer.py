@@ -196,7 +196,7 @@ class Trainer:
 
     def init(self, endpoint: str) -> None:
         logger.info(f"Initializing Trainer...")
-        self._verl_client = VerlAgentClient(endpoint=endpoint)
+        self._init_verl_client(endpoint)
 
         if self.agentops_managed and self._agentops_server_manager:
             self._agentops_server_manager.start()
@@ -219,6 +219,13 @@ class Trainer:
             self._agentops_server_manager.stop()
         self._verl_client = None
         logger.info(f"Trainer main cleanup complete.")
+
+    def _init_verl_client(self, endpoint: str) -> VerlAgentClient:
+        if self._verl_client is None:
+            self._verl_client = VerlAgentClient(endpoint=endpoint)
+        else:
+            logger.warning("VerlAgentClient already initialized. Returning existing instance.")
+        return self._verl_client
 
     def _initialize_worker_env(self, worker_id: int):
         logger.info(f"[Worker {worker_id}] Setting up environment...")  # worker_id included in process name

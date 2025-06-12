@@ -24,6 +24,10 @@ class SamplingParameters(TypedDict):
 
 class VerlAgentClient:
 
+    _next_task_uri = "next_data_sample"
+    _sampling_parameters_uri = "train_information"
+    _report_trajectory_uri = "report"
+
     def __init__(self, endpoint: str, poll_interval: float = 5.0, timeout: float = 10.0) -> None:
         """
         Initialize the VerlAgentClient with the given endpoint.
@@ -84,7 +88,7 @@ class VerlAgentClient:
         It has an extra `rollout_id` field, which is a unique identifier for the task,
         and an `is_train` field indicating whether the task is for training or evaluation.
         """
-        url = urllib.parse.urljoin(self.endpoint, "next_data_sample")
+        url = urllib.parse.urljoin(self.endpoint, self._next_task_uri)
         while True:
             data = await self.request_json_async(url)
             if data and data.get("is_available"):
@@ -102,7 +106,7 @@ class VerlAgentClient:
         The client agent is expected to respect the designated sampling parameters
         when calling the LLMs, to maximize the power of the algorithms.
         """
-        url = urllib.parse.urljoin(self.endpoint, "train_information")
+        url = urllib.parse.urljoin(self.endpoint, self._sampling_parameters_uri)
         while True:
             data = await self.request_json_async(url)
             if data:
@@ -117,7 +121,7 @@ class VerlAgentClient:
     async def post_trajectory_async(
         self, rollout_id: str, transitions: List[Transition]
     ) -> dict:
-        url = urllib.parse.urljoin(self.endpoint, "report")
+        url = urllib.parse.urljoin(self.endpoint, self._report_trajectory_uri)
         payload = self._to_acceptable_trajectory_payload(rollout_id, transitions)
 
         return await self.post_json_async(url, payload)
@@ -174,7 +178,7 @@ class VerlAgentClient:
         It has an extra `rollout_id` field, which is a unique identifier for the task,
         and an `is_train` field indicating whether the task is for training or evaluation.
         """
-        url = urllib.parse.urljoin(self.endpoint, "next_data_sample")
+        url = urllib.parse.urljoin(self.endpoint, self._next_task_uri)
         while True:
             data = self.request_json(url)
             if data and data.get("is_available"):
@@ -192,7 +196,7 @@ class VerlAgentClient:
         The client agent is expected to respect the designated sampling parameters
         when calling the LLMs, to maximize the power of the algorithms.
         """
-        url = urllib.parse.urljoin(self.endpoint, "train_information")
+        url = urllib.parse.urljoin(self.endpoint, self._sampling_parameters_uri)
         while True:
             data = self.request_json(url)
             if data:
@@ -214,6 +218,6 @@ class VerlAgentClient:
         :param transitions: List of transitions in the trajectory.
         :return: The server response as a dictionary.
         """
-        url = urllib.parse.urljoin(self.endpoint, "report")
+        url = urllib.parse.urljoin(self.endpoint, self._report_trajectory_uri)
         payload = self._to_acceptable_trajectory_payload(rollout_id, transitions)
         return self.post_json(url, payload)

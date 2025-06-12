@@ -59,6 +59,7 @@ class ServerDataStore:
         Retrieves the next task from the queue without blocking.
         Returns None if the queue is empty.
         """
+        # TODO: send the task back to queue if timeout.
         try:
             return self._task_queue.get_nowait()
         except asyncio.QueueEmpty:
@@ -147,17 +148,17 @@ async def next_task():
 
 
 @app.get("/resources")
-async def fetch_resources() -> NamedResources:
+async def fetch_resources():
     """
     Endpoint for clients to poll for the latest sampling parameters.
     """
     resources = await get_server_store().get_named_resources()
     logger.debug(f"Serving resources to a client: {resources}")
-    return resources
+    return resources.dump()
 
 
 @app.post("/trajectory")
-async def post_trajectory(payload: TrajectoryPayload):
+async def post_trajectory(payload: dict):  # FIXME: type annotation
     """
     Endpoint for clients to report a completed trajectory.
     """
