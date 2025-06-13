@@ -48,7 +48,61 @@ sequenceDiagram
     Algo->>Srv: Update Resources for next iteration
 ```
 
-## Alternatives
+## Pseudo Code
+
+### Resource
+
+```python
+class LLM(Resource):
+    endpoint: str
+    model: str
+    sampling_params: dict
+
+class PromptTemplate(Resource):
+    template: str
+    engine: str
+```
+
+### Algorithm
+
+```python
+# 1. Initialize the server
+server = AgentLightningServer()
+server.start()
+
+prompt_to_optimize = "What is the capital of {country}?"
+
+for iteration in range(max_iterations):
+    # 2. Update resources
+    server.update_resources(
+        prompt_template=PromptTemplate(template=prompt_to_optimize, engine="f-string"),
+    )
+    # 3. Queue tasks
+    rollout_ids = [server.queue_task(data) for data in dataset]
+    # 4. Poll for completed rollouts
+    completed_rollouts = server.get_completed_rollouts(rollout_ids)
+    # 5. Analyze rollouts and update optimization state
+    metric = analyze_rollouts(completed_rollouts)
+    prompt_to_optimize = optimize_prompt(prompt_to_optimize, metric)
+```
+
+### Client
+
+```python
+# 1. Initialize the client
+client = AgentLightningClient(server_url="http://localhost:8000")
+
+# 2. Poll for tasks
+for rollout_id, task_data in client.poll_for_tasks():
+    # 3. Get the latest resources
+    resources = client.get_resources()
+    # 4. Execute the task using the resources
+    trajectory = execute_task(task_data, resources)
+    # 5. Report the trajectory back to the server
+    client.report_trajectory(rollout_id, trajectory)
+```
+
+## Design Choices
 
 ### Hosting the server as a persistent, long-running process
 
@@ -71,13 +125,31 @@ This platform-like diffs in that the optimization algorithm in the original prop
 
 ### Comparison with traditional AutoML paradigm.
 
-AutoML: computation-light algorithms with computation-heavy model trainings.
-Agent lightning: computation-light agents. LLM computations are mainly done and served by the server (sometimes by third-party  APIs, even within the algorithm in RL cases).
+thoughts:
 
+AutoML: computation-light algorithms with computation-heavy model trainings. algorithms can be on a laptop, which launches jobs to the server.
+Agent lightning: computation-light agents. LLM computations are mainly done and served by the server (sometimes by third-party  APIs, even within the algorithm in RL cases).
+computation-heavy means that a heavy model needs to be trained or inferences, normally on a GPU server. Though some agents are also heavy, but the main burden are in the environment they depend on, or the time consumption. It does not make sense for the agent side to run a stateful server.
 Initate connection from client to server is possible. Initiate connection from server to client requires hack in most cases.
 
-#### Commons
+parallel level: each trial in automl trains and evaluates on a dataset (at least a subset of it). The algorithm is not usually not aware of the dataset. In agent lightning, each trial is a single task, which is usually a single sample from a dataset. The algorithm is aware of the dataset, and can queue tasks from it.
+This originates from the idea that agents perform "single rollouts" rather than "model trainings and evaluations". The algorithm alleviates the burden of managing and iterating over the dataset to the server side to support better algorithm support (e.g., RL algorithms) and better parallelism.
 
-- Stateful algorithm and stateless *trials*
+metric data: Agent reports intermediate and final rewards for one rollout, whereas AutoML trials directly report the final metric (e.g., F1 score). Agent algorithms are responsible for aggregating the rewards into monitorable metrics.
 
-[elaborate this]
+commons: Stateful algorithm and stateless *trials*
+
+
+### fetch resource data with or without task data
+
+multiple task data could be fetched as a batch -- The isolation is better.
+if resource is always fetched alongside the task data, combining them will simplify the code.
+
+
+### Reporting full trace data vs. prompt-response-reward triplets
+
+I think we have several options for this design:
+
+1. Full trace collected: the hierarchical opentelemetry trace. 
+2. Logs: in the full-trace setting, we even collect the stdout or other logging information. fully customizable by agents, some optimizers (especially LLM-based ones) might work better.
+3. Triplets: friendly for RL algorithms. agents will be responsible for selecting the triplets from the full trace if they want to optimize only a subset of the trace in a Multi-agent setting.
