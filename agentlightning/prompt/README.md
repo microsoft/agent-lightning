@@ -10,10 +10,10 @@ The core idea is a server-client architecture for distributed, automated tuning 
 - Optimization Algorithm: The developer-defined logic that drives the tuning process. This could be anything from a Reinforcement Learning (RL) algorithm (like PPO for model fine-tuning) to a heuristic-based search (like evolutionary algorithms for prompt optimization). It runs on the server-side and uses the Server SDK.
 - Agent Lightning Client (and SDK): A lightweight agent that runs remotely. It uses the Client SDK to poll the server for new tasks and the latest versions of tuned resources. After executing a task, it reports the trajectory (state, action, reward) or traces back to the server.
 - Tunable Resources: These are the components the algorithm is optimizing. This is a flexible concept that can include:
-    - Model Weights: The actual parameters of an LLM.
-    - Prompt Templates: The instructional text given to the agent.
-    - Sampling Parameters: Hyperparameters like temperature, top-p, etc.
-    - Workflow Graphs: The structure of a multi-step agent task.
+  - Model Weights: The actual parameters of an LLM.
+  - Prompt Templates: The instructional text given to the agent.
+  - Sampling Parameters: Hyperparameters like temperature, top-p, etc.
+  - Workflow Graphs: The structure of a multi-step agent task.
 
 ## System Architecture Diagrams
 
@@ -117,7 +117,7 @@ While both are optimization frameworks, Agent Lightning operates on a different 
 - **Optimization Goal**: AutoML's primary goal is **model creation**. It tunes hyperparameters to produce the best possible static model from a training process. Agent Lightning's goal is **behavioral optimization**. It tunes the runtime resources of an agent to improve its performance and decision-making during a live or simulated interaction.
 - **Computational Load**: In AutoML, algorithm is light, launches heavy model training jobs. In Agent Lighting, agent client is light, server manages and serves resources.
 - **Unit of Work ("Trial")**: In AutoML, a trial is a complete **train-and-evaluate cycle** on a dataset, resulting in a single model with a final performance score. In Agent Lightning, a trial is a single **task rollout** or "episode," where an agent performs a task in an environment.
-- **Feedback Mechanism**: AutoML receives a **terminal, scalar metric** as feedback (e.g., `Accuracy = 92%`). This indicates the overall quality of the final model but not *why* it performs that way. Agent Lightning receives a **rich, sequential trace** of the entire rollout. This detailed feedback allows the algorithm to understand and optimize the intermediate steps, decisions, and tool use within the agent's workflow.
+- **Feedback Mechanism**: AutoML receives a **terminal, scalar metric** as feedback (e.g., `Accuracy = 92%`). This indicates the overall quality of the final model but not _why_ it performs that way. Agent Lightning receives a **rich, sequential trace** of the entire rollout. This detailed feedback allows the algorithm to understand and optimize the intermediate steps, decisions, and tool use within the agent's workflow.
 - **Data Awareness**: AutoML algorithms are typically **dataset-agnostic**; they receive a pointer to data but don't interact with individual samples. The Agent Lightning algorithm is **dataset-aware**, actively queuing specific tasks from a dataset. This enables advanced strategies like curriculum learning or focusing on tasks where the agent currently struggles.
 
 ### Decoupled Resource and Task Fetching
@@ -126,24 +126,49 @@ Resource fetching and task fetching will be handled by **separate API endpoints*
 
 The bundled alternative, fetching resources along with the task data, simplifies the client-side logic to a single API call per job. This shortens one line of code, which is not worth the trade-offs in flexibility and efficiency.
 
-### Reporting full trace data vs. prompt-response-reward triplets
+### Reporting Formats
 
-I think we have several options for this design:
+Forcing a single, rigid data format is too limiting, while allowing completely unstructured data creates chaos for the optimization algorithm. The choice between reporting formats boils down to a classic trade-off between structured simplicity and rich, complex context.
 
-1. Full trace collected: the hierarchical opentelemetry trace. 
-2. Logs: in the full-trace setting, we even collect the stdout or other logging information. fully customizable by agents, some optimizers (especially LLM-based ones) might work better.
-3. Triplets: friendly for RL algorithms. agents will be responsible for selecting the triplets from the full trace if they want to optimize only a subset of the trace in a Multi-agent setting. Better debugability -- client can directly see the triplets they are reporting. Better alignment with the naming (rollout, which is a RL term).
+- **Prompt-Response-Reward Triplets** are like a **store receipt**. They are structured, easy to read, and contain the most critical information for a specific purpose (e.g., RL training). You can quickly see the items purchased (prompt/response) and the total cost (reward). They are highly efficient for algorithms that just need that core data.
+- **A Full OpenTelemetry Trace** is like the store's **full security camera footage**. It shows not just _what_ was bought, but the customer's entire journey: how they navigated the aisles, what they looked at but didn't buy, and where they hesitated. This data is invaluable for deep analysis and debugging _why_ a particular outcome occurred, but it's much heavier and more complex to process.
 
-Assumptions (is it true?):
-- Agent must have at least one LLM call, giving them at least one prompt-response pair.
-- the reward does not have to be rewarding the prompt-responses. They can be a criteria for whether current workflow configuration is good or not.
-- some agents might not be easily traced. They want to report their own triplets for optimization.
+This proposed design should hold up well against the following assumptions:
 
-Proposal: Similar to pytorch lightning, I can have an `automatic_trace` (similar to `automatic_optimization` in pytorch lightning), which is responsible for tracing the agent, LLM calls automatically. I can have multiple allowed return type for `training_rollout` method.
+- **"Agent might have zero to mulitple LLM calls."** An agent could be a workflow of traditional tools. It could simply perform its task and return a `Trajectory` with a `final_reward` and maybe some custom `metrics` like latency or cost, without any LLM calls or triplets. This makes Agent Lightning a more general-purpose optimization framework.
+- **"The reward does not have to be rewarding the prompt-responses."** The `final_reward` is decoupled from the `triplets`. You can have a task-level reward, step-level rewards within each `Triplet`, or both. This is crucial for complex tasks where credit assignment is difficult.
+- **"Some agents might not be easily traced and want to report their own triplets."** When tracing does not work, the developer can simply construct the log object manually with whatever logic makes sense for their specific case.
 
-1. a float (final reward)
-2. a list of triplets (prompt, response, reward)
-3. a full trace (opentelemetry trace)
-4. ...
+Instead of allowing the client to return arbitrary data types (`float`, `list`), the SDK should enforce the return of a single, standardized data object. Let's call it a `Rollout`. This object would have well-defined fields, some of which are optional.
 
-Communicating between the client and server: I think triplets should be required and sufficient for 90% cases. The full trace can be optional, and the client can report it if they want to. The server can also request the full trace if needed for debugging or analysis. In case the triplets are not available, the trace can be required.
+```python
+@dataclass
+class Triplet:
+    """A standard structure for a single turn in a trajectory."""
+    prompt: Any
+    response: Any
+    reward: Optional[float] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+@dataclass
+class Rollout:
+    """The standard reporting object from client to server."""
+    rollout_id: str
+
+    # Primary, high-level feedback
+    final_reward: Optional[float] = None
+
+    # Structured, sequential feedback for RL-style optimization
+    triplets: Optional[List[Triplet]] = None
+
+    # Optional, rich-context data for deep analysis
+    trace_data: Optional[Dict[str, Any]] = None # For serialized OpenTelemetry data
+    logs: Optional[List[str]] = None
+
+    # A bucket for any other relevant numbers
+    metrics: Dict[str, float] = field(default_factory=dict)
+```
+
+A client can support various optimization schemes by choosing what to populate. It may only need to report the final outcome. `client.report(Rollout(rollout_id=id, final_reward=0.95))`. Or, a client having issues can include the full trace for inspection by the developer or an LLM-based analyzer: `client.report(Rollout(rollout_id=id, final_reward=0.2, trace_data={...}, logs=[...]))`. That being sai, I think triplets should be sufficient for 90% of the cases.
+
+We support an `automatic_trace` flag in client SDK. When enabled, a client-side SDK wrapper could automatically instrument LLM calls, populate the `triplets` and `trace_data` fields, and return the complete `Rollout` object. This provides "convention over configuration" -- users get rich data for free, but they can override it or construct it manually for full control.
