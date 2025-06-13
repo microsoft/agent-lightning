@@ -106,24 +106,23 @@ for rollout_id, task_data in client.poll_for_tasks():
 
 ### Hosting the server as a persistent, long-running process
 
-This platform-like diffs in that the optimization algorithm in the original proposal was responsible for running the server, would instead become a client of this platform. This divides the server side into two distinct components:
-
+The optimization algorithm in the original proposal was responsible for running the server. In this design, it would instead become a client of this platform. This divides the server side into two distinct components:
 - The Platform Server: A centralized, always-on service.
 - The Algorithm Client: The user's optimization script, which connects to the platform to manage experiments.
 
 #### Pros
 
-- Decoupling and Simplified Deployment: The user developing the optimization algorithm no longer needs to manage the lifecycle of a web server. They can write a simple script that connects to the existing platform. They don't have to worry about ports, hosting, or process management.
-- Centralized Management and Scalability: A dedicated platform can manage the core server's uptime, security, and scaling. It can also intelligently orchestrate and distribute jobs from multiple different algorithms and users, leading to better resource utilization.
-- Enhanced Observability: With all experiments running through a central hub, the platform can provide dashboards, leaderboards, and detailed logging for all ongoing and past experiments in one place, which is invaluable for tracking and comparison.
+- **Decoupling and Simplified Deployment:** The user developing the optimization algorithm no longer needs to manage the lifecycle of a web server. They can write a simple script that connects to the existing platform. They don't have to worry about ports, hosting, or process management.
+- **Centralized Management and Scalability:** A dedicated platform can manage the core server's uptime, security, and scaling. It can also intelligently orchestrate and distribute jobs from multiple different algorithms and users, leading to better resource utilization.
+- **Enhanced Observability:** With all experiments running through a central hub, the platform can provide dashboards, leaderboards, and detailed logging for all ongoing and past experiments in one place, which is invaluable for tracking and comparison.
 
 #### Cons
 
-- Communication Overhead and Latency: Every command from the algorithm (e.g., update_resources, queue_task) now involves a network round-trip to the platform server instead of a local function call.
-- Reduced Flexibility: The platform's API becomes a rigid contract. In the original model, a user could modify the server's behavior directly to suit a novel experiment. In a platform model, they are constrained by the features the platform API exposes. Implementing a non-standard communication pattern would require a feature request and a platform update.
-- More Complex Debugging: When something goes wrong, it can be harder to diagnose the issue. The problem could lie with the algorithm script, the network connection, the platform server, or the agent client. In the original design, the algorithm and server run in the same process, which is often easier to debug with standard tools.
+- **Communication Overhead and Latency:** Every command from the algorithm (e.g., update_resources, queue_task) now involves a network round-trip to the platform server instead of a local function call.
+- **Reduced Flexibility:** The platform's API becomes a rigid contract. In the original model, a user could modify the server's behavior directly to suit a novel experiment. In a platform model, they are constrained by the features the platform API exposes. Implementing a non-standard communication pattern would require a feature request and a platform update.
+- **More Complex Debugging:** When something goes wrong, it can be harder to diagnose the issue. The problem could lie with the algorithm script, the network connection, the platform server, or the agent client. In the original design, the algorithm and server run in the same process, which is often easier to debug with standard tools.
 
-### Comparison with traditional AutoML paradigm.
+### Comparison with traditional AutoML paradigm
 
 thoughts:
 
@@ -139,6 +138,8 @@ metric data: Agent reports intermediate and final rewards for one rollout, where
 
 commons: Stateful algorithm and stateless *trials*
 
+[DO NOT USE TABLES FOR THE COMPARISON!]
+
 
 ### fetch resource data with or without task data
 
@@ -153,3 +154,7 @@ I think we have several options for this design:
 1. Full trace collected: the hierarchical opentelemetry trace. 
 2. Logs: in the full-trace setting, we even collect the stdout or other logging information. fully customizable by agents, some optimizers (especially LLM-based ones) might work better.
 3. Triplets: friendly for RL algorithms. agents will be responsible for selecting the triplets from the full trace if they want to optimize only a subset of the trace in a Multi-agent setting.
+
+Assumptions (is it true?):
+- Agent must have at least one LLM call, giving them at least one prompt-response pair.
+- the reward does not have to be rewarding the prompt-responses. They can be a criteria for whether current workflow configuration is good or not.
