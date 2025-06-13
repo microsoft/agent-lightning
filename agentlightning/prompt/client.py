@@ -1,13 +1,13 @@
-import aiohttp
 import asyncio
 import logging
-import requests
 import time
 import urllib.parse
+from typing import Any, Dict, Optional
 
-from typing import Any, Dict, List, Optional
+import aiohttp
+import requests
 
-from .types import Task, TaskIfAny, Rollout, ResourcesUpdate, NamedResources
+from .types import Rollout, Task, TaskIfAny, ResourcesUpdate, NamedResources
 
 
 logger = logging.getLogger(__name__)
@@ -15,15 +15,17 @@ logger = logging.getLogger(__name__)
 
 class AgentLightningClient:
     """
-    Client for interacting with an Agent Lightning Server.
+    Client for interacting with a version-aware Agent Lightning Server.
 
-    This client handles polling for tasks, fetching resources (like model configurations),
-    and posting completed rollouts back to the server. It provides both synchronous
-    and asynchronous methods for these operations.
+    This client handles polling for tasks, fetching specific versions of resources
+    (like model configurations), and posting completed rollouts back to the server.
+    It provides both synchronous and asynchronous methods for these operations and
+    includes a cache for resources.
     """
 
     _next_task_uri = "/task"
     _resources_uri = "/resources"
+    _latest_resources_uri = "/resources/latest"
     _report_rollout_uri = "/rollout"
 
     def __init__(self, endpoint: str, poll_interval: float = 5.0, timeout: float = 10.0):
@@ -38,6 +40,7 @@ class AgentLightningClient:
         self.task_count = 0
         self.poll_interval = poll_interval
         self.timeout = timeout
+        self._resource_cache: Dict[str, ResourcesUpdate] = {}  # TODO: mechanism to evict cache
 
     async def _request_json_async(self, url: str) -> Optional[Dict[str, Any]]:
         """Makes an async GET request to the specified URL and returns the JSON response.
@@ -96,24 +99,42 @@ class AgentLightningClient:
             logger.debug(f"No task available yet. Retrying in {self.poll_interval} seconds...")
             await asyncio.sleep(self.poll_interval)
 
-    async def poll_resources_async(self) -> NamedResources:
-        """Polls the server asynchronously for the latest resources.
+    async def get_resources_by_id_async(self, resource_id: str) -> Optional[ResourcesUpdate]:
+        """Fetches a specific version of resources by its ID, using a cache.
 
-        The client agent is expected to use these resources (e.g., LLM sampling parameters)
-        for its tasks.
+        Args:
+            resource_id: The ID of the resources to fetch, usually from a Task's metadata.
 
         Returns:
-            A dictionary of named resources.
+            A ResourcesUpdate object containing the versioned resources, or None if not found.
         """
-        url = urllib.parse.urljoin(self.endpoint, self._resources_uri)
-        while True:
-            response = await self._request_json_async(url)
-            if response:
-                resources_update = ResourcesUpdate.model_validate(response)
-                logger.info(f"Resources received: {resources_update.resources}")
-                return resources_update.resources
-            logger.debug(f"No resources available yet. Retrying in {self.poll_interval} seconds...")
-            await asyncio.sleep(self.poll_interval)
+        if resource_id in self._resource_cache:
+            logger.debug(f"Found resources '{resource_id}' in cache.")
+            return self._resource_cache[resource_id]
+
+        url = urllib.parse.urljoin(self.endpoint, f"{self._resources_uri}/{resource_id}")
+        response = await self._request_json_async(url)
+        if response:
+            resources_update = ResourcesUpdate.model_validate(response)
+            self._resource_cache[resource_id] = resources_update
+            logger.info(f"Fetched and cached resources for ID: {resource_id}")
+            return resources_update
+        return None
+
+    async def get_latest_resources_async(self) -> Optional[ResourcesUpdate]:
+        """Fetches the latest available resources from the server.
+
+        Returns:
+            A ResourcesUpdate object containing the latest resources.
+        """
+        url = urllib.parse.urljoin(self.endpoint, self._latest_resources_uri)
+        response = await self._request_json_async(url)
+        if response:
+            resources_update = ResourcesUpdate.model_validate(response)
+            # Cache this result as well
+            self._resource_cache[resources_update.resources_id] = resources_update
+            return resources_update
+        return None
 
     async def post_rollout_async(self, rollout: Rollout) -> Optional[Dict[str, Any]]:
         """Posts a completed rollout to the server asynchronously.
@@ -167,7 +188,7 @@ class AgentLightningClient:
         """Polls the server synchronously for the next task until one is available.
 
         Returns:
-            A Task object containing the task details.
+            A Task object containing the task details, including the required `resources_id`.
         """
         url = urllib.parse.urljoin(self.endpoint, self._next_task_uri)
         while True:
@@ -181,24 +202,41 @@ class AgentLightningClient:
             logger.debug(f"No task available yet. Retrying in {self.poll_interval} seconds...")
             time.sleep(self.poll_interval)
 
-    def poll_resources(self) -> NamedResources:
-        """Polls the server synchronously for the latest resources.
+    def get_resources_by_id(self, resource_id: str) -> Optional[ResourcesUpdate]:
+        """Fetches a specific version of resources by its ID synchronously, using a cache.
 
-        The client agent is expected to use these resources (e.g., LLM sampling parameters)
-        for its tasks.
+        Args:
+            resource_id: The ID of the resources to fetch, usually from a Task's metadata.
 
         Returns:
-            A dictionary of named resources.
+            A ResourcesUpdate object containing the versioned resources, or None if not found.
         """
-        url = urllib.parse.urljoin(self.endpoint, self._resources_uri)
-        while True:
-            response = self._request_json(url)
-            if response:
-                resources_update = ResourcesUpdate.model_validate(response)
-                logger.info(f"Resources received: {resources_update.resources}")
-                return resources_update.resources
-            logger.debug(f"No resources available yet. Retrying in {self.poll_interval} seconds...")
-            time.sleep(self.poll_interval)
+        if resource_id in self._resource_cache:
+            logger.debug(f"Found resources '{resource_id}' in cache.")
+            return self._resource_cache[resource_id]
+
+        url = urllib.parse.urljoin(self.endpoint, f"{self._resources_uri}/{resource_id}")
+        response = self._request_json(url)
+        if response:
+            resources_update = ResourcesUpdate.model_validate(response)
+            self._resource_cache[resource_id] = resources_update
+            logger.info(f"Fetched and cached resources for ID: {resource_id}")
+            return resources_update
+        return None
+
+    def get_latest_resources(self) -> Optional[ResourcesUpdate]:
+        """Fetches the latest available resources from the server synchronously.
+
+        Returns:
+            A ResourcesUpdate object containing the latest resources.
+        """
+        url = urllib.parse.urljoin(self.endpoint, self._latest_resources_uri)
+        response = self._request_json(url)
+        if response:
+            resources_update = ResourcesUpdate.model_validate(response)
+            self._resource_cache[resources_update.resources_id] = resources_update
+            return resources_update
+        return None
 
     def post_rollout(self, rollout: Rollout) -> Optional[Dict[str, Any]]:
         """Posts a completed rollout to the server synchronously.

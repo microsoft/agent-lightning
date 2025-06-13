@@ -3,7 +3,7 @@ import logging
 import time
 import uuid
 from contextlib import asynccontextmanager
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Literal
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Path
@@ -214,7 +214,13 @@ class AgentLightningServer:
             await asyncio.sleep(1)  # Allow time for graceful shutdown.
             logger.info("Server stopped.")
 
-    async def queue_task(self, sample: Any, metadata: Optional[Dict[str, Any]] = None) -> str:
+    async def queue_task(
+        self,
+        sample: Any,
+        mode: Literal["train", "val", "test"] | None = None,
+        resources_id: str | None = None,
+        **metadata: Any,
+    ) -> str:
         """
         Adds a task to the queue for a client to process.
 
@@ -222,12 +228,13 @@ class AgentLightningServer:
 
         Args:
             sample: The data sample for the task (e.g., a dictionary with a prompt).
-            metadata: A dictionary with additional context for the task (e.g., mode: 'train').
+            mode: Optional mode for the task (e.g., 'train', 'val', 'test').
+            resources_id: Optional specific resources ID to use for this task.
 
         Returns:
             A unique `rollout_id` for tracking the task.
         """
-        task_metadata = TaskMetadata(**(metadata or {}))
+        task_metadata = TaskMetadata(mode=mode, resources_id=resources_id, **metadata)
         return await self._store.add_task(sample, task_metadata)
 
     async def update_resources(self, resources: NamedResources) -> str:
