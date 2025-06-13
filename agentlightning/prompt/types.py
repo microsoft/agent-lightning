@@ -31,12 +31,22 @@ class Rollout(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
+class TaskMetadata(BaseModel):
+    """Metadata for a task, used to provide additional context."""
+
+    mode: Optional[Literal["train", "val", "test"]] = None
+    resources_id: Optional[str] = None
+
+    class Config:
+        extra = "allow"
+
+
 class Task(BaseModel):
     """A task (rollout request) to be processed by the client agent."""
 
     rollout_id: str
     input: Any
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    metadata: TaskMetadata = Field(default_factory=TaskMetadata)
 
 
 class TaskIfAny(BaseModel):
@@ -108,6 +118,7 @@ class ResourcesUpdate(BaseModel):
     clients dynamically.
     """
 
+    resources_id: str
     resources: NamedResources
 
 
