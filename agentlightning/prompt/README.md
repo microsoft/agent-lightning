@@ -102,50 +102,29 @@ for rollout_id, task_data in client.poll_for_tasks():
     client.report_trajectory(rollout_id, trajectory)
 ```
 
-## Design Choices
+## Design Options
 
-### Hosting the server as a persistent, long-running process
+### Hosting Architecture as a Platform-Centric Model
 
-The optimization algorithm in the original proposal was responsible for running the server. In this design, it would instead become a client of this platform. This divides the server side into two distinct components:
-- The Platform Server: A centralized, always-on service.
-- The Algorithm Client: The user's optimization script, which connects to the platform to manage experiments.
+An alternative approach is that the system will be architected around a **persistent, long-running platform server**. The optimization algorithm will act as a client to this platform. This choice prioritizes long-term scalability and decouples the optimization logic from the infrastructure, allowing developers to focus on their algorithm without managing a web server's lifecycle. A central platform provides superior observability, multi-tenancy, and resource management.
 
-#### Pros
+However, a simpler, script-managed server is viable for initial prototyping, and refactoring to a client-server model will be relatively straightforward. The key is to ensure the server's API is well-defined and modular, allowing for easy transition to a platform-centric architecture later.
 
-- **Decoupling and Simplified Deployment:** The user developing the optimization algorithm no longer needs to manage the lifecycle of a web server. They can write a simple script that connects to the existing platform. They don't have to worry about ports, hosting, or process management.
-- **Centralized Management and Scalability:** A dedicated platform can manage the core server's uptime, security, and scaling. It can also intelligently orchestrate and distribute jobs from multiple different algorithms and users, leading to better resource utilization.
-- **Enhanced Observability:** With all experiments running through a central hub, the platform can provide dashboards, leaderboards, and detailed logging for all ongoing and past experiments in one place, which is invaluable for tracking and comparison.
+### A Comparison to AutoML
 
-#### Cons
+While both are optimization frameworks, Agent Lightning operates on a different paradigm than traditional AutoML.
 
-- **Communication Overhead and Latency:** Every command from the algorithm (e.g., update_resources, queue_task) now involves a network round-trip to the platform server instead of a local function call.
-- **Reduced Flexibility:** The platform's API becomes a rigid contract. In the original model, a user could modify the server's behavior directly to suit a novel experiment. In a platform model, they are constrained by the features the platform API exposes. Implementing a non-standard communication pattern would require a feature request and a platform update.
-- **More Complex Debugging:** When something goes wrong, it can be harder to diagnose the issue. The problem could lie with the algorithm script, the network connection, the platform server, or the agent client. In the original design, the algorithm and server run in the same process, which is often easier to debug with standard tools.
+- **Optimization Goal**: AutoML's primary goal is **model creation**. It tunes hyperparameters to produce the best possible static model from a training process. Agent Lightning's goal is **behavioral optimization**. It tunes the runtime resources of an agent to improve its performance and decision-making during a live or simulated interaction.
+- **Computational Load**: In AutoML, algorithm is light, launches heavy model training jobs. In Agent Lighting, agent client is light, server manages and serves resources.
+- **Unit of Work ("Trial")**: In AutoML, a trial is a complete **train-and-evaluate cycle** on a dataset, resulting in a single model with a final performance score. In Agent Lightning, a trial is a single **task rollout** or "episode," where an agent performs a task in an environment.
+- **Feedback Mechanism**: AutoML receives a **terminal, scalar metric** as feedback (e.g., `Accuracy = 92%`). This indicates the overall quality of the final model but not *why* it performs that way. Agent Lightning receives a **rich, sequential trace** of the entire rollout. This detailed feedback allows the algorithm to understand and optimize the intermediate steps, decisions, and tool use within the agent's workflow.
+- **Data Awareness**: AutoML algorithms are typically **dataset-agnostic**; they receive a pointer to data but don't interact with individual samples. The Agent Lightning algorithm is **dataset-aware**, actively queuing specific tasks from a dataset. This enables advanced strategies like curriculum learning or focusing on tasks where the agent currently struggles.
 
-### Comparison with traditional AutoML paradigm
+### Decoupled Resource and Task Fetching
 
-thoughts:
+Resource fetching and task fetching will be handled by **separate API endpoints**. The design significantly improves network efficiency. Resources (like a prompt) often change far less frequently than tasks. Separating the endpoints allows the client to **cache resources** locally and only poll for new tasks. This also simplifies task batching and makes resource versioning more explicit.
 
-AutoML: computation-light algorithms with computation-heavy model trainings. algorithms can be on a laptop, which launches jobs to the server.
-Agent lightning: computation-light agents. LLM computations are mainly done and served by the server (sometimes by third-party  APIs, even within the algorithm in RL cases).
-computation-heavy means that a heavy model needs to be trained or inferences, normally on a GPU server. Though some agents are also heavy, but the main burden are in the environment they depend on, or the time consumption. It does not make sense for the agent side to run a stateful server.
-Initate connection from client to server is possible. Initiate connection from server to client requires hack in most cases.
-
-parallel level: each trial in automl trains and evaluates on a dataset (at least a subset of it). The algorithm is not usually not aware of the dataset. In agent lightning, each trial is a single task, which is usually a single sample from a dataset. The algorithm is aware of the dataset, and can queue tasks from it.
-This originates from the idea that agents perform "single rollouts" rather than "model trainings and evaluations". The algorithm alleviates the burden of managing and iterating over the dataset to the server side to support better algorithm support (e.g., RL algorithms) and better parallelism.
-
-metric data: Agent reports intermediate and final rewards for one rollout, whereas AutoML trials directly report the final metric (e.g., F1 score). Agent algorithms are responsible for aggregating the rewards into monitorable metrics.
-
-commons: Stateful algorithm and stateless *trials*
-
-[DO NOT USE TABLES FOR THE COMPARISON!]
-
-
-### fetch resource data with or without task data
-
-multiple task data could be fetched as a batch -- The isolation is better.
-if resource is always fetched alongside the task data, combining them will simplify the code.
-
+The bundled alternative, fetching resources along with the task data, simplifies the client-side logic to a single API call per job. This shortens one line of code, which is not worth the trade-offs in flexibility and efficiency.
 
 ### Reporting full trace data vs. prompt-response-reward triplets
 
@@ -153,8 +132,18 @@ I think we have several options for this design:
 
 1. Full trace collected: the hierarchical opentelemetry trace. 
 2. Logs: in the full-trace setting, we even collect the stdout or other logging information. fully customizable by agents, some optimizers (especially LLM-based ones) might work better.
-3. Triplets: friendly for RL algorithms. agents will be responsible for selecting the triplets from the full trace if they want to optimize only a subset of the trace in a Multi-agent setting.
+3. Triplets: friendly for RL algorithms. agents will be responsible for selecting the triplets from the full trace if they want to optimize only a subset of the trace in a Multi-agent setting. Better debugability -- client can directly see the triplets they are reporting. Better alignment with the naming (rollout, which is a RL term).
 
 Assumptions (is it true?):
 - Agent must have at least one LLM call, giving them at least one prompt-response pair.
 - the reward does not have to be rewarding the prompt-responses. They can be a criteria for whether current workflow configuration is good or not.
+- some agents might not be easily traced. They want to report their own triplets for optimization.
+
+Proposal: Similar to pytorch lightning, I can have an `automatic_trace` (similar to `automatic_optimization` in pytorch lightning), which is responsible for tracing the agent, LLM calls automatically. I can have multiple allowed return type for `training_rollout` method.
+
+1. a float (final reward)
+2. a list of triplets (prompt, response, reward)
+3. a full trace (opentelemetry trace)
+4. ...
+
+Communicating between the client and server: I think triplets should be required and sufficient for 90% cases. The full trace can be optional, and the client can report it if they want to. The server can also request the full trace if needed for debugging or analysis. In case the triplets are not available, the trace can be required.
