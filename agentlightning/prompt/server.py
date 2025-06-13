@@ -8,25 +8,11 @@ from typing import Any, Dict, List, Optional, TypedDict, cast
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
-from agentlightning.client import TaskData, SamplingParameters, Transition
 
-from .resource import NamedResources, PromptTemplate
+from .types import Rollout, Triplet, Task, TaskIfAny, Resource, LLM, NamedResources, GenericResponse, ResourcesUpdate
 
 
 logger = logging.getLogger(__name__)
-
-
-class TrajectoryPayload(TypedDict):
-    """
-    Represents a completed trajectory from a client.
-
-    This includes the rollout ID and trace of transitions.
-
-    # TBD: is it necessary to include the full trace here?
-    """
-
-    rollout_id: str
-    transitions: List[Transition]
 
 
 class ServerDataStore:
@@ -36,25 +22,25 @@ class ServerDataStore:
     """
 
     def __init__(self):
-        self._task_queue: asyncio.Queue[TaskData] = asyncio.Queue()
-        self._named_resources: NamedResources = NamedResources()
-        self._completed_rollouts: Dict[str, TrajectoryPayload] = {}
+        self._task_queue: asyncio.Queue[Task] = asyncio.Queue()
+        self._named_resources: NamedResources = {}
+        self._completed_rollouts: Dict[str, Rollout] = {}
 
         # Locks for thread-safe access to non-queue resources
-        self._trajectories_lock = asyncio.Lock()
+        self._results_lock = asyncio.Lock()
         self._resources_lock = asyncio.Lock()
 
-    async def add_task(self, sample: Any, is_train: bool) -> str:
+    async def add_task(self, sample: Any, metadata: Dict[str, Any]) -> str:
         """
         Adds a new task to the queue and returns its unique rollout_id.
         """
         rollout_id = f"rollout-{uuid.uuid4()}"
-        task = cast(TaskData, {"rollout_id": rollout_id, "is_train": is_train, **sample})
+        task = Task(rollout_id=rollout_id, input=sample, metadata=metadata)
         await self._task_queue.put(task)
-        logger.info(f"Task queued: {rollout_id} (is_train: {is_train})")
+        logger.info(f"Task queued: {rollout_id} (metadata: {metadata})")
         return rollout_id
 
-    async def get_next_task(self) -> Optional[TaskData]:
+    async def get_next_task(self) -> Optional[Task]:
         """
         Retrieves the next task from the queue without blocking.
         Returns None if the queue is empty.
@@ -71,38 +57,38 @@ class ServerDataStore:
         """
         async with self._resources_lock:
             self._named_resources = resources
-            logger.info(f"Named resources updated: {resources.dump()}")
+            logger.info(f"Named resources updated: {resources}")
 
     async def get_named_resources(self) -> NamedResources:
         """
         Safely retrieves the current named resources.
         """
         async with self._resources_lock:
-            return NamedResources(**self._named_resources)
+            return {**self._named_resources}
 
-    async def store_trajectory(self, trajectory: TrajectoryPayload):
+    async def store_rollout(self, rollout: Rollout):
         """
-        Safely stores a completed trajectory from a client.
+        Safely stores a completed rollout from a client.
         """
-        async with self._trajectories_lock:
-            self._completed_rollouts[trajectory["rollout_id"]] = trajectory
-            logger.info(f"Trajectory received and stored for rollout: {trajectory['rollout_id']}")
+        async with self._results_lock:
+            self._completed_rollouts[rollout.rollout_id] = rollout
+            logger.info(f"Rollout received and stored: {rollout.rollout_id}")
 
-    async def retrieve_trajectory(self, rollout_id: str) -> Optional[TrajectoryPayload]:
+    async def retrieve_rollout(self, rollout_id: str) -> Optional[Rollout]:
         """
-        Safely retrieves a single trajectory by its ID.
+        Safely retrieves a single rollout by its ID.
         """
-        async with self._trajectories_lock:
+        async with self._results_lock:
             return self._completed_rollouts.pop(rollout_id, None)
 
-    async def retrieve_all_trajectories(self) -> List[TrajectoryPayload]:
+    async def retrieve_completed_rollouts(self) -> List[Rollout]:
         """
-        Retrieves all completed trajectories and clears the store.
+        Retrieves all completed rollouts and clears the store.
         """
-        async with self._trajectories_lock:
-            trajectories = list(self._completed_rollouts.values())
+        async with self._results_lock:
+            rollouts = list(self._completed_rollouts.values())
             self._completed_rollouts.clear()
-            return trajectories
+            return rollouts
 
 
 server_store: Optional[ServerDataStore] = None
@@ -134,36 +120,39 @@ app = FastAPI(lifespan=lifespan)
 
 
 @app.get("/task")
-async def next_task():
+async def next_task() -> TaskIfAny:
     """
     Endpoint for clients to poll for the next available task.
     """
     task = await get_server_store().get_next_task()
     if task:
-        logger.debug(f"Serving task {task['rollout_id']} to a client.")
-        return {"is_available": True, "data": task}
+        logger.debug(f"Serving task {task.rollout_id} to a client.")
+        return TaskIfAny(is_available=True, task=task)
     else:
         logger.debug("No task available for client.")
-        return {"is_available": False, "data": None}
+        return TaskIfAny(is_available=False)
 
 
 @app.get("/resources")
-async def fetch_resources():
+async def fetch_resources() -> ResourcesUpdate:
     """
     Endpoint for clients to poll for the latest sampling parameters.
     """
     resources = await get_server_store().get_named_resources()
     logger.debug(f"Serving resources to a client: {resources}")
-    return resources.dump()
+    return ResourcesUpdate(resources=resources)
 
 
-@app.post("/trajectory")
-async def post_trajectory(payload: dict):  # FIXME: type annotation
+@app.post("/rollout")
+async def post_rollout(payload: Rollout) -> GenericResponse:
     """
     Endpoint for clients to report a completed trajectory.
     """
-    await get_server_store().store_trajectory(payload)
-    return {"status": "ok", "message": f"Trajectory for {payload['rollout_id']} received."}
+    await get_server_store().store_rollout(payload)
+    return GenericResponse(
+        status="ok",
+        message=f"Rollout {payload.rollout_id} received and stored.",
+    )
 
 
 class AgentLightningServer:
@@ -216,7 +205,7 @@ class AgentLightningServer:
             await asyncio.sleep(1)
             logger.info("Server stopped.")
 
-    async def queue_task(self, sample: Dict[str, Any], is_train: bool = True) -> str:
+    async def queue_task(self, sample: Dict[str, Any], metadata: Dict[str, Any]) -> str:
         """
         Adds a task to the queue for a client to process.
 
@@ -227,7 +216,7 @@ class AgentLightningServer:
         Returns:
             A unique `rollout_id` for tracking the task.
         """
-        return await self._store.add_task(sample, is_train)
+        return await self._store.add_task(sample, metadata)
 
     async def update_resources(self, resources: NamedResources):
         """
@@ -241,7 +230,7 @@ class AgentLightningServer:
         """
         await self._store.update_named_resources(resources)
 
-    async def get_completed_rollout(self, rollout_id: str) -> Optional[TrajectoryPayload]:
+    async def get_completed_rollout(self, rollout_id: str) -> Optional[Rollout]:
         """
         Retrieves a specific completed rollout by its ID.
         The rollout is removed from the store once retrieved.
@@ -252,11 +241,9 @@ class AgentLightningServer:
         Returns:
             The rollout payload if found, otherwise None.
         """
-        return await self._store.retrieve_trajectory(rollout_id)
+        return await self._store.retrieve_rollout(rollout_id)
 
-    async def poll_completed_rollout(
-        self, rollout_id: str, timeout: Optional[float] = None
-    ) -> Optional[TrajectoryPayload]:
+    async def poll_completed_rollout(self, rollout_id: str, timeout: Optional[float] = None) -> Optional[Rollout]:
         """
         Polls for a completed rollout by its ID, waiting up to `timeout` seconds.
 
@@ -276,7 +263,7 @@ class AgentLightningServer:
                 return None
             await asyncio.sleep(1)
 
-    async def get_all_completed_trajectories(self) -> List[TrajectoryPayload]:
+    async def retrieve_completed_rollouts(self) -> List[Rollout]:
         """
         Retrieves all available completed trajectories and clears the internal store.
         This is useful for batch processing results in an optimization loop.
@@ -284,4 +271,4 @@ class AgentLightningServer:
         Returns:
             A list of all completed trajectory payloads.
         """
-        return await self._store.retrieve_all_trajectories()
+        return await self._store.retrieve_completed_rollouts()

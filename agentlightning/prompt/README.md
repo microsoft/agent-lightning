@@ -9,7 +9,7 @@ The core idea is a server-client architecture for distributed, automated tuning 
 - Agent Lightning Server: A central service that manages the communication protocol. It serves resources and task data to clients and collects resulting trajectories (traces). It acts as the bridge between the optimization algorithm and the agent clients. The server comes with a SDK, which provides functions to update tunable resources, queue tasks from a dataset, and retrieve completed trajectories submitted by clients.
 - Optimization Algorithm: The developer-defined logic that drives the tuning process. This could be anything from a Reinforcement Learning (RL) algorithm (like PPO for model fine-tuning) to a heuristic-based search (like evolutionary algorithms for prompt optimization). It runs on the server-side and uses the Server SDK.
 - Agent Lightning Client (and SDK): A lightweight agent that runs remotely. It uses the Client SDK to poll the server for new tasks and the latest versions of tuned resources. After executing a task, it reports the trajectory (state, action, reward) or traces back to the server.
-- Tunable Resources: These are the components the algorithm is optimizing. This is a flexible concept that can include:
+- Tunable Resources: These are the components the algorithm is optimizing. The algorithm and the client **must agree on** the types of resources for the closed-loop to work. Resources can include:
   - Model Weights: The actual parameters of an LLM.
   - Prompt Templates: The instructional text given to the agent.
   - Sampling Parameters: Hyperparameters like temperature, top-p, etc.
