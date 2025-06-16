@@ -33,6 +33,7 @@ class LitAgent:
 
         Returns:
             The result of the rollout, which can be one of:
+            - None. The tracing should be handled by the agent runner.
             - A float representing the final reward.
             - A list of `Triplet` objects for detailed, step-by-step feedback.
             - A complete `Rollout` object for full control over reporting.

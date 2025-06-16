@@ -9,7 +9,7 @@ import psutil
 
 from .client import AgentLightningClient
 from .litagent import LitAgent
-from .loop import Loop
+from .runner import Loop
 
 logger = logging.getLogger(__name__)
 
