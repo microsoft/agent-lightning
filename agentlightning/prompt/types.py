@@ -41,11 +41,14 @@ class TaskMetadata(BaseModel):
         extra = "allow"
 
 
+TaskInput = Any
+
+
 class Task(BaseModel):
     """A task (rollout request) to be processed by the client agent."""
 
     rollout_id: str
-    input: Any
+    input: TaskInput
     metadata: TaskMetadata = Field(default_factory=TaskMetadata)
 
 
