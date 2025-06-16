@@ -10,6 +10,7 @@ from .types import Rollout, Task, Triplet
 logger = logging.getLogger(__name__)
 
 
+# WIP
 class Loop:
     """Manages the agent's execution loop.
 
@@ -83,13 +84,14 @@ class Loop:
                 break
 
             resources_id = task.metadata.resources_id
-            if not resources_id:
-                logger.error(f"[Worker {worker_id}] Task {task.rollout_id} missing required 'resources_id'. Skipping.")
-                continue
-
-            resources_update = self.client.get_resources_by_id(resources_id)
+            resources_update = None
+            if resources_id:
+                resources_update = self.client.get_resources_by_id(resources_id)
+            else:
+                logger.debug(f"[Worker {worker_id}] Task {task.rollout_id} has no 'resources_id'. Fetching latest resources.")
+                resources_update = self.client.get_latest_resources()
             if not resources_update:
-                logger.error(f"[Worker {worker_id}] Could not fetch resources for ID '{resources_id}'. Skipping.")
+                logger.error(f"[Worker {worker_id}] Task {task.rollout_id} failed to fetch resources. Skipping.")
                 continue
 
             try:
