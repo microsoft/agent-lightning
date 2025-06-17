@@ -1,6 +1,6 @@
-from typing import Any, Dict, List, Optional, Union, Literal
+from typing import Any, Dict, List, Optional, Union, Literal, Annotated
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, Discriminator
 from opentelemetry.sdk.trace import ReadableSpan
 
 
@@ -70,6 +70,7 @@ class Resource(BaseModel):
     """
     Base class for all tunable resources.
     """
+    resource_type: Any
 
 
 class LLM(Resource):
@@ -82,7 +83,7 @@ class LLM(Resource):
         sampling_parameters (SamplingParameters): A dictionary of hyperparameters
             for model inference, such as temperature, top_p, etc.
     """
-
+    resource_type: Literal["llm"] = "llm"
     endpoint: str
     model: str
     sampling_parameters: Dict[str, Any] = Field(default_factory=dict)
@@ -95,14 +96,17 @@ class PromptTemplate(Resource):
     Attributes:
         template (str): The template string. The format depends on the engine.
         engine (Literal['jinja', 'f-string', 'poml']): The templating engine
-            to use for rendering the prompt.
+            to use for rendering the prompt. I imagine users can use their own
+            customized engines, but algos can only well operate on a subset of them.
     """
-
+    resource_type: Literal["prompt_template"] = "prompt_template"
     template: str
     engine: Literal["jinja", "f-string", "poml"]
 
 
-NamedResources = Dict[str, Resource]
+# Use discriminated union for proper deserialization
+ResourceUnion = Annotated[Union[LLM, PromptTemplate], Field(discriminator='resource_type')]
+NamedResources = Dict[str, ResourceUnion]
 """
 A dictionary-like class to hold named resources.
 

@@ -4,15 +4,14 @@ import random
 
 from openai import OpenAI
 
-from agentlightning import LitAgent, configure_logger
-from agentlightning.prompt.resource import NamedResources
-from agentlightning.prompt.client import TrainerV1
+from agentlightning import configure_logger
+from agentlightning.prompt.litagent import LitAgent
+from agentlightning.prompt.trainer import Trainer
 
 
 class SimpleAgent(LitAgent):
 
-    def training_rollout(self, sample, *, sampling_parameters=None, rollout_id=None):
-        resources = NamedResources.load(sampling_parameters)
+    def training_rollout(self, task, rollout_id, resources):
         print("Resources:", resources)
 
         openai = OpenAI(
@@ -24,7 +23,7 @@ class SimpleAgent(LitAgent):
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": resources["system_prompt"].template},
-                {"role": "user", "content": sample["prompt"]},
+                {"role": "user", "content": task["prompt"]},
             ],
         )
         print("Result:", result)
@@ -36,5 +35,5 @@ if __name__ == "__main__":
     configure_logger()
     dotenv.load_dotenv()
     agent = SimpleAgent()
-    trainer = TrainerV1()
+    trainer = Trainer()
     trainer.fit(agent, endpoint="http://127.0.0.1:9997")

@@ -1,7 +1,7 @@
 import asyncio
 
 from agentlightning.prompt.server import AgentLightningServer
-from agentlightning.prompt.resource import NamedResources, PromptTemplate
+from agentlightning.prompt.types import NamedResources, PromptTemplate
 
 
 async def example_apo():
@@ -22,7 +22,7 @@ async def example_apo():
     for prompt in prompt_candidates:
         # 1. The optimization algorithm updates the prompt template
         print(f"\n[Algo] Updating prompt template to: '{prompt}'")
-        resources = NamedResources({"system_prompt": PromptTemplate(template=prompt, engine="f-string")})
+        resources: NamedResources = {"system_prompt": PromptTemplate(template=prompt, engine="f-string")}
         # How the resource is used fully depends on the client implementation.
         await server.update_resources(resources)
 
@@ -32,11 +32,10 @@ async def example_apo():
         print(f"[Algo] Task '{task_id}' is now available for clients.")
 
         # 3. The algorithm waits for clients to process the task
-        trajectory = await server.poll_completed_rollout(task_id, timeout=30)
-        assert trajectory, "Expected a completed trajectory from the client."
-        print(f"[Algo] Received Result: {trajectory}")
-        # FIXME: trajectory is dict here, typing is wrong
-        reward = trajectory["transitions"][-1]["reward"] if trajectory["transitions"] else 0
+        rollout = await server.poll_completed_rollout(task_id, timeout=30)
+        assert rollout, "Expected a completed rollout from the client."
+        print(f"[Algo] Received Result: {rollout}")
+        reward = rollout.final_reward
         prompt_and_rewards.append((prompt, reward))
 
     print(f"\n[Algo] All prompts and their rewards: {prompt_and_rewards}")

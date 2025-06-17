@@ -85,10 +85,9 @@ class ServerDataStore:
         """
         Safely retrieves the latest version of named resources.
         """
-        async with self._resources_lock:
-            if self._latest_resources_id:
-                return await self.get_resources_by_id(self._latest_resources_id)
-            return None
+        if self._latest_resources_id:
+            return await self.get_resources_by_id(self._latest_resources_id)
+        return None
 
     async def store_rollout(self, rollout: Rollout):
         """

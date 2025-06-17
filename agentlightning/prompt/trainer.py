@@ -153,6 +153,9 @@ class Trainer:
         mode = "Async" if is_async else "Sync"
         logger.info(f"[Worker {worker_id}] {mode} worker process started.")
 
+        num_processed = 0
+        self._initialize_worker_env(worker_id)
+
         try:
             client = self.client()
             loop = AgentRunner(
@@ -163,11 +166,15 @@ class Trainer:
                 agentops_managed=self.agentops_managed,
             )
             if is_async:
-                asyncio.run(loop.run_async())
+                num_processed = asyncio.run(loop.run_async())
             else:
-                loop.run()
+                num_processed = loop.run()
         except Exception:
             logger.exception(f"[Worker {worker_id}] Unhandled exception in worker loop.")
+        finally:
+            self._teardown_worker_env(worker_id)
+
+        return num_processed
 
     def _initialize_worker_env(self, worker_id: int):
         logger.info(f"[Worker {worker_id}] Setting up environment...")  # worker_id included in process name
