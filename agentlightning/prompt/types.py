@@ -37,16 +37,6 @@ class Rollout(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
-class TaskMetadata(BaseModel):
-    """Metadata for a task, used to provide additional context."""
-
-    mode: Optional[Literal["train", "val", "test"]] = None
-    resources_id: Optional[str] = None
-
-    class Config:
-        extra = "allow"
-
-
 TaskInput = Any
 
 
@@ -55,7 +45,17 @@ class Task(BaseModel):
 
     rollout_id: str
     input: TaskInput
-    metadata: TaskMetadata = Field(default_factory=TaskMetadata)
+
+    mode: Optional[Literal["train", "val", "test"]] = None
+    resources_id: Optional[str] = None
+
+    # Optional fields for tracking task lifecycle
+    create_time: Optional[float] = None
+    last_claim_time: Optional[float] = None
+    num_claims: Optional[int] = None
+
+    # Allow additional metadata fields
+    metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
 class TaskIfAny(BaseModel):

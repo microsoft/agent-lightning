@@ -16,7 +16,6 @@ from .types import (
     NamedResources,
     GenericResponse,
     ResourcesUpdate,
-    TaskMetadata,
 )
 
 logger = logging.getLogger(__name__)
@@ -30,6 +29,7 @@ class ServerDataStore:
 
     def __init__(self):
         self._task_queue: asyncio.Queue[Task] = asyncio.Queue()
+        self._processing_tasks: Dict[str, Task] = {}  # Currently processing tasks
         self._completed_rollouts: Dict[str, Rollout] = {}
 
         # Store for versioned resources
@@ -40,14 +40,28 @@ class ServerDataStore:
         self._results_lock = asyncio.Lock()
         self._resources_lock = asyncio.Lock()
 
-    async def add_task(self, sample: Any, metadata: TaskMetadata) -> str:
+    async def add_task(
+        self,
+        sample: Any,
+        mode: Literal["train", "val", "test"] | None = None,
+        resources_id: str | None = None,
+        metadata: Dict[str, Any] | None = None,
+    ) -> str:
         """
         Adds a new task to the queue with specific metadata and returns its unique ID.
         """
         rollout_id = f"rollout-{uuid.uuid4()}"
-        task = Task(rollout_id=rollout_id, input=sample, metadata=metadata)
+        task = Task(
+            rollout_id=rollout_id,
+            input=sample,
+            mode=mode,
+            resources_id=resources_id,
+            create_time=time.time(),
+            num_claims=0,
+            metadata=metadata or {},
+        )
         await self._task_queue.put(task)
-        logger.info(f"Task queued: {rollout_id} (Metadata: {metadata})")
+        logger.info(f"Task queued: {rollout_id} (mode: {mode}, resources_id: {resources_id})")
         return rollout_id
 
     async def get_next_task(self) -> Optional[Task]:
@@ -55,9 +69,21 @@ class ServerDataStore:
         Retrieves the next task from the queue without blocking.
         Returns None if the queue is empty.
         """
-        # TODO: send the task back to queue if timeout.
         try:
-            return self._task_queue.get_nowait()
+            async with self._results_lock:
+                task = self._task_queue.get_nowait()
+                task = task.model_copy(
+                    update={
+                        "last_claim_time": time.time(),
+                        "num_claims": (task.num_claims or 0) + 1,
+                    }
+                )
+                self._processing_tasks[task.rollout_id] = task
+                if task.num_claims == 1:
+                    logger.debug(f"Next task retrieved: {task.rollout_id}")
+                else:
+                    logger.info(f"Task {task.rollout_id} re-claimed (attempt {task.num_claims})")
+                return task
         except asyncio.QueueEmpty:
             return None
 
@@ -94,6 +120,7 @@ class ServerDataStore:
         Safely stores a completed rollout from a client.
         """
         async with self._results_lock:
+            self._processing_tasks.pop(rollout.rollout_id, None)
             self._completed_rollouts[rollout.rollout_id] = rollout
             logger.info(f"Rollout received and stored: {rollout.rollout_id}")
 
@@ -113,73 +140,17 @@ class ServerDataStore:
             self._completed_rollouts.clear()
             return rollouts
 
+    def get_processing_tasks(self) -> Dict[str, Task]:
+        """Returns a copy of currently processing tasks for timeout checking."""
+        return self._processing_tasks.copy()
 
-server_store: Optional[ServerDataStore] = None
-
-
-def get_server_store() -> ServerDataStore:
-    """Returns the global server data store instance."""
-    global server_store
-    if not server_store:
-        server_store = ServerDataStore()
-    return server_store
-
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Context manager to handle server startup and shutdown logic."""
-    logger.info("Agent Lightning Server is starting up...")
-    yield
-    logger.info("Agent Lightning Server is shutting down...")
-
-
-app = FastAPI(lifespan=lifespan)
-
-
-@app.get("/task", response_model=TaskIfAny)
-async def next_task() -> TaskIfAny:
-    """Endpoint for clients to poll for the next available task."""
-    task = await get_server_store().get_next_task()
-    if task:
-        logger.debug(f"Serving task {task.rollout_id} to a client.")
-        return TaskIfAny(is_available=True, task=task)
-    else:
-        logger.debug("No task available for client.")
-        return TaskIfAny(is_available=False)
-
-
-@app.get("/resources/latest", response_model=ResourcesUpdate)
-async def fetch_latest_resources() -> ResourcesUpdate:
-    """Endpoint for clients to poll for the latest available resources."""
-    store = get_server_store()
-    resources_update = await store.get_latest_resources()
-    if not resources_update:
-        raise HTTPException(status_code=404, detail="No resources have been set on the server.")
-    logger.debug(f"Serving latest resources '{resources_update.resources_id}' to a client.")
-    return resources_update
-
-
-@app.get("/resources/{resource_id}", response_model=ResourcesUpdate)
-async def fetch_resources_by_id(
-    resource_id: str = Path(..., description="The unique identifier for the resource version.")
-) -> ResourcesUpdate:
-    """Endpoint for clients to fetch a specific version of resources."""
-    store = get_server_store()
-    resources_update = await store.get_resources_by_id(resource_id)
-    if not resources_update:
-        raise HTTPException(status_code=404, detail=f"Resource ID '{resource_id}' not found.")
-    logger.debug(f"Serving resources for ID '{resource_id}' to a client.")
-    return resources_update
-
-
-@app.post("/rollout", response_model=GenericResponse)
-async def post_rollout(payload: Rollout) -> GenericResponse:
-    """Endpoint for clients to report a completed rollout."""
-    await get_server_store().store_rollout(payload)
-    return GenericResponse(
-        status="ok",
-        message=f"Rollout {payload.rollout_id} received and stored.",
-    )
+    async def requeue_task(self, task: Task):
+        """Requeues a task that has timed out and removes it from processing."""
+        logger.warning(f"Requeuing task {task.rollout_id} after timeout (attempt {task.num_claims})")
+        async with self._results_lock:
+            # Remove from processing tasks
+            self._processing_tasks.pop(task.rollout_id, None)
+            self._task_queue.put_nowait(task)
 
 
 class AgentLightningServer:
@@ -190,14 +161,87 @@ class AgentLightningServer:
     and retrieval of results, providing a simple interface for the optimization logic.
     """
 
-    def __init__(self, host: str = "127.0.0.1", port: int = 8000):
-        """Initializes the server controller."""
+    def __init__(self, host: str = "127.0.0.1", port: int = 8000, task_timeout_seconds: float = 300.0):
+        """
+        Initializes the server controller.
+        
+        Args:
+            host: The host to bind the server to.
+            port: The port to bind the server to.
+            task_timeout_seconds: Time in seconds after which a claimed task is considered stale and requeued.
+        """
         self.host = host
         self.port = port
         self.endpoint = f"http://{host}:{port}"
-        self._store = get_server_store()
-        self._uvicorn_config = uvicorn.Config(app, host=self.host, port=self.port, log_level="info")
+        self._task_timeout_seconds = task_timeout_seconds
+        
+        self._store = ServerDataStore()
+        
+        # Create FastAPI app instance
+        self._app = FastAPI()
+        self._setup_routes()
+        
+        self._uvicorn_config = uvicorn.Config(self._app, host=self.host, port=self.port, log_level="info")
         self._uvicorn_server = uvicorn.Server(self._uvicorn_config)
+
+    async def _check_and_requeue_stale_tasks(self):
+        """
+        Check for stale tasks and requeue them. Called reactively during get_next_task.
+        """
+        current_time = time.time()
+        processing_tasks = self._store.get_processing_tasks()
+        
+        for rollout_id, task in processing_tasks.items():
+            if (task.last_claim_time and 
+                current_time - task.last_claim_time > self._task_timeout_seconds):
+                await self._store.requeue_task(task)
+                logger.warning(f"Task {task.rollout_id} timed out after {self._task_timeout_seconds}s, requeued (attempt {task.num_claims})")
+
+    def _setup_routes(self):
+        """Setup FastAPI routes."""
+        
+        @self._app.get("/task", response_model=TaskIfAny)
+        async def next_task() -> TaskIfAny:
+            """Endpoint for clients to poll for the next available task."""
+            # Reactively check for stale tasks before serving next task
+            await self._check_and_requeue_stale_tasks()
+            
+            task = await self._store.get_next_task()
+            if task:
+                logger.debug(f"Serving task {task.rollout_id} to a client.")
+                return TaskIfAny(is_available=True, task=task)
+            else:
+                logger.debug("No task available for client.")
+                return TaskIfAny(is_available=False)
+
+        @self._app.get("/resources/latest", response_model=ResourcesUpdate)
+        async def fetch_latest_resources() -> ResourcesUpdate:
+            """Endpoint for clients to poll for the latest available resources."""
+            resources_update = await self._store.get_latest_resources()
+            if not resources_update:
+                raise HTTPException(status_code=404, detail="No resources have been set on the server.")
+            logger.debug(f"Serving latest resources '{resources_update.resources_id}' to a client.")
+            return resources_update
+
+        @self._app.get("/resources/{resource_id}", response_model=ResourcesUpdate)
+        async def fetch_resources_by_id(
+            resource_id: str = Path(..., description="The unique identifier for the resource version.")
+        ) -> ResourcesUpdate:
+            """Endpoint for clients to fetch a specific version of resources."""
+            resources_update = await self._store.get_resources_by_id(resource_id)
+            if not resources_update:
+                raise HTTPException(status_code=404, detail=f"Resource ID '{resource_id}' not found.")
+            logger.debug(f"Serving resources for ID '{resource_id}' to a client.")
+            return resources_update
+
+        @self._app.post("/rollout", response_model=GenericResponse)
+        async def post_rollout(payload: Rollout) -> GenericResponse:
+            """Endpoint for clients to report a completed rollout."""
+            await self._store.store_rollout(payload)
+            return GenericResponse(
+                status="ok",
+                message=f"Rollout {payload.rollout_id} received and stored.",
+            )
 
     async def start(self):
         """Starts the FastAPI server in the background."""
@@ -218,7 +262,7 @@ class AgentLightningServer:
         sample: Any,
         mode: Literal["train", "val", "test"] | None = None,
         resources_id: str | None = None,
-        **metadata: Any,
+        metadata: Dict[str, Any] | None = None,
     ) -> str:
         """
         Adds a task to the queue for a client to process.
@@ -229,12 +273,12 @@ class AgentLightningServer:
             sample: The data sample for the task (e.g., a dictionary with a prompt).
             mode: Optional mode for the task (e.g., 'train', 'val', 'test').
             resources_id: Optional specific resources ID to use for this task.
+            metadata: Additional metadata for the task, such as dataset info.
 
         Returns:
             A unique `rollout_id` for tracking the task.
         """
-        task_metadata = TaskMetadata(mode=mode, resources_id=resources_id, **metadata)
-        return await self._store.add_task(sample, task_metadata)
+        return await self._store.add_task(sample, mode=mode, resources_id=resources_id, metadata=metadata)
 
     async def update_resources(self, resources: NamedResources) -> str:
         """

@@ -140,7 +140,7 @@ class AgentRunner:
             return False
         rollout_id = task.rollout_id
 
-        resources_id = task.metadata.resources_id
+        resources_id = task.resources_id
         resources_update = None
         if resources_id:
             resources_update = self.client.get_resources_by_id(resources_id)
@@ -164,7 +164,7 @@ class AgentRunner:
                 start_time = time.time()
                 rollout_method = (
                     self.agent.training_rollout
-                    if task.metadata.mode == "train"
+                    if task.mode == "train"
                     else self.agent.validation_rollout
                 )
                 # Pass the task input, not the whole task object
@@ -208,7 +208,7 @@ class AgentRunner:
             return False
         rollout_id = task.rollout_id
 
-        resources_id = task.metadata.resources_id
+        resources_id = task.resources_id
         resources_update = None
         if resources_id:
             resources_update = await self.client.get_resources_by_id_async(resources_id)
@@ -232,7 +232,7 @@ class AgentRunner:
                 start_time = time.time()
                 rollout_method = (
                     self.agent.training_rollout_async
-                    if task.metadata.mode == "train"
+                    if task.mode == "train"
                     else self.agent.validation_rollout_async
                 )
                 # Pass the task input, not the whole task object
