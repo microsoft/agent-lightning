@@ -54,7 +54,7 @@ class AgentRunner:
         self.agentops_server_port = agentops_server_port
         self.instrument_managed = instrument_managed
 
-    def _init_runner_env(self):
+    def init_runner_env(self):
         logger.info(f"{self._log_prefix()} Setting up environment...")  # worker_id included in process name
         if self.agentops_managed:
             if self.agentops_server_port:
@@ -83,7 +83,7 @@ class AgentRunner:
             instrument_all()
             logger.info(f"{self._log_prefix()} Instrumentation applied.")
 
-    def _teardown_runner_env(self):
+    def teardown_runner_env(self):
         logger.info(f"{self._log_prefix()} Cleaning up environment...")
         # Do nothing for now.
         logger.info(f"{self._log_prefix()} Environment cleanup complete.")
@@ -100,8 +100,10 @@ class AgentRunner:
         return "[Default Worker]"
 
     def _to_rollout_object(
-        self, result: RolloutRawResult, rollout_id: str,
-        lightning_span_processor: Optional[LightningSpanProcessor] = None
+        self,
+        result: RolloutRawResult,
+        rollout_id: str,
+        lightning_span_processor: Optional[LightningSpanProcessor] = None,
     ) -> Rollout:
         """Standardizes the agent's return value into a Rollout object.
 
@@ -144,7 +146,9 @@ class AgentRunner:
             trace = [json.loads(readable_span.to_json()) for readable_span in lightning_span_processor.spans()]
 
         if lightning_trace_spans:
-            trajectory = lightning_trace_spans.to_trajectory(agent_match=self.agent.trained_agents, final_reward=final_reward)
+            trajectory = lightning_trace_spans.to_trajectory(
+                agent_match=self.agent.trained_agents, final_reward=final_reward
+            )
             triplets = [Triplet(prompt=step.state, response=step.action, reward=step.reward) for step in trajectory]
 
         # If the agent has triplets, use the last one for final reward if not sets
@@ -166,64 +170,76 @@ class AgentRunner:
             return result.model_copy(update=result_dict)
         return Rollout(**result_dict)
 
-    def run(self, worker_id: int) -> int:
+    def iter(self, worker_id: int) -> int:
         """Executes the synchronous polling and rollout loop."""
-        # ... (implementation is analogous to run_async, but with sync calls)
-        # This is omitted for brevity but would follow the same logic as run_async
+        # ... (implementation is analogous to iter_async, but with sync calls)
+        # This is omitted for brevity but would follow the same logic as iter_async
         # using client.poll_next_task() and client.post_rollout().
         raise NotImplementedError("Sync runner not implemented for this example. Use async.")
 
-    async def run_async(self, worker_id: int) -> int:
-        """Executes the asynchronous polling and rollout loop with AgentOps."""
+    async def run_async(self) -> bool:
+        """Poll the task and rollout once."""
+        task = await self.client.poll_next_task_async()
+        if task is None:
+            logger.info(f"{self._log_prefix()} Poll returned no task. Exiting.")
+            return False
+        rollout_id = task.rollout_id
+
+        resources_id = task.metadata.resources_id
+        resources_update = None
+        if resources_id:
+            resources_update = await self.client.get_resources_by_id_async(resources_id)
+        else:
+            logger.debug(f"{self._log_prefix(rollout_id)} No 'resources_id'. Fetching latest resources.")
+            resources_update = await self.client.get_latest_resources_async()
+        if not resources_update:
+            logger.error(f"{self._log_prefix(rollout_id)} Failed to fetch resources. Skipping.")
+            return False
+
+        rollout_obj = Rollout(rollout_id=task.rollout_id)  # Default empty rollout
+        if self.agentops_managed:
+            span_processor = lightning_span_processor()
+            context = span_processor
+        else:
+            span_processor = None
+            context = nullcontext()
+
+        try:
+            with context:
+                start_time = time.time()
+                rollout_method = (
+                    self.agent.training_rollout_async
+                    if task.metadata.mode == "train"
+                    else self.agent.validation_rollout_async
+                )
+                # Pass the task input, not the whole task object
+                result = await rollout_method(task.input, task.rollout_id, resources_update.resources)
+                rollout_obj = self._to_rollout_object(result, task.rollout_id, span_processor)
+                end_time = time.time()
+                logger.info(
+                    f"{self._log_prefix(rollout_id)} Completed in "
+                    f"{end_time - start_time:.2f}s. Reward: {rollout_obj.final_reward}"
+                )
+
+        except Exception:
+            logger.exception(f"{self._log_prefix(rollout_id)} Exception during rollout.")
+        finally:
+            await self.client.post_rollout_async(rollout_obj)
+
+        return True
+
+    async def iter_async(self) -> int:
+        """Executes the asynchronous polling and rollout loop."""
+        self.init_runner_env()
         num_tasks_processed = 0
-        logger.info(f"[Worker {worker_id}] Started async rollouts (max: {self.max_tasks or 'unlimited'}).")
+        logger.info(f"{self._log_prefix()} Started async rollouts (max: {self.max_tasks or 'unlimited'}).")
 
         while self.max_tasks is None or num_tasks_processed < self.max_tasks:
-            task = await self.client.poll_next_task_async()
-            if task is None:
-                logger.info(f"[Worker {worker_id}] No more tasks available. Exiting.")
-                break
-
-            resources_id = task.metadata.resources_id
-            resources_update = None
-            if resources_id:
-                resources_update = await self.client.get_resources_by_id_async(resources_id)
-            else:
-                logger.debug(f"[Worker {worker_id}] Task {task.rollout_id} has no 'resources_id'. Fetching latest resources.")
-                resources_update = await self.client.get_latest_resources_async()
-            if not resources_update:
-                logger.error(f"[Worker {worker_id}] Task {task.rollout_id} failed to fetch resources. Skipping.")
-                continue
-
-            exception_occurred = False
-            rollout_obj = Rollout(rollout_id=task.rollout_id) # Default empty rollout
-            try:
-                # Use AgentOps record as a context manager if enabled
-                context = agentops.record_async(Event(name=f"rollout_{task.rollout_id}")) if self.agentops_enabled else nullcontext()
-                async with context:
-                    start_time = time.time()
-                    rollout_method = (
-                        self.agent.training_rollout_async
-                        if task.metadata.mode == "train"
-                        else self.agent.validation_rollout_async
-                    )
-                    # Pass the task input, not the whole task object
-                    result = await rollout_method(task.input, task.rollout_id, resources_update.resources)
-                    rollout_obj = self._to_rollout_object(result, task.rollout_id)
-                    end_time = time.time()
-                    logger.info(
-                        f"[Worker {worker_id}] (Rollout {task.rollout_id}) Completed in "
-                        f"{end_time - start_time:.2f}s. Reward: {rollout_obj.final_reward}"
-                    )
-
-            except Exception:
-                exception_occurred = True
-                logger.exception(f"[Worker {worker_id}] (Rollout {task.rollout_id}) Exception during rollout.")
-            finally:
-                # End AgentOps session and report to the Agent Lightning Server
-                self._end_agentops_session(rollout_obj, exception_occurred)
-                await self.client.post_rollout_async(rollout_obj)
+            if await self.run_async():
                 num_tasks_processed += 1
 
-        logger.info(f"[Worker {worker_id}] Finished async rollouts. Processed {num_tasks_processed} tasks.")
+            if num_tasks_processed % 10 == 0 or num_tasks_processed == 1:
+                logger.info(f"{self._log_prefix()} Progress: {num_tasks_processed}/{self.max_tasks or 'unlimited'}")
+        logger.info(f"{self._log_prefix()} Finished async rollouts. Processed {num_tasks_processed} tasks.")
+        self.teardown_runner_env()
         return num_tasks_processed
