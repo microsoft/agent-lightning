@@ -166,9 +166,9 @@ class Trainer:
                 agentops_managed=self.agentops_managed,
             )
             if is_async:
-                num_processed = asyncio.run(loop.run_async())
+                num_processed = asyncio.run(loop.iter_async())
             else:
-                num_processed = loop.run()
+                num_processed = loop.iter()
         except Exception:
             logger.exception(f"[Worker {worker_id}] Unhandled exception in worker loop.")
         finally:

@@ -35,5 +35,5 @@ if __name__ == "__main__":
     configure_logger()
     dotenv.load_dotenv()
     agent = SimpleAgent()
-    trainer = Trainer()
+    trainer = Trainer(n_workers=2)
     trainer.fit(agent, endpoint="http://127.0.0.1:9997")
