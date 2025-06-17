@@ -456,6 +456,13 @@ class LightningSpanProcessor(SpanProcessor):
     def __exit__(self, exc_type, exc_val, exc_tb):
         pass
 
+    def spans(self) -> List[ReadableSpan]:
+        """
+        Get the list of spans collected by this processor.
+        This is useful for debugging and testing purposes.
+        """
+        return self._spans
+
     def last_trace(self, repair_hierarchy: bool = True) -> LightningTrace:
         """
         Get and convert the last trace into a tree.

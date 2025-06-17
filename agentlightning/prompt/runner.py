@@ -1,17 +1,19 @@
 import asyncio
+import json
 import logging
 import os
 import time
 from contextlib import nullcontext
-from typing import List, Optional, Union, Any
+from typing import List, Optional, Union, Dict, Any
 
 import agentops
 
+from opentelemetry.sdk.trace import ReadableSpan
 from agentlightning.instrumentation import instrument_all
-from agentlightning.trace import LightningSpanProcessor, lightning_span_processor
+from agentlightning.trace import LightningSpanProcessor, LightningTrace, lightning_span_processor
 from .client import AgentLightningClient
 from .litagent import LitAgent
-from .types import Rollout, Task, Triplet
+from .types import Rollout, Task, Triplet, RolloutRawResult
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +100,7 @@ class AgentRunner:
         return "[Default Worker]"
 
     def _to_rollout_object(
-        self, result: Union[None, float, List[Triplet], Rollout], rollout_id: str,
+        self, result: RolloutRawResult, rollout_id: str,
         lightning_span_processor: Optional[LightningSpanProcessor] = None
     ) -> Rollout:
         """Standardizes the agent's return value into a Rollout object.
@@ -111,41 +113,58 @@ class AgentRunner:
         Returns:
             A standardized `Rollout` object for reporting to the server.
         """
-        trace_json: Any = None
+        trace: Any = None
+        lightning_trace_spans: Optional[LightningTrace] = None
         final_reward: Optional[float] = None
         triplets: Optional[List[Triplet]] = None
 
+        # Handle different types of results from the agent
+        # Case 1: result is a float (final reward)
         if isinstance(result, float):
             final_reward = result
+        # Case 2: result is a list of Triplets
+        if isinstance(result, list) and all(isinstance(t, Triplet) for t in result):
+            triplets = result  # type: ignore
+        # Case 3: result is a list of ReadableSpan (OpenTelemetry spans)
+        if isinstance(result, list) and all(isinstance(t, ReadableSpan) for t in result):
+            lightning_trace_spans = LightningTrace.from_spans(result)  # type: ignore
+            trace = [json.loads(readable_span.to_json()) for readable_span in result]  # type: ignore
+        # Case 4: result is a list of dict (trace JSON)
+        if isinstance(result, list) and all(isinstance(t, dict) for t in result):
+            trace = result
+        # Case 5: result is a Rollout object
         if isinstance(result, Rollout):
             final_reward = result.final_reward
+            triplets = result.triplets
+            trace = result.trace
 
-        if lightning_span_processor:
-            trace = lightning_span_processor.last_trace()
-            if trace:
-                trace_json = trace.to_json()
-                trajectory = trace.to_trajectory(agent_match=self.agent.trained_agents, final_reward=final_reward)
-                triplets = [Triplet(prompt=step.state, response=step.action, reward=step.reward) for step in trajectory]
+        # If the agent has tracing enabled, use the LightningSpanProcessor
+        if lightning_span_processor and lightning_trace_spans is None:
+            lightning_trace_spans = lightning_span_processor.last_trace()
+            trace = [json.loads(readable_span.to_json()) for readable_span in lightning_span_processor.spans()]
 
-        if isinstance(result, list) and all(isinstance(t, Triplet) for t in result):
-            triplets = result
+        if lightning_trace_spans:
+            trajectory = lightning_trace_spans.to_trajectory(agent_match=self.agent.trained_agents, final_reward=final_reward)
+            triplets = [Triplet(prompt=step.state, response=step.action, reward=step.reward) for step in trajectory]
 
+        # If the agent has triplets, use the last one for final reward if not sets
         if triplets and triplets[-1].reward is not None and final_reward is None:
             final_reward = triplets[-1].reward
 
-        if result is None:
-            # Agent wants runner to handle tracing; return minimal Rollout
-            return Rollout(rollout_id=rollout_id)
+        # Create the Rollout object with standardized fields
+        result_dict: Dict[str, Any] = {
+            "rollout_id": rollout_id,
+        }
+        if final_reward is not None:
+            result_dict["final_reward"] = final_reward
+        if triplets is not None:
+            result_dict["triplets"] = triplets
+        if trace is not None:
+            result_dict["trace"] = trace
+
         if isinstance(result, Rollout):
-            result.rollout_id = rollout_id
-            return result
-        elif isinstance(result, float):
-            return Rollout(rollout_id=rollout_id, final_reward=result)
-        elif isinstance(result, list):
-            return Rollout(rollout_id=rollout_id, triplets=result)
-        else:
-            logger.warning(f"Unexpected return type: {type(result)}. Reporting empty Rollout.")
-            return Rollout(rollout_id=rollout_id)
+            return result.model_copy(update=result_dict)
+        return Rollout(**result_dict)
 
     def run(self, worker_id: int) -> int:
         """Executes the synchronous polling and rollout loop."""

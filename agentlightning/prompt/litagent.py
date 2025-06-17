@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from typing import Any, List, Union, Optional, TYPE_CHECKING
+from typing import Any, List, Dict, Union, Optional, TYPE_CHECKING
 
-from .types import NamedResources, Rollout, Task, TaskInput, Triplet
+from .types import NamedResources, Rollout, Task, TaskInput, Triplet, RolloutRawResult
 
 if TYPE_CHECKING:
     from .trainer import Trainer
@@ -50,9 +50,7 @@ class LitAgent:
             raise ValueError("Trainer has not been set for this agent.")
         return self._trainer
 
-    def training_rollout(
-        self, task: TaskInput, rollout_id: str, resources: NamedResources
-    ) -> Union[float, List[Triplet], Rollout]:
+    def training_rollout(self, task: TaskInput, rollout_id: str, resources: NamedResources) -> RolloutRawResult:
         """Defines the agent's behavior for a single training task.
 
         This method should contain the logic for how the agent processes an
@@ -72,13 +70,13 @@ class LitAgent:
             - None. The tracing should be handled by the agent runner.
             - A float representing the final reward.
             - A list of `Triplet` objects for detailed, step-by-step feedback.
+            - A list of `ReadableSpan` objects for OpenTelemetry tracing.
+            - A list of dictionaries for any trace spans.
             - A complete `Rollout` object for full control over reporting.
         """
         raise NotImplementedError("Subclasses must implement the `training_rollout` method.")
 
-    def validation_rollout(
-        self, task: TaskInput, rollout_id: str, resources: NamedResources
-    ) -> Union[float, List[Triplet], Rollout]:
+    def validation_rollout(self, task: TaskInput, rollout_id: str, resources: NamedResources) -> RolloutRawResult:
         """Defines the agent's behavior for a single validation task.
 
         By default, this method redirects to `training_rollout`. Override it
@@ -99,7 +97,7 @@ class LitAgent:
 
     async def training_rollout_async(
         self, task: TaskInput, rollout_id: str, resources: NamedResources
-    ) -> Union[float, List[Triplet], Rollout]:
+    ) -> RolloutRawResult:
         """Asynchronous version of `training_rollout`.
 
         This method should be implemented by agents that perform asynchronous
@@ -118,7 +116,7 @@ class LitAgent:
 
     async def validation_rollout_async(
         self, task: TaskInput, rollout_id: str, resources: NamedResources
-    ) -> Union[float, List[Triplet], Rollout]:
+    ) -> RolloutRawResult:
         """Asynchronous version of `validation_rollout`.
 
         By default, this method redirects to `training_rollout_async`.

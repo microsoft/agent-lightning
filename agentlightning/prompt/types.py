@@ -1,6 +1,7 @@
-from typing import Any, Dict, List, Optional, Literal
+from typing import Any, Dict, List, Optional, Union, Literal
 
 from pydantic import BaseModel, Field
+from opentelemetry.sdk.trace import ReadableSpan
 
 
 class Triplet(BaseModel):
@@ -24,7 +25,12 @@ class Rollout(BaseModel):
     triplets: Optional[List[Triplet]] = None
 
     # Optional, rich-context data for deep analysis
-    trace: Optional[List[Dict[str, Any]]] = None  # For serialized OpenTelemetry data
+    trace: Optional[List[Dict[str, Any]]] = Field(
+        default=None,
+        description="A list of spans that conform to the OpenTelemetry JSON format. "
+                    "Users of the opentelemetry-sdk can generate this by calling "
+                    "json.loads(readable_span.to_json())."
+    )
     logs: Optional[List[str]] = None
 
     # A bucket for any other relevant information
@@ -55,6 +61,9 @@ class Task(BaseModel):
 class TaskIfAny(BaseModel):
     is_available: bool
     task: Optional[Task] = None
+
+
+RolloutRawResult = Union[None, float, List[Triplet], List[Dict[str, Any]], List[ReadableSpan], Rollout]
 
 
 class Resource(BaseModel):
