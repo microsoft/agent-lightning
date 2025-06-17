@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import weakref
 from typing import Any, List, Dict, Union, Optional, TYPE_CHECKING
 
 from .types import NamedResources, Rollout, Task, TaskInput, Triplet, RolloutRawResult
@@ -24,9 +25,6 @@ class LitAgent:
     infrastructure.
     """
 
-    _trainer: Trainer | None = None
-    _runner: AgentRunner | None = None
-
     def __init__(self, *, trained_agents: Optional[str] = None) -> None:  # FIXME: str | None won't work for cli
         """
         Initialize the LitAgent.
@@ -36,6 +34,8 @@ class LitAgent:
                             This can be used to track which agents have been trained by this instance.
         """
         self.trained_agents = trained_agents
+        self._trainer_ref: weakref.ReferenceType[Trainer] | None = None
+        self._runner_ref: weakref.ReferenceType[AgentRunner] | None = None
 
     def set_trainer(self, trainer: Trainer) -> None:
         """
@@ -44,7 +44,7 @@ class LitAgent:
         Args:
             trainer: The Trainer instance that will handle training and validation.
         """
-        self._trainer = trainer
+        self._trainer_ref = weakref.ref(trainer)
 
     @property
     def trainer(self) -> Trainer:
@@ -54,9 +54,12 @@ class LitAgent:
         Returns:
             The Trainer instance associated with this agent.
         """
-        if self._trainer is None:
+        if self._trainer_ref is None:
             raise ValueError("Trainer has not been set for this agent.")
-        return self._trainer
+        trainer = self._trainer_ref()
+        if trainer is None:
+            raise ValueError("Trainer reference is no longer valid (object has been garbage collected).")
+        return trainer
 
     def set_runner(self, runner: AgentRunner) -> None:
         """
@@ -65,7 +68,7 @@ class LitAgent:
         Args:
             runner: The AgentRunner instance that will handle the execution of rollouts.
         """
-        self._runner = runner
+        self._runner_ref = weakref.ref(runner)
 
     @property
     def runner(self) -> AgentRunner:
@@ -75,9 +78,12 @@ class LitAgent:
         Returns:
             The AgentRunner instance associated with this agent.
         """
-        if self._runner is None:
+        if self._runner_ref is None:
             raise ValueError("Runner has not been set for this agent.")
-        return self._runner
+        runner = self._runner_ref()
+        if runner is None:
+            raise ValueError("Runner reference is no longer valid (object has been garbage collected).")
+        return runner
 
     def training_rollout(self, task: TaskInput, rollout_id: str, resources: NamedResources) -> RolloutRawResult:
         """Defines the agent's behavior for a single training task.

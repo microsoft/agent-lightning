@@ -147,6 +147,9 @@ class Trainer:
             signal.signal(signal.SIGINT, signal.SIG_IGN)
             setproctitle.setproctitle(multiprocessing.current_process().name)
 
+        # Now we are in child processes, so we can safely set up the environment.
+        agent.set_trainer(self)
+
         mode = "Async" if is_async else "Sync"
         logger.info(f"[Worker {worker_id}] {mode} worker process started.")
 
@@ -214,7 +217,6 @@ class Trainer:
                 proc.kill()
 
     def fit(self, agent: LitAgent, endpoint: str) -> None:
-        agent.set_trainer(self)
         self.init(endpoint)
         processes: List[multiprocessing.Process] = []
 
