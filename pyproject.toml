@@ -17,6 +17,7 @@ dev = [
   "flake8",
   "pytest",
   "hatch",
+  "pytest-asyncio",
 ]
 experiment = [
   "random-word",
