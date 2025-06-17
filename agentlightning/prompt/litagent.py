@@ -1,8 +1,11 @@
 from __future__ import annotations
 
-from typing import Any, List, Union
+from typing import Any, List, Union, Optional, TYPE_CHECKING
 
 from .types import NamedResources, Rollout, Task, TaskInput, Triplet
+
+if TYPE_CHECKING:
+    from .trainer import Trainer
 
 
 class LitAgent:
@@ -13,6 +16,39 @@ class LitAgent:
     is completely decoupled from the server communication and training
     infrastructure.
     """
+
+    _trainer: Trainer | None = None
+
+    def __init__(self, *, trained_agents: Optional[str] = None) -> None:  # FIXME: str | None won't work for cli
+        """
+        Initialize the LitAgent.
+
+        Args:
+            trained_agents: Optional string representing the trained agents.
+                            This can be used to track which agents have been trained by this instance.
+        """
+        self.trained_agents = trained_agents
+
+    def set_trainer(self, trainer: Trainer) -> None:
+        """
+        Set the trainer for this agent.
+
+        Args:
+            trainer: The Trainer instance that will handle training and validation.
+        """
+        self._trainer = trainer
+
+    @property
+    def trainer(self) -> Trainer:
+        """
+        Get the trainer for this agent.
+
+        Returns:
+            The Trainer instance associated with this agent.
+        """
+        if self._trainer is None:
+            raise ValueError("Trainer has not been set for this agent.")
+        return self._trainer
 
     def training_rollout(
         self, task: TaskInput, rollout_id: str, resources: NamedResources

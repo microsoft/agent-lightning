@@ -3,7 +3,7 @@ import logging
 import os
 import time
 from contextlib import nullcontext
-from typing import List, Optional, Union
+from typing import List, Optional, Union, Any
 
 import agentops
 
@@ -111,9 +111,27 @@ class AgentRunner:
         Returns:
             A standardized `Rollout` object for reporting to the server.
         """
+        trace_json: Any = None
+        final_reward: Optional[float] = None
+        triplets: Optional[List[Triplet]] = None
+
+        if isinstance(result, float):
+            final_reward = result
+        if isinstance(result, Rollout):
+            final_reward = result.final_reward
+
         if lightning_span_processor:
             trace = lightning_span_processor.last_trace()
-            # TODO
+            if trace:
+                trace_json = trace.to_json()
+                trajectory = trace.to_trajectory(agent_match=self.agent.trained_agents, final_reward=final_reward)
+                triplets = [Triplet(prompt=step.state, response=step.action, reward=step.reward) for step in trajectory]
+
+        if isinstance(result, list) and all(isinstance(t, Triplet) for t in result):
+            triplets = result
+
+        if triplets and triplets[-1].reward is not None and final_reward is None:
+            final_reward = triplets[-1].reward
 
         if result is None:
             # Agent wants runner to handle tracing; return minimal Rollout
