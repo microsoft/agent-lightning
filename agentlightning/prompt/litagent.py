@@ -1,11 +1,18 @@
 from __future__ import annotations
 
+import logging
 from typing import Any, List, Dict, Union, Optional, TYPE_CHECKING
 
 from .types import NamedResources, Rollout, Task, TaskInput, Triplet, RolloutRawResult
 
 if TYPE_CHECKING:
     from .trainer import Trainer
+    from .runner import AgentRunner
+
+    from agentops.integration.callbacks.langchain import LangchainCallbackHandler
+
+
+logger = logging.getLogger(__name__)
 
 
 class LitAgent:
@@ -18,6 +25,7 @@ class LitAgent:
     """
 
     _trainer: Trainer | None = None
+    _runner: AgentRunner | None = None
 
     def __init__(self, *, trained_agents: Optional[str] = None) -> None:  # FIXME: str | None won't work for cli
         """
@@ -49,6 +57,27 @@ class LitAgent:
         if self._trainer is None:
             raise ValueError("Trainer has not been set for this agent.")
         return self._trainer
+
+    def set_runner(self, runner: AgentRunner) -> None:
+        """
+        Set the runner for this agent.
+
+        Args:
+            runner: The AgentRunner instance that will handle the execution of rollouts.
+        """
+        self._runner = runner
+
+    @property
+    def runner(self) -> AgentRunner:
+        """
+        Get the runner for this agent.
+
+        Returns:
+            The AgentRunner instance associated with this agent.
+        """
+        if self._runner is None:
+            raise ValueError("Runner has not been set for this agent.")
+        return self._runner
 
     def training_rollout(self, task: TaskInput, rollout_id: str, resources: NamedResources) -> RolloutRawResult:
         """Defines the agent's behavior for a single training task.
@@ -132,3 +161,25 @@ class LitAgent:
             The result of the asynchronous validation rollout.
         """
         return await self.training_rollout_async(task, rollout_id, resources)
+
+
+def get_langchain_callback_handler(self, tags: list[str] | None = None) -> LangchainCallbackHandler:
+    """
+    Get the Langchain callback handler for integrating with Langchain.
+
+    :param tags: Optional list of tags to apply to the Langchain callback handler.
+    :return: An instance of the Langchain callback handler.
+    """
+    import agentops
+    from agentops.integration.callbacks.langchain import LangchainCallbackHandler
+
+    tags = tags or []
+    client_instance = agentops.get_client()
+    api_key = None
+    if client_instance.initialized:
+        api_key = client_instance.config.api_key
+    else:
+        logger.warning(
+            "AgentOps client not initialized when creating LangchainCallbackHandler. API key may be missing."
+        )
+    return LangchainCallbackHandler(api_key=api_key, tags=tags)
