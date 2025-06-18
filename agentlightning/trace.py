@@ -4,7 +4,8 @@ from enum import Enum
 from typing import Any, List, Optional, Tuple
 from pydantic import BaseModel
 
-from agentops.sdk import TracingCore
+import agentops.sdk.core
+from agentops.sdk.core import TracingCore
 from agentops.sdk.processors import SpanProcessor, Context
 from opentelemetry import trace as trace_api
 from opentelemetry.sdk.trace import Span, ReadableSpan
@@ -247,15 +248,19 @@ class LightningTrace:
             return agent_name
 
     def maybe_reward_dict(self) -> dict[str, Any]:
-        output = self.span.attributes.get("agentops.entity.output")
-        if output:
-            if isinstance(output, dict):
-                return output
-            elif isinstance(output, str):
-                try:
-                    return json.loads(output)
-                except json.JSONDecodeError:
-                    return {}
+        for key in [
+            "agentops.task.output",  # newer versions of agentops
+            "agentops.entity.output",
+        ]:
+            output = self.span.attributes.get(key)
+            if output:
+                if isinstance(output, dict):
+                    return output
+                elif isinstance(output, str):
+                    try:
+                        return json.loads(output)
+                    except json.JSONDecodeError:
+                        return {}
         return {}
 
     def is_reward_span(self) -> bool:
@@ -497,7 +502,16 @@ def lightning_span_processor():
     global _global_lightning_span_processor
     if _global_lightning_span_processor is None:
         _global_lightning_span_processor = LightningSpanProcessor()
-        TracingCore.get_instance()._provider.add_span_processor(
-            _global_lightning_span_processor
-        )
+        try:
+            # new versions
+            instance = agentops.sdk.core.tracer
+            instance.provider.add_span_processor(
+                _global_lightning_span_processor
+            )
+        except AttributeError:
+            # old versions
+            instance = TracingCore.get_instance()
+            instance._provider.add_span_processor(
+                _global_lightning_span_processor
+            )
     return _global_lightning_span_processor

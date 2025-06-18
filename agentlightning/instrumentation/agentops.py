@@ -6,37 +6,88 @@ import time
 
 import flask
 import setproctitle
-import opentelemetry.instrumentation.openai.shared.chat_wrappers
-from opentelemetry.instrumentation.openai.shared.chat_wrappers import (
-    _handle_response,
-    dont_throw,
-)
 
 logger = logging.getLogger(__name__)
 
-_original_handle_response = _handle_response
+
+# Define patching functions for different versions of agentops
+def _patch_new_agentops():
+    import agentops.instrumentation.openai.wrappers.chat
+    import agentops.instrumentation.openai.instrumentor
+    from agentops.instrumentation.openai.wrappers.chat import handle_chat_attributes
+
+    _original_handle_chat_attributes = handle_chat_attributes
+
+    def _handle_chat_attributes_with_tokens(args=None, kwargs=None, return_value=None):
+        attributes = _original_handle_chat_attributes(args=args, kwargs=kwargs, return_value=return_value)
+        if hasattr(return_value, "prompt_token_ids"):
+            attributes["prompt_token_ids"] = list(return_value.prompt_token_ids)
+        if hasattr(return_value, "response_token_ids"):
+            attributes["response_token_ids"] = list(return_value.response_token_ids[0])
+
+        # For LiteLLM, response is a openai._legacy_response.LegacyAPIResponse
+        if hasattr(return_value, "http_response") and hasattr(return_value.http_response, "json"):
+            json_data = return_value.http_response.json()
+            if isinstance(json_data, dict):
+                if "prompt_token_ids" in json_data:
+                    attributes["prompt_token_ids"] = list(json_data["prompt_token_ids"])
+                if "response_token_ids" in json_data:
+                    attributes["response_token_ids"] = list(json_data["response_token_ids"][0])
+
+        return attributes
+
+    agentops.instrumentation.openai.wrappers.chat.handle_chat_attributes = _handle_chat_attributes_with_tokens
+    agentops.instrumentation.openai.instrumentor.handle_chat_attributes = _handle_chat_attributes_with_tokens
+    logger.info("Patched newer version of agentops using handle_chat_attributes")
+    return True
 
 
-@dont_throw
-def _handle_response_with_tokens(response, span, *args, **kwargs):
-    _original_handle_response(response, span, *args, **kwargs)
-    if hasattr(response, "prompt_token_ids"):
-        span.set_attribute("prompt_token_ids", list(response.prompt_token_ids))
-    if hasattr(response, "response_token_ids"):
-        span.set_attribute("response_token_ids", list(response.response_token_ids[0]))
+def _patch_old_agentops():
+    import opentelemetry.instrumentation.openai.shared.chat_wrappers
+    from opentelemetry.instrumentation.openai.shared.chat_wrappers import _handle_response, dont_throw
 
-    # For LiteLLM, response is a openai._legacy_response.LegacyAPIResponse
-    if hasattr(response, "http_response") and hasattr(response.http_response, "json"):
-        json_data = response.http_response.json()
-        if isinstance(json_data, dict):
-            if "prompt_token_ids" in json_data:
-                span.set_attribute("prompt_token_ids", list(json_data["prompt_token_ids"]))
-            if "response_token_ids" in json_data:
-                span.set_attribute("response_token_ids", list(json_data["response_token_ids"][0]))
+    _original_handle_response = _handle_response
+
+    @dont_throw
+    def _handle_response_with_tokens(response, span, *args, **kwargs):
+        _original_handle_response(response, span, *args, **kwargs)
+        if hasattr(response, "prompt_token_ids"):
+            span.set_attribute("prompt_token_ids", list(response.prompt_token_ids))
+        if hasattr(response, "response_token_ids"):
+            span.set_attribute("response_token_ids", list(response.response_token_ids[0]))
+
+        # For LiteLLM, response is a openai._legacy_response.LegacyAPIResponse
+        if hasattr(response, "http_response") and hasattr(response.http_response, "json"):
+            json_data = response.http_response.json()
+            if isinstance(json_data, dict):
+                if "prompt_token_ids" in json_data:
+                    span.set_attribute("prompt_token_ids", list(json_data["prompt_token_ids"]))
+                if "response_token_ids" in json_data:
+                    span.set_attribute("response_token_ids", list(json_data["response_token_ids"][0]))
+
+    opentelemetry.instrumentation.openai.shared.chat_wrappers._handle_response = _handle_response_with_tokens
+    logger.info("Patched earlier version of agentops using _handle_response")
+    return True
 
 
 def instrument_agentops():
-    opentelemetry.instrumentation.openai.shared.chat_wrappers._handle_response = _handle_response_with_tokens
+    """
+    Instrument agentops to capture token IDs.
+    Automatically detects and uses the appropriate patching method based on the installed agentops version.
+    """
+    # Try newest version first
+    try:
+        return _patch_new_agentops()
+    except ImportError as e:
+        logger.debug(f"Couldn't patch newer version of agentops: {str(e)}")
+
+    # Try older version
+    try:
+        return _patch_old_agentops()
+    except ImportError as e:
+        logger.warning(f"Couldn't patch older version of agentops: {str(e)}")
+        logger.error("Failed to instrument agentops - neither patching method was successful")
+        return False
 
 
 def agentops_local_server():

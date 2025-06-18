@@ -178,6 +178,11 @@ class Trainer:
 
     def _initialize_worker_env(self, worker_id: int):
         logger.info(f"[Worker {worker_id}] Setting up environment...")  # worker_id included in process name
+
+        if self.instrument_managed:
+            instrument_all()
+            logger.info(f"[Worker {worker_id}] Instrumentation applied.")
+
         if self.agentops_managed:
             if self._agentops_server_port_val:  # Use the stored, picklable port value
                 base_url = f"http://localhost:{self._agentops_server_port_val}"
@@ -200,10 +205,6 @@ class Trainer:
                 logger.info(f"[Worker {worker_id}] AgentOps client initialized.")
             else:
                 logger.warning(f"[Worker {worker_id}] AgentOps client was already initialized.")
-
-        if self.instrument_managed:
-            instrument_all()
-            logger.info(f"[Worker {worker_id}] Instrumentation applied.")
 
     def _teardown_worker_env(self, worker_id: int):
         logger.info(f"[Worker {worker_id}] Cleaning up environment...")
