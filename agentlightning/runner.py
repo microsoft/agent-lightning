@@ -9,8 +9,7 @@ from typing import List, Optional, Union, Dict, Any
 import agentops
 
 from opentelemetry.sdk.trace import ReadableSpan
-from agentlightning.instrumentation import instrument_all
-from agentlightning.trace import LightningSpanProcessor, LightningTrace, lightning_span_processor
+from .trace import LightningSpanProcessor, LightningTrace, lightning_span_processor
 from .client import AgentLightningClient
 from .litagent import LitAgent
 from .types import Rollout, Task, Triplet, RolloutRawResult

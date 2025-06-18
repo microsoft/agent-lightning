@@ -6,9 +6,9 @@ import pytest
 import pytest_asyncio
 from httpx import AsyncClient
 
-from agentlightning.prompt.server import AgentLightningServer
-from agentlightning.prompt.client import AgentLightningClient
-from agentlightning.prompt.types import (
+from agentlightning import (
+    AgentLightningClient,
+    AgentLightningServer,
     Rollout,
     Triplet,
     NamedResources,

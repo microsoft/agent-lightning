@@ -3,6 +3,22 @@ from typing import Any, Dict, List, Optional, Union, Literal, Annotated
 from pydantic import BaseModel, Field, Discriminator
 from opentelemetry.sdk.trace import ReadableSpan
 
+__all__ = [
+    "Triplet",
+    "Rollout",
+    "Task",
+    "TaskInput",
+    "TaskIfAny",
+    "RolloutRawResult",
+    "Resource",
+    "LLM",
+    "PromptTemplate",
+    "ResourceUnion",
+    "NamedResources",
+    "ResourcesUpdate",
+    "GenericResponse"
+]
+
 
 class Triplet(BaseModel):
     """A standard structure for a single turn in a trajectory."""

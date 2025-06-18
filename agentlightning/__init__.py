@@ -1,8 +1,11 @@
 __version__ = '0.1'
 
-from .client import VerlAgentClient, SamplingParameters, TaskData
+from .client import AgentLightningClient
 from .config import lightning_cli
+from .litagent import LitAgent
 from .logging import configure_logger
 from .reward import reward
+from .server import AgentLightningServer
 from .trace import lightning_span_processor
-from .trainer import LitAgent, Trainer
+from .trainer import Trainer
+from .types import *
