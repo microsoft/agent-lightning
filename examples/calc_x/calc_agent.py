@@ -3,14 +3,13 @@ import string
 import re
 from typing import Any
 
-from agentlightning.client import SamplingParameters
 import sympy
 from autogen_agentchat.agents import AssistantAgent
 from autogen_core.models import ModelFamily
 from autogen_ext.models.openai import OpenAIChatCompletionClient
 from autogen_ext.tools.mcp import McpWorkbench, StdioServerParams
 
-from agentlightning import Trainer, LitAgent, SamplingParameters, reward, configure_logger
+from agentlightning import Trainer, LitAgent, NamedResources, LLM, reward, configure_logger
 
 configure_logger()
 
@@ -100,21 +99,19 @@ def get_agent(model, openai_base_url, temperature, workbench):
 
 class CalcAgent(LitAgent):
 
-    async def training_rollout_async(
-        self, sample: Any, *, sampling_parameters: SamplingParameters | None = None, rollout_id: str | None = None
-    ) -> Any:
-        assert sampling_parameters is not None
+    async def training_rollout_async(self, task: Any, rollout_id: str, resources: NamedResources) -> Any:
+        llm: LLM = resources.get("main_llm")
         async with McpWorkbench(calculator_mcp_server) as workbench:
             calc_agent = get_agent(
-                sampling_parameters["model"],
-                self.trainer.get_openai_endpoint(),
-                sampling_parameters["temperature"],
+                llm.model,
+                llm.endpoint,
+                llm.sampling_parameters.get("temperature", 0.7),
                 workbench,
             )
             try:
                 output_format = "Output the answer when you are ready. The answer should be surrounded by three sharps (`###`), in the form of ### ANSWER: <answer> ###."
-                task = sample["question"] + " " + output_format
-                result = await calc_agent.run(task=task)
+                prompt = task["question"] + " " + output_format
+                result = await calc_agent.run(task=prompt)
                 # evaluate
                 answer = re.search(r"###\s*ANSWER:\s*(.+?)(\s*###|$)", result.messages[-1].content)
                 if answer:
@@ -124,15 +121,19 @@ class CalcAgent(LitAgent):
             except Exception as e:
                 print("Failure:", str(e))
                 answer = "None"
-            reward = await eval(answer, str(sample["result"]))  # reward is tracked with the decorator
-            print("answer: {} ground_truth: {} reward: {}".format(answer, sample["result"], reward))
+            reward = await eval(answer, str(task["result"]))  # reward is tracked with the decorator
+            print("answer: {} ground_truth: {} reward: {}".format(answer, task["result"], reward))
 
-    async def validation_rollout_async(
-        self, sample: Any, *, sampling_parameters: SamplingParameters | None = None, rollout_id: str | None = None
-    ) -> Any:
-        return await self.training_rollout_async(
-            sample, sampling_parameters={"temperature": 0, "model": sampling_parameters["model"]}, rollout_id=rollout_id
-        )
+    async def validation_rollout_async(self, task: Any, rollout_id: str, resources: NamedResources) -> Any:
+        llm: LLM = resources.get("main_llm")
+        resources = {
+            "main_llm": LLM(
+                endpoint=llm.endpoint,
+                model=llm.model,
+                sampling_parameters={"temperature": 0},
+            )
+        }
+        return await self.training_rollout_async(task, rollout_id, resources)
 
 
 if __name__ == "__main__":

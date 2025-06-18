@@ -257,6 +257,13 @@ class AgentLightningServer:
             await asyncio.sleep(1)  # Allow time for graceful shutdown.
             logger.info("Server stopped.")
 
+    async def run_forever(self):
+        """
+        Runs the server indefinitely until stopped.
+        This is useful when async start and stop methods do not work.
+        """
+        await self._uvicorn_server.serve()
+
     async def queue_task(
         self,
         sample: Any,
