@@ -108,7 +108,10 @@ class AgentRunner:
             trajectory = lightning_trace_spans.to_trajectory(
                 agent_match=self.agent.trained_agents, final_reward=final_reward
             )
-            triplets = [Triplet(prompt=step.state, response=step.action, reward=step.reward) for step in trajectory]
+            triplets = [
+                Triplet(prompt={"token_ids": step.state}, response={"token_ids": step.action}, reward=step.reward)
+                for step in trajectory
+            ]
 
         # If the agent has triplets, use the last one for final reward if not sets
         if triplets and triplets[-1].reward is not None and final_reward is None:
@@ -161,11 +164,7 @@ class AgentRunner:
         try:
             with context:
                 start_time = time.time()
-                rollout_method = (
-                    self.agent.training_rollout
-                    if task.mode == "train"
-                    else self.agent.validation_rollout
-                )
+                rollout_method = self.agent.training_rollout if task.mode == "train" else self.agent.validation_rollout
                 # Pass the task input, not the whole task object
                 result = rollout_method(task.input, task.rollout_id, resources_update.resources)
                 rollout_obj = self._to_rollout_object(result, task.rollout_id, span_processor)
@@ -230,9 +229,7 @@ class AgentRunner:
             with context:
                 start_time = time.time()
                 rollout_method = (
-                    self.agent.training_rollout_async
-                    if task.mode == "train"
-                    else self.agent.validation_rollout_async
+                    self.agent.training_rollout_async if task.mode == "train" else self.agent.validation_rollout_async
                 )
                 # Pass the task input, not the whole task object
                 result = await rollout_method(task.input, task.rollout_id, resources_update.resources)
