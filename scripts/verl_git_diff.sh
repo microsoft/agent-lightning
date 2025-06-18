@@ -41,6 +41,16 @@ echo "Creating output directories in '$ORIGINAL_DIR'..."
 mkdir -p "$ORIGINAL_DIR/$OLD_VERSION_DIR"
 mkdir -p "$ORIGINAL_DIR/$CURRENT_VERSION_DIR"
 
+# Move the contents within OLD and CURRENT directories to avoid overwriting
+if [ -d "$ORIGINAL_DIR/$OLD_VERSION_DIR" ]; then
+  echo "Warning: '$OLD_VERSION_DIR' already exists. Its contents will be overwritten."
+  rm -rf "$ORIGINAL_DIR/$OLD_VERSION_DIR"/*
+fi
+if [ -d "$ORIGINAL_DIR/$CURRENT_VERSION_DIR" ]; then
+  echo "Warning: '$CURRENT_VERSION_DIR' already exists. Its contents will be overwritten."
+  rm -rf "$ORIGINAL_DIR/$CURRENT_VERSION_DIR"/*
+fi
+
 echo "Finding differences between $COMMIT_HASH and HEAD in '$SUBFOLDER'..."
 
 # Get the list of changed files relative to the repo root
