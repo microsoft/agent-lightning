@@ -137,4 +137,4 @@ class CalcAgent(LitAgent):
 
 
 if __name__ == "__main__":
-    Trainer(n_workers=4).fit(CalcAgent(), "http://localhost:9999/")
+    Trainer(n_workers=10).fit(CalcAgent(), "http://localhost:9999/")
