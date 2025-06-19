@@ -84,6 +84,13 @@ pip install sqlparse nltk
 
 Don't worry if dependency conflicts arise during this step. Follow the installation order above and the conflicts generally do not matter.
 
+## Development Practices
+
+When developing RL algorithms with Agent Lightning, we recommend the following practices:
+
+1. Keep VERL in a separate repository.
+2. Use `scripts/verl_git_diff.sh` to check in changes to VERL into Agent Lightning as a patch.
+
 ## Architecture
 
 Currently, Agent Lightning is built around a **training server** and one or multiple **agents**.
@@ -107,3 +114,5 @@ For more detailed examples, please see the `examples` folder.
 4.  **Environment Variables**: The environment variables and working directory at the time of `ray init` are important. If you run into "file not found" errors, try restarting Ray from your current working directory.
 
 5.  **Handling Timeouts**: The training server may hang if samples fail or time out on the agent side. To prevent this, we recommend setting limits on the prompt and response lengths, as this is the most common cause of failures.
+
+6.  **VERL Failures**: Save checkpoints frequently, as VERL with vLLM may sometimes experience out-of-memory issues. If you encounter a VERL failure, you can resume training from the last checkpoint.

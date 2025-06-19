@@ -17,6 +17,7 @@ dev = [
   "flake8",
   "pytest",
   "hatch",
+  "pytest-asyncio",
 ]
 experiment = [
   "random-word",
@@ -28,3 +29,4 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["agentlightning"]
+include = ["**/*.yaml", "**/*.yml"]

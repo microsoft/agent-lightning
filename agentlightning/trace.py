@@ -1,14 +1,23 @@
+from __future__ import annotations
+
 import json
+import logging
 import re
 from enum import Enum
-from typing import Any, List, Optional, Tuple
+from typing import Any, List, Optional, Tuple, TYPE_CHECKING
 from pydantic import BaseModel
 
-from agentops.sdk import TracingCore
+import agentops.sdk.core
+from agentops.sdk.core import TracingCore
 from agentops.sdk.processors import SpanProcessor, Context
 from opentelemetry import trace as trace_api
 from opentelemetry.sdk.trace import Span, ReadableSpan
 
+if TYPE_CHECKING:
+    from agentops.integration.callbacks.langchain import LangchainCallbackHandler
+
+
+logger = logging.getLogger(__name__)
 
 class Transition(BaseModel):
     """
@@ -247,15 +256,19 @@ class LightningTrace:
             return agent_name
 
     def maybe_reward_dict(self) -> dict[str, Any]:
-        output = self.span.attributes.get("agentops.entity.output")
-        if output:
-            if isinstance(output, dict):
-                return output
-            elif isinstance(output, str):
-                try:
-                    return json.loads(output)
-                except json.JSONDecodeError:
-                    return {}
+        for key in [
+            "agentops.task.output",  # newer versions of agentops
+            "agentops.entity.output",
+        ]:
+            output = self.span.attributes.get(key)
+            if output:
+                if isinstance(output, dict):
+                    return output
+                elif isinstance(output, str):
+                    try:
+                        return json.loads(output)
+                    except json.JSONDecodeError:
+                        return {}
         return {}
 
     def is_reward_span(self) -> bool:
@@ -456,6 +469,13 @@ class LightningSpanProcessor(SpanProcessor):
     def __exit__(self, exc_type, exc_val, exc_tb):
         pass
 
+    def spans(self) -> List[ReadableSpan]:
+        """
+        Get the list of spans collected by this processor.
+        This is useful for debugging and testing purposes.
+        """
+        return self._spans
+
     def last_trace(self, repair_hierarchy: bool = True) -> LightningTrace:
         """
         Get and convert the last trace into a tree.
@@ -490,7 +510,41 @@ def lightning_span_processor():
     global _global_lightning_span_processor
     if _global_lightning_span_processor is None:
         _global_lightning_span_processor = LightningSpanProcessor()
-        TracingCore.get_instance()._provider.add_span_processor(
-            _global_lightning_span_processor
-        )
+        try:
+            # new versions
+            instance = agentops.sdk.core.tracer
+            instance.provider.add_span_processor(
+                _global_lightning_span_processor
+            )
+        except AttributeError:
+            # old versions
+            instance = TracingCore.get_instance()
+            instance._provider.add_span_processor(
+                _global_lightning_span_processor
+            )
     return _global_lightning_span_processor
+
+
+def get_langchain_callback_handler(tags: list[str] | None = None) -> LangchainCallbackHandler:
+    """
+    Get the Langchain callback handler for integrating with Langchain.
+
+    Args:
+        tags: Optional list of tags to apply to the Langchain callback handler.
+
+    Returns:
+        An instance of the Langchain callback handler.
+    """
+    import agentops
+    from agentops.integration.callbacks.langchain import LangchainCallbackHandler
+
+    tags = tags or []
+    client_instance = agentops.get_client()
+    api_key = None
+    if client_instance.initialized:
+        api_key = client_instance.config.api_key
+    else:
+        logger.warning(
+            "AgentOps client not initialized when creating LangchainCallbackHandler. API key may be missing."
+        )
+    return LangchainCallbackHandler(api_key=api_key, tags=tags)

@@ -25,7 +25,7 @@ from langchain_community.tools.sql_database.tool import QuerySQLDatabaseTool
 from spider_eval.exec_eval import eval_exec_match
 
 import agentlightning
-from agentlightning import SamplingParameters
+from agentlightning.trace import get_langchain_callback_handler
 
 agentlightning.configure_logger()
 
@@ -188,7 +188,7 @@ class SQLAgent:
         debug: bool = False,
         db_schema: str | None = None,
         endpoint: str | None = None,
-        verl_replacement: SamplingParameters | None = None,
+        verl_replacement: dict | None = None,
         table_info_truncate: int = 2048,
         execution_truncate: int = 2048,
     ):
@@ -429,10 +429,11 @@ class LitSQLAgent(agentlightning.LitAgent):
         self.execution_truncate = execution_truncate
 
     def _execute_rollout(
-        self, sample: dict[str, Any], *, sampling_parameters: SamplingParameters, rollout_id: str, is_training: bool
+        self, sample: dict[str, Any], *, resources: agentlightning.NamedResources, rollout_id: str, is_training: bool
     ) -> float | None:
         question = sample["question"]
         start_time = time.time()
+        llm: agentlightning.LLM = resources["main_llm"]
 
         if is_training:
             original_db_path = os.path.join(self.spider_dir, "database", sample["db_id"], sample["db_id"] + ".sqlite")
@@ -468,13 +469,20 @@ class LitSQLAgent(agentlightning.LitAgent):
                 execution_truncate=self.execution_truncate,
                 debug=False,
                 db_schema=schema,
-                endpoint=self.trainer.get_openai_endpoint(),
-                verl_replacement=sampling_parameters,
+                endpoint=llm.endpoint,
+                verl_replacement=(
+                    {"model": llm.model, **llm.sampling_parameters}
+                    if is_training
+                    else {
+                        "model": llm.model,
+                        "temperature": self.val_temperature or llm.sampling_parameters.get("temperature") or 0.0,
+                    }
+                ),
             ).graph()
             try:
                 result = agent.invoke(
                     {"question": question},
-                    {"callbacks": [self.trainer.get_langchain_callback_handler()], "recursion_limit": 100},
+                    {"callbacks": [get_langchain_callback_handler()], "recursion_limit": 100},
                 )
             except Exception as e:
                 logger.exception(f"[Rollout {rollout_id}] Error during agent invocation: {e}")
@@ -500,17 +508,11 @@ class LitSQLAgent(agentlightning.LitAgent):
 
         return reward
 
-    def training_rollout(self, sample, *, sampling_parameters=None, rollout_id=None):
-        return self._execute_rollout(
-            sample, sampling_parameters=sampling_parameters, rollout_id=rollout_id, is_training=True
-        )
+    def training_rollout(self, task: Any, rollout_id: str, resources: agentlightning.NamedResources) -> Any:
+        return self._execute_rollout(task, resources=resources, rollout_id=rollout_id, is_training=True)
 
-    def validation_rollout(self, sample, *, sampling_parameters=None, rollout_id=None):
-        if self.val_temperature is not None:
-            sampling_parameters = {**sampling_parameters, "temperature": self.val_temperature}
-        return self._execute_rollout(
-            sample, sampling_parameters=sampling_parameters, rollout_id=rollout_id, is_training=False
-        )
+    def validation_rollout(self, task: Any, rollout_id: str, resources: agentlightning.NamedResources) -> Any:
+        return self._execute_rollout(task, resources=resources, rollout_id=rollout_id, is_training=False)
 
 
 if __name__ == "__main__":

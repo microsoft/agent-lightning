@@ -20,6 +20,7 @@ This trainer supports model-agonistic model initialization with huggingface
 
 import json
 import os
+import random
 import uuid
 from collections import defaultdict
 from contextlib import contextmanager
@@ -44,6 +45,7 @@ from verl.single_controller.base import Worker
 from verl.single_controller.ray import RayClassWithInitArgs, RayResourcePool, RayWorkerGroup
 from verl.single_controller.ray.base import create_colocated_worker_cls
 from verl.trainer.ppo import core_algos
+from verl.trainer.ppo.agent_mode import AgentModeDaemon
 from verl.trainer.ppo.core_algos import agg_loss
 from verl.trainer.ppo.metric_utils import (
     compute_data_metrics,
@@ -60,15 +62,6 @@ from verl.utils.seqlen_balancing import get_seqlen_balanced_partitions, log_seql
 from verl.utils.torch_functional import masked_mean
 from verl.utils.tracking import ValidationGenerationsLogger
 from verl.workers.rollout.async_server import AsyncLLMServerManager
-import threading
-from flask import Flask, request, Response, abort, jsonify
-import requests
-import random
-import uuid
-import time
-import copy
-from tensordict import TensorDict
-from typing import List
 
 WorkerType = Type[Worker]
 
@@ -284,404 +277,6 @@ def _timer(name: str, timing_raw: Dict[str, float]):
     if name not in timing_raw:
         timing_raw[name] = 0
     timing_raw[name] += timer.last
-
-
-def get_left_padded_ids_and_attention_mask(
-    ids: List[int],
-    max_length: int,
-    pad_token_id: int
-):
-    """
-    Left-pad (or truncate) a sequence of token IDs to a fixed length, 
-    and build the corresponding attention mask.
-
-    Args:
-        ids:             the original list of token IDs.
-        max_length:      desired total length after padding/truncation.
-        pad_token_id:    ID to use for padding.
-
-    Returns:
-        padded_ids:      list of length == max_length.
-        attention_mask:  list of same length: 1 for non-pad tokens, 0 for pads.
-    """
-    seq_len = len(ids)
-
-    if seq_len >= max_length:
-        # too long → truncate from the left, keep the last max_length tokens
-        trimmed = ids[-max_length:]
-        attention_mask = [1] * max_length
-        return trimmed, attention_mask
-
-    # too short → pad on the left
-    pad_len = max_length - seq_len
-    padded_ids = [pad_token_id] * pad_len + ids
-    attention_mask = [0] * pad_len + [1] * seq_len
-    return padded_ids, attention_mask
-
-def get_right_padded_ids_and_attention_mask(
-    ids: List[int],
-    max_length: int,
-    pad_token_id: int
-):
-    """
-    Right-pad (or truncate) a sequence of token IDs to a fixed length,
-    and build the corresponding attention mask.
-
-    Args:
-        ids:            the original list of token IDs.
-        max_length:     desired total length after padding/truncation.
-        pad_token_id:   ID to use for padding.
-
-    Returns:
-        padded_ids:     list of length == max_length.
-        attention_mask: list of same length: 1 for non-pad tokens, 0 for pads.
-    """
-    seq_len = len(ids)
-
-    if seq_len >= max_length:
-        # too long → truncate to the first max_length tokens
-        trimmed = ids[:max_length]
-        attention_mask = [1] * max_length
-        return trimmed, attention_mask
-
-    # too short → pad on the right
-    pad_len = max_length - seq_len
-    padded_ids = ids + [pad_token_id] * pad_len
-    attention_mask = [1] * seq_len + [0] * pad_len
-    return padded_ids, attention_mask
-
-
-class AgentModeDaemon(object):
-
-    def __init__(self, port, train_rollout_n, train_information, mini_batch_size, pad_token_id):
-        self.port = port
-        self.timeout_seconds = 180
-        self.available_server_addresses = []
-        self.n_sample = None
-        self.picked_id_set = set()
-        self.picked_id_to_ts = {}
-        self.unfinished_id_to_sample_info = {}
-        self.finished_id_to_sample_info = {}
-        self.train_information = train_information
-        # train_rollout_n only work for training
-        self.train_rollout_n = train_rollout_n
-        self.mini_batch_size = mini_batch_size
-        self.pad_token_id = pad_token_id
-        self.is_train = True
-        self.lock = threading.Lock()
-
-    def set_up_data_and_server(self, data, server_addresses, is_train=True):
-        keys = data.keys()
-        self.n_sample = len(data[list(keys)[0]])
-        self.finished_id_to_sample_info = {}
-        self.unfinished_id_to_sample_info = {}
-        self.picked_id_set = set()
-        self.picked_id_to_ts = {}
-        self.available_server_addresses = server_addresses
-        self.is_train = is_train
-        if is_train is True:
-            # for training, rollout should happen for self.train_rollout_n times for every sample
-            for i in range(self.n_sample):
-                data_id = str(uuid.uuid4())
-                for j in range(self.train_rollout_n):
-                    sample_info = {}
-                    sample_info["data_id"] = data_id
-                    rollout_id = str(uuid.uuid4())
-                    sample_info["rollout_id"] = rollout_id
-                    sample_info["is_train"] = True
-                    for key in keys:
-                        sample_info[key] = data[key][i]
-                    self.unfinished_id_to_sample_info[rollout_id] = sample_info
-        else:
-            # For testing, currently, one sample will only be evaluated for once
-            for i in range(self.n_sample):
-                data_id = str(uuid.uuid4())
-                sample_info = {}
-                sample_info["data_id"] = data_id
-                rollout_id = str(uuid.uuid4())
-                sample_info["rollout_id"] = rollout_id
-                sample_info["is_train"] = False
-                for key in keys:
-                    sample_info[key] = data[key][i]
-                self.unfinished_id_to_sample_info[rollout_id] = sample_info
-
-    def is_finished(self, verbose=False):
-        if len(self.unfinished_id_to_sample_info) > 0:
-            if verbose:
-                print("Unfinished number {} .....".format(len(self.unfinished_id_to_sample_info)))
-            return False
-        else:
-            if self.is_train:
-                assert self.n_sample * self.train_rollout_n == len(self.finished_id_to_sample_info)
-            else:
-                assert self.n_sample == len(self.finished_id_to_sample_info)
-            return True
-
-    def clear_data_and_server(self):
-        self.available_server_addresses = []
-        self.n_sample = None
-        self.unfinished_id_to_sample_info = {}
-        self.finished_id_to_sample_info = {}
-        self.picked_id_set = set()
-        self.picked_id_to_ts = {}
-        self.is_train = True
-
-    def reset_timeout_task(self):
-        # check if there's any picked sample, but not finished on time
-        with self.lock:
-            cur_ts = time.time()
-            ids_to_remove = []
-            for rollout_id, picked_ts in self.picked_id_to_ts.items():
-                if rollout_id not in self.finished_id_to_sample_info and cur_ts - picked_ts > self.timeout_seconds:
-                    ids_to_remove.append(rollout_id)
-            for rollout_id in ids_to_remove:
-                del self.picked_id_to_ts[rollout_id]
-                self.picked_id_set.remove(rollout_id)
-
-    def pick_one_sample(self):
-        # return None if not available
-        if len(self.unfinished_id_to_sample_info) == 0:
-            return None
-        # ensure concurrency
-        with self.lock:
-            for rollout_id, sample in self.unfinished_id_to_sample_info.items():
-                if rollout_id not in self.picked_id_set:
-                    # ok, we can pick this
-                    self.picked_id_set.add(rollout_id)
-                    self.picked_id_to_ts[rollout_id] = time.time()
-                    # picked
-                    return sample
-        return None
-
-    def report_one_sample(self, rollout_id, reward, trace_list):
-        # trace_list [{"prompt_ids": <prompt_ids>, "response_ids": <response_ids>}]
-        with self.lock:
-            if rollout_id not in self.unfinished_id_to_sample_info:
-                print("warning, this rollout_id is not in this batch! rollout_id:", rollout_id)
-                return
-            sample_info = self.unfinished_id_to_sample_info[rollout_id]
-            del self.unfinished_id_to_sample_info[rollout_id]
-            sample_info['reward'] = reward
-            sample_info['trace_list'] = trace_list
-            self.finished_id_to_sample_info[rollout_id] = sample_info
-
-    def run_until_all_finished(self):
-        while True:
-            self.reset_timeout_task()
-            if self.is_finished(verbose=True):
-                break
-            time.sleep(5)
-
-    def get_test_metrics(self):
-        assert self.is_train is False
-        assert self.n_sample == len(self.finished_id_to_sample_info)
-
-        sample_stat_list = []
-        for rollout_id, sample_info in self.finished_id_to_sample_info.items():
-            trace_list = sample_info["trace_list"]
-            reward = sample_info["reward"]
-            response_length_list = [len(trace["response_ids"]) for trace in trace_list]
-            sample_stat_list.append({
-                "sum_response_length": np.sum(response_length_list),
-                "mean_response_length": np.mean(response_length_list),
-                "turn_count": len(trace_list),
-                "reward": reward
-            })
-        return {
-            "val/reward": np.mean([stat["reward"] for stat in sample_stat_list]),
-            "val/mean_response_length": np.mean([stat["mean_response_length"] for stat in sample_stat_list]),
-            "val/sum_response_length": np.mean([stat["sum_response_length"] for stat in sample_stat_list]),
-            "val/turn_count": np.mean([stat["turn_count"] for stat in sample_stat_list]),
-        }
-
-
-    def get_train_data_batch(self, max_prompt_length, max_response_length, device):
-        # 获取所有的已经 report 的数据
-        # prompt_ids 是 left pad，如果 prompt_ids 超出
-        # response_ids 是 right pad
-        # 中间拼接
-        # 丢弃处理：
-        #    超过 max_prompt_length 的会被 mark 为丢弃，但在这里不丢，只是截断标记一下，后面再丢，这是为了计算 advantage 的正确性
-        #   包括 ppo mini batch 的丢弃也要这样处理
-        assert self.is_train is True
-        assert self.n_sample * self.train_rollout_n == len(self.finished_id_to_sample_info)
-        input_ids_list = []
-        input_attention_mask_list = []
-        response_ids_list = []
-        response_attention_mask_list = []
-        reward_list = []
-        data_id_list = []
-        rollout_id_list = []
-        turn_index_list = []
-        is_drop_list = []
-        n_trunc_sample_because_of_response = 0
-        for rollout_id, sample_info in self.finished_id_to_sample_info.items():
-            trace_list = sample_info["trace_list"]
-            reward = sample_info["reward"]
-            for turn_index, trace in enumerate(trace_list):
-                reward_list.append(reward)
-                prompt_ids = trace["prompt_ids"]
-                response_ids = trace["response_ids"]
-                if len(prompt_ids) > max_prompt_length:
-                    # mark_as_drop, only drop when max_prompt_length exceeds
-                    prompt_ids = prompt_ids[:max_prompt_length]
-                    is_drop_list.append(True)
-                else:
-                    is_drop_list.append(False)
-                if len(response_ids) > max_response_length:
-                    response_ids = response_ids[:max_response_length]
-                    n_trunc_sample_because_of_response += 1
-                one_input_ids, one_input_attention_mask = \
-                    get_left_padded_ids_and_attention_mask(
-                        prompt_ids, 
-                        max_prompt_length, 
-                        self.pad_token_id
-                    )
-                one_response_ids, one_response_attention_mask = \
-                    get_right_padded_ids_and_attention_mask(
-                        response_ids, 
-                        max_response_length, 
-                        self.pad_token_id
-                    )
-                input_ids_list.append(one_input_ids)
-                input_attention_mask_list.append(one_input_attention_mask)
-                response_ids_list.append(one_response_ids)
-                response_attention_mask_list.append(one_response_attention_mask)
-                data_id_list.append(sample_info['data_id'])
-                rollout_id_list.append(rollout_id)
-                turn_index_list.append(turn_index)
-
-        n_transition = len(input_ids_list)
-        batch_input_ids = torch.LongTensor(input_ids_list).to(device)
-        input_attention_mask = torch.LongTensor(input_attention_mask_list).to(device)
-        batch_response_ids = torch.LongTensor(response_ids_list).to(device)
-        response_attention_mask = torch.LongTensor(response_attention_mask_list).to(device)
-        batch_seq = torch.cat([batch_input_ids, batch_response_ids], dim=-1)
-        attention_mask = torch.cat([input_attention_mask, response_attention_mask], dim=-1)
-        position_ids = torch.clip(torch.cumsum(attention_mask, dim=-1) - 1, min=0, max=None)
-        is_drop_mask = torch.BoolTensor(is_drop_list).to(device)
-        scores = torch.tensor(reward_list, dtype=torch.bfloat16).to(device)
-        token_level_scores = torch.zeros_like(attention_mask, dtype=scores.dtype)  # (bsz, seqlen)
-        # 在每个样本的 eos_mask_idx 位置，把对应的 scores 填进去
-        # torch.arange(batch_size) 生成 [0,1,2,...,bsz-1] 作为 batch 维度的索引
-        eos_mask_idx = torch.argmax(position_ids * attention_mask, dim=-1)  # (bsz,)
-        token_level_scores[torch.arange(n_transition), eos_mask_idx] = scores
-        # 只取出序列末尾 response_length 那部分，得到模型回答部分的 token-level 分数
-        token_level_scores = token_level_scores[:, -max_response_length:]
-
-        # form output
-        batch = TensorDict(
-            {
-                'prompts': batch_input_ids,
-                'responses': batch_response_ids,
-                'input_ids': batch_seq,  # here input_ids become the whole sentences
-                'attention_mask': attention_mask,
-                'position_ids': position_ids,
-                "is_drop_mask": is_drop_mask,
-                "token_level_scores": token_level_scores.contiguous(),
-            },
-            batch_size=n_transition
-        )
-        data_proto = DataProto(batch=batch)
-
-        data_metrics = {
-            "agent_mode/n_trunc_sample_because_of_response": n_trunc_sample_because_of_response,
-            "agent_mode/n_sample_to_train": n_transition,
-        }
-
-        data_proto.non_tensor_batch["data_id_list"] = np.array(data_id_list)
-        data_proto.non_tensor_batch["rollout_id_list"] = np.array(rollout_id_list)
-        data_proto.non_tensor_batch["turn_index_list"] = np.array(turn_index_list)
-
-        return data_proto, data_metrics
-
-
-    def start(self):
-        app = Flask(__name__)
-
-        @app.route('/')
-        def index():
-            return 'Hello, Flask in Daemon Thread!'
-
-        @app.route('/status', methods=['GET'])
-        def status():
-            # True if there's at least one backend, False otherwise
-            return jsonify(endpoint_status=True if len(self.available_server_addresses) > 0 else False)
-
-        @app.route('/train_information', methods=['GET'])
-        def train_information():
-            # True if there's at least one backend, False otherwise
-            return jsonify(**self.train_information)
-
-        @app.route('/next_data_sample', methods=['GET'])
-        def next_data_sample():
-            # True if there's at least one backend, False otherwise
-            sample_data = self.pick_one_sample()
-            if sample_data is None:
-                return jsonify(is_available=False, data=None)
-            else:
-                return jsonify(is_available=True, data=sample_data)
-
-        @app.route('/report', methods=['POST'])
-        def report():
-            payload = request.get_json(force=True)
-
-            rollout_id = payload['rollout_id']
-            trace_list = payload['trace_list']
-            reward = payload['reward']
-
-            self.report_one_sample(rollout_id, reward, trace_list)
-
-            return jsonify(status='ok', received_id=rollout_id), 200
-
-        @app.route('/v1/<path:path>', methods=['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD'])
-        def proxy(path):
-            # 随机选择一个后端
-            if len(self.available_server_addresses) == 0:
-                abort(500, description="no backend server configured")
-            target = random.choice(self.available_server_addresses)
-            # 构造完整 URL
-            target_url = f'http://{target}/v1/{path}'
-            print("Redirected to", target_url)
-            # 复制客户端请求头，去掉 Host
-            headers = {
-                key: value
-                for key, value in request.headers.items()
-                if key.lower() != 'host'
-            }
-
-            # 发起转发请求
-            resp = requests.request(
-                method=request.method,
-                url=target_url,
-                headers=headers,
-                params=request.args,
-                data=request.get_data(),
-                cookies=request.cookies,
-                allow_redirects=False
-            )
-
-            # 过滤掉一些 hop-by-hop 头
-            excluded_headers = {
-                'content-encoding', 'content-length', 'transfer-encoding',
-                'connection', 'keep-alive', 'proxy-authenticate',
-                'proxy-authorization', 'te', 'trailers', 'upgrade'
-            }
-            response_headers = [
-                (name, value) for name, value in resp.headers.items()
-                if name.lower() not in excluded_headers
-            ]
-
-            # 返回后端响应给客户端
-            return Response(resp.content, status=resp.status_code, headers=response_headers)
-
-        def _run():
-            app.run(port=self.port, threaded=True, debug=False)
-
-        thread = threading.Thread(target=_run, daemon=True)
-        thread.start()
-        return thread
-
 
 
 class RayPPOTrainer:
@@ -993,7 +588,6 @@ class RayPPOTrainer:
         self.agent_mode_daemon.clear_data_and_server()
         self.async_rollout_manager.sleep()
         return test_metrics
-
 
     def _validate(self):
         if self.config.agent_mode.enable is True:
@@ -1339,7 +933,6 @@ class RayPPOTrainer:
         self.global_steps += 1
         last_val_metrics = None
 
-
         for epoch in range(self.config.trainer.total_epochs):
             for batch_dict in self.train_dataloader:
                 metrics = {}
@@ -1374,10 +967,7 @@ class RayPPOTrainer:
                             gen_batch_output = self.actor_rollout_wg.generate_sequences(gen_batch)
                         elif self.config.agent_mode.enable:
                             self.async_rollout_manager.wake_up()
-                            self.agent_mode_daemon.set_up_data_and_server(
-                                gen_batch.non_tensor_batch,
-                                self.async_rollout_manager.server_addresses
-                            )
+                            self.agent_mode_daemon.set_up_data_and_server(gen_batch.non_tensor_batch, self.async_rollout_manager.server_addresses)
                             self.agent_mode_daemon.run_until_all_finished()
                             batch, agent_metrics = self.agent_mode_daemon.get_train_data_batch(
                                 max_prompt_length=self.config.data.max_prompt_length,
@@ -1470,7 +1060,7 @@ class RayPPOTrainer:
 
                     with _timer("adv", timing_raw):
                         # if agent_mode is enabled, there is already token_level_scores
-                        if not(self.config.agent_mode.enable):
+                        if not (self.config.agent_mode.enable):
                             # we combine with rule-based rm
                             reward_extra_infos_dict: dict[str, list]
                             if self.config.reward_model.launch_reward_fn_async:
@@ -1502,7 +1092,6 @@ class RayPPOTrainer:
                             multi_turn=self.config.actor_rollout_ref.rollout.multi_turn.enable,
                         )
 
-
                     # after advantages are assinged, we begin to drop (1) long prompt (2) floor to ppo minisize
                     if self.config.agent_mode.enable:
                         keep_indices = (~batch.batch["is_drop_mask"]).nonzero(as_tuple=True)[0]
@@ -1517,7 +1106,6 @@ class RayPPOTrainer:
                         n_remained_transition = n_transition // mini_batch_size * mini_batch_size
                         batch = batch[list(range(n_remained_transition))]
                         metrics["agent_mode/n_dropped_sample_because_of_mini_batch"] = n_transition - n_remained_transition
-
 
                     # Agent mode note: Change the order of balance batch;
                     #     1. first calculate advantage
