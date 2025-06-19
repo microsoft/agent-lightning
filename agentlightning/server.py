@@ -2,6 +2,7 @@ import asyncio
 import logging
 import time
 import uuid
+import threading
 from contextlib import asynccontextmanager
 from typing import Any, Dict, List, Optional, Literal
 
@@ -164,7 +165,7 @@ class AgentLightningServer:
     def __init__(self, host: str = "127.0.0.1", port: int = 8000, task_timeout_seconds: float = 300.0):
         """
         Initializes the server controller.
-        
+
         Args:
             host: The host to bind the server to.
             port: The port to bind the server to.
@@ -174,38 +175,65 @@ class AgentLightningServer:
         self.port = port
         self.endpoint = f"http://{host}:{port}"
         self._task_timeout_seconds = task_timeout_seconds
-        
-        self._store = ServerDataStore()
-        
-        # Create FastAPI app instance
-        self._app = FastAPI()
+
+        # Defer initialization and use event for cross-thread communication
+        self._store: Optional[ServerDataStore] = None
+        self.loop: Optional[asyncio.AbstractEventLoop] = None
+        self.startup_event = threading.Event()
+
+        # Create FastAPI app instance with a lifespan manager
+        self._app = FastAPI(lifespan=self._lifespan)
         self._setup_routes()
-        
+
         self._uvicorn_config = uvicorn.Config(self._app, host=self.host, port=self.port, log_level="info")
         self._uvicorn_server = uvicorn.Server(self._uvicorn_config)
+
+    # --- ADDED: Lifespan context manager ---
+    @asynccontextmanager
+    async def _lifespan(self, app: FastAPI):
+        """
+        Manages server startup and shutdown. This runs inside the server's event loop.
+        """
+        logger.info("Server is starting up...")
+        self.loop = asyncio.get_running_loop()
+        self._store = ServerDataStore()  # Initialize data store here
+        self.startup_event.set()  # Signal that the server is ready
+
+        yield
+
+        logger.info("Server is shutting down.")
+        self._store = None
+        self.startup_event.clear()  # Clear the startup event
+        self.loop = None
 
     async def _check_and_requeue_stale_tasks(self):
         """
         Check for stale tasks and requeue them. Called reactively during get_next_task.
         """
         current_time = time.time()
+        # Ensure store is initialized before checking
+        if not self._store:
+            return
         processing_tasks = self._store.get_processing_tasks()
-        
+
         for rollout_id, task in processing_tasks.items():
-            if (task.last_claim_time and 
-                current_time - task.last_claim_time > self._task_timeout_seconds):
+            if task.last_claim_time and current_time - task.last_claim_time > self._task_timeout_seconds:
                 await self._store.requeue_task(task)
-                logger.warning(f"Task {task.rollout_id} timed out after {self._task_timeout_seconds}s, requeued (attempt {task.num_claims})")
+                logger.warning(
+                    f"Task {task.rollout_id} timed out after {self._task_timeout_seconds}s, requeued (attempt {task.num_claims})"
+                )
 
     def _setup_routes(self):
         """Setup FastAPI routes."""
-        
+
         @self._app.get("/task", response_model=TaskIfAny)
         async def next_task() -> TaskIfAny:
             """Endpoint for clients to poll for the next available task."""
-            # Reactively check for stale tasks before serving next task
             await self._check_and_requeue_stale_tasks()
-            
+
+            if not self._store:
+                return TaskIfAny(is_available=False)
+
             task = await self._store.get_next_task()
             if task:
                 logger.debug(f"Serving task {task.rollout_id} to a client.")
@@ -217,6 +245,8 @@ class AgentLightningServer:
         @self._app.get("/resources/latest", response_model=ResourcesUpdate)
         async def fetch_latest_resources() -> ResourcesUpdate:
             """Endpoint for clients to poll for the latest available resources."""
+            if not self._store:
+                raise HTTPException(status_code=503, detail="Server not fully initialized.")
             resources_update = await self._store.get_latest_resources()
             if not resources_update:
                 raise HTTPException(status_code=404, detail="No resources have been set on the server.")
@@ -228,6 +258,8 @@ class AgentLightningServer:
             resource_id: str = Path(..., description="The unique identifier for the resource version.")
         ) -> ResourcesUpdate:
             """Endpoint for clients to fetch a specific version of resources."""
+            if not self._store:
+                raise HTTPException(status_code=503, detail="Server not fully initialized.")
             resources_update = await self._store.get_resources_by_id(resource_id)
             if not resources_update:
                 raise HTTPException(status_code=404, detail=f"Resource ID '{resource_id}' not found.")
@@ -237,6 +269,8 @@ class AgentLightningServer:
         @self._app.post("/rollout", response_model=GenericResponse)
         async def post_rollout(payload: Rollout) -> GenericResponse:
             """Endpoint for clients to report a completed rollout."""
+            if not self._store:
+                raise HTTPException(status_code=503, detail="Server not fully initialized.")
             await self._store.store_rollout(payload)
             return GenericResponse(
                 status="ok",
@@ -273,31 +307,17 @@ class AgentLightningServer:
     ) -> str:
         """
         Adds a task to the queue for a client to process.
-
-        The task will be automatically associated with the latest resource version.
-
-        Args:
-            sample: The data sample for the task (e.g., a dictionary with a prompt).
-            mode: Optional mode for the task (e.g., 'train', 'val', 'test').
-            resources_id: Optional specific resources ID to use for this task.
-            metadata: Additional metadata for the task, such as dataset info.
-
-        Returns:
-            A unique `rollout_id` for tracking the task.
         """
+        if not self._store:
+            raise RuntimeError("Store not initialized. The server may not be running.")
         return await self._store.add_task(sample, mode=mode, resources_id=resources_id, metadata=metadata)
 
     async def update_resources(self, resources: NamedResources) -> str:
         """
         Updates the resources, creating a new version and setting it as the latest.
-
-        Args:
-            resources: A `NamedResources` object containing the full set of
-                       resources (e.g., LLMs, prompts) for the next tasks.
-
-        Returns:
-            The unique `resources_id` for the newly created resource version.
         """
+        if not self._store:
+            raise RuntimeError("Store not initialized. The server may not be running.")
         resources_id = f"res-{uuid.uuid4()}"
         update = ResourcesUpdate(resources_id=resources_id, resources=resources)
         await self._store.update_resources(update)
@@ -306,26 +326,14 @@ class AgentLightningServer:
     async def get_completed_rollout(self, rollout_id: str) -> Optional[Rollout]:
         """
         Retrieves a specific completed rollout by its ID.
-        The rollout is removed from the store once retrieved.
-
-        Args:
-            rollout_id: The ID of the task to retrieve.
-
-        Returns:
-            The rollout payload if found, otherwise None.
         """
+        if not self._store:
+            raise RuntimeError("Store not initialized. The server may not be running.")
         return await self._store.retrieve_rollout(rollout_id)
 
     async def poll_completed_rollout(self, rollout_id: str, timeout: Optional[float] = None) -> Optional[Rollout]:
         """
         Polls for a completed rollout by its ID, waiting up to `timeout` seconds.
-
-        Args:
-            rollout_id: The ID of the task to retrieve.
-            timeout: Optional timeout in seconds to wait for the rollout.
-
-        Returns:
-            The rollout payload if found, otherwise None.
         """
         start_time = time.time()
         while True:
@@ -339,9 +347,7 @@ class AgentLightningServer:
     async def retrieve_completed_rollouts(self) -> List[Rollout]:
         """
         Retrieves all available completed trajectories and clears the internal store.
-        This is useful for batch processing results in an optimization loop.
-
-        Returns:
-            A list of all completed rollouts.
         """
+        if not self._store:
+            raise RuntimeError("Store not initialized. The server may not be running.")
         return await self._store.retrieve_completed_rollouts()

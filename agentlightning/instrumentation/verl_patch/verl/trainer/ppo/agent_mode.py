@@ -1,4 +1,5 @@
 import asyncio
+import logging  # Added import
 import random
 import socket
 import threading
@@ -178,6 +179,13 @@ class AgentModeDaemon:
 
         self._server_thread = threading.Thread(target=run_server, daemon=True)
         self._server_thread.start()
+        
+        # Wait for the server's internal startup event to be set.
+        print("Waiting for AgentLightningServer to start...")
+        is_ready = self.server.startup_event.wait(timeout=20.0) # Wait up to 20s
+        if not is_ready:
+            raise RuntimeError("AgentLightningServer failed to start within the timeout period.")
+
         print(f"AgentLightningServer control plane running on port {self.server_port}")
 
         self._start_proxy_server()
@@ -219,19 +227,25 @@ class AgentModeDaemon:
 
     def set_up_data_and_server(self, data, server_addresses, is_train=True):
         """Synchronous wrapper for setting up data and server resources."""
-        asyncio.run(self._async_set_up(data, server_addresses, is_train))
+        if not self.server.loop or not self.server.startup_event.is_set():
+            raise RuntimeError("Server is not running or ready.")
+        
+        coro = self._async_set_up(data, server_addresses, is_train)
+        future = asyncio.run_coroutine_threadsafe(coro, self.server.loop)
+        try:
+            future.result(timeout=60)  # Wait for completion with a timeout
+        except Exception as e:
+            print(f"Failed to set up data on server: {e}")
+            raise
 
     async def _async_run_until_finished(self, verbose=True):
         """Async helper to wait for all tasks to complete."""
         while len(self._completed_rollouts) < self._total_tasks_queued:
-            # Periodically retrieve completed rollouts from the server
             completed_batch = await self.server.retrieve_completed_rollouts()
             for rollout in completed_batch:
                 self._completed_rollouts[rollout.rollout_id] = rollout
-
             if verbose:
                 print(f"Completed {len(self._completed_rollouts)}/{self._total_tasks_queued} tasks...")
-
             await asyncio.sleep(5)
         print("All tasks finished.")
 
@@ -240,7 +254,17 @@ class AgentModeDaemon:
         if self._total_tasks_queued == 0:
             print("Warning: No tasks were queued.")
             return
-        asyncio.run(self._async_run_until_finished(verbose))
+            
+        if not self.server.loop or not self.server.startup_event.is_set():
+            raise RuntimeError("Server is not running or ready.")
+        
+        coro = self._async_run_until_finished(verbose)
+        future = asyncio.run_coroutine_threadsafe(coro, self.server.loop)
+        try:
+            future.result()  # Wait indefinitely for all tasks to complete
+        except Exception as e:
+            print(f"Error while waiting for tasks to finish: {e}")
+            raise
 
     def get_test_metrics(self):
         """Calculates and returns metrics for a validation run."""
