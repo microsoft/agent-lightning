@@ -1,5 +1,6 @@
 import asyncio
 import random
+import socket
 import threading
 import time
 import uuid
@@ -75,6 +76,12 @@ def get_right_padded_ids_and_attention_mask(ids: List[int], max_length: int, pad
     return padded_ids, attention_mask
 
 
+def _find_available_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("", 0))
+        return s.getsockname()[1]
+
+
 class AgentModeDaemon:
     """
     AgentModeDaemon using the AgentLightningServer SDK.
@@ -89,7 +96,7 @@ class AgentModeDaemon:
         self.server_port = port
         self.task_timeout_seconds = 180
         self.server = AgentLightningServer(host="0.0.0.0", port=self.server_port, task_timeout_seconds=self.task_timeout_seconds)
-        self.proxy_port = port + 1  # Run proxy on a different port
+        self.proxy_port = _find_available_port()  # Run proxy on a different port
 
         # Training and Data Configuration
         self.train_rollout_n = train_rollout_n
