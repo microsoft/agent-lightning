@@ -75,13 +75,15 @@ def instrument_agentops():
     Instrument agentops to capture token IDs.
     Automatically detects and uses the appropriate patching method based on the installed agentops version.
     """
-    # Try newest version first
+    # Try newest version first (tested for 0.4.16)
     try:
         return _patch_new_agentops()
     except ImportError as e:
         logger.debug(f"Couldn't patch newer version of agentops: {str(e)}")
 
-    # Try older version
+    # Note: 0.4.15 needs another patching method, but it's too shortlived to be worth handling separately.
+
+    # Try older version (tested for 0.4.13)
     try:
         return _patch_old_agentops()
     except ImportError as e:
