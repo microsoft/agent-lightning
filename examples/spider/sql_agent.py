@@ -475,7 +475,11 @@ class LitSQLAgent(agentlightning.LitAgent):
                     if is_training
                     else {
                         "model": llm.model,
-                        "temperature": self.val_temperature or llm.sampling_parameters.get("temperature") or 0.0,
+                        "temperature": (
+                            self.val_temperature
+                            if self.val_temperature is not None
+                            else llm.sampling_parameters.get("temperature", 0.0)
+                        ),
                     }
                 ),
             ).graph()
