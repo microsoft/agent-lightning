@@ -1,7 +1,10 @@
+from __future__ import annotations
+
 import json
+import logging
 import re
 from enum import Enum
-from typing import Any, List, Optional, Tuple
+from typing import Any, List, Optional, Tuple, TYPE_CHECKING
 from pydantic import BaseModel
 
 import agentops.sdk.core
@@ -10,6 +13,11 @@ from agentops.sdk.processors import SpanProcessor, Context
 from opentelemetry import trace as trace_api
 from opentelemetry.sdk.trace import Span, ReadableSpan
 
+if TYPE_CHECKING:
+    from agentops.integration.callbacks.langchain import LangchainCallbackHandler
+
+
+logger = logging.getLogger(__name__)
 
 class Transition(BaseModel):
     """
@@ -515,3 +523,28 @@ def lightning_span_processor():
                 _global_lightning_span_processor
             )
     return _global_lightning_span_processor
+
+
+def get_langchain_callback_handler(tags: list[str] | None = None) -> LangchainCallbackHandler:
+    """
+    Get the Langchain callback handler for integrating with Langchain.
+
+    Args:
+        tags: Optional list of tags to apply to the Langchain callback handler.
+
+    Returns:
+        An instance of the Langchain callback handler.
+    """
+    import agentops
+    from agentops.integration.callbacks.langchain import LangchainCallbackHandler
+
+    tags = tags or []
+    client_instance = agentops.get_client()
+    api_key = None
+    if client_instance.initialized:
+        api_key = client_instance.config.api_key
+    else:
+        logger.warning(
+            "AgentOps client not initialized when creating LangchainCallbackHandler. API key may be missing."
+        )
+    return LangchainCallbackHandler(api_key=api_key, tags=tags)
