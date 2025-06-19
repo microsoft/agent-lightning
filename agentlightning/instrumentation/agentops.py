@@ -12,9 +12,9 @@ logger = logging.getLogger(__name__)
 
 # Define patching functions for different versions of agentops
 def _patch_new_agentops():
-    import agentops.instrumentation.openai.wrappers.chat
-    import agentops.instrumentation.openai.instrumentor
-    from agentops.instrumentation.openai.wrappers.chat import handle_chat_attributes
+    import agentops.instrumentation.providers.openai.wrappers.chat
+    import agentops.instrumentation.providers.openai.stream_wrapper
+    from agentops.instrumentation.providers.openai.wrappers.chat import handle_chat_attributes
 
     _original_handle_chat_attributes = handle_chat_attributes
 
@@ -36,8 +36,8 @@ def _patch_new_agentops():
 
         return attributes
 
-    agentops.instrumentation.openai.wrappers.chat.handle_chat_attributes = _handle_chat_attributes_with_tokens
-    agentops.instrumentation.openai.instrumentor.handle_chat_attributes = _handle_chat_attributes_with_tokens
+    agentops.instrumentation.providers.openai.wrappers.chat.handle_chat_attributes = _handle_chat_attributes_with_tokens
+    agentops.instrumentation.providers.openai.stream_wrapper.handle_chat_attributes = _handle_chat_attributes_with_tokens
     logger.info("Patched newer version of agentops using handle_chat_attributes")
     return True
 
