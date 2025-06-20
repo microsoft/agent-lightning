@@ -41,6 +41,7 @@ class AgentLightningClient:
         self.poll_interval = poll_interval
         self.timeout = timeout
         self._resource_cache: Dict[str, ResourcesUpdate] = {}  # TODO: mechanism to evict cache
+        self._default_headers = {"X-AgentLightning-Client": "true"}
 
     async def _request_json_async(self, url: str) -> Optional[Dict[str, Any]]:
         """Makes an async GET request to the specified URL and returns the JSON response.
@@ -54,7 +55,7 @@ class AgentLightningClient:
         timeout = aiohttp.ClientTimeout(total=self.timeout)
         async with aiohttp.ClientSession(timeout=timeout) as session:
             try:
-                async with session.get(url) as resp:
+                async with session.get(url, headers=self._default_headers) as resp:
                     resp.raise_for_status()
                     return await resp.json()
             except Exception as e:
@@ -74,7 +75,7 @@ class AgentLightningClient:
         timeout = aiohttp.ClientTimeout(total=self.timeout)
         async with aiohttp.ClientSession(timeout=timeout) as session:
             try:
-                async with session.post(url, json=payload) as resp:
+                async with session.post(url, json=payload, headers=self._default_headers) as resp:
                     resp.raise_for_status()
                     return await resp.json()
             except Exception as e:
@@ -159,7 +160,7 @@ class AgentLightningClient:
             The JSON response as a dictionary or None if the request fails.
         """
         try:
-            response = requests.get(url, timeout=self.timeout)
+            response = requests.get(url, timeout=self.timeout, headers=self._default_headers)
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
@@ -177,7 +178,7 @@ class AgentLightningClient:
             The JSON response as a dictionary or None if the request fails.
         """
         try:
-            response = requests.post(url, json=payload, timeout=self.timeout)
+            response = requests.post(url, json=payload, timeout=self.timeout, headers=self._default_headers)
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
