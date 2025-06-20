@@ -1,23 +1,13 @@
-from __future__ import annotations
-
 import json
-import logging
 import re
 from enum import Enum
-from typing import Any, List, Optional, Tuple, TYPE_CHECKING
+from typing import List, Dict, Tuple, Optional, Any
+
 from pydantic import BaseModel
-
-import agentops.sdk.core
-from agentops.sdk.core import TracingCore
-from agentops.sdk.processors import SpanProcessor, Context
 from opentelemetry import trace as trace_api
-from opentelemetry.sdk.trace import Span, ReadableSpan
+from opentelemetry.sdk.trace import ReadableSpan
+from agentlightning.types import Triplet
 
-if TYPE_CHECKING:
-    from agentops.integration.callbacks.langchain import LangchainCallbackHandler
-
-
-logger = logging.getLogger(__name__)
 
 class Transition(BaseModel):
     """
@@ -47,7 +37,7 @@ class RewardMatchPolicy(str, Enum):
     """
 
 
-class LightningTrace:
+class TraceTree:
     """
     A trace item, along with its span and children.
     """
@@ -56,7 +46,7 @@ class LightningTrace:
         self,
         id: str,
         span: ReadableSpan,
-        children: Optional[List["LightningTrace"]] = None,
+        children: Optional[List["TraceTree"]] = None,
     ):
         self.id = id
         self.span = span
@@ -70,7 +60,7 @@ class LightningTrace:
     def end_time(self):
         return self.span.end_time
 
-    def find_id(self, id: str) -> "LightningTrace | None":
+    def find_id(self, id: str) -> "TraceTree | None":
         if self.id == id:
             return self
         for child in self.children:
@@ -79,7 +69,7 @@ class LightningTrace:
                 return found
         return None
 
-    def add_child(self, child: "LightningTrace") -> None:
+    def add_child(self, child: "TraceTree") -> None:
         self.children.append(child)
 
     def _tree_visualize(self, filename: str, interested_span_match: str | None = None) -> None:
@@ -94,7 +84,7 @@ class LightningTrace:
 
         should_visit_cache = {}
 
-        def should_visit(node: "LightningTrace") -> bool:
+        def should_visit(node: "TraceTree") -> bool:
             if node.id in should_visit_cache:
                 return should_visit_cache[node.id]
             if interested_span_match is not None:
@@ -111,7 +101,7 @@ class LightningTrace:
             else:
                 return True
 
-        def visit(node: "LightningTrace") -> bool:
+        def visit(node: "TraceTree") -> bool:
             if not should_visit(node):
                 return False
             agent_name = node.agent_name()
@@ -127,16 +117,16 @@ class LightningTrace:
         visit(self)
         dot.render(filename, format="png", cleanup=True)
 
-    def traverse(self) -> List["LightningTrace"]:
+    def traverse(self) -> List["TraceTree"]:
         """
         Traverse the trace tree and return a list of all spans.
         """
-        spans = [self]
+        spans: List["TraceTree"] = [self]
         for child in self.children:
             spans.extend(child.traverse())
         return spans
 
-    def to_json(self) -> dict[str, ReadableSpan]:
+    def to_json(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "span": self.span.to_json(),
@@ -144,9 +134,9 @@ class LightningTrace:
         }
 
     @classmethod
-    def from_spans(cls, spans: List[ReadableSpan]) -> "LightningTrace":
+    def from_spans(cls, spans: List[ReadableSpan]) -> "TraceTree":
         """
-        Create a LightningTrace from a list of spans.
+        Create a TraceTree from a list of spans.
         All spans without parents found will be considered as candidate root spans.
         If multiple root spans are found, a virtual root span will be created as the parent of all root spans.
         """
@@ -162,9 +152,7 @@ class LightningTrace:
             else:
                 if span.parent.span_id not in forward_graph:
                     forward_graph[span.parent.span_id] = []
-                forward_graph[span.parent.span_id].append(
-                    span.get_span_context().span_id
-                )
+                forward_graph[span.parent.span_id].append(span.get_span_context().span_id)
 
         # Diff between span with data and forward_graph keys
         # Sometimes the top-level session span is lost.
@@ -173,7 +161,7 @@ class LightningTrace:
             root_ids.append(unfound_root)
 
         def visit(node_id):
-            children: list[LightningTrace] = []
+            children: list[TraceTree] = []
             if node_id in forward_graph:
                 for child_id in forward_graph[node_id]:
                     children.append(visit(child_id))
@@ -192,9 +180,7 @@ class LightningTrace:
                     start_time=children[0].start_time,
                     end_time=children[-1].end_time,
                 )
-                return cls(
-                    trace_api.format_span_id(node_id), virtual_span, children=children
-                )
+                return cls(trace_api.format_span_id(node_id), virtual_span, children=children)
             else:
                 return cls(
                     trace_api.format_span_id(node_id),
@@ -205,7 +191,7 @@ class LightningTrace:
         # Create a virtual root span if multiple root spans are found
         if len(root_ids) > 1:
             root_spans = [visit(root_id) for root_id in root_ids]
-            virtual_root = LightningTrace(
+            virtual_root = TraceTree(
                 id="virtual-root",
                 span=ReadableSpan(
                     context=trace_api.SpanContext(
@@ -281,7 +267,7 @@ class LightningTrace:
         agent_match: Optional[str],
         within_matching_subtree: str | None = None,
         within_reward: Optional[bool] = None,
-    ) -> List[Tuple["LightningTrace", str]]:
+    ) -> List[Tuple["TraceTree", str]]:
         """Find all LLM calls in the trace tree.
 
         The LLM call is defined as a span with type = request and name matching `llm_call_match`.
@@ -289,7 +275,7 @@ class LightningTrace:
 
         Return a list of traces and the agent names (why it's selected).
         """
-        llm_calls: List[Tuple[LightningTrace, str]] = []
+        llm_calls: List[Tuple[TraceTree, str]] = []
 
         if within_matching_subtree is not None and (within_reward is None or not within_reward):
             # We are in an interesting agent subtree, and not in a reward span.
@@ -307,11 +293,7 @@ class LightningTrace:
             within_reward = True
 
         for child in self.children:
-            llm_calls.extend(
-                child.find_llm_calls(
-                    llm_call_match, agent_match, within_matching_subtree, within_reward
-                )
-            )
+            llm_calls.extend(child.find_llm_calls(llm_call_match, agent_match, within_matching_subtree, within_reward))
 
         return llm_calls
 
@@ -336,16 +318,8 @@ class LightningTrace:
             for node in self.traverse():
                 if node.id == repair_node.id:
                     continue
-                if (
-                    node.start_time <= repair_node.start_time
-                    and node.end_time >= repair_node.end_time
-                ):
-                    duration_delta = (
-                        node.end_time
-                        - repair_node.end_time
-                        + repair_node.start_time
-                        - node.start_time
-                    )
+                if node.start_time <= repair_node.start_time and node.end_time >= repair_node.end_time:
+                    duration_delta = node.end_time - repair_node.end_time + repair_node.start_time - node.start_time
                     if duration_delta < closest_duration:
                         closest_duration = duration_delta
                         closest_parent = node
@@ -355,17 +329,13 @@ class LightningTrace:
                 self.children.remove(repair_node)
                 closest_parent.children.append(repair_node)
 
-    def match_rewards(
-        self, reward_match: str, llm_calls: List["LightningTrace"]
-    ) -> dict[str, Optional[float]]:
+    def match_rewards(self, reward_match: str, llm_calls: List["TraceTree"]) -> dict[str, Optional[float]]:
         """Match the rewards to the LLM calls."""
         llm_call_ids = set([llm_call.id for llm_call in llm_calls])
         rewards: dict[str, Optional[float]] = {}
 
         if reward_match == RewardMatchPolicy.FIRST_OCCURRENCE:
-            time_sorted: List[LightningTrace] = sorted(
-                self.traverse(), key=lambda x: x.start_time
-            )
+            time_sorted: List[TraceTree] = sorted(self.traverse(), key=lambda x: x.start_time)
             assign_to: int | None = None
             for item in time_sorted:
                 if item.id in llm_call_ids:
@@ -404,7 +374,7 @@ class LightningTrace:
         exclude_llm_call_in_reward: bool = True,
         reward_match: RewardMatchPolicy = RewardMatchPolicy.FIRST_OCCURRENCE,
         final_reward: Optional[float] = None,
-    ) -> List[Transition]:
+    ) -> List[Triplet]:
         """Convert the trace tree to a trajectory.
 
         First, we find all the LLM calls (span type = request, `llm_call_match` matching the span name).
@@ -421,19 +391,24 @@ class LightningTrace:
         """
         # Find all LLM calls
         llm_calls = self.find_llm_calls(
-            llm_call_match, agent_match, '*' if agent_match is None else None, False if exclude_llm_call_in_reward else None
+            llm_call_match,
+            agent_match,
+            "*" if agent_match is None else None,
+            False if exclude_llm_call_in_reward else None,
         )
         id_transitions = [
             (
                 llm_call.id,
-                Transition(
-                    state=llm_call.span.attributes.get("prompt_token_ids", []),
-                    action=llm_call.span.attributes.get("response_token_ids", []),
-                    response_id=llm_call.span.attributes.get(
-                        "gen_ai.response.id", None
-                    ),  # it works at least for OpenAI
-                    agent_name=agent_name,
+                Triplet(
+                    prompt=llm_call.span.attributes.get("prompt_token_ids", []),
+                    response=llm_call.span.attributes.get("response_token_ids", []),
                     reward=None,
+                    metadata=dict(
+                        response_id=llm_call.span.attributes.get(
+                            "gen_ai.response.id", None
+                        ),  # it works at least for OpenAI
+                        agent_name=agent_name,
+                    ),
                 ),
             )
             for llm_call, agent_name in llm_calls
@@ -441,8 +416,7 @@ class LightningTrace:
 
         rewards = self.match_rewards(reward_match, [call for call, _ in llm_calls])
         transitions = [
-            transition.model_copy(update={"reward": rewards.get(id, None)})
-            for id, transition in id_transitions
+            transition.model_copy(update={"reward": rewards.get(id, None)}) for id, transition in id_transitions
         ]
         if final_reward is not None and len(transitions) > 0:
             # Add the final reward to the last transition
@@ -451,100 +425,47 @@ class LightningTrace:
 
     def __repr__(self):
         return (
-            f"LightningTrace(id={self.id}, span={self.span}, start_time={self.start_time}, "
+            f"TraceTree(id={self.id}, span={self.span}, start_time={self.start_time}, "
             + f"end_time={self.end_time}, children={self.children})"
         )
 
 
-class LightningSpanProcessor(SpanProcessor):
-
-    _last_trace: Optional[LightningTrace] = None
-    _spans: List[ReadableSpan] = []
-
-    def __enter__(self):
-        self._last_trace = None
-        self._spans = []
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        pass
-
-    def spans(self) -> List[ReadableSpan]:
-        """
-        Get the list of spans collected by this processor.
-        This is useful for debugging and testing purposes.
-        """
-        return self._spans
-
-    def last_trace(self, repair_hierarchy: bool = True) -> LightningTrace:
-        """
-        Get and convert the last trace into a tree.
-
-        When `repair_hierarchy` is set to True, the trace will be repaired with the time information.
-        See `LightningTrace.repair_hierarchy` for more details.
-        """
-        if self._last_trace is None:
-            self._last_trace = LightningTrace.from_spans(self._spans)
-            if repair_hierarchy:
-                self._last_trace.repair_hierarchy()
-        return self._last_trace
-
-    def on_end(self, span: ReadableSpan) -> None:
-        # Skip if span is not sampled
-        if not span.context or not span.context.trace_flags.sampled:
-            return
-
-        self._spans.append(span)
-
-    def shutdown(self) -> None:
-        pass
-
-    def force_flush(self, timeout_millis: int = 30000) -> bool:
-        return True
-
-
-_global_lightning_span_processor: Optional[LightningSpanProcessor] = None
-
-
-def lightning_span_processor():
-    global _global_lightning_span_processor
-    if _global_lightning_span_processor is None:
-        _global_lightning_span_processor = LightningSpanProcessor()
-        try:
-            # new versions
-            instance = agentops.sdk.core.tracer
-            instance.provider.add_span_processor(
-                _global_lightning_span_processor
-            )
-        except AttributeError:
-            # old versions
-            instance = TracingCore.get_instance()
-            instance._provider.add_span_processor(
-                _global_lightning_span_processor
-            )
-    return _global_lightning_span_processor
-
-
-def get_langchain_callback_handler(tags: list[str] | None = None) -> LangchainCallbackHandler:
+class TripletExporter:
     """
-    Get the Langchain callback handler for integrating with Langchain.
+    A class to export triplet data from OpenTelemetry spans.
 
-    Args:
-        tags: Optional list of tags to apply to the Langchain callback handler.
-
-    Returns:
-        An instance of the Langchain callback handler.
+    Attributes:
+        repair_hierarchy: When `repair_hierarchy` is set to True, the trace will be repaired with the time information.
+            See `TraceTree.repair_hierarchy` for more details.
+        llm_call_match: Regular expression pattern to match LLM call span names.
+        agent_match: Optional regular expression pattern to match agent span names. If None, all agents are matched.
+        exclude_llm_call_in_reward: Whether to exclude LLM calls that occur within reward spans.
+        reward_match: Policy for matching rewards to LLM calls.
     """
-    import agentops
-    from agentops.integration.callbacks.langchain import LangchainCallbackHandler
 
-    tags = tags or []
-    client_instance = agentops.get_client()
-    api_key = None
-    if client_instance.initialized:
-        api_key = client_instance.config.api_key
-    else:
-        logger.warning(
-            "AgentOps client not initialized when creating LangchainCallbackHandler. API key may be missing."
+    def __init__(
+        self,
+        repair_hierarchy: bool = True,
+        llm_call_match: str = r"openai\.chat\.completion",
+        agent_match: Optional[str] = None,
+        exclude_llm_call_in_reward: bool = True,
+        reward_match: RewardMatchPolicy = RewardMatchPolicy.FIRST_OCCURRENCE,
+    ):
+        self.repair_hierarchy = repair_hierarchy
+        self.llm_call_match = llm_call_match
+        self.agent_match = agent_match
+        self.exclude_llm_call_in_reward = exclude_llm_call_in_reward
+        self.reward_match = reward_match
+
+    def export(self, spans: List[ReadableSpan]) -> List[Triplet]:
+        """Convert OpenTelemetry spans to a list of Triplet objects."""
+        trace_tree = TraceTree.from_spans(spans)
+        if self.repair_hierarchy:
+            trace_tree.repair_hierarchy()
+        trajectory = trace_tree.to_trajectory(
+            llm_call_match=self.llm_call_match,
+            agent_match=self.agent_match,
+            exclude_llm_call_in_reward=self.exclude_llm_call_in_reward,
+            reward_match=self.reward_match,
         )
-    return LangchainCallbackHandler(api_key=api_key, tags=tags)
+        return trajectory
