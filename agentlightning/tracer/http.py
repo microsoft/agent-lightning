@@ -20,16 +20,6 @@ from opentelemetry.trace.span import (
 logger = logging.getLogger(__name__)
 
 
-@contextmanager
-def my_http_context():
-    """
-    Sample code: A context manager to trace all HTTP requests using httpdbg.
-    """
-    records = HTTPRecords()
-    with httprecord(records):
-        yield records
-
-
 class HttpTracer(BaseTracer):
     """
     A tracer implementation that captures HTTP requests using httpdbg.

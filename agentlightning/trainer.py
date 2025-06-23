@@ -5,6 +5,7 @@ import os
 import signal
 import time
 from typing import List, Optional
+import importlib
 
 import agentops
 
@@ -13,12 +14,14 @@ from .instrumentation import instrument_all
 from .client import AgentLightningClient
 from .litagent import LitAgent
 from .runner import AgentRunner
+from .types import ParallelWorkerBase
+from .tracer.agentops import AgentOpsTracer
 
 
 logger = logging.getLogger(__name__)
 
 
-class Trainer:
+class Trainer(ParallelWorkerBase):
     """Orchestrates the distributed execution of agent rollouts.
 
     The Trainer is responsible for launching one or more worker processes
@@ -38,6 +41,7 @@ class Trainer:
                           If not, you are responsible for calling and using it before using the trainer.
         instrument_managed: Whether to automatically manage instrumentation.
                             When set to false, you will manage the instrumentation yourself and the trainer might not work as expected.
+        tracer_init: The initialization method for the tracer.
     """
 
     def __init__(
@@ -48,17 +52,20 @@ class Trainer:
         daemon: bool = True,
         agentops_managed: bool = True,
         instrument_managed: bool = True,
+        tracer_init=None,
     ):
+        super().__init__()
         self.n_workers = n_workers
         self.max_tasks = max_tasks
         self.daemon = daemon
         self.agentops_managed = agentops_managed
         self.instrument_managed = instrument_managed
-
         self._agentops_server_manager: AgentOpsServerManager | None = None
         self._agentops_server_port_val: int | None = None  # Stores the picklable port number
-
         self._client: AgentLightningClient | None = None  # Will be initialized in fit method
+
+        # Tracer instantiation logic
+        self.tracer = self._make_tracer(tracer_init)
 
         if self.agentops_managed:
             self._agentops_server_manager = AgentOpsServerManager(self.daemon)
@@ -76,17 +83,21 @@ class Trainer:
                 "The cleanup must be handled manually."
             )
 
-    def __getstate__(self):
-        state = self.__dict__.copy()
-        state["_agentops_server_manager"] = None  # Exclude the unpicklable server manager
-        # _agentops_server_port_val (int) is inherently picklable and will be included.
-        logger.debug(f"Getting state for pickling Trainer (PID {os.getpid()}). _agentops_server_manager excluded.")
-        return state
-
-    def __setstate__(self, state):
-        self.__dict__.update(state)
-        # In child process, self._agentops_server_manager will be None.
-        logger.debug(f"Setting state for unpickled Trainer (PID {os.getpid()}). _agentops_server_manager is None.")
+    def _make_tracer(self, tracer_init):
+        if tracer_init is None:
+            return AgentOpsTracer(agentops_managed=self.agentops_managed, instrument_managed=self.instrument_managed, daemon=self.daemon)
+        if hasattr(tracer_init, 'trace_context') and hasattr(tracer_init, 'get_last_trace'):
+            return tracer_init
+        if isinstance(tracer_init, dict):
+            tracer_type = tracer_init.get('type')
+            if tracer_type is None:
+                raise ValueError("tracer_init dict must have a 'type' key with the class full name")
+            module_name, class_name = tracer_type.rsplit('.', 1)
+            module = importlib.import_module(module_name)
+            tracer_cls = getattr(module, class_name)
+            tracer_args = {k: v for k, v in tracer_init.items() if k != 'type'}
+            return tracer_cls(**tracer_args)
+        raise ValueError(f"Invalid tracer_init: {tracer_init}")
 
     def init(self, endpoint: str) -> None:
         logger.info(f"Initializing Trainer...")
@@ -153,6 +164,8 @@ class Trainer:
         mode = "Async" if is_async else "Sync"
         logger.info(f"[Worker {worker_id}] {mode} worker process started.")
 
+        # Use the pickled tracer (self.tracer) for this worker
+        self.tracer.init_worker(worker_id)
         num_processed = 0
         self._initialize_worker_env(worker_id)
 
@@ -161,10 +174,11 @@ class Trainer:
             loop = AgentRunner(
                 agent=agent,
                 client=client,
+                tracer=self.tracer,
                 max_tasks=self.max_tasks,
                 worker_id=worker_id,
-                agentops_managed=self.agentops_managed,
             )
+            loop.init_worker(worker_id)
             if is_async:
                 num_processed = asyncio.run(loop.iter_async())
             else:
@@ -172,7 +186,7 @@ class Trainer:
         except Exception:
             logger.exception(f"[Worker {worker_id}] Unhandled exception in worker loop.")
         finally:
-            self._teardown_worker_env(worker_id)
+            self.tracer.teardown_worker(worker_id)
 
         return num_processed
 

@@ -9,15 +9,17 @@ from typing import List, Optional, Union, Dict, Any
 import agentops
 
 from opentelemetry.sdk.trace import ReadableSpan
-from .trace import LightningSpanProcessor, LightningTrace, lightning_span_processor
 from .client import AgentLightningClient
 from .litagent import LitAgent
 from .types import Rollout, Task, Triplet, RolloutRawResult
+from .types import ParallelWorkerBase
+from .tracer.base import BaseTracer
+from .tracer import TripletExporter
 
 logger = logging.getLogger(__name__)
 
 
-class AgentRunner:
+class AgentRunner(ParallelWorkerBase):
     """Manages the agent's execution loop and integrates with AgentOps.
 
     This class orchestrates the interaction between the agent (`LitAgent`) and
@@ -28,24 +30,25 @@ class AgentRunner:
     Attributes:
         agent: The `LitAgent` instance containing the agent's logic.
         client: The `AgentLightningClient` for server communication.
+        tracer: The tracer instance for this runner/worker.
         worker_id: An optional identifier for the worker process.
         max_tasks: The maximum number of tasks to process before stopping.
-        agentops_managed: If True, automatically trace rollouts with AgentOps.
     """
 
     def __init__(
         self,
         agent: LitAgent,
         client: AgentLightningClient,
+        tracer: BaseTracer,
         worker_id: Optional[int] = None,
         max_tasks: Optional[int] = None,
-        agentops_managed: bool = True,
     ):
+        super().__init__()
         self.agent = agent
         self.client = client
+        self.tracer = tracer
         self.worker_id = worker_id
         self.max_tasks = max_tasks
-        self.agentops_managed = agentops_managed
 
     def _log_prefix(self, rollout_id: Optional[str] = None) -> str:
         """Generates a standardized log prefix for the current worker."""
@@ -62,22 +65,20 @@ class AgentRunner:
         self,
         result: RolloutRawResult,
         rollout_id: str,
-        lightning_span_processor: Optional[LightningSpanProcessor] = None,
     ) -> Rollout:
         """Standardizes the agent's return value into a Rollout object.
 
         Args:
             result: The output from the agent's rollout method.
             rollout_id: The unique identifier for the current task.
-            lightning_span_processor: Optional span processor for tracing.
 
         Returns:
             A standardized `Rollout` object for reporting to the server.
         """
         trace: Any = None
-        lightning_trace_spans: Optional[LightningTrace] = None
         final_reward: Optional[float] = None
         triplets: Optional[List[Triplet]] = None
+        trace_spans: Optional[List[ReadableSpan]] = None
 
         # Handle different types of results from the agent
         # Case 1: result is a float (final reward)
@@ -88,8 +89,8 @@ class AgentRunner:
             triplets = result  # type: ignore
         # Case 3: result is a list of ReadableSpan (OpenTelemetry spans)
         if isinstance(result, list) and all(isinstance(t, ReadableSpan) for t in result):
-            lightning_trace_spans = LightningTrace.from_spans(result)  # type: ignore
-            trace = [json.loads(readable_span.to_json()) for readable_span in result]  # type: ignore
+            trace_spans = result  # type: ignore
+            trace = [json.loads(readable_span.to_json()) for readable_span in trace_spans]  # type: ignore
         # Case 4: result is a list of dict (trace JSON)
         if isinstance(result, list) and all(isinstance(t, dict) for t in result):
             trace = result
@@ -99,21 +100,18 @@ class AgentRunner:
             triplets = result.triplets
             trace = result.trace
 
-        # If the agent has tracing enabled, use the LightningSpanProcessor
-        if lightning_span_processor and lightning_trace_spans is None:
-            lightning_trace_spans = lightning_span_processor.last_trace()
-            trace = [json.loads(readable_span.to_json()) for readable_span in lightning_span_processor.spans()]
+        # If the agent has tracing enabled, use the tracer's last trace if not already set
+        if self.tracer and (trace is None or trace_spans is None):
+            spans = self.tracer.get_last_trace()
+            if spans:
+                trace = [json.loads(readable_span.to_json()) for readable_span in spans]
+                trace_spans = spans
 
-        if lightning_trace_spans:
-            trajectory = lightning_trace_spans.to_trajectory(
-                agent_match=self.agent.trained_agents, final_reward=final_reward
-            )
-            triplets = [
-                Triplet(prompt={"token_ids": step.state}, response={"token_ids": step.action}, reward=step.reward)
-                for step in trajectory
-            ]
+        # Always extract triplets from the trace using TripletExporter
+        if trace_spans:
+            triplets = TripletExporter().export(trace_spans)
 
-        # If the agent has triplets, use the last one for final reward if not sets
+        # If the agent has triplets, use the last one for final reward if not set
         if triplets and triplets[-1].reward is not None and final_reward is None:
             final_reward = triplets[-1].reward
 
@@ -154,20 +152,14 @@ class AgentRunner:
             return False
 
         rollout_obj = Rollout(rollout_id=task.rollout_id)  # Default empty rollout
-        if self.agentops_managed:
-            span_processor = lightning_span_processor()
-            context = span_processor
-        else:
-            span_processor = None
-            context = nullcontext()
 
         try:
-            with context:
+            with self.tracer.trace_context(name=f"rollout_{rollout_id}"):
                 start_time = time.time()
                 rollout_method = self.agent.training_rollout if task.mode == "train" else self.agent.validation_rollout
                 # Pass the task input, not the whole task object
                 result = rollout_method(task.input, task.rollout_id, resources_update.resources)
-                rollout_obj = self._to_rollout_object(result, task.rollout_id, span_processor)
+                rollout_obj = self._to_rollout_object(result, task.rollout_id)
                 end_time = time.time()
                 logger.info(
                     f"{self._log_prefix(rollout_id)} Completed in "
@@ -218,28 +210,21 @@ class AgentRunner:
             return False
 
         rollout_obj = Rollout(rollout_id=task.rollout_id)  # Default empty rollout
-        if self.agentops_managed:
-            span_processor = lightning_span_processor()
-            context = span_processor
-        else:
-            span_processor = None
-            context = nullcontext()
 
         try:
-            with context:
+            with self.tracer.trace_context(name=f"rollout_{rollout_id}"):
                 start_time = time.time()
                 rollout_method = (
                     self.agent.training_rollout_async if task.mode == "train" else self.agent.validation_rollout_async
                 )
                 # Pass the task input, not the whole task object
                 result = await rollout_method(task.input, task.rollout_id, resources_update.resources)
-                rollout_obj = self._to_rollout_object(result, task.rollout_id, span_processor)
+                rollout_obj = self._to_rollout_object(result, task.rollout_id)
                 end_time = time.time()
                 logger.info(
                     f"{self._log_prefix(rollout_id)} Completed in "
                     f"{end_time - start_time:.2f}s. Reward: {rollout_obj.final_reward}"
                 )
-
         except Exception:
             logger.exception(f"{self._log_prefix(rollout_id)} Exception during rollout.")
         finally:
