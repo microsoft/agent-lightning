@@ -6,7 +6,7 @@ import pickle
 import os
 import time
 from unittest.mock import Mock, patch
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from agentlightning.tracer.http import HttpTracer
 from agentlightning.tracer.agentops import AgentOpsTracer, LightningSpanProcessor
@@ -46,10 +46,10 @@ def mock_readable_span():
         span_id: int = 1,
         trace_id: int = 1,
         name: str = "test_span",
-        attributes: Dict[str, Any] = None,
-        start_time: int = None,
-        end_time: int = None,
-        parent_span_id: int = None,
+        attributes: Optional[Dict[str, Any]] = None,
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
+        parent_span_id: Optional[int] = None,
     ):
         attributes = attributes or {}
         start_time = start_time or int(time.time() * 1_000_000_000)  # nanoseconds
@@ -1005,12 +1005,8 @@ class TestTracerEdgeCases:
         misplaced_tree = next((child for child in tree.children if child.span.name == "misplaced"), None)
 
         # After repair, misplaced should be moved under root
-        if root_tree and len(root_tree.children) == 1:
-            assert root_tree.children[0].span.name == "misplaced"
-        else:
-            # If repair didn't work as expected, at least verify the structure is valid
-            assert root_tree is not None
-            # The misplaced span might not be moved if the repair logic doesn't find it suitable
+        assert root_tree and len(root_tree.children) == 1
+        assert root_tree.children[0].span.name == "misplaced"
 
     def test_trace_tree_reward_matching_policies(self, mock_readable_span):
         """Test different reward matching policies."""

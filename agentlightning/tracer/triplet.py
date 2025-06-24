@@ -312,11 +312,13 @@ class TraceTree:
         """
         nodes_to_repair = list(self.children)
         for repair_node in nodes_to_repair:
-            # Find the closest parent span
+            # Find the closest parent span (but not the root itself)
             closest_parent = None
             closest_duration = float("inf")
             for node in self.traverse():
                 if node.id == repair_node.id:
+                    continue
+                if node is self:
                     continue
                 if node.start_time <= repair_node.start_time and node.end_time >= repair_node.end_time:
                     duration_delta = node.end_time - repair_node.end_time + repair_node.start_time - node.start_time
