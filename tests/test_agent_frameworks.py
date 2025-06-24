@@ -8,7 +8,10 @@ This module tests the integration of AgentLightning with:
 - AgentOps
 - Reward tracking functionality
 
-Uses real agent frameworks but mocks only the OpenAI API server.
+Uses real agent frameworks but defaults to a mock OpenAI API server.
+Set ``OPENAI_BASE_URL`` and ``OPENAI_API_KEY`` environment variables to run
+against the real API with the ``OPENAI_MODEL`` of your choice (``gpt-4.1-nano``
+by default).
 """
 
 import pytest
@@ -17,6 +20,7 @@ import json
 import asyncio
 import time
 import os
+import re
 import httpx
 from unittest.mock import Mock, patch, AsyncMock, MagicMock
 from typing import Dict, Any, List, Optional
@@ -35,11 +39,18 @@ import openai
 from openai import OpenAI, AsyncOpenAI
 
 from langchain import hub
+from langchain.chat_models import init_chat_model
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.messages import HumanMessage, BaseMessage, AIMessage, ToolMessage
+from langchain_community.utilities import SQLDatabase
+from langchain_community.agent_toolkits import SQLDatabaseToolkit
 from langchain.agents import tool, AgentExecutor, create_react_agent
+from langchain_core.messages import AIMessage
+from langgraph.graph import END, START, MessagesState, StateGraph
+from langgraph.prebuilt import ToolNode
+from typing import Literal
 
 from langgraph.graph import StateGraph, END, MessagesState
 from typing_extensions import TypedDict
@@ -47,24 +58,32 @@ from typing_extensions import TypedDict
 import autogen_agentchat
 from autogen_agentchat.agents import AssistantAgent, UserProxyAgent
 from autogen_agentchat.teams import RoundRobinGroupChat
+from autogen_agentchat.conditions import ExternalTermination, TextMentionTermination
 from autogen_ext.models.openai import OpenAIChatCompletionClient
 from autogen_ext.tools.mcp import McpWorkbench, StdioServerParams
 
-from agents import Agent, Runner, AgentHooks, InputGuardrail, GuardrailFunctionOutput, function_tool
+from agents import Agent, Runner, AgentHooks, InputGuardrail, GuardrailFunctionOutput, function_tool, RunConfig
 from agents.mcp import MCPServerStdio
+from agents.models.openai_provider import OpenAIProvider
 
 import litellm
 
 import agentops
 
-
-OPENAI_BASE_URL = "http://127.0.0.1:8000/v1"
-OPENAI_MODEL = "gpt-4-mock"
-OPENAI_API_KEY = "token-abc123"
+USE_OPENAI = os.environ.get("USE_OPENAI", "false").lower() == "true"
+if USE_OPENAI:
+    OPENAI_BASE_URL = os.environ.get("OPENAI_BASE_URL", os.environ["OPENAI_API_BASE"])
+    OPENAI_MODEL = "gpt-4.1-mini"
+    OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
+else:
+    OPENAI_BASE_URL = "http://127.0.0.1:8000/v1"
+    OPENAI_MODEL = "gpt-4-mock"
+    OPENAI_API_KEY = "token-abc123"
 
 
 class AgentState(TypedDict):
     """State for LangGraph agents."""
+
     messages: List[BaseMessage]
 
 
@@ -188,11 +207,11 @@ Action Input: {"a": 42, "b": 12}"""
         # Wait for server to start
         max_wait = 10  # seconds
         wait_time = 0
-        while not getattr(self.server, 'started', False) and wait_time < max_wait:
+        while not getattr(self.server, "started", False) and wait_time < max_wait:
             await asyncio.sleep(0.1)
             wait_time += 0.1
 
-        if not getattr(self.server, 'started', False):
+        if not getattr(self.server, "started", False):
             raise RuntimeError("Server failed to start within timeout")
 
         return self
@@ -217,7 +236,14 @@ async def run_agent(agent_func):
     Returns:
         The result of the agent function execution
     """
-    async with MockOpenAICompatibleServer():
+    # Use the mock server only when pointing to the default local URL
+    if OPENAI_BASE_URL.startswith("http://127.0.0.1"):
+        async with MockOpenAICompatibleServer():
+            if inspect.iscoroutinefunction(agent_func):
+                return await agent_func()
+            else:
+                return agent_func()
+    else:
         # Check if the function is async
         if inspect.iscoroutinefunction(agent_func):
             # Handle async function - run directly since we're already in async context
@@ -249,7 +275,7 @@ def agent_litellm():
 
 def agent_langchain():
     """A simple LangChain agent."""
-    llm = ChatOpenAI(model=OPENAI_MODEL, base_url=OPENAI_BASE_URL, api_key=OPENAI_API_KEY)
+    llm = ChatOpenAI(model=OPENAI_MODEL, openai_api_base=OPENAI_BASE_URL, openai_api_key=OPENAI_API_KEY)
     prompt = ChatPromptTemplate.from_messages([("human", "{input}")])
     chain = prompt | llm | StrOutputParser()
     result = chain.invoke({"input": "What is the capital of France?"})
@@ -260,55 +286,146 @@ def agent_langchain_tooluse():
     """A LangChain agent that uses a calculator tool."""
 
     @tool
-    def calculator(a: int, b: int) -> int:
+    def multiply(a_and_b: str) -> int:
         """A simple calculator tool that multiplies two integers."""
-        return a * b
+        a, b = re.search(r"(\d+).*?(\d+)", a_and_b).groups()
+        return int(a) * int(b)
 
-    llm = ChatOpenAI(model=OPENAI_MODEL, temperature=0, base_url=OPENAI_BASE_URL, api_key=OPENAI_API_KEY)
-    tools = [calculator]
+    llm = ChatOpenAI(model=OPENAI_MODEL, temperature=0, openai_api_base=OPENAI_BASE_URL, openai_api_key=OPENAI_API_KEY)
+    tools = [multiply]
     agent = create_react_agent(llm, tools, hub.pull("hwchase17/react"))
-    agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+    agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=False)
     result = agent_executor.invoke({"input": "what is 42 * 12"})
     assert "504" in result["output"]
 
 
 def agent_langgraph():
     """An agent built with LangGraph for stateful, cyclical workflows."""
-    # Simplified LangGraph agent that just uses a basic chain
-    llm = ChatOpenAI(model=OPENAI_MODEL, base_url=OPENAI_BASE_URL, api_key=OPENAI_API_KEY)
+    llm = init_chat_model("openai:" + OPENAI_MODEL, openai_api_base=OPENAI_BASE_URL, openai_api_key=OPENAI_API_KEY)
+    db = SQLDatabase.from_uri("sqlite:///" + os.path.join(os.path.dirname(__file__), "assets/Chinook.db"))
+    toolkit = SQLDatabaseToolkit(db=db, llm=llm)
+    tools = toolkit.get_tools()
 
-    def call_model(state: MessagesState):
-        messages = state["messages"]
-        response = llm.invoke(messages)
-        return {"messages": messages + [response]}
+    def get_tool(name):
+        return next(t for t in tools if t.name == name)
 
-    # Define the graph structure
-    workflow = StateGraph(MessagesState)
-    workflow.add_node("agent", call_model)
-    workflow.set_entry_point("agent")
-    workflow.set_finish_point("agent")
-    app = workflow.compile()
+    get_schema_tool = next(tool for tool in tools if tool.name == "sql_db_schema")
+    get_schema_node = ToolNode([get_schema_tool], name="get_schema")
 
-    inputs = {"messages": [HumanMessage(content="search for the weather in sf")]}
-    result = app.invoke(inputs)
-    assert "weather" in result["messages"][-1].content.lower()
+    run_query_tool = next(tool for tool in tools if tool.name == "sql_db_query")
+    run_query_node = ToolNode([run_query_tool], name="run_query")
+
+    def list_tables(state: MessagesState):
+        tool_call = {
+            "name": "sql_db_list_tables",
+            "args": {},
+            "id": "abc123",
+            "type": "tool_call",
+        }
+        tool_call_message = AIMessage(content="", tool_calls=[tool_call])
+
+        list_tables_tool = next(tool for tool in tools if tool.name == "sql_db_list_tables")
+        tool_message = list_tables_tool.invoke(tool_call)
+        response = AIMessage(f"Available tables: {tool_message.content}")
+
+        return {"messages": [tool_call_message, tool_message, response]}
+
+    def call_get_schema(state: MessagesState):
+        # Note that LangChain enforces that all models accept `tool_choice="any"`
+        # as well as `tool_choice=<string name of tool>`.
+        llm_with_tools = llm.bind_tools([get_schema_tool], tool_choice="any")
+        response = llm_with_tools.invoke(state["messages"])
+
+        return {"messages": [response]}
+
+    # Generate SQL Query
+    def generate_query(state: MessagesState):
+        prompt = f"""
+    You are an agent for SQL ({db.dialect}). 
+    Write a query to answer the user. Limit results to 5. Do not modify data.
+    """
+        msg = {"role": "system", "content": prompt}
+        llm_with_tools = llm.bind_tools([get_tool("sql_db_query")])
+        resp = llm_with_tools.invoke([msg] + state["messages"])
+        return {"messages": [resp]}
+
+    # Double-check SQL Query
+    def check_query(state: MessagesState):
+        prompt = f"""
+    You are a SQL expert. Double check the following {db.dialect} query for mistakes.
+    Rewrite if needed. Otherwise, output as is.
+    """
+        user_query = state["messages"][-1].tool_calls[0]["args"]["query"]
+        llm_with_tools = llm.bind_tools([get_tool("sql_db_query")], tool_choice="any")
+        resp = llm_with_tools.invoke([{"role": "system", "content": prompt}, {"role": "user", "content": user_query}])
+        resp.id = state["messages"][-1].id  # keep consistent ID for trace
+        return {"messages": [resp]}
+
+    # Conditional edge: if query tool-call exists, check query, else done
+    def should_continue(state: MessagesState) -> Literal[END, "check_query"]:
+        last = state["messages"][-1]
+        return "check_query" if getattr(last, "tool_calls", None) else END
+
+    # 5. Build the agent graph
+    builder = StateGraph(MessagesState)
+    builder.add_node(list_tables)
+    builder.add_node(call_get_schema)
+    builder.add_node(get_schema_node, "get_schema")
+    builder.add_node(generate_query)
+    builder.add_node(check_query)
+    builder.add_node(run_query_node, "run_query")
+    builder.add_edge(START, "list_tables")
+    builder.add_edge("list_tables", "call_get_schema")
+    builder.add_edge("call_get_schema", "get_schema")
+    builder.add_edge("get_schema", "generate_query")
+    builder.add_conditional_edges(
+        "generate_query",
+        should_continue,
+    )
+    builder.add_edge("check_query", "run_query")
+    builder.add_edge("run_query", "generate_query")
+    agent = builder.compile()
+
+    with open("mermaid.png", "wb") as f:
+        f.write(agent.get_graph().draw_mermaid_png())
+
+    # 6. Run a sample question
+    question = "Which sales agent made the most in sales in 2009?"
+    result = agent.invoke({"messages": [{"role": "user", "content": question}]})
+    assert "Steve Johnson" in result["messages"][-1].content
+    assert len(result["messages"]) > 5
 
 
 async def agent_autogen_multiagent():
-    """A multi-agent conversation with AutoGen (fixed usage)."""
-    from autogen_ext.models.openai import OpenAIChatCompletionClient
-    from autogen_agentchat.agents import AssistantAgent, UserProxyAgent
+    """A multi-agent conversation with AutoGen."""
 
     model_client = OpenAIChatCompletionClient(
         model=OPENAI_MODEL,
         base_url=OPENAI_BASE_URL,
         api_key=OPENAI_API_KEY,
     )
-    assistant = AssistantAgent(name="assistant", model_client=model_client)
-    user_proxy = UserProxyAgent(name="user_proxy", model_client=model_client)
-    # Use a simple chat
-    result = await user_proxy.a_chat(assistant, message="Write a thank you note to my friend.")
-    assert "thank you" in result[-1]["content"].lower()
+
+    primary_agent = AssistantAgent(
+        "primary",
+        model_client=model_client,
+        system_message="You are a helpful AI assistant.",
+    )
+
+    critic_agent = AssistantAgent(
+        "critic",
+        model_client=model_client,
+        system_message="Provide constructive feedback. Respond with 'APPROVE' to when your feedbacks are addressed.",
+    )
+
+    text_termination = TextMentionTermination("APPROVE")
+
+    # Create a team with the primary and critic agents.
+    team = RoundRobinGroupChat([primary_agent, critic_agent], termination_condition=text_termination, max_turns=4)
+
+    result = await team.run(task="Write a short poem about the fall season.")
+    sources = [msg.source for msg in result.messages]
+    assert "primary" in sources
+    assert "critic" in sources
 
 
 async def agent_autogen_mcp():
@@ -324,7 +441,14 @@ async def agent_autogen_mcp():
         agent = AssistantAgent(name="calc_agent", model_client=model_client, workbench=workbench)
         # Simulate a tool-use message
         response = await agent.run(task="What is 42 * 12?")
-        assert "calculator" in response.content.lower()
+        assert "504" in response.messages[-1].content
+
+
+def openai_agents_sdk_run_config():
+    return RunConfig(
+        model=OPENAI_MODEL,
+        model_provider=OpenAIProvider(api_key=OPENAI_API_KEY, base_url=OPENAI_BASE_URL, use_responses=False),
+    )
 
 
 async def openai_agents_sdk_eval_hook_and_guardrail():
@@ -336,10 +460,11 @@ async def openai_agents_sdk_eval_hook_and_guardrail():
         @reward
         def evaluate(self, context, agent, output):
             # Custom reward logic: reward if the answer contains 'homework'
-            return 1.0 if output and "homework" in str(output).lower() else 0.0
+            return 1.0 if output and "no" in str(output).lower() else 0.0
 
         async def on_end(self, context, agent, output):
-            return self.evaluate(context, agent, output)
+            nonlocal final_reward
+            final_reward = self.evaluate(context, agent, output)
 
     guardrail_agent = Agent(
         name="Guardrail check",
@@ -349,7 +474,9 @@ async def openai_agents_sdk_eval_hook_and_guardrail():
     )
 
     async def homework_guardrail(ctx, agent, input_data):
-        result = await Runner.run(guardrail_agent, input_data, context=ctx.context)
+        result = await Runner.run(
+            guardrail_agent, input_data, context=ctx.context, run_config=openai_agents_sdk_run_config()
+        )
         final_output = result.final_output_as(HomeworkOutput)
         return GuardrailFunctionOutput(
             output_info=final_output,
@@ -362,15 +489,15 @@ async def openai_agents_sdk_eval_hook_and_guardrail():
         input_guardrails=[InputGuardrail(guardrail_function=homework_guardrail)],
         hooks=EvalHook(),
     )
-    result = await Runner.run(main_agent, "Is this homework?")
+    final_reward = None
+    result = await Runner.run(main_agent, "The teacher asks to answer whether hummingbirds are mammals.", run_config=openai_agents_sdk_run_config())
     # Should trigger the guardrail and reward should be 1.0
-    assert result.reward == 1.0
+    assert final_reward == 1.0
     assert hasattr(result, "final_output")
 
 
 async def openai_agents_sdk_mcp_tool_use():
-    # Simulate a local MCP server (replace with a real one if available)
-    async with MCPServerStdio(params={"command": "echo", "args": ["MCP server running"]}) as mcp_server:
+    async with MCPServerStdio(params={"command": "uvx", "args": ["mcp-server-calculator"]}) as mcp_server:
         agent = Agent(
             name="MCP Tool Agent",
             instructions="Use the tools to answer the question.",
@@ -378,8 +505,9 @@ async def openai_agents_sdk_mcp_tool_use():
         )
         # The actual tool list and invocation will depend on the MCP server implementation
         # Here we just check that the agent can run with the MCP server attached
-        result = await Runner.run(agent, "What is 1+1?")
-        assert result is not None
+        result = await Runner.run(agent, "What is 43*57?", run_config=openai_agents_sdk_run_config())
+        assert hasattr(result, "final_output")
+        assert "2451" in result.final_output_as(str)
 
 
 async def openai_agents_sdk_handoff_tool_output_type_and_reward():
@@ -400,11 +528,14 @@ async def openai_agents_sdk_handoff_tool_output_type_and_reward():
                 instructions="Return 1.0 if the answer is 8, else 0.0.",
                 output_type=float,
             )
-            result = await Runner.run(checker, str(getattr(output, "answer", "")))
+            result = await Runner.run(
+                checker, str(getattr(output, "answer", "")), run_config=openai_agents_sdk_run_config()
+            )
             return float(result.final_output)
 
         async def on_end(self, context, agent, output):
-            return await self.evaluate(context, agent, output)
+            nonlocal final_reward
+            final_reward = await self.evaluate(context, agent, output)
 
     math_agent = Agent(
         name="MathAgent",
@@ -427,26 +558,26 @@ async def openai_agents_sdk_handoff_tool_output_type_and_reward():
     )
 
     # Math handoff
-    result = await Runner.run(triage_agent, "What is 3+5?")
+    final_reward = None
+    result = await Runner.run(triage_agent, "What is 3+5?", run_config=openai_agents_sdk_run_config())
     assert isinstance(result.final_output, MathOutput)
     assert result.final_output.answer == 8
     # The reward should be 1.0 (computed by the checker agent)
-    assert result.reward == 1.0
+    assert final_reward == 1.0
     # History handoff
-    result2 = await Runner.run(triage_agent, "Who was the first president of the US?")
+    result2 = await Runner.run(triage_agent, "Who was the first president of the US?", run_config=openai_agents_sdk_run_config())
     assert isinstance(result2.final_output, str)
     assert "president" in result2.final_output.lower()
 
 
-if __name__ == '__main__':
-    # Test sync agent
+if __name__ == "__main__":
     asyncio.run(run_agent(agent_pure_openai))
     asyncio.run(run_agent(agent_litellm))
     asyncio.run(run_agent(agent_langchain))
     asyncio.run(run_agent(agent_langchain_tooluse))
     asyncio.run(run_agent(agent_langgraph))
-    # Test async agents
     asyncio.run(run_agent(agent_autogen_multiagent))
     asyncio.run(run_agent(agent_autogen_mcp))
     asyncio.run(run_agent(openai_agents_sdk_eval_hook_and_guardrail))
     asyncio.run(run_agent(openai_agents_sdk_mcp_tool_use))
+    asyncio.run(run_agent(openai_agents_sdk_handoff_tool_output_type_and_reward))
