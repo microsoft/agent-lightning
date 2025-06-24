@@ -22,6 +22,7 @@ import time
 import os
 import re
 import httpx
+import difflib
 from unittest.mock import Mock, patch, AsyncMock, MagicMock
 from typing import Dict, Any, List, Optional
 import threading
@@ -31,6 +32,7 @@ from contextlib import asynccontextmanager
 from pydantic import BaseModel, Field
 
 from agentlightning.tracer.agentops import AgentOpsTracer, LightningSpanProcessor
+from agentlightning.tracer.http import HttpTracer
 from agentlightning.tracer.triplet import TripletExporter
 from agentlightning.reward import reward
 from agentlightning.types import Triplet
@@ -77,7 +79,7 @@ if USE_OPENAI:
     OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
 else:
     OPENAI_BASE_URL = "http://127.0.0.1:8000/v1"
-    OPENAI_MODEL = "gpt-4-mock"
+    OPENAI_MODEL = "gpt-4.1-mini"
     OPENAI_API_KEY = "token-abc123"
 
 
@@ -99,6 +101,7 @@ class MockOpenAICompatibleServer:
     """
     A mock server that mimics the OpenAI Chat Completions API for testing purposes.
     It provides deterministic, canned responses based on the content of the prompt.
+    Now supports replaying from prompt caches.
     """
 
     def __init__(self, host="127.0.0.1", port=8000):
@@ -107,95 +110,66 @@ class MockOpenAICompatibleServer:
         self.app = FastAPI()
         self.server_thread = None
         self.server = None
+        self.prompt_caches = self._load_prompt_caches()
         self._setup_routes()
+
+    def _load_prompt_caches(self):
+        cache_path = os.path.join(os.path.dirname(__file__), "assets/prompt_caches.jsonl")
+        caches = []
+        if os.path.exists(cache_path):
+            with open(cache_path, "r") as f:
+                for line in f:
+                    try:
+                        caches.append(json.loads(line))
+                    except Exception:
+                        continue
+        return caches
+
+    def _find_best_cache_match(self, request_dict):
+        """
+        Find the cached request with the highest similarity to the incoming request.
+        Returns (response, similarity_score) or (None, 0.0) if not found.
+        """
+        def normalize_messages(msgs):
+            # Flatten messages to a string for comparison
+            if not msgs:
+                return ""
+            return "\n".join(
+                f"{m.get('role','')}:{m.get('content','')}" for m in msgs
+            )
+
+        req_msgs = request_dict.get("messages", [])
+        req_tools = request_dict.get("tools", "")
+        req_str = normalize_messages(req_msgs) + f"\ntools:{req_tools}"
+
+        best_score = 0.0
+        best_response = None
+        for cache in self.prompt_caches:
+            cache_req = cache.get("request", {})
+            cache_msgs = cache_req.get("messages", [])
+            cache_tools = cache_req.get("tools", "")
+            cache_str = normalize_messages(cache_msgs) + f"\ntools:{cache_tools}"
+
+            # Use difflib for quick ratio
+            score = difflib.SequenceMatcher(None, req_str, cache_str).ratio()
+            if score > best_score:
+                best_score = score
+                best_response = cache.get("response")
+        return best_response, best_score
 
     def _setup_routes(self):
         @self.app.post("/v1/chat/completions")
-        async def chat_completions(request: ChatCompletionRequest):
-            last_message_content = request.messages[-1]["content"].lower() if request.messages else ""
-            response_text = "This is a default mock response."
-            tool_calls = None
-            finish_reason = "stop"
-
-            # Check if tools are provided in the request to decide on a tool-calling path.
-            if request.tools:
-                if "what is 42 * 12" in last_message_content:
-                    tool_calls = [
-                        {
-                            "id": "call_calculator_123",
-                            "type": "function",
-                            "function": {"name": "calculator", "arguments": '{"a": 42, "b": 12}'},
-                        }
-                    ]
-                elif "search for the weather in sf" in last_message_content:
-                    tool_calls = [
-                        {
-                            "id": "call_search_456",
-                            "type": "function",
-                            "function": {"name": "web_search", "arguments": '{"query": "weather in SF"}'},
-                        }
-                    ]
-                else:
-                    # For ReAct agents, provide a proper action format
-                    response_text = """I need to use a tool to solve this problem.
-
-Action: calculator
-Action Input: {"a": 42, "b": 12}"""
-            else:
-                # Handle standard, non-tool-use queries
-                if "capital of france" in last_message_content:
-                    response_text = "The capital of France is Paris."
-                elif "what is 2 + 2" in last_message_content:
-                    response_text = "Claro! 2 + 2 is 4."
-                elif "thank you note" in last_message_content:
-                    response_text = "You're welcome! Here is a thank you note to your friend for the wonderful gift."
-                elif "what is 42 * 12" in last_message_content:
-                    # For ReAct agents without tool calls, provide the action format
-                    response_text = """I need to calculate 42 * 12.
-
-Action: calculator
-Action Input: {"a": 42, "b": 12}"""
-
-            # According to OpenAI API, when a tool is called, content is null.
-            if tool_calls:
-                response_text = None
-                finish_reason = "tool_calls"
-
-            mock_choice = {
-                "index": 0,
-                "message": {"role": "assistant", "content": response_text},
-                "finish_reason": finish_reason,
-            }
-            if tool_calls:
-                mock_choice["message"]["tool_calls"] = tool_calls
-
-            response_data = {
-                "id": f"chatcmpl-mock-{int(time.time())}",
-                "object": "chat.completion",
-                "created": int(time.time()),
-                "model": request.model,
-                "choices": [mock_choice],
-                "usage": {"prompt_tokens": 15, "completion_tokens": 25, "total_tokens": 40},
-                # The instrumentation specifically looks for these keys.
-                "prompt_token_ids": list(range(15)),
-                "response_token_ids": [list(range(25))],
-            }
-
-            if request.stream:
-                from fastapi.responses import StreamingResponse
-
-                async def stream_generator():
-                    # Simplified stream for testing purposes
-                    chunk = {
-                        "id": response_data["id"],
-                        "choices": [{"delta": {"role": "assistant", "content": response_text or ""}}],
-                    }
-                    yield f"data: {json.dumps(chunk)}\n\n"
-                    yield "data: [DONE]\n\n"
-
-                return StreamingResponse(stream_generator(), media_type="text/plain")
-
-            return response_data
+        def chat_completions(request: ChatCompletionRequest):
+            # Try to find the best match in prompt caches
+            request_dict = request.model_dump()
+            cached_response, score = self._find_best_cache_match(request_dict)
+            if cached_response and score > 0.8:
+                time.sleep(0.1)  # Simulate network delay
+                # Return the cached response directly
+                return cached_response
+            raise ValueError(
+                "No suitable cached response found. Please ensure the prompt caches are populated."
+            )
 
     async def __aenter__(self):
         # Start the server manually
@@ -291,7 +265,13 @@ def agent_langchain_tooluse():
         a, b = re.search(r"(\d+).*?(\d+)", a_and_b).groups()
         return int(a) * int(b)
 
-    llm = ChatOpenAI(model=OPENAI_MODEL, temperature=0, openai_api_base=OPENAI_BASE_URL, openai_api_key=OPENAI_API_KEY)
+    llm = ChatOpenAI(
+        model=OPENAI_MODEL,
+        temperature=0,
+        openai_api_base=OPENAI_BASE_URL,
+        openai_api_key=OPENAI_API_KEY,
+        disable_streaming=True,
+    )
     tools = [multiply]
     agent = create_react_agent(llm, tools, hub.pull("hwchase17/react"))
     agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=False)
@@ -302,7 +282,7 @@ def agent_langchain_tooluse():
 def agent_langgraph():
     """An agent built with LangGraph for stateful, cyclical workflows."""
     llm = init_chat_model("openai:" + OPENAI_MODEL, openai_api_base=OPENAI_BASE_URL, openai_api_key=OPENAI_API_KEY)
-    db = SQLDatabase.from_uri("sqlite:///" + os.path.join(os.path.dirname(__file__), "assets/Chinook.db"))
+    db = SQLDatabase.from_uri("sqlite:///" + os.path.join(os.path.dirname(__file__), "assets/chinook.db"))
     toolkit = SQLDatabaseToolkit(db=db, llm=llm)
     tools = toolkit.get_tools()
 
@@ -386,9 +366,6 @@ def agent_langgraph():
     builder.add_edge("run_query", "generate_query")
     agent = builder.compile()
 
-    with open("mermaid.png", "wb") as f:
-        f.write(agent.get_graph().draw_mermaid_png())
-
     # 6. Run a sample question
     question = "Which sales agent made the most in sales in 2009?"
     result = agent.invoke({"messages": [{"role": "user", "content": question}]})
@@ -464,7 +441,7 @@ async def openai_agents_sdk_eval_hook_and_guardrail():
 
         async def on_end(self, context, agent, output):
             nonlocal final_reward
-            final_reward = self.evaluate(context, agent, output)
+            final_reward = final_reward or self.evaluate(context, agent, output)
 
     guardrail_agent = Agent(
         name="Guardrail check",
@@ -490,9 +467,13 @@ async def openai_agents_sdk_eval_hook_and_guardrail():
         hooks=EvalHook(),
     )
     final_reward = None
-    result = await Runner.run(main_agent, "The teacher asks to answer whether hummingbirds are mammals.", run_config=openai_agents_sdk_run_config())
+    result = await Runner.run(
+        main_agent,
+        "The teacher asks to answer whether hummingbirds are mammals.",
+        run_config=openai_agents_sdk_run_config(),
+    )
     # Should trigger the guardrail and reward should be 1.0
-    assert final_reward == 1.0
+    assert final_reward == 1.0, f"Expected reward to be 1.0, got {final_reward}"
     assert hasattr(result, "final_output")
 
 
@@ -565,19 +546,49 @@ async def openai_agents_sdk_handoff_tool_output_type_and_reward():
     # The reward should be 1.0 (computed by the checker agent)
     assert final_reward == 1.0
     # History handoff
-    result2 = await Runner.run(triage_agent, "Who was the first president of the US?", run_config=openai_agents_sdk_run_config())
+    result2 = await Runner.run(
+        triage_agent, "Who was the first president of the US?", run_config=openai_agents_sdk_run_config()
+    )
     assert isinstance(result2.final_output, str)
     assert "president" in result2.final_output.lower()
 
 
+def create_prompt_caches():
+    """Create prompt caches for the agent frameworks."""
+
+    def _run_all():
+        asyncio.run(run_agent(agent_pure_openai))
+        asyncio.run(run_agent(agent_litellm))
+        asyncio.run(run_agent(agent_langchain))
+        asyncio.run(run_agent(agent_langchain_tooluse))
+        asyncio.run(run_agent(agent_langgraph))
+        asyncio.run(run_agent(agent_autogen_multiagent))
+        asyncio.run(run_agent(agent_autogen_mcp))
+        asyncio.run(run_agent(openai_agents_sdk_eval_hook_and_guardrail))
+        asyncio.run(run_agent(openai_agents_sdk_mcp_tool_use))
+        asyncio.run(run_agent(openai_agents_sdk_handoff_tool_output_type_and_reward))
+
+    if USE_OPENAI:
+        tracer = HttpTracer()
+        with tracer.trace_context():
+            _run_all()
+
+        with open(os.path.join(os.path.dirname(__file__), "assets/prompt_caches.jsonl"), "w") as f:
+            for span in tracer._last_records.requests.values():
+                if span.url.startswith(OPENAI_BASE_URL) and span.status_code < 400 and span.response.content:
+                    f.write(
+                        json.dumps(
+                            {
+                                "request": json.loads(span.request.content.decode()),
+                                "response": json.loads(span.response.content.decode()),
+                            }
+                        )
+                        + "\n"
+                    )
+
+    else:
+        _run_all()
+
+
 if __name__ == "__main__":
-    asyncio.run(run_agent(agent_pure_openai))
-    asyncio.run(run_agent(agent_litellm))
-    asyncio.run(run_agent(agent_langchain))
-    asyncio.run(run_agent(agent_langchain_tooluse))
-    asyncio.run(run_agent(agent_langgraph))
-    asyncio.run(run_agent(agent_autogen_multiagent))
-    asyncio.run(run_agent(agent_autogen_mcp))
-    asyncio.run(run_agent(openai_agents_sdk_eval_hook_and_guardrail))
-    asyncio.run(run_agent(openai_agents_sdk_mcp_tool_use))
-    asyncio.run(run_agent(openai_agents_sdk_handoff_tool_output_type_and_reward))
+    create_prompt_caches()
