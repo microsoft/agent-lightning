@@ -307,23 +307,33 @@ def agent_langgraph():
 
 
 async def agent_autogen_multiagent():
-    """A multi-agent conversation with AutoGen."""
-    config_list = [{"model": OPENAI_MODEL, "api_key": OPENAI_API_KEY, "base_url": OPENAI_BASE_URL}]
-    assistant = AssistantAgent("assistant", llm_config={"config_list": config_list})
-    user_proxy = UserProxyAgent("user_proxy", code_execution_config=False, human_input_mode="NEVER")
-    await user_proxy.a_initiate_chat(assistant, message="Write a thank you note to my friend.")
-    assert "thank you" in user_proxy.last_message()["content"].lower()
+    """A multi-agent conversation with AutoGen (fixed usage)."""
+    from autogen_ext.models.openai import OpenAIChatCompletionClient
+    from autogen_agentchat.agents import AssistantAgent, UserProxyAgent
+    config = {
+        "model": OPENAI_MODEL,
+        "api_key": OPENAI_API_KEY,
+        "base_url": OPENAI_BASE_URL,
+    }
+    model_client = OpenAIChatCompletionClient(**config)
+    assistant = AssistantAgent(name="assistant", model_client=model_client)
+    user_proxy = UserProxyAgent(name="user_proxy", model_client=model_client)
+    # Use a simple chat
+    result = await user_proxy.a_chat(assistant, message="Write a thank you note to my friend.")
+    assert "thank you" in result[-1]["content"].lower()
 
 
 async def agent_autogen_mcp():
-    """An AutoGen agent using the Multi-agent Conversation Platform (MCP) and a tool."""
-    # This test is conceptual, as MCP requires a live server process for the tool.
-    # We will simulate the agent's part of the interaction.
-    config_list = [{"model": OPENAI_MODEL, "api_key": OPENAI_API_KEY, "base_url": OPENAI_BASE_URL}]
-    model_client = OpenAIChatCompletionClient(config_list=config_list)
+    """An AutoGen agent using the Multi-agent Conversation Platform (MCP) and a tool (fixed usage)."""
+    from autogen_ext.models.openai import OpenAIChatCompletionClient
+    from autogen_agentchat.agents import AssistantAgent
+    config = {
+        "model": OPENAI_MODEL,
+        "api_key": OPENAI_API_KEY,
+        "base_url": OPENAI_BASE_URL,
+    }
+    model_client = OpenAIChatCompletionClient(**config)
     agent = AssistantAgent(name="calc_agent", model_client=model_client)
-
-    # In a real MCP scenario, the workbench would connect to a tool server.
-    # Here, we just ensure the agent can be created and can generate a reply.
+    # Simulate a tool-use message
     response = await agent.a_generate_reply(messages=[HumanMessage(content="What is 42 * 12?")])
     assert "calculator" in response.content.lower()
