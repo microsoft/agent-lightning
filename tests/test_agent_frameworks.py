@@ -45,7 +45,8 @@ from autogen_agentchat.teams import RoundRobinGroupChat
 from autogen_ext.models.openai import OpenAIChatCompletionClient
 from autogen_ext.tools.mcp import McpWorkbench, StdioServerParams
 
-from agents import Agent, Runner
+from agents import Agent, Runner, AgentHooks, InputGuardrail, GuardrailFunctionOutput, function_tool
+from agents.mcp import MCPServerStdio
 
 import litellm
 
@@ -196,38 +197,6 @@ def agent_litellm():
     assert "4" in response.choices[0].message.content
 
 
-async def agent_openai_agents_sdk():
-    """Agent using the `openai-agents` SDK."""
-    client = AsyncOpenAI(base_url=OPENAI_BASE_URL, api_key=OPENAI_API_KEY)
-    assistant = await Assistant.create(
-        name="Test Assistant",
-        instructions="You are a helpful assistant.",
-        model=OPENAI_MODEL,
-        client=client,
-    )
-    thread = await Thread.create(client=client)
-    runner = Runner(assistant=assistant, thread=thread, client=client)
-    final_messages = await runner.run("What is the capital of France?")
-    assert "Paris" in final_messages[-1].content[0].text.value
-
-
-async def agent_openai_agents_sdk_with_reward():
-    """Agent using `openai-agents` SDK with a reward function."""
-
-    @reward
-    async def check_answer(answer: str) -> float:
-        return 1.0 if "4" in answer else 0.0
-
-    client = AsyncOpenAI(base_url=OPENAI_BASE_URL, api_key=OPENAI_API_KEY)
-    assistant = await Assistant.create(name="Math Assistant", model=OPENAI_MODEL, client=client)
-    thread = await Thread.create(client=client)
-    runner = Runner(assistant=assistant, thread=thread, client=client)
-    final_messages = await runner.run("what is 2 + 2")
-    final_answer = final_messages[-1].content[0].text.value
-    reward_value = await check_answer(final_answer)
-    assert reward_value == 1.0
-
-
 def agent_langchain():
     """A simple LangChain agent."""
     llm = ChatOpenAI(model=OPENAI_MODEL, openai_api_base=OPENAI_BASE_URL, openai_api_key=OPENAI_API_KEY)
@@ -310,6 +279,7 @@ async def agent_autogen_multiagent():
     """A multi-agent conversation with AutoGen (fixed usage)."""
     from autogen_ext.models.openai import OpenAIChatCompletionClient
     from autogen_agentchat.agents import AssistantAgent, UserProxyAgent
+
     config = {
         "model": OPENAI_MODEL,
         "api_key": OPENAI_API_KEY,
@@ -327,6 +297,7 @@ async def agent_autogen_mcp():
     """An AutoGen agent using the Multi-agent Conversation Platform (MCP) and a tool (fixed usage)."""
     from autogen_ext.models.openai import OpenAIChatCompletionClient
     from autogen_agentchat.agents import AssistantAgent
+
     config = {
         "model": OPENAI_MODEL,
         "api_key": OPENAI_API_KEY,
@@ -337,3 +308,114 @@ async def agent_autogen_mcp():
     # Simulate a tool-use message
     response = await agent.a_generate_reply(messages=[HumanMessage(content="What is 42 * 12?")])
     assert "calculator" in response.content.lower()
+
+
+async def openai_agents_sdk_eval_hook_and_guardrail():
+    class HomeworkOutput(BaseModel):
+        is_homework: bool
+        reasoning: str
+
+    class EvalHook(AgentHooks):
+        @reward
+        def evaluate(self, context, agent, output):
+            # Custom reward logic: reward if the answer contains 'homework'
+            return 1.0 if output and "homework" in str(output).lower() else 0.0
+
+        async def on_end(self, context, agent, output):
+            return self.evaluate(context, agent, output)
+
+    guardrail_agent = Agent(
+        name="Guardrail check",
+        instructions="Check if the user is asking about homework.",
+        output_type=HomeworkOutput,
+        hooks=EvalHook(),
+    )
+
+    async def homework_guardrail(ctx, agent, input_data):
+        result = await Runner.run(guardrail_agent, input_data, context=ctx.context)
+        final_output = result.final_output_as(HomeworkOutput)
+        return GuardrailFunctionOutput(
+            output_info=final_output,
+            tripwire_triggered=not final_output.is_homework,
+        )
+
+    main_agent = Agent(
+        name="Main Agent",
+        instructions="Answer questions. If it's about homework, say so.",
+        input_guardrails=[InputGuardrail(guardrail_function=homework_guardrail)],
+        hooks=EvalHook(),
+    )
+    result = await Runner.run(main_agent, "Is this homework?")
+    # Should trigger the guardrail and reward should be 1.0
+    assert result.reward == 1.0
+    assert hasattr(result, "final_output")
+
+
+async def openai_agents_sdk_mcp_tool_use():
+    # Simulate a local MCP server (replace with a real one if available)
+    async with MCPServerStdio(params={"command": "echo", "args": ["MCP server running"]}) as mcp_server:
+        agent = Agent(
+            name="MCP Tool Agent",
+            instructions="Use the tools to answer the question.",
+            mcp_servers=[mcp_server],
+        )
+        # The actual tool list and invocation will depend on the MCP server implementation
+        # Here we just check that the agent can run with the MCP server attached
+        result = await Runner.run(agent, "What is 1+1?")
+        assert result is not None
+
+
+async def openai_agents_sdk_handoff_tool_output_type_and_reward():
+
+    class MathOutput(BaseModel):
+        answer: int
+
+    @function_tool
+    def add(a: int, b: int) -> int:
+        return a + b
+
+    class RewardHook(AgentHooks):
+        @reward
+        async def evaluate(self, context, agent, output):
+            # Use another agent to check the answer and compute reward
+            checker = Agent(
+                name="Checker",
+                instructions="Return 1.0 if the answer is 8, else 0.0.",
+                output_type=float,
+            )
+            result = await Runner.run(checker, str(getattr(output, "answer", "")))
+            return float(result.final_output)
+
+        async def on_end(self, context, agent, output):
+            return await self.evaluate(context, agent, output)
+
+    math_agent = Agent(
+        name="MathAgent",
+        instructions="Add two numbers.",
+        tools=[add],
+        output_type=MathOutput,
+        hooks=RewardHook(),
+    )
+
+    history_agent = Agent(
+        name="HistoryAgent",
+        instructions="Answer history questions.",
+        output_type=str,
+    )
+
+    triage_agent = Agent(
+        name="TriageAgent",
+        instructions="If the question is about math, handoff to MathAgent. Otherwise, handoff to HistoryAgent.",
+        handoffs=[math_agent, history_agent],
+    )
+
+    # Math handoff
+    result = await Runner.run(triage_agent, "What is 3+5?")
+    assert isinstance(result.final_output, MathOutput)
+    assert result.final_output.answer == 8
+    # The reward should be 1.0 (computed by the checker agent)
+    assert result.reward == 1.0
+    # History handoff
+    result2 = await Runner.run(triage_agent, "Who was the first president of the US?")
+    assert isinstance(result2.final_output, str)
+    assert "president" in result2.final_output.lower()
