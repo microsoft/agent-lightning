@@ -23,6 +23,7 @@ import os
 import re
 import httpx
 import difflib
+from contextlib import contextmanager
 from unittest.mock import Mock, patch, AsyncMock, MagicMock
 from typing import Dict, Any, List, Optional
 import threading
@@ -163,7 +164,7 @@ class MockOpenAICompatibleServer:
                 time.sleep(0.1)  # Simulate network delay
                 # Return the cached response directly
                 cached_response["prompt_token_ids"] = [1, 2, 3]
-                cached_response["response_token_ids"] = [4, 5, 6]
+                cached_response["response_token_ids"] = [[4, 5, 6]]
                 return cached_response
             raise ValueError("No suitable cached response found. Please ensure the prompt caches are populated.")
 
@@ -601,6 +602,32 @@ def run_with_agentops_tracer():
     tracer.teardown()
 
 
+def run_with_http_tracer():
+    import httpdbg.hooks.all
+
+    @contextmanager
+    def empty_hook(*args, **kwargs):
+        yield
+
+
+    # httpdbg.hooks.all.hook_fastapi = empty_hook
+    # httpdbg.hooks.all.hook_uvicorn = empty_hook
+
+    tracer = HttpTracer()
+    tracer.init()
+    tracer.init_worker(0)
+    for agent_func in iterate_over_agents():
+        with tracer.trace_context():
+            run_one(agent_func)
+        print(agent_func.__name__)
+        # print(tracer._last_records.requests.values())
+        print(agent_func.__name__, tracer.get_last_trace())
+        # for triplet in TripletExporter().export(tracer.get_last_trace()):
+        #     print(triplet)
+    tracer.teardown_worker(0)
+    tracer.teardown()
+
+
 def create_prompt_caches():
     """Create prompt caches for the agent frameworks."""
 
@@ -627,4 +654,5 @@ def create_prompt_caches():
 
 
 if __name__ == "__main__":
-    run_with_agentops_tracer()
+    # run_with_agentops_tracer()
+    run_with_http_tracer()
