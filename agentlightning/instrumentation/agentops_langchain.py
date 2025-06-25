@@ -22,3 +22,7 @@ def on_chain_start(self, serialized: Dict[str, Any], inputs: Dict[str, Any], **k
 
 def instrument_agentops_langchain():
     LangchainCallbackHandler.on_chain_start = on_chain_start
+
+
+def uninstrument_agentops_langchain():
+    LangchainCallbackHandler.on_chain_start = original_on_chain_start

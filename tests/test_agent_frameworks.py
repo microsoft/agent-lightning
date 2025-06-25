@@ -83,10 +83,7 @@ else:
     OPENAI_API_KEY = "token-abc123"
 
 
-class AgentState(TypedDict):
-    """State for LangGraph agents."""
-
-    messages: List[BaseMessage]
+_langchain_callback_handler = None
 
 
 class ChatCompletionRequest(BaseModel):
@@ -130,13 +127,12 @@ class MockOpenAICompatibleServer:
         Find the cached request with the highest similarity to the incoming request.
         Returns (response, similarity_score) or (None, 0.0) if not found.
         """
+
         def normalize_messages(msgs):
             # Flatten messages to a string for comparison
             if not msgs:
                 return ""
-            return "\n".join(
-                f"{m.get('role','')}:{m.get('content','')}" for m in msgs
-            )
+            return "\n".join(f"{m.get('role','')}:{m.get('content','')}" for m in msgs)
 
         req_msgs = request_dict.get("messages", [])
         req_tools = request_dict.get("tools", "")
@@ -166,10 +162,10 @@ class MockOpenAICompatibleServer:
             if cached_response and score > 0.8:
                 time.sleep(0.1)  # Simulate network delay
                 # Return the cached response directly
+                cached_response["prompt_token_ids"] = [1, 2, 3]
+                cached_response["response_token_ids"] = [4, 5, 6]
                 return cached_response
-            raise ValueError(
-                "No suitable cached response found. Please ensure the prompt caches are populated."
-            )
+            raise ValueError("No suitable cached response found. Please ensure the prompt caches are populated.")
 
     async def __aenter__(self):
         # Start the server manually
@@ -275,7 +271,10 @@ def agent_langchain_tooluse():
     tools = [multiply]
     agent = create_react_agent(llm, tools, hub.pull("hwchase17/react"))
     agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=False)
-    result = agent_executor.invoke({"input": "what is 42 * 12"})
+    result = agent_executor.invoke(
+        {"input": "what is 42 * 12"},
+        {"callbacks": [_langchain_callback_handler]} if _langchain_callback_handler else None,
+    )
     assert "504" in result["output"]
 
 
@@ -368,7 +367,10 @@ def agent_langgraph():
 
     # 6. Run a sample question
     question = "Which sales agent made the most in sales in 2009?"
-    result = agent.invoke({"messages": [{"role": "user", "content": question}]})
+    result = agent.invoke(
+        {"messages": [{"role": "user", "content": question}]},
+        {"callbacks": [_langchain_callback_handler]} if _langchain_callback_handler else None,
+    )
     assert "Steve Johnson" in result["messages"][-1].content
     assert len(result["messages"]) > 5
 
@@ -553,25 +555,59 @@ async def openai_agents_sdk_handoff_tool_output_type_and_reward():
     assert "president" in result2.final_output.lower()
 
 
+def iterate_over_agents():
+    yield from [
+        agent_pure_openai,
+        agent_litellm,
+        agent_langchain,
+        agent_langchain_tooluse,
+        agent_langgraph,
+        agent_autogen_multiagent,
+        agent_autogen_mcp,
+        openai_agents_sdk_eval_hook_and_guardrail,
+        openai_agents_sdk_mcp_tool_use,
+        openai_agents_sdk_handoff_tool_output_type_and_reward,
+    ]
+
+
+def run_one(agent_func):
+    asyncio.get_event_loop().run_until_complete(run_agent(agent_func))
+
+
+def run_all():
+    for agent_func in iterate_over_agents():
+        run_one(agent_func)
+
+
+def run_with_agentops_tracer():
+    tracer = AgentOpsTracer()
+    tracer.init()
+    tracer.init_worker(0)
+    from agentlightning.tracer.triplet import TraceTree
+
+    global _langchain_callback_handler
+    _langchain_callback_handler = tracer.get_langchain_callback_handler()
+
+    for agent_func in iterate_over_agents():
+        with tracer.trace_context():
+            run_one(agent_func)
+        TraceTree.from_spans(tracer.get_last_trace()).visualize(f"debug/{agent_func.__name__}")
+        for triplet in TripletExporter().export(tracer.get_last_trace()):
+            print(triplet)
+
+    _langchain_callback_handler = None
+
+    tracer.teardown_worker(0)
+    tracer.teardown()
+
+
 def create_prompt_caches():
     """Create prompt caches for the agent frameworks."""
-
-    def _run_all():
-        asyncio.run(run_agent(agent_pure_openai))
-        asyncio.run(run_agent(agent_litellm))
-        asyncio.run(run_agent(agent_langchain))
-        asyncio.run(run_agent(agent_langchain_tooluse))
-        asyncio.run(run_agent(agent_langgraph))
-        asyncio.run(run_agent(agent_autogen_multiagent))
-        asyncio.run(run_agent(agent_autogen_mcp))
-        asyncio.run(run_agent(openai_agents_sdk_eval_hook_and_guardrail))
-        asyncio.run(run_agent(openai_agents_sdk_mcp_tool_use))
-        asyncio.run(run_agent(openai_agents_sdk_handoff_tool_output_type_and_reward))
 
     if USE_OPENAI:
         tracer = HttpTracer()
         with tracer.trace_context():
-            _run_all()
+            run_all()
 
         with open(os.path.join(os.path.dirname(__file__), "assets/prompt_caches.jsonl"), "w") as f:
             for span in tracer._last_records.requests.values():
@@ -587,8 +623,8 @@ def create_prompt_caches():
                     )
 
     else:
-        _run_all()
+        run_all()
 
 
 if __name__ == "__main__":
-    create_prompt_caches()
+    run_with_agentops_tracer()

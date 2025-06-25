@@ -24,3 +24,7 @@ def patched_set_attributes(self, span: Any, kwargs, response_obj: Optional[Any])
 
 def instrument_litellm():
     OpenTelemetry.set_attributes = patched_set_attributes
+
+
+def uninstrument_litellm():
+    OpenTelemetry.set_attributes = original_set_attributes

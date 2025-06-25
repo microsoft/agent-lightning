@@ -63,3 +63,45 @@ def instrument_all():
         instrument_agentops_langchain()
     else:
         warnings.warn("Agentops-langchain integration is not installed. It's therefore not instrumented.")
+
+
+def uninstrument_all():
+    if AGENTOPS_INSTALLED:
+        try:
+            from .agentops import uninstrument_agentops
+
+            uninstrument_agentops()
+        except ImportError:
+            warnings.warn("agentops is installed but uninstrument_agentops could not be imported.")
+    else:
+        warnings.warn("agentops is not installed. It's therefore not uninstrumented.")
+
+    if LITELLM_INSTALLED:
+        try:
+            from .litellm import uninstrument_litellm
+
+            uninstrument_litellm()
+        except ImportError:
+            warnings.warn("litellm is installed but uninstrument_litellm could not be imported.")
+    else:
+        warnings.warn("litellm is not installed. It's therefore not uninstrumented.")
+
+    if VLLM_INSTALLED:
+        try:
+            from .vllm import uninstrument_vllm
+
+            uninstrument_vllm()
+        except ImportError:
+            warnings.warn("vllm is installed but uninstrument_vllm could not be imported.")
+    else:
+        warnings.warn("vllm is not installed. It's therefore not uninstrumented.")
+
+    if AGENTOPS_LANGCHAIN_INSTALLED:
+        try:
+            from .agentops_langchain import uninstrument_agentops_langchain
+
+            uninstrument_agentops_langchain()
+        except ImportError:
+            warnings.warn("agentops_langchain is installed but uninstrument_agentops_langchain could not be imported.")
+    else:
+        warnings.warn("Agentops-langchain integration is not installed. It's therefore not uninstrumented.")

@@ -12,6 +12,7 @@ from agentops.sdk.processors import SpanProcessor
 from opentelemetry.sdk.trace import ReadableSpan
 
 from agentlightning.instrumentation.agentops import AgentOpsServerManager
+from agentlightning.instrumentation import instrument_all, uninstrument_all
 from .base import BaseTracer
 
 
@@ -84,21 +85,16 @@ class AgentOpsTracer(BaseTracer):
                 ):  # Server failed to start
                     raise RuntimeError("AgentOps server manager indicates server is not running and port is None.")
 
+    def teardown(self):
+        if self.agentops_managed:
+            self._agentops_server_manager.stop()
+            logger.info("AgentOps server stopped.")
+
     def instrument(self, worker_id: int):
-        from agentlightning.instrumentation.agentops import instrument_agentops
+        instrument_all()
 
-        instrument_agentops()
-        logger.info(f"[Worker {worker_id}] AgentOps instrumentation applied.")
-
-        try:
-            from agentlightning.instrumentation.litellm import instrument_litellm
-
-            instrument_litellm()
-            logger.info(f"[Worker {worker_id}] LiteLLM instrumentation applied.")
-        except ImportError:
-            logger.warning(
-                f"[Worker {worker_id}] LiteLLM instrumentation not applied. Ensure litellm is installed if needed."
-            )
+    def uninstrument(self, worker_id: int):
+        uninstrument_all()
 
     def init_worker(self, worker_id: int):
         super().init_worker(worker_id)
@@ -106,6 +102,7 @@ class AgentOpsTracer(BaseTracer):
 
         if self.instrument_managed:
             self.instrument(worker_id)
+            logger.info(f"[Worker {worker_id}] Instrumentation applied.")
 
         if self.agentops_managed:
             if self._agentops_server_port_val:  # Use the stored, picklable port value
@@ -140,6 +137,13 @@ class AgentOpsTracer(BaseTracer):
             # old versions
             instance = TracingCore.get_instance()
             instance._provider.add_span_processor(self._lightning_span_processor)
+
+    def teardown_worker(self, worker_id: int) -> None:
+        super().teardown_worker(worker_id)
+
+        if self.instrument_managed:
+            self.uninstrument(worker_id)
+            logger.info(f"[Worker {worker_id}] Instrumentation removed.")
 
     @contextmanager
     def trace_context(self, name: Optional[str] = None):

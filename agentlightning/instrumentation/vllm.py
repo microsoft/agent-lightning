@@ -62,3 +62,7 @@ def instrument_vllm():
         ChatCompletionResponsePatched
     )
     OpenAIServingChat.chat_completion_full_generator = chat_completion_full_generator
+
+
+def uninstrument_vllm():
+    OpenAIServingChat.chat_completion_full_generator = original_chat_completion_full_generator

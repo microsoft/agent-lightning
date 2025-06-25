@@ -72,7 +72,7 @@ class TraceTree:
     def add_child(self, child: "TraceTree") -> None:
         self.children.append(child)
 
-    def _tree_visualize(self, filename: str, interested_span_match: str | None = None) -> None:
+    def visualize(self, filename: str, interested_span_match: str | None = None) -> None:
         """
         Visualize the trace tree using graphviz.
         For debugging purposes only.

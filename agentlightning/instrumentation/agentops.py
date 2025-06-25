@@ -9,13 +9,17 @@ import setproctitle
 
 logger = logging.getLogger(__name__)
 
+# Module-level storage for originals
+_original_handle_chat_attributes = None
+_original_handle_response = None
 
-# Define patching functions for different versions of agentops
+
 def _patch_new_agentops():
     import agentops.instrumentation.providers.openai.wrappers.chat
     import agentops.instrumentation.providers.openai.stream_wrapper
     from agentops.instrumentation.providers.openai.wrappers.chat import handle_chat_attributes
 
+    global _original_handle_chat_attributes
     _original_handle_chat_attributes = handle_chat_attributes
 
     def _handle_chat_attributes_with_tokens(args=None, kwargs=None, return_value=None):
@@ -37,15 +41,33 @@ def _patch_new_agentops():
         return attributes
 
     agentops.instrumentation.providers.openai.wrappers.chat.handle_chat_attributes = _handle_chat_attributes_with_tokens
-    agentops.instrumentation.providers.openai.stream_wrapper.handle_chat_attributes = _handle_chat_attributes_with_tokens
+    agentops.instrumentation.providers.openai.stream_wrapper.handle_chat_attributes = (
+        _handle_chat_attributes_with_tokens
+    )
     logger.info("Patched newer version of agentops using handle_chat_attributes")
     return True
+
+
+def _unpatch_new_agentops():
+    import agentops.instrumentation.providers.openai.wrappers.chat
+    import agentops.instrumentation.providers.openai.stream_wrapper
+
+    global _original_handle_chat_attributes
+    if _original_handle_chat_attributes is not None:
+        agentops.instrumentation.providers.openai.wrappers.chat.handle_chat_attributes = (
+            _original_handle_chat_attributes
+        )
+        agentops.instrumentation.providers.openai.stream_wrapper.handle_chat_attributes = (
+            _original_handle_chat_attributes
+        )
+        logger.info("Unpatched newer version of agentops using handle_chat_attributes")
 
 
 def _patch_old_agentops():
     import opentelemetry.instrumentation.openai.shared.chat_wrappers
     from opentelemetry.instrumentation.openai.shared.chat_wrappers import _handle_response, dont_throw
 
+    global _original_handle_response
     _original_handle_response = _handle_response
 
     @dont_throw
@@ -70,6 +92,15 @@ def _patch_old_agentops():
     return True
 
 
+def _unpatch_old_agentops():
+    import opentelemetry.instrumentation.openai.shared.chat_wrappers
+
+    global _original_handle_response
+    if _original_handle_response is not None:
+        opentelemetry.instrumentation.openai.shared.chat_wrappers._handle_response = _original_handle_response
+        logger.info("Unpatched earlier version of agentops using _handle_response")
+
+
 def instrument_agentops():
     """
     Instrument agentops to capture token IDs.
@@ -90,6 +121,17 @@ def instrument_agentops():
         logger.warning(f"Couldn't patch older version of agentops: {str(e)}")
         logger.error("Failed to instrument agentops - neither patching method was successful")
         return False
+
+
+def uninstrument_agentops():
+    try:
+        _unpatch_new_agentops()
+    except Exception:
+        pass
+    try:
+        _unpatch_old_agentops()
+    except Exception:
+        pass
 
 
 def agentops_local_server():
