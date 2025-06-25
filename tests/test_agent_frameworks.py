@@ -610,8 +610,8 @@ def run_with_http_tracer():
         yield
 
 
-    # httpdbg.hooks.all.hook_fastapi = empty_hook
-    # httpdbg.hooks.all.hook_uvicorn = empty_hook
+    httpdbg.hooks.all.hook_fastapi = empty_hook
+    httpdbg.hooks.all.hook_uvicorn = empty_hook
 
     tracer = HttpTracer()
     tracer.init()
@@ -622,8 +622,8 @@ def run_with_http_tracer():
         print(agent_func.__name__)
         # print(tracer._last_records.requests.values())
         print(agent_func.__name__, tracer.get_last_trace())
-        # for triplet in TripletExporter().export(tracer.get_last_trace()):
-        #     print(triplet)
+        for triplet in TripletExporter().export(tracer.get_last_trace()):
+            print(triplet)
     tracer.teardown_worker(0)
     tracer.teardown()
 
