@@ -141,6 +141,9 @@ class TraceTree:
         If multiple root spans are found, a virtual root span will be created as the parent of all root spans.
         """
 
+        if not spans:
+            raise ValueError("No spans provided to create TraceTree.")
+
         # Process trace items in topological order
         id_to_span = {span.get_span_context().span_id: span for span in spans}
 

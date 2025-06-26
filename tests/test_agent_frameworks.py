@@ -602,6 +602,90 @@ def run_with_agentops_tracer():
     tracer.teardown()
 
 
+from collections.abc import Callable
+import traceback
+import warnings
+
+import httpx
+
+from httpdbg.hooks.utils import getcallargs, decorate, undecorate
+from httpdbg.initiator import httpdbg_initiator
+from httpdbg.records import HTTPRecords
+
+
+def set_hook_for_httpx_send(records: "HTTPRecords", method: Callable):
+    """Hook for the synchronous httpx.Client.send."""
+    def hook(*args, **kwargs):
+        initiator_and_group = None
+        try:
+            with httpdbg_initiator(
+                records, traceback.extract_stack(), method, *args, **kwargs
+            ) as initiator_and_group:
+                ret = method(*args, **kwargs)
+            return ret
+        except Exception as ex:
+            callargs = getcallargs(method, *args, **kwargs)
+            if "request" in callargs:
+                if initiator_and_group:
+                    initiator, group, is_new = initiator_and_group
+                    if is_new:
+                        records.add_new_record_exception(
+                            initiator, group, str(callargs["request"].url), ex
+                        )
+            raise
+    return hook
+
+
+def set_hook_for_httpx_send_async(records: "HTTPRecords", method: Callable):
+    """Hook for the asynchronous httpx.AsyncClient.send."""
+    async def hook(*args, **kwargs):
+        initiator_and_group = None
+        try:
+            with httpdbg_initiator(
+                records, traceback.extract_stack(), method, *args, **kwargs
+            ) as initiator_and_group:
+                ret = await method(*args, **kwargs)
+            return ret
+        except Exception as ex:
+            callargs = getcallargs(method, *args, **kwargs)
+            if "request" in callargs:
+                if initiator_and_group:
+                    initiator, group, is_new = initiator_and_group
+                    if is_new:
+                        records.add_new_record_exception(
+                            initiator, group, str(callargs["request"].url), ex
+                        )
+            raise
+    return hook
+
+
+@contextmanager
+def patch_httpx(records: "HTTPRecords"):
+    """
+    Applies the patches to httpx.Client.send and httpx.AsyncClient.send.
+
+    This function should be called within an active httpdbg context.
+    """
+    if not isinstance(records, HTTPRecords):
+        warnings.warn("The 'records' object provided is not a valid httpdbg.HTTPRecords instance. Patching may fail.")
+
+    httpx.Client.send = decorate(
+        records, httpx.Client.send, set_hook_for_httpx_send
+    )
+    httpx.AsyncClient.send = decorate(
+        records, httpx.AsyncClient.send, set_hook_for_httpx_send_async
+    )
+    print("Successfully patched httpx.send methods for httpdbg.")
+
+    yield
+
+    """Removes the patches from httpx.Client.send and httpx.AsyncClient.send."""
+    httpx.Client.send = undecorate(httpx.Client.send)
+    httpx.AsyncClient.send = undecorate(httpx.AsyncClient.send)
+    print("Removed httpx.send patches.")
+
+
+
 def run_with_http_tracer():
     import httpdbg.hooks.all
 
@@ -613,17 +697,40 @@ def run_with_http_tracer():
     httpdbg.hooks.all.hook_fastapi = empty_hook
     httpdbg.hooks.all.hook_uvicorn = empty_hook
 
+    from httpdbg.log import set_env_for_logging, LogLevel
+    from pathlib import Path
+    # import httpx
+    # set_env_for_logging(LogLevel.DEBUG, Path('debug.log'))
+
     tracer = HttpTracer()
     tracer.init()
     tracer.init_worker(0)
-    for agent_func in iterate_over_agents():
+
+    def _run_agent_with_tracer(agent_func):
         with tracer.trace_context():
             run_one(agent_func)
-        print(agent_func.__name__)
-        # print(tracer._last_records.requests.values())
-        print(agent_func.__name__, tracer.get_last_trace())
-        for triplet in TripletExporter().export(tracer.get_last_trace()):
-            print(triplet)
+            print(agent_func.__name__)
+            for val in tracer._last_records.requests.values():
+                print(val.__dict__)
+            print(agent_func.__name__, tracer.get_last_trace())
+            for triplet in TripletExporter().export(tracer.get_last_trace()):
+                print(triplet)
+
+    for agent_func in [agent_pure_openai, agent_autogen_multiagent]:
+        print('=================================================')
+        import multiprocessing
+        process = multiprocessing.Process(target=_run_agent_with_tracer, args=(agent_func,))
+        
+        process.start()
+        process.join()
+        # with tracer.trace_context():
+        #     print('before patch', httpx.AsyncClient.request)
+        #         with patch_httpx(tracer._last_records):
+        #             print(httpx.AsyncClient.request)
+        #             run_one(agent_func)
+        # print('after patch', httpx.AsyncClient.request)
+        # time.sleep(0.1)  # Allow some time for the trace to be recorded
+
     tracer.teardown_worker(0)
     tracer.teardown()
 
