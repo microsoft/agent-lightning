@@ -11,12 +11,8 @@ export PROJECT_NAME=AgentLightningDebug
 
 echo "Starting training script..."
 
-python -m verl.trainer.main_ppo \
-    agent_mode.enable=True \
-    actor_rollout_ref.rollout.mode=async \
-    actor_rollout_ref.rollout.chat_scheduler=agentlightning.instrumentation.verl_chat_scheduler.NaiveChatCompletionScheduler \
+python -m agentlightning.verl \
     algorithm.adv_estimator=grpo \
-    actor_rollout_ref.model.path=${BASE_MODEL} \
     data.train_files=${DATA_DIR}/train.parquet \
     data.val_files=${DATA_DIR}/test_mini.parquet \
     actor_rollout_ref.rollout.tensor_model_parallel_size=$ROLLOUT_TP_SIZE \
@@ -26,9 +22,10 @@ python -m verl.trainer.main_ppo \
     actor_rollout_ref.actor.ppo_mini_batch_size=32 \
     actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=4 \
     actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu=4 \
+    actor_rollout_ref.rollout.multi_turn.format=hermes \
+    actor_rollout_ref.model.path=${BASE_MODEL} \
     data.max_prompt_length=4096 \
     data.max_response_length=2048 \
-    data.filter_overlong_prompts=True \
     data.truncation='error' \
     trainer.val_before_train=True \
     actor_rollout_ref.actor.optim.lr=1e-6 \
@@ -53,4 +50,4 @@ python -m verl.trainer.main_ppo \
     trainer.nnodes=1 \
     trainer.save_freq=256 \
     trainer.test_freq=32 \
-    trainer.total_epochs=2 $@
+    trainer.total_epochs=1 $@

@@ -19,12 +19,14 @@ try:
 except ImportError:
     pass
 
-try:
-    from . import vllm
+# MAGIC! DO NOT TOUCH THIS!
+# vllm import will cause reward tracing function to fail and produce nothing.
+# try:
+#     from . import vllm
 
-    VLLM_INSTALLED = True
-except ImportError:
-    pass
+#     VLLM_INSTALLED = True
+# except ImportError:
+#     pass
 
 
 try:
