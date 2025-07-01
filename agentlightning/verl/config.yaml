@@ -15,5 +15,3 @@ data:
 actor_rollout_ref:
   rollout:
     mode: async
-    multi_turn:
-      tool_config_path: /dev/null
