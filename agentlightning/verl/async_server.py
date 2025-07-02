@@ -22,7 +22,7 @@ class PatchedvLLMServer(_unwrap_ray_remote(AsyncvLLMServer)):
         super().__init__(*args, **kwargs)
 
         self.config = deepcopy(self.config)
-        self.config.multi_turn.tool_config_path = "/dev/null"
+        self.config.rollout.multi_turn.tool_config_path = "/dev/null"
 
     async def chat_completion(self, raw_request: Request):
         """OpenAI-compatible HTTP endpoint.
