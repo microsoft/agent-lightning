@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from typing import List
 
 from vllm.entrypoints.openai.protocol import ChatCompletionResponse
@@ -58,6 +59,10 @@ async def chat_completion_full_generator(
 
 
 def instrument_vllm():
+    if vllm.entrypoints.openai.protocol.ChatCompletionResponse is ChatCompletionResponsePatched:
+        warnings.warn("vllm is already instrumented. Skip the instrumentation.")
+        return
+
     vllm.entrypoints.openai.protocol.ChatCompletionResponse = (
         ChatCompletionResponsePatched
     )

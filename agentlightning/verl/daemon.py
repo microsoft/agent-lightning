@@ -175,8 +175,12 @@ class AgentModeDaemon:
                     # sometimes it has some differences with the hacky method in the end, but this should align with ToolCompletionCallback
                     response_ids = full_ids[len(prompt_ids):]
 
-                    response_json['prompt_token_ids'] = prompt_ids
-                    response_json['response_token_ids'] = [response_ids]
+                    # NOTE (yuge): They are different. Don't know why.
+                    # assert response_json['prompt_token_ids'] == prompt_ids
+                    # patched_response_ids = response_json['response_token_ids'][0]
+                    # assert patched_response_ids == response_ids[:len(patched_response_ids)], f"{patched_response_ids} != {response_ids[:len(patched_response_ids)]}"
+                    # response_json['prompt_token_ids'] = prompt_ids
+                    # response_json['response_token_ids'] = [response_ids]
                     replaced_return_content = json.dumps(response_json).encode("utf-8")
                     return Response(replaced_return_content, status=resp.status_code, headers=response_headers)
                 return Response(resp.content, resp.status_code, response_headers)
