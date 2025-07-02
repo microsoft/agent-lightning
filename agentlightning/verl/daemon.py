@@ -258,11 +258,20 @@ class AgentModeDaemon:
             print(f"Failed to set up data on server: {e}")
             raise
 
+    def _validate_data(self, rollout: Rollout):
+        if rollout.final_reward is None:
+            print(f"Warning: Reward is None for rollout {rollout.rollout_id}, will be auto-set to {self.reward_fillna_value}.")
+        if rollout.triplets is None:
+            print(f"Warning: Triplet is None for rollout {rollout.rollout_id}.")
+        elif len(rollout.triplets) == 0:
+            print(f"Warning: Length of triplets is 0 for rollout {rollout.rollout_id}.")
+
     async def _async_run_until_finished(self, verbose=True):
         """Async helper to wait for all tasks to complete."""
         while len(self._completed_rollouts) < self._total_tasks_queued:
             completed_batch = await self.server.retrieve_completed_rollouts()
             for rollout in completed_batch:
+                self._validate_data(rollout)
                 self._completed_rollouts[rollout.rollout_id] = rollout
             if verbose:
                 print(f"Completed {len(self._completed_rollouts)}/{self._total_tasks_queued} tasks...")
@@ -452,7 +461,6 @@ class AgentModeDaemon:
     def _fillna_reward(self, rollout):
         if rollout.final_reward is None:
             if self.reward_fillna_value is not None:
-                print(f"Warning: Reward is None for rollout {rollout.rollout_id}, auto setting to {self.reward_fillna_value}.")
                 final_reward = self.reward_fillna_value
             else:
                 raise ValueError(f"Reward is None for rollout {rollout.rollout_id}, please check the reward function.")
