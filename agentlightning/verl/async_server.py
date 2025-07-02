@@ -1,4 +1,5 @@
 import ray
+from copy import deepcopy
 
 from agentlightning.instrumentation.vllm import instrument_vllm, ChatCompletionResponsePatched
 from starlette.requests import Request
@@ -18,8 +19,10 @@ class PatchedvLLMServer(_unwrap_ray_remote(AsyncvLLMServer)):
 
     def __init__(self, *args, **kwargs):
         instrument_vllm()
-        print("vllm instrumented")
         super().__init__(*args, **kwargs)
+
+        self.config = deepcopy(self.config)
+        self.config.multi_turn.tool_config_path = "/dev/null"
 
     async def chat_completion(self, raw_request: Request):
         """OpenAI-compatible HTTP endpoint.
