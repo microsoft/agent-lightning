@@ -269,6 +269,10 @@ class AgentModeDaemon:
             print(f"Warning: Triplet is None for rollout {rollout.rollout_id}.")
         elif len(rollout.triplets) == 0:
             print(f"Warning: Length of triplets is 0 for rollout {rollout.rollout_id}.")
+        elif any(not r.response.get("token_ids", []) for r in rollout.triplets):
+            print(f"Warning: Rollout {rollout.rollout_id} contains empty response: {rollout.triplets}")
+        elif any(not r.prompt.get("token_ids", []) for r in rollout.triplets):
+            print(f"Warning: Rollout {rollout.rollout_id} contains empty prompt: {rollout.triplets}")
 
     async def _async_run_until_finished(self, verbose=True):
         """Async helper to wait for all tasks to complete."""
