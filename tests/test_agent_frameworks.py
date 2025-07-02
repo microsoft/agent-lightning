@@ -589,17 +589,31 @@ def run_with_agentops_tracer():
     global _langchain_callback_handler
     _langchain_callback_handler = tracer.get_langchain_callback_handler()
 
-    for agent_func in iterate_over_agents():
+    for agent_func in [agent_langgraph]:
         with tracer.trace_context():
             run_one(agent_func)
+        for span in tracer.get_last_trace():
+            print(span.name)
         TraceTree.from_spans(tracer.get_last_trace()).visualize(f"debug/{agent_func.__name__}")
         for triplet in TripletExporter().export(tracer.get_last_trace()):
             print(triplet)
 
-    _langchain_callback_handler = None
+    # _langchain_callback_handler = None
 
     tracer.teardown_worker(0)
     tracer.teardown()
+
+
+def run_with_agentops_and_upload():
+    assert "AGENTOPS_API_KEY" in os.environ, "AGENTOPS_API_KEY is not set"
+    from agentlightning.instrumentation.agentops_langchain import instrument_agentops_langchain
+    instrument_agentops_langchain()
+    agentops.init()
+    from agentops.integration.callbacks.langchain import LangchainCallbackHandler
+    global _langchain_callback_handler
+    _langchain_callback_handler = LangchainCallbackHandler(api_key=os.environ["AGENTOPS_API_KEY"])
+    for agent_func in [agent_langgraph]:
+        run_one(agent_func)
 
 
 from collections.abc import Callable
@@ -761,5 +775,6 @@ def create_prompt_caches():
 
 
 if __name__ == "__main__":
+    run_with_agentops_and_upload()
     # run_with_agentops_tracer()
-    run_with_http_tracer()
+    # run_with_http_tracer()
