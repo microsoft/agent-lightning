@@ -15,6 +15,7 @@ data:
 actor_rollout_ref:
   rollout:
     mode: async
-    custom_async_server:
-      path: pkg://agentlightning.verl.async_server
-      name: PatchedvLLMServer
+    agent:
+      custom_async_server:
+        path: pkg://agentlightning.verl.async_server
+        name: PatchedvLLMServer
