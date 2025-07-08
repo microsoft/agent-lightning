@@ -1,7 +1,7 @@
 import asyncio
 
-from agentlightning.prompt.server import AgentLightningServer
-from agentlightning.prompt.types import NamedResources, PromptTemplate
+from agentlightning.server import AgentLightningServer
+from agentlightning.types import NamedResources, PromptTemplate
 
 
 async def example_apo():
