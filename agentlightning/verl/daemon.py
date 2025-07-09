@@ -165,15 +165,15 @@ class AgentModeDaemon:
                 if resp.status_code == 200:
                     # NOTE: from Zhiyuan's code.
                     # https://github.com/hzy46/verl_agent_mode/blob/2db65ea9858f645a914120357412a7540f8bd82d/verl/trainer/ppo/ray_trainer.py#L692-L711                    
-                    request_json = json.loads(request.get_data().decode("utf-8"))
+                    # request_json = json.loads(request.get_data().decode("utf-8"))
                     response_json = json.loads(resp.content.decode("utf-8"))
-                    response_message = ChatCompletion(**response_json).choices[0].message.model_dump(exclude_unset=True, exclude_none=True)
-                    tool_schemas = request_json.get("tools", None)
-                    prompt_ids = self.tokenizer.apply_chat_template(request_json["messages"], tools=tool_schemas, add_generation_prompt=True, tokenize=True)
-                    full_ids = self.tokenizer.apply_chat_template(request_json["messages"] + [response_message], tools=tool_schemas, add_generation_prompt=False, tokenize=True)
+                    # response_message = ChatCompletion(**response_json).choices[0].message.model_dump(exclude_unset=True, exclude_none=True)
+                    # tool_schemas = request_json.get("tools", None)
+                    # prompt_ids = self.tokenizer.apply_chat_template(request_json["messages"], tools=tool_schemas, add_generation_prompt=True, tokenize=True)
+                    # full_ids = self.tokenizer.apply_chat_template(request_json["messages"] + [response_message], tools=tool_schemas, add_generation_prompt=False, tokenize=True)
                     # TBD: response_ids sometimes ends with "<eos_id>\n", shall we keep the extra "\n"?
                     # sometimes it has some differences with the hacky method in the end, but this should align with ToolCompletionCallback
-                    response_ids = full_ids[len(prompt_ids):]
+                    # response_ids = full_ids[len(prompt_ids):]
 
                     # NOTE (yuge): They are different. Don't know why.
                     # assert response_json['prompt_token_ids'] == prompt_ids
