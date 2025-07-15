@@ -5,6 +5,7 @@ import uuid
 import pickle
 import multiprocessing
 import asyncio
+import queue
 from urllib.parse import urlparse
 
 from .base import BaseTracer
@@ -49,7 +50,7 @@ class HttpTracer(BaseTracer):
         include_headers: bool = False,
         include_body: bool = False,
         include_agentlightning_requests: bool = False,
-        subprocess_mode: bool = False,
+        subprocess_mode: bool = True,
         subprocess_timeout: float = 3600.0,
     ):
         super().__init__()
@@ -231,7 +232,7 @@ class HttpTracer(BaseTracer):
             The return value of the function.
         """
         if self.subprocess_mode:
-            return self._trace_run_subprocess(func, *args, **kwargs)
+            return self._trace_run_subprocess(func, args, kwargs)
         else:
             return super().trace_run(func, *args, **kwargs)
 
@@ -287,8 +288,8 @@ class HttpTracer(BaseTracer):
 
         try:
             # Wait for the process to complete and get the result
-            result = result_queue.get(timeout=self.subprocess_timeout)
-            process.join()
+            process.join(timeout=self.subprocess_timeout)
+            result = result_queue.get_nowait()
 
             if result["success"]:
                 # Store the captured records for get_last_trace()
@@ -303,7 +304,9 @@ class HttpTracer(BaseTracer):
         except multiprocessing.TimeoutError:
             process.terminate()
             process.join()
-            raise TimeoutError("Subprocess execution timed out after 5 minutes")
+            raise TimeoutError(f"Subprocess execution timed out after {self.subprocess_timeout} seconds.")
+        except queue.Empty:
+            logger.error("Traced result is empty. This may indicate a timeout or an issue with the subprocess.")
         finally:
             if process.is_alive():
                 process.terminate()

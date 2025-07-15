@@ -604,102 +604,6 @@ def run_with_agentops_tracer():
     tracer.teardown()
 
 
-def run_with_agentops_and_upload():
-    assert "AGENTOPS_API_KEY" in os.environ, "AGENTOPS_API_KEY is not set"
-    from agentlightning.instrumentation.agentops_langchain import instrument_agentops_langchain
-    instrument_agentops_langchain()
-    agentops.init()
-    from agentops.integration.callbacks.langchain import LangchainCallbackHandler
-    global _langchain_callback_handler
-    _langchain_callback_handler = LangchainCallbackHandler(api_key=os.environ["AGENTOPS_API_KEY"])
-    for agent_func in [agent_langgraph]:
-        run_one(agent_func)
-
-
-from collections.abc import Callable
-import traceback
-import warnings
-
-import httpx
-
-from httpdbg.hooks.utils import getcallargs, decorate, undecorate
-from httpdbg.initiator import httpdbg_initiator
-from httpdbg.records import HTTPRecords
-
-
-def set_hook_for_httpx_send(records: "HTTPRecords", method: Callable):
-    """Hook for the synchronous httpx.Client.send."""
-    def hook(*args, **kwargs):
-        initiator_and_group = None
-        try:
-            with httpdbg_initiator(
-                records, traceback.extract_stack(), method, *args, **kwargs
-            ) as initiator_and_group:
-                ret = method(*args, **kwargs)
-            return ret
-        except Exception as ex:
-            callargs = getcallargs(method, *args, **kwargs)
-            if "request" in callargs:
-                if initiator_and_group:
-                    initiator, group, is_new = initiator_and_group
-                    if is_new:
-                        records.add_new_record_exception(
-                            initiator, group, str(callargs["request"].url), ex
-                        )
-            raise
-    return hook
-
-
-def set_hook_for_httpx_send_async(records: "HTTPRecords", method: Callable):
-    """Hook for the asynchronous httpx.AsyncClient.send."""
-    async def hook(*args, **kwargs):
-        initiator_and_group = None
-        try:
-            with httpdbg_initiator(
-                records, traceback.extract_stack(), method, *args, **kwargs
-            ) as initiator_and_group:
-                ret = await method(*args, **kwargs)
-            return ret
-        except Exception as ex:
-            callargs = getcallargs(method, *args, **kwargs)
-            if "request" in callargs:
-                if initiator_and_group:
-                    initiator, group, is_new = initiator_and_group
-                    if is_new:
-                        records.add_new_record_exception(
-                            initiator, group, str(callargs["request"].url), ex
-                        )
-            raise
-    return hook
-
-
-@contextmanager
-def patch_httpx(records: "HTTPRecords"):
-    """
-    Applies the patches to httpx.Client.send and httpx.AsyncClient.send.
-
-    This function should be called within an active httpdbg context.
-    """
-    if not isinstance(records, HTTPRecords):
-        warnings.warn("The 'records' object provided is not a valid httpdbg.HTTPRecords instance. Patching may fail.")
-
-    httpx.Client.send = decorate(
-        records, httpx.Client.send, set_hook_for_httpx_send
-    )
-    httpx.AsyncClient.send = decorate(
-        records, httpx.AsyncClient.send, set_hook_for_httpx_send_async
-    )
-    print("Successfully patched httpx.send methods for httpdbg.")
-
-    yield
-
-    """Removes the patches from httpx.Client.send and httpx.AsyncClient.send."""
-    httpx.Client.send = undecorate(httpx.Client.send)
-    httpx.AsyncClient.send = undecorate(httpx.AsyncClient.send)
-    print("Removed httpx.send patches.")
-
-
-
 def run_with_http_tracer():
     import httpdbg.hooks.all
 
@@ -707,50 +611,36 @@ def run_with_http_tracer():
     def empty_hook(*args, **kwargs):
         yield
 
-
     httpdbg.hooks.all.hook_fastapi = empty_hook
     httpdbg.hooks.all.hook_uvicorn = empty_hook
-
-    from httpdbg.log import set_env_for_logging, LogLevel
-    from pathlib import Path
-    # import httpx
-    # set_env_for_logging(LogLevel.DEBUG, Path('debug.log'))
 
     tracer = HttpTracer()
     tracer.init()
     tracer.init_worker(0)
 
-    def _run_agent_with_tracer(agent_func):
-        with tracer.trace_context():
-            run_one(agent_func)
-            print(agent_func.__name__)
-            for val in tracer._last_records.requests.values():
-                print(val.__dict__)
-            print(agent_func.__name__, tracer.get_last_trace())
-            for triplet in TripletExporter().export(tracer.get_last_trace()):
-                print(triplet)
+    from agentlightning import configure_logger
+    configure_logger()
 
-    for agent_func in [agent_pure_openai, agent_autogen_multiagent]:
-        print('=================================================')
-        import multiprocessing
-        process = multiprocessing.Process(target=_run_agent_with_tracer, args=(agent_func,))
-        
-        process.start()
-        process.join()
-        # with tracer.trace_context():
-        #     print('before patch', httpx.AsyncClient.request)
-        #         with patch_httpx(tracer._last_records):
-        #             print(httpx.AsyncClient.request)
-        #             run_one(agent_func)
-        # print('after patch', httpx.AsyncClient.request)
-        # time.sleep(0.1)  # Allow some time for the trace to be recorded
+    for agent_func in iterate_over_agents():
+        print(agent_func)
+        if "mcp" in agent_func.__name__:
+            # FIXME: MCP server is not yet supported with HTTP tracer
+            continue
+        tracer.trace_run(
+            run_one,
+            agent_func,
+        )
+
+        print(tracer.get_last_trace())
 
     tracer.teardown_worker(0)
     tracer.teardown()
 
 
 def create_prompt_caches():
-    """Create prompt caches for the agent frameworks."""
+    """Create prompt caches for the agent frameworks.
+    This should only be run once to populate the caches.
+    """
 
     if USE_OPENAI:
         tracer = HttpTracer()
@@ -774,7 +664,22 @@ def create_prompt_caches():
         run_all()
 
 
+def _debug_with_agentops():
+    """This function is for debugging purposes only."""
+    assert "AGENTOPS_API_KEY" in os.environ, "AGENTOPS_API_KEY is not set"
+    from agentlightning.instrumentation.agentops_langchain import instrument_agentops_langchain
+
+    instrument_agentops_langchain()
+    agentops.init()
+    from agentops.integration.callbacks.langchain import LangchainCallbackHandler
+
+    global _langchain_callback_handler
+    _langchain_callback_handler = LangchainCallbackHandler(api_key=os.environ["AGENTOPS_API_KEY"])
+    for agent_func in [agent_langgraph]:
+        run_one(agent_func)
+
+
 if __name__ == "__main__":
-    run_with_agentops_and_upload()
+    run_with_http_tracer()
     # run_with_agentops_tracer()
     # run_with_http_tracer()
