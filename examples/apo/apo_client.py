@@ -5,8 +5,8 @@ import random
 from openai import OpenAI
 
 from agentlightning import configure_logger
-from agentlightning.prompt.litagent import LitAgent
-from agentlightning.prompt.trainer import Trainer
+from agentlightning.litagent import LitAgent
+from agentlightning.trainer import Trainer
 
 
 class SimpleAgent(LitAgent):
@@ -20,7 +20,7 @@ class SimpleAgent(LitAgent):
         )
 
         result = openai.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-4.1-mini",
             messages=[
                 {"role": "system", "content": resources["system_prompt"].template},
                 {"role": "user", "content": task["prompt"]},
