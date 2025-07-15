@@ -1,7 +1,10 @@
 from contextlib import contextmanager
-from typing import Iterator, List, Optional, Any, Dict
+from typing import Iterator, List, Optional, Any, Dict, Callable, Awaitable
 import logging
 import uuid
+import pickle
+import multiprocessing
+import asyncio
 from urllib.parse import urlparse
 
 from .base import BaseTracer
@@ -35,18 +38,27 @@ class HttpTracer(BaseTracer):
         include_body: Whether to include HTTP request and response bodies in the spans.
             Bodies may be large and contain sensitive information. Use with caution.
         include_agentlightning_requests: Whether to include requests initiated by AgentLightning itself.
+        subprocess_mode: Whether to run trace_run and trace_run_async in subprocesses for isolation.
+        subprocess_timeout: Timeout for subprocess execution in seconds.
     """
 
     AGENTLIGHTNING_HEADERS = {"x-agentlightning-client"}
 
     def __init__(
-        self, include_headers: bool = False, include_body: bool = False, include_agentlightning_requests: bool = False
+        self,
+        include_headers: bool = False,
+        include_body: bool = False,
+        include_agentlightning_requests: bool = False,
+        subprocess_mode: bool = False,
+        subprocess_timeout: float = 3600.0,
     ):
         super().__init__()
         self._last_records = None
         self.include_headers = include_headers
         self.include_body = include_body
         self.include_agentlightning_requests = include_agentlightning_requests
+        self.subprocess_mode = subprocess_mode
+        self.subprocess_timeout = subprocess_timeout
 
     def init_worker(self, worker_id: int):
         """
@@ -169,7 +181,7 @@ class HttpTracer(BaseTracer):
             if self.include_body and record.response:
                 body_content = record.response.content
                 if body_content:
-                    # Store raw body content for later parsing/analysis 
+                    # Store raw body content for later parsing/analysis
                     attributes["http.response.body"] = body_content
 
             # Determine span status
@@ -202,3 +214,146 @@ class HttpTracer(BaseTracer):
             spans.append(span)
 
         return spans
+
+    def trace_run(self, func: Callable, *args, **kwargs) -> Any:
+        """
+        A convenience wrapper to trace the execution of a single synchronous function.
+
+        If subprocess_mode is enabled, the function will be executed in an isolated subprocess
+        to prevent HTTP hooks from affecting the parent process.
+
+        Args:
+            func: The synchronous function to execute and trace.
+            *args: Positional arguments to pass to the function.
+            **kwargs: Keyword arguments to pass to the function.
+
+        Returns:
+            The return value of the function.
+        """
+        if self.subprocess_mode:
+            return self._trace_run_subprocess(func, *args, **kwargs)
+        else:
+            return super().trace_run(func, *args, **kwargs)
+
+    async def trace_run_async(self, func: Callable[..., Awaitable], *args, **kwargs) -> Any:
+        """
+        A convenience wrapper to trace the execution of a single asynchronous function.
+
+        If subprocess_mode is enabled, the function will be executed in an isolated subprocess
+        to prevent HTTP hooks from affecting the parent process.
+
+        Args:
+            func: The asynchronous function to execute and trace.
+            *args: Positional arguments to pass to the function.
+            **kwargs: Keyword arguments to pass to the function.
+
+        Returns:
+            The return value of the function.
+        """
+        if self.subprocess_mode:
+            loop = asyncio.get_event_loop()
+            return await loop.run_in_executor(
+                None, self._trace_run_subprocess, func, args, kwargs, True  # True for async
+            )
+        else:
+            return await super().trace_run_async(func, *args, **kwargs)
+
+    def _trace_run_subprocess(self, func: Callable, args=None, kwargs=None, is_async: bool = False) -> Any:
+        """
+        Execute a function in a subprocess with HTTP tracing.
+
+        Args:
+            func: The function to execute.
+            args: Positional arguments to pass to the function.
+            kwargs: Keyword arguments to pass to the function.
+            is_async: Whether the function is asynchronous.
+
+        Returns:
+            The return value of the function.
+        """
+        if args is None:
+            args = ()
+        if kwargs is None:
+            kwargs = {}
+
+        # Create a queue to receive results from the subprocess
+        result_queue = multiprocessing.Queue()
+
+        # Create and start the subprocess
+        process = multiprocessing.Process(
+            target=self._subprocess_worker, args=(func, args, kwargs, result_queue, is_async)
+        )
+        process.start()
+
+        try:
+            # Wait for the process to complete and get the result
+            result = result_queue.get(timeout=self.subprocess_timeout)
+            process.join()
+
+            if result["success"]:
+                # Store the captured records for get_last_trace()
+                self._last_records = result["records"]
+                return result["return_value"]
+            else:
+                if "records" in result:
+                    self._last_records = result["records"]
+                # Re-raise the exception that occurred in the subprocess
+                raise result["exception"]
+
+        except multiprocessing.TimeoutError:
+            process.terminate()
+            process.join()
+            raise TimeoutError("Subprocess execution timed out after 5 minutes")
+        finally:
+            if process.is_alive():
+                process.terminate()
+                process.join()
+
+    def _subprocess_worker(self, func: Callable, args, kwargs, result_queue: multiprocessing.Queue, is_async: bool):
+        """
+        Worker function that runs in the subprocess to execute the traced function.
+
+        Args:
+            func: The function to execute.
+            args: Positional arguments.
+            kwargs: Keyword arguments.
+            result_queue: Queue to send results back to parent process.
+            is_async: Whether the function is asynchronous.
+        """
+        # Create a new tracer instance in the subprocess (without subprocess mode to avoid recursion)
+        subprocess_tracer = HttpTracer(
+            include_headers=self.include_headers,
+            include_body=self.include_body,
+            include_agentlightning_requests=self.include_agentlightning_requests,
+            subprocess_mode=False,  # Disable subprocess mode in the worker
+        )
+
+        try:
+            if is_async:
+                # Run async function in new event loop
+                import asyncio
+
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    return_value = loop.run_until_complete(subprocess_tracer.trace_run_async(func, *args, **kwargs))
+                finally:
+                    loop.close()
+            else:
+                # Run sync function
+                return_value = subprocess_tracer.trace_run(func, *args, **kwargs)
+
+            # Get the captured records
+            records = subprocess_tracer._last_records
+
+            # Send success result back to parent
+            result_queue.put({"success": True, "return_value": return_value, "records": records})
+
+        except Exception as e:
+            # Log the exception
+            logger.exception(f"Error in subprocess worker in http tracer: {e}")
+
+            # Get the captured records even when there's an exception
+            records = subprocess_tracer._last_records
+            # Send error result back to parent
+            result_queue.put({"success": False, "exception": e, "records": records})
