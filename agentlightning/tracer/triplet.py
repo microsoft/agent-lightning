@@ -180,8 +180,8 @@ class TraceTree:
                     name="virtual-node",
                     kind=trace_api.SpanKind.INTERNAL,
                     attributes={},
-                    start_time=children[0].start_time,
-                    end_time=children[-1].end_time,
+                    start_time=min(child.start_time for child in children),
+                    end_time=max(child.end_time for child in children),
                 )
                 return cls(trace_api.format_span_id(node_id), virtual_span, children=children)
             else:
@@ -343,6 +343,9 @@ class TraceTree:
         """
         nodes_to_repair = list(self.children)
         for repair_node in nodes_to_repair:
+            if len(self.children) == 1:
+                # If there is only one child, we don't need to repair the hierarchy.
+                break
             # Find the closest parent span (but not the root itself)
             closest_parent = None
             closest_duration = float("inf")
@@ -353,7 +356,7 @@ class TraceTree:
                     continue
                 if node.start_time <= repair_node.start_time and node.end_time >= repair_node.end_time:
                     duration_delta = node.end_time - repair_node.end_time + repair_node.start_time - node.start_time
-                    if duration_delta < closest_duration:
+                    if duration_delta > 0 and duration_delta < closest_duration:
                         closest_duration = duration_delta
                         closest_parent = node
 
@@ -386,6 +389,7 @@ class TraceTree:
                             # If the reward is already set, skip
                             continue
                         rewards[assign_to_id] = agentops_output.get("value", None)
+                        break
 
         elif reward_match == RewardMatchPolicy.FIRST_SIBLING:
             for item in self.traverse():
@@ -403,6 +407,7 @@ class TraceTree:
                             if assign_to_id in rewards:
                                 continue
                             rewards[assign_to_id] = agentops_output.get("value", None)
+                            break
 
         return rewards
 

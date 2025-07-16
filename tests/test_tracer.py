@@ -584,8 +584,10 @@ AGENTOPS_EXPECTED_TREES = {
     ],
     "openai_agents_sdk_mcp_tool_use": [
         (
-            "calc_agent",
+            "MCP Tool Agent",
             [
+                "openai.chat.completion",
+                "calculate",
                 "openai.chat.completion",
             ],
         )
@@ -612,6 +614,24 @@ AGENTOPS_EXPECTED_TREES = {
             ],
         ),
     ],
+}
+
+AGENTOPS_EXPECTED_TRIPLETS_NUMBER = {
+    "agent_pure_openai": 1,
+    "agent_litellm": 1,
+    "agent_langchain": 1,
+    "agent_langchain_tooluse": 2,
+    "agent_langgraph": 4,
+    "agent_autogen_multiagent": 4,
+    "agent_autogen_mcp": 1,
+    "openai_agents_sdk_eval_hook_and_guardrail": 2,
+    "openai_agents_sdk_mcp_tool_use": 2,
+    "openai_agents_sdk_handoff_tool_output_type_and_reward": 5,
+}
+
+AGENTOPS_EXPECTED_REWARDS = {
+    "openai_agents_sdk_eval_hook_and_guardrail": ([1.0, None], [None, 1.0]),
+    "openai_agents_sdk_handoff_tool_output_type_and_reward": [None, None, 1.0, None, None],
 }
 
 
@@ -658,10 +678,29 @@ def run_with_agentops_tracer():
         #     print(span.span.__dict__)
         tree.repair_hierarchy()
         tree.visualize(f"debug/{agent_func.__name__}")
-        for triplet in TripletExporter().export(tracer.get_last_trace()):
-            print(triplet)
+        # for triplet in TripletExporter().export(tracer.get_last_trace()):
+        #     print(triplet)
+        triplets = TripletExporter().export(tracer.get_last_trace())
+        assert len(triplets) == AGENTOPS_EXPECTED_TRIPLETS_NUMBER[agent_func.__name__], (
+            f"Expected {AGENTOPS_EXPECTED_TRIPLETS_NUMBER[agent_func.__name__]} triplets, "
+            f"but got: {triplets}"
+        )
+        if agent_func.__name__ in AGENTOPS_EXPECTED_REWARDS:
+            if isinstance(AGENTOPS_EXPECTED_REWARDS[agent_func.__name__], tuple):
+                # If the expected rewards are a tuple, make sure at least one of them matches
+                assert any(
+                    [r.reward in expected for r in triplets for expected in AGENTOPS_EXPECTED_REWARDS[agent_func.__name__]]
+                ), (
+                    f"Expected rewards {AGENTOPS_EXPECTED_REWARDS[agent_func.__name__]}, "
+                    f"but got: {triplets}"
+                )
+            else:
+                assert [r.reward for r in triplets] == AGENTOPS_EXPECTED_REWARDS[agent_func.__name__], (
+                    f"Expected rewards {AGENTOPS_EXPECTED_REWARDS[agent_func.__name__]}, "
+                    f"but got: {triplets}"
+                )
 
-    # _langchain_callback_handler = None
+    _langchain_callback_handler = None
 
     tracer.teardown_worker(0)
     tracer.teardown()
@@ -735,7 +774,7 @@ def _debug_with_agentops():
 
     global _langchain_callback_handler
     _langchain_callback_handler = LangchainCallbackHandler(api_key=os.environ["AGENTOPS_API_KEY"])
-    for agent_func in [agent_pure_openai]:
+    for agent_func in [agent_langchain_tooluse]:
         run_one(agent_func)
 
 
