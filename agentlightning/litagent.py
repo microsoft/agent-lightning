@@ -9,6 +9,7 @@ from .types import NamedResources, Rollout, Task, TaskInput, Triplet, RolloutRaw
 if TYPE_CHECKING:
     from .trainer import Trainer
     from .runner import AgentRunner
+    from .tracer import BaseTracer
 
 
 logger = logging.getLogger(__name__)
@@ -58,6 +59,16 @@ class LitAgent:
         if trainer is None:
             raise ValueError("Trainer reference is no longer valid (object has been garbage collected).")
         return trainer
+
+    @property
+    def tracer(self) -> BaseTracer:
+        """
+        Get the tracer for this agent.
+
+        Returns:
+            The BaseTracer instance associated with this agent.
+        """
+        return self.trainer.tracer
 
     def set_runner(self, runner: AgentRunner) -> None:
         """

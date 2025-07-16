@@ -462,8 +462,8 @@ class TraceTree:
             (
                 llm_call.id,
                 Triplet(
-                    prompt=llm_call.span.attributes.get("prompt_token_ids", []),
-                    response=llm_call.span.attributes.get("response_token_ids", []),
+                    prompt={"token_ids": llm_call.span.attributes.get("prompt_token_ids", [])},
+                    response={"token_ids": llm_call.span.attributes.get("response_token_ids", [])},
                     reward=None,
                     metadata=dict(
                         response_id=llm_call.span.attributes.get(

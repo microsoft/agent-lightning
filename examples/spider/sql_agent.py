@@ -25,7 +25,6 @@ from langchain_community.tools.sql_database.tool import QuerySQLDatabaseTool
 from spider_eval.exec_eval import eval_exec_match
 
 import agentlightning
-from agentlightning.trace import get_langchain_callback_handler
 
 agentlightning.configure_logger()
 
@@ -486,7 +485,7 @@ class LitSQLAgent(agentlightning.LitAgent):
             try:
                 result = agent.invoke(
                     {"question": question},
-                    {"callbacks": [get_langchain_callback_handler()], "recursion_limit": 100},
+                    {"callbacks": [self.tracer.get_langchain_callback_handler()], "recursion_limit": 100},
                 )
             except Exception as e:
                 logger.exception(f"[Rollout {rollout_id}] Error during agent invocation: {e}")

@@ -151,14 +151,12 @@ class Trainer(ParallelWorkerBase):
 
         # Now we are in child processes, so we can safely set up the environment.
         agent.set_trainer(self)
+        self._initialize_worker_env(worker_id)
 
         mode = "Async" if is_async else "Sync"
         logger.info(f"[Worker {worker_id}] {mode} worker process started.")
 
-        # Use the pickled tracer (self.tracer) for this worker
-        self.tracer.init_worker(worker_id)
         num_processed = 0
-        self._initialize_worker_env(worker_id)
 
         try:
             client = self.client()
@@ -178,16 +176,16 @@ class Trainer(ParallelWorkerBase):
         except Exception:
             logger.exception(f"[Worker {worker_id}] Unhandled exception in worker loop.")
         finally:
-            self.tracer.teardown_worker(worker_id)
+            self._teardown_worker_env(worker_id)
 
         return num_processed
 
     def _initialize_worker_env(self, worker_id: int):
-        logger.info(f"[Worker {worker_id}] Setting up environment...")  # worker_id included in process name
+        logger.info(f"[Worker {worker_id}] Setting up trainer environment...")  # worker_id included in process name
         self.tracer.init_worker(worker_id)
 
     def _teardown_worker_env(self, worker_id: int):
-        logger.info(f"[Worker {worker_id}] Cleaning up environment...")
+        logger.info(f"[Worker {worker_id}] Cleaning up trainer environment...")
         self.tracer.teardown_worker(worker_id)
         logger.info(f"[Worker {worker_id}] Environment cleanup complete.")
 

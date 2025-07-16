@@ -98,7 +98,7 @@ class AgentOpsTracer(BaseTracer):
 
     def init_worker(self, worker_id: int):
         super().init_worker(worker_id)
-        logger.info(f"[Worker {worker_id}] Setting up environment...")  # worker_id included in process name
+        logger.info(f"[Worker {worker_id}] Setting up tracer...")  # worker_id included in process name
 
         if self.instrument_managed:
             self.instrument(worker_id)
