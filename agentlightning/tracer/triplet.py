@@ -341,34 +341,40 @@ class TraceTree:
 
         if reward_match == RewardMatchPolicy.FIRST_OCCURRENCE:
             time_sorted: List[TraceTree] = sorted(self.traverse(), key=lambda x: x.start_time)
-            assign_to: int | None = None
+            assign_to: List[Tuple[str, int]] = []
             for item in time_sorted:
                 if item.id in llm_call_ids:
-                    assign_to = item.id
+                    assign_to.append((item.id, item.end_time))
 
                 # get reward
                 agentops_output = item.maybe_reward_dict()
                 if agentops_output and agentops_output.get("type") == "reward":
-                    if assign_to is not None:
+                    for assign_to_id, assign_to_end_time in reversed(assign_to):
+                        # This reward happens before the end of the LLM call.
+                        if assign_to_end_time > item.start_time:
+                            continue
                         # Ok, we found someone to assign to
-                        if assign_to in rewards:
+                        if assign_to_id in rewards:
                             # If the reward is already set, skip
                             continue
-                        rewards[assign_to] = agentops_output.get("value", None)
+                        rewards[assign_to_id] = agentops_output.get("value", None)
 
         elif reward_match == RewardMatchPolicy.FIRST_SIBLING:
             for item in self.traverse():
-                assign_to: int | None = None
+                assign_to: List[Tuple[str, int]] = []
                 for child in item.children:
                     if child.id in llm_call_ids:
-                        assign_to = child.id
+                        assign_to.append(child.id)
 
                     agentops_output = item.maybe_reward_dict()
                     if agentops_output and agentops_output.get("type") == "reward":
-                        if assign_to is not None:
-                            if assign_to in rewards:
+                        for assign_to_id, assign_to_end_time in reversed(assign_to):
+                            if assign_to_end_time > item.start_time:
+                                # This reward happens before the end of the LLM call.
                                 continue
-                            rewards[assign_to] = agentops_output.get("value", None)
+                            if assign_to_id in rewards:
+                                continue
+                            rewards[assign_to_id] = agentops_output.get("value", None)
 
         return rewards
 

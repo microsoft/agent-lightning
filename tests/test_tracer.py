@@ -556,6 +556,65 @@ async def openai_agents_sdk_handoff_tool_output_type_and_reward():
     assert "president" in result2.final_output.lower()
 
 
+AGENTOPS_EXPECTED_TREES = {
+    "agent_pure_openai": [("openai.chat.completion", ["openai.chat.completion"])],
+    "agent_litellm": [("openai.chat.completion", ["openai.chat.completion"])],
+    "agent_langchain": [("openai.chat.completion", ["openai.chat.completion"])],
+    "agent_langchain_tooluse": [
+        ("chat_model.llm", ["openai.chat.completion"]),
+        ("chat_model.llm", ["openai.chat.completion"]),
+    ],
+    "agent_langgraph": [
+        ("call_get_schema", ["openai.chat.completion"]),
+        ("generate_query", ["openai.chat.completion"]),
+        ("check_query", ["openai.chat.completion"]),
+        ("run_query", ["openai.chat.completion"]),
+    ],
+    "agent_autogen_multiagent": [
+        ("primary", ["openai.chat.completion"]),
+        ("critic", ["openai.chat.completion"]),
+    ],
+    "agent_autogen_mcp": [
+        ("calc_agent", ["openai.chat.completion"]),
+    ],
+    "openai_agents_sdk_eval_hook_and_guardrail": [
+        ("homework_guardrail", ["openai.chat.completion"]),
+        ("Main Agent", ["openai.chat.completion"]),
+        "agentops_reward_operation.task",
+    ],
+    "openai_agents_sdk_mcp_tool_use": [
+        (
+            "calc_agent",
+            [
+                "openai.chat.completion",
+            ],
+        )
+    ],
+    "openai_agents_sdk_handoff_tool_output_type_and_reward": [
+        (
+            "TriangeAgent",
+            [
+                "openai.chat.completion",
+            ],
+        ),
+        (
+            "MathAgent",
+            [
+                "openai.chat.completion",
+                "openai.chat.completion",
+                "agentops_reward_operation.task",
+            ],
+        ),
+        (
+            "HistoryAgent",
+            [
+                "openai.chat.completion",
+            ],
+        ),
+    ],
+}
+
+
 def iterate_over_agents():
     yield from [
         agent_pure_openai,
@@ -589,12 +648,12 @@ def run_with_agentops_tracer():
     global _langchain_callback_handler
     _langchain_callback_handler = tracer.get_langchain_callback_handler()
 
-    for agent_func in [agent_langgraph]:
+    for agent_func in iterate_over_agents():
         with tracer.trace_context():
             run_one(agent_func)
-        for span in tracer.get_last_trace():
-            print(span.name)
-        TraceTree.from_spans(tracer.get_last_trace()).visualize(f"debug/{agent_func.__name__}")
+        tree = TraceTree.from_spans(tracer.get_last_trace())
+        tree.repair_hierarchy()
+        tree.visualize(f"debug/{agent_func.__name__}")
         for triplet in TripletExporter().export(tracer.get_last_trace()):
             print(triplet)
 
@@ -617,9 +676,6 @@ def run_with_http_tracer():
     tracer = HttpTracer()
     tracer.init()
     tracer.init_worker(0)
-
-    from agentlightning import configure_logger
-    configure_logger()
 
     for agent_func in iterate_over_agents():
         print(agent_func)
@@ -680,6 +736,6 @@ def _debug_with_agentops():
 
 
 if __name__ == "__main__":
-    run_with_http_tracer()
-    # run_with_agentops_tracer()
+    # run_with_http_tracer()
+    run_with_agentops_tracer()
     # run_with_http_tracer()
