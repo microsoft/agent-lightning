@@ -40,6 +40,7 @@ class AgentRunner(ParallelWorkerBase):
         agent: LitAgent,
         client: AgentLightningClient,
         tracer: BaseTracer,
+        triplet_exporter: TripletExporter,
         worker_id: Optional[int] = None,
         max_tasks: Optional[int] = None,
     ):
@@ -47,6 +48,9 @@ class AgentRunner(ParallelWorkerBase):
         self.agent = agent
         self.client = client
         self.tracer = tracer
+        self.triplet_exporter = triplet_exporter
+
+        # Worker-specific attributes
         self.worker_id = worker_id
         self.max_tasks = max_tasks
 
@@ -109,7 +113,7 @@ class AgentRunner(ParallelWorkerBase):
 
         # Always extract triplets from the trace using TripletExporter
         if trace_spans:
-            triplets = TripletExporter().export(trace_spans)
+            triplets = self.triplet_exporter.export(trace_spans)
 
         # If the agent has triplets, use the last one for final reward if not set
         if triplets and triplets[-1].reward is not None and final_reward is None:

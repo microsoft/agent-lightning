@@ -4,18 +4,18 @@ import multiprocessing
 import os
 import signal
 import time
-from typing import List, Optional
+from typing import List, Optional, Union
 import importlib
 
 import agentops
 
-from .instrumentation.agentops import AgentOpsServerManager
-from .instrumentation import instrument_all
 from .client import AgentLightningClient
 from .litagent import LitAgent
 from .runner import AgentRunner
 from .types import ParallelWorkerBase
+from .tracer.base import BaseTracer
 from .tracer.agentops import AgentOpsTracer
+from .tracer.triplet import TripletExporter
 
 
 logger = logging.getLogger(__name__)
@@ -35,13 +35,11 @@ class Trainer(ParallelWorkerBase):
                    workers run until no more tasks are available.
         daemon: Whether worker processes should be daemons. Daemon processes
                 are terminated automatically when the main process exits.
-        agentops_managed: Whether to automatically manage `agentops`.
-                          When set to true, trainer calls `agentops.init()` automatically and launching an agentops endpoint locally,
-                          in which case the agentops will not behave normally.
-                          If not, you are responsible for calling and using it before using the trainer.
-        instrument_managed: Whether to automatically manage instrumentation.
-                            When set to false, you will manage the instrumentation yourself and the trainer might not work as expected.
-        tracer_init: The initialization method for the tracer.
+        tracer: A tracer instance, or a string pointing to the class full name or a dictionary with a 'type' key
+                that specifies the class full name and other initialization parameters.
+                If None, a default `AgentOpsTracer` will be created with the current settings.
+        triplet_exporter: An instance of `TripletExporter` to export triplets from traces,
+                          or a dictionary with the initialization parameters for the exporter.
     """
 
     def __init__(
@@ -50,32 +48,25 @@ class Trainer(ParallelWorkerBase):
         n_workers: int = 1,
         max_tasks: Optional[int] = None,
         daemon: bool = True,
-        agentops_managed: bool = True,
-        instrument_managed: bool = True,
-        tracer_init=None,
+        tracer: Union[BaseTracer, str, dict, None] = None,
+        triplet_exporter: Union[TripletExporter, dict, None] = None
     ):
         super().__init__()
         self.n_workers = n_workers
         self.max_tasks = max_tasks
         self.daemon = daemon
-        self.agentops_managed = agentops_managed
-        self.instrument_managed = instrument_managed
-        self._agentops_server_manager: AgentOpsServerManager | None = None
-        self._agentops_server_port_val: int | None = None  # Stores the picklable port number
         self._client: AgentLightningClient | None = None  # Will be initialized in fit method
 
-        # Tracer instantiation logic
-        self.tracer = self._make_tracer(tracer_init)
+        self.tracer = self._make_tracer(tracer)
+        if isinstance(triplet_exporter, TripletExporter):
+            self.triplet_exporter = triplet_exporter
+        elif isinstance(triplet_exporter, dict):
+            self.triplet_exporter = TripletExporter(**triplet_exporter)
+        elif triplet_exporter is None:
+            self.triplet_exporter = TripletExporter()
+        else:
+            raise ValueError(f"Invalid triplet_exporter type: {type(triplet_exporter)}. Expected TripletExporter, dict, or None.")
 
-        if self.agentops_managed:
-            self._agentops_server_manager = AgentOpsServerManager(self.daemon)
-
-        if not self.agentops_managed and self.n_workers > 1:
-            logger.warning(
-                "Using n_workers > 1 with agentops_managed=False. Ensure manual AgentOps setup is process-safe."
-            )
-        if not self.instrument_managed:
-            logger.warning("instrument_managed=False. You are responsible for all instrumentation.")
         if not self.daemon:
             logger.warning(
                 "daemon=False. Worker processes are non-daemonic. "
@@ -83,46 +74,46 @@ class Trainer(ParallelWorkerBase):
                 "The cleanup must be handled manually."
             )
 
-    def _make_tracer(self, tracer_init):
-        if tracer_init is None:
-            return AgentOpsTracer(agentops_managed=self.agentops_managed, instrument_managed=self.instrument_managed, daemon=self.daemon)
-        if hasattr(tracer_init, 'trace_context') and hasattr(tracer_init, 'get_last_trace'):
-            return tracer_init
-        if isinstance(tracer_init, dict):
-            tracer_type = tracer_init.get('type')
+    def _make_tracer(self, tracer: Union[BaseTracer, str, dict, None]) -> BaseTracer:
+        """Creates a tracer instance based on the provided configuration."""
+        if isinstance(tracer, BaseTracer):
+            return tracer
+        if isinstance(tracer, str):
+            module_name, class_name = tracer.rsplit('.', 1)
+            module = importlib.import_module(module_name)
+            tracer_cls = getattr(module, class_name)
+            return tracer_cls()
+        if isinstance(tracer, dict):
+            tracer_type = tracer.get('type')
             if tracer_type is None:
-                raise ValueError("tracer_init dict must have a 'type' key with the class full name")
+                raise ValueError("tracer dict must have a 'type' key with the class full name")
             module_name, class_name = tracer_type.rsplit('.', 1)
             module = importlib.import_module(module_name)
             tracer_cls = getattr(module, class_name)
-            tracer_args = {k: v for k, v in tracer_init.items() if k != 'type'}
-            return tracer_cls(**tracer_args)
-        raise ValueError(f"Invalid tracer_init: {tracer_init}")
+            # Remove 'type' key and pass remaining keys as kwargs
+            tracer_kwargs = {k: v for k, v in tracer.items() if k != 'type'}
+            return tracer_cls(**tracer_kwargs)
+        if tracer is None:
+            return AgentOpsTracer(
+                agentops_managed=True,
+                instrument_managed=True,
+                daemon=self.daemon
+            )
+        raise ValueError(f"Invalid tracer type: {type(tracer)}. Expected BaseTracer, str, dict, or None.")
 
     def init(self, endpoint: str) -> None:
         logger.info(f"Initializing Trainer...")
 
         self._init_client(endpoint)
 
-        if self.agentops_managed and self._agentops_server_manager:
-            self._agentops_server_manager.start()
-            self._agentops_server_port_val = self._agentops_server_manager.get_port()
-            if self._agentops_server_port_val is None:
-                if (
-                    self._agentops_server_manager.server_process is not None
-                    and self._agentops_server_manager.server_process.is_alive()
-                ):
-                    raise RuntimeError("AgentOps server started but port is None. Check server manager logic.")
-                elif (
-                    self._agentops_server_port_val is None and self._agentops_server_manager.server_process is None
-                ):  # Server failed to start
-                    raise RuntimeError("AgentOps server manager indicates server is not running and port is None.")
+        self.tracer.init()
+
         logger.info(f"Trainer main initialization complete.")
 
-    def cleanup(self) -> None:
+    def teardown(self) -> None:
         logger.info(f"Cleaning up Trainer...")
-        if self.agentops_managed and self._agentops_server_manager:
-            self._agentops_server_manager.stop()
+        self.tracer.teardown()
+
         self._verl_client = None
         logger.info(f"Trainer main cleanup complete.")
 
@@ -175,6 +166,7 @@ class Trainer(ParallelWorkerBase):
                 agent=agent,
                 client=client,
                 tracer=self.tracer,
+                triplet_exporter=self.triplet_exporter,
                 max_tasks=self.max_tasks,
                 worker_id=worker_id,
             )
@@ -192,37 +184,11 @@ class Trainer(ParallelWorkerBase):
 
     def _initialize_worker_env(self, worker_id: int):
         logger.info(f"[Worker {worker_id}] Setting up environment...")  # worker_id included in process name
-
-        if self.instrument_managed:
-            instrument_all()
-            logger.info(f"[Worker {worker_id}] Instrumentation applied.")
-
-        if self.agentops_managed:
-            if self._agentops_server_port_val:  # Use the stored, picklable port value
-                base_url = f"http://localhost:{self._agentops_server_port_val}"
-                env_vars_to_set = {
-                    "AGENTOPS_API_KEY": "dummy",
-                    "AGENTOPS_API_ENDPOINT": base_url,
-                    "AGENTOPS_APP_URL": f"{base_url}/notavailable",
-                    "AGENTOPS_EXPORTER_ENDPOINT": f"{base_url}/traces",
-                }
-                for key, value in env_vars_to_set.items():
-                    os.environ[key] = value
-                    logger.info(f"[Worker {worker_id}] Env var set: {key}={value}")
-            else:
-                logger.warning(
-                    f"[Worker {worker_id}] AgentOps managed, but local server port is not available. Client may not connect as expected."
-                )
-
-            if not agentops.get_client().initialized:
-                agentops.init()
-                logger.info(f"[Worker {worker_id}] AgentOps client initialized.")
-            else:
-                logger.warning(f"[Worker {worker_id}] AgentOps client was already initialized.")
+        self.tracer.init_worker(worker_id)
 
     def _teardown_worker_env(self, worker_id: int):
         logger.info(f"[Worker {worker_id}] Cleaning up environment...")
-        # Do nothing for now.
+        self.tracer.teardown_worker(worker_id)
         logger.info(f"[Worker {worker_id}] Environment cleanup complete.")
 
     @staticmethod
@@ -315,6 +281,6 @@ class Trainer(ParallelWorkerBase):
             logger.exception(f"Unhandled exception in fit method.")
         finally:
             if self.daemon:
-                self.cleanup()
+                self.teardown()
             else:
                 logger.info("Main process exiting. Please use Trainer.kill_orphaned_processes() for cleanup.")
