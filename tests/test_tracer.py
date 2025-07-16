@@ -649,9 +649,13 @@ def run_with_agentops_tracer():
     _langchain_callback_handler = tracer.get_langchain_callback_handler()
 
     for agent_func in iterate_over_agents():
-        with tracer.trace_context():
-            run_one(agent_func)
+        tracer.trace_run(
+            run_one,
+            agent_func,
+        )
         tree = TraceTree.from_spans(tracer.get_last_trace())
+        # for span in tree.traverse():
+        #     print(span.span.__dict__)
         tree.repair_hierarchy()
         tree.visualize(f"debug/{agent_func.__name__}")
         for triplet in TripletExporter().export(tracer.get_last_trace()):
@@ -731,11 +735,11 @@ def _debug_with_agentops():
 
     global _langchain_callback_handler
     _langchain_callback_handler = LangchainCallbackHandler(api_key=os.environ["AGENTOPS_API_KEY"])
-    for agent_func in [agent_langgraph]:
+    for agent_func in [agent_pure_openai]:
         run_one(agent_func)
 
 
 if __name__ == "__main__":
-    # run_with_http_tracer()
     run_with_agentops_tracer()
     # run_with_http_tracer()
+    # _debug_with_agentops()

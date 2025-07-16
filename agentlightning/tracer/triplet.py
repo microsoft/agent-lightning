@@ -266,10 +266,13 @@ class TraceTree:
 
     def find_llm_calls(
         self,
+        *,
         llm_call_match: str,
         agent_match: Optional[str],
         within_matching_subtree: str | None = None,
         within_reward: Optional[bool] = None,
+        within_llm_call: Optional[bool] = None,
+        existing_llm_call_response_ids: Optional[set[str]] = None,
     ) -> List[Tuple["TraceTree", str]]:
         """Find all LLM calls in the trace tree.
 
@@ -280,10 +283,28 @@ class TraceTree:
         """
         llm_calls: List[Tuple[TraceTree, str]] = []
 
-        if within_matching_subtree is not None and (within_reward is None or not within_reward):
-            # We are in an interesting agent subtree, and not in a reward span.
-            if re.search(llm_call_match, self.span.name):
+        is_llm_call = True
+        if within_matching_subtree is None or within_reward is True:
+            # We must be in an interesting agent subtree, and not in a reward span.
+            is_llm_call = False
+        if re.search(llm_call_match, self.span.name) is None:
+            # The span name does not match the LLM call match.
+            is_llm_call = False
+        if is_llm_call:
+            # Check the response id
+            response_id = self.span.attributes.get("gen_ai.response.id")
+            if response_id is None and within_llm_call is True:
+                is_llm_call = False
+            if response_id is not None and existing_llm_call_response_ids is not None and response_id in existing_llm_call_response_ids:
+                is_llm_call = False
+
+            if is_llm_call:
                 llm_calls.append((self, within_matching_subtree))
+                existing_llm_call_response_ids = existing_llm_call_response_ids or set()
+                if response_id is not None:
+                    existing_llm_call_response_ids.add(response_id)
+                if within_llm_call is not None:
+                    within_llm_call = True
 
         agent_name = self.agent_name()
         if agent_name is not None:
@@ -296,7 +317,14 @@ class TraceTree:
             within_reward = True
 
         for child in self.children:
-            llm_calls.extend(child.find_llm_calls(llm_call_match, agent_match, within_matching_subtree, within_reward))
+            llm_calls.extend(child.find_llm_calls(
+                llm_call_match=llm_call_match,
+                agent_match=agent_match,
+                within_matching_subtree=within_matching_subtree,
+                within_reward=within_reward,
+                within_llm_call=within_llm_call,
+                existing_llm_call_response_ids=existing_llm_call_response_ids,
+            ))
 
         return llm_calls
 
@@ -383,6 +411,7 @@ class TraceTree:
         llm_call_match: str = r"openai\.chat\.completion",
         agent_match: Optional[str] = None,
         exclude_llm_call_in_reward: bool = True,
+        dedup_llm_call: bool = True,
         reward_match: RewardMatchPolicy = RewardMatchPolicy.FIRST_OCCURRENCE,
         final_reward: Optional[float] = None,
     ) -> List[Triplet]:
@@ -402,10 +431,12 @@ class TraceTree:
         """
         # Find all LLM calls
         llm_calls = self.find_llm_calls(
-            llm_call_match,
-            agent_match,
-            "*" if agent_match is None else None,
-            False if exclude_llm_call_in_reward else None,
+            llm_call_match=llm_call_match,
+            agent_match=agent_match,
+            within_matching_subtree="*" if agent_match is None else None,
+            within_reward=False if exclude_llm_call_in_reward else None,
+            within_llm_call=False if dedup_llm_call else None,
+            existing_llm_call_response_ids=set(),
         )
         id_transitions = [
             (
