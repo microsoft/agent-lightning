@@ -23,6 +23,7 @@ import os
 import re
 import httpx
 import difflib
+import pprint
 from contextlib import contextmanager
 from unittest.mock import Mock, patch, AsyncMock, MagicMock
 from typing import Dict, Any, List, Optional
@@ -557,62 +558,42 @@ async def openai_agents_sdk_handoff_tool_output_type_and_reward():
 
 
 AGENTOPS_EXPECTED_TREES = {
-    "agent_pure_openai": [("openai.chat.completion", ["openai.chat.completion"])],
-    "agent_litellm": [("openai.chat.completion", ["openai.chat.completion"])],
-    "agent_langchain": [("openai.chat.completion", ["openai.chat.completion"])],
+    "agent_pure_openai": [("openai.chat.completion", "openai.chat.completion")],
+    "agent_litellm": [("openai.chat.completion", "openai.chat.completion")],
+    "agent_langchain": [("openai.chat.completion", "openai.chat.completion")],
     "agent_langchain_tooluse": [
-        ("chat_model.llm", ["openai.chat.completion"]),
-        ("chat_model.llm", ["openai.chat.completion"]),
+        ("chat_model.llm", "openai.chat.completion"),
+        ("chat_model.llm", "openai.chat.completion"),
     ],
     "agent_langgraph": [
-        ("call_get_schema", ["openai.chat.completion"]),
-        ("generate_query", ["openai.chat.completion"]),
-        ("check_query", ["openai.chat.completion"]),
-        ("run_query", ["openai.chat.completion"]),
+        ("call_get_schema", "openai.chat.completion"),
+        ("generate_query", "openai.chat.completion"),
+        ("check_query", "openai.chat.completion"),
+        ("run_query", "tool.tool"),
     ],
     "agent_autogen_multiagent": [
-        ("primary", ["openai.chat.completion"]),
-        ("critic", ["openai.chat.completion"]),
+        ("primary", "openai.chat.completion"),
+        ("critic", "openai.chat.completion"),
     ],
     "agent_autogen_mcp": [
-        ("calc_agent", ["openai.chat.completion"]),
+        ("calc_agent", "openai.chat.completion"),
     ],
     "openai_agents_sdk_eval_hook_and_guardrail": [
-        ("homework_guardrail", ["openai.chat.completion"]),
-        ("Main Agent", ["openai.chat.completion"]),
-        "agentops_reward_operation.task",
+        ("homework_guardrail", "openai.chat.completion"),
+        ("Main Agent", "openai.chat.completion"),
+        ("Main Agent", "agentops_reward_operation.task")
     ],
     "openai_agents_sdk_mcp_tool_use": [
-        (
-            "MCP Tool Agent",
-            [
-                "openai.chat.completion",
-                "calculate",
-                "openai.chat.completion",
-            ],
-        )
+        ("MCP Tool Agent", "openai.chat.completion"),
+        ("MCP Tool Agent", "calculate"),
+        ("MCP Tool Agent", "openai.chat.completion"),
     ],
     "openai_agents_sdk_handoff_tool_output_type_and_reward": [
-        (
-            "TriangeAgent",
-            [
-                "openai.chat.completion",
-            ],
-        ),
-        (
-            "MathAgent",
-            [
-                "openai.chat.completion",
-                "openai.chat.completion",
-                "agentops_reward_operation.task",
-            ],
-        ),
-        (
-            "HistoryAgent",
-            [
-                "openai.chat.completion",
-            ],
-        ),
+        ("TriageAgent", "openai.chat.completion"),
+        ("MathAgent", "openai.chat.completion"),
+        ("MathAgent", "openai.chat.completion"),
+        ("MathAgent", "agentops_reward_operation.task"),
+        ("HistoryAgent", "openai.chat.completion"),
     ],
 }
 
@@ -633,6 +614,43 @@ AGENTOPS_EXPECTED_REWARDS = {
     "openai_agents_sdk_eval_hook_and_guardrail": ([1.0, None], [None, 1.0]),
     "openai_agents_sdk_handoff_tool_output_type_and_reward": [None, None, 1.0, None, None],
 }
+
+
+def assert_expected_pairs_in_tree(root_tuple, expected_pairs):
+    """
+    Assert that every (ancestor_name, child_name) pair in `expected_pairs`
+    occurs somewhere in the tree produced by TraceTree.names_tuple().
+    """
+
+    # Collect every node's full path from root → node
+    paths = []              # e.g. [["root", "A", "B"], …]
+    def _collect(node_tuple, prefix):
+        name, children = node_tuple
+        cur_path = prefix + [name]
+        paths.append(cur_path)
+        for child in children:
+            _collect(child, cur_path)
+    _collect(root_tuple, [])
+
+    # Greedy—but safe—matching of each expected pair
+    used_child_paths: set[tuple] = set()
+
+    for anc_name, child_name in expected_pairs:
+        matched = False
+        for p in paths:
+            if child_name not in p[-1] or tuple(p) in used_child_paths:
+                continue
+            if any(anc_name in pv for pv in p[:-1]): # ancestor appears anywhere above
+                used_child_paths.add(tuple(p))
+                matched = True
+                break
+        if not matched:
+            raise AssertionError(
+                f"Expected ancestor/child pair ({anc_name!r}, {child_name!r}) "
+                "not found or child already matched.\n"
+                f"Root tuple: {pprint.pformat(root_tuple)}\n",
+                f"Expected pairs: {expected_pairs}"
+            )
 
 
 def iterate_over_agents():
@@ -678,6 +696,12 @@ def run_with_agentops_tracer():
         #     print(span.span.__dict__)
         tree.repair_hierarchy()
         tree.visualize(f"debug/{agent_func.__name__}")
+
+        assert_expected_pairs_in_tree(
+            tree.names_tuple(),
+            AGENTOPS_EXPECTED_TREES[agent_func.__name__]
+        )
+
         # for triplet in TripletExporter().export(tracer.get_last_trace()):
         #     print(triplet)
         triplets = TripletExporter().export(tracer.get_last_trace())
@@ -692,12 +716,12 @@ def run_with_agentops_tracer():
                     [r.reward in expected for r in triplets for expected in AGENTOPS_EXPECTED_REWARDS[agent_func.__name__]]
                 ), (
                     f"Expected rewards {AGENTOPS_EXPECTED_REWARDS[agent_func.__name__]}, "
-                    f"but got: {triplets}"
+                    f"but got: {pprint.pformat(triplets)}"
                 )
             else:
                 assert [r.reward for r in triplets] == AGENTOPS_EXPECTED_REWARDS[agent_func.__name__], (
                     f"Expected rewards {AGENTOPS_EXPECTED_REWARDS[agent_func.__name__]}, "
-                    f"but got: {triplets}"
+                    f"but got: {pprint.pformat(triplets)}"
                 )
 
     _langchain_callback_handler = None

@@ -117,6 +117,21 @@ class TraceTree:
         visit(self)
         dot.render(filename, format="png", cleanup=True)
 
+    def names_tuple(self) -> Tuple[str, List[Any]]:
+        """Return the span name, and a list of children.
+        Each child is also a tuple of span name and a list of children.
+        Useful for debugging and testing.
+        """
+        name = self.span.name
+        agent_name = self.agent_name()
+        if agent_name is not None:
+            name += " [" + agent_name + "]"
+        children_names = []
+        for child in self.children:
+            child_name, child_children = child.names_tuple()
+            children_names.append((child_name, child_children))
+        return name, children_names
+
     def traverse(self) -> List["TraceTree"]:
         """
         Traverse the trace tree and return a list of all spans.
