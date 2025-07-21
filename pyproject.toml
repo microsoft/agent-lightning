@@ -9,7 +9,7 @@ dependencies = [
   "psutil",
   "setproctitle",
   "flask",
-  "agentops",
+  "agentops<0.4.18",
   "httpdbg",
 ]
 

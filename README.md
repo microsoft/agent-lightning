@@ -1,8 +1,8 @@
 # Agent Lightning
 
-**Warning: This project is currently in a research preview stage. The APIs are not stable and the functionalities are not well tested.**
+Welcome to Agent Lightning! Agent Lightning is a flexible and extensible training framework that enables seamless model training for any existing agent framework.
 
-Welcome to Agent Lightning! This guide will walk you through setting up and running the project.
+This guide will walk you through setting up and running the project.
 
 ## Installation
 
@@ -16,7 +16,7 @@ We strongly recommend creating a new virtual environment to avoid conflicts with
 
 Next, let's install the essential packages: `uv`, `PyTorch`, `FlashAttention`, and `vLLM`.
 
-  * **Install `uv`** (This is required for some MCP agents):
+  * **Install `uv`** (This is required for some MCP agents; otherwise some agents might hang):
 
     ```bash
     curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -26,27 +26,19 @@ Next, let's install the essential packages: `uv`, `PyTorch`, `FlashAttention`, a
     The following versions and installation order have been tested and are confirmed to work.
 
     ```bash
-    pip install torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cu124
+    pip install torch==2.7.0 torchvision==0.22.0 torchaudio==2.7.0 --index-url https://download.pytorch.org/whl/cu128
     pip install flash-attn --no-build-isolation
-    pip install vllm==v0.8.5.post1
+    pip install vllm==0.9.2
     ```
 
-### 3. Install Patched VERL
+### 3. Install VERL
 
-Agent Lightning requires a patched version of VERL for full compatibility. If you have a different version of VERL installed, please uninstall it first.
+Agent Lightning requires VERL for RL training. Please install the latest version from main branch.
 
 ```bash
-# Clone the specific commit of VERL
 git clone https://github.com/volcengine/verl /path/to/your/verl
 cd /path/to/your/verl
-git checkout 2dc3e0ebadb479bb3f2b48cfc7f28a3b70d5ce60
-
-# Install the patched version
 pip install -e .
-
-# Apply the patch from Agent Lightning
-cd /path/to/agentlightning
-bash scripts/verl_git_apply.sh /path/to/your/verl
 ```
 
 ### 4. Install Agent Lightning
@@ -84,13 +76,6 @@ pip install sqlparse nltk
 
 Don't worry if dependency conflicts arise during this step. Follow the installation order above and the conflicts generally do not matter.
 
-## Development Practices
-
-When developing RL algorithms with Agent Lightning, we recommend the following practices:
-
-1. Keep VERL in a separate repository.
-2. Use `scripts/verl_git_diff.sh` to check in changes to VERL into Agent Lightning as a patch.
-
 ## Architecture
 
 Currently, Agent Lightning is built around a **training server** and one or multiple **agents**.
@@ -105,9 +90,9 @@ For more detailed examples, please see the `examples` folder.
 
 ## Important Caveats
 
-1.  **AgentOps Integration**: Agent Lightning uses [AgentOps](https://github.com/AgentOps-AI/agentops) for agent tracking by default. If you're already using AgentOps in your own code, you'll need to disable our managed AgentOps client by setting `agentops_managed` to `False` in the `Trainer` and handle your integration by yourself.
+1.  **AgentOps Integration**: Agent Lightning uses [AgentOps](https://github.com/AgentOps-AI/agentops) for agent tracking by default. If you're already using AgentOps in your own code, you'll need to disable our managed AgentOps client by modifying the `tracer` parameter of trainer.
 
-2.  **Debugging Traces**: If you encounter issues with tracing, you can visualize the trace tree using `processor.last_trace()._tree_visualize("tree_graph")`. Please note that this API is experimental and may change in future releases.
+2.  **Debugging Traces**: If you encounter issues with tracing, you can visualize the trace tree using `tracer.last_trace().visualize("tree_graph")`. Please note that this API is experimental and may change in future releases.
 
 3.  **Launching the Server and Agents**: Currently, the training server and agent clients must be launched in separate processes. You can open two terminal windows or run one of them in the background. The order in which you launch them generally doesn't matter.
 
