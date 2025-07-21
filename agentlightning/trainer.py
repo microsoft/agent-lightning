@@ -30,6 +30,7 @@ class Trainer(ParallelWorkerBase):
     running a client-side agent fleet.
 
     Attributes:
+        dev: If True, rollouts are run against the dev endpoint provided in `fit`.
         n_workers: Number of agent workers (processes) to run in parallel.
         max_tasks: Maximum number of tasks to process per worker. If None,
                    workers run until no more tasks are available.
@@ -45,16 +46,18 @@ class Trainer(ParallelWorkerBase):
     def __init__(
         self,
         *,
+        dev: bool = False,
         n_workers: int = 1,
         max_tasks: Optional[int] = None,
         daemon: bool = True,
         tracer: Union[BaseTracer, str, dict, None] = None,
-        triplet_exporter: Union[TripletExporter, dict, None] = None
+        triplet_exporter: Union[TripletExporter, dict, None] = None,
     ):
         super().__init__()
         self.n_workers = n_workers
         self.max_tasks = max_tasks
         self.daemon = daemon
+        self.dev = dev
         self._client: AgentLightningClient | None = None  # Will be initialized in fit method
 
         self.tracer = self._make_tracer(tracer)
@@ -114,7 +117,7 @@ class Trainer(ParallelWorkerBase):
         logger.info(f"Cleaning up Trainer...")
         self.tracer.teardown()
 
-        self._verl_client = None
+        self._client = None
         logger.info(f"Trainer main cleanup complete.")
 
     def client(self) -> AgentLightningClient:
@@ -202,7 +205,7 @@ class Trainer(ParallelWorkerBase):
             if proc.name().startswith("AgentLightning-"):
                 proc.kill()
 
-    def fit(self, agent: LitAgent, endpoint: str) -> None:
+    def fit(self, agent: LitAgent, backend: str, dev_backend: Optional[str] = None):
         self.init(endpoint)
         processes: List[multiprocessing.Process] = []
 

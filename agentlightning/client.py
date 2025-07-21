@@ -251,3 +251,20 @@ class AgentLightningClient:
         url = urllib.parse.urljoin(self.endpoint, self._report_rollout_uri)
         payload = rollout.model_dump(mode="json")
         return self._post_json(url, payload)
+
+
+
+class LocalClient(AgentLightningClient):
+    """A local task manager for development that provides sample tasks and resources.
+    Mock the APIs to fetch tasks and resources from a local queue.
+    "Server" and "client" resides within the same process.
+
+    TODO: docstring
+    """
+    
+    def __init__(
+        self,
+        tasks: List[Task],
+        resources: NamedResources
+    ):
+        ...
