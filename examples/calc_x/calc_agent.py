@@ -1,4 +1,5 @@
 import math
+import os
 import string
 import re
 from typing import Any
@@ -9,7 +10,7 @@ from autogen_core.models import ModelFamily
 from autogen_ext.models.openai import OpenAIChatCompletionClient
 from autogen_ext.tools.mcp import McpWorkbench, StdioServerParams
 
-from agentlightning import Trainer, LitAgent, NamedResources, LLM, reward, configure_logger
+from agentlightning import Trainer, LitAgent, NamedResources, LLM, reward, configure_logger, DevTaskLoader
 
 configure_logger()
 
@@ -77,7 +78,7 @@ def get_agent(model, openai_base_url, temperature, workbench):
     model_client = OpenAIChatCompletionClient(
         model=model,
         base_url=openai_base_url,
-        api_key="token-abc123",
+        api_key=os.environ.get("OPENAI_API_KEY", "token-abc123"),
         model_info={
             "vision": False,
             "function_calling": True,
@@ -134,6 +135,30 @@ class CalcAgent(LitAgent):
             )
         }
         return await self.training_rollout_async(task, rollout_id, resources)
+
+
+def dev_task_loader() -> DevTaskLoader:
+    return DevTaskLoader(
+        tasks=[
+            {
+                "question": "What is 2 + 2?",
+                "result": "4",
+            },
+            {
+                "question": "What is 3 * 5?",
+                "result": "15",
+            },
+            {
+                "question": "What is the square root of 16?",
+                "result": "4",
+            },
+        ],
+        resources={
+            "main_llm": LLM(
+                endpoint=os.environ["OPENAI_API_BASE"], model="gpt-4o", sampling_parameters={"temperature": 0.7}
+            ),
+        },
+    )
 
 
 if __name__ == "__main__":

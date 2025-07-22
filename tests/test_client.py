@@ -17,7 +17,7 @@ from agentlightning import (
     ResourcesUpdate,
     Task,
 )
-from agentlightning.client import LocalClient
+from agentlightning.client import DevTaskLoader
 
 
 @pytest.fixture
@@ -268,10 +268,10 @@ async def test_client_with_bad_endpoint():
 
 
 def test_local_client_core_functionality(sample_resources: NamedResources):
-    """Test core LocalClient functionality: initialization, polling, resources, and rollouts."""
+    """Test core DevTaskLoader functionality: initialization, polling, resources, and rollouts."""
     # Test initialization with TaskInput objects
     task_inputs = ["input1", {"prompt": "input2"}]
-    client = LocalClient(tasks=task_inputs, resources=sample_resources)
+    client = DevTaskLoader(tasks=task_inputs, resources=sample_resources)
     
     assert len(client._tasks) == 2
     assert client._resources_update.resources_id == "local"
@@ -294,7 +294,7 @@ def test_local_client_core_functionality(sample_resources: NamedResources):
     # Test initialization with Task objects and ResourcesUpdate
     resources_update = ResourcesUpdate(resources_id="version123", resources=sample_resources)
     tasks = [Task(rollout_id="existing_task", input="existing_input", resources_id="version123")]
-    client2 = LocalClient(tasks=tasks, resources=resources_update)
+    client2 = DevTaskLoader(tasks=tasks, resources=resources_update)
     
     task3 = client2.poll_next_task()
     assert task3.rollout_id == "existing_task"
@@ -319,29 +319,29 @@ def test_local_client_core_functionality(sample_resources: NamedResources):
     
     # Test repr
     repr_str = repr(client2)
-    assert "LocalClient" in repr_str
+    assert "DevTaskLoader" in repr_str
     assert "num_tasks=1" in repr_str
 
 
 def test_local_client_error_handling(sample_resources: NamedResources):
-    """Test LocalClient error handling and edge cases."""
+    """Test DevTaskLoader error handling and edge cases."""
     # Empty tasks should raise error
-    with pytest.raises(ValueError, match="LocalClient requires at least one task"):
-        LocalClient(tasks=[], resources=sample_resources)
+    with pytest.raises(ValueError, match="DevTaskLoader requires at least one task"):
+        DevTaskLoader(tasks=[], resources=sample_resources)
     
     # Mixed task types should raise error
     mixed_tasks = [Task(rollout_id="task1", input="input1"), "task_input2"]
     with pytest.raises(ValueError, match="All tasks must be either Task or TaskInput objects"):
-        LocalClient(tasks=mixed_tasks, resources=sample_resources)
+        DevTaskLoader(tasks=mixed_tasks, resources=sample_resources)
     
     # Wrong resource ID should raise error
     resources_update = ResourcesUpdate(resources_id="version123", resources=sample_resources)
-    client = LocalClient(tasks=["input1"], resources=resources_update)
+    client = DevTaskLoader(tasks=["input1"], resources=resources_update)
     with pytest.raises(ValueError, match="Resource ID 'wrong_id' not found"):
         client.get_resources_by_id("wrong_id")
     
     # Polling beyond available tasks should cycle back
-    single_task_client = LocalClient(tasks=["only_task"], resources=sample_resources)
+    single_task_client = DevTaskLoader(tasks=["only_task"], resources=sample_resources)
     task1 = single_task_client.poll_next_task()
     task2 = single_task_client.poll_next_task()
     assert task2.input == task1.input
@@ -349,8 +349,8 @@ def test_local_client_error_handling(sample_resources: NamedResources):
 
 @pytest.mark.asyncio
 async def test_local_client_async_methods(sample_resources: NamedResources):
-    """Test that LocalClient async methods work correctly."""
-    client = LocalClient(tasks=["async_input"], resources=sample_resources)
+    """Test that DevTaskLoader async methods work correctly."""
+    client = DevTaskLoader(tasks=["async_input"], resources=sample_resources)
     
     # Test all async methods delegate to sync versions
     task = await client.poll_next_task_async()

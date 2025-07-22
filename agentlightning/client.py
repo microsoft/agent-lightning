@@ -253,14 +253,14 @@ class AgentLightningClient:
         return self._post_json(url, payload)
 
 
-class LocalClient(AgentLightningClient):
+class DevTaskLoader(AgentLightningClient):
     """A local task manager for development that provides sample tasks and resources.
 
     This client mocks the server APIs by maintaining a local queue of tasks and resources
     within the same process. It's designed for development, testing, and scenarios where
     a full Agent Lightning server is not needed.
 
-    The LocalClient overrides the polling and resource fetching methods to return data
+    The DevTaskLoader overrides the polling and resource fetching methods to return data
     from local collections instead of making HTTP requests to a remote server.
     """
 
@@ -270,7 +270,7 @@ class LocalClient(AgentLightningClient):
         resources: Union[NamedResources, ResourcesUpdate],
         **kwargs: Any,
     ):
-        """Initializes the LocalClient with pre-defined tasks and resources.
+        """Initializes the DevTaskLoader with pre-defined tasks and resources.
 
         Args:
             tasks: Either a List of TaskInput objects or a List of Task objects.
@@ -280,7 +280,7 @@ class LocalClient(AgentLightningClient):
         super().__init__(endpoint="local://", **kwargs)
         self._tasks = tasks.copy()
         if len(self._tasks) == 0:
-            raise ValueError("LocalClient requires at least one task to be provided.")
+            raise ValueError("DevTaskLoader requires at least one task to be provided.")
 
         # Check if tasks are mixture of TaskInput and Task
         if any(isinstance(task, Task) for task in self._tasks):
@@ -325,7 +325,7 @@ class LocalClient(AgentLightningClient):
         return task
 
     def get_resources_by_id(self, resource_id: str) -> Optional[ResourcesUpdate]:
-        logger.debug(f"LocalClient checking resources for ID: {resource_id}")
+        logger.debug(f"DevTaskLoader checking resources for ID: {resource_id}")
         if resource_id != self._resources_update.resources_id:
             raise ValueError(
                 f"Resource ID '{resource_id}' not found. Only '{self._resources_update.resources_id}' is available."
@@ -333,11 +333,11 @@ class LocalClient(AgentLightningClient):
         return self._resources_update
 
     def get_latest_resources(self) -> Optional[ResourcesUpdate]:
-        logger.debug("LocalClient returning latest resources.")
+        logger.debug("DevTaskLoader returning latest resources.")
         return self._resources_update
 
     def post_rollout(self, rollout: Rollout) -> Optional[Dict[str, Any]]:
-        logger.debug(f"LocalClient received rollout for task: {rollout.rollout_id}")
+        logger.debug(f"DevTaskLoader received rollout for task: {rollout.rollout_id}")
         return {"status": "received", "rollout_id": rollout.rollout_id}
 
     async def poll_next_task_async(self) -> Task:
@@ -353,4 +353,4 @@ class LocalClient(AgentLightningClient):
         return self.post_rollout(rollout)
 
     def __repr__(self):
-        return f"LocalClient(num_tasks={len(self._tasks)}, resources={self._resources_update.resources})"
+        return f"DevTaskLoader(num_tasks={len(self._tasks)}, resources={self._resources_update.resources})"
