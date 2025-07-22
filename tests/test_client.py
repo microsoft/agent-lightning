@@ -15,7 +15,9 @@ from agentlightning import (
     LLM,
     PromptTemplate,
     ResourcesUpdate,
+    Task,
 )
+from agentlightning.client import LocalClient
 
 
 @pytest.fixture
@@ -263,3 +265,106 @@ async def test_client_with_bad_endpoint():
     # Sync methods should also return None
     sync_resources = client.get_latest_resources()
     assert sync_resources is None
+
+
+def test_local_client_core_functionality(sample_resources: NamedResources):
+    """Test core LocalClient functionality: initialization, polling, resources, and rollouts."""
+    # Test initialization with TaskInput objects
+    task_inputs = ["input1", {"prompt": "input2"}]
+    client = LocalClient(tasks=task_inputs, resources=sample_resources)
+    
+    assert len(client._tasks) == 2
+    assert client._resources_update.resources_id == "local"
+    assert client._resources_update.resources == sample_resources
+    assert client.task_count == 0
+    
+    # Test polling TaskInput objects
+    task1 = client.poll_next_task()
+    assert isinstance(task1, Task)
+    assert task1.rollout_id == "local_task_001"
+    assert task1.input == "input1"
+    assert task1.resources_id == "local"
+    assert client.task_count == 1
+    
+    task2 = client.poll_next_task()
+    assert task2.rollout_id == "local_task_002"
+    assert task2.input == {"prompt": "input2"}
+    assert client.task_count == 2
+    
+    # Test initialization with Task objects and ResourcesUpdate
+    resources_update = ResourcesUpdate(resources_id="version123", resources=sample_resources)
+    tasks = [Task(rollout_id="existing_task", input="existing_input", resources_id="version123")]
+    client2 = LocalClient(tasks=tasks, resources=resources_update)
+    
+    task3 = client2.poll_next_task()
+    assert task3.rollout_id == "existing_task"
+    assert task3.input == "existing_input"
+    
+    # Test resource retrieval
+    resources = client2.get_resources_by_id("version123")
+    assert resources is not None
+    assert resources.resources_id == "version123"
+    assert resources.resources == sample_resources
+    
+    latest = client2.get_latest_resources()
+    assert latest is not None
+    assert latest.resources_id == "version123"
+    
+    # Test rollout posting
+    rollout = Rollout(rollout_id="test_rollout", final_reward=0.9)
+    result = client2.post_rollout(rollout)
+    assert result is not None
+    assert result["status"] == "received"
+    assert result["rollout_id"] == "test_rollout"
+    
+    # Test repr
+    repr_str = repr(client2)
+    assert "LocalClient" in repr_str
+    assert "num_tasks=1" in repr_str
+
+
+def test_local_client_error_handling(sample_resources: NamedResources):
+    """Test LocalClient error handling and edge cases."""
+    # Empty tasks should raise error
+    with pytest.raises(ValueError, match="LocalClient requires at least one task"):
+        LocalClient(tasks=[], resources=sample_resources)
+    
+    # Mixed task types should raise error
+    mixed_tasks = [Task(rollout_id="task1", input="input1"), "task_input2"]
+    with pytest.raises(ValueError, match="All tasks must be either Task or TaskInput objects"):
+        LocalClient(tasks=mixed_tasks, resources=sample_resources)
+    
+    # Wrong resource ID should raise error
+    resources_update = ResourcesUpdate(resources_id="version123", resources=sample_resources)
+    client = LocalClient(tasks=["input1"], resources=resources_update)
+    with pytest.raises(ValueError, match="Resource ID 'wrong_id' not found"):
+        client.get_resources_by_id("wrong_id")
+    
+    # Polling beyond available tasks should cycle back
+    single_task_client = LocalClient(tasks=["only_task"], resources=sample_resources)
+    task1 = single_task_client.poll_next_task()
+    task2 = single_task_client.poll_next_task()
+    assert task2.input == task1.input
+
+
+@pytest.mark.asyncio
+async def test_local_client_async_methods(sample_resources: NamedResources):
+    """Test that LocalClient async methods work correctly."""
+    client = LocalClient(tasks=["async_input"], resources=sample_resources)
+    
+    # Test all async methods delegate to sync versions
+    task = await client.poll_next_task_async()
+    assert task.input == "async_input"
+    
+    resources = await client.get_resources_by_id_async("local")
+    assert resources is not None
+    assert resources.resources_id == "local"
+    
+    latest = await client.get_latest_resources_async()
+    assert latest is not None
+    assert latest.resources_id == "local"
+    
+    rollout = Rollout(rollout_id="async_rollout", final_reward=0.8)
+    result = await client.post_rollout_async(rollout)
+    assert result is not None
+    assert result["rollout_id"] == "async_rollout"

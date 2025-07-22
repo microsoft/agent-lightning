@@ -2,12 +2,12 @@ import asyncio
 import logging
 import time
 import urllib.parse
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List, Union
 
 import aiohttp
 import requests
 
-from .types import Rollout, Task, TaskIfAny, ResourcesUpdate, NamedResources
+from .types import Rollout, Task, TaskInput, TaskIfAny, ResourcesUpdate, NamedResources
 
 
 logger = logging.getLogger(__name__)
@@ -253,18 +253,104 @@ class AgentLightningClient:
         return self._post_json(url, payload)
 
 
-
 class LocalClient(AgentLightningClient):
     """A local task manager for development that provides sample tasks and resources.
-    Mock the APIs to fetch tasks and resources from a local queue.
-    "Server" and "client" resides within the same process.
 
-    TODO: docstring
+    This client mocks the server APIs by maintaining a local queue of tasks and resources
+    within the same process. It's designed for development, testing, and scenarios where
+    a full Agent Lightning server is not needed.
+
+    The LocalClient overrides the polling and resource fetching methods to return data
+    from local collections instead of making HTTP requests to a remote server.
     """
-    
+
     def __init__(
         self,
-        tasks: List[Task],
-        resources: NamedResources
+        tasks: Union[List[TaskInput], List[Task]],
+        resources: Union[NamedResources, ResourcesUpdate],
+        **kwargs: Any,
     ):
-        ...
+        """Initializes the LocalClient with pre-defined tasks and resources.
+
+        Args:
+            tasks: Either a List of TaskInput objects or a List of Task objects.
+            resources: Either NamedResources or ResourcesUpdate object.
+            **kwargs: Additional arguments passed to the parent AgentLightningClient.
+        """
+        super().__init__(endpoint="local://", **kwargs)
+        self._tasks = tasks.copy()
+        if len(self._tasks) == 0:
+            raise ValueError("LocalClient requires at least one task to be provided.")
+
+        # Check if tasks are mixture of TaskInput and Task
+        if any(isinstance(task, Task) for task in self._tasks):
+            if not all(isinstance(task, Task) for task in self._tasks):
+                raise ValueError("All tasks must be either Task or TaskInput objects.")
+
+        self._task_index = 0
+
+        if isinstance(resources, ResourcesUpdate):
+            self._resources_update = resources
+        else:
+            self._resources_update = ResourcesUpdate(resources_id="local", resources=resources)
+
+    def poll_next_task(self) -> Task:
+        """Returns the next task from the local queue.
+
+        If tasks are TaskInput objects, assembles them into Task objects.
+        If tasks are already Task objects, returns them directly.
+
+        Returns:
+            The next Task object from the local task list.
+        """
+        if self._task_index >= len(self._tasks):
+            self._task_index = 0
+
+        task_or_input = self._tasks[self._task_index]
+
+        if isinstance(task_or_input, Task):
+            task = task_or_input
+        else:
+            rollout_id = f"local_task_{self._task_index + 1:03d}"
+            task = Task(
+                rollout_id=rollout_id,
+                input=task_or_input,
+                resources_id=self._resources_update.resources_id,
+                create_time=time.time(),
+            )
+
+        self._task_index += 1
+        self.task_count += 1
+        logger.info(f"[Task {self.task_count} Received] Task ID: {task.rollout_id}")
+        return task
+
+    def get_resources_by_id(self, resource_id: str) -> Optional[ResourcesUpdate]:
+        logger.debug(f"LocalClient checking resources for ID: {resource_id}")
+        if resource_id != self._resources_update.resources_id:
+            raise ValueError(
+                f"Resource ID '{resource_id}' not found. Only '{self._resources_update.resources_id}' is available."
+            )
+        return self._resources_update
+
+    def get_latest_resources(self) -> Optional[ResourcesUpdate]:
+        logger.debug("LocalClient returning latest resources.")
+        return self._resources_update
+
+    def post_rollout(self, rollout: Rollout) -> Optional[Dict[str, Any]]:
+        logger.debug(f"LocalClient received rollout for task: {rollout.rollout_id}")
+        return {"status": "received", "rollout_id": rollout.rollout_id}
+
+    async def poll_next_task_async(self) -> Task:
+        return self.poll_next_task()
+
+    async def get_resources_by_id_async(self, resource_id: str) -> Optional[ResourcesUpdate]:
+        return self.get_resources_by_id(resource_id)
+
+    async def get_latest_resources_async(self) -> Optional[ResourcesUpdate]:
+        return self.get_latest_resources()
+
+    async def post_rollout_async(self, rollout: Rollout) -> Optional[Dict[str, Any]]:
+        return self.post_rollout(rollout)
+
+    def __repr__(self):
+        return f"LocalClient(num_tasks={len(self._tasks)}, resources={self._resources_update.resources})"

@@ -11,6 +11,8 @@ dependencies = [
   "flask",
   "agentops",
   "httpdbg",
+  "uvicorn",
+  "fastapi",
 ]
 
 [project.optional-dependencies]

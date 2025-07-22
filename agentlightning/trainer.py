@@ -104,10 +104,10 @@ class Trainer(ParallelWorkerBase):
             )
         raise ValueError(f"Invalid tracer type: {type(tracer)}. Expected BaseTracer, str, dict, or None.")
 
-    def init(self, endpoint: str) -> None:
+    def init(self, backend: Union[str, AgentLightningClient]) -> None:
         logger.info(f"Initializing Trainer...")
 
-        self._init_client(endpoint)
+        self._init_client(backend)
 
         self.tracer.init()
 
@@ -126,9 +126,19 @@ class Trainer(ParallelWorkerBase):
             raise RuntimeError("AgentLightningClient has not been initialized. Call `init` first.")
         return self._client
 
-    def _init_client(self, endpoint: str) -> AgentLightningClient:
+    def _init_client(self, backend: Union[str, AgentLightningClient]) -> AgentLightningClient:
         if self._client is None:
-            self._client = AgentLightningClient(endpoint=endpoint)
+            if isinstance(backend, AgentLightningClient):
+                logger.info("Using provided AgentLightningClient instance.")
+                self._client = backend
+            else:
+                logger.info(f"Initializing AgentLightningClient with endpoint: {backend}")
+                if not isinstance(backend, str):
+                    raise ValueError("backend must be a string URL or an AgentLightningClient instance.")
+                if not backend.startswith("http://") and not backend.startswith("https://"):
+                    raise ValueError("backend must be a valid URL starting with http:// or https://")
+                # Initialize the client with the provided backend URL
+                self._client = AgentLightningClient(endpoint=backend)
         else:
             logger.warning("AgentLightningClient already initialized. Returning existing instance.")
         return self._client
@@ -205,8 +215,16 @@ class Trainer(ParallelWorkerBase):
             if proc.name().startswith("AgentLightning-"):
                 proc.kill()
 
-    def fit(self, agent: LitAgent, backend: str, dev_backend: Optional[str] = None):
-        self.init(endpoint)
+    def fit(self, agent: LitAgent, backend: Union[str, AgentLightningClient], dev_backend: Union[str, AgentLightningClient, None] = None):
+        if self.dev:
+            if dev_backend is None:
+                raise ValueError("dev_backend must be provided when dev=True.")
+            logger.warning(f"Running in dev mode. Using dev backend: {dev_backend}")
+            self.init(dev_backend)
+        else:
+            logger.debug(f"Running in non-dev mode. Using backend: {backend}")
+            self.init(backend)
+
         processes: List[multiprocessing.Process] = []
 
         # Determine if the agent is asynchronous.
