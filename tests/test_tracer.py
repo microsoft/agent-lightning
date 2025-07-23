@@ -705,9 +705,9 @@ def run_with_agentops_tracer():
         # for triplet in TripletExporter().export(tracer.get_last_trace()):
         #     print(triplet)
         triplets = TripletExporter().export(tracer.get_last_trace())
-        assert len(triplets) == AGENTOPS_EXPECTED_TRIPLETS_NUMBER[agent_func.__name__], (
-            f"Expected {AGENTOPS_EXPECTED_TRIPLETS_NUMBER[agent_func.__name__]} triplets, " f"but got: {triplets}"
-        )
+        assert (
+            len(triplets) == AGENTOPS_EXPECTED_TRIPLETS_NUMBER[agent_func.__name__]
+        ), f"Expected {AGENTOPS_EXPECTED_TRIPLETS_NUMBER[agent_func.__name__]} triplets, but got: {triplets}"
         if agent_func.__name__ in AGENTOPS_EXPECTED_REWARDS:
             if isinstance(AGENTOPS_EXPECTED_REWARDS[agent_func.__name__], tuple):
                 # If the expected rewards are a tuple, make sure at least one of them matches
@@ -811,9 +811,9 @@ def test_run_with_agentops_tracer(agent_func):
         assert_expected_pairs_in_tree(tree.names_tuple(), AGENTOPS_EXPECTED_TREES[agent_func.__name__])
 
         triplets = TripletExporter().export(tracer.get_last_trace())
-        assert len(triplets) == AGENTOPS_EXPECTED_TRIPLETS_NUMBER[agent_func.__name__], (
-            f"Expected {AGENTOPS_EXPECTED_TRIPLETS_NUMBER[agent_func.__name__]} triplets, " f"but got: {triplets}"
-        )
+        assert (
+            len(triplets) == AGENTOPS_EXPECTED_TRIPLETS_NUMBER[agent_func.__name__]
+        ), f"Expected {AGENTOPS_EXPECTED_TRIPLETS_NUMBER[agent_func.__name__]} triplets, but got: {triplets}"
         if agent_func.__name__ in AGENTOPS_EXPECTED_REWARDS:
             if isinstance(AGENTOPS_EXPECTED_REWARDS[agent_func.__name__], tuple):
                 # If the expected rewards are a tuple, make sure at least one of them matches
