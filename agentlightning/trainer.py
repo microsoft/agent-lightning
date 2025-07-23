@@ -68,7 +68,9 @@ class Trainer(ParallelWorkerBase):
         elif triplet_exporter is None:
             self.triplet_exporter = TripletExporter()
         else:
-            raise ValueError(f"Invalid triplet_exporter type: {type(triplet_exporter)}. Expected TripletExporter, dict, or None.")
+            raise ValueError(
+                f"Invalid triplet_exporter type: {type(triplet_exporter)}. Expected TripletExporter, dict, or None."
+            )
 
         if not self.daemon:
             logger.warning(
@@ -82,26 +84,22 @@ class Trainer(ParallelWorkerBase):
         if isinstance(tracer, BaseTracer):
             return tracer
         if isinstance(tracer, str):
-            module_name, class_name = tracer.rsplit('.', 1)
+            module_name, class_name = tracer.rsplit(".", 1)
             module = importlib.import_module(module_name)
             tracer_cls = getattr(module, class_name)
             return tracer_cls()
         if isinstance(tracer, dict):
-            tracer_type = tracer.get('type')
+            tracer_type = tracer.get("type")
             if tracer_type is None:
                 raise ValueError("tracer dict must have a 'type' key with the class full name")
-            module_name, class_name = tracer_type.rsplit('.', 1)
+            module_name, class_name = tracer_type.rsplit(".", 1)
             module = importlib.import_module(module_name)
             tracer_cls = getattr(module, class_name)
             # Remove 'type' key and pass remaining keys as kwargs
-            tracer_kwargs = {k: v for k, v in tracer.items() if k != 'type'}
+            tracer_kwargs = {k: v for k, v in tracer.items() if k != "type"}
             return tracer_cls(**tracer_kwargs)
         if tracer is None:
-            return AgentOpsTracer(
-                agentops_managed=True,
-                instrument_managed=True,
-                daemon=self.daemon
-            )
+            return AgentOpsTracer(agentops_managed=True, instrument_managed=True, daemon=self.daemon)
         raise ValueError(f"Invalid tracer type: {type(tracer)}. Expected BaseTracer, str, dict, or None.")
 
     def init(self, backend: Union[str, AgentLightningClient]) -> None:
@@ -215,7 +213,12 @@ class Trainer(ParallelWorkerBase):
             if proc.name().startswith("AgentLightning-"):
                 proc.kill()
 
-    def fit(self, agent: LitAgent, backend: Union[str, AgentLightningClient], dev_backend: Union[str, AgentLightningClient, None] = None):
+    def fit(
+        self,
+        agent: LitAgent,
+        backend: Union[str, AgentLightningClient],
+        dev_backend: Union[str, AgentLightningClient, None] = None,
+    ):
         if self.dev:
             if dev_backend is None:
                 raise ValueError("dev_backend must be provided when dev=True.")

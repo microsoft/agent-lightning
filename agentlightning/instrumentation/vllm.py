@@ -13,9 +13,7 @@ class ChatCompletionResponsePatched(ChatCompletionResponse):
     response_token_ids: List[int] | None = None
 
 
-original_chat_completion_full_generator = (
-    OpenAIServingChat.chat_completion_full_generator
-)
+original_chat_completion_full_generator = OpenAIServingChat.chat_completion_full_generator
 
 
 async def chat_completion_full_generator(
@@ -63,9 +61,7 @@ def instrument_vllm():
         warnings.warn("vllm is already instrumented. Skip the instrumentation.")
         return
 
-    vllm.entrypoints.openai.protocol.ChatCompletionResponse = (
-        ChatCompletionResponsePatched
-    )
+    vllm.entrypoints.openai.protocol.ChatCompletionResponse = ChatCompletionResponsePatched
     OpenAIServingChat.chat_completion_full_generator = chat_completion_full_generator
 
 

@@ -226,7 +226,7 @@ def _add_arguments_for_class(
             f"CLI argument parsing for this class might be based on string annotations, "
             "which could be unreliable for complex types."
         )
-        resolved_hints = {} # Fallback to an empty dict if resolution fails
+        resolved_hints = {}  # Fallback to an empty dict if resolution fails
 
     if cls not in class_arg_configs_maps:  # Ensure the class entry exists
         class_arg_configs_maps[cls] = {}
@@ -279,7 +279,9 @@ def _instantiate_classes(
             logger.info("Instantiating %s with args: %s", cls.__name__, constructor_args)
             instances_list.append(cls(**constructor_args))
         except Exception as e:
-            parsed_args_for_cls = {k: getattr(parsed_args, v) for k, v in param_to_dest_map.items() if hasattr(parsed_args, v)}
+            parsed_args_for_cls = {
+                k: getattr(parsed_args, v) for k, v in param_to_dest_map.items() if hasattr(parsed_args, v)
+            }
             logger.error(
                 f"Error instantiating {cls.__name__} with resolved args {constructor_args}. "
                 f"Parsed args for class: "

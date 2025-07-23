@@ -28,7 +28,7 @@ async def example_apo():
 
         # 2. The algorithm queues up a task from a dataset
         print("[Algo] Queuing task for clients...")
-        task_id = await server.queue_task(sample={"prompt": "What is the capital of France?"}, mode='train')
+        task_id = await server.queue_task(sample={"prompt": "What is the capital of France?"}, mode="train")
         print(f"[Algo] Task '{task_id}' is now available for clients.")
 
         # 3. The algorithm waits for clients to process the task

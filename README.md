@@ -84,6 +84,21 @@ Currently, Agent Lightning is built around a **training server** and one or mult
   * **Agents** retrieve samples from the server, process them (which may involve interacting with the LLM), and send the results back. These results, or "trajectories," are lists of prompts and responses from the LLM.
   * The **server** then collects these trajectories and computes the loss to optimize the language models.
 
+## Development Instructions
+
+Install with development dependencies:
+
+```
+pip install -e .[dev]
+```
+
+Please run pre-commit hooks before checking in code:
+
+```
+pre-commit install
+pre-commit run --all-files --show-diff-on-failure --color=always
+```
+
 ## Examples
 
 For more detailed examples, please see the `examples` folder.

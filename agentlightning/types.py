@@ -45,8 +45,8 @@ class Rollout(BaseModel):
     trace: Optional[List[Dict[str, Any]]] = Field(
         default=None,
         description="A list of spans that conform to the OpenTelemetry JSON format. "
-                    "Users of the opentelemetry-sdk can generate this by calling "
-                    "json.loads(readable_span.to_json())."
+        "Users of the opentelemetry-sdk can generate this by calling "
+        "json.loads(readable_span.to_json()).",
     )
     logs: Optional[List[str]] = None
 

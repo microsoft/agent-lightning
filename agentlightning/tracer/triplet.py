@@ -310,7 +310,11 @@ class TraceTree:
             response_id = self.span.attributes.get("gen_ai.response.id")
             if response_id is None and within_llm_call is True:
                 is_llm_call = False
-            if response_id is not None and existing_llm_call_response_ids is not None and response_id in existing_llm_call_response_ids:
+            if (
+                response_id is not None
+                and existing_llm_call_response_ids is not None
+                and response_id in existing_llm_call_response_ids
+            ):
                 is_llm_call = False
 
             if is_llm_call:
@@ -332,14 +336,16 @@ class TraceTree:
             within_reward = True
 
         for child in self.children:
-            llm_calls.extend(child.find_llm_calls(
-                llm_call_match=llm_call_match,
-                agent_match=agent_match,
-                within_matching_subtree=within_matching_subtree,
-                within_reward=within_reward,
-                within_llm_call=within_llm_call,
-                existing_llm_call_response_ids=existing_llm_call_response_ids,
-            ))
+            llm_calls.extend(
+                child.find_llm_calls(
+                    llm_call_match=llm_call_match,
+                    agent_match=agent_match,
+                    within_matching_subtree=within_matching_subtree,
+                    within_reward=within_reward,
+                    within_llm_call=within_llm_call,
+                    existing_llm_call_response_ids=existing_llm_call_response_ids,
+                )
+            )
 
         return llm_calls
 

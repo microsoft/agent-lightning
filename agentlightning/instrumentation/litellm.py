@@ -13,13 +13,9 @@ def patched_set_attributes(self, span: Any, kwargs, response_obj: Optional[Any])
     original_set_attributes(self, span, kwargs, response_obj)
     # Add custom attributes
     if response_obj.get("prompt_token_ids"):
-        span.set_attribute(
-            "prompt_token_ids", list(response_obj.get("prompt_token_ids"))
-        )
+        span.set_attribute("prompt_token_ids", list(response_obj.get("prompt_token_ids")))
     if response_obj.get("response_token_ids"):
-        span.set_attribute(
-            "response_token_ids", list(response_obj.get("response_token_ids")[0])
-        )
+        span.set_attribute("response_token_ids", list(response_obj.get("response_token_ids")[0]))
 
 
 def instrument_litellm():

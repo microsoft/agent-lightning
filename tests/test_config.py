@@ -270,7 +270,12 @@ def get_param_obj(cls, param_name):
         ("value", SimpleConfig, "simpleconfig.value", {"type": int, "default": 10}),
         ("text", ComplexConfig, "complexconfig.text", {"type": str, "required": True}),
         ("is_active", ComplexConfig, "complexconfig.is-active", {"type": config._str_to_bool, "required": True}),
-        ("count", ComplexConfig, "complexconfig.count", {"type": config.nullable_int, "default": None}),  # Optional[int]=None
+        (
+            "count",
+            ComplexConfig,
+            "complexconfig.count",
+            {"type": config.nullable_int, "default": None},
+        ),  # Optional[int]=None
         ("items", ComplexConfig, "complexconfig.items", {"type": str, "nargs": "*", "default": []}),
         (
             "maybe_text",

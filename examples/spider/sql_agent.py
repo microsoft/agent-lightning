@@ -521,6 +521,7 @@ class LitSQLAgent(agentlightning.LitAgent):
 def spider_dev_data():
     # Read from dev.parquet
     import pandas as pd
+
     spider_dev_data_path = os.path.join(os.environ.get("VERL_SPIDER_DEV_DATA", "data"), "dev.parquet")
     if not os.path.exists(spider_dev_data_path):
         raise FileNotFoundError(f"Spider dev data file {spider_dev_data_path} does not exist.")

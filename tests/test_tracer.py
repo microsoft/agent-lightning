@@ -582,7 +582,7 @@ AGENTOPS_EXPECTED_TREES = {
     "openai_agents_sdk_eval_hook_and_guardrail": [
         ("homework_guardrail", "openai.chat.completion"),
         ("Main Agent", "openai.chat.completion"),
-        ("Main Agent", "agentops_reward_operation.task")
+        ("Main Agent", "agentops_reward_operation.task"),
     ],
     "openai_agents_sdk_mcp_tool_use": [
         ("MCP Tool Agent", "openai.chat.completion"),
@@ -624,13 +624,15 @@ def assert_expected_pairs_in_tree(root_tuple, expected_pairs):
     """
 
     # Collect every node's full path from root → node
-    paths = []              # e.g. [["root", "A", "B"], …]
+    paths = []  # e.g. [["root", "A", "B"], …]
+
     def _collect(node_tuple, prefix):
         name, children = node_tuple
         cur_path = prefix + [name]
         paths.append(cur_path)
         for child in children:
             _collect(child, cur_path)
+
     _collect(root_tuple, [])
 
     # Greedy—but safe—matching of each expected pair
@@ -641,7 +643,7 @@ def assert_expected_pairs_in_tree(root_tuple, expected_pairs):
         for p in paths:
             if child_name not in p[-1] or tuple(p) in used_child_paths:
                 continue
-            if any(anc_name in pv for pv in p[:-1]): # ancestor appears anywhere above
+            if any(anc_name in pv for pv in p[:-1]):  # ancestor appears anywhere above
                 used_child_paths.add(tuple(p))
                 matched = True
                 break
@@ -650,7 +652,7 @@ def assert_expected_pairs_in_tree(root_tuple, expected_pairs):
                 f"Expected ancestor/child pair ({anc_name!r}, {child_name!r}) "
                 "not found or child already matched.\n"
                 f"Root tuple: {pprint.pformat(root_tuple)}\n",
-                f"Expected pairs: {expected_pairs}"
+                f"Expected pairs: {expected_pairs}",
             )
 
 
@@ -698,23 +700,23 @@ def run_with_agentops_tracer():
         tree.repair_hierarchy()
         tree.visualize(f"debug/{agent_func.__name__}")
 
-        assert_expected_pairs_in_tree(
-            tree.names_tuple(),
-            AGENTOPS_EXPECTED_TREES[agent_func.__name__]
-        )
+        assert_expected_pairs_in_tree(tree.names_tuple(), AGENTOPS_EXPECTED_TREES[agent_func.__name__])
 
         # for triplet in TripletExporter().export(tracer.get_last_trace()):
         #     print(triplet)
         triplets = TripletExporter().export(tracer.get_last_trace())
         assert len(triplets) == AGENTOPS_EXPECTED_TRIPLETS_NUMBER[agent_func.__name__], (
-            f"Expected {AGENTOPS_EXPECTED_TRIPLETS_NUMBER[agent_func.__name__]} triplets, "
-            f"but got: {triplets}"
+            f"Expected {AGENTOPS_EXPECTED_TRIPLETS_NUMBER[agent_func.__name__]} triplets, " f"but got: {triplets}"
         )
         if agent_func.__name__ in AGENTOPS_EXPECTED_REWARDS:
             if isinstance(AGENTOPS_EXPECTED_REWARDS[agent_func.__name__], tuple):
                 # If the expected rewards are a tuple, make sure at least one of them matches
                 assert any(
-                    [r.reward in expected for r in triplets for expected in AGENTOPS_EXPECTED_REWARDS[agent_func.__name__]]
+                    [
+                        r.reward in expected
+                        for r in triplets
+                        for expected in AGENTOPS_EXPECTED_REWARDS[agent_func.__name__]
+                    ]
                 ), (
                     f"Expected rewards {AGENTOPS_EXPECTED_REWARDS[agent_func.__name__]}, "
                     f"but got: {pprint.pformat(triplets)}"
@@ -806,21 +808,21 @@ def test_run_with_agentops_tracer(agent_func):
 
         tree.repair_hierarchy()
 
-        assert_expected_pairs_in_tree(
-            tree.names_tuple(),
-            AGENTOPS_EXPECTED_TREES[agent_func.__name__]
-        )
+        assert_expected_pairs_in_tree(tree.names_tuple(), AGENTOPS_EXPECTED_TREES[agent_func.__name__])
 
         triplets = TripletExporter().export(tracer.get_last_trace())
         assert len(triplets) == AGENTOPS_EXPECTED_TRIPLETS_NUMBER[agent_func.__name__], (
-            f"Expected {AGENTOPS_EXPECTED_TRIPLETS_NUMBER[agent_func.__name__]} triplets, "
-            f"but got: {triplets}"
+            f"Expected {AGENTOPS_EXPECTED_TRIPLETS_NUMBER[agent_func.__name__]} triplets, " f"but got: {triplets}"
         )
         if agent_func.__name__ in AGENTOPS_EXPECTED_REWARDS:
             if isinstance(AGENTOPS_EXPECTED_REWARDS[agent_func.__name__], tuple):
                 # If the expected rewards are a tuple, make sure at least one of them matches
                 assert any(
-                    [r.reward in expected for r in triplets for expected in AGENTOPS_EXPECTED_REWARDS[agent_func.__name__]]
+                    [
+                        r.reward in expected
+                        for r in triplets
+                        for expected in AGENTOPS_EXPECTED_REWARDS[agent_func.__name__]
+                    ]
                 ), (
                     f"Expected rewards {AGENTOPS_EXPECTED_REWARDS[agent_func.__name__]}, "
                     f"but got: {pprint.pformat(triplets)}"

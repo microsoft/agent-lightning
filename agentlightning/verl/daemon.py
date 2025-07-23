@@ -93,11 +93,22 @@ class AgentModeDaemon:
     the original interface for compatibility with the RayPPOTrainer.
     """
 
-    def __init__(self, port, train_rollout_n, train_information, tokenizer, mini_batch_size, pad_token_id, reward_fillna_value = 0.0):
+    def __init__(
+        self,
+        port,
+        train_rollout_n,
+        train_information,
+        tokenizer,
+        mini_batch_size,
+        pad_token_id,
+        reward_fillna_value=0.0,
+    ):
         # Server and Task Configuration
         self.server_port = port
         self.task_timeout_seconds = 180
-        self.server = AgentLightningServer(host="0.0.0.0", port=self.server_port, task_timeout_seconds=self.task_timeout_seconds)
+        self.server = AgentLightningServer(
+            host="0.0.0.0", port=self.server_port, task_timeout_seconds=self.task_timeout_seconds
+        )
         self.proxy_port = _find_available_port()  # Run proxy on a different port
 
         # Training and Data Configuration
@@ -160,11 +171,24 @@ class AgentModeDaemon:
                     timeout=self.task_timeout_seconds,
                 )
                 # Filter out hop-by-hop headers before returning the response
-                excluded_headers = ["content-encoding", "content-length", "transfer-encoding", "connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailers", "upgrade"]
-                response_headers = [(name, value) for name, value in resp.raw.headers.items() if name.lower() not in excluded_headers]
+                excluded_headers = [
+                    "content-encoding",
+                    "content-length",
+                    "transfer-encoding",
+                    "connection",
+                    "keep-alive",
+                    "proxy-authenticate",
+                    "proxy-authorization",
+                    "te",
+                    "trailers",
+                    "upgrade",
+                ]
+                response_headers = [
+                    (name, value) for name, value in resp.raw.headers.items() if name.lower() not in excluded_headers
+                ]
                 if resp.status_code == 200:
                     # NOTE: from Zhiyuan's code.
-                    # https://github.com/hzy46/verl_agent_mode/blob/2db65ea9858f645a914120357412a7540f8bd82d/verl/trainer/ppo/ray_trainer.py#L692-L711                    
+                    # https://github.com/hzy46/verl_agent_mode/blob/2db65ea9858f645a914120357412a7540f8bd82d/verl/trainer/ppo/ray_trainer.py#L692-L711
                     # request_json = json.loads(request.get_data().decode("utf-8"))
                     response_json = json.loads(resp.content.decode("utf-8"))
                     # response_message = ChatCompletion(**response_json).choices[0].message.model_dump(exclude_unset=True, exclude_none=True)
@@ -203,10 +227,10 @@ class AgentModeDaemon:
 
         self._server_thread = threading.Thread(target=run_server, daemon=True)
         self._server_thread.start()
-        
+
         # Wait for the server's internal startup event to be set.
         print("Waiting for AgentLightningServer to start...")
-        is_ready = self.server.startup_event.wait(timeout=20.0) # Wait up to 20s
+        is_ready = self.server.startup_event.wait(timeout=20.0)  # Wait up to 20s
         if not is_ready:
             raise RuntimeError("AgentLightningServer failed to start within the timeout period.")
 
@@ -244,7 +268,12 @@ class AgentModeDaemon:
                 task_metadata = {"data_id": data_id, "is_train": is_train}
 
                 # Data ID is different from Rollout ID, as one data can have multiple rollouts.
-                rollout_id = await self.server.queue_task(sample=original_sample, mode="train" if is_train else "val", resources_id=resources_id, metadata=task_metadata)
+                rollout_id = await self.server.queue_task(
+                    sample=original_sample,
+                    mode="train" if is_train else "val",
+                    resources_id=resources_id,
+                    metadata=task_metadata,
+                )
                 # Store original sample data to reconstruct batch information later
                 self._task_id_to_original_sample[rollout_id] = original_sample
                 self._total_tasks_queued += 1
@@ -253,7 +282,7 @@ class AgentModeDaemon:
         """Synchronous wrapper for setting up data and server resources."""
         if not self.server.loop or not self.server.startup_event.is_set():
             raise RuntimeError("Server is not running or ready.")
-        
+
         coro = self._async_set_up(data, server_addresses, is_train)
         future = asyncio.run_coroutine_threadsafe(coro, self.server.loop)
         try:
@@ -264,7 +293,9 @@ class AgentModeDaemon:
 
     def _validate_data(self, rollout: Rollout):
         if rollout.final_reward is None:
-            print(f"Warning: Reward is None for rollout {rollout.rollout_id}, will be auto-set to {self.reward_fillna_value}.")
+            print(
+                f"Warning: Reward is None for rollout {rollout.rollout_id}, will be auto-set to {self.reward_fillna_value}."
+            )
         if rollout.triplets is None:
             print(f"Warning: Triplet is None for rollout {rollout.rollout_id}.")
         elif len(rollout.triplets) == 0:
@@ -291,10 +322,10 @@ class AgentModeDaemon:
         if self._total_tasks_queued == 0:
             print("Warning: No tasks were queued.")
             return
-            
+
         if not self.server.loop or not self.server.startup_event.is_set():
             raise RuntimeError("Server is not running or ready.")
-        
+
         coro = self._async_run_until_finished(verbose)
         future = asyncio.run_coroutine_threadsafe(coro, self.server.loop)
         try:
@@ -352,7 +383,10 @@ class AgentModeDaemon:
             # The client should report triplets that contain prompt_ids and response_ids.
             # Example triplet.prompt: {"token_ids": [...]}
             # Example triplet.response: {"token_ids": [...]}
-            trace_list = [{"prompt_ids": t.prompt.get("token_ids", []), "response_ids": t.response.get("token_ids", [])} for t in rollout.triplets]
+            trace_list = [
+                {"prompt_ids": t.prompt.get("token_ids", []), "response_ids": t.response.get("token_ids", [])}
+                for t in rollout.triplets
+            ]
 
             final_reward = self._fillna_reward(rollout)
             info = {
@@ -396,8 +430,12 @@ class AgentModeDaemon:
                     n_trunc_sample_because_of_response += 1
 
                 # Pad prompts to the left and responses to the right
-                one_input_ids, one_input_attention_mask = get_left_padded_ids_and_attention_mask(prompt_ids, max_prompt_length, self.pad_token_id)
-                one_response_ids, one_response_attention_mask = get_right_padded_ids_and_attention_mask(response_ids, max_response_length, self.pad_token_id)
+                one_input_ids, one_input_attention_mask = get_left_padded_ids_and_attention_mask(
+                    prompt_ids, max_prompt_length, self.pad_token_id
+                )
+                one_response_ids, one_response_attention_mask = get_right_padded_ids_and_attention_mask(
+                    response_ids, max_response_length, self.pad_token_id
+                )
 
                 input_ids_list.append(one_input_ids)
                 input_attention_mask_list.append(one_input_attention_mask)
