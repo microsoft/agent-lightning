@@ -41,3 +41,5 @@ jobs:
       - name: Run tests
         run: |
           pytest -v tests
+        env:
+          PYTEST_ADDOPTS: "--color=yes"

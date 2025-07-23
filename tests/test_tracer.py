@@ -794,48 +794,48 @@ def test_run_with_agentops_tracer(agent_func):
     tracer.init()
     tracer.init_worker(0)
 
-
     global _langchain_callback_handler
     _langchain_callback_handler = tracer.get_langchain_callback_handler()
 
-    tracer.trace_run(
-        run_one,
-        agent_func,
-    )
-    tree = TraceTree.from_spans(tracer.get_last_trace())
+    try:
+        tracer.trace_run(
+            run_one,
+            agent_func,
+        )
+        tree = TraceTree.from_spans(tracer.get_last_trace())
 
-    tree.repair_hierarchy()
-    tree.visualize(f"debug/{agent_func.__name__}")
+        tree.repair_hierarchy()
 
-    assert_expected_pairs_in_tree(
-        tree.names_tuple(),
-        AGENTOPS_EXPECTED_TREES[agent_func.__name__]
-    )
+        assert_expected_pairs_in_tree(
+            tree.names_tuple(),
+            AGENTOPS_EXPECTED_TREES[agent_func.__name__]
+        )
 
-    triplets = TripletExporter().export(tracer.get_last_trace())
-    assert len(triplets) == AGENTOPS_EXPECTED_TRIPLETS_NUMBER[agent_func.__name__], (
-        f"Expected {AGENTOPS_EXPECTED_TRIPLETS_NUMBER[agent_func.__name__]} triplets, "
-        f"but got: {triplets}"
-    )
-    if agent_func.__name__ in AGENTOPS_EXPECTED_REWARDS:
-        if isinstance(AGENTOPS_EXPECTED_REWARDS[agent_func.__name__], tuple):
-            # If the expected rewards are a tuple, make sure at least one of them matches
-            assert any(
-                [r.reward in expected for r in triplets for expected in AGENTOPS_EXPECTED_REWARDS[agent_func.__name__]]
-            ), (
-                f"Expected rewards {AGENTOPS_EXPECTED_REWARDS[agent_func.__name__]}, "
-                f"but got: {pprint.pformat(triplets)}"
-            )
-        else:
-            assert [r.reward for r in triplets] == AGENTOPS_EXPECTED_REWARDS[agent_func.__name__], (
-                f"Expected rewards {AGENTOPS_EXPECTED_REWARDS[agent_func.__name__]}, "
-                f"but got: {pprint.pformat(triplets)}"
-            )
+        triplets = TripletExporter().export(tracer.get_last_trace())
+        assert len(triplets) == AGENTOPS_EXPECTED_TRIPLETS_NUMBER[agent_func.__name__], (
+            f"Expected {AGENTOPS_EXPECTED_TRIPLETS_NUMBER[agent_func.__name__]} triplets, "
+            f"but got: {triplets}"
+        )
+        if agent_func.__name__ in AGENTOPS_EXPECTED_REWARDS:
+            if isinstance(AGENTOPS_EXPECTED_REWARDS[agent_func.__name__], tuple):
+                # If the expected rewards are a tuple, make sure at least one of them matches
+                assert any(
+                    [r.reward in expected for r in triplets for expected in AGENTOPS_EXPECTED_REWARDS[agent_func.__name__]]
+                ), (
+                    f"Expected rewards {AGENTOPS_EXPECTED_REWARDS[agent_func.__name__]}, "
+                    f"but got: {pprint.pformat(triplets)}"
+                )
+            else:
+                assert [r.reward for r in triplets] == AGENTOPS_EXPECTED_REWARDS[agent_func.__name__], (
+                    f"Expected rewards {AGENTOPS_EXPECTED_REWARDS[agent_func.__name__]}, "
+                    f"but got: {pprint.pformat(triplets)}"
+                )
 
-    _langchain_callback_handler = None
+        _langchain_callback_handler = None
 
-    tracer.teardown_worker(0)
-    tracer.teardown()
+    finally:
+        tracer.teardown_worker(0)
+        tracer.teardown()
 
 
 @pytest.mark.parametrize("agent_func", list(iterate_over_agents()), ids=lambda f: f.__name__)
@@ -862,13 +862,15 @@ def test_run_with_http_tracer(agent_func):
     tracer.init()
     tracer.init_worker(0)
 
-    tracer.trace_run(
-        run_one,
-        agent_func,
-    )
-    assert len(tracer.get_last_trace()) > 0
-    tracer.teardown_worker(0)
-    tracer.teardown()
+    try:
+        tracer.trace_run(
+            run_one,
+            agent_func,
+        )
+        assert len(tracer.get_last_trace()) > 0
+    finally:
+        tracer.teardown_worker(0)
+        tracer.teardown()
 
 
 def _debug_with_agentops():

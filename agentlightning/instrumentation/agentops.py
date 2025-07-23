@@ -20,6 +20,11 @@ def _patch_new_agentops():
     from agentops.instrumentation.providers.openai.wrappers.chat import handle_chat_attributes
 
     global _original_handle_chat_attributes
+
+    if _original_handle_chat_attributes is not None:
+        logger.warning("AgentOps already patched. Skipping.")
+        return True
+
     _original_handle_chat_attributes = handle_chat_attributes
 
     def _handle_chat_attributes_with_tokens(args=None, kwargs=None, return_value=None):
@@ -60,6 +65,7 @@ def _unpatch_new_agentops():
         agentops.instrumentation.providers.openai.stream_wrapper.handle_chat_attributes = (
             _original_handle_chat_attributes
         )
+        _original_handle_chat_attributes = None
         logger.info("Unpatched newer version of agentops using handle_chat_attributes")
 
 
@@ -98,6 +104,7 @@ def _unpatch_old_agentops():
     global _original_handle_response
     if _original_handle_response is not None:
         opentelemetry.instrumentation.openai.shared.chat_wrappers._handle_response = _original_handle_response
+        _original_handle_response = None
         logger.info("Unpatched earlier version of agentops using _handle_response")
 
 
