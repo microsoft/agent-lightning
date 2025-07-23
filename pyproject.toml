@@ -23,6 +23,7 @@ dev = [
   "pytest-asyncio",
   "pre-commit",
   "pytest-rerunfailures",
+  "black",
 ]
 experiment = [
   "random-word",
