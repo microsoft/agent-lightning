@@ -25,6 +25,20 @@ dev = [
 experiment = [
   "random-word",
 ]
+agent = [
+  "autogen-agentchat",
+  "autogen-ext[openai]",
+  "litellm[proxy]",
+  "mcp",
+  "openai-agents",
+  "langgraph",
+  "langchain[openai]",
+  "langchain-community",
+  "langchain-text-splitters",
+  "sqlparse",
+  "nltk",
+  "uv",
+]
 
 [build-system]
 requires = ["hatchling"]

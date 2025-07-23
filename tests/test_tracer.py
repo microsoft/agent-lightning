@@ -34,6 +34,7 @@ from contextlib import asynccontextmanager
 from pydantic import BaseModel, Field
 
 from agentlightning.tracer.agentops import AgentOpsTracer, LightningSpanProcessor
+from agentlightning.tracer.triplet import TraceTree
 from agentlightning.tracer.http import HttpTracer
 from agentlightning.tracer.triplet import TripletExporter
 from agentlightning.reward import reward
@@ -746,7 +747,7 @@ def run_with_http_tracer():
 
     for agent_func in iterate_over_agents():
         print(agent_func)
-        if "mcp" in agent_func.__name__:
+        if "mcp" in agent_func.__name__ or "openai_agents_sdk" in agent_func.__name__:
             # FIXME: MCP server is not yet supported with HTTP tracer
             continue
         tracer.trace_run(
@@ -787,6 +788,87 @@ def create_prompt_caches():
         run_all()
 
 
+@pytest.mark.parametrize("agent_func", list(iterate_over_agents()), ids=lambda f: f.__name__)
+def test_run_with_agentops_tracer(agent_func):
+    tracer = AgentOpsTracer()
+    tracer.init()
+    tracer.init_worker(0)
+
+
+    global _langchain_callback_handler
+    _langchain_callback_handler = tracer.get_langchain_callback_handler()
+
+    tracer.trace_run(
+        run_one,
+        agent_func,
+    )
+    tree = TraceTree.from_spans(tracer.get_last_trace())
+
+    tree.repair_hierarchy()
+    tree.visualize(f"debug/{agent_func.__name__}")
+
+    assert_expected_pairs_in_tree(
+        tree.names_tuple(),
+        AGENTOPS_EXPECTED_TREES[agent_func.__name__]
+    )
+
+    triplets = TripletExporter().export(tracer.get_last_trace())
+    assert len(triplets) == AGENTOPS_EXPECTED_TRIPLETS_NUMBER[agent_func.__name__], (
+        f"Expected {AGENTOPS_EXPECTED_TRIPLETS_NUMBER[agent_func.__name__]} triplets, "
+        f"but got: {triplets}"
+    )
+    if agent_func.__name__ in AGENTOPS_EXPECTED_REWARDS:
+        if isinstance(AGENTOPS_EXPECTED_REWARDS[agent_func.__name__], tuple):
+            # If the expected rewards are a tuple, make sure at least one of them matches
+            assert any(
+                [r.reward in expected for r in triplets for expected in AGENTOPS_EXPECTED_REWARDS[agent_func.__name__]]
+            ), (
+                f"Expected rewards {AGENTOPS_EXPECTED_REWARDS[agent_func.__name__]}, "
+                f"but got: {pprint.pformat(triplets)}"
+            )
+        else:
+            assert [r.reward for r in triplets] == AGENTOPS_EXPECTED_REWARDS[agent_func.__name__], (
+                f"Expected rewards {AGENTOPS_EXPECTED_REWARDS[agent_func.__name__]}, "
+                f"but got: {pprint.pformat(triplets)}"
+            )
+
+    _langchain_callback_handler = None
+
+    tracer.teardown_worker(0)
+    tracer.teardown()
+
+
+@pytest.mark.parametrize("agent_func", list(iterate_over_agents()), ids=lambda f: f.__name__)
+def test_run_with_http_tracer(agent_func):
+    if "mcp" in agent_func.__name__:
+        pytest.skip("MCP server is not yet supported with HTTP tracer")
+    if "openai_agents_sdk" in agent_func.__name__:
+        pytest.skip("OpenAI Agents SDK is not yet supported with HTTP tracer")
+    if "langgraph" in agent_func.__name__:
+        pytest.skip("LangGraph is not yet supported with HTTP tracer")
+
+    import httpdbg.hooks.all
+
+    @contextmanager
+    def empty_hook(*args, **kwargs):
+        yield
+
+    httpdbg.hooks.all.hook_fastapi = empty_hook
+    httpdbg.hooks.all.hook_uvicorn = empty_hook
+
+    tracer = HttpTracer()
+    tracer.init()
+    tracer.init_worker(0)
+
+    tracer.trace_run(
+        run_one,
+        agent_func,
+    )
+    assert len(tracer.get_last_trace()) > 0
+    tracer.teardown_worker(0)
+    tracer.teardown()
+
+
 def _debug_with_agentops():
     """This function is for debugging purposes only."""
     assert "AGENTOPS_API_KEY" in os.environ, "AGENTOPS_API_KEY is not set"
@@ -803,6 +885,6 @@ def _debug_with_agentops():
 
 
 if __name__ == "__main__":
-    run_with_agentops_tracer()
-    # run_with_http_tracer()
+    # run_with_agentops_tracer()
+    run_with_http_tracer()
     # _debug_with_agentops()

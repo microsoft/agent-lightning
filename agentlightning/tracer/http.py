@@ -33,6 +33,10 @@ class HttpTracer(BaseTracer):
     The captured requests are converted to OpenTelemetry spans for
     compatibility with the rest of the tracing ecosystem.
 
+    Caution: The current implementation of HttpTracer is very fragile,
+    and we do not recommend using it in production.
+    It is primarily for demonstration and testing purposes.
+
     Attributes:
         include_headers: Whether to include HTTP headers in the spans.
             Headers may contain sensitive information. Use with caution.
