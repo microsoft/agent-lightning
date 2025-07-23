@@ -846,6 +846,8 @@ def test_run_with_http_tracer(agent_func):
         pytest.skip("OpenAI Agents SDK is not yet supported with HTTP tracer")
     if "langgraph" in agent_func.__name__:
         pytest.skip("LangGraph is not yet supported with HTTP tracer")
+    if "autogen" in agent_func.__name__:
+        pytest.skip("AutoGen is not yet supported with HTTP tracer")
 
     import httpdbg.hooks.all
 
