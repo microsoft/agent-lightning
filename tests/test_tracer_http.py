@@ -40,6 +40,7 @@ async def async_http_function():
     return {"get_status": get_status, "post_status": post_status, "get_data": get_data, "post_data": post_data}
 
 
+@pytest.mark.flaky(reruns=3, reruns_delay=2)
 def test_normal_mode_sync_requests():
     """Test HttpTracer in normal mode with synchronous requests."""
     tracer = HttpTracer(include_headers=True, include_body=True, subprocess_mode=False)
@@ -69,6 +70,7 @@ def test_normal_mode_sync_requests():
         assert span.attributes["http.status_code"] == 200
 
 
+@pytest.mark.flaky(reruns=3, reruns_delay=2)
 def test_subprocess_mode_sync_requests():
     """Test HttpTracer in subprocess mode with synchronous requests."""
     tracer = HttpTracer(include_headers=True, include_body=True, subprocess_mode=True)
@@ -91,6 +93,7 @@ def test_subprocess_mode_sync_requests():
     assert "HTTP POST https://httpbin.org/post" in span_names
 
 
+@pytest.mark.flaky(reruns=3, reruns_delay=2)
 @pytest.mark.asyncio
 async def test_subprocess_mode_async_requests():
     """Test HttpTracer in subprocess mode with asynchronous requests."""
@@ -114,6 +117,7 @@ async def test_subprocess_mode_async_requests():
     assert "HTTP POST https://httpbin.org/post" in span_names
 
 
+@pytest.mark.flaky(reruns=3, reruns_delay=2)
 @pytest.mark.asyncio
 async def test_normal_mode_async_requests():
     """Test HttpTracer in normal mode with asynchronous requests."""
@@ -135,6 +139,7 @@ async def test_normal_mode_async_requests():
     assert "HTTP POST https://httpbin.org/post" in span_names
 
 
+@pytest.mark.flaky(reruns=3, reruns_delay=2)
 def test_span_attributes_detailed():
     """Test that spans contain expected attributes when headers and body are included."""
     tracer = HttpTracer(include_headers=True, include_body=True, subprocess_mode=False)
@@ -161,6 +166,7 @@ def test_span_attributes_detailed():
         assert "http.request.header.accept" in span.attributes
 
 
+@pytest.mark.flaky(reruns=3, reruns_delay=2)
 def test_span_attributes_minimal():
     """Test that spans contain minimal attributes when headers and body are excluded."""
     tracer = HttpTracer(include_headers=False, include_body=False, subprocess_mode=False)
@@ -185,6 +191,7 @@ def test_span_attributes_minimal():
         assert "http.response.body" not in span.attributes
 
 
+@pytest.mark.flaky(reruns=3, reruns_delay=2)
 def test_error_handling_in_subprocess():
     """Test that errors in subprocess mode are properly propagated."""
 
