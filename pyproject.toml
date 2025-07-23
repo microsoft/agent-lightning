@@ -21,6 +21,7 @@ dev = [
   "pytest",
   "hatch",
   "pytest-asyncio",
+  "pre-commit",
 ]
 experiment = [
   "random-word",
