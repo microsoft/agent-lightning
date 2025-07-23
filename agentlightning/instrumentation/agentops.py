@@ -27,8 +27,8 @@ def _patch_new_agentops():
 
     _original_handle_chat_attributes = handle_chat_attributes
 
-    def _handle_chat_attributes_with_tokens(args=None, kwargs=None, return_value=None):
-        attributes = _original_handle_chat_attributes(args=args, kwargs=kwargs, return_value=return_value)
+    def _handle_chat_attributes_with_tokens(args=None, kwargs=None, return_value=None, **kws):
+        attributes = _original_handle_chat_attributes(args=args, kwargs=kwargs, return_value=return_value, **kws)
         if hasattr(return_value, "prompt_token_ids"):
             attributes["prompt_token_ids"] = list(return_value.prompt_token_ids)
         if hasattr(return_value, "response_token_ids"):
