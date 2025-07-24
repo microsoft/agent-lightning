@@ -528,7 +528,7 @@ def spider_dev_data():
     df = pd.read_parquet(spider_dev_data_path)
     resource = {
         "main_llm": agentlightning.LLM(
-            model="gpt-4.1-mini",
+            model="gpt-4.1-nano",
             endpoint=os.environ["OPENAI_API_BASE"],
             sampling_parameters={
                 "temperature": 0.0,
