@@ -16,7 +16,7 @@ jobs:
     timeout-minutes: 90
     container:
       image: ghcr.io/microsoft/agent-lightning/base:latest
-      options: --gpus all --ipc=host
+      options: --gpus all --ipc=host --interactive --tty
     steps:
       - name: Check GPU status
         run: nvidia-smi
