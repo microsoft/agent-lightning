@@ -13,6 +13,7 @@ on:
 jobs:
   examples:
     runs-on: [self-hosted, linux, gpu]
+    timeout-minutes: 90
     container:
       image: ghcr.io/microsoft/agent-lightning/base:latest
       options: --gpus all --ipc=host
@@ -45,8 +46,8 @@ jobs:
           . .venv/bin/activate
           cd examples/spider
           gdown --fuzzy https://drive.google.com/file/d/1oi9J1jZP9TyM35L85CL3qeGWl2jqlnL6/view
-          unzip -q spider_data.zip -d data
-          rm spider_data.zip
+          unzip -q spider-data.zip -d data
+          rm spider-data.zip
       - name: Prepare Calc-X dataset
         run: |
           set -ex
