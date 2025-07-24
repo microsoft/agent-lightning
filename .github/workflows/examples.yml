@@ -1,0 +1,32 @@
+name: GPU Test
+on:
+  schedule:
+    # Every day at 4 AM UTC+8
+    - cron: '0 20 * * *'
+
+  workflow_dispatch:
+
+jobs:
+  gpu-job:
+    runs-on: [self-hosted, linux, gpu]
+    container:
+      image: nvidia/cuda:12.8.0-cudnn-devel-ubuntu24.04
+      options: --gpus all --ipc=host
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install deps inside the container
+        run: ./scripts/setup_stable_gpu.sh
+      - name: Calc-X Example
+        run: |
+          set -ex
+          cd examples/calc-x
+          gdown --fuzzy https://drive.google.com/file/d/1FQMyKLLd6hP9dw9rfZn1EZOWNvKaDsqw/view
+          unzip calc-x-data.zip -d data
+          rm calc-x-data.zip
+          ../../scripts/restart_ray.sh
+          python calc_agent.py &
+          bash train_mini.sh
+          pkill -f calc_agent.py || true
+        continue-on-error: true
+      - name: Cleanup
+        run: ./scripts/cleanup.sh
