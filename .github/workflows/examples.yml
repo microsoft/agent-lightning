@@ -15,11 +15,7 @@ jobs:
     runs-on: [self-hosted, linux, gpu]
     container:
       image: ghcr.io/microsoft/agent-lightning/base:latest
-      options: |
-        --gpus all \
-        --ipc=host \
-        --user 1001:1001 \
-        --group-add video
+      options: --gpus all --ipc=host --user 1001:1001 --group-add video
     steps:
       - uses: actions/checkout@v4
       - name: Install deps inside the container
