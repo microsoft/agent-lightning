@@ -2,8 +2,8 @@ name: GPU Test
 permissions:
   contents: read
 on:
-  # push:  # for debugging purposes
-  #   branches: [examples-test]
+  push:  # for debugging purposes
+    branches: [examples-test]
   schedule:
     # Every day at 4 AM UTC+8
     - cron: '0 20 * * *'
@@ -14,7 +14,7 @@ jobs:
   gpu-job:
     runs-on: [self-hosted, linux, gpu]
     container:
-      image: nvidia/cuda:12.8.0-cudnn-devel-ubuntu24.04
+      image: ghcr.io/microsoft/agent-lightning/base:latest
       options: --gpus all --ipc=host
     steps:
       - uses: actions/checkout@v4
