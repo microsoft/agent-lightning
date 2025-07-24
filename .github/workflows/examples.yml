@@ -39,7 +39,7 @@ jobs:
           name: dependencies-python
           path: requirements-freeze.txt
           compression-level: 0
-      - name: Calc-X Example
+      - name: Prepare Calc-X dataset
         run: |
           set -ex
           source .venv/bin/activate
@@ -47,11 +47,24 @@ jobs:
           gdown --fuzzy https://drive.google.com/file/d/1FQMyKLLd6hP9dw9rfZn1EZOWNvKaDsqw/view
           unzip calc-x-data.zip -d data
           rm calc-x-data.zip
-          python calc_agent.py
-          # ../../scripts/restart_ray.sh
-          # PYTHONUNBUFFERED=1 python calc_agent.py &
-          # bash train_ci.sh
-          # pkill -f calc_agent.py || true
+      - name: Calc-X sanity check
+        run: |
+          set -ex
+          source .venv/bin/activate
+          cd examples/calc_x
+          python calc_agent_dev.py
+        env:
+          OPENAI_API_BASE: ${{ secrets.OPENAI_API_BASE }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      - name: Calc-X training
+        run: |
+          set -ex
+          source .venv/bin/activate
+          cd examples/calc_x
+          ../../scripts/restart_ray.sh
+          PYTHONUNBUFFERED=1 python calc_agent.py &
+          bash train_ci.sh
+          pkill -f calc_agent.py || true
         env:
           WANDB_API_KEY: ${{ secrets.WANDB_API_KEY }}
       - name: Cleanup
