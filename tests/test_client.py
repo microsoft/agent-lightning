@@ -316,6 +316,8 @@ def test_local_client_core_functionality(sample_resources: NamedResources):
     assert result is not None
     assert result["status"] == "received"
     assert result["rollout_id"] == "test_rollout"
+    assert len(client2.posted_rollouts) == 1
+    assert client2.posted_rollouts[0].rollout_id == "test_rollout"
 
     # Test repr
     repr_str = repr(client2)
@@ -368,3 +370,5 @@ async def test_local_client_async_methods(sample_resources: NamedResources):
     result = await client.post_rollout_async(rollout)
     assert result is not None
     assert result["rollout_id"] == "async_rollout"
+    assert len(client.posted_rollouts) == 1
+    assert client.posted_rollouts[0].final_reward == 0.8

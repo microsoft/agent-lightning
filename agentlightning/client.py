@@ -294,6 +294,14 @@ class DevTaskLoader(AgentLightningClient):
         else:
             self._resources_update = ResourcesUpdate(resources_id="local", resources=resources)
 
+        # Store rollouts posted back to the loader for easy debugging of local runs
+        self._posted_rollouts: List[Rollout] = []
+
+    @property
+    def posted_rollouts(self) -> List[Rollout]:
+        """Return rollouts that have been posted back to the loader."""
+        return self._posted_rollouts
+
     def poll_next_task(self) -> Task:
         """Returns the next task from the local queue.
 
@@ -338,6 +346,7 @@ class DevTaskLoader(AgentLightningClient):
 
     def post_rollout(self, rollout: Rollout) -> Optional[Dict[str, Any]]:
         logger.debug(f"DevTaskLoader received rollout for task: {rollout.rollout_id}")
+        self._posted_rollouts.append(rollout)
         return {"status": "received", "rollout_id": rollout.rollout_id}
 
     async def poll_next_task_async(self) -> Task:
