@@ -526,10 +526,18 @@ def spider_dev_data():
     if not os.path.exists(spider_dev_data_path):
         raise FileNotFoundError(f"Spider dev data file {spider_dev_data_path} does not exist.")
     df = pd.read_parquet(spider_dev_data_path)
+    if "OPENAI_API_BASE" not in os.environ:
+        logger.warning(
+            "Environment variable OPENAI_API_BASE is not set. Using default value 'https://api.openai.com/v1'."
+        )
+        openai_api_base = "https://api.openai.com/v1"
+    else:
+        openai_api_base = os.environ["OPENAI_API_BASE"]
+
     resource = {
         "main_llm": agentlightning.LLM(
             model="gpt-4.1-nano",
-            endpoint=os.environ["OPENAI_API_BASE"],
+            endpoint=openai_api_base,
             sampling_parameters={
                 "temperature": 0.0,
             },

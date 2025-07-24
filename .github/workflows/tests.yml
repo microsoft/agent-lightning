@@ -19,6 +19,7 @@ jobs:
   lint:
     name: Lint with Black
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-python@v4
@@ -45,6 +46,7 @@ jobs:
 
     name: Test with Python ${{ matrix.python-version }} (${{ matrix.setup-script }})
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-python@v4

@@ -6,7 +6,7 @@ export N_GPUS=1
 export BASE_MODEL=Qwen/Qwen2.5-Coder-1.5B-Instruct
 export DATA_DIR=data
 export ROLLOUT_TP_SIZE=1
-export EXPERIMENT_NAME=spider
+export EXPERIMENT_NAME="spider_$(date +%Y%m%d%H%M%S)"
 export PROJECT_NAME=AgentLightning
 
 echo "Starting training script..."
