@@ -12,6 +12,7 @@ export PROJECT_NAME=AgentLightning
 echo "Starting training script..."
 
 python -m agentlightning.verl \
+    agentlightning.port=9991 \
     algorithm.adv_estimator=grpo \
     data.train_files=${DATA_DIR}/train_spider.parquet \
     data.val_files=${DATA_DIR}/test_dev.parquet \

@@ -84,26 +84,39 @@ jobs:
         env:
           OPENAI_API_BASE: ${{ secrets.OPENAI_API_BASE }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      - name: Calc-X training
-        run: |
-          set -ex
-          . .venv/bin/activate
-          cd examples/calc_x
-          ../../scripts/restart_ray.sh
-          PYTHONUNBUFFERED=1 python calc_agent.py &
-          bash train_ci.sh
-          pkill -f calc_agent.py || true
-        env:
-          WANDB_API_KEY: ${{ secrets.WANDB_API_KEY }}
       - name: Spider training
         run: |
           set -ex
-          . .venv/bin/activate
+          source .venv/bin/activate
           cd examples/spider
           ../../scripts/restart_ray.sh
           PYTHONUNBUFFERED=1 python sql_agent.py --trainer.n-workers 10 &
           bash train_ci.sh
-          pkill -f sql_agent.py || true
+          pkill -f sql_agent.py && echo "SIGTERM sent to sql_agent.py" || echo "No sql_agent.py process found"
+          while pgrep -f sql_agent.py; do
+            echo "Waiting for sql_agent.py to finish..."
+            sleep 5
+          done
+          echo "sql_agent.py has finished."
+        shell: bash
+        env:
+          VERL_API_BASE: http://localhost:9991/
+          WANDB_API_KEY: ${{ secrets.WANDB_API_KEY }}
+      - name: Calc-X training
+        run: |
+          set -ex
+          source .venv/bin/activate
+          cd examples/calc_x
+          ../../scripts/restart_ray.sh
+          PYTHONUNBUFFERED=1 python calc_agent.py &
+          bash train_ci.sh
+          pkill -f calc_agent.py && echo "SIGTERM sent to calc_agent.py" || echo "No calc_agent.py process found"
+          while pgrep -f calc_agent.py; do
+            echo "Waiting for calc_agent.py to finish..."
+            sleep 5
+          done
+          echo "calc_agent.py has finished."
+        shell: bash
         env:
           WANDB_API_KEY: ${{ secrets.WANDB_API_KEY }}
         if: success() || failure()
