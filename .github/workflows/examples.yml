@@ -20,13 +20,15 @@ jobs:
       - name: Check GPU status
         run: nvidia-smi
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v4
-        with:
-          python-version: '3.12'
+      - name: Create a virtual environment
+        run: python -m venv .venv
       - name: Install deps inside the container
-        run: ./scripts/setup_stable_gpu.sh
+        run: |
+          source .venv/bin/activate
+          ./scripts/setup_stable_gpu.sh
       - name: Freeze dependencies
         run: |
+          source .venv/bin/activate
           which python
           which pip
           which uvx
@@ -40,6 +42,7 @@ jobs:
       - name: Calc-X Example
         run: |
           set -ex
+          source .venv/bin/activate
           cd examples/calc_x
           gdown --fuzzy https://drive.google.com/file/d/1FQMyKLLd6hP9dw9rfZn1EZOWNvKaDsqw/view
           unzip calc-x-data.zip -d data
