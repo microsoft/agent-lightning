@@ -21,11 +21,11 @@ def dev_task_loader() -> DevTaskLoader:
         ],
         resources={
             "main_llm": LLM(
-                endpoint=os.environ["OPENAI_API_BASE"], model="gpt-4o-mini", sampling_parameters={"temperature": 0.7}
+                endpoint=os.environ["OPENAI_API_BASE"], model="gpt-4.1-nano", sampling_parameters={"temperature": 0.7}
             ),
         },
     )
 
 
 if __name__ == "__main__":
-    Trainer(n_workers=4, dev=True, max_tasks=5).fit(CalcAgent(), "http://localhost:9999/", dev_task_loader())
+    Trainer(n_workers=2, dev=True, max_tasks=2).fit(CalcAgent(), "http://localhost:9999/", dev_task_loader())

@@ -63,7 +63,7 @@ jobs:
           set -ex
           . .venv/bin/activate
           cd examples/spider
-          python sql_agent.py --trainer.n-workers 1 --trainer.dev true --trainer.max-tasks 5
+          python sql_agent.py --trainer.n-workers 1 --trainer.dev true --trainer.max-tasks 2
         env:
           VERL_API_BASE: http://localhost:9999/
           OPENAI_API_BASE: ${{ secrets.OPENAI_API_BASE }}
