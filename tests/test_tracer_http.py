@@ -2,7 +2,7 @@
 """
 Functional tests for HttpTracer with real HTTP requests.
 
-These tests use actual HTTP requests to httpbin.org to validate
+These tests use actual HTTP requests to httpbingo.org to validate
 that the HttpTracer correctly captures HTTP traffic in both
 normal and subprocess modes.
 """
@@ -16,8 +16,8 @@ from agentlightning.tracer.http import HttpTracer
 
 def sync_http_function():
     """A simple synchronous function that makes HTTP requests."""
-    response = requests.get("https://httpbin.org/get")
-    response2 = requests.post("https://httpbin.org/post", json={"test": "data"})
+    response = requests.get("https://httpbingo.org/get")
+    response2 = requests.post("https://httpbingo.org/post", json={"test": "data"})
     return {
         "get_status": response.status_code,
         "post_status": response2.status_code,
@@ -29,11 +29,11 @@ def sync_http_function():
 async def async_http_function():
     """A simple asynchronous function that makes HTTP requests."""
     async with aiohttp.ClientSession() as session:
-        async with session.get("https://httpbin.org/get") as response:
+        async with session.get("https://httpbingo.org/get") as response:
             get_data = await response.json()
             get_status = response.status
 
-        async with session.post("https://httpbin.org/post", json={"async": "test"}) as response:
+        async with session.post("https://httpbingo.org/post", json={"async": "test"}) as response:
             post_data = await response.json()
             post_status = response.status
 
@@ -53,14 +53,14 @@ def test_normal_mode_sync_requests():
     assert result["post_status"] == 200
     assert "get_data" in result
     assert "post_data" in result
-    assert result["get_data"]["url"] == "https://httpbin.org/get"
+    assert result["get_data"]["url"] == "https://httpbingo.org/get"
     assert result["post_data"]["json"]["test"] == "data"
 
     # Verify spans
     assert len(spans) == 2
     span_names = [span.name for span in spans]
-    assert "HTTP GET https://httpbin.org/get" in span_names
-    assert "HTTP POST https://httpbin.org/post" in span_names
+    assert "HTTP GET https://httpbingo.org/get" in span_names
+    assert "HTTP POST https://httpbingo.org/post" in span_names
 
     # Verify span attributes
     for span in spans:
@@ -83,14 +83,14 @@ def test_subprocess_mode_sync_requests():
     assert result["post_status"] == 200
     assert "get_data" in result
     assert "post_data" in result
-    assert result["get_data"]["url"] == "https://httpbin.org/get"
+    assert result["get_data"]["url"] == "https://httpbingo.org/get"
     assert result["post_data"]["json"]["test"] == "data"
 
     # Verify spans
     assert len(spans) == 2
     span_names = [span.name for span in spans]
-    assert "HTTP GET https://httpbin.org/get" in span_names
-    assert "HTTP POST https://httpbin.org/post" in span_names
+    assert "HTTP GET https://httpbingo.org/get" in span_names
+    assert "HTTP POST https://httpbingo.org/post" in span_names
 
 
 @pytest.mark.flaky(reruns=3, reruns_delay=2)
@@ -107,14 +107,14 @@ async def test_subprocess_mode_async_requests():
     assert result["post_status"] == 200
     assert "get_data" in result
     assert "post_data" in result
-    assert result["get_data"]["url"] == "https://httpbin.org/get"
+    assert result["get_data"]["url"] == "https://httpbingo.org/get"
     assert result["post_data"]["json"]["async"] == "test"
 
     # Verify spans
     assert len(spans) == 2
     span_names = [span.name for span in spans]
-    assert "HTTP GET https://httpbin.org/get" in span_names
-    assert "HTTP POST https://httpbin.org/post" in span_names
+    assert "HTTP GET https://httpbingo.org/get" in span_names
+    assert "HTTP POST https://httpbingo.org/post" in span_names
 
 
 @pytest.mark.flaky(reruns=3, reruns_delay=2)
@@ -135,8 +135,8 @@ async def test_normal_mode_async_requests():
     # Verify spans
     assert len(spans) == 2
     span_names = [span.name for span in spans]
-    assert "HTTP GET https://httpbin.org/get" in span_names
-    assert "HTTP POST https://httpbin.org/post" in span_names
+    assert "HTTP GET https://httpbingo.org/get" in span_names
+    assert "HTTP POST https://httpbingo.org/post" in span_names
 
 
 @pytest.mark.flaky(reruns=3, reruns_delay=2)
@@ -196,7 +196,7 @@ def test_error_handling_in_subprocess():
     """Test that errors in subprocess mode are properly propagated."""
 
     def failing_function():
-        requests.get("https://httpbin.org/get")
+        requests.get("https://httpbingo.org/get")
         raise ValueError("Test error")
 
     tracer = HttpTracer(subprocess_mode=True)
@@ -207,4 +207,4 @@ def test_error_handling_in_subprocess():
     # Should still capture the successful request before the error
     spans = tracer.get_last_trace()
     assert len(spans) == 1
-    assert "HTTP GET https://httpbin.org/get" in spans[0].name
+    assert "HTTP GET https://httpbingo.org/get" in spans[0].name
