@@ -14,6 +14,10 @@ jobs:
   examples:
     runs-on: [self-hosted, linux, gpu]
     timeout-minutes: 60
+    strategy:
+      matrix:
+        setup: [stable, latest]
+      fail-fast: false
     container:
       image: ghcr.io/microsoft/agent-lightning/base:latest
       options: --gpus all --ipc=host --interactive --tty
@@ -23,10 +27,10 @@ jobs:
       - uses: actions/checkout@v4
       - name: Create a virtual environment
         run: python3 -m venv .venv
-      - name: Install deps inside the container
+      - name: Install deps inside the container (${{ matrix.setup }})
         run: |
           . .venv/bin/activate
-          ./scripts/setup_stable_gpu.sh
+          ./scripts/setup_${{ matrix.setup }}_gpu.sh
       - name: Freeze dependencies
         run: |
           . .venv/bin/activate
@@ -84,6 +88,11 @@ jobs:
         env:
           OPENAI_API_BASE: ${{ secrets.OPENAI_API_BASE }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
+      # Calc-X training suddenly works after running the sanity check.
+      # And it has to be run before Spider training.
+      # The client side used to hang in many of my attempts.
+      # Don't ask why. Don't touch this.
       - name: Calc-X training
         run: |
           set -ex
