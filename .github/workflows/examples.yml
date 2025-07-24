@@ -39,7 +39,7 @@ jobs:
       - name: Upload dependencies artifact
         uses: actions/upload-artifact@v4
         with:
-          name: dependencies-python
+          name: dependencies-${{ matrix.setup }}
           path: requirements-freeze.txt
           compression-level: 0
       - name: Prepare Spider dataset
