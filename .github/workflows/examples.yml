@@ -2,8 +2,6 @@ name: GPU Test
 permissions:
   contents: read
 on:
-  push:  # for debugging purposes
-    branches: [examples-test]
   schedule:
     # Every day at 3 AM UTC+8
     - cron: '0 19 * * *'
