@@ -1,4 +1,5 @@
 set -ex
 
-rm -rf checkpoints
+rm -rf examples/spider/checkpoints
+rm -rf examples/calc_x/checkpoints
 rm -rf verl

@@ -95,6 +95,18 @@ jobs:
           pkill -f calc_agent.py || true
         env:
           WANDB_API_KEY: ${{ secrets.WANDB_API_KEY }}
+      - name: Spider training
+        run: |
+          set -ex
+          . .venv/bin/activate
+          cd examples/spider
+          ../../scripts/restart_ray.sh
+          PYTHONUNBUFFERED=1 python sql_agent.py --trainer.n-workers 10 &
+          bash train_ci.sh
+          pkill -f sql_agent.py || true
+        env:
+          WANDB_API_KEY: ${{ secrets.WANDB_API_KEY }}
+        if: success() || failure()
       - name: Cleanup
         run: ./scripts/cleanup.sh
         if: success() || failure()

@@ -1,3 +1,3 @@
 set -ex
-python -m pip install --upgrade pip
-pip install -e .[dev,agent]
+python -m pip install --upgrade --no-cache-dir pip
+pip install -e --no-cache-dir .[dev,agent]

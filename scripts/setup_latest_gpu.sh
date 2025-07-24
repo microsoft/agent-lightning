@@ -1,17 +1,17 @@
 set -ex
-sudo apt update
-sudo apt install -y wget curl unzip vim
 
-python -m pip install --upgrade pip
+python -m pip install --upgrade --no-cache-dir pip
 
-pip install packaging ninja numpy pandas ipython ipykernel gdown
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
-pip install flash-attn --no-build-isolation
-pip install vllm
+pip install --no-cache-dir packaging ninja numpy pandas ipython ipykernel gdown wheel setuptools
+pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
+pip install --no-cache-dir flash-attn --no-build-isolation
+pip install --no-cache-dir vllm
 
 git clone https://github.com/volcengine/verl
 cd verl
-pip install -e .
+pip install -e --no-cache-dir .
 cd ..
 
-pip install -e .[dev,agent]
+pip install -e --no-cache-dir .[dev,agent]
+# Upgrade agentops to the latest version
+pip install --no-cache-dir -U agentops
