@@ -3,4 +3,5 @@ wandb/
 outputs/
 checkpoints/
 calc-x-data.zip
+spider-data.zip
 agentops.log

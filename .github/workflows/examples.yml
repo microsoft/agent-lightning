@@ -39,6 +39,14 @@ jobs:
           name: dependencies-python
           path: requirements-freeze.txt
           compression-level: 0
+      - name: Prepare Spider dataset
+        run: |
+          set -ex
+          . .venv/bin/activate
+          cd examples/spider
+          gdown --fuzzy https://drive.google.com/file/d/1oi9J1jZP9TyM35L85CL3qeGWl2jqlnL6/view
+          unzip -q spider_data.zip -d data
+          rm spider_data.zip
       - name: Prepare Calc-X dataset
         run: |
           set -ex
@@ -47,6 +55,16 @@ jobs:
           gdown --fuzzy https://drive.google.com/file/d/1FQMyKLLd6hP9dw9rfZn1EZOWNvKaDsqw/view
           unzip calc-x-data.zip -d data
           rm calc-x-data.zip
+      - name: Spider sanity check
+        run: |
+          set -ex
+          . .venv/bin/activate
+          cd examples/spider
+          python sql_agent.py --trainer.n-workers 1 --trainer.dev true --trainer.max-tasks 5
+        env:
+          VERL_API_BASE: http://localhost:9999/
+          OPENAI_API_BASE: ${{ secrets.OPENAI_API_BASE }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       - name: Calc-X sanity check
         run: |
           set -ex
