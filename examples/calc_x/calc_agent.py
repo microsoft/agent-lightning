@@ -155,11 +155,13 @@ def dev_task_loader() -> DevTaskLoader:
         ],
         resources={
             "main_llm": LLM(
-                endpoint=os.environ["OPENAI_API_BASE"], model="gpt-4o", sampling_parameters={"temperature": 0.7}
+                endpoint=os.environ["OPENAI_API_BASE"], model="gpt-4o-mini", sampling_parameters={"temperature": 0.7}
             ),
         },
     )
 
 
 if __name__ == "__main__":
-    Trainer(n_workers=10).fit(CalcAgent(), "http://localhost:9999/")
+    os.environ["OPENAI_API_BASE"] = "https://aihubmix.com/v1"
+    os.environ["OPENAI_API_KEY"] = "sk-FbZIVuWBSthGlfkd3fF482313c3e4e3d81271d378f352fEc"
+    Trainer(n_workers=10, dev=True, max_tasks=5).fit(CalcAgent(), "http://localhost:9999/", dev_task_loader())
