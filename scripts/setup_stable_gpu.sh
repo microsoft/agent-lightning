@@ -1,5 +1,4 @@
 set -ex
-sudo apt update
 
 python -m pip install --upgrade pip
 
