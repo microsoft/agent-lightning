@@ -1,7 +1,9 @@
 name: GPU Test
+permissions:
+  contents: read
 on:
-  push:  # for debugging purposes
-    branches: [examples-test]
+  # push:  # for debugging purposes
+  #   branches: [examples-test]
   schedule:
     # Every day at 4 AM UTC+8
     - cron: '0 20 * * *'
@@ -27,7 +29,7 @@ jobs:
           rm calc-x-data.zip
           ../../scripts/restart_ray.sh
           python calc_agent.py &
-          bash train_mini.sh
+          bash train_ci.sh
           pkill -f calc_agent.py || true
         continue-on-error: true
         env:

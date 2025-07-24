@@ -1,6 +1,5 @@
 set -ex
 sudo apt update
-sudo apt install -y wget curl unzip vim
 
 python -m pip install --upgrade pip
 
