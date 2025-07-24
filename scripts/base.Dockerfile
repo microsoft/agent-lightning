@@ -7,6 +7,7 @@ RUN apt-get update && apt-get update && apt-get install -y \
     build-essential \
     python3-dev \
     python3-pip \
+    python3-venv \
     graphviz \
     unzip \
     tmux \
