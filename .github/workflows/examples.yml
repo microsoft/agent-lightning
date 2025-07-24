@@ -21,7 +21,7 @@ jobs:
         run: nvidia-smi
       - uses: actions/checkout@v4
       - name: Create a virtual environment
-        run: python -m venv .venv
+        run: python3 -m venv .venv
       - name: Install deps inside the container
         run: |
           source .venv/bin/activate
