@@ -1,7 +1,7 @@
 
 #!/bin/bash
 
-set -e
+set -ex
 
 export N_GPUS=1
 export BASE_MODEL=Qwen/Qwen2.5-1.5B-Instruct

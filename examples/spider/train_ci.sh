@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -e
+set -ex
 
 export N_GPUS=1
 export BASE_MODEL=Qwen/Qwen2.5-Coder-1.5B-Instruct
@@ -11,7 +11,7 @@ export PROJECT_NAME=AgentLightning
 
 echo "Starting training script..."
 
-python -m agentlightning.verl \
+PYTHONUNBUFFERED=1 python -m agentlightning.verl \
     agentlightning.port=9991 \
     algorithm.adv_estimator=grpo \
     data.train_files=${DATA_DIR}/train_spider.parquet \

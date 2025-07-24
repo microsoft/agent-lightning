@@ -97,6 +97,7 @@ jobs:
           source .venv/bin/activate
           cd examples/calc_x
           ../../scripts/restart_ray.sh
+          sleep 5
           PYTHONUNBUFFERED=1 python calc_agent.py &
           bash train_ci.sh
           pkill -f calc_agent.py && echo "SIGTERM sent to calc_agent.py" || echo "No calc_agent.py process found"
@@ -105,6 +106,7 @@ jobs:
             sleep 5
           done
           echo "calc_agent.py has finished."
+          sleep 10
         shell: bash
         env:
           WANDB_API_KEY: ${{ secrets.WANDB_API_KEY }}
@@ -114,6 +116,7 @@ jobs:
           source .venv/bin/activate
           cd examples/spider
           ../../scripts/restart_ray.sh
+          sleep 5
           PYTHONUNBUFFERED=1 python sql_agent.py --trainer.n-workers 10 &
           bash train_ci.sh
           pkill -f sql_agent.py && echo "SIGTERM sent to sql_agent.py" || echo "No sql_agent.py process found"
@@ -122,6 +125,7 @@ jobs:
             sleep 5
           done
           echo "sql_agent.py has finished."
+          sleep 10
         shell: bash
         env:
           VERL_API_BASE: http://localhost:9991/
