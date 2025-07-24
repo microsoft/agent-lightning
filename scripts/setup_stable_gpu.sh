@@ -10,7 +10,7 @@ pip install --no-cache-dir vllm==0.9.2
 git clone https://github.com/volcengine/verl
 cd verl
 git checkout 1df03f3abf96f59cb90c684f93a71ee0bbb57f49
-pip install -e --no-cache-dir .
+pip install --no-cache-dir -e .
 cd ..
 
-pip install -e --no-cache-dir .[dev,agent]
+pip install --no-cache-dir -e .[dev,agent]

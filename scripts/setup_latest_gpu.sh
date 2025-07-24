@@ -9,9 +9,9 @@ pip install --no-cache-dir vllm
 
 git clone https://github.com/volcengine/verl
 cd verl
-pip install -e --no-cache-dir .
+pip install --no-cache-dir -e .
 cd ..
 
-pip install -e --no-cache-dir .[dev,agent]
+pip install --no-cache-dir -e .[dev,agent]
 # Upgrade agentops to the latest version
 pip install --no-cache-dir -U agentops

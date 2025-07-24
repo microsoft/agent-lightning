@@ -5,8 +5,8 @@ on:
   push:  # for debugging purposes
     branches: [examples-test]
   schedule:
-    # Every day at 4 AM UTC+8
-    - cron: '0 20 * * *'
+    # Every day at 3 AM UTC+8
+    - cron: '0 19 * * *'
 
   workflow_dispatch:
 
