@@ -25,6 +25,9 @@ jobs:
         run: ./scripts/setup_stable_gpu.sh
       - name: Freeze dependencies
         run: |
+          which python
+          which pip
+          which uvx
           pip list | tee requirements-freeze.txt
       - name: Upload dependencies artifact
         uses: actions/upload-artifact@v4
