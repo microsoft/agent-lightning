@@ -13,7 +13,7 @@ on:
 jobs:
   examples:
     runs-on: [self-hosted, linux, gpu]
-    timeout-minutes: 90
+    timeout-minutes: 60
     container:
       image: ghcr.io/microsoft/agent-lightning/base:latest
       options: --gpus all --ipc=host --interactive --tty
@@ -84,6 +84,23 @@ jobs:
         env:
           OPENAI_API_BASE: ${{ secrets.OPENAI_API_BASE }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      - name: Calc-X training
+        run: |
+          set -ex
+          source .venv/bin/activate
+          cd examples/calc_x
+          ../../scripts/restart_ray.sh
+          PYTHONUNBUFFERED=1 python calc_agent.py &
+          bash train_ci.sh
+          pkill -f calc_agent.py && echo "SIGTERM sent to calc_agent.py" || echo "No calc_agent.py process found"
+          while pgrep -f calc_agent.py; do
+            echo "Waiting for calc_agent.py to finish..."
+            sleep 5
+          done
+          echo "calc_agent.py has finished."
+        shell: bash
+        env:
+          WANDB_API_KEY: ${{ secrets.WANDB_API_KEY }}
       - name: Spider training
         run: |
           set -ex
@@ -101,23 +118,6 @@ jobs:
         shell: bash
         env:
           VERL_API_BASE: http://localhost:9991/
-          WANDB_API_KEY: ${{ secrets.WANDB_API_KEY }}
-      - name: Calc-X training
-        run: |
-          set -ex
-          source .venv/bin/activate
-          cd examples/calc_x
-          ../../scripts/restart_ray.sh
-          PYTHONUNBUFFERED=1 python calc_agent.py &
-          bash train_ci.sh
-          pkill -f calc_agent.py && echo "SIGTERM sent to calc_agent.py" || echo "No calc_agent.py process found"
-          while pgrep -f calc_agent.py; do
-            echo "Waiting for calc_agent.py to finish..."
-            sleep 5
-          done
-          echo "calc_agent.py has finished."
-        shell: bash
-        env:
           WANDB_API_KEY: ${{ secrets.WANDB_API_KEY }}
         if: success() || failure()
       - name: Cleanup

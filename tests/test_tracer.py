@@ -846,6 +846,8 @@ def test_run_with_http_tracer(agent_func):
         pytest.skip("MCP server is not yet supported with HTTP tracer")
     if "openai_agents_sdk" in agent_func.__name__:
         pytest.skip("OpenAI Agents SDK is not yet supported with HTTP tracer")
+    if "langchain_tooluse" in agent_func.__name__:
+        pytest.skip("LangChain tool use sometimes timeouts with HTTP tracer")
     if "langgraph" in agent_func.__name__:
         pytest.skip("LangGraph is not yet supported with HTTP tracer")
     if "autogen" in agent_func.__name__:
