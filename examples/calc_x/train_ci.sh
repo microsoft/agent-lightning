@@ -1,3 +1,4 @@
+
 #!/bin/bash
 
 set -e
@@ -9,7 +10,7 @@ export ROLLOUT_TP_SIZE=1
 export EXPERIMENT_NAME=calc_x
 export PROJECT_NAME=AgentLightningCI
 
-python -m agentlightning.verl \
+PYTHONUNBUFFERED=1 python -m agentlightning.verl \
     algorithm.adv_estimator=grpo \
     data.train_files=${DATA_DIR}/train.parquet \
     data.val_files=${DATA_DIR}/test_mini.parquet \

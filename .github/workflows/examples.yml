@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  gpu-job:
+  examples:
     runs-on: [self-hosted, linux, gpu]
     container:
       image: ghcr.io/microsoft/agent-lightning/base:latest
@@ -43,7 +43,7 @@ jobs:
           unzip calc-x-data.zip -d data
           rm calc-x-data.zip
           ../../scripts/restart_ray.sh
-          python calc_agent.py &
+          PYTHONUNBUFFERED=1 python calc_agent.py &
           bash train_ci.sh
           pkill -f calc_agent.py || true
         env:
