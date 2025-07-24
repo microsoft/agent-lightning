@@ -18,6 +18,9 @@ jobs:
       options: --gpus all --ipc=host
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
       - name: Install deps inside the container
         run: ./scripts/setup_stable_gpu.sh
       - name: Calc-X Example
