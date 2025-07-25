@@ -29,4 +29,10 @@ if hist.empty:
 else:
     first, last = hist["val/reward"].iloc[0], hist["val/reward"].iloc[-1]
     if last <= first:
-        print(f"::warning::No improvement (start={first:.4f}, end={last:.4f})")
+        print(
+            f"::warning title=Training no improvement::No improvement (run_name={run_name} start={first:.4f}, end={last:.4f})"
+        )
+    else:
+        print(
+            f"::notice title=Training completed::Run has improved (run_name={run_name} start={first:.4f}, end={last:.4f})"
+        )
