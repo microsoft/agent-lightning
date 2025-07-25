@@ -336,6 +336,11 @@ class AgentLightningTrainer(RayPPOTrainer):
                 if is_last_step:
                     pprint(f"Final validation metrics: {last_val_metrics}")
                     progress_bar.close()
+
+                    # This exit logic is to ensure a robust CI.
+                    pprint(f"Flush the logger...")
+                    del logger  # Make sure the loggers are flushed and closed properly
+                    pprint(f"Training finished at step {self.global_steps}.")
                     return
 
                 progress_bar.update(1)

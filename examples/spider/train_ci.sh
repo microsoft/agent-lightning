@@ -8,7 +8,8 @@ export DATA_DIR=data
 export ROLLOUT_TP_SIZE=1
 export EXPERIMENT_NAME="spider_$(date +%Y%m%d%H%M%S)"
 export PROJECT_NAME=AgentLightningCI
-echo "RUN_ID=$EXPERIMENT_NAME" >> $GITHUB_ENV
+echo "project_name=${PROJECT_NAME}" >> $GITHUB_OUTPUT
+echo "run_name=${EXPERIMENT_NAME}" >> $GITHUB_OUTPUT
 
 PYTHONUNBUFFERED=1 python -m agentlightning.verl \
     agentlightning.port=9991 \
