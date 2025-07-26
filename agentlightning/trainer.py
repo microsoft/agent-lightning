@@ -1,16 +1,14 @@
 import asyncio
 import logging
 import multiprocessing
-import os
 import signal
 import time
 from typing import List, Optional, Union
 import importlib
 
-import agentops
-
 from .client import AgentLightningClient
 from .litagent import LitAgent
+from .logging import LightningLogger
 from .runner import AgentRunner
 from .types import ParallelWorkerBase
 from .tracer.base import BaseTracer
@@ -52,6 +50,7 @@ class Trainer(ParallelWorkerBase):
         daemon: bool = True,
         tracer: Union[BaseTracer, str, dict, None] = None,
         triplet_exporter: Union[TripletExporter, dict, None] = None,
+        loggers: Optional[List[LightningLogger]] = None,
     ):
         super().__init__()
         self.n_workers = n_workers
