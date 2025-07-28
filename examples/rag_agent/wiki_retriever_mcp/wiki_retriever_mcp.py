@@ -15,7 +15,7 @@ with open('nq_list.pkl', 'rb') as f:
     chunks = pickle.load(f)
 print("Chunks loaded successfully.")
     
-mcp = FastMCP(name="wiki retrievel mcp")
+mcp = FastMCP(name="wiki retrieval mcp")
 
 @mcp.tool(
     name="retrieve",
