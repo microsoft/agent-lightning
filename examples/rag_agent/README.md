@@ -7,7 +7,7 @@ This example originally runs on a single node with four GPUs, each requiring at 
 3. Set up the environment for wiki retriever MCP: `bash wiki_retriever_install.sh`. This will install the required packages and set up the environment for the wiki retriever MCP.
 4. Start the wiki retriever MCP: `python wiki_retriever_mcp.py`. This will start the wiki retriever MCP server.
 5. Start Ray: `bash ../../scripts/restart_ray.sh`. To use Wandb, you need to set the WANDB_API_KEY environment variable before starting Ray.
-6. Run the agent: `python calc_agent.py`. This automatically launches 12 agent workers by default.
+6. Run the agent: `python rag_agent.py`. This automatically launches 12 agent workers by default.
 7. In another terminal, launch the training server: `bash train.sh`.
 
 ## Evaluation
