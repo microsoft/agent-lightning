@@ -10,8 +10,7 @@ from typing import Any, Literal, Optional
 
 import dotenv
 import termcolor
-from agents import (Agent, Runner, function_tool, gen_trace_id,
-                    set_trace_processors, set_tracing_disabled, trace)
+from agents import Agent, Runner, function_tool, gen_trace_id, set_trace_processors, set_tracing_disabled, trace
 from agents.extensions.models.litellm_model import LitellmModel
 from agents.mcp import MCPServer, MCPServerSse
 from agents.model_settings import ModelSettings
@@ -19,12 +18,11 @@ from agents.tracing.processors import BatchTraceProcessor, ConsoleSpanExporter
 from utils import compute_scores
 
 import agentlightning
-from agentlightning import (LLM, LitAgent, NamedResources, Trainer,
-                            configure_logger, reward)
+from agentlightning import LLM, LitAgent, NamedResources, Trainer, configure_logger, reward
 
 configure_logger()
 
-agent_prompt="""You are an assistant who answers questions using Wikipedia retriever. Answer the question using only the retrieved passages. Verify your answer directly against the text.
+agent_prompt = """You are an assistant who answers questions using Wikipedia retriever. Answer the question using only the retrieved passages. Verify your answer directly against the text.
 
 After each search:
 - Summarize findings.
@@ -34,7 +32,8 @@ After each search:
 - Explain your reasoning for the chosen action.
 
 Repeat as needed. When done, wrap your final, concise answer in <answer> tags."""
-    
+
+
 class RAGAgent(LitAgent):
     def __init__(self):
         self.mcp_server_url = "http://127.0.0.1:8099/sse"
@@ -47,7 +46,7 @@ class RAGAgent(LitAgent):
             params={"url": self.mcp_server_url},
         ) as server:
             agent = Agent(
-                model=LitellmModel(model='hosted_vllm/'+llm.model, base_url=llm.endpoint),
+                model=LitellmModel(model="hosted_vllm/" + llm.model, base_url=llm.endpoint),
                 model_settings=ModelSettings(
                     max_tokens=4096,
                     temperature=0.7,
@@ -61,7 +60,6 @@ class RAGAgent(LitAgent):
             reward = compute_scores(answer, str(task["answer"]))
             print("question:{} answer: {} ground_truth: {} reward: {}".format(task["question"], answer, task["answer"], reward))
             return reward
-
 
     async def validation_rollout_async(self, task: Any, rollout_id: str, resources: NamedResources) -> Any:
         llm: LLM = resources.get("main_llm")
