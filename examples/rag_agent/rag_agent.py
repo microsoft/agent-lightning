@@ -43,7 +43,7 @@ class RAGAgent(LitAgent):
         llm: LLM = resources.get("main_llm")
         print("Training with model:", llm.model, "on endpoint:", llm.endpoint)
         async with MCPServerSse(
-            name="wiki_retrieval_mcp",
+            name="wiki_retriever_mcp",
             params={"url": self.mcp_server_url},
         ) as server:
             agent = Agent(
@@ -60,6 +60,7 @@ class RAGAgent(LitAgent):
             answer = result.final_output
             reward = compute_scores(answer, str(task["answer"]))
             print("question:{} answer: {} ground_truth: {} reward: {}".format(task["question"], answer, task["answer"], reward))
+            return reward
 
 
     async def validation_rollout_async(self, task: Any, rollout_id: str, resources: NamedResources) -> Any:

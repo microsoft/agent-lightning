@@ -236,7 +236,8 @@ def compute_lenient_response_f1(solution_str=None, ground_truth=None, gold_sente
     f1, prec, recall = lenient_f1_score(ans, gold)
     return f1
 
-
+def fact_checking_api(prediction, ans):
+    return True  # Placeholder for actual fact-checking logic
 
 def compute_f1(solution_str=None, ground_truth=None, gold_sentences=None, data_source=None, extra_info=None):
     prediction = solution_str
