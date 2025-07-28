@@ -60,8 +60,7 @@ class RAGAgent(LitAgent):
             answer = result.final_output
             reward = compute_scores(answer, str(task["answer"]))
             print("question:{} answer: {} ground_truth: {} reward: {}".format(task["question"], answer, task["answer"], reward))
-
-
+            return reward
     async def validation_rollout_async(self, task: Any, rollout_id: str, resources: NamedResources) -> Any:
         llm: LLM = resources.get("main_llm")
         resources = {
