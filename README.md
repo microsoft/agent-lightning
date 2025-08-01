@@ -2,14 +2,14 @@
 
 # Agent Lightning⚡
 
-Agent Lightning is a flexible framework that enables optimize any AI Agent.
+Agent Lightning is a flexible framework that enables you to optimize any AI agent.
 
 ## ⚡ Core Features
 
 - Turn your agent into an optimizable beast with **ZERO CODE CHANGE** (almost)!
 - Build with **ANY** agent framework (LangChain, OpenAI Agent SDK, AutoGen, CrewAI, ...); or even WITHOUT agent framework (Python OpenAI). You name it!
 - **Selectively** optimize one or more agents in a multi-agent system.
-- The architecture works with Reinforcement Learning, Automatic Prompt Optimizations and more.
+- The architecture works with Reinforcement Learning, Automatic Prompt Optimization and more.
 
 ![Agent-Lightning-code-diff](assets/readme-diff.png)
 
@@ -51,7 +51,7 @@ pip install -e .
 ### 4. Install Agent Frameworks (Optional)
 
 If you plan to use other agent frameworks, you can install them with the following commands. If you don't need these, feel free to skip this step.
-We recommend doing this as the final step to avoid dependency version being overwritten by mistake.
+We recommend doing this as the final step to avoid dependency versions being overwritten by mistake.
 
 ```bash
 # AutoGen (Recommended to install first)
@@ -90,7 +90,7 @@ For more detailed examples, please see the `examples` folder:
 
 1.  **AgentOps Integration**: Agent Lightning uses [AgentOps](https://github.com/AgentOps-AI/agentops) for agent tracking by default. If you're already using AgentOps in your own code, you'll need to disable our managed AgentOps client by modifying the `tracer` parameter of trainer.
 2.  **Debugging Traces**: If you encounter issues with tracing, you can visualize the trace tree using `tracer.last_trace().visualize("tree_graph")`. Please note that this API is experimental and may change in future releases.
-3.  **Launching the Server and Agents**: Currently, the training server and agent clients must be launched in separate processes. You can open two terminal windows or run one of them in the background. The order in which you launch them generally doesn't matter.
+3.  **Launching the Server and Agents**: Currently, the training server and agent clients must be launched in separate processes. You can open two terminal windows or run one of them in the background. The launching order generally doesn't matter.
 4.  **Environment Variables**: The environment variables and working directory at the time of `ray init` are important. If you run into "file not found" errors, try restarting Ray from your current working directory.
 5.  **Handling Timeouts**: The training server may hang if samples fail or time out on the agent side. To prevent this, we recommend setting limits on the prompt and response lengths, as this is the most common cause of failures.
 6.  **VERL Failures**: Save checkpoints frequently, as VERL with vLLM may sometimes experience out-of-memory issues. If you encounter a VERL failure, you can resume training from the last checkpoint.
@@ -101,7 +101,7 @@ Currently, Agent Lightning is built around a **training server** and one or mult
 
 * The **server** manages the training data, prepares samples for the agents, and provides the LLM endpoint.
 * **Agents** retrieve samples from the server, process them (which may involve interacting with the LLM), and send the results back. These results, or "trajectories," are lists of prompts and responses from the LLM.
-* The **server** then collects these trajectories and computes the loss to optimize the language models.
+* The **server** then collects these trajectories and computes the losses to optimize the language models.
 
 ![Agent-Lightning-architecture](assets/readme-architecture.png)
 
