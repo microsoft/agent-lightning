@@ -9,4 +9,4 @@ This example requires a single node with one GPU of at least 40GB memory.
 
 ## Common Issues
 
-1. The agent client will hang indefinitely if the environment is not properly configured. Check if uv and mcp are properly installed. Use `tests/test_mcp_calcutor.py` to verify the installation.
+1. The agent client will hang indefinitely if the environment is not properly configured. Check if uv and mcp are properly installed. Use `tests/test_mcp_calculator.py` to verify the installation.
