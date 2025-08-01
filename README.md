@@ -6,10 +6,10 @@ Agent Lightning is a flexible framework that enables you to optimize any AI agen
 
 ## ⚡ Core Features
 
-- Turn your agent into an optimizable beast with **ZERO CODE CHANGE** (almost)!
-- Build with **ANY** agent framework (LangChain, OpenAI Agent SDK, AutoGen, CrewAI, ...); or even WITHOUT agent framework (Python OpenAI). You name it!
-- **Selectively** optimize one or more agents in a multi-agent system.
-- The architecture works with Reinforcement Learning, Automatic Prompt Optimization and more.
+- Turn your agent into an optimizable beast with **ZERO CODE CHANGE** (almost)! 💤
+- Build with **ANY** agent framework (LangChain, OpenAI Agent SDK, AutoGen, CrewAI, ...); or even WITHOUT agent framework (Python OpenAI). You name it! 🤖
+- **Selectively** optimize one or more agents in a multi-agent system. 🎯
+- Embraces Reinforcement Learning, Automatic Prompt Optimization and more **algorithms**. 🤗
 
 ![Agent-Lightning-code-diff](assets/readme-diff.png)
 
