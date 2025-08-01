@@ -4,7 +4,15 @@ import logging
 import weakref
 from typing import Any, List, Dict, Union, Optional, TYPE_CHECKING
 
-from .types import NamedResources, Rollout, Task, TaskInput, Triplet, RolloutRawResult
+from .types import (
+    NamedResources,
+    Rollout,
+    Task,
+    TaskInput,
+    Triplet,
+    RolloutRawResult,
+    ParallelWorkerBase,
+)
 
 if TYPE_CHECKING:
     from .trainer import Trainer
@@ -15,7 +23,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class LitAgent:
+class LitAgent(ParallelWorkerBase):
     """Base class for the training and validation logic of an agent.
 
     Developers should subclass this class and implement the rollout methods
@@ -32,6 +40,7 @@ class LitAgent:
             trained_agents: Optional string representing the trained agents.
                             This can be used to track which agents have been trained by this instance.
         """
+        super().__init__()
         self.trained_agents = trained_agents
         self._trainer_ref: weakref.ReferenceType[Trainer] | None = None
         self._runner_ref: weakref.ReferenceType[AgentRunner] | None = None
