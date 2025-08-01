@@ -1,10 +1,10 @@
 ![Agent-lightning-banner](assets/readme-banner.png)
 
-# Agent Lightning
+# Agent Lightning⚡
 
 Agent Lightning is a flexible framework that enables optimize any AI Agent.
 
-## Core Features
+## ⚡ Core Features
 
 - Turn your agent into an optimizable beast with **ZERO CODE CHANGE** (almost)!
 - Build with **ANY** agent framework (LangChain, OpenAI Agent SDK, AutoGen, CrewAI, ...); or even WITHOUT agent framework (Python OpenAI). You name it!
@@ -13,12 +13,12 @@ Agent Lightning is a flexible framework that enables optimize any AI Agent.
 
 ![Agent-Lightning-code-diff](assets/readme-diff.png)
 
-## Resources
+## ⚡ Resources
 
 - 7/26/2025 [We discovered an approach to train any AI agent with RL, with (almost) zero code changes.](https://www.reddit.com/r/LocalLLaMA/comments/1m9m670/we_discovered_an_approach_to_train_any_ai_agent/) Reddit.
 - 6/6/2025 [Agent Lightning - Microsoft Research](https://www.microsoft.com/en-us/research/project/agent-lightning/) Project page.
 
-## Installation
+## ⚡ Installation
 
 First, let's get your environment set up. We'll be using `/path/to/agentlightning` to refer to the directory containing this README file.
 
@@ -78,7 +78,7 @@ pip install sqlparse nltk
 
 Don't worry if dependency conflicts arise during this step. Follow the installation order above and the conflicts generally do not matter.
 
-## Examples
+## ⚡ Examples
 
 For more detailed examples, please see the `examples` folder:
 
@@ -86,7 +86,7 @@ For more detailed examples, please see the `examples` folder:
 2. [spider](examples/spider): A write-check-rewrite looped agent with LangGraph with SQL execution; selectively optimize write and rewrite on Spider dataset with Reinforcement Learning.
 3. [apo](examples/apo): An example to customize an optimization algorithm: Automatic Prompt Optimization.
 
-## Important Caveats
+## ⚡ Important Caveats
 
 1.  **AgentOps Integration**: Agent Lightning uses [AgentOps](https://github.com/AgentOps-AI/agentops) for agent tracking by default. If you're already using AgentOps in your own code, you'll need to disable our managed AgentOps client by modifying the `tracer` parameter of trainer.
 2.  **Debugging Traces**: If you encounter issues with tracing, you can visualize the trace tree using `tracer.last_trace().visualize("tree_graph")`. Please note that this API is experimental and may change in future releases.
@@ -95,7 +95,7 @@ For more detailed examples, please see the `examples` folder:
 5.  **Handling Timeouts**: The training server may hang if samples fail or time out on the agent side. To prevent this, we recommend setting limits on the prompt and response lengths, as this is the most common cause of failures.
 6.  **VERL Failures**: Save checkpoints frequently, as VERL with vLLM may sometimes experience out-of-memory issues. If you encounter a VERL failure, you can resume training from the last checkpoint.
 
-## Architecture
+## ⚡ Architecture
 
 Currently, Agent Lightning is built around a **training server** and one or multiple **agents**.
 
@@ -105,7 +105,7 @@ Currently, Agent Lightning is built around a **training server** and one or mult
 
 ![Agent-Lightning-architecture](assets/readme-architecture.png)
 
-## Development Instructions
+## ⚡ Development Instructions
 
 Install with development dependencies:
 
@@ -120,7 +120,7 @@ pre-commit install
 pre-commit run --all-files --show-diff-on-failure --color=always
 ```
 
-## Contributing
+## ⚡ Contributing
 
 This project welcomes contributions and suggestions. Most contributions require you to agree to a Contributor License Agreement (CLA) declaring that you have the right to, and actually do, grant us the rights to use your contribution. For details, visit https://cla.opensource.microsoft.com.
 
@@ -128,14 +128,14 @@ When you submit a pull request, a CLA bot will automatically determine whether y
 
 This project has adopted the [Microsoft Open Source Code of Conduct](https://opensource.microsoft.com/codeofconduct/). For more information see the [Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/) or contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additional questions or comments.
 
-## Trademarks
+## ⚡ Trademarks
 
 This project may contain trademarks or logos for projects, products, or services. Authorized use of Microsoft trademarks or logos is subject to and must follow [Microsoft's Trademark & Brand Guidelines](https://www.microsoft.com/en-us/legal/intellectualproperty/trademarks/usage/general). Use of Microsoft trademarks or logos in modified versions of this project must not cause confusion or imply Microsoft sponsorship. Any use of third-party trademarks or logos are subject to those third-party's policies.
 
-## Responsible AI
+## ⚡ Responsible AI
 
 This project has been evaluated and certified to comply with the Microsoft Responsible AI Standard. The team will continue to monitor and maintain the repository, addressing any severe issues, including potential harms, if they arise.
 
-## License
+## ⚡ License
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
