@@ -102,21 +102,25 @@ class Trainer(ParallelWorkerBase):
             return AgentOpsTracer(agentops_managed=True, instrument_managed=True, daemon=self.daemon)
         raise ValueError(f"Invalid tracer type: {type(tracer)}. Expected BaseTracer, str, dict, or None.")
 
-    def init(self, backend: Union[str, AgentLightningClient]) -> None:
-        logger.info(f"Initializing Trainer...")
+    def init(self, agent: LitAgent, backend: Union[str, AgentLightningClient]) -> None:
+        logger.info("Initializing Trainer...")
 
         self._init_client(backend)
 
+        agent.init()
+
         self.tracer.init()
 
-        logger.info(f"Trainer main initialization complete.")
+        logger.info("Trainer main initialization complete.")
 
-    def teardown(self) -> None:
-        logger.info(f"Cleaning up Trainer...")
+    def teardown(self, agent: LitAgent) -> None:
+        logger.info("Cleaning up Trainer...")
         self.tracer.teardown()
 
+        agent.teardown()
+
         self._client = None
-        logger.info(f"Trainer main cleanup complete.")
+        logger.info("Trainer main cleanup complete.")
 
     def client(self) -> AgentLightningClient:
         """Returns the AgentLightningClient instance."""
@@ -161,8 +165,7 @@ class Trainer(ParallelWorkerBase):
             setproctitle.setproctitle(multiprocessing.current_process().name)
 
         # Now we are in child processes, so we can safely set up the environment.
-        agent.set_trainer(self)
-        self._initialize_worker_env(worker_id)
+        self.init_worker(agent, worker_id)
 
         mode = "Async" if is_async else "Sync"
         logger.info(f"[Worker {worker_id}] {mode} worker process started.")
@@ -187,16 +190,19 @@ class Trainer(ParallelWorkerBase):
         except Exception:
             logger.exception(f"[Worker {worker_id}] Unhandled exception in worker loop.")
         finally:
-            self._teardown_worker_env(worker_id)
+            self.teardown_worker(agent, worker_id)
 
         return num_processed
 
-    def _initialize_worker_env(self, worker_id: int):
+    def init_worker(self, agent: LitAgent, worker_id: int):
         logger.info(f"[Worker {worker_id}] Setting up trainer environment...")  # worker_id included in process name
+        agent.set_trainer(self)
+        agent.init_worker(worker_id)
         self.tracer.init_worker(worker_id)
 
-    def _teardown_worker_env(self, worker_id: int):
+    def teardown_worker(self, agent: LitAgent, worker_id: int):
         logger.info(f"[Worker {worker_id}] Cleaning up trainer environment...")
+        agent.teardown_worker(worker_id)
         self.tracer.teardown_worker(worker_id)
         logger.info(f"[Worker {worker_id}] Environment cleanup complete.")
 
@@ -223,10 +229,10 @@ class Trainer(ParallelWorkerBase):
             if dev_backend is None:
                 raise ValueError("dev_backend must be provided when dev=True.")
             logger.warning(f"Running in dev mode. Using dev backend: {dev_backend}")
-            self.init(dev_backend)
+            self.init(agent, dev_backend)
         else:
             logger.debug(f"Running in non-dev mode. Using backend: {backend}")
-            self.init(backend)
+            self.init(agent, backend)
 
         processes: List[multiprocessing.Process] = []
 
@@ -302,7 +308,6 @@ class Trainer(ParallelWorkerBase):
         except Exception as e:
             logger.exception(f"Unhandled exception in fit method.")
         finally:
-            if self.daemon:
-                self.teardown()
-            else:
+            self.teardown(agent)
+            if not self.daemon:
                 logger.info("Main process exiting. Please use Trainer.kill_orphaned_processes() for cleanup.")
