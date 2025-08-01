@@ -44,8 +44,7 @@ See `scripts/setup_stable_gpu.sh` for a full installation script.
 Now, you're ready to install Agent Lightning itself.
 
 ```bash
-cd /path/to/agentlightning
-pip install -e .
+pip install agentlightning
 ```
 
 ### 4. Install Agent Frameworks (Optional)
@@ -110,6 +109,8 @@ Currently, Agent Lightning is built around a **training server** and one or mult
 Install with development dependencies:
 
 ```
+git clone https://github.com/microsoft/agent-lightning
+cd agent-lightning
 pip install -e .[dev]
 ```
 
