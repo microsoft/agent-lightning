@@ -162,6 +162,9 @@ class Trainer(ParallelWorkerBase):
 
         # Now we are in child processes, so we can safely set up the environment.
         agent.set_trainer(self)
+        # TODO: this should be set elsewhere
+        if agent.trained_agents:
+            self.triplet_exporter.agent_match = agent.trained_agents
         self._initialize_worker_env(worker_id)
 
         mode = "Async" if is_async else "Sync"
