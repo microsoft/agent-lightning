@@ -74,8 +74,9 @@ class AgentLightningTrainer(RayPPOTrainer):
         self.async_rollout_manager.sleep()
         return test_metrics
 
-    def _train_step(self, batch: DataProto) -> dict:
+    def _train_step(self, batch_dict: dict) -> dict:
         # Isolate in a separate method to automatically recycle the variables before validation.
+        batch: DataProto = DataProto.from_single_dict(batch_dict)
         metrics = {}
         timing_raw = {}
 
@@ -307,11 +308,10 @@ class AgentLightningTrainer(RayPPOTrainer):
             for batch_dict in self.train_dataloader:
                 metrics = {}
                 timing_raw = {}
-                batch: DataProto = DataProto.from_single_dict(batch_dict)
                 is_last_step = self.global_steps >= self.total_training_steps
 
                 # train step
-                metrics = self._train_step(batch)
+                metrics = self._train_step(batch_dict)
 
                 # validate
                 if (
