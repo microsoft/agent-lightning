@@ -312,8 +312,6 @@ class AgentLightningTrainer(RayPPOTrainer):
                         and self.config.trainer.test_freq > 0
                         and (is_last_step or self.global_steps % self.config.trainer.test_freq == 0)
                     ):
-                        # Make sure all training status are cleared before validation
-                        torch.cuda.synchronize()
                         with _timer("testing", timing_raw):
                             val_metrics: dict = self._validate()
                             if is_last_step:
