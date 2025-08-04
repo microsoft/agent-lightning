@@ -74,7 +74,7 @@ class AgentLightningTrainer(RayPPOTrainer):
         self.async_rollout_manager.sleep()
         return test_metrics
 
-    def _train_step(self, batch: DataProto) -> Tuple[dict, dict]:
+    def _train_step(self, batch: DataProto) -> dict:
         # Isolate in a separate method to automatically recycle the variables before validation.
         metrics = {}
         timing_raw = {}
@@ -250,11 +250,12 @@ class AgentLightningTrainer(RayPPOTrainer):
 
         # compute training metrics
         metrics.update(compute_data_metrics(batch=batch, use_critic=self.use_critic))
+        metrics.update(compute_timing_metrics(batch=batch, timing_raw=timing_raw))
         # TODO: implement actual tflpo and theoretical tflpo
         n_gpus = self.resource_pool_manager.get_n_gpus()
         metrics.update(compute_throughout_metrics(batch=batch, timing_raw=timing_raw, n_gpus=n_gpus))
 
-        return metrics, timing_raw
+        return metrics
 
     def fit(self):
         logger = Tracking(
@@ -309,8 +310,7 @@ class AgentLightningTrainer(RayPPOTrainer):
 
                 with _timer("step", timing_raw):
                     # train step
-                    metrics, timing_train = self._train_step(batch)
-                    timing_raw.update(timing_train)
+                    metrics = self._train_step(batch)
 
                     # validate
                     if (
@@ -318,7 +318,7 @@ class AgentLightningTrainer(RayPPOTrainer):
                         and self.config.trainer.test_freq > 0
                         and (is_last_step or self.global_steps % self.config.trainer.test_freq == 0)
                     ):
-                        with _timer("testing", timing_raw):
+                        with _timer("validate", timing_raw):
                             val_metrics: dict = self._validate()
                             if is_last_step:
                                 last_val_metrics = val_metrics
@@ -337,8 +337,6 @@ class AgentLightningTrainer(RayPPOTrainer):
                         "training/epoch": epoch,
                     }
                 )
-                # collect timing metrics
-                metrics.update(compute_timing_metrics(batch=batch, timing_raw=timing_raw))
 
                 # TODO: make a canonical logger that supports various backend
                 logger.log(data=metrics, step=self.global_steps)
