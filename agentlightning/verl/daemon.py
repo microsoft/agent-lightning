@@ -102,12 +102,13 @@ class AgentModeDaemon:
         mini_batch_size,
         pad_token_id,
         reward_fillna_value=0.0,
+        llm_timeout_seconds=600.0,
     ):
         # Server and Task Configuration
         self.server_port = port
-        self.task_timeout_seconds = 180
+        self.llm_timeout_seconds = llm_timeout_seconds
         self.server = AgentLightningServer(
-            host="0.0.0.0", port=self.server_port, task_timeout_seconds=self.task_timeout_seconds
+            host="0.0.0.0", port=self.server_port, task_timeout_seconds=self.llm_timeout_seconds
         )
         self.proxy_port = _find_available_port()  # Run proxy on a different port
 
@@ -168,7 +169,7 @@ class AgentModeDaemon:
                     data=request.get_data(),
                     cookies=request.cookies,
                     allow_redirects=False,
-                    timeout=self.task_timeout_seconds,
+                    timeout=self.llm_timeout_seconds,
                 )
                 # Filter out hop-by-hop headers before returning the response
                 excluded_headers = [
