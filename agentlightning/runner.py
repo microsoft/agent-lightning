@@ -158,6 +158,11 @@ class AgentRunner(ParallelWorkerBase):
         rollout_obj = Rollout(rollout_id=task.rollout_id)  # Default empty rollout
 
         try:
+            try:
+                self.agent.on_rollout_start(task, self, self.tracer)
+            except Exception:
+                logger.exception(f"{self._log_prefix(rollout_id)} Exception during on_rollout_start hook.")
+
             with self.tracer.trace_context(name=f"rollout_{rollout_id}"):
                 start_time = time.time()
                 rollout_method = self.agent.training_rollout if task.mode == "train" else self.agent.validation_rollout
@@ -175,6 +180,10 @@ class AgentRunner(ParallelWorkerBase):
         except Exception:
             logger.exception(f"{self._log_prefix(rollout_id)} Exception during rollout.")
         finally:
+            try:
+                self.agent.on_rollout_end(task, rollout_obj, self, self.tracer)
+            except Exception:
+                logger.exception(f"{self._log_prefix(rollout_id)} Exception during on_rollout_end hook.")
             self.client.post_rollout(rollout_obj)
 
         return True
@@ -218,6 +227,11 @@ class AgentRunner(ParallelWorkerBase):
         rollout_obj = Rollout(rollout_id=task.rollout_id)  # Default empty rollout
 
         try:
+            try:
+                self.agent.on_rollout_start(task, self, self.tracer)
+            except Exception:
+                logger.exception(f"{self._log_prefix(rollout_id)} Exception during on_rollout_start hook.")
+
             with self.tracer.trace_context(name=f"rollout_{rollout_id}"):
                 start_time = time.time()
                 rollout_method = (
@@ -234,6 +248,10 @@ class AgentRunner(ParallelWorkerBase):
         except Exception:
             logger.exception(f"{self._log_prefix(rollout_id)} Exception during rollout.")
         finally:
+            try:
+                self.agent.on_rollout_end(task, rollout_obj, self, self.tracer)
+            except Exception:
+                logger.exception(f"{self._log_prefix(rollout_id)} Exception during on_rollout_end hook.")
             await self.client.post_rollout_async(rollout_obj)
 
         return True
