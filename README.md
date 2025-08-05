@@ -2,6 +2,11 @@
 
 # Agent Lightning⚡
 
+[![CPU Test](https://github.com/microsoft/agent-lightning/actions/workflows/tests.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/tests.yml)
+[![GPU Test](https://github.com/microsoft/agent-lightning/actions/workflows/examples.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/examples.yml)
+[![PyPI version](https://badge.fury.io/py/agentlightning.svg)](https://badge.fury.io/py/agentlightning)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 Agent Lightning is a flexible framework that enables you to optimize any AI agent.
 
 ## ⚡ Core Features
