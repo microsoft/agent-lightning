@@ -518,7 +518,35 @@ class LitSQLAgent(agentlightning.LitAgent):
         return self._execute_rollout(task, resources=resources, rollout_id=rollout_id, is_training=False)
 
 
+def spider_dev_data():
+    # Read from dev.parquet
+    import pandas as pd
+
+    spider_dev_data_path = os.path.join(os.environ.get("VERL_SPIDER_DEV_DATA", "data"), "dev.parquet")
+    if not os.path.exists(spider_dev_data_path):
+        raise FileNotFoundError(f"Spider dev data file {spider_dev_data_path} does not exist.")
+    df = pd.read_parquet(spider_dev_data_path)
+    if "OPENAI_API_BASE" not in os.environ:
+        logger.warning(
+            "Environment variable OPENAI_API_BASE is not set. Using default value 'https://api.openai.com/v1'."
+        )
+        openai_api_base = "https://api.openai.com/v1"
+    else:
+        openai_api_base = os.environ["OPENAI_API_BASE"]
+
+    resource = {
+        "main_llm": agentlightning.LLM(
+            model="gpt-4.1-nano",
+            endpoint=openai_api_base,
+            sampling_parameters={
+                "temperature": 0.0,
+            },
+        )
+    }
+    return agentlightning.DevTaskLoader(df.head(10).to_dict(orient="records"), resource)
+
+
 if __name__ == "__main__":
     dotenv.load_dotenv()
     agent, trainer = agentlightning.lightning_cli(LitSQLAgent, agentlightning.Trainer)
-    trainer.fit(agent, os.environ["VERL_API_BASE"])
+    trainer.fit(agent, os.environ["VERL_API_BASE"], spider_dev_data())
