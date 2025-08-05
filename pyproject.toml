@@ -1,7 +1,7 @@
 [project]
 name = "agentlightning"
-version = "0.1"
-description = "Agent Lightning"
+version = "0.1.1"
+description = "Agent Lightning is the absolute trainer to light up AI agents."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [

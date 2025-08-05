@@ -7,7 +7,7 @@
 [![PyPI version](https://badge.fury.io/py/agentlightning.svg)](https://badge.fury.io/py/agentlightning)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Agent Lightning is a flexible framework that enables you to optimize any AI agent.
+**The absolute trainer to light up AI agents.**
 
 ## ⚡ Core Features
 
