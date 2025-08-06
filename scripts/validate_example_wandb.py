@@ -3,6 +3,7 @@ import sys
 
 if len(sys.argv) != 3:
     print("Usage: python validate_example_wandb.py <project> <run_name>")
+    sys.exit(1)
 
 project = sys.argv[1]
 run_name = sys.argv[2]
