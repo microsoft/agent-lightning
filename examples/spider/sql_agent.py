@@ -373,7 +373,7 @@ class SQLAgent:
             "check_query",
             self.should_continue,
         )
-        builder.add_edge("rewrite_query", "check_query")
+        builder.add_edge("rewrite_query", "execute_query")
 
         return builder.compile()
 
