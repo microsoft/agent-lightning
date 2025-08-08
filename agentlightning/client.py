@@ -325,6 +325,7 @@ class DevTaskLoader(AgentLightningClient):
                 input=task_or_input,
                 resources_id=self._resources_update.resources_id,
                 create_time=time.time(),
+                task_index=self._task_index,
             )
 
         self._task_index += 1

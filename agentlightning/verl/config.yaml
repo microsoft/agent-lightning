@@ -11,6 +11,7 @@ agentlightning:
 
 data:
   filter_overlong_prompts: false
+  validation_shuffle: false
 
 actor_rollout_ref:
   rollout:

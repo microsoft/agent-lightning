@@ -274,6 +274,7 @@ class AgentModeDaemon:
                     mode="train" if is_train else "val",
                     resources_id=resources_id,
                     metadata=task_metadata,
+                    task_index=i,
                 )
                 # Store original sample data to reconstruct batch information later
                 self._task_id_to_original_sample[rollout_id] = original_sample
