@@ -43,6 +43,7 @@ jobs:
             setup-script: 'latest'
           - python-version: '3.12'
             setup-script: 'stable'
+      fail-fast: false
 
     name: Test with Python ${{ matrix.python-version }} (${{ matrix.setup-script }})
     runs-on: ubuntu-latest
