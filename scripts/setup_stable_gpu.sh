@@ -10,3 +10,4 @@ pip install --no-cache-dir vllm==0.9.2
 pip install --no-cache-dir verl==0.5.0
 
 pip install --no-cache-dir -e .[dev,agent]
+pip install --no-cache-dir openai==1.99.1
