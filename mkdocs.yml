@@ -41,6 +41,10 @@ markdown_extensions:
 
 plugins:
   - search
+  - git-revision-date-localized:
+      enable_creation_date: true
+      type: timeago
+  - git-authors
   - mkdocstrings:
       handlers:
         python:
@@ -74,5 +78,4 @@ nav:
     - Concepts: deep-dive/concepts.md
   - API Reference:
     - Core: reference/core.md
-    - Agents: reference/agents.md
-    - Utils: reference/utils.md
+    - RL: reference/rl.md

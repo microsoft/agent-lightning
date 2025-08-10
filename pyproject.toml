@@ -28,6 +28,8 @@ dev = [
   "mkdocs-material",
   "mkdocstrings[python]",
   "mike",
+  "mkdocs-git-revision-date-localized-plugin",
+  "mkdocs-git-authors-plugin",
 ]
 experiment = [
   "random-word",
