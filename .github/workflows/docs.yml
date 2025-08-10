@@ -51,9 +51,9 @@ jobs:
       - name: Deploy versioned docs
         if: startsWith(github.ref, 'refs/tags/')
         run: |
-          mike deploy --push --update-aliases ${{ steps.version.outputs.version }} latest
+          mike deploy --push --update-aliases ${{ steps.version.outputs.version }} stable
 
       - name: Deploy dev docs
         if: github.ref == 'refs/heads/main'
         run: |
-          mike deploy --push dev
+          mike deploy --push latest
