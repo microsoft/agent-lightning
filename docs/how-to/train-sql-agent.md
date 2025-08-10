@@ -1,14 +1,36 @@
 # SQL Agent with Agent Lightning
 
-This example demonstrates how to build and train a self-correcting SQL agent. It leverages [Agent Lightning](https://github.com/microsoft/agent-lightning) and the `verl` framework for Reinforcement Learning (RL) based training, and LangGraph to define the agent's complex, cyclical reasoning workflow. The goal is to fine-tune a Large Language Model (LLM) to accurately convert natural language questions into executable SQL queries.
+This example demonstrates how to build and train a self-correcting SQL agent. It leverages [Agent Lightning]({{ config.repo_url }}) and the `verl` framework for Reinforcement Learning (RL) based training, and LangGraph to define the agent's complex, cyclical reasoning workflow. The goal is to fine-tune a Large Language Model (LLM) to accurately convert natural language questions into executable SQL queries.
 
 ## SQL Agent Implementation
 
-The design of Agent-lightning **allows flexible integration with various agent frameworks**, including AutoGen, CrewAI, OpenAI Agent SDK, LangGraph, and more. It can also work without agent frameworks, allowing you to train an agent built from scratch with Python code. See [our example gallery](https://github.com/microsoft/agent-lightning/tree/main/examples) for more details.
+The design of Agent-lightning **allows flexible integration with various agent frameworks**, including AutoGen, CrewAI, OpenAI Agent SDK, LangGraph, and more. It can also work without agent frameworks, allowing you to train an agent built from scratch with Python code. See [our example gallery]({{ config.repo_url }}/tree/{{ config.extra.source_commit }}/examples) for more details.
 
 The core of the agent is a state machine built with LangGraph, which allows for a robust and transparent workflow. The agent's logic, as visualized below, starts by writing a query, executes it, and then enters a refinement loop where it checks and rewrites the query until it is deemed correct or a turn limit is reached.
 
-![The agent's reasoning workflow, implemented as a StateGraph in LangGraph](assets/sql_agent_visualization.png)
+```mermaid
+---
+config:
+  flowchart:
+    curve: linear
+---
+graph LR;
+        __start__([<p>__start__</p>]):::first
+        write_query(write_query)
+        execute_query(execute_query)
+        check_query(check_query)
+        rewrite_query(rewrite_query)
+        __end__([<p>__end__</p>]):::last
+        __start__ --> write_query;
+        check_query -.-> __end__;
+        check_query -.-> rewrite_query;
+        execute_query --> check_query;
+        rewrite_query --> execute_query;
+        write_query --> execute_query;
+        classDef default fill:#f2f2f2,line-height:1.2
+        classDef first fill-opacity:0
+        classDef last fill:#cccccc
+```
 
 This workflow is implemented in the `SQLAgent` class within `sql_agent.py`. It consists of the following key steps:
 
@@ -22,12 +44,12 @@ We aim to train **write_query** and **rewrite_query** step in the setup of this 
 
 ## Client-Server Training with Agent Lightning
 
-The training process uses a distributed client-server architecture designed by Agent Lightning to efficiently fine-tune the underlying LLM. This separation allows for scalable data generation across multiple clients while centralizing the computationally intensive model training on a dedicated server with GPUs, and also provides opportunities for customizing algorithms and training strategies (like [prompt optimization](https://github.com/microsoft/agent-lightning/tree/160a82b0354969122ff3667937bab75c0a09a21e/examples/apo)) with minimal code changes.
+The training process uses a distributed client-server architecture designed by Agent Lightning to efficiently fine-tune the underlying LLM. This separation allows for scalable data generation across multiple clients while centralizing the computationally intensive model training on a dedicated server with GPUs, and also provides opportunities for customizing algorithms and training strategies (like [prompt optimization]({{ config.repo_url }}/tree/{{ config.extra.source_commit }}/examples/apo)) with minimal code changes.
 
-* **Training Server (`agentlightning.verl`)**: The server, launched with the first command below, manages the core training loop. It runs an RL algorithm (with `verl` of course) and hosts an OpenAI-compatible LLM endpoint (with `verl`'s async server). The server's sole purpose is to receive interaction data from clients and update the LLM's weights to improve its performance. [This link](https://github.com/microsoft/agent-lightning/tree/160a82b0354969122ff3667937bab75c0a09a21e/agentlightning/verl) points to the implementation of the server, which is built upon `verl`.
+* **Training Server (`agentlightning.verl`)**: The server, launched with the first command below, manages the core training loop. It runs an RL algorithm (with `verl` of course) and hosts an OpenAI-compatible LLM endpoint (with `verl`'s async server). The server's sole purpose is to receive interaction data from clients and update the LLM's weights to improve its performance. [This link]({{ config.repo_url }}/tree/{{ config.extra.source_commit }}/agentlightning/verl) points to the implementation of the server, which is built upon `verl`.
 * **Agent Clients (`sql_agent.py`)**: The clients run the LangGraph agent logic described above. They connect to the server to fetch tasks (natural language questions) and use the server's **OpenAI-compatible endpoint** for all generation steps (`write_query`, `check_query`, `rewrite_query`). After completing a task, the client exports its interaction traces (traced by [AgentOps](https://www.agentops.ai/) and filtered by trace hierarchy), evaluates its correctness to calculate a reward, and sends the entire interaction history (the "trajectory") back to the server for training. To adapt any agent to an "agent client", you do not need to change the agent logic, but only need to invoke the client's `run` method with `agentlightning.trainer`.
 
-![Difference between the original agent and modified agent client](assets/sql_agent_diff.png)
+![Difference between the original agent and modified agent client](../assets/sql-agent-diff.png)
 
 ## Running the Example
 
@@ -133,11 +155,11 @@ The setup of training server is the same as the command above.
 
 ### W&B Report
 
-[link](https://wandb.ai/ultmaster/AgentZero/reports/SQL-Agent-with-Agent-Lightning--VmlldzoxMzg3NjY4NQ)
+[link](https://api.wandb.ai/links/ultmaster/4cid500g)
 
 ### Performance Metrics
 
-![](assets/val_reward_curves.png)
+![](../assets/sql-agent-val-reward-curve.png)
 
 | Model         | Size   |   Context |   Max Turns | Agents                        |   Acc (Initial) |   Acc (Final) | Transitions   |   Prompt Length | Response Length   |
 |---------------|--------|-----------|-------------|-------------------------------|-----------------|---------------|---------------|-----------------|-------------------|

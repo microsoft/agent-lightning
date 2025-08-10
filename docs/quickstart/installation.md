@@ -70,7 +70,7 @@ pip install agentlightning[agent]
 ## Install from Source
 
 ```
-git clone https://github.com/microsoft/agent-lightning
+git clone {{ config.repo_url }}
 cd agent-lightning
 pip install -e .[dev]
 ```

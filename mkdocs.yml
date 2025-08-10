@@ -19,7 +19,6 @@ theme:
         icon: material/brightness-4
         name: Switch to light mode
   features:
-    - navigation.tabs
     - navigation.sections
     - navigation.expand
     - navigation.top
@@ -30,7 +29,11 @@ theme:
 markdown_extensions:
   - pymdownx.highlight:
       anchor_linenums: true
-  - pymdownx.superfences
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
   - pymdownx.snippets
   - admonition
   - pymdownx.details
@@ -45,6 +48,7 @@ plugins:
       enable_creation_date: true
       type: timeago
   - git-authors
+  - macros
   - mkdocstrings:
       handlers:
         python:
@@ -64,18 +68,20 @@ extra:
   version:
     provider: mike
     default: latest
+  source_commit: !ENV [SOURCE_COMMIT, 'main']
+
+extra_javascript:
+  - https://unpkg.com/mermaid@10.6.1/dist/mermaid.min.js
 
 nav:
   - Home: index.md
   - Quickstart:
     - Installation: quickstart/installation.md
     - Getting Started: quickstart/getting-started.md
-  - How-To:
-    - Basic Usage: how-to/basic-usage.md
-    - Advanced Features: how-to/advanced-features.md
+  - How-To Guides:
+    - Train SQL Agent: how-to/train-sql-agent.md
   - Deep Dive:
-    - Architecture: deep-dive/architecture.md
-    - Concepts: deep-dive/concepts.md
+    - Server-Client Architecture: deep-dive/server-client-architecture.md
   - API Reference:
     - Core: reference/core.md
     - RL: reference/rl.md

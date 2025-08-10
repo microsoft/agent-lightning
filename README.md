@@ -1,4 +1,4 @@
-![Agent-lightning-banner](assets/readme-banner.png)
+![Agent-lightning-banner](docs/assets/readme-banner.png)
 
 # Agent Lightning⚡
 
@@ -16,7 +16,7 @@
 - **Selectively** optimize one or more agents in a multi-agent system. 🎯
 - Embraces Reinforcement Learning, Automatic Prompt Optimization and more **algorithms**. 🤗
 
-![Agent-Lightning-code-diff](assets/readme-diff.png)
+![Agent-Lightning-code-diff](docs/assets/readme-diff.png)
 
 ## ⚡ Resources
 
@@ -107,7 +107,7 @@ Currently, Agent Lightning is built around a **training server** and one or mult
 * **Agents** retrieve samples from the server, process them (which may involve interacting with the LLM), and send the results back. These results, or "trajectories," are lists of prompts and responses from the LLM.
 * The **server** then collects these trajectories and computes the losses to optimize the language models.
 
-![Agent-Lightning-architecture](assets/readme-architecture.png)
+![Agent-Lightning-architecture](docs/assets/readme-architecture.png)
 
 ## ⚡ Development Instructions
 

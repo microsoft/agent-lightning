@@ -375,7 +375,8 @@ class SQLAgent:
         )
         builder.add_edge("rewrite_query", "execute_query")
 
-        return builder.compile()
+        g = builder.compile()
+        print(g.get_graph().draw_mermaid())
 
 
 def evaluate_query(query: str, ground_truth: str, database: str, raise_on_error: bool = True) -> float:

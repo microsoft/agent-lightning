@@ -6,7 +6,7 @@ This guide walks you through building your first Agent Lightning application - a
 
 You'll create a distributed training system with a server that manages optimization algorithms and tasks, a client with multiple workers that execute tasks in parallel, and built-in telemetry for monitoring and debugging.
 
-Before starting, ensure you have Python 3.10 or later, Agent Lightning installed (`pip install agentlightning`), and an OpenAI API key. The complete code is available in the [examples/apo](https://github.com/microsoft/agent-lightning/tree/main/examples/apo) directory.
+Before starting, ensure you have Python 3.10 or later, Agent Lightning installed (`pip install agentlightning`), and an OpenAI API key. The complete code is available in the [examples/apo]({{ config.repo_url }}/tree/{{ config.extra.source_commit }}/examples/apo) directory.
 
 ## Part 1: Building Your Agent
 
@@ -143,7 +143,7 @@ print(f"Best prompt: '{best_prompt[0]}' with reward {best_prompt[1]:.3f}")
 
 ## Running Your System
 
-The [Complete example code](https://github.com/microsoft/agent-lightning/tree/main/examples/apo) can be found on the GitHub repository. To run it:
+The [Complete example code]({{ config.repo_url }}/tree/{{ config.extra.source_commit }}/examples/apo) can be found on the GitHub repository. To run it:
 
 Create a `.env` file with your API credentials:
 
