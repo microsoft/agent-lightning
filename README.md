@@ -20,6 +20,7 @@
 
 ## ⚡ Resources
 
+- 8/5/2025 [Agent Lightning: Train ANY AI Agents with Reinforcement Learning](https://arxiv.org/abs/2508.03680) arXiv paper.
 - 7/26/2025 [We discovered an approach to train any AI agent with RL, with (almost) zero code changes.](https://www.reddit.com/r/LocalLLaMA/comments/1m9m670/we_discovered_an_approach_to_train_any_ai_agent/) Reddit.
 - 6/6/2025 [Agent Lightning - Microsoft Research](https://www.microsoft.com/en-us/research/project/agent-lightning/) Project page.
 
@@ -130,6 +131,22 @@ Serve documentation locally:
 
 ```bash
 mkdocs serve
+```
+
+## ⚡ Citation
+
+If you find Agent Lightning useful in your research or projects, please cite our paper:
+
+```bibtex
+@misc{luo2025agentlightningtrainai,
+      title={Agent Lightning: Train ANY AI Agents with Reinforcement Learning}, 
+      author={Xufang Luo and Yuge Zhang and Zhiyuan He and Zilong Wang and Siyun Zhao and Dongsheng Li and Luna K. Qiu and Yuqing Yang},
+      year={2025},
+      eprint={2508.03680},
+      archivePrefix={arXiv},
+      primaryClass={cs.AI},
+      url={https://arxiv.org/abs/2508.03680}, 
+}
 ```
 
 ## ⚡ Contributing
