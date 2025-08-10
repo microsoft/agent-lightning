@@ -24,6 +24,10 @@ dev = [
   "pre-commit",
   "pytest-rerunfailures",
   "black",
+  "mkdocs",
+  "mkdocs-material",
+  "mkdocstrings[python]",
+  "mike",
 ]
 experiment = [
   "random-word",
