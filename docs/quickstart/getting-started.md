@@ -110,7 +110,7 @@ for prompt in prompt_candidates:
     await server.update_resources(resources)
 ```
 
-When you update resources, all connected clients immediately receive the new prompt. The format of resources can be arbitrary. We use the key `"system_prompt"` here as an example. The resources here are exactly you would expect at the client side, who will use this prompt for the next task they process.
+When you update resources, all connected clients immediately receive the new system prompt. The format of resources can be arbitrary. We use the key `"system_prompt"` here as an example. The resources here are exactly you would expect at the client side, who will use this prompt for the next task they process.
 
 ### Step 3: Queue Tasks and Collect Results
 
