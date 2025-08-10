@@ -57,3 +57,4 @@ jobs:
         if: github.ref == 'refs/heads/main'
         run: |
           mike deploy --push latest
+          mike set-default --push latest
