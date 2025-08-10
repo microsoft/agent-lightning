@@ -4,10 +4,10 @@ Agent Lightning is the absolute trainer to light up AI agents.
 
 ## Features
 
-- Fast and efficient agent training
-- Support for multiple agent frameworks
-- Built-in monitoring and debugging tools
-- Extensible architecture
+- Turn your agent into an optimizable beast with **ZERO CODE CHANGE** (almost)! 💤
+- Build with **ANY** agent framework (LangChain, OpenAI Agent SDK, AutoGen, CrewAI, ...); or even WITHOUT agent framework (Python OpenAI). You name it! 🤖
+- **Selectively** optimize one or more agents in a multi-agent system. 🎯
+- Embraces Reinforcement Learning, Automatic Prompt Optimization and more **algorithms**. 🤗
 
 ## Quick Links
 
