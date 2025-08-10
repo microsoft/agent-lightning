@@ -17,7 +17,7 @@ pip install vllm==0.9.2
 pip install verl==0.5.0
 ```
 
-See `scripts/setup_stable_gpu.sh` for a full installation script.
+See [this script]({{ config.repo_url }}/tree/{{ config.extra.source_commit }}/scripts/setup_stable_gpu.sh) for a full installation script.
 
 ### Install Agent Lightning
 

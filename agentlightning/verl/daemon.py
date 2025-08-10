@@ -31,8 +31,8 @@ def get_left_padded_ids_and_attention_mask(ids: List[int], max_length: int, pad_
         pad_token_id:    ID to use for padding.
 
     Returns:
-        padded_ids:      list of length == max_length.
-        attention_mask:  list of same length: 1 for non-pad tokens, 0 for pads.
+        padded_ids (any):      list of length == max_length.
+        attention_mask (any):  list of same length: 1 for non-pad tokens, 0 for pads.
     """
     seq_len = len(ids)
 
@@ -60,8 +60,8 @@ def get_right_padded_ids_and_attention_mask(ids: List[int], max_length: int, pad
         pad_token_id:   ID to use for padding.
 
     Returns:
-        padded_ids:     list of length == max_length.
-        attention_mask: list of same length: 1 for non-pad tokens, 0 for pads.
+        padded_ids (any):     list of length == max_length.
+        attention_mask (any): list of same length: 1 for non-pad tokens, 0 for pads.
     """
     seq_len = len(ids)
 

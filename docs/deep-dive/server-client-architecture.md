@@ -1,5 +1,7 @@
 # Server-client Architecture
 
+Article to be written.
+
 ```mermaid
 sequenceDiagram
     participant RL as RL Framework

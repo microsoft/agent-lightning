@@ -5,6 +5,8 @@ repo_name: agent-lightning
 
 theme:
   name: material
+  logo: assets/logo-light.png
+  # Don't set favicon here - we'll handle it dynamically
   palette:
     - scheme: default
       primary: red
@@ -72,6 +74,7 @@ extra:
 
 extra_javascript:
   - https://unpkg.com/mermaid@10.6.1/dist/mermaid.min.js
+  - js/favicon-theme.js
 
 nav:
   - Home: index.md

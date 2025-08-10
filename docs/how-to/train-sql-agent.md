@@ -1,5 +1,7 @@
 # SQL Agent with Agent Lightning
 
+> This tutorial is tested with `verl==0.5.0` and `vllm==0.10.0`.
+
 This example demonstrates how to build and train a self-correcting SQL agent. It leverages [Agent Lightning]({{ config.repo_url }}) and the `verl` framework for Reinforcement Learning (RL) based training, and LangGraph to define the agent's complex, cyclical reasoning workflow. The goal is to fine-tune a Large Language Model (LLM) to accurately convert natural language questions into executable SQL queries.
 
 ## SQL Agent Implementation

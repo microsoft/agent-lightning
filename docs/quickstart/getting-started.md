@@ -227,6 +227,7 @@ The AgentOps tracer, enabled by default, collects comprehensive data about each 
 
 Now that you have a working system, how about:
 
-- Replace the random reward with actual quality metrics based on real response accuracy?
-- Test the system prompt on a batch of different questions to see how it performs across various tasks?
-- Make the algorithm automatically improve the system prompt based on the best-performing ones?
+- Replacing the random reward with actual quality metrics based on real response accuracy?
+- Testing the system prompt on a batch of different questions to see how it performs across various tasks?
+- Making the algorithm automatically improve the system prompt based on the best-performing ones?
+- Setting up a real agent system that consists of multiple prompts, and optimizing them together?
