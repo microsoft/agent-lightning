@@ -35,15 +35,9 @@ def f1_score(prediction, ground_truth):
 
     ZERO_METRIC = (0, 0, 0)
 
-    if (
-        normalized_prediction in ["yes", "no", "noanswer"]
-        and normalized_prediction != normalized_ground_truth
-    ):
+    if normalized_prediction in ["yes", "no", "noanswer"] and normalized_prediction != normalized_ground_truth:
         return ZERO_METRIC
-    if (
-        normalized_ground_truth in ["yes", "no", "noanswer"]
-        and normalized_prediction != normalized_ground_truth
-    ):
+    if normalized_ground_truth in ["yes", "no", "noanswer"] and normalized_prediction != normalized_ground_truth:
         return ZERO_METRIC
 
     prediction_tokens = normalized_prediction.split()
@@ -64,17 +58,10 @@ def lenient_f1_score(prediction, ground_truth):
 
     ZERO_METRIC = (0, 0, 0)
 
-    if (
-        normalized_ground_truth in ["yes", "no", "noanswer"]
-        and normalized_prediction != normalized_ground_truth
-    ):
-        if normalized_ground_truth == "yes" and (
-            "no" in normalized_prediction or "noanswer" in normalized_prediction
-        ):
+    if normalized_ground_truth in ["yes", "no", "noanswer"] and normalized_prediction != normalized_ground_truth:
+        if normalized_ground_truth == "yes" and ("no" in normalized_prediction or "noanswer" in normalized_prediction):
             return ZERO_METRIC
-        if normalized_ground_truth == "no" and (
-            "yes" in normalized_prediction or "noanswer" in normalized_prediction
-        ):
+        if normalized_ground_truth == "no" and ("yes" in normalized_prediction or "noanswer" in normalized_prediction):
             return ZERO_METRIC
 
     prediction_tokens = normalized_prediction.split()
@@ -194,9 +181,7 @@ def compute_reward(
 ):
     prediction = solution_str
     gold = ground_truth
-    return compute_score(
-        prediction, gold, gold_sentences=gold_sentences, data_source=data_source
-    )
+    return compute_score(prediction, gold, gold_sentences=gold_sentences, data_source=data_source)
 
 
 def compute_em(

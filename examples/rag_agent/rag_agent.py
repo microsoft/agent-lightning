@@ -53,9 +53,7 @@ class RAGAgent(LitAgent):
     def __init__(self):
         self.mcp_server_url = "http://127.0.0.1:8099/sse"
 
-    async def training_rollout_async(
-        self, task: Any, rollout_id: str, resources: NamedResources
-    ) -> Any:
+    async def training_rollout_async(self, task: Any, rollout_id: str, resources: NamedResources) -> Any:
         llm: LLM = resources.get("main_llm")
         print("Training with model:", llm.model, "on endpoint:", llm.endpoint)
         async with MCPServerSse(
@@ -63,9 +61,7 @@ class RAGAgent(LitAgent):
             params={"url": self.mcp_server_url},
         ) as server:
             agent = Agent(
-                model=LitellmModel(
-                    model="hosted_vllm/" + llm.model, base_url=llm.endpoint
-                ),
+                model=LitellmModel(model="hosted_vllm/" + llm.model, base_url=llm.endpoint),
                 model_settings=ModelSettings(
                     max_tokens=4096,
                     temperature=0.7,
@@ -84,9 +80,7 @@ class RAGAgent(LitAgent):
             )
             return reward
 
-    async def validation_rollout_async(
-        self, task: Any, rollout_id: str, resources: NamedResources
-    ) -> Any:
+    async def validation_rollout_async(self, task: Any, rollout_id: str, resources: NamedResources) -> Any:
         llm: LLM = resources.get("main_llm")
         resources = {
             "main_llm": LLM(
