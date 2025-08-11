@@ -13,7 +13,6 @@ FORMAT_PUNISH = -2
 
 
 def normalize_answer(s):
-
     def remove_articles(text):
         return re.sub(r"\b(a|an|the)\b", " ", text)
 
@@ -36,9 +35,15 @@ def f1_score(prediction, ground_truth):
 
     ZERO_METRIC = (0, 0, 0)
 
-    if normalized_prediction in ["yes", "no", "noanswer"] and normalized_prediction != normalized_ground_truth:
+    if (
+        normalized_prediction in ["yes", "no", "noanswer"]
+        and normalized_prediction != normalized_ground_truth
+    ):
         return ZERO_METRIC
-    if normalized_ground_truth in ["yes", "no", "noanswer"] and normalized_prediction != normalized_ground_truth:
+    if (
+        normalized_ground_truth in ["yes", "no", "noanswer"]
+        and normalized_prediction != normalized_ground_truth
+    ):
         return ZERO_METRIC
 
     prediction_tokens = normalized_prediction.split()
@@ -59,10 +64,17 @@ def lenient_f1_score(prediction, ground_truth):
 
     ZERO_METRIC = (0, 0, 0)
 
-    if normalized_ground_truth in ["yes", "no", "noanswer"] and normalized_prediction != normalized_ground_truth:
-        if normalized_ground_truth == "yes" and ("no" in normalized_prediction or "noanswer" in normalized_prediction):
+    if (
+        normalized_ground_truth in ["yes", "no", "noanswer"]
+        and normalized_prediction != normalized_ground_truth
+    ):
+        if normalized_ground_truth == "yes" and (
+            "no" in normalized_prediction or "noanswer" in normalized_prediction
+        ):
             return ZERO_METRIC
-        if normalized_ground_truth == "no" and ("yes" in normalized_prediction or "noanswer" in normalized_prediction):
+        if normalized_ground_truth == "no" and (
+            "yes" in normalized_prediction or "noanswer" in normalized_prediction
+        ):
             return ZERO_METRIC
 
     prediction_tokens = normalized_prediction.split()
@@ -173,13 +185,27 @@ def compute_score(prediction, gold, gold_sentences=None, data_source=None):
     # return  answer_acc
 
 
-def compute_reward(solution_str=None, ground_truth=None, gold_sentences=None, data_source=None, extra_info=None):
+def compute_reward(
+    solution_str=None,
+    ground_truth=None,
+    gold_sentences=None,
+    data_source=None,
+    extra_info=None,
+):
     prediction = solution_str
     gold = ground_truth
-    return compute_score(prediction, gold, gold_sentences=gold_sentences, data_source=data_source)
+    return compute_score(
+        prediction, gold, gold_sentences=gold_sentences, data_source=data_source
+    )
 
 
-def compute_em(solution_str=None, ground_truth=None, gold_sentences=None, data_source=None, extra_info=None):
+def compute_em(
+    solution_str=None,
+    ground_truth=None,
+    gold_sentences=None,
+    data_source=None,
+    extra_info=None,
+):
     prediction = solution_str
     gold = ground_truth
     prompt, response = split_response(prediction)
@@ -195,7 +221,13 @@ def compute_em(solution_str=None, ground_truth=None, gold_sentences=None, data_s
     return em
 
 
-def compute_cem(solution_str=None, ground_truth=None, gold_sentences=None, data_source=None, extra_info=None):
+def compute_cem(
+    solution_str=None,
+    ground_truth=None,
+    gold_sentences=None,
+    data_source=None,
+    extra_info=None,
+):
     prediction = solution_str
     gold = ground_truth
     prompt, response = split_response(prediction)
@@ -208,7 +240,13 @@ def compute_cem(solution_str=None, ground_truth=None, gold_sentences=None, data_
     return cem
 
 
-def compute_response_cem(solution_str=None, ground_truth=None, gold_sentences=None, data_source=None, extra_info=None):
+def compute_response_cem(
+    solution_str=None,
+    ground_truth=None,
+    gold_sentences=None,
+    data_source=None,
+    extra_info=None,
+):
     prediction = solution_str
     gold = ground_truth
     prompt, response = split_response(prediction)
@@ -221,7 +259,13 @@ def compute_response_cem(solution_str=None, ground_truth=None, gold_sentences=No
     return cem
 
 
-def compute_lenient_f1(solution_str=None, ground_truth=None, gold_sentences=None, data_source=None, extra_info=None):
+def compute_lenient_f1(
+    solution_str=None,
+    ground_truth=None,
+    gold_sentences=None,
+    data_source=None,
+    extra_info=None,
+):
     prediction = solution_str
     gold = ground_truth
     prompt, response = split_response(prediction)
@@ -234,7 +278,13 @@ def compute_lenient_f1(solution_str=None, ground_truth=None, gold_sentences=None
     return f1
 
 
-def compute_lenient_response_f1(solution_str=None, ground_truth=None, gold_sentences=None, data_source=None, extra_info=None):
+def compute_lenient_response_f1(
+    solution_str=None,
+    ground_truth=None,
+    gold_sentences=None,
+    data_source=None,
+    extra_info=None,
+):
     prediction = solution_str
     gold = ground_truth
     prompt, response = split_response(prediction)
@@ -251,7 +301,13 @@ def fact_checking_api(prediction, ans):
     return True  # Placeholder for actual fact-checking logic
 
 
-def compute_f1(solution_str=None, ground_truth=None, gold_sentences=None, data_source=None, extra_info=None):
+def compute_f1(
+    solution_str=None,
+    ground_truth=None,
+    gold_sentences=None,
+    data_source=None,
+    extra_info=None,
+):
     prediction = solution_str
     gold = ground_truth
     prompt, response = split_response(prediction)
@@ -264,7 +320,13 @@ def compute_f1(solution_str=None, ground_truth=None, gold_sentences=None, data_s
     return f1
 
 
-def compute_format(solution_str=None, ground_truth=None, gold_sentences=None, data_source=None, extra_info=None):
+def compute_format(
+    solution_str=None,
+    ground_truth=None,
+    gold_sentences=None,
+    data_source=None,
+    extra_info=None,
+):
     prediction = solution_str
     gold = ground_truth
     prompt, response = split_response(prediction)
@@ -284,7 +346,13 @@ def split_trace(text):
     return prompt, response
 
 
-def compute_action_query(solution_str=None, ground_truth=None, gold_sentences=None, data_source=None, extra_info=None):
+def compute_action_query(
+    solution_str=None,
+    ground_truth=None,
+    gold_sentences=None,
+    data_source=None,
+    extra_info=None,
+):
     prediction = solution_str
     gold = ground_truth
     prompt, trace = split_trace(prediction)
@@ -292,7 +360,13 @@ def compute_action_query(solution_str=None, ground_truth=None, gold_sentences=No
     return res
 
 
-def compute_action_bm25(solution_str=None, ground_truth=None, gold_sentences=None, data_source=None, extra_info=None):
+def compute_action_bm25(
+    solution_str=None,
+    ground_truth=None,
+    gold_sentences=None,
+    data_source=None,
+    extra_info=None,
+):
     prediction = solution_str
     gold = ground_truth
     prompt, trace = split_trace(prediction)
@@ -300,7 +374,13 @@ def compute_action_bm25(solution_str=None, ground_truth=None, gold_sentences=Non
     return res
 
 
-def compute_action_read_pre(solution_str=None, ground_truth=None, gold_sentences=None, data_source=None, extra_info=None):
+def compute_action_read_pre(
+    solution_str=None,
+    ground_truth=None,
+    gold_sentences=None,
+    data_source=None,
+    extra_info=None,
+):
     prediction = solution_str
     gold = ground_truth
     prompt, trace = split_trace(prediction)
@@ -308,7 +388,13 @@ def compute_action_read_pre(solution_str=None, ground_truth=None, gold_sentences
     return res
 
 
-def compute_action_read_nxt(solution_str=None, ground_truth=None, gold_sentences=None, data_source=None, extra_info=None):
+def compute_action_read_nxt(
+    solution_str=None,
+    ground_truth=None,
+    gold_sentences=None,
+    data_source=None,
+    extra_info=None,
+):
     prediction = solution_str
     gold = ground_truth
     prompt, trace = split_trace(prediction)
@@ -316,7 +402,13 @@ def compute_action_read_nxt(solution_str=None, ground_truth=None, gold_sentences
     return res
 
 
-def compute_action_continue(solution_str=None, ground_truth=None, gold_sentences=None, data_source=None, extra_info=None):
+def compute_action_continue(
+    solution_str=None,
+    ground_truth=None,
+    gold_sentences=None,
+    data_source=None,
+    extra_info=None,
+):
     prediction = solution_str
     gold = ground_truth
     prompt, trace = split_trace(prediction)
@@ -324,7 +416,13 @@ def compute_action_continue(solution_str=None, ground_truth=None, gold_sentences
     return res
 
 
-def compute_action_match(solution_str=None, ground_truth=None, gold_sentences=None, data_source=None, extra_info=None):
+def compute_action_match(
+    solution_str=None,
+    ground_truth=None,
+    gold_sentences=None,
+    data_source=None,
+    extra_info=None,
+):
     prediction = solution_str
     gold = ground_truth
     prompt, trace = split_trace(prediction)
@@ -332,7 +430,13 @@ def compute_action_match(solution_str=None, ground_truth=None, gold_sentences=No
     return res
 
 
-def compute_total_action_number(solution_str=None, ground_truth=None, gold_sentences=None, data_source=None, extra_info=None):
+def compute_total_action_number(
+    solution_str=None,
+    ground_truth=None,
+    gold_sentences=None,
+    data_source=None,
+    extra_info=None,
+):
     prediction = solution_str
     gold = ground_truth
     prompt, trace = split_trace(prediction)
