@@ -13,6 +13,7 @@ dependencies = [
   "httpdbg",
   "uvicorn",
   "fastapi",
+  "aiohttp",
 ]
 
 [project.optional-dependencies]
