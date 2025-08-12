@@ -40,7 +40,7 @@ jobs:
           TIMESTAMP=$(date +%Y%m%d%H%M%S)
           DEV_VERSION="${{ steps.get_version.outputs.version }}.dev$TIMESTAMP"
           echo "Creating dev version: $DEV_VERSION"
-          ./scripts/bump_version.sh $DEV_VERSION
+          ./scripts/bump_version.sh "$DEV_VERSION"
 
       - name: Build package
         run: |

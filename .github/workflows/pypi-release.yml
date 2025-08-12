@@ -9,6 +9,8 @@ on:
 jobs:
   check-version:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       version: ${{ steps.get_version.outputs.version }}
       tag_version: ${{ steps.get_tag.outputs.tag_version }}
@@ -41,7 +43,6 @@ jobs:
   publish-pypi:
     needs: check-version
     runs-on: ubuntu-latest
-    environment: release
     permissions:
       id-token: write  # IMPORTANT: this permission is mandatory for trusted publishing
       contents: read
@@ -72,7 +73,7 @@ jobs:
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
 
-      - name: Test installation from Test PyPI
+      - name: Test installation from PyPI
         run: |
           # Wait a bit for the package to be available
           sleep 30

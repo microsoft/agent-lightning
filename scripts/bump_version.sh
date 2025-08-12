@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Script to bump version in pyproject.toml
-# Usage: ./bumpVersion.sh <new_version>
+# Usage: ./bump_version.sh <new_version>
 
 set -e
 
