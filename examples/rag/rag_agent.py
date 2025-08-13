@@ -6,7 +6,7 @@ import shutil
 import sys
 import tempfile
 import time
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 import dotenv
 import termcolor
@@ -50,7 +50,8 @@ Repeat as needed. When done, wrap your final, concise answer in <answer> tags.""
 
 
 class RAGAgent(LitAgent):
-    def __init__(self):
+    def __init__(self, trained_agents: str | None = None) -> None:
+        super().__init__(trained_agents=trained_agents)
         self.mcp_server_url = "http://127.0.0.1:8099/sse"
 
     async def training_rollout_async(self, task: Any, rollout_id: str, resources: NamedResources) -> Any:
