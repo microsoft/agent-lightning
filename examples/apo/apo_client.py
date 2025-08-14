@@ -1,6 +1,16 @@
 import dotenv
 import os
 import random
+
+from openai import OpenAI
+
+from agentlightning import configure_logger
+from agentlightning.litagent import LitAgent
+from agentlightning.trainer import Trainer
+
+import dotenv
+import os
+import random
 import re
 from agentlightning import configure_logger
 from agentlightning.litagent import LitAgent
@@ -8,12 +18,8 @@ from agentlightning.trainer import Trainer
 from agentlightning.types import Rollout
 from typing import List, Dict, Tuple, Optional
 
-def call_api(user_prompt: str = "") -> str:
-    return user_prompt + " (simulated API response)"
-
-
 class GSM8KAgent(LitAgent):
-    
+
     def _is_number(self, s: str) -> Tuple[bool, Optional[str]]:
         """
         Check if a string is a number and return its numeric value.
@@ -62,26 +68,40 @@ class GSM8KAgent(LitAgent):
             return abs(float(pred_answer) - float(gt_label)) <= tolerance
         except ValueError:
             return False
-
+            
     def training_rollout(self, task, rollout_id, resources):
         print("Resources:", resources)
         print("Task:", task)
         user_prompt = resources["prompt"].template
-
-        # user_prompt = user_prompt.render_query(question=task['question'])
         user_prompt = user_prompt.replace("{question}", task['question'])
-        user_prompt = re.sub(r'\n{3,}', '\n\n', user_prompt)
 
-        query_output = call_api(user_prompt)
+        openai = OpenAI(
+            api_key="111",
+            base_url="http://localhost:8000/v1",
+        )
+
+        result = openai.chat.completions.create(
+            model="/home/jiahangxu/working/models/Meta-Llama-3-8B-Instruct",
+            messages=[
+                # {"role": "system", "content": resources["system_prompt"].template},
+                {"role": "user", "content": user_prompt},
+            ],
+        ).choices[0].message.content
+        print("Result:", result)
+
         question = task['question']
         ground_truth = task['answer']
-        score = int(self.check_answer(query_output, task['answer']))
+        score = int(self.check_answer(result, task['answer']))
+        print(f"Question: {question}")
+        print(f"Query Output: {result}")
+        print(f"Ground Truth: {ground_truth}")
+        print(f"Score: {score}")
         return Rollout(
             rollout_id=rollout_id,
             final_reward=score,
             metadata={
                 "query": question,
-                "query_output": query_output,
+                "query_output": result,
                 "ground_truth": ground_truth
             }
         )

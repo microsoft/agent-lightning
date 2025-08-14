@@ -1,22 +1,43 @@
 import asyncio
+
+from agentlightning.server import AgentLightningServer
+from agentlightning.types import NamedResources, PromptTemplate
+
+import asyncio
 import random
 from agentlightning.server import AgentLightningServer
 from agentlightning.types import NamedResources, PromptTemplate
 # from cfpo import POAgents
 from typing import List, Dict, Tuple, Optional
-class POAgents:
-    def __init__(self, task_intention: str):
-        """
-        Initialize the POAgents with a task intention.
-        """
-        self.task_intention = task_intention
-    def diagnosing(self, prompt: str, query: str, query_output: str, ground_truth: str, reward: float) -> List[str]:
-        print(f"Prompt: {prompt}")
-        print(f"Query: {query}")
-        print(f"Query Output: {query_output}")
-        print(f"Ground Truth: {ground_truth}")
-        print(f"Reward: {reward}")
-        return []
+from po_agent.agent import POAgent
+
+def call_api(user_prompt: str = "") -> str:
+    import anthropic
+    print("Calling API with user prompt:", user_prompt)
+
+    client = anthropic.Anthropic(
+        # defaults to os.environ.get("ANTHROPIC_API_KEY")
+        api_key=os.environ.get("ANTHROPIC_API_KEY"),
+    )
+
+    message = client.messages.create(
+        model="claude-sonnet-4-20250514",
+        max_tokens=20000,
+        temperature=1,
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": user_prompt
+                    }
+                ]
+            }
+        ]
+    )
+    return message.content[0].text
+
 
 import datasets
 import random
@@ -31,7 +52,7 @@ class GSM8KDataLoader:
         self,
         train_size: int = 100,
         minibatch_size: int = 5,
-        valid_size: int = 20,
+        valid_size: int = 2,
         test_size: int = 20,
         answer_marker: str = "The answer is",
     ):
@@ -109,75 +130,54 @@ async def example_apo():
     An example of how a prompt optimization works.
     """
     gsm8k_dataloader = GSM8KDataLoader()
-    prompt_optimizer = POAgents(task_intention="solve a reasoning task and answer the following mathematical problem")
-    
+    prompt_optimizer = POAgent(task_intention="solve a reasoning task and answer the following mathematical problem",
+    optimizer_api=call_api)
+
     server = AgentLightningServer(host="127.0.0.1", port=9997)
     await server.start()
 
     prompt_candidates_and_reward = [("Please solve the following question: ", None)]
-    
-    for round_idx in range(3):
-        round_idx = 0
-        print(f"\n[Algo] Round {round_idx + 1} of prompt optimization")
 
-        for prompt, _ in prompt_candidates_and_reward:
-            # 1. Get the test results of the prompt
-            print(f"\n[Algo] Testing prompt: '{prompt}'")
-            task_id_list = []
-            
-            prompt = prompt + "{question}" if "{question}" not in prompt else prompt
-            resources: NamedResources = {"prompt": PromptTemplate(prompt, engine="f-string")}
-            # How the resource is used fully depends on the client implementation.
-            await server.update_resources(resources)
-            
-            minibatch = gsm8k_dataloader.sample_minibatch()
-            print(f"[Algo] Sampled {len(minibatch)} tasks from the GSM8K dataset for this round.")
+    for prompt, _ in prompt_candidates_and_reward:
+        task_id_list = []
+        # 1. The optimization algorithm updates the prompt template
+        print(f"\n[Algo] Updating prompt template to: '{prompt}'")
+        prompt = prompt + "\n{question}" if "\n{question}" not in prompt else prompt
+        resources: NamedResources = {"prompt": PromptTemplate(template=prompt, engine="f-string")}
+        # How the resource is used fully depends on the client implementation.
+        await server.update_resources(resources)
 
-            # 2. Get the results of prompt in this minibatch
-            querys, ground_truths, query_outputs, scores = [], [], [], []
-            for data in minibatch:
-                print("[Algo] Queuing task for clients...")
-                task_id = await server.queue_task(sample=data, mode='train')
-                print(f"[Algo] Task '{task_id}' is now available for clients.")
-                task_id_list.append(task_id)
-            
-            for task_id in task_id_list:
-                rollout = await server.poll_completed_rollout(task_id, timeout=30)
-                assert rollout, "Expected a completed rollout from the client."
-                print(f"[Algo] Received Result: {rollout}")
-                querys.append(rollout.metadata["query"])
-                ground_truths.append(rollout.metadata["ground_truth"])
-                query_outputs.append(rollout.metadata["query_output"])
-                scores.append(rollout.final_reward)
+        minibatch = gsm8k_dataloader.sample_minibatch()
+        print(f"[Algo] Sampled {len(minibatch)} tasks from the GSM8K dataset for this round.")
 
-            # 3. Use the prompt optimizer to mutate the prompt
-            prompt_candidates = prompt_optimizer.diagnosing(prompt, querys, query_outputs, ground_truths, scores)
-            prompt_candidates_and_reward.extend(prompt_candidates)
+        # 2. Get the results of prompt in this minibatch
+        querys, ground_truths, query_outputs, scores = [], [], [], []
+        for data in minibatch:
+            print(data)
+            print("[Algo] Queuing task for clients...")
+            task_id = await server.queue_task(sample=data, mode='train')
+            print(f"[Algo] Task '{task_id}' is now available for clients.")
+            task_id_list.append(task_id)
+        
+        for task_id in task_id_list:
+            rollout = await server.poll_completed_rollout(task_id, timeout=30)
+            assert rollout, "Expected a completed rollout from the client."
+            print(f"[Algo] Received Result: {rollout}")
+            querys.append(rollout.metadata["query"])
+            ground_truths.append(rollout.metadata["ground_truth"])
+            query_outputs.append(rollout.metadata["query_output"])
+            scores.append(rollout.final_reward)
+        
+        prompt_candidates = prompt_optimizer.diagnosing(prompt, querys, query_outputs, ground_truths, scores)[0]
+        print(f"[Algo] Found {len(prompt_candidates)} prompt candidates for the next round.")
 
-        # 4. evaluate the prompt candidate pool
-        print(f"\n[Algo] Evaluating prompt candidates: {prompt_candidates}")
-        for i, (prompt, eval_reward) in enumerate(prompt_candidates_and_reward):
-            if eval_reward is None:
-                scores = []
-                # Evaluate the prompt using the validation set
-                for data in minibatch:
-                    print("[Algo] Queuing task for clients...")
-                    task_id = await server.queue_task(sample=data, mode='train')
-                    print(f"[Algo] Task '{task_id}' is now available for clients.")
-                    task_id_list.append(task_id)
+        
+        # avg_reward = sum(scores) / len(scores) if scores else 0
+        # print(f"[Algo] Average reward for prompt '{prompt}': {avg_reward}")
+        for candidate in prompt_candidates:
+            print(f"[Algo] Candidate prompt: '{candidate[0]}'")
+            prompt_candidates_and_reward.append((candidate[0], None))
 
-                for task_id in task_id_list:
-                    rollout = await server.poll_completed_rollout(task_id, timeout=30)
-                    assert rollout, "Expected a completed rollout from the client."
-                    print(f"[Algo] Received Result: {rollout}")
-
-                    # update the prompt candicate pool
-                    scores.append(rollout.final_reward)
-                prompt_candidates_and_reward[i] = (prompt, sum(scores) / len(scores))  # Average reward for the prompt
-
-            # Get the best 5 candidates for the current prompt pool
-            prompt_candidates_and_reward = sorted(prompt_candidates_and_reward, key=lambda x: x[1], reverse=True)[:5]
-            print(f"[Algo] Best candidates for prompt '{prompt}': {prompt_candidates_and_reward[0]}")
 
     await server.stop()
 
