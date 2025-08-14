@@ -15,6 +15,8 @@ Agent Lightning is the absolute trainer to light up AI agents.
 - [Quickstart](quickstart/getting-started.md) - Learn the fundamentals of Agent Lightning
 - [Train SQL Agent with RL](how-to/train-sql-agent.md) - A practical example of training a SQL agent
 - [API Reference](reference/core.md) - Complete API documentation
+- [Join our Discord community](https://discord.gg/UScU7kyr) - Connect with other users and contributors
+
 
 ## Resources
 
