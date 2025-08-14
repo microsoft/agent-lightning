@@ -460,11 +460,13 @@ def test_instantiate_classes_error_handling(caplog):
 
 
 # --- Integration Tests for lightning_cli ---
-def run_lightning_cli(classes_to_configure, cli_args_list):
+def run_lightning_cli(classes_to_configure, cli_args_list, defaults=None):
     """Helper to run lightning_cli with mocked sys.argv."""
+    if defaults is None:
+        defaults = {}
     # Prepend a dummy program name to cli_args_list for sys.argv
     with mock.patch.object(sys, "argv", ["test_program.py"] + cli_args_list):
-        result = config.lightning_cli(*classes_to_configure)
+        result = config.lightning_cli(*classes_to_configure, defaults=defaults)
         if not isinstance(result, tuple):
             return (result,)
         return result
@@ -595,3 +597,19 @@ def test_lightning_cli_optional_no_default_behavior():
     # Provided with a value
     (cfg3,) = run_lightning_cli([OptionalNoDefaultConfig], ["--optionalnodefaultconfig.opt-val", "ActualValue"])
     assert cfg3.opt_val == "ActualValue"
+
+
+def test_lightning_cli_programmatic_defaults_override_required():
+    """Tests that defaults passed to lightning_cli satisfy required args and can be overridden."""
+    defaults = {SimpleConfig: {"name": "Provided"}}
+
+    # No CLI args, should use provided default for required 'name'
+    (cfg1,) = run_lightning_cli([SimpleConfig], [], defaults=defaults)
+    assert cfg1.name == "Provided"
+    assert cfg1.value == 10
+
+    # CLI arg should override provided default
+    (cfg2,) = run_lightning_cli(
+        [SimpleConfig], ["--simpleconfig.name", "FromCLI"], defaults=defaults
+    )
+    assert cfg2.name == "FromCLI"
