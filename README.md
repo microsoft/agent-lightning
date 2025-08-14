@@ -6,11 +6,11 @@
 [![GPU Test](https://github.com/microsoft/agent-lightning/actions/workflows/examples.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/examples.yml)
 [![PyPI version](https://badge.fury.io/py/agentlightning.svg)](https://badge.fury.io/py/agentlightning)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/UScU7kyr)
+[![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/RYk7CdvDR7)
 
 **The absolute trainer to light up AI agents.**
 
-Join our [Discord community](https://discord.gg/UScU7kyr) to connect with other users and contributors.
+Join our [Discord community](https://discord.gg/RYk7CdvDR7) to connect with other users and contributors.
 
 ## ⚡ Core Features
 
