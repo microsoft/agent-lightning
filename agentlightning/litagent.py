@@ -139,6 +139,50 @@ class LitAgent:
         """
         return self.training_rollout(task, rollout_id, resources)
 
+    def training_rollout_batch(
+        self,
+        tasks: List[TaskInput],
+        rollout_ids: List[str],
+        resources_list: List[NamedResources],
+    ) -> List[RolloutRawResult]:
+        """Executes training rollouts for a batch of tasks.
+
+        By default, this method iterates over ``tasks`` and delegates to
+        :meth:`training_rollout` for each corresponding ``rollout_id`` with its
+        matching resources.
+
+        Args:
+            tasks: A list of task inputs.
+            rollout_ids: A list of rollout identifiers matching ``tasks``.
+            resources_list: A list of named resources for each rollout.
+
+        Returns:
+            A list containing the result of each individual rollout.
+        """
+        return [self.training_rollout(t, rid, res) for t, rid, res in zip(tasks, rollout_ids, resources_list)]
+
+    def validation_rollout_batch(
+        self,
+        tasks: List[TaskInput],
+        rollout_ids: List[str],
+        resources_list: List[NamedResources],
+    ) -> List[RolloutRawResult]:
+        """Executes validation rollouts for a batch of tasks.
+
+        By default, this method delegates to :meth:`validation_rollout` for each
+        task, which itself falls back to :meth:`training_rollout` unless
+        overridden.
+
+        Args:
+            tasks: A list of task inputs.
+            rollout_ids: A list of rollout identifiers matching ``tasks``.
+            resources_list: A list of named resources for each rollout.
+
+        Returns:
+            A list containing the result of each individual validation rollout.
+        """
+        return [self.validation_rollout(t, rid, res) for t, rid, res in zip(tasks, rollout_ids, resources_list)]
+
     async def training_rollout_async(
         self, task: TaskInput, rollout_id: str, resources: NamedResources
     ) -> RolloutRawResult:
@@ -176,3 +220,51 @@ class LitAgent:
             The result of the asynchronous validation rollout.
         """
         return await self.training_rollout_async(task, rollout_id, resources)
+
+    async def training_rollout_batch_async(
+        self,
+        tasks: List[TaskInput],
+        rollout_ids: List[str],
+        resources_list: List[NamedResources],
+    ) -> List[RolloutRawResult]:
+        """Asynchronous version of :meth:`training_rollout_batch`.
+
+        By default, this method awaits :meth:`training_rollout_async` for each
+        item in ``tasks`` sequentially with its matching resources.
+
+        Args:
+            tasks: A list of task inputs.
+            rollout_ids: A list of rollout identifiers matching ``tasks``.
+            resources_list: A list of named resources for each rollout.
+
+        Returns:
+            A list containing the result of each individual rollout.
+        """
+        return [
+            await self.training_rollout_async(t, rid, res) for t, rid, res in zip(tasks, rollout_ids, resources_list)
+        ]
+
+    async def validation_rollout_batch_async(
+        self,
+        tasks: List[TaskInput],
+        rollout_ids: List[str],
+        resources_list: List[NamedResources],
+    ) -> List[RolloutRawResult]:
+        """Asynchronous version of :meth:`validation_rollout_batch`.
+
+        By default, this method awaits :meth:`validation_rollout_async` for each
+        task. Since :meth:`validation_rollout_async` redirects to
+        :meth:`training_rollout_async` unless overridden, this batch method will
+        also use :meth:`training_rollout_async` by default.
+
+        Args:
+            tasks: A list of task inputs.
+            rollout_ids: A list of rollout identifiers matching ``tasks``.
+            resources_list: A list of named resources for each rollout.
+
+        Returns:
+            A list containing the result of each individual validation rollout.
+        """
+        return [
+            await self.validation_rollout_async(t, rid, res) for t, rid, res in zip(tasks, rollout_ids, resources_list)
+        ]

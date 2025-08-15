@@ -50,6 +50,7 @@ class Trainer(ParallelWorkerBase):
         n_workers: int = 1,
         max_tasks: Optional[int] = None,
         daemon: bool = True,
+        batch_size: int = 1,
         tracer: Union[BaseTracer, str, dict, None] = None,
         triplet_exporter: Union[TripletExporter, dict, None] = None,
     ):
@@ -58,6 +59,7 @@ class Trainer(ParallelWorkerBase):
         self.max_tasks = max_tasks
         self.daemon = daemon
         self.dev = dev
+        self.batch_size = batch_size
         self._client: AgentLightningClient | None = None  # Will be initialized in fit method
 
         self.tracer = self._make_tracer(tracer)
@@ -181,6 +183,7 @@ class Trainer(ParallelWorkerBase):
                 triplet_exporter=self.triplet_exporter,
                 max_tasks=self.max_tasks,
                 worker_id=worker_id,
+                batch_size=self.batch_size,
             )
             loop.init_worker(worker_id)
             if is_async:

@@ -372,3 +372,23 @@ async def test_local_client_async_methods(sample_resources: NamedResources):
     assert result["rollout_id"] == "async_rollout"
     assert len(client.rollouts) == 1
     assert client.rollouts[0].final_reward == 0.8
+
+
+@pytest.mark.asyncio
+async def test_queue_tasks(server_setup: Dict[str, Any]):
+    """Ensure multiple tasks can be queued and retrieved."""
+    server: AgentLightningServer = server_setup["server"]
+    http_client: AsyncClient = server_setup["http_client"]
+    endpoint: str = server_setup["endpoint"]
+    client = AgentLightningClient(endpoint=endpoint, poll_interval=0.1)
+
+    samples = [{"prompt": "1"}, {"prompt": "2"}]
+    rollout_ids = await server.queue_tasks(samples, mode="train")
+    assert len(rollout_ids) == 2
+
+    task_a = await client.poll_next_task_async()
+    task_b = await client.poll_next_task_async()
+    assert {task_a.rollout_id, task_b.rollout_id} == set(rollout_ids)
+
+    resp = await http_client.get("/task")
+    assert resp.json()["is_available"] is False
