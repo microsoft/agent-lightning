@@ -120,6 +120,7 @@ async def test_full_lifecycle_async(
     assert task.rollout_id == rollout_id
     assert task.input == sample_task_input
     assert task.resources_id == resources_id  # Task is correctly associated with latest resources
+    assert task.task_index == 0
 
     # 3. Client fetches resources
     res_update = await client.get_resources_by_id_async(task.resources_id)
@@ -170,6 +171,7 @@ async def test_full_lifecycle_sync(
         assert task.rollout_id == rollout_id
         assert task.input == sample_task_input
         assert task.resources_id is None
+        assert task.task_index == 0
 
         # 3. Client fetches resources
         res_update = client.get_latest_resources()
@@ -284,11 +286,13 @@ def test_local_client_core_functionality(sample_resources: NamedResources):
     assert task1.rollout_id == "local_task_001"
     assert task1.input == "input1"
     assert task1.resources_id == "local"
+    assert task1.task_index == 0
     assert client.task_count == 1
 
     task2 = client.poll_next_task()
     assert task2.rollout_id == "local_task_002"
     assert task2.input == {"prompt": "input2"}
+    assert task2.task_index == 1
     assert client.task_count == 2
 
     # Test initialization with Task objects and ResourcesUpdate
@@ -299,6 +303,7 @@ def test_local_client_core_functionality(sample_resources: NamedResources):
     task3 = client2.poll_next_task()
     assert task3.rollout_id == "existing_task"
     assert task3.input == "existing_input"
+    assert task3.task_index is None
 
     # Test resource retrieval
     resources = client2.get_resources_by_id("version123")
@@ -347,6 +352,8 @@ def test_local_client_error_handling(sample_resources: NamedResources):
     task1 = single_task_client.poll_next_task()
     task2 = single_task_client.poll_next_task()
     assert task2.input == task1.input
+    assert task1.task_index == 0
+    assert task2.task_index == 0
 
 
 @pytest.mark.asyncio
@@ -357,6 +364,7 @@ async def test_local_client_async_methods(sample_resources: NamedResources):
     # Test all async methods delegate to sync versions
     task = await client.poll_next_task_async()
     assert task.input == "async_input"
+    assert task.task_index == 0
 
     resources = await client.get_resources_by_id_async("local")
     assert resources is not None
@@ -372,3 +380,21 @@ async def test_local_client_async_methods(sample_resources: NamedResources):
     assert result["rollout_id"] == "async_rollout"
     assert len(client.rollouts) == 1
     assert client.rollouts[0].final_reward == 0.8
+
+
+@pytest.mark.asyncio
+async def test_server_auto_increments_task_index(server_setup: Dict[str, Any], sample_task_input: Dict[str, Any]):
+    server: AgentLightningServer = server_setup["server"]
+    endpoint: str = server_setup["endpoint"]
+
+    # Queue multiple tasks without specifying task_index
+    await server.queue_task(sample=sample_task_input)
+    await server.queue_task(sample=sample_task_input)
+
+    client = AgentLightningClient(endpoint=endpoint, poll_interval=0.1)
+
+    task1 = await client.poll_next_task_async()
+    task2 = await client.poll_next_task_async()
+
+    assert task1.task_index == 0
+    assert task2.task_index == 1

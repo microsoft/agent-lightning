@@ -91,10 +91,11 @@ class Trainer(ParallelWorkerBase):
         if isinstance(tracer, dict):
             tracer_type = tracer.get("type")
             if tracer_type is None:
-                raise ValueError("tracer dict must have a 'type' key with the class full name")
-            module_name, class_name = tracer_type.rsplit(".", 1)
-            module = importlib.import_module(module_name)
-            tracer_cls = getattr(module, class_name)
+                tracer_cls = AgentOpsTracer
+            else:
+                module_name, class_name = tracer_type.rsplit(".", 1)
+                module = importlib.import_module(module_name)
+                tracer_cls = getattr(module, class_name)
             # Remove 'type' key and pass remaining keys as kwargs
             tracer_kwargs = {k: v for k, v in tracer.items() if k != "type"}
             return tracer_cls(**tracer_kwargs)

@@ -41,22 +41,35 @@ class ServerDataStore:
         self._results_lock = asyncio.Lock()
         self._resources_lock = asyncio.Lock()
 
+        # Auto-incrementing index for tasks added without explicit task_index
+        self._next_task_index: int = 0
+
     async def add_task(
         self,
         sample: Any,
         mode: Literal["train", "val", "test"] | None = None,
         resources_id: str | None = None,
         metadata: Dict[str, Any] | None = None,
+        task_index: int | None = None,
     ) -> str:
         """
         Adds a new task to the queue with specific metadata and returns its unique ID.
         """
         rollout_id = f"rollout-{uuid.uuid4()}"
+
+        if task_index is None:
+            task_index = self._next_task_index
+            self._next_task_index += 1
+        else:
+            if task_index >= self._next_task_index:
+                self._next_task_index = task_index + 1
+
         task = Task(
             rollout_id=rollout_id,
             input=sample,
             mode=mode,
             resources_id=resources_id,
+            task_index=task_index,
             create_time=time.time(),
             num_claims=0,
             metadata=metadata or {},
@@ -304,13 +317,20 @@ class AgentLightningServer:
         mode: Literal["train", "val", "test"] | None = None,
         resources_id: str | None = None,
         metadata: Dict[str, Any] | None = None,
+        task_index: int | None = None,
     ) -> str:
         """
         Adds a task to the queue for a client to process.
         """
         if not self._store:
             raise RuntimeError("Store not initialized. The server may not be running.")
-        return await self._store.add_task(sample, mode=mode, resources_id=resources_id, metadata=metadata)
+        return await self._store.add_task(
+            sample,
+            mode=mode,
+            resources_id=resources_id,
+            metadata=metadata,
+            task_index=task_index,
+        )
 
     async def update_resources(self, resources: NamedResources) -> str:
         """

@@ -70,6 +70,7 @@ class Task(BaseModel):
     create_time: Optional[float] = None
     last_claim_time: Optional[float] = None
     num_claims: Optional[int] = None
+    task_index: int | None = None
 
     # Allow additional metadata fields
     metadata: Dict[str, Any] = Field(default_factory=dict)
