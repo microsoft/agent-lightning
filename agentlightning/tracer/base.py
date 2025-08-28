@@ -2,7 +2,7 @@ from contextlib import contextmanager
 from typing import Iterator, List, Optional, Callable, Any, Awaitable
 
 from opentelemetry.sdk.trace import ReadableSpan
-from agentlightning.types import ParallelWorkerBase
+from agentlightning.types import ParallelWorkerBase, Task
 
 
 class BaseTracer(ParallelWorkerBase):
@@ -41,7 +41,7 @@ class BaseTracer(ParallelWorkerBase):
     """
 
     @contextmanager
-    def trace_context(self, name: Optional[str] = None) -> Iterator[Any]:
+    def trace_context(self, name: Optional[str] = None, task: Optional[Task] = None, **kwargs: Any) -> Iterator[Any]:
         """
         Starts a new tracing context. This should be used as a context manager.
 
@@ -52,6 +52,7 @@ class BaseTracer(ParallelWorkerBase):
 
         Args:
             name: The name for the root span of this trace context.
+            task: An optional task metadata, useful for counting the tasks traced.
         """
         raise NotImplementedError()
 

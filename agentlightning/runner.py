@@ -158,7 +158,7 @@ class AgentRunner(ParallelWorkerBase):
         rollout_obj = Rollout(rollout_id=task.rollout_id)  # Default empty rollout
 
         try:
-            with self.tracer.trace_context(name=f"rollout_{rollout_id}"):
+            with self.tracer.trace_context(name=rollout_id, task_index=task.task_index):
                 start_time = time.time()
                 rollout_method = self.agent.training_rollout if task.mode == "train" else self.agent.validation_rollout
                 # Pass the task input, not the whole task object
@@ -218,7 +218,7 @@ class AgentRunner(ParallelWorkerBase):
         rollout_obj = Rollout(rollout_id=task.rollout_id)  # Default empty rollout
 
         try:
-            with self.tracer.trace_context(name=f"rollout_{rollout_id}"):
+            with self.tracer.trace_context(name=f"rollout_{rollout_id}", task=task):
                 start_time = time.time()
                 rollout_method = (
                     self.agent.training_rollout_async if task.mode == "train" else self.agent.validation_rollout_async

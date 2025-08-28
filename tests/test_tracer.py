@@ -884,6 +884,6 @@ def _debug_with_agentops():
 
 
 if __name__ == "__main__":
-    # run_with_agentops_tracer()
-    run_with_http_tracer()
+    run_with_agentops_tracer()
+    # run_with_http_tracer()
     # _debug_with_agentops()

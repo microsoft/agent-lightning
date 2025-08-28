@@ -8,8 +8,10 @@ export DATA_DIR=data
 export ROLLOUT_TP_SIZE=1
 export EXPERIMENT_NAME="calc_x_$(date +%Y%m%d%H%M%S)"
 export PROJECT_NAME=AgentLightningCI
-echo "project_name=${PROJECT_NAME}" >> $GITHUB_OUTPUT
-echo "run_name=${EXPERIMENT_NAME}" >> $GITHUB_OUTPUT
+if [ -n "$GITHUB_OUTPUT" ]; then
+    echo "project_name=${PROJECT_NAME}" >> "$GITHUB_OUTPUT"
+    echo "run_name=${EXPERIMENT_NAME}" >> "$GITHUB_OUTPUT"
+fi
 
 PYTHONUNBUFFERED=1 python -m agentlightning.verl \
     algorithm.adv_estimator=grpo \

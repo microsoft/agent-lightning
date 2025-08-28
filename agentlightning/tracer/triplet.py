@@ -362,18 +362,24 @@ class TraceTree:
 
         This function modifies the tree in place.
         """
-        nodes_to_repair = list(self.children)
+        if self.span.name == "virtual-node" and len(self.children) == 1:
+            # If the node is a virtual node with only one child, we jump to its direct child.
+            root = self.children[0]
+        else:
+            root = self
+
+        nodes_to_repair = list(root.children)
         for repair_node in nodes_to_repair:
-            if len(self.children) == 1:
+            if len(root.children) == 1:
                 # If there is only one child, we don't need to repair the hierarchy.
                 break
             # Find the closest parent span (but not the root itself)
             closest_parent = None
             closest_duration = float("inf")
-            for node in self.traverse():
+            for node in root.traverse():
                 if node.id == repair_node.id:
                     continue
-                if node is self:
+                if node is root:
                     continue
                 if node.start_time <= repair_node.start_time and node.end_time >= repair_node.end_time:
                     duration_delta = node.end_time - repair_node.end_time + repair_node.start_time - node.start_time
@@ -383,7 +389,7 @@ class TraceTree:
 
             # Repair the hierarchy
             if closest_parent is not None:
-                self.children.remove(repair_node)
+                root.children.remove(repair_node)
                 closest_parent.children.append(repair_node)
 
     def match_rewards(self, reward_match: str, llm_calls: List["TraceTree"]) -> dict[str, Optional[float]]:
