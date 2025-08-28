@@ -278,7 +278,10 @@ class AgentLightningTrainer(RayPPOTrainer):
             self.config.agentlightning.port,
             self.config.actor_rollout_ref.rollout.n,
             train_information={
-                "model": self.config.actor_rollout_ref.model.path,
+                # Note (Zhiyuan): To avoid further patch into vllm async server, using the same sentence to get the naming here.
+                # However, it is possible that verl updates the naming and causes incompatibility.
+                # Reference: https://github.com/volcengine/verl/blob/5b5e09d9cc20625e436d01f69d9cc739ff681c54/verl/workers/rollout/vllm_rollout/vllm_async_server.py#L217
+                "model": "/".join(self.config.actor_rollout_ref.model.path.split("/")[-2:]),
                 "temperature": self.config.actor_rollout_ref.rollout.temperature,
             },
             tokenizer=self.tokenizer,
@@ -292,7 +295,7 @@ class AgentLightningTrainer(RayPPOTrainer):
         if self.val_reward_fn is not None and self.config.trainer.get("val_before_train", True):
             val_metrics = self._validate()
             assert val_metrics, f"{val_metrics=}"
-            pprint(f"Initial validation metrics: {val_metrics}")
+            print(f"Initial validation metrics: {val_metrics}")
             logger.log(data=val_metrics, step=self.global_steps)
             if self.config.trainer.get("val_only", False):
                 return
