@@ -65,6 +65,21 @@ class ServerDataStore:
         logger.info(f"Task queued: {rollout_id} (mode: {mode}, resources_id: {resources_id})")
         return rollout_id
 
+    async def add_tasks(
+        self,
+        samples: List[Any],
+        mode: Literal["train", "val", "test"] | None = None,
+        resources_id: str | None = None,
+        metadata_list: Optional[List[Dict[str, Any]]] = None,
+    ) -> List[str]:
+        """Adds multiple tasks to the queue and returns their rollout IDs."""
+        rollout_ids = []
+        for idx, sample in enumerate(samples):
+            metadata = metadata_list[idx] if metadata_list and idx < len(metadata_list) else None
+            rollout_id = await self.add_task(sample, mode=mode, resources_id=resources_id, metadata=metadata)
+            rollout_ids.append(rollout_id)
+        return rollout_ids
+
     async def get_next_task(self) -> Optional[Task]:
         """
         Retrieves the next task from the queue without blocking.
@@ -311,6 +326,18 @@ class AgentLightningServer:
         if not self._store:
             raise RuntimeError("Store not initialized. The server may not be running.")
         return await self._store.add_task(sample, mode=mode, resources_id=resources_id, metadata=metadata)
+
+    async def queue_tasks(
+        self,
+        samples: List[Any],
+        mode: Literal["train", "val", "test"] | None = None,
+        resources_id: str | None = None,
+        metadata_list: Optional[List[Dict[str, Any]]] = None,
+    ) -> List[str]:
+        """Adds multiple tasks to the queue for a client to process."""
+        if not self._store:
+            raise RuntimeError("Store not initialized. The server may not be running.")
+        return await self._store.add_tasks(samples, mode=mode, resources_id=resources_id, metadata_list=metadata_list)
 
     async def update_resources(self, resources: NamedResources) -> str:
         """
