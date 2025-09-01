@@ -373,7 +373,7 @@ class SQLAgent:
             "check_query",
             self.should_continue,
         )
-        builder.add_edge("rewrite_query", "check_query")
+        builder.add_edge("rewrite_query", "execute_query")
 
         return builder.compile()
 
@@ -522,7 +522,7 @@ def spider_dev_data():
     # Read from dev.parquet
     import pandas as pd
 
-    spider_dev_data_path = os.path.join(os.environ.get("VERL_SPIDER_DEV_DATA", "data"), "dev.parquet")
+    spider_dev_data_path = os.path.join(os.environ.get("VERL_SPIDER_DATA_DIR", "data"), "dev.parquet")
     if not os.path.exists(spider_dev_data_path):
         raise FileNotFoundError(f"Spider dev data file {spider_dev_data_path} does not exist.")
     df = pd.read_parquet(spider_dev_data_path)

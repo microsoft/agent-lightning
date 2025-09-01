@@ -1,0 +1,81 @@
+name: PyPI Release
+
+on:
+  push:
+    tags:
+      - 'v*'  # Trigger on version tags like v1.0.0, v1.2.3, etc.
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+      tag_version: ${{ steps.get_tag.outputs.tag_version }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Get version from pyproject.toml
+        id: get_version
+        run: |
+          VERSION=$(grep '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Package version: $VERSION"
+
+      - name: Get tag version
+        id: get_tag
+        run: |
+          TAG_VERSION=${GITHUB_REF#refs/tags/v}
+          echo "tag_version=$TAG_VERSION" >> $GITHUB_OUTPUT
+          echo "Tag version: $TAG_VERSION"
+
+      - name: Verify version matches tag
+        run: |
+          if [ "${{ steps.get_version.outputs.version }}" != "${{ steps.get_tag.outputs.tag_version }}" ]; then
+            echo "Error: Version in pyproject.toml (${{ steps.get_version.outputs.version }}) does not match tag (${{ steps.get_tag.outputs.tag_version }})"
+            exit 1
+          fi
+          echo "Version check passed!"
+
+  publish-pypi:
+    needs: check-version
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write  # IMPORTANT: this permission is mandatory for trusted publishing
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[dev]
+
+      - name: Build package
+        run: |
+          hatch build
+
+      - name: Verify package contents
+        run: |
+          python -m tarfile -l dist/*.tar.gz
+          python -m zipfile -l dist/*.whl
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+      - name: Test installation from PyPI
+        run: |
+          # Wait a bit for the package to be available
+          sleep 30
+          pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ agentlightning
+          python -c "import agentlightning; print('Package installed successfully')"

@@ -1,7 +1,7 @@
 [project]
 name = "agentlightning"
-version = "0.1"
-description = "Agent Lightning"
+version = "0.1.2"
+description = "Agent Lightning is the absolute trainer to light up AI agents."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
@@ -13,6 +13,7 @@ dependencies = [
   "httpdbg",
   "uvicorn",
   "fastapi",
+  "aiohttp",
 ]
 
 [project.optional-dependencies]
@@ -24,6 +25,13 @@ dev = [
   "pre-commit",
   "pytest-rerunfailures",
   "black",
+  "mkdocs",
+  "mkdocs-material",
+  "mkdocstrings[python]",
+  "mike",
+  "mkdocs-git-revision-date-localized-plugin",
+  "mkdocs-git-authors-plugin",
+  "mkdocs-macros-plugin",
 ]
 experiment = [
   "random-word",

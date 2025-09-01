@@ -1,7 +1,7 @@
 import random
 from contextlib import contextmanager
 from copy import deepcopy
-from typing import Dict
+from typing import Dict, Tuple
 
 import numpy as np
 import torch
@@ -74,6 +74,192 @@ class AgentLightningTrainer(RayPPOTrainer):
         self.async_rollout_manager.sleep()
         return test_metrics
 
+    def _train_step(self, batch_dict: dict) -> dict:
+        # Isolate in a separate method to automatically recycle the variables before validation.
+        batch: DataProto = DataProto.from_single_dict(batch_dict)
+        metrics = {}
+        timing_raw = {}
+
+        with _timer("step", timing_raw):
+
+            # When agent mode is enabled, we read the batch as it is.
+            gen_batch = batch
+
+            # generate a batch
+            with _timer("gen", timing_raw):
+                self.async_rollout_manager.wake_up()
+                self.agent_mode_daemon.set_up_data_and_server(
+                    gen_batch.non_tensor_batch, self.async_rollout_manager.server_addresses
+                )
+                self.agent_mode_daemon.run_until_all_finished()
+                batch, agent_metrics = self.agent_mode_daemon.get_train_data_batch(
+                    max_prompt_length=self.config.data.max_prompt_length,
+                    max_response_length=self.config.data.max_response_length,
+                    device=gen_batch.batch["fake_ids"].device,
+                )
+                metrics.update(agent_metrics)
+                self.agent_mode_daemon.clear_data_and_server()
+                self.async_rollout_manager.sleep()
+
+            if self.config.algorithm.adv_estimator == AdvantageEstimator.REMAX:
+                with _timer("gen_max", timing_raw):
+                    gen_baseline_batch = deepcopy(gen_batch)
+                    gen_baseline_batch.meta_info["do_sample"] = False
+                    gen_baseline_output = self.actor_rollout_wg.generate_sequences(gen_baseline_batch)
+
+                    batch = batch.union(gen_baseline_output)
+                    reward_baseline_tensor = self.reward_fn(batch)
+                    reward_baseline_tensor = reward_baseline_tensor.sum(dim=-1)
+
+                    batch.pop(batch_keys=list(gen_baseline_output.batch.keys()))
+
+                    batch.batch["reward_baselines"] = reward_baseline_tensor
+
+                    del gen_baseline_batch, gen_baseline_output
+
+            # uid is used for algorithm like GRPO, should be aligned to data id
+            batch.non_tensor_batch["uid"] = batch.non_tensor_batch["data_id_list"]
+
+            batch.batch["response_mask"] = compute_response_mask(batch)
+
+            # compute global_valid tokens
+            batch.meta_info["global_token_num"] = torch.sum(batch.batch["attention_mask"], dim=-1).tolist()
+
+            with _timer("reward", timing_raw):
+                # compute reward model score
+                if self.use_rm:
+                    reward_tensor = self.rm_wg.compute_rm_score(batch)
+                    batch = batch.union(reward_tensor)
+
+                reward_extra_infos_dict = {}
+
+            # for agent mode, pad the lengths to calculate old log prob, ref, and values
+            batch, pad_size = pad_dataproto_to_divisor(batch, self.actor_rollout_wg.world_size)
+
+            # recompute old_log_probs
+            with _timer("old_log_prob", timing_raw):
+                old_log_prob = self.actor_rollout_wg.compute_log_prob(batch)
+                entropys = old_log_prob.batch["entropys"]
+                response_masks = batch.batch["response_mask"]
+                loss_agg_mode = self.config.actor_rollout_ref.actor.loss_agg_mode
+                entropy_loss = agg_loss(loss_mat=entropys, loss_mask=response_masks, loss_agg_mode=loss_agg_mode)
+                old_log_prob_metrics = {"actor/entropy_loss": entropy_loss.detach().item()}
+                metrics.update(old_log_prob_metrics)
+                old_log_prob.batch.pop("entropys")
+                batch = batch.union(old_log_prob)
+
+            if self.use_reference_policy:
+                # compute reference log_prob
+                with _timer("ref", timing_raw):
+                    ref_log_prob = self.ref_policy_wg.compute_ref_log_prob(batch)
+                    batch = batch.union(ref_log_prob)
+
+            # compute values
+            if self.use_critic:
+                with _timer("values", timing_raw):
+                    values = self.critic_wg.compute_values(batch)
+                    batch = batch.union(values)
+
+            # for agent mode, unpad to calculate adv
+            # it is important, as adv should be based on the raw traces
+            batch = unpad_dataproto(batch, pad_size=pad_size)
+
+            with _timer("adv", timing_raw):
+                # if agent_mode is enabled, there is already token_level_scores
+                # token_level_scores is not needed to compute here
+
+                # compute rewards. apply_kl_penalty if available
+                if self.config.algorithm.use_kl_in_reward:
+                    batch, kl_metrics = apply_kl_penalty(
+                        batch, kl_ctrl=self.kl_ctrl_in_reward, kl_penalty=self.config.algorithm.kl_penalty
+                    )
+                    metrics.update(kl_metrics)
+                else:
+                    batch.batch["token_level_rewards"] = batch.batch["token_level_scores"]
+
+                # compute advantages, executed on the driver process
+
+                norm_adv_by_std_in_grpo = self.config.algorithm.get(
+                    "norm_adv_by_std_in_grpo", True
+                )  # GRPO adv normalization factor
+
+                batch = compute_advantage(
+                    batch,
+                    adv_estimator=self.config.algorithm.adv_estimator,
+                    gamma=self.config.algorithm.gamma,
+                    lam=self.config.algorithm.lam,
+                    num_repeat=self.config.actor_rollout_ref.rollout.n,
+                    norm_adv_by_std_in_grpo=norm_adv_by_std_in_grpo,
+                    config=self.config.algorithm,
+                )
+
+            # after advantages are assinged, we begin to drop (1) long prompt (2) floor to ppo minisize
+            keep_indices = (~batch.batch["is_drop_mask"]).nonzero(as_tuple=True)[0]
+            metrics["agent_mode/n_dropped_sample_because_of_prompt"] = (
+                batch.batch["is_drop_mask"].shape[0] - keep_indices.shape[0]
+            )
+            batch = batch[keep_indices]
+            # next, round to minibatch size
+            mini_batch_size = self.config.actor_rollout_ref.actor.ppo_mini_batch_size
+            n_transition = len(batch)
+            random_indices = list(range(n_transition))
+            random.shuffle(random_indices)
+            batch.reorder(torch.tensor(random_indices).type(torch.int32))
+            n_remained_transition = n_transition // mini_batch_size * mini_batch_size
+            batch = batch[list(range(n_remained_transition))]
+            metrics["agent_mode/n_dropped_sample_because_of_mini_batch"] = n_transition - n_remained_transition
+
+            # Agent mode note: Change the order of balance batch;
+            #     1. first calculate advantage
+            #     2. then drop the samples (too long prompt & floor to ppo minisize)
+            #     3. balance
+            # balance the number of valid tokens on each dp rank.
+            # Note that this breaks the order of data inside the batch.
+            # Please take care when you implement group based adv computation such as GRPO and rloo
+            if self.config.trainer.balance_batch:
+                self._balance_batch(batch, metrics=metrics)
+
+            # update critic
+            if self.use_critic:
+                with _timer("update_critic", timing_raw):
+                    critic_output = self.critic_wg.update_critic(batch)
+                critic_output_metrics = reduce_metrics(critic_output.meta_info["metrics"])
+                metrics.update(critic_output_metrics)
+
+            # implement critic warmup
+            if self.config.trainer.critic_warmup <= self.global_steps:
+                # update actor
+                with _timer("update_actor", timing_raw):
+                    batch.meta_info["multi_turn"] = self.config.actor_rollout_ref.rollout.multi_turn.enable
+                    actor_output = self.actor_rollout_wg.update_actor(batch)
+                actor_output_metrics = reduce_metrics(actor_output.meta_info["metrics"])
+                metrics.update(actor_output_metrics)
+
+            # Log rollout generations if enabled
+            rollout_data_dir = self.config.trainer.get("rollout_data_dir", None)
+            if rollout_data_dir:
+                with _timer("dump_rollout_generations", timing_raw):
+                    print(batch.batch.keys())
+                    inputs = self.tokenizer.batch_decode(batch.batch["prompts"], skip_special_tokens=True)
+                    outputs = self.tokenizer.batch_decode(batch.batch["responses"], skip_special_tokens=True)
+                    scores = batch.batch["token_level_scores"].sum(-1).cpu().tolist()
+                    self._dump_generations(
+                        inputs=inputs,
+                        outputs=outputs,
+                        scores=scores,
+                        reward_extra_infos_dict=reward_extra_infos_dict,
+                        dump_path=rollout_data_dir,
+                    )
+
+        # compute training metrics
+        metrics.update(compute_data_metrics(batch=batch, use_critic=self.use_critic))
+        metrics.update(compute_timing_metrics(batch=batch, timing_raw=timing_raw))
+        # TODO: implement actual tflpo and theoretical tflpo
+        n_gpus = self.resource_pool_manager.get_n_gpus()
+        metrics.update(compute_throughout_metrics(batch=batch, timing_raw=timing_raw, n_gpus=n_gpus))
+
+        return metrics
+
     def fit(self):
         logger = Tracking(
             project_name=self.config.trainer.project_name,
@@ -92,7 +278,10 @@ class AgentLightningTrainer(RayPPOTrainer):
             self.config.agentlightning.port,
             self.config.actor_rollout_ref.rollout.n,
             train_information={
-                "model": self.config.actor_rollout_ref.model.path,
+                # Note (Zhiyuan): To avoid further patch into vllm async server, using the same sentence to get the naming here.
+                # However, it is possible that verl updates the naming and causes incompatibility.
+                # Reference: https://github.com/volcengine/verl/blob/5b5e09d9cc20625e436d01f69d9cc739ff681c54/verl/workers/rollout/vllm_rollout/vllm_async_server.py#L217
+                "model": "/".join(self.config.actor_rollout_ref.model.path.split("/")[-2:]),
                 "temperature": self.config.actor_rollout_ref.rollout.temperature,
             },
             tokenizer=self.tokenizer,
@@ -122,213 +311,36 @@ class AgentLightningTrainer(RayPPOTrainer):
             for batch_dict in self.train_dataloader:
                 metrics = {}
                 timing_raw = {}
-                batch: DataProto = DataProto.from_single_dict(batch_dict)
-
-                # When agent mode is enabled, we read the batch as it is.
-                gen_batch = batch
-
                 is_last_step = self.global_steps >= self.total_training_steps
 
-                with _timer("step", timing_raw):
-                    # generate a batch
-                    with _timer("gen", timing_raw):
-                        self.async_rollout_manager.wake_up()
-                        self.agent_mode_daemon.set_up_data_and_server(
-                            gen_batch.non_tensor_batch, self.async_rollout_manager.server_addresses
-                        )
-                        self.agent_mode_daemon.run_until_all_finished()
-                        batch, agent_metrics = self.agent_mode_daemon.get_train_data_batch(
-                            max_prompt_length=self.config.data.max_prompt_length,
-                            max_response_length=self.config.data.max_response_length,
-                            device=gen_batch.batch["fake_ids"].device,
-                        )
-                        metrics.update(agent_metrics)
-                        self.agent_mode_daemon.clear_data_and_server()
-                        self.async_rollout_manager.sleep()
+                # train step
+                metrics = self._train_step(batch_dict)
 
-                    if self.config.algorithm.adv_estimator == AdvantageEstimator.REMAX:
-                        with _timer("gen_max", timing_raw):
-                            gen_baseline_batch = deepcopy(gen_batch)
-                            gen_baseline_batch.meta_info["do_sample"] = False
-                            gen_baseline_output = self.actor_rollout_wg.generate_sequences(gen_baseline_batch)
+                # validate
+                if (
+                    self.val_reward_fn is not None
+                    and self.config.trainer.test_freq > 0
+                    and (is_last_step or self.global_steps % self.config.trainer.test_freq == 0)
+                ):
+                    with _timer("validate", timing_raw):
+                        val_metrics: dict = self._validate()
+                        if is_last_step:
+                            last_val_metrics = val_metrics
+                    metrics.update(val_metrics)
 
-                            batch = batch.union(gen_baseline_output)
-                            reward_baseline_tensor = self.reward_fn(batch)
-                            reward_baseline_tensor = reward_baseline_tensor.sum(dim=-1)
+                if self.config.trainer.save_freq > 0 and (
+                    is_last_step or self.global_steps % self.config.trainer.save_freq == 0
+                ):
+                    with _timer("save_checkpoint", timing_raw):
+                        self._save_checkpoint()
 
-                            batch.pop(batch_keys=list(gen_baseline_output.batch.keys()))
-
-                            batch.batch["reward_baselines"] = reward_baseline_tensor
-
-                            del gen_baseline_batch, gen_baseline_output
-
-                    # uid is used for algorithm like GRPO, should be aligned to data id
-                    batch.non_tensor_batch["uid"] = batch.non_tensor_batch["data_id_list"]
-
-                    batch.batch["response_mask"] = compute_response_mask(batch)
-
-                    # compute global_valid tokens
-                    batch.meta_info["global_token_num"] = torch.sum(batch.batch["attention_mask"], dim=-1).tolist()
-
-                    with _timer("reward", timing_raw):
-                        # compute reward model score
-                        if self.use_rm:
-                            reward_tensor = self.rm_wg.compute_rm_score(batch)
-                            batch = batch.union(reward_tensor)
-
-                        reward_extra_infos_dict = {}
-
-                    # for agent mode, pad the lengths to calculate old log prob, ref, and values
-                    batch, pad_size = pad_dataproto_to_divisor(batch, self.actor_rollout_wg.world_size)
-
-                    # recompute old_log_probs
-                    with _timer("old_log_prob", timing_raw):
-                        old_log_prob = self.actor_rollout_wg.compute_log_prob(batch)
-                        entropys = old_log_prob.batch["entropys"]
-                        response_masks = batch.batch["response_mask"]
-                        loss_agg_mode = self.config.actor_rollout_ref.actor.loss_agg_mode
-                        entropy_loss = agg_loss(
-                            loss_mat=entropys, loss_mask=response_masks, loss_agg_mode=loss_agg_mode
-                        )
-                        old_log_prob_metrics = {"actor/entropy_loss": entropy_loss.detach().item()}
-                        metrics.update(old_log_prob_metrics)
-                        old_log_prob.batch.pop("entropys")
-                        batch = batch.union(old_log_prob)
-
-                    if self.use_reference_policy:
-                        # compute reference log_prob
-                        with _timer("ref", timing_raw):
-                            ref_log_prob = self.ref_policy_wg.compute_ref_log_prob(batch)
-                            batch = batch.union(ref_log_prob)
-
-                    # compute values
-                    if self.use_critic:
-                        with _timer("values", timing_raw):
-                            values = self.critic_wg.compute_values(batch)
-                            batch = batch.union(values)
-
-                    # for agent mode, unpad to calculate adv
-                    # it is important, as adv should be based on the raw traces
-                    batch = unpad_dataproto(batch, pad_size=pad_size)
-
-                    with _timer("adv", timing_raw):
-                        # if agent_mode is enabled, there is already token_level_scores
-                        # token_level_scores is not needed to compute here
-
-                        # compute rewards. apply_kl_penalty if available
-                        if self.config.algorithm.use_kl_in_reward:
-                            batch, kl_metrics = apply_kl_penalty(
-                                batch, kl_ctrl=self.kl_ctrl_in_reward, kl_penalty=self.config.algorithm.kl_penalty
-                            )
-                            metrics.update(kl_metrics)
-                        else:
-                            batch.batch["token_level_rewards"] = batch.batch["token_level_scores"]
-
-                        # compute advantages, executed on the driver process
-
-                        norm_adv_by_std_in_grpo = self.config.algorithm.get(
-                            "norm_adv_by_std_in_grpo", True
-                        )  # GRPO adv normalization factor
-
-                        batch = compute_advantage(
-                            batch,
-                            adv_estimator=self.config.algorithm.adv_estimator,
-                            gamma=self.config.algorithm.gamma,
-                            lam=self.config.algorithm.lam,
-                            num_repeat=self.config.actor_rollout_ref.rollout.n,
-                            norm_adv_by_std_in_grpo=norm_adv_by_std_in_grpo,
-                            config=self.config.algorithm,
-                        )
-
-                    # after advantages are assinged, we begin to drop (1) long prompt (2) floor to ppo minisize
-                    keep_indices = (~batch.batch["is_drop_mask"]).nonzero(as_tuple=True)[0]
-                    metrics["agent_mode/n_dropped_sample_because_of_prompt"] = (
-                        batch.batch["is_drop_mask"].shape[0] - keep_indices.shape[0]
-                    )
-                    batch = batch[keep_indices]
-                    # next, round to minibatch size
-                    mini_batch_size = self.config.actor_rollout_ref.actor.ppo_mini_batch_size
-                    n_transition = len(batch)
-                    random_indices = list(range(n_transition))
-                    random.shuffle(random_indices)
-                    batch.reorder(torch.tensor(random_indices).type(torch.int32))
-                    n_remained_transition = n_transition // mini_batch_size * mini_batch_size
-                    batch = batch[list(range(n_remained_transition))]
-                    metrics["agent_mode/n_dropped_sample_because_of_mini_batch"] = n_transition - n_remained_transition
-
-                    # Agent mode note: Change the order of balance batch;
-                    #     1. first calculate advantage
-                    #     2. then drop the samples (too long prompt & floor to ppo minisize)
-                    #     3. balance
-                    # balance the number of valid tokens on each dp rank.
-                    # Note that this breaks the order of data inside the batch.
-                    # Please take care when you implement group based adv computation such as GRPO and rloo
-                    if self.config.trainer.balance_batch:
-                        self._balance_batch(batch, metrics=metrics)
-
-                    # update critic
-                    if self.use_critic:
-                        with _timer("update_critic", timing_raw):
-                            critic_output = self.critic_wg.update_critic(batch)
-                        critic_output_metrics = reduce_metrics(critic_output.meta_info["metrics"])
-                        metrics.update(critic_output_metrics)
-
-                    # implement critic warmup
-                    if self.config.trainer.critic_warmup <= self.global_steps:
-                        # update actor
-                        with _timer("update_actor", timing_raw):
-                            batch.meta_info["multi_turn"] = self.config.actor_rollout_ref.rollout.multi_turn.enable
-                            actor_output = self.actor_rollout_wg.update_actor(batch)
-                        actor_output_metrics = reduce_metrics(actor_output.meta_info["metrics"])
-                        metrics.update(actor_output_metrics)
-
-                    # Log rollout generations if enabled
-                    rollout_data_dir = self.config.trainer.get("rollout_data_dir", None)
-                    if rollout_data_dir:
-                        with _timer("dump_rollout_generations", timing_raw):
-                            print(batch.batch.keys())
-                            inputs = self.tokenizer.batch_decode(batch.batch["prompts"], skip_special_tokens=True)
-                            outputs = self.tokenizer.batch_decode(batch.batch["responses"], skip_special_tokens=True)
-                            scores = batch.batch["token_level_scores"].sum(-1).cpu().tolist()
-                            self._dump_generations(
-                                inputs=inputs,
-                                outputs=outputs,
-                                scores=scores,
-                                reward_extra_infos_dict=reward_extra_infos_dict,
-                                dump_path=rollout_data_dir,
-                            )
-
-                    # validate
-                    if (
-                        self.val_reward_fn is not None
-                        and self.config.trainer.test_freq > 0
-                        and (is_last_step or self.global_steps % self.config.trainer.test_freq == 0)
-                    ):
-                        with _timer("testing", timing_raw):
-                            val_metrics: dict = self._validate()
-                            if is_last_step:
-                                last_val_metrics = val_metrics
-                        metrics.update(val_metrics)
-
-                    if self.config.trainer.save_freq > 0 and (
-                        is_last_step or self.global_steps % self.config.trainer.save_freq == 0
-                    ):
-                        with _timer("save_checkpoint", timing_raw):
-                            self._save_checkpoint()
-
-                # training metrics
+                # step metrics
                 metrics.update(
                     {
                         "training/global_step": self.global_steps,
                         "training/epoch": epoch,
                     }
                 )
-                # collect metrics
-                metrics.update(compute_data_metrics(batch=batch, use_critic=self.use_critic))
-                metrics.update(compute_timing_metrics(batch=batch, timing_raw=timing_raw))
-                # TODO: implement actual tflpo and theoretical tflpo
-                n_gpus = self.resource_pool_manager.get_n_gpus()
-                metrics.update(compute_throughout_metrics(batch=batch, timing_raw=timing_raw, n_gpus=n_gpus))
 
                 # TODO: make a canonical logger that supports various backend
                 logger.log(data=metrics, step=self.global_steps)

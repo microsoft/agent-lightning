@@ -1,21 +1,20 @@
 #!/bin/bash
 
-set -ex
+set -e
 
 export N_GPUS=1
-export BASE_MODEL=Qwen/Qwen2.5-Coder-1.5B-Instruct
+export BASE_MODEL=Qwen/Qwen3-1.7B
 export DATA_DIR=data
 export ROLLOUT_TP_SIZE=1
-export EXPERIMENT_NAME="spider_$(date +%Y%m%d%H%M%S)"
-export PROJECT_NAME=AgentLightningCI
-echo "project_name=${PROJECT_NAME}" >> $GITHUB_OUTPUT
-echo "run_name=${EXPERIMENT_NAME}" >> $GITHUB_OUTPUT
+export EXPERIMENT_NAME=rag_agent
+export PROJECT_NAME=AgentLightning
 
-PYTHONUNBUFFERED=1 python -m agentlightning.verl \
-    agentlightning.port=9991 \
+echo "Starting training script..."
+
+python -m agentlightning.verl \
     algorithm.adv_estimator=grpo \
-    data.train_files=${DATA_DIR}/train_spider.parquet \
-    data.val_files=${DATA_DIR}/test_dev.parquet \
+    data.train_files=${DATA_DIR}/musique_train.parquet \
+    data.val_files=${DATA_DIR}/musique_dev_128.parquet \
     actor_rollout_ref.rollout.tensor_model_parallel_size=$ROLLOUT_TP_SIZE \
     trainer.n_gpus_per_node=${N_GPUS} \
     data.train_batch_size=32 \
@@ -49,7 +48,6 @@ PYTHONUNBUFFERED=1 python -m agentlightning.verl \
     trainer.project_name=${PROJECT_NAME} \
     trainer.experiment_name=${EXPERIMENT_NAME} \
     trainer.nnodes=1 \
-    trainer.save_freq=256 \
-    trainer.test_freq=1 \
-    trainer.total_epochs=1 \
-    trainer.total_training_steps=1 $@
+    trainer.save_freq=40 \
+    trainer.test_freq=20 \
+    trainer.total_epochs=2 $@

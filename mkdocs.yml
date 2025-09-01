@@ -1,0 +1,90 @@
+site_name: Agent Lightning
+site_url: https://microsoft.github.io/agent-lightning/
+repo_url: https://github.com/microsoft/agent-lightning
+repo_name: agent-lightning
+
+theme:
+  name: material
+  logo: assets/logo-light.png
+  # Don't set favicon here - we'll handle it dynamically
+  palette:
+    - scheme: default
+      primary: red
+      accent: red
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: red
+      accent: red
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.snippets
+  - admonition
+  - pymdownx.details
+  - pymdownx.tabbed:
+      alternate_style: true
+  - toc:
+      permalink: true
+
+plugins:
+  - search
+  - git-revision-date-localized:
+      enable_creation_date: true
+      type: timeago
+  - git-authors
+  - macros
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            show_source: true
+            show_root_heading: true
+            show_symbol_type_heading: true
+            show_symbol_type_toc: true
+            docstring_style: google
+  - mike:
+      version_selector: true
+      css_dir: css
+      javascript_dir: js
+      canonical_version: latest
+
+extra:
+  version:
+    provider: mike
+    default: latest
+  source_commit: !ENV [SOURCE_COMMIT, 'main']
+
+extra_javascript:
+  - https://unpkg.com/mermaid@10.6.1/dist/mermaid.min.js
+  - js/favicon-theme.js
+
+nav:
+  - Home: index.md
+  - Quickstart:
+    - Installation: quickstart/installation.md
+    - Getting Started: quickstart/getting-started.md
+  - How-To Guides:
+    - Train SQL Agent: how-to/train-sql-agent.md
+  - Deep Dive:
+    - Server-Client Architecture: deep-dive/server-client-architecture.md
+  - API Reference:
+    - Core: reference/core.md
+    - RL: reference/rl.md

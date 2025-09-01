@@ -1,8 +1,16 @@
-![Agent-lightning-banner](assets/readme-banner.png)
+![Agent-lightning-banner](docs/assets/readme-banner.png)
 
 # Agent Lightning⚡
 
-Agent Lightning is a flexible framework that enables you to optimize any AI agent.
+[![CPU Test](https://github.com/microsoft/agent-lightning/actions/workflows/tests.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/tests.yml)
+[![GPU Test](https://github.com/microsoft/agent-lightning/actions/workflows/examples.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/examples.yml)
+[![PyPI version](https://badge.fury.io/py/agentlightning.svg)](https://badge.fury.io/py/agentlightning)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/RYk7CdvDR7)
+
+**The absolute trainer to light up AI agents.**
+
+Join our [Discord community](https://discord.gg/RYk7CdvDR7) to connect with other users and contributors.
 
 ## ⚡ Core Features
 
@@ -11,10 +19,12 @@ Agent Lightning is a flexible framework that enables you to optimize any AI agen
 - **Selectively** optimize one or more agents in a multi-agent system. 🎯
 - Embraces Reinforcement Learning, Automatic Prompt Optimization and more **algorithms**. 🤗
 
-![Agent-Lightning-code-diff](assets/readme-diff.png)
+![Agent-Lightning-code-diff](docs/assets/readme-diff.png)
 
 ## ⚡ Resources
 
+- 8/11/2025 [Training AI Agents to Write and Self-correct SQL with Reinforcement Learning](https://medium.com/@yugez/training-ai-agents-to-write-and-self-correct-sql-with-reinforcement-learning-571ed31281ad) Medium.
+- 8/5/2025 [Agent Lightning: Train ANY AI Agents with Reinforcement Learning](https://arxiv.org/abs/2508.03680) arXiv paper.
 - 7/26/2025 [We discovered an approach to train any AI agent with RL, with (almost) zero code changes.](https://www.reddit.com/r/LocalLLaMA/comments/1m9m670/we_discovered_an_approach_to_train_any_ai_agent/) Reddit.
 - 6/6/2025 [Agent Lightning - Microsoft Research](https://www.microsoft.com/en-us/research/project/agent-lightning/) Project page.
 
@@ -102,7 +112,7 @@ Currently, Agent Lightning is built around a **training server** and one or mult
 * **Agents** retrieve samples from the server, process them (which may involve interacting with the LLM), and send the results back. These results, or "trajectories," are lists of prompts and responses from the LLM.
 * The **server** then collects these trajectories and computes the losses to optimize the language models.
 
-![Agent-Lightning-architecture](assets/readme-architecture.png)
+![Agent-Lightning-architecture](docs/assets/readme-architecture.png)
 
 ## ⚡ Development Instructions
 
@@ -119,6 +129,28 @@ Please run pre-commit hooks before checking in code:
 ```
 pre-commit install
 pre-commit run --all-files --show-diff-on-failure --color=always
+```
+
+Serve documentation locally:
+
+```bash
+mkdocs serve
+```
+
+## ⚡ Citation
+
+If you find Agent Lightning useful in your research or projects, please cite our paper:
+
+```bibtex
+@misc{luo2025agentlightningtrainai,
+      title={Agent Lightning: Train ANY AI Agents with Reinforcement Learning}, 
+      author={Xufang Luo and Yuge Zhang and Zhiyuan He and Zilong Wang and Siyun Zhao and Dongsheng Li and Luna K. Qiu and Yuqing Yang},
+      year={2025},
+      eprint={2508.03680},
+      archivePrefix={arXiv},
+      primaryClass={cs.AI},
+      url={https://arxiv.org/abs/2508.03680}, 
+}
 ```
 
 ## ⚡ Contributing

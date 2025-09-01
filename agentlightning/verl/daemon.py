@@ -31,8 +31,8 @@ def get_left_padded_ids_and_attention_mask(ids: List[int], max_length: int, pad_
         pad_token_id:    ID to use for padding.
 
     Returns:
-        padded_ids:      list of length == max_length.
-        attention_mask:  list of same length: 1 for non-pad tokens, 0 for pads.
+        padded_ids (any):      list of length == max_length.
+        attention_mask (any):  list of same length: 1 for non-pad tokens, 0 for pads.
     """
     seq_len = len(ids)
 
@@ -60,8 +60,8 @@ def get_right_padded_ids_and_attention_mask(ids: List[int], max_length: int, pad
         pad_token_id:   ID to use for padding.
 
     Returns:
-        padded_ids:     list of length == max_length.
-        attention_mask: list of same length: 1 for non-pad tokens, 0 for pads.
+        padded_ids (any):     list of length == max_length.
+        attention_mask (any): list of same length: 1 for non-pad tokens, 0 for pads.
     """
     seq_len = len(ids)
 
@@ -102,12 +102,13 @@ class AgentModeDaemon:
         mini_batch_size,
         pad_token_id,
         reward_fillna_value=0.0,
+        llm_timeout_seconds=600.0,
     ):
         # Server and Task Configuration
         self.server_port = port
-        self.task_timeout_seconds = 180
+        self.llm_timeout_seconds = llm_timeout_seconds
         self.server = AgentLightningServer(
-            host="0.0.0.0", port=self.server_port, task_timeout_seconds=self.task_timeout_seconds
+            host="0.0.0.0", port=self.server_port, task_timeout_seconds=self.llm_timeout_seconds
         )
         self.proxy_port = _find_available_port()  # Run proxy on a different port
 
@@ -168,7 +169,7 @@ class AgentModeDaemon:
                     data=request.get_data(),
                     cookies=request.cookies,
                     allow_redirects=False,
-                    timeout=self.task_timeout_seconds,
+                    timeout=self.llm_timeout_seconds,
                 )
                 # Filter out hop-by-hop headers before returning the response
                 excluded_headers = [

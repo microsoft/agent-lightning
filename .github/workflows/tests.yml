@@ -33,6 +33,33 @@ jobs:
         run: |
           black --check --diff --line-length=120 .
 
+  docs:
+    name: Build documentation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+      - name: Install documentation dependencies
+        run: |
+          ./scripts/setup_stable.sh
+      - name: Set source commit for docs
+        run: |
+          echo "SOURCE_COMMIT=${{ github.sha }}" >> $GITHUB_ENV
+      - name: Build documentation
+        run: |
+          mkdocs build --strict
+      - name: Upload docs artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: documentation-site
+          path: site/
+          compression-level: 6
+
   test:
     strategy:
       matrix:
@@ -43,6 +70,7 @@ jobs:
             setup-script: 'latest'
           - python-version: '3.12'
             setup-script: 'stable'
+      fail-fast: false
 
     name: Test with Python ${{ matrix.python-version }} (${{ matrix.setup-script }})
     runs-on: ubuntu-latest

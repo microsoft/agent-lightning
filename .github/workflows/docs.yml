@@ -1,0 +1,60 @@
+name: Deploy Documentation
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          ./scripts/setup_stable.sh
+
+      - name: Configure Git
+        run: |
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+
+      - name: Get version and commit
+        id: version
+        run: |
+          if [[ $GITHUB_REF == refs/tags/* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/v}
+            SOURCE_COMMIT=${GITHUB_SHA}
+          else
+            VERSION=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
+            SOURCE_COMMIT=${GITHUB_SHA}
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "SOURCE_COMMIT=$SOURCE_COMMIT" >> $GITHUB_ENV
+
+      - name: Deploy versioned docs
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          mike deploy --push --update-aliases ${{ steps.version.outputs.version }} stable
+
+      - name: Deploy dev docs
+        if: github.ref == 'refs/heads/main'
+        run: |
+          mike deploy --push latest
+          mike set-default --push latest

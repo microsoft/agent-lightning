@@ -1,0 +1,59 @@
+name: PyPI Nightly Build
+
+on:
+  schedule:
+    # Run daily at 6:00 AM UTC
+    - cron: '0 6 * * *'
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  publish-test-pypi:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write  # IMPORTANT: this permission is mandatory for trusted publishing
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[dev]
+
+      - name: Get current version
+        id: get_version
+        run: |
+          VERSION=$(grep '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Current version: $VERSION"
+
+      - name: Create development version
+        run: |
+          # Create a dev version with timestamp
+          TIMESTAMP=$(date +%Y%m%d%H%M%S)
+          DEV_VERSION="${{ steps.get_version.outputs.version }}.dev$TIMESTAMP"
+          echo "Creating dev version: $DEV_VERSION"
+          ./scripts/bump_version.sh "$DEV_VERSION"
+
+      - name: Build package
+        run: |
+          hatch build
+
+      - name: Publish to Test PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+
+      - name: Test installation from Test PyPI
+        run: |
+          # Wait a bit for the package to be available
+          sleep 30
+          pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ agentlightning
+          python -c "import agentlightning; print('Package installed successfully')"
