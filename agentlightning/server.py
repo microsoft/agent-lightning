@@ -77,6 +77,7 @@ class ServerDataStore:
                     update={
                         "last_claim_time": time.time(),
                         "num_claims": (task.num_claims or 0) + 1,
+                        "attempt_id": str(uuid.uuid4()),
                     }
                 )
                 self._processing_tasks[task.rollout_id] = task
@@ -121,6 +122,16 @@ class ServerDataStore:
         Safely stores a completed rollout from a client.
         """
         async with self._results_lock:
+            current_task = self._processing_tasks.get(rollout.rollout_id)
+            if not current_task:
+                logger.warning(f"Ignoring rollout {rollout.rollout_id}: task not in processing anymore")
+                return  # drop stale result
+
+            if getattr(rollout, "attempt_id", None) != current_task.attempt_id:
+                logger.warning(f"Ignoring stale rollout {rollout.rollout_id}: attempt_id mismatch: {rollout.attempt_id} != {current_task.attempt_id}")
+                logger.warning(f"The rollout: {rollout}")
+                return  # drop stale result
+
             self._processing_tasks.pop(rollout.rollout_id, None)
             self._completed_rollouts[rollout.rollout_id] = rollout
             logger.info(f"Rollout received and stored: {rollout.rollout_id}")
