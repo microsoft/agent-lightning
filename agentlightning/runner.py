@@ -69,6 +69,7 @@ class AgentRunner(ParallelWorkerBase):
         self,
         result: RolloutRawResult,
         rollout_id: str,
+        attempt_id: str,
     ) -> Rollout:
         """Standardizes the agent's return value into a Rollout object.
 
@@ -122,6 +123,7 @@ class AgentRunner(ParallelWorkerBase):
         # Create the Rollout object with standardized fields
         result_dict: Dict[str, Any] = {
             "rollout_id": rollout_id,
+            "attempt_id": attempt_id,
         }
         if final_reward is not None:
             result_dict["final_reward"] = final_reward
@@ -155,7 +157,7 @@ class AgentRunner(ParallelWorkerBase):
             logger.error(f"{self._log_prefix(rollout_id)} Failed to fetch resources. Skipping.")
             return False
 
-        rollout_obj = Rollout(rollout_id=task.rollout_id)  # Default empty rollout
+        rollout_obj = Rollout(rollout_id=task.rollout_id, attempt_id=task.attempt_id)  # Default empty rollout
 
         try:
             try:
@@ -168,7 +170,7 @@ class AgentRunner(ParallelWorkerBase):
                 rollout_method = self.agent.training_rollout if task.mode == "train" else self.agent.validation_rollout
                 # Pass the task input, not the whole task object
                 result = rollout_method(task.input, task.rollout_id, resources_update.resources)
-                rollout_obj = self._to_rollout_object(result, task.rollout_id)
+                rollout_obj = self._to_rollout_object(result, task.rollout_id, task.attempt_id)
                 end_time = time.time()
                 logger.info(
                     f"{self._log_prefix(rollout_id)} Completed in "
@@ -224,8 +226,8 @@ class AgentRunner(ParallelWorkerBase):
             logger.error(f"{self._log_prefix(rollout_id)} Failed to fetch resources. Skipping.")
             return False
 
-        rollout_obj = Rollout(rollout_id=task.rollout_id)  # Default empty rollout
-
+        rollout_obj = Rollout(rollout_id=task.rollout_id, attempt_id=task.attempt_id)  # Default empty rollout
+        
         try:
             try:
                 self.agent.on_rollout_start(task, self, self.tracer)
@@ -239,7 +241,7 @@ class AgentRunner(ParallelWorkerBase):
                 )
                 # Pass the task input, not the whole task object
                 result = await rollout_method(task.input, task.rollout_id, resources_update.resources)
-                rollout_obj = self._to_rollout_object(result, task.rollout_id)
+                rollout_obj = self._to_rollout_object(result, task.rollout_id, task.attempt_id)
                 end_time = time.time()
                 logger.info(
                     f"{self._log_prefix(rollout_id)} Completed in "

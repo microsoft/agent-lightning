@@ -50,6 +50,9 @@ class Rollout(BaseModel):
     )
     logs: Optional[List[str]] = None
 
+    # Optional fields for tracking task lifecycle
+    attempt_id: Optional[str] = None
+
     # A bucket for any other relevant information
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
@@ -70,6 +73,9 @@ class Task(BaseModel):
     create_time: Optional[float] = None
     last_claim_time: Optional[float] = None
     num_claims: Optional[int] = None
+
+    # Optional fields for tracking task lifecycle
+    attempt_id: Optional[str] = None
 
     # Allow additional metadata fields
     metadata: Dict[str, Any] = Field(default_factory=dict)
