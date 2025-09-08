@@ -312,7 +312,10 @@ class AgentModeDaemon:
             completed_batch = await self.server.retrieve_completed_rollouts()
             for rollout in completed_batch:
                 self._validate_data(rollout)
-                self._completed_rollouts[rollout.rollout_id] = rollout
+                if rollout.rollout_id not in self._task_id_to_original_sample:
+                    print(f"Warning: Received unknown rollout ID {rollout.rollout_id}, skipping.")
+                else:
+                    self._completed_rollouts[rollout.rollout_id] = rollout
             if verbose:
                 print(f"Completed {len(self._completed_rollouts)}/{self._total_tasks_queued} tasks...")
             await asyncio.sleep(5)
