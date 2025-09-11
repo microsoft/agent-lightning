@@ -81,27 +81,30 @@ class AgentRunner(ParallelWorkerBase):
             A standardized `Rollout` object for reporting to the server.
         """
         trace: Any = None
-        final_reward: Optional[float] = None
+        final_reward: Optional[List[float]] = None  # 修改为List[float]类型
         triplets: Optional[List[Triplet]] = None
         trace_spans: Optional[List[ReadableSpan]] = None
 
         # Handle different types of results from the agent
         # Case 1: result is a float (final reward)
         if isinstance(result, float):
-            final_reward = result
-        # Case 2: result is a list of Triplets
-        if isinstance(result, list) and all(isinstance(t, Triplet) for t in result):
+            final_reward = [result]
+        # Case 2: result is a list of floats (reward list)
+        elif isinstance(result, list) and all(isinstance(r, (int, float)) for r in result):
+            final_reward = [float(r) for r in result]
+        # Case 3: result is a list of Triplets
+        elif isinstance(result, list) and all(isinstance(t, Triplet) for t in result):
             triplets = result  # type: ignore
-        # Case 3: result is a list of ReadableSpan (OpenTelemetry spans)
-        if isinstance(result, list) and all(isinstance(t, ReadableSpan) for t in result):
+        # Case 4: result is a list of ReadableSpan (OpenTelemetry spans)
+        elif isinstance(result, list) and all(isinstance(t, ReadableSpan) for t in result):
             trace_spans = result  # type: ignore
             trace = [json.loads(readable_span.to_json()) for readable_span in trace_spans]  # type: ignore
-        # Case 4: result is a list of dict (trace JSON)
-        if isinstance(result, list) and all(isinstance(t, dict) for t in result):
+        # Case 5: result is a list of dict (trace JSON)
+        elif isinstance(result, list) and all(isinstance(t, dict) for t in result):
             trace = result
-        # Case 5: result is a Rollout object
-        if isinstance(result, Rollout):
-            final_reward = result.final_reward
+        # Case 6: result is a Rollout object
+        elif isinstance(result, Rollout):
+            final_reward = result.final_reward  # 已经是list[float]类型
             triplets = result.triplets
             trace = result.trace
 

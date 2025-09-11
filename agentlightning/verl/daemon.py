@@ -18,6 +18,7 @@ from tensordict import TensorDict
 from verl import DataProto
 
 configure_logger()
+logger = configure_logger(name=__name__)
 
 
 def get_left_padded_ids_and_attention_mask(ids: List[int], max_length: int, pad_token_id: int):
@@ -341,27 +342,64 @@ class AgentModeDaemon:
         assert len(self._completed_rollouts) == self._total_tasks_queued
 
         sample_stat_list = []
+        # 用于存储每轮的reward统计
+        turn_rewards = []  # 存储所有trajectory中每一轮的reward
+        
         for rollout_id, rollout in self._completed_rollouts.items():
             if not rollout.triplets:
                 continue
             response_length_list = [len(triplet.response.get("token_ids", [])) for triplet in rollout.triplets]
             final_reward = self._fillna_reward(rollout)
+            
+            # 处理列表形式的reward
+            if isinstance(final_reward, (list, tuple)):
+                # 计算trajectory的平均reward
+                trajectory_reward = np.mean(final_reward) if final_reward else 0.0
+                # 收集每一轮的reward
+                for turn_idx, turn_reward in enumerate(final_reward):
+                    # 扩展turn_rewards列表以适应当前轮次
+                    while len(turn_rewards) <= turn_idx:
+                        turn_rewards.append([])
+                    turn_rewards[turn_idx].append(turn_reward)
+            else:
+                # 兼容原有的单一reward格式
+                trajectory_reward = final_reward
+                # 将单一reward视为第一轮的reward
+                if len(turn_rewards) == 0:
+                    turn_rewards.append([])
+                turn_rewards[0].append(final_reward)
+            
             sample_stat_list.append(
                 {
                     "sum_response_length": np.sum(response_length_list),
                     "mean_response_length": np.mean(response_length_list) if response_length_list else 0,
                     "turn_count": len(rollout.triplets),
-                    "reward": final_reward,
+                    "reward": trajectory_reward,
+                    "reward_list": final_reward if isinstance(final_reward, (list, tuple)) else [final_reward],
                 }
             )
 
-        return {
+        # 计算基础指标
+        metrics = {
             "val/reward": np.mean([stat["reward"] for stat in sample_stat_list]),
             "val/mean_response_length": np.mean([stat["mean_response_length"] for stat in sample_stat_list]),
             "val/sum_response_length": np.mean([stat["sum_response_length"] for stat in sample_stat_list]),
             "val/turn_count": np.mean([stat["turn_count"] for stat in sample_stat_list]),
         }
-
+        
+        # 添加每一轮reward的统计
+        for turn_idx, rewards_at_turn in enumerate(turn_rewards):
+            if rewards_at_turn:  # 确保该轮有数据
+                metrics[f"val/reward_turn_{turn_idx + 1}"] = np.mean(rewards_at_turn)
+                # 可选：添加该轮的trajectory数量统计
+                metrics[f"val/trajectory_count_turn_{turn_idx + 1}"] = len(rewards_at_turn)
+        
+        # 添加最大轮次统计
+        if turn_rewards:
+            metrics["val/max_turns"] = len(turn_rewards)
+        
+        return metrics
+        
     def get_train_data_batch(self, max_prompt_length, max_response_length, device):
         """
         Processes completed rollouts to generate a training data batch.
@@ -415,7 +453,11 @@ class AgentModeDaemon:
         for rollout_id, sample_info in finished_id_to_sample_info.items():
             for turn_index, trace in enumerate(sample_info["trace_list"]):
 
-                reward_list.append(sample_info["reward"])
+                if type(sample_info["reward"]) == list:
+                    reward_list.append(sample_info["reward"][turn_index])
+                else:
+                    reward_list.append(sample_info["reward"])
+                    
                 prompt_ids, response_ids = trace["prompt_ids"], trace["response_ids"]
 
                 # Mark samples with prompts exceeding max_prompt_length to be dropped later

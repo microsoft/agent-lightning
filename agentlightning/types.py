@@ -36,7 +36,7 @@ class Rollout(BaseModel):
     rollout_id: str
 
     # Primary, high-level feedback
-    final_reward: Optional[float] = None
+    final_reward: list[float] = None
 
     # Structured, sequential feedback for RL-style optimization
     triplets: Optional[List[Triplet]] = None
