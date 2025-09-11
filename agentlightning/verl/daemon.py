@@ -125,7 +125,7 @@ class AgentModeDaemon:
         mini_batch_size,
         pad_token_id,
         reward_fillna_value=0.0,
-        llm_timeout_seconds=600.0,
+        llm_timeout_seconds=1200.0,
     ):
         # Server and Task Configuration
         self.server_port = port
