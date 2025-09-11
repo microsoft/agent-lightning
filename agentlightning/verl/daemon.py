@@ -5,6 +5,7 @@ import socket
 import threading
 import time
 import uuid
+from collections.abc import Mapping, Sequence
 from typing import Dict, List, Optional
 
 import numpy as np
@@ -82,6 +83,28 @@ def _find_available_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("", 0))
         return s.getsockname()[1]
+
+
+def _to_native(obj):
+    """Convert data retrieved from Panquet to data usable in AGL server."""
+    # 1) Arrays -> list (then recurse)
+    if isinstance(obj, np.ndarray):
+        return _to_native(obj.tolist())
+
+    # 2) NumPy scalar types -> Python scalars
+    if isinstance(obj, np.generic):
+        return _to_native(obj.item())
+
+    # 3) Dict-like -> dict
+    if isinstance(obj, Mapping):
+        return {_to_native(k): _to_native(v) for k, v in obj.items()}
+
+    # 4) Lists/Tuples/Sets -> list
+    if isinstance(obj, (list, tuple, set)):
+        return [_to_native(x) for x in obj]
+
+    # 5) Anything else: leave as-is
+    return obj
 
 
 class AgentModeDaemon:
@@ -270,7 +293,7 @@ class AgentModeDaemon:
 
                 # Data ID is different from Rollout ID, as one data can have multiple rollouts.
                 rollout_id = await self.server.queue_task(
-                    sample=original_sample,
+                    sample=_to_native(original_sample),
                     mode="train" if is_train else "val",
                     resources_id=resources_id,
                     metadata=task_metadata,
