@@ -260,7 +260,7 @@ class TraceTree:
             return agent_name
 
         # Case 5: agent-framework
-        agent_name = self.span.attributes.get("exeucutor.id")
+        agent_name = self.span.attributes.get("executor.id")
         if agent_name is not None:
             return agent_name
 
