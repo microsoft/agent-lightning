@@ -365,10 +365,12 @@ class AgentModeDaemon:
 
         sample_stat_list = []
         for rollout_id, rollout in self._completed_rollouts.items():
+            final_reward = self._fillna_reward(rollout)
             if not rollout.triplets:
+                print(f"Warning: No triplets found for test rollout {rollout.rollout_id}.")
+                sample_stat_list.append({"reward": final_reward})
                 continue
             response_length_list = [len(triplet.response.get("token_ids", [])) for triplet in rollout.triplets]
-            final_reward = self._fillna_reward(rollout)
             sample_stat_list.append(
                 {
                     "sum_response_length": np.sum(response_length_list),
@@ -379,10 +381,17 @@ class AgentModeDaemon:
             )
 
         return {
-            "val/reward": np.mean([stat["reward"] for stat in sample_stat_list]),
-            "val/mean_response_length": np.mean([stat["mean_response_length"] for stat in sample_stat_list]),
-            "val/sum_response_length": np.mean([stat["sum_response_length"] for stat in sample_stat_list]),
-            "val/turn_count": np.mean([stat["turn_count"] for stat in sample_stat_list]),
+            "val/n_samples": len(sample_stat_list),
+            "val/reward": np.mean(
+                [stat["reward"] for stat in sample_stat_list]
+            ),  # each rollout must have a reward (fillna if missing)
+            "val/mean_response_length": np.mean(
+                [stat["mean_response_length"] for stat in sample_stat_list if "mean_response_length" in stat]
+            ),
+            "val/sum_response_length": np.mean(
+                [stat["sum_response_length"] for stat in sample_stat_list if "sum_response_length" in stat]
+            ),
+            "val/turn_count": np.mean([stat["turn_count"] for stat in sample_stat_list if "turn_count" in stat]),
         }
 
     def get_train_data_batch(self, max_prompt_length, max_response_length, device):
@@ -398,10 +407,15 @@ class AgentModeDaemon:
 
         # 1. Reconstruct the `finished_id_to_sample_info` structure from completed rollouts
         finished_id_to_sample_info = {}
+        finished_id_to_final_reward = {}
         for rollout_id, rollout in self._completed_rollouts.items():
             original_sample = self._task_id_to_original_sample[rollout_id]
 
+            final_reward = self._fillna_reward(rollout)
+
             if not rollout.triplets:
+                finished_id_to_final_reward[rollout_id] = final_reward
+                print(f"Warning: No triplets found for training rollout {rollout.rollout_id}, skipping.")
                 continue
 
             # The client should report triplets that contain prompt_ids and response_ids.
@@ -411,14 +425,13 @@ class AgentModeDaemon:
                 {"prompt_ids": t.prompt.get("token_ids", []), "response_ids": t.response.get("token_ids", [])}
                 for t in rollout.triplets
             ]
-
-            final_reward = self._fillna_reward(rollout)
             info = {
                 "reward": final_reward,
                 "trace_list": trace_list,
                 "data_id": original_sample["data_id"],
             }
             finished_id_to_sample_info[rollout_id] = info
+            finished_id_to_final_reward[rollout_id] = final_reward
         #
         # --- Data processing and tensor creation logic ---
         # Get all the reported data.
@@ -507,8 +520,11 @@ class AgentModeDaemon:
         data_proto = DataProto(batch=batch)
 
         data_metrics = {
-            "agent_mode/n_trunc_sample_because_of_response": n_trunc_sample_because_of_response,
-            "agent_mode/n_sample_to_train": n_transition,
+            "train/reward": np.mean(list(finished_id_to_final_reward.values())),
+            "train/n_rollouts": len(finished_id_to_final_reward),
+            "train/n_rollouts_w_trace": len(finished_id_to_sample_info),
+            "train/n_truncated_triplets": n_trunc_sample_because_of_response,
+            "train/n_triplets": n_transition,
         }
 
         # Add non-tensor data for advantage calculation and logging
