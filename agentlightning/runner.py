@@ -7,12 +7,11 @@ from contextlib import nullcontext
 from typing import List, Optional, Union, Dict, Any
 
 import agentops
-
 from opentelemetry.sdk.trace import ReadableSpan
+
 from .client import AgentLightningClient
 from .litagent import LitAgent
-from .types import Rollout, Task, Triplet, RolloutRawResult
-from .types import ParallelWorkerBase
+from .types import Rollout, Task, Triplet, RolloutRawResult, ParallelWorkerBase, Hook
 from .tracer.base import BaseTracer
 from .tracer import TripletExporter
 
@@ -43,12 +42,14 @@ class AgentRunner(ParallelWorkerBase):
         triplet_exporter: TripletExporter,
         worker_id: Optional[int] = None,
         max_tasks: Optional[int] = None,
+        hooks: Optional[List[Hook]] = None,
     ):
         super().__init__()
         self.agent = agent
         self.client = client
         self.tracer = tracer
         self.triplet_exporter = triplet_exporter
+        self.hooks = hooks or []
 
         # Worker-specific attributes
         self.worker_id = worker_id
@@ -158,10 +159,11 @@ class AgentRunner(ParallelWorkerBase):
         rollout_obj = Rollout(rollout_id=task.rollout_id)  # Default empty rollout
 
         try:
-            try:
-                self.agent.on_rollout_start(task, self, self.tracer)
-            except Exception:
-                logger.exception(f"{self._log_prefix(rollout_id)} Exception during on_rollout_start hook.")
+            for hook in self.hooks:
+                try:
+                    hook.on_rollout_start(task, self, self.tracer)
+                except Exception:
+                    logger.exception(f"{self._log_prefix(rollout_id)} Exception during on_rollout_start hook: {hook}.")
 
             with self.tracer.trace_context(name=f"rollout_{rollout_id}"):
                 start_time = time.time()
@@ -180,10 +182,11 @@ class AgentRunner(ParallelWorkerBase):
         except Exception:
             logger.exception(f"{self._log_prefix(rollout_id)} Exception during rollout.")
         finally:
-            try:
-                self.agent.on_rollout_end(task, rollout_obj, self, self.tracer)
-            except Exception:
-                logger.exception(f"{self._log_prefix(rollout_id)} Exception during on_rollout_end hook.")
+            for hook in self.hooks:
+                try:
+                    hook.on_rollout_end(task, rollout_obj, self, self.tracer)
+                except Exception:
+                    logger.exception(f"{self._log_prefix(rollout_id)} Exception during on_rollout_end hook: {hook}.")
             self.client.post_rollout(rollout_obj)
 
         return True
@@ -227,10 +230,11 @@ class AgentRunner(ParallelWorkerBase):
         rollout_obj = Rollout(rollout_id=task.rollout_id)  # Default empty rollout
 
         try:
-            try:
-                self.agent.on_rollout_start(task, self, self.tracer)
-            except Exception:
-                logger.exception(f"{self._log_prefix(rollout_id)} Exception during on_rollout_start hook.")
+            for hook in self.hooks:
+                try:
+                    hook.on_rollout_start(task, self, self.tracer)
+                except Exception:
+                    logger.exception(f"{self._log_prefix(rollout_id)} Exception during on_rollout_start hook: {hook}.")
 
             with self.tracer.trace_context(name=f"rollout_{rollout_id}"):
                 start_time = time.time()
@@ -248,10 +252,11 @@ class AgentRunner(ParallelWorkerBase):
         except Exception:
             logger.exception(f"{self._log_prefix(rollout_id)} Exception during rollout.")
         finally:
-            try:
-                self.agent.on_rollout_end(task, rollout_obj, self, self.tracer)
-            except Exception:
-                logger.exception(f"{self._log_prefix(rollout_id)} Exception during on_rollout_end hook.")
+            for hook in self.hooks:
+                try:
+                    hook.on_rollout_end(task, rollout_obj, self, self.tracer)
+                except Exception:
+                    logger.exception(f"{self._log_prefix(rollout_id)} Exception during on_rollout_end hook: {hook}.")
             await self.client.post_rollout_async(rollout_obj)
 
         return True

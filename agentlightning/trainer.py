@@ -1,16 +1,14 @@
 import asyncio
 import logging
 import multiprocessing
-import os
 import signal
 import time
 from typing import List, Optional, Union
 import importlib
 
-import agentops
-
 from .client import AgentLightningClient
 from .litagent import LitAgent
+from .logging import LightningLogger
 from .runner import AgentRunner
 from .types import ParallelWorkerBase
 from .tracer.base import BaseTracer
@@ -52,6 +50,7 @@ class Trainer(ParallelWorkerBase):
         daemon: bool = True,
         tracer: Union[BaseTracer, str, dict, None] = None,
         triplet_exporter: Union[TripletExporter, dict, None] = None,
+        loggers: Optional[List[LightningLogger]] = None,
     ):
         super().__init__()
         self.n_workers = n_workers
@@ -59,6 +58,8 @@ class Trainer(ParallelWorkerBase):
         self.daemon = daemon
         self.dev = dev
         self._client: AgentLightningClient | None = None  # Will be initialized in fit method
+
+        self._loggers = loggers or []
 
         self.tracer = self._make_tracer(tracer)
         if isinstance(triplet_exporter, TripletExporter):
@@ -109,11 +110,17 @@ class Trainer(ParallelWorkerBase):
 
         self.tracer.init()
 
+        for _logger in self.loggers:
+            _logger.init()
+
         logger.info(f"Trainer main initialization complete.")
 
     def teardown(self) -> None:
         logger.info(f"Cleaning up Trainer...")
         self.tracer.teardown()
+
+        for _logger in self.loggers:
+            _logger.teardown()
 
         self._client = None
         logger.info(f"Trainer main cleanup complete.")
@@ -187,6 +194,8 @@ class Trainer(ParallelWorkerBase):
                 num_processed = asyncio.run(loop.iter_async())
             else:
                 num_processed = loop.iter()
+        except KeyboardInterrupt:
+            logger.info(f"[Worker {worker_id}] KeyboardInterrupt received. Exiting worker loop...")
         except Exception:
             logger.exception(f"[Worker {worker_id}] Unhandled exception in worker loop.")
         finally:
@@ -197,11 +206,21 @@ class Trainer(ParallelWorkerBase):
     def _initialize_worker_env(self, worker_id: int):
         logger.info(f"[Worker {worker_id}] Setting up trainer environment...")  # worker_id included in process name
         self.tracer.init_worker(worker_id)
+        for _logger in self.loggers:
+            _logger.init_worker(worker_id)
+        logger.info(f"[Worker {worker_id}] Worker environment setup complete.")
 
     def _teardown_worker_env(self, worker_id: int):
         logger.info(f"[Worker {worker_id}] Cleaning up trainer environment...")
         self.tracer.teardown_worker(worker_id)
         logger.info(f"[Worker {worker_id}] Environment cleanup complete.")
+        for _logger in self.loggers:
+            _logger.teardown_worker(worker_id)
+        logger.info(f"[Worker {worker_id}] Worker environments torn down.")
+
+    @property
+    def loggers(self) -> List[LightningLogger]:
+        return self._loggers
 
     @staticmethod
     def kill_orphaned_processes() -> None:

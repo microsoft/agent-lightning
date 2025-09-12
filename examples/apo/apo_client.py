@@ -35,5 +35,10 @@ if __name__ == "__main__":
     configure_logger()
     dotenv.load_dotenv()
     agent = SimpleAgent()
-    trainer = Trainer(n_workers=2)
+    from agentlightning.logging import ConsoleLogger, WandbLogger
+    loggers = [
+        ConsoleLogger(),
+        WandbLogger(project="agent-lightning-debug"),
+    ]
+    trainer = Trainer(n_workers=2, loggers=loggers)
     trainer.fit(agent, backend="http://127.0.0.1:9997")

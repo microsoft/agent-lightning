@@ -1,8 +1,7 @@
 import pytest
 from contextlib import contextmanager
 
-
-from agentlightning import LitAgent, Task, ResourcesUpdate
+from agentlightning import Hook, LitAgent, Task, ResourcesUpdate
 from agentlightning.runner import AgentRunner
 from agentlightning.tracer import BaseTracer, TripletExporter
 
@@ -53,17 +52,15 @@ class DummyAsyncClient:
 
 
 class HookAgent(LitAgent):
-    def __init__(self):
-        super().__init__()
-        self.start_called = False
-        self.end_called = False
-        self.end_rollout = None
 
     def training_rollout(self, task, rollout_id, resources):
         return 0.5
 
     async def training_rollout_async(self, task, rollout_id, resources):
         return 0.5
+
+
+class TestHook(Hook):
 
     def on_rollout_start(self, task, runner, tracer):
         self.start_called = True
@@ -78,12 +75,13 @@ def test_runner_calls_hooks():
     agent = HookAgent()
     client = DummyClient()
     tracer = DummyTracer()
-    runner = AgentRunner(agent, client, tracer, TripletExporter())
+    hook = TestHook()
+    runner = AgentRunner(agent, client, tracer, TripletExporter(), hooks=[hook])
 
     assert runner.run() is True
-    assert agent.start_called
-    assert agent.end_called
-    assert agent.end_rollout.final_reward == 0.5
+    assert hook.start_called
+    assert hook.end_called
+    assert hook.end_rollout.final_reward == 0.5
 
 
 @pytest.mark.asyncio
@@ -91,9 +89,10 @@ async def test_runner_calls_hooks_async():
     agent = HookAgent()
     client = DummyAsyncClient()
     tracer = DummyTracer()
-    runner = AgentRunner(agent, client, tracer, TripletExporter())
+    hook = TestHook()
+    runner = AgentRunner(agent, client, tracer, TripletExporter(), hooks=[hook])
 
     assert await runner.run_async() is True
-    assert agent.start_called
-    assert agent.end_called
-    assert agent.end_rollout.final_reward == 0.5
+    assert hook.start_called
+    assert hook.end_called
+    assert hook.end_rollout.final_reward == 0.5
