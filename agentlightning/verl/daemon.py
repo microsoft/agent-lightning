@@ -518,11 +518,11 @@ class AgentModeDaemon:
         data_proto = DataProto(batch=batch)
 
         data_metrics = {
-            "train/reward": np.mean(list(finished_id_to_final_reward.values())),
-            "train/n_rollouts": len(finished_id_to_final_reward),
-            "train/n_rollouts_w_trace": len(finished_id_to_sample_info),
-            "train/n_truncated_triplets": n_trunc_sample_because_of_response,
-            "train/n_triplets": n_transition,
+            "training/reward": np.mean(list(finished_id_to_final_reward.values())),
+            "training/n_rollouts": len(finished_id_to_final_reward),
+            "training/n_rollouts_w_trace": len(finished_id_to_sample_info),
+            "training/n_truncated_triplets": n_trunc_sample_because_of_response,
+            "training/n_triplets": n_transition,
         }
 
         # Add non-tensor data for advantage calculation and logging
