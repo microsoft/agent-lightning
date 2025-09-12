@@ -380,18 +380,16 @@ class AgentModeDaemon:
                 }
             )
 
+        stats_w_trace = [stat for stat in sample_stat_list if "sum_response_length" in stat]
         return {
-            "val/n_samples": len(sample_stat_list),
+            "val/n_rollouts": len(sample_stat_list),
+            "val/n_rollouts_w_trace": len(stats_w_trace),
             "val/reward": np.mean(
                 [stat["reward"] for stat in sample_stat_list]
             ),  # each rollout must have a reward (fillna if missing)
-            "val/mean_response_length": np.mean(
-                [stat["mean_response_length"] for stat in sample_stat_list if "mean_response_length" in stat]
-            ),
-            "val/sum_response_length": np.mean(
-                [stat["sum_response_length"] for stat in sample_stat_list if "sum_response_length" in stat]
-            ),
-            "val/turn_count": np.mean([stat["turn_count"] for stat in sample_stat_list if "turn_count" in stat]),
+            "val/mean_response_length": np.mean([stat["mean_response_length"] for stat in stats_w_trace]),
+            "val/sum_response_length": np.mean([stat["sum_response_length"] for stat in stats_w_trace]),
+            "val/turn_count": np.mean([stat["turn_count"] for stat in stats_w_trace]),
         }
 
     def get_train_data_batch(self, max_prompt_length, max_response_length, device):
