@@ -36,12 +36,15 @@ def _patch_new_agentops():
 
         # For LiteLLM, response is a openai._legacy_response.LegacyAPIResponse
         if hasattr(return_value, "http_response") and hasattr(return_value.http_response, "json"):
-            json_data = return_value.http_response.json()
-            if isinstance(json_data, dict):
-                if "prompt_token_ids" in json_data:
-                    attributes["prompt_token_ids"] = list(json_data["prompt_token_ids"])
-                if "response_token_ids" in json_data:
-                    attributes["response_token_ids"] = list(json_data["response_token_ids"][0])
+            try:
+                json_data = return_value.http_response.json()
+                if isinstance(json_data, dict):
+                    if "prompt_token_ids" in json_data:
+                        attributes["prompt_token_ids"] = list(json_data["prompt_token_ids"])
+                    if "response_token_ids" in json_data:
+                        attributes["response_token_ids"] = list(json_data["response_token_ids"][0])
+            except Exception as e:
+                logger.debug(f"Failed to parse HTTP response JSON for token extraction: {e}")
 
         return attributes
 
@@ -86,12 +89,15 @@ def _patch_old_agentops():
 
         # For LiteLLM, response is a openai._legacy_response.LegacyAPIResponse
         if hasattr(response, "http_response") and hasattr(response.http_response, "json"):
-            json_data = response.http_response.json()
-            if isinstance(json_data, dict):
-                if "prompt_token_ids" in json_data:
-                    span.set_attribute("prompt_token_ids", list(json_data["prompt_token_ids"]))
-                if "response_token_ids" in json_data:
-                    span.set_attribute("response_token_ids", list(json_data["response_token_ids"][0]))
+            try:
+                json_data = response.http_response.json()
+                if isinstance(json_data, dict):
+                    if "prompt_token_ids" in json_data:
+                        span.set_attribute("prompt_token_ids", list(json_data["prompt_token_ids"]))
+                    if "response_token_ids" in json_data:
+                        span.set_attribute("response_token_ids", list(json_data["response_token_ids"][0]))
+            except Exception as e:
+                logger.debug(f"Failed to parse HTTP response JSON for token extraction: {e}")
 
     opentelemetry.instrumentation.openai.shared.chat_wrappers._handle_response = _handle_response_with_tokens
     logger.info("Patched earlier version of agentops using _handle_response")
