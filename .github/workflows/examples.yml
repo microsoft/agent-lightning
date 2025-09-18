@@ -10,22 +10,19 @@ on:
 
 jobs:
   examples:
-    runs-on: [self-hosted, linux, gpu]
+    runs-on: [self-hosted, 1ES.Pool=agl-runner-gpu]
     timeout-minutes: 60
     strategy:
       matrix:
         setup: [stable, latest]
       fail-fast: false
-    container:
-      image: ghcr.io/microsoft/agent-lightning/base:latest
-      options: --gpus all --ipc=host --interactive --tty
     steps:
       - name: Check GPU status
         run: nvidia-smi
       - uses: actions/checkout@v4
       - name: Create a virtual environment
         run: python3 -m venv .venv
-      - name: Install deps inside the container (${{ matrix.setup }})
+      - name: Install dependencies (${{ matrix.setup }})
         run: |
           . .venv/bin/activate
           ./scripts/setup_${{ matrix.setup }}_gpu.sh
