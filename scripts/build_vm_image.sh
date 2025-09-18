@@ -1,5 +1,11 @@
 #!/bin/bash
 
+# Based on: Standard_NC24ads_A100_v4
+# With: Canonical:ubuntu-24_04-lts:server:latest
+# Secure boot is off.
+
+# This script is not designed to be run automatically.
+
 set -ex
 
 # Build essentials are required.
