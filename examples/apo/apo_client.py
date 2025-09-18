@@ -8,6 +8,8 @@ from agentlightning import configure_logger
 from agentlightning.litagent import LitAgent
 from agentlightning.trainer import Trainer
 
+from tqdm import tqdm
+
 import dotenv
 import os
 import random
@@ -68,13 +70,9 @@ class GSM8KAgent(LitAgent):
             return abs(float(pred_answer) - float(gt_label)) <= tolerance
         except ValueError:
             return False
-            
-    def training_rollout(self, task, rollout_id, resources):
-        print("Resources:", resources)
-        print("Task:", task)
-        user_prompt = resources["prompt"].template
-        user_prompt = user_prompt.replace("{question}", task['question'])
-
+    
+    def eval_one_case(self, user_prompt, question, answer):
+        user_prompt = user_prompt.replace("{question}", question)
         openai = OpenAI(
             api_key="111",
             base_url="http://localhost:8000/v1",
@@ -87,25 +85,39 @@ class GSM8KAgent(LitAgent):
                 {"role": "user", "content": user_prompt},
             ],
         ).choices[0].message.content
-        print("Result:", result)
 
-        question = task['question']
-        ground_truth = task['answer']
-        score = int(self.check_answer(result, task['answer']))
-        print(f"Question: {question}")
-        print(f"Query Output: {result}")
-        print(f"Ground Truth: {ground_truth}")
-        print(f"Score: {score}")
+        question = question
+        ground_truth = answer
+        score = int(self.check_answer(result, answer))
+        # print(f"Question: {question}")
+        # print(f"Query Output: {result}")
+        # print(f"Ground Truth: {ground_truth}")
+        # print(f"Score: {score}")
+        return question, result, ground_truth, score
+            
+    def training_rollout(self, task, rollout_id, resources):
+        user_prompt = resources["prompt"].template
+
+        if isinstance(task, dict) and 'question' in task:
+            question, result, ground_truth, score = self.eval_one_case(user_prompt, task['question'], task['answer'])
+        
+        elif isinstance(task, list):
+            question, result, ground_truth, score = [], [], [], []
+            for t in tqdm(task):
+                q, r, gt, s = self.eval_one_case(user_prompt, t['question'], t['answer'])
+                question.append(q)
+                result.append(r)
+                ground_truth.append(gt)
+                score.append(s)
+
         return Rollout(
             rollout_id=rollout_id,
-            final_reward=score,
+            final_reward=sum(score) / len(score) if isinstance(score, list) else score,
             metadata={
                 "query": question,
                 "query_output": result,
                 "ground_truth": ground_truth
-            }
-        )
-
+            })
 
 if __name__ == "__main__":
     configure_logger()
