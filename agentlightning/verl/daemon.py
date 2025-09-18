@@ -249,7 +249,7 @@ class AgentModeDaemon:
         llm_resource = LLM(
             endpoint=f"http://127.0.0.1:{self.proxy_port}/v1",
             model=self.train_information.get("model", "default-model"),
-            sampling_parameters={"temperature": self.train_information.get("temperature", 0.7)},
+            sampling_parameters={"temperature": self.train_information.get("temperature", 0.7 if is_train else 0.0)},
         )
         resources: NamedResources = {"main_llm": llm_resource}
         resources_id = await self.server.update_resources(resources)

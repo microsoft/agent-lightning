@@ -260,6 +260,10 @@ class Trainer(ParallelWorkerBase):
                     logger.info(f"Starting worker process {i} (name: {process_name})...")
                     p.start()
 
+                from agentlightning.tuner import verl
+
+                verl.main()
+
                 if self.daemon:
                     for i, p in enumerate(processes):
                         p.join()  # Wait for the process to complete

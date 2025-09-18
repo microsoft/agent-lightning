@@ -4,7 +4,7 @@ import logging
 import weakref
 from typing import Any, List, Dict, Union, Optional, TYPE_CHECKING
 
-from .types import NamedResources, Rollout, Task, TaskInput, Triplet, RolloutRawResult
+from .types import LLM, NamedResources, Rollout, Task, TaskInput, Triplet, RolloutRawResult
 
 if TYPE_CHECKING:
     from .trainer import Trainer
@@ -202,3 +202,9 @@ class LitAgent:
             The result of the asynchronous validation rollout.
         """
         return await self.training_rollout_async(task, rollout_id, resources)
+
+
+# Helper functions to creately create a LitAgent without the class
+
+# def llm_rollout(func: (TaskInput, LLM, Rollout) -> RolloutRawResult) -> LitAgent:
+#     ...
