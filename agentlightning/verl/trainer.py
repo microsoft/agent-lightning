@@ -195,7 +195,7 @@ class AgentLightningTrainer(RayPPOTrainer):
 
             # after advantages are assinged, we begin to drop (1) long prompt (2) floor to ppo minisize
             keep_indices = (~batch.batch["is_drop_mask"]).nonzero(as_tuple=True)[0]
-            metrics["agent_mode/n_dropped_sample_because_of_prompt"] = (
+            metrics["training/n_triplets_prompt_too_long"] = (
                 batch.batch["is_drop_mask"].shape[0] - keep_indices.shape[0]
             )
             batch = batch[keep_indices]
@@ -207,7 +207,7 @@ class AgentLightningTrainer(RayPPOTrainer):
             batch.reorder(torch.tensor(random_indices).type(torch.int32))
             n_remained_transition = n_transition // mini_batch_size * mini_batch_size
             batch = batch[list(range(n_remained_transition))]
-            metrics["agent_mode/n_dropped_sample_because_of_mini_batch"] = n_transition - n_remained_transition
+            metrics["training/n_triplets_dropped_remainder"] = n_transition - n_remained_transition
 
             # Agent mode note: Change the order of balance batch;
             #     1. first calculate advantage
