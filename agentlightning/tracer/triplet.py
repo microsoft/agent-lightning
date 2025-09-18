@@ -259,6 +259,11 @@ class TraceTree:
         if agent_name is not None:
             return agent_name
 
+        # Case 5: agent-framework
+        agent_name = self.span.attributes.get("executor.id")
+        if agent_name is not None:
+            return agent_name
+
     def maybe_reward_dict(self) -> dict[str, Any]:
         for key in [
             "agentops.task.output",  # newer versions of agentops

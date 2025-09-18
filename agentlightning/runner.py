@@ -243,7 +243,9 @@ class AgentRunner(ParallelWorkerBase):
                 end_time = time.time()
                 logger.info(
                     f"{self._log_prefix(rollout_id)} Completed in "
-                    f"{end_time - start_time:.2f}s. Reward: {rollout_obj.final_reward}"
+                    f"{end_time - start_time:.2f}s. Triplet length: "
+                    f"{len(rollout_obj.triplets) if rollout_obj.triplets is not None else 'N/A'}. "
+                    f"Reward: {rollout_obj.final_reward}"
                 )
         except Exception:
             logger.exception(f"{self._log_prefix(rollout_id)} Exception during rollout.")
