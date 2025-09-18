@@ -86,7 +86,7 @@ def _find_available_port() -> int:
 
 
 def _to_native(obj):
-    """Convert data retrieved from Panquet to data usable in AGL server."""
+    """Convert data retrieved from Parquet to data usable in AGL server."""
     # 1) Arrays -> list (then recurse)
     if isinstance(obj, np.ndarray):
         return _to_native(obj.tolist())
