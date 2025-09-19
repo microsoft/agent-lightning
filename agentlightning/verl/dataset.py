@@ -1,5 +1,6 @@
 import torch
 from datasets import Dataset as HuggingFaceDataset
+from omegaconf import DictConfig
 from verl.utils.dataset.rl_dataset import RLHFDataset
 
 from agentlightning.types import Dataset
@@ -23,19 +24,12 @@ class AgentDataset(RLHFDataset):
         return row_dict
 
 
-class LoadedDataset(RLHFDataset):
+class LoadedDataset(AgentDataset):
 
     def __init__(self, dataset: Dataset):
-        super().__init__([])
+        super().__init__([], None, DictConfig({}))  # type: ignore
         dataset_copy = [dataset[i] for i in range(len(dataset))]
         self.dataframe = HuggingFaceDataset.from_list(dataset_copy)
 
-    def __getstate__(self):
-        if not self.serialize_dataset:
-            state = self.__dict__.copy()
-
-            if "dataframe" in state:
-                del state["dataframe"]
-            return state
-
-        return self.__dict__.copy()
+    def _read_files_and_tokenize(self):
+        pass

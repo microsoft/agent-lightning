@@ -18,6 +18,13 @@ logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
+__all__ = [
+    "LitAgent",
+    "LitAgentLLM",
+    "llm_rollout",
+    "rollout",
+]
+
 
 def is_v0_1_rollout_api(func: Callable) -> bool:
     """Check if the rollout API is v0.1.
@@ -259,7 +266,7 @@ class LitAgent(Generic[T]):
             The result of the asynchronous training rollout. See `rollout` for
             possible return types.
         """
-        return self.rollout(task, resources, rollout)
+        return await self.rollout_async(task, resources, rollout)
 
     async def validation_rollout_async(self, task: T, resources: NamedResources, rollout: Rollout) -> RolloutRawResult:
         """Asynchronous version of `validation_rollout`.
@@ -276,7 +283,7 @@ class LitAgent(Generic[T]):
             The result of the asynchronous validation rollout. See `rollout` for
             possible return types.
         """
-        return self.rollout(task, resources, rollout)
+        return await self.rollout_async(task, resources, rollout)
 
 
 LlmRolloutFunc = Union[
@@ -426,7 +433,7 @@ def llm_rollout(func: LlmRolloutFunc[T], *, trained_agents: Optional[str] = None
     return LitAgentLLM(func, trained_agents=trained_agents)
 
 
-def lit_agent(func: Union[LlmRolloutFunc[T], Callable], *, trained_agents: Optional[str] = None) -> LitAgent[T]:
+def rollout(func: Union[LlmRolloutFunc[T], Callable], *, trained_agents: Optional[str] = None) -> LitAgent[T]:
     """Create a LitAgent from a function, automatically detecting the appropriate type.
 
     This function inspects the provided callable and creates the appropriate
@@ -442,7 +449,7 @@ def lit_agent(func: Union[LlmRolloutFunc[T], Callable], *, trained_agents: Optio
         type hints and behavior while providing all agent functionality.
 
     Example:
-        @lit_agent
+        @rollout
         def my_agent(task, llm):
             client = OpenAI(base_url=llm.endpoint)
             response = client.chat.completions.create(

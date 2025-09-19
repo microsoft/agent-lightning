@@ -1,8 +1,8 @@
-"""Test that @llm_rollout and @lit_agent decorators preserve function executability."""
+"""Test that @llm_rollout and @rollout decorators preserve function executability."""
 
 import inspect
 import pytest
-from agentlightning.litagent import llm_rollout, lit_agent, LitAgentLLM
+from agentlightning.litagent import llm_rollout, rollout, LitAgentLLM
 
 
 @llm_rollout
@@ -11,9 +11,9 @@ def sample_llm_rollout_func(task, llm):
     return f"Processed task: {task} with LLM: {llm}"
 
 
-@lit_agent
-def sample_lit_agent_func(task, llm):
-    """A test function with lit_agent decorator."""
+@rollout
+def sample_rollout_func(task, llm):
+    """A test function with rollout decorator."""
     return f"Processed task: {task} with LLM: {llm}"
 
 
@@ -59,42 +59,42 @@ def test_llm_rollout_preserves_signature():
     assert params == ["task", "llm"]
 
 
-def test_lit_agent_preserves_executability():
-    """Test that @lit_agent decorated functions remain executable."""
+def test_rollout_preserves_executability():
+    """Test that @rollout decorated functions remain executable."""
     test_task = "Hello World"
     test_llm = "gpt-4"
 
     # Function should be callable
-    assert callable(sample_lit_agent_func)
+    assert callable(sample_rollout_func)
 
     # Function should execute and return expected result
-    result = sample_lit_agent_func(test_task, test_llm)
+    result = sample_rollout_func(test_task, test_llm)
     expected = f"Processed task: {test_task} with LLM: {test_llm}"
     assert result == expected
 
 
-def test_lit_agent_preserves_metadata():
-    """Test that @lit_agent preserves function metadata."""
+def test_rollout_preserves_metadata():
+    """Test that @rollout preserves function metadata."""
     # Function name should be preserved
-    assert sample_lit_agent_func.__name__ == "sample_lit_agent_func"
+    assert sample_rollout_func.__name__ == "sample_rollout_func"
 
     # Docstring should be preserved
-    assert sample_lit_agent_func.__doc__ == "A test function with lit_agent decorator."
+    assert sample_rollout_func.__doc__ == "A test function with rollout decorator."
 
 
-def test_lit_agent_returns_litagent_instance():
-    """Test that @lit_agent returns a LitAgent instance (actually LitAgentLLM for this pattern)."""
-    assert isinstance(sample_lit_agent_func, LitAgentLLM)
+def test_rollout_returns_litagent_instance():
+    """Test that @rollout returns a LitAgent instance (actually LitAgentLLM for this pattern)."""
+    assert isinstance(sample_rollout_func, LitAgentLLM)
 
     # Should have agent methods
-    assert hasattr(sample_lit_agent_func, "rollout")
-    assert hasattr(sample_lit_agent_func, "rollout_async")
-    assert hasattr(sample_lit_agent_func, "training_rollout")
+    assert hasattr(sample_rollout_func, "rollout")
+    assert hasattr(sample_rollout_func, "rollout_async")
+    assert hasattr(sample_rollout_func, "training_rollout")
 
 
-def test_lit_agent_preserves_signature():
-    """Test that @lit_agent preserves function signature."""
-    sig = inspect.signature(sample_lit_agent_func)
+def test_rollout_preserves_signature():
+    """Test that @rollout preserves function signature."""
+    sig = inspect.signature(sample_rollout_func)
     params = list(sig.parameters.keys())
 
     # Should have the expected parameters
@@ -122,10 +122,10 @@ async def test_async_function_with_llm_rollout():
 
 
 @pytest.mark.asyncio
-async def test_async_function_with_lit_agent():
-    """Test that async functions work with @lit_agent decorator."""
+async def test_async_function_with_rollout():
+    """Test that async functions work with @rollout decorator."""
 
-    @lit_agent
+    @rollout
     async def async_agent(task, llm):
         """An async test function."""
         return f"Async processed: {task} with {llm}"

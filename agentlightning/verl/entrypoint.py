@@ -26,7 +26,7 @@ def run_ppo(config: Any, train_dataset: Dataset | None, val_dataset: Dataset | N
         )
 
     runner = TaskRunner.remote()
-    ray.get(runner.run.remote(config))
+    ray.get(runner.run.remote(config, train_dataset, val_dataset))
 
 
 @ray.remote(num_cpus=1)  # please make sure main_task is not scheduled on head

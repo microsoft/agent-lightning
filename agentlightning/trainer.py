@@ -139,16 +139,13 @@ class Trainer(ParallelWorkerBase):
             return AgentLightningClient(endpoint=data)
         elif isinstance(data, AgentLightningClient):
             return data
-        elif isinstance(data, Dataset):
-            return None
-        else:
-            raise ValueError(f"Invalid data type: {type(data)}. Expected str, AgentLightningClient, or Dataset.")
+        return None
 
     def _extract_dataset_from_data(self, data: Union[str, AgentLightningClient, Dataset]) -> Optional[Dataset]:
         """Extract dataset from data if it's a Dataset."""
-        if isinstance(data, Dataset):
-            return data
-        return None
+        if isinstance(data, str) or isinstance(data, AgentLightningClient):
+            return None
+        return data
 
     def _determine_backend(
         self,
@@ -293,7 +290,7 @@ class Trainer(ParallelWorkerBase):
         agent: LitAgent,
         train_data: Union[str, AgentLightningClient, Dataset],
         *,
-        test_data: Union[str, AgentLightningClient, Dataset, None] = None,
+        val_data: Union[str, AgentLightningClient, Dataset, None] = None,
         dev_data: Union[str, AgentLightningClient, Dataset, None] = None,
         dev_backend: Union[str, AgentLightningClient, None] = None,
     ):
@@ -318,7 +315,7 @@ class Trainer(ParallelWorkerBase):
 
         # Extract datasets for algorithm if available
         train_dataset = self._extract_dataset_from_data(train_data)
-        test_dataset = self._extract_dataset_from_data(test_data) if test_data else None
+        val_dataset = self._extract_dataset_from_data(val_data) if val_data else None
         dev_dataset = self._extract_dataset_from_data(dev_data) if dev_data else None
 
         # Initialize the algorithm with trainer if provided
@@ -361,7 +358,7 @@ class Trainer(ParallelWorkerBase):
                     logger.info("Running algorithm training after worker completion.")
                     self.algorithm.run(
                         train_dataset=train_dataset,
-                        validation_dataset=test_dataset,
+                        validation_dataset=val_dataset,
                         dev_dataset=dev_dataset,
                     )
             else:
@@ -384,7 +381,7 @@ class Trainer(ParallelWorkerBase):
                         logger.info("All workers have been spawned. Running algorithm training with provided datasets.")
                         self.algorithm.run(
                             train_dataset=train_dataset,
-                            validation_dataset=test_dataset,
+                            validation_dataset=val_dataset,
                             dev_dataset=dev_dataset,
                         )
                         logger.info("Algorithm exits. Waiting for the rest of workers to complete.")
@@ -413,7 +410,7 @@ class Trainer(ParallelWorkerBase):
                         logger.info("Main process continues to run algorithm.")
                         self.algorithm.run(
                             train_dataset=train_dataset,
-                            validation_dataset=test_dataset,
+                            validation_dataset=val_dataset,
                             dev_dataset=dev_dataset,
                         )
 
@@ -438,8 +435,10 @@ class Trainer(ParallelWorkerBase):
                         p.kill()
                         p.join(timeout=10)  # Ensure it's reaped
             logger.info(f"Workers terminated or single worker interrupted.")
+            raise
         except Exception as e:
             logger.exception(f"Unhandled exception in fit method.")
+            raise
         finally:
             if self.daemon:
                 self.teardown()
