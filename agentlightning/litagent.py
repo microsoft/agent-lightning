@@ -6,14 +6,14 @@ import functools
 import inspect
 import logging
 import weakref
-from typing import Any, Callable, Coroutine, List, Dict, Union, Optional, TYPE_CHECKING, TypeVar, Generic
+from typing import TYPE_CHECKING, Any, Callable, Coroutine, Dict, Generic, List, Optional, TypeVar, Union
 
-from .types import LLM, NamedResources, Rollout, Task, TaskInput, Triplet, RolloutRawResult
+from .types import LLM, NamedResources, Rollout, RolloutRawResult, Task, TaskInput, Triplet
 
 if TYPE_CHECKING:
-    from .trainer import Trainer
     from .runner import AgentRunner
     from .tracer import BaseTracer
+    from .trainer import Trainer
 
 
 logger = logging.getLogger(__name__)

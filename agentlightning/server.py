@@ -2,23 +2,23 @@
 
 import asyncio
 import logging
+import threading
 import time
 import uuid
-import threading
 from contextlib import asynccontextmanager
-from typing import Any, Dict, List, Optional, Literal
+from typing import Any, Dict, List, Literal, Optional
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Path
 from pydantic import Field
 
 from .types import (
+    GenericResponse,
+    NamedResources,
+    ResourcesUpdate,
     Rollout,
     Task,
     TaskIfAny,
-    NamedResources,
-    GenericResponse,
-    ResourcesUpdate,
 )
 
 logger = logging.getLogger(__name__)

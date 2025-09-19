@@ -1,10 +1,10 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-import pytest
 from contextlib import contextmanager
 
+import pytest
 
-from agentlightning import LitAgent, Task, ResourcesUpdate
+from agentlightning import LitAgent, ResourcesUpdate, Task
 from agentlightning.runner import AgentRunner
 from agentlightning.tracer import BaseTracer, TripletExporter
 

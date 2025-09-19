@@ -3,8 +3,10 @@
 """Test that @llm_rollout and @rollout decorators preserve function executability."""
 
 import inspect
+
 import pytest
-from agentlightning.litagent import llm_rollout, rollout, LitAgentLLM
+
+from agentlightning.litagent import LitAgentLLM, llm_rollout, rollout
 
 
 @llm_rollout

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import weakref
-from typing import Any, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Optional
 
 from agentlightning.client import AgentLightningClient
 from agentlightning.types import Dataset

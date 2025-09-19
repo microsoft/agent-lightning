@@ -17,8 +17,8 @@ _original_handle_response = None
 
 
 def _patch_new_agentops():
-    import agentops.instrumentation.providers.openai.wrappers.chat
     import agentops.instrumentation.providers.openai.stream_wrapper
+    import agentops.instrumentation.providers.openai.wrappers.chat
     from agentops.instrumentation.providers.openai.wrappers.chat import handle_chat_attributes
 
     global _original_handle_chat_attributes
@@ -56,8 +56,8 @@ def _patch_new_agentops():
 
 
 def _unpatch_new_agentops():
-    import agentops.instrumentation.providers.openai.wrappers.chat
     import agentops.instrumentation.providers.openai.stream_wrapper
+    import agentops.instrumentation.providers.openai.wrappers.chat
 
     global _original_handle_chat_attributes
     if _original_handle_chat_attributes is not None:

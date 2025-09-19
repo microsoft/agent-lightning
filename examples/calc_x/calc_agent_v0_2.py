@@ -1,15 +1,14 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-from typing import Any
 import re
+from typing import Any
 
+from autogen_ext.tools.mcp import McpWorkbench, StdioServerParams
+from calc_agent import eval, get_agent
 from datasets import Dataset
 
-from agentlightning import rollout, Trainer, LLM
+from agentlightning import LLM, Trainer, rollout
 from agentlightning.algorithm.verl import VERL
-from autogen_ext.tools.mcp import McpWorkbench, StdioServerParams
-
-from calc_agent import get_agent, eval
 
 calculator_mcp_server = StdioServerParams(command="uvx", args=["mcp-server-calculator"])
 

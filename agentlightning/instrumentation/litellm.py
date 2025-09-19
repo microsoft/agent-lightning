@@ -1,6 +1,6 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-from typing import Optional, Any
+from typing import Any, Optional
 
 from litellm.integrations.opentelemetry import OpenTelemetry
 

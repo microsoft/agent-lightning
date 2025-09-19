@@ -4,13 +4,12 @@ import asyncio
 import logging
 import time
 import urllib.parse
-from typing import Any, Dict, Optional, List, Union
+from typing import Any, Dict, List, Optional, Union
 
 import aiohttp
 import requests
 
-from .types import Rollout, Task, TaskInput, TaskIfAny, ResourcesUpdate, NamedResources
-
+from .types import NamedResources, ResourcesUpdate, Rollout, Task, TaskIfAny, TaskInput
 
 logger = logging.getLogger(__name__)
 

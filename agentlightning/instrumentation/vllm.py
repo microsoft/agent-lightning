@@ -5,8 +5,8 @@ from __future__ import annotations
 import warnings
 from typing import List
 
-from vllm.entrypoints.openai.protocol import ChatCompletionResponse
 import vllm.entrypoints.openai.protocol
+from vllm.entrypoints.openai.protocol import ChatCompletionResponse
 from vllm.entrypoints.openai.serving_chat import OpenAIServingChat
 
 

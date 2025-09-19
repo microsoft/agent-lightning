@@ -2,14 +2,13 @@
 
 from typing import Any, Optional
 
-
-from hydra import initialize, compose
+from hydra import compose, initialize
 from omegaconf import OmegaConf
 
-from agentlightning.verl.entrypoint import run_ppo
-from agentlightning.client import AgentLightningClient
 from agentlightning.algorithm.base import BaseAlgorithm
+from agentlightning.client import AgentLightningClient
 from agentlightning.types import Dataset
+from agentlightning.verl.entrypoint import run_ppo
 
 
 class VERL(BaseAlgorithm):

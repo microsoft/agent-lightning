@@ -2,8 +2,8 @@
 
 import math
 import os
-import string
 import re
+import string
 from typing import Any
 
 import sympy
@@ -12,7 +12,7 @@ from autogen_core.models import ModelFamily
 from autogen_ext.models.openai import OpenAIChatCompletionClient
 from autogen_ext.tools.mcp import McpWorkbench, StdioServerParams
 
-from agentlightning import Trainer, LitAgent, NamedResources, LLM, reward, configure_logger, DevTaskLoader
+from agentlightning import LLM, DevTaskLoader, LitAgent, NamedResources, Trainer, configure_logger, reward
 
 configure_logger()
 

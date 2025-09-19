@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Generic, List, Optional, Protocol, TypeVar, Union, Literal, Annotated
+from typing import Annotated, Any, Dict, Generic, List, Literal, Optional, Protocol, TypeVar, Union
 
-from pydantic import BaseModel, Field, Discriminator
 from opentelemetry.sdk.trace import ReadableSpan
+from pydantic import BaseModel, Discriminator, Field
 
 __all__ = [
     "Triplet",

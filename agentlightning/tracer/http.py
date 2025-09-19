@@ -1,27 +1,26 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-from contextlib import contextmanager
-from typing import Iterator, List, Optional, Any, Dict, Callable, Awaitable
-import logging
-import uuid
-import pickle
-import multiprocessing
 import asyncio
+import logging
+import multiprocessing
+import pickle
 import queue
+import uuid
+from contextlib import contextmanager
+from typing import Any, Awaitable, Callable, Dict, Iterator, List, Optional
 from urllib.parse import urlparse
-
-from .base import BaseTracer
 
 from httpdbg.hooks.all import httprecord
 from httpdbg.records import HTTPRecords
 from opentelemetry.sdk.trace import ReadableSpan
-from opentelemetry.trace import StatusCode, SpanKind, Status
+from opentelemetry.trace import SpanKind, Status, StatusCode
 from opentelemetry.trace.span import (
     SpanContext,
     TraceFlags,
     TraceState,
 )
 
+from .base import BaseTracer
 
 logger = logging.getLogger(__name__)
 

@@ -6,17 +6,16 @@ import logging
 import os
 import time
 from contextlib import nullcontext
-from typing import List, Optional, Union, Dict, Any
+from typing import Any, Dict, List, Optional, Union
 
 import agentops
-
 from opentelemetry.sdk.trace import ReadableSpan
+
 from .client import AgentLightningClient
 from .litagent import LitAgent, is_v0_1_rollout_api
-from .types import Rollout, Task, Triplet, RolloutRawResult
-from .types import ParallelWorkerBase
-from .tracer.base import BaseTracer
 from .tracer import TripletExporter
+from .tracer.base import BaseTracer
+from .types import ParallelWorkerBase, Rollout, RolloutRawResult, Task, Triplet
 
 logger = logging.getLogger(__name__)
 

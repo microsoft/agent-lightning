@@ -3,13 +3,14 @@
 # type: ignore
 # The evaluation code is from https://github.com/taoyds/test-suite-sql-eval
 
+import itertools
 import re
+from collections import namedtuple
+from typing import Any, Dict, Iterator, List, Set, Tuple, Union
+
 import sqlparse
-from typing import List, Tuple, Set, Iterator, Dict, Any, Union
 from sqlparse.sql import Comparison, Identifier
 from sqlparse.tokens import Whitespace
-import itertools
-from collections import namedtuple
 
 Token = namedtuple("Token", ["ttype", "value"])
 VALUE_NUM_SYMBOL = "VALUERARE"

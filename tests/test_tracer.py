@@ -16,66 +16,55 @@ against the real API with the ``OPENAI_MODEL`` of your choice (``gpt-4.1-nano``
 by default).
 """
 
-import pytest
+import asyncio
+import difflib
 import inspect
 import json
-import asyncio
-import time
 import os
-import re
-import httpx
-import difflib
 import pprint
-from contextlib import contextmanager
-from unittest.mock import Mock, patch, AsyncMock, MagicMock
-from typing import Dict, Any, List, Optional
+import re
 import threading
-import uvicorn
-from fastapi import FastAPI
-from contextlib import asynccontextmanager
-from pydantic import BaseModel, Field
-
-from agentlightning.tracer.agentops import AgentOpsTracer, LightningSpanProcessor
-from agentlightning.tracer.triplet import TraceTree
-from agentlightning.tracer.http import HttpTracer
-from agentlightning.tracer.triplet import TripletExporter
-from agentlightning.reward import reward
-from agentlightning.types import Triplet
-
-import openai
-from openai import OpenAI, AsyncOpenAI
-
-from langchain import hub
-from langchain.chat_models import init_chat_model
-from langchain_openai import ChatOpenAI
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import StrOutputParser
-from langchain_core.messages import HumanMessage, BaseMessage, AIMessage, ToolMessage
-from langchain_community.utilities import SQLDatabase
-from langchain_community.agent_toolkits import SQLDatabaseToolkit
-from langchain.agents import tool, AgentExecutor, create_react_agent
-from langchain_core.messages import AIMessage
-from langgraph.graph import END, START, MessagesState, StateGraph
-from langgraph.prebuilt import ToolNode
-from typing import Literal
-
-from langgraph.graph import StateGraph, END, MessagesState
-from typing_extensions import TypedDict
-
-import autogen_agentchat
-from autogen_agentchat.agents import AssistantAgent, UserProxyAgent
-from autogen_agentchat.teams import RoundRobinGroupChat
-from autogen_agentchat.conditions import ExternalTermination, TextMentionTermination
-from autogen_ext.models.openai import OpenAIChatCompletionClient
-from autogen_ext.tools.mcp import McpWorkbench, StdioServerParams
-
-from agents import Agent, Runner, AgentHooks, InputGuardrail, GuardrailFunctionOutput, function_tool, RunConfig
-from agents.mcp import MCPServerStdio
-from agents.models.openai_provider import OpenAIProvider
-
-import litellm
+import time
+from contextlib import asynccontextmanager, contextmanager
+from typing import Any, Dict, List, Literal, Optional
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import agentops
+import autogen_agentchat
+import httpx
+import litellm
+import openai
+import pytest
+import uvicorn
+from agents import Agent, AgentHooks, GuardrailFunctionOutput, InputGuardrail, RunConfig, Runner, function_tool
+from agents.mcp import MCPServerStdio
+from agents.models.openai_provider import OpenAIProvider
+from autogen_agentchat.agents import AssistantAgent, UserProxyAgent
+from autogen_agentchat.conditions import ExternalTermination, TextMentionTermination
+from autogen_agentchat.teams import RoundRobinGroupChat
+from autogen_ext.models.openai import OpenAIChatCompletionClient
+from autogen_ext.tools.mcp import McpWorkbench, StdioServerParams
+from fastapi import FastAPI
+from langchain import hub
+from langchain.agents import AgentExecutor, create_react_agent, tool
+from langchain.chat_models import init_chat_model
+from langchain_community.agent_toolkits import SQLDatabaseToolkit
+from langchain_community.utilities import SQLDatabase
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_openai import ChatOpenAI
+from langgraph.graph import END, START, MessagesState, StateGraph
+from langgraph.prebuilt import ToolNode
+from openai import AsyncOpenAI, OpenAI
+from pydantic import BaseModel, Field
+from typing_extensions import TypedDict
+
+from agentlightning.reward import reward
+from agentlightning.tracer.agentops import AgentOpsTracer, LightningSpanProcessor
+from agentlightning.tracer.http import HttpTracer
+from agentlightning.tracer.triplet import TraceTree, TripletExporter
+from agentlightning.types import Triplet
 
 USE_OPENAI = os.environ.get("USE_OPENAI", "false").lower() == "true"
 if USE_OPENAI:

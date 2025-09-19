@@ -1,8 +1,8 @@
 # Copyright (c) Microsoft. All rights reserved.
 
 import time
-from agentlightning.instrumentation.agentops import AgentOpsServerManager
 
+from agentlightning.instrumentation.agentops import AgentOpsServerManager
 
 if __name__ == "__main__":
     import argparse

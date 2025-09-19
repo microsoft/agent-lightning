@@ -9,10 +9,12 @@ that the HttpTracer correctly captures HTTP traffic in both
 normal and subprocess modes.
 """
 
-import pytest
 import asyncio
-import requests
+
 import aiohttp
+import pytest
+import requests
+
 from agentlightning.tracer.http import HttpTracer
 
 

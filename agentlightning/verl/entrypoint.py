@@ -1,15 +1,16 @@
 # Copyright (c) Microsoft. All rights reserved.
 
 from typing import Any
+
 import hydra
 import ray
+from verl.trainer.main_ppo import create_rl_sampler
+from verl.trainer.ppo.reward import load_reward_manager
 
 from agentlightning.types import Dataset
 
 from .dataset import AgentDataset, LoadedDataset
 from .trainer import AgentLightningTrainer
-from verl.trainer.ppo.reward import load_reward_manager
-from verl.trainer.main_ppo import create_rl_sampler
 
 
 @hydra.main(config_path="pkg://agentlightning/verl", config_name="config", version_base=None)
@@ -38,7 +39,6 @@ class TaskRunner:
         from pprint import pprint
 
         from omegaconf import OmegaConf
-
         from verl.utils.fs import copy_to_local
 
         pprint(OmegaConf.to_container(config, resolve=True))  # resolve=True will eval symbol values

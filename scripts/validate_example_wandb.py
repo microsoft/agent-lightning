@@ -1,7 +1,8 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-import wandb
 import sys
+
+import wandb
 
 if len(sys.argv) != 3:
     print("Usage: python validate_example_wandb.py <project> <run_name>")
