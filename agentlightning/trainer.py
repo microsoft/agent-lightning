@@ -6,13 +6,13 @@ import signal
 import time
 from typing import List, Optional, Union
 import importlib
-
-import agentops
+import warnings
 
 from .client import AgentLightningClient
 from .litagent import LitAgent
 from .runner import AgentRunner
-from .types import ParallelWorkerBase
+from .types import Dataset, ParallelWorkerBase
+from .algorithm.base import BaseAlgorithm
 from .tracer.base import BaseTracer
 from .tracer.agentops import AgentOpsTracer
 from .tracer.triplet import TripletExporter
@@ -41,6 +41,7 @@ class Trainer(ParallelWorkerBase):
                 If None, a default `AgentOpsTracer` will be created with the current settings.
         triplet_exporter: An instance of `TripletExporter` to export triplets from traces,
                           or a dictionary with the initialization parameters for the exporter.
+        algorithm: An instance of `BaseAlgorithm` to use for training.
     """
 
     def __init__(
@@ -52,6 +53,7 @@ class Trainer(ParallelWorkerBase):
         daemon: bool = True,
         tracer: Union[BaseTracer, str, dict, None] = None,
         triplet_exporter: Union[TripletExporter, dict, None] = None,
+        algorithm: Union[BaseAlgorithm, str, dict, None] = None,
     ):
         super().__init__()
         self.n_workers = n_workers
@@ -219,17 +221,39 @@ class Trainer(ParallelWorkerBase):
     def fit(
         self,
         agent: LitAgent,
-        backend: Union[str, AgentLightningClient],
+        train_data: Union[str, AgentLightningClient, Dataset],
+        *,
+        test_data: Union[str, AgentLightningClient, Dataset, None] = None,
+        dev_data: Union[str, AgentLightningClient, None] = None,
         dev_backend: Union[str, AgentLightningClient, None] = None,
     ):
+        """Train the agent using the provided data.
+
+        Each data argument can be a string URL connecting to a agent-lightning server,
+        or an AgentLightningClient instance connecting to a server (or mock server), or a dataset.
+        If no algorithm is provided when instantiating the trainer, the data must be
+        provided to connecting a server. Otherwise, dataset is also allowed and will be
+        passed to the algorithm.
+
+        If the algorithm is instantiated and there is no URL/client provided,
+        the algorithm will be responsible for creating a client that will connect to itself.
+        It can also create a mock client if the algorithm does not require a server.
+        """
+
+        if dev_backend is not None:
+            warnings.warn("dev_backend is deprecated. Use dev_data instead.")
+            if dev_data is not None:
+                raise ValueError("dev_data and dev_backend cannot be provided at the same time.")
+            dev_data = dev_backend
+
         if self.dev:
-            if dev_backend is None:
-                raise ValueError("dev_backend must be provided when dev=True.")
-            logger.warning(f"Running in dev mode. Using dev backend: {dev_backend}")
-            self.init(dev_backend)
+            if dev_data is None:
+                raise ValueError("dev_data must be provided when dev=True.")
+            logger.warning(f"Running in dev mode. Using dev backend: {dev_data}")
+            self.init(dev_data)
         else:
-            logger.debug(f"Running in non-dev mode. Using backend: {backend}")
-            self.init(backend)
+            logger.debug(f"Running in non-dev mode. Using data backend: {train_data}")
+            self.init(train_data)
 
         processes: List[multiprocessing.Process] = []
 

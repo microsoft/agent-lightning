@@ -3,6 +3,7 @@ from __future__ import annotations
 import weakref
 from typing import Any, Optional, TYPE_CHECKING
 
+from agentlightning.client import AgentLightningClient
 from agentlightning.types import Dataset
 
 if TYPE_CHECKING:
@@ -53,4 +54,15 @@ class BaseAlgorithm:
         Returns:
             Algorithm should refrain from returning anything. It should just run the algorithm.
         """
-        pass
+        raise NotImplementedError("Subclasses must implement run().")
+
+    def get_client(self) -> AgentLightningClient:
+        """Get the client to communicate with the algorithm.
+
+        If the algorithm does not require a server-client communication, it can also create a mock client
+        that never communicates with itself.
+
+        Returns:
+            The AgentLightningClient instance associated with this algorithm.
+        """
+        raise NotImplementedError("Subclasses must implement get_client().")
