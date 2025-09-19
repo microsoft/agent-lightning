@@ -233,18 +233,14 @@ class Trainer(ParallelWorkerBase):
 
         processes: List[multiprocessing.Process] = []
 
-        # Determine if the agent is asynchronous.
-        is_async = (
-            hasattr(agent, "training_rollout_async")
-            and agent.__class__.training_rollout_async is not LitAgent.training_rollout_async
-        )
+        # Determine if the agent is asynchronous
 
-        mode = "asynchronous" if is_async else "synchronous"
+        mode = "asynchronous" if agent.is_async else "synchronous"
 
         try:
             if self.n_workers == 1:
                 logger.info(f"Running with n_workers=1 ({mode} in main process).")
-                num_tasks = self._worker_main_loop(agent, 0, is_async)
+                num_tasks = self._worker_main_loop(agent, 0, agent.is_async)
                 logger.info(f"Single worker mode finished. Tasks processed: {num_tasks}")
             else:
                 logger.info(f"Running with n_workers={self.n_workers} ({mode} multiprocessing).")
@@ -252,7 +248,7 @@ class Trainer(ParallelWorkerBase):
                     process_name = f"AgentLightning-Worker-{i}"
                     p = multiprocessing.Process(
                         target=self._worker_main_loop,
-                        args=(agent, i, is_async),
+                        args=(agent, i, agent.is_async),
                         daemon=self.daemon,
                         name=process_name,
                     )

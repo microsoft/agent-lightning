@@ -169,8 +169,8 @@ class AgentRunner(ParallelWorkerBase):
                 # Pass the task input, not the whole task object
                 if is_v0_1_rollout_api(rollout_method):
                     result = rollout_method(
-                        task.input, rollout_id=rollout_obj.rollout_id, resources=resources_update.resources
-                    )
+                        task.input, rollout_id=rollout_obj.rollout_id, resources=resources_update.resources  # type: ignore
+                    )  # type: ignore
                 else:
                     result = rollout_method(task.input, resources=resources_update.resources, rollout=rollout_obj)
                 rollout_obj = self._to_rollout_object(result, task.rollout_id)
@@ -245,8 +245,8 @@ class AgentRunner(ParallelWorkerBase):
                 # Pass the task input, not the whole task object
                 if is_v0_1_rollout_api(rollout_method):
                     result = await rollout_method(
-                        task.input, rollout_id=rollout_obj.rollout_id, resources=resources_update.resources
-                    )
+                        task.input, rollout_id=rollout_obj.rollout_id, resources=resources_update.resources  # type: ignore
+                    )  # type: ignore
                 else:
                     result = await rollout_method(task.input, resources=resources_update.resources, rollout=rollout_obj)
                 rollout_obj = self._to_rollout_object(result, task.rollout_id)

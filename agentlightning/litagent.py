@@ -3,7 +3,7 @@ from __future__ import annotations
 import inspect
 import logging
 import weakref
-from typing import Any, Callable, List, Dict, Union, Optional, TYPE_CHECKING
+from typing import Any, Callable, Coroutine, List, Dict, Union, Optional, TYPE_CHECKING, TypeVar, Generic
 
 from .types import LLM, NamedResources, Rollout, Task, TaskInput, Triplet, RolloutRawResult
 
@@ -14,6 +14,8 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger(__name__)
+
+T = TypeVar("T")
 
 
 def is_v0_1_rollout_api(func: Callable) -> bool:
@@ -26,7 +28,7 @@ def is_v0_1_rollout_api(func: Callable) -> bool:
     return "rollout_id" in inspect.signature(func).parameters
 
 
-class LitAgent:
+class LitAgent(Generic[T]):
     """Base class for the training and validation logic of an agent.
 
     Developers should subclass this class and implement the rollout methods
@@ -46,6 +48,27 @@ class LitAgent:
         self.trained_agents = trained_agents
         self._trainer_ref: weakref.ReferenceType[Trainer] | None = None
         self._runner_ref: weakref.ReferenceType[AgentRunner] | None = None
+
+    @property
+    def is_async(self) -> bool:
+        """
+        Check if the agent implements asynchronous rollout methods.
+        Override this property for customized async detection logic.
+
+        Returns:
+            True if the agent has custom async rollout methods, False otherwise.
+        """
+        return (
+            (
+                hasattr(self, "training_rollout_async")
+                and self.__class__.training_rollout_async is not LitAgent.training_rollout_async
+            )
+            or (
+                hasattr(self, "validation_rollout_async")
+                and self.__class__.validation_rollout_async is not LitAgent.validation_rollout_async
+            )
+            or (hasattr(self, "rollout_async") and self.__class__.rollout_async is not LitAgent.rollout_async)
+        )
 
     def set_trainer(self, trainer: Trainer) -> None:
         """
@@ -131,7 +154,62 @@ class LitAgent:
         logging. By default, this is a no-op.
         """
 
-    def training_rollout(self, task: TaskInput, resources: NamedResources, rollout: Rollout) -> RolloutRawResult:
+    def rollout(self, task: T, resources: NamedResources, rollout: Rollout) -> RolloutRawResult:
+        """Main entry point for executing a rollout.
+
+        This method determines whether to call the synchronous or
+        asynchronous rollout method based on the agent's implementation.
+
+        If you don't wish to implement both training rollout and validation
+        rollout separately, you can just implement `rollout` which will work for both.
+
+        Args:
+            task: The task object received from the server, containing the
+                  input data and metadata.
+            resources: A dictionary of named resources (e.g., LLMs, prompt
+                       templates) for the agent to use.
+            rollout: The full rollout object, please avoid from directly modifying it.
+                     Most agents should only use `task` and `resources`. Use `rollout`
+                     only if you need to access metadata like `rollout_id`.
+
+        Returns:
+            The result of the rollout, which can be one of:
+            - None. The tracing should be handled by the agent runner.
+            - A float representing the final reward.
+            - A list of `Triplet` objects for detailed, step-by-step feedback.
+            - A list of `ReadableSpan` objects for OpenTelemetry tracing.
+            - A list of dictionaries for any trace spans.
+            - A complete `Rollout` object for full control over reporting.
+        """
+        raise NotImplementedError("Agents must implement the `rollout` method.")
+
+    async def rollout_async(self, task: T, resources: NamedResources, rollout: Rollout) -> RolloutRawResult:
+        """Asynchronous version of the main rollout method.
+
+        This method determines whether to call the synchronous or
+        asynchronous rollout method based on the agent's implementation.
+
+        Args:
+            task: The task object received from the server, containing the
+                  input data and metadata.
+            resources: A dictionary of named resources (e.g., LLMs, prompt
+                       templates) for the agent to use.
+            rollout: The full rollout object, please avoid from directly modifying it.
+                     Most agents should only use `task` and `resources`. Use `rollout`
+                     only if you need to access metadata like `rollout_id`.
+
+        Returns:
+            The result of the rollout, which can be one of:
+            - None. The tracing should be handled by the agent runner.
+            - A float representing the final reward.
+            - A list of `Triplet` objects for detailed, step-by-step feedback.
+            - A list of `ReadableSpan` objects for OpenTelemetry tracing.
+            - A list of dictionaries for any trace spans.
+            - A complete `Rollout` object for full control over reporting.
+        """
+        raise NotImplementedError("Agents must implement the `rollout_async` method for async operations.")
+
+    def training_rollout(self, task: T, resources: NamedResources, rollout: Rollout) -> RolloutRawResult:
         """Defines the agent's behavior for a single training task.
 
         This method should contain the logic for how the agent processes an
@@ -143,20 +221,11 @@ class LitAgent:
                   input data and metadata.
             resources: A dictionary of named resources (e.g., LLMs, prompt
                        templates) for the agent to use.
-            rollout: The full rollout object, avoid from modifying it.
-
-        Returns:
-            The result of the rollout, which can be one of:
-            - None. The tracing should be handled by the agent runner.
-            - A float representing the final reward.
-            - A list of `Triplet` objects for detailed, step-by-step feedback.
-            - A list of `ReadableSpan` objects for OpenTelemetry tracing.
-            - A list of dictionaries for any trace spans.
-            - A complete `Rollout` object for full control over reporting.
+            rollout: The full rollout object, please avoid from directly modifying it.
         """
-        raise NotImplementedError("Subclasses must implement the `training_rollout` method.")
+        return self.rollout(task, resources, rollout)
 
-    def validation_rollout(self, task: TaskInput, resources: NamedResources, rollout: Rollout) -> RolloutRawResult:
+    def validation_rollout(self, task: T, resources: NamedResources, rollout: Rollout) -> RolloutRawResult:
         """Defines the agent's behavior for a single validation task.
 
         By default, this method redirects to `training_rollout`. Override it
@@ -169,15 +238,13 @@ class LitAgent:
             rollout: The full rollout object, avoid from modifying it.
 
         Returns:
-            The result of the validation rollout. See `training_rollout` for
+            The result of the validation rollout. See `rollout` for
             possible return types.
         """
-        if is_v0_1_rollout_api(self.training_rollout):
-            return self.training_rollout(task, rollout_id=rollout.rollout_id, resources=resources)  # type: ignore
-        return self.training_rollout(task, resources=resources, rollout=rollout)
+        return self.rollout(task, resources, rollout)
 
     async def training_rollout_async(
-        self, task: TaskInput, resources: NamedResources, rollout: Rollout
+        self, task: T, resources: NamedResources, rollout: Rollout
     ) -> RolloutRawResult:
         """Asynchronous version of `training_rollout`.
 
@@ -190,12 +257,13 @@ class LitAgent:
             rollout: The full rollout object, avoid from modifying it.
 
         Returns:
-            The result of the asynchronous training rollout.
+            The result of the asynchronous training rollout. See `rollout` for
+            possible return types.
         """
-        raise NotImplementedError("Async agents must implement the `training_rollout_async` method.")
+        return self.rollout(task, resources, rollout)
 
     async def validation_rollout_async(
-        self, task: TaskInput, resources: NamedResources, rollout: Rollout
+        self, task: T, resources: NamedResources, rollout: Rollout
     ) -> RolloutRawResult:
         """Asynchronous version of `validation_rollout`.
 
@@ -208,20 +276,184 @@ class LitAgent:
             rollout: The full rollout object, avoid from modifying it.
 
         Returns:
-            The result of the asynchronous validation rollout.
+            The result of the asynchronous validation rollout. See `rollout` for
+            possible return types.
         """
-        if is_v0_1_rollout_api(self.training_rollout_async):
-            return await self.training_rollout_async(task, rollout_id=rollout.rollout_id, resources=resources)  # type: ignore
-        return await self.training_rollout_async(task, resources=resources, rollout=rollout)
+        return self.rollout(task, resources, rollout)
 
 
-# Helper functions to creately create a LitAgent without the class
+LlmRolloutFunc = Union[
+    Callable[[T, LLM, Rollout], RolloutRawResult],
+    Callable[[T, LLM], RolloutRawResult],
+    Callable[[T, LLM, Rollout], Coroutine[Any, Any, RolloutRawResult]],
+    Callable[[T, LLM], Coroutine[Any, Any, RolloutRawResult]],
+]
 
-# def llm_rollout(func: (TaskInput, LLM, Rollout) -> RolloutRawResult | (TaskInput, LLM) -> RolloutRawResult) -> LitAgent:
-#     ...
 
-# def lit_agent(func: (TaskInput, LLM, Rollout) -> RolloutRawResult | (TaskInput, LLM) -> RolloutRawResult) -> LitAgent:
-#     if # satisfies the llm rollout api
-#         return llm_rollout(func)
-#     else:
-#         raise not implemented error
+class LitAgentLLM(LitAgent[T]):
+    """A specialized LitAgent that wraps a function-based rollout that accepts
+    dynamically a task input and a configured LLM.
+
+    This class allows users to define agent behavior using a simple function
+    that takes task input and an LLM resource, rather than implementing a full
+    LitAgent subclass.
+    """
+
+    def __init__(self, llm_rollout_func: LlmRolloutFunc[T], *, trained_agents: Optional[str] = None) -> None:
+        """
+        Initialize the LitAgentLLM with an LLM rollout function.
+
+        Args:
+            llm_rollout_func: A function that defines the agent's behavior.
+                              Can be sync or async, and can optionally accept a Rollout parameter.
+            trained_agents: Optional string representing the trained agents.
+                            This can be used to track which agents have been trained by this instance.
+        """
+        super().__init__(trained_agents=trained_agents)
+        self.llm_rollout_func = llm_rollout_func
+        self._is_async = inspect.iscoroutinefunction(llm_rollout_func)
+        self._accepts_rollout = "rollout" in inspect.signature(llm_rollout_func).parameters
+
+    @property
+    def is_async(self) -> bool:
+        return self._is_async
+
+    def rollout(self, task: T, resources: NamedResources, rollout: Rollout) -> RolloutRawResult:
+        """Execute a synchronous rollout using the wrapped function.
+
+        Args:
+            task: The task input data.
+            resources: Dictionary of named resources including LLMs.
+            rollout: The rollout object with metadata.
+
+        Returns:
+            The result from the wrapped rollout function.
+        """
+        if self._is_async:
+            raise RuntimeError("This LitAgentLLM uses an async function. Use rollout_async instead.")
+
+        # Find the first LLM resource
+        llm = self._get_llm_resource(resources)
+
+        if self._accepts_rollout:
+            return self.llm_rollout_func(task, llm=llm, rollout=rollout)  # type: ignore
+        else:
+            return self.llm_rollout_func(task, llm=llm)  # type: ignore
+
+    async def rollout_async(self, task: T, resources: NamedResources, rollout: Rollout) -> RolloutRawResult:
+        """Execute an asynchronous rollout using the wrapped function.
+
+        Args:
+            task: The task input data.
+            resources: Dictionary of named resources including LLMs.
+            rollout: The rollout object with metadata.
+
+        Returns:
+            The result from the wrapped rollout function.
+        """
+        if not self._is_async:
+            # Fall back to sync version if the function is not async
+            return self.rollout(task, resources, rollout)
+
+        # Find the first LLM resource
+        llm = self._get_llm_resource(resources)
+
+        if self._accepts_rollout:
+            return await self.llm_rollout_func(task, llm=llm, rollout=rollout)  # type: ignore
+        else:
+            return await self.llm_rollout_func(task, llm=llm)  # type: ignore
+
+    def _get_llm_resource(self, resources: NamedResources) -> LLM:
+        """Extract the first LLM resource from the resources dictionary.
+
+        Args:
+            resources: Dictionary of named resources.
+
+        Returns:
+            The first LLM resource found.
+
+        Raises:
+            ValueError: If no LLM resource is found.
+        """
+        resource_found: LLM | None = None
+        for name, resource in resources.items():
+            if isinstance(resource, LLM):
+                if resource_found is not None:
+                    logger.warning(f"Multiple LLM resources found in resources. Using the first one: '{name}'.")
+                    break
+                resource_found = resource
+
+        if resource_found is None:
+            raise ValueError("No LLM resource found in the provided resources.")
+        return resource_found
+
+
+def llm_rollout(func: LlmRolloutFunc[T], *, trained_agents: Optional[str] = None) -> LitAgentLLM[T]:
+    """Create a LitAgentLLM from a function that takes (task, llm[, rollout]).
+
+    This decorator allows you to define an agent using a simple function
+    instead of creating a full LitAgent subclass.
+
+    Args:
+        func: A function that defines the agent's behavior. Can be:
+              - sync: (task, llm) -> result
+              - sync with rollout: (task, llm, rollout) -> result
+              - async: async (task, llm) -> result
+              - async with rollout: async (task, llm, rollout) -> result
+        trained_agents: Optional string representing trained agents.
+
+    Returns:
+        A LitAgentLLM instance wrapping the provided function.
+
+    Example:
+        @llm_rollout
+        def my_agent(task, llm):
+            # Agent logic here
+            return response
+    """
+    return LitAgentLLM(func, trained_agents=trained_agents)
+
+
+def lit_agent(func: Union[LlmRolloutFunc[T], Callable], *, trained_agents: Optional[str] = None) -> LitAgent[T]:
+    """Create a LitAgent from a function, automatically detecting the appropriate type.
+
+    This function inspects the provided callable and creates the appropriate
+    agent type based on its signature.
+
+    Args:
+        func: A function that defines the agent's behavior.
+        trained_agents: Optional string representing trained agents.
+
+    Returns:
+        An appropriate LitAgent subclass instance.
+
+    Example:
+        @lit_agent
+        def my_agent(task, llm):
+            client = OpenAI(base_url=llm.endpoint)
+            response = client.chat.completions.create(
+                model=llm.model,
+                messages=[{"role": "user", "content": task.input}],
+            )
+
+    Raises:
+        NotImplementedError: If the function signature doesn't match any known patterns.
+    """
+    sig = inspect.signature(func)
+    params = list(sig.parameters.keys())
+
+    # Check if it matches the LLM rollout API pattern
+    # Should have at least 2 params, with the second one being 'llm' or typed as LLM
+    if len(params) >= 2:
+        second_param = sig.parameters[params[1]]
+        # Check if the second parameter is named 'llm' or has LLM type annotation
+        if second_param.name == "llm" or (
+            second_param.annotation != inspect.Parameter.empty
+            and (second_param.annotation == LLM or str(second_param.annotation).endswith("LLM"))
+        ):
+            return llm_rollout(func, trained_agents=trained_agents)
+
+    raise NotImplementedError(
+        f"Function signature {sig} does not match any known agent patterns. "
+        "Expected signatures: (task, llm[, rollout]) or async (task, llm[, rollout])"
+    )
