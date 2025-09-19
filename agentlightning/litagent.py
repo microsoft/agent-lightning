@@ -363,8 +363,7 @@ class LitAgentLLM(LitAgent[T]):
             The result from the wrapped rollout function.
         """
         if not self._is_async:
-            # Fall back to sync version if the function is not async
-            return self.rollout(task, resources, rollout)
+            raise RuntimeError("This LitAgentLLM uses an async function. Use rollout instead.")
 
         # Find the first LLM resource
         llm = self._get_llm_resource(resources)

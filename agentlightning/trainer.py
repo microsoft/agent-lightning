@@ -168,7 +168,9 @@ class Trainer(ParallelWorkerBase):
                 )
             elif client is None and self.algorithm is not None:
                 # Algorithm will be responsible for creating the client
-                return self.algorithm.get_client()  # type: ignore
+                client = self.algorithm.get_client()
+                logger.info(f"Algorithm created client: {client}")
+                return client
             return client
 
     def init(self, backend: Union[str, AgentLightningClient]) -> None:
@@ -285,6 +287,24 @@ class Trainer(ParallelWorkerBase):
             if proc.name().startswith("AgentLightning-"):
                 proc.kill()
 
+    def _terminate_processes(self, processes: List[multiprocessing.Process]) -> None:
+        if self.n_workers > 1 and len(processes) > 0:
+            for i, p in enumerate(processes):
+                if p.is_alive():
+                    logger.info(f"Terminating worker {i} (name: {p.name}, PID: {p.pid})...")
+                    p.terminate()
+                else:
+                    logger.info(f"Worker {i} (name: {p.name}, PID: {p.pid}) is not alive or has already terminated.")
+            for i, p in enumerate(processes):
+                if p.is_alive():
+                    p.join(timeout=10)  # Give some time to terminate
+                if p.is_alive():  # If still alive, kill
+                    logger.warning(
+                        f"Worker {i} (name: {p.name}, PID: {p.pid}) did not terminate gracefully, killing..."
+                    )
+                    p.kill()
+                    p.join(timeout=10)  # Ensure it's reaped
+
     def fit(
         self,
         agent: LitAgent,
@@ -384,7 +404,8 @@ class Trainer(ParallelWorkerBase):
                             validation_dataset=val_dataset,
                             dev_dataset=dev_dataset,
                         )
-                        logger.info("Algorithm exits. Waiting for the rest of workers to complete.")
+                        logger.info("Algorithm exits. Killing the workers.")
+                        self._terminate_processes(processes)
 
                     for i, p in enumerate(processes):
                         p.join()  # Wait for the process to complete
@@ -413,31 +434,18 @@ class Trainer(ParallelWorkerBase):
                             validation_dataset=val_dataset,
                             dev_dataset=dev_dataset,
                         )
+                        logger.info("Algorithm exits. Killing the workers.")
+                        self._terminate_processes(processes)
 
         except KeyboardInterrupt:
-            if self.n_workers > 1 and len(processes) > 0:
-                logger.info(f"KeyboardInterrupt received. Terminating workers...")
-                for i, p in enumerate(processes):
-                    if p.is_alive():
-                        logger.info(f"Terminating worker {i} (name: {p.name}, PID: {p.pid})...")
-                        p.terminate()
-                    else:
-                        logger.info(
-                            f"Worker {i} (name: {p.name}, PID: {p.pid}) is not alive or has already terminated."
-                        )
-                for i, p in enumerate(processes):
-                    if p.is_alive():
-                        p.join(timeout=10)  # Give some time to terminate
-                    if p.is_alive():  # If still alive, kill
-                        logger.warning(
-                            f"Worker {i} (name: {p.name}, PID: {p.pid}) did not terminate gracefully, killing..."
-                        )
-                        p.kill()
-                        p.join(timeout=10)  # Ensure it's reaped
+            logger.info("KeyboardInterrupt received. Killing the workers.")
+            self._terminate_processes(processes)
             logger.info(f"Workers terminated or single worker interrupted.")
             raise
         except Exception as e:
             logger.exception(f"Unhandled exception in fit method.")
+            self._terminate_processes(processes)
+            logger.info(f"Workers terminated or single worker interrupted.")
             raise
         finally:
             if self.daemon:
