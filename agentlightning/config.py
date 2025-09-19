@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 """
 This file is not carefully reviewed.
 It might contain unintentional bugs and issues.

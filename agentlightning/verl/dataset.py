@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 import torch
 from verl.utils.dataset.rl_dataset import RLHFDataset
 

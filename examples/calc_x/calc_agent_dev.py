@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 import os
 from agentlightning import Trainer, DevTaskLoader, LLM
 from calc_agent import CalcAgent

@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 from typing import Any, Dict, List, Optional, Union, Literal, Annotated
 
 from pydantic import BaseModel, Field, Discriminator

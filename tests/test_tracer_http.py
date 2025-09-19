@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 #!/usr/bin/env python3
 """
 Functional tests for HttpTracer with real HTTP requests.

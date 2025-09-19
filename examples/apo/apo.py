@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 import asyncio
 
 from agentlightning.server import AgentLightningServer

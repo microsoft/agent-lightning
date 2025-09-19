@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 import ray
 from copy import deepcopy
 

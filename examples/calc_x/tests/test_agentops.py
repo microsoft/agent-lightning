@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 import agentops
 from agentlightning.reward import reward
 from agentops.sdk.decorators import operation

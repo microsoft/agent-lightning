@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 import random
 from contextlib import contextmanager
 from copy import deepcopy

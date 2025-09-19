@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 # type: ignore
 
 # https://github.com/volcengine/verl/blob/bd94bd61fe4193e56f2845dc794004afbef7f818/examples/ppo_trainer/naive_chat_scheduler.py

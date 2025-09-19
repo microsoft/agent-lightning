@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 import dotenv
 import os
 import random

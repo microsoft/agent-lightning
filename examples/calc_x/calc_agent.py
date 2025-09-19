@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 import math
 import os
 import string

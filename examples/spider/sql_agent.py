@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 """
 Adapted from https://python.langchain.com/docs/tutorials/sql_qa/
 as well as https://langchain-ai.github.io/langgraph/tutorials/sql-agent/

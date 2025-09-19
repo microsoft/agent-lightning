@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 """
 This file is not carefully reviewed.
 It is to ensure the *somewhat* correctness of the code in agentlightning/config.py.
