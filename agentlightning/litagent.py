@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import inspect
 import logging
 import weakref
-from typing import Any, List, Dict, Union, Optional, TYPE_CHECKING
+from typing import Any, Callable, List, Dict, Union, Optional, TYPE_CHECKING
 
 from .types import LLM, NamedResources, Rollout, Task, TaskInput, Triplet, RolloutRawResult
 
@@ -13,6 +14,16 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger(__name__)
+
+
+def is_v0_1_rollout_api(func: Callable) -> bool:
+    """Check if the rollout API is v0.1.
+    Inspect the function signature to see if it has a rollout_id parameter.
+
+    Args:
+        func: The function to check.
+    """
+    return "rollout_id" in inspect.signature(func).parameters
 
 
 class LitAgent:
@@ -120,7 +131,7 @@ class LitAgent:
         logging. By default, this is a no-op.
         """
 
-    def training_rollout(self, task: TaskInput, rollout_id: str, resources: NamedResources) -> RolloutRawResult:
+    def training_rollout(self, task: TaskInput, resources: NamedResources, rollout: Rollout) -> RolloutRawResult:
         """Defines the agent's behavior for a single training task.
 
         This method should contain the logic for how the agent processes an
@@ -130,10 +141,9 @@ class LitAgent:
         Args:
             task: The task object received from the server, containing the
                   input data and metadata.
-            rollout_id: A unique identifier for the rollout, used for tracking
-                        and reporting purposes.
             resources: A dictionary of named resources (e.g., LLMs, prompt
                        templates) for the agent to use.
+            rollout: The full rollout object, avoid from modifying it.
 
         Returns:
             The result of the rollout, which can be one of:
@@ -146,7 +156,7 @@ class LitAgent:
         """
         raise NotImplementedError("Subclasses must implement the `training_rollout` method.")
 
-    def validation_rollout(self, task: TaskInput, rollout_id: str, resources: NamedResources) -> RolloutRawResult:
+    def validation_rollout(self, task: TaskInput, resources: NamedResources, rollout: Rollout) -> RolloutRawResult:
         """Defines the agent's behavior for a single validation task.
 
         By default, this method redirects to `training_rollout`. Override it
@@ -155,18 +165,19 @@ class LitAgent:
         Args:
             task: The task object received from the server, containing the
                   input data and metadata.
-            rollout_id: A unique identifier for the validation rollout,
-                        used for tracking and reporting purposes.
             resources: A dictionary of named resources for the agent to use.
+            rollout: The full rollout object, avoid from modifying it.
 
         Returns:
             The result of the validation rollout. See `training_rollout` for
             possible return types.
         """
-        return self.training_rollout(task, rollout_id, resources)
+        if is_v0_1_rollout_api(self.training_rollout):
+            return self.training_rollout(task, rollout_id=rollout.rollout_id, resources=resources)  # type: ignore
+        return self.training_rollout(task, resources=resources, rollout=rollout)
 
     async def training_rollout_async(
-        self, task: TaskInput, rollout_id: str, resources: NamedResources
+        self, task: TaskInput, resources: NamedResources, rollout: Rollout
     ) -> RolloutRawResult:
         """Asynchronous version of `training_rollout`.
 
@@ -175,9 +186,8 @@ class LitAgent:
 
         Args:
             task: The task object received from the server.
-            rollout_id: A unique identifier for the training rollout,
-                        used for tracking and reporting purposes.
             resources: A dictionary of named resources for the agent to use.
+            rollout: The full rollout object, avoid from modifying it.
 
         Returns:
             The result of the asynchronous training rollout.
@@ -185,7 +195,7 @@ class LitAgent:
         raise NotImplementedError("Async agents must implement the `training_rollout_async` method.")
 
     async def validation_rollout_async(
-        self, task: TaskInput, rollout_id: str, resources: NamedResources
+        self, task: TaskInput, resources: NamedResources, rollout: Rollout
     ) -> RolloutRawResult:
         """Asynchronous version of `validation_rollout`.
 
@@ -194,17 +204,24 @@ class LitAgent:
 
         Args:
             task: The task object received from the server.
-            rollout_id: A unique identifier for the validation rollout,
-                        used for tracking and reporting purposes.
             resources: A dictionary of named resources for the agent to use.
+            rollout: The full rollout object, avoid from modifying it.
 
         Returns:
             The result of the asynchronous validation rollout.
         """
-        return await self.training_rollout_async(task, rollout_id, resources)
+        if is_v0_1_rollout_api(self.training_rollout_async):
+            return await self.training_rollout_async(task, rollout_id=rollout.rollout_id, resources=resources)  # type: ignore
+        return await self.training_rollout_async(task, resources=resources, rollout=rollout)
 
 
 # Helper functions to creately create a LitAgent without the class
 
-# def llm_rollout(func: (TaskInput, LLM, Rollout) -> RolloutRawResult) -> LitAgent:
+# def llm_rollout(func: (TaskInput, LLM, Rollout) -> RolloutRawResult | (TaskInput, LLM) -> RolloutRawResult) -> LitAgent:
 #     ...
+
+# def lit_agent(func: (TaskInput, LLM, Rollout) -> RolloutRawResult | (TaskInput, LLM) -> RolloutRawResult) -> LitAgent:
+#     if # satisfies the llm rollout api
+#         return llm_rollout(func)
+#     else:
+#         raise not implemented error

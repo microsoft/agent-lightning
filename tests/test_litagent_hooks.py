@@ -59,10 +59,10 @@ class HookAgent(LitAgent):
         self.end_called = False
         self.end_rollout = None
 
-    def training_rollout(self, task, rollout_id, resources):
+    def training_rollout(self, task, resources, rollout):
         return 0.5
 
-    async def training_rollout_async(self, task, rollout_id, resources):
+    async def training_rollout_async(self, task, resources, rollout):
         return 0.5
 
     def on_rollout_start(self, task, runner, tracer):

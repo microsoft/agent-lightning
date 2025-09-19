@@ -1,4 +1,6 @@
-from typing import Any, Dict, List, Optional, Union, Literal, Annotated
+from __future__ import annotations
+
+from typing import Any, Dict, Generic, List, Optional, Protocol, TypeVar, Union, Literal, Annotated
 
 from pydantic import BaseModel, Field, Discriminator
 from opentelemetry.sdk.trace import ReadableSpan
@@ -18,7 +20,10 @@ __all__ = [
     "ResourcesUpdate",
     "GenericResponse",
     "ParallelWorkerBase",
+    "Dataset",
 ]
+
+T = TypeVar("T")
 
 
 class Triplet(BaseModel):
@@ -34,6 +39,9 @@ class Rollout(BaseModel):
     """The standard reporting object from client to server."""
 
     rollout_id: str
+
+    # Echoing the input task
+    task: Optional[Task] = None
 
     # Primary, high-level feedback
     final_reward: Optional[float] = None
@@ -202,3 +210,15 @@ class ParallelWorkerBase:
 
     def teardown(self, *args: Any, **kwargs: Any) -> None:
         pass
+
+
+class Dataset(Protocol, Generic[T]):
+    """The general interface for a dataset.
+
+    It's currently implemented as a protocol, having a similar interface to torch.utils.data.Dataset.
+    You don't have to inherit from this class; you can use a simple list if you want to.
+    """
+
+    def __getitem__(self, index: int) -> T: ...
+
+    def __len__(self) -> int: ...

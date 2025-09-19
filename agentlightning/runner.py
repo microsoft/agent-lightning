@@ -10,7 +10,7 @@ import agentops
 
 from opentelemetry.sdk.trace import ReadableSpan
 from .client import AgentLightningClient
-from .litagent import LitAgent
+from .litagent import LitAgent, is_v0_1_rollout_api
 from .types import Rollout, Task, Triplet, RolloutRawResult
 from .types import ParallelWorkerBase
 from .tracer.base import BaseTracer
@@ -155,7 +155,7 @@ class AgentRunner(ParallelWorkerBase):
             logger.error(f"{self._log_prefix(rollout_id)} Failed to fetch resources. Skipping.")
             return False
 
-        rollout_obj = Rollout(rollout_id=task.rollout_id)  # Default empty rollout
+        rollout_obj = Rollout(rollout_id=task.rollout_id, task=task)  # Default empty rollout
 
         try:
             try:
@@ -167,7 +167,12 @@ class AgentRunner(ParallelWorkerBase):
                 start_time = time.time()
                 rollout_method = self.agent.training_rollout if task.mode == "train" else self.agent.validation_rollout
                 # Pass the task input, not the whole task object
-                result = rollout_method(task.input, task.rollout_id, resources_update.resources)
+                if is_v0_1_rollout_api(rollout_method):
+                    result = rollout_method(
+                        task.input, rollout_id=rollout_obj.rollout_id, resources=resources_update.resources
+                    )
+                else:
+                    result = rollout_method(task.input, resources=resources_update.resources, rollout=rollout_obj)
                 rollout_obj = self._to_rollout_object(result, task.rollout_id)
                 end_time = time.time()
                 logger.info(
@@ -224,7 +229,7 @@ class AgentRunner(ParallelWorkerBase):
             logger.error(f"{self._log_prefix(rollout_id)} Failed to fetch resources. Skipping.")
             return False
 
-        rollout_obj = Rollout(rollout_id=task.rollout_id)  # Default empty rollout
+        rollout_obj = Rollout(rollout_id=task.rollout_id, task=task)  # Default empty rollout
 
         try:
             try:
@@ -238,7 +243,12 @@ class AgentRunner(ParallelWorkerBase):
                     self.agent.training_rollout_async if task.mode == "train" else self.agent.validation_rollout_async
                 )
                 # Pass the task input, not the whole task object
-                result = await rollout_method(task.input, task.rollout_id, resources_update.resources)
+                if is_v0_1_rollout_api(rollout_method):
+                    result = await rollout_method(
+                        task.input, rollout_id=rollout_obj.rollout_id, resources=resources_update.resources
+                    )
+                else:
+                    result = await rollout_method(task.input, resources=resources_update.resources, rollout=rollout_obj)
                 rollout_obj = self._to_rollout_object(result, task.rollout_id)
                 end_time = time.time()
                 logger.info(
