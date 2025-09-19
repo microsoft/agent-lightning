@@ -365,7 +365,7 @@ class LitAgentLLM(LitAgent[T]):
             The result from the wrapped rollout function.
         """
         if not self._is_async:
-            raise RuntimeError("This LitAgentLLM uses an async function. Use rollout instead.")
+            raise RuntimeError("This LitAgentLLM uses a sync function. Use rollout instead.")
 
         # Find the first LLM resource
         llm = self._get_llm_resource(resources)
