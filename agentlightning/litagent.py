@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 import inspect
 import logging
 import weakref
@@ -243,9 +244,7 @@ class LitAgent(Generic[T]):
         """
         return self.rollout(task, resources, rollout)
 
-    async def training_rollout_async(
-        self, task: T, resources: NamedResources, rollout: Rollout
-    ) -> RolloutRawResult:
+    async def training_rollout_async(self, task: T, resources: NamedResources, rollout: Rollout) -> RolloutRawResult:
         """Asynchronous version of `training_rollout`.
 
         This method should be implemented by agents that perform asynchronous
@@ -262,9 +261,7 @@ class LitAgent(Generic[T]):
         """
         return self.rollout(task, resources, rollout)
 
-    async def validation_rollout_async(
-        self, task: T, resources: NamedResources, rollout: Rollout
-    ) -> RolloutRawResult:
+    async def validation_rollout_async(self, task: T, resources: NamedResources, rollout: Rollout) -> RolloutRawResult:
         """Asynchronous version of `validation_rollout`.
 
         By default, this method redirects to `training_rollout_async`.
@@ -313,6 +310,13 @@ class LitAgentLLM(LitAgent[T]):
         self.llm_rollout_func = llm_rollout_func
         self._is_async = inspect.iscoroutinefunction(llm_rollout_func)
         self._accepts_rollout = "rollout" in inspect.signature(llm_rollout_func).parameters
+
+        # Copy function metadata to preserve type hints and other attributes
+        functools.update_wrapper(self, llm_rollout_func)
+
+    def __call__(self, *args, **kwargs):
+        """Make the agent instance callable, preserving the original function behavior."""
+        return self.llm_rollout_func(*args, **kwargs)
 
     @property
     def is_async(self) -> bool:
@@ -392,7 +396,8 @@ def llm_rollout(func: LlmRolloutFunc[T], *, trained_agents: Optional[str] = None
     """Create a LitAgentLLM from a function that takes (task, llm[, rollout]).
 
     This decorator allows you to define an agent using a simple function
-    instead of creating a full LitAgent subclass.
+    instead of creating a full LitAgent subclass. The returned LitAgentLLM
+    instance is callable, preserving the original function's behavior.
 
     Args:
         func: A function that defines the agent's behavior. Can be:
@@ -403,13 +408,20 @@ def llm_rollout(func: LlmRolloutFunc[T], *, trained_agents: Optional[str] = None
         trained_agents: Optional string representing trained agents.
 
     Returns:
-        A LitAgentLLM instance wrapping the provided function.
+        A callable LitAgentLLM instance that preserves the original function's
+        type hints and behavior while providing all agent functionality.
 
     Example:
         @llm_rollout
         def my_agent(task, llm):
             # Agent logic here
             return response
+
+        # Function is still callable with original behavior
+        result = my_agent(task, llm)
+
+        # Agent methods are also available
+        result = my_agent.rollout(task, resources, rollout)
     """
     return LitAgentLLM(func, trained_agents=trained_agents)
 
@@ -418,14 +430,16 @@ def lit_agent(func: Union[LlmRolloutFunc[T], Callable], *, trained_agents: Optio
     """Create a LitAgent from a function, automatically detecting the appropriate type.
 
     This function inspects the provided callable and creates the appropriate
-    agent type based on its signature.
+    agent type based on its signature. The returned agent instance is callable,
+    preserving the original function's behavior and type hints.
 
     Args:
         func: A function that defines the agent's behavior.
         trained_agents: Optional string representing trained agents.
 
     Returns:
-        An appropriate LitAgent subclass instance.
+        A callable LitAgent subclass instance that preserves the original function's
+        type hints and behavior while providing all agent functionality.
 
     Example:
         @lit_agent
@@ -435,6 +449,12 @@ def lit_agent(func: Union[LlmRolloutFunc[T], Callable], *, trained_agents: Optio
                 model=llm.model,
                 messages=[{"role": "user", "content": task.input}],
             )
+
+        # Function is still callable with original behavior
+        result = my_agent(task, llm)
+
+        # Agent methods are also available
+        result = my_agent.rollout(task, resources, rollout)
 
     Raises:
         NotImplementedError: If the function signature doesn't match any known patterns.
