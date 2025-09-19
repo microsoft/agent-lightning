@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 import json
 import re
 from enum import Enum
@@ -256,6 +258,11 @@ class TraceTree:
 
         # Case 4: LangGraph
         agent_name = self.span.attributes.get("langchain.chain.type")
+        if agent_name is not None:
+            return agent_name
+
+        # Case 5: agent-framework
+        agent_name = self.span.attributes.get("executor.id")
         if agent_name is not None:
             return agent_name
 

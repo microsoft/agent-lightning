@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 import torch
 from datasets import Dataset as HuggingFaceDataset
 from omegaconf import DictConfig

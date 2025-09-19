@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 import json
 import pickle
 import re

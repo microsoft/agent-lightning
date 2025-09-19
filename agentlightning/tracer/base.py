@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 from contextlib import contextmanager
 from typing import Iterator, List, Optional, Callable, Any, Awaitable
 

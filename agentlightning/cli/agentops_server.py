@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 import time
 from agentlightning.instrumentation.agentops import AgentOpsServerManager
 

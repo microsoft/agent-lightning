@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 from typing import List
 
 from vllm.entrypoints.cli.main import main

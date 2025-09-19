@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 import faiss
 from sentence_transformers import SentenceTransformer
 import pickle

@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 # type: ignore
 # The evaluation code is from https://github.com/taoyds/test-suite-sql-eval
 

@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 import asyncio
 import time
 from typing import Any, Dict, AsyncGenerator
