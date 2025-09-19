@@ -76,7 +76,7 @@ extend-exclude = '''
 [tool.isort]
 profile = "black"
 line_length = 120
-known_first_party = ["poml"]
+known_first_party = ["agentlightning"]
 extend_skip_glob = [
   "data/**",
   "_version.py",
