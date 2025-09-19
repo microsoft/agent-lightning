@@ -19,7 +19,7 @@ class VERL(BaseAlgorithm):
         override_conf = OmegaConf.create(config)
         self.config = OmegaConf.merge(base_cfg, override_conf)
 
-    def run(self, train_dataset: Dataset, val_dataset: Dataset):
+    def run(self, train_dataset: Dataset, val_dataset: Dataset, dev_dataset: Dataset):
         run_ppo(self.config, train_dataset, val_dataset)
 
     def get_client(self) -> AgentLightningClient:

@@ -43,7 +43,10 @@ class BaseAlgorithm:
         return self.run(*args, **kwargs)
 
     def run(
-        self, train_dataset: Optional[Dataset[Any]] = None, validation_dataset: Optional[Dataset[Any]] = None
+        self,
+        train_dataset: Optional[Dataset[Any]] = None,
+        validation_dataset: Optional[Dataset[Any]] = None,
+        dev_dataset: Optional[Dataset[Any]] = None,
     ) -> None:
         """Subclasses should implement this method to implement the algorithm.
 
@@ -66,3 +69,29 @@ class BaseAlgorithm:
             The AgentLightningClient instance associated with this algorithm.
         """
         raise NotImplementedError("Subclasses must implement get_client().")
+
+    def fit(
+        self,
+        agent: Any,
+        train_data: Optional[Dataset[Any]] = None,
+        test_data: Optional[Dataset[Any]] = None,
+        dev_data: Optional[Dataset[Any]] = None,
+        trainer: Optional[Trainer] = None,
+    ) -> None:
+        """Fit the algorithm with the provided agent and datasets.
+
+        Args:
+            agent: The agent to train.
+            train_data: The training dataset.
+            test_data: The test dataset.
+            dev_data: The development dataset.
+            trainer: The trainer instance.
+        """
+        if trainer is not None:
+            self.set_trainer(trainer)
+
+        self.run(
+            train_dataset=train_data,
+            validation_dataset=test_data,
+            dev_dataset=dev_data,
+        )

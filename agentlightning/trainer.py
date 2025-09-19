@@ -74,6 +74,8 @@ class Trainer(ParallelWorkerBase):
                 f"Invalid triplet_exporter type: {type(triplet_exporter)}. Expected TripletExporter, dict, or None."
             )
 
+        self.algorithm = self._make_algorithm(algorithm)
+
         if not self.daemon:
             logger.warning(
                 "daemon=False. Worker processes are non-daemonic. "
@@ -103,6 +105,74 @@ class Trainer(ParallelWorkerBase):
         if tracer is None:
             return AgentOpsTracer(agentops_managed=True, instrument_managed=True, daemon=self.daemon)
         raise ValueError(f"Invalid tracer type: {type(tracer)}. Expected BaseTracer, str, dict, or None.")
+
+    def _make_algorithm(self, algorithm: Union[BaseAlgorithm, str, dict, None]) -> Optional[BaseAlgorithm]:
+        """Creates an algorithm instance based on the provided configuration."""
+        if isinstance(algorithm, BaseAlgorithm):
+            return algorithm
+        if isinstance(algorithm, str):
+            module_name, class_name = algorithm.rsplit(".", 1)
+            module = importlib.import_module(module_name)
+            algorithm_cls = getattr(module, class_name)
+            return algorithm_cls()
+        if isinstance(algorithm, dict):
+            algorithm_type = algorithm.get("type")
+            if algorithm_type is None:
+                raise ValueError("algorithm dict must have a 'type' key with the class full name")
+            module_name, class_name = algorithm_type.rsplit(".", 1)
+            module = importlib.import_module(module_name)
+            algorithm_cls = getattr(module, class_name)
+            # Remove 'type' key and pass remaining keys as kwargs
+            algorithm_kwargs = {k: v for k, v in algorithm.items() if k != "type"}
+            return algorithm_cls(**algorithm_kwargs)
+        if algorithm is None:
+            return None
+        raise ValueError(f"Invalid algorithm type: {type(algorithm)}. Expected BaseAlgorithm, str, dict, or None.")
+
+    def _extract_client_from_data(
+        self, data: Union[str, AgentLightningClient, Dataset]
+    ) -> Optional[AgentLightningClient]:
+        """Extract client from data if it's a string URL or AgentLightningClient."""
+        if isinstance(data, str):
+            if not data.startswith("http://") and not data.startswith("https://"):
+                raise ValueError("String data must be a valid URL starting with http:// or https://")
+            return AgentLightningClient(endpoint=data)
+        elif isinstance(data, AgentLightningClient):
+            return data
+        elif isinstance(data, Dataset):
+            return None
+        else:
+            raise ValueError(f"Invalid data type: {type(data)}. Expected str, AgentLightningClient, or Dataset.")
+
+    def _extract_dataset_from_data(self, data: Union[str, AgentLightningClient, Dataset]) -> Optional[Dataset]:
+        """Extract dataset from data if it's a Dataset."""
+        if isinstance(data, Dataset):
+            return data
+        return None
+
+    def _determine_backend(
+        self,
+        train_data: Union[str, AgentLightningClient, Dataset],
+        dev_data: Union[str, AgentLightningClient, Dataset, None] = None,
+    ) -> Union[str, AgentLightningClient]:
+        """Determine which backend to use for initialization."""
+        if self.dev:
+            if dev_data is None:
+                raise ValueError("dev_data must be provided when dev=True.")
+            client = self._extract_client_from_data(dev_data)
+            if client is None:
+                raise ValueError("dev_data must be a string URL or AgentLightningClient when dev=True.")
+            return client
+        else:
+            client = self._extract_client_from_data(train_data)
+            if client is None and self.algorithm is None:
+                raise ValueError(
+                    "train_data must be a string URL or AgentLightningClient when no algorithm is provided."
+                )
+            elif client is None and self.algorithm is not None:
+                # Algorithm will be responsible for creating the client
+                return self.algorithm.get_client()  # type: ignore
+            return client
 
     def init(self, backend: Union[str, AgentLightningClient]) -> None:
         logger.info(f"Initializing Trainer...")
@@ -224,7 +294,7 @@ class Trainer(ParallelWorkerBase):
         train_data: Union[str, AgentLightningClient, Dataset],
         *,
         test_data: Union[str, AgentLightningClient, Dataset, None] = None,
-        dev_data: Union[str, AgentLightningClient, None] = None,
+        dev_data: Union[str, AgentLightningClient, Dataset, None] = None,
         dev_backend: Union[str, AgentLightningClient, None] = None,
     ):
         """Train the agent using the provided data.
@@ -246,14 +316,25 @@ class Trainer(ParallelWorkerBase):
                 raise ValueError("dev_data and dev_backend cannot be provided at the same time.")
             dev_data = dev_backend
 
+        # Extract datasets for algorithm if available
+        train_dataset = self._extract_dataset_from_data(train_data)
+        test_dataset = self._extract_dataset_from_data(test_data) if test_data else None
+        dev_dataset = self._extract_dataset_from_data(dev_data) if dev_data else None
+
+        # Initialize the algorithm with trainer if provided
+        if self.algorithm is not None:
+            self.algorithm.set_trainer(self)
+            # DO NOT RUN TRAINING HERE. Need to spawn the worker first.
+
+        # Determine the backend to use for client-server mode
+        backend = self._determine_backend(train_data, dev_data)
+
         if self.dev:
-            if dev_data is None:
-                raise ValueError("dev_data must be provided when dev=True.")
-            logger.warning(f"Running in dev mode. Using dev backend: {dev_data}")
-            self.init(dev_data)
+            logger.warning(f"Running in dev mode. Using dev backend: {backend}")
         else:
-            logger.debug(f"Running in non-dev mode. Using data backend: {train_data}")
-            self.init(train_data)
+            logger.debug(f"Running in non-dev mode. Using backend: {backend}")
+
+        self.init(backend)
 
         processes: List[multiprocessing.Process] = []
 
@@ -264,8 +345,25 @@ class Trainer(ParallelWorkerBase):
         try:
             if self.n_workers == 1:
                 logger.info(f"Running with n_workers=1 ({mode} in main process).")
+
+                # Warn if algorithm is set with single worker mode
+                if self.algorithm is not None:
+                    logger.warning(
+                        "Algorithm is set but using single worker mode. Algorithm will never get the chance to run."
+                    )
+                    # Ideally the single worker should be run in a separate thread or process.
+
                 num_tasks = self._worker_main_loop(agent, 0, agent.is_async)
                 logger.info(f"Single worker mode finished. Tasks processed: {num_tasks}")
+
+                # If algorithm is provided and we have datasets, run algorithm after worker completes
+                if self.algorithm is not None and train_dataset is not None:
+                    logger.info("Running algorithm training after worker completion.")
+                    self.algorithm.run(
+                        train_dataset=train_dataset,
+                        validation_dataset=test_dataset,
+                        dev_dataset=dev_dataset,
+                    )
             else:
                 logger.info(f"Running with n_workers={self.n_workers} ({mode} multiprocessing).")
                 for i in range(self.n_workers):
@@ -280,11 +378,17 @@ class Trainer(ParallelWorkerBase):
                     logger.info(f"Starting worker process {i} (name: {process_name})...")
                     p.start()
 
-                from agentlightning.tuner import verl
-
-                verl.main()
-
                 if self.daemon:
+                    # If algorithm is provided and we have datasets, pass them to the algorithm
+                    if self.algorithm is not None:
+                        logger.info("All workers have been spawned. Running algorithm training with provided datasets.")
+                        self.algorithm.run(
+                            train_dataset=train_dataset,
+                            validation_dataset=test_dataset,
+                            dev_dataset=dev_dataset,
+                        )
+                        logger.info("Algorithm exits. Waiting for the rest of workers to complete.")
+
                     for i, p in enumerate(processes):
                         p.join()  # Wait for the process to complete
                         logger.info(
@@ -304,6 +408,14 @@ class Trainer(ParallelWorkerBase):
                     import multiprocessing.process as multiprocessing_process
 
                     multiprocessing_process._children.clear()  # type: ignore
+
+                    if self.algorithm is not None:
+                        logger.info("Main process continues to run algorithm.")
+                        self.algorithm.run(
+                            train_dataset=train_dataset,
+                            validation_dataset=test_dataset,
+                            dev_dataset=dev_dataset,
+                        )
 
         except KeyboardInterrupt:
             if self.n_workers > 1 and len(processes) > 0:
