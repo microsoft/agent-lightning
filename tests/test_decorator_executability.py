@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 """Test that @llm_rollout and @rollout decorators preserve function executability."""
 
 import inspect
