@@ -28,9 +28,7 @@ def iter_python_files() -> list[Path]:
         check=True,
         cwd=REPO_ROOT,
     )
-    return [
-        REPO_ROOT / line.strip() for line in result.stdout.splitlines() if line.strip()
-    ]
+    return [REPO_ROOT / line.strip() for line in result.stdout.splitlines() if line.strip()]
 
 
 def main() -> int:
@@ -64,14 +62,10 @@ def main() -> int:
         )
 
     if missing_blank_line:
-        print(
-            "The following Python files are missing a blank line after the copyright header:"
-        )
+        print("The following Python files are missing a blank line after the copyright header:")
         for path in missing_blank_line:
             print(f" - {path}")
-        print(
-            "Ensure there is an empty line separating the header from the rest of the file."
-        )
+        print("Ensure there is an empty line separating the header from the rest of the file.")
 
     if missing_header or missing_blank_line:
         return 1
