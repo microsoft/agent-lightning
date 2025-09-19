@@ -33,8 +33,9 @@ jobs:
         run: |
           python scripts/check_python_headers.py
       - name: Run Black
-        run: |
-          black --check --diff --line-length=120 .
+        run: black --check .
+      - name: Run isort
+        run: isort --check-only .
 
   docs:
     name: Build documentation

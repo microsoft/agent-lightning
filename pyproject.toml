@@ -25,6 +25,7 @@ dev = [
   "pre-commit",
   "pytest-rerunfailures",
   "black",
+  "isort",
   "mkdocs",
   "mkdocs-material",
   "mkdocstrings[python]",
