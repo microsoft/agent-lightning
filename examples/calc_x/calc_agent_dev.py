@@ -30,4 +30,4 @@ def dev_task_loader() -> DevTaskLoader:
 
 
 if __name__ == "__main__":
-    Trainer(n_workers=1, dev=True, max_tasks=2).fit(CalcAgent(), "http://localhost:9999/", dev_task_loader())
+    Trainer(n_workers=1, dev=True, max_tasks=2).fit(CalcAgent(), "http://localhost:9999/", dev_data=dev_task_loader())

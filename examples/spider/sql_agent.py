@@ -551,4 +551,4 @@ def spider_dev_data():
 if __name__ == "__main__":
     dotenv.load_dotenv()
     agent, trainer = agentlightning.lightning_cli(LitSQLAgent, agentlightning.Trainer)
-    trainer.fit(agent, os.environ["VERL_API_BASE"], spider_dev_data())
+    trainer.fit(agent, os.environ["VERL_API_BASE"], dev_data=spider_dev_data())
