@@ -175,7 +175,7 @@ class Trainer(ParallelWorkerBase):
                 client = self.algorithm.get_client()
                 logger.info(f"Algorithm created client: {client}")
                 return client
-            elif client is not None:
+            if client is None:
                 raise ValueError(
                     "train_data must be a string URL or AgentLightningClient when no algorithm is provided."
                 )
