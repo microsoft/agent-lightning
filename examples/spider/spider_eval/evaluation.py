@@ -24,13 +24,13 @@
 # }
 ################################
 
-import os
-import json
-import sqlite3
 import argparse
+import json
+import os
+import sqlite3
 
-from .process_sql import get_schema, Schema, get_sql
 from .exec_eval import eval_exec_match
+from .process_sql import Schema, get_schema, get_sql
 
 # Flag to disable value evaluation
 DISABLE_VALUE = True

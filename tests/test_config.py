@@ -7,25 +7,26 @@ It can contain logically erroroneous expected values.
 Please do not use the file as a reference for the expected behavior of config.
 """
 
-import pytest
 import argparse
+import inspect
+import sys
+from typing import TypeVar  # Added for completeness if testing TypeVars directly
+from typing import _GenericAlias  # type: ignore
 from typing import (
     Any,
-    List,
-    Type,
-    Union,
-    Optional,
-    Tuple,
     Callable,
     Dict,
-    TypeVar,  # Added for completeness if testing TypeVars directly
-    _GenericAlias,  # type: ignore
-    get_origin,
+    List,
+    Optional,
+    Tuple,
+    Type,
+    Union,
     get_args,
+    get_origin,
 )
-import inspect
 from unittest import mock  # For mock.patch.object, mock.call, MagicMock etc.
-import sys
+
+import pytest
 
 from agentlightning import config
 

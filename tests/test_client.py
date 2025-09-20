@@ -2,22 +2,22 @@
 
 import asyncio
 import time
-from typing import Any, Dict, AsyncGenerator
+from typing import Any, AsyncGenerator, Dict
 
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient
 
 from agentlightning import (
+    LLM,
     AgentLightningClient,
     AgentLightningServer,
-    Rollout,
-    Triplet,
     NamedResources,
-    LLM,
     PromptTemplate,
     ResourcesUpdate,
+    Rollout,
     Task,
+    Triplet,
 )
 from agentlightning.client import DevTaskLoader
 

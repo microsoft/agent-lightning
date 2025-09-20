@@ -1,9 +1,9 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-import dotenv
 import os
 import random
 
+import dotenv
 from openai import OpenAI
 
 from agentlightning import configure_logger

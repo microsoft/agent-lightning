@@ -25,6 +25,7 @@ dev = [
   "pre-commit",
   "pytest-rerunfailures",
   "black",
+  "isort",
   "mkdocs",
   "mkdocs-material",
   "mkdocstrings[python]",
@@ -61,3 +62,22 @@ include = ["**/*.yaml", "**/*.yml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.black]
+line-length = 120
+target-version = ['py312']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  _version\.py
+)
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 120
+known_first_party = ["agentlightning"]
+extend_skip_glob = [
+  "data/**",
+  "_version.py",
+]

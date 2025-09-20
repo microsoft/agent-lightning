@@ -24,7 +24,6 @@ from typing import Any, Dict, List
 import torch
 from openai.types.chat.chat_completion import ChatCompletion
 from tensordict import TensorDict
-
 from verl.protocol import DataProto
 from verl.workers.rollout.async_server import ChatCompletionScheduler
 

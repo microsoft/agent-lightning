@@ -11,20 +11,20 @@ from __future__ import annotations
 import argparse
 import inspect
 import logging
+from typing import _GenericAlias  # type: ignore
 from typing import (
     Any,
+    Callable,
+    Dict,
     List,
+    Tuple,
     Type,
     TypeVar,
     Union,
-    _GenericAlias,  # type: ignore
-    get_origin,
     get_args,
-    Tuple,
-    Callable,
-    overload,
-    Dict,
+    get_origin,
     get_type_hints,
+    overload,
 )
 
 CliConfigurable = Any

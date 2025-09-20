@@ -5,18 +5,18 @@ from __future__ import annotations
 import logging
 import os
 from contextlib import contextmanager
-from typing import List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, List, Optional
 
-import agentops.sdk.core
 import agentops
+import agentops.sdk.core
 from agentops.sdk.core import TracingCore
 from agentops.sdk.processors import SpanProcessor
 from opentelemetry.sdk.trace import ReadableSpan
 
-from agentlightning.instrumentation.agentops import AgentOpsServerManager
 from agentlightning.instrumentation import instrument_all, uninstrument_all
-from .base import BaseTracer
+from agentlightning.instrumentation.agentops import AgentOpsServerManager
 
+from .base import BaseTracer
 
 if TYPE_CHECKING:
     from agentops.integration.callbacks.langchain import LangchainCallbackHandler

@@ -3,7 +3,7 @@
 import asyncio
 import inspect
 import warnings
-from typing import TypedDict, Optional
+from typing import Optional, TypedDict
 
 from agentops.sdk.decorators import operation
 

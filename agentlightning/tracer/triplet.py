@@ -3,11 +3,12 @@
 import json
 import re
 from enum import Enum
-from typing import List, Dict, Tuple, Optional, Any
+from typing import Any, Dict, List, Optional, Tuple
 
-from pydantic import BaseModel
 from opentelemetry import trace as trace_api
 from opentelemetry.sdk.trace import ReadableSpan
+from pydantic import BaseModel
+
 from agentlightning.types import Triplet
 
 

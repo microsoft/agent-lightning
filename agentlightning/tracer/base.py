@@ -1,9 +1,10 @@
 # Copyright (c) Microsoft. All rights reserved.
 
 from contextlib import contextmanager
-from typing import Iterator, List, Optional, Callable, Any, Awaitable
+from typing import Any, Awaitable, Callable, Iterator, List, Optional
 
 from opentelemetry.sdk.trace import ReadableSpan
+
 from agentlightning.types import ParallelWorkerBase
 
 
