@@ -16,6 +16,7 @@ dependencies = [
   "aiohttp",
   "opentelemetry-api>=1.35",
   "opentelemetry-sdk>=1.35",
+  "pydantic>=2.11",
 ]
 
 [project.optional-dependencies]
