@@ -5,6 +5,7 @@ repos:
       - id: end-of-file-fixer
       - id: trailing-whitespace
       - id: check-yaml
+        exclude: ^mkdocs\.yml$
       - id: check-toml
       - id: check-added-large-files
       - id: check-shebang-scripts-are-executable
