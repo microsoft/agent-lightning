@@ -17,6 +17,7 @@ dependencies = [
   "opentelemetry-api>=1.35",
   "opentelemetry-sdk>=1.35",
   "pydantic>=2.11",
+  "openai",
 ]
 
 [project.optional-dependencies]

@@ -695,9 +695,9 @@ def run_with_agentops_tracer() -> None:
 
         assert_expected_pairs_in_tree(tree.names_tuple(), AGENTOPS_EXPECTED_TREES[agent_func.__name__])
 
-        # for triplet in TripleTraceTripletAdaptertExporter().export(tracer.get_last_trace()):
+        # for triplet in TripleTraceTripletAdaptertExporter().adapt(tracer.get_last_trace()):
         #     print(triplet)
-        triplets = TraceTripletAdapter().export(tracer.get_last_trace())
+        triplets = TraceTripletAdapter().adapt(tracer.get_last_trace())
         assert (
             len(triplets) == AGENTOPS_EXPECTED_TRIPLETS_NUMBER[agent_func.__name__]
         ), f"Expected {AGENTOPS_EXPECTED_TRIPLETS_NUMBER[agent_func.__name__]} triplets, but got: {triplets}"
@@ -803,7 +803,7 @@ def test_run_with_agentops_tracer(agent_func):
 
         assert_expected_pairs_in_tree(tree.names_tuple(), AGENTOPS_EXPECTED_TREES[agent_func.__name__])
 
-        triplets = TraceTripletAdapter().export(tracer.get_last_trace())
+        triplets = TraceTripletAdapter().adapt(tracer.get_last_trace())
         assert (
             len(triplets) == AGENTOPS_EXPECTED_TRIPLETS_NUMBER[agent_func.__name__]
         ), f"Expected {AGENTOPS_EXPECTED_TRIPLETS_NUMBER[agent_func.__name__]} triplets, but got: {triplets}"

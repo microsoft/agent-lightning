@@ -38,7 +38,7 @@ class BaseTracer(ParallelWorkerBase):
 
     # Process the trace data
     if trace_tree:
-        rl_triplets = TraceTripletAdapter().export(spans)
+        rl_triplets = TraceTripletAdapter().adapt(spans)
         # ... do something with the triplets
     ```
     """
