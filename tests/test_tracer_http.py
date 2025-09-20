@@ -65,11 +65,11 @@ def test_normal_mode_sync_requests():
 
     # Verify span attributes
     for span in spans:
-        if span.attributes is not None:
-            assert "http.method" in span.attributes
-            assert "http.url" in span.attributes
-            assert "http.status_code" in span.attributes
-            assert span.attributes["http.status_code"] == 200
+        assert span.attributes is not None
+        assert "http.method" in span.attributes
+        assert "http.url" in span.attributes
+        assert "http.status_code" in span.attributes
+        assert span.attributes["http.status_code"] == 200
 
 
 @pytest.mark.flaky(reruns=3, reruns_delay=2)
@@ -153,20 +153,20 @@ def test_span_attributes_detailed():
 
     for span in spans:
         # Basic HTTP attributes
-        if span.attributes is not None:
-            assert "http.method" in span.attributes
-            assert "http.url" in span.attributes
-            assert "http.target" in span.attributes
-            assert "http.host" in span.attributes
-            assert "http.status_code" in span.attributes
+        assert span.attributes is not None
+        assert "http.method" in span.attributes
+        assert "http.url" in span.attributes
+        assert "http.target" in span.attributes
+        assert "http.host" in span.attributes
+        assert "http.status_code" in span.attributes
 
-            # Headers should be included
-            has_request_headers = any(key.startswith("http.request.header.") for key in span.attributes.keys())
-            assert has_request_headers
+        # Headers should be included
+        has_request_headers = any(key.startswith("http.request.header.") for key in span.attributes.keys())
+        assert has_request_headers
 
-            # Check for specific expected headers
-            assert "http.request.header.user-agent" in span.attributes
-            assert "http.request.header.accept" in span.attributes
+        # Check for specific expected headers
+        assert "http.request.header.user-agent" in span.attributes
+        assert "http.request.header.accept" in span.attributes
 
 
 @pytest.mark.flaky(reruns=3, reruns_delay=2)
@@ -181,18 +181,18 @@ def test_span_attributes_minimal():
 
     for span in spans:
         # Basic HTTP attributes should still be present
-        if span.attributes is not None:
-            assert "http.method" in span.attributes
-            assert "http.url" in span.attributes
-            assert "http.status_code" in span.attributes
+        assert span.attributes is not None
+        assert "http.method" in span.attributes
+        assert "http.url" in span.attributes
+        assert "http.status_code" in span.attributes
 
-            # Headers should not be included
-            has_request_headers = any(key.startswith("http.request.header.") for key in span.attributes.keys())
-            assert not has_request_headers
+        # Headers should not be included
+        has_request_headers = any(key.startswith("http.request.header.") for key in span.attributes.keys())
+        assert not has_request_headers
 
-            # Body should not be included
-            assert "http.request.body" not in span.attributes
-            assert "http.response.body" not in span.attributes
+        # Body should not be included
+        assert "http.request.body" not in span.attributes
+        assert "http.response.body" not in span.attributes
 
 
 @pytest.mark.flaky(reruns=3, reruns_delay=2)

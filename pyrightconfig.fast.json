@@ -1,0 +1,22 @@
+{
+  "include": ["agentlightning"],
+  "exclude": [
+    "**/data",
+    "**/assets",
+    "agentlightning/verl",
+    "agentlightning/instrumentation",
+    "agentlightning/algorithm/verl",
+    "agentlightning/cli/vllm.py"
+  ],
+
+  "pythonVersion": "3.12",
+
+  "typeCheckingMode": "strict",
+
+  "reportMissingTypeStubs": "none",
+  "reportUnknownMemberType": "error",
+  "reportUnknownVariableType": "error",
+  "reportMissingImports": "error",
+  "reportMissingModuleSource": "error",
+  "reportOptionalMemberAccess": "error"
+}

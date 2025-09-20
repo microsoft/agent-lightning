@@ -16,8 +16,8 @@ on:
 
 jobs:
 
-  lint:
-    name: Lint
+  lint-fast:
+    name: Lint - Fast
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -37,7 +37,26 @@ jobs:
       - name: Run isort
         run: isort --check-only .
       - name: Run pyright
-        run: pyright
+        run: pyright -p pyrightconfig.fast.json
+
+  lint-slow:
+    name: Lint - Slow
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: |
+          ./scripts/setup_stable_full.sh
+      - name: Run Black
+        run: black --check .
+      - name: Run isort
+        run: isort --check-only .
+      - name: Run pyright
+        run: pyright -p pyrightconfig.json
 
   docs:
     name: Build documentation

@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import os
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any, List, Optional
+from typing import TYPE_CHECKING, Any, Iterator, List, Optional
 
 import agentops
 import agentops.sdk.core
@@ -148,7 +148,7 @@ class AgentOpsTracer(BaseTracer):
             logger.info(f"[Worker {worker_id}] Instrumentation removed.")
 
     @contextmanager
-    def trace_context(self, name: Optional[str] = None):
+    def trace_context(self, name: Optional[str] = None) -> Iterator[LightningSpanProcessor]:
         """
         Starts a new tracing context. This should be used as a context manager.
 
