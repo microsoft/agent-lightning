@@ -175,7 +175,11 @@ class Trainer(ParallelWorkerBase):
                 client = self.algorithm.get_client()
                 logger.info(f"Algorithm created client: {client}")
                 return client
-            raise ValueError("train_data must be a string URL or AgentLightningClient when no algorithm is provided.")
+            elif client is not None:
+                raise ValueError(
+                    "train_data must be a string URL or AgentLightningClient when no algorithm is provided."
+                )
+            return client
 
     def init(self, backend: Union[str, AgentLightningClient]) -> None:
         logger.info(f"Initializing Trainer...")

@@ -484,7 +484,7 @@ class LitSQLAgent(agentlightning.LitAgent[Any]):
                 ),
             ).graph()
             try:
-                result = agent.invoke(
+                result = agent.invoke(  # type: ignore
                     {"question": question},  # type: ignore
                     {"callbacks": [self.tracer.get_langchain_callback_handler()], "recursion_limit": 100},  # type: ignore
                 )
