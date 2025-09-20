@@ -9,13 +9,13 @@ import time
 import warnings
 from typing import Any, Dict, List, Optional, TypeVar, Union
 
+from .adapter import TraceTripletAdapter
 from .algorithm.base import BaseAlgorithm
 from .client import AgentLightningClient
 from .litagent import LitAgent
 from .runner import AgentRunner
 from .tracer.agentops import AgentOpsTracer
 from .tracer.base import BaseTracer
-from .tracer.triplet import TripletExporter
 from .types import Dataset, ParallelWorkerBase
 
 logger = logging.getLogger(__name__)
@@ -41,7 +41,7 @@ class Trainer(ParallelWorkerBase):
         tracer: A tracer instance, or a string pointing to the class full name or a dictionary with a 'type' key
                 that specifies the class full name and other initialization parameters.
                 If None, a default `AgentOpsTracer` will be created with the current settings.
-        triplet_exporter: An instance of `TripletExporter` to export triplets from traces,
+        triplet_exporter: An instance of `TraceTripletAdapter` to export triplets from traces,
                           or a dictionary with the initialization parameters for the exporter.
         algorithm: An instance of `BaseAlgorithm` to use for training.
     """
@@ -54,7 +54,7 @@ class Trainer(ParallelWorkerBase):
         max_tasks: Optional[int] = None,
         daemon: bool = True,
         tracer: Union[BaseTracer, str, Dict[str, Any], None] = None,
-        triplet_exporter: Union[TripletExporter, Dict[str, Any], None] = None,
+        triplet_exporter: Union[TraceTripletAdapter, Dict[str, Any], None] = None,
         algorithm: Union[BaseAlgorithm, str, Dict[str, Any], None] = None,
     ):
         super().__init__()
@@ -65,12 +65,12 @@ class Trainer(ParallelWorkerBase):
         self._client: AgentLightningClient | None = None  # Will be initialized in fit method
 
         self.tracer = self._make_tracer(tracer)
-        if isinstance(triplet_exporter, TripletExporter):
+        if isinstance(triplet_exporter, TraceTripletAdapter):
             self.triplet_exporter = triplet_exporter
         elif isinstance(triplet_exporter, dict):
-            self.triplet_exporter = TripletExporter(**triplet_exporter)
+            self.triplet_exporter = TraceTripletAdapter(**triplet_exporter)
         elif triplet_exporter is None:
-            self.triplet_exporter = TripletExporter()
+            self.triplet_exporter = TraceTripletAdapter()
         else:
             raise ValueError(
                 f"Invalid triplet_exporter type: {type(triplet_exporter)}. Expected TripletExporter, dict, or None."

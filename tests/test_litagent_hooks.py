@@ -1,13 +1,16 @@
 # Copyright (c) Microsoft. All rights reserved.
 
 from contextlib import contextmanager
-from typing import Any, Iterator, List, Optional
+from typing import Any, Iterator, List, Optional, cast
 
 import pytest
 
 from agentlightning import LitAgent, ResourcesUpdate, Task
+from agentlightning.adapter import TraceTripletAdapter
+from agentlightning.client import AgentLightningClient
 from agentlightning.runner import AgentRunner
-from agentlightning.tracer import BaseTracer, TripletExporter
+from agentlightning.tracer import BaseTracer
+from agentlightning.types import Rollout
 
 
 class DummyTracer(BaseTracer):
@@ -60,7 +63,7 @@ class HookAgent(LitAgent[Any]):
         super().__init__()
         self.start_called = False
         self.end_called = False
-        self.end_rollout = None
+        self.end_rollout: Rollout | None = None
 
     def training_rollout(self, task: Any, resources: Any, rollout: Any) -> float:
         return 0.5
@@ -81,12 +84,13 @@ def test_runner_calls_hooks():
     agent = HookAgent()
     client = DummyClient()
     tracer = DummyTracer()
-    runner = AgentRunner(agent, client, tracer, TripletExporter())  # type: ignore
+    runner = AgentRunner(agent, cast(AgentLightningClient, client), tracer, TraceTripletAdapter())
 
     assert runner.run() is True
     assert agent.start_called
     assert agent.end_called
-    assert agent.end_rollout.final_reward == 0.5  # type: ignore
+    assert agent.end_rollout is not None
+    assert agent.end_rollout.final_reward == 0.5
 
 
 @pytest.mark.asyncio
@@ -94,9 +98,10 @@ async def test_runner_calls_hooks_async():
     agent = HookAgent()
     client = DummyAsyncClient()
     tracer = DummyTracer()
-    runner = AgentRunner(agent, client, tracer, TripletExporter())  # type: ignore
+    runner = AgentRunner(agent, cast(AgentLightningClient, client), tracer, TraceTripletAdapter())
 
     assert await runner.run_async() is True
     assert agent.start_called
     assert agent.end_called
-    assert agent.end_rollout.final_reward == 0.5  # type: ignore
+    assert agent.end_rollout is not None
+    assert agent.end_rollout.final_reward == 0.5

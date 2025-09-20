@@ -7,9 +7,9 @@ from typing import Any, Dict, List, Optional, cast
 
 from opentelemetry.sdk.trace import ReadableSpan
 
+from .adapter import TraceTripletAdapter
 from .client import AgentLightningClient
 from .litagent import LitAgent, is_v0_1_rollout_api
-from .tracer import TripletExporter
 from .tracer.base import BaseTracer
 from .types import ParallelWorkerBase, Rollout, RolloutRawResult, Triplet
 
@@ -37,7 +37,7 @@ class AgentRunner(ParallelWorkerBase):
         agent: LitAgent[Any],
         client: AgentLightningClient,
         tracer: BaseTracer,
-        triplet_exporter: TripletExporter,
+        triplet_exporter: TraceTripletAdapter,
         worker_id: Optional[int] = None,
         max_tasks: Optional[int] = None,
     ):
@@ -110,7 +110,7 @@ class AgentRunner(ParallelWorkerBase):
 
         # Always extract triplets from the trace using TripletExporter
         if trace_spans:
-            triplets = self.triplet_exporter.export(trace_spans)
+            triplets = self.triplet_exporter(trace_spans)
 
         # If the agent has triplets, use the last one for final reward if not set
         if triplets and triplets[-1].reward is not None and final_reward is None:

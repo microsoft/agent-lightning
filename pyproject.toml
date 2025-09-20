@@ -14,6 +14,8 @@ dependencies = [
   "uvicorn",
   "fastapi",
   "aiohttp",
+  "opentelemetry-api>=1.35",
+  "opentelemetry-sdk>=1.35",
 ]
 
 [project.optional-dependencies]
