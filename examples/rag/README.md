@@ -17,8 +17,8 @@ This example originally runs on a single node with four GPUs, each requiring at 
 
 To enable semantic retrieval with this mcp server, we need two files:
 
-1. **FAISS index file** (`.index`)  
-2. **Chunk list file** (`.pkl`)  
+1. **FAISS index file** (`.index`)
+2. **Chunk list file** (`.pkl`)
 
 These two files work together: the FAISS index stores the vector embeddings and their mapping to integer IDs, while the pickle file stores the actual text chunks. The integer IDs in the index correspond exactly to the positions in the chunk list.
 
@@ -26,40 +26,40 @@ These two files work together: the FAISS index stores the vector embeddings and 
 
 ### Step 1. Collecting Text Chunks
 
-You first need a collection of text passages (chunks). For example, you can download a Wikipedia-based dataset such as `wiki18_100w.zip` in the [FlashRAG_dataset](https://huggingface.co/datasets/FlashRAG) or use other pre-split corpora.  
+You first need a collection of text passages (chunks). For example, you can download a Wikipedia-based dataset such as `wiki18_100w.zip` in the [FlashRAG_dataset](https://huggingface.co/datasets/FlashRAG) or use other pre-split corpora.
 
 ---
 
 ### Step 2. Creating the FAISS Index (`nq_hnsw_faiss_n32e40.index`)
 
-- Use a sentence embedding model (e.g., `BAAI/bge-large-en-v1.5`) to encode each chunk into a vector.  
-- Build a FAISS index from these vectors.  
-- In this example, we use an **HNSW index** (Hierarchical Navigable Small World graph), which supports efficient approximate nearest-neighbor search.  
+- Use a sentence embedding model (e.g., `BAAI/bge-large-en-v1.5`) to encode each chunk into a vector.
+- Build a FAISS index from these vectors.
+- In this example, we use an **HNSW index** (Hierarchical Navigable Small World graph), which supports efficient approximate nearest-neighbor search.
 - The index only stores embeddings and integer IDs (no raw text).
 
 ---
 
 ### Step 3. Creating the Chunk List (`nq_list.pkl`)
 
-- Store the raw text chunks in a Python list.  
-- Save this list with `pickle`.  
+- Store the raw text chunks in a Python list.
+- Save this list with `pickle`.
 - The index ID returned by FAISS corresponds to the list index in this file. For example, if FAISS search returns `I[0][i] = 12345`, then the corresponding text chunk is `chunks[12345]`.
 
 ---
 
 ### Example Schema
 
-- **`nq_hnsw_faiss_n32e40.index`**  
-  - Type: FAISS HNSW index  
-  - Contains:  
-    - Vector embeddings  
-    - Graph structure for fast search  
-    - Integer IDs mapping to chunk positions  
+- **`nq_hnsw_faiss_n32e40.index`**
+  - Type: FAISS HNSW index
+  - Contains:
+    - Vector embeddings
+    - Graph structure for fast search
+    - Integer IDs mapping to chunk positions
 
-- **`nq_list.pkl`**  
-  - Type: Pickled Python list  
-  - Element type: string (or dict with text + metadata, depending on preprocessing)  
-  - Example:  
+- **`nq_list.pkl`**
+  - Type: Pickled Python list
+  - Element type: string (or dict with text + metadata, depending on preprocessing)
+  - Example:
     ```python
     [
         "The Eiffel Tower is located in Paris, France.",

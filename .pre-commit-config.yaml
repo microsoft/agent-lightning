@@ -1,4 +1,14 @@
 repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-yaml
+      - id: check-toml
+      - id: check-added-large-files
+      - id: check-shebang-scripts-are-executable
+      - id: detect-private-key
   - repo: https://github.com/pycqa/isort
     rev: 6.0.1
     hooks:

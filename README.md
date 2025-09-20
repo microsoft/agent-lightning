@@ -143,13 +143,13 @@ If you find Agent Lightning useful in your research or projects, please cite our
 
 ```bibtex
 @misc{luo2025agentlightningtrainai,
-      title={Agent Lightning: Train ANY AI Agents with Reinforcement Learning}, 
+      title={Agent Lightning: Train ANY AI Agents with Reinforcement Learning},
       author={Xufang Luo and Yuge Zhang and Zhiyuan He and Zilong Wang and Siyun Zhao and Dongsheng Li and Luna K. Qiu and Yuqing Yang},
       year={2025},
       eprint={2508.03680},
       archivePrefix={arXiv},
       primaryClass={cs.AI},
-      url={https://arxiv.org/abs/2508.03680}, 
+      url={https://arxiv.org/abs/2508.03680},
 }
 ```
 

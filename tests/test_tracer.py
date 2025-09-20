@@ -316,7 +316,7 @@ def agent_langgraph() -> None:
     # Generate SQL Query
     def generate_query(state: MessagesState):
         prompt = f"""
-    You are an agent for SQL ({db.dialect}). 
+    You are an agent for SQL ({db.dialect}).
     Write a query to answer the user. Limit results to 5. Do not modify data.
     """
         msg = {"role": "system", "content": prompt}

@@ -119,7 +119,7 @@ For each prompt, queue a task and wait for results. The `{"prompt": ...}` format
 ```python
 # Queue a task for clients to process
 task_id = await server.queue_task(
-    sample={"prompt": "What is the capital of France?"}, 
+    sample={"prompt": "What is the capital of France?"},
     mode="train"
 )
 

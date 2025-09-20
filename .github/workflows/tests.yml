@@ -29,6 +29,8 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e .[dev]
+      - name: Run pre-commit
+        uses: pre-commit/action@v3.0.1
       - name: Check Python headers
         run: |
           python scripts/check_python_headers.py
