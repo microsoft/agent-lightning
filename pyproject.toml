@@ -26,6 +26,7 @@ dev = [
   "pytest-rerunfailures",
   "black",
   "isort",
+  "pyright",
   "mkdocs",
   "mkdocs-material",
   "mkdocstrings[python]",

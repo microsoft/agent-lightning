@@ -288,23 +288,23 @@ class HttpTracer(BaseTracer):
             kwargs = {}
 
         # Create a queue to receive results from the subprocess
-        result_queue = multiprocessing.Queue[Any]()
+        result_queue = multiprocessing.Queue()  # type: ignore
 
         # Create and start the subprocess
         process = multiprocessing.Process(
-            target=self._subprocess_worker, args=(func, args, kwargs, result_queue, is_async)
+            target=self._subprocess_worker, args=(func, args, kwargs, result_queue, is_async)  # type: ignore
         )
         process.start()
 
         try:
             # Wait for the process to complete and get the result
             process.join(timeout=self.subprocess_timeout)
-            result = result_queue.get_nowait()
+            result = result_queue.get_nowait()  # type: ignore
 
             if result["success"]:
                 # Store the captured records for get_last_trace()
                 self._last_records = result["records"]
-                return result["return_value"]
+                return result["return_value"]  # type: ignore
             else:
                 if "records" in result:
                     self._last_records = result["records"]
@@ -327,7 +327,7 @@ class HttpTracer(BaseTracer):
         func: Callable[..., Any],
         args: Tuple[Any, ...],
         kwargs: Dict[str, Any],
-        result_queue: multiprocessing.Queue[Any],
+        result_queue: multiprocessing.Queue,  # type: ignore
         is_async: bool,
     ) -> None:
         """
@@ -367,7 +367,7 @@ class HttpTracer(BaseTracer):
             records = subprocess_tracer._last_records
 
             # Send success result back to parent
-            result_queue.put({"success": True, "return_value": return_value, "records": records})
+            result_queue.put({"success": True, "return_value": return_value, "records": records})  # type: ignore
 
         except Exception as e:
             # Log the exception
@@ -376,4 +376,4 @@ class HttpTracer(BaseTracer):
             # Get the captured records even when there's an exception
             records = subprocess_tracer._last_records
             # Send error result back to parent
-            result_queue.put({"success": False, "exception": e, "records": records})
+            result_queue.put({"success": False, "exception": e, "records": records})  # type: ignore
