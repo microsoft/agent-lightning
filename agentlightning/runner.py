@@ -108,7 +108,7 @@ class AgentRunner(ParallelWorkerBase):
                 trace = [json.loads(readable_span.to_json()) for readable_span in spans]
                 trace_spans = spans
 
-        # Always extract triplets from the trace using TripletExporter
+        # Always extract triplets from the trace using TraceTripletAdapter
         if trace_spans:
             triplets = self.triplet_exporter(trace_spans)
 

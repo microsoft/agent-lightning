@@ -73,7 +73,7 @@ class Trainer(ParallelWorkerBase):
             self.triplet_exporter = TraceTripletAdapter()
         else:
             raise ValueError(
-                f"Invalid triplet_exporter type: {type(triplet_exporter)}. Expected TripletExporter, dict, or None."
+                f"Invalid triplet_exporter type: {type(triplet_exporter)}. Expected TraceTripletAdapter, dict, or None."
             )
 
         self.algorithm = self._make_algorithm(algorithm)
