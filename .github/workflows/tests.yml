@@ -36,6 +36,8 @@ jobs:
         run: black --check .
       - name: Run isort
         run: isort --check-only .
+      - name: Run pyright
+        run: pyright
 
   docs:
     name: Build documentation
