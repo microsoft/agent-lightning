@@ -62,10 +62,10 @@ from openai import AsyncOpenAI, OpenAI
 from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
+from agentlightning.adapter.triplet import TraceTree, TraceTripletAdapter
 from agentlightning.reward import reward
 from agentlightning.tracer.agentops import AgentOpsTracer, LightningSpanProcessor
 from agentlightning.tracer.http import HttpTracer
-from agentlightning.tracer.triplet import TraceTree, TripletExporter
 from agentlightning.types import Triplet
 
 USE_OPENAI = os.environ.get("USE_OPENAI", "false").lower() == "true"
