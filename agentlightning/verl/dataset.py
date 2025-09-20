@@ -1,5 +1,7 @@
 # Copyright (c) Microsoft. All rights reserved.
 
+# type: ignore
+
 import torch
 from datasets import Dataset as HuggingFaceDataset
 from omegaconf import DictConfig

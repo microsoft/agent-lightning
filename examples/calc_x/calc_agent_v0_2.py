@@ -27,16 +27,16 @@ async def calc_agent(task: Any, llm: LLM) -> Any:
             prompt = task["question"] + " " + output_format
             result = await calc_agent.run(task=prompt)
             # evaluate
-            answer = re.search(r"###\s*ANSWER:\s*(.+?)(\s*###|$)", result.messages[-1].content)
+            answer = re.search(r"###\s*ANSWER:\s*(.+?)(\s*###|$)", result.messages[-1].content)  # type: ignore
             if answer:
                 answer = answer.group(1)
             else:
-                answer = result.messages[-1].content
+                answer = result.messages[-1].content  # type: ignore
         except Exception as e:
             print("Failure:", str(e))
             answer = "None"
-        reward = await eval(answer, str(task["result"]))  # reward is tracked with the decorator
-        print("answer: {} ground_truth: {} reward: {}".format(answer, task["result"], reward))
+        reward = await eval(answer, str(task["result"]))  # reward is tracked with the decorator  # type: ignore
+        print("answer: {} ground_truth: {} reward: {}".format(answer, task["result"], reward))  # type: ignore
 
 
 def main():
@@ -104,16 +104,16 @@ def main():
         },
     }
 
-    train_dataset = Dataset.from_parquet("data/train.parquet").to_list()
-    val_dataset = Dataset.from_parquet("data/test_mini.parquet").to_list()
+    train_dataset = Dataset.from_parquet("data/train.parquet").to_list()  # type: ignore
+    val_dataset = Dataset.from_parquet("data/test_mini.parquet").to_list()  # type: ignore
 
     print("First 5 rows of train dataset:")
-    print(train_dataset[:5])
+    print(train_dataset[:5])  # type: ignore
     print("First 5 rows of val dataset:")
-    print(val_dataset[:5])
+    print(val_dataset[:5])  # type: ignore
 
     trainer = Trainer(algorithm=VERL(rl_training_config), n_workers=2)
-    trainer.fit(calc_agent, train_dataset, val_data=val_dataset)
+    trainer.fit(calc_agent, train_dataset, val_data=val_dataset)  # type: ignore
 
 
 if __name__ == "__main__":

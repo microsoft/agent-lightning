@@ -9,14 +9,14 @@ original_on_chain_start = LangchainCallbackHandler.on_chain_start
 langgraph_entry = None
 
 
-def on_chain_start(self, serialized: Dict[str, Any], inputs: Dict[str, Any], **kwargs: Any) -> None:
+def on_chain_start(self: Any, serialized: Dict[str, Any], inputs: Dict[str, Any], **kwargs: Any) -> None:
     if "name" in kwargs:
-        if serialized is None:
+        if serialized is None:  # type: ignore
             serialized = {}
         serialized = serialized.copy()
         serialized["name"] = kwargs["name"]
     if "run_id" in kwargs:
-        if serialized is None:
+        if serialized is None:  # type: ignore
             serialized = {}
         serialized = serialized.copy()
         if "id" not in serialized:

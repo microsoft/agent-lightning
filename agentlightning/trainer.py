@@ -4,11 +4,10 @@ import asyncio
 import importlib
 import logging
 import multiprocessing
-import os
 import signal
 import time
 import warnings
-from typing import List, Optional, Union
+from typing import Any, Dict, List, Optional, TypeVar, Union
 
 from .algorithm.base import BaseAlgorithm
 from .client import AgentLightningClient
@@ -20,6 +19,8 @@ from .tracer.triplet import TripletExporter
 from .types import Dataset, ParallelWorkerBase
 
 logger = logging.getLogger(__name__)
+
+T_co = TypeVar("T_co", covariant=True)
 
 
 class Trainer(ParallelWorkerBase):
@@ -52,9 +53,9 @@ class Trainer(ParallelWorkerBase):
         n_workers: int = 1,
         max_tasks: Optional[int] = None,
         daemon: bool = True,
-        tracer: Union[BaseTracer, str, dict, None] = None,
-        triplet_exporter: Union[TripletExporter, dict, None] = None,
-        algorithm: Union[BaseAlgorithm, str, dict, None] = None,
+        tracer: Union[BaseTracer, str, Dict[str, Any], None] = None,
+        triplet_exporter: Union[TripletExporter, Dict[str, Any], None] = None,
+        algorithm: Union[BaseAlgorithm, str, Dict[str, Any], None] = None,
     ):
         super().__init__()
         self.n_workers = n_workers
@@ -84,7 +85,7 @@ class Trainer(ParallelWorkerBase):
                 "The cleanup must be handled manually."
             )
 
-    def _make_tracer(self, tracer: Union[BaseTracer, str, dict, None]) -> BaseTracer:
+    def _make_tracer(self, tracer: Union[BaseTracer, str, Dict[str, Any], None]) -> BaseTracer:
         """Creates a tracer instance based on the provided configuration."""
         if isinstance(tracer, BaseTracer):
             return tracer
@@ -107,7 +108,7 @@ class Trainer(ParallelWorkerBase):
             return AgentOpsTracer(agentops_managed=True, instrument_managed=True, daemon=self.daemon)
         raise ValueError(f"Invalid tracer type: {type(tracer)}. Expected BaseTracer, str, dict, or None.")
 
-    def _make_algorithm(self, algorithm: Union[BaseAlgorithm, str, dict, None]) -> Optional[BaseAlgorithm]:
+    def _make_algorithm(self, algorithm: Union[BaseAlgorithm, str, Dict[str, Any], None]) -> Optional[BaseAlgorithm]:
         """Creates an algorithm instance based on the provided configuration."""
         if isinstance(algorithm, BaseAlgorithm):
             return algorithm
@@ -131,7 +132,7 @@ class Trainer(ParallelWorkerBase):
         raise ValueError(f"Invalid algorithm type: {type(algorithm)}. Expected BaseAlgorithm, str, dict, or None.")
 
     def _extract_client_from_data(
-        self, data: Union[str, AgentLightningClient, Dataset]
+        self, data: Union[str, AgentLightningClient, Dataset[Any]]
     ) -> Optional[AgentLightningClient]:
         """Extract client from data if it's a string URL or AgentLightningClient."""
         if isinstance(data, str):
@@ -142,7 +143,9 @@ class Trainer(ParallelWorkerBase):
             return data
         return None
 
-    def _extract_dataset_from_data(self, data: Union[str, AgentLightningClient, Dataset]) -> Optional[Dataset]:
+    def _extract_dataset_from_data(
+        self, data: Union[str, AgentLightningClient, Dataset[Any]]
+    ) -> Optional[Dataset[Any]]:
         """Extract dataset from data if it's a Dataset."""
         if isinstance(data, str) or isinstance(data, AgentLightningClient):
             return None
@@ -150,8 +153,8 @@ class Trainer(ParallelWorkerBase):
 
     def _determine_backend(
         self,
-        train_data: Union[str, AgentLightningClient, Dataset],
-        dev_data: Union[str, AgentLightningClient, Dataset, None] = None,
+        train_data: Union[str, AgentLightningClient, Dataset[Any]],
+        dev_data: Union[str, AgentLightningClient, Dataset[Any], None] = None,
     ) -> Union[str, AgentLightningClient]:
         """Determine which backend to use for initialization."""
         if self.dev:
@@ -172,7 +175,7 @@ class Trainer(ParallelWorkerBase):
                 client = self.algorithm.get_client()
                 logger.info(f"Algorithm created client: {client}")
                 return client
-            return client
+            raise ValueError("train_data must be a string URL or AgentLightningClient when no algorithm is provided.")
 
     def init(self, backend: Union[str, AgentLightningClient]) -> None:
         logger.info(f"Initializing Trainer...")
@@ -203,7 +206,7 @@ class Trainer(ParallelWorkerBase):
                 self._client = backend
             else:
                 logger.info(f"Initializing AgentLightningClient with endpoint: {backend}")
-                if not isinstance(backend, str):
+                if not isinstance(backend, str):  # type: ignore
                     raise ValueError("backend must be a string URL or an AgentLightningClient instance.")
                 if not backend.startswith("http://") and not backend.startswith("https://"):
                     raise ValueError("backend must be a valid URL starting with http:// or https://")
@@ -213,7 +216,7 @@ class Trainer(ParallelWorkerBase):
             logger.warning("AgentLightningClient already initialized. Returning existing instance.")
         return self._client
 
-    def _worker_main_loop(self, agent: LitAgent, worker_id: int, is_async: bool):
+    def _worker_main_loop(self, agent: LitAgent[Any], worker_id: int, is_async: bool):
         """The main function for each worker process.
 
         This function initializes the client and the loop, then starts the
@@ -283,7 +286,7 @@ class Trainer(ParallelWorkerBase):
         """
         import psutil
 
-        for proc in psutil.process_iter():
+        for proc in psutil.process_iter():  # type: ignore
             # check whether the process name matches
             if proc.name().startswith("AgentLightning-"):
                 proc.kill()
@@ -308,11 +311,11 @@ class Trainer(ParallelWorkerBase):
 
     def fit(
         self,
-        agent: LitAgent,
-        train_data: Union[str, AgentLightningClient, Dataset],
+        agent: LitAgent[T_co],
+        train_data: Union[str, AgentLightningClient, Dataset[T_co]],
         *,
-        val_data: Union[str, AgentLightningClient, Dataset, None] = None,
-        dev_data: Union[str, AgentLightningClient, Dataset, None] = None,
+        val_data: Union[str, AgentLightningClient, Dataset[T_co], None] = None,
+        dev_data: Union[str, AgentLightningClient, Dataset[T_co], None] = None,
         dev_backend: Union[str, AgentLightningClient, None] = None,
     ):
         """Train the agent using the provided data.
@@ -443,7 +446,7 @@ class Trainer(ParallelWorkerBase):
             self._terminate_processes(processes)
             logger.info(f"Workers terminated or single worker interrupted.")
             raise
-        except Exception as e:
+        except Exception:
             logger.exception(f"Unhandled exception in fit method.")
             self._terminate_processes(processes)
             logger.info(f"Workers terminated or single worker interrupted.")

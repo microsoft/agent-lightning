@@ -1,5 +1,7 @@
 # Copyright (c) Microsoft. All rights reserved.
 
+# type: ignore
+
 """
 This file is not carefully reviewed.
 It is to ensure the *somewhat* correctness of the code in agentlightning/config.py.
@@ -107,7 +109,7 @@ class OptionalNoDefaultConfig:
         ("NoneValue", "NoneValue"),  # Should not convert if not exact keyword
     ],
 )
-def test_nullable_str(input_val, expected_output):
+def test_nullable_str(input_val: str, expected_output: Optional[str]) -> None:
     """Tests the nullable_str function for various inputs."""
     assert config.nullable_str(input_val) == expected_output
 
@@ -142,13 +144,13 @@ def test_nullable_str(input_val, expected_output):
         (False, False),  # Direct bool pass-through
     ],
 )
-def test_str_to_bool_valid(input_val, expected_output):
+def test_str_to_bool_valid(input_val: Union[str, bool], expected_output: bool) -> None:
     """Tests _str_to_bool with valid boolean string representations."""
     assert config._str_to_bool(input_val) == expected_output
 
 
 @pytest.mark.parametrize("invalid_input", ["maybe", "2", "", " ", "trueish", "falsey"])
-def test_str_to_bool_invalid(invalid_input):
+def test_str_to_bool_invalid(invalid_input: str) -> None:
     """Tests _str_to_bool with invalid inputs, expecting ArgumentTypeError."""
     with pytest.raises(argparse.ArgumentTypeError):
         config._str_to_bool(invalid_input)
@@ -180,7 +182,9 @@ def test_str_to_bool_invalid(invalid_input):
         (Optional[List[Any]], List[Any], True, True),
     ],
 )
-def test_get_param_type_details(annotation, expected_core_type, expected_is_optional, expected_is_list):
+def test_get_param_type_details(
+    annotation: Any, expected_core_type: Any, expected_is_optional: bool, expected_is_list: bool
+) -> None:
     """Tests _get_param_type_details for various type annotations."""
     core_type, is_optional, is_list = config._get_param_type_details(annotation)
 
@@ -219,7 +223,9 @@ def test_get_param_type_details(annotation, expected_core_type, expected_is_opti
         (List[Dict[str, int]], True, {"nargs": "*", "type": str}),
     ],
 )
-def test_determine_argparse_type_and_nargs(core_param_type, is_param_list, expected_kwargs):
+def test_determine_argparse_type_and_nargs(
+    core_param_type: Any, is_param_list: bool, expected_kwargs: Dict[str, Any]
+) -> None:
     """Tests _determine_argparse_type_and_nargs for type and nargs mapping."""
     assert config._determine_argparse_type_and_nargs(core_param_type, is_param_list) == expected_kwargs
 
@@ -246,7 +252,9 @@ def test_determine_argparse_type_and_nargs(core_param_type, is_param_list, expec
         ("C", "p_empty", inspect.Parameter.empty, False, False, "For C: 'p_empty'. Inferred type: Any."),
     ],
 )
-def test_build_help_string(cls_name, param_name, core_type, is_optional, is_list, expected_help):
+def test_build_help_string(
+    cls_name: str, param_name: str, core_type: Any, is_optional: bool, is_list: bool, expected_help: str
+) -> None:
     """Tests _build_help_string for generating correct help messages."""
     assert config._build_help_string(cls_name, param_name, core_type, is_optional, is_list) == expected_help
 
@@ -349,7 +357,7 @@ def test_add_argument_for_parameter(
 
 
 # --- Tests for _add_arguments_for_class ---
-def test_add_arguments_for_class(mock_parser):
+def test_add_arguments_for_class(mock_parser: Any) -> None:
     """Tests _add_arguments_for_class by checking calls to _add_argument_for_parameter."""
     class_arg_configs_maps = {}
     with mock.patch("agentlightning.config._add_argument_for_parameter") as mock_add_param_func:
@@ -377,7 +385,7 @@ def test_add_arguments_for_class(mock_parser):
         assert mock_add_param_func.call_count == expected_calls
 
 
-def test_add_arguments_for_class_no_init_params(mock_parser):
+def test_add_arguments_for_class_no_init_params(mock_parser: Any) -> None:
     """Tests _add_arguments_for_class with a class having no __init__ parameters."""
     class_arg_configs_maps = {}
     with mock.patch("agentlightning.config._add_argument_for_parameter") as mock_add_param_func:
@@ -386,7 +394,7 @@ def test_add_arguments_for_class_no_init_params(mock_parser):
         assert class_arg_configs_maps[NoInitParamsConfig] == {}
 
 
-def test_create_argument_parser():
+def test_create_argument_parser() -> None:
     """Tests _create_argument_parser for basic parser properties."""
     parser = config._create_argument_parser()
     assert isinstance(parser, argparse.ArgumentParser)
@@ -395,7 +403,7 @@ def test_create_argument_parser():
     assert type(parser.formatter_class) == type(argparse.ArgumentDefaultsHelpFormatter)
 
 
-def test_instantiate_classes():
+def test_instantiate_classes() -> None:
     """Tests _instantiate_classes with various argument types and defaults."""
     parsed_args = argparse.Namespace(
         simpleconfig_name="TestName",

@@ -2,39 +2,20 @@
 
 from __future__ import annotations
 
-import os
-import re
-import shutil
-import sys
-import tempfile
-import time
-from typing import Any, Literal
+from typing import Any, cast
 
-import dotenv
-import termcolor
-from agents import (
-    Agent,
-    Runner,
-    function_tool,
-    gen_trace_id,
-    set_trace_processors,
-    set_tracing_disabled,
-    trace,
-)
+from agents import Agent, Runner
 from agents.extensions.models.litellm_model import LitellmModel
-from agents.mcp import MCPServer, MCPServerSse
+from agents.mcp import MCPServerSse
 from agents.model_settings import ModelSettings
-from agents.tracing.processors import BatchTraceProcessor, ConsoleSpanExporter
 from utils import compute_scores
 
-import agentlightning
 from agentlightning import (
     LLM,
     LitAgent,
     NamedResources,
     Trainer,
     configure_logger,
-    reward,
 )
 
 configure_logger()
@@ -51,13 +32,13 @@ After each search:
 Repeat as needed. When done, wrap your final, concise answer in <answer> tags."""
 
 
-class RAGAgent(LitAgent):
+class RAGAgent(LitAgent[Any]):
     def __init__(self, trained_agents: str | None = None) -> None:
         super().__init__(trained_agents=trained_agents)
         self.mcp_server_url = "http://127.0.0.1:8099/sse"
 
-    async def training_rollout_async(self, task: Any, rollout_id: str, resources: NamedResources) -> Any:
-        llm: LLM = resources.get("main_llm")
+    async def training_rollout_async(self, task: Any, rollout_id: str, resources: NamedResources) -> Any:  # type: ignore
+        llm: LLM = cast(LLM, resources.get("main_llm"))
         print("Training with model:", llm.model, "on endpoint:", llm.endpoint)
         async with MCPServerSse(
             name="wiki_retriever_mcp",
@@ -74,7 +55,7 @@ class RAGAgent(LitAgent):
                 mcp_servers=[server],
             )
             result = await Runner.run(agent, task["question"])
-            answer = result.final_output
+            answer = result.final_output  # type: ignore
             reward = compute_scores(answer, str(task["answer"]))
             print(
                 "question:{} answer: {} ground_truth: {} reward: {}".format(
@@ -83,8 +64,8 @@ class RAGAgent(LitAgent):
             )
             return reward
 
-    async def validation_rollout_async(self, task: Any, rollout_id: str, resources: NamedResources) -> Any:
-        llm: LLM = resources.get("main_llm")
+    async def validation_rollout_async(self, task: Any, rollout_id: str, resources: NamedResources) -> Any:  # type: ignore
+        llm: LLM = cast(LLM, resources.get("main_llm"))
         resources = {
             "main_llm": LLM(
                 endpoint=llm.endpoint,

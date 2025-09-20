@@ -1,21 +1,17 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-import asyncio
 import json
 import logging
-import os
 import time
-from contextlib import nullcontext
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, cast
 
-import agentops
 from opentelemetry.sdk.trace import ReadableSpan
 
 from .client import AgentLightningClient
 from .litagent import LitAgent, is_v0_1_rollout_api
 from .tracer import TripletExporter
 from .tracer.base import BaseTracer
-from .types import ParallelWorkerBase, Rollout, RolloutRawResult, Task, Triplet
+from .types import ParallelWorkerBase, Rollout, RolloutRawResult, Triplet
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +34,7 @@ class AgentRunner(ParallelWorkerBase):
 
     def __init__(
         self,
-        agent: LitAgent,
+        agent: LitAgent[Any],
         client: AgentLightningClient,
         tracer: BaseTracer,
         triplet_exporter: TripletExporter,
@@ -169,8 +165,11 @@ class AgentRunner(ParallelWorkerBase):
                 rollout_method = self.agent.training_rollout if task.mode == "train" else self.agent.validation_rollout
                 # Pass the task input, not the whole task object
                 if is_v0_1_rollout_api(rollout_method):
-                    result = rollout_method(
-                        task.input, rollout_id=rollout_obj.rollout_id, resources=resources_update.resources  # type: ignore
+                    result = cast(
+                        RolloutRawResult,
+                        rollout_method(
+                            task.input, rollout_id=rollout_obj.rollout_id, resources=resources_update.resources  # type: ignore
+                        ),
                     )  # type: ignore
                 else:
                     result = rollout_method(task.input, resources=resources_update.resources, rollout=rollout_obj)
@@ -245,8 +244,11 @@ class AgentRunner(ParallelWorkerBase):
                 )
                 # Pass the task input, not the whole task object
                 if is_v0_1_rollout_api(rollout_method):
-                    result = await rollout_method(
-                        task.input, rollout_id=rollout_obj.rollout_id, resources=resources_update.resources  # type: ignore
+                    result = cast(
+                        RolloutRawResult,
+                        await rollout_method(
+                            task.input, rollout_id=rollout_obj.rollout_id, resources=resources_update.resources  # type: ignore
+                        ),
                     )  # type: ignore
                 else:
                     result = await rollout_method(task.input, resources=resources_update.resources, rollout=rollout_obj)

@@ -12,7 +12,7 @@ from agentlightning.verl.entrypoint import run_ppo
 
 
 class VERL(BaseAlgorithm):
-    def __init__(self, config: dict):
+    def __init__(self, config: dict[str, Any]):
         super().__init__()
 
         # Compose the base config exactly like your decorator:

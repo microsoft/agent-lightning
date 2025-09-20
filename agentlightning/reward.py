@@ -3,17 +3,20 @@
 import asyncio
 import inspect
 import warnings
-from typing import Optional, TypedDict
+from typing import Any, Callable, Literal, Optional, TypedDict, TypeVar
 
 from agentops.sdk.decorators import operation
 
 
 class RewardSpanData(TypedDict):
-    type: "reward"
+    type: Literal["reward"]
     value: Optional[float]
 
 
-def reward(fn: callable) -> callable:
+FnType = TypeVar("FnType", bound=Callable[..., Any])
+
+
+def reward(fn: FnType) -> FnType:
     """
     A decorator to wrap a function that computes rewards.
     It will automatically handle the input and output of the function.
@@ -25,7 +28,7 @@ def reward(fn: callable) -> callable:
         """
         if result is None:
             return {"type": "reward", "value": None}
-        if not isinstance(result, (float, int)):
+        if not isinstance(result, (float, int)):  # type: ignore
             warnings.warn(f"Reward is ignored because it is not a number: {result}")
             return {"type": "reward", "value": None}
         return {"type": "reward", "value": float(result)}
@@ -35,7 +38,7 @@ def reward(fn: callable) -> callable:
 
     if is_async:
 
-        async def wrapper_async(*args, **kwargs):
+        async def wrapper_async(*args: Any, **kwargs: Any) -> Any:
             result: Optional[float] = None
 
             @operation
@@ -49,11 +52,11 @@ def reward(fn: callable) -> callable:
             await agentops_reward_operation()
             return result
 
-        return wrapper_async
+        return wrapper_async  # type: ignore
 
     else:
 
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             result: Optional[float] = None
 
             @operation
@@ -65,4 +68,4 @@ def reward(fn: callable) -> callable:
             agentops_reward_operation()
             return result
 
-        return wrapper
+        return wrapper  # type: ignore

@@ -3,7 +3,7 @@
 import json
 import re
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, cast
 
 from opentelemetry import trace as trace_api
 from opentelemetry.sdk.trace import ReadableSpan
@@ -85,7 +85,7 @@ class TraceTree:
 
         dot = graphviz.Digraph(comment="Trace Tree")
 
-        should_visit_cache = {}
+        should_visit_cache: Dict[str, bool] = {}
 
         def should_visit(node: "TraceTree") -> bool:
             if node.id in should_visit_cache:
@@ -111,14 +111,14 @@ class TraceTree:
             vis_name = node.id[:8] + " (" + node.span.name + ")"
             if agent_name is not None:
                 vis_name += " [" + agent_name + "]"
-            dot.node(node.id, vis_name)
+            dot.node(node.id, vis_name)  # type: ignore
             for child in node.children:
                 if visit(child):
-                    dot.edge(node.id, child.id)
+                    dot.edge(node.id, child.id)  # type: ignore
             return True
 
         visit(self)
-        dot.render(filename, format="png", cleanup=True)
+        dot.render(filename, format="png", cleanup=True)  # type: ignore
 
     def names_tuple(self) -> Tuple[str, List[Any]]:
         """Return the span name, and a list of children.
@@ -129,7 +129,7 @@ class TraceTree:
         agent_name = self.agent_name()
         if agent_name is not None:
             name += " [" + agent_name + "]"
-        children_names = []
+        children_names: List[Tuple[str, List[Any]]] = []
         for child in self.children:
             child_name, child_children = child.names_tuple()
             children_names.append((child_name, child_children))
@@ -163,17 +163,18 @@ class TraceTree:
             raise ValueError("No spans provided to create TraceTree.")
 
         # Process trace items in topological order
-        id_to_span = {span.get_span_context().span_id: span for span in spans}
+        id_to_span = {span.get_span_context().span_id: span for span in spans}  # type: ignore
 
         forward_graph: dict[int, list[int]] = {}
         root_ids: list[int] = []
         for span in spans:
+            span_id: int = span.get_span_context().span_id  # type: ignore
             if span.parent is None:
-                root_ids.append(span.get_span_context().span_id)
+                root_ids.append(span_id)
             else:
                 if span.parent.span_id not in forward_graph:
                     forward_graph[span.parent.span_id] = []
-                forward_graph[span.parent.span_id].append(span.get_span_context().span_id)
+                forward_graph[span.parent.span_id].append(span_id)
 
         # Diff between span with data and forward_graph keys
         # Sometimes the top-level session span is lost.
@@ -181,7 +182,7 @@ class TraceTree:
         for unfound_root in unfound_roots:
             root_ids.append(unfound_root)
 
-        def visit(node_id):
+        def visit(node_id: int) -> "TraceTree":
             children: list[TraceTree] = []
             if node_id in forward_graph:
                 for child_id in forward_graph[node_id]:
@@ -191,15 +192,15 @@ class TraceTree:
                 assert len(children) > 0
                 virtual_span = ReadableSpan(
                     context=trace_api.SpanContext(
-                        trace_id=children[0].span.get_span_context().trace_id,
+                        trace_id=children[0].span.get_span_context().trace_id,  # type: ignore
                         span_id=node_id,
                         is_remote=False,
                     ),
                     name="virtual-node",
                     kind=trace_api.SpanKind.INTERNAL,
                     attributes={},
-                    start_time=min(child.start_time for child in children),
-                    end_time=max(child.end_time for child in children),
+                    start_time=min(child.start_time for child in children),  # type: ignore
+                    end_time=max(child.end_time for child in children),  # type: ignore
                 )
                 return cls(trace_api.format_span_id(node_id), virtual_span, children=children)
             else:
@@ -216,7 +217,7 @@ class TraceTree:
                 id="virtual-root",
                 span=ReadableSpan(
                     context=trace_api.SpanContext(
-                        trace_id=root_spans[0].span.get_span_context().trace_id,
+                        trace_id=root_spans[0].span.get_span_context().trace_id,  # type: ignore
                         span_id=0,
                         is_remote=False,
                     ),
@@ -239,31 +240,34 @@ class TraceTree:
     def agent_name(self) -> Optional[str]:
         """Return the name of agent span. Return the agent or None (not an agent at all).
         Extend this function to support more agent frameworks."""
+        attributes = self.span.attributes
+        if attributes is None:
+            return None
 
         # Case 1: OpenAI Agent SDK
-        agent_name = self.span.attributes.get("agent.name")
+        agent_name = cast(Optional[str], attributes.get("agent.name"))
         if agent_name is not None:
             return agent_name
 
         # Case 2: Agentops decorator @agent
-        is_agent = self.span.attributes.get("agentops.span.kind") == "agent"
+        is_agent = attributes.get("agentops.span.kind") == "agent"
         if is_agent:
-            agent_name = self.span.attributes.get("operation.name")
+            agent_name = cast(Optional[str], attributes.get("operation.name"))
             if agent_name is not None:
                 return agent_name
 
         # Case 3: Autogen team
-        agent_name = self.span.attributes.get("recipient_agent_type")
+        agent_name = cast(Optional[str], attributes.get("recipient_agent_type"))
         if agent_name is not None:
             return agent_name
 
         # Case 4: LangGraph
-        agent_name = self.span.attributes.get("langchain.chain.type")
+        agent_name = cast(Optional[str], attributes.get("langchain.chain.type"))
         if agent_name is not None:
             return agent_name
 
         # Case 5: agent-framework
-        agent_name = self.span.attributes.get("executor.id")
+        agent_name = cast(Optional[str], attributes.get("executor.id"))
         if agent_name is not None:
             return agent_name
 
@@ -272,7 +276,7 @@ class TraceTree:
             "agentops.task.output",  # newer versions of agentops
             "agentops.entity.output",
         ]:
-            output = self.span.attributes.get(key)
+            output = self.span.attributes.get(key)  # type: ignore
             if output:
                 if isinstance(output, dict):
                     return output
@@ -285,7 +289,7 @@ class TraceTree:
 
     def is_reward_span(self) -> bool:
         maybe_reward = self.maybe_reward_dict()
-        return maybe_reward and maybe_reward.get("type") == "reward"
+        return maybe_reward and maybe_reward.get("type") == "reward"  # type: ignore
 
     def find_llm_calls(
         self,
@@ -315,7 +319,7 @@ class TraceTree:
             is_llm_call = False
         if is_llm_call:
             # Check the response id
-            response_id = self.span.attributes.get("gen_ai.response.id")
+            response_id: Optional[str] = self.span.attributes.get("gen_ai.response.id")  # type: ignore
             if response_id is None and within_llm_call is True:
                 is_llm_call = False
             if (
@@ -326,7 +330,7 @@ class TraceTree:
                 is_llm_call = False
 
             if is_llm_call:
-                llm_calls.append((self, within_matching_subtree))
+                llm_calls.append((self, within_matching_subtree))  # type: ignore
                 existing_llm_call_response_ids = existing_llm_call_response_ids or set()
                 if response_id is not None:
                     existing_llm_call_response_ids.add(response_id)
@@ -383,10 +387,10 @@ class TraceTree:
                     continue
                 if node is self:
                     continue
-                if node.start_time <= repair_node.start_time and node.end_time >= repair_node.end_time:
-                    duration_delta = node.end_time - repair_node.end_time + repair_node.start_time - node.start_time
+                if node.start_time <= repair_node.start_time and node.end_time >= repair_node.end_time:  # type: ignore
+                    duration_delta = node.end_time - repair_node.end_time + repair_node.start_time - node.start_time  # type: ignore
                     if duration_delta > 0 and duration_delta < closest_duration:
-                        closest_duration = duration_delta
+                        closest_duration = duration_delta  # type: ignore
                         closest_parent = node
 
             # Repair the hierarchy
@@ -400,18 +404,18 @@ class TraceTree:
         rewards: dict[str, Optional[float]] = {}
 
         if reward_match == RewardMatchPolicy.FIRST_OCCURRENCE:
-            time_sorted: List[TraceTree] = sorted(self.traverse(), key=lambda x: x.start_time)
-            assign_to: List[Tuple[str, int]] = []
+            time_sorted: List[TraceTree] = cast(List[TraceTree], sorted(self.traverse(), key=lambda x: x.start_time))  # type: ignore
+            assign_to: List[Tuple[str, int]] = []  # type: ignore
             for item in time_sorted:
                 if item.id in llm_call_ids:
-                    assign_to.append((item.id, item.end_time))
+                    assign_to.append((item.id, item.end_time))  # type: ignore
 
                 # get reward
                 agentops_output = item.maybe_reward_dict()
                 if agentops_output and agentops_output.get("type") == "reward":
                     for assign_to_id, assign_to_end_time in reversed(assign_to):
                         # This reward happens before the end of the LLM call.
-                        if assign_to_end_time > item.start_time:
+                        if assign_to_end_time > item.start_time:  # type: ignore
                             continue
                         # Ok, we found someone to assign to
                         if assign_to_id in rewards:
@@ -425,12 +429,12 @@ class TraceTree:
                 assign_to: List[Tuple[str, int]] = []
                 for child in item.children:
                     if child.id in llm_call_ids:
-                        assign_to.append(child.id)
+                        assign_to.append(child.id)  # type: ignore
 
                     agentops_output = item.maybe_reward_dict()
                     if agentops_output and agentops_output.get("type") == "reward":
                         for assign_to_id, assign_to_end_time in reversed(assign_to):
-                            if assign_to_end_time > item.start_time:
+                            if assign_to_end_time > item.start_time:  # type: ignore
                                 # This reward happens before the end of the LLM call.
                                 continue
                             if assign_to_id in rewards:
@@ -476,11 +480,11 @@ class TraceTree:
             (
                 llm_call.id,
                 Triplet(
-                    prompt={"token_ids": llm_call.span.attributes.get("prompt_token_ids", [])},
-                    response={"token_ids": llm_call.span.attributes.get("response_token_ids", [])},
+                    prompt={"token_ids": llm_call.span.attributes.get("prompt_token_ids", [])},  # type: ignore
+                    response={"token_ids": llm_call.span.attributes.get("response_token_ids", [])},  # type: ignore
                     reward=None,
                     metadata=dict(
-                        response_id=llm_call.span.attributes.get(
+                        response_id=llm_call.span.attributes.get(  # type: ignore
                             "gen_ai.response.id", None
                         ),  # it works at least for OpenAI
                         agent_name=agent_name,

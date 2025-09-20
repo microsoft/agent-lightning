@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import os
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING, Any, List, Optional
 
 import agentops
 import agentops.sdk.core
@@ -67,12 +67,12 @@ class AgentOpsTracer(BaseTracer):
         logger.debug(f"Getting state for pickling Trainer (PID {os.getpid()}). _agentops_server_manager excluded.")
         return state
 
-    def __setstate__(self, state):
+    def __setstate__(self, state: Any):
         self.__dict__.update(state)
         # In child process, self._agentops_server_manager will be None.
         logger.debug(f"Setting state for unpickled Trainer (PID {os.getpid()}). _agentops_server_manager is None.")
 
-    def init(self, *args, **kwargs):
+    def init(self, *args: Any, **kwargs: Any):
         if self.agentops_managed and self._agentops_server_manager:
             self._agentops_server_manager.start()
             self._agentops_server_port_val = self._agentops_server_manager.get_port()
@@ -124,7 +124,7 @@ class AgentOpsTracer(BaseTracer):
                 )
 
             if not agentops.get_client().initialized:
-                agentops.init()
+                agentops.init()  # type: ignore
                 logger.info(f"[Worker {worker_id}] AgentOps client initialized.")
             else:
                 logger.warning(f"[Worker {worker_id}] AgentOps client was already initialized.")
@@ -134,11 +134,11 @@ class AgentOpsTracer(BaseTracer):
         try:
             # new versions
             instance = agentops.sdk.core.tracer
-            instance.provider.add_span_processor(self._lightning_span_processor)
+            instance.provider.add_span_processor(self._lightning_span_processor)  # type: ignore
         except AttributeError:
             # old versions
-            instance = TracingCore.get_instance()
-            instance._provider.add_span_processor(self._lightning_span_processor)
+            instance = TracingCore.get_instance()  # type: ignore
+            instance._provider.add_span_processor(self._lightning_span_processor)  # type: ignore
 
     def teardown_worker(self, worker_id: int) -> None:
         super().teardown_worker(worker_id)
@@ -209,7 +209,7 @@ class LightningSpanProcessor(SpanProcessor):
         self._spans = []
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any):
         pass
 
     def spans(self) -> List[ReadableSpan]:

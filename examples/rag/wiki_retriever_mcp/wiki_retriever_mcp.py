@@ -1,5 +1,7 @@
 # Copyright (c) Microsoft. All rights reserved.
 
+# type: ignore
+
 import pickle
 
 import faiss

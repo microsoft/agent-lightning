@@ -7,14 +7,13 @@ import socket
 import threading
 import time
 import uuid
-from collections.abc import Mapping, Sequence
-from typing import Dict, List, Optional
+from collections.abc import Mapping
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import requests
 import torch
 from flask import Flask, Response, abort, request
-from openai.types.chat.chat_completion import ChatCompletion
 from tensordict import TensorDict
 from verl import DataProto
 
@@ -23,7 +22,9 @@ from agentlightning import LLM, AgentLightningServer, NamedResources, Rollout, c
 configure_logger()
 
 
-def get_left_padded_ids_and_attention_mask(ids: List[int], max_length: int, pad_token_id: int):
+def get_left_padded_ids_and_attention_mask(
+    ids: List[int], max_length: int, pad_token_id: int
+) -> Tuple[List[int], List[int]]:
     """
     Left-pad (or truncate) a sequence of token IDs to a fixed length,
     and build the corresponding attention mask.
@@ -52,7 +53,9 @@ def get_left_padded_ids_and_attention_mask(ids: List[int], max_length: int, pad_
     return padded_ids, attention_mask
 
 
-def get_right_padded_ids_and_attention_mask(ids: List[int], max_length: int, pad_token_id: int):
+def get_right_padded_ids_and_attention_mask(
+    ids: List[int], max_length: int, pad_token_id: int
+) -> Tuple[List[int], List[int]]:
     """
     Right-pad (or truncate) a sequence of token IDs to a fixed length,
     and build the corresponding attention mask.
@@ -87,7 +90,7 @@ def _find_available_port() -> int:
         return s.getsockname()[1]
 
 
-def _to_native(obj):
+def _to_native(obj: Any) -> Any:
     """Convert data retrieved from Parquet to data usable in AGL server."""
     # 1) Arrays -> list (then recurse)
     if isinstance(obj, np.ndarray):
@@ -99,11 +102,11 @@ def _to_native(obj):
 
     # 3) Dict-like -> dict
     if isinstance(obj, Mapping):
-        return {_to_native(k): _to_native(v) for k, v in obj.items()}
+        return {_to_native(k): _to_native(v) for k, v in obj.items()}  # type: ignore
 
     # 4) Lists/Tuples/Sets -> list
     if isinstance(obj, (list, tuple, set)):
-        return [_to_native(x) for x in obj]
+        return [_to_native(x) for x in obj]  # type: ignore
 
     # 5) Anything else: leave as-is
     return obj
@@ -120,14 +123,14 @@ class AgentModeDaemon:
 
     def __init__(
         self,
-        port,
-        train_rollout_n,
-        train_information,
-        tokenizer,
-        mini_batch_size,
-        pad_token_id,
-        reward_fillna_value=0.0,
-        llm_timeout_seconds=1200.0,
+        port: int,
+        train_rollout_n: int,
+        train_information: Dict[str, Any],
+        tokenizer: Any,
+        mini_batch_size: int,
+        pad_token_id: int,
+        reward_fillna_value: float = 0.0,
+        llm_timeout_seconds: float = 1200.0,
     ):
         # Server and Task Configuration
         self.server_port = port
@@ -149,7 +152,7 @@ class AgentModeDaemon:
         self.backend_llm_server_addresses: List[str] = []
         self._total_tasks_queued = 0
         self._completed_rollouts: Dict[str, Rollout] = {}
-        self._task_id_to_original_sample: Dict[str, Dict] = {}
+        self._task_id_to_original_sample: Dict[str, Dict[str, Any]] = {}
         self._server_thread: Optional[threading.Thread] = None
         self._proxy_thread: Optional[threading.Thread] = None
         self.is_train = True
@@ -165,7 +168,7 @@ class AgentModeDaemon:
         last_request_time = 0
 
         @app.route("/v1/<path:path>", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"])
-        def proxy(path):
+        def proxy(path: str):  # type: ignore
             if not self.backend_llm_server_addresses:
                 abort(503, description="No backend LLM servers available.")
 
@@ -190,7 +193,7 @@ class AgentModeDaemon:
                     method=request.method,
                     url=target_url,
                     headers=headers,
-                    params=request.args,
+                    params=request.args,  # type: ignore
                     data=request.get_data(),
                     cookies=request.cookies,
                     allow_redirects=False,
@@ -264,7 +267,7 @@ class AgentModeDaemon:
 
         self._start_proxy_server()
 
-    async def _async_set_up(self, data, server_addresses, is_train=True):
+    async def _async_set_up(self, data: Dict[str, Any], server_addresses: List[str], is_train: bool = True):
         """Async helper to set up data and resources on the server."""
         self.clear_data_and_server()
         self.backend_llm_server_addresses = server_addresses
@@ -290,7 +293,7 @@ class AgentModeDaemon:
             original_sample["data_id"] = data_id
 
             # For training, each sample is rolled out multiple times
-            for j in range(rollouts_per_sample):
+            for _ in range(rollouts_per_sample):
                 task_metadata = {"data_id": data_id, "is_train": is_train}
 
                 # Data ID is different from Rollout ID, as one data can have multiple rollouts.
@@ -304,7 +307,7 @@ class AgentModeDaemon:
                 self._task_id_to_original_sample[rollout_id] = original_sample
                 self._total_tasks_queued += 1
 
-    def set_up_data_and_server(self, data, server_addresses, is_train=True):
+    def set_up_data_and_server(self, data: Dict[str, Any], server_addresses: List[str], is_train: bool = True):
         """Synchronous wrapper for setting up data and server resources."""
         if not self.server.loop or not self.server.startup_event.is_set():
             raise RuntimeError("Server is not running or ready.")
@@ -331,7 +334,7 @@ class AgentModeDaemon:
         elif any(not r.prompt.get("token_ids", []) for r in rollout.triplets):
             print(f"Warning: Rollout {rollout.rollout_id} contains empty prompt: {rollout.triplets}")
 
-    async def _async_run_until_finished(self, verbose=True):
+    async def _async_run_until_finished(self, verbose: bool = True):
         """Async helper to wait for all tasks to complete."""
         while len(self._completed_rollouts) < self._total_tasks_queued:
             completed_batch = await self.server.retrieve_completed_rollouts()
@@ -346,7 +349,7 @@ class AgentModeDaemon:
             await asyncio.sleep(5)
         print("All tasks finished.")
 
-    def run_until_all_finished(self, verbose=True):
+    def run_until_all_finished(self, verbose: bool = True):
         """Synchronously waits for all queued tasks to be completed and reported."""
         if self._total_tasks_queued == 0:
             print("Warning: No tasks were queued.")
@@ -368,8 +371,8 @@ class AgentModeDaemon:
         assert not self.is_train, "This method should only be called during validation."
         assert len(self._completed_rollouts) == self._total_tasks_queued
 
-        sample_stat_list = []
-        for rollout_id, rollout in self._completed_rollouts.items():
+        sample_stat_list: List[Dict[str, Any]] = []
+        for _, rollout in self._completed_rollouts.items():
             final_reward = self._fillna_reward(rollout)
             if not rollout.triplets:
                 print(f"Warning: No triplets found for test rollout {rollout.rollout_id}.")
@@ -397,7 +400,7 @@ class AgentModeDaemon:
             "val/turn_count": np.mean([stat["turn_count"] for stat in stats_w_trace]),
         }
 
-    def get_train_data_batch(self, max_prompt_length, max_response_length, device):
+    def get_train_data_batch(self, max_prompt_length: int, max_response_length: int, device: torch.device):
         """
         Processes completed rollouts to generate a training data batch.
 
@@ -409,8 +412,8 @@ class AgentModeDaemon:
         assert len(self._completed_rollouts) == self._total_tasks_queued
 
         # 1. Reconstruct the `finished_id_to_sample_info` structure from completed rollouts
-        finished_id_to_sample_info = {}
-        finished_id_to_final_reward = {}
+        finished_id_to_sample_info: Dict[str, Dict[str, Any]] = {}
+        finished_id_to_final_reward: Dict[str, float] = {}
         for rollout_id, rollout in self._completed_rollouts.items():
             original_sample = self._task_id_to_original_sample[rollout_id]
 
@@ -446,9 +449,15 @@ class AgentModeDaemon:
         #     discarded here. They are only truncated and marked, to be discarded later.
         #     This is for the correctness of the advantage calculation.
         #   - The discard for the PPO mini-batch should also be handled this way.
-        input_ids_list, input_attention_mask_list = [], []
-        response_ids_list, response_attention_mask_list = [], []
-        reward_list, data_id_list, rollout_id_list, turn_index_list, is_drop_list = [], [], [], [], []
+        input_ids_list: List[List[int]] = []
+        input_attention_mask_list: List[List[int]] = []
+        response_ids_list: List[List[int]] = []
+        response_attention_mask_list: List[List[int]] = []
+        reward_list: List[float] = []
+        data_id_list: List[str] = []
+        rollout_id_list: List[str] = []
+        turn_index_list: List[int] = []
+        is_drop_list: List[bool] = []
         n_trunc_sample_because_of_response = 0
 
         for rollout_id, sample_info in finished_id_to_sample_info.items():
@@ -531,9 +540,9 @@ class AgentModeDaemon:
         }
 
         # Add non-tensor data for advantage calculation and logging
-        data_proto.non_tensor_batch["data_id_list"] = np.array(data_id_list)
-        data_proto.non_tensor_batch["rollout_id_list"] = np.array(rollout_id_list)
-        data_proto.non_tensor_batch["turn_index_list"] = np.array(turn_index_list)
+        data_proto.non_tensor_batch["data_id_list"] = np.array(data_id_list)  # type: ignore
+        data_proto.non_tensor_batch["rollout_id_list"] = np.array(rollout_id_list)  # type: ignore
+        data_proto.non_tensor_batch["turn_index_list"] = np.array(turn_index_list)  # type: ignore
 
         return data_proto, data_metrics
 
@@ -547,9 +556,9 @@ class AgentModeDaemon:
         # This implementation assumes that `set_up_data_and_server` is called
         # for each new run, effectively starting a fresh batch.
 
-    def _fillna_reward(self, rollout):
+    def _fillna_reward(self, rollout: Rollout):
         if rollout.final_reward is None:
-            if self.reward_fillna_value is not None:
+            if self.reward_fillna_value is not None:  # type: ignore
                 final_reward = self.reward_fillna_value
             else:
                 raise ValueError(f"Reward is None for rollout {rollout.rollout_id}, please check the reward function.")

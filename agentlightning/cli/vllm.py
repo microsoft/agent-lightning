@@ -1,7 +1,5 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-from typing import List
-
 from vllm.entrypoints.cli.main import main
 
 from agentlightning.instrumentation.vllm import instrument_vllm

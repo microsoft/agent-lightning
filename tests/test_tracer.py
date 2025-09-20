@@ -1,5 +1,7 @@
 # Copyright (c) Microsoft. All rights reserved.
 
+# type: ignore
+
 """
 Integration tests for various agent frameworks with AgentLightning.
 
@@ -26,7 +28,7 @@ import re
 import threading
 import time
 from contextlib import asynccontextmanager, contextmanager
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Callable, Dict, Iterator, List, Literal, Optional, Tuple
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import agentops
@@ -95,7 +97,7 @@ class MockOpenAICompatibleServer:
     Now supports replaying from prompt caches.
     """
 
-    def __init__(self, host="127.0.0.1", port=8000):
+    def __init__(self, host: str = "127.0.0.1", port: int = 8000) -> None:
         self.host = host
         self.port = port
         self.app = FastAPI()
@@ -116,13 +118,13 @@ class MockOpenAICompatibleServer:
                         continue
         return caches
 
-    def _find_best_cache_match(self, request_dict):
+    def _find_best_cache_match(self, request_dict: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]], float]:
         """
         Find the cached request with the highest similarity to the incoming request.
         Returns (response, similarity_score) or (None, 0.0) if not found.
         """
 
-        def normalize_messages(msgs):
+        def normalize_messages(msgs: List[Dict[str, Any]]) -> str:
             # Flatten messages to a string for comparison
             if not msgs:
                 return ""
@@ -180,14 +182,14 @@ class MockOpenAICompatibleServer:
 
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         if self.server:
             self.server.should_exit = True
         if self.server_thread and self.server_thread.is_alive():
             self.server_thread.join(timeout=5)
 
 
-async def run_agent(agent_func):
+async def run_agent(agent_func: Callable[[], Any]) -> None:
     """
     Run an agent function with mock server, handling both sync and async functions.
 
@@ -217,7 +219,7 @@ async def run_agent(agent_func):
             return agent_func()
 
 
-def agent_pure_openai():
+def agent_pure_openai() -> None:
     """A simple agent using the `openai` library."""
     client = OpenAI(base_url=OPENAI_BASE_URL, api_key=OPENAI_API_KEY)
     response = client.chat.completions.create(
@@ -226,7 +228,7 @@ def agent_pure_openai():
     assert "Paris" in response.choices[0].message.content
 
 
-def agent_litellm():
+def agent_litellm() -> None:
     """Agent using `litellm` to call the mock server."""
     response = litellm.completion(
         model="openai/" + OPENAI_MODEL,
@@ -237,7 +239,7 @@ def agent_litellm():
     assert "4" in response.choices[0].message.content
 
 
-def agent_langchain():
+def agent_langchain() -> None:
     """A simple LangChain agent."""
     llm = ChatOpenAI(model=OPENAI_MODEL, openai_api_base=OPENAI_BASE_URL, openai_api_key=OPENAI_API_KEY)
     prompt = ChatPromptTemplate.from_messages([("human", "{input}")])
@@ -246,7 +248,7 @@ def agent_langchain():
     assert "Paris" in result
 
 
-def agent_langchain_tooluse():
+def agent_langchain_tooluse() -> None:
     """A LangChain agent that uses a calculator tool."""
 
     @tool
@@ -272,14 +274,14 @@ def agent_langchain_tooluse():
     assert "504" in result["output"]
 
 
-def agent_langgraph():
+def agent_langgraph() -> None:
     """An agent built with LangGraph for stateful, cyclical workflows."""
     llm = init_chat_model("openai:" + OPENAI_MODEL, openai_api_base=OPENAI_BASE_URL, openai_api_key=OPENAI_API_KEY)
     db = SQLDatabase.from_uri("sqlite:///" + os.path.join(os.path.dirname(__file__), "assets/chinook.db"))
     toolkit = SQLDatabaseToolkit(db=db, llm=llm)
     tools = toolkit.get_tools()
 
-    def get_tool(name):
+    def get_tool(name: str) -> Any:
         return next(t for t in tools if t.name == name)
 
     get_schema_tool = next(tool for tool in tools if tool.name == "sql_db_schema")
@@ -369,7 +371,7 @@ def agent_langgraph():
     assert len(result["messages"]) > 5
 
 
-async def agent_autogen_multiagent():
+async def agent_autogen_multiagent() -> None:
     """A multi-agent conversation with AutoGen."""
 
     model_client = OpenAIChatCompletionClient(
@@ -401,7 +403,7 @@ async def agent_autogen_multiagent():
     assert "critic" in sources
 
 
-async def agent_autogen_mcp():
+async def agent_autogen_mcp() -> None:
     """An AutoGen agent using the Multi-agent Conversation Platform (MCP) and a tool (fixed usage)."""
     calculator_mcp_server = StdioServerParams(command="uvx", args=["mcp-server-calculator"])
 
@@ -417,14 +419,14 @@ async def agent_autogen_mcp():
         assert "504" in response.messages[-1].content
 
 
-def openai_agents_sdk_run_config():
+def openai_agents_sdk_run_config() -> RunConfig:
     return RunConfig(
         model=OPENAI_MODEL,
         model_provider=OpenAIProvider(api_key=OPENAI_API_KEY, base_url=OPENAI_BASE_URL, use_responses=False),
     )
 
 
-async def openai_agents_sdk_eval_hook_and_guardrail():
+async def openai_agents_sdk_eval_hook_and_guardrail() -> None:
     class HomeworkOutput(BaseModel):
         is_homework: bool
         reasoning: str
@@ -473,7 +475,7 @@ async def openai_agents_sdk_eval_hook_and_guardrail():
     assert hasattr(result, "final_output")
 
 
-async def openai_agents_sdk_mcp_tool_use():
+async def openai_agents_sdk_mcp_tool_use() -> None:
     async with MCPServerStdio(params={"command": "uvx", "args": ["mcp-server-calculator"]}) as mcp_server:
         agent = Agent(
             name="MCP Tool Agent",
@@ -487,7 +489,7 @@ async def openai_agents_sdk_mcp_tool_use():
         assert "2451" in result.final_output_as(str)
 
 
-async def openai_agents_sdk_handoff_tool_output_type_and_reward():
+async def openai_agents_sdk_handoff_tool_output_type_and_reward() -> None:
 
     class MathOutput(BaseModel):
         answer: int
@@ -608,7 +610,7 @@ AGENTOPS_EXPECTED_REWARDS = {
 }
 
 
-def assert_expected_pairs_in_tree(root_tuple, expected_pairs):
+def assert_expected_pairs_in_tree(root_tuple: Tuple[str, List[Any]], expected_pairs: List[Tuple[str, str]]) -> None:
     """
     Assert that every (ancestor_name, child_name) pair in `expected_pairs`
     occurs somewhere in the tree produced by TraceTree.names_tuple().
@@ -647,7 +649,7 @@ def assert_expected_pairs_in_tree(root_tuple, expected_pairs):
             )
 
 
-def iterate_over_agents():
+def iterate_over_agents() -> Iterator[Callable[[], Any]]:
     yield from [
         agent_pure_openai,
         agent_litellm,
@@ -662,16 +664,16 @@ def iterate_over_agents():
     ]
 
 
-def run_one(agent_func):
+def run_one(agent_func: Callable[[], Any]) -> None:
     asyncio.get_event_loop().run_until_complete(run_agent(agent_func))
 
 
-def run_all():
+def run_all() -> None:
     for agent_func in iterate_over_agents():
         run_one(agent_func)
 
 
-def run_with_agentops_tracer():
+def run_with_agentops_tracer() -> None:
     tracer = AgentOpsTracer()
     tracer.init()
     tracer.init_worker(0)
@@ -724,7 +726,7 @@ def run_with_agentops_tracer():
     tracer.teardown()
 
 
-def run_with_http_tracer():
+def run_with_http_tracer() -> None:
     import httpdbg.hooks.all
 
     @contextmanager
@@ -754,7 +756,7 @@ def run_with_http_tracer():
     tracer.teardown()
 
 
-def create_prompt_caches():
+def create_prompt_caches() -> None:
     """Create prompt caches for the agent frameworks.
     This should only be run once to populate the caches.
     """

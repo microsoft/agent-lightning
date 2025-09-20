@@ -69,8 +69,8 @@ def nullable_float(value: str) -> float | None:
 
 def _str_to_bool(v: str) -> bool:
     """Converts common string representations of bool to Python bool (case-insensitive)."""
-    if isinstance(v, bool):  # Allow passing bools directly if used programmatically
-        return v
+    if isinstance(v, bool):  # type: ignore
+        return v  # Allow passing bools directly if used programmatically
     lowered_v = v.lower()
     if lowered_v in ("yes", "true", "t", "y", "1"):
         return True
@@ -307,7 +307,7 @@ def lightning_cli(cls1: Type[_C1], cls2: Type[_C2], cls3: Type[_C3], cls4: Type[
 def lightning_cli(*classes: Type[CliConfigurable]) -> Tuple[CliConfigurable, ...]: ...
 
 
-def lightning_cli(*classes: Type[CliConfigurable]) -> CliConfigurable | Tuple[CliConfigurable, ...]:
+def lightning_cli(*classes: Type[CliConfigurable]) -> CliConfigurable | Tuple[CliConfigurable, ...]:  # type: ignore
     """
     Parses command-line arguments to configure and instantiate provided CliConfigurable classes.
 

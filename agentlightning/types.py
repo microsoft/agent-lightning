@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Annotated, Any, Dict, Generic, List, Literal, Optional, Protocol, TypeVar, Union
 
 from opentelemetry.sdk.trace import ReadableSpan
-from pydantic import BaseModel, Discriminator, Field
+from pydantic import BaseModel, Field
 
 __all__ = [
     "Triplet",
@@ -25,7 +25,7 @@ __all__ = [
     "Dataset",
 ]
 
-T = TypeVar("T")
+T_co = TypeVar("T_co", covariant=True)
 
 
 class Triplet(BaseModel):
@@ -214,13 +214,13 @@ class ParallelWorkerBase:
         pass
 
 
-class Dataset(Protocol, Generic[T]):
+class Dataset(Protocol, Generic[T_co]):
     """The general interface for a dataset.
 
     It's currently implemented as a protocol, having a similar interface to torch.utils.data.Dataset.
     You don't have to inherit from this class; you can use a simple list if you want to.
     """
 
-    def __getitem__(self, index: int) -> T: ...
+    def __getitem__(self, index: int) -> T_co: ...
 
     def __len__(self) -> int: ...

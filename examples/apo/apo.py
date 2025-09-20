@@ -1,6 +1,7 @@
 # Copyright (c) Microsoft. All rights reserved.
 
 import asyncio
+from typing import cast
 
 from agentlightning.server import AgentLightningServer
 from agentlightning.types import NamedResources, PromptTemplate
@@ -19,7 +20,7 @@ async def example_apo():
         "You are a friendly chatbot.",
     ]
 
-    prompt_and_rewards = []
+    prompt_and_rewards: list[tuple[str, float]] = []
 
     for prompt in prompt_candidates:
         # 1. The optimization algorithm updates the prompt template
@@ -38,7 +39,7 @@ async def example_apo():
         assert rollout, "Expected a completed rollout from the client."
         print(f"[Algo] Received Result: {rollout}")
         reward = rollout.final_reward
-        prompt_and_rewards.append((prompt, reward))
+        prompt_and_rewards.append((prompt, cast(float, reward)))
 
     print(f"\n[Algo] All prompts and their rewards: {prompt_and_rewards}")
     best_prompt = max(prompt_and_rewards, key=lambda x: x[1])

@@ -1,5 +1,7 @@
 # Copyright (c) Microsoft. All rights reserved.
 
+# type: ignore
+
 import asyncio
 import time
 from typing import Any, AsyncGenerator, Dict

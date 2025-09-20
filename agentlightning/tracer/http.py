@@ -3,11 +3,10 @@
 import asyncio
 import logging
 import multiprocessing
-import pickle
 import queue
 import uuid
 from contextlib import contextmanager
-from typing import Any, Awaitable, Callable, Dict, Iterator, List, Optional
+from typing import Any, Awaitable, Callable, Dict, Iterator, List, Optional, Tuple
 from urllib.parse import urlparse
 
 from httpdbg.hooks.all import httprecord
@@ -59,14 +58,14 @@ class HttpTracer(BaseTracer):
         subprocess_timeout: float = 3600.0,
     ):
         super().__init__()
-        self._last_records = None
+        self._last_records: Optional[HTTPRecords] = None
         self.include_headers = include_headers
         self.include_body = include_body
         self.include_agentlightning_requests = include_agentlightning_requests
         self.subprocess_mode = subprocess_mode
         self.subprocess_timeout = subprocess_timeout
 
-    def init_worker(self, worker_id: int):
+    def init_worker(self, worker_id: int) -> None:
         """
         Initialize the tracer in a worker process.
 
@@ -114,7 +113,7 @@ class HttpTracer(BaseTracer):
         Returns:
             A list of ReadableSpan objects representing the HTTP activities.
         """
-        spans = []
+        spans: List[ReadableSpan] = []
 
         # Create a trace ID that will be shared by all spans in this trace
         trace_id = int(uuid.uuid4().hex[:16], 16)
@@ -157,7 +156,7 @@ class HttpTracer(BaseTracer):
                 "http.host": parsed_url.netloc,
             }
 
-            if status_code is not None and status_code > 0:
+            if status_code is not None and status_code > 0:  # type: ignore
                 attributes["http.status_code"] = status_code
 
             # Calculate duration - from begin time to last update
@@ -221,7 +220,7 @@ class HttpTracer(BaseTracer):
 
         return spans
 
-    def trace_run(self, func: Callable, *args, **kwargs) -> Any:
+    def trace_run(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         """
         A convenience wrapper to trace the execution of a single synchronous function.
 
@@ -241,7 +240,7 @@ class HttpTracer(BaseTracer):
         else:
             return super().trace_run(func, *args, **kwargs)
 
-    async def trace_run_async(self, func: Callable[..., Awaitable], *args, **kwargs) -> Any:
+    async def trace_run_async(self, func: Callable[..., Awaitable[Any]], *args: Any, **kwargs: Any) -> Any:
         """
         A convenience wrapper to trace the execution of a single asynchronous function.
 
@@ -264,7 +263,13 @@ class HttpTracer(BaseTracer):
         else:
             return await super().trace_run_async(func, *args, **kwargs)
 
-    def _trace_run_subprocess(self, func: Callable, args=None, kwargs=None, is_async: bool = False) -> Any:
+    def _trace_run_subprocess(
+        self,
+        func: Callable[..., Any],
+        args: Optional[Tuple[Any, ...]] = None,
+        kwargs: Optional[Dict[str, Any]] = None,
+        is_async: bool = False,
+    ) -> Any:
         """
         Execute a function in a subprocess with HTTP tracing.
 
@@ -283,7 +288,7 @@ class HttpTracer(BaseTracer):
             kwargs = {}
 
         # Create a queue to receive results from the subprocess
-        result_queue = multiprocessing.Queue()
+        result_queue = multiprocessing.Queue[Any]()
 
         # Create and start the subprocess
         process = multiprocessing.Process(
@@ -317,7 +322,14 @@ class HttpTracer(BaseTracer):
                 process.terminate()
                 process.join()
 
-    def _subprocess_worker(self, func: Callable, args, kwargs, result_queue: multiprocessing.Queue, is_async: bool):
+    def _subprocess_worker(
+        self,
+        func: Callable[..., Any],
+        args: Tuple[Any, ...],
+        kwargs: Dict[str, Any],
+        result_queue: multiprocessing.Queue[Any],
+        is_async: bool,
+    ) -> None:
         """
         Worker function that runs in the subprocess to execute the traced function.
 

@@ -1,5 +1,7 @@
 # Copyright (c) Microsoft. All rights reserved.
 
+# type: ignore
+
 from typing import Any
 
 import hydra
@@ -18,7 +20,7 @@ def main(config):
     run_ppo(config, None, None)
 
 
-def run_ppo(config: Any, train_dataset: Dataset | None, val_dataset: Dataset | None) -> None:
+def run_ppo(config: Any, train_dataset: Dataset[Any] | None, val_dataset: Dataset[Any] | None) -> None:
     if not ray.is_initialized():
         # this is for local ray cluster
         ray.init(

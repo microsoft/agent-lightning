@@ -1,5 +1,7 @@
 # Copyright (c) Microsoft. All rights reserved.
 
+# type: ignore
+
 import random
 from contextlib import contextmanager
 from copy import deepcopy

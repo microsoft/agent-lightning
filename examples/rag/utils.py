@@ -1,11 +1,11 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-import json
-import pickle
+# type: ignore
+
 import re
 import string
-import sys
 from collections import Counter
+from typing import List, Optional, Set, Tuple
 
 ANS_BEGIN = "<answer>"
 ANS_END = "</answer>"
@@ -14,24 +14,24 @@ FORMAT_SCORE = 0.1
 FORMAT_PUNISH = -2
 
 
-def normalize_answer(s):
-    def remove_articles(text):
+def normalize_answer(s: str) -> str:
+    def remove_articles(text: str) -> str:
         return re.sub(r"\b(a|an|the)\b", " ", text)
 
-    def white_space_fix(text):
+    def white_space_fix(text: str) -> str:
         return " ".join(text.split())
 
-    def remove_punc(text):
+    def remove_punc(text: str) -> str:
         exclude = set(string.punctuation)
         return "".join(ch for ch in text if ch not in exclude)
 
-    def lower(text):
+    def lower(text: str) -> str:
         return text.lower()
 
     return white_space_fix(remove_articles(remove_punc(lower(s))))
 
 
-def f1_score(prediction, ground_truth):
+def f1_score(prediction: str, ground_truth: str) -> Tuple[float, float, float]:
     normalized_prediction = normalize_answer(prediction)
     normalized_ground_truth = normalize_answer(ground_truth)
 
@@ -54,7 +54,7 @@ def f1_score(prediction, ground_truth):
     return f1, precision, recall
 
 
-def lenient_f1_score(prediction, ground_truth):
+def lenient_f1_score(prediction: str, ground_truth: str) -> Tuple[float, float, float]:
     normalized_prediction = normalize_answer(prediction)
     normalized_ground_truth = normalize_answer(ground_truth)
 
@@ -78,15 +78,15 @@ def lenient_f1_score(prediction, ground_truth):
     return f1, precision, recall
 
 
-def exact_match_score(prediction, ground_truth):
+def exact_match_score(prediction: str, ground_truth: str) -> bool:
     return normalize_answer(prediction) == normalize_answer(ground_truth)
 
 
-def cover_exact_match_score(prediction, ground_truth):
+def cover_exact_match_score(prediction: str, ground_truth: str) -> bool:
     return normalize_answer(ground_truth) in normalize_answer(prediction)
 
 
-def extract_answer(response):
+def extract_answer(response: str) -> str:
     if ANS_BEGIN not in response or ANS_END not in response:
         return ""
     pos1 = response.rfind(ANS_BEGIN)
@@ -99,14 +99,14 @@ def extract_answer(response):
     return ans
 
 
-def split_response(text):
+def split_response(text: str) -> Tuple[str, str]:
     start_response = text.rfind(GEN_BEGIN)
     response = text[start_response + len(GEN_BEGIN) :]
     prompt = text[: -len(response)]
     return prompt, response
 
 
-def extract_recall_chunk(prompt, response):
+def extract_recall_chunk(prompt: str, response: str) -> Tuple[Set[str], Set[str]]:
     import re
 
     # 正则表达式，匹配每个search_step内1.和2.后面的内容
@@ -124,7 +124,7 @@ def extract_recall_chunk(prompt, response):
 import re
 
 
-def extract_retrieved_paragraphs(log_text):
+def extract_retrieved_paragraphs(log_text: str) -> List[str]:
     # 正则表达式匹配 "Retrieved paragraph:" 后的内容
     pattern = re.compile(r"Retrieved paragraph:\s*(.*?)\n", re.DOTALL)
 
@@ -134,11 +134,13 @@ def extract_retrieved_paragraphs(log_text):
     return matches
 
 
-def compute_score(prediction, gold, gold_sentences=None, data_source=None):
+def compute_score(
+    prediction: str, gold: str, gold_sentences: Optional[List[str]] = None, data_source: Optional[str] = None
+) -> float:
     # format acc
     format_acc = FORMAT_SCORE
 
-    prompt, response = split_response(prediction)
+    _, response = split_response(prediction)
     ans = extract_answer(response)
     if ans == "":
         # format score 0.1
@@ -152,8 +154,8 @@ def compute_score(prediction, gold, gold_sentences=None, data_source=None):
         return format_acc
 
     # answer acc
-    em, cem = exact_match_score(ans, gold), cover_exact_match_score(ans, gold)
-    f1, prec, recall = f1_score(ans, gold)
+    em, _ = exact_match_score(ans, gold), cover_exact_match_score(ans, gold)
+    f1, _, _ = f1_score(ans, gold)
 
     if fact_checking_api(prediction, ans):
         answer_acc = max(float(em), f1)
@@ -175,27 +177,27 @@ def compute_score(prediction, gold, gold_sentences=None, data_source=None):
 
 
 def compute_reward(
-    solution_str=None,
-    ground_truth=None,
-    gold_sentences=None,
-    data_source=None,
-    extra_info=None,
-):
+    solution_str: Optional[str] = None,
+    ground_truth: Optional[str] = None,
+    gold_sentences: Optional[List[str]] = None,
+    data_source: Optional[str] = None,
+    extra_info: Optional[str] = None,
+) -> float:
     prediction = solution_str
     gold = ground_truth
     return compute_score(prediction, gold, gold_sentences=gold_sentences, data_source=data_source)
 
 
 def compute_em(
-    solution_str=None,
-    ground_truth=None,
-    gold_sentences=None,
-    data_source=None,
-    extra_info=None,
-):
+    solution_str: Optional[str] = None,
+    ground_truth: Optional[str] = None,
+    gold_sentences: Optional[List[str]] = None,
+    data_source: Optional[str] = None,
+    extra_info: Optional[str] = None,
+) -> float:
     prediction = solution_str
     gold = ground_truth
-    prompt, response = split_response(prediction)
+    _, response = split_response(prediction)
     ans = extract_answer(response)
     if ans == "":
         # format score 0.1
@@ -217,7 +219,7 @@ def compute_cem(
 ):
     prediction = solution_str
     gold = ground_truth
-    prompt, response = split_response(prediction)
+    _, response = split_response(prediction)
     ans = extract_answer(response)
     if ans == "":
         return 0.0
@@ -236,7 +238,7 @@ def compute_response_cem(
 ):
     prediction = solution_str
     gold = ground_truth
-    prompt, response = split_response(prediction)
+    _, response = split_response(prediction)
     ans = response
     if ans == "":
         return 0.0
@@ -255,7 +257,7 @@ def compute_lenient_f1(
 ):
     prediction = solution_str
     gold = ground_truth
-    prompt, response = split_response(prediction)
+    _, response = split_response(prediction)
     ans = extract_answer(response)
     if ans == "":
         return 0.0
@@ -274,7 +276,7 @@ def compute_lenient_response_f1(
 ):
     prediction = solution_str
     gold = ground_truth
-    prompt, response = split_response(prediction)
+    _, response = split_response(prediction)
     ans = response
     if ans == "":
         return 0.0
@@ -284,39 +286,39 @@ def compute_lenient_response_f1(
     return f1
 
 
-def fact_checking_api(prediction, ans):
+def fact_checking_api(prediction: str, ans: str) -> bool:
     return True  # Placeholder for actual fact-checking logic
 
 
 def compute_f1(
-    solution_str=None,
-    ground_truth=None,
-    gold_sentences=None,
-    data_source=None,
-    extra_info=None,
-):
+    solution_str: Optional[str] = None,
+    ground_truth: Optional[str] = None,
+    gold_sentences: Optional[List[str]] = None,
+    data_source: Optional[str] = None,
+    extra_info: Optional[str] = None,
+) -> float:
     prediction = solution_str
     gold = ground_truth
-    prompt, response = split_response(prediction)
+    _, response = split_response(prediction)
     ans = extract_answer(response)
     if ans == "":
         return 0.0
 
     # answer acc
-    f1, prec, recall = f1_score(ans, gold)
+    f1, _, _ = f1_score(ans, gold)
     return f1
 
 
 def compute_format(
-    solution_str=None,
-    ground_truth=None,
-    gold_sentences=None,
-    data_source=None,
-    extra_info=None,
-):
+    solution_str: Optional[str] = None,
+    ground_truth: Optional[str] = None,
+    gold_sentences: Optional[List[str]] = None,
+    data_source: Optional[str] = None,
+    extra_info: Optional[str] = None,
+) -> float:
     prediction = solution_str
     gold = ground_truth
-    prompt, response = split_response(prediction)
+    _, response = split_response(prediction)
     ans = extract_answer(response)
     if ans == "":
         delimiter = "<|im_start|>assistant"
@@ -326,7 +328,7 @@ def compute_format(
     return FORMAT_SCORE
 
 
-def split_trace(text):
+def split_trace(text: str) -> Tuple[str, str]:
     start_response = text.find(GEN_BEGIN)
     response = text[start_response + len(GEN_BEGIN) :]
     prompt = text[: -len(response)]
@@ -334,12 +336,12 @@ def split_trace(text):
 
 
 def compute_action_query(
-    solution_str=None,
-    ground_truth=None,
-    gold_sentences=None,
-    data_source=None,
-    extra_info=None,
-):
+    solution_str: Optional[str] = None,
+    ground_truth: Optional[str] = None,
+    gold_sentences: Optional[List[str]] = None,
+    data_source: Optional[str] = None,
+    extra_info: Optional[str] = None,
+) -> int:
     prediction = solution_str
     gold = ground_truth
     prompt, trace = split_trace(prediction)
@@ -348,12 +350,12 @@ def compute_action_query(
 
 
 def compute_action_bm25(
-    solution_str=None,
-    ground_truth=None,
-    gold_sentences=None,
-    data_source=None,
-    extra_info=None,
-):
+    solution_str: Optional[str] = None,
+    ground_truth: Optional[str] = None,
+    gold_sentences: Optional[List[str]] = None,
+    data_source: Optional[str] = None,
+    extra_info: Optional[str] = None,
+) -> int:
     prediction = solution_str
     gold = ground_truth
     prompt, trace = split_trace(prediction)
@@ -362,12 +364,12 @@ def compute_action_bm25(
 
 
 def compute_action_read_pre(
-    solution_str=None,
-    ground_truth=None,
-    gold_sentences=None,
-    data_source=None,
-    extra_info=None,
-):
+    solution_str: Optional[str] = None,
+    ground_truth: Optional[str] = None,
+    gold_sentences: Optional[List[str]] = None,
+    data_source: Optional[str] = None,
+    extra_info: Optional[str] = None,
+) -> int:
     prediction = solution_str
     gold = ground_truth
     prompt, trace = split_trace(prediction)
@@ -376,12 +378,12 @@ def compute_action_read_pre(
 
 
 def compute_action_read_nxt(
-    solution_str=None,
-    ground_truth=None,
-    gold_sentences=None,
-    data_source=None,
-    extra_info=None,
-):
+    solution_str: Optional[str] = None,
+    ground_truth: Optional[str] = None,
+    gold_sentences: Optional[List[str]] = None,
+    data_source: Optional[str] = None,
+    extra_info: Optional[str] = None,
+) -> int:
     prediction = solution_str
     gold = ground_truth
     prompt, trace = split_trace(prediction)
@@ -390,12 +392,12 @@ def compute_action_read_nxt(
 
 
 def compute_action_continue(
-    solution_str=None,
-    ground_truth=None,
-    gold_sentences=None,
-    data_source=None,
-    extra_info=None,
-):
+    solution_str: Optional[str] = None,
+    ground_truth: Optional[str] = None,
+    gold_sentences: Optional[List[str]] = None,
+    data_source: Optional[str] = None,
+    extra_info: Optional[str] = None,
+) -> int:
     prediction = solution_str
     gold = ground_truth
     prompt, trace = split_trace(prediction)
@@ -404,12 +406,12 @@ def compute_action_continue(
 
 
 def compute_action_match(
-    solution_str=None,
-    ground_truth=None,
-    gold_sentences=None,
-    data_source=None,
-    extra_info=None,
-):
+    solution_str: Optional[str] = None,
+    ground_truth: Optional[str] = None,
+    gold_sentences: Optional[List[str]] = None,
+    data_source: Optional[str] = None,
+    extra_info: Optional[str] = None,
+) -> int:
     prediction = solution_str
     gold = ground_truth
     prompt, trace = split_trace(prediction)
@@ -418,12 +420,12 @@ def compute_action_match(
 
 
 def compute_total_action_number(
-    solution_str=None,
-    ground_truth=None,
-    gold_sentences=None,
-    data_source=None,
-    extra_info=None,
-):
+    solution_str: Optional[str] = None,
+    ground_truth: Optional[str] = None,
+    gold_sentences: Optional[List[str]] = None,
+    data_source: Optional[str] = None,
+    extra_info: Optional[str] = None,
+) -> int:
     prediction = solution_str
     gold = ground_truth
     prompt, trace = split_trace(prediction)
@@ -434,7 +436,7 @@ def compute_total_action_number(
 # define reward functions for evaluation
 
 
-def compute_scores(answer, ground_truth):
+def compute_scores(answer: str, ground_truth: str) -> float:
     parsed_answer = extract_answer(answer)
     if parsed_answer is None:
         return -0.1

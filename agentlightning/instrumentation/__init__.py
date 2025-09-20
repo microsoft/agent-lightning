@@ -2,22 +2,22 @@
 
 import warnings
 
-AGENTOPS_INSTALLED = False
-AGENTOPS_LANGCHAIN_INSTALLED = False
-LITELLM_INSTALLED = False
-VLLM_INSTALLED = False
+AGENTOPS_INSTALLED: bool = False
+AGENTOPS_LANGCHAIN_INSTALLED: bool = False
+LITELLM_INSTALLED: bool = False
+VLLM_INSTALLED: bool = False
 
 try:
-    from . import agentops
+    from . import agentops  # type: ignore
 
-    AGENTOPS_INSTALLED = True
+    AGENTOPS_INSTALLED = True  # type: ignore
 except ImportError:
     pass
 
 try:
-    from . import litellm
+    from . import litellm  # type: ignore
 
-    LITELLM_INSTALLED = True
+    LITELLM_INSTALLED = True  # type: ignore
 except ImportError:
     pass
 
@@ -32,9 +32,9 @@ except ImportError:
 
 
 try:
-    from . import agentops_langchain
+    from . import agentops_langchain  # type: ignore
 
-    AGENTOPS_LANGCHAIN_INSTALLED = True
+    AGENTOPS_LANGCHAIN_INSTALLED = True  # type: ignore
 except ImportError:
     pass
 

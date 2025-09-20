@@ -10,3 +10,14 @@ from .reward import reward
 from .server import AgentLightningServer
 from .trainer import Trainer
 from .types import *
+
+__all__ = [
+    "AgentLightningClient",
+    "DevTaskLoader",
+    "lightning_cli",
+    "configure_logger",
+    "reward",
+    "AgentLightningServer",
+    "Trainer",
+    "__version__",
+]

@@ -4,7 +4,7 @@ import math
 import os
 import re
 import string
-from typing import Any
+from typing import Any, cast
 
 import sympy
 from autogen_agentchat.agents import AssistantAgent
@@ -12,7 +12,7 @@ from autogen_core.models import ModelFamily
 from autogen_ext.models.openai import OpenAIChatCompletionClient
 from autogen_ext.tools.mcp import McpWorkbench, StdioServerParams
 
-from agentlightning import LLM, DevTaskLoader, LitAgent, NamedResources, Trainer, configure_logger, reward
+from agentlightning import LLM, LitAgent, NamedResources, Trainer, configure_logger, reward
 
 configure_logger()
 
@@ -48,8 +48,8 @@ def float_eval(input_str: str) -> float:
 
 
 def scalar_are_results_same(pred_result: str, true_result: str, rel_tol: float) -> bool:
-    pred_result = str(pred_result) if pred_result is not None else ""
-    true_result = str(true_result) if true_result is not None else ""
+    pred_result = str(pred_result) if pred_result is not None else ""  # type: ignore
+    true_result = str(true_result) if true_result is not None else ""  # type: ignore
 
     if pred_result.strip() == true_result.strip():
         return True
@@ -76,7 +76,7 @@ async def eval(prediction: str, ground_truth: str) -> float:
     return float(scalar_are_results_same(prediction, ground_truth, 1e-2))
 
 
-def get_agent(model, openai_base_url, temperature, workbench):
+def get_agent(model: str, openai_base_url: str, temperature: float, workbench: McpWorkbench) -> AssistantAgent:
     model_client = OpenAIChatCompletionClient(
         model=model,
         base_url=openai_base_url,
@@ -100,10 +100,10 @@ def get_agent(model, openai_base_url, temperature, workbench):
     return calc_agent
 
 
-class CalcAgent(LitAgent):
+class CalcAgent(LitAgent[Any]):
 
-    async def training_rollout_async(self, task: Any, rollout_id: str, resources: NamedResources) -> Any:
-        llm: LLM = resources.get("main_llm")
+    async def training_rollout_async(self, task: Any, rollout_id: str, resources: NamedResources) -> Any:  # type: ignore
+        llm: LLM = cast(LLM, resources.get("main_llm"))
         async with McpWorkbench(calculator_mcp_server) as workbench:
             calc_agent = get_agent(
                 llm.model,
@@ -116,19 +116,19 @@ class CalcAgent(LitAgent):
                 prompt = task["question"] + " " + output_format
                 result = await calc_agent.run(task=prompt)
                 # evaluate
-                answer = re.search(r"###\s*ANSWER:\s*(.+?)(\s*###|$)", result.messages[-1].content)
+                answer = re.search(r"###\s*ANSWER:\s*(.+?)(\s*###|$)", result.messages[-1].content)  # type: ignore
                 if answer:
                     answer = answer.group(1)
                 else:
-                    answer = result.messages[-1].content
+                    answer = result.messages[-1].content  # type: ignore
             except Exception as e:
                 print("Failure:", str(e))
                 answer = "None"
-            reward = await eval(answer, str(task["result"]))  # reward is tracked with the decorator
-            print("answer: {} ground_truth: {} reward: {}".format(answer, task["result"], reward))
+            reward = await eval(answer, str(task["result"]))  # reward is tracked with the decorator  # type: ignore
+            print("answer: {} ground_truth: {} reward: {}".format(answer, task["result"], reward))  # type: ignore
 
-    async def validation_rollout_async(self, task: Any, rollout_id: str, resources: NamedResources) -> Any:
-        llm: LLM = resources.get("main_llm")
+    async def validation_rollout_async(self, task: Any, rollout_id: str, resources: NamedResources) -> Any:  # type: ignore
+        llm: LLM = cast(LLM, resources.get("main_llm"))
         resources = {
             "main_llm": LLM(
                 endpoint=llm.endpoint,

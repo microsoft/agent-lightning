@@ -6,9 +6,9 @@ import functools
 import inspect
 import logging
 import weakref
-from typing import TYPE_CHECKING, Any, Callable, Coroutine, Dict, Generic, List, Optional, TypeVar, Union
+from typing import TYPE_CHECKING, Any, Callable, Coroutine, Generic, Optional, TypeVar, Union
 
-from .types import LLM, NamedResources, Rollout, RolloutRawResult, Task, TaskInput, Triplet
+from .types import LLM, NamedResources, Rollout, RolloutRawResult, Task
 
 if TYPE_CHECKING:
     from .runner import AgentRunner
@@ -28,7 +28,7 @@ __all__ = [
 ]
 
 
-def is_v0_1_rollout_api(func: Callable) -> bool:
+def is_v0_1_rollout_api(func: Callable[..., Any]) -> bool:
     """Check if the rollout API is v0.1.
     Inspect the function signature to see if it has a rollout_id parameter.
 
@@ -71,13 +71,13 @@ class LitAgent(Generic[T]):
         return (
             (
                 hasattr(self, "training_rollout_async")
-                and self.__class__.training_rollout_async is not LitAgent.training_rollout_async
+                and self.__class__.training_rollout_async is not LitAgent.training_rollout_async  # type: ignore
             )
             or (
                 hasattr(self, "validation_rollout_async")
-                and self.__class__.validation_rollout_async is not LitAgent.validation_rollout_async
+                and self.__class__.validation_rollout_async is not LitAgent.validation_rollout_async  # type: ignore
             )
-            or (hasattr(self, "rollout_async") and self.__class__.rollout_async is not LitAgent.rollout_async)
+            or (hasattr(self, "rollout_async") and self.__class__.rollout_async is not LitAgent.rollout_async)  # type: ignore
         )
 
     def set_trainer(self, trainer: Trainer) -> None:
@@ -321,9 +321,9 @@ class LitAgentLLM(LitAgent[T]):
         self._accepts_rollout = "rollout" in inspect.signature(llm_rollout_func).parameters
 
         # Copy function metadata to preserve type hints and other attributes
-        functools.update_wrapper(self, llm_rollout_func)
+        functools.update_wrapper(self, llm_rollout_func)  # type: ignore
 
-    def __call__(self, *args, **kwargs):
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
         """Make the agent instance callable, preserving the original function behavior."""
         return self.llm_rollout_func(*args, **kwargs)
 
@@ -434,7 +434,7 @@ def llm_rollout(func: LlmRolloutFunc[T], *, trained_agents: Optional[str] = None
     return LitAgentLLM(func, trained_agents=trained_agents)
 
 
-def rollout(func: Union[LlmRolloutFunc[T], Callable], *, trained_agents: Optional[str] = None) -> LitAgent[T]:
+def rollout(func: Union[LlmRolloutFunc[T], Callable[..., Any]], *, trained_agents: Optional[str] = None) -> LitAgent[T]:
     """Create a LitAgent from a function, automatically detecting the appropriate type.
 
     This function inspects the provided callable and creates the appropriate

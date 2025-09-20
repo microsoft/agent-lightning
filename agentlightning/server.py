@@ -10,7 +10,6 @@ from typing import Any, Dict, List, Literal, Optional
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Path
-from pydantic import Field
 
 from .types import (
     GenericResponse,
@@ -218,7 +217,7 @@ class AgentLightningServer:
             return
         processing_tasks = self._store.get_processing_tasks()
 
-        for rollout_id, task in processing_tasks.items():
+        for _, task in processing_tasks.items():
             if task.last_claim_time and current_time - task.last_claim_time > self._task_timeout_seconds:
                 await self._store.requeue_task(task)
                 logger.warning(
@@ -229,7 +228,7 @@ class AgentLightningServer:
         """Setup FastAPI routes."""
 
         @self._app.get("/task", response_model=TaskIfAny)
-        async def next_task() -> TaskIfAny:
+        async def next_task() -> TaskIfAny:  # type: ignore
             """Endpoint for clients to poll for the next available task."""
             await self._check_and_requeue_stale_tasks()
 
@@ -245,7 +244,7 @@ class AgentLightningServer:
                 return TaskIfAny(is_available=False)
 
         @self._app.get("/resources/latest", response_model=ResourcesUpdate)
-        async def fetch_latest_resources() -> ResourcesUpdate:
+        async def fetch_latest_resources() -> ResourcesUpdate:  # type: ignore
             """Endpoint for clients to poll for the latest available resources."""
             if not self._store:
                 raise HTTPException(status_code=503, detail="Server not fully initialized.")
@@ -256,7 +255,7 @@ class AgentLightningServer:
             return resources_update
 
         @self._app.get("/resources/{resource_id}", response_model=ResourcesUpdate)
-        async def fetch_resources_by_id(
+        async def fetch_resources_by_id(  # type: ignore
             resource_id: str = Path(..., description="The unique identifier for the resource version.")
         ) -> ResourcesUpdate:
             """Endpoint for clients to fetch a specific version of resources."""
@@ -269,7 +268,7 @@ class AgentLightningServer:
             return resources_update
 
         @self._app.post("/rollout", response_model=GenericResponse)
-        async def post_rollout(payload: Rollout) -> GenericResponse:
+        async def post_rollout(payload: Rollout) -> GenericResponse:  # type: ignore
             """Endpoint for clients to report a completed rollout."""
             if not self._store:
                 raise HTTPException(status_code=503, detail="Server not fully initialized.")

@@ -83,7 +83,7 @@ class AgentLightningClient:
                 logger.debug(f"Async POST request failed for {url}: {e}")
                 return None
 
-    async def poll_next_task_async(self) -> Task:
+    async def poll_next_task_async(self) -> Optional[Task]:
         """Polls the server asynchronously for the next task until one is available.
 
         Returns:
@@ -186,7 +186,7 @@ class AgentLightningClient:
             logger.debug(f"Sync POST request failed for {url}: {e}")
             return None
 
-    def poll_next_task(self) -> Task:
+    def poll_next_task(self) -> Optional[Task]:
         """Polls the server synchronously for the next task until one is available.
 
         Returns:
@@ -303,7 +303,7 @@ class DevTaskLoader(AgentLightningClient):
         """Return rollouts that have been posted back to the loader."""
         return self._rollouts
 
-    def poll_next_task(self) -> Task:
+    def poll_next_task(self) -> Optional[Task]:
         """Returns the next task from the local queue.
 
         If tasks are TaskInput objects, assembles them into Task objects.
@@ -350,7 +350,7 @@ class DevTaskLoader(AgentLightningClient):
         self._rollouts.append(rollout)
         return {"status": "received", "rollout_id": rollout.rollout_id}
 
-    async def poll_next_task_async(self) -> Task:
+    async def poll_next_task_async(self) -> Optional[Task]:
         return self.poll_next_task()
 
     async def get_resources_by_id_async(self, resource_id: str) -> Optional[ResourcesUpdate]:

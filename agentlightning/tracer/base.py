@@ -67,7 +67,7 @@ class BaseTracer(ParallelWorkerBase):
         """
         raise NotImplementedError()
 
-    def trace_run(self, func: Callable, *args, **kwargs) -> Any:
+    def trace_run(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         """
         A convenience wrapper to trace the execution of a single synchronous function.
 
@@ -82,7 +82,7 @@ class BaseTracer(ParallelWorkerBase):
         with self.trace_context(name=func.__name__):
             return func(*args, **kwargs)
 
-    async def trace_run_async(self, func: Callable[..., Awaitable], *args, **kwargs) -> Any:
+    async def trace_run_async(self, func: Callable[..., Awaitable[Any]], *args: Any, **kwargs: Any) -> Any:
         """
         A convenience wrapper to trace the execution of a single asynchronous function.
 

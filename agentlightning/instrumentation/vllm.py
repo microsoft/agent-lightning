@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import warnings
-from typing import List
+from typing import Any, List
 
 import vllm.entrypoints.openai.protocol
 from vllm.entrypoints.openai.protocol import ChatCompletionResponse
@@ -19,15 +19,15 @@ original_chat_completion_full_generator = OpenAIServingChat.chat_completion_full
 
 
 async def chat_completion_full_generator(
-    self,
-    request,
-    result_generator,
+    self: Any,
+    request: Any,
+    result_generator: Any,
     request_id: str,
     model_name: str,
-    conversation,
-    tokenizer,
-    request_metadata,
-):
+    conversation: Any,
+    tokenizer: Any,
+    request_metadata: Any,
+) -> Any:
     prompt_token_ids: List[int] | None = None
     response_token_ids: List[List[int]] | None = None
 

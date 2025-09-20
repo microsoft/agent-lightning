@@ -1,5 +1,7 @@
 # Copyright (c) Microsoft. All rights reserved.
 
+# type: ignore
+
 """Test that @llm_rollout and @rollout decorators preserve function executability."""
 
 import inspect
