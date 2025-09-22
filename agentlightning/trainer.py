@@ -460,3 +460,11 @@ class Trainer(ParallelWorkerBase):
                 self.teardown()
             else:
                 logger.info("Main process exiting. Please use Trainer.kill_orphaned_processes() for cleanup.")
+
+    def step(self, agent: LitAgent[T_co], task_input: T_co) -> None:
+        """Perform one single rollout of the agent on a particular task input,
+        and send the result to the algorithm.
+        
+        Theoretically, users can use `step` in a loop to implement what's equivalent to the training.
+        """
+        ...

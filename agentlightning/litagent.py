@@ -410,9 +410,9 @@ def llm_rollout(func: LlmRolloutFunc[T], *, trained_agents: Optional[str] = None
     Args:
         func: A function that defines the agent's behavior. Can be:
               - sync: (task, llm) -> result
-              - sync with rollout: (task, llm, rollout) -> result
+              - sync with full rollout obj: (task, llm, rollout) -> result
               - async: async (task, llm) -> result
-              - async with rollout: async (task, llm, rollout) -> result
+              - async with full rollout obj: async (task, llm, rollout) -> result
         trained_agents: Optional string representing trained agents.
 
     Returns:

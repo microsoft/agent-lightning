@@ -2,6 +2,10 @@
 
 
 class ExecutionStrategy:
+    """
+    Execution strategy determines the placements of and communications between roles.
+    
+    """
 
     def fork(self) -> None:
         ...
