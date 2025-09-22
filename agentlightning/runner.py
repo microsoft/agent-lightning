@@ -7,8 +7,10 @@ from typing import Any, Dict, List, Optional, cast
 
 from opentelemetry.sdk.trace import ReadableSpan
 
+from .store.base import LightningStore
+
 from .adapter import TraceTripletAdapter
-from .client import AgentLightningClient
+# from .client import AgentLightningClient
 from .litagent import LitAgent, is_v0_1_rollout_api
 from .tracer.base import BaseTracer
 from .types import ParallelWorkerBase, Rollout, RolloutRawResult, Triplet
@@ -16,7 +18,7 @@ from .types import ParallelWorkerBase, Rollout, RolloutRawResult, Triplet
 logger = logging.getLogger(__name__)
 
 
-class AgentRunner(ParallelWorkerBase):
+class LightningRunner(ParallelWorkerBase):
     """Manages the agent's execution loop and integrates with AgentOps.
 
     This class orchestrates the interaction between the agent (`LitAgent`) and
@@ -35,16 +37,16 @@ class AgentRunner(ParallelWorkerBase):
     def __init__(
         self,
         agent: LitAgent[Any],
-        client: AgentLightningClient,
         tracer: BaseTracer,
         triplet_exporter: TraceTripletAdapter,
+        store: LightningStore,
         worker_id: Optional[int] = None,
         max_tasks: Optional[int] = None,
     ):
         super().__init__()
         self.agent = agent
-        self.client = client
         self.tracer = tracer
+        self.store = store
         self.triplet_exporter = triplet_exporter
 
         # Worker-specific attributes

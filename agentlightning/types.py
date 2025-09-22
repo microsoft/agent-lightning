@@ -71,6 +71,9 @@ class Rollout(BaseModel):
     acknowledge_time: Optional[float] = None # time when the current retry has started
     end_time: Optional[float] = None
 
+    # A bucket for any other relevant information
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
     # Primary, high-level feedback
     final_reward: Optional[float] = None
 
@@ -85,6 +88,38 @@ class Rollout(BaseModel):
         "json.loads(readable_span.to_json()).",
     )
     logs: Optional[List[str]] = None
+
+
+class RolloutV2(BaseModel):
+    rollout_id: str
+
+    # Inputs
+    input: TaskInput
+
+    trainer_mode: Optional[Literal["train", "val", "test"]] = None
+    resources_id: Optional[str] = None
+
+    # Optional fields for tracking task lifecycle
+    create_time: Optional[float] = None
+    last_claim_time: Optional[float] = None
+    num_claims: Optional[int] = None
+
+    # Running information
+    status: Literal[
+        "queuing", # initial status
+        "preparing", # after the trace is claimed
+        "running", # after receiving the first trace
+        "error", # crashed
+        "success", # status OK
+        "unresponsive", # the worker has not reported results for a while
+        "timeout", # the worker has been emitting new logs, but have been working on the task for too long
+        "requeuing", # retrying
+    ]
+    worker_id: Optional[str] = None
+    attempt_sequence_id: Optional[int] = None
+    attempt_id: Optional[str] = None # the universal id for current attempt
+    acknowledge_time: Optional[float] = None # time when the current retry has started
+    end_time: Optional[float] = None
 
     # A bucket for any other relevant information
     metadata: Dict[str, Any] = Field(default_factory=dict)

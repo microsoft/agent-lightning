@@ -7,11 +7,6 @@ class ExecutionStrategy:
     
     """
 
-    def fork(self) -> None:
-        ...
-
-    def terminate(self) -> None:
-        ...
 
 
 
@@ -22,15 +17,16 @@ class SharedMemoryExecutionStrategy(ExecutionStrategy):
         self.n_rollout_workers = n_rollout_workers
         self.main_thread = main_thread
 
-    def fork(self) -> None:
-        ...
-
 
 class InterProcessExecutionStrategy(ExecutionStrategy):
     alias: str = "ipc"
 
 
+class RayExecutionStrategy(ExecutionStrategy):
+
+
 class ClientServerExecutionStrategy(ExecutionStrategy):
     alias: str = "cs"
 
-    def __init__(self, role: str, )
+    def __init__(self, role: str, ):
+        # role can be either server or client
