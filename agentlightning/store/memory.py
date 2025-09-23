@@ -13,7 +13,7 @@ from opentelemetry.sdk.trace import ReadableSpan
 from agentlightning.tracer import Span
 from agentlightning.types import ResourcesUpdate, RolloutStatus, RolloutV2
 
-from .base import LightningStore, LightningStoreWatchDog, is_finished
+from .base import LightningStore, LightningStoreWatchDog, healthcheck, is_finished
 
 
 class InMemoryLightningStore(LightningStore):
@@ -40,6 +40,7 @@ class InMemoryLightningStore(LightningStore):
         # Completion tracking for wait_for_rollouts
         self._completion_events: Dict[str, asyncio.Event] = {}
 
+    @healthcheck
     async def add_task(
         self,
         sample: Any,
@@ -71,6 +72,7 @@ class InMemoryLightningStore(LightningStore):
 
             return rollout
 
+    @healthcheck
     async def pop_rollout(self) -> Optional[RolloutV2]:
         """
         Retrieves the next task from the queue without blocking.
@@ -101,6 +103,7 @@ class InMemoryLightningStore(LightningStore):
             status_set = set(status)
             return [rollout for rollout in self._rollouts.values() if rollout.status in status_set]
 
+    @healthcheck
     async def update_resources(self, update: ResourcesUpdate):
         """
         Safely stores a new version of named resources and sets it as the latest.
@@ -109,6 +112,7 @@ class InMemoryLightningStore(LightningStore):
             self._resources[update.resources_id] = update
             self._latest_resources_id = update.resources_id
 
+    @healthcheck
     async def get_resources_by_id(self, resources_id: str) -> Optional[ResourcesUpdate]:
         """
         Safely retrieves a specific version of named resources by its ID.
@@ -116,6 +120,7 @@ class InMemoryLightningStore(LightningStore):
         async with self._lock:
             return self._resources.get(resources_id)
 
+    @healthcheck
     async def get_latest_resources(self) -> Optional[ResourcesUpdate]:
         """
         Safely retrieves the latest version of named resources.
@@ -147,6 +152,7 @@ class InMemoryLightningStore(LightningStore):
 
             return span
 
+    @healthcheck
     async def wait_for_rollouts(self, rollout_ids: List[str], timeout: Optional[float] = None) -> List[RolloutV2]:
         """
         Wait for specified rollouts to complete with a timeout.
@@ -154,6 +160,7 @@ class InMemoryLightningStore(LightningStore):
         """
         completed_rollouts: List[RolloutV2] = []
 
+        @healthcheck
         async def wait_for_rollout(rollout_id: str):
             if rollout_id in self._completion_events:
                 try:

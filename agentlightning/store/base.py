@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import functools
 import time
-from typing import Any, Dict, List, Literal, Optional, Sequence
+from typing import Any, Callable, Dict, List, Literal, Optional, Sequence, TypeVar, cast
 
 from opentelemetry.sdk.trace import ReadableSpan
 
@@ -21,6 +22,27 @@ def is_running(rollout: RolloutV2) -> bool:
 
 def is_finished(rollout: RolloutV2) -> bool:
     return rollout.status == "error" or rollout.status == "success"
+
+
+T_callable = TypeVar("T_callable", bound=Callable[..., Any])
+
+
+def healthcheck(func: T_callable) -> T_callable:
+    """
+    Decorator to run the watchdog healthcheck before executing the decorated method.
+    Only runs if the store has a watchdog configured.
+    """
+
+    @functools.wraps(func)
+    async def wrapper(self: LightningStore, *args: Any, **kwargs: Any) -> Any:
+        # Run watchdog healthcheck if available
+        if self.watchdog is not None:
+            await self.watchdog.healthcheck(self)
+
+        # Execute the original method
+        return await func(self, *args, **kwargs)
+
+    return cast(T_callable, wrapper)
 
 
 class LightningStore:
@@ -42,7 +64,7 @@ class LightningStore:
         """
         Adds a new task to the queue with specific metadata and returns its unique ID.
         """
-        ...
+        raise NotImplementedError()
 
     async def pop_rollout(self) -> Optional[RolloutV2]:
         """
@@ -51,52 +73,52 @@ class LightningStore:
 
         Will set the rollout status to preparing.
         """
-        ...
+        raise NotImplementedError()
 
     async def query_rollouts(self, status: Optional[Sequence[RolloutStatus]] = None) -> List[RolloutV2]:
         """
         Query and retrieve rollouts filtered by their status.
         If no status is provided, returns all rollouts.
         """
-        ...
+        raise NotImplementedError()
 
-    async def update_resources(self, update: ResourcesUpdate):
+    async def update_resources(self, update: ResourcesUpdate) -> None:
         """
         Safely stores a new version of named resources and sets it as the latest.
         """
-        ...
+        raise NotImplementedError()
 
     async def get_resources_by_id(self, resources_id: str) -> Optional[ResourcesUpdate]:
         """
         Safely retrieves a specific version of named resources by its ID.
         """
-        ...
+        raise NotImplementedError()
 
     async def get_latest_resources(self) -> Optional[ResourcesUpdate]:
         """
         Safely retrieves the latest version of named resources.
         """
-        ...
+        raise NotImplementedError()
 
     async def add_span(self, rollout_id: str, attempt_id: str, readable_span: ReadableSpan) -> Span:
         """
         Add a span to the store.
         """
-        ...
+        raise NotImplementedError()
 
     async def wait_for_rollouts(self, rollout_ids: List[str], timeout: Optional[float] = None) -> List[RolloutV2]:
         """
         Wait for specified rollouts to complete with a timeout.
         Returns the completed rollouts, potentially incomplete if timeout is reached.
         """
-        ...
+        raise NotImplementedError()
 
     async def query_spans(self, rollout_id: str) -> List[Span]:
         """
         Query and retrieve all spans associated with a specific rollout ID.
         Returns an empty list if no spans are found.
         """
-        ...
+        raise NotImplementedError()
 
     async def _update_rollout(
         self,
@@ -108,7 +130,7 @@ class LightningStore:
         attempt_start_time: Optional[float] = None,
         last_attempt_status: Optional[RolloutStatus] = None,
         **kwargs: Any,
-    ):
+    ) -> None:
         """
         Update the rollout status and related metadata.
         This should only be used internally or by watchdog.
@@ -123,7 +145,7 @@ class LightningStore:
             last_attempt_status: Optional status of the last attempt
             **kwargs: Additional rollout metadata to update
         """
-        ...
+        raise NotImplementedError()
 
 
 class LightningStoreWatchDog:
