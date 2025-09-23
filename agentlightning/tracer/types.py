@@ -22,26 +22,15 @@ Attributes = Dict[str, AttributeValue]
 TraceState = Dict[str, str]
 
 
-class SpanKind(str, Enum):
-    INTERNAL = "SpanKind.INTERNAL"
-    SERVER = "SpanKind.SERVER"
-    CLIENT = "SpanKind.CLIENT"
-    PRODUCER = "SpanKind.PRODUCER"
-    CONSUMER = "SpanKind.CONSUMER"
-
-
-class StatusCode(str, Enum):
-    UNSET = "UNSET"
-    OK = "OK"
-    ERROR = "ERROR"
-
-
 class SpanContext(BaseModel):
     """Corresponding to opentelemetry.trace.SpanContext"""
     trace_id: str
     span_id: str
     is_remote: bool
     trace_state: TraceState
+
+    class Config:
+        allow_extra = True
 
     @classmethod
     def from_opentelemetry(cls, src: trace_api.SpanContext) -> "SpanContext":
@@ -50,12 +39,17 @@ class SpanContext(BaseModel):
             span_id=trace_api.format_span_id(src.span_id),
             is_remote=src.is_remote,
             trace_state={k: v for k, v in src.trace_state.items()} if src.trace_state else {},
+            ...
         )
 
 
 class TraceStatus(BaseModel):
-    status_code: StatusCode = StatusCode.UNSET
+    """Corresponding to opentelemetry.trace.Status"""
+    status_code: str
     description: Optional[str] = None
+
+    class Config:
+        allow_extra = True
 
 
 class Event(BaseModel):
@@ -105,7 +99,6 @@ class Span(BaseModel):
 
     # Core ReadableSpan fields
     name: str
-    kind: SpanKind
     status: TraceStatus
     attributes: Attributes
     events: List[Event]
@@ -132,4 +125,3 @@ class Span(BaseModel):
         self.rollout_id = rollout_id
         self.attempt_id = attempt_id
 
-        self.trace_id = trace
