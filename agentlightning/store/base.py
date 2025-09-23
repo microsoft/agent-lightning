@@ -1,19 +1,33 @@
-from typing import *
+from __future__ import annotations
+
+from typing import Any, Dict, List, Literal, Optional
 
 from opentelemetry.sdk.trace import ReadableSpan
 
-from agentlightning.types import *
+from agentlightning.tracer import Span
+from agentlightning.types import ResourcesUpdate, RolloutStatus, RolloutV2
 
 
-def is_queuing(rollout: Rollout):
+def is_queuing(rollout: RolloutV2) -> bool:
     return rollout.status == "queuing" or rollout.status == "requeuing"
+
+
+def is_running(rollout: RolloutV2) -> bool:
+    return rollout.status == "preparing" or rollout.status == "running"
+
+
+def is_finished(rollout: RolloutV2) -> bool:
+    return rollout.status == "error" or rollout.status == "success"
 
 
 class LightningStore:
     """
-    A centralized, thread-safe, async, in-memory data store for the server's state.
+    A centralized, thread-safe, async, data store for the lightning's state.
     This holds the task queue, versioned resources, and completed rollouts.
     """
+
+    def __init__(self, watchdog: LightningStoreWatchDog | None = None):
+        self.watchdog = watchdog
 
     async def add_task(
         self,
@@ -21,13 +35,13 @@ class LightningStore:
         mode: Literal["train", "val", "test"] | None = None,
         resources_id: str | None = None,
         metadata: Dict[str, Any] | None = None,
-    ) -> Rollout:
+    ) -> RolloutV2:
         """
         Adds a new task to the queue with specific metadata and returns its unique ID.
         """
         ...
 
-    async def pop_rollout(self) -> Optional[Rollout]:
+    async def pop_rollout(self) -> Optional[RolloutV2]:
         """
         Retrieves the next task from the queue without blocking.
         Returns None if the queue is empty.
@@ -60,11 +74,19 @@ class LightningStore:
         """
         ...
 
-    async def wait_for_rollouts(self, rollout_ids: List[str], timeout: float) -> List[Rollout]: ...
+    async def wait_for_rollouts(self, rollout_ids: List[str], timeout: float) -> List[RolloutV2]: ...
 
-    async def get_spans(self, rollout_id: str) -> List[Span]: ...
+    async def query_spans(self, rollout_id: str) -> List[Span]: ...
 
-    async def _update_rollout(self, rollout_data: Partial[Rollout]) -> Rollout:
+    async def _update_rollout(
+        self,
+        status: RolloutStatus,
+        worker_id: Optional[str] = None,
+        attempt_sequence_id: Optional[int] = None,
+        attempt_id: Optional[str] = None,
+        acknowledge_time: Optional[float] = None,
+        **kwargs: Any,
+    ):
         """
         Update the rollout status.
         This should only be used internally or by watchdog.
