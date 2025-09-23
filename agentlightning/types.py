@@ -86,7 +86,6 @@ class RolloutV2(BaseModel):
     resources_id: Optional[str] = None
 
     # Optional fields for tracking task lifecycle
-    create_time: Optional[float] = None
     start_time: Optional[float] = None
     end_time: Optional[float] = None
 
@@ -95,7 +94,10 @@ class RolloutV2(BaseModel):
     worker_id: Optional[str] = None
     attempt_sequence_id: Optional[int] = None
     attempt_id: Optional[str] = None  # the universal id for current attempt
-    acknowledge_time: Optional[float] = None  # time when the current retry has started
+    attempt_start_time: Optional[float] = None  # time when the current retry has started
+    # status of the last attempt if any,
+    # only available when the rollout starts to requeue
+    last_attempt_status: Optional[RolloutStatus] = None
 
     # A bucket for any other relevant information
     metadata: Dict[str, Any] = Field(default_factory=dict)
