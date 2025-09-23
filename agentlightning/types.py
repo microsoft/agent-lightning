@@ -80,19 +80,19 @@ class RolloutV2(BaseModel):
 
     # Running information
     status: Literal[
-        "queuing", # initial status
-        "preparing", # after the trace is claimed
-        "running", # after receiving the first trace
-        "error", # crashed
-        "success", # status OK
-        "unresponsive", # the worker has not reported results for a while
-        "timeout", # the worker has been emitting new logs, but have been working on the task for too long
-        "requeuing", # retrying
+        "queuing",  # initial status
+        "preparing",  # after the trace is claimed
+        "running",  # after receiving the first trace
+        "error",  # crashed
+        "success",  # status OK
+        "unresponsive",  # the worker has not reported results for a while
+        "timeout",  # the worker has been emitting new logs, but have been working on the task for too long
+        "requeuing",  # retrying
     ]
     worker_id: Optional[str] = None
     attempt_sequence_id: Optional[int] = None
-    attempt_id: Optional[str] = None # the universal id for current attempt
-    acknowledge_time: Optional[float] = None # time when the current retry has started
+    attempt_id: Optional[str] = None  # the universal id for current attempt
+    acknowledge_time: Optional[float] = None  # time when the current retry has started
     end_time: Optional[float] = None
 
     # A bucket for any other relevant information

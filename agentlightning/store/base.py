@@ -1,7 +1,8 @@
 from typing import *
-from agentlightning.types import *
 
 from opentelemetry.sdk.trace import ReadableSpan
+
+from agentlightning.types import *
 
 
 def is_queuing(rollout: Rollout):
@@ -59,11 +60,9 @@ class LightningStore:
         """
         ...
 
-    async def wait_for_rollouts(self, rollout_ids: List[str], timeout: float) -> List[Rollout]:
-        ...
+    async def wait_for_rollouts(self, rollout_ids: List[str], timeout: float) -> List[Rollout]: ...
 
-    async def get_spans(self, rollout_id: str) -> List[Span]:
-        ...
+    async def get_spans(self, rollout_id: str) -> List[Span]: ...
 
     async def _update_rollout(self, rollout_data: Partial[Rollout]) -> Rollout:
         """
@@ -79,5 +78,4 @@ class LightningStoreWatchDog:
         self.timeout_seconds = timeout_seconds
         self.unresponsive_seconds = unresponsive_seconds
 
-    def healthcheck(self, store: LightningStore):
-        ...
+    def healthcheck(self, store: LightningStore): ...
