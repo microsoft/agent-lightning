@@ -4,7 +4,8 @@ import asyncio
 import logging
 import multiprocessing
 import threading
-from typing import Literal, Protocol
+from contextlib import suppress
+from typing import Any, Awaitable, Literal, Protocol
 
 from .store.base import LightningStore
 from .store.client_server import LightningStoreClient, LightningStoreServer
@@ -14,11 +15,25 @@ logger = logging.getLogger(__name__)
 
 
 class AlgorithmBundle(Protocol):
-    async def __call__(self, store: LightningStore) -> None: ...
+    async def __call__(self, store: LightningStore) -> None:
+        """Initalization and execution logic."""
+
+    async def cleanup(self) -> None:
+        """Cleaning up is invoked when the execution is done or interrupted.
+        It's not part of the `__call__` logic; and is not recommended to bake into `__call__`.
+        Executor will call cleanup at best effort in case of graceful shutdown.
+        """
 
 
 class RunnerBundle(Protocol):
-    async def __call__(self, store: LightningStore, worker_id: int) -> None: ...
+    async def __call__(self, store: LightningStore, worker_id: int) -> None:
+        """Initalization and execution logic."""
+
+    async def cleanup(self) -> None:
+        """Cleaning up is invoked when the execution is done or interrupted.
+        It's not part of the `__call__` logic; and is not recommended to bake into `__call__`.
+        Executor will call cleanup at best effort in case of graceful shutdown.
+        """
 
 
 class ExecutionStrategy:
@@ -39,12 +54,54 @@ class ExecutionStrategy:
 
 
 class SharedMemoryExecutionStrategy(ExecutionStrategy):
+    """Run algorithm and runners in a single process with threads sharing memory.
+
+    This strategy wraps the provided `LightningStore` with a thread-safe adapter
+    and runs the algorithm bundle and one or more runner bundles as threads.
+
+    **Notes on termination:**
+    Python threads cannot be forcefully killed. If a bundle does not cooperate
+    (e.g., block forever in I/O without cancellation), the interpreter may not
+    exit promptly. We therefore mark threads as daemons and join with a timeout,
+    logging an error if any are still alive.
+    """
 
     alias: str = "shm"
 
     def __init__(self, n_runners: int = 1, main_thread: Literal["algorithm", "runner"] = "runner") -> None:
         self.n_runners = n_runners
         self.main_thread = main_thread
+
+    async def _run_until_completed_or_canceled(
+        self, coro: asyncio._CoroutineLike[Any], stop_evt: threading.Event
+    ) -> Any:
+        task = asyncio.create_task(coro)
+
+        # Bridge: when the threading.Event is set, cancel the task on this loop.
+        async def watch_stop():
+            await asyncio.to_thread(stop_evt.wait)  # doesn’t block the loop
+            task.cancel()
+
+        watcher = asyncio.create_task(watch_stop())
+
+        result: Any = None
+
+        try:
+            await asyncio.wait({task, watcher}, return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            # Ensure the algorithm task is finished/cancelled and awaited
+            if not task.done():
+                logger.warning(f"Coroutine {coro} did not complete before stop event, cancelling...")
+                task.cancel()
+            else:
+                logger.debug(f"Coroutine {coro} completed before stop event.")
+            with suppress(asyncio.CancelledError):
+                result = await task
+            watcher.cancel()
+            with suppress(asyncio.CancelledError):
+                await watcher
+
+        return result
 
     def _algorithm_thread(self, algorithm: AlgorithmBundle, store: LightningStore) -> None:
         asyncio.run(algorithm(store))
@@ -89,6 +146,26 @@ class SharedMemoryExecutionStrategy(ExecutionStrategy):
 
 
 class ClientServerExecutionStrategy(ExecutionStrategy):
+    """Run algorithm (server) and runners (clients) as separate processes over HTTP.
+
+    - Role "algorithm": start the HTTP server (`LightningStoreServer`) in-process
+      and run the algorithm against it.
+    - Role "runner": connect to a remote server via `LightningStoreClient` and run
+      one or more runner processes.
+    - Role "both": spawn runner processes, then start the algorithm + server in the
+      main process.
+
+    **Notes on termination**
+    Child processes are tracked; on Ctrl+C or normal completion we terminate any
+    still-alive runner processes and then `join()` them to avoid zombies.
+
+    For termination, we try the following sequence in order:
+    1. Send the special signal to the subprocesses to trigger graceful cleanup.
+    2. Wait up to 5 seconds for them to exit on their own.
+    3. If still alive, send SIGTERM to request termination.
+    4. Wait another 5 seconds for them to exit on their own.
+    5. If still alive, send SIGKILL to force immediate termination.
+    """
 
     alias: str = "cs"
 

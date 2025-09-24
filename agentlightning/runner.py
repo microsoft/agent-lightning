@@ -3,7 +3,7 @@
 import json
 import logging
 import time
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, Dict, List, Optional, Protocol, cast
 
 from opentelemetry.sdk.trace import ReadableSpan
 
@@ -14,6 +14,18 @@ from .tracer.base import BaseTracer
 from .types import ParallelWorkerBase, Rollout, RolloutRawResult, Triplet
 
 logger = logging.getLogger(__name__)
+
+
+class Runner(Protocol):
+    async def __call__(self) -> None: ...
+
+
+class RunnerFactory(Protocol):
+    def __call__(
+        self,
+        worker_id: Optional[int],
+        agent: Optional[LitAgent[Any]],
+    ) -> Runner: ...
 
 
 class AgentRunner(ParallelWorkerBase):
