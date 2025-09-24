@@ -88,20 +88,13 @@ class SharedMemoryExecutionStrategy(ExecutionStrategy):
                 # algo_thread.kill() ?
 
 
-class InterProcessExecutionStrategy(ExecutionStrategy):
-
-    alias: str = "ipc"
-
-    # TODO: to be implemented
-
-
 class ClientServerExecutionStrategy(ExecutionStrategy):
 
     alias: str = "cs"
 
     def __init__(
         self,
-        role: Literal["algorithm", "runner"],
+        role: Literal["algorithm", "runner", "both"],
         server_host: str = "localhost",
         server_port: int = 4747,
         n_runners: int = 1,
@@ -130,24 +123,45 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
         except KeyboardInterrupt:
             logger.warning("Received KeyboardInterrupt, shutting down...")
 
+    def _spawn_runners(self, runner: RunnerBundle, store: LightningStore) -> list[multiprocessing.Process]:
+        processes: list[multiprocessing.Process] = []
+
+        def _runner_sync(runner: RunnerBundle, store: LightningStore, worker_id: int) -> None:
+            asyncio.run(self._execute_runner(runner, store, worker_id))
+
+        for i in range(self.n_runners):
+            p = multiprocessing.Process(target=_runner_sync, args=(runner, store, i))
+            processes.append(p)
+            p.start()
+
+        return processes
+
     def execute(self, algorithm: AlgorithmBundle, runner: RunnerBundle, store: LightningStore) -> None:
         logger.info(f"Starting client-server execution with {self.n_runners} runners")
 
         if self.role == "algorithm":
             asyncio.run(self._execute_algorithm(algorithm, store))
-        else:
+        elif self.role == "runner":
             if self.n_runners == 1:
                 asyncio.run(self._execute_runner(runner, store, 0))
             else:
-                processes: list[multiprocessing.Process] = []
-
-                def _runner_sync(runner: RunnerBundle, store: LightningStore, worker_id: int) -> None:
-                    asyncio.run(self._execute_runner(runner, store, worker_id))
-
-                for i in range(self.n_runners):
-                    p = multiprocessing.Process(target=_runner_sync, args=(runner, store, i))
-                    processes.append(p)
-                    p.start()
-
+                processes = self._spawn_runners(runner, store)
                 for p in processes:
                     p.join()
+        elif self.role == "both":
+            # Auto start all the runners in subprocesses
+            processes = self._spawn_runners(runner, store)
+            # Run the algorithm in the main process
+            asyncio.run(self._execute_algorithm(algorithm, store))
+            # Wait for all runners to finish
+            for p in processes:
+                p.join()
+        else:
+            raise ValueError(f"Unknown role: {self.role}")
+
+
+class InterProcessExecutionStrategy(ExecutionStrategy):
+
+    alias: str = "ipc"
+
+    # TODO: to be implemented
