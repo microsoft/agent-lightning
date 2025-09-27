@@ -542,7 +542,17 @@ class TraceTripletAdapter(TraceAdapter[List[Triplet]]):
     def visualize(
         self, source: List[ReadableSpan], /, filename: str = "trace_tree", interested_span_match: str | None = None
     ) -> TraceTree:
-        """Visualize the trace tree."""
+        """
+        Visualize the trace tree.
+
+        Args:
+            source (List[ReadableSpan]): The list of OpenTelemetry spans to visualize.
+            filename (str): The base filename for the output visualization (default: "trace_tree").
+            interested_span_match (str | None): Optional regular expression pattern to highlight or focus on specific spans in the visualization.
+
+        Returns:
+            TraceTree: The constructed trace tree object.
+        """
         trace_tree = TraceTree.from_spans(source)
         if self.repair_hierarchy:
             trace_tree.repair_hierarchy()
