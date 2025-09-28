@@ -3,14 +3,16 @@ import os
 import tempfile
 import threading
 import time
-from typing import Any, Dict, List, TypedDict
+from typing import Any, AsyncGenerator, Dict, List, Literal, Optional, TypedDict, Union
 
+import litellm
 import uvicorn
 import yaml
+from litellm.caching.dual_cache import DualCache
+from litellm.integrations.custom_logger import CustomLogger
 from litellm.integrations.opentelemetry import OpenTelemetry
-from litellm.proxy.proxy_server import app, save_worker_config
-
-otel = OpenTelemetry()
+from litellm.proxy.proxy_server import UserAPIKeyAuth, app, save_worker_config
+from litellm.types.utils import ModelResponseStream
 
 
 class ModelConfig(TypedDict):
@@ -18,49 +20,24 @@ class ModelConfig(TypedDict):
     litellm_params: Dict[str, Any]
 
 
-from typing import Any, AsyncGenerator, Literal, Optional, Union
-
-import litellm
-from litellm.caching.dual_cache import DualCache
-from litellm.integrations.custom_logger import CustomLogger
-from litellm.proxy.proxy_server import UserAPIKeyAuth
-from litellm.types.utils import ModelResponseStream
-
-
-# This file includes the custom callbacks for LiteLLM Proxy
-# Once defined, these can be passed in proxy_config.yaml
-class MyCustomHandler(CustomLogger):  # https://docs.litellm.ai/docs/observability/custom_callback#callback-class
-    # Class variables or attributes
-    def __init__(self):
-        pass
-
-    #### CALL HOOKS - proxy only ####
+class AddReturnTokenIds(CustomLogger):
 
     async def async_pre_call_hook(
         self,
         user_api_key_dict: UserAPIKeyAuth,
         cache: DualCache,
-        data: dict,
-        call_type: Literal[
-            "completion",
-            "text_completion",
-            "embeddings",
-            "image_generation",
-            "moderation",
-            "audio_transcription",
-            "pass_through_endpoint",
-            "rerank",
-        ],
-    ) -> Optional[
-        Union[Exception, str, dict]
-    ]:  # raise exception if invalid, return a str for the user to receive - if rejected, or return a modified dictionary for passing into litellm
+        data: Dict[str, Any],
+        call_type: Any,
+    ) -> Optional[Union[Exception, str, dict]]:
         print(call_type, data)
         return {**data, "return_token_ids": True}
 
 
-proxy_handler_instance = MyCustomHandler()
+add_return_token_ids = AddReturnTokenIds()
 
-litellm.callbacks.append(MyCustomHandler())
+litellm.callbacks.append(add_return_token_ids)
+
+otel = OpenTelemetry()
 litellm.callbacks.append(otel)
 
 
@@ -144,7 +121,7 @@ def main():
 
     import openai
 
-    client = openai.OpenAI(base_url="http://127.0.0.1:9000/v1", api_key="token-abc123")
+    client = openai.OpenAI(base_url="http://127.0.0.1:9000/rollout/123/attempt/456", api_key="token-abc123")
     response = client.chat.completions.create(
         model="gpt-4o",
         messages=[{"role": "user", "content": "Hello, world!"}],
