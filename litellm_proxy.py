@@ -1,5 +1,6 @@
 import asyncio
 import os
+import re
 import tempfile
 import threading
 import time
@@ -46,20 +47,19 @@ litellm.callbacks.append(otel)
 async def rollout_attempt_middleware(request: Request, call_next):
     path = request.url.path
 
-    if path.startswith("/rollout/") and "/attempt/" in path:
-        path_parts = path.split("/")
-        if len(path_parts) >= 5 and path_parts[1] == "rollout" and path_parts[3] == "attempt":
-            rollout_id = path_parts[2]
-            attempt_id = path_parts[4]
-            new_path = "/" + "/".join(path_parts[5:]) if len(path_parts) > 5 else "/"
+    match = re.match(r"^/rollout/([^/]+)/attempt/([^/]+)(/.*)?$", path)
+    if match:
+        rollout_id = match.group(1)
+        attempt_id = match.group(2)
+        new_path = match.group(3) if match.group(3) is not None else "/"
 
-            request.scope["path"] = new_path
-            request.scope["raw_path"] = new_path.encode()
+        request.scope["path"] = new_path
+        request.scope["raw_path"] = new_path.encode()
 
-            request.scope["headers"] = list(request.scope["headers"]) + [
-                (b"x-rollout-id", rollout_id.encode()),
-                (b"x-attempt-id", attempt_id.encode()),
-            ]
+        request.scope["headers"] = list(request.scope["headers"]) + [
+            (b"x-rollout-id", rollout_id.encode()),
+            (b"x-attempt-id", attempt_id.encode()),
+        ]
 
     response = await call_next(request)
     return response
