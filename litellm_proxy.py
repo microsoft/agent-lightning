@@ -8,6 +8,7 @@ from typing import Any, AsyncGenerator, Dict, List, Literal, Optional, TypedDict
 import litellm
 import uvicorn
 import yaml
+from fastapi import Request
 from litellm.caching.dual_cache import DualCache
 from litellm.integrations.custom_logger import CustomLogger
 from litellm.integrations.opentelemetry import OpenTelemetry
@@ -39,6 +40,29 @@ litellm.callbacks.append(add_return_token_ids)
 
 otel = OpenTelemetry()
 litellm.callbacks.append(otel)
+
+
+@app.middleware("http")
+async def rollout_attempt_middleware(request: Request, call_next):
+    path = request.url.path
+
+    if path.startswith("/rollout/") and "/attempt/" in path:
+        path_parts = path.split("/")
+        if len(path_parts) >= 5 and path_parts[1] == "rollout" and path_parts[3] == "attempt":
+            rollout_id = path_parts[2]
+            attempt_id = path_parts[4]
+            new_path = "/" + "/".join(path_parts[5:]) if len(path_parts) > 5 else "/"
+
+            request.scope["path"] = new_path
+            request.scope["raw_path"] = new_path.encode()
+
+            request.scope["headers"] = list(request.scope["headers"]) + [
+                (b"x-rollout-id", rollout_id.encode()),
+                (b"x-attempt-id", attempt_id.encode()),
+            ]
+
+    response = await call_next(request)
+    return response
 
 
 class LLMProxy:
