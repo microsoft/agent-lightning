@@ -149,6 +149,8 @@ class Span(BaseModel):
 
     rollout_id: str
     attempt_id: str
+    # The ID to make spans ordered within a single attempt
+    sequence_id: int
 
     # Current ID (in hex, formatted via trace_api.format_*)
     trace_id: str
@@ -180,6 +182,7 @@ class Span(BaseModel):
         src: ReadableSpan,
         rollout_id: str,
         attempt_id: str,
+        sequence_id: int,
     ) -> "Span":
         context = src.get_span_context()
         if context is None:
@@ -190,6 +193,7 @@ class Span(BaseModel):
         return cls(
             rollout_id=rollout_id,
             attempt_id=attempt_id,
+            sequence_id=sequence_id,
             trace_id=trace_api.format_trace_id(trace_id),
             span_id=trace_api.format_span_id(span_id),
             parent_id=(trace_api.format_span_id(src.parent.span_id) if src.parent else None),

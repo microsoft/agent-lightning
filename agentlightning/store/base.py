@@ -9,7 +9,7 @@ from typing import Any, Callable, Dict, List, Literal, Optional, Sequence, TypeV
 from opentelemetry.sdk.trace import ReadableSpan
 
 from agentlightning.tracer import Span
-from agentlightning.types import ResourcesUpdate, RolloutStatus, RolloutV2
+from agentlightning.types import NamedResources, ResourcesUpdate, RolloutStatus, RolloutV2
 
 
 def is_queuing(rollout: RolloutV2) -> bool:
@@ -81,16 +81,30 @@ class LightningStore:
         """
         raise NotImplementedError()
 
+    async def add_span(self, span: Span) -> None:
+        """
+        Add a span to the store.
+        """
+        raise NotImplementedError()
+
+    async def add_otel_span(
+        self,
+        rollout_id: str,
+        attempt_id: str,
+        readable_span: ReadableSpan,
+        sequence_id: int | None = None,
+    ) -> Span:
+        """
+        Add an opentelemetry span to the store.
+
+        If sequence_id is not provided, it will be fetched from `get_next_span_sequence_id` and assigned automatically.
+        """
+        raise NotImplementedError()
+
     async def query_rollouts(self, status: Optional[Sequence[RolloutStatus]] = None) -> List[RolloutV2]:
         """
         Query and retrieve rollouts filtered by their status.
         If no status is provided, returns all rollouts.
-        """
-        raise NotImplementedError()
-
-    async def update_resources(self, update: ResourcesUpdate) -> None:
-        """
-        Safely stores a new version of named resources and sets it as the latest.
         """
         raise NotImplementedError()
 
@@ -106,15 +120,12 @@ class LightningStore:
         """
         raise NotImplementedError()
 
-    async def add_span(self, span: Span) -> None:
+    async def get_next_span_sequence_id(self, rollout_id: str, attempt_id: str) -> int:
         """
-        Add a span to the store.
-        """
-        raise NotImplementedError()
+        Get the next span sequence ID for a given rollout and attempt.
+        This should be used to assign a unique sequence ID to each span within an attempt.
 
-    async def add_otel_span(self, rollout_id: str, attempt_id: str, readable_span: ReadableSpan) -> Span:
-        """
-        Add a span to the store.
+        Recommend getting the ID before the operation even begins to avoid racing conditions.
         """
         raise NotImplementedError()
 
@@ -125,14 +136,20 @@ class LightningStore:
         """
         raise NotImplementedError()
 
-    async def query_spans(self, rollout_id: str) -> List[Span]:
+    async def query_spans(self, rollout_id: str, attempt_id: str | Literal["latest"] | None = None) -> List[Span]:
         """
         Query and retrieve all spans associated with a specific rollout ID.
         Returns an empty list if no spans are found.
         """
         raise NotImplementedError()
 
-    async def _update_rollout(
+    async def update_resources(self, resources_id: str, resources: NamedResources) -> ResourcesUpdate:
+        """
+        Safely stores a new version of named resources and sets it as the latest.
+        """
+        raise NotImplementedError()
+
+    async def update_rollout(
         self,
         rollout_id: str,
         status: RolloutStatus,
@@ -145,7 +162,6 @@ class LightningStore:
     ) -> None:
         """
         Update the rollout status and related metadata.
-        This should only be used internally or by watchdog.
 
         Args:
             rollout_id: Unique identifier for the rollout to update
@@ -155,7 +171,7 @@ class LightningStore:
             attempt_id: Optional unique attempt identifier
             attempt_start_time: Optional timestamp when current attempt started
             last_attempt_status: Optional status of the last attempt
-            **kwargs: Additional rollout metadata to update
+            **kwargs: Additional rollout information to update
         """
         raise NotImplementedError()
 
@@ -274,7 +290,7 @@ class LightningStoreWatchDog:
 
             # If we haven't exceeded max attempts, retry
             if current_attempts < self.max_attempts:
-                await store._update_rollout(  # type: ignore[reportPrivateUsage]
+                await store.update_rollout(
                     rollout_id=rollout.rollout_id,
                     status="requeuing",
                     last_attempt_status=status,
@@ -283,7 +299,7 @@ class LightningStoreWatchDog:
                 return
 
         # If we can't retry or shouldn't retry, mark with the failure status
-        await store._update_rollout(  # type: ignore[reportPrivateUsage]
+        await store.update_rollout(
             rollout_id=rollout.rollout_id,
             status=status,
         )

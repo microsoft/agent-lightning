@@ -121,8 +121,12 @@ class LightningStoreServer(LightningStore):
             return await self.store.wait_for_rollouts(rollout_ids=request.rollout_ids, timeout=request.timeout)
 
         @self.app.get("/query_spans/{rollout_id}", response_model=List[Span])
-        async def query_spans(rollout_id: str):
-            return await self.store.query_spans(rollout_id)
+        async def query_spans(rollout_id: str, attempt_id: Optional[str] = None):
+            return await self.store.query_spans(rollout_id, attempt_id)
+
+        @self.app.get("/get_next_span_sequence_id/{rollout_id}/{attempt_id}", response_model=int)
+        async def get_next_span_sequence_id(rollout_id: str, attempt_id: str):
+            return await self.store.get_next_span_sequence_id(rollout_id, attempt_id)
 
     # Delegate all LightningStore methods to the underlying store
     async def add_task(
@@ -155,14 +159,19 @@ class LightningStoreServer(LightningStore):
     async def add_span(self, span: Span) -> None:
         await self.store.add_span(span)
 
-    async def add_otel_span(self, rollout_id: str, attempt_id: str, readable_span: ReadableSpan) -> Span:
-        return await self.store.add_otel_span(rollout_id, attempt_id, readable_span)
+    async def get_next_span_sequence_id(self, rollout_id: str, attempt_id: str) -> int:
+        return await self.store.get_next_span_sequence_id(rollout_id, attempt_id)
+
+    async def add_otel_span(
+        self, rollout_id: str, attempt_id: str, readable_span: ReadableSpan, sequence_id: int | None = None
+    ) -> Span:
+        return await self.store.add_otel_span(rollout_id, attempt_id, readable_span, sequence_id)
 
     async def wait_for_rollouts(self, rollout_ids: List[str], timeout: Optional[float] = None) -> List[RolloutV2]:
         return await self.store.wait_for_rollouts(rollout_ids, timeout)
 
-    async def query_spans(self, rollout_id: str) -> List[Span]:
-        return await self.store.query_spans(rollout_id)
+    async def query_spans(self, rollout_id: str, attempt_id: str | Literal["latest"] | None = None) -> List[Span]:
+        return await self.store.query_spans(rollout_id, attempt_id)
 
 
 class LightningStoreClient(LightningStore):
@@ -252,8 +261,24 @@ class LightningStoreClient(LightningStore):
         async with session.post(f"{self.server_address}/add_span", json=span.model_dump(mode="json")) as response:
             response.raise_for_status()
 
-    async def add_otel_span(self, rollout_id: str, attempt_id: str, readable_span: ReadableSpan) -> Span:
-        span = Span.from_opentelemetry(readable_span, rollout_id=rollout_id, attempt_id=attempt_id)
+    async def get_next_span_sequence_id(self, rollout_id: str, attempt_id: str) -> int:
+        session = await self._get_session()
+
+        async with session.get(
+            f"{self.server_address}/get_next_span_sequence_id/{rollout_id}/{attempt_id}"
+        ) as response:
+            response.raise_for_status()
+            data = await response.json()
+            return data
+
+    async def add_otel_span(
+        self, rollout_id: str, attempt_id: str, readable_span: ReadableSpan, sequence_id: int | None = None
+    ) -> Span:
+        if sequence_id is None:
+            sequence_id = await self.get_next_span_sequence_id(rollout_id, attempt_id)
+        span = Span.from_opentelemetry(
+            readable_span, rollout_id=rollout_id, attempt_id=attempt_id, sequence_id=sequence_id
+        )
         await self.add_span(span)
         return span
 
@@ -266,10 +291,14 @@ class LightningStoreClient(LightningStore):
             data = await response.json()
             return [RolloutV2.model_validate(item) for item in data]
 
-    async def query_spans(self, rollout_id: str) -> List[Span]:
+    async def query_spans(self, rollout_id: str, attempt_id: str | Literal["latest"] | None = None) -> List[Span]:
         session = await self._get_session()
 
-        async with session.get(f"{self.server_address}/query_spans/{rollout_id}") as response:
+        url = f"{self.server_address}/query_spans/{rollout_id}"
+        if attempt_id:
+            url += f"?attempt_id={attempt_id}"
+
+        async with session.get(url) as response:
             response.raise_for_status()
             data = await response.json()
             return [Span.model_validate(item) for item in data]

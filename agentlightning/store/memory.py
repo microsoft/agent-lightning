@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Literal, Optional, Sequence
 from opentelemetry.sdk.trace import ReadableSpan
 
 from agentlightning.tracer import Span
-from agentlightning.types import ResourcesUpdate, RolloutStatus, RolloutV2
+from agentlightning.types import NamedResources, ResourcesUpdate, RolloutStatus, RolloutV2
 
 from .base import LightningStore, LightningStoreWatchDog, healthcheck, is_finished
 
@@ -114,13 +114,15 @@ class InMemoryLightningStore(LightningStore):
             return [rollout for rollout in self._rollouts.values() if rollout.status in status_set]
 
     @healthcheck
-    async def update_resources(self, update: ResourcesUpdate):
+    async def update_resources(self, resources_id: str, resources: NamedResources) -> ResourcesUpdate:
         """
         Safely stores a new version of named resources and sets it as the latest.
         """
         async with self._lock:
-            self._resources[update.resources_id] = update
-            self._latest_resources_id = update.resources_id
+            update = ResourcesUpdate(resources_id=resources_id, resources=resources)
+            self._resources[resources_id] = update
+            self._latest_resources_id = resources_id
+            return update
 
     @healthcheck
     async def get_resources_by_id(self, resources_id: str) -> Optional[ResourcesUpdate]:
@@ -140,6 +142,16 @@ class InMemoryLightningStore(LightningStore):
                 return self._resources.get(self._latest_resources_id)
             return None
 
+    async def get_next_span_sequence_id(self, rollout_id: str, attempt_id: str) -> int:
+        """
+        Get the next span sequence ID for a given rollout and attempt.
+        """
+        async with self._lock:
+            if rollout_id not in self._spans:
+                return 1
+            existing_spans = [span for span in self._spans[rollout_id] if span.attempt_id == attempt_id]
+            return len(existing_spans) + 1
+
     async def add_span(self, span: Span) -> None:
         """Persist a pre-converted span."""
         async with self._lock:
@@ -154,8 +166,15 @@ class InMemoryLightningStore(LightningStore):
             if rollout.status == "preparing":
                 rollout.status = "running"
 
-    async def add_otel_span(self, rollout_id: str, attempt_id: str, readable_span: ReadableSpan) -> Span:
-        span = Span.from_opentelemetry(readable_span, rollout_id=rollout_id, attempt_id=attempt_id)
+    async def add_otel_span(
+        self, rollout_id: str, attempt_id: str, readable_span: ReadableSpan, sequence_id: int | None = None
+    ) -> Span:
+        """Add an opentelemetry span to the store."""
+        if sequence_id is None:
+            sequence_id = await self.get_next_span_sequence_id(rollout_id, attempt_id)
+        span = Span.from_opentelemetry(
+            readable_span, rollout_id=rollout_id, attempt_id=attempt_id, sequence_id=sequence_id
+        )
         await self.add_span(span)
         return span
 
@@ -184,15 +203,25 @@ class InMemoryLightningStore(LightningStore):
 
         return completed_rollouts
 
-    async def query_spans(self, rollout_id: str) -> List[Span]:
+    async def query_spans(self, rollout_id: str, attempt_id: str | Literal["latest"] | None = None) -> List[Span]:
         """
         Query and retrieve all spans associated with a specific rollout ID.
         Returns an empty list if no spans are found.
         """
         async with self._lock:
-            return self._spans.get(rollout_id, [])
+            spans = self._spans.get(rollout_id, [])
+            if attempt_id is None:
+                return spans
+            elif attempt_id == "latest":
+                # Find the latest attempt_id
+                if not spans:
+                    return []
+                latest_attempt = max(spans, key=lambda s: s.attempt_id if s.attempt_id else "").attempt_id
+                return [s for s in spans if s.attempt_id == latest_attempt]
+            else:
+                return [s for s in spans if s.attempt_id == attempt_id]
 
-    async def _update_rollout(
+    async def update_rollout(
         self,
         rollout_id: str,
         status: RolloutStatus,
@@ -202,11 +231,12 @@ class InMemoryLightningStore(LightningStore):
         attempt_start_time: Optional[float] = None,
         last_attempt_status: Optional[RolloutStatus] = None,
         **kwargs: Any,
-    ):
+    ) -> None:
         """
         Update the rollout status and related metadata.
-        This should only be used internally or by watchdog.
+        Public method for external use (including watchdog).
         """
+
         async with self._lock:
             rollout = self._rollouts.get(rollout_id)
             if not rollout:

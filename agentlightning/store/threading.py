@@ -64,14 +64,20 @@ class LightningStoreThreaded(LightningStore):
         with self._lock:
             return await self.store.add_span(span)
 
-    async def add_otel_span(self, rollout_id: str, attempt_id: str, readable_span: ReadableSpan) -> Span:
+    async def add_otel_span(
+        self, rollout_id: str, attempt_id: str, readable_span: ReadableSpan, sequence_id: int | None = None
+    ) -> Span:
         with self._lock:
-            return await self.store.add_otel_span(rollout_id, attempt_id, readable_span)
+            return await self.store.add_otel_span(rollout_id, attempt_id, readable_span, sequence_id)
 
     async def wait_for_rollouts(self, rollout_ids: List[str], timeout: Optional[float] = None) -> List[RolloutV2]:
         with self._lock:
             return await self.store.wait_for_rollouts(rollout_ids, timeout)
 
-    async def query_spans(self, rollout_id: str) -> List[Span]:
+    async def get_next_span_sequence_id(self, rollout_id: str, attempt_id: str) -> int:
         with self._lock:
-            return await self.store.query_spans(rollout_id)
+            return await self.store.get_next_span_sequence_id(rollout_id, attempt_id)
+
+    async def query_spans(self, rollout_id: str, attempt_id: str | Literal["latest"] | None = None) -> List[Span]:
+        with self._lock:
+            return await self.store.query_spans(rollout_id, attempt_id)
