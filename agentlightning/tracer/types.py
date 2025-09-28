@@ -153,7 +153,7 @@ class Span(BaseModel):
     sequence_id: int
 
     # Current ID (in hex, formatted via trace_api.format_*)
-    trace_id: str
+    trace_id: str  # one rollout can have traces coming from multiple places
     span_id: str
     parent_id: Optional[str]
 
