@@ -66,6 +66,12 @@ class LightningStore:
         """
         raise NotImplementedError()
 
+    async def add_rollout(self, rollout: RolloutV2) -> None:
+        """
+        Add a rollout to the store.
+        """
+        raise NotImplementedError()
+
     async def pop_rollout(self) -> Optional[RolloutV2]:
         """
         Retrieves the next task from the queue without blocking.
@@ -100,7 +106,13 @@ class LightningStore:
         """
         raise NotImplementedError()
 
-    async def add_span(self, rollout_id: str, attempt_id: str, readable_span: ReadableSpan) -> Span:
+    async def add_span(self, span: Span) -> None:
+        """
+        Add a span to the store.
+        """
+        raise NotImplementedError()
+
+    async def add_otel_span(self, rollout_id: str, attempt_id: str, readable_span: ReadableSpan) -> Span:
         """
         Add a span to the store.
         """

@@ -40,6 +40,12 @@ class InMemoryLightningStore(LightningStore):
         # Completion tracking for wait_for_rollouts
         self._completion_events: Dict[str, asyncio.Event] = {}
 
+    def _register_rollout_unlocked(self, rollout: RolloutV2) -> None:
+        """Register rollout assuming caller holds ``self._lock``."""
+        self._rollouts[rollout.rollout_id] = rollout
+        self._task_queue.append(rollout)
+        self._completion_events.setdefault(rollout.rollout_id, asyncio.Event())
+
     @healthcheck
     async def add_task(
         self,
@@ -66,11 +72,15 @@ class InMemoryLightningStore(LightningStore):
                 metadata=metadata or {},
             )
 
-            self._rollouts[rollout_id] = rollout
-            self._task_queue.append(rollout)
-            self._completion_events[rollout_id] = asyncio.Event()
+            self._register_rollout_unlocked(rollout)
 
             return rollout
+
+    @healthcheck
+    async def add_rollout(self, rollout: RolloutV2) -> None:
+        """Add an existing rollout to the store."""
+        async with self._lock:
+            self._register_rollout_unlocked(rollout)
 
     @healthcheck
     async def pop_rollout(self) -> Optional[RolloutV2]:
@@ -130,27 +140,24 @@ class InMemoryLightningStore(LightningStore):
                 return self._resources.get(self._latest_resources_id)
             return None
 
-    async def add_span(self, rollout_id: str, attempt_id: str, readable_span: ReadableSpan) -> Span:
-        """
-        Add a span to the store.
-        """
+    async def add_span(self, span: Span) -> None:
+        """Persist a pre-converted span."""
         async with self._lock:
-            # Convert ReadableSpan to our Span format
-            rollout = self._rollouts.get(rollout_id)
+            rollout = self._rollouts.get(span.rollout_id)
             if not rollout:
-                raise ValueError(f"Rollout {rollout_id} not found")
+                raise ValueError(f"Rollout {span.rollout_id} not found")
 
-            span = Span.from_opentelemetry(readable_span, rollout_id=rollout_id, attempt_id=attempt_id)
+            if span.rollout_id not in self._spans:
+                self._spans[span.rollout_id] = []
+            self._spans[span.rollout_id].append(span)
 
-            if rollout_id not in self._spans:
-                self._spans[rollout_id] = []
-            self._spans[rollout_id].append(span)
-
-            # Update rollout status to running if it's still preparing
             if rollout.status == "preparing":
                 rollout.status = "running"
 
-            return span
+    async def add_otel_span(self, rollout_id: str, attempt_id: str, readable_span: ReadableSpan) -> Span:
+        span = Span.from_opentelemetry(readable_span, rollout_id=rollout_id, attempt_id=attempt_id)
+        await self.add_span(span)
+        return span
 
     @healthcheck
     async def wait_for_rollouts(self, rollout_ids: List[str], timeout: Optional[float] = None) -> List[RolloutV2]:

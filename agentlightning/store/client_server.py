@@ -32,12 +32,6 @@ class QueryRolloutsRequest(BaseModel):
     status: Optional[List[RolloutStatus]] = None
 
 
-class AddSpanRequest(BaseModel):
-    rollout_id: str
-    attempt_id: str
-    span_data: str  # JSON serialized ReadableSpan
-
-
 class WaitForRolloutsRequest(BaseModel):
     rollout_ids: List[str]
     timeout: Optional[float] = None
@@ -104,6 +98,11 @@ class LightningStoreServer(LightningStore):
             await self.store.update_resources(update)
             return {"status": "success"}
 
+        @self.app.post("/add_rollout", response_model=RolloutV2)
+        async def add_rollout(rollout: RolloutV2):
+            await self.store.add_rollout(rollout)
+            return rollout
+
         @self.app.get("/get_resources_by_id/{resources_id}", response_model=Optional[ResourcesUpdate])
         async def get_resources_by_id(resources_id: str):
             return await self.store.get_resources_by_id(resources_id)
@@ -113,10 +112,9 @@ class LightningStoreServer(LightningStore):
             return await self.store.get_latest_resources()
 
         @self.app.post("/add_span", response_model=Span)
-        async def add_span(request: AddSpanRequest):
-            # This would need to reconstruct ReadableSpan from JSON
-            # For now, we'll use a placeholder approach
-            raise NotImplementedError("Span serialization not yet implemented")
+        async def add_span(span: Span):
+            await self.store.add_span(span)
+            return span
 
         @self.app.post("/wait_for_rollouts", response_model=List[RolloutV2])
         async def wait_for_rollouts(request: WaitForRolloutsRequest):
@@ -136,6 +134,9 @@ class LightningStoreServer(LightningStore):
     ) -> RolloutV2:
         return await self.store.add_task(sample, mode, resources_id, metadata)
 
+    async def add_rollout(self, rollout: RolloutV2) -> None:
+        await self.store.add_rollout(rollout)
+
     async def pop_rollout(self) -> Optional[RolloutV2]:
         return await self.store.pop_rollout()
 
@@ -151,8 +152,11 @@ class LightningStoreServer(LightningStore):
     async def get_latest_resources(self) -> Optional[ResourcesUpdate]:
         return await self.store.get_latest_resources()
 
-    async def add_span(self, rollout_id: str, attempt_id: str, readable_span: ReadableSpan) -> Span:
-        return await self.store.add_span(rollout_id, attempt_id, readable_span)
+    async def add_span(self, span: Span) -> None:
+        await self.store.add_span(span)
+
+    async def add_otel_span(self, rollout_id: str, attempt_id: str, readable_span: ReadableSpan) -> Span:
+        return await self.store.add_otel_span(rollout_id, attempt_id, readable_span)
 
     async def wait_for_rollouts(self, rollout_ids: List[str], timeout: Optional[float] = None) -> List[RolloutV2]:
         return await self.store.wait_for_rollouts(rollout_ids, timeout)
@@ -236,10 +240,22 @@ class LightningStoreClient(LightningStore):
             data = await response.json()
             return ResourcesUpdate.model_validate(data) if data else None
 
-    async def add_span(self, rollout_id: str, attempt_id: str, readable_span: ReadableSpan) -> Span:
-        # This would need to serialize ReadableSpan to JSON
-        # For now, we'll raise NotImplementedError
-        raise NotImplementedError("Span serialization over HTTP not yet implemented")
+    async def add_rollout(self, rollout: RolloutV2) -> None:
+        session = await self._get_session()
+
+        async with session.post(f"{self.server_address}/add_rollout", json=rollout.model_dump(mode="json")) as response:
+            response.raise_for_status()
+
+    async def add_span(self, span: Span) -> None:
+        session = await self._get_session()
+
+        async with session.post(f"{self.server_address}/add_span", json=span.model_dump(mode="json")) as response:
+            response.raise_for_status()
+
+    async def add_otel_span(self, rollout_id: str, attempt_id: str, readable_span: ReadableSpan) -> Span:
+        span = Span.from_opentelemetry(readable_span, rollout_id=rollout_id, attempt_id=attempt_id)
+        await self.add_span(span)
+        return span
 
     async def wait_for_rollouts(self, rollout_ids: List[str], timeout: Optional[float] = None) -> List[RolloutV2]:
         session = await self._get_session()

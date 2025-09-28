@@ -36,6 +36,10 @@ class LightningStoreThreaded(LightningStore):
         with self._lock:
             return await self.store.add_task(sample, mode, resources_id, metadata)
 
+    async def add_rollout(self, rollout: RolloutV2) -> None:
+        with self._lock:
+            return await self.store.add_rollout(rollout)
+
     async def pop_rollout(self) -> Optional[RolloutV2]:
         with self._lock:
             return await self.store.pop_rollout()
@@ -56,9 +60,13 @@ class LightningStoreThreaded(LightningStore):
         with self._lock:
             return await self.store.get_latest_resources()
 
-    async def add_span(self, rollout_id: str, attempt_id: str, readable_span: ReadableSpan) -> Span:
+    async def add_span(self, span: Span) -> None:
         with self._lock:
-            return await self.store.add_span(rollout_id, attempt_id, readable_span)
+            return await self.store.add_span(span)
+
+    async def add_otel_span(self, rollout_id: str, attempt_id: str, readable_span: ReadableSpan) -> Span:
+        with self._lock:
+            return await self.store.add_otel_span(rollout_id, attempt_id, readable_span)
 
     async def wait_for_rollouts(self, rollout_ids: List[str], timeout: Optional[float] = None) -> List[RolloutV2]:
         with self._lock:
