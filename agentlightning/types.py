@@ -102,6 +102,13 @@ class RolloutV2(BaseModel):
     # A bucket for any other relevant information
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
+    def update(self, data: Dict[str, Any]) -> RolloutV2:
+        """Update the fields of the rollout in place and return the updated object."""
+        new_rollout = self.model_copy(update=data)
+        for key in data.keys():
+            setattr(self, key, getattr(new_rollout, key))
+        return new_rollout
+
 
 TaskInput = Any
 

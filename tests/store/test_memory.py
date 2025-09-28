@@ -57,6 +57,8 @@ def mock_readable_span() -> Mock:
     context = Mock()
     context.trace_id = 111111
     context.span_id = 222222
+    context.is_remote = False
+    context.trace_state = {}  # Make it an empty dict instead of Mock
     span.get_span_context = Mock(return_value=context)
 
     # Mock other attributes
@@ -169,7 +171,7 @@ async def test_update_rollout_fields(store: InMemoryLightningStore) -> None:
         attempt_sequence_id=2,
         attempt_start_time=time.time(),
         last_attempt_status="timeout",
-        custom_field="custom_value",  # Extra field goes to metadata
+        metadata=dict(custom_field="custom_value"),  # Extra field goes to metadata
     )
 
     # Verify all updates
@@ -185,6 +187,41 @@ async def test_update_rollout_fields(store: InMemoryLightningStore) -> None:
 
 
 # Queue Operations Tests
+
+
+@pytest.mark.asyncio
+async def test_pop_rollout_skips_non_queuing_status(store: InMemoryLightningStore) -> None:
+    """Test that pop_rollout skips rollouts that have been updated to non-queuing status."""
+    # Add multiple rollouts to the queue
+    r1 = await store.add_task(sample={"id": 1})
+    r2 = await store.add_task(sample={"id": 2})
+    r3 = await store.add_task(sample={"id": 3})
+
+    # Update r1 to success status while it's still in the queue
+    await store.update_rollout(rollout_id=r1.rollout_id, status="success")
+
+    # Update r2 to have a span
+    await store.update_rollout(rollout_id=r2.rollout_id, status="error")
+
+    # r3 should still be in queuing status
+
+    # Pop should skip r1 and r2 (both non-queuing) and return r3
+    popped = await store.pop_rollout()
+    assert popped is not None
+    assert popped.rollout_id == r3.rollout_id
+    assert popped.status == "preparing"
+    assert popped.input["id"] == 3
+
+    # Second pop should return None since no queuing rollouts remain
+    popped2 = await store.pop_rollout()
+    assert popped2 is None
+
+    # Verify r1 and r2 are still in their non-queuing states
+    all_rollouts = await store.query_rollouts()
+    rollout_statuses = {r.rollout_id: r.status for r in all_rollouts}
+    assert rollout_statuses[r1.rollout_id] == "success"
+    assert rollout_statuses[r2.rollout_id] == "error"
+    assert rollout_statuses[r3.rollout_id] == "preparing"
 
 
 @pytest.mark.asyncio
@@ -474,6 +511,39 @@ async def test_wait_timeout(store: InMemoryLightningStore) -> None:
 
 
 @pytest.mark.asyncio
+async def test_watchdog_healthcheck_queries(store_with_watchdog: InMemoryLightningStore) -> None:
+    """Test that missing @healthcheck decorators prevent watchdog from detecting stuck rollouts."""
+    store = store_with_watchdog
+    rollout = await store.add_task(sample={"test": "data"})
+
+    # Start processing by popping the rollout
+    popped = await store.pop_rollout()
+    assert popped is not None
+    assert popped.status == "preparing"
+
+    # Simulate timeout condition by advancing time
+    with patch("time.time") as mock_time:
+        mock_time.return_value = rollout.start_time + 10.0  # Past timeout threshold
+
+        # The rollout should have timed out
+        rollouts = await store.query_rollouts(status=["requeuing"])
+        assert len(rollouts) == 1
+        assert rollouts[0].last_attempt_status == "timeout"
+
+        spans = await store.query_spans(rollout.rollout_id)
+        assert len(spans) == 0
+
+        await store.update_rollout(rollout_id=rollout.rollout_id, status="running")
+
+    # Now call a method that HAS @healthcheck decorator
+    await store.add_task(sample={"test2": "data2"})
+
+    rollouts = await store.query_rollouts(status=["running"])
+    assert len(rollouts) == 1
+    assert rollouts[0].rollout_id == rollout.rollout_id
+
+
+@pytest.mark.asyncio
 async def test_watchdog_detects_timeout(store_with_watchdog: InMemoryLightningStore) -> None:
     """Test watchdog detecting and handling timeouts."""
     store = store_with_watchdog
@@ -489,7 +559,7 @@ async def test_watchdog_detects_timeout(store_with_watchdog: InMemoryLightningSt
             await store.watchdog.healthcheck(store)
 
     # Should be requeued
-    rollouts = await store.query_rollouts(status=["queuing"])
+    rollouts = await store.query_rollouts(status=["requeuing"])
     assert len(rollouts) == 1
     assert rollouts[0].last_attempt_status == "timeout"
     assert rollouts[0].attempt_sequence_id == 2
@@ -510,7 +580,7 @@ async def test_watchdog_detects_unresponsive(store_with_watchdog: InMemoryLightn
             await store.watchdog.healthcheck(store)
 
     # Should be requeued
-    rollouts = await store.query_rollouts(status=["queuing"])
+    rollouts = await store.query_rollouts(status=["requeuing"])
     assert len(rollouts) == 1
     assert rollouts[0].last_attempt_status == "unresponsive"
 
@@ -531,7 +601,7 @@ async def test_watchdog_respects_max_attempts(store_with_watchdog: InMemoryLight
 
         if attempt < 2:
             # Should be requeued
-            rollouts = await store.query_rollouts(status=["queuing"])
+            rollouts = await store.query_rollouts(status=["requeuing"])
             assert len(rollouts) == 1
         else:
             # Should be marked as timeout (not requeued)
@@ -555,6 +625,75 @@ async def test_healthcheck_decorator(store_with_watchdog: InMemoryLightningStore
             assert mock_check.call_count == 3
             for call in mock_check.call_args_list:
                 assert call[0][0] == store
+
+
+@pytest.mark.asyncio
+async def test_healthcheck_recursive_prevention(store_with_watchdog: InMemoryLightningStore) -> None:
+    """Test that healthcheck decorator prevents recursive calls."""
+    store = store_with_watchdog
+
+    if store.watchdog:
+        # Create a mock healthcheck that tries to call another decorated method
+        async def recursive_healthcheck(store_arg):
+            # This should NOT trigger another healthcheck due to the flag
+            await store_arg.query_rollouts(status=["preparing"])
+
+        with patch.object(store.watchdog, "healthcheck", new_callable=AsyncMock) as mock_check:
+            mock_check.side_effect = recursive_healthcheck
+
+            # Call a decorated method - this should only trigger healthcheck once
+            await store.add_task(sample={"test": "data"})
+
+            # Verify healthcheck was called exactly once despite the recursive call
+            assert mock_check.call_count == 1
+
+            # Verify the flag is properly cleared after execution
+            assert not getattr(store, "_healthcheck_running", False)
+
+
+@pytest.mark.asyncio
+async def test_watchdog_no_recent_span_activity_logic(store_with_watchdog: InMemoryLightningStore) -> None:
+    """Test the _no_recent_span_activity logic with different span scenarios."""
+    store = store_with_watchdog
+    rollout = await store.add_task(sample={"test": "data"})
+
+    if store.watchdog:
+        current_time = time.time()
+
+        # Test 1: No spans at all should return False (handled separately)
+        assert store.watchdog._no_recent_span_activity([], current_time) is False
+
+        # Test 2: Spans with recent activity should return False
+        recent_span = Mock()
+        recent_span.end_time = current_time - 1.0  # 1 second ago
+        recent_span.start_time = current_time - 2.0
+
+        spans_with_recent_activity = [recent_span]
+        assert store.watchdog._no_recent_span_activity(spans_with_recent_activity, current_time) is False
+
+        # Test 3: Spans with old activity should return True
+        old_span = Mock()
+        old_span.end_time = current_time - 10.0  # 10 seconds ago (past unresponsive threshold of 2.0)
+        old_span.start_time = current_time - 11.0
+
+        spans_with_old_activity = [old_span]
+        assert store.watchdog._no_recent_span_activity(spans_with_old_activity, current_time) is True
+
+        # Test 4: Spans with no end_time but recent start_time should return False
+        running_span = Mock()
+        running_span.end_time = None
+        running_span.start_time = current_time - 1.0  # 1 second ago
+
+        spans_still_running = [running_span]
+        assert store.watchdog._no_recent_span_activity(spans_still_running, current_time) is False
+
+        # Test 5: Spans with no times at all should return False (latest_span_time = 0.0)
+        span_no_times = Mock()
+        span_no_times.end_time = None
+        span_no_times.start_time = None
+
+        spans_no_times = [span_no_times]
+        assert store.watchdog._no_recent_span_activity(spans_no_times, current_time) is False
 
 
 # Concurrent Access Tests

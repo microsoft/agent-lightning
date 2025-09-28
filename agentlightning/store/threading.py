@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Literal, Optional, Sequence, TypeVar
 from opentelemetry.sdk.trace import ReadableSpan
 
 from agentlightning.tracer import Span
-from agentlightning.types import ResourcesUpdate, RolloutStatus, RolloutV2
+from agentlightning.types import NamedResources, ResourcesUpdate, RolloutStatus, RolloutV2
 
 from .base import LightningStore
 
@@ -36,7 +36,7 @@ class LightningStoreThreaded(LightningStore):
         with self._lock:
             return await self.store.add_task(sample, mode, resources_id, metadata)
 
-    async def add_rollout(self, rollout: RolloutV2) -> None:
+    async def add_rollout(self, rollout: RolloutV2) -> RolloutV2:
         with self._lock:
             return await self.store.add_rollout(rollout)
 
@@ -48,9 +48,9 @@ class LightningStoreThreaded(LightningStore):
         with self._lock:
             return await self.store.query_rollouts(status)
 
-    async def update_resources(self, update: ResourcesUpdate) -> None:
+    async def update_resources(self, resources_id: str, resources: NamedResources) -> ResourcesUpdate:
         with self._lock:
-            return await self.store.update_resources(update)
+            return await self.store.update_resources(resources_id, resources)
 
     async def get_resources_by_id(self, resources_id: str) -> Optional[ResourcesUpdate]:
         with self._lock:
@@ -60,7 +60,7 @@ class LightningStoreThreaded(LightningStore):
         with self._lock:
             return await self.store.get_latest_resources()
 
-    async def add_span(self, span: Span) -> None:
+    async def add_span(self, span: Span) -> Span:
         with self._lock:
             return await self.store.add_span(span)
 
@@ -81,3 +81,26 @@ class LightningStoreThreaded(LightningStore):
     async def query_spans(self, rollout_id: str, attempt_id: str | Literal["latest"] | None = None) -> List[Span]:
         with self._lock:
             return await self.store.query_spans(rollout_id, attempt_id)
+
+    async def update_rollout(
+        self,
+        rollout_id: str,
+        status: RolloutStatus,
+        worker_id: Optional[str] = None,
+        attempt_sequence_id: Optional[int] = None,
+        attempt_id: Optional[str] = None,
+        attempt_start_time: Optional[float] = None,
+        last_attempt_status: Optional[RolloutStatus] = None,
+        **kwargs: Any,
+    ) -> RolloutV2:
+        with self._lock:
+            return await self.store.update_rollout(
+                rollout_id=rollout_id,
+                status=status,
+                worker_id=worker_id,
+                attempt_sequence_id=attempt_sequence_id,
+                attempt_id=attempt_id,
+                attempt_start_time=attempt_start_time,
+                last_attempt_status=last_attempt_status,
+                **kwargs,
+            )

@@ -31,13 +31,26 @@ def healthcheck(func: T_callable) -> T_callable:
     """
     Decorator to run the watchdog healthcheck before executing the decorated method.
     Only runs if the store has a watchdog configured.
+    Prevents recursive healthcheck execution using a flag on the store instance.
     """
 
     @functools.wraps(func)
     async def wrapper(self: LightningStore, *args: Any, **kwargs: Any) -> Any:
-        # Run watchdog healthcheck if available
+        # Check if healthcheck is already running to prevent recursion
+        if getattr(self, "_healthcheck_running", False):
+            # Skip healthcheck if already running
+            return await func(self, *args, **kwargs)
+
+        # Run watchdog healthcheck if available and not already running
         if self.watchdog is not None:
-            await self.watchdog.healthcheck(self)
+            # Set flag to prevent recursive healthcheck calls
+            # This flag is not asyncio/thread-safe, but it doesn't matter
+            self._healthcheck_running = True  # type: ignore
+            try:
+                await self.watchdog.healthcheck(self)
+            finally:
+                # Always clear the flag, even if healthcheck fails
+                self._healthcheck_running = False  # type: ignore
 
         # Execute the original method
         return await func(self, *args, **kwargs)
@@ -66,7 +79,7 @@ class LightningStore:
         """
         raise NotImplementedError()
 
-    async def add_rollout(self, rollout: RolloutV2) -> None:
+    async def add_rollout(self, rollout: RolloutV2) -> RolloutV2:
         """
         Add a rollout to the store.
         """
@@ -81,7 +94,7 @@ class LightningStore:
         """
         raise NotImplementedError()
 
-    async def add_span(self, span: Span) -> None:
+    async def add_span(self, span: Span) -> Span:
         """
         Add a span to the store.
         """
@@ -159,7 +172,7 @@ class LightningStore:
         attempt_start_time: Optional[float] = None,
         last_attempt_status: Optional[RolloutStatus] = None,
         **kwargs: Any,
-    ) -> None:
+    ) -> RolloutV2:
         """
         Update the rollout status and related metadata.
 
@@ -261,7 +274,8 @@ class LightningStoreWatchDog:
             True if no recent activity, False otherwise
         """
         if not spans:
-            return True
+            # No spans at all is handled separately
+            return False
 
         # Find the most recent span activity
         latest_span_time = 0.0
@@ -271,8 +285,7 @@ class LightningStoreWatchDog:
             elif span.start_time:
                 latest_span_time = max(latest_span_time, span.start_time)
 
-        # If no span times found or latest activity is too old
-        return latest_span_time == 0.0 or current_time - latest_span_time > self.unresponsive_seconds
+        return latest_span_time != 0.0 and current_time - latest_span_time > self.unresponsive_seconds
 
     async def _handle_failed_rollout(self, store: LightningStore, rollout: RolloutV2, status: RolloutStatus) -> None:
         """

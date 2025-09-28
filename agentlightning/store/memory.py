@@ -13,7 +13,7 @@ from opentelemetry.sdk.trace import ReadableSpan
 from agentlightning.tracer import Span
 from agentlightning.types import NamedResources, ResourcesUpdate, RolloutStatus, RolloutV2
 
-from .base import LightningStore, LightningStoreWatchDog, healthcheck, is_finished
+from .base import LightningStore, LightningStoreWatchDog, healthcheck, is_finished, is_queuing
 
 
 class InMemoryLightningStore(LightningStore):
@@ -77,10 +77,11 @@ class InMemoryLightningStore(LightningStore):
             return rollout
 
     @healthcheck
-    async def add_rollout(self, rollout: RolloutV2) -> None:
+    async def add_rollout(self, rollout: RolloutV2) -> RolloutV2:
         """Add an existing rollout to the store."""
         async with self._lock:
             self._register_rollout_unlocked(rollout)
+            return rollout
 
     @healthcheck
     async def pop_rollout(self) -> Optional[RolloutV2]:
@@ -91,16 +92,26 @@ class InMemoryLightningStore(LightningStore):
         Will set the rollout status to preparing.
         """
         async with self._lock:
-            if not self._task_queue:
-                return None
+            # Keep looking until we find a rollout that's still in queuing status
+            # or the queue is empty
+            while self._task_queue:
+                rollout = self._task_queue.popleft()
 
-            rollout = self._task_queue.popleft()
-            # Update status to preparing (similar to legacy implementation)
-            rollout.status = "preparing"
-            rollout.attempt_start_time = time.time()
+                # Check if rollout is still in a queuing state
+                # (it might have been updated to a different status while in queue)
+                if is_queuing(rollout):
+                    # Update status to preparing (similar to legacy implementation)
+                    rollout.status = "preparing"
+                    rollout.attempt_start_time = time.time()
+                    return rollout
 
-            return rollout
+                # If not in queuing state, skip this rollout and continue
+                # (it was updated externally and should not be processed)
 
+            # No valid rollouts found
+            return None
+
+    @healthcheck
     async def query_rollouts(self, status: Optional[Sequence[RolloutStatus]] = None) -> List[RolloutV2]:
         """
         Query and retrieve rollouts filtered by their status.
@@ -142,6 +153,7 @@ class InMemoryLightningStore(LightningStore):
                 return self._resources.get(self._latest_resources_id)
             return None
 
+    @healthcheck
     async def get_next_span_sequence_id(self, rollout_id: str, attempt_id: str) -> int:
         """
         Get the next span sequence ID for a given rollout and attempt.
@@ -152,7 +164,7 @@ class InMemoryLightningStore(LightningStore):
             existing_spans = [span for span in self._spans[rollout_id] if span.attempt_id == attempt_id]
             return len(existing_spans) + 1
 
-    async def add_span(self, span: Span) -> None:
+    async def add_span(self, span: Span) -> Span:
         """Persist a pre-converted span."""
         async with self._lock:
             rollout = self._rollouts.get(span.rollout_id)
@@ -165,6 +177,8 @@ class InMemoryLightningStore(LightningStore):
 
             if rollout.status == "preparing":
                 rollout.status = "running"
+
+            return span
 
     async def add_otel_span(
         self, rollout_id: str, attempt_id: str, readable_span: ReadableSpan, sequence_id: int | None = None
@@ -186,8 +200,15 @@ class InMemoryLightningStore(LightningStore):
         """
         completed_rollouts: List[RolloutV2] = []
 
-        @healthcheck
         async def wait_for_rollout(rollout_id: str):
+            # First check if already completed
+            async with self._lock:
+                rollout = self._rollouts.get(rollout_id)
+                if rollout and is_finished(rollout):
+                    completed_rollouts.append(rollout)
+                    return
+
+            # If not completed and we have an event, wait for completion
             if rollout_id in self._completion_events:
                 try:
                     await asyncio.wait_for(self._completion_events[rollout_id].wait(), timeout=timeout)
@@ -203,6 +224,7 @@ class InMemoryLightningStore(LightningStore):
 
         return completed_rollouts
 
+    @healthcheck
     async def query_spans(self, rollout_id: str, attempt_id: str | Literal["latest"] | None = None) -> List[Span]:
         """
         Query and retrieve all spans associated with a specific rollout ID.
@@ -221,17 +243,18 @@ class InMemoryLightningStore(LightningStore):
             else:
                 return [s for s in spans if s.attempt_id == attempt_id]
 
+    @healthcheck
     async def update_rollout(
         self,
         rollout_id: str,
-        status: RolloutStatus,
+        status: Optional[RolloutStatus] = None,
         worker_id: Optional[str] = None,
         attempt_sequence_id: Optional[int] = None,
         attempt_id: Optional[str] = None,
         attempt_start_time: Optional[float] = None,
         last_attempt_status: Optional[RolloutStatus] = None,
         **kwargs: Any,
-    ) -> None:
+    ) -> RolloutV2:
         """
         Update the rollout status and related metadata.
         Public method for external use (including watchdog).
@@ -243,24 +266,21 @@ class InMemoryLightningStore(LightningStore):
                 raise ValueError(f"Rollout {rollout_id} not found")
 
             # Update fields
-            rollout.status = status
+            updates: Dict[str, Any] = {}
+            if status is not None:
+                updates["status"] = status
             if worker_id is not None:
-                rollout.worker_id = worker_id
+                updates["worker_id"] = worker_id
             if attempt_sequence_id is not None:
-                rollout.attempt_sequence_id = attempt_sequence_id
+                updates["attempt_sequence_id"] = attempt_sequence_id
             if attempt_id is not None:
-                rollout.attempt_id = attempt_id
+                updates["attempt_id"] = attempt_id
             if attempt_start_time is not None:
-                rollout.attempt_start_time = attempt_start_time
+                updates["attempt_start_time"] = attempt_start_time
             if last_attempt_status is not None:
-                rollout.last_attempt_status = last_attempt_status
-
-            # Update any additional fields
-            for key, value in kwargs.items():
-                if hasattr(rollout, key):
-                    setattr(rollout, key, value)
-                else:
-                    rollout.metadata[key] = value
+                updates["last_attempt_status"] = last_attempt_status
+            updates.update(kwargs)
+            rollout.update(updates)
 
             # Set end time for finished rollouts using utility function
             if is_finished(rollout):
@@ -269,7 +289,8 @@ class InMemoryLightningStore(LightningStore):
                 if rollout_id in self._completion_events:
                     self._completion_events[rollout_id].set()
 
-            # If requeuing, add back to queue (similar to legacy requeue_task)
+            # If requeuing, add back to queue (similar to requeue_task)
             elif status == "requeuing":
-                rollout.status = "queuing"  # Reset to queuing for the queue
                 self._task_queue.append(rollout)
+
+            return rollout
