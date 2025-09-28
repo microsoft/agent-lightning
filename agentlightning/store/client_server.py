@@ -13,7 +13,7 @@ from opentelemetry.sdk.trace import ReadableSpan
 from pydantic import BaseModel
 
 from agentlightning.tracer import Span
-from agentlightning.types import ResourcesUpdate, RolloutStatus, RolloutV2
+from agentlightning.types import NamedResources, ResourcesUpdate, RolloutStatus, RolloutV2
 
 from .base import LightningStore, LightningStoreWatchDog
 
@@ -77,7 +77,7 @@ class LightningStoreServer(LightningStore):
         """Set up FastAPI routes for all store operations."""
 
         @self.app.post("/add_task", response_model=RolloutV2)
-        async def add_task(request: AddTaskRequest):
+        async def add_task(request: AddTaskRequest):  # type: ignore[unused]
             return await self.store.add_task(
                 sample=request.sample,
                 mode=request.mode,
@@ -86,47 +86,66 @@ class LightningStoreServer(LightningStore):
             )
 
         @self.app.get("/pop_rollout", response_model=Optional[RolloutV2])
-        async def pop_rollout():
+        async def pop_rollout():  # type: ignore[unused]
             return await self.store.pop_rollout()
 
         @self.app.post("/query_rollouts", response_model=List[RolloutV2])
-        async def query_rollouts(request: QueryRolloutsRequest):
+        async def query_rollouts(request: QueryRolloutsRequest):  # type: ignore[unused]
             return await self.store.query_rollouts(status=request.status)
 
-        @self.app.post("/update_resources")
-        async def update_resources(update: ResourcesUpdate):
-            await self.store.update_resources(update)
-            return {"status": "success"}
+        @self.app.post("/update_resources", response_model=ResourcesUpdate)
+        async def update_resources(update: ResourcesUpdate):  # type: ignore[unused]
+            return await self.store.update_resources(update.resources_id, update.resources)
 
         @self.app.post("/add_rollout", response_model=RolloutV2)
-        async def add_rollout(rollout: RolloutV2):
-            await self.store.add_rollout(rollout)
-            return rollout
+        async def add_rollout(rollout: RolloutV2):  # type: ignore[unused]
+            return await self.store.add_rollout(rollout)
 
         @self.app.get("/get_resources_by_id/{resources_id}", response_model=Optional[ResourcesUpdate])
-        async def get_resources_by_id(resources_id: str):
+        async def get_resources_by_id(resources_id: str):  # type: ignore[unused]
             return await self.store.get_resources_by_id(resources_id)
 
         @self.app.get("/get_latest_resources", response_model=Optional[ResourcesUpdate])
-        async def get_latest_resources():
+        async def get_latest_resources():  # type: ignore[unused]
             return await self.store.get_latest_resources()
 
         @self.app.post("/add_span", response_model=Span)
-        async def add_span(span: Span):
-            await self.store.add_span(span)
-            return span
+        async def add_span(span: Span):  # type: ignore[unused]
+            return await self.store.add_span(span)
 
         @self.app.post("/wait_for_rollouts", response_model=List[RolloutV2])
-        async def wait_for_rollouts(request: WaitForRolloutsRequest):
+        async def wait_for_rollouts(request: WaitForRolloutsRequest):  # type: ignore[unused]
             return await self.store.wait_for_rollouts(rollout_ids=request.rollout_ids, timeout=request.timeout)
 
         @self.app.get("/query_spans/{rollout_id}", response_model=List[Span])
-        async def query_spans(rollout_id: str, attempt_id: Optional[str] = None):
+        async def query_spans(rollout_id: str, attempt_id: Optional[str] = None):  # type: ignore[unused]
             return await self.store.query_spans(rollout_id, attempt_id)
 
         @self.app.get("/get_next_span_sequence_id/{rollout_id}/{attempt_id}", response_model=int)
-        async def get_next_span_sequence_id(rollout_id: str, attempt_id: str):
+        async def get_next_span_sequence_id(rollout_id: str, attempt_id: str):  # type: ignore[unused]
             return await self.store.get_next_span_sequence_id(rollout_id, attempt_id)
+
+        @self.app.post("/update_rollout", response_model=RolloutV2)
+        async def update_rollout(  # type: ignore[unused]
+            rollout_id: str,
+            status: Optional[RolloutStatus] = None,
+            worker_id: Optional[str] = None,
+            attempt_sequence_id: Optional[int] = None,
+            attempt_id: Optional[str] = None,
+            attempt_start_time: Optional[float] = None,
+            last_attempt_status: Optional[RolloutStatus] = None,
+            **kwargs: Any,
+        ):
+            return await self.store.update_rollout(
+                rollout_id=rollout_id,
+                status=status,
+                worker_id=worker_id,
+                attempt_sequence_id=attempt_sequence_id,
+                attempt_id=attempt_id,
+                attempt_start_time=attempt_start_time,
+                last_attempt_status=last_attempt_status,
+                **kwargs,
+            )
 
     # Delegate all LightningStore methods to the underlying store
     async def add_task(
@@ -138,8 +157,8 @@ class LightningStoreServer(LightningStore):
     ) -> RolloutV2:
         return await self.store.add_task(sample, mode, resources_id, metadata)
 
-    async def add_rollout(self, rollout: RolloutV2) -> None:
-        await self.store.add_rollout(rollout)
+    async def add_rollout(self, rollout: RolloutV2) -> RolloutV2:
+        return await self.store.add_rollout(rollout)
 
     async def pop_rollout(self) -> Optional[RolloutV2]:
         return await self.store.pop_rollout()
@@ -147,8 +166,8 @@ class LightningStoreServer(LightningStore):
     async def query_rollouts(self, status: Optional[Sequence[RolloutStatus]] = None) -> List[RolloutV2]:
         return await self.store.query_rollouts(status)
 
-    async def update_resources(self, update: ResourcesUpdate) -> None:
-        return await self.store.update_resources(update)
+    async def update_resources(self, resources_id: str, resources: NamedResources) -> ResourcesUpdate:
+        return await self.store.update_resources(resources_id, resources)
 
     async def get_resources_by_id(self, resources_id: str) -> Optional[ResourcesUpdate]:
         return await self.store.get_resources_by_id(resources_id)
@@ -156,8 +175,8 @@ class LightningStoreServer(LightningStore):
     async def get_latest_resources(self) -> Optional[ResourcesUpdate]:
         return await self.store.get_latest_resources()
 
-    async def add_span(self, span: Span) -> None:
-        await self.store.add_span(span)
+    async def add_span(self, span: Span) -> Span:
+        return await self.store.add_span(span)
 
     async def get_next_span_sequence_id(self, rollout_id: str, attempt_id: str) -> int:
         return await self.store.get_next_span_sequence_id(rollout_id, attempt_id)
@@ -172,6 +191,28 @@ class LightningStoreServer(LightningStore):
 
     async def query_spans(self, rollout_id: str, attempt_id: str | Literal["latest"] | None = None) -> List[Span]:
         return await self.store.query_spans(rollout_id, attempt_id)
+
+    async def update_rollout(
+        self,
+        rollout_id: str,
+        status: Optional[RolloutStatus] = None,
+        worker_id: Optional[str] = None,
+        attempt_sequence_id: Optional[int] = None,
+        attempt_id: Optional[str] = None,
+        attempt_start_time: Optional[float] = None,
+        last_attempt_status: Optional[RolloutStatus] = None,
+        **kwargs: Any,
+    ) -> RolloutV2:
+        return await self.store.update_rollout(
+            rollout_id=rollout_id,
+            status=status,
+            worker_id=worker_id,
+            attempt_sequence_id=attempt_sequence_id,
+            attempt_id=attempt_id,
+            attempt_start_time=attempt_start_time,
+            last_attempt_status=last_attempt_status,
+            **kwargs,
+        )
 
 
 class LightningStoreClient(LightningStore):
@@ -227,11 +268,14 @@ class LightningStoreClient(LightningStore):
             data = await response.json()
             return [RolloutV2.model_validate(item) for item in data]
 
-    async def update_resources(self, update: ResourcesUpdate):
+    async def update_resources(self, resources_id: str, resources: NamedResources) -> ResourcesUpdate:
         session = await self._get_session()
+        update = ResourcesUpdate(resources_id=resources_id, resources=resources)
 
         async with session.post(f"{self.server_address}/update_resources", json=update.model_dump()) as response:
             response.raise_for_status()
+            data = await response.json()
+            return ResourcesUpdate.model_validate(data)
 
     async def get_resources_by_id(self, resources_id: str) -> Optional[ResourcesUpdate]:
         session = await self._get_session()
@@ -249,17 +293,21 @@ class LightningStoreClient(LightningStore):
             data = await response.json()
             return ResourcesUpdate.model_validate(data) if data else None
 
-    async def add_rollout(self, rollout: RolloutV2) -> None:
+    async def add_rollout(self, rollout: RolloutV2) -> RolloutV2:
         session = await self._get_session()
 
         async with session.post(f"{self.server_address}/add_rollout", json=rollout.model_dump(mode="json")) as response:
             response.raise_for_status()
+            data = await response.json()
+            return RolloutV2.model_validate(data)
 
-    async def add_span(self, span: Span) -> None:
+    async def add_span(self, span: Span) -> Span:
         session = await self._get_session()
 
         async with session.post(f"{self.server_address}/add_span", json=span.model_dump(mode="json")) as response:
             response.raise_for_status()
+            data = await response.json()
+            return Span.model_validate(data)
 
     async def get_next_span_sequence_id(self, rollout_id: str, attempt_id: str) -> int:
         session = await self._get_session()
@@ -302,3 +350,34 @@ class LightningStoreClient(LightningStore):
             response.raise_for_status()
             data = await response.json()
             return [Span.model_validate(item) for item in data]
+
+    async def update_rollout(
+        self,
+        rollout_id: str,
+        status: Optional[RolloutStatus] = None,
+        worker_id: Optional[str] = None,
+        attempt_sequence_id: Optional[int] = None,
+        attempt_id: Optional[str] = None,
+        attempt_start_time: Optional[float] = None,
+        last_attempt_status: Optional[RolloutStatus] = None,
+        **kwargs: Any,
+    ) -> RolloutV2:
+        session = await self._get_session()
+
+        request_data = {
+            "rollout_id": rollout_id,
+            "status": status,
+            "worker_id": worker_id,
+            "attempt_sequence_id": attempt_sequence_id,
+            "attempt_id": attempt_id,
+            "attempt_start_time": attempt_start_time,
+            "last_attempt_status": last_attempt_status,
+            **kwargs,
+        }
+        # Remove None values
+        request_data = {k: v for k, v in request_data.items() if v is not None}
+
+        async with session.post(f"{self.server_address}/update_rollout", json=request_data) as response:
+            response.raise_for_status()
+            data = await response.json()
+            return RolloutV2.model_validate(data)

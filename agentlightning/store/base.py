@@ -165,7 +165,7 @@ class LightningStore:
     async def update_rollout(
         self,
         rollout_id: str,
-        status: RolloutStatus,
+        status: Optional[RolloutStatus] = None,
         worker_id: Optional[str] = None,
         attempt_sequence_id: Optional[int] = None,
         attempt_id: Optional[str] = None,

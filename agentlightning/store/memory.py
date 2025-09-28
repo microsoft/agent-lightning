@@ -153,7 +153,6 @@ class InMemoryLightningStore(LightningStore):
                 return self._resources.get(self._latest_resources_id)
             return None
 
-    @healthcheck
     async def get_next_span_sequence_id(self, rollout_id: str, attempt_id: str) -> int:
         """
         Get the next span sequence ID for a given rollout and attempt.
