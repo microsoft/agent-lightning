@@ -9,7 +9,15 @@ from typing import Any, Callable, Dict, List, Literal, Optional, Sequence, TypeV
 from opentelemetry.sdk.trace import ReadableSpan
 
 from agentlightning.tracer import Span
-from agentlightning.types import NamedResources, ResourcesUpdate, RolloutStatus, RolloutV2
+from agentlightning.types import (
+    Attempt,
+    AttemptStatus,
+    NamedResources,
+    ResourcesUpdate,
+    RolloutStatus,
+    RolloutV2,
+    TaskInput,
+)
 
 
 def is_queuing(rollout: RolloutV2) -> bool:
@@ -25,6 +33,26 @@ def is_finished(rollout: RolloutV2) -> bool:
 
 
 T_callable = TypeVar("T_callable", bound=Callable[..., Any])
+
+
+class _UnsetType:
+    """A sentinel type to indicate an unset value."""
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:
+        return "UNSET"
+
+    def __reduce__(self):
+        return (_get_unset, ())
+
+
+def _get_unset() -> _UnsetType:
+    return UNSET
+
+
+UNSET = _UnsetType()
+Unset = _UnsetType  # Alias for convenience
 
 
 def healthcheck(func: T_callable) -> T_callable:
@@ -121,6 +149,19 @@ class LightningStore:
         """
         raise NotImplementedError()
 
+    async def query_attempts(self, rollout_id: str) -> List[Attempt]:
+        """
+        Query and retrieve all attempts associated with a specific rollout ID.
+        Returns an empty list if no attempts are found.
+        """
+        raise NotImplementedError()
+
+    async def get_latest_attempt(self, rollout_id: str) -> Optional[Attempt]:
+        """
+        Safely retrieves the latest attempt for a given rollout ID.
+        """
+        raise NotImplementedError()
+
     async def get_resources_by_id(self, resources_id: str) -> Optional[ResourcesUpdate]:
         """
         Safely retrieves a specific version of named resources by its ID.
@@ -165,26 +206,48 @@ class LightningStore:
     async def update_rollout(
         self,
         rollout_id: str,
-        status: Optional[RolloutStatus] = None,
-        worker_id: Optional[str] = None,
-        attempt_sequence_id: Optional[int] = None,
-        attempt_id: Optional[str] = None,
-        attempt_start_time: Optional[float] = None,
-        last_attempt_status: Optional[RolloutStatus] = None,
-        **kwargs: Any,
+        input: TaskInput | Unset = UNSET,
+        mode: Optional[Literal["train", "val", "test"]] | Unset = UNSET,
+        resources_id: Optional[str] | Unset = UNSET,
+        status: RolloutStatus | Unset = UNSET,
+        metadata: Dict[str, Any] | Unset = UNSET,
     ) -> RolloutV2:
         """
         Update the rollout status and related metadata.
 
         Args:
             rollout_id: Unique identifier for the rollout to update
-            status: New status to set for the rollout
-            worker_id: Optional worker identifier
-            attempt_sequence_id: Optional sequence ID for the attempt
-            attempt_id: Optional unique attempt identifier
-            attempt_start_time: Optional timestamp when current attempt started
-            last_attempt_status: Optional status of the last attempt
-            **kwargs: Additional rollout information to update
+            input: New input data for the rollout. If set, will be updated. Can be updated to None
+            mode: New mode for the rollout. If set, will be updated. Can be updated to None
+            resources_id: New resources ID for the rollout. If set, will be updated. Can be updated to None
+            status: New status for the rollout. If set, will be updated
+            metadata: Dictionary of additional metadata to update. If set, will be merged with existing metadata
+        """
+        raise NotImplementedError()
+
+    async def update_attempt(
+        self,
+        rollout_id: str,
+        attempt_id: str | Literal["latest"],
+        end_time: float | Unset = UNSET,
+        status: AttemptStatus | Unset = UNSET,
+        worker_id: str | Unset = UNSET,
+        last_heartbeat_time: float | Unset = UNSET,
+        metadata: Dict[str, Any] | Unset = UNSET,
+    ) -> Attempt:
+        """
+        Update a specific or latest attempt for a given rollout.
+
+        Update the latest attempt will also affect the corresponding rollout status.
+
+        Args:
+            rollout_id: Unique identifier for the rollout
+            attempt_id: Unique identifier for the attempt
+            end_time: Timestamp when the attempt ended, update if provided
+            status: Status to set for the attempt, update if provided
+            worker_id: Worker identifier, update if provided
+            last_heartbeat_time: Timestamp of the last heartbeat from the worker
+            metadata: Dictionary of additional metadata to update, will be merged with existing metadata
         """
         raise NotImplementedError()
 
@@ -203,7 +266,7 @@ class LightningStoreWatchDog:
         timeout_seconds: float,
         unresponsive_seconds: float,
         max_attempts: int = 3,
-        retry_condition: Optional[Sequence[RolloutStatus]] = None,
+        retry_condition: Optional[Sequence[AttemptStatus]] = None,
     ):
         """
         Initialize the watchdog with timeout configurations.
@@ -287,7 +350,7 @@ class LightningStoreWatchDog:
 
         return latest_span_time != 0.0 and current_time - latest_span_time > self.unresponsive_seconds
 
-    async def _handle_failed_rollout(self, store: LightningStore, rollout: RolloutV2, status: RolloutStatus) -> None:
+    async def _handle_failed_rollout(self, store: LightningStore, rollout: RolloutV2, status: AttemptStatus) -> None:
         """
         Handle a failed rollout by either retrying or marking as failed.
 
@@ -311,8 +374,9 @@ class LightningStoreWatchDog:
                 )
                 return
 
-        # If we can't retry or shouldn't retry, mark with the failure status
+        # If we can't retry or shouldn't retry, mark as failed
         await store.update_rollout(
             rollout_id=rollout.rollout_id,
-            status=status,
+            status="failed",
+            last_attempt_status=status,
         )

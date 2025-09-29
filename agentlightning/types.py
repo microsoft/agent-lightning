@@ -111,12 +111,12 @@ class RolloutV2(BaseModel):
     # Inputs
     input: TaskInput
 
+    # Time to track the lifecycle of the rollout
+    start_time: float
+    end_time: Optional[float] = None
+
     mode: Optional[Literal["train", "val", "test"]] = None
     resources_id: Optional[str] = None
-
-    # Optional fields for tracking task lifecycle
-    start_time: Optional[float] = None
-    end_time: Optional[float] = None
 
     # Overall scheduling/running information
     status: RolloutStatus = "queuing"
