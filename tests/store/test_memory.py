@@ -46,6 +46,33 @@ async def test_enqueue_rollout_creates_rollout(store: InMemoryLightningStore) ->
 
 
 @pytest.mark.asyncio
+async def test_add_rollout_initializes_attempt(store: InMemoryLightningStore) -> None:
+    """Test that add_rollout immediately tracks a preparing attempt."""
+    sample = {"payload": "value"}
+
+    attempt_rollout = await store.add_rollout(sample=sample, mode="val", resources_id="res-add")
+
+    assert attempt_rollout.status == "preparing"
+    assert attempt_rollout.rollout_id.startswith("rollout-")
+    assert attempt_rollout.attempt.attempt_id.startswith("attempt-")
+    assert attempt_rollout.attempt.sequence_id == 1
+    assert attempt_rollout.attempt.status == "preparing"
+
+    stored = await store.query_rollouts(status=["preparing"])
+    assert len(stored) == 1
+    assert stored[0].rollout_id == attempt_rollout.rollout_id
+    assert stored[0].resources_id == "res-add"
+
+    attempts = await store.query_attempts(attempt_rollout.rollout_id)
+    assert len(attempts) == 1
+    assert attempts[0].attempt_id == attempt_rollout.attempt.attempt_id
+
+    latest_attempt = await store.get_latest_attempt(attempt_rollout.rollout_id)
+    assert latest_attempt is not None
+    assert latest_attempt.attempt_id == attempt_rollout.attempt.attempt_id
+
+
+@pytest.mark.asyncio
 async def test_query_rollouts_by_status(store: InMemoryLightningStore) -> None:
     """Test querying rollouts filtered by status."""
     # Create rollouts with different statuses
@@ -572,6 +599,24 @@ async def test_add_span_without_rollout(store: InMemoryLightningStore, mock_read
 
 
 @pytest.mark.asyncio
+async def test_add_span_with_missing_attempt(store: InMemoryLightningStore, mock_readable_span: Mock) -> None:
+    """Test adding span with an unknown attempt_id raises a helpful error."""
+    rollout = await store.enqueue_rollout(sample={"test": "data"})
+    # Create a valid attempt to ensure rollout exists in store
+    await store.dequeue_rollout()
+
+    invalid_span = Span.from_opentelemetry(
+        mock_readable_span,
+        rollout_id=rollout.rollout_id,
+        attempt_id="attempt-missing",
+        sequence_id=1,
+    )
+
+    with pytest.raises(ValueError, match="Attempt attempt-missing not found"):
+        await store.add_span(invalid_span)
+
+
+@pytest.mark.asyncio
 async def test_query_empty_spans(store: InMemoryLightningStore) -> None:
     """Test querying spans for non-existent rollout returns empty."""
     spans = await store.query_spans("nonexistent")
@@ -689,6 +734,96 @@ async def test_update_latest_attempt(store: InMemoryLightningStore) -> None:
 
     assert updated.status == "succeeded"
     assert updated.end_time is not None  # Should auto-set end_time
+
+
+@pytest.mark.asyncio
+async def test_update_attempt_sets_end_time_for_terminal_status(store: InMemoryLightningStore) -> None:
+    """Terminal attempt statuses set end_time while in-progress statuses don't."""
+    rollout = await store.enqueue_rollout(sample={"test": "data"})
+    await store.dequeue_rollout()
+
+    attempt = (await store.query_attempts(rollout.rollout_id))[0]
+    assert attempt.end_time is None
+
+    running = await store.update_attempt(
+        rollout_id=rollout.rollout_id,
+        attempt_id=attempt.attempt_id,
+        status="running",
+    )
+    assert running.status == "running"
+    assert running.end_time is None
+
+    failed = await store.update_attempt(
+        rollout_id=rollout.rollout_id,
+        attempt_id=attempt.attempt_id,
+        status="failed",
+    )
+    assert failed.status == "failed"
+    assert failed.end_time is not None
+    assert failed.end_time >= failed.start_time
+
+
+@pytest.mark.asyncio
+async def test_rollout_retry_lifecycle_updates_statuses(
+    store: InMemoryLightningStore, mock_readable_span: Mock
+) -> None:
+    """Rollout retry creates new attempts and updates statuses via spans and completions."""
+    rollout = await store.enqueue_rollout(sample={"test": "data"})
+
+    first_attempted = await store.dequeue_rollout()
+    assert first_attempted is not None
+    assert first_attempted.status == "preparing"
+
+    first_attempt = (await store.query_attempts(rollout.rollout_id))[0]
+    await store.add_otel_span(rollout.rollout_id, first_attempt.attempt_id, mock_readable_span)
+
+    # Status should reflect running state after span is recorded
+    running_rollout = await store.query_rollouts(status=["running"])
+    assert running_rollout and running_rollout[0].rollout_id == rollout.rollout_id
+
+    running_attempts = await store.query_attempts(rollout.rollout_id)
+    assert running_attempts[0].status == "running"
+
+    # Mark first attempt as failed and requeue rollout
+    failed_attempt = await store.update_attempt(
+        rollout_id=rollout.rollout_id,
+        attempt_id=first_attempt.attempt_id,
+        status="failed",
+    )
+    assert failed_attempt.end_time is not None
+    await store.update_rollout(rollout_id=rollout.rollout_id, status="requeuing")
+
+    attempts_after_failure = await store.query_attempts(rollout.rollout_id)
+    assert [a.status for a in attempts_after_failure] == ["failed"]
+
+    retry_attempted = await store.dequeue_rollout()
+    assert retry_attempted is not None
+    assert retry_attempted.status == "preparing"
+    assert retry_attempted.attempt.sequence_id == 2
+
+    latest_pre_span = await store.get_latest_attempt(rollout.rollout_id)
+    assert latest_pre_span is not None and latest_pre_span.sequence_id == 2
+    assert latest_pre_span.status == "preparing"
+
+    await store.add_otel_span(rollout.rollout_id, retry_attempted.attempt.attempt_id, mock_readable_span)
+
+    latest_running = await store.get_latest_attempt(rollout.rollout_id)
+    assert latest_running is not None
+    assert latest_running.sequence_id == 2
+    assert latest_running.status == "running"
+
+    await store.update_attempt(
+        rollout_id=rollout.rollout_id,
+        attempt_id=retry_attempted.attempt.attempt_id,
+        status="succeeded",
+    )
+    await store.update_rollout(rollout_id=rollout.rollout_id, status="succeeded")
+
+    final_rollout = await store.query_rollouts(status=["succeeded"])
+    assert final_rollout and final_rollout[0].rollout_id == rollout.rollout_id
+
+    final_attempts = await store.query_attempts(rollout.rollout_id)
+    assert [a.status for a in final_attempts] == ["failed", "succeeded"]
 
 
 @pytest.mark.asyncio

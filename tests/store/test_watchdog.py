@@ -280,6 +280,64 @@ async def test_full_lifecycle_with_retry(store_with_watchdog: InMemoryLightningS
 
 
 @pytest.mark.asyncio
+async def test_watchdog_promotes_preparing_attempt_with_heartbeat(store_with_watchdog: InMemoryLightningStore) -> None:
+    """A recorded heartbeat should promote a preparing attempt and rollout to running."""
+    store = store_with_watchdog
+    rollout = await store.enqueue_rollout(sample={"test": "heartbeat"})
+    await store.dequeue_rollout()
+
+    attempt = (await store.query_attempts(rollout.rollout_id))[0]
+    heartbeat_time = attempt.start_time + 0.5
+
+    # Record a heartbeat without changing the status from preparing
+    attempt = await store.update_attempt(
+        rollout_id=rollout.rollout_id,
+        attempt_id=attempt.attempt_id,
+        last_heartbeat_time=heartbeat_time,
+    )
+    assert attempt.status == "preparing"
+
+    # Rollout should still not be preparing because of watchdog
+    preparing = await store.query_rollouts(status=["preparing"])
+    assert len(preparing) == 0
+    running = await store.query_rollouts(status=["running"])
+    assert len(running) == 1
+
+    latest_attempt = await store.get_latest_attempt(rollout.rollout_id)
+    assert latest_attempt is not None
+    assert latest_attempt.status == "running"
+
+    running_rollouts = await store.query_rollouts(status=["running"])
+    assert running_rollouts and running_rollouts[0].rollout_id == rollout.rollout_id
+
+
+@pytest.mark.asyncio
+async def test_watchdog_marks_failed_attempt_without_retry(store_with_watchdog: InMemoryLightningStore) -> None:
+    """Attempts marked failed should not be retried and rollout becomes failed."""
+    store = store_with_watchdog
+    rollout = await store.enqueue_rollout(sample={"test": "hard-fail"})
+    await store.dequeue_rollout()
+
+    attempt = (await store.query_attempts(rollout.rollout_id))[0]
+
+    # Explicitly mark attempt as failed before watchdog runs
+    await store.update_attempt(
+        rollout_id=rollout.rollout_id,
+        attempt_id=attempt.attempt_id,
+        status="failed",
+    )
+
+    # Rollout should be marked failed without requeueing
+    failed_rollouts = await store.query_rollouts(status=["failed"])
+    assert failed_rollouts and failed_rollouts[0].rollout_id == rollout.rollout_id
+
+    store_with_watchdog.watchdog.retry_condition = [*store_with_watchdog.watchdog.retry_condition, "failed"]
+    await store.update_rollout(rollout_id=rollout.rollout_id, status="running")
+    queuing_rollouts = await store.query_rollouts(status=["requeuing"])
+    assert queuing_rollouts and queuing_rollouts[0].rollout_id == rollout.rollout_id
+
+
+@pytest.mark.asyncio
 async def test_watchdog_handles_succeeded_attempt(store_with_watchdog: InMemoryLightningStore) -> None:
     """Test watchdog properly handles succeeded attempts."""
     store = store_with_watchdog
