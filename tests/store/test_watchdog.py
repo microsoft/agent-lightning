@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from agentlightning.store.base import LightningStoreWatchDog
+from agentlightning.store.base import LightningStore, LightningStoreWatchDog
 from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.tracer import Span
 from agentlightning.types import LLM, Attempt, AttemptStatus, PromptTemplate, ResourcesUpdate, RolloutStatus, RolloutV2
@@ -106,6 +106,7 @@ async def test_watchdog_respects_max_attempts(store_with_watchdog: InMemoryLight
     # Simulate multiple failures
     for attempt_num in range(3):  # max_attempts = 3
         rollout = await store.dequeue_rollout()
+        assert rollout is not None
         attempts = await store.query_attempts(rollout.rollout_id)
         current_attempt = attempts[-1]  # Get the latest attempt
 
@@ -149,7 +150,7 @@ async def test_healthcheck_recursive_prevention(store_with_watchdog: InMemoryLig
 
     if store.watchdog:
         # Create a mock healthcheck that tries to call another decorated method
-        async def recursive_healthcheck(store_arg):
+        async def recursive_healthcheck(store_arg: LightningStore):
             # This should NOT trigger another healthcheck due to the flag
             await store_arg.query_rollouts(status=["preparing"])
 
@@ -214,6 +215,7 @@ async def test_watchdog_heartbeat_based_unresponsiveness(
         # Test 3: Old heartbeat - should be marked unresponsive
         # Get current heartbeat time before patching
         current_attempt = await store.get_latest_attempt(rollout.rollout_id)
+        assert current_attempt is not None
         assert current_attempt.last_heartbeat_time is not None
 
         with patch("time.time") as mock_time:

@@ -143,7 +143,7 @@ async def test_dequeue_rollout_skips_non_queuing_status(store: InMemoryLightning
 @pytest.mark.asyncio
 async def test_fifo_ordering(store: InMemoryLightningStore) -> None:
     """Test that queue maintains FIFO order."""
-    rollouts = []
+    rollouts: List[RolloutV2] = []
     for i in range(5):
         r = await store.enqueue_rollout(sample={"order": i})
         rollouts.append(r)
@@ -214,13 +214,13 @@ async def test_resource_lifecycle(store: InMemoryLightningStore) -> None:
         model="test-model-v1",
         sampling_parameters={"temperature": 0.7},
     )
-    v1 = ResourcesUpdate(resources_id="v1", resources={"main_llm": llm_v1})
     update = await store.update_resources("v1", {"main_llm": llm_v1})
     assert update.resources_id == "v1"
 
     latest = await store.get_latest_resources()
     assert latest is not None
     assert latest.resources_id == "v1"
+    assert isinstance(latest.resources["main_llm"], LLM)
     assert latest.resources["main_llm"].model == "test-model-v1"
 
     # Add second version with different LLM
@@ -232,6 +232,7 @@ async def test_resource_lifecycle(store: InMemoryLightningStore) -> None:
     )
     v2 = await store.update_resources("v2", {"main_llm": llm_v2})
     assert v2.resources_id == "v2"
+    assert isinstance(v2.resources["main_llm"], LLM)
     assert v2.resources["main_llm"].model == "test-model-v2"
 
     # Latest should be v2
@@ -242,6 +243,7 @@ async def test_resource_lifecycle(store: InMemoryLightningStore) -> None:
     # Can still retrieve v1
     old = await store.get_resources_by_id("v1")
     assert old is not None
+    assert isinstance(old.resources["main_llm"], LLM)
     assert old.resources["main_llm"].model == "test-model-v1"
 
 
@@ -416,7 +418,7 @@ async def test_wait_for_rollouts(store: InMemoryLightningStore) -> None:
     # Add multiple rollouts
     r1 = await store.enqueue_rollout(sample={"id": 1})
     r2 = await store.enqueue_rollout(sample={"id": 2})
-    r3 = await store.enqueue_rollout(sample={"id": 3})
+    _r3 = await store.enqueue_rollout(sample={"id": 3})
 
     # Start waiting for r1 and r2
     async def wait_for_completion() -> List[RolloutV2]:
@@ -506,6 +508,7 @@ async def test_concurrent_span_additions(store: InMemoryLightningStore, mock_rea
     """Test concurrent span additions maintain consistency."""
     await store.enqueue_rollout(sample={"test": "data"})
     rollout = await store.dequeue_rollout()  # Create an attempt
+    assert rollout is not None
 
     async def add_span(index: int) -> Span:
         return await store.add_otel_span(rollout.rollout_id, rollout.attempt.attempt_id, mock_readable_span)
@@ -547,6 +550,7 @@ async def test_concurrent_resource_updates(store: InMemoryLightningStore) -> Non
     for i in range(50):
         res = await store.get_resources_by_id(f"v{i}")
         assert res is not None
+        assert isinstance(res.resources["llm"], LLM)
         assert res.resources["llm"].model == f"model-v{i}"
 
 
@@ -708,6 +712,7 @@ async def test_full_lifecycle_success(store: InMemoryLightningStore, mock_readab
 
     # 2. Pop to start processing (creates attempt)
     popped = await store.dequeue_rollout()
+    assert popped is not None
     assert popped.status == "preparing"
 
     attempts = await store.query_attempts(rollout.rollout_id)
@@ -737,5 +742,6 @@ async def test_full_lifecycle_success(store: InMemoryLightningStore, mock_readab
     assert final.end_time is not None
 
     final_attempt = await store.get_latest_attempt(rollout.rollout_id)
+    assert final_attempt is not None
     assert final_attempt.status == "succeeded"
     assert final_attempt.end_time is not None
