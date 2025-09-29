@@ -5,7 +5,7 @@ import logging
 import multiprocessing
 import threading
 from contextlib import suppress
-from typing import Any, Awaitable, Literal, Protocol
+from typing import Any, Awaitable, Literal, Optional, Protocol
 
 from .store.base import LightningStore
 from .store.client_server import LightningStoreClient, LightningStoreServer
@@ -14,26 +14,32 @@ from .store.threading import LightningStoreThreaded
 logger = logging.getLogger(__name__)
 
 
-class AlgorithmBundle(Protocol):
-    async def __call__(self, store: LightningStore) -> None:
-        """Initalization and execution logic."""
+class Event(Protocol):
+    """
+    A minimal protocol similar to threading.Event.
 
-    async def cleanup(self) -> None:
-        """Cleaning up is invoked when the execution is done or interrupted.
-        It's not part of the `__call__` logic; and is not recommended to bake into `__call__`.
-        Executor will call cleanup at best effort in case of graceful shutdown.
-        """
+    Methods:
+        set(): Signal event like a cancellation (idempotent).
+        clear(): Reset to the non-set state.
+        is_set() -> bool: True if event has been signaled.
+        wait(timeout: Optional[float] = None) -> bool:
+            Block until event is set or timeout. Returns True if event has signaled.
+    """
+
+    def set(self) -> None: ...
+    def clear(self) -> None: ...
+    def is_set(self) -> bool: ...
+    def wait(self, timeout: Optional[float] = None) -> bool: ...
+
+
+class AlgorithmBundle(Protocol):
+    async def __call__(self, store: LightningStore, event: Event) -> None:
+        """Initalization and execution logic."""
 
 
 class RunnerBundle(Protocol):
-    async def __call__(self, store: LightningStore, worker_id: int) -> None:
+    async def __call__(self, store: LightningStore, worker_id: int, event: Event) -> None:
         """Initalization and execution logic."""
-
-    async def cleanup(self) -> None:
-        """Cleaning up is invoked when the execution is done or interrupted.
-        It's not part of the `__call__` logic; and is not recommended to bake into `__call__`.
-        Executor will call cleanup at best effort in case of graceful shutdown.
-        """
 
 
 class ExecutionStrategy:
