@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import asyncio
 import logging
 import os
@@ -7,7 +8,7 @@ import re
 import tempfile
 import threading
 import time
-from typing import Any, Dict, List, Optional, Sequence, TypedDict, Union, cast
+from typing import Any, Dict, Iterable, List, Optional, Sequence, TypedDict, Union, cast
 
 import litellm
 import uvicorn
@@ -65,21 +66,146 @@ class LightningSpanExporter(SpanExporter):
         self.store = store
 
         self._buffer: List[ReadableSpan] = []
+        self._lock = threading.RLock()
+
+        # Single dedicated event loop running in a daemon thread.
+        self._loop = asyncio.new_event_loop()
+        self._loop_thread = threading.Thread(target=self._run_loop, name="LightningSpanExporterLoop", daemon=True)
+        self._loop_thread.start()
+
+    def _run_loop(self) -> None:
+        asyncio.set_event_loop(self._loop)
+        self._loop.run_forever()
+
+    def shutdown(self) -> None:
+        """Optional: call when your process exits."""
+        try:
+
+            def _stop():
+                self._loop.stop()
+
+            self._loop.call_soon_threadsafe(_stop)
+            self._loop_thread.join(timeout=2.0)
+            self._loop.close()
+        except Exception:
+            logger.exception("Error during exporter shutdown")
 
     def export(self, spans: Sequence[ReadableSpan]) -> SpanExportResult:
-        for span in spans:
-            self._buffer.append(span)
+        with self._lock:
+            for span in spans:
+                self._buffer.append(span)
 
-        self._maybe_flush()
+        # Run the async flush on our private loop, synchronously from caller’s POV.
+        async def _locked_flush():
+            with self._lock:
+                return await self._maybe_flush()
+
+        try:
+            fut = asyncio.run_coroutine_threadsafe(_locked_flush(), self._loop)
+            fut.result()  # bubble up any exceptions
+        except Exception as e:
+            logger.exception("Export flush failed: %s", e)
+            return SpanExportResult.FAILURE
 
         return SpanExportResult.SUCCESS
 
-    def _maybe_flush(self):
+    async def _maybe_flush(self):
         """Every span needs to find its parent span (or it's a root span) to be flushed.
 
         In a tree, we find "metadata.requester_custom_headers": "{'x-rollout-id': '123', 'x-attempt-id': '456', 'x-sequence-id': '1'}"
         to get the information we want to add to the store.
         """
+        for root_span_id in self._get_root_span_ids():
+            subtree_spans = self._pop_subtrees(root_span_id)
+            if not subtree_spans:
+                continue
+
+            # Merge all custom headers in the subtree spans.
+            # This is to find the rollout_id and attempt_id.
+            headers_merged: Dict[str, Any] = {}
+
+            for span in subtree_spans:
+                if span.attributes is None:
+                    continue
+                headers_str = span.attributes.get("metadata.requester_custom_headers")
+                if headers_str is None:
+                    continue
+                if not isinstance(headers_str, str):
+                    logger.error(
+                        f"metadata.requester_custom_headers is not stored as a string: {headers_str}. Skipping the span."
+                    )
+                    continue
+                try:
+                    headers = ast.literal_eval(headers_str)
+                except Exception as e:
+                    logger.error(
+                        f"Failed to parse metadata.requester_custom_headers: {headers_str}, error: {e}. Skipping the span."
+                    )
+                    continue
+                if not isinstance(headers, dict):
+                    logger.error(
+                        f"metadata.requester_custom_headers is not parsed as a dict: {headers}. Skipping the span."
+                    )
+                    continue
+                headers_merged.update(cast(Dict[str, Any], headers))
+
+            if not headers_merged:
+                logger.warning(f"No headers found in {len(subtree_spans)} subtree spans. Can't logging to store.")
+                continue
+
+            # Convert the rollout_id and attempt_id to str, sequence_id to int.
+            rollout_id = headers_merged.get("x-rollout-id")
+            attempt_id = headers_merged.get("x-attempt-id")
+            sequence_id = headers_merged.get("x-sequence-id")
+            if not rollout_id or not attempt_id or not sequence_id or not sequence_id.isdigit():
+                logger.warning(
+                    f"Missing or invalid rollout_id, attempt_id, or sequence_id in headers: {headers_merged}. Can't logging to store."
+                )
+                continue
+            if not isinstance(rollout_id, str) or not isinstance(attempt_id, str):
+                logger.warning(
+                    f"rollout_id or attempt_id is not a string: {rollout_id}, {attempt_id}. Can't logging to store."
+                )
+                continue
+            sequence_id_decimal = int(sequence_id)
+
+            # Store the spans to the store.
+            for span in subtree_spans:
+                await self.store.add_otel_span(
+                    rollout_id=rollout_id, attempt_id=attempt_id, sequence_id=sequence_id_decimal, readable_span=span
+                )
+
+    def _get_root_span_ids(self) -> Iterable[int]:
+        for span in self._buffer:
+            if span.parent is None:
+                span_context = span.get_span_context()
+                if span_context is not None:
+                    yield span_context.span_id
+
+    def _get_subtrees(self, root_span_id: int) -> Iterable[int]:
+        # Yield the root span id first.
+        yield root_span_id
+        for span in self._buffer:
+            # Check whether the span's parent is the root_span_id.
+            if span.parent is not None and span.parent.span_id == root_span_id:
+                span_context = span.get_span_context()
+                if span_context is not None:
+                    # Recursively get child spans.
+                    yield from self._get_subtrees(span_context.span_id)
+
+    def _pop_subtrees(self, root_span_id: int) -> List[ReadableSpan]:
+        """Get the subtree of a particular root span id and remove them from the buffer."""
+        subtree_span_ids = set(self._get_subtrees(root_span_id))
+        subtree_spans: List[ReadableSpan] = []
+        new_buffer: List[ReadableSpan] = []
+        for span in self._buffer:
+            span_context = span.get_span_context()
+            if span_context is not None and span_context.span_id in subtree_span_ids:
+                subtree_spans.append(span)
+            else:
+                new_buffer.append(span)
+        self._buffer = new_buffer
+        return subtree_spans
 
 
 class LightningOpenTelemetry(OpenTelemetry):
