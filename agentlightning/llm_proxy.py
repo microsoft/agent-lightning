@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 from __future__ import annotations
 
 import ast
@@ -23,7 +25,7 @@ from opentelemetry.sdk.trace.export import SpanExporter, SpanExportResult
 from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.types import LLM
 
-from .store.base import LightningStore
+from .store.base import LightningStore, LightningStoreWatchDog
 
 logger = logging.getLogger(__name__)
 
@@ -226,13 +228,23 @@ class LightningOpenTelemetry(OpenTelemetry):
 class LLMProxy:
 
     def __init__(
-        self, store: LightningStore, host: str, port: int, model_list: List[ModelConfig], litellm_config: Dict[str, Any]
+        self,
+        store: LightningStore,
+        host: str,
+        port: int,
+        model_list: List[ModelConfig],
+        litellm_config: Dict[str, Any],
+        num_retries: int = 0,
     ):
         self.store = store
         self.host = host
         self.port = port
         self.model_list = model_list
         self.litellm_config = litellm_config
+
+        self.litellm_config.setdefault("litellm_settings", {})
+        self.litellm_config["litellm_settings"].setdefault("num_retries", num_retries)
+
         self._server_thread = None
         self._config_file = None
         self._uvicorn_server = None
@@ -318,24 +330,38 @@ class LLMProxy:
             self._uvicorn_server.should_exit = True
             self._server_thread.join(timeout=20.0)  # Allow time for graceful shutdown.
 
-    def as_resource(self, sampling_parameters: Dict[str, Any]) -> LLM:
+    def as_resource(
+        self,
+        rollout_id: str,
+        attempt_id: str,
+        model: str | None = None,
+        sampling_parameters: Dict[str, Any] | None = None,
+    ) -> LLM:
         """
         Return an `LLM` Resource pointing at this proxy (OpenAI-compatible /v1).
 
-        The `model` you pass at inference-time should be one of the model_name
-        values from the constructed `model_list`. (e.g., 'backend-1', 'gpt-4o', ...).
-        Clients will hit `endpoint/v1/...` like the OpenAI API. :contentReference[oaicite:4]{index=4}
+        Each resource is binded to a particular rollout and attempt, so that we can
+        trace the request back to the rollout and attempt.
         """
+        if model is None:
+            if len(self.model_list) == 1:
+                model = self.model_list[0]["model_name"]
+            else:
+                raise ValueError(
+                    f"Multiple or zero models found in model_list: {self.model_list}. Please specify the model."
+                )
+
         return LLM(
-            endpoint=f"http://{self.host}:{self.port}/v1",
-            model="backend-1",  # default logical name; callers can override per-request
+            endpoint=f"http://{self.host}:{self.port}/rollout/{rollout_id}/attempt/{attempt_id}",
+            model=model,
             sampling_parameters=dict(sampling_parameters or {}),
         )
 
 
-def main():
+async def main():
+    store = InMemoryLightningStore(watchdog=LightningStoreWatchDog(10.0, 5.0))
     proxy = LLMProxy(
-        store=InMemoryLightningStore(),
+        store=store,
         host="0.0.0.0",
         port=9000,
         model_list=[
@@ -350,12 +376,16 @@ def main():
         litellm_config={},
     )
 
+    rollout = await store.add_rollout(None)
+
     proxy.initialize()
     proxy.start()
 
+    resource = proxy.as_resource(rollout.rollout_id, rollout.attempt.attempt_id)
+
     import openai
 
-    client = openai.OpenAI(base_url="http://127.0.0.1:9000/rollout/123/attempt/456", api_key="token-abc123")
+    client = openai.OpenAI(base_url=resource.endpoint, api_key="token-abc123")
     response = client.chat.completions.create(
         model="gpt-4o",
         messages=[{"role": "user", "content": "Hello, world!"}],
@@ -365,6 +395,9 @@ def main():
 
     proxy.stop()
 
+    await store.update_attempt(rollout.rollout_id, rollout.attempt.attempt_id, status="succeeded")
+    print(await store.query_spans(rollout.rollout_id, rollout.attempt.attempt_id))
+
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

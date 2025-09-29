@@ -108,6 +108,8 @@ class LightningStore:
         This will immediately sets the rollout to a preparing state, and should be
         used by whoever is going to execute the rollout.
 
+        Return a special rollout with attempt object. Do not update it directly.
+
         But if the rollout fails or timeouts, it's still possible that the watchdog
         sends it back to the queue for retry.
 
@@ -309,6 +311,38 @@ class LightningStoreWatchDog:
         self.max_attempts = max_attempts
         self.retry_condition = retry_condition or ["unresponsive", "timeout"]
 
+    async def propagate_status(self, store: LightningStore, attempt: Attempt) -> RolloutV2:
+        """
+        Propagate the status of an attempt to the rollout.
+
+        The rollout should be made sure in a state to be outdated.
+        Requeue the rollout if it should be retried.
+        """
+        # Propagate the status directly to the rollout
+        if attempt.status == "preparing" or attempt.status == "running" or attempt.status == "succeeded":
+            return await store.update_rollout(
+                rollout_id=attempt.rollout_id,
+                status=attempt.status,
+            )
+
+        if attempt.status == "failed" or attempt.status == "timeout" or attempt.status == "unresponsive":
+            # Check if this status should trigger a retry
+            if attempt.status in self.retry_condition:
+                # If we haven't exceeded max attempts, retry
+                if attempt.sequence_id < self.max_attempts:
+                    return await store.update_rollout(
+                        rollout_id=attempt.rollout_id,
+                        status="requeuing",
+                    )
+
+            # If we can't retry or shouldn't retry, mark as failed
+            return await store.update_rollout(
+                rollout_id=attempt.rollout_id,
+                status="failed",
+            )
+
+        raise ValueError(f"Invalid attempt status: {attempt.status}")
+
     async def healthcheck(self, store: LightningStore) -> None:
         """
         Perform health check on all running rollouts in the store.
@@ -334,17 +368,18 @@ class LightningStoreWatchDog:
                 continue
 
             # Check if the attempt has already failed or succeeded
-            if latest_attempt.status == "failed":
-                await self._handle_failed_rollout(store, latest_attempt, latest_attempt.status)
-                continue
-
-            if latest_attempt.status == "succeeded":
-                await self._handle_succeeded_rollout(store, latest_attempt)
+            if latest_attempt.status == "failed" or latest_attempt.status == "succeeded":
+                await self.propagate_status(store, latest_attempt)
                 continue
 
             # Check for timeout condition (based on attempt start_time, instead of rollout start_time)
             if current_time - latest_attempt.start_time > self.timeout_seconds:
-                await self._handle_failed_rollout(store, latest_attempt, "timeout")
+                await store.update_attempt(
+                    rollout_id=latest_attempt.rollout_id,
+                    attempt_id=latest_attempt.attempt_id,
+                    status="timeout",
+                )
+                await self.propagate_status(store, latest_attempt)
                 continue
 
             # Check for unresponsive condition (based on last heartbeat)
@@ -356,15 +391,16 @@ class LightningStoreWatchDog:
                         attempt_id=latest_attempt.attempt_id,
                         status="running",
                     )
-                if rollout.status == "preparing":
-                    rollout = await store.update_rollout(
-                        rollout_id=latest_attempt.rollout_id,
-                        status="running",
-                    )
+                    await self.propagate_status(store, latest_attempt)
 
                 # Haven't received heartbeat for a while
                 if current_time - cast(float, latest_attempt.last_heartbeat_time) > self.unresponsive_seconds:
-                    await self._handle_failed_rollout(store, latest_attempt, "unresponsive")
+                    await store.update_attempt(
+                        rollout_id=latest_attempt.rollout_id,
+                        attempt_id=latest_attempt.attempt_id,
+                        status="unresponsive",
+                    )
+                    await self.propagate_status(store, latest_attempt)
                     continue
 
             # Check if there's no last heartbeat (no spans) at all
@@ -372,54 +408,9 @@ class LightningStoreWatchDog:
                 latest_attempt.last_heartbeat_time is None
                 and current_time - latest_attempt.start_time > self.unresponsive_seconds
             ):
-                await self._handle_failed_rollout(store, latest_attempt, "unresponsive")
-
-    async def _handle_succeeded_rollout(self, store: LightningStore, attempt: Attempt) -> None:
-        """
-        Handle a succeeded rollout by marking the rollout as succeeded.
-
-        Args:
-            store: The LightningStore instance
-            attempt: The Attempt instance that has succeeded
-        """
-        await store.update_rollout(
-            rollout_id=attempt.rollout_id,
-            status="succeeded",
-        )
-
-    async def _handle_failed_rollout(self, store: LightningStore, attempt: Attempt, status: AttemptStatus) -> None:
-        """
-        Handle a failed rollout by either retrying or marking as failed.
-
-        Args:
-            store: The LightningStore instance
-            attempt: The Attempt instance that has failed
-            status: The failure status ("timeout" or "unresponsive")
-        """
-        # Update the current attempt with the failure status
-        if status != attempt.status:
-            await store.update_attempt(
-                rollout_id=attempt.rollout_id,
-                attempt_id=attempt.attempt_id,
-                status=status,
-            )
-
-        # Check if this status should trigger a retry
-        if status in self.retry_condition:
-            # Get current attempt count
-            attempts = await store.query_attempts(attempt.rollout_id)
-            current_attempts = len(attempts)
-
-            # If we haven't exceeded max attempts, retry
-            if current_attempts < self.max_attempts:
-                await store.update_rollout(
-                    rollout_id=attempt.rollout_id,
-                    status="requeuing",
+                await store.update_attempt(
+                    rollout_id=latest_attempt.rollout_id,
+                    attempt_id=latest_attempt.attempt_id,
+                    status="unresponsive",
                 )
-                return
-
-        # If we can't retry or shouldn't retry, mark as failed
-        await store.update_rollout(
-            rollout_id=attempt.rollout_id,
-            status="failed",
-        )
+                await self.propagate_status(store, latest_attempt)

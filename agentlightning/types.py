@@ -188,6 +188,7 @@ class LLM(Resource):
     resource_type: Literal["llm"] = "llm"
     endpoint: str
     model: str
+    api_key: Optional[str] = None
     sampling_parameters: Dict[str, Any] = Field(default_factory=dict)
 
 

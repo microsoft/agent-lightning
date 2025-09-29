@@ -436,4 +436,7 @@ class InMemoryLightningStore(LightningStore):
             # Re-validate the attempt to ensure legality
             Attempt.model_validate(attempt.model_dump())
 
-            return attempt
+        if self.watchdog is not None:
+            await self.watchdog.propagate_status(self, attempt)
+
+        return attempt
