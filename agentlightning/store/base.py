@@ -11,6 +11,7 @@ from opentelemetry.sdk.trace import ReadableSpan
 from agentlightning.tracer import Span
 from agentlightning.types import (
     Attempt,
+    AttemptedRollout,
     AttemptStatus,
     NamedResources,
     ResourcesUpdate,
@@ -95,30 +96,50 @@ class LightningStore:
     def __init__(self, watchdog: LightningStoreWatchDog | None = None):
         self.watchdog = watchdog
 
-    async def add_task(
+    async def add_rollout(
         self,
-        sample: Any,
+        sample: TaskInput,
+        mode: Literal["train", "val", "test"] | None = None,
+        resources_id: str | None = None,
+        metadata: Dict[str, Any] | None = None,
+    ) -> AttemptedRollout:
+        """
+        Add one incomplete rollout to the store, and get an attempt created for it.
+        This will immediately sets the rollout to a preparing state, and should be
+        used by whoever is going to execute the rollout.
+
+        But if the rollout fails or timeouts, it's still possible that the watchdog
+        sends it back to the queue for retry.
+
+        To enqueue a rollout to the task queue, use `enqueue_rollout` instead.
+        """
+        raise NotImplementedError()
+
+    async def enqueue_rollout(
+        self,
+        sample: TaskInput,
         mode: Literal["train", "val", "test"] | None = None,
         resources_id: str | None = None,
         metadata: Dict[str, Any] | None = None,
     ) -> RolloutV2:
         """
-        Adds a new task to the queue with specific metadata and returns its unique ID.
+        Adds a new task to the queue with specific metadata and
+        returns the rollout object with its unique ID.
         """
         raise NotImplementedError()
 
-    async def add_rollout(self, rollout: RolloutV2) -> RolloutV2:
-        """
-        Add a rollout to the store.
-        """
-        raise NotImplementedError()
-
-    async def pop_rollout(self) -> Optional[RolloutV2]:
+    async def dequeue_rollout(self) -> Optional[AttemptedRollout]:
         """
         Retrieves the next task from the queue without blocking.
         Returns None if the queue is empty.
 
         Will set the rollout status to preparing.
+        """
+        raise NotImplementedError()
+
+    async def add_attempt(self, rollout_id: str) -> Attempt:
+        """
+        Create a new attempt for a given rollout ID and return the attempt details.
         """
         raise NotImplementedError()
 

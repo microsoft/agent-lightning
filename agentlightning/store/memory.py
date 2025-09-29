@@ -13,6 +13,7 @@ from opentelemetry.sdk.trace import ReadableSpan
 from agentlightning.tracer import Span
 from agentlightning.types import (
     Attempt,
+    AttemptedRollout,
     AttemptStatus,
     NamedResources,
     ResourcesUpdate,
@@ -51,16 +52,53 @@ class InMemoryLightningStore(LightningStore):
         # Completion tracking for wait_for_rollouts
         self._completion_events: Dict[str, asyncio.Event] = {}
 
-    def _register_rollout_unlocked(self, rollout: RolloutV2) -> None:
-        """Register rollout assuming caller holds ``self._lock``."""
-        self._rollouts[rollout.rollout_id] = rollout
-        self._task_queue.append(rollout)
-        self._completion_events.setdefault(rollout.rollout_id, asyncio.Event())
+    @healthcheck
+    async def add_rollout(
+        self,
+        sample: TaskInput,
+        mode: Literal["train", "val", "test"] | None = None,
+        resources_id: str | None = None,
+        metadata: Dict[str, Any] | None = None,
+    ) -> AttemptedRollout:
+        """
+        Add an existing rollout to the store.
+        """
+        async with self._lock:
+            rollout_id = f"rollout-{uuid.uuid4()}"
+            current_time = time.time()
+
+            rollout = RolloutV2(
+                rollout_id=rollout_id,
+                input=sample,
+                mode=mode,
+                resources_id=resources_id or self._latest_resources_id,
+                start_time=current_time,
+                status="preparing",
+                metadata=metadata or {},
+            )
+
+            # Create the initial attempt
+            attempt_id = f"attempt-{uuid.uuid4()}"
+            attempt = Attempt(
+                rollout_id=rollout.rollout_id,
+                attempt_id=attempt_id,
+                sequence_id=1,
+                start_time=current_time,
+                status="preparing",
+            )
+
+            self._attempts[rollout.rollout_id] = [attempt]
+            self._rollouts[rollout.rollout_id] = rollout
+
+            self._task_queue.append(rollout)
+            self._completion_events.setdefault(rollout.rollout_id, asyncio.Event())
+
+            return AttemptedRollout(**rollout.model_dump(), attempt=attempt)
 
     @healthcheck
-    async def add_task(
+    async def enqueue_rollout(
         self,
-        sample: Any,
+        sample: TaskInput,
         mode: Literal["train", "val", "test"] | None = None,
         resources_id: str | None = None,
         metadata: Dict[str, Any] | None = None,
@@ -78,23 +116,18 @@ class InMemoryLightningStore(LightningStore):
                 mode=mode,
                 resources_id=resources_id or self._latest_resources_id,
                 start_time=current_time,
-                status="queuing",
+                status="queuing",  # should be queuing
                 metadata=metadata or {},
             )
 
-            self._register_rollout_unlocked(rollout)
+            self._rollouts[rollout.rollout_id] = rollout
+            self._task_queue.append(rollout)  # add it to the end of the queue
+            self._completion_events.setdefault(rollout.rollout_id, asyncio.Event())
 
             return rollout
 
     @healthcheck
-    async def add_rollout(self, rollout: RolloutV2) -> RolloutV2:
-        """Add an existing rollout to the store."""
-        async with self._lock:
-            self._register_rollout_unlocked(rollout)
-            return rollout
-
-    @healthcheck
-    async def pop_rollout(self) -> Optional[RolloutV2]:
+    async def dequeue_rollout(self) -> Optional[AttemptedRollout]:
         """
         Retrieves the next task from the queue without blocking.
         Returns None if the queue is empty.
@@ -133,7 +166,7 @@ class InMemoryLightningStore(LightningStore):
                         self._attempts[rollout.rollout_id] = []
                     self._attempts[rollout.rollout_id].append(attempt)
 
-                    return rollout
+                    return AttemptedRollout(**rollout.model_dump(), attempt=attempt)
 
                 # If not in queuing state, skip this rollout and continue
                 # (it was updated externally and should not be processed)
@@ -302,7 +335,7 @@ class InMemoryLightningStore(LightningStore):
                 # Find the latest attempt_id
                 if not spans:
                     return []
-                latest_attempt = max(spans, key=lambda s: s.attempt_id if s.attempt_id else "").attempt_id
+                latest_attempt = max(spans, key=lambda s: s.sequence_id if s.attempt_id else "").attempt_id
                 return [s for s in spans if s.attempt_id == latest_attempt]
             else:
                 return [s for s in spans if s.attempt_id == attempt_id]
@@ -352,6 +385,9 @@ class InMemoryLightningStore(LightningStore):
             elif is_queuing(rollout) and rollout not in self._task_queue:
                 self._task_queue.append(rollout)
 
+            # Re-validate the rollout to ensure legality
+            RolloutV2.model_validate(rollout.model_dump())
+
             return rollout
 
     @healthcheck
@@ -396,5 +432,8 @@ class InMemoryLightningStore(LightningStore):
                     attempt.metadata = {**attempt.metadata, **metadata}
                 else:
                     attempt.metadata = metadata
+
+            # Re-validate the attempt to ensure legality
+            Attempt.model_validate(attempt.model_dump())
 
             return attempt

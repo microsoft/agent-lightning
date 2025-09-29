@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Annotated, Any, Dict, Generic, List, Literal, Optional, Protocol, TypeVar, Union
 
 from opentelemetry.sdk.trace import ReadableSpan
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 __all__ = [
     "Triplet",
@@ -91,7 +91,7 @@ class Attempt(BaseModel):
 
     rollout_id: str  # the rollout this attempt belongs to
     attempt_id: str  # the universal id for current attempt
-    sequence_id: int  # the sequence number of the attempt, starting from 0
+    sequence_id: int  # the sequence number of the attempt, starting from 1
     start_time: float  # time when the attempt has started
     end_time: Optional[float] = None  # time when the attempt has ended
 
@@ -124,12 +124,17 @@ class RolloutV2(BaseModel):
     # A bucket for any other relevant information
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
-    def update(self, data: Dict[str, Any]) -> RolloutV2:
-        """Update the fields of the rollout in place and return the updated object."""
-        new_rollout = self.model_copy(update=data)
-        for key in data.keys():
-            setattr(self, key, getattr(new_rollout, key))
-        return new_rollout
+
+class AttemptedRollout(RolloutV2):
+    """A rollout along with its active attempt."""
+
+    attempt: Attempt
+
+    @model_validator(mode="after")
+    def check_consistency(self) -> AttemptedRollout:
+        if self.attempt.rollout_id != self.rollout_id:
+            raise ValueError("Inconsistent rollout_id between Rollout and Attempt")
+        return self
 
 
 TaskInput = Any

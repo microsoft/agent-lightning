@@ -26,7 +26,7 @@ import pytest
 from agentlightning.store.base import LightningStoreWatchDog
 from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.tracer import Span
-from agentlightning.types import LLM, PromptTemplate, ResourcesUpdate, RolloutV2
+from agentlightning.types import LLM, Attempt, AttemptStatus, PromptTemplate, ResourcesUpdate, RolloutStatus, RolloutV2
 
 
 @pytest.fixture
@@ -81,12 +81,12 @@ def mock_readable_span() -> Mock:
 
 
 @pytest.mark.asyncio
-async def test_add_task_creates_rollout(store: InMemoryLightningStore) -> None:
-    """Test that add_task creates a properly initialized rollout."""
+async def test_enqueue_rollout_creates_rollout(store: InMemoryLightningStore) -> None:
+    """Test that enqueue_rollout creates a properly initialized rollout."""
     sample = {"input": "test_data"}
     metadata = {"key": "value", "number": 42}
 
-    rollout = await store.add_task(sample=sample, mode="train", resources_id="res-123", metadata=metadata)
+    rollout = await store.enqueue_rollout(sample=sample, mode="train", resources_id="res-123", metadata=metadata)
 
     assert rollout.rollout_id.startswith("rollout-")
     assert rollout.input == sample
@@ -94,46 +94,20 @@ async def test_add_task_creates_rollout(store: InMemoryLightningStore) -> None:
     assert rollout.resources_id == "res-123"
     assert rollout.metadata == metadata
     assert rollout.status == "queuing"
-    assert rollout.attempt_sequence_id == 1
     assert rollout.start_time is not None
-
-
-@pytest.mark.asyncio
-async def test_add_existing_rollout(store: InMemoryLightningStore) -> None:
-    """Test adding a pre-created rollout to the store."""
-    rollout = RolloutV2(
-        rollout_id="custom-id-123",
-        input={"custom": "data"},
-        status="queuing",
-        start_time=time.time(),
-        metadata={"source": "external"},
-    )
-
-    await store.add_rollout(rollout)
-
-    # Verify it's in the store
-    all_rollouts = await store.query_rollouts()
-    assert len(all_rollouts) == 1
-    assert all_rollouts[0].rollout_id == "custom-id-123"
-    assert all_rollouts[0].metadata["source"] == "external"
-
-    # Verify it's in the queue
-    popped = await store.pop_rollout()
-    assert popped is not None
-    assert popped.rollout_id == "custom-id-123"
 
 
 @pytest.mark.asyncio
 async def test_query_rollouts_by_status(store: InMemoryLightningStore) -> None:
     """Test querying rollouts filtered by status."""
     # Create rollouts with different statuses
-    r1 = await store.add_task(sample={"id": 1})
-    r2 = await store.add_task(sample={"id": 2})
-    r3 = await store.add_task(sample={"id": 3})
+    r1 = await store.enqueue_rollout(sample={"id": 1})
+    r2 = await store.enqueue_rollout(sample={"id": 2})
+    r3 = await store.enqueue_rollout(sample={"id": 3})
 
     # Modify statuses
-    await store.pop_rollout()  # r1 becomes "preparing"
-    await store.update_rollout(rollout_id=r2.rollout_id, status="error")
+    await store.dequeue_rollout()  # r1 becomes "preparing"
+    await store.update_rollout(rollout_id=r2.rollout_id, status="failed")
     # r3 remains "queuing"
 
     # Test various queries
@@ -148,7 +122,7 @@ async def test_query_rollouts_by_status(store: InMemoryLightningStore) -> None:
     assert len(preparing) == 1
     assert preparing[0].rollout_id == r1.rollout_id
 
-    finished = await store.query_rollouts(status=["error", "success"])
+    finished = await store.query_rollouts(status=["failed", "succeeded"])
     assert len(finished) == 1
     assert finished[0].rollout_id == r2.rollout_id
 
@@ -160,29 +134,23 @@ async def test_query_rollouts_by_status(store: InMemoryLightningStore) -> None:
 @pytest.mark.asyncio
 async def test_update_rollout_fields(store: InMemoryLightningStore) -> None:
     """Test updating various rollout fields."""
-    rollout = await store.add_task(sample={"test": "data"})
+    rollout = await store.enqueue_rollout(sample={"test": "data"})
 
     # Update multiple fields at once
     await store.update_rollout(
         rollout_id=rollout.rollout_id,
         status="running",
-        worker_id="worker-abc",
-        attempt_id="attempt-1",
-        attempt_sequence_id=2,
-        attempt_start_time=time.time(),
-        last_attempt_status="timeout",
-        metadata=dict(custom_field="custom_value"),  # Extra field goes to metadata
+        mode="train",
+        resources_id="new-resources",
+        metadata={"custom_field": "custom_value"},
     )
 
     # Verify all updates
     updated_rollouts = await store.query_rollouts()
     updated = updated_rollouts[0]
     assert updated.status == "running"
-    assert updated.worker_id == "worker-abc"
-    assert updated.attempt_id == "attempt-1"
-    assert updated.attempt_sequence_id == 2
-    assert updated.attempt_start_time is not None
-    assert updated.last_attempt_status == "timeout"
+    assert updated.mode == "train"
+    assert updated.resources_id == "new-resources"
     assert updated.metadata["custom_field"] == "custom_value"
 
 
@@ -190,37 +158,37 @@ async def test_update_rollout_fields(store: InMemoryLightningStore) -> None:
 
 
 @pytest.mark.asyncio
-async def test_pop_rollout_skips_non_queuing_status(store: InMemoryLightningStore) -> None:
-    """Test that pop_rollout skips rollouts that have been updated to non-queuing status."""
+async def test_dequeue_rollout_skips_non_queuing_status(store: InMemoryLightningStore) -> None:
+    """Test that dequeue_rollout skips rollouts that have been updated to non-queuing status."""
     # Add multiple rollouts to the queue
-    r1 = await store.add_task(sample={"id": 1})
-    r2 = await store.add_task(sample={"id": 2})
-    r3 = await store.add_task(sample={"id": 3})
+    r1 = await store.enqueue_rollout(sample={"id": 1})
+    r2 = await store.enqueue_rollout(sample={"id": 2})
+    r3 = await store.enqueue_rollout(sample={"id": 3})
 
-    # Update r1 to success status while it's still in the queue
-    await store.update_rollout(rollout_id=r1.rollout_id, status="success")
+    # Update r1 to succeeded status while it's still in the queue
+    await store.update_rollout(rollout_id=r1.rollout_id, status="succeeded")
 
-    # Update r2 to have a span
-    await store.update_rollout(rollout_id=r2.rollout_id, status="error")
+    # Update r2 to failed status
+    await store.update_rollout(rollout_id=r2.rollout_id, status="failed")
 
     # r3 should still be in queuing status
 
     # Pop should skip r1 and r2 (both non-queuing) and return r3
-    popped = await store.pop_rollout()
+    popped = await store.dequeue_rollout()
     assert popped is not None
     assert popped.rollout_id == r3.rollout_id
     assert popped.status == "preparing"
     assert popped.input["id"] == 3
 
     # Second pop should return None since no queuing rollouts remain
-    popped2 = await store.pop_rollout()
+    popped2 = await store.dequeue_rollout()
     assert popped2 is None
 
     # Verify r1 and r2 are still in their non-queuing states
     all_rollouts = await store.query_rollouts()
     rollout_statuses = {r.rollout_id: r.status for r in all_rollouts}
-    assert rollout_statuses[r1.rollout_id] == "success"
-    assert rollout_statuses[r2.rollout_id] == "error"
+    assert rollout_statuses[r1.rollout_id] == "succeeded"
+    assert rollout_statuses[r2.rollout_id] == "failed"
     assert rollout_statuses[r3.rollout_id] == "preparing"
 
 
@@ -229,53 +197,56 @@ async def test_fifo_ordering(store: InMemoryLightningStore) -> None:
     """Test that queue maintains FIFO order."""
     rollouts = []
     for i in range(5):
-        r = await store.add_task(sample={"order": i})
+        r = await store.enqueue_rollout(sample={"order": i})
         rollouts.append(r)
 
     # Pop all and verify order
     for i in range(5):
-        popped = await store.pop_rollout()
+        popped = await store.dequeue_rollout()
         assert popped is not None
         assert popped.rollout_id == rollouts[i].rollout_id
         assert popped.input["order"] == i
         assert popped.status == "preparing"
-        assert popped.attempt_start_time is not None
 
 
 @pytest.mark.asyncio
 async def test_pop_empty_queue(store: InMemoryLightningStore) -> None:
     """Test popping from empty queue returns None."""
-    result = await store.pop_rollout()
+    result = await store.dequeue_rollout()
     assert result is None
 
     # Multiple pops should all return None
     for _ in range(3):
-        assert await store.pop_rollout() is None
+        assert await store.dequeue_rollout() is None
 
 
 @pytest.mark.asyncio
 async def test_requeue_mechanism(store: InMemoryLightningStore) -> None:
     """Test requeuing puts rollout back in queue."""
-    rollout = await store.add_task(sample={"data": "test"})
+    rollout = await store.enqueue_rollout(sample={"data": "test"})
     original_id = rollout.rollout_id
 
     # Pop and verify it's not in queue
-    popped = await store.pop_rollout()
+    popped = await store.dequeue_rollout()
     assert popped is not None
-    assert await store.pop_rollout() is None
+    assert await store.dequeue_rollout() is None
 
     # Requeue it
-    await store.update_rollout(
-        rollout_id=original_id, status="requeuing", last_attempt_status="timeout", attempt_sequence_id=2
-    )
+    await store.update_rollout(rollout_id=original_id, status="requeuing")
 
-    # Should be back in queue with updated metadata
-    requeued = await store.pop_rollout()
+    # Should be back in queue
+    requeued = await store.dequeue_rollout()
     assert requeued is not None
     assert requeued.rollout_id == original_id
     assert requeued.status == "preparing"  # Changes when popped
-    assert requeued.last_attempt_status == "timeout"
-    assert requeued.attempt_sequence_id == 2
+    # Check that a new attempt was created
+    attempts = await store.query_attempts(requeued.rollout_id)
+    assert len(attempts) == 2  # First attempt plus requeued attempt
+
+    latest_attempt = await store.get_latest_attempt(requeued.rollout_id)
+    assert latest_attempt is not None
+    assert latest_attempt.status == "preparing"
+    assert latest_attempt.sequence_id == 2
 
 
 # Resource Management Tests
@@ -335,11 +306,11 @@ async def test_task_inherits_latest_resources(store: InMemoryLightningStore) -> 
     await store.update_resources(update.resources_id, update.resources)
 
     # Task without explicit resources_id
-    r1 = await store.add_task(sample={"id": 1})
+    r1 = await store.enqueue_rollout(sample={"id": 1})
     assert r1.resources_id == "current"
 
     # Task with explicit resources_id
-    r2 = await store.add_task(sample={"id": 2}, resources_id="override")
+    r2 = await store.enqueue_rollout(sample={"id": 2}, resources_id="override")
     assert r2.resources_id == "override"
 
     # Update resources
@@ -348,7 +319,7 @@ async def test_task_inherits_latest_resources(store: InMemoryLightningStore) -> 
     await store.update_resources(update2.resources_id, update2.resources)
 
     # New task gets new resources
-    r3 = await store.add_task(sample={"id": 3})
+    r3 = await store.enqueue_rollout(sample={"id": 3})
     assert r3.resources_id == "new"
 
 
@@ -358,20 +329,24 @@ async def test_task_inherits_latest_resources(store: InMemoryLightningStore) -> 
 @pytest.mark.asyncio
 async def test_span_sequence_generation(store: InMemoryLightningStore, mock_readable_span: Mock) -> None:
     """Test automatic sequence ID generation for spans."""
-    rollout = await store.add_task(sample={"test": "data"})
+    rollout = await store.enqueue_rollout(sample={"test": "data"})
+    # Pop to create an attempt
+    await store.dequeue_rollout()
+    attempts = await store.query_attempts(rollout.rollout_id)
+    attempt_id = attempts[0].attempt_id
 
     # First span gets sequence_id 1
-    seq_id = await store.get_next_span_sequence_id(rollout.rollout_id, "attempt-1")
+    seq_id = await store.get_next_span_sequence_id(rollout.rollout_id, attempt_id)
     assert seq_id == 1
 
-    span1 = await store.add_otel_span(rollout.rollout_id, "attempt-1", mock_readable_span)
+    span1 = await store.add_otel_span(rollout.rollout_id, attempt_id, mock_readable_span)
     assert span1.sequence_id == 1
 
     # Next span gets sequence_id 2
-    seq_id = await store.get_next_span_sequence_id(rollout.rollout_id, "attempt-1")
+    seq_id = await store.get_next_span_sequence_id(rollout.rollout_id, attempt_id)
     assert seq_id == 2
 
-    span2 = await store.add_otel_span(rollout.rollout_id, "attempt-1", mock_readable_span)
+    span2 = await store.add_otel_span(rollout.rollout_id, attempt_id, mock_readable_span)
     assert span2.sequence_id == 2
 
     # Different attempt starts from 1
@@ -382,40 +357,57 @@ async def test_span_sequence_generation(store: InMemoryLightningStore, mock_read
 @pytest.mark.asyncio
 async def test_span_with_explicit_sequence_id(store: InMemoryLightningStore, mock_readable_span: Mock) -> None:
     """Test providing explicit sequence_id to spans."""
-    rollout = await store.add_task(sample={"test": "data"})
+    rollout = await store.enqueue_rollout(sample={"test": "data"})
+    # Pop to create an attempt
+    await store.dequeue_rollout()
+    attempts = await store.query_attempts(rollout.rollout_id)
+    attempt_id = attempts[0].attempt_id
 
     # Add span with explicit sequence_id
-    span = await store.add_otel_span(rollout.rollout_id, "attempt-1", mock_readable_span, sequence_id=100)
+    span = await store.add_otel_span(rollout.rollout_id, attempt_id, mock_readable_span, sequence_id=100)
     assert span.sequence_id == 100
 
     # Next auto-generated should not be affected by explicit IDs
-    next_seq = await store.get_next_span_sequence_id(rollout.rollout_id, "attempt-1")
+    next_seq = await store.get_next_span_sequence_id(rollout.rollout_id, attempt_id)
     assert next_seq == 2  # Only one span added so far
 
 
 @pytest.mark.asyncio
 async def test_query_spans_by_attempt(store: InMemoryLightningStore, mock_readable_span: Mock) -> None:
     """Test querying spans filtered by attempt_id."""
-    rollout = await store.add_task(sample={"test": "data"})
+    rollout = await store.enqueue_rollout(sample={"test": "data"})
+    # Pop to create first attempt
+    await store.dequeue_rollout()
+    attempts = await store.query_attempts(rollout.rollout_id)
+    attempt1_id = attempts[0].attempt_id
 
-    # Add spans for multiple attempts
-    for attempt in ["attempt-1", "attempt-2", "attempt-3"]:
-        for _ in range(2):
-            await store.add_otel_span(rollout.rollout_id, attempt, mock_readable_span)
+    # Add spans for first attempt
+    for _ in range(2):
+        await store.add_otel_span(rollout.rollout_id, attempt1_id, mock_readable_span)
+
+    # Simulate requeue and create second attempt
+    await store.update_rollout(rollout_id=rollout.rollout_id, status="requeuing")
+    await store.dequeue_rollout()
+    attempts = await store.query_attempts(rollout.rollout_id)
+    attempt2_id = attempts[1].attempt_id
+
+    # Add spans for second attempt
+    for _ in range(3):
+        await store.add_otel_span(rollout.rollout_id, attempt2_id, mock_readable_span)
 
     # Query all spans
     all_spans = await store.query_spans(rollout.rollout_id)
-    assert len(all_spans) == 6
+    assert len(all_spans) == 5
 
     # Query specific attempt
-    attempt1_spans = await store.query_spans(rollout.rollout_id, attempt_id="attempt-1")
+    attempt1_spans = await store.query_spans(rollout.rollout_id, attempt_id=attempt1_id)
     assert len(attempt1_spans) == 2
-    assert all(s.attempt_id == "attempt-1" for s in attempt1_spans)
+    assert all(s.attempt_id == attempt1_id for s in attempt1_spans)
 
-    # Query latest attempt (lexicographically)
+    # Query latest attempt
     latest_spans = await store.query_spans(rollout.rollout_id, attempt_id="latest")
-    assert len(latest_spans) == 2
-    assert all(s.attempt_id == "attempt-3" for s in latest_spans)
+    assert len(latest_spans) == 3
+    assert all(s.attempt_id == attempt2_id for s in latest_spans)
 
     # Query non-existent attempt
     no_spans = await store.query_spans(rollout.rollout_id, attempt_id="nonexistent")
@@ -425,10 +417,10 @@ async def test_query_spans_by_attempt(store: InMemoryLightningStore, mock_readab
 @pytest.mark.asyncio
 async def test_span_triggers_status_transition(store: InMemoryLightningStore, mock_readable_span: Mock) -> None:
     """Test that adding first span transitions rollout from preparing to running."""
-    rollout = await store.add_task(sample={"test": "data"})
+    rollout = await store.enqueue_rollout(sample={"test": "data"})
 
-    # Pop to set status to preparing
-    popped = await store.pop_rollout()
+    # Pop to set status to preparing and create attempt
+    popped = await store.dequeue_rollout()
     assert popped is not None
     assert popped.status == "preparing"
 
@@ -436,8 +428,12 @@ async def test_span_triggers_status_transition(store: InMemoryLightningStore, mo
     rollouts = await store.query_rollouts(status=["preparing"])
     assert len(rollouts) == 1
 
+    # Get the attempt
+    attempts = await store.query_attempts(rollout.rollout_id)
+    attempt_id = attempts[0].attempt_id
+
     # Add first span
-    await store.add_otel_span(rollout.rollout_id, "attempt-1", mock_readable_span)
+    await store.add_otel_span(rollout.rollout_id, attempt_id, mock_readable_span)
 
     # Status should transition to running
     rollouts = await store.query_rollouts(status=["running"])
@@ -451,17 +447,17 @@ async def test_span_triggers_status_transition(store: InMemoryLightningStore, mo
 @pytest.mark.asyncio
 async def test_completion_sets_end_time(store: InMemoryLightningStore) -> None:
     """Test that completing a rollout sets end_time."""
-    rollout = await store.add_task(sample={"test": "data"})
+    rollout = await store.enqueue_rollout(sample={"test": "data"})
 
     # Initially no end_time
     assert rollout.end_time is None
 
-    # Complete as success
-    await store.update_rollout(rollout_id=rollout.rollout_id, status="success")
+    # Complete as succeeded
+    await store.update_rollout(rollout_id=rollout.rollout_id, status="succeeded")
 
     completed_rollouts = await store.query_rollouts()
     completed = completed_rollouts[0]
-    assert completed.status == "success"
+    assert completed.status == "succeeded"
     assert completed.end_time is not None
     assert completed.end_time > completed.start_time
 
@@ -470,9 +466,9 @@ async def test_completion_sets_end_time(store: InMemoryLightningStore) -> None:
 async def test_wait_for_rollouts(store: InMemoryLightningStore) -> None:
     """Test waiting for rollout completion."""
     # Add multiple rollouts
-    r1 = await store.add_task(sample={"id": 1})
-    r2 = await store.add_task(sample={"id": 2})
-    r3 = await store.add_task(sample={"id": 3})
+    r1 = await store.enqueue_rollout(sample={"id": 1})
+    r2 = await store.enqueue_rollout(sample={"id": 2})
+    r3 = await store.enqueue_rollout(sample={"id": 3})
 
     # Start waiting for r1 and r2
     async def wait_for_completion() -> List[RolloutV2]:
@@ -482,22 +478,22 @@ async def test_wait_for_rollouts(store: InMemoryLightningStore) -> None:
     await asyncio.sleep(0.01)  # Let wait task start
 
     # Complete r1
-    await store.update_rollout(rollout_id=r1.rollout_id, status="success")
+    await store.update_rollout(rollout_id=r1.rollout_id, status="succeeded")
 
     # Complete r2
-    await store.update_rollout(rollout_id=r2.rollout_id, status="error")
+    await store.update_rollout(rollout_id=r2.rollout_id, status="failed")
 
     # Get results
     completed = await wait_task
     assert len(completed) == 2
     assert {r.rollout_id for r in completed} == {r1.rollout_id, r2.rollout_id}
-    assert {r.status for r in completed} == {"success", "error"}
+    assert {r.status for r in completed} == {"succeeded", "failed"}
 
 
 @pytest.mark.asyncio
 async def test_wait_timeout(store: InMemoryLightningStore) -> None:
     """Test wait_for_rollouts timeout behavior."""
-    rollout = await store.add_task(sample={"test": "data"})
+    rollout = await store.enqueue_rollout(sample={"test": "data"})
 
     start = time.time()
     completed = await store.wait_for_rollouts([rollout.rollout_id], timeout=0.1)
@@ -512,100 +508,114 @@ async def test_wait_timeout(store: InMemoryLightningStore) -> None:
 
 @pytest.mark.asyncio
 async def test_watchdog_healthcheck_queries(store_with_watchdog: InMemoryLightningStore) -> None:
-    """Test that missing @healthcheck decorators prevent watchdog from detecting stuck rollouts."""
+    """Test watchdog healthcheck behavior with new attempt system."""
     store = store_with_watchdog
-    rollout = await store.add_task(sample={"test": "data"})
+    rollout = await store.enqueue_rollout(sample={"test": "data"})
 
-    # Start processing by popping the rollout
-    popped = await store.pop_rollout()
+    # Start processing by popping the rollout (creates first attempt)
+    popped = await store.dequeue_rollout()
     assert popped is not None
     assert popped.status == "preparing"
 
+    # Get the created attempt
+    attempts = await store.query_attempts(rollout.rollout_id)
+    assert len(attempts) == 1
+    attempt = attempts[0]
+
     # Simulate timeout condition by advancing time
     with patch("time.time") as mock_time:
-        mock_time.return_value = rollout.start_time + 10.0  # Past timeout threshold
+        mock_time.return_value = attempt.start_time + 10.0  # Past timeout threshold
 
-        # The rollout should have timed out
+        # Call healthcheck
+        if store.watchdog:
+            await store.watchdog.healthcheck(store)
+
+        # The rollout should be requeued due to timeout
         rollouts = await store.query_rollouts(status=["requeuing"])
         assert len(rollouts) == 1
-        assert rollouts[0].last_attempt_status == "timeout"
 
-        spans = await store.query_spans(rollout.rollout_id)
-        assert len(spans) == 0
-
-        await store.update_rollout(rollout_id=rollout.rollout_id, status="running")
-
-    # Now call a method that HAS @healthcheck decorator
-    await store.add_task(sample={"test2": "data2"})
-
-    rollouts = await store.query_rollouts(status=["running"])
-    assert len(rollouts) == 1
-    assert rollouts[0].rollout_id == rollout.rollout_id
+        # The attempt should be marked as timed out
+        attempts = await store.query_attempts(rollout.rollout_id)
+        assert attempts[0].status == "timeout"
 
 
 @pytest.mark.asyncio
 async def test_watchdog_detects_timeout(store_with_watchdog: InMemoryLightningStore) -> None:
     """Test watchdog detecting and handling timeouts."""
     store = store_with_watchdog
-    rollout = await store.add_task(sample={"test": "data"})
+    rollout = await store.enqueue_rollout(sample={"test": "data"})
 
     # Start processing
-    await store.pop_rollout()
+    await store.dequeue_rollout()
+    attempts = await store.query_attempts(rollout.rollout_id)
+    attempt = attempts[0]
 
     # Simulate timeout
     with patch("time.time") as mock_time:
-        mock_time.return_value = rollout.start_time + 10.0  # Past timeout
+        mock_time.return_value = attempt.start_time + 10.0  # Past timeout
         if store.watchdog:
             await store.watchdog.healthcheck(store)
 
     # Should be requeued
     rollouts = await store.query_rollouts(status=["requeuing"])
     assert len(rollouts) == 1
-    assert rollouts[0].last_attempt_status == "timeout"
-    assert rollouts[0].attempt_sequence_id == 2
+
+    # Check attempts - should still have one marked as timeout
+    attempts = await store.query_attempts(rollout.rollout_id)
+    assert len(attempts) == 1
+    assert attempts[0].status == "timeout"
 
 
 @pytest.mark.asyncio
 async def test_watchdog_detects_unresponsive(store_with_watchdog: InMemoryLightningStore) -> None:
     """Test watchdog detecting unresponsive workers."""
     store = store_with_watchdog
-    rollout = await store.add_task(sample={"test": "data"})
-    popped = await store.pop_rollout()
+    rollout = await store.enqueue_rollout(sample={"test": "data"})
+    popped = await store.dequeue_rollout()
     assert popped is not None
 
-    # Simulate unresponsiveness (no spans for too long)
+    attempts = await store.query_attempts(rollout.rollout_id)
+    attempt = attempts[0]
+
+    # Simulate unresponsiveness (no heartbeat for too long)
     with patch("time.time") as mock_time:
-        mock_time.return_value = popped.attempt_start_time + 3.0  # Past unresponsive threshold
+        mock_time.return_value = attempt.start_time + 3.0  # Past unresponsive threshold
         if store.watchdog:
             await store.watchdog.healthcheck(store)
 
     # Should be requeued
     rollouts = await store.query_rollouts(status=["requeuing"])
     assert len(rollouts) == 1
-    assert rollouts[0].last_attempt_status == "unresponsive"
+
+    # Attempt should be marked unresponsive
+    attempts = await store.query_attempts(rollout.rollout_id)
+    assert attempts[0].status == "unresponsive"
 
 
 @pytest.mark.asyncio
 async def test_watchdog_respects_max_attempts(store_with_watchdog: InMemoryLightningStore) -> None:
     """Test watchdog stops retrying after max attempts."""
     store = store_with_watchdog
-    rollout = await store.add_task(sample={"test": "data"})
+    await store.enqueue_rollout(sample={"test": "data"})
 
     # Simulate multiple failures
-    for attempt in range(3):  # max_attempts = 3
-        await store.pop_rollout()
+    for attempt_num in range(3):  # max_attempts = 3
+        rollout = await store.dequeue_rollout()
+        attempts = await store.query_attempts(rollout.rollout_id)
+        current_attempt = attempts[-1]  # Get the latest attempt
+
         with patch("time.time") as mock_time:
-            mock_time.return_value = rollout.start_time + (attempt + 1) * 10
+            mock_time.return_value = current_attempt.start_time + 10  # Trigger timeout
             if store.watchdog:
                 await store.watchdog.healthcheck(store)
 
-        if attempt < 2:
+        if attempt_num < 2:
             # Should be requeued
             rollouts = await store.query_rollouts(status=["requeuing"])
             assert len(rollouts) == 1
         else:
-            # Should be marked as timeout (not requeued)
-            rollouts = await store.query_rollouts(status=["timeout"])
+            # Should be marked as failed (not requeued)
+            rollouts = await store.query_rollouts(status=["failed"])
             assert len(rollouts) == 1
 
 
@@ -617,7 +627,7 @@ async def test_healthcheck_decorator(store_with_watchdog: InMemoryLightningStore
     if store.watchdog:
         with patch.object(store.watchdog, "healthcheck", new_callable=AsyncMock) as mock_check:
             # Call decorated methods
-            await store.add_task(sample={"test": "data"})
+            await store.enqueue_rollout(sample={"test": "data"})
             await store.get_latest_resources()
             await store.wait_for_rollouts([], timeout=0.01)
 
@@ -642,7 +652,7 @@ async def test_healthcheck_recursive_prevention(store_with_watchdog: InMemoryLig
             mock_check.side_effect = recursive_healthcheck
 
             # Call a decorated method - this should only trigger healthcheck once
-            await store.add_task(sample={"test": "data"})
+            await store.enqueue_rollout(sample={"test": "data"})
 
             # Verify healthcheck was called exactly once despite the recursive call
             assert mock_check.call_count == 1
@@ -655,7 +665,7 @@ async def test_healthcheck_recursive_prevention(store_with_watchdog: InMemoryLig
 async def test_watchdog_no_recent_span_activity_logic(store_with_watchdog: InMemoryLightningStore) -> None:
     """Test the _no_recent_span_activity logic with different span scenarios."""
     store = store_with_watchdog
-    rollout = await store.add_task(sample={"test": "data"})
+    await store.enqueue_rollout(sample={"test": "data"})
 
     if store.watchdog:
         current_time = time.time()
@@ -703,11 +713,11 @@ async def test_watchdog_no_recent_span_activity_logic(store_with_watchdog: InMem
 async def test_concurrent_task_addition(store: InMemoryLightningStore) -> None:
     """Test adding tasks concurrently."""
 
-    async def add_task(index: int) -> RolloutV2:
-        return await store.add_task(sample={"index": index})
+    async def enqueue_rollout(index: int) -> RolloutV2:
+        return await store.enqueue_rollout(sample={"index": index})
 
     # Add 50 tasks concurrently
-    tasks = [add_task(i) for i in range(50)]
+    tasks = [enqueue_rollout(i) for i in range(50)]
     rollouts = await asyncio.gather(*tasks)
 
     # All should succeed with unique IDs
@@ -725,10 +735,10 @@ async def test_concurrent_pop_operations(store: InMemoryLightningStore) -> None:
     """Test concurrent popping ensures each rollout is popped once."""
     # Add 20 tasks
     for i in range(20):
-        await store.add_task(sample={"index": i})
+        await store.enqueue_rollout(sample={"index": i})
 
     async def pop_task() -> RolloutV2 | None:
-        return await store.pop_rollout()
+        return await store.dequeue_rollout()
 
     # Pop concurrently (more attempts than available)
     tasks = [pop_task() for _ in range(30)]
@@ -749,10 +759,11 @@ async def test_concurrent_pop_operations(store: InMemoryLightningStore) -> None:
 @pytest.mark.asyncio
 async def test_concurrent_span_additions(store: InMemoryLightningStore, mock_readable_span: Mock) -> None:
     """Test concurrent span additions maintain consistency."""
-    rollout = await store.add_task(sample={"test": "data"})
+    await store.enqueue_rollout(sample={"test": "data"})
+    rollout = await store.dequeue_rollout()  # Create an attempt
 
     async def add_span(index: int) -> Span:
-        return await store.add_otel_span(rollout.rollout_id, "attempt-1", mock_readable_span)
+        return await store.add_otel_span(rollout.rollout_id, rollout.attempt.attempt_id, mock_readable_span)
 
     # Add 30 spans concurrently
     tasks = [add_span(i) for i in range(30)]
@@ -768,14 +779,14 @@ async def test_concurrent_span_additions(store: InMemoryLightningStore, mock_rea
 async def test_concurrent_resource_updates(store: InMemoryLightningStore) -> None:
     """Test concurrent resource updates are atomic."""
 
-    async def update_resource(version: int) -> None:
+    async def update_resource(ver: int) -> None:
         llm = LLM(
             resource_type="llm",
-            endpoint=f"http://localhost:808{version % 10}",
-            model=f"model-v{version}",
-            sampling_parameters={"temperature": 0.5 + version * 0.01},
+            endpoint=f"http://localhost:808{ver % 10}",
+            model=f"model-v{ver}",
+            sampling_parameters={"temperature": 0.5 + ver * 0.01},
         )
-        update = ResourcesUpdate(resources_id=f"v{version}", resources={"llm": llm})
+        update = ResourcesUpdate(resources_id=f"v{ver}", resources={"llm": llm})
         await store.update_resources(update.resources_id, update.resources)
 
     # Update concurrently
@@ -801,7 +812,7 @@ async def test_concurrent_resource_updates(store: InMemoryLightningStore) -> Non
 async def test_update_nonexistent_rollout(store: InMemoryLightningStore) -> None:
     """Test updating non-existent rollout raises error."""
     with pytest.raises(ValueError, match="Rollout nonexistent not found"):
-        await store.update_rollout(rollout_id="nonexistent", status="error")
+        await store.update_rollout(rollout_id="nonexistent", status="failed")
 
 
 @pytest.mark.asyncio
@@ -829,7 +840,7 @@ async def test_query_empty_spans(store: InMemoryLightningStore) -> None:
 @pytest.mark.asyncio
 async def test_query_latest_with_no_spans(store: InMemoryLightningStore) -> None:
     """Test querying 'latest' attempt when no spans exist."""
-    rollout = await store.add_task(sample={"test": "data"})
+    rollout = await store.enqueue_rollout(sample={"test": "data"})
 
     spans = await store.query_spans(rollout.rollout_id, attempt_id="latest")
     assert spans == []
@@ -840,3 +851,219 @@ async def test_wait_for_nonexistent_rollout(store: InMemoryLightningStore) -> No
     """Test waiting for non-existent rollout handles gracefully."""
     completed = await store.wait_for_rollouts(["nonexistent"], timeout=0.1)
     assert len(completed) == 0
+
+
+# Attempt Management Tests
+
+
+@pytest.mark.asyncio
+async def test_query_attempts(store: InMemoryLightningStore) -> None:
+    """Test querying attempts for a rollout."""
+    rollout = await store.enqueue_rollout(sample={"test": "data"})
+
+    # Initially no attempts
+    attempts = await store.query_attempts(rollout.rollout_id)
+    assert len(attempts) == 0
+
+    # Pop creates first attempt
+    await store.dequeue_rollout()
+    attempts = await store.query_attempts(rollout.rollout_id)
+    assert len(attempts) == 1
+    assert attempts[0].sequence_id == 1
+    assert attempts[0].status == "preparing"
+
+    # Requeue and pop creates second attempt
+    await store.update_rollout(rollout_id=rollout.rollout_id, status="requeuing")
+    await store.dequeue_rollout()
+    attempts = await store.query_attempts(rollout.rollout_id)
+    assert len(attempts) == 2
+    assert attempts[0].sequence_id == 1
+    assert attempts[1].sequence_id == 2
+
+
+@pytest.mark.asyncio
+async def test_get_latest_attempt(store: InMemoryLightningStore) -> None:
+    """Test getting the latest attempt."""
+    rollout = await store.enqueue_rollout(sample={"test": "data"})
+
+    # No attempts initially
+    latest = await store.get_latest_attempt(rollout.rollout_id)
+    assert latest is None
+
+    # Create first attempt
+    await store.dequeue_rollout()
+    latest = await store.get_latest_attempt(rollout.rollout_id)
+    assert latest is not None
+    assert latest.sequence_id == 1
+
+    # Create second attempt
+    await store.update_rollout(rollout_id=rollout.rollout_id, status="requeuing")
+    await store.dequeue_rollout()
+    latest = await store.get_latest_attempt(rollout.rollout_id)
+    assert latest is not None
+    assert latest.sequence_id == 2
+
+
+@pytest.mark.asyncio
+async def test_update_attempt_fields(store: InMemoryLightningStore) -> None:
+    """Test updating attempt fields."""
+    rollout = await store.enqueue_rollout(sample={"test": "data"})
+    await store.dequeue_rollout()
+
+    attempts = await store.query_attempts(rollout.rollout_id)
+    attempt = attempts[0]
+
+    # Update various fields
+    updated = await store.update_attempt(
+        rollout_id=rollout.rollout_id,
+        attempt_id=attempt.attempt_id,
+        status="running",
+        worker_id="worker-123",
+        last_heartbeat_time=time.time(),
+        metadata={"custom": "value"},
+    )
+
+    assert updated.status == "running"
+    assert updated.worker_id == "worker-123"
+    assert updated.last_heartbeat_time is not None
+    assert updated.metadata["custom"] == "value"
+
+
+@pytest.mark.asyncio
+async def test_update_latest_attempt(store: InMemoryLightningStore) -> None:
+    """Test updating latest attempt using 'latest' identifier."""
+    rollout = await store.enqueue_rollout(sample={"test": "data"})
+    await store.dequeue_rollout()
+
+    # Update using 'latest'
+    updated = await store.update_attempt(rollout_id=rollout.rollout_id, attempt_id="latest", status="succeeded")
+
+    assert updated.status == "succeeded"
+    assert updated.end_time is not None  # Should auto-set end_time
+
+
+@pytest.mark.asyncio
+async def test_update_nonexistent_attempt(store: InMemoryLightningStore) -> None:
+    """Test updating non-existent attempt raises error."""
+    rollout = await store.enqueue_rollout(sample={"test": "data"})
+
+    with pytest.raises(ValueError, match="No attempts found"):
+        await store.update_attempt(rollout_id=rollout.rollout_id, attempt_id="nonexistent", status="failed")
+
+
+# Full Lifecycle Integration Tests
+
+
+@pytest.mark.asyncio
+async def test_full_lifecycle_success(store: InMemoryLightningStore, mock_readable_span: Mock) -> None:
+    """Test successful rollout lifecycle: queue -> prepare -> run -> succeed."""
+    # 1. Create task
+    rollout = await store.enqueue_rollout(sample={"test": "data"}, mode="train")
+    assert rollout.status == "queuing"
+
+    # 2. Pop to start processing (creates attempt)
+    popped = await store.dequeue_rollout()
+    assert popped.status == "preparing"
+
+    attempts = await store.query_attempts(rollout.rollout_id)
+    assert len(attempts) == 1
+    attempt = attempts[0]
+    assert attempt.status == "preparing"
+
+    # 3. Add span (transitions to running)
+    span = await store.add_otel_span(rollout.rollout_id, attempt.attempt_id, mock_readable_span)
+    assert span.sequence_id == 1
+
+    # Check status transitions
+    rollouts = await store.query_rollouts(status=["running"])
+    assert len(rollouts) == 1
+
+    attempts = await store.query_attempts(rollout.rollout_id)
+    assert attempts[0].status == "running"
+    assert attempts[0].last_heartbeat_time is not None
+
+    # 4. Complete successfully
+    await store.update_attempt(rollout_id=rollout.rollout_id, attempt_id=attempt.attempt_id, status="succeeded")
+    await store.update_rollout(rollout_id=rollout.rollout_id, status="succeeded")
+
+    # Verify final state
+    final = (await store.query_rollouts())[0]
+    assert final.status == "succeeded"
+    assert final.end_time is not None
+
+    final_attempt = await store.get_latest_attempt(rollout.rollout_id)
+    assert final_attempt.status == "succeeded"
+    assert final_attempt.end_time is not None
+
+
+@pytest.mark.asyncio
+async def test_full_lifecycle_with_retry(store_with_watchdog: InMemoryLightningStore, mock_readable_span: Mock) -> None:
+    """Test rollout lifecycle with failure and retry."""
+    store = store_with_watchdog
+
+    # 1. Create and start task
+    rollout = await store.enqueue_rollout(sample={"retry": "test"})
+    await store.dequeue_rollout()
+
+    attempts = await store.query_attempts(rollout.rollout_id)
+    first_attempt = attempts[0]
+
+    # 2. Simulate timeout
+    with patch("time.time") as mock_time:
+        mock_time.return_value = first_attempt.start_time + 10  # Past timeout
+        if store.watchdog:
+            await store.watchdog.healthcheck(store)
+
+    # Should be requeuing
+    rollouts = await store.query_rollouts(status=["requeuing"])
+    assert len(rollouts) == 1
+
+    # First attempt should be marked as timeout
+    attempts = await store.query_attempts(rollout.rollout_id)
+    assert attempts[0].status == "timeout"
+
+    # 3. Process retry attempt
+    await store.dequeue_rollout()
+    attempts = await store.query_attempts(rollout.rollout_id)
+    assert len(attempts) == 2
+    second_attempt = attempts[1]
+    assert second_attempt.sequence_id == 2
+
+    # 4. Add span to second attempt
+    await store.add_otel_span(rollout.rollout_id, second_attempt.attempt_id, mock_readable_span)
+
+    # 5. Complete successfully
+    await store.update_attempt(rollout_id=rollout.rollout_id, attempt_id=second_attempt.attempt_id, status="succeeded")
+    await store.update_rollout(rollout_id=rollout.rollout_id, status="succeeded")
+
+    # Verify final state
+    final = (await store.query_rollouts())[0]
+    assert final.status == "succeeded"
+
+    all_attempts = await store.query_attempts(rollout.rollout_id)
+    assert len(all_attempts) == 2
+    assert all_attempts[0].status == "timeout"  # First failed
+    assert all_attempts[1].status == "succeeded"  # Second succeeded
+
+
+@pytest.mark.asyncio
+async def test_watchdog_handles_succeeded_attempt(store_with_watchdog: InMemoryLightningStore) -> None:
+    """Test watchdog properly handles succeeded attempts."""
+    store = store_with_watchdog
+    rollout = await store.enqueue_rollout(sample={"test": "data"})
+    await store.dequeue_rollout()
+
+    attempts = await store.query_attempts(rollout.rollout_id)
+    attempt = attempts[0]
+
+    # Mark attempt as succeeded
+    await store.update_attempt(rollout_id=rollout.rollout_id, attempt_id=attempt.attempt_id, status="succeeded")
+
+    # Run watchdog healthcheck
+    if store.watchdog:
+        await store.watchdog.healthcheck(store)
+
+    # Rollout should be marked as succeeded
+    rollouts = await store.query_rollouts(status=["succeeded"])
+    assert len(rollouts) == 1
+    assert rollouts[0].rollout_id == rollout.rollout_id
