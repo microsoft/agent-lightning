@@ -68,12 +68,41 @@ RolloutStatus = Literal[
     "queuing",  # initial status
     "preparing",  # after the trace is claimed
     "running",  # after receiving the first trace
-    "error",  # crashed
-    "success",  # status OK
-    "unresponsive",  # the worker has not reported results for a while
-    "timeout",  # the worker has been emitting new logs, but have been working on the task for too long
+    "failed",  # crashed
+    "succeeded",  # status OK
+    "cancelled",  # cancelled by user (or watchdog)
     "requeuing",  # retrying
 ]
+
+AttemptStatus = Literal[
+    # A status is essentially a process.
+    # It should not have scheduling/management statuses like "queuing" or "cancelled".
+    "preparing",
+    "running",
+    "failed",
+    "succeeded",
+    "unresponsive",  # the worker has not reported results for a while
+    "timeout",  # the worker has been emitting new logs, but have been working on the task for too long
+]
+
+
+class Attempt(BaseModel):
+    """An attempt to execute a rollout. A rollout can have multiple attempts if retries are needed."""
+
+    rollout_id: str  # the rollout this attempt belongs to
+    attempt_id: str  # the universal id for current attempt
+    sequence_id: int  # the sequence number of the attempt, starting from 0
+    start_time: float  # time when the attempt has started
+    end_time: Optional[float] = None  # time when the attempt has ended
+
+    status: AttemptStatus = "preparing"
+    # The rollout worker which is executing this attempt
+    worker_id: Optional[str] = None
+
+    last_heartbeat_time: Optional[float] = None  # last time when the worker has reported progress
+
+    # A bucket for any other relevant information
+    metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
 class RolloutV2(BaseModel):
@@ -89,15 +118,8 @@ class RolloutV2(BaseModel):
     start_time: Optional[float] = None
     end_time: Optional[float] = None
 
-    # Running information
+    # Overall scheduling/running information
     status: RolloutStatus = "queuing"
-    worker_id: Optional[str] = None
-    attempt_sequence_id: Optional[int] = None
-    attempt_id: Optional[str] = None  # the universal id for current attempt
-    attempt_start_time: Optional[float] = None  # time when the current retry has started
-    # status of the last attempt if any,
-    # only available when the rollout starts to requeue
-    last_attempt_status: Optional[RolloutStatus] = None
 
     # A bucket for any other relevant information
     metadata: Dict[str, Any] = Field(default_factory=dict)

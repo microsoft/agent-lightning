@@ -21,7 +21,7 @@ def is_running(rollout: RolloutV2) -> bool:
 
 
 def is_finished(rollout: RolloutV2) -> bool:
-    return rollout.status == "error" or rollout.status == "success"
+    return rollout.status == "failed" or rollout.status == "succeeded" or rollout.status == "cancelled"
 
 
 T_callable = TypeVar("T_callable", bound=Callable[..., Any])
