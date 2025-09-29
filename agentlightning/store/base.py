@@ -215,6 +215,11 @@ class LightningStore:
         """
         Update the rollout status and related metadata.
 
+        Not-listed fields here either cannot be updated, or should be auto-updated (e.g., end_time).
+
+        When status is updated to a finished / problematic state, other states like task
+        queues will be updated accordingly.
+
         Args:
             rollout_id: Unique identifier for the rollout to update
             input: New input data for the rollout. If set, will be updated. Can be updated to None
@@ -229,7 +234,6 @@ class LightningStore:
         self,
         rollout_id: str,
         attempt_id: str | Literal["latest"],
-        end_time: float | Unset = UNSET,
         status: AttemptStatus | Unset = UNSET,
         worker_id: str | Unset = UNSET,
         last_heartbeat_time: float | Unset = UNSET,
@@ -243,7 +247,6 @@ class LightningStore:
         Args:
             rollout_id: Unique identifier for the rollout
             attempt_id: Unique identifier for the attempt
-            end_time: Timestamp when the attempt ended, update if provided
             status: Status to set for the attempt, update if provided
             worker_id: Worker identifier, update if provided
             last_heartbeat_time: Timestamp of the last heartbeat from the worker
@@ -287,9 +290,9 @@ class LightningStoreWatchDog:
         Perform health check on all running rollouts in the store.
 
         This method should be called periodically to:
-        1. Check for unresponsive rollouts (attempted but no response, or no spans for a while)
+        1. Check for unresponsive attempts (no heartbeat or spans for a while)
         2. Check for timed-out rollouts (running too long since start_time)
-        3. Update rollout status accordingly via store._update_rollout
+        3. Update attempt/rollout status accordingly
 
         Args:
             store: The LightningStore instance to check rollouts from
@@ -297,86 +300,67 @@ class LightningStoreWatchDog:
         current_time = time.time()
 
         # Get all running rollouts from the store
-        # Note: This assumes store has a method to get running rollouts
-        # In a real implementation, you'd need to add this method to LightningStore
         running_rollouts = await store.query_rollouts(status=["preparing", "running"])
 
         for rollout in running_rollouts:
-            # Check for timeout condition (based on start_time)
-            if rollout.start_time and current_time - rollout.start_time > self.timeout_seconds:
-                await self._handle_failed_rollout(store, rollout, "timeout")
+            # Get the latest attempt for this rollout
+            latest_attempt = await store.get_latest_attempt(rollout.rollout_id)
+            if not latest_attempt:
                 continue
 
-            # Query the recent spans for this rollout
-            recent_spans = await store.query_spans(rollout.rollout_id)
+            # Check for timeout condition (based on attempt start_time, instead of rollout start_time)
+            if current_time - latest_attempt.start_time > self.timeout_seconds:
+                await self._handle_failed_rollout(store, latest_attempt, "timeout")
+                continue
 
-            # Check for unresponsive condition (based on attempt_start_time)
-            # This checks if worker attempted but no response, or no spans for a while
+            # Check for unresponsive condition (based on last heartbeat)
             if (
-                rollout.attempt_start_time
-                and current_time - rollout.attempt_start_time > self.unresponsive_seconds
-                and not recent_spans
+                latest_attempt.last_heartbeat_time
+                and current_time - latest_attempt.last_heartbeat_time > self.unresponsive_seconds
             ):
-
-                await self._handle_failed_rollout(store, rollout, "unresponsive")
+                await self._handle_failed_rollout(store, latest_attempt, "unresponsive")
                 continue
 
-            # Additionally, check if there's no recent span activity
-            if self._no_recent_span_activity(recent_spans, current_time):
-                await self._handle_failed_rollout(store, rollout, "unresponsive")
+            # Check if there's no last heartbeat (no spans) at all
+            if (
+                latest_attempt.last_heartbeat_time is None
+                and current_time - latest_attempt.start_time > self.unresponsive_seconds
+            ):
+                await self._handle_failed_rollout(store, latest_attempt, "unresponsive")
 
-    def _no_recent_span_activity(self, spans: List[Span], current_time: float) -> bool:
-        """
-        Check if there's no recent span activity within the unresponsive threshold.
-
-        Args:
-            spans: List of spans for the rollout
-            current_time: Current timestamp
-
-        Returns:
-            True if no recent activity, False otherwise
-        """
-        if not spans:
-            # No spans at all is handled separately
-            return False
-
-        # Find the most recent span activity
-        latest_span_time = 0.0
-        for span in spans:
-            if span.end_time:
-                latest_span_time = max(latest_span_time, span.end_time)
-            elif span.start_time:
-                latest_span_time = max(latest_span_time, span.start_time)
-
-        return latest_span_time != 0.0 and current_time - latest_span_time > self.unresponsive_seconds
-
-    async def _handle_failed_rollout(self, store: LightningStore, rollout: RolloutV2, status: AttemptStatus) -> None:
+    async def _handle_failed_rollout(self, store: LightningStore, attempt: Attempt, status: AttemptStatus) -> None:
         """
         Handle a failed rollout by either retrying or marking as failed.
 
         Args:
             store: The LightningStore instance
-            rollout: The rollout that failed
+            attempt: The Attempt instance that has failed
             status: The failure status ("timeout" or "unresponsive")
         """
+        # Update the current attempt with the failure status
+
+        await store.update_attempt(
+            rollout_id=attempt.rollout_id,
+            attempt_id=attempt.attempt_id,
+            status=status,
+        )
+
         # Check if this status should trigger a retry
         if status in self.retry_condition:
-            # Get current attempt count (default to 1 if not set)
-            current_attempts = rollout.attempt_sequence_id or 1
+            # Get current attempt count
+            attempts = await store.query_attempts(attempt.rollout_id)
+            current_attempts = len(attempts)
 
             # If we haven't exceeded max attempts, retry
             if current_attempts < self.max_attempts:
                 await store.update_rollout(
-                    rollout_id=rollout.rollout_id,
+                    rollout_id=attempt.rollout_id,
                     status="requeuing",
-                    last_attempt_status=status,
-                    attempt_sequence_id=current_attempts + 1,
                 )
                 return
 
         # If we can't retry or shouldn't retry, mark as failed
         await store.update_rollout(
-            rollout_id=rollout.rollout_id,
+            rollout_id=attempt.rollout_id,
             status="failed",
-            last_attempt_status=status,
         )
