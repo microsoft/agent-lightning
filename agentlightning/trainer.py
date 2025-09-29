@@ -14,6 +14,7 @@ from .algorithm.base import BaseAlgorithm
 from .client import AgentLightningClient
 from .litagent import LitAgent
 from .runner import AgentRunner
+from .store.base import LightningStore
 from .tracer.agentops import AgentOpsTracer
 from .tracer.base import BaseTracer
 from .types import Dataset, ParallelWorkerBase
@@ -56,12 +57,14 @@ class Trainer(ParallelWorkerBase):
         tracer: Union[BaseTracer, str, Dict[str, Any], None] = None,
         triplet_exporter: Union[TraceTripletAdapter, Dict[str, Any], None] = None,
         algorithm: Union[BaseAlgorithm, str, Dict[str, Any], None] = None,
+        store: Optional[LightningStore] = None,
     ):
         super().__init__()
         self.n_workers = n_workers
         self.max_tasks = max_tasks
         self.daemon = daemon
         self.dev = dev
+        self.store = store
         self._client: AgentLightningClient | None = None  # Will be initialized in fit method
 
         self.tracer = self._make_tracer(tracer)
