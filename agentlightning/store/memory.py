@@ -11,9 +11,17 @@ from typing import Any, Dict, List, Literal, Optional, Sequence
 from opentelemetry.sdk.trace import ReadableSpan
 
 from agentlightning.tracer import Span
-from agentlightning.types import NamedResources, ResourcesUpdate, RolloutStatus, RolloutV2
+from agentlightning.types import (
+    Attempt,
+    AttemptStatus,
+    NamedResources,
+    ResourcesUpdate,
+    RolloutStatus,
+    RolloutV2,
+    TaskInput,
+)
 
-from .base import LightningStore, LightningStoreWatchDog, healthcheck, is_finished, is_queuing
+from .base import UNSET, LightningStore, LightningStoreWatchDog, Unset, healthcheck, is_finished, is_queuing
 
 
 class InMemoryLightningStore(LightningStore):
@@ -36,6 +44,9 @@ class InMemoryLightningStore(LightningStore):
 
         # Spans storage
         self._spans: Dict[str, List[Span]] = {}  # rollout_id -> list of spans
+
+        # Attempt tracking
+        self._attempts: Dict[str, List[Attempt]] = {}  # rollout_id -> list of attempts
 
         # Completion tracking for wait_for_rollouts
         self._completion_events: Dict[str, asyncio.Event] = {}
@@ -68,7 +79,6 @@ class InMemoryLightningStore(LightningStore):
                 resources_id=resources_id or self._latest_resources_id,
                 start_time=current_time,
                 status="queuing",
-                attempt_sequence_id=1,
                 metadata=metadata or {},
             )
 
@@ -89,7 +99,7 @@ class InMemoryLightningStore(LightningStore):
         Retrieves the next task from the queue without blocking.
         Returns None if the queue is empty.
 
-        Will set the rollout status to preparing.
+        Will set the rollout status to preparing and create a new attempt.
         """
         async with self._lock:
             # Keep looking until we find a rollout that's still in queuing status
@@ -100,9 +110,29 @@ class InMemoryLightningStore(LightningStore):
                 # Check if rollout is still in a queuing state
                 # (it might have been updated to a different status while in queue)
                 if is_queuing(rollout):
-                    # Update status to preparing (similar to legacy implementation)
+                    # Update status to preparing
                     rollout.status = "preparing"
-                    rollout.attempt_start_time = time.time()
+
+                    # Create a new attempt (could be first attempt or retry)
+                    attempt_id = f"attempt-{uuid.uuid4()}"
+                    current_time = time.time()
+
+                    # Get existing attempts to determine sequence number
+                    existing_attempts = self._attempts.get(rollout.rollout_id, [])
+                    sequence_id = len(existing_attempts) + 1
+
+                    attempt = Attempt(
+                        rollout_id=rollout.rollout_id,
+                        attempt_id=attempt_id,
+                        sequence_id=sequence_id,
+                        start_time=current_time,
+                        status="preparing",
+                    )
+
+                    if rollout.rollout_id not in self._attempts:
+                        self._attempts[rollout.rollout_id] = []
+                    self._attempts[rollout.rollout_id].append(attempt)
+
                     return rollout
 
                 # If not in queuing state, skip this rollout and continue
@@ -123,6 +153,26 @@ class InMemoryLightningStore(LightningStore):
 
             status_set = set(status)
             return [rollout for rollout in self._rollouts.values() if rollout.status in status_set]
+
+    @healthcheck
+    async def query_attempts(self, rollout_id: str) -> List[Attempt]:
+        """
+        Query and retrieve all attempts associated with a specific rollout ID.
+        Returns an empty list if no attempts are found.
+        """
+        async with self._lock:
+            return self._attempts.get(rollout_id, [])
+
+    @healthcheck
+    async def get_latest_attempt(self, rollout_id: str) -> Optional[Attempt]:
+        """
+        Safely retrieves the latest attempt for a given rollout ID.
+        """
+        async with self._lock:
+            attempts = self._attempts.get(rollout_id, [])
+            if not attempts:
+                return None
+            return max(attempts, key=lambda a: a.sequence_id)
 
     @healthcheck
     async def update_resources(self, resources_id: str, resources: NamedResources) -> ResourcesUpdate:
@@ -169,12 +219,27 @@ class InMemoryLightningStore(LightningStore):
             rollout = self._rollouts.get(span.rollout_id)
             if not rollout:
                 raise ValueError(f"Rollout {span.rollout_id} not found")
+            attempts = self._attempts.get(span.rollout_id, [])
+            current_attempt = next((a for a in attempts if a.attempt_id == span.attempt_id), None)
+            latest_attempt = max(attempts, key=lambda a: a.sequence_id) if attempts else None
+            if not current_attempt:
+                raise ValueError(f"Attempt {span.attempt_id} not found for rollout {span.rollout_id}")
+            if not latest_attempt:
+                raise ValueError(f"No attempts found for rollout {span.rollout_id}")
 
             if span.rollout_id not in self._spans:
                 self._spans[span.rollout_id] = []
             self._spans[span.rollout_id].append(span)
 
-            if rollout.status == "preparing":
+            # Update attempt heartbeat
+            current_attempt.last_heartbeat_time = time.time()
+            if current_attempt.status == "preparing":
+                current_attempt.status = "running"
+
+            # If the status has already timed out or failed, do not change it
+
+            # Update rollout status if it's the latest attempt
+            if rollout.status == "preparing" and current_attempt == latest_attempt:
                 rollout.status = "running"
 
             return span
@@ -246,50 +311,90 @@ class InMemoryLightningStore(LightningStore):
     async def update_rollout(
         self,
         rollout_id: str,
-        status: Optional[RolloutStatus] = None,
-        worker_id: Optional[str] = None,
-        attempt_sequence_id: Optional[int] = None,
-        attempt_id: Optional[str] = None,
-        attempt_start_time: Optional[float] = None,
-        last_attempt_status: Optional[RolloutStatus] = None,
-        **kwargs: Any,
+        input: TaskInput | Unset = UNSET,
+        mode: Optional[Literal["train", "val", "test"]] | Unset = UNSET,
+        resources_id: Optional[str] | Unset = UNSET,
+        status: RolloutStatus | Unset = UNSET,
+        metadata: Dict[str, Any] | Unset = UNSET,
     ) -> RolloutV2:
         """
         Update the rollout status and related metadata.
-        Public method for external use (including watchdog).
         """
-
         async with self._lock:
             rollout = self._rollouts.get(rollout_id)
             if not rollout:
                 raise ValueError(f"Rollout {rollout_id} not found")
 
-            # Update fields
-            updates: Dict[str, Any] = {}
-            if status is not None:
-                updates["status"] = status
-            if worker_id is not None:
-                updates["worker_id"] = worker_id
-            if attempt_sequence_id is not None:
-                updates["attempt_sequence_id"] = attempt_sequence_id
-            if attempt_id is not None:
-                updates["attempt_id"] = attempt_id
-            if attempt_start_time is not None:
-                updates["attempt_start_time"] = attempt_start_time
-            if last_attempt_status is not None:
-                updates["last_attempt_status"] = last_attempt_status
-            updates.update(kwargs)
-            rollout.update(updates)
+            # Update fields if they are not UNSET
+            if not isinstance(input, Unset):
+                rollout.input = input
+            if not isinstance(mode, Unset):
+                rollout.mode = mode
+            if not isinstance(resources_id, Unset):
+                rollout.resources_id = resources_id
+            if not isinstance(metadata, Unset):
+                # Merge metadata
+                if rollout.metadata:
+                    rollout.metadata = {**rollout.metadata, **metadata}
+                else:
+                    rollout.metadata = metadata
+            if not isinstance(status, Unset):
+                rollout.status = status
 
-            # Set end time for finished rollouts using utility function
-            if is_finished(rollout):
+            # Set end time for finished rollouts
+            if status is not UNSET and is_finished(rollout):
                 rollout.end_time = time.time()
                 # Signal completion
                 if rollout_id in self._completion_events:
                     self._completion_events[rollout_id].set()
 
-            # If requeuing, add back to queue (similar to requeue_task)
-            elif status == "requeuing":
+            # If requeuing, add back to queue
+            elif is_queuing(rollout) and rollout not in self._task_queue:
                 self._task_queue.append(rollout)
 
             return rollout
+
+    @healthcheck
+    async def update_attempt(
+        self,
+        rollout_id: str,
+        attempt_id: str | Literal["latest"],
+        status: AttemptStatus | Unset = UNSET,
+        worker_id: str | Unset = UNSET,
+        last_heartbeat_time: float | Unset = UNSET,
+        metadata: Dict[str, Any] | Unset = UNSET,
+    ) -> Attempt:
+        """
+        Update a specific or latest attempt for a given rollout.
+        """
+        async with self._lock:
+            attempts = self._attempts.get(rollout_id, [])
+            if not attempts:
+                raise ValueError(f"No attempts found for rollout {rollout_id}")
+
+            # Find the attempt to update
+            if attempt_id == "latest":
+                attempt = max(attempts, key=lambda a: a.sequence_id)
+            else:
+                attempt = next((a for a in attempts if a.attempt_id == attempt_id), None)
+                if not attempt:
+                    raise ValueError(f"Attempt {attempt_id} not found for rollout {rollout_id}")
+
+            # Update fields if they are not UNSET
+            if not isinstance(status, Unset):
+                attempt.status = status
+                # Also update end_time if the status indicates completion
+                if status in ["failed", "succeeded"]:
+                    attempt.end_time = time.time()
+            if not isinstance(worker_id, Unset):
+                attempt.worker_id = worker_id
+            if not isinstance(last_heartbeat_time, Unset):
+                attempt.last_heartbeat_time = last_heartbeat_time
+            if not isinstance(metadata, Unset):
+                # Merge metadata
+                if attempt.metadata:
+                    attempt.metadata = {**attempt.metadata, **metadata}
+                else:
+                    attempt.metadata = metadata
+
+            return attempt
