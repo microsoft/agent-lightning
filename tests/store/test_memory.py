@@ -58,7 +58,7 @@ async def test_add_rollout_initializes_attempt(store: InMemoryLightningStore) ->
     """Test that add_rollout immediately tracks a preparing attempt."""
     sample = {"payload": "value"}
 
-    attempt_rollout = await store.add_rollout(sample=sample, mode="val", resources_id="res-add")
+    attempt_rollout = await store.start_rollout(sample=sample, mode="val", resources_id="res-add")
 
     assert attempt_rollout.status == "preparing"
     assert attempt_rollout.rollout_id.startswith("rollout-")
@@ -954,6 +954,198 @@ async def test_update_nonexistent_attempt(store: InMemoryLightningStore) -> None
 
     with pytest.raises(ValueError, match="No attempts found"):
         await store.update_attempt(rollout_id=rollout.rollout_id, attempt_id="nonexistent", status="failed")
+
+
+# Add Attempt Tests
+
+
+@pytest.mark.asyncio
+async def test_add_attempt_creates_new_attempt(store: InMemoryLightningStore) -> None:
+    """Test add_attempt creates a new attempt for existing rollout."""
+    # Create a rollout
+    rollout = await store.enqueue_rollout(sample={"test": "data"})
+
+    # Add first manual attempt
+    attempted_rollout = await store.start_attempt(rollout.rollout_id)
+
+    assert attempted_rollout.rollout_id == rollout.rollout_id
+    assert attempted_rollout.attempt.sequence_id == 1
+    assert attempted_rollout.attempt.status == "preparing"
+    assert attempted_rollout.attempt.rollout_id == rollout.rollout_id
+    assert attempted_rollout.attempt.attempt_id.startswith("attempt-")
+
+    # Verify attempt is stored
+    attempts = await store.query_attempts(rollout.rollout_id)
+    assert len(attempts) == 1
+    assert attempts[0].attempt_id == attempted_rollout.attempt.attempt_id
+
+
+@pytest.mark.asyncio
+async def test_add_attempt_increments_sequence_id(store: InMemoryLightningStore) -> None:
+    """Test add_attempt correctly increments sequence_id."""
+    # Create a rollout and dequeue to create first attempt
+    rollout = await store.enqueue_rollout(sample={"test": "data"})
+    await store.dequeue_rollout()  # Creates attempt with sequence_id=1
+
+    # Add second attempt manually
+    attempted_rollout2 = await store.start_attempt(rollout.rollout_id)
+    assert attempted_rollout2.attempt.sequence_id == 2
+
+    # Add third attempt manually
+    attempted_rollout3 = await store.start_attempt(rollout.rollout_id)
+    assert attempted_rollout3.attempt.sequence_id == 3
+
+    # Verify all attempts exist
+    attempts = await store.query_attempts(rollout.rollout_id)
+    assert len(attempts) == 3
+    assert [a.sequence_id for a in attempts] == [1, 2, 3]
+
+
+@pytest.mark.asyncio
+async def test_add_attempt_nonexistent_rollout(store: InMemoryLightningStore) -> None:
+    """Test add_attempt raises error for nonexistent rollout."""
+    with pytest.raises(ValueError, match="Rollout nonexistent not found"):
+        await store.start_attempt("nonexistent")
+
+
+@pytest.mark.asyncio
+async def test_add_attempt_ignores_max_attempts(store: InMemoryLightningStore) -> None:
+    """Test add_attempt ignores max_attempts configuration."""
+    # Create rollout with max_attempts=2
+    rollout = await store.enqueue_rollout(sample={"test": "data"})
+    config = RolloutConfig(max_attempts=2)
+    await store.update_rollout(rollout_id=rollout.rollout_id, config=config)
+
+    # Add attempts beyond max_attempts
+    attempt1 = await store.start_attempt(rollout.rollout_id)
+    attempt2 = await store.start_attempt(rollout.rollout_id)
+    attempt3 = await store.start_attempt(rollout.rollout_id)  # Should succeed despite max_attempts=2
+
+    assert attempt1.attempt.sequence_id == 1
+    assert attempt2.attempt.sequence_id == 2
+    assert attempt3.attempt.sequence_id == 3
+
+    # All attempts should exist
+    attempts = await store.query_attempts(rollout.rollout_id)
+    assert len(attempts) == 3
+
+
+# Latest Attempt Status Propagation Tests
+
+
+@pytest.mark.asyncio
+async def test_status_propagation_only_for_latest_attempt(store: InMemoryLightningStore) -> None:
+    """Test that status changes only propagate to rollout when updating latest attempt."""
+    rollout = await store.enqueue_rollout(sample={"test": "propagation"})
+
+    # Create multiple attempts
+    attempt1 = await store.start_attempt(rollout.rollout_id)
+    _attempt2 = await store.start_attempt(rollout.rollout_id)
+    attempt3 = await store.start_attempt(rollout.rollout_id)  # This is the latest
+
+    # Update attempt1 (not latest) to succeeded
+    await store.update_attempt(
+        rollout_id=rollout.rollout_id, attempt_id=attempt1.attempt.attempt_id, status="succeeded"
+    )
+
+    # Rollout status should NOT change since attempt1 is not the latest
+    updated_rollout = await store.get_rollout_by_id(rollout.rollout_id)
+    assert updated_rollout is not None
+    assert updated_rollout.status == "queuing"  # Should remain unchanged
+
+    # Update attempt3 (latest) to succeeded
+    await store.update_attempt(
+        rollout_id=rollout.rollout_id, attempt_id=attempt3.attempt.attempt_id, status="succeeded"
+    )
+
+    # Now rollout status should change since we updated the latest attempt
+    updated_rollout = await store.get_rollout_by_id(rollout.rollout_id)
+    assert updated_rollout is not None
+    assert updated_rollout.status == "succeeded"
+
+
+@pytest.mark.asyncio
+async def test_status_propagation_with_retry_for_latest_attempt(store: InMemoryLightningStore) -> None:
+    """Test retry logic only applies when updating latest attempt."""
+    rollout = await store.enqueue_rollout(sample={"test": "retry"})
+    config = RolloutConfig(max_attempts=3, retry_condition=["failed"])
+    await store.update_rollout(rollout_id=rollout.rollout_id, config=config)
+
+    # Create multiple attempts
+    attempt1 = await store.start_attempt(rollout.rollout_id)  # sequence_id=1
+    attempt2 = await store.start_attempt(rollout.rollout_id)  # sequence_id=2 (latest)
+
+    # Fail attempt1 (not latest) - should NOT trigger retry
+    await store.update_attempt(rollout_id=rollout.rollout_id, attempt_id=attempt1.attempt.attempt_id, status="failed")
+
+    updated_rollout = await store.get_rollout_by_id(rollout.rollout_id)
+    assert updated_rollout is not None
+    assert updated_rollout.status == "queuing"  # Should remain unchanged
+
+    # Fail attempt2 (latest) - should trigger retry since sequence_id=2 < max_attempts=3
+    await store.update_attempt(rollout_id=rollout.rollout_id, attempt_id=attempt2.attempt.attempt_id, status="failed")
+
+    updated_rollout = await store.get_rollout_by_id(rollout.rollout_id)
+    assert updated_rollout is not None
+    assert updated_rollout.status == "requeuing"  # Should be requeued for retry
+
+
+@pytest.mark.asyncio
+async def test_status_propagation_latest_changes_when_new_attempt_added(store: InMemoryLightningStore) -> None:
+    """Test that the 'latest attempt' changes as new attempts are added."""
+    rollout = await store.enqueue_rollout(sample={"test": "latest_changes"})
+
+    # Create first attempt and update it to succeeded
+    attempt1 = await store.start_attempt(rollout.rollout_id)
+    await store.update_attempt(
+        rollout_id=rollout.rollout_id, attempt_id=attempt1.attempt.attempt_id, status="succeeded"
+    )
+
+    # Rollout should be succeeded since attempt1 is latest
+    updated_rollout = await store.get_rollout_by_id(rollout.rollout_id)
+    assert updated_rollout is not None
+    assert updated_rollout.status == "succeeded"
+
+    # Add second attempt (now this becomes latest)
+    attempt2 = await store.start_attempt(rollout.rollout_id)
+
+    # Update attempt1 to failed - should NOT affect rollout since it's no longer latest
+    await store.update_attempt(rollout_id=rollout.rollout_id, attempt_id=attempt1.attempt.attempt_id, status="failed")
+
+    updated_rollout = await store.get_rollout_by_id(rollout.rollout_id)
+    assert updated_rollout is not None
+    assert updated_rollout.status == "succeeded"  # Should remain unchanged
+
+    # Update attempt2 (now latest) to failed
+    await store.update_attempt(rollout_id=rollout.rollout_id, attempt_id=attempt2.attempt.attempt_id, status="failed")
+
+    # Now rollout should change since we updated the new latest attempt
+    updated_rollout = await store.get_rollout_by_id(rollout.rollout_id)
+    assert updated_rollout is not None
+    assert updated_rollout.status == "failed"
+
+
+@pytest.mark.asyncio
+async def test_status_propagation_update_latest_by_reference(store: InMemoryLightningStore) -> None:
+    """Test status propagation when updating latest attempt using 'latest' reference."""
+    rollout = await store.enqueue_rollout(sample={"test": "latest_ref"})
+
+    # Create multiple attempts
+    await store.start_attempt(rollout.rollout_id)
+    await store.start_attempt(rollout.rollout_id)
+    attempt3 = await store.start_attempt(rollout.rollout_id)  # This is latest
+
+    # Update using "latest" reference
+    updated_attempt = await store.update_attempt(rollout_id=rollout.rollout_id, attempt_id="latest", status="succeeded")
+
+    # Should have updated attempt3
+    assert updated_attempt.attempt_id == attempt3.attempt.attempt_id
+    assert updated_attempt.status == "succeeded"
+
+    # Rollout should be updated since we updated the latest attempt
+    updated_rollout = await store.get_rollout_by_id(rollout.rollout_id)
+    assert updated_rollout is not None
+    assert updated_rollout.status == "succeeded"
 
 
 @pytest.mark.asyncio

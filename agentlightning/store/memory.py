@@ -103,7 +103,7 @@ class InMemoryLightningStore(LightningStore):
             yield
 
     @_healthcheck_wrapper
-    async def add_rollout(
+    async def start_rollout(
         self,
         sample: TaskInput,
         mode: Literal["train", "val", "test"] | None = None,
@@ -111,7 +111,7 @@ class InMemoryLightningStore(LightningStore):
         metadata: Dict[str, Any] | None = None,
     ) -> AttemptedRollout:
         """
-        Add an existing rollout to the store.
+        Notify the store that I'm about to run a rollout.
         """
         async with self._lock:
             rollout_id = f"rollout-{uuid.uuid4()}"
@@ -140,7 +140,7 @@ class InMemoryLightningStore(LightningStore):
             self._attempts[rollout.rollout_id] = [attempt]
             self._rollouts[rollout.rollout_id] = rollout
 
-            self._task_queue.append(rollout)
+            # Manully added rollout is not added to task queue. It's already preparing
             self._completion_events.setdefault(rollout.rollout_id, asyncio.Event())
 
             return AttemptedRollout(**rollout.model_dump(), attempt=attempt)
@@ -223,6 +223,45 @@ class InMemoryLightningStore(LightningStore):
 
             # No valid rollouts found
             return None
+
+    @_healthcheck_wrapper
+    async def start_attempt(self, rollout_id: str) -> AttemptedRollout:
+        """
+        Create a new attempt for a given rollout ID and return the attempt details.
+        """
+        async with self._lock:
+            # Get the rollout
+            rollout = self._rollouts.get(rollout_id)
+            if not rollout:
+                raise ValueError(f"Rollout {rollout_id} not found")
+
+            # Get existing attempts to determine sequence number
+            existing_attempts = self._attempts.get(rollout_id, [])
+            sequence_id = len(existing_attempts) + 1
+
+            # We don't care whether the max attempts have reached or not
+            # This attempt is from user trigger
+
+            # Create new attempt
+            attempt_id = f"attempt-{uuid.uuid4()}"
+            current_time = time.time()
+
+            attempt = Attempt(
+                rollout_id=rollout_id,
+                attempt_id=attempt_id,
+                sequence_id=sequence_id,
+                start_time=current_time,
+                status="preparing",
+            )
+
+            # Add attempt to storage
+            if rollout_id not in self._attempts:
+                self._attempts[rollout_id] = []
+            self._attempts[rollout_id].append(attempt)
+
+            self._completion_events.setdefault(rollout.rollout_id, asyncio.Event())
+
+            return AttemptedRollout(**rollout.model_dump(), attempt=attempt)
 
     @_healthcheck_wrapper
     async def query_rollouts(
@@ -525,9 +564,11 @@ class InMemoryLightningStore(LightningStore):
         if not attempts:
             raise ValueError(f"No attempts found for rollout {rollout_id}")
 
+        latest_attempt = max(attempts, key=lambda a: a.sequence_id)
+
         # Find the attempt to update
         if attempt_id == "latest":
-            attempt = max(attempts, key=lambda a: a.sequence_id)
+            attempt = latest_attempt
         else:
             attempt = next((a for a in attempts if a.attempt_id == attempt_id), None)
             if not attempt:
@@ -553,9 +594,17 @@ class InMemoryLightningStore(LightningStore):
         # Re-validate the attempt to ensure legality
         Attempt.model_validate(attempt.model_dump())
 
-        await propagate_status(
-            lambda rollout_id, status: self._update_rollout_unlocked(rollout_id, status=status), attempt, rollout.config
-        )
+        if attempt == latest_attempt:
+
+            async def _update_status(rollout_id: str, status: RolloutStatus) -> RolloutV2:
+                return await self._update_rollout_unlocked(rollout_id, status=status)
+
+            # Propagate the status to the rollout
+            await propagate_status(
+                _update_status,
+                attempt,
+                rollout.config,
+            )
 
         return attempt
 
@@ -572,10 +621,15 @@ class InMemoryLightningStore(LightningStore):
                         continue
                     latest_attempt = max(all_attempts, key=lambda a: a.sequence_id)
                     running_rollouts.append(AttemptedRollout(**rollout.model_dump(), attempt=latest_attempt))
+
+            async def _update_attempt_status(rollout_id: str, attempt_id: str, status: AttemptStatus) -> Attempt:
+                return await self._update_attempt_unlocked(rollout_id, attempt_id, status=status)
+
+            async def _update_rollout_status(rollout_id: str, status: RolloutStatus) -> RolloutV2:
+                return await self._update_rollout_unlocked(rollout_id, status=status)
+
             await healthcheck(
                 running_rollouts,
-                lambda rollout_id, status: self._update_rollout_unlocked(rollout_id, status=status),
-                lambda rollout_id, attempt_id, status: self._update_attempt_unlocked(
-                    rollout_id, attempt_id, status=status
-                ),
+                _update_rollout_status,
+                _update_attempt_status,
             )

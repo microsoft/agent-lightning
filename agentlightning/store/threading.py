@@ -35,7 +35,7 @@ class LightningStoreThreaded(LightningStore):
         self.store = store
         self._lock = threading.Lock()
 
-    async def add_rollout(
+    async def start_rollout(
         self,
         sample: TaskInput,
         mode: Literal["train", "val", "test"] | None = None,
@@ -43,7 +43,7 @@ class LightningStoreThreaded(LightningStore):
         metadata: Dict[str, Any] | None = None,
     ) -> AttemptedRollout:
         with self._lock:
-            return await self.store.add_rollout(sample, mode, resources_id, metadata)
+            return await self.store.start_rollout(sample, mode, resources_id, metadata)
 
     async def enqueue_rollout(
         self,
@@ -59,9 +59,9 @@ class LightningStoreThreaded(LightningStore):
         with self._lock:
             return await self.store.dequeue_rollout()
 
-    async def add_attempt(self, rollout_id: str) -> Attempt:
+    async def start_attempt(self, rollout_id: str) -> AttemptedRollout:
         with self._lock:
-            return await self.store.add_attempt(rollout_id)
+            return await self.store.start_attempt(rollout_id)
 
     async def query_rollouts(
         self,

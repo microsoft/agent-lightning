@@ -45,7 +45,7 @@ class WaitForRolloutsRequest(BaseModel):
     timeout: Optional[float] = None
 
 
-class AddAttemptRequest(BaseModel):
+class RolloutId(BaseModel):
     rollout_id: str
 
 
@@ -106,9 +106,9 @@ class LightningStoreServer(LightningStore):
     def _setup_routes(self):
         """Set up FastAPI routes for all store operations."""
 
-        @self.app.post("/add_rollout", response_model=AttemptedRollout)
-        async def add_rollout(request: RolloutRequest):  # pyright: ignore[reportUnusedFunction]
-            return await self.store.add_rollout(
+        @self.app.post("/start_rollout", response_model=AttemptedRollout)
+        async def start_rollout(request: RolloutRequest):  # pyright: ignore[reportUnusedFunction]
+            return await self.store.start_rollout(
                 sample=request.sample,
                 mode=request.mode,
                 resources_id=request.resources_id,
@@ -128,9 +128,9 @@ class LightningStoreServer(LightningStore):
         async def dequeue_rollout():  # pyright: ignore[reportUnusedFunction]
             return await self.store.dequeue_rollout()
 
-        @self.app.post("/add_attempt", response_model=Attempt)
-        async def add_attempt(request: AddAttemptRequest):  # pyright: ignore[reportUnusedFunction]
-            return await self.store.add_attempt(request.rollout_id)
+        @self.app.post("/start_attempt", response_model=Attempt)
+        async def start_attempt(request: RolloutId):  # pyright: ignore[reportUnusedFunction]
+            return await self.store.start_attempt(request.rollout_id)
 
         @self.app.post("/query_rollouts", response_model=List[RolloutV2])
         async def query_rollouts(request: QueryRolloutsRequest):  # pyright: ignore[reportUnusedFunction]
@@ -202,14 +202,14 @@ class LightningStoreServer(LightningStore):
             )
 
     # Delegate methods -------------------------------------------------
-    async def add_rollout(
+    async def start_rollout(
         self,
         sample: TaskInput,
         mode: Literal["train", "val", "test"] | None = None,
         resources_id: str | None = None,
         metadata: Dict[str, Any] | None = None,
     ) -> AttemptedRollout:
-        return await self.store.add_rollout(sample, mode, resources_id, metadata)
+        return await self.store.start_rollout(sample, mode, resources_id, metadata)
 
     async def enqueue_rollout(
         self,
@@ -223,8 +223,8 @@ class LightningStoreServer(LightningStore):
     async def dequeue_rollout(self) -> Optional[AttemptedRollout]:
         return await self.store.dequeue_rollout()
 
-    async def add_attempt(self, rollout_id: str) -> Attempt:
-        return await self.store.add_attempt(rollout_id)
+    async def start_attempt(self, rollout_id: str) -> Attempt:
+        return await self.store.start_attempt(rollout_id)
 
     async def query_rollouts(self, status: Optional[Sequence[RolloutStatus]] = None) -> List[RolloutV2]:
         return await self.store.query_rollouts(status)
@@ -325,7 +325,7 @@ class LightningStoreClient(LightningStore):
         if self.session and not self.session.closed:
             await self.session.close()
 
-    async def add_rollout(
+    async def start_rollout(
         self,
         sample: TaskInput,
         mode: Literal["train", "val", "test"] | None = None,
@@ -335,7 +335,7 @@ class LightningStoreClient(LightningStore):
         session = await self._get_session()
         request_data = RolloutRequest(sample=sample, mode=mode, resources_id=resources_id, metadata=metadata)
 
-        async with session.post(f"{self.server_address}/add_rollout", json=request_data.model_dump()) as response:
+        async with session.post(f"{self.server_address}/start_rollout", json=request_data.model_dump()) as response:
             response.raise_for_status()
             data = await response.json()
             return AttemptedRollout.model_validate(data)
@@ -363,11 +363,11 @@ class LightningStoreClient(LightningStore):
             data = await response.json()
             return AttemptedRollout.model_validate(data) if data else None
 
-    async def add_attempt(self, rollout_id: str) -> Attempt:
+    async def start_attempt(self, rollout_id: str) -> Attempt:
         session = await self._get_session()
-        request_data = AddAttemptRequest(rollout_id=rollout_id)
+        request_data = RolloutId(rollout_id=rollout_id)
 
-        async with session.post(f"{self.server_address}/add_attempt", json=request_data.model_dump()) as response:
+        async with session.post(f"{self.server_address}/start_attempt", json=request_data.model_dump()) as response:
             response.raise_for_status()
             data = await response.json()
             return Attempt.model_validate(data)

@@ -63,7 +63,7 @@ class LightningStore:
     All the time-based operations like retry, timeout, etc. should be handled by the store.
     """
 
-    async def add_rollout(
+    async def start_rollout(
         self,
         sample: TaskInput,
         mode: Literal["train", "val", "test"] | None = None,
@@ -106,7 +106,7 @@ class LightningStore:
         """
         raise NotImplementedError()
 
-    async def add_attempt(self, rollout_id: str) -> Attempt:
+    async def start_attempt(self, rollout_id: str) -> AttemptedRollout:
         """
         Create a new attempt for a given rollout ID and return the attempt details.
         """
