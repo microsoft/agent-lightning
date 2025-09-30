@@ -701,8 +701,10 @@ def test_execute_algorithm_keyboard_interrupt_propagates(store: LightningStore) 
         graceful_timeout=0.05,
         terminate_timeout=0.05,
     )
-    with pytest.raises(KeyboardInterrupt):
-        strat.execute(algorithm=_kbint_in_algorithm, runner=_runner_wait_for_stop, store=store)
+    # ``execute`` handles KeyboardInterrupt raised by the algorithm by
+    # initiating a cooperative shutdown without propagating the exception to the
+    # caller. The method should therefore return cleanly.
+    strat.execute(algorithm=_kbint_in_algorithm, runner=_runner_wait_for_stop, store=store)
 
 
 def test_execute_runner_single_keyboard_interrupt_is_caught(store: LightningStore) -> None:
