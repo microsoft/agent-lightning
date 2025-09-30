@@ -2,7 +2,7 @@
 
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Literal, Optional, Sequence
 from unittest.mock import MagicMock
 
 import pytest
@@ -58,13 +58,19 @@ class DummyLightningStore(LightningStore):
         self.calls.append(("add_attempt", (rollout_id,), {}))
         return self.return_values["add_attempt"]
 
-    async def query_rollouts(self, status: Optional[Sequence[RolloutStatus]] = None) -> List[RolloutV2]:
-        self.calls.append(("query_rollouts", (status,), {}))
+    async def query_rollouts(
+        self, *, status: Optional[Sequence[RolloutStatus]] = None, rollout_ids: Optional[Sequence[str]] = None
+    ) -> List[RolloutV2]:
+        self.calls.append(("query_rollouts", (), {"status": status, "rollout_ids": rollout_ids}))
         return self.return_values["query_rollouts"]
 
     async def query_attempts(self, rollout_id: str) -> List[Attempt]:
         self.calls.append(("query_attempts", (rollout_id,), {}))
         return self.return_values["query_attempts"]
+
+    async def get_rollout_by_id(self, rollout_id: str) -> Optional[RolloutV2]:
+        self.calls.append(("get_rollout_by_id", (rollout_id,), {}))
+        return self.return_values["get_rollout_by_id"]
 
     async def get_latest_attempt(self, rollout_id: str) -> Optional[Attempt]:
         self.calls.append(("get_latest_attempt", (rollout_id,), {}))
@@ -96,8 +102,8 @@ class DummyLightningStore(LightningStore):
         self.calls.append(("add_otel_span", (rollout_id, attempt_id, readable_span, sequence_id), {}))
         return self.return_values["add_otel_span"]
 
-    async def wait_for_rollouts(self, rollout_ids: List[str], timeout: Optional[float] = None) -> List[RolloutV2]:
-        self.calls.append(("wait_for_rollouts", (rollout_ids, timeout), {}))
+    async def wait_for_rollouts(self, *, rollout_ids: List[str], timeout: Optional[float] = None) -> List[RolloutV2]:
+        self.calls.append(("wait_for_rollouts", (), {"rollout_ids": rollout_ids, "timeout": timeout}))
         return self.return_values["wait_for_rollouts"]
 
     async def get_next_span_sequence_id(self, rollout_id: str, attempt_id: str) -> int:
@@ -107,7 +113,7 @@ class DummyLightningStore(LightningStore):
     async def query_spans(
         self,
         rollout_id: str,
-        attempt_id: Optional[str] = None,
+        attempt_id: str | Literal["latest"] | None = None,
     ) -> List[Span]:
         self.calls.append(("query_spans", (rollout_id, attempt_id), {}))
         return self.return_values["query_spans"]
@@ -119,12 +125,13 @@ class DummyLightningStore(LightningStore):
         mode: Optional[str] | Any = UNSET,
         resources_id: Optional[str] | Any = UNSET,
         status: RolloutStatus | Any = UNSET,
+        config: Any = UNSET,
         metadata: Dict[str, Any] | Any = UNSET,
     ) -> RolloutV2:
         self.calls.append(
             (
                 "update_rollout",
-                (rollout_id, input, mode, resources_id, status, metadata),
+                (rollout_id, input, mode, resources_id, status, config, metadata),
                 {},
             )
         )
@@ -133,7 +140,7 @@ class DummyLightningStore(LightningStore):
     async def update_attempt(
         self,
         rollout_id: str,
-        attempt_id: str,
+        attempt_id: str | Literal["latest"],
         status: AttemptStatus | Any = UNSET,
         worker_id: str | Any = UNSET,
         last_heartbeat_time: float | Any = UNSET,
@@ -279,6 +286,7 @@ async def test_threaded_store_delegates_all_methods() -> None:
         "add_attempt": base_attempt,
         "query_rollouts": [base_rollout],
         "query_attempts": [base_attempt],
+        "get_rollout_by_id": base_rollout,
         "get_latest_attempt": base_attempt,
         "update_resources": resources_update,
         "get_resources_by_id": resources_update,
@@ -305,15 +313,18 @@ async def test_threaded_store_delegates_all_methods() -> None:
     )
     assert await threaded_store.dequeue_rollout() == attempted_rollout
     assert await threaded_store.add_attempt(rollout_id) == base_attempt
-    assert await threaded_store.query_rollouts(status=["preparing", "running"]) == [base_rollout]
+    assert await threaded_store.query_rollouts(status=["preparing", "running"], rollout_ids=[rollout_id]) == [
+        base_rollout
+    ]
     assert await threaded_store.query_attempts(rollout_id) == [base_attempt]
+    assert await threaded_store.get_rollout_by_id(rollout_id) == base_rollout
     assert await threaded_store.get_latest_attempt(rollout_id) == base_attempt
     assert await threaded_store.update_resources("resources-1", {}) == resources_update
     assert await threaded_store.get_resources_by_id("resources-1") == resources_update
     assert await threaded_store.get_latest_resources() == resources_update
     assert await threaded_store.add_span(span) == span
     assert await threaded_store.add_otel_span(rollout_id, attempt_id, readable_span, sequence_id=5) == span
-    assert await threaded_store.wait_for_rollouts([rollout_id], timeout=1.0) == [base_rollout]
+    assert await threaded_store.wait_for_rollouts(rollout_ids=[rollout_id], timeout=1.0) == [base_rollout]
     assert await threaded_store.get_next_span_sequence_id(rollout_id, attempt_id) == 42
     assert await threaded_store.query_spans(rollout_id, attempt_id="latest") == [span]
     assert (
@@ -346,6 +357,7 @@ async def test_threaded_store_delegates_all_methods() -> None:
         "add_attempt",
         "query_rollouts",
         "query_attempts",
+        "get_rollout_by_id",
         "get_latest_attempt",
         "update_resources",
         "get_resources_by_id",
