@@ -19,18 +19,19 @@ from agentlightning.types import (
     AttemptStatus,
     NamedResources,
     ResourcesUpdate,
+    RolloutConfig,
     RolloutStatus,
     RolloutV2,
     TaskInput,
 )
 
-from .base import UNSET, LightningStore, LightningStoreWatchDog, Unset
+from .base import UNSET, LightningStore, Unset
 
 logger = logging.getLogger(__name__)
 
 
 class RolloutRequest(BaseModel):
-    sample: TaskInput
+    input: TaskInput
     mode: Optional[Literal["train", "val", "test"]] = None
     resources_id: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
@@ -38,6 +39,7 @@ class RolloutRequest(BaseModel):
 
 class QueryRolloutsRequest(BaseModel):
     status: Optional[List[RolloutStatus]] = None
+    rollout_ids: Optional[List[str]] = None
 
 
 class WaitForRolloutsRequest(BaseModel):
@@ -55,6 +57,7 @@ class UpdateRolloutRequest(BaseModel):
     mode: Optional[Literal["train", "val", "test"]] = None
     resources_id: Optional[str] = None
     status: Optional[RolloutStatus] = None
+    config: Optional[RolloutConfig] = None
     metadata: Optional[Dict[str, Any]] = None
 
 
@@ -109,7 +112,7 @@ class LightningStoreServer(LightningStore):
         @self.app.post("/start_rollout", response_model=AttemptedRollout)
         async def start_rollout(request: RolloutRequest):  # pyright: ignore[reportUnusedFunction]
             return await self.store.start_rollout(
-                sample=request.sample,
+                input=request.input,
                 mode=request.mode,
                 resources_id=request.resources_id,
                 metadata=request.metadata,
@@ -118,7 +121,7 @@ class LightningStoreServer(LightningStore):
         @self.app.post("/enqueue_rollout", response_model=RolloutV2)
         async def enqueue_rollout(request: RolloutRequest):  # pyright: ignore[reportUnusedFunction]
             return await self.store.enqueue_rollout(
-                sample=request.sample,
+                input=request.input,
                 mode=request.mode,
                 resources_id=request.resources_id,
                 metadata=request.metadata,
@@ -128,7 +131,7 @@ class LightningStoreServer(LightningStore):
         async def dequeue_rollout():  # pyright: ignore[reportUnusedFunction]
             return await self.store.dequeue_rollout()
 
-        @self.app.post("/start_attempt", response_model=Attempt)
+        @self.app.post("/start_attempt", response_model=AttemptedRollout)
         async def start_attempt(request: RolloutId):  # pyright: ignore[reportUnusedFunction]
             return await self.store.start_attempt(request.rollout_id)
 
@@ -143,6 +146,10 @@ class LightningStoreServer(LightningStore):
         @self.app.get("/get_latest_attempt/{rollout_id}", response_model=Optional[Attempt])
         async def get_latest_attempt(rollout_id: str):  # pyright: ignore[reportUnusedFunction]
             return await self.store.get_latest_attempt(rollout_id)
+
+        @self.app.get("/get_rollout_by_id/{rollout_id}", response_model=Optional[RolloutV2])
+        async def get_rollout_by_id(rollout_id: str):  # pyright: ignore[reportUnusedFunction]
+            return await self.store.get_rollout_by_id(rollout_id)
 
         @self.app.post("/update_resources", response_model=ResourcesUpdate)
         async def update_resources(update: ResourcesUpdate):  # pyright: ignore[reportUnusedFunction]
@@ -169,9 +176,9 @@ class LightningStoreServer(LightningStore):
             return await self.store.wait_for_rollouts(rollout_ids=request.rollout_ids, timeout=request.timeout)
 
         @self.app.get("/query_spans/{rollout_id}", response_model=List[Span])
-        async def query_spans(
+        async def query_spans(  # pyright: ignore[reportUnusedFunction]
             rollout_id: str, attempt_id: Optional[str] = None
-        ):  # pyright: ignore[reportUnusedFunction]
+        ):
             return await self.store.query_spans(rollout_id, attempt_id)
 
         @self.app.post("/update_rollout", response_model=RolloutV2)
@@ -184,6 +191,7 @@ class LightningStoreServer(LightningStore):
                 mode=payload.get("mode", UNSET),
                 resources_id=payload.get("resources_id", UNSET),
                 status=payload.get("status", UNSET),
+                config=payload.get("config", UNSET),
                 metadata=payload.get("metadata", UNSET),
             )
 
@@ -204,36 +212,41 @@ class LightningStoreServer(LightningStore):
     # Delegate methods -------------------------------------------------
     async def start_rollout(
         self,
-        sample: TaskInput,
+        input: TaskInput,
         mode: Literal["train", "val", "test"] | None = None,
         resources_id: str | None = None,
         metadata: Dict[str, Any] | None = None,
     ) -> AttemptedRollout:
-        return await self.store.start_rollout(sample, mode, resources_id, metadata)
+        return await self.store.start_rollout(input, mode, resources_id, metadata)
 
     async def enqueue_rollout(
         self,
-        sample: TaskInput,
+        input: TaskInput,
         mode: Literal["train", "val", "test"] | None = None,
         resources_id: str | None = None,
         metadata: Dict[str, Any] | None = None,
     ) -> RolloutV2:
-        return await self.store.enqueue_rollout(sample, mode, resources_id, metadata)
+        return await self.store.enqueue_rollout(input, mode, resources_id, metadata)
 
     async def dequeue_rollout(self) -> Optional[AttemptedRollout]:
         return await self.store.dequeue_rollout()
 
-    async def start_attempt(self, rollout_id: str) -> Attempt:
+    async def start_attempt(self, rollout_id: str) -> AttemptedRollout:
         return await self.store.start_attempt(rollout_id)
 
-    async def query_rollouts(self, status: Optional[Sequence[RolloutStatus]] = None) -> List[RolloutV2]:
-        return await self.store.query_rollouts(status)
+    async def query_rollouts(
+        self, *, status: Optional[Sequence[RolloutStatus]] = None, rollout_ids: Optional[Sequence[str]] = None
+    ) -> List[RolloutV2]:
+        return await self.store.query_rollouts(status=status, rollout_ids=rollout_ids)
 
     async def query_attempts(self, rollout_id: str) -> List[Attempt]:
         return await self.store.query_attempts(rollout_id)
 
     async def get_latest_attempt(self, rollout_id: str) -> Optional[Attempt]:
         return await self.store.get_latest_attempt(rollout_id)
+
+    async def get_rollout_by_id(self, rollout_id: str) -> Optional[RolloutV2]:
+        return await self.store.get_rollout_by_id(rollout_id)
 
     async def update_resources(self, resources_id: str, resources: NamedResources) -> ResourcesUpdate:
         return await self.store.update_resources(resources_id, resources)
@@ -259,8 +272,8 @@ class LightningStoreServer(LightningStore):
     ) -> Span:
         return await self.store.add_otel_span(rollout_id, attempt_id, readable_span, sequence_id)
 
-    async def wait_for_rollouts(self, rollout_ids: List[str], timeout: Optional[float] = None) -> List[RolloutV2]:
-        return await self.store.wait_for_rollouts(rollout_ids, timeout)
+    async def wait_for_rollouts(self, *, rollout_ids: List[str], timeout: Optional[float] = None) -> List[RolloutV2]:
+        return await self.store.wait_for_rollouts(rollout_ids=rollout_ids, timeout=timeout)
 
     async def query_spans(
         self,
@@ -276,6 +289,7 @@ class LightningStoreServer(LightningStore):
         mode: Optional[Literal["train", "val", "test"]] | Unset = UNSET,
         resources_id: Optional[str] | Unset = UNSET,
         status: RolloutStatus | Unset = UNSET,
+        config: RolloutConfig | Unset = UNSET,
         metadata: Dict[str, Any] | Unset = UNSET,
     ) -> RolloutV2:
         return await self.store.update_rollout(
@@ -284,6 +298,7 @@ class LightningStoreServer(LightningStore):
             mode=mode,
             resources_id=resources_id,
             status=status,
+            config=config,
             metadata=metadata,
         )
 
@@ -309,8 +324,7 @@ class LightningStoreServer(LightningStore):
 class LightningStoreClient(LightningStore):
     """HTTP client that talks to a remote LightningStoreServer."""
 
-    def __init__(self, server_address: str, watchdog: LightningStoreWatchDog | None = None):
-        super().__init__(watchdog)
+    def __init__(self, server_address: str):
         self.server_address = server_address.rstrip("/")
         self.session: Optional[aiohttp.ClientSession] = None
 
@@ -327,13 +341,13 @@ class LightningStoreClient(LightningStore):
 
     async def start_rollout(
         self,
-        sample: TaskInput,
+        input: TaskInput,
         mode: Literal["train", "val", "test"] | None = None,
         resources_id: str | None = None,
         metadata: Dict[str, Any] | None = None,
     ) -> AttemptedRollout:
         session = await self._get_session()
-        request_data = RolloutRequest(sample=sample, mode=mode, resources_id=resources_id, metadata=metadata)
+        request_data = RolloutRequest(input=input, mode=mode, resources_id=resources_id, metadata=metadata)
 
         async with session.post(f"{self.server_address}/start_rollout", json=request_data.model_dump()) as response:
             response.raise_for_status()
@@ -342,13 +356,13 @@ class LightningStoreClient(LightningStore):
 
     async def enqueue_rollout(
         self,
-        sample: TaskInput,
+        input: TaskInput,
         mode: Literal["train", "val", "test"] | None = None,
         resources_id: str | None = None,
         metadata: Dict[str, Any] | None = None,
     ) -> RolloutV2:
         session = await self._get_session()
-        request_data = RolloutRequest(sample=sample, mode=mode, resources_id=resources_id, metadata=metadata)
+        request_data = RolloutRequest(input=input, mode=mode, resources_id=resources_id, metadata=metadata)
 
         async with session.post(f"{self.server_address}/enqueue_rollout", json=request_data.model_dump()) as response:
             response.raise_for_status()
@@ -363,18 +377,22 @@ class LightningStoreClient(LightningStore):
             data = await response.json()
             return AttemptedRollout.model_validate(data) if data else None
 
-    async def start_attempt(self, rollout_id: str) -> Attempt:
+    async def start_attempt(self, rollout_id: str) -> AttemptedRollout:
         session = await self._get_session()
         request_data = RolloutId(rollout_id=rollout_id)
 
         async with session.post(f"{self.server_address}/start_attempt", json=request_data.model_dump()) as response:
             response.raise_for_status()
             data = await response.json()
-            return Attempt.model_validate(data)
+            return AttemptedRollout.model_validate(data)
 
-    async def query_rollouts(self, status: Optional[Sequence[RolloutStatus]] = None) -> List[RolloutV2]:
+    async def query_rollouts(
+        self, *, status: Optional[Sequence[RolloutStatus]] = None, rollout_ids: Optional[Sequence[str]] = None
+    ) -> List[RolloutV2]:
         session = await self._get_session()
-        request_data = QueryRolloutsRequest(status=list(status) if status else None)
+        request_data = QueryRolloutsRequest(
+            status=list(status) if status else None, rollout_ids=list(rollout_ids) if rollout_ids else None
+        )
 
         async with session.post(f"{self.server_address}/query_rollouts", json=request_data.model_dump()) as response:
             response.raise_for_status()
@@ -396,6 +414,14 @@ class LightningStoreClient(LightningStore):
             response.raise_for_status()
             data = await response.json()
             return Attempt.model_validate(data) if data else None
+
+    async def get_rollout_by_id(self, rollout_id: str) -> Optional[RolloutV2]:
+        session = await self._get_session()
+
+        async with session.get(f"{self.server_address}/get_rollout_by_id/{rollout_id}") as response:
+            response.raise_for_status()
+            data = await response.json()
+            return RolloutV2.model_validate(data) if data else None
 
     async def update_resources(self, resources_id: str, resources: NamedResources) -> ResourcesUpdate:
         session = await self._get_session()
@@ -458,7 +484,7 @@ class LightningStoreClient(LightningStore):
         await self.add_span(span)
         return span
 
-    async def wait_for_rollouts(self, rollout_ids: List[str], timeout: Optional[float] = None) -> List[RolloutV2]:
+    async def wait_for_rollouts(self, *, rollout_ids: List[str], timeout: Optional[float] = None) -> List[RolloutV2]:
         session = await self._get_session()
         request_data = WaitForRolloutsRequest(rollout_ids=rollout_ids, timeout=timeout)
 
@@ -490,6 +516,7 @@ class LightningStoreClient(LightningStore):
         mode: Optional[Literal["train", "val", "test"]] | Unset = UNSET,
         resources_id: Optional[str] | Unset = UNSET,
         status: RolloutStatus | Unset = UNSET,
+        config: RolloutConfig | Unset = UNSET,
         metadata: Dict[str, Any] | Unset = UNSET,
     ) -> RolloutV2:
         session = await self._get_session()
@@ -503,6 +530,8 @@ class LightningStoreClient(LightningStore):
             payload["resources_id"] = resources_id
         if not isinstance(status, Unset):
             payload["status"] = status
+        if not isinstance(config, Unset):
+            payload["config"] = config.model_dump()
         if not isinstance(metadata, Unset):
             payload["metadata"] = metadata
 

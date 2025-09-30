@@ -1,15 +1,16 @@
 # Copyright (c) Microsoft. All rights reserved.
 
 import time
-from unittest.mock import AsyncMock, Mock, patch
+from typing import List, Optional, cast
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.store.utils import healthcheck, propagate_status
 from agentlightning.types import (
     Attempt,
     AttemptedRollout,
+    AttemptStatus,
     RolloutConfig,
 )
 
@@ -25,7 +26,7 @@ from agentlightning.types import (
     ],
 )
 @pytest.mark.asyncio
-async def test_propagate_status_direct_statuses(status, expected_call) -> None:
+async def test_propagate_status_direct_statuses(status: AttemptStatus, expected_call: AttemptStatus) -> None:
     """Test propagate_status directly propagates preparing/running/succeeded statuses."""
     attempt = Attempt(
         rollout_id="test-rollout", attempt_id="test-attempt", sequence_id=1, start_time=time.time(), status=status
@@ -51,7 +52,7 @@ async def test_propagate_status_direct_statuses(status, expected_call) -> None:
 )
 @pytest.mark.asyncio
 async def test_propagate_status_retry_logic(
-    status, in_retry_condition, sequence_id, max_attempts, expected_call
+    status: AttemptStatus, in_retry_condition: bool, sequence_id: int, max_attempts: int, expected_call: AttemptStatus
 ) -> None:
     """Test propagate_status retry logic for different combinations."""
     attempt = Attempt(
@@ -62,7 +63,7 @@ async def test_propagate_status_retry_logic(
         status=status,
     )
 
-    retry_condition = [status] if in_retry_condition else []
+    retry_condition: List[AttemptStatus] = [status] if in_retry_condition else []
     config = RolloutConfig(max_attempts=max_attempts, retry_condition=retry_condition)
     update_rollout_mock = AsyncMock()
 
@@ -79,7 +80,7 @@ async def test_propagate_status_invalid_status() -> None:
         rollout_id="test-rollout", attempt_id="test-attempt", sequence_id=1, start_time=time.time(), status="failed"
     )
     # Bypass Pydantic validation by directly setting the attribute
-    attempt.status = "invalid_status"  # Invalid status
+    attempt.status = cast(AttemptStatus, "invalid_status")  # Invalid status
 
     config = RolloutConfig()
     update_rollout_mock = AsyncMock()
@@ -167,7 +168,10 @@ async def test_healthcheck_multiple_rollouts_different_timeouts() -> None:
 )
 @pytest.mark.asyncio
 async def test_healthcheck_timeout_configurations(
-    timeout_seconds, unresponsive_seconds, should_timeout, should_unresponsive
+    timeout_seconds: Optional[float],
+    unresponsive_seconds: Optional[float],
+    should_timeout: bool,
+    should_unresponsive: bool,
 ) -> None:
     """Test healthcheck with various timeout configurations."""
     current_time = time.time()
@@ -309,7 +313,7 @@ async def test_healthcheck_skips_rollouts_without_attempts() -> None:
     )
 
     # Bypass Pydantic validation by directly setting the attribute
-    rollout.attempt = None  # No attempt
+    rollout.attempt = cast(Attempt, None)  # No attempt
 
     update_rollout_mock = AsyncMock()
     update_attempt_mock = AsyncMock()
