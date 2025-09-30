@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import multiprocessing
+import os
 import signal
 import time
 from contextlib import suppress
@@ -217,8 +218,10 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
     ) -> None:
         """Invoke ``action`` on each process while suppressing individual failures."""
         for process in processes:
-            with suppress(Exception):
+            try:
                 action(process)
+            except Exception:
+                logger.exception("Error signaling process %s (pid=%s)", process.name, process.pid)
 
     def _shutdown_processes(
         self,
@@ -239,24 +242,18 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
         if not alive:
             return
 
-        phase_desc = "cooperative wait"
-        sigint = getattr(signal, "SIGINT", None)
-        if sigint is not None:
-            logger.warning(
-                "Subprocesses still alive after cooperative wait; sending SIGINT to %s",
-                ", ".join(p.name or str(p.pid) for p in alive),
-            )
-            self._signal_processes(alive, lambda p: p.send_signal(sigint))  # type: ignore
-            alive = self._join_until_deadline(alive, self.terminate_timeout)
-            if not alive:
-                return
-            phase_desc = "SIGINT wait"
-        else:
-            logger.debug("SIGINT not available on this platform; skipping KeyboardInterrupt escalation step")
+        logger.warning(
+            "Subprocesses still alive after cooperative wait; sending SIGINT to %s",
+            ", ".join(p.name or str(p.pid) for p in alive),
+        )
+        # SIGINT is not reliable on Windows, but we do not consider such case yet.
+        self._signal_processes(alive, lambda p: os.kill(cast(int, p.pid), signal.SIGINT))
+        alive = self._join_until_deadline(alive, self.terminate_timeout)
+        if not alive:
+            return
 
         logger.warning(
-            "Subprocesses still alive after %s; sending terminate() to %s",
-            phase_desc,
+            "Subprocesses still alive after SIGINT wait; sending terminate() to %s",
             ", ".join(p.name or str(p.pid) for p in alive),
         )
         self._signal_processes(alive, lambda p: p.terminate())

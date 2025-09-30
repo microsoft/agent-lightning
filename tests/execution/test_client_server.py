@@ -236,8 +236,8 @@ def test_shutdown_processes_phase2_sigint() -> None:
     strat = ClientServerExecutionStrategy(
         role="runner",
         server_port=_free_port(),
-        graceful_timeout=0.02,
-        terminate_timeout=0.05,
+        graceful_timeout=1.0,
+        terminate_timeout=1.0,
     )
     ctx = get_context()
 
@@ -248,6 +248,37 @@ def test_shutdown_processes_phase2_sigint() -> None:
         signal.signal(signal.SIGINT, on_sigint)
         while True:
             time.sleep(0.1)
+
+    p: Process = ctx.Process(target=target, name="sigint-exit")
+    p.start()
+    try:
+        strat._shutdown_processes([p], DummyEvt())
+        assert not p.is_alive() and p.exitcode == 0
+    finally:
+        if p.is_alive():
+            p.terminate()
+        p.join()
+
+
+def test_shutdown_processes_phase2_try_catch() -> None:
+    """
+    Process survives cooperative window, exits cleanly on SIGINT.
+    """
+    strat = ClientServerExecutionStrategy(
+        role="runner",
+        server_port=_free_port(),
+        graceful_timeout=1.0,
+        terminate_timeout=1.0,
+    )
+    ctx = get_context()
+
+    def target() -> None:
+        try:
+            while True:
+                time.sleep(0.1)
+        except KeyboardInterrupt:
+            print("keyboard interrupt")
+            return
 
     p: Process = ctx.Process(target=target, name="sigint-exit")
     p.start()
@@ -637,8 +668,9 @@ def test_execute_both_main_runner_debug_cooperative_shutdown(store: LightningSto
         n_runners=1,
         server_host="127.0.0.1",
         server_port=port,
-        graceful_timeout=0.05,
-        terminate_timeout=0.05,
+        # Allow a generous timeout to ensure the server starts
+        graceful_timeout=5.0,
+        terminate_timeout=5.0,
     )
     strat.execute(algorithm=algo, runner=runner, store=store)
 
