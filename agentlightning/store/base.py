@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import functools
-import time
-from typing import Any, Callable, Dict, List, Literal, Optional, Sequence, TypeVar, cast
+from typing import Any, Dict, List, Literal, Optional, Sequence
 
 from opentelemetry.sdk.trace import ReadableSpan
 

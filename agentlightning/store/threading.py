@@ -37,23 +37,23 @@ class LightningStoreThreaded(LightningStore):
 
     async def start_rollout(
         self,
-        sample: TaskInput,
+        input: TaskInput,
         mode: Literal["train", "val", "test"] | None = None,
         resources_id: str | None = None,
         metadata: Dict[str, Any] | None = None,
     ) -> AttemptedRollout:
         with self._lock:
-            return await self.store.start_rollout(sample, mode, resources_id, metadata)
+            return await self.store.start_rollout(input, mode, resources_id, metadata)
 
     async def enqueue_rollout(
         self,
-        sample: TaskInput,
+        input: TaskInput,
         mode: Literal["train", "val", "test"] | None = None,
         resources_id: str | None = None,
         metadata: Dict[str, Any] | None = None,
     ) -> RolloutV2:
         with self._lock:
-            return await self.store.enqueue_rollout(sample, mode, resources_id, metadata)
+            return await self.store.enqueue_rollout(input, mode, resources_id, metadata)
 
     async def dequeue_rollout(self) -> Optional[AttemptedRollout]:
         with self._lock:

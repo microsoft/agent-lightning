@@ -16,7 +16,7 @@ Test categories:
 import asyncio
 import time
 from typing import List
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import Mock
 
 import pytest
 
@@ -24,12 +24,9 @@ from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.tracer import Span
 from agentlightning.types import (
     LLM,
-    Attempt,
-    AttemptStatus,
     PromptTemplate,
     ResourcesUpdate,
     RolloutConfig,
-    RolloutStatus,
     RolloutV2,
 )
 

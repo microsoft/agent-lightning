@@ -30,33 +30,33 @@ class DummyLightningStore(LightningStore):
         self.calls: List[tuple[str, tuple[Any, ...], Dict[str, Any]]] = []
         self.return_values = return_values
 
-    async def add_rollout(
+    async def start_rollout(
         self,
-        sample: TaskInput,
+        input: TaskInput,
         mode: Optional[str] = None,
         resources_id: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> AttemptedRollout:
-        self.calls.append(("add_rollout", (sample, mode, resources_id, metadata), {}))
-        return self.return_values["add_rollout"]
+        self.calls.append(("start_rollout", (input, mode, resources_id, metadata), {}))
+        return self.return_values["start_rollout"]
 
     async def enqueue_rollout(
         self,
-        sample: TaskInput,
+        input: TaskInput,
         mode: Optional[str] = None,
         resources_id: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> RolloutV2:
-        self.calls.append(("enqueue_rollout", (sample, mode, resources_id, metadata), {}))
+        self.calls.append(("enqueue_rollout", (input, mode, resources_id, metadata), {}))
         return self.return_values["enqueue_rollout"]
 
     async def dequeue_rollout(self) -> Optional[AttemptedRollout]:
         self.calls.append(("dequeue_rollout", (), {}))
         return self.return_values["dequeue_rollout"]
 
-    async def add_attempt(self, rollout_id: str) -> Attempt:
-        self.calls.append(("add_attempt", (rollout_id,), {}))
-        return self.return_values["add_attempt"]
+    async def start_attempt(self, rollout_id: str) -> AttemptedRollout:
+        self.calls.append(("start_attempt", (rollout_id,), {}))
+        return self.return_values["start_attempt"]
 
     async def query_rollouts(
         self, *, status: Optional[Sequence[RolloutStatus]] = None, rollout_ids: Optional[Sequence[str]] = None
@@ -280,10 +280,10 @@ async def test_threaded_store_delegates_all_methods() -> None:
     )
 
     return_values = {
-        "add_rollout": attempted_rollout,
+        "start_rollout": attempted_rollout,
         "enqueue_rollout": base_rollout,
         "dequeue_rollout": attempted_rollout,
-        "add_attempt": base_attempt,
+        "start_attempt": attempted_rollout,
         "query_rollouts": [base_rollout],
         "query_attempts": [base_attempt],
         "get_rollout_by_id": base_rollout,
@@ -304,7 +304,7 @@ async def test_threaded_store_delegates_all_methods() -> None:
     threaded_store = LightningStoreThreaded(dummy_store)
 
     assert (
-        await threaded_store.add_rollout(task_input, mode="train", resources_id="resources-1", metadata={"a": 1})
+        await threaded_store.start_rollout(task_input, mode="train", resources_id="resources-1", metadata={"a": 1})
         == attempted_rollout
     )
     assert (
@@ -312,7 +312,7 @@ async def test_threaded_store_delegates_all_methods() -> None:
         == base_rollout
     )
     assert await threaded_store.dequeue_rollout() == attempted_rollout
-    assert await threaded_store.add_attempt(rollout_id) == base_attempt
+    assert await threaded_store.start_attempt(rollout_id) == attempted_rollout
     assert await threaded_store.query_rollouts(status=["preparing", "running"], rollout_ids=[rollout_id]) == [
         base_rollout
     ]
@@ -351,10 +351,10 @@ async def test_threaded_store_delegates_all_methods() -> None:
     )
 
     expected_order = [
-        "add_rollout",
+        "start_rollout",
         "enqueue_rollout",
         "dequeue_rollout",
-        "add_attempt",
+        "start_attempt",
         "query_rollouts",
         "query_attempts",
         "get_rollout_by_id",
