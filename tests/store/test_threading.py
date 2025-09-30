@@ -126,7 +126,7 @@ class DummyLightningStore(LightningStore):
         resources_id: Optional[str] | Any = UNSET,
         status: RolloutStatus | Any = UNSET,
         config: Any = UNSET,
-        metadata: Dict[str, Any] | Any = UNSET,
+        metadata: Optional[Dict[str, Any]] | Any = UNSET,
     ) -> RolloutV2:
         self.calls.append(
             (
@@ -144,7 +144,7 @@ class DummyLightningStore(LightningStore):
         status: AttemptStatus | Any = UNSET,
         worker_id: str | Any = UNSET,
         last_heartbeat_time: float | Any = UNSET,
-        metadata: Dict[str, Any] | Any = UNSET,
+        metadata: Optional[Dict[str, Any]] | Any = UNSET,
     ) -> Attempt:
         self.calls.append(
             (

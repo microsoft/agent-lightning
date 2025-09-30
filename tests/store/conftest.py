@@ -4,6 +4,7 @@ import time
 from unittest.mock import Mock
 
 import pytest
+from opentelemetry.sdk.trace import ReadableSpan
 
 from agentlightning.store.memory import InMemoryLightningStore
 
@@ -20,7 +21,7 @@ def store() -> InMemoryLightningStore:
 
 
 @pytest.fixture
-def mock_readable_span() -> Mock:
+def mock_readable_span() -> ReadableSpan:
     """Create a mock ReadableSpan for testing."""
     span = Mock()
     span.name = "test_span"

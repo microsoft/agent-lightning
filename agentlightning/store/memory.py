@@ -8,7 +8,7 @@ import logging
 import time
 import uuid
 from collections import deque
-from typing import Any, Callable, Dict, List, Literal, Optional, Sequence, TypeVar, cast
+from typing import Any, Callable, Counter, Dict, List, Literal, Optional, Sequence, TypeVar, cast
 
 from opentelemetry.sdk.trace import ReadableSpan
 
@@ -86,6 +86,7 @@ class InMemoryLightningStore(LightningStore):
 
         # Spans storage
         self._spans: Dict[str, List[Span]] = {}  # rollout_id -> list of spans
+        self._span_sequence_ids: Dict[str, int] = Counter()  # rollout_id -> sequence_id
 
         # Attempt tracking
         self._attempts: Dict[str, List[Attempt]] = {}  # rollout_id -> list of attempts
@@ -337,16 +338,17 @@ class InMemoryLightningStore(LightningStore):
     async def get_next_span_sequence_id(self, rollout_id: str, attempt_id: str) -> int:
         """
         Get the next span sequence ID for a given rollout and attempt.
+        The number is strictly increasing for each rollout.
+        The store will not issue the same sequence ID twice.
         """
         async with self._lock:
-            if rollout_id not in self._spans:
-                return 1
-            existing_spans = [span for span in self._spans[rollout_id] if span.attempt_id == attempt_id]
-            return len(existing_spans) + 1
+            self._span_sequence_ids[rollout_id] += 1
+            return self._span_sequence_ids[rollout_id]
 
     async def add_span(self, span: Span) -> Span:
         """Persist a pre-converted span."""
         async with self._lock:
+            self._span_sequence_ids[span.rollout_id] = max(self._span_sequence_ids[span.rollout_id], span.sequence_id)
             return await self._add_span_unlocked(span)
 
     async def add_otel_span(
@@ -355,11 +357,14 @@ class InMemoryLightningStore(LightningStore):
         """Add an opentelemetry span to the store."""
         async with self._lock:
             if sequence_id is None:
-                if rollout_id not in self._spans:
-                    sequence_id = 1
-                else:
-                    existing_spans = [span for span in self._spans[rollout_id] if span.attempt_id == attempt_id]
-                    sequence_id = len(existing_spans) + 1
+                # Issue a new sequence ID for the rollout
+                self._span_sequence_ids[rollout_id] += 1
+                sequence_id = self._span_sequence_ids[rollout_id]
+            else:
+                # Comes from a provided sequence ID
+                # Make sure our counter is strictly increasing
+                self._span_sequence_ids[rollout_id] = max(self._span_sequence_ids[rollout_id], sequence_id)
+
             span = Span.from_opentelemetry(
                 readable_span, rollout_id=rollout_id, attempt_id=attempt_id, sequence_id=sequence_id
             )
@@ -457,7 +462,7 @@ class InMemoryLightningStore(LightningStore):
         resources_id: Optional[str] | Unset = UNSET,
         status: RolloutStatus | Unset = UNSET,
         config: RolloutConfig | Unset = UNSET,
-        metadata: Dict[str, Any] | Unset = UNSET,
+        metadata: Optional[Dict[str, Any]] | Unset = UNSET,
     ) -> RolloutV2:
         """
         Update the rollout status and related metadata.
@@ -481,7 +486,7 @@ class InMemoryLightningStore(LightningStore):
         status: AttemptStatus | Unset = UNSET,
         worker_id: str | Unset = UNSET,
         last_heartbeat_time: float | Unset = UNSET,
-        metadata: Dict[str, Any] | Unset = UNSET,
+        metadata: Optional[Dict[str, Any]] | Unset = UNSET,
     ) -> Attempt:
         """
         Update a specific or latest attempt for a given rollout.
@@ -506,7 +511,7 @@ class InMemoryLightningStore(LightningStore):
         resources_id: Optional[str] | Unset = UNSET,
         status: RolloutStatus | Unset = UNSET,
         config: RolloutConfig | Unset = UNSET,
-        metadata: Dict[str, Any] | Unset = UNSET,
+        metadata: Optional[Dict[str, Any]] | Unset = UNSET,
     ) -> RolloutV2:
         # No lock inside this one.
         rollout = self._rollouts.get(rollout_id)
@@ -525,11 +530,7 @@ class InMemoryLightningStore(LightningStore):
         if not isinstance(config, Unset):
             rollout.config = config
         if not isinstance(metadata, Unset):
-            # Merge metadata
-            if rollout.metadata:
-                rollout.metadata = {**rollout.metadata, **metadata}
-            else:
-                rollout.metadata = metadata
+            rollout.metadata = metadata
 
         # Set end time for finished rollouts
         # Rollout is only finished when it succeeded or fail with no more retries.
@@ -555,7 +556,7 @@ class InMemoryLightningStore(LightningStore):
         status: AttemptStatus | Unset = UNSET,
         worker_id: str | Unset = UNSET,
         last_heartbeat_time: float | Unset = UNSET,
-        metadata: Dict[str, Any] | Unset = UNSET,
+        metadata: Optional[Dict[str, Any]] | Unset = UNSET,
     ) -> Attempt:
         # No lock, but with status propagation.
         rollout = self._rollouts.get(rollout_id)
@@ -587,11 +588,7 @@ class InMemoryLightningStore(LightningStore):
         if not isinstance(last_heartbeat_time, Unset):
             attempt.last_heartbeat_time = last_heartbeat_time
         if not isinstance(metadata, Unset):
-            # Merge metadata
-            if attempt.metadata:
-                attempt.metadata = {**attempt.metadata, **metadata}
-            else:
-                attempt.metadata = metadata
+            attempt.metadata = metadata
 
         # Re-validate the attempt to ensure legality
         Attempt.model_validate(attempt.model_dump())

@@ -102,7 +102,7 @@ class Attempt(BaseModel):
     last_heartbeat_time: Optional[float] = None  # last time when the worker has reported progress
 
     # A bucket for any other relevant information
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    metadata: Optional[Dict[str, Any]] = None
 
 
 class RolloutConfig(BaseModel):
@@ -133,7 +133,7 @@ class RolloutV2(BaseModel):
     config: RolloutConfig = Field(default_factory=RolloutConfig)
 
     # A bucket for any other relevant information
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    metadata: Optional[Dict[str, Any]] = None
 
 
 class AttemptedRollout(RolloutV2):

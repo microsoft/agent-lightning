@@ -211,7 +211,7 @@ class LightningStore:
         resources_id: Optional[str] | Unset = UNSET,
         status: RolloutStatus | Unset = UNSET,
         config: RolloutConfig | Unset = UNSET,
-        metadata: Dict[str, Any] | Unset = UNSET,
+        metadata: Optional[Dict[str, Any]] | Unset = UNSET,
     ) -> RolloutV2:
         """
         Update the rollout status and related metadata.
@@ -228,7 +228,7 @@ class LightningStore:
             resources_id: New resources ID for the rollout. If set, will be updated. Can be updated to None
             status: New status for the rollout. If set, will be updated
             config: New config for the rollout. If set, will be updated
-            metadata: Dictionary of additional metadata to update. If set, will be merged with existing metadata
+            metadata: Dictionary of additional metadata to update. If set, will replace the existing metadata
         """
         raise NotImplementedError()
 
@@ -239,7 +239,7 @@ class LightningStore:
         status: AttemptStatus | Unset = UNSET,
         worker_id: str | Unset = UNSET,
         last_heartbeat_time: float | Unset = UNSET,
-        metadata: Dict[str, Any] | Unset = UNSET,
+        metadata: Optional[Dict[str, Any]] | Unset = UNSET,
     ) -> Attempt:
         """
         Update a specific or latest attempt for a given rollout.
@@ -253,6 +253,6 @@ class LightningStore:
             status: Status to set for the attempt, update if provided
             worker_id: Worker identifier, update if provided
             last_heartbeat_time: Timestamp of the last heartbeat from the worker
-            metadata: Dictionary of additional metadata to update, will be merged with existing metadata
+            metadata: Dictionary of additional metadata to update, will replace the existing metadata
         """
         raise NotImplementedError()

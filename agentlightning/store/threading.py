@@ -134,7 +134,7 @@ class LightningStoreThreaded(LightningStore):
         resources_id: Optional[str] | Unset = UNSET,
         status: RolloutStatus | Unset = UNSET,
         config: RolloutConfig | Unset = UNSET,
-        metadata: Dict[str, Any] | Unset = UNSET,
+        metadata: Optional[Dict[str, Any]] | Unset = UNSET,
     ) -> RolloutV2:
         with self._lock:
             return await self.store.update_rollout(
@@ -154,7 +154,7 @@ class LightningStoreThreaded(LightningStore):
         status: AttemptStatus | Unset = UNSET,
         worker_id: str | Unset = UNSET,
         last_heartbeat_time: float | Unset = UNSET,
-        metadata: Dict[str, Any] | Unset = UNSET,
+        metadata: Optional[Dict[str, Any]] | Unset = UNSET,
     ) -> Attempt:
         with self._lock:
             return await self.store.update_attempt(

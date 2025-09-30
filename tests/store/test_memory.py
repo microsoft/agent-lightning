@@ -199,6 +199,7 @@ async def test_update_rollout_fields(store: InMemoryLightningStore) -> None:
     assert updated.config.unresponsive_seconds == 30.0
     assert updated.config.max_attempts == 3
     assert updated.config.retry_condition == ["timeout", "unresponsive"]
+    assert updated.metadata is not None
     assert updated.metadata["custom_field"] == "custom_value"
 
 
@@ -429,18 +430,18 @@ async def test_span_sequence_generation(store: InMemoryLightningStore, mock_read
     assert seq_id == 1
 
     span1 = await store.add_otel_span(rollout.rollout_id, attempt_id, mock_readable_span)
-    assert span1.sequence_id == 1
+    assert span1.sequence_id == 2
 
-    # Next span gets sequence_id 2
+    # Next span gets sequence_id 3
     seq_id = await store.get_next_span_sequence_id(rollout.rollout_id, attempt_id)
-    assert seq_id == 2
+    assert seq_id == 3
 
     span2 = await store.add_otel_span(rollout.rollout_id, attempt_id, mock_readable_span)
-    assert span2.sequence_id == 2
+    assert span2.sequence_id == 4
 
-    # Different attempt starts from 1
+    # Different attempt reuses the same rollout_id
     seq_id = await store.get_next_span_sequence_id(rollout.rollout_id, "attempt-2")
-    assert seq_id == 1
+    assert seq_id == 5
 
 
 @pytest.mark.asyncio
@@ -456,9 +457,8 @@ async def test_span_with_explicit_sequence_id(store: InMemoryLightningStore, moc
     span = await store.add_otel_span(rollout.rollout_id, attempt_id, mock_readable_span, sequence_id=100)
     assert span.sequence_id == 100
 
-    # Next auto-generated should not be affected by explicit IDs
     next_seq = await store.get_next_span_sequence_id(rollout.rollout_id, attempt_id)
-    assert next_seq == 2  # Only one span added so far
+    assert next_seq == 101
 
 
 @pytest.mark.asyncio
@@ -832,6 +832,7 @@ async def test_update_attempt_fields(store: InMemoryLightningStore) -> None:
     assert updated.status == "running"
     assert updated.worker_id == "worker-123"
     assert updated.last_heartbeat_time is not None
+    assert updated.metadata is not None
     assert updated.metadata["custom"] == "value"
 
 

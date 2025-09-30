@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, Dict, List, Literal, Optional, Sequence
+from typing import Any, Dict, List, Literal, Optional, Sequence, Union
 
 import aiohttp
 import uvicorn
 from fastapi import FastAPI
 from opentelemetry.sdk.trace import ReadableSpan
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from agentlightning.tracer import Span
 from agentlightning.types import (
@@ -57,21 +57,21 @@ class RolloutId(BaseModel):
 
 class UpdateRolloutRequest(BaseModel):
     rollout_id: str
-    input: TaskInput
-    mode: Optional[Literal["train", "val", "test"]]
-    resources_id: Optional[str]
-    status: RolloutStatus
-    config: RolloutConfig
-    metadata: Dict[str, Any]
+    input: Union[TaskInput, PydanticUnset] = Field(default_factory=PydanticUnset)
+    mode: Union[Optional[Literal["train", "val", "test"]], PydanticUnset] = Field(default_factory=PydanticUnset)
+    resources_id: Union[Optional[str], PydanticUnset] = Field(default_factory=PydanticUnset)
+    status: Union[RolloutStatus, PydanticUnset] = Field(default_factory=PydanticUnset)
+    config: Union[RolloutConfig, PydanticUnset] = Field(default_factory=PydanticUnset)
+    metadata: Union[Dict[str, Any], PydanticUnset] = Field(default_factory=PydanticUnset)
 
 
 class UpdateAttemptRequest(BaseModel):
     rollout_id: str
-    attempt_id: str | Literal["latest"]
-    status: AttemptStatus
-    worker_id: str
-    last_heartbeat_time: float
-    metadata: Dict[str, Any]
+    attempt_id: Union[str, Literal["latest"]]
+    status: Union[AttemptStatus, PydanticUnset] = Field(default_factory=PydanticUnset)
+    worker_id: Union[str, PydanticUnset] = Field(default_factory=PydanticUnset)
+    last_heartbeat_time: Union[float, PydanticUnset] = Field(default_factory=PydanticUnset)
+    metadata: Union[Dict[str, Any], PydanticUnset] = Field(default_factory=PydanticUnset)
 
 
 class LightningStoreServer(LightningStore):
@@ -173,7 +173,15 @@ class LightningStoreServer(LightningStore):
 
         @self.app.get("/get_next_span_sequence_id/{rollout_id}/{attempt_id}", response_model=int)
         async def get_next_span_sequence_id(rollout_id: str, attempt_id: str):  # pyright: ignore[reportUnusedFunction]
-            return await self.store.get_next_span_sequence_id(rollout_id, attempt_id)
+            result = await self.store.get_next_span_sequence_id(rollout_id, attempt_id)
+            # print process id and thread id
+            import os
+            import threading
+
+            print(f"process id: {os.getpid()}")
+            print(f"thread id: {threading.get_ident()}")
+            print(f"get_next_span_sequence_id: {result}")
+            return result
 
         @self.app.post("/wait_for_rollouts", response_model=List[RolloutV2])
         async def wait_for_rollouts(request: WaitForRolloutsRequest):  # pyright: ignore[reportUnusedFunction]
@@ -187,30 +195,31 @@ class LightningStoreServer(LightningStore):
 
         @self.app.post("/update_rollout", response_model=RolloutV2)
         async def update_rollout(request: UpdateRolloutRequest):  # pyright: ignore[reportUnusedFunction]
-            payload = request.model_dump(exclude_unset=True)
-            rollout_id = payload.pop("rollout_id")
-            return await self.store.update_rollout(
+            rollout_id = request.rollout_id
+            print(request)
+            result = await self.store.update_rollout(
                 rollout_id=rollout_id,
-                input=payload.get("input", UNSET),
-                mode=payload.get("mode", UNSET),
-                resources_id=payload.get("resources_id", UNSET),
-                status=payload.get("status", UNSET),
-                config=payload.get("config", UNSET),
-                metadata=payload.get("metadata", UNSET),
+                input=request.input if not isinstance(request.input, PydanticUnset) else UNSET,
+                mode=request.mode if not isinstance(request.mode, PydanticUnset) else UNSET,
+                resources_id=request.resources_id if not isinstance(request.resources_id, PydanticUnset) else UNSET,
+                status=request.status if not isinstance(request.status, PydanticUnset) else UNSET,
+                config=request.config if not isinstance(request.config, PydanticUnset) else UNSET,
+                metadata=request.metadata if not isinstance(request.metadata, PydanticUnset) else UNSET,
             )
+            print(result)
+            return result
 
         @self.app.post("/update_attempt", response_model=Attempt)
         async def update_attempt(request: UpdateAttemptRequest):  # pyright: ignore[reportUnusedFunction]
-            payload = request.model_dump(exclude_unset=True)
-            rollout_id = payload.pop("rollout_id")
-            attempt_id = payload.pop("attempt_id")
             return await self.store.update_attempt(
-                rollout_id=rollout_id,
-                attempt_id=attempt_id,
-                status=payload.get("status", UNSET),
-                worker_id=payload.get("worker_id", UNSET),
-                last_heartbeat_time=payload.get("last_heartbeat_time", UNSET),
-                metadata=payload.get("metadata", UNSET),
+                rollout_id=request.rollout_id,
+                attempt_id=request.attempt_id,
+                status=request.status if not isinstance(request.status, PydanticUnset) else UNSET,
+                worker_id=request.worker_id if not isinstance(request.worker_id, PydanticUnset) else UNSET,
+                last_heartbeat_time=(
+                    request.last_heartbeat_time if not isinstance(request.last_heartbeat_time, PydanticUnset) else UNSET
+                ),
+                metadata=request.metadata if not isinstance(request.metadata, PydanticUnset) else UNSET,
             )
 
     # Delegate methods -------------------------------------------------
@@ -294,7 +303,7 @@ class LightningStoreServer(LightningStore):
         resources_id: Optional[str] | Unset = UNSET,
         status: RolloutStatus | Unset = UNSET,
         config: RolloutConfig | Unset = UNSET,
-        metadata: Dict[str, Any] | Unset = UNSET,
+        metadata: Optional[Dict[str, Any]] | Unset = UNSET,
     ) -> RolloutV2:
         return await self.store.update_rollout(
             rollout_id=rollout_id,
@@ -313,7 +322,7 @@ class LightningStoreServer(LightningStore):
         status: AttemptStatus | Unset = UNSET,
         worker_id: str | Unset = UNSET,
         last_heartbeat_time: float | Unset = UNSET,
-        metadata: Dict[str, Any] | Unset = UNSET,
+        metadata: Optional[Dict[str, Any]] | Unset = UNSET,
     ) -> Attempt:
         return await self.store.update_attempt(
             rollout_id=rollout_id,
@@ -490,6 +499,10 @@ class LightningStoreClient(LightningStore):
 
     async def wait_for_rollouts(self, *, rollout_ids: List[str], timeout: Optional[float] = None) -> List[RolloutV2]:
         session = await self._get_session()
+        if timeout is not None and timeout > 0.1:
+            raise ValueError(
+                "Timeout must be less than 0.1 seconds in LightningStoreClient to avoid blocking the event loop"
+            )
         request_data = WaitForRolloutsRequest(rollout_ids=rollout_ids, timeout=timeout)
 
         async with session.post(f"{self.server_address}/wait_for_rollouts", json=request_data.model_dump()) as response:
@@ -521,7 +534,7 @@ class LightningStoreClient(LightningStore):
         resources_id: Optional[str] | Unset = UNSET,
         status: RolloutStatus | Unset = UNSET,
         config: RolloutConfig | Unset = UNSET,
-        metadata: Dict[str, Any] | Unset = UNSET,
+        metadata: Optional[Dict[str, Any]] | Unset = UNSET,
     ) -> RolloutV2:
         session = await self._get_session()
 
@@ -551,7 +564,7 @@ class LightningStoreClient(LightningStore):
         status: AttemptStatus | Unset = UNSET,
         worker_id: str | Unset = UNSET,
         last_heartbeat_time: float | Unset = UNSET,
-        metadata: Dict[str, Any] | Unset = UNSET,
+        metadata: Optional[Dict[str, Any]] | Unset = UNSET,
     ) -> Attempt:
         session = await self._get_session()
 
