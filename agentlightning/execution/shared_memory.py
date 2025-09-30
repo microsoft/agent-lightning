@@ -4,7 +4,8 @@ import asyncio
 import logging
 import threading
 from contextlib import suppress
-from typing import Any, Awaitable, Callable, List, Literal, Tuple
+from queue import SimpleQueue
+from typing import Any, Awaitable, Callable, List, Literal, Optional, Tuple
 
 from agentlightning.store.base import LightningStore
 from agentlightning.store.threading import LightningStoreThreaded
@@ -41,6 +42,7 @@ class SharedMemoryExecutionStrategy(ExecutionStrategy):
         main_thread: Literal["algorithm", "runner"] = "runner",
         join_timeout: float = 15.0,
         graceful_delay: float = 5.0,
+        poll_interval: float = 0.05,
     ) -> None:
         if main_thread not in ("algorithm", "runner"):
             raise ValueError("main_thread must be 'algorithm' or 'runner'")
@@ -50,6 +52,7 @@ class SharedMemoryExecutionStrategy(ExecutionStrategy):
         self.main_thread = main_thread
         self.join_timeout = join_timeout
         self.graceful_delay = graceful_delay
+        self.poll_interval = poll_interval
 
     async def _run_until_completed_or_canceled(self, coro: Awaitable[Any], stop_evt: Event) -> Any:
         """Run `coro` until it finishes or a cooperative stop is requested.
@@ -57,7 +60,7 @@ class SharedMemoryExecutionStrategy(ExecutionStrategy):
         Control flow:
           1) Start the bundle coroutine as `task`.
           2) Start a watcher task that waits for `stop_evt` *without blocking* the loop
-             (using `asyncio.to_thread(stop_evt.wait)`).
+             by periodically polling the threading event.
           3) When the stop event flips:
                a) Give the bundle *graceful_delay* seconds to finish on its own,
                   because well-behaved bundles will check the event and return.
@@ -68,10 +71,17 @@ class SharedMemoryExecutionStrategy(ExecutionStrategy):
         frequently; cooperative shutdown (checking `stop_evt` yourself) is still preferred.
         """
         task: asyncio.Task[Any] = asyncio.create_task(coro)  # type: ignore
+        task_exception: Optional[BaseException] = None
 
         async def watcher() -> None:
-            # Block in a thread so we don't block the event loop.
-            await asyncio.to_thread(stop_evt.wait)
+            # Poll the threading event without blocking the event loop. Using a
+            # background thread via ``asyncio.to_thread`` makes cancellation
+            # difficult because ``ThreadingEvent.wait`` is not interruptible.
+            # Instead we cooperatively check the flag from the loop so the
+            # watcher task stays cancellable and tests don't hang when the
+            # bundle finishes naturally before the stop event is set.
+            while not stop_evt.is_set():
+                await asyncio.sleep(self.poll_interval)
 
             # Grace period: let a cooperative bundle exit on its own.
             try:
@@ -108,39 +118,67 @@ class SharedMemoryExecutionStrategy(ExecutionStrategy):
                 try:
                     await asyncio.wait_for(task, timeout=self.graceful_delay)  # second chance
                 except asyncio.TimeoutError:
-                    logger.error("Bundle task did not stop after cancellation; abandoning task.")
+                    logger.error(
+                        "Bundle task did not stop after cancellation; abandoning task."
+                        "This thread could live until the process exits."
+                    )
                     # We return without awaiting it. asyncio.run will still try to cancel
                     # pending tasks on loop close; if the task ignores cancellation, this
                     # thread may still stick. It's the best we can do in Python.
+                    # We don't raise an exception here, but the thread could be a zombie.
                     return result
             else:
                 # Task completed naturally; retrieve result.
-                with suppress(asyncio.CancelledError):
+                try:
                     result = await task  # type: ignore
+                except asyncio.CancelledError:
+                    pass
+                except BaseException as exc:
+                    task_exception = exc
 
             watcher_task.cancel()
             with suppress(asyncio.CancelledError):
                 await watcher_task
 
+        if task_exception is not None:
+            raise task_exception
+
         return result  # type: ignore
 
-    def _run_algorithm(self, algorithm: AlgorithmBundle, store: LightningStore, stop_evt: Event) -> None:
+    def _run_algorithm(
+        self,
+        algorithm: AlgorithmBundle,
+        store: LightningStore,
+        stop_evt: Event,
+        thread_exceptions: Optional[SimpleQueue[BaseException]],
+    ) -> None:
         try:
             asyncio.run(self._run_until_completed_or_canceled(algorithm(store, stop_evt), stop_evt))
         except asyncio.CancelledError:
             logger.info("Algorithm bundle canceled due to stop signal.")
-        except BaseException:
+        except BaseException as exc:
             logger.exception("Algorithm bundle crashed; signaling stop to others.")
+            if thread_exceptions is not None:
+                thread_exceptions.put(exc)
             stop_evt.set()
             raise
 
-    def _run_runner(self, runner: RunnerBundle, store: LightningStore, worker_id: int, stop_evt: Event) -> None:
+    def _run_runner(
+        self,
+        runner: RunnerBundle,
+        store: LightningStore,
+        worker_id: int,
+        stop_evt: Event,
+        thread_exceptions: Optional[SimpleQueue[BaseException]],
+    ) -> None:
         try:
             asyncio.run(self._run_until_completed_or_canceled(runner(store, worker_id, stop_evt), stop_evt))
         except asyncio.CancelledError:
             logger.info("Runner bundle (worker_id=%s) canceled due to stop signal.", worker_id)
-        except BaseException:
+        except BaseException as exc:
             logger.exception("Runner bundle crashed (worker_id=%s); signaling stop to others.", worker_id)
+            if thread_exceptions is not None:
+                thread_exceptions.put(exc)
             stop_evt.set()
             raise
 
@@ -154,6 +192,9 @@ class SharedMemoryExecutionStrategy(ExecutionStrategy):
         # Create stop event and thread-safe store.
         stop_evt = ThreadingEvent()
         thread_safe_store = LightningStoreThreaded(store)
+
+        thread_exceptions: SimpleQueue[BaseException] = SimpleQueue()
+        raised_from_thread: Optional[BaseException] = None
 
         def make_thread(name: str, target: Callable[..., Any], args: Tuple[Any, ...]) -> threading.Thread:
             t = threading.Thread(name=name, target=target, args=args, daemon=True)
@@ -169,12 +210,13 @@ class SharedMemoryExecutionStrategy(ExecutionStrategy):
                     thread = make_thread(
                         name=f"runner-{i}",
                         target=self._run_runner,
-                        args=(runner, thread_safe_store, i, stop_evt),
+                        args=(runner, thread_safe_store, i, stop_evt, thread_exceptions),
                     )
                     threads.append(thread)
 
                 # Ctrl+C here raises KeyboardInterrupt on this stack.
-                self._run_algorithm(algorithm, thread_safe_store, stop_evt)
+                # Main thread doesn't need to collect exceptions.
+                self._run_algorithm(algorithm, thread_safe_store, stop_evt, None)
 
                 # If algo finishes naturally, request runners to stop.
                 stop_evt.set()
@@ -184,15 +226,19 @@ class SharedMemoryExecutionStrategy(ExecutionStrategy):
                 thread = make_thread(
                     name="algorithm",
                     target=self._run_algorithm,
-                    args=(algorithm, thread_safe_store, stop_evt),
+                    args=(algorithm, thread_safe_store, stop_evt, thread_exceptions),
                 )
                 threads.append(thread)
 
                 # Ctrl+C here raises KeyboardInterrupt on this stack.
-                self._run_runner(runner, thread_safe_store, 0, stop_evt)
+                # Main thread doesn't need to collect exceptions.
+                self._run_runner(runner, thread_safe_store, 0, stop_evt, None)
 
                 # If runner finishes naturally, WAIT FOR ALGORITHM TO FINISH.
                 thread.join()
+
+            if not thread_exceptions.empty():
+                raised_from_thread = thread_exceptions.get()
 
         except KeyboardInterrupt:
             logger.warning("KeyboardInterrupt received on main thread; initiating cooperative shutdown...")
@@ -210,3 +256,9 @@ class SharedMemoryExecutionStrategy(ExecutionStrategy):
                     self.join_timeout,
                     ", ".join(alive),
                 )
+
+            if raised_from_thread is None and not thread_exceptions.empty():
+                raised_from_thread = thread_exceptions.get()
+
+        if raised_from_thread is not None:
+            raise raised_from_thread

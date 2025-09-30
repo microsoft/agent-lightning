@@ -12,9 +12,7 @@ from agentlightning.execution.shared_memory import SharedMemoryExecutionStrategy
 
 from ..store.dummy_store import DummyLightningStore, minimal_dummy_store
 
-# -------------------------
 # Fixtures & tiny utilities
-# -------------------------
 
 
 @pytest.fixture
@@ -29,9 +27,7 @@ def tiny_sleep(seconds: float) -> float:
     return time.monotonic() - start
 
 
-# -------------------------
 # Helper bundles for tests
-# -------------------------
 
 
 def make_cooperative_algorithm(
@@ -99,9 +95,7 @@ def make_slow_cleanup_on_cancel_coro(cleanup_time: float):
     return _coro()
 
 
-# -------------------------
 # Unit tests: _run_until_completed_or_canceled
-# -------------------------
 
 
 def test_run_until_completes_naturally(caplog):
@@ -186,12 +180,10 @@ def test_run_until_second_chance_timeout_logs_and_returns(caplog):
     assert any("did not stop after cancellation; abandoning task" in rec.message for rec in caplog.records)
 
 
-# -------------------------
 # Unit tests: _run_algorithm and _run_runner
-# -------------------------
 
 
-def test__run_algorithm_sets_stop_on_exception(store):
+def test_run_algorithm_sets_stop_on_exception(store):
     strat = SharedMemoryExecutionStrategy()
 
     evt = ThreadingEvent()
@@ -201,12 +193,12 @@ def test__run_algorithm_sets_stop_on_exception(store):
         raise ValueError("algo crash")
 
     with pytest.raises(ValueError):
-        strat._run_algorithm(boom, store, evt)
+        strat._run_algorithm(boom, store, evt, None)
 
     assert evt.is_set(), "stop_evt must be set when algorithm raises"
 
 
-def test__run_runner_sets_stop_on_exception(store):
+def test_run_runner_sets_stop_on_exception(store):
     strat = SharedMemoryExecutionStrategy()
 
     evt = ThreadingEvent()
@@ -216,14 +208,12 @@ def test__run_runner_sets_stop_on_exception(store):
         raise RuntimeError("runner crash")
 
     with pytest.raises(RuntimeError):
-        strat._run_runner(boom, store, 0, evt)
+        strat._run_runner(boom, store, 0, evt, None)
 
     assert evt.is_set(), "stop_evt must be set when a runner raises"
 
 
-# -------------------------
 # Integration tests: execute(...)
-# -------------------------
 
 
 def test_execute_main_algorithm_normal_stop_sets_event(store):
