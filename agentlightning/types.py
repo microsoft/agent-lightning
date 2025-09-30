@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Any, Dict, Generic, List, Literal, Optional, Protocol, TypeVar, Union
+from typing import Annotated, Any, Callable, Dict, Generic, List, Literal, Optional, Protocol, TypeVar, Union, cast
 
 from opentelemetry.sdk.trace import ReadableSpan
 from pydantic import BaseModel, Field, model_validator
@@ -23,6 +23,12 @@ __all__ = [
     "GenericResponse",
     "ParallelWorkerBase",
     "Dataset",
+    "AttemptStatus",
+    "RolloutStatus",
+    "RolloutConfig",
+    "RolloutV2",
+    "Attempt",
+    "AttemptedRollout",
 ]
 
 T_co = TypeVar("T_co", covariant=True)
@@ -111,7 +117,9 @@ class RolloutConfig(BaseModel):
     timeout_seconds: Optional[float] = None  # none indicates no timeout
     unresponsive_seconds: Optional[float] = None  # none indicates no unresponsive timeout
     max_attempts: int = Field(default=1, ge=1)  # including the first attempt
-    retry_condition: List[AttemptStatus] = Field(default_factory=list)  # list of statuses that should trigger a retry
+    retry_condition: List[AttemptStatus] = Field(
+        default_factory=cast(Callable[[], List[AttemptStatus]], list)
+    )  # list of statuses that should trigger a retry
 
 
 class RolloutV2(BaseModel):
