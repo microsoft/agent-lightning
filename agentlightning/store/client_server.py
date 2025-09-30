@@ -30,6 +30,10 @@ from .base import UNSET, LightningStore, Unset
 logger = logging.getLogger(__name__)
 
 
+class PydanticUnset(BaseModel):
+    _type: Literal["UNSET"] = "UNSET"
+
+
 class RolloutRequest(BaseModel):
     input: TaskInput
     mode: Optional[Literal["train", "val", "test"]] = None
@@ -53,21 +57,21 @@ class RolloutId(BaseModel):
 
 class UpdateRolloutRequest(BaseModel):
     rollout_id: str
-    input: Optional[TaskInput] = None
-    mode: Optional[Literal["train", "val", "test"]] = None
-    resources_id: Optional[str] = None
-    status: Optional[RolloutStatus] = None
-    config: Optional[RolloutConfig] = None
-    metadata: Optional[Dict[str, Any]] = None
+    input: TaskInput
+    mode: Optional[Literal["train", "val", "test"]]
+    resources_id: Optional[str]
+    status: RolloutStatus
+    config: RolloutConfig
+    metadata: Dict[str, Any]
 
 
 class UpdateAttemptRequest(BaseModel):
     rollout_id: str
     attempt_id: str | Literal["latest"]
-    status: Optional[AttemptStatus] = None
-    worker_id: Optional[str] = None
-    last_heartbeat_time: Optional[float] = None
-    metadata: Optional[Dict[str, Any]] = None
+    status: AttemptStatus
+    worker_id: str
+    last_heartbeat_time: float
+    metadata: Dict[str, Any]
 
 
 class LightningStoreServer(LightningStore):
