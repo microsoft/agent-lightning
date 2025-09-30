@@ -173,15 +173,7 @@ class LightningStoreServer(LightningStore):
 
         @self.app.get("/get_next_span_sequence_id/{rollout_id}/{attempt_id}", response_model=int)
         async def get_next_span_sequence_id(rollout_id: str, attempt_id: str):  # pyright: ignore[reportUnusedFunction]
-            result = await self.store.get_next_span_sequence_id(rollout_id, attempt_id)
-            # print process id and thread id
-            import os
-            import threading
-
-            print(f"process id: {os.getpid()}")
-            print(f"thread id: {threading.get_ident()}")
-            print(f"get_next_span_sequence_id: {result}")
-            return result
+            return await self.store.get_next_span_sequence_id(rollout_id, attempt_id)
 
         @self.app.post("/wait_for_rollouts", response_model=List[RolloutV2])
         async def wait_for_rollouts(request: WaitForRolloutsRequest):  # pyright: ignore[reportUnusedFunction]
@@ -195,10 +187,8 @@ class LightningStoreServer(LightningStore):
 
         @self.app.post("/update_rollout", response_model=RolloutV2)
         async def update_rollout(request: UpdateRolloutRequest):  # pyright: ignore[reportUnusedFunction]
-            rollout_id = request.rollout_id
-            print(request)
-            result = await self.store.update_rollout(
-                rollout_id=rollout_id,
+            return await self.store.update_rollout(
+                rollout_id=request.rollout_id,
                 input=request.input if not isinstance(request.input, PydanticUnset) else UNSET,
                 mode=request.mode if not isinstance(request.mode, PydanticUnset) else UNSET,
                 resources_id=request.resources_id if not isinstance(request.resources_id, PydanticUnset) else UNSET,
@@ -206,8 +196,6 @@ class LightningStoreServer(LightningStore):
                 config=request.config if not isinstance(request.config, PydanticUnset) else UNSET,
                 metadata=request.metadata if not isinstance(request.metadata, PydanticUnset) else UNSET,
             )
-            print(result)
-            return result
 
         @self.app.post("/update_attempt", response_model=Attempt)
         async def update_attempt(request: UpdateAttemptRequest):  # pyright: ignore[reportUnusedFunction]
