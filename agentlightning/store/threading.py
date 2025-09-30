@@ -111,8 +111,8 @@ class LightningStoreThreaded(LightningStore):
             return await self.store.add_otel_span(rollout_id, attempt_id, readable_span, sequence_id)
 
     async def wait_for_rollouts(self, *, rollout_ids: List[str], timeout: Optional[float] = None) -> List[RolloutV2]:
-        with self._lock:
-            return await self.store.wait_for_rollouts(rollout_ids=rollout_ids, timeout=timeout)
+        # This method does not change the state of the store, and it's not thread-safe.
+        return await self.store.wait_for_rollouts(rollout_ids=rollout_ids, timeout=timeout)
 
     async def get_next_span_sequence_id(self, rollout_id: str, attempt_id: str) -> int:
         with self._lock:

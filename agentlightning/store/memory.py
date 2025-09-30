@@ -8,8 +8,7 @@ import logging
 import time
 import uuid
 from collections import deque
-from contextlib import asynccontextmanager
-from typing import Any, AsyncGenerator, Callable, Dict, List, Literal, Optional, Sequence, TypeVar, cast
+from typing import Any, Callable, Dict, List, Literal, Optional, Sequence, TypeVar, cast
 
 from opentelemetry.sdk.trace import ReadableSpan
 
@@ -93,14 +92,6 @@ class InMemoryLightningStore(LightningStore):
 
         # Completion tracking for wait_for_rollouts
         self._completion_events: Dict[str, asyncio.Event] = {}
-
-    @asynccontextmanager
-    async def lock(self) -> AsyncGenerator[None, None]:
-        """
-        Acquire the lock.
-        """
-        async with self._lock:
-            yield
 
     @_healthcheck_wrapper
     async def start_rollout(
@@ -356,44 +347,52 @@ class InMemoryLightningStore(LightningStore):
     async def add_span(self, span: Span) -> Span:
         """Persist a pre-converted span."""
         async with self._lock:
-            rollout = self._rollouts.get(span.rollout_id)
-            if not rollout:
-                raise ValueError(f"Rollout {span.rollout_id} not found")
-            attempts = self._attempts.get(span.rollout_id, [])
-            current_attempt = next((a for a in attempts if a.attempt_id == span.attempt_id), None)
-            latest_attempt = max(attempts, key=lambda a: a.sequence_id) if attempts else None
-            if not current_attempt:
-                raise ValueError(f"Attempt {span.attempt_id} not found for rollout {span.rollout_id}")
-            if not latest_attempt:
-                raise ValueError(f"No attempts found for rollout {span.rollout_id}")
-
-            if span.rollout_id not in self._spans:
-                self._spans[span.rollout_id] = []
-            self._spans[span.rollout_id].append(span)
-
-            # Update attempt heartbeat
-            current_attempt.last_heartbeat_time = time.time()
-            if current_attempt.status == "preparing":
-                current_attempt.status = "running"
-
-            # If the status has already timed out or failed, do not change it
-
-            # Update rollout status if it's the latest attempt
-            if rollout.status == "preparing" and current_attempt == latest_attempt:
-                rollout.status = "running"
-
-            return span
+            return await self._add_span_unlocked(span)
 
     async def add_otel_span(
         self, rollout_id: str, attempt_id: str, readable_span: ReadableSpan, sequence_id: int | None = None
     ) -> Span:
         """Add an opentelemetry span to the store."""
-        if sequence_id is None:
-            sequence_id = await self.get_next_span_sequence_id(rollout_id, attempt_id)
-        span = Span.from_opentelemetry(
-            readable_span, rollout_id=rollout_id, attempt_id=attempt_id, sequence_id=sequence_id
-        )
-        await self.add_span(span)
+        async with self._lock:
+            if sequence_id is None:
+                if rollout_id not in self._spans:
+                    sequence_id = 1
+                else:
+                    existing_spans = [span for span in self._spans[rollout_id] if span.attempt_id == attempt_id]
+                    sequence_id = len(existing_spans) + 1
+            span = Span.from_opentelemetry(
+                readable_span, rollout_id=rollout_id, attempt_id=attempt_id, sequence_id=sequence_id
+            )
+            await self._add_span_unlocked(span)
+            return span
+
+    async def _add_span_unlocked(self, span: Span) -> Span:
+        rollout = self._rollouts.get(span.rollout_id)
+        if not rollout:
+            raise ValueError(f"Rollout {span.rollout_id} not found")
+        attempts = self._attempts.get(span.rollout_id, [])
+        current_attempt = next((a for a in attempts if a.attempt_id == span.attempt_id), None)
+        latest_attempt = max(attempts, key=lambda a: a.sequence_id) if attempts else None
+        if not current_attempt:
+            raise ValueError(f"Attempt {span.attempt_id} not found for rollout {span.rollout_id}")
+        if not latest_attempt:
+            raise ValueError(f"No attempts found for rollout {span.rollout_id}")
+
+        if span.rollout_id not in self._spans:
+            self._spans[span.rollout_id] = []
+        self._spans[span.rollout_id].append(span)
+
+        # Update attempt heartbeat
+        current_attempt.last_heartbeat_time = time.time()
+        if current_attempt.status == "preparing":
+            current_attempt.status = "running"
+
+        # If the status has already timed out or failed, do not change it
+
+        # Update rollout status if it's the latest attempt
+        if rollout.status == "preparing" and current_attempt == latest_attempt:
+            rollout.status = "running"
+
         return span
 
     @_healthcheck_wrapper
@@ -401,6 +400,8 @@ class InMemoryLightningStore(LightningStore):
         """
         Wait for specified rollouts to complete with a timeout.
         Returns the completed rollouts, potentially incomplete if timeout is reached.
+
+        This method does not change the state of the store.
         """
         completed_rollouts: List[RolloutV2] = []
 
@@ -531,6 +532,7 @@ class InMemoryLightningStore(LightningStore):
                 rollout.metadata = metadata
 
         # Set end time for finished rollouts
+        # Rollout is only finished when it succeeded or fail with no more retries.
         if status is not UNSET and is_finished(rollout):
             rollout.end_time = time.time()
             # Signal completion
