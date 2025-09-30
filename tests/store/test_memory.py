@@ -20,10 +20,18 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from agentlightning.store.base import LightningStoreWatchDog
 from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.tracer import Span
-from agentlightning.types import LLM, Attempt, AttemptStatus, PromptTemplate, ResourcesUpdate, RolloutStatus, RolloutV2
+from agentlightning.types import (
+    LLM,
+    Attempt,
+    AttemptStatus,
+    PromptTemplate,
+    ResourcesUpdate,
+    RolloutConfig,
+    RolloutStatus,
+    RolloutV2,
+)
 
 # Core CRUD Operations Tests
 
@@ -107,16 +115,80 @@ async def test_query_rollouts_by_status(store: InMemoryLightningStore) -> None:
 
 
 @pytest.mark.asyncio
+async def test_get_rollout_by_id(store: InMemoryLightningStore) -> None:
+    """Test retrieving rollouts by their ID."""
+    # Test getting non-existent rollout
+    rollout = await store.get_rollout_by_id("nonexistent")
+    assert rollout is None
+
+    # Create a rollout
+    created = await store.enqueue_rollout(sample={"test": "data"}, mode="train")
+
+    # Retrieve by ID
+    retrieved = await store.get_rollout_by_id(created.rollout_id)
+    assert retrieved is not None
+    assert retrieved.rollout_id == created.rollout_id
+    assert retrieved.input == created.input
+    assert retrieved.mode == created.mode
+    assert retrieved.status == created.status
+
+    # Update rollout and verify changes are reflected
+    await store.update_rollout(rollout_id=created.rollout_id, status="running")
+    updated = await store.get_rollout_by_id(created.rollout_id)
+    assert updated is not None
+    assert updated.status == "running"
+
+
+@pytest.mark.asyncio
+async def test_query_rollouts_by_rollout_ids(store: InMemoryLightningStore) -> None:
+    """Test querying rollouts filtered by rollout IDs."""
+    # Create multiple rollouts
+    r1 = await store.enqueue_rollout(sample={"id": 1})
+    r2 = await store.enqueue_rollout(sample={"id": 2})
+    r3 = await store.enqueue_rollout(sample={"id": 3})
+
+    # Query by specific IDs
+    selected = await store.query_rollouts(rollout_ids=[r1.rollout_id, r3.rollout_id])
+    assert len(selected) == 2
+    selected_ids = {r.rollout_id for r in selected}
+    assert selected_ids == {r1.rollout_id, r3.rollout_id}
+
+    # Query by single ID
+    single = await store.query_rollouts(rollout_ids=[r2.rollout_id])
+    assert len(single) == 1
+    assert single[0].rollout_id == r2.rollout_id
+
+    # Query by non-existent ID
+    none = await store.query_rollouts(rollout_ids=["nonexistent"])
+    assert len(none) == 0
+
+    # Combine with status filter
+    await store.update_rollout(rollout_id=r1.rollout_id, status="succeeded")
+    await store.update_rollout(rollout_id=r2.rollout_id, status="failed")
+
+    filtered = await store.query_rollouts(
+        rollout_ids=[r1.rollout_id, r2.rollout_id, r3.rollout_id], status=["succeeded", "queuing"]
+    )
+    assert len(filtered) == 2
+    filtered_ids = {r.rollout_id for r in filtered}
+    assert filtered_ids == {r1.rollout_id, r3.rollout_id}  # r1 succeeded, r3 still queuing
+
+
+@pytest.mark.asyncio
 async def test_update_rollout_fields(store: InMemoryLightningStore) -> None:
     """Test updating various rollout fields."""
     rollout = await store.enqueue_rollout(sample={"test": "data"})
 
-    # Update multiple fields at once
+    # Update multiple fields at once including config
+    config = RolloutConfig(
+        timeout_seconds=60.0, unresponsive_seconds=30.0, max_attempts=3, retry_condition=["timeout", "unresponsive"]
+    )
     await store.update_rollout(
         rollout_id=rollout.rollout_id,
         status="running",
         mode="train",
         resources_id="new-resources",
+        config=config,
         metadata={"custom_field": "custom_value"},
     )
 
@@ -126,7 +198,50 @@ async def test_update_rollout_fields(store: InMemoryLightningStore) -> None:
     assert updated.status == "running"
     assert updated.mode == "train"
     assert updated.resources_id == "new-resources"
+    assert updated.config.timeout_seconds == 60.0
+    assert updated.config.unresponsive_seconds == 30.0
+    assert updated.config.max_attempts == 3
+    assert updated.config.retry_condition == ["timeout", "unresponsive"]
     assert updated.metadata["custom_field"] == "custom_value"
+
+
+@pytest.mark.asyncio
+async def test_rollout_config_functionality(store: InMemoryLightningStore) -> None:
+    """Test RolloutConfig controls retry and timeout behavior."""
+    # Create rollout with specific retry configuration
+    config = RolloutConfig(
+        timeout_seconds=30.0,
+        unresponsive_seconds=15.0,
+        max_attempts=2,
+        retry_condition=["timeout", "unresponsive", "failed"],
+    )
+
+    rollout = await store.enqueue_rollout(sample={"test": "retry"})
+    await store.update_rollout(rollout_id=rollout.rollout_id, config=config)
+
+    # Verify config is stored
+    stored = await store.get_rollout_by_id(rollout.rollout_id)
+    assert stored is not None
+    assert stored.config.timeout_seconds == 30.0
+    assert stored.config.max_attempts == 2
+    assert "failed" in stored.config.retry_condition
+
+    # Test that different rollouts can have different configs
+    config2 = RolloutConfig(timeout_seconds=120.0, max_attempts=5, retry_condition=["timeout"])
+
+    rollout2 = await store.enqueue_rollout(sample={"test": "different_config"})
+    await store.update_rollout(rollout_id=rollout2.rollout_id, config=config2)
+
+    stored2 = await store.get_rollout_by_id(rollout2.rollout_id)
+    assert stored2 is not None
+    assert stored2.config.timeout_seconds == 120.0
+    assert stored2.config.max_attempts == 5
+    assert stored2.config.retry_condition == ["timeout"]
+
+    # Verify first rollout config unchanged
+    stored1_again = await store.get_rollout_by_id(rollout.rollout_id)
+    assert stored1_again is not None
+    assert stored1_again.config.timeout_seconds == 30.0
 
 
 # Queue Operations Tests
@@ -449,7 +564,7 @@ async def test_wait_for_rollouts(store: InMemoryLightningStore) -> None:
 
     # Start waiting for r1 and r2
     async def wait_for_completion() -> List[RolloutV2]:
-        return await store.wait_for_rollouts([r1.rollout_id, r2.rollout_id], timeout=5.0)
+        return await store.wait_for_rollouts(rollout_ids=[r1.rollout_id, r2.rollout_id], timeout=5.0)
 
     wait_task = asyncio.create_task(wait_for_completion())
     await asyncio.sleep(0.01)  # Let wait task start
@@ -473,7 +588,7 @@ async def test_wait_timeout(store: InMemoryLightningStore) -> None:
     rollout = await store.enqueue_rollout(sample={"test": "data"})
 
     start = time.time()
-    completed = await store.wait_for_rollouts([rollout.rollout_id], timeout=0.1)
+    completed = await store.wait_for_rollouts(rollout_ids=[rollout.rollout_id], timeout=0.1)
     elapsed = time.time() - start
 
     assert elapsed < 0.2  # Should timeout quickly
@@ -643,7 +758,7 @@ async def test_query_latest_with_no_spans(store: InMemoryLightningStore) -> None
 @pytest.mark.asyncio
 async def test_wait_for_nonexistent_rollout(store: InMemoryLightningStore) -> None:
     """Test waiting for non-existent rollout handles gracefully."""
-    completed = await store.wait_for_rollouts(["nonexistent"], timeout=0.1)
+    completed = await store.wait_for_rollouts(rollout_ids=["nonexistent"], timeout=0.1)
     assert len(completed) == 0
 
 
@@ -762,6 +877,12 @@ async def test_update_attempt_sets_end_time_for_terminal_status(store: InMemoryL
     assert failed.end_time is not None
     assert failed.end_time >= failed.start_time
 
+    rollout = await store.get_rollout_by_id(rollout_id=rollout.rollout_id)
+    assert rollout is not None
+    assert rollout.status == "failed"
+    assert rollout.end_time is not None
+    assert rollout.end_time >= failed.end_time
+
 
 @pytest.mark.asyncio
 async def test_rollout_retry_lifecycle_updates_statuses(
@@ -833,6 +954,77 @@ async def test_update_nonexistent_attempt(store: InMemoryLightningStore) -> None
 
     with pytest.raises(ValueError, match="No attempts found"):
         await store.update_attempt(rollout_id=rollout.rollout_id, attempt_id="nonexistent", status="failed")
+
+
+@pytest.mark.asyncio
+async def test_healthcheck_timeout_behavior(store: InMemoryLightningStore, mock_readable_span: Mock) -> None:
+    """Test that healthcheck detects and handles timeout conditions."""
+    # Create rollout with short timeout configuration
+    config = RolloutConfig(
+        timeout_seconds=0.1, max_attempts=2, retry_condition=["timeout"]  # Very short timeout for testing
+    )
+
+    rollout = await store.enqueue_rollout(sample={"test": "timeout"})
+    await store.update_rollout(rollout_id=rollout.rollout_id, config=config)
+
+    # Dequeue to create an attempt and add span to make it running
+    attempted = await store.dequeue_rollout()
+    assert attempted is not None
+    await store.add_otel_span(rollout.rollout_id, attempted.attempt.attempt_id, mock_readable_span)
+
+    # Verify it's running
+    running_rollouts = await store.query_rollouts(status=["running"])
+    assert len(running_rollouts) == 1
+
+    # Wait for timeout to occur
+    await asyncio.sleep(0.15)  # Wait longer than timeout_seconds
+
+    # Trigger healthcheck by calling any decorated method
+    # Verify the attempt was marked as timeout and rollout was requeued
+    attempts = await store.query_attempts(rollout.rollout_id)
+    assert len(attempts) == 1
+    assert attempts[0].status == "timeout"
+
+    # Since retry_condition includes "timeout" and max_attempts=2, should requeue
+    rollout_after = await store.get_rollout_by_id(rollout.rollout_id)
+    assert rollout_after is not None
+    assert rollout_after.status == "requeuing"
+
+
+@pytest.mark.asyncio
+async def test_healthcheck_unresponsive_behavior(store: InMemoryLightningStore, mock_readable_span: Mock) -> None:
+    """Test that healthcheck detects and handles unresponsive conditions."""
+    # Create rollout with short unresponsive timeout but no retry for unresponsive
+    config = RolloutConfig(
+        unresponsive_seconds=0.1,  # Very short unresponsive timeout
+        max_attempts=3,
+        retry_condition=["timeout"],  # Note: "unresponsive" not in retry_condition
+    )
+
+    rollout = await store.enqueue_rollout(sample={"test": "unresponsive"})
+    await store.update_rollout(rollout_id=rollout.rollout_id, config=config)
+
+    # Dequeue and add span to make it running (this sets last_heartbeat_time)
+    attempted = await store.dequeue_rollout()
+    assert attempted is not None
+    await store.add_otel_span(rollout.rollout_id, attempted.attempt.attempt_id, mock_readable_span)
+
+    # Verify it's running and has heartbeat
+    running_attempts = await store.query_attempts(rollout.rollout_id)
+    assert running_attempts[0].status == "running"
+    assert running_attempts[0].last_heartbeat_time is not None
+
+    # Wait for unresponsive timeout
+    await asyncio.sleep(0.15)  # Wait longer than unresponsive_seconds
+
+    # Verify attempt was marked as unresponsive
+    attempts_after = await store.query_attempts(rollout.rollout_id)
+    assert attempts_after[0].status == "unresponsive"
+
+    # Since "unresponsive" not in retry_condition, rollout should be failed
+    rollout_after = await store.get_rollout_by_id(rollout.rollout_id)
+    assert rollout_after is not None
+    assert rollout_after.status == "failed"
 
 
 # Full Lifecycle Integration Tests

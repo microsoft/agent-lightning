@@ -20,14 +20,14 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from agentlightning.store.base import LightningStoreWatchDog
+# from agentlightning.store.base import LightningStoreWatchDog  # TODO: Re-enable when watchdog is implemented
 from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.tracer import Span
 from agentlightning.types import LLM, Attempt, AttemptStatus, PromptTemplate, ResourcesUpdate, RolloutStatus, RolloutV2
 
 __all__ = [
     "store",
-    "store_with_watchdog",
+    # "store_with_watchdog",  # TODO: Re-enable when watchdog is implemented
     "mock_readable_span",
 ]
 
@@ -38,16 +38,17 @@ def store() -> InMemoryLightningStore:
     return InMemoryLightningStore()
 
 
-@pytest.fixture
-def store_with_watchdog() -> InMemoryLightningStore:
-    """Create a store with watchdog configured."""
-    watchdog = LightningStoreWatchDog(
-        timeout_seconds=5.0,
-        unresponsive_seconds=2.0,
-        max_attempts=3,
-        retry_condition=["unresponsive", "timeout"],
-    )
-    return InMemoryLightningStore(watchdog=watchdog)
+# TODO: Re-enable when watchdog is implemented
+# @pytest.fixture
+# def store_with_watchdog() -> InMemoryLightningStore:
+#     """Create a store with watchdog configured."""
+#     watchdog = LightningStoreWatchDog(
+#         timeout_seconds=5.0,
+#         unresponsive_seconds=2.0,
+#         max_attempts=3,
+#         retry_condition=["unresponsive", "timeout"],
+#     )
+#     return InMemoryLightningStore(watchdog=watchdog)
 
 
 @pytest.fixture

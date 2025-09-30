@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import logging
 import time
 import uuid
 from collections import deque
@@ -29,6 +30,8 @@ from .base import UNSET, LightningStore, Unset, is_finished, is_queuing
 from .utils import healthcheck, propagate_status
 
 T_callable = TypeVar("T_callable", bound=Callable[..., Any])
+
+logger = logging.getLogger(__name__)
 
 
 def _healthcheck_wrapper(func: T_callable) -> T_callable:
@@ -444,10 +447,6 @@ class InMemoryLightningStore(LightningStore):
         Update a specific or latest attempt for a given rollout.
         """
         async with self._lock:
-            rollout = self._rollouts.get(rollout_id)
-            if not rollout:
-                raise ValueError(f"Rollout {rollout_id} not found")
-
             attempt = await self._update_attempt_unlocked(
                 rollout_id=rollout_id,
                 attempt_id=attempt_id,
@@ -456,10 +455,6 @@ class InMemoryLightningStore(LightningStore):
                 last_heartbeat_time=last_heartbeat_time,
                 metadata=metadata,
             )
-
-        await propagate_status(
-            lambda rollout_id, status: self._update_rollout_unlocked(rollout_id, status=status), attempt, rollout.config
-        )
 
         return attempt
 
@@ -521,7 +516,11 @@ class InMemoryLightningStore(LightningStore):
         last_heartbeat_time: float | Unset = UNSET,
         metadata: Dict[str, Any] | Unset = UNSET,
     ) -> Attempt:
-        # No lock. No status propagation.
+        # No lock, but with status propagation.
+        rollout = self._rollouts.get(rollout_id)
+        if not rollout:
+            raise ValueError(f"Rollout {rollout_id} not found")
+
         attempts = self._attempts.get(rollout_id, [])
         if not attempts:
             raise ValueError(f"No attempts found for rollout {rollout_id}")
@@ -554,6 +553,10 @@ class InMemoryLightningStore(LightningStore):
         # Re-validate the attempt to ensure legality
         Attempt.model_validate(attempt.model_dump())
 
+        await propagate_status(
+            lambda rollout_id, status: self._update_rollout_unlocked(rollout_id, status=status), attempt, rollout.config
+        )
+
         return attempt
 
     async def _healthcheck(self) -> None:
@@ -563,6 +566,10 @@ class InMemoryLightningStore(LightningStore):
             for rollout in self._rollouts.values():
                 if rollout.status in ["preparing", "running"]:
                     all_attempts = self._attempts.get(rollout.rollout_id, [])
+                    if not all_attempts:
+                        # The rollout is running but has no attempts, this should not happen
+                        logger.error(f"Rollout {rollout.rollout_id} is running but has no attempts")
+                        continue
                     latest_attempt = max(all_attempts, key=lambda a: a.sequence_id)
                     running_rollouts.append(AttemptedRollout(**rollout.model_dump(), attempt=latest_attempt))
             await healthcheck(
