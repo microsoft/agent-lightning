@@ -39,7 +39,7 @@ class SharedMemoryExecutionStrategy(ExecutionStrategy):
         self,
         n_runners: int = 1,
         main_thread: Literal["algorithm", "runner"] = "runner",
-        join_timeout: float = 10.0,
+        join_timeout: float = 15.0,
         graceful_delay: float = 5.0,
     ) -> None:
         if main_thread not in ("algorithm", "runner"):
@@ -75,6 +75,7 @@ class SharedMemoryExecutionStrategy(ExecutionStrategy):
 
             # Grace period: let a cooperative bundle exit on its own.
             try:
+                # At this point of waiting, the main task should already see the stop event.
                 await asyncio.wait_for(asyncio.shield(task), timeout=self.graceful_delay)  # type: ignore
                 logger.debug("Bundle finished by itself during grace period.")
                 return  # bundle finished by itself during grace period
@@ -104,8 +105,14 @@ class SharedMemoryExecutionStrategy(ExecutionStrategy):
             # If the main task hasn't completed yet (e.g., watcher scheduled cancel),
             # finish the cancellation handshake.
             if not task.done():
-                with suppress(asyncio.CancelledError):
-                    await task
+                try:
+                    await asyncio.wait_for(task, timeout=self.graceful_delay)  # second chance
+                except asyncio.TimeoutError:
+                    logger.error("Bundle task did not stop after cancellation; abandoning task.")
+                    # We return without awaiting it. asyncio.run will still try to cancel
+                    # pending tasks on loop close; if the task ignores cancellation, this
+                    # thread may still stick. It's the best we can do in Python.
+                    return result
             else:
                 # Task completed naturally; retrieve result.
                 with suppress(asyncio.CancelledError):
