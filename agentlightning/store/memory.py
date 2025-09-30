@@ -105,7 +105,7 @@ class InMemoryLightningStore(LightningStore):
     @_healthcheck_wrapper
     async def start_rollout(
         self,
-        sample: TaskInput,
+        input: TaskInput,
         mode: Literal["train", "val", "test"] | None = None,
         resources_id: str | None = None,
         metadata: Dict[str, Any] | None = None,
@@ -119,7 +119,7 @@ class InMemoryLightningStore(LightningStore):
 
             rollout = RolloutV2(
                 rollout_id=rollout_id,
-                input=sample,
+                input=input,
                 mode=mode,
                 resources_id=resources_id or self._latest_resources_id,
                 start_time=current_time,
@@ -148,7 +148,7 @@ class InMemoryLightningStore(LightningStore):
     @_healthcheck_wrapper
     async def enqueue_rollout(
         self,
-        sample: TaskInput,
+        input: TaskInput,
         mode: Literal["train", "val", "test"] | None = None,
         resources_id: str | None = None,
         metadata: Dict[str, Any] | None = None,
@@ -162,7 +162,7 @@ class InMemoryLightningStore(LightningStore):
 
             rollout = RolloutV2(
                 rollout_id=rollout_id,
-                input=sample,
+                input=input,
                 mode=mode,
                 resources_id=resources_id or self._latest_resources_id,
                 start_time=current_time,

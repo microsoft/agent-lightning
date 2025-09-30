@@ -65,7 +65,7 @@ class LightningStore:
 
     async def start_rollout(
         self,
-        sample: TaskInput,
+        input: TaskInput,
         mode: Literal["train", "val", "test"] | None = None,
         resources_id: str | None = None,
         metadata: Dict[str, Any] | None = None,
@@ -86,7 +86,7 @@ class LightningStore:
 
     async def enqueue_rollout(
         self,
-        sample: TaskInput,
+        input: TaskInput,
         mode: Literal["train", "val", "test"] | None = None,
         resources_id: str | None = None,
         metadata: Dict[str, Any] | None = None,

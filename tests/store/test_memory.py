@@ -42,7 +42,7 @@ async def test_enqueue_rollout_creates_rollout(store: InMemoryLightningStore) ->
     sample = {"input": "test_data"}
     metadata = {"key": "value", "number": 42}
 
-    rollout = await store.enqueue_rollout(sample=sample, mode="train", resources_id="res-123", metadata=metadata)
+    rollout = await store.enqueue_rollout(input=sample, mode="train", resources_id="res-123", metadata=metadata)
 
     assert rollout.rollout_id.startswith("rollout-")
     assert rollout.input == sample
@@ -58,7 +58,7 @@ async def test_add_rollout_initializes_attempt(store: InMemoryLightningStore) ->
     """Test that add_rollout immediately tracks a preparing attempt."""
     sample = {"payload": "value"}
 
-    attempt_rollout = await store.start_rollout(sample=sample, mode="val", resources_id="res-add")
+    attempt_rollout = await store.start_rollout(input=sample, mode="val", resources_id="res-add")
 
     assert attempt_rollout.status == "preparing"
     assert attempt_rollout.rollout_id.startswith("rollout-")
@@ -84,9 +84,9 @@ async def test_add_rollout_initializes_attempt(store: InMemoryLightningStore) ->
 async def test_query_rollouts_by_status(store: InMemoryLightningStore) -> None:
     """Test querying rollouts filtered by status."""
     # Create rollouts with different statuses
-    r1 = await store.enqueue_rollout(sample={"id": 1})
-    r2 = await store.enqueue_rollout(sample={"id": 2})
-    r3 = await store.enqueue_rollout(sample={"id": 3})
+    r1 = await store.enqueue_rollout(input={"id": 1})
+    r2 = await store.enqueue_rollout(input={"id": 2})
+    r3 = await store.enqueue_rollout(input={"id": 3})
 
     # Modify statuses
     await store.dequeue_rollout()  # r1 becomes "preparing"
@@ -122,7 +122,7 @@ async def test_get_rollout_by_id(store: InMemoryLightningStore) -> None:
     assert rollout is None
 
     # Create a rollout
-    created = await store.enqueue_rollout(sample={"test": "data"}, mode="train")
+    created = await store.enqueue_rollout(input={"test": "data"}, mode="train")
 
     # Retrieve by ID
     retrieved = await store.get_rollout_by_id(created.rollout_id)
@@ -143,9 +143,9 @@ async def test_get_rollout_by_id(store: InMemoryLightningStore) -> None:
 async def test_query_rollouts_by_rollout_ids(store: InMemoryLightningStore) -> None:
     """Test querying rollouts filtered by rollout IDs."""
     # Create multiple rollouts
-    r1 = await store.enqueue_rollout(sample={"id": 1})
-    r2 = await store.enqueue_rollout(sample={"id": 2})
-    r3 = await store.enqueue_rollout(sample={"id": 3})
+    r1 = await store.enqueue_rollout(input={"id": 1})
+    r2 = await store.enqueue_rollout(input={"id": 2})
+    r3 = await store.enqueue_rollout(input={"id": 3})
 
     # Query by specific IDs
     selected = await store.query_rollouts(rollout_ids=[r1.rollout_id, r3.rollout_id])
@@ -177,7 +177,7 @@ async def test_query_rollouts_by_rollout_ids(store: InMemoryLightningStore) -> N
 @pytest.mark.asyncio
 async def test_update_rollout_fields(store: InMemoryLightningStore) -> None:
     """Test updating various rollout fields."""
-    rollout = await store.enqueue_rollout(sample={"test": "data"})
+    rollout = await store.enqueue_rollout(input={"test": "data"})
 
     # Update multiple fields at once including config
     config = RolloutConfig(
@@ -216,7 +216,7 @@ async def test_rollout_config_functionality(store: InMemoryLightningStore) -> No
         retry_condition=["timeout", "unresponsive", "failed"],
     )
 
-    rollout = await store.enqueue_rollout(sample={"test": "retry"})
+    rollout = await store.enqueue_rollout(input={"test": "retry"})
     await store.update_rollout(rollout_id=rollout.rollout_id, config=config)
 
     # Verify config is stored
@@ -229,7 +229,7 @@ async def test_rollout_config_functionality(store: InMemoryLightningStore) -> No
     # Test that different rollouts can have different configs
     config2 = RolloutConfig(timeout_seconds=120.0, max_attempts=5, retry_condition=["timeout"])
 
-    rollout2 = await store.enqueue_rollout(sample={"test": "different_config"})
+    rollout2 = await store.enqueue_rollout(input={"test": "different_config"})
     await store.update_rollout(rollout_id=rollout2.rollout_id, config=config2)
 
     stored2 = await store.get_rollout_by_id(rollout2.rollout_id)
@@ -251,9 +251,9 @@ async def test_rollout_config_functionality(store: InMemoryLightningStore) -> No
 async def test_dequeue_rollout_skips_non_queuing_status(store: InMemoryLightningStore) -> None:
     """Test that dequeue_rollout skips rollouts that have been updated to non-queuing status."""
     # Add multiple rollouts to the queue
-    r1 = await store.enqueue_rollout(sample={"id": 1})
-    r2 = await store.enqueue_rollout(sample={"id": 2})
-    r3 = await store.enqueue_rollout(sample={"id": 3})
+    r1 = await store.enqueue_rollout(input={"id": 1})
+    r2 = await store.enqueue_rollout(input={"id": 2})
+    r3 = await store.enqueue_rollout(input={"id": 3})
 
     # Update r1 to succeeded status while it's still in the queue
     await store.update_rollout(rollout_id=r1.rollout_id, status="succeeded")
@@ -287,7 +287,7 @@ async def test_fifo_ordering(store: InMemoryLightningStore) -> None:
     """Test that queue maintains FIFO order."""
     rollouts: List[RolloutV2] = []
     for i in range(5):
-        r = await store.enqueue_rollout(sample={"order": i})
+        r = await store.enqueue_rollout(input={"order": i})
         rollouts.append(r)
 
     # Pop all and verify order
@@ -313,7 +313,7 @@ async def test_pop_empty_queue(store: InMemoryLightningStore) -> None:
 @pytest.mark.asyncio
 async def test_requeue_mechanism(store: InMemoryLightningStore) -> None:
     """Test requeuing puts rollout back in queue."""
-    rollout = await store.enqueue_rollout(sample={"data": "test"})
+    rollout = await store.enqueue_rollout(input={"data": "test"})
     original_id = rollout.rollout_id
 
     # Pop and verify it's not in queue
@@ -398,11 +398,11 @@ async def test_task_inherits_latest_resources(store: InMemoryLightningStore) -> 
     await store.update_resources(update.resources_id, update.resources)
 
     # Task without explicit resources_id
-    r1 = await store.enqueue_rollout(sample={"id": 1})
+    r1 = await store.enqueue_rollout(input={"id": 1})
     assert r1.resources_id == "current"
 
     # Task with explicit resources_id
-    r2 = await store.enqueue_rollout(sample={"id": 2}, resources_id="override")
+    r2 = await store.enqueue_rollout(input={"id": 2}, resources_id="override")
     assert r2.resources_id == "override"
 
     # Update resources
@@ -411,7 +411,7 @@ async def test_task_inherits_latest_resources(store: InMemoryLightningStore) -> 
     await store.update_resources(update2.resources_id, update2.resources)
 
     # New task gets new resources
-    r3 = await store.enqueue_rollout(sample={"id": 3})
+    r3 = await store.enqueue_rollout(input={"id": 3})
     assert r3.resources_id == "new"
 
 
@@ -421,7 +421,7 @@ async def test_task_inherits_latest_resources(store: InMemoryLightningStore) -> 
 @pytest.mark.asyncio
 async def test_span_sequence_generation(store: InMemoryLightningStore, mock_readable_span: Mock) -> None:
     """Test automatic sequence ID generation for spans."""
-    rollout = await store.enqueue_rollout(sample={"test": "data"})
+    rollout = await store.enqueue_rollout(input={"test": "data"})
     # Pop to create an attempt
     await store.dequeue_rollout()
     attempts = await store.query_attempts(rollout.rollout_id)
@@ -449,7 +449,7 @@ async def test_span_sequence_generation(store: InMemoryLightningStore, mock_read
 @pytest.mark.asyncio
 async def test_span_with_explicit_sequence_id(store: InMemoryLightningStore, mock_readable_span: Mock) -> None:
     """Test providing explicit sequence_id to spans."""
-    rollout = await store.enqueue_rollout(sample={"test": "data"})
+    rollout = await store.enqueue_rollout(input={"test": "data"})
     # Pop to create an attempt
     await store.dequeue_rollout()
     attempts = await store.query_attempts(rollout.rollout_id)
@@ -467,7 +467,7 @@ async def test_span_with_explicit_sequence_id(store: InMemoryLightningStore, moc
 @pytest.mark.asyncio
 async def test_query_spans_by_attempt(store: InMemoryLightningStore, mock_readable_span: Mock) -> None:
     """Test querying spans filtered by attempt_id."""
-    rollout = await store.enqueue_rollout(sample={"test": "data"})
+    rollout = await store.enqueue_rollout(input={"test": "data"})
     # Pop to create first attempt
     await store.dequeue_rollout()
     attempts = await store.query_attempts(rollout.rollout_id)
@@ -509,7 +509,7 @@ async def test_query_spans_by_attempt(store: InMemoryLightningStore, mock_readab
 @pytest.mark.asyncio
 async def test_span_triggers_status_transition(store: InMemoryLightningStore, mock_readable_span: Mock) -> None:
     """Test that adding first span transitions rollout from preparing to running."""
-    rollout = await store.enqueue_rollout(sample={"test": "data"})
+    rollout = await store.enqueue_rollout(input={"test": "data"})
 
     # Pop to set status to preparing and create attempt
     popped = await store.dequeue_rollout()
@@ -539,7 +539,7 @@ async def test_span_triggers_status_transition(store: InMemoryLightningStore, mo
 @pytest.mark.asyncio
 async def test_completion_sets_end_time(store: InMemoryLightningStore) -> None:
     """Test that completing a rollout sets end_time."""
-    rollout = await store.enqueue_rollout(sample={"test": "data"})
+    rollout = await store.enqueue_rollout(input={"test": "data"})
 
     # Initially no end_time
     assert rollout.end_time is None
@@ -558,9 +558,9 @@ async def test_completion_sets_end_time(store: InMemoryLightningStore) -> None:
 async def test_wait_for_rollouts(store: InMemoryLightningStore) -> None:
     """Test waiting for rollout completion."""
     # Add multiple rollouts
-    r1 = await store.enqueue_rollout(sample={"id": 1})
-    r2 = await store.enqueue_rollout(sample={"id": 2})
-    _r3 = await store.enqueue_rollout(sample={"id": 3})
+    r1 = await store.enqueue_rollout(input={"id": 1})
+    r2 = await store.enqueue_rollout(input={"id": 2})
+    _r3 = await store.enqueue_rollout(input={"id": 3})
 
     # Start waiting for r1 and r2
     async def wait_for_completion() -> List[RolloutV2]:
@@ -585,7 +585,7 @@ async def test_wait_for_rollouts(store: InMemoryLightningStore) -> None:
 @pytest.mark.asyncio
 async def test_wait_timeout(store: InMemoryLightningStore) -> None:
     """Test wait_for_rollouts timeout behavior."""
-    rollout = await store.enqueue_rollout(sample={"test": "data"})
+    rollout = await store.enqueue_rollout(input={"test": "data"})
 
     start = time.time()
     completed = await store.wait_for_rollouts(rollout_ids=[rollout.rollout_id], timeout=0.1)
@@ -603,7 +603,7 @@ async def test_concurrent_task_addition(store: InMemoryLightningStore) -> None:
     """Test adding tasks concurrently."""
 
     async def enqueue_rollout(index: int) -> RolloutV2:
-        return await store.enqueue_rollout(sample={"index": index})
+        return await store.enqueue_rollout(input={"index": index})
 
     # Add 50 tasks concurrently
     tasks = [enqueue_rollout(i) for i in range(50)]
@@ -624,7 +624,7 @@ async def test_concurrent_pop_operations(store: InMemoryLightningStore) -> None:
     """Test concurrent popping ensures each rollout is popped once."""
     # Add 20 tasks
     for i in range(20):
-        await store.enqueue_rollout(sample={"index": i})
+        await store.enqueue_rollout(input={"index": i})
 
     async def pop_task() -> RolloutV2 | None:
         return await store.dequeue_rollout()
@@ -648,7 +648,7 @@ async def test_concurrent_pop_operations(store: InMemoryLightningStore) -> None:
 @pytest.mark.asyncio
 async def test_concurrent_span_additions(store: InMemoryLightningStore, mock_readable_span: Mock) -> None:
     """Test concurrent span additions maintain consistency."""
-    await store.enqueue_rollout(sample={"test": "data"})
+    await store.enqueue_rollout(input={"test": "data"})
     rollout = await store.dequeue_rollout()  # Create an attempt
     assert rollout is not None
 
@@ -716,7 +716,7 @@ async def test_add_span_without_rollout(store: InMemoryLightningStore, mock_read
 @pytest.mark.asyncio
 async def test_add_span_with_missing_attempt(store: InMemoryLightningStore, mock_readable_span: Mock) -> None:
     """Test adding span with an unknown attempt_id raises a helpful error."""
-    rollout = await store.enqueue_rollout(sample={"test": "data"})
+    rollout = await store.enqueue_rollout(input={"test": "data"})
     # Create a valid attempt to ensure rollout exists in store
     await store.dequeue_rollout()
 
@@ -749,7 +749,7 @@ async def test_query_empty_spans(store: InMemoryLightningStore) -> None:
 @pytest.mark.asyncio
 async def test_query_latest_with_no_spans(store: InMemoryLightningStore) -> None:
     """Test querying 'latest' attempt when no spans exist."""
-    rollout = await store.enqueue_rollout(sample={"test": "data"})
+    rollout = await store.enqueue_rollout(input={"test": "data"})
 
     spans = await store.query_spans(rollout.rollout_id, attempt_id="latest")
     assert spans == []
@@ -768,7 +768,7 @@ async def test_wait_for_nonexistent_rollout(store: InMemoryLightningStore) -> No
 @pytest.mark.asyncio
 async def test_query_attempts(store: InMemoryLightningStore) -> None:
     """Test querying attempts for a rollout."""
-    rollout = await store.enqueue_rollout(sample={"test": "data"})
+    rollout = await store.enqueue_rollout(input={"test": "data"})
 
     # Initially no attempts
     attempts = await store.query_attempts(rollout.rollout_id)
@@ -793,7 +793,7 @@ async def test_query_attempts(store: InMemoryLightningStore) -> None:
 @pytest.mark.asyncio
 async def test_get_latest_attempt(store: InMemoryLightningStore) -> None:
     """Test getting the latest attempt."""
-    rollout = await store.enqueue_rollout(sample={"test": "data"})
+    rollout = await store.enqueue_rollout(input={"test": "data"})
 
     # No attempts initially
     latest = await store.get_latest_attempt(rollout.rollout_id)
@@ -816,7 +816,7 @@ async def test_get_latest_attempt(store: InMemoryLightningStore) -> None:
 @pytest.mark.asyncio
 async def test_update_attempt_fields(store: InMemoryLightningStore) -> None:
     """Test updating attempt fields."""
-    rollout = await store.enqueue_rollout(sample={"test": "data"})
+    rollout = await store.enqueue_rollout(input={"test": "data"})
     await store.dequeue_rollout()
 
     attempts = await store.query_attempts(rollout.rollout_id)
@@ -841,7 +841,7 @@ async def test_update_attempt_fields(store: InMemoryLightningStore) -> None:
 @pytest.mark.asyncio
 async def test_update_latest_attempt(store: InMemoryLightningStore) -> None:
     """Test updating latest attempt using 'latest' identifier."""
-    rollout = await store.enqueue_rollout(sample={"test": "data"})
+    rollout = await store.enqueue_rollout(input={"test": "data"})
     await store.dequeue_rollout()
 
     # Update using 'latest'
@@ -854,7 +854,7 @@ async def test_update_latest_attempt(store: InMemoryLightningStore) -> None:
 @pytest.mark.asyncio
 async def test_update_attempt_sets_end_time_for_terminal_status(store: InMemoryLightningStore) -> None:
     """Terminal attempt statuses set end_time while in-progress statuses don't."""
-    rollout = await store.enqueue_rollout(sample={"test": "data"})
+    rollout = await store.enqueue_rollout(input={"test": "data"})
     await store.dequeue_rollout()
 
     attempt = (await store.query_attempts(rollout.rollout_id))[0]
@@ -889,7 +889,7 @@ async def test_rollout_retry_lifecycle_updates_statuses(
     store: InMemoryLightningStore, mock_readable_span: Mock
 ) -> None:
     """Rollout retry creates new attempts and updates statuses via spans and completions."""
-    rollout = await store.enqueue_rollout(sample={"test": "data"})
+    rollout = await store.enqueue_rollout(input={"test": "data"})
 
     first_attempted = await store.dequeue_rollout()
     assert first_attempted is not None
@@ -950,7 +950,7 @@ async def test_rollout_retry_lifecycle_updates_statuses(
 @pytest.mark.asyncio
 async def test_update_nonexistent_attempt(store: InMemoryLightningStore) -> None:
     """Test updating non-existent attempt raises error."""
-    rollout = await store.enqueue_rollout(sample={"test": "data"})
+    rollout = await store.enqueue_rollout(input={"test": "data"})
 
     with pytest.raises(ValueError, match="No attempts found"):
         await store.update_attempt(rollout_id=rollout.rollout_id, attempt_id="nonexistent", status="failed")
@@ -963,7 +963,7 @@ async def test_update_nonexistent_attempt(store: InMemoryLightningStore) -> None
 async def test_add_attempt_creates_new_attempt(store: InMemoryLightningStore) -> None:
     """Test add_attempt creates a new attempt for existing rollout."""
     # Create a rollout
-    rollout = await store.enqueue_rollout(sample={"test": "data"})
+    rollout = await store.enqueue_rollout(input={"test": "data"})
 
     # Add first manual attempt
     attempted_rollout = await store.start_attempt(rollout.rollout_id)
@@ -984,7 +984,7 @@ async def test_add_attempt_creates_new_attempt(store: InMemoryLightningStore) ->
 async def test_add_attempt_increments_sequence_id(store: InMemoryLightningStore) -> None:
     """Test add_attempt correctly increments sequence_id."""
     # Create a rollout and dequeue to create first attempt
-    rollout = await store.enqueue_rollout(sample={"test": "data"})
+    rollout = await store.enqueue_rollout(input={"test": "data"})
     await store.dequeue_rollout()  # Creates attempt with sequence_id=1
 
     # Add second attempt manually
@@ -1012,7 +1012,7 @@ async def test_add_attempt_nonexistent_rollout(store: InMemoryLightningStore) ->
 async def test_add_attempt_ignores_max_attempts(store: InMemoryLightningStore) -> None:
     """Test add_attempt ignores max_attempts configuration."""
     # Create rollout with max_attempts=2
-    rollout = await store.enqueue_rollout(sample={"test": "data"})
+    rollout = await store.enqueue_rollout(input={"test": "data"})
     config = RolloutConfig(max_attempts=2)
     await store.update_rollout(rollout_id=rollout.rollout_id, config=config)
 
@@ -1036,7 +1036,7 @@ async def test_add_attempt_ignores_max_attempts(store: InMemoryLightningStore) -
 @pytest.mark.asyncio
 async def test_status_propagation_only_for_latest_attempt(store: InMemoryLightningStore) -> None:
     """Test that status changes only propagate to rollout when updating latest attempt."""
-    rollout = await store.enqueue_rollout(sample={"test": "propagation"})
+    rollout = await store.enqueue_rollout(input={"test": "propagation"})
 
     # Create multiple attempts
     attempt1 = await store.start_attempt(rollout.rollout_id)
@@ -1067,7 +1067,7 @@ async def test_status_propagation_only_for_latest_attempt(store: InMemoryLightni
 @pytest.mark.asyncio
 async def test_status_propagation_with_retry_for_latest_attempt(store: InMemoryLightningStore) -> None:
     """Test retry logic only applies when updating latest attempt."""
-    rollout = await store.enqueue_rollout(sample={"test": "retry"})
+    rollout = await store.enqueue_rollout(input={"test": "retry"})
     config = RolloutConfig(max_attempts=3, retry_condition=["failed"])
     await store.update_rollout(rollout_id=rollout.rollout_id, config=config)
 
@@ -1093,7 +1093,7 @@ async def test_status_propagation_with_retry_for_latest_attempt(store: InMemoryL
 @pytest.mark.asyncio
 async def test_status_propagation_latest_changes_when_new_attempt_added(store: InMemoryLightningStore) -> None:
     """Test that the 'latest attempt' changes as new attempts are added."""
-    rollout = await store.enqueue_rollout(sample={"test": "latest_changes"})
+    rollout = await store.enqueue_rollout(input={"test": "latest_changes"})
 
     # Create first attempt and update it to succeeded
     attempt1 = await store.start_attempt(rollout.rollout_id)
@@ -1128,7 +1128,7 @@ async def test_status_propagation_latest_changes_when_new_attempt_added(store: I
 @pytest.mark.asyncio
 async def test_status_propagation_update_latest_by_reference(store: InMemoryLightningStore) -> None:
     """Test status propagation when updating latest attempt using 'latest' reference."""
-    rollout = await store.enqueue_rollout(sample={"test": "latest_ref"})
+    rollout = await store.enqueue_rollout(input={"test": "latest_ref"})
 
     # Create multiple attempts
     await store.start_attempt(rollout.rollout_id)
@@ -1156,7 +1156,7 @@ async def test_healthcheck_timeout_behavior(store: InMemoryLightningStore, mock_
         timeout_seconds=0.1, max_attempts=2, retry_condition=["timeout"]  # Very short timeout for testing
     )
 
-    rollout = await store.enqueue_rollout(sample={"test": "timeout"})
+    rollout = await store.enqueue_rollout(input={"test": "timeout"})
     await store.update_rollout(rollout_id=rollout.rollout_id, config=config)
 
     # Dequeue to create an attempt and add span to make it running
@@ -1193,7 +1193,7 @@ async def test_healthcheck_unresponsive_behavior(store: InMemoryLightningStore, 
         retry_condition=["timeout"],  # Note: "unresponsive" not in retry_condition
     )
 
-    rollout = await store.enqueue_rollout(sample={"test": "unresponsive"})
+    rollout = await store.enqueue_rollout(input={"test": "unresponsive"})
     await store.update_rollout(rollout_id=rollout.rollout_id, config=config)
 
     # Dequeue and add span to make it running (this sets last_heartbeat_time)
@@ -1226,7 +1226,7 @@ async def test_healthcheck_unresponsive_behavior(store: InMemoryLightningStore, 
 async def test_full_lifecycle_success(store: InMemoryLightningStore, mock_readable_span: Mock) -> None:
     """Test successful rollout lifecycle: queue -> prepare -> run -> succeed."""
     # 1. Create task
-    rollout = await store.enqueue_rollout(sample={"test": "data"}, mode="train")
+    rollout = await store.enqueue_rollout(input={"test": "data"}, mode="train")
     assert rollout.status == "queuing"
 
     # 2. Pop to start processing (creates attempt)
