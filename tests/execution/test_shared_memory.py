@@ -6,13 +6,13 @@ import time
 from typing import Any, List, Optional
 
 import pytest
+from _pytest.logging import LogCaptureFixture
 
-from agentlightning.execution.events import ThreadingEvent
+from agentlightning.execution.events import Event, ThreadingEvent
 from agentlightning.execution.shared_memory import SharedMemoryExecutionStrategy
+from agentlightning.store.base import LightningStore
 
 from ..store.dummy_store import DummyLightningStore, minimal_dummy_store
-
-# Fixtures & tiny utilities
 
 
 @pytest.fixture
@@ -35,13 +35,12 @@ def make_cooperative_algorithm(
     finished: List[str],
     poll_delay: float = 0.005,
 ):
-    async def algo(store, stop_evt) -> str:
+    async def algo(store: LightningStore, event: Event) -> None:
         started.append("algo")
         # cooperatively exit when asked
-        while not stop_evt.is_set():
+        while not event.is_set():
             await asyncio.sleep(poll_delay)
         finished.append("algo")
-        return "algo:done"
 
     return algo
 
@@ -51,12 +50,11 @@ def make_cooperative_runner(
     finished: List[int],
     poll_delay: float = 0.005,
 ):
-    async def runner(store, worker_id: int, stop_evt) -> str:
+    async def runner(store: LightningStore, worker_id: int, event: Event) -> None:
         started.append(worker_id)
-        while not stop_evt.is_set():
+        while not event.is_set():
             await asyncio.sleep(poll_delay)
         finished.append(worker_id)
-        return f"runner:{worker_id}:done"
 
     return runner
 
@@ -98,37 +96,41 @@ def make_slow_cleanup_on_cancel_coro(cleanup_time: float):
 # Unit tests: _run_until_completed_or_canceled
 
 
-def test_run_until_completes_naturally(caplog):
+def test_run_until_completes_naturally(caplog: LogCaptureFixture):
     caplog.set_level(logging.DEBUG)
     strat = SharedMemoryExecutionStrategy(n_runners=1, main_thread="runner", graceful_delay=0.05, join_timeout=0.2)
 
     evt = ThreadingEvent()
 
-    result = asyncio.run(strat._run_until_completed_or_canceled(make_sleepy_coro(0.02, "ok"), evt))
+    result = asyncio.run(
+        strat._run_until_completed_or_canceled(make_sleepy_coro(0.02, "ok"), evt)  # pyright: ignore[reportPrivateUsage]
+    )
     assert result == "ok"
 
 
-def test_run_until_stops_gracefully_with_event(caplog):
+def test_run_until_stops_gracefully_with_event(caplog: LogCaptureFixture):
     caplog.set_level(logging.DEBUG)
     strat = SharedMemoryExecutionStrategy(n_runners=1, main_thread="runner", graceful_delay=0.05, join_timeout=0.2)
 
     evt = ThreadingEvent()
 
-    async def cooperative(stop_evt):
+    async def cooperative(event: Event):
         # Stop promptly after event flips
-        while not stop_evt.is_set():
+        while not event.is_set():
             await asyncio.sleep(0.005)
         return "bye"
 
     # Set the stop event before we start to exercise the "finish during grace" path
     evt.set()
-    result = asyncio.run(strat._run_until_completed_or_canceled(cooperative(evt), evt))
+    result = asyncio.run(
+        strat._run_until_completed_or_canceled(cooperative(evt), evt)  # pyright: ignore[reportPrivateUsage]
+    )
     assert result == "bye"
     # Should have logged that the bundle finished during grace period
     assert any("finished by itself during grace period" in rec.message for rec in caplog.records)
 
 
-def test_run_until_cancels_after_grace_if_not_quick_to_stop(caplog):
+def test_run_until_cancels_after_grace_if_not_quick_to_stop(caplog: LogCaptureFixture):
     caplog.set_level(logging.DEBUG)
     # Grace: 30ms; the task won't stop within that, so cancel fires; then second-chance wait succeeds.
     graceful = 0.03
@@ -143,7 +145,9 @@ def test_run_until_cancels_after_grace_if_not_quick_to_stop(caplog):
     async def runner():
         # flip stop after a short time
         asyncio.get_running_loop().call_later(0.01, evt.set)
-        return await strat._run_until_completed_or_canceled(slow_to_notice(), evt)
+        return await strat._run_until_completed_or_canceled(  # pyright: ignore[reportPrivateUsage]
+            slow_to_notice(), evt
+        )
 
     t0 = time.monotonic()
     result = asyncio.run(runner())
@@ -156,7 +160,7 @@ def test_run_until_cancels_after_grace_if_not_quick_to_stop(caplog):
     assert any("Graceful delay elapsed; canceling bundle task..." in rec.message for rec in caplog.records)
 
 
-def test_run_until_second_chance_timeout_logs_and_returns(caplog):
+def test_run_until_second_chance_timeout_logs_and_returns(caplog: LogCaptureFixture):
     caplog.set_level(logging.DEBUG)
     # The task takes longer to clean up than graceful_delay; we hit the second-chance timeout branch.
     graceful = 0.03
@@ -168,7 +172,9 @@ def test_run_until_second_chance_timeout_logs_and_returns(caplog):
     async def runner():
         # Schedule stop, then run a task that sleeps extra on cancel
         asyncio.get_running_loop().call_later(0.005, evt.set)
-        return await strat._run_until_completed_or_canceled(make_slow_cleanup_on_cancel_coro(cleanup), evt)
+        return await strat._run_until_completed_or_canceled(  # pyright: ignore[reportPrivateUsage]
+            make_slow_cleanup_on_cancel_coro(cleanup), evt
+        )
 
     t0 = time.monotonic()
     result = asyncio.run(runner())
@@ -183,32 +189,32 @@ def test_run_until_second_chance_timeout_logs_and_returns(caplog):
 # Unit tests: _run_algorithm and _run_runner
 
 
-def test_run_algorithm_sets_stop_on_exception(store):
+def test_run_algorithm_sets_stop_on_exception(store: DummyLightningStore):
     strat = SharedMemoryExecutionStrategy()
 
     evt = ThreadingEvent()
 
-    async def boom(store, stop_evt):
+    async def boom(store: LightningStore, event: Event) -> None:
         await asyncio.sleep(0.005)
         raise ValueError("algo crash")
 
     with pytest.raises(ValueError):
-        strat._run_algorithm(boom, store, evt, None)
+        strat._run_algorithm(boom, store, evt, None)  # pyright: ignore[reportPrivateUsage]
 
     assert evt.is_set(), "stop_evt must be set when algorithm raises"
 
 
-def test_run_runner_sets_stop_on_exception(store):
+def test_run_runner_sets_stop_on_exception(store: DummyLightningStore):
     strat = SharedMemoryExecutionStrategy()
 
     evt = ThreadingEvent()
 
-    async def boom(store, worker_id, stop_evt):
+    async def boom(store: LightningStore, worker_id: int, event: Event) -> None:
         await asyncio.sleep(0.005)
         raise RuntimeError("runner crash")
 
     with pytest.raises(RuntimeError):
-        strat._run_runner(boom, store, 0, evt, None)
+        strat._run_runner(boom, store, 0, evt, None)  # pyright: ignore[reportPrivateUsage]
 
     assert evt.is_set(), "stop_evt must be set when a runner raises"
 
@@ -216,7 +222,7 @@ def test_run_runner_sets_stop_on_exception(store):
 # Integration tests: execute(...)
 
 
-def test_execute_main_algorithm_normal_stop_sets_event(store):
+def test_execute_main_algorithm_normal_stop_sets_event(store: DummyLightningStore):
     started_r: List[int] = []
     finished_r: List[int] = []
     started_a: List[str] = []
@@ -227,11 +233,10 @@ def test_execute_main_algorithm_normal_stop_sets_event(store):
     runner = make_cooperative_runner(started_r, finished_r, poll_delay=0.005)
 
     # Algorithm finishes quickly; then execute() should set stop_evt for runners.
-    async def algo(store, stop_evt):
+    async def algo(store: LightningStore, event: Event) -> None:
         started_a.append("algo")
         await asyncio.sleep(0.02)
         finished_a.append("algo")
-        return "done"
 
     strat.execute(algo, runner, store)
 
@@ -242,7 +247,7 @@ def test_execute_main_algorithm_normal_stop_sets_event(store):
     assert finished_a == ["algo"]
 
 
-def test_execute_main_runner_waits_for_algorithm_natural_finish(store):
+def test_execute_main_runner_waits_for_algorithm_natural_finish(store: DummyLightningStore):
     # Policy: when main_thread='runner' and runner finishes, do NOT set stop; wait for algo to finish.
     started_r: List[int] = []
     finished_r: List[int] = []
@@ -252,13 +257,13 @@ def test_execute_main_runner_waits_for_algorithm_natural_finish(store):
 
     strat = SharedMemoryExecutionStrategy(n_runners=1, main_thread="runner", graceful_delay=0.02, join_timeout=0.2)
 
-    async def algo(store, stop_evt):
-        captured_evt[0] = stop_evt
+    async def algo(store: LightningStore, event: Event) -> None:
+        captured_evt[0] = event
         started_a.append("algo")
         await asyncio.sleep(0.05)  # natural finish
         finished_a.append("algo")
 
-    async def runner(store, worker_id, stop_evt):
+    async def runner(store: LightningStore, worker_id: int, event: Event) -> None:
         started_r.append(worker_id)
         await asyncio.sleep(0.01)  # finish quickly
         finished_r.append(worker_id)
@@ -273,7 +278,7 @@ def test_execute_main_runner_waits_for_algorithm_natural_finish(store):
     assert captured_evt[0] is not None and captured_evt[0].is_set() is False
 
 
-def test_execute_runner_crash_propagates_and_stops_algorithm(store):
+def test_execute_runner_crash_propagates_and_stops_algorithm(store: DummyLightningStore):
     # Runner raises; algorithm should see stop_evt and exit.
     started_a: List[str] = []
     finished_a: List[str] = []
@@ -281,15 +286,15 @@ def test_execute_runner_crash_propagates_and_stops_algorithm(store):
 
     strat = SharedMemoryExecutionStrategy(n_runners=1, main_thread="algorithm", graceful_delay=0.02, join_timeout=0.3)
 
-    async def algo(store, stop_evt):
+    async def algo(store: LightningStore, event: Event) -> None:
         started_a.append("algo")
         # wait until stop evt set (by runner crash)
-        while not stop_evt.is_set():
+        while not event.is_set():
             await asyncio.sleep(0.005)
         saw_stop.append(True)
         finished_a.append("algo")
 
-    async def bad_runner(store, worker_id, stop_evt):
+    async def bad_runner(store: LightningStore, worker_id: int, event: Event) -> None:
         await asyncio.sleep(0.02)
         raise RuntimeError("boom")
 
@@ -301,7 +306,7 @@ def test_execute_runner_crash_propagates_and_stops_algorithm(store):
     assert finished_a == ["algo"]
 
 
-def test_execute_ctrl_c_on_algorithm_stops_runners(store, caplog):
+def test_execute_ctrl_c_on_algorithm_stops_runners(store: DummyLightningStore, caplog: LogCaptureFixture):
     caplog.set_level(logging.DEBUG)
     # Simulate Ctrl+C by having the algorithm raise KeyboardInterrupt on the main thread.
     runner_started: List[int] = []
@@ -309,13 +314,13 @@ def test_execute_ctrl_c_on_algorithm_stops_runners(store, caplog):
 
     strat = SharedMemoryExecutionStrategy(n_runners=2, main_thread="algorithm", graceful_delay=0.02, join_timeout=0.3)
 
-    async def algo_kbi(store, stop_evt):
+    async def algo_kbi(store: LightningStore, event: Event) -> None:
         await asyncio.sleep(0.01)
         raise KeyboardInterrupt()
 
-    async def runner(store, worker_id, stop_evt):
+    async def runner(store: LightningStore, worker_id: int, event: Event) -> None:
         runner_started.append(worker_id)
-        while not stop_evt.is_set():
+        while not event.is_set():
             await asyncio.sleep(0.005)
         runner_finished.append(worker_id)
 
@@ -327,7 +332,7 @@ def test_execute_ctrl_c_on_algorithm_stops_runners(store, caplog):
     assert any("KeyboardInterrupt received on main thread" in rec.message for rec in caplog.records)
 
 
-def test_execute_ctrl_c_on_runner_stops_algorithm(store, caplog):
+def test_execute_ctrl_c_on_runner_stops_algorithm(store: DummyLightningStore, caplog: LogCaptureFixture):
     caplog.set_level(logging.DEBUG)
     # Simulate Ctrl+C on the main thread when main_thread='runner'
     algo_started: List[str] = []
@@ -335,14 +340,14 @@ def test_execute_ctrl_c_on_runner_stops_algorithm(store, caplog):
 
     strat = SharedMemoryExecutionStrategy(n_runners=1, main_thread="runner", graceful_delay=0.02, join_timeout=0.3)
 
-    async def algo(store, stop_evt):
+    async def algo(store: LightningStore, event: Event) -> None:
         algo_started.append("a")
         # Await stop_evt after KBI from runner
-        while not stop_evt.is_set():
+        while not event.is_set():
             await asyncio.sleep(0.005)
         algo_finished.append("a")
 
-    async def runner_kbi(store, worker_id, stop_evt):
+    async def runner_kbi(store: LightningStore, worker_id: int, event: Event) -> None:
         await asyncio.sleep(0.01)
         raise KeyboardInterrupt()
 
