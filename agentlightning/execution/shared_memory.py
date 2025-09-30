@@ -151,6 +151,7 @@ class SharedMemoryExecutionStrategy(ExecutionStrategy):
             self.main_thread,
         )
 
+        # Create stop event and thread-safe store.
         stop_evt = ThreadingEvent()
         thread_safe_store = LightningStoreThreaded(store)
 
