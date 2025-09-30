@@ -28,6 +28,10 @@ Join our [Discord community](https://discord.gg/RYk7CdvDR7) to connect with othe
 - 7/26/2025 [We discovered an approach to train any AI agent with RL, with (almost) zero code changes.](https://www.reddit.com/r/LocalLLaMA/comments/1m9m670/we_discovered_an_approach_to_train_any_ai_agent/) Reddit.
 - 6/6/2025 [Agent Lightning - Microsoft Research](https://www.microsoft.com/en-us/research/project/agent-lightning/) Project page.
 
+## ⚡ Community Projects
+
+- [DeepWerewolf](https://github.com/af-74413592/DeepWerewolf) — A case study of agent RL training for the Chinese Werewolf game built with AgentScope and Agent Lightning.
+
 ## ⚡ Installation
 
 First, let's get your environment set up. We'll be using `/path/to/agentlightning` to refer to the directory containing this README file.
