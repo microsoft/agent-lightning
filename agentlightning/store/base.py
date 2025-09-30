@@ -15,6 +15,7 @@ from agentlightning.types import (
     AttemptStatus,
     NamedResources,
     ResourcesUpdate,
+    RolloutConfig,
     RolloutStatus,
     RolloutV2,
     TaskInput,
@@ -31,9 +32,6 @@ def is_running(rollout: RolloutV2) -> bool:
 
 def is_finished(rollout: RolloutV2) -> bool:
     return rollout.status == "failed" or rollout.status == "succeeded" or rollout.status == "cancelled"
-
-
-T_callable = TypeVar("T_callable", bound=Callable[..., Any])
 
 
 class _UnsetType:
@@ -56,45 +54,14 @@ UNSET = _UnsetType()
 Unset = _UnsetType  # Alias for convenience
 
 
-def healthcheck(func: T_callable) -> T_callable:
-    """
-    Decorator to run the watchdog healthcheck before executing the decorated method.
-    Only runs if the store has a watchdog configured.
-    Prevents recursive healthcheck execution using a flag on the store instance.
-    """
-
-    @functools.wraps(func)
-    async def wrapper(self: LightningStore, *args: Any, **kwargs: Any) -> Any:
-        # Check if healthcheck is already running to prevent recursion
-        if getattr(self, "_healthcheck_running", False):
-            # Skip healthcheck if already running
-            return await func(self, *args, **kwargs)
-
-        # Run watchdog healthcheck if available and not already running
-        if self.watchdog is not None:
-            # Set flag to prevent recursive healthcheck calls
-            # This flag is not asyncio/thread-safe, but it doesn't matter
-            self._healthcheck_running = True  # type: ignore
-            try:
-                await self.watchdog.healthcheck(self)
-            finally:
-                # Always clear the flag, even if healthcheck fails
-                self._healthcheck_running = False  # type: ignore
-
-        # Execute the original method
-        return await func(self, *args, **kwargs)
-
-    return cast(T_callable, wrapper)
-
-
 class LightningStore:
     """
     A centralized, thread-safe, async, data store for the lightning's state.
     This holds the task queue, versioned resources, and completed rollouts.
-    """
 
-    def __init__(self, watchdog: LightningStoreWatchDog | None = None):
-        self.watchdog = watchdog
+    The store has a built-in clock and it should be responsible for tracking the times.
+    All the time-based operations like retry, timeout, etc. should be handled by the store.
+    """
 
     async def add_rollout(
         self,
@@ -167,7 +134,9 @@ class LightningStore:
         """
         raise NotImplementedError()
 
-    async def query_rollouts(self, status: Optional[Sequence[RolloutStatus]] = None) -> List[RolloutV2]:
+    async def query_rollouts(
+        self, *, status: Optional[Sequence[RolloutStatus]] = None, rollout_ids: Optional[Sequence[str]] = None
+    ) -> List[RolloutV2]:
         """
         Query and retrieve rollouts filtered by their status.
         If no status is provided, returns all rollouts.
@@ -178,6 +147,12 @@ class LightningStore:
         """
         Query and retrieve all attempts associated with a specific rollout ID.
         Returns an empty list if no attempts are found.
+        """
+        raise NotImplementedError()
+
+    async def get_rollout_by_id(self, rollout_id: str) -> Optional[RolloutV2]:
+        """
+        Safely retrieves a specific rollout by its ID.
         """
         raise NotImplementedError()
 
@@ -208,10 +183,12 @@ class LightningStore:
         """
         raise NotImplementedError()
 
-    async def wait_for_rollouts(self, rollout_ids: List[str], timeout: Optional[float] = None) -> List[RolloutV2]:
+    async def wait_for_rollouts(self, *, rollout_ids: List[str], timeout: Optional[float] = None) -> List[RolloutV2]:
         """
         Wait for specified rollouts to complete with a timeout.
         Returns the completed rollouts, potentially incomplete if timeout is reached.
+
+        TODO: Add support for waiting for 20 new rollouts, or wait until 80% of the pending ids are completed.
         """
         raise NotImplementedError()
 
@@ -235,6 +212,7 @@ class LightningStore:
         mode: Optional[Literal["train", "val", "test"]] | Unset = UNSET,
         resources_id: Optional[str] | Unset = UNSET,
         status: RolloutStatus | Unset = UNSET,
+        config: RolloutConfig | Unset = UNSET,
         metadata: Dict[str, Any] | Unset = UNSET,
     ) -> RolloutV2:
         """
@@ -251,6 +229,7 @@ class LightningStore:
             mode: New mode for the rollout. If set, will be updated. Can be updated to None
             resources_id: New resources ID for the rollout. If set, will be updated. Can be updated to None
             status: New status for the rollout. If set, will be updated
+            config: New config for the rollout. If set, will be updated
             metadata: Dictionary of additional metadata to update. If set, will be merged with existing metadata
         """
         raise NotImplementedError()
@@ -279,138 +258,3 @@ class LightningStore:
             metadata: Dictionary of additional metadata to update, will be merged with existing metadata
         """
         raise NotImplementedError()
-
-
-class LightningStoreWatchDog:
-    """
-    Watchdog service that monitors rollout health and handles timeouts.
-
-    Monitors running rollouts for:
-    - Unresponsive workers (attempted but no response, or no spans for a while)
-    - Timeout conditions (total execution time exceeds timeout_seconds)
-    """
-
-    def __init__(
-        self,
-        timeout_seconds: float,
-        unresponsive_seconds: float,
-        max_attempts: int = 3,
-        retry_condition: Optional[Sequence[AttemptStatus]] = None,
-    ):
-        """
-        Initialize the watchdog with timeout configurations.
-
-        Args:
-            timeout_seconds: Maximum total time allowed for a rollout execution
-            unresponsive_seconds: Maximum time without activity before marking as unresponsive
-            max_attempts: Maximum number of retry attempts for a rollout
-            retry_condition: List of statuses that should trigger a retry (default: ["unresponsive", "timeout"])
-        """
-        self.timeout_seconds = timeout_seconds
-        self.unresponsive_seconds = unresponsive_seconds
-        self.max_attempts = max_attempts
-        self.retry_condition = retry_condition or ["unresponsive", "timeout"]
-
-    async def propagate_status(self, store: LightningStore, attempt: Attempt) -> RolloutV2:
-        """
-        Propagate the status of an attempt to the rollout.
-
-        The rollout should be made sure in a state to be outdated.
-        Requeue the rollout if it should be retried.
-        """
-        # Propagate the status directly to the rollout
-        if attempt.status == "preparing" or attempt.status == "running" or attempt.status == "succeeded":
-            return await store.update_rollout(
-                rollout_id=attempt.rollout_id,
-                status=attempt.status,
-            )
-
-        if attempt.status == "failed" or attempt.status == "timeout" or attempt.status == "unresponsive":
-            # Check if this status should trigger a retry
-            if attempt.status in self.retry_condition:
-                # If we haven't exceeded max attempts, retry
-                if attempt.sequence_id < self.max_attempts:
-                    return await store.update_rollout(
-                        rollout_id=attempt.rollout_id,
-                        status="requeuing",
-                    )
-
-            # If we can't retry or shouldn't retry, mark as failed
-            return await store.update_rollout(
-                rollout_id=attempt.rollout_id,
-                status="failed",
-            )
-
-        raise ValueError(f"Invalid attempt status: {attempt.status}")
-
-    async def healthcheck(self, store: LightningStore) -> None:
-        """
-        Perform health check on all running rollouts in the store.
-
-        This method should be called periodically to:
-        1. Update rollout status to failed to succeeded when the attempt is done
-        2. Check for unresponsive attempts (no heartbeat or spans for a while)
-        3. Check for timed-out rollouts (running too long since start_time)
-        4. Update attempt/rollout status accordingly
-
-        Args:
-            store: The LightningStore instance to check rollouts from
-        """
-        current_time = time.time()
-
-        # Get all running rollouts from the store
-        running_rollouts = await store.query_rollouts(status=["preparing", "running"])
-
-        for rollout in running_rollouts:
-            # Get the latest attempt for this rollout
-            latest_attempt = await store.get_latest_attempt(rollout.rollout_id)
-            if not latest_attempt:
-                continue
-
-            # Check if the attempt has already failed or succeeded
-            if latest_attempt.status == "failed" or latest_attempt.status == "succeeded":
-                await self.propagate_status(store, latest_attempt)
-                continue
-
-            # Check for timeout condition (based on attempt start_time, instead of rollout start_time)
-            if current_time - latest_attempt.start_time > self.timeout_seconds:
-                await store.update_attempt(
-                    rollout_id=latest_attempt.rollout_id,
-                    attempt_id=latest_attempt.attempt_id,
-                    status="timeout",
-                )
-                await self.propagate_status(store, latest_attempt)
-                continue
-
-            # Check for unresponsive condition (based on last heartbeat)
-            if latest_attempt.last_heartbeat_time:
-                if latest_attempt.status == "preparing":
-                    # If still preparing, mark it as running
-                    latest_attempt = await store.update_attempt(
-                        rollout_id=latest_attempt.rollout_id,
-                        attempt_id=latest_attempt.attempt_id,
-                        status="running",
-                    )
-                    await self.propagate_status(store, latest_attempt)
-
-                # Haven't received heartbeat for a while
-                if current_time - cast(float, latest_attempt.last_heartbeat_time) > self.unresponsive_seconds:
-                    await store.update_attempt(
-                        rollout_id=latest_attempt.rollout_id,
-                        attempt_id=latest_attempt.attempt_id,
-                        status="unresponsive",
-                    )
-                    await self.propagate_status(store, latest_attempt)
-                    continue
-
-            # Check if there's no last heartbeat (no spans) at all
-            if (
-                latest_attempt.last_heartbeat_time is None
-                and current_time - latest_attempt.start_time > self.unresponsive_seconds
-            ):
-                await store.update_attempt(
-                    rollout_id=latest_attempt.rollout_id,
-                    attempt_id=latest_attempt.attempt_id,
-                    status="unresponsive",
-                )
-                await self.propagate_status(store, latest_attempt)

@@ -22,7 +22,8 @@ from agentlightning.types import (
     TaskInput,
 )
 
-from .base import UNSET, LightningStore, LightningStoreWatchDog, Unset, healthcheck, is_finished, is_queuing
+from .base import UNSET, LightningStore, Unset, is_finished, is_queuing
+from .utils import healthcheck_wrapper, propagate_status
 
 
 class InMemoryLightningStore(LightningStore):
@@ -31,8 +32,7 @@ class InMemoryLightningStore(LightningStore):
     Thread-safe and async-compatible but data is not persistent.
     """
 
-    def __init__(self, watchdog: LightningStoreWatchDog | None = None):
-        super().__init__(watchdog)
+    def __init__(self):
         self._lock = asyncio.Lock()
 
         # Task queue and rollouts storage
@@ -52,7 +52,7 @@ class InMemoryLightningStore(LightningStore):
         # Completion tracking for wait_for_rollouts
         self._completion_events: Dict[str, asyncio.Event] = {}
 
-    @healthcheck
+    @healthcheck_wrapper
     async def add_rollout(
         self,
         sample: TaskInput,
@@ -95,7 +95,7 @@ class InMemoryLightningStore(LightningStore):
 
             return AttemptedRollout(**rollout.model_dump(), attempt=attempt)
 
-    @healthcheck
+    @healthcheck_wrapper
     async def enqueue_rollout(
         self,
         sample: TaskInput,
@@ -126,7 +126,7 @@ class InMemoryLightningStore(LightningStore):
 
             return rollout
 
-    @healthcheck
+    @healthcheck_wrapper
     async def dequeue_rollout(self) -> Optional[AttemptedRollout]:
         """
         Retrieves the next task from the queue without blocking.
@@ -174,7 +174,7 @@ class InMemoryLightningStore(LightningStore):
             # No valid rollouts found
             return None
 
-    @healthcheck
+    @healthcheck_wrapper
     async def query_rollouts(self, status: Optional[Sequence[RolloutStatus]] = None) -> List[RolloutV2]:
         """
         Query and retrieve rollouts filtered by their status.
@@ -187,7 +187,7 @@ class InMemoryLightningStore(LightningStore):
             status_set = set(status)
             return [rollout for rollout in self._rollouts.values() if rollout.status in status_set]
 
-    @healthcheck
+    @healthcheck_wrapper
     async def query_attempts(self, rollout_id: str) -> List[Attempt]:
         """
         Query and retrieve all attempts associated with a specific rollout ID.
@@ -196,7 +196,7 @@ class InMemoryLightningStore(LightningStore):
         async with self._lock:
             return self._attempts.get(rollout_id, [])
 
-    @healthcheck
+    @healthcheck_wrapper
     async def get_latest_attempt(self, rollout_id: str) -> Optional[Attempt]:
         """
         Safely retrieves the latest attempt for a given rollout ID.
@@ -207,7 +207,7 @@ class InMemoryLightningStore(LightningStore):
                 return None
             return max(attempts, key=lambda a: a.sequence_id)
 
-    @healthcheck
+    @healthcheck_wrapper
     async def update_resources(self, resources_id: str, resources: NamedResources) -> ResourcesUpdate:
         """
         Safely stores a new version of named resources and sets it as the latest.
@@ -218,7 +218,7 @@ class InMemoryLightningStore(LightningStore):
             self._latest_resources_id = resources_id
             return update
 
-    @healthcheck
+    @healthcheck_wrapper
     async def get_resources_by_id(self, resources_id: str) -> Optional[ResourcesUpdate]:
         """
         Safely retrieves a specific version of named resources by its ID.
@@ -226,7 +226,7 @@ class InMemoryLightningStore(LightningStore):
         async with self._lock:
             return self._resources.get(resources_id)
 
-    @healthcheck
+    @healthcheck_wrapper
     async def get_latest_resources(self) -> Optional[ResourcesUpdate]:
         """
         Safely retrieves the latest version of named resources.
@@ -289,7 +289,7 @@ class InMemoryLightningStore(LightningStore):
         await self.add_span(span)
         return span
 
-    @healthcheck
+    @healthcheck_wrapper
     async def wait_for_rollouts(self, rollout_ids: List[str], timeout: Optional[float] = None) -> List[RolloutV2]:
         """
         Wait for specified rollouts to complete with a timeout.
@@ -321,7 +321,7 @@ class InMemoryLightningStore(LightningStore):
 
         return completed_rollouts
 
-    @healthcheck
+    @healthcheck_wrapper
     async def query_spans(self, rollout_id: str, attempt_id: str | Literal["latest"] | None = None) -> List[Span]:
         """
         Query and retrieve all spans associated with a specific rollout ID.
@@ -340,7 +340,7 @@ class InMemoryLightningStore(LightningStore):
             else:
                 return [s for s in spans if s.attempt_id == attempt_id]
 
-    @healthcheck
+    @healthcheck_wrapper
     async def update_rollout(
         self,
         rollout_id: str,
@@ -390,7 +390,7 @@ class InMemoryLightningStore(LightningStore):
 
             return rollout
 
-    @healthcheck
+    @healthcheck_wrapper
     async def update_attempt(
         self,
         rollout_id: str,
@@ -404,6 +404,10 @@ class InMemoryLightningStore(LightningStore):
         Update a specific or latest attempt for a given rollout.
         """
         async with self._lock:
+            rollout = self._rollouts.get(rollout_id)
+            if not rollout:
+                raise ValueError(f"Rollout {rollout_id} not found")
+
             attempts = self._attempts.get(rollout_id, [])
             if not attempts:
                 raise ValueError(f"No attempts found for rollout {rollout_id}")
@@ -436,7 +440,6 @@ class InMemoryLightningStore(LightningStore):
             # Re-validate the attempt to ensure legality
             Attempt.model_validate(attempt.model_dump())
 
-        if self.watchdog is not None:
-            await self.watchdog.propagate_status(self, attempt)
+        await propagate_status(self, attempt, rollout.config)
 
         return attempt

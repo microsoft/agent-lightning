@@ -105,6 +105,15 @@ class Attempt(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
+class RolloutConfig(BaseModel):
+    """Configurations for rollout execution."""
+
+    timeout_seconds: Optional[float] = None  # none indicates no timeout
+    unresponsive_seconds: Optional[float] = None  # none indicates no unresponsive timeout
+    max_attempts: int = Field(default=1, ge=1)  # including the first attempt
+    retry_condition: List[AttemptStatus] = Field(default_factory=list)  # list of statuses that should trigger a retry
+
+
 class RolloutV2(BaseModel):
     rollout_id: str
 
@@ -120,6 +129,8 @@ class RolloutV2(BaseModel):
 
     # Overall scheduling/running information
     status: RolloutStatus = "queuing"
+
+    config: RolloutConfig = Field(default_factory=RolloutConfig)
 
     # A bucket for any other relevant information
     metadata: Dict[str, Any] = Field(default_factory=dict)
