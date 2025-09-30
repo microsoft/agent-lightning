@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Annotated, Any, Dict, Generic, List, Literal, Optional, Protocol, TypeVar, Union
 
 from opentelemetry.sdk.trace import ReadableSpan
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 __all__ = [
     "Triplet",
@@ -64,6 +64,90 @@ class Rollout(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
+RolloutStatus = Literal[
+    "queuing",  # initial status
+    "preparing",  # after the trace is claimed
+    "running",  # after receiving the first trace
+    "failed",  # crashed
+    "succeeded",  # status OK
+    "cancelled",  # cancelled by user (or watchdog)
+    "requeuing",  # retrying
+]
+
+AttemptStatus = Literal[
+    # A status is essentially a process.
+    # It should not have scheduling/management statuses like "queuing" or "cancelled".
+    "preparing",
+    "running",
+    "failed",
+    "succeeded",
+    "unresponsive",  # the worker has not reported results for a while
+    "timeout",  # the worker has been emitting new logs, but have been working on the task for too long
+]
+
+
+class Attempt(BaseModel):
+    """An attempt to execute a rollout. A rollout can have multiple attempts if retries are needed."""
+
+    rollout_id: str  # the rollout this attempt belongs to
+    attempt_id: str  # the universal id for current attempt
+    sequence_id: int  # the sequence number of the attempt, starting from 1
+    start_time: float  # time when the attempt has started
+    end_time: Optional[float] = None  # time when the attempt has ended
+
+    status: AttemptStatus = "preparing"
+    # The rollout worker which is executing this attempt
+    worker_id: Optional[str] = None
+
+    last_heartbeat_time: Optional[float] = None  # last time when the worker has reported progress
+
+    # A bucket for any other relevant information
+    metadata: Optional[Dict[str, Any]] = None
+
+
+class RolloutConfig(BaseModel):
+    """Configurations for rollout execution."""
+
+    timeout_seconds: Optional[float] = None  # none indicates no timeout
+    unresponsive_seconds: Optional[float] = None  # none indicates no unresponsive timeout
+    max_attempts: int = Field(default=1, ge=1)  # including the first attempt
+    retry_condition: List[AttemptStatus] = Field(default_factory=list)  # list of statuses that should trigger a retry
+
+
+class RolloutV2(BaseModel):
+    rollout_id: str
+
+    # Inputs
+    input: TaskInput
+
+    # Time to track the lifecycle of the rollout
+    start_time: float
+    end_time: Optional[float] = None
+
+    mode: Optional[Literal["train", "val", "test"]] = None
+    resources_id: Optional[str] = None
+
+    # Overall scheduling/running information
+    status: RolloutStatus = "queuing"
+
+    config: RolloutConfig = Field(default_factory=RolloutConfig)
+
+    # A bucket for any other relevant information
+    metadata: Optional[Dict[str, Any]] = None
+
+
+class AttemptedRollout(RolloutV2):
+    """A rollout along with its active attempt."""
+
+    attempt: Attempt
+
+    @model_validator(mode="after")
+    def check_consistency(self) -> AttemptedRollout:
+        if self.attempt.rollout_id != self.rollout_id:
+            raise ValueError("Inconsistent rollout_id between Rollout and Attempt")
+        return self
+
+
 TaskInput = Any
 
 
@@ -115,6 +199,7 @@ class LLM(Resource):
     resource_type: Literal["llm"] = "llm"
     endpoint: str
     model: str
+    api_key: Optional[str] = None
     sampling_parameters: Dict[str, Any] = Field(default_factory=dict)
 
 
