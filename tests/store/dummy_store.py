@@ -148,3 +148,29 @@ class DummyLightningStore(LightningStore):
             )
         )
         return self.return_values["update_attempt"]
+
+
+def minimal_dummy_store() -> DummyLightningStore:
+    # Provide minimal return values
+    return DummyLightningStore(
+        return_values={
+            "start_rollout": None,
+            "enqueue_rollout": None,
+            "dequeue_rollout": None,
+            "start_attempt": None,
+            "query_rollouts": [],
+            "query_attempts": [],
+            "get_rollout_by_id": None,
+            "get_latest_attempt": None,
+            "update_resources": None,
+            "get_resources_by_id": None,
+            "get_latest_resources": None,
+            "add_span": None,
+            "add_otel_span": None,
+            "wait_for_rollouts": [],
+            "get_next_span_sequence_id": 0,
+            "query_spans": [],
+            "update_rollout": None,
+            "update_attempt": None,
+        }
+    )
