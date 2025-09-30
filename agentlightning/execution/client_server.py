@@ -327,18 +327,22 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
                         # algorithm/server portion finishes (successfully or not).
                         stop_evt.set()
                 else:  # main_process == "runner"
+                    if self.n_runners > 1:
+                        raise ValueError("main_process='runner' requires n_runners to be 1")
+
                     logger.info("Spawning algorithm process...")
                     algorithm_process = self._spawn_algorithm_process(algorithm, store, stop_evt, ctx=ctx)
                     processes = [algorithm_process]
-                    try:
-                        # Run the lone runner cooperatively in-process so users can
-                        # attach a debugger. The algorithm + HTTP server live in
-                        # the background process spawned above (the provided
-                        # store must therefore be picklable when using spawn).
-                        logger.info("Running runner...")
-                        asyncio.run(self._execute_runner(runner, 0, stop_evt))
-                    finally:
-                        stop_evt.set()
+
+                    # Run the lone runner cooperatively in-process so users can
+                    # attach a debugger. The algorithm + HTTP server live in
+                    # the background process spawned above (the provided
+                    # store must therefore be picklable when using spawn).
+                    logger.info("Running runner...")
+                    asyncio.run(self._execute_runner(runner, 0, stop_evt))
+
+                    # Wait for the algorithm process to finish.
+                    algorithm_process.join()
             else:
                 raise ValueError(f"Unknown role: {self.role}")
         except KeyboardInterrupt:

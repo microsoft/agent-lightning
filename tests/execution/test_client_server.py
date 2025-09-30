@@ -6,10 +6,12 @@ import os
 import signal
 import socket
 import sys
+import tempfile
 import time
 from contextlib import closing
 from multiprocessing import Event as MpEvent
 from multiprocessing import Process, get_context
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 import pytest
@@ -754,3 +756,82 @@ def test_constructor_validation() -> None:
         ClientServerExecutionStrategy(role="runner", main_process="runner")  # invalid combo
     with pytest.raises(ValueError):
         ClientServerExecutionStrategy(role="both", main_process="runner", n_runners=2)
+
+
+def test_execute_main_runner_rejects_multiple_runners(store: LightningStore) -> None:
+    """
+    main_process='runner' should validate that n_runners=1 and raise ValueError otherwise.
+    """
+    port: int = _free_port()
+    with pytest.raises(ValueError, match="main_process='runner' requires n_runners to be 1"):
+        strat = ClientServerExecutionStrategy(
+            role="both",
+            main_process="runner",
+            n_runners=2,  # Invalid: must be 1
+            server_host="127.0.0.1",
+            server_port=port,
+        )
+        strat.execute(algorithm=_noop_algorithm, runner=_noop_runner, store=store)
+
+
+def test_execute_main_runner_waits_for_algorithm_completion(store: LightningStore) -> None:
+    """
+    When main_process='runner', the algorithm process should complete fully
+    even after the runner finishes. This test verifies the algorithm process
+    is joined properly instead of being interrupted prematurely.
+    """
+    port: int = _free_port()
+    marker_file = Path(tempfile.mktemp(suffix=".txt"))
+
+    try:
+
+        async def runner(_client: Any, _wid: int, stop_evt: Any) -> None:
+            # Runner completes quickly
+            await asyncio.sleep(0.01)
+
+        async def algo(_store: Any, stop_evt: Any) -> None:
+            # Algorithm takes longer and should complete fully
+            await asyncio.sleep(0.5)
+            marker_file.write_text("done")
+            stop_evt.set()
+
+        strat = ClientServerExecutionStrategy(
+            role="both",
+            main_process="runner",
+            n_runners=1,
+            server_host="127.0.0.1",
+            server_port=port,
+            graceful_timeout=0.05,
+            terminate_timeout=0.05,
+        )
+        strat.execute(algorithm=algo, runner=runner, store=store)
+
+        # Verify the algorithm completed by checking the marker file exists
+        assert marker_file.exists()
+        assert marker_file.read_text() == "done"
+    finally:
+        marker_file.unlink()
+
+
+def test_execute_both_main_algo_runner_ignores_stop(store: LightningStore) -> None:
+    """
+    When main_process='algorithm' and runners ignore stop, the algorithm
+    setting stop_evt should trigger shutdown that forcefully terminates runners.
+    """
+    port: int = _free_port()
+    strat = ClientServerExecutionStrategy(
+        role="both",
+        main_process="algorithm",
+        n_runners=2,
+        server_host="127.0.0.1",
+        server_port=port,
+        graceful_timeout=0.05,
+        terminate_timeout=0.05,
+    )
+
+    async def algo(_store: Any, stop_evt: Any) -> None:
+        await asyncio.sleep(0.1)
+
+    # Should complete without hanging despite runners ignoring signals
+    with pytest.raises(RuntimeError, match="Subprocesses failed:"):
+        strat.execute(algorithm=algo, runner=_runner_ignores_stop_forever, store=store)
