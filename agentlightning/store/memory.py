@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import functools
 import time
 import uuid
 from collections import deque
-from typing import Any, Dict, List, Literal, Optional, Sequence
+from contextlib import asynccontextmanager
+from typing import Any, AsyncGenerator, Callable, Dict, List, Literal, Optional, Sequence, TypeVar, cast
 
 from opentelemetry.sdk.trace import ReadableSpan
 
@@ -17,19 +19,56 @@ from agentlightning.types import (
     AttemptStatus,
     NamedResources,
     ResourcesUpdate,
+    RolloutConfig,
     RolloutStatus,
     RolloutV2,
     TaskInput,
 )
 
 from .base import UNSET, LightningStore, Unset, is_finished, is_queuing
-from .utils import healthcheck_wrapper, propagate_status
+from .utils import healthcheck, propagate_status
+
+T_callable = TypeVar("T_callable", bound=Callable[..., Any])
+
+
+def _healthcheck_wrapper(func: T_callable) -> T_callable:
+    """
+    Decorator to run the watchdog healthcheck **before** executing the decorated method.
+    Only runs if the store has a watchdog configured.
+    Prevents recursive healthcheck execution using a flag on the store instance.
+    """
+
+    @functools.wraps(func)
+    async def wrapper(self: InMemoryLightningStore, *args: Any, **kwargs: Any) -> Any:
+        # Check if healthcheck is already running to prevent recursion
+        if getattr(self, "_healthcheck_running", False):
+            # Skip healthcheck if already running
+            return await func(self, *args, **kwargs)
+
+        # Set flag to prevent recursive healthcheck calls
+        # This flag is not asyncio/thread-safe, but it doesn't matter
+        self._healthcheck_running = True  # type: ignore
+        try:
+            # The following methods should live inside one lock.
+            await self._healthcheck()  # pyright: ignore[reportPrivateUsage]
+        finally:
+            # Always clear the flag, even if healthcheck fails
+            self._healthcheck_running = False  # type: ignore
+
+        # Execute the original method
+        # This should be outside the lock.
+        return await func(self, *args, **kwargs)
+
+    return cast(T_callable, wrapper)
 
 
 class InMemoryLightningStore(LightningStore):
     """
     In-memory implementation of LightningStore using Python data structures.
     Thread-safe and async-compatible but data is not persistent.
+
+    The methods in this class should generally not call each other,
+    especially those that are locked.
     """
 
     def __init__(self):
@@ -52,7 +91,15 @@ class InMemoryLightningStore(LightningStore):
         # Completion tracking for wait_for_rollouts
         self._completion_events: Dict[str, asyncio.Event] = {}
 
-    @healthcheck_wrapper
+    @asynccontextmanager
+    async def lock(self) -> AsyncGenerator[None, None]:
+        """
+        Acquire the lock.
+        """
+        async with self._lock:
+            yield
+
+    @_healthcheck_wrapper
     async def add_rollout(
         self,
         sample: TaskInput,
@@ -95,7 +142,7 @@ class InMemoryLightningStore(LightningStore):
 
             return AttemptedRollout(**rollout.model_dump(), attempt=attempt)
 
-    @healthcheck_wrapper
+    @_healthcheck_wrapper
     async def enqueue_rollout(
         self,
         sample: TaskInput,
@@ -126,7 +173,7 @@ class InMemoryLightningStore(LightningStore):
 
             return rollout
 
-    @healthcheck_wrapper
+    @_healthcheck_wrapper
     async def dequeue_rollout(self) -> Optional[AttemptedRollout]:
         """
         Retrieves the next task from the queue without blocking.
@@ -174,20 +221,38 @@ class InMemoryLightningStore(LightningStore):
             # No valid rollouts found
             return None
 
-    @healthcheck_wrapper
-    async def query_rollouts(self, status: Optional[Sequence[RolloutStatus]] = None) -> List[RolloutV2]:
+    @_healthcheck_wrapper
+    async def query_rollouts(
+        self, *, status: Optional[Sequence[RolloutStatus]] = None, rollout_ids: Optional[Sequence[str]] = None
+    ) -> List[RolloutV2]:
         """
-        Query and retrieve rollouts filtered by their status.
+        Query and retrieve rollouts filtered by their status and rollout ids.
         If no status is provided, returns all rollouts.
         """
         async with self._lock:
-            if status is None:
-                return list(self._rollouts.values())
+            rollouts = list(self._rollouts.values())
 
-            status_set = set(status)
-            return [rollout for rollout in self._rollouts.values() if rollout.status in status_set]
+            # Filter by rollout_ids if provided
+            if rollout_ids is not None:
+                rollout_ids_set = set(rollout_ids)
+                rollouts = [rollout for rollout in rollouts if rollout.rollout_id in rollout_ids_set]
 
-    @healthcheck_wrapper
+            # Filter by status if provided
+            if status is not None:
+                status_set = set(status)
+                rollouts = [rollout for rollout in rollouts if rollout.status in status_set]
+
+            return rollouts
+
+    @_healthcheck_wrapper
+    async def get_rollout_by_id(self, rollout_id: str) -> Optional[RolloutV2]:
+        """
+        Safely retrieves a specific rollout by its ID.
+        """
+        async with self._lock:
+            return self._rollouts.get(rollout_id)
+
+    @_healthcheck_wrapper
     async def query_attempts(self, rollout_id: str) -> List[Attempt]:
         """
         Query and retrieve all attempts associated with a specific rollout ID.
@@ -196,7 +261,7 @@ class InMemoryLightningStore(LightningStore):
         async with self._lock:
             return self._attempts.get(rollout_id, [])
 
-    @healthcheck_wrapper
+    @_healthcheck_wrapper
     async def get_latest_attempt(self, rollout_id: str) -> Optional[Attempt]:
         """
         Safely retrieves the latest attempt for a given rollout ID.
@@ -207,7 +272,7 @@ class InMemoryLightningStore(LightningStore):
                 return None
             return max(attempts, key=lambda a: a.sequence_id)
 
-    @healthcheck_wrapper
+    @_healthcheck_wrapper
     async def update_resources(self, resources_id: str, resources: NamedResources) -> ResourcesUpdate:
         """
         Safely stores a new version of named resources and sets it as the latest.
@@ -218,7 +283,7 @@ class InMemoryLightningStore(LightningStore):
             self._latest_resources_id = resources_id
             return update
 
-    @healthcheck_wrapper
+    @_healthcheck_wrapper
     async def get_resources_by_id(self, resources_id: str) -> Optional[ResourcesUpdate]:
         """
         Safely retrieves a specific version of named resources by its ID.
@@ -226,7 +291,7 @@ class InMemoryLightningStore(LightningStore):
         async with self._lock:
             return self._resources.get(resources_id)
 
-    @healthcheck_wrapper
+    @_healthcheck_wrapper
     async def get_latest_resources(self) -> Optional[ResourcesUpdate]:
         """
         Safely retrieves the latest version of named resources.
@@ -289,8 +354,8 @@ class InMemoryLightningStore(LightningStore):
         await self.add_span(span)
         return span
 
-    @healthcheck_wrapper
-    async def wait_for_rollouts(self, rollout_ids: List[str], timeout: Optional[float] = None) -> List[RolloutV2]:
+    @_healthcheck_wrapper
+    async def wait_for_rollouts(self, *, rollout_ids: List[str], timeout: Optional[float] = None) -> List[RolloutV2]:
         """
         Wait for specified rollouts to complete with a timeout.
         Returns the completed rollouts, potentially incomplete if timeout is reached.
@@ -321,7 +386,7 @@ class InMemoryLightningStore(LightningStore):
 
         return completed_rollouts
 
-    @healthcheck_wrapper
+    @_healthcheck_wrapper
     async def query_spans(self, rollout_id: str, attempt_id: str | Literal["latest"] | None = None) -> List[Span]:
         """
         Query and retrieve all spans associated with a specific rollout ID.
@@ -340,7 +405,7 @@ class InMemoryLightningStore(LightningStore):
             else:
                 return [s for s in spans if s.attempt_id == attempt_id]
 
-    @healthcheck_wrapper
+    @_healthcheck_wrapper
     async def update_rollout(
         self,
         rollout_id: str,
@@ -348,49 +413,24 @@ class InMemoryLightningStore(LightningStore):
         mode: Optional[Literal["train", "val", "test"]] | Unset = UNSET,
         resources_id: Optional[str] | Unset = UNSET,
         status: RolloutStatus | Unset = UNSET,
+        config: RolloutConfig | Unset = UNSET,
         metadata: Dict[str, Any] | Unset = UNSET,
     ) -> RolloutV2:
         """
         Update the rollout status and related metadata.
         """
         async with self._lock:
-            rollout = self._rollouts.get(rollout_id)
-            if not rollout:
-                raise ValueError(f"Rollout {rollout_id} not found")
+            return await self._update_rollout_unlocked(
+                rollout_id=rollout_id,
+                input=input,
+                mode=mode,
+                resources_id=resources_id,
+                status=status,
+                config=config,
+                metadata=metadata,
+            )
 
-            # Update fields if they are not UNSET
-            if not isinstance(input, Unset):
-                rollout.input = input
-            if not isinstance(mode, Unset):
-                rollout.mode = mode
-            if not isinstance(resources_id, Unset):
-                rollout.resources_id = resources_id
-            if not isinstance(metadata, Unset):
-                # Merge metadata
-                if rollout.metadata:
-                    rollout.metadata = {**rollout.metadata, **metadata}
-                else:
-                    rollout.metadata = metadata
-            if not isinstance(status, Unset):
-                rollout.status = status
-
-            # Set end time for finished rollouts
-            if status is not UNSET and is_finished(rollout):
-                rollout.end_time = time.time()
-                # Signal completion
-                if rollout_id in self._completion_events:
-                    self._completion_events[rollout_id].set()
-
-            # If requeuing, add back to queue
-            elif is_queuing(rollout) and rollout not in self._task_queue:
-                self._task_queue.append(rollout)
-
-            # Re-validate the rollout to ensure legality
-            RolloutV2.model_validate(rollout.model_dump())
-
-            return rollout
-
-    @healthcheck_wrapper
+    @_healthcheck_wrapper
     async def update_attempt(
         self,
         rollout_id: str,
@@ -408,38 +448,127 @@ class InMemoryLightningStore(LightningStore):
             if not rollout:
                 raise ValueError(f"Rollout {rollout_id} not found")
 
-            attempts = self._attempts.get(rollout_id, [])
-            if not attempts:
-                raise ValueError(f"No attempts found for rollout {rollout_id}")
+            attempt = await self._update_attempt_unlocked(
+                rollout_id=rollout_id,
+                attempt_id=attempt_id,
+                status=status,
+                worker_id=worker_id,
+                last_heartbeat_time=last_heartbeat_time,
+                metadata=metadata,
+            )
 
-            # Find the attempt to update
-            if attempt_id == "latest":
-                attempt = max(attempts, key=lambda a: a.sequence_id)
-            else:
-                attempt = next((a for a in attempts if a.attempt_id == attempt_id), None)
-                if not attempt:
-                    raise ValueError(f"Attempt {attempt_id} not found for rollout {rollout_id}")
-
-            # Update fields if they are not UNSET
-            if not isinstance(status, Unset):
-                attempt.status = status
-                # Also update end_time if the status indicates completion
-                if status in ["failed", "succeeded"]:
-                    attempt.end_time = time.time()
-            if not isinstance(worker_id, Unset):
-                attempt.worker_id = worker_id
-            if not isinstance(last_heartbeat_time, Unset):
-                attempt.last_heartbeat_time = last_heartbeat_time
-            if not isinstance(metadata, Unset):
-                # Merge metadata
-                if attempt.metadata:
-                    attempt.metadata = {**attempt.metadata, **metadata}
-                else:
-                    attempt.metadata = metadata
-
-            # Re-validate the attempt to ensure legality
-            Attempt.model_validate(attempt.model_dump())
-
-        await propagate_status(self, attempt, rollout.config)
+        await propagate_status(
+            lambda rollout_id, status: self._update_rollout_unlocked(rollout_id, status=status), attempt, rollout.config
+        )
 
         return attempt
+
+    async def _update_rollout_unlocked(
+        self,
+        rollout_id: str,
+        input: TaskInput | Unset = UNSET,
+        mode: Optional[Literal["train", "val", "test"]] | Unset = UNSET,
+        resources_id: Optional[str] | Unset = UNSET,
+        status: RolloutStatus | Unset = UNSET,
+        config: RolloutConfig | Unset = UNSET,
+        metadata: Dict[str, Any] | Unset = UNSET,
+    ) -> RolloutV2:
+        # No lock inside this one.
+        rollout = self._rollouts.get(rollout_id)
+        if not rollout:
+            raise ValueError(f"Rollout {rollout_id} not found")
+
+        # Update fields if they are not UNSET
+        if not isinstance(input, Unset):
+            rollout.input = input
+        if not isinstance(mode, Unset):
+            rollout.mode = mode
+        if not isinstance(resources_id, Unset):
+            rollout.resources_id = resources_id
+        if not isinstance(status, Unset):
+            rollout.status = status
+        if not isinstance(config, Unset):
+            rollout.config = config
+        if not isinstance(metadata, Unset):
+            # Merge metadata
+            if rollout.metadata:
+                rollout.metadata = {**rollout.metadata, **metadata}
+            else:
+                rollout.metadata = metadata
+
+        # Set end time for finished rollouts
+        if status is not UNSET and is_finished(rollout):
+            rollout.end_time = time.time()
+            # Signal completion
+            if rollout_id in self._completion_events:
+                self._completion_events[rollout_id].set()
+
+        # If requeuing, add back to queue
+        elif is_queuing(rollout) and rollout not in self._task_queue:
+            self._task_queue.append(rollout)
+
+        # Re-validate the rollout to ensure legality
+        RolloutV2.model_validate(rollout.model_dump())
+
+        return rollout
+
+    async def _update_attempt_unlocked(
+        self,
+        rollout_id: str,
+        attempt_id: str | Literal["latest"],
+        status: AttemptStatus | Unset = UNSET,
+        worker_id: str | Unset = UNSET,
+        last_heartbeat_time: float | Unset = UNSET,
+        metadata: Dict[str, Any] | Unset = UNSET,
+    ) -> Attempt:
+        # No lock. No status propagation.
+        attempts = self._attempts.get(rollout_id, [])
+        if not attempts:
+            raise ValueError(f"No attempts found for rollout {rollout_id}")
+
+        # Find the attempt to update
+        if attempt_id == "latest":
+            attempt = max(attempts, key=lambda a: a.sequence_id)
+        else:
+            attempt = next((a for a in attempts if a.attempt_id == attempt_id), None)
+            if not attempt:
+                raise ValueError(f"Attempt {attempt_id} not found for rollout {rollout_id}")
+
+        # Update fields if they are not UNSET
+        if not isinstance(status, Unset):
+            attempt.status = status
+            # Also update end_time if the status indicates completion
+            if status in ["failed", "succeeded"]:
+                attempt.end_time = time.time()
+        if not isinstance(worker_id, Unset):
+            attempt.worker_id = worker_id
+        if not isinstance(last_heartbeat_time, Unset):
+            attempt.last_heartbeat_time = last_heartbeat_time
+        if not isinstance(metadata, Unset):
+            # Merge metadata
+            if attempt.metadata:
+                attempt.metadata = {**attempt.metadata, **metadata}
+            else:
+                attempt.metadata = metadata
+
+        # Re-validate the attempt to ensure legality
+        Attempt.model_validate(attempt.model_dump())
+
+        return attempt
+
+    async def _healthcheck(self) -> None:
+        """Perform healthcheck against all running rollouts in the store."""
+        async with self._lock:
+            running_rollouts: List[AttemptedRollout] = []
+            for rollout in self._rollouts.values():
+                if rollout.status in ["preparing", "running"]:
+                    all_attempts = self._attempts.get(rollout.rollout_id, [])
+                    latest_attempt = max(all_attempts, key=lambda a: a.sequence_id)
+                    running_rollouts.append(AttemptedRollout(**rollout.model_dump(), attempt=latest_attempt))
+            await healthcheck(
+                running_rollouts,
+                lambda rollout_id, status: self._update_rollout_unlocked(rollout_id, status=status),
+                lambda rollout_id, attempt_id, status: self._update_attempt_unlocked(
+                    rollout_id, attempt_id, status=status
+                ),
+            )
