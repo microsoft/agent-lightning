@@ -335,7 +335,7 @@ class LightningSpanExporter(SpanExporter):
                 headers_merged.update(cast(Dict[str, Any], headers))
 
             if not headers_merged:
-                logger.warning(f"No headers found in {len(subtree_spans)} subtree spans. Can't logging to store.")
+                logger.warning(f"No headers found in {len(subtree_spans)} subtree spans. Cannot log to store.")
                 continue
 
             # Validate and normalize required header fields.
@@ -344,12 +344,12 @@ class LightningSpanExporter(SpanExporter):
             sequence_id = headers_merged.get("x-sequence-id")
             if not rollout_id or not attempt_id or not sequence_id or not sequence_id.isdigit():
                 logger.warning(
-                    f"Missing or invalid rollout_id, attempt_id, or sequence_id in headers: {headers_merged}. Can't logging to store."
+                    f"Missing or invalid rollout_id, attempt_id, or sequence_id in headers: {headers_merged}. Cannot log to store."
                 )
                 continue
             if not isinstance(rollout_id, str) or not isinstance(attempt_id, str):
                 logger.warning(
-                    f"rollout_id or attempt_id is not a string: {rollout_id}, {attempt_id}. Can't logging to store."
+                    f"rollout_id or attempt_id is not a string: {rollout_id}, {attempt_id}. Cannot log to store."
                 )
                 continue
             sequence_id_decimal = int(sequence_id)
