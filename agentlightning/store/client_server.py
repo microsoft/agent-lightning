@@ -87,10 +87,42 @@ class LightningStoreServer(LightningStore):
         self.store = store
         self.host = host
         self.port = port
-        self.app = FastAPI(title="LightningStore Server")
+        self.app: FastAPI | None = FastAPI(title="LightningStore Server")
         self._setup_routes()
-        self._uvicorn_config = uvicorn.Config(self.app, host=self.host, port=self.port, log_level="info")
-        self._uvicorn_server = uvicorn.Server(self._uvicorn_config)
+        self._uvicorn_config: uvicorn.Config | None = uvicorn.Config(
+            self.app, host=self.host, port=self.port, log_level="info"
+        )
+        self._uvicorn_server: uvicorn.Server | None = uvicorn.Server(self._uvicorn_config)
+
+    def __getstate__(self):
+        """
+        Control pickling to prevent server state from being sent to subprocesses.
+
+        When LightningStoreServer is pickled (e.g., passed to a subprocess), we only
+        serialize the underlying store and connection details. The FastAPI app and
+        uvicorn server are excluded as they should not be transferred between processes.
+
+        The subprocess should create its own server instance if needed.
+        """
+        return {
+            "store": self.store,
+            "host": self.host,
+            "port": self.port,
+        }
+
+    def __setstate__(self, state: Dict[str, Any]):
+        """
+        Restore from pickle by reconstructing only the essential attributes.
+
+        Note: This creates a new server instance without FastAPI/uvicorn initialized.
+        Call __init__() pattern or create a new LightningStoreServer if you need
+        a fully functional server in the subprocess.
+        """
+        self.store = state["store"]
+        self.host = state["host"]
+        self.port = state["port"]
+        # Do NOT reconstruct app, _uvicorn_config, _uvicorn_server
+        # to avoid transferring server state to subprocess
 
     @property
     def endpoint(self) -> str:
@@ -98,12 +130,14 @@ class LightningStoreServer(LightningStore):
 
     async def start(self):
         """Starts the FastAPI server in the background."""
+        assert self._uvicorn_server is not None
         logger.info(f"Starting server at {self.endpoint}")
         asyncio.create_task(self._uvicorn_server.serve())
         await asyncio.sleep(1)  # Allow time for server to start up.
 
     async def stop(self):
         """Gracefully stops the running FastAPI server."""
+        assert self._uvicorn_server is not None
         if self._uvicorn_server.started:
             logger.info("Stopping server...")
             self._uvicorn_server.should_exit = True
@@ -112,6 +146,7 @@ class LightningStoreServer(LightningStore):
 
     def _setup_routes(self):
         """Set up FastAPI routes for all store operations."""
+        assert self.app is not None
 
         @self.app.post("/start_rollout", response_model=AttemptedRollout)
         async def start_rollout(request: RolloutRequest):  # pyright: ignore[reportUnusedFunction]
@@ -210,7 +245,7 @@ class LightningStoreServer(LightningStore):
                 metadata=request.metadata if not isinstance(request.metadata, PydanticUnset) else UNSET,
             )
 
-    # Delegate methods -------------------------------------------------
+    # Delegate methods
     async def start_rollout(
         self,
         input: TaskInput,
