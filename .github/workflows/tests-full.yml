@@ -1,0 +1,46 @@
+name: GPU Test
+permissions:
+  contents: read
+on:
+  schedule:
+    # Every day at 5 AM UTC+8
+    - cron: '0 21 * * *'
+
+  workflow_dispatch:
+
+jobs:
+  tests-full:
+    runs-on: [self-hosted, 1ES.Pool=agl-runner-gpu]
+    timeout-minutes: 30
+    strategy:
+      matrix:
+        setup: [stable, latest]
+      fail-fast: false
+    steps:
+      - name: Check GPU status
+        run: nvidia-smi
+      - uses: actions/checkout@v4
+      - name: Create a virtual environment
+        run: python3 -m venv .venv
+      - name: Install dependencies (${{ matrix.setup }})
+        run: |
+          . .venv/bin/activate
+          ./scripts/setup_${{ matrix.setup }}_gpu.sh
+      - name: Freeze dependencies
+        run: |
+          . .venv/bin/activate
+          which python
+          which pip
+          which uvx
+          pip list | tee requirements-freeze.txt
+      - name: Upload dependencies artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependencies-${{ matrix.setup }}
+          path: requirements-freeze.txt
+          compression-level: 0
+      - name: Run tests
+        run: |
+          pytest -v tests
+        env:
+          PYTEST_ADDOPTS: "--color=yes"
