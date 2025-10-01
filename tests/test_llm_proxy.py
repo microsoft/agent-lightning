@@ -46,19 +46,24 @@ except Exception:
 pytest.mark.skipif(not GPU_AVAILABLE, reason="GPU not available")
 
 VLLM_AVAILABLE = False
+VLLM_UNAVAILABLE_REASON = ""
 
 try:
+    import vllm
     from vllm.engine.arg_utils import AsyncEngineArgs
     from vllm.entrypoints.cli.serve import ServeSubcommand
     from vllm.model_executor.model_loader import get_model_loader
     from vllm.utils import FlexibleArgumentParser
 
     VLLM_AVAILABLE = True  # type: ignore
-except ImportError:
+    VLLM_VERSION = tuple(int(v) for v in vllm.__version__.split("."))
+except ImportError as e:
     AsyncEngineArgs = None
     get_model_loader = None
     FlexibleArgumentParser = None
     ServeSubcommand = None
+    VLLM_VERSION = (0, 0, 0)  # type: ignore
+    VLLM_UNAVAILABLE_REASON = str(e)  # type: ignore
 
 
 def _get_free_port() -> int:
@@ -101,12 +106,23 @@ class RemoteOpenAIServer:
         env["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"  # safer CUDA init
         if env_dict is not None:
             env.update(env_dict)
-        self.proc: subprocess.Popen[bytes] = subprocess.Popen(
-            ["vllm", "serve", model, *vllm_serve_args],
-            env=env,
-            stdout=sys.stdout,
-            stderr=sys.stderr,
-        )
+
+        if VLLM_VERSION >= (0, 10, 2):
+            # Supports return_token_ids
+            self.proc: subprocess.Popen[bytes] = subprocess.Popen(
+                ["vllm", "serve", model, *vllm_serve_args],
+                env=env,
+                stdout=sys.stdout,
+                stderr=sys.stderr,
+            )
+        else:
+            # Does not support return_token_ids
+            self.proc = subprocess.Popen(
+                ["python", "-m", "agentlightning.cli.vllm", model, *vllm_serve_args],
+                env=env,
+                stdout=sys.stdout,
+                stderr=sys.stderr,
+            )
 
     def __init__(
         self,
@@ -123,7 +139,7 @@ class RemoteOpenAIServer:
             or FlexibleArgumentParser is None
             or ServeSubcommand is None
         ):
-            raise ImportError("vLLM is not available")
+            raise ImportError("vLLM is not available: " + VLLM_UNAVAILABLE_REASON)
 
         self.model = model
 
@@ -297,8 +313,23 @@ async def test_basic_integration(qwen25_model: RemoteOpenAIServer):
     assert "llm.hosted_vllm.choices" in raw_span.attributes, "choices not found in raw_gen_ai_request span"
     choices: list[dict[str, Any]] = ast.literal_eval(raw_span.attributes["llm.hosted_vllm.choices"])  # type: ignore
     assert len(choices) > 0, "Should have at least one choice"
-    assert "token_ids" in choices[0], "token_ids not found in choice"
-    response_token_ids: list[int] = choices[0]["token_ids"]
+    if VLLM_VERSION >= (0, 10, 2):
+        assert "token_ids" in choices[0], "token_ids not found in choice"
+        response_token_ids: list[int] = choices[0]["token_ids"]
+    else:
+        assert (
+            "llm.hosted_vllm.response_token_ids" in raw_span.attributes
+        ), "response_token_ids not found in raw_gen_ai_request span"
+        response_token_ids_list: list[list[int]] = ast.literal_eval(raw_span.attributes["llm.hosted_vllm.response_token_ids"])  # type: ignore
+        assert isinstance(response_token_ids_list, list), "response_token_ids_list should be a list"
+        assert len(response_token_ids_list) > 0, "response_token_ids_list should not be empty"
+        assert all(
+            isinstance(tid_list, list) for tid_list in response_token_ids_list
+        ), "All response token IDs should be lists"
+        assert all(
+            isinstance(tid, int) for tid_list in response_token_ids_list for tid in tid_list
+        ), "All response token IDs should be integers"
+        response_token_ids = response_token_ids_list[0]
     assert isinstance(response_token_ids, list), "response token_ids should be a list"
     assert len(response_token_ids) > 0, "response token_ids should not be empty"
     assert all(isinstance(tid, int) for tid in response_token_ids), "All response token IDs should be integers"
