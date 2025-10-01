@@ -9,13 +9,13 @@ from opentelemetry.sdk.trace import ReadableSpan
 from agentlightning.store.memory import InMemoryLightningStore
 
 __all__ = [
-    "store",
+    "inmemory_store",
     "mock_readable_span",
 ]
 
 
 @pytest.fixture
-def store() -> InMemoryLightningStore:
+def inmemory_store() -> InMemoryLightningStore:
     """Create a fresh InMemoryLightningStore instance."""
     return InMemoryLightningStore()
 

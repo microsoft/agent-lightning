@@ -2,7 +2,9 @@
 
 import asyncio
 import contextlib
+import multiprocessing
 import socket
+import sys
 from typing import AsyncGenerator, Tuple
 from unittest.mock import patch
 
@@ -241,3 +243,139 @@ async def test_concurrent_add_otel_span_sequence_ids_unique(
 
     stored_spans = await client.query_spans(rollout_id, attempt_id="latest")
     assert len(stored_spans) >= 2
+
+
+@pytest.mark.asyncio
+async def test_subprocess_operations_sync_via_http_automatically() -> None:
+    """
+    Test that LightningStoreServer automatically uses HTTP client in subprocesses.
+
+    When LightningStoreServer is passed to a subprocess, it detects it's in a different
+    process (via PID tracking) and automatically delegates to an HTTP client instead of
+    the local store. This ensures operations in the subprocess are reflected in the
+    main process via the HTTP server.
+    """
+    store = InMemoryLightningStore()
+    port = _get_free_port()
+    server = LightningStoreServer(store, "127.0.0.1", port)
+    await server.start()
+
+    try:
+        # Record initial state
+        initial_rollouts = await store.query_rollouts()
+        initial_count = len(initial_rollouts)
+
+        def subprocess_work(server_obj: LightningStoreServer) -> None:
+            """Subprocess that performs operations via the server object."""
+
+            async def do_work() -> None:
+                # The server detects we're in a different process and automatically
+                # uses HTTP client to communicate with the main process server
+                await server_obj.enqueue_rollout(input={"origin": "subprocess"})
+
+            asyncio.run(do_work())
+
+        # Spawn a subprocess to perform operations
+        ctx = multiprocessing.get_context()
+        process = ctx.Process(target=subprocess_work, args=(server,))
+        process.start()
+        await asyncio.to_thread(process.join, timeout=5.0)
+
+        assert process.exitcode == 0
+
+        # Allow time for HTTP request to complete
+        await asyncio.sleep(0.2)
+
+        # Subprocess operations ARE reflected in main process store
+        # because the server automatically used HTTP client in the subprocess
+        main_process_rollouts = await store.query_rollouts()
+        assert len(main_process_rollouts) == initial_count + 1, (
+            "Subprocess operations should be reflected in main process store " "via automatic HTTP client delegation"
+        )
+
+    finally:
+        await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_subprocess_client_operations_work_but_direct_store_access_fails() -> None:
+    """
+    Demonstrate that:
+    1. Client operations via HTTP work correctly (data persists in main process)
+    2. Direct store access in subprocess does NOT work (data isolated to subprocess)
+    """
+    store = InMemoryLightningStore()
+    port = _get_free_port()
+    server = LightningStoreServer(store, "127.0.0.1", port)
+    await server.start()
+
+    try:
+        initial_rollouts = await store.query_rollouts()
+        initial_count = len(initial_rollouts)
+
+        def subprocess_client_work(endpoint: str) -> None:
+            """Subprocess using HTTP client - this WORKS."""
+
+            async def do_work() -> None:
+                client = LightningStoreClient(endpoint)
+                try:
+                    await client.enqueue_rollout(input={"origin": "subprocess-client"})
+                except Exception as e:
+                    print(f"Client subprocess error: {e}", file=sys.stderr)
+                    raise
+                finally:
+                    await client.close()
+
+            asyncio.run(do_work())
+
+        def subprocess_direct_store_work(server_obj: LightningStoreServer) -> None:
+            """Subprocess using direct store access - this does NOT work."""
+
+            async def do_work() -> None:
+                # This operates on the subprocess's copy of the store
+                await server_obj.enqueue_rollout(input={"origin": "subprocess-direct"})
+
+            asyncio.run(do_work())
+
+        # Test 1: Client operations via HTTP - should work
+        ctx = multiprocessing.get_context()
+        client_process = ctx.Process(target=subprocess_client_work, args=(server.endpoint,))
+        client_process.start()
+        await asyncio.to_thread(client_process.join, timeout=5.0)  # Add timeout
+
+        # Handle timeout case
+        if client_process.is_alive():
+            client_process.terminate()
+            client_process.join(timeout=1.0)
+            pytest.fail("Client subprocess hung and had to be terminated")
+
+        assert client_process.exitcode == 0, f"Client subprocess failed with exit code {client_process.exitcode}"
+
+        await asyncio.sleep(0.2)
+        after_client = await store.query_rollouts()
+        # Client operations WORK - the rollout is in the main process store
+        assert len(after_client) == initial_count + 1
+
+        # Test 2: Server object in subprocess - ALSO works now (auto-delegates to HTTP)
+        direct_process = ctx.Process(target=subprocess_direct_store_work, args=(server,))
+        direct_process.start()
+        await asyncio.to_thread(direct_process.join, timeout=5.0)
+
+        # Handle timeout case
+        if direct_process.is_alive():
+            direct_process.terminate()
+            direct_process.join(timeout=1.0)
+            pytest.fail("Server subprocess hung and had to be terminated")
+
+        assert direct_process.exitcode == 0, f"Server subprocess failed with exit code {direct_process.exitcode}"
+
+        await asyncio.sleep(0.2)
+        after_direct = await store.query_rollouts()
+        # With the fix: server object in subprocess ALSO works via auto HTTP delegation
+        # Both rollouts (client + server) should be in the store
+        assert (
+            len(after_direct) == initial_count + 2
+        ), "Both explicit client and server object operations should work via HTTP"
+
+    finally:
+        await server.stop()

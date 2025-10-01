@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from typing import Any, Dict, List, Literal, Optional, Sequence, Union
 
 import aiohttp
@@ -87,31 +88,96 @@ class LightningStoreServer(LightningStore):
         self.store = store
         self.host = host
         self.port = port
-        self.app = FastAPI(title="LightningStore Server")
+        self.app: FastAPI | None = FastAPI(title="LightningStore Server")
         self._setup_routes()
-        self._uvicorn_config = uvicorn.Config(self.app, host=self.host, port=self.port, log_level="info")
-        self._uvicorn_server = uvicorn.Server(self._uvicorn_config)
+        self._uvicorn_config: uvicorn.Config | None = uvicorn.Config(
+            self.app, host=self.host, port=self.port, log_level="info"
+        )
+        self._uvicorn_server: uvicorn.Server | None = uvicorn.Server(self._uvicorn_config)
+
+        # Process-awareness:
+        # LightningStoreServer holds a plain Python object (self.store) in one process
+        # (the process that runs uvicorn/FastAPI).
+        # When you multiprocessing.Process(...) and call methods on a different LightningStore instance
+        # (or on a copy inherited via fork), you’re mutating another process’s memory, not the server’s memory.
+        # So we need to track the owner process (whoever creates the server),
+        # and only mutate the store in that process.
+        self._owner_pid = os.getpid()
+        self._client: Optional[LightningStoreClient] = None
+
+    def __getstate__(self):
+        """
+        Control pickling to prevent server state from being sent to subprocesses.
+
+        When LightningStoreServer is pickled (e.g., passed to a subprocess), we only
+        serialize the underlying store and connection details. The FastAPI app and
+        uvicorn server are excluded as they should not be transferred between processes.
+
+        The subprocess should create its own server instance if needed.
+        """
+        return {
+            "store": self.store,
+            "host": self.host,
+            "port": self.port,
+            "_owner_pid": self._owner_pid,
+        }
+
+    def __setstate__(self, state: Dict[str, Any]):
+        """
+        Restore from pickle by reconstructing only the essential attributes.
+
+        Note: This creates a new server instance without FastAPI/uvicorn initialized.
+        Call __init__() pattern or create a new LightningStoreServer if you need
+        a fully functional server in the subprocess.
+        """
+        self.store = state["store"]
+        self.host = state["host"]
+        self.port = state["port"]
+        self._owner_pid = state["_owner_pid"]
+        # Do NOT reconstruct app, _uvicorn_config, _uvicorn_server
+        # to avoid transferring server state to subprocess
 
     @property
     def endpoint(self) -> str:
         return f"http://{self.host}:{self.port}"
 
     async def start(self):
-        """Starts the FastAPI server in the background."""
+        """Starts the FastAPI server in the background.
+
+        You need to call this method in the same process as the server was created in.
+        """
+        assert self._uvicorn_server is not None
         logger.info(f"Starting server at {self.endpoint}")
         asyncio.create_task(self._uvicorn_server.serve())
         await asyncio.sleep(1)  # Allow time for server to start up.
 
     async def stop(self):
-        """Gracefully stops the running FastAPI server."""
+        """Gracefully stops the running FastAPI server.
+
+        You need to call this method in the same process as the server was created in.
+        """
+        assert self._uvicorn_server is not None
         if self._uvicorn_server.started:
             logger.info("Stopping server...")
             self._uvicorn_server.should_exit = True
             await asyncio.sleep(1)  # Allow time for graceful shutdown.
             logger.info("Server stopped.")
 
+    def _backend(self) -> LightningStore:
+        """Returns the object to delegate to in *this* process.
+
+        - In the owner process: delegate to the in-process store.
+        - In a different process: delegate to a HTTP client talking to the server.
+        """
+        if os.getpid() == self._owner_pid:
+            return self.store
+        if self._client is None:
+            self._client = LightningStoreClient(self.endpoint)
+        return self._client
+
     def _setup_routes(self):
         """Set up FastAPI routes for all store operations."""
+        assert self.app is not None
 
         @self.app.post("/start_rollout", response_model=AttemptedRollout)
         async def start_rollout(request: RolloutRequest):  # pyright: ignore[reportUnusedFunction]
@@ -210,7 +276,7 @@ class LightningStoreServer(LightningStore):
                 metadata=request.metadata if not isinstance(request.metadata, PydanticUnset) else UNSET,
             )
 
-    # Delegate methods -------------------------------------------------
+    # Delegate methods
     async def start_rollout(
         self,
         input: TaskInput,
@@ -218,7 +284,7 @@ class LightningStoreServer(LightningStore):
         resources_id: str | None = None,
         metadata: Dict[str, Any] | None = None,
     ) -> AttemptedRollout:
-        return await self.store.start_rollout(input, mode, resources_id, metadata)
+        return await self._backend().start_rollout(input, mode, resources_id, metadata)
 
     async def enqueue_rollout(
         self,
@@ -227,42 +293,42 @@ class LightningStoreServer(LightningStore):
         resources_id: str | None = None,
         metadata: Dict[str, Any] | None = None,
     ) -> RolloutV2:
-        return await self.store.enqueue_rollout(input, mode, resources_id, metadata)
+        return await self._backend().enqueue_rollout(input, mode, resources_id, metadata)
 
     async def dequeue_rollout(self) -> Optional[AttemptedRollout]:
-        return await self.store.dequeue_rollout()
+        return await self._backend().dequeue_rollout()
 
     async def start_attempt(self, rollout_id: str) -> AttemptedRollout:
-        return await self.store.start_attempt(rollout_id)
+        return await self._backend().start_attempt(rollout_id)
 
     async def query_rollouts(
         self, *, status: Optional[Sequence[RolloutStatus]] = None, rollout_ids: Optional[Sequence[str]] = None
     ) -> List[RolloutV2]:
-        return await self.store.query_rollouts(status=status, rollout_ids=rollout_ids)
+        return await self._backend().query_rollouts(status=status, rollout_ids=rollout_ids)
 
     async def query_attempts(self, rollout_id: str) -> List[Attempt]:
-        return await self.store.query_attempts(rollout_id)
+        return await self._backend().query_attempts(rollout_id)
 
     async def get_latest_attempt(self, rollout_id: str) -> Optional[Attempt]:
-        return await self.store.get_latest_attempt(rollout_id)
+        return await self._backend().get_latest_attempt(rollout_id)
 
     async def get_rollout_by_id(self, rollout_id: str) -> Optional[RolloutV2]:
-        return await self.store.get_rollout_by_id(rollout_id)
+        return await self._backend().get_rollout_by_id(rollout_id)
 
     async def update_resources(self, resources_id: str, resources: NamedResources) -> ResourcesUpdate:
-        return await self.store.update_resources(resources_id, resources)
+        return await self._backend().update_resources(resources_id, resources)
 
     async def get_resources_by_id(self, resources_id: str) -> Optional[ResourcesUpdate]:
-        return await self.store.get_resources_by_id(resources_id)
+        return await self._backend().get_resources_by_id(resources_id)
 
     async def get_latest_resources(self) -> Optional[ResourcesUpdate]:
-        return await self.store.get_latest_resources()
+        return await self._backend().get_latest_resources()
 
     async def add_span(self, span: Span) -> Span:
-        return await self.store.add_span(span)
+        return await self._backend().add_span(span)
 
     async def get_next_span_sequence_id(self, rollout_id: str, attempt_id: str) -> int:
-        return await self.store.get_next_span_sequence_id(rollout_id, attempt_id)
+        return await self._backend().get_next_span_sequence_id(rollout_id, attempt_id)
 
     async def add_otel_span(
         self,
@@ -271,17 +337,17 @@ class LightningStoreServer(LightningStore):
         readable_span: ReadableSpan,
         sequence_id: int | None = None,
     ) -> Span:
-        return await self.store.add_otel_span(rollout_id, attempt_id, readable_span, sequence_id)
+        return await self._backend().add_otel_span(rollout_id, attempt_id, readable_span, sequence_id)
 
     async def wait_for_rollouts(self, *, rollout_ids: List[str], timeout: Optional[float] = None) -> List[RolloutV2]:
-        return await self.store.wait_for_rollouts(rollout_ids=rollout_ids, timeout=timeout)
+        return await self._backend().wait_for_rollouts(rollout_ids=rollout_ids, timeout=timeout)
 
     async def query_spans(
         self,
         rollout_id: str,
         attempt_id: str | Literal["latest"] | None = None,
     ) -> List[Span]:
-        return await self.store.query_spans(rollout_id, attempt_id)
+        return await self._backend().query_spans(rollout_id, attempt_id)
 
     async def update_rollout(
         self,
@@ -293,7 +359,7 @@ class LightningStoreServer(LightningStore):
         config: RolloutConfig | Unset = UNSET,
         metadata: Optional[Dict[str, Any]] | Unset = UNSET,
     ) -> RolloutV2:
-        return await self.store.update_rollout(
+        return await self._backend().update_rollout(
             rollout_id=rollout_id,
             input=input,
             mode=mode,
@@ -312,7 +378,7 @@ class LightningStoreServer(LightningStore):
         last_heartbeat_time: float | Unset = UNSET,
         metadata: Optional[Dict[str, Any]] | Unset = UNSET,
     ) -> Attempt:
-        return await self.store.update_attempt(
+        return await self._backend().update_attempt(
             rollout_id=rollout_id,
             attempt_id=attempt_id,
             status=status,
