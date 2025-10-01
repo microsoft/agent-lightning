@@ -16,6 +16,8 @@ dependencies = [
   "aiohttp",
   "opentelemetry-api>=1.35",
   "opentelemetry-sdk>=1.35",
+  "opentelemetry-exporter-otlp>=1.35",
+  "litellm[proxy]",
   "pydantic>=2.11",
   "openai",
 ]
@@ -55,6 +57,7 @@ agent = [
   "sqlparse",
   "nltk",
   "uv",
+  "anthropic",
 ]
 
 [build-system]
