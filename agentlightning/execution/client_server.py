@@ -6,7 +6,6 @@ import multiprocessing
 import os
 import signal
 import time
-from contextlib import suppress
 from multiprocessing.context import BaseContext
 from typing import Callable, Iterable, Literal, cast
 

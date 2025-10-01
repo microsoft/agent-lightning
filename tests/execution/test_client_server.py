@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import signal
 import socket
 import sys
@@ -12,11 +11,12 @@ from contextlib import closing
 from multiprocessing import Event as MpEvent
 from multiprocessing import Process, get_context
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import pytest
 
 from agentlightning.execution.client_server import ClientServerExecutionStrategy
+from agentlightning.execution.events import Event
 from agentlightning.store.base import LightningStore
 from agentlightning.store.client_server import LightningStoreClient
 
@@ -34,7 +34,10 @@ def _free_port() -> int:
         return int(s.getsockname()[1])
 
 
-class DummyEvt:
+RecordedCall = Tuple[str, Tuple[Any, ...], Dict[str, Any]]
+
+
+class DummyEvt(Event):
     """Simple in-process Event-like object required by the strategy."""
 
     def __init__(self) -> None:
@@ -63,75 +66,77 @@ def store() -> DummyLightningStore:
 # =========================
 
 
-async def _noop_algorithm(_store: Any, stop_evt: Any) -> None:
+async def _noop_algorithm(store: LightningStore, event: Event) -> None:
+    _ = store  # explicitly acknowledge unused parameter
     await asyncio.sleep(0)
-    assert not stop_evt.is_set()
+    assert not event.is_set()
 
 
-async def _algo_calls_store_enqueue(store_obj: Any, stop_evt: Any) -> None:
+async def _algo_calls_store_enqueue(store: LightningStore, event: Event) -> None:
     # Calls a delegated method on the server wrapper; real server is running.
-    await store_obj.enqueue_rollout(input={"x": 1})
+    await store.enqueue_rollout(input={"x": 1})
     await asyncio.sleep(0)
-    assert not stop_evt.is_set()
+    assert not event.is_set()
 
 
-async def _algo_sets_stop_delayed(_store: Any, stop_evt: Any, delay: float = 0.05) -> None:
+async def _algo_sets_stop_delayed(store: LightningStore, event: Event, delay: float = 0.05) -> None:
+    _ = store
     await asyncio.sleep(delay)
-    stop_evt.set()
+    event.set()
 
 
-async def _algo_ignores_stop_forever(_store: Any, _stop_evt: Any) -> None:
-    # Ignore signals to force escalation phases in shutdown.
-    signal.signal(signal.SIGINT, signal.SIG_IGN)
-    signal.signal(signal.SIGTERM, signal.SIG_IGN)
-    while True:
-        await asyncio.sleep(0.1)
-
-
-async def _raise_in_algorithm(_store: Any, stop_evt: Any) -> None:
-    stop_evt.set()
+async def _raise_in_algorithm(store: LightningStore, event: Event) -> None:
+    _ = store
+    event.set()
     raise RuntimeError("algo boom")
 
 
-async def _kbint_in_algorithm(_store: Any, stop_evt: Any) -> None:
-    stop_evt.set()
+async def _kbint_in_algorithm(store: LightningStore, event: Event) -> None:
+    _ = store
+    event.set()
     raise KeyboardInterrupt()
 
 
-async def _noop_runner(_store: Any, _worker_id: int, stop_evt: Any) -> None:
+async def _noop_runner(store: LightningStore, worker_id: int, event: Event) -> None:
+    _ = (store, worker_id)
     await asyncio.sleep(0)
-    assert not stop_evt.is_set()
+    assert not event.is_set()
 
 
-async def _runner_wait_for_stop(_store: Any, _worker_id: int, stop_evt: Any, timeout: float = 0.5) -> None:
+async def _runner_wait_for_stop(store: LightningStore, worker_id: int, event: Event, timeout: float = 0.5) -> None:
+    _ = (store, worker_id)
     t0: float = time.monotonic()
-    while not stop_evt.is_set() and time.monotonic() - t0 < timeout:
+    while not event.is_set() and time.monotonic() - t0 < timeout:
         await asyncio.sleep(0.005)
 
 
-async def _runner_ignores_stop_forever(_store: Any, _worker_id: int, _stop_evt: Any) -> None:
+async def _runner_ignores_stop_forever(store: LightningStore, worker_id: int, event: Event) -> None:
     # Ignore signals to force escalation.
+    _ = (store, worker_id)
     signal.signal(signal.SIGINT, signal.SIG_IGN)
     signal.signal(signal.SIGTERM, signal.SIG_IGN)
     while True:
         await asyncio.sleep(0.1)
 
 
-async def _raise_in_runner(_store: Any, _worker_id: int, stop_evt: Any) -> None:
-    stop_evt.set()
+async def _raise_in_runner(store: LightningStore, worker_id: int, event: Event) -> None:
+    _ = (store, worker_id)
+    event.set()
     raise RuntimeError("runner boom")
 
 
-async def _kbint_in_runner(_store: Any, _worker_id: int, stop_evt: Any) -> None:
-    stop_evt.set()
+async def _kbint_in_runner(store: LightningStore, worker_id: int, event: Event) -> None:
+    _ = (store, worker_id)
+    event.set()
     raise KeyboardInterrupt()
 
 
-async def _timeout_error_in_runner(client: LightningStoreClient, _worker_id: int, stop_evt: Any) -> None:
+async def _timeout_error_in_runner(store: LightningStore, worker_id: int, event: Event) -> None:
     # Provoke client's validation (pre-request), then raise TimeoutError.
     with pytest.raises(ValueError):
-        await client.wait_for_rollouts(rollout_ids=["r1"], timeout=0.2)
-    stop_evt.set()
+        await store.wait_for_rollouts(rollout_ids=["r1"], timeout=0.2)
+    _ = worker_id
+    event.set()
     raise TimeoutError("runner timeout")
 
 
@@ -153,7 +158,7 @@ def test_join_until_deadline_includes_alive_process() -> None:
     p: Process = ctx.Process(target=time.sleep, args=(0.5,), name="alive")
     p.start()
     try:
-        alive: List[Process] = strat._join_until_deadline([p], timeout=0.005)
+        alive: List[Process] = strat._join_until_deadline([p], timeout=0.005)  # pyright: ignore[reportPrivateUsage]
         assert alive == [p]
         assert p.is_alive()
     finally:
@@ -167,7 +172,7 @@ def test_join_until_deadline_excludes_finished_process() -> None:
     p: Process = ctx.Process(target=lambda: None, name="done")
     p.start()
     p.join()
-    alive: List[Process] = strat._join_until_deadline([p], timeout=0.05)
+    alive: List[Process] = strat._join_until_deadline([p], timeout=0.05)  # pyright: ignore[reportPrivateUsage]
     assert alive == []
 
 
@@ -177,7 +182,7 @@ def test_join_until_deadline_zero_timeout_path() -> None:
     p: Process = ctx.Process(target=time.sleep, args=(0.2,), name="zero-join")
     p.start()
     try:
-        alive: List[Process] = strat._join_until_deadline([p], timeout=0.0)
+        alive: List[Process] = strat._join_until_deadline([p], timeout=0.0)  # pyright: ignore[reportPrivateUsage]
         assert alive == [p]
     finally:
         p.terminate()
@@ -192,12 +197,14 @@ def test_signal_processes_invokes_action_and_suppresses_exceptions() -> None:
     seen: List[int] = []
 
     def action(proc: Process) -> None:
-        seen.append(proc.pid)  # record
+        pid = proc.pid
+        if pid is not None:
+            seen.append(pid)  # record
         if len(seen) == 1:
             raise RuntimeError("deliberate")  # ensure suppression
 
     try:
-        strat._signal_processes([p], action)
+        strat._signal_processes([p], action)  # pyright: ignore[reportPrivateUsage]
         assert seen == [p.pid]
     finally:
         p.terminate()
@@ -206,7 +213,7 @@ def test_signal_processes_invokes_action_and_suppresses_exceptions() -> None:
 
 def test_shutdown_processes_empty_list_noop() -> None:
     strat = ClientServerExecutionStrategy(role="runner", server_port=_free_port())
-    strat._shutdown_processes([], DummyEvt())  # should not raise
+    strat._shutdown_processes([], DummyEvt())  # pyright: ignore[reportPrivateUsage]
 
 
 def test_shutdown_processes_phase1_cooperative() -> None:
@@ -223,7 +230,7 @@ def test_shutdown_processes_phase1_cooperative() -> None:
     p: Process = ctx.Process(target=time.sleep, args=(0.01,), name="coop")
     p.start()
     try:
-        strat._shutdown_processes([p], DummyEvt())
+        strat._shutdown_processes([p], DummyEvt())  # pyright: ignore[reportPrivateUsage]
         assert not p.is_alive() and p.exitcode == 0
     finally:
         if p.is_alive():
@@ -254,7 +261,7 @@ def test_shutdown_processes_phase2_sigint() -> None:
     p: Process = ctx.Process(target=target, name="sigint-exit")
     p.start()
     try:
-        strat._shutdown_processes([p], DummyEvt())
+        strat._shutdown_processes([p], DummyEvt())  # pyright: ignore[reportPrivateUsage]
         assert not p.is_alive() and p.exitcode == 0
     finally:
         if p.is_alive():
@@ -285,7 +292,7 @@ def test_shutdown_processes_phase2_try_catch() -> None:
     p: Process = ctx.Process(target=target, name="sigint-exit")
     p.start()
     try:
-        strat._shutdown_processes([p], DummyEvt())
+        strat._shutdown_processes([p], DummyEvt())  # pyright: ignore[reportPrivateUsage]
         assert not p.is_alive() and p.exitcode == 0
     finally:
         if p.is_alive():
@@ -313,7 +320,7 @@ def test_shutdown_processes_phase3_terminate_when_sigint_ignored() -> None:
     p: Process = ctx.Process(target=target, name="term-on-sigterm")
     p.start()
     try:
-        strat._shutdown_processes([p], DummyEvt())
+        strat._shutdown_processes([p], DummyEvt())  # pyright: ignore[reportPrivateUsage]
         assert not p.is_alive()
         # Non-zero expected for terminated processes.
         assert p.exitcode is not None and p.exitcode != 0
@@ -344,7 +351,7 @@ def test_shutdown_processes_phase4_kill_when_term_ignored() -> None:
     p: Process = ctx.Process(target=target, name="kill-required")
     p.start()
     try:
-        strat._shutdown_processes([p], DummyEvt())
+        strat._shutdown_processes([p], DummyEvt())  # pyright: ignore[reportPrivateUsage]
         assert not p.is_alive()
         assert p.exitcode is not None and p.exitcode != 0
     finally:
@@ -367,7 +374,7 @@ def test_shutdown_processes_when_stop_already_set() -> None:
     evt: DummyEvt = DummyEvt()
     evt.set()
     try:
-        strat._shutdown_processes([p], evt)
+        strat._shutdown_processes([p], evt)  # pyright: ignore[reportPrivateUsage]
         assert not p.is_alive()
     finally:
         if p.is_alive():
@@ -380,7 +387,7 @@ def test_shutdown_processes_when_stop_already_set() -> None:
 # =========================
 
 
-def test_execute_algorithm_success_invokes_store(store: LightningStore) -> None:
+def test_execute_algorithm_success_invokes_store(store: DummyLightningStore) -> None:
     port: int = _free_port()
     strat = ClientServerExecutionStrategy(
         role="algorithm",
@@ -391,9 +398,11 @@ def test_execute_algorithm_success_invokes_store(store: LightningStore) -> None:
         terminate_timeout=0.05,
     )
     # Should run and stop the real HTTP server, while delegating to underlying store.
-    asyncio.run(strat._execute_algorithm(_algo_calls_store_enqueue, store, DummyEvt()))
+    asyncio.run(
+        strat._execute_algorithm(_algo_calls_store_enqueue, store, DummyEvt())  # pyright: ignore[reportPrivateUsage]
+    )
     # The DummyLightningStore should have recorded the delegated call.
-    recorded: List[tuple[str, tuple[Any, ...], Dict[str, Any]]] = store.calls
+    recorded: List[RecordedCall] = store.calls
     assert any(name == "enqueue_rollout" for name, _, _ in recorded)
 
 
@@ -409,7 +418,7 @@ def test_execute_algorithm_sets_stop_on_exception_and_propagates(store: Lightnin
     )
     evt: DummyEvt = DummyEvt()
     with pytest.raises(RuntimeError, match="algo boom"):
-        asyncio.run(strat._execute_algorithm(_raise_in_algorithm, store, evt))
+        asyncio.run(strat._execute_algorithm(_raise_in_algorithm, store, evt))  # pyright: ignore[reportPrivateUsage]
     assert evt.is_set()
 
 
@@ -425,7 +434,7 @@ def test_execute_algorithm_keyboardinterrupt_sets_stop_and_propagates(store: Lig
     )
     evt: DummyEvt = DummyEvt()
     with pytest.raises(KeyboardInterrupt):
-        asyncio.run(strat._execute_algorithm(_kbint_in_algorithm, store, evt))
+        asyncio.run(strat._execute_algorithm(_kbint_in_algorithm, store, evt))  # pyright: ignore[reportPrivateUsage]
     assert evt.is_set()
 
 
@@ -446,7 +455,9 @@ def test_execute_runner_success_closes_client() -> None:
     orig_close: Callable[[LightningStoreClient], Any] = LightningStoreClient.close  # type: ignore[attr-defined]
     try:
         LightningStoreClient.close = patched_close  # type: ignore[assignment]
-        asyncio.run(strat._execute_runner(_noop_runner, worker_id=0, stop_evt=DummyEvt()))
+        asyncio.run(
+            strat._execute_runner(_noop_runner, worker_id=0, stop_evt=DummyEvt())  # pyright: ignore[reportPrivateUsage]
+        )
     finally:
         LightningStoreClient.close = orig_close  # type: ignore[assignment]
 
@@ -472,7 +483,11 @@ def test_execute_runner_exception_sets_stop_and_closes_client() -> None:
     try:
         LightningStoreClient.close = patched_close  # type: ignore[assignment]
         with pytest.raises(RuntimeError, match="runner boom"):
-            asyncio.run(strat._execute_runner(_raise_in_runner, worker_id=7, stop_evt=evt))
+            asyncio.run(
+                strat._execute_runner(  # pyright: ignore[reportPrivateUsage]
+                    _raise_in_runner, worker_id=7, stop_evt=evt
+                )
+            )
     finally:
         LightningStoreClient.close = orig_close  # type: ignore[assignment]
 
@@ -491,7 +506,9 @@ def test_execute_runner_keyboardinterrupt_sets_stop_and_propagates() -> None:
     )
     evt: DummyEvt = DummyEvt()
     with pytest.raises(KeyboardInterrupt):
-        asyncio.run(strat._execute_runner(_kbint_in_runner, worker_id=0, stop_evt=evt))
+        asyncio.run(
+            strat._execute_runner(_kbint_in_runner, worker_id=0, stop_evt=evt)  # pyright: ignore[reportPrivateUsage]
+        )
     assert evt.is_set()
 
 
@@ -506,7 +523,11 @@ def test_execute_runner_distinguishes_timeout_error() -> None:
     )
     evt: DummyEvt = DummyEvt()
     with pytest.raises(TimeoutError, match="runner timeout"):
-        asyncio.run(strat._execute_runner(_timeout_error_in_runner, worker_id=0, stop_evt=evt))
+        asyncio.run(
+            strat._execute_runner(  # pyright: ignore[reportPrivateUsage]
+                _timeout_error_in_runner, worker_id=0, stop_evt=evt
+            )
+        )
     assert evt.is_set()
 
 
@@ -520,10 +541,14 @@ def test_spawn_runners_creates_processes_and_they_exit_on_event() -> None:
         terminate_timeout=0.05,
     )
     ctx = get_context()
-    stop_evt: MpEvent = MpEvent()
+    stop_evt: Event = MpEvent()
 
     def runner_sync() -> None:
-        asyncio.run(strat._execute_runner(_runner_wait_for_stop, worker_id=0, stop_evt=stop_evt))
+        asyncio.run(
+            strat._execute_runner(  # pyright: ignore[reportPrivateUsage]
+                _runner_wait_for_stop, worker_id=0, stop_evt=stop_evt
+            )
+        )
 
     procs: List[Process] = []
     for i in range(2):
@@ -554,9 +579,11 @@ def test_spawn_algorithm_process_creates_and_runs(store: LightningStore) -> None
         terminate_timeout=0.05,
     )
     ctx = get_context()
-    stop_evt: MpEvent = MpEvent()
+    stop_evt: Event = MpEvent()
 
-    p: Process = strat._spawn_algorithm_process(_noop_algorithm, store, stop_evt, ctx=ctx)
+    p: Process = strat._spawn_algorithm_process(  # pyright: ignore[reportPrivateUsage]
+        _noop_algorithm, store, stop_evt, ctx=ctx
+    )
     try:
         p.join(timeout=4.0)
         assert not p.is_alive()
@@ -632,8 +659,8 @@ def test_execute_both_main_algorithm_cooperative_shutdown(store: LightningStore)
     """
     port: int = _free_port()
 
-    async def algo(store_obj: Any, stop_evt: Any) -> None:
-        await _algo_sets_stop_delayed(store_obj, stop_evt, delay=0.05)
+    async def algo(store: LightningStore, event: Event) -> None:
+        await _algo_sets_stop_delayed(store, event, delay=0.05)
 
     strat = ClientServerExecutionStrategy(
         role="both",
@@ -655,13 +682,15 @@ def test_execute_both_main_runner_debug_cooperative_shutdown(store: LightningSto
     """
     port: int = _free_port()
 
-    async def runner(_client: Any, _wid: int, stop_evt: Any) -> None:
+    async def runner(store: LightningStore, worker_id: int, event: Event) -> None:
+        _ = (store, worker_id)
         await asyncio.sleep(0.05)
-        stop_evt.set()
+        event.set()
 
-    async def algo(_store: Any, stop_evt: Any) -> None:
+    async def algo(store: LightningStore, event: Event) -> None:
+        _ = store
         t0: float = time.monotonic()
-        while not stop_evt.is_set() and time.monotonic() - t0 < 1.0:
+        while not event.is_set() and time.monotonic() - t0 < 1.0:
             await asyncio.sleep(0.005)
 
     strat = ClientServerExecutionStrategy(
@@ -781,19 +810,23 @@ def test_execute_main_runner_waits_for_algorithm_completion(store: LightningStor
     is joined properly instead of being interrupted prematurely.
     """
     port: int = _free_port()
-    marker_file = Path(tempfile.mktemp(suffix=".txt"))
+    temp_file = tempfile.NamedTemporaryFile(suffix=".txt", delete=False)
+    marker_file = Path(temp_file.name)
+    temp_file.close()
 
     try:
 
-        async def runner(_client: Any, _wid: int, stop_evt: Any) -> None:
+        async def runner(store: LightningStore, worker_id: int, event: Event) -> None:
+            _ = (store, worker_id)
             # Runner completes quickly
             await asyncio.sleep(0.01)
 
-        async def algo(_store: Any, stop_evt: Any) -> None:
+        async def algo(store: LightningStore, event: Event) -> None:
+            _ = store
             # Algorithm takes longer and should complete fully
             await asyncio.sleep(0.5)
             marker_file.write_text("done")
-            stop_evt.set()
+            event.set()
 
         strat = ClientServerExecutionStrategy(
             role="both",
@@ -810,7 +843,8 @@ def test_execute_main_runner_waits_for_algorithm_completion(store: LightningStor
         assert marker_file.exists()
         assert marker_file.read_text() == "done"
     finally:
-        marker_file.unlink()
+        if marker_file.exists():
+            marker_file.unlink()
 
 
 def test_execute_both_main_algo_runner_ignores_stop(store: LightningStore) -> None:
@@ -829,7 +863,8 @@ def test_execute_both_main_algo_runner_ignores_stop(store: LightningStore) -> No
         terminate_timeout=0.05,
     )
 
-    async def algo(_store: Any, stop_evt: Any) -> None:
+    async def algo(store: LightningStore, event: Event) -> None:
+        _ = store
         await asyncio.sleep(0.1)
 
     # Should complete without hanging despite runners ignoring signals
