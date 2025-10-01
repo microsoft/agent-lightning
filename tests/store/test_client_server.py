@@ -246,14 +246,14 @@ async def test_concurrent_add_otel_span_sequence_ids_unique(
 
 
 @pytest.mark.asyncio
-async def test_subprocess_operations_not_synced_to_main_process_store() -> None:
+async def test_subprocess_operations_sync_via_http_automatically() -> None:
     """
-    Reproduce the data-sync issue: when LightningStoreServer is started in the main
-    process and a subprocess performs operations via direct store access, those
-    operations are NOT reflected in the main process store.
+    Test that LightningStoreServer automatically uses HTTP client in subprocesses.
 
-    This happens because the subprocess gets a pickled copy of the store, and
-    modifications happen to that copy, not the original.
+    When LightningStoreServer is passed to a subprocess, it detects it's in a different
+    process (via PID tracking) and automatically delegates to an HTTP client instead of
+    the local store. This ensures operations in the subprocess are reflected in the
+    main process via the HTTP server.
     """
     store = InMemoryLightningStore()
     port = _get_free_port()
@@ -266,13 +266,12 @@ async def test_subprocess_operations_not_synced_to_main_process_store() -> None:
         initial_count = len(initial_rollouts)
 
         def subprocess_work(server_obj: LightningStoreServer) -> None:
-            """Subprocess that performs operations on the store."""
-            import asyncio
+            """Subprocess that performs operations via the server object."""
 
             async def do_work() -> None:
-                # The subprocess has a COPY of the store, not the original
-                await server_obj.store.enqueue_rollout(input={"origin": "subprocess"})
-                # This modification happens to the subprocess's copy
+                # The server detects we're in a different process and automatically
+                # uses HTTP client to communicate with the main process server
+                await server_obj.enqueue_rollout(input={"origin": "subprocess"})
 
             asyncio.run(do_work())
 
@@ -280,21 +279,18 @@ async def test_subprocess_operations_not_synced_to_main_process_store() -> None:
         ctx = multiprocessing.get_context()
         process = ctx.Process(target=subprocess_work, args=(server,))
         process.start()
-        process.join()
+        await asyncio.to_thread(process.join, timeout=5.0)
 
         assert process.exitcode == 0
 
-        # Allow time for any potential propagation
-        await asyncio.sleep(0.5)
+        # Allow time for HTTP request to complete
+        await asyncio.sleep(0.2)
 
-        # ISSUE: The main process store should have the new rollout, but it doesn't
-        # because the subprocess operated on a copy of the store
+        # Subprocess operations ARE reflected in main process store
+        # because the server automatically used HTTP client in the subprocess
         main_process_rollouts = await store.query_rollouts()
-        # This assertion demonstrates the bug - the count should be initial_count + 1,
-        # but it's still initial_count because changes in subprocess don't sync back
-        assert len(main_process_rollouts) == initial_count, (
-            "Expected subprocess changes to NOT be reflected in main process store "
-            "(this is the bug we're reproducing)"
+        assert len(main_process_rollouts) == initial_count + 1, (
+            "Subprocess operations should be reflected in main process store " "via automatic HTTP client delegation"
         )
 
     finally:
@@ -337,7 +333,7 @@ async def test_subprocess_client_operations_work_but_direct_store_access_fails()
 
             async def do_work() -> None:
                 # This operates on the subprocess's copy of the store
-                await server_obj.store.enqueue_rollout(input={"origin": "subprocess-direct"})
+                await server_obj.enqueue_rollout(input={"origin": "subprocess-direct"})
 
             asyncio.run(do_work())
 
@@ -355,31 +351,31 @@ async def test_subprocess_client_operations_work_but_direct_store_access_fails()
 
         assert client_process.exitcode == 0, f"Client subprocess failed with exit code {client_process.exitcode}"
 
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(0.2)
         after_client = await store.query_rollouts()
         # Client operations WORK - the rollout is in the main process store
         assert len(after_client) == initial_count + 1
 
-        # Test 2: Direct store access - should NOT work
+        # Test 2: Server object in subprocess - ALSO works now (auto-delegates to HTTP)
         direct_process = ctx.Process(target=subprocess_direct_store_work, args=(server,))
         direct_process.start()
-        await asyncio.to_thread(direct_process.join, timeout=5.0)  # Add timeout
+        await asyncio.to_thread(direct_process.join, timeout=5.0)
 
         # Handle timeout case
         if direct_process.is_alive():
             direct_process.terminate()
             direct_process.join(timeout=1.0)
-            pytest.fail("Direct store subprocess hung and had to be terminated")
+            pytest.fail("Server subprocess hung and had to be terminated")
 
-        assert direct_process.exitcode == 0, f"Direct store subprocess failed with exit code {direct_process.exitcode}"
+        assert direct_process.exitcode == 0, f"Server subprocess failed with exit code {direct_process.exitcode}"
 
         await asyncio.sleep(0.2)
         after_direct = await store.query_rollouts()
-        # Direct store access does NOT work - the rollout is NOT in the main process store
-        assert len(after_direct) == initial_count + 1, (
-            "Direct store access in subprocess should NOT add rollouts to main process "
-            "(demonstrating the isolation issue)"
-        )
+        # With the fix: server object in subprocess ALSO works via auto HTTP delegation
+        # Both rollouts (client + server) should be in the store
+        assert (
+            len(after_direct) == initial_count + 2
+        ), "Both explicit client and server object operations should work via HTTP"
 
     finally:
         await server.stop()
