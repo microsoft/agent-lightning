@@ -60,8 +60,6 @@ except ImportError:
     FlexibleArgumentParser = None
     ServeSubcommand = None
 
-# TODO: mark the whole module to skip if no GPU is available
-
 
 def _get_free_port() -> int:
     with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:

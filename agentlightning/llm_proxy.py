@@ -31,13 +31,36 @@ logger = logging.getLogger(__name__)
 
 
 class ModelConfig(TypedDict):
-    """Model configuration in the format of LiteLLM's model_list."""
+    """LiteLLM model registration entry.
+
+    This mirrors the items in LiteLLM's ``model_list`` section.
+
+    Attributes:
+        model_name: Logical model name exposed by the proxy.
+        litellm_params: Parameters passed to LiteLLM for this model
+            (e.g., backend model id, api_base, additional options).
+    """  # Google style kept concise.
 
     model_name: str
     litellm_params: Dict[str, Any]
 
 
 def _get_pre_call_data(args: Any, kwargs: Any) -> Dict[str, Any]:
+    """Extract LiteLLM request payload from hook args.
+
+    The LiteLLM logger hooks receive ``(*args, **kwargs)`` whose third positional
+    argument or ``data=`` kwarg contains the request payload.
+
+    Args:
+        args: Positional arguments from the hook.
+        kwargs: Keyword arguments from the hook.
+
+    Returns:
+        The request payload dict.
+
+    Raises:
+        ValueError: If the payload cannot be located or is not a dict.
+    """
     if kwargs.get("data"):
         data = kwargs["data"]
     elif len(args) >= 3:
@@ -56,21 +79,47 @@ _global_store: LightningStore | None = None
 
 
 def get_global_store() -> LightningStore:
+    """Return the globally registered LightningStore.
+
+    Used by components that are initialized without an explicit store
+    (e.g., exporter created inside OpenTelemetry).
+
+    Returns:
+        LightningStore: The active global store.
+
+    Raises:
+        ValueError: If the global store has not been set by ``LLMProxy.start()``.
+    """
     if _global_store is None:
         raise ValueError("Global store is not initialized. Please start a LLMProxy first.")
     return _global_store
 
 
 def initialize() -> None:
+    """Initialize global middleware and LiteLLM callbacks once.
+
+    Idempotent. Installs:
+
+    * A FastAPI middleware that rewrites /rollout/{rid}/attempt/{aid}/... paths,
+      injects rollout/attempt/sequence headers, and forwards downstream.
+    * LiteLLM callbacks for token ids and OpenTelemetry export.
+
+    This function does not start any server. It only wires global hooks.
+    """
     global _initialized
     if _initialized:
         return
 
-    # Add middleware here because it relies on "self.store".
+    # Add middleware here because it relies on the global store.
     @app.middleware("http")
     async def rollout_attempt_middleware(  # pyright: ignore[reportUnusedFunction]
         request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
+        # Decode rollout and attempt from the URL prefix. Example:
+        #   /rollout/r123/attempt/a456/v1/chat/completions
+        # becomes
+        #   /v1/chat/completions
+        # while adding request-scoped headers for trace attribution.
         path = request.url.path
 
         match = re.match(r"^/rollout/([^/]+)/attempt/([^/]+)(/.*)?$", path)
@@ -79,11 +128,14 @@ def initialize() -> None:
             attempt_id = match.group(2)
             new_path = match.group(3) if match.group(3) is not None else "/"
 
+            # Rewrite the ASGI scope path so downstream sees a clean OpenAI path.
             request.scope["path"] = new_path
             request.scope["raw_path"] = new_path.encode()
 
+            # Allocate a monotonic sequence id per (rollout, attempt).
             sequence_id = await get_global_store().get_next_span_sequence_id(rollout_id, attempt_id)
 
+            # Inject headers so downstream components and exporters can retrieve them.
             request.scope["headers"] = list(request.scope["headers"]) + [
                 (b"x-rollout-id", rollout_id.encode()),
                 (b"x-attempt-id", attempt_id.encode()),
@@ -93,6 +145,7 @@ def initialize() -> None:
         response = await call_next(request)
         return response
 
+    # Register callbacks once on the global LiteLLM callback list.
     litellm.callbacks.extend(  # pyright: ignore[reportUnknownMemberType]
         [
             AddReturnTokenIds(),
@@ -104,19 +157,53 @@ def initialize() -> None:
 
 
 class AddReturnTokenIds(CustomLogger):
-    """Callback to add requests for return_token_ids to the request data."""
+    """LiteLLM logger hook to request token ids from vLLM.
+
+    This mutates the outgoing request payload to include ``return_token_ids=True``
+    for backends that support token id return (e.g., vLLM).
+
+    See:
+        https://github.com/vllm-project/vllm/pull/22587
+    """
 
     async def async_pre_call_hook(self, *args: Any, **kwargs: Any) -> Optional[Union[Exception, str, Dict[str, Any]]]:
+        """Async pre-call hook to adjust request payload.
+
+        Args:
+            args: Positional args from LiteLLM.
+            kwargs: Keyword args from LiteLLM.
+
+        Returns:
+            Either an updated payload dict or an Exception to short-circuit.
+        """
         try:
             data = _get_pre_call_data(args, kwargs)
         except Exception as e:
             return e
 
-        # https://github.com/vllm-project/vllm/pull/22587
+        # Ensure token ids are requested from the backend when supported.
         return {**data, "return_token_ids": True}
 
 
 class LightningSpanExporter(SpanExporter):
+    """Buffered OTEL span exporter with subtree flushing and training-store sink.
+
+    Design:
+
+    * Spans are buffered until a root span's entire subtree is available.
+    * A private event loop on a daemon thread runs async flush logic.
+    * Rollout/attempt/sequence metadata is reconstructed by merging headers
+      from any span within a subtree.
+
+    Thread-safety:
+
+    * Buffer access is protected by a re-entrant lock.
+    * Export is synchronous to the caller yet schedules an async flush on the
+      internal loop, then waits for completion.
+
+    Args:
+        store: Optional explicit LightningStore. If None, uses ``get_global_store()``.
+    """
 
     def __init__(self, store: Optional[LightningStore] = None):
         self._store = store
@@ -124,21 +211,35 @@ class LightningSpanExporter(SpanExporter):
         self._lock = threading.RLock()
 
         # Single dedicated event loop running in a daemon thread.
+        # This decouples OTEL SDK threads from our async store I/O.
         self._loop = asyncio.new_event_loop()
         self._loop_thread = threading.Thread(target=self._run_loop, name="LightningSpanExporterLoop", daemon=True)
         self._loop_thread.start()
 
     def _get_store(self) -> LightningStore:
+        """Return the LightningStore to use.
+
+        Returns:
+            LightningStore: Explicit store if provided, else the global store.
+
+        Raises:
+            ValueError: If no global store is configured and no explicit store was given.
+        """
         if self._store is None:
             return get_global_store()
         return self._store
 
     def _run_loop(self) -> None:
+        """Run the private asyncio loop forever on the exporter thread."""
         asyncio.set_event_loop(self._loop)
         self._loop.run_forever()
 
     def shutdown(self) -> None:
-        """Optional: call when your process exits."""
+        """Shut down the exporter event loop.
+
+        Safe to call at process exit.
+
+        """
         try:
 
             def _stop():
@@ -151,18 +252,31 @@ class LightningSpanExporter(SpanExporter):
             logger.exception("Error during exporter shutdown")
 
     def export(self, spans: Sequence[ReadableSpan]) -> SpanExportResult:
+        """Export spans via buffered subtree flush.
+
+        Appends spans to the internal buffer, then triggers an async flush on the
+        private event loop. Blocks until that flush completes.
+
+        Args:
+            spans: Sequence of spans to export.
+
+        Returns:
+            SpanExportResult: SUCCESS on flush success, else FAILURE.
+        """
+        # Buffer append under lock to protect against concurrent exporters.
         with self._lock:
             for span in spans:
                 self._buffer.append(span)
 
         # Run the async flush on our private loop, synchronously from caller’s POV.
         async def _locked_flush():
+            # Take the lock inside the coroutine to serialize with other flushes.
             with self._lock:
                 return await self._maybe_flush()
 
         try:
             fut = asyncio.run_coroutine_threadsafe(_locked_flush(), self._loop)
-            fut.result()  # bubble up any exceptions
+            fut.result()  # Bubble up any exceptions from the coroutine.
         except Exception as e:
             logger.exception("Export flush failed: %s", e)
             return SpanExportResult.FAILURE
@@ -170,18 +284,28 @@ class LightningSpanExporter(SpanExporter):
         return SpanExportResult.SUCCESS
 
     async def _maybe_flush(self):
-        """Every span needs to find its parent span (or it's a root span) to be flushed.
+        """Flush ready subtrees from the buffer.
 
-        In a tree, we find "metadata.requester_custom_headers": "{'x-rollout-id': '123', 'x-attempt-id': '456', 'x-sequence-id': '1'}"
-        to get the information we want to add to the store.
+        Strategy:
+            We consider a subtree "ready" if we can identify a root span. We
+            then take that root and all its descendants out of the buffer and
+            try to reconstruct rollout/attempt/sequence headers by merging any
+            span's ``metadata.requester_custom_headers`` within the subtree.
+
+        Required headers:
+            ``x-rollout-id`` (str), ``x-attempt-id`` (str), ``x-sequence-id`` (str of int)
+
+        Raises:
+            None directly. Logs and skips malformed spans.
+
         """
+        # Iterate over current roots. Each iteration pops a whole subtree.
         for root_span_id in self._get_root_span_ids():
             subtree_spans = self._pop_subtrees(root_span_id)
             if not subtree_spans:
                 continue
 
-            # Merge all custom headers in the subtree spans.
-            # This is to find the rollout_id and attempt_id.
+            # Merge all custom headers found in the subtree.
             headers_merged: Dict[str, Any] = {}
 
             for span in subtree_spans:
@@ -196,6 +320,7 @@ class LightningSpanExporter(SpanExporter):
                     )
                     continue
                 try:
+                    # Use literal_eval to parse the stringified dict safely.
                     headers = ast.literal_eval(headers_str)
                 except Exception as e:
                     logger.error(
@@ -213,7 +338,7 @@ class LightningSpanExporter(SpanExporter):
                 logger.warning(f"No headers found in {len(subtree_spans)} subtree spans. Can't logging to store.")
                 continue
 
-            # Convert the rollout_id and attempt_id to str, sequence_id to int.
+            # Validate and normalize required header fields.
             rollout_id = headers_merged.get("x-rollout-id")
             attempt_id = headers_merged.get("x-attempt-id")
             sequence_id = headers_merged.get("x-sequence-id")
@@ -229,13 +354,20 @@ class LightningSpanExporter(SpanExporter):
                 continue
             sequence_id_decimal = int(sequence_id)
 
-            # Store the spans to the store.
+            # Persist each span in the subtree with the resolved identifiers.
             for span in subtree_spans:
                 await self._get_store().add_otel_span(
                     rollout_id=rollout_id, attempt_id=attempt_id, sequence_id=sequence_id_decimal, readable_span=span
                 )
 
     def _get_root_span_ids(self) -> Iterable[int]:
+        """Yield span_ids for root spans currently in the buffer.
+
+        A root span is defined as one with ``parent is None``.
+
+        Yields:
+            int: Span id for each root span found.
+        """
         for span in self._buffer:
             if span.parent is None:
                 span_context = span.get_span_context()
@@ -243,6 +375,16 @@ class LightningSpanExporter(SpanExporter):
                     yield span_context.span_id
 
     def _get_subtrees(self, root_span_id: int) -> Iterable[int]:
+        """Yield span_ids in the subtree rooted at ``root_span_id``.
+
+        Depth-first traversal over the current buffer.
+
+        Args:
+            root_span_id: The span id of the root.
+
+        Yields:
+            int: Span ids including the root and all descendants found.
+        """
         # Yield the root span id first.
         yield root_span_id
         for span in self._buffer:
@@ -254,7 +396,14 @@ class LightningSpanExporter(SpanExporter):
                     yield from self._get_subtrees(span_context.span_id)
 
     def _pop_subtrees(self, root_span_id: int) -> List[ReadableSpan]:
-        """Get the subtree of a particular root span id and remove them from the buffer."""
+        """Remove and return the subtree for a particular root from the buffer.
+
+        Args:
+            root_span_id: Root span id identifying the subtree.
+
+        Returns:
+            list[ReadableSpan]: Spans that were part of the subtree. Order follows buffer order.
+        """
         subtree_span_ids = set(self._get_subtrees(root_span_id))
         subtree_spans: List[ReadableSpan] = []
         new_buffer: List[ReadableSpan] = []
@@ -264,17 +413,22 @@ class LightningSpanExporter(SpanExporter):
                 subtree_spans.append(span)
             else:
                 new_buffer.append(span)
+        # Replace buffer with remaining spans to avoid re-processing.
         self._buffer = new_buffer
         return subtree_spans
 
 
 class LightningOpenTelemetry(OpenTelemetry):
-    """OpenTelemetry callback that logs the spans to lightning store.
+    """OpenTelemetry integration that exports spans to the Lightning store.
 
-    It gets a sequence id at the beginning where request is initiated so that
-    they won't get mixed up due to the misaligned clock between the client node and the proxy node.
+    Responsibilities:
 
-    It also stores every span to the lightning store so that we can use it for training.
+    * Ensures each request is annotated with a per-attempt sequence id so spans
+      are ordered deterministically even with clock skew across nodes.
+    * Uses ``LightningSpanExporter`` to persist spans for analytics and training.
+
+    Args:
+        store: Optional explicit LightningStore for the exporter.
     """
 
     def __init__(self, store: LightningStore | None = None):
@@ -283,6 +437,29 @@ class LightningOpenTelemetry(OpenTelemetry):
 
 
 class LLMProxy:
+    """Host a LiteLLM OpenAI-compatible proxy bound to a LightningStore.
+
+    The proxy:
+
+    * Serves an OpenAI-compatible API via uvicorn.
+    * Adds rollout/attempt routing and headers via middleware.
+    * Registers OTEL export and token-id callbacks.
+    * Writes a LiteLLM worker config file with ``model_list`` and settings.
+
+    Lifecycle:
+
+    * ``start()`` writes config, starts uvicorn server in a thread, and waits until ready.
+    * ``stop()`` tears down the server and removes the temp config file.
+    * ``restart()`` convenience wrapper to stop then start.
+
+    Args:
+        port: TCP port to bind.
+        model_list: LiteLLM ``model_list`` entries.
+        store: LightningStore used for span sequence and persistence.
+        host: Publicly reachable host used in resource endpoints. Defaults to best-guess IPv4.
+        litellm_config: Extra LiteLLM proxy config merged with ``model_list``.
+        num_retries: Default LiteLLM retry count injected into ``litellm_settings``.
+    """
 
     def __init__(
         self,
@@ -299,6 +476,7 @@ class LLMProxy:
         self.model_list = model_list
         self.litellm_config = litellm_config or {}
 
+        # Ensure num_retries is present inside the litellm_settings block.
         self.litellm_config.setdefault("litellm_settings", {})
         self.litellm_config["litellm_settings"].setdefault("num_retries", num_retries)
 
@@ -308,14 +486,22 @@ class LLMProxy:
         self._ready_event = threading.Event()
 
     def update_model_list(self, model_list: List[ModelConfig]) -> None:
-        """Update the model list and restart the server."""
+        """Replace the in-memory model list and hot-restart if running.
+
+        Args:
+            model_list: New list of model entries.
+        """
         self.model_list = model_list
         if self.is_running():
             self.restart()
         # Do nothing if the server is not running.
 
     def _wait_until_started(self, startup_timeout: float = 20.0):
-        """Block until the uvicorn Server flips .started or we time out/exiting."""
+        """Block until the uvicorn server reports started or timeout.
+
+        Args:
+            startup_timeout: Maximum seconds to wait.
+        """
         start = time.time()
         while True:
             if self._uvicorn_server is None:
@@ -330,12 +516,23 @@ class LLMProxy:
             time.sleep(0.01)
 
     def start(self):
+        """Start the proxy server thread and initialize global wiring.
+
+        Side effects:
+
+        * Sets the module-level global store for middleware/exporter access.
+        * Calls ``initialize()`` once to register middleware and callbacks.
+        * Writes a temporary YAML config consumed by LiteLLM worker.
+        * Launches uvicorn in a daemon thread and waits for readiness.
+        """
         global _global_store
 
         _global_store = self.store
 
-        initialize()  # initialize the middleware if needed
+        # Initialize global middleware and callbacks once.
+        initialize()
 
+        # Persist a temp worker config for LiteLLM and point the proxy at it.
         self._config_file = tempfile.mktemp(suffix=".yaml")
         with open(self._config_file, "w") as fp:
             yaml.safe_dump(
@@ -348,9 +545,11 @@ class LLMProxy:
 
         save_worker_config(config=self._config_file)
 
+        # Bind to all interfaces to allow other hosts to reach it if needed.
         self._uvicorn_server = uvicorn.Server(uvicorn.Config(app, host="0.0.0.0", port=self.port))
 
         def run_server():
+            # Serve uvicorn in this background thread with its own event loop.
             assert self._uvicorn_server is not None
             asyncio.run(self._uvicorn_server.serve())
 
@@ -360,10 +559,15 @@ class LLMProxy:
         self._wait_until_started()
 
     def stop(self):
+        """Stop the proxy server and clean up temporary artifacts.
+
+        This is a best-effort graceful shutdown with a bounded join timeout.
+        """
         if not self.is_running():
             logger.warning("LLMProxy is not running. Nothing to stop.")
             return
 
+        # Remove worker config to avoid stale references.
         if self._config_file and os.path.exists(self._config_file):
             os.unlink(self._config_file)
 
@@ -376,11 +580,20 @@ class LLMProxy:
             self._ready_event.clear()
 
     def restart(self) -> None:
+        """Restart the proxy if running, else start it.
+
+        Convenience wrapper calling ``stop()`` followed by ``start()``.
+        """
         if self.is_running():
             self.stop()
         self.start()
 
     def is_running(self) -> bool:
+        """Return whether the uvicorn server is active.
+
+        Returns:
+            bool: True if server was started and did not signal exit.
+        """
         return self._uvicorn_server is not None and self._uvicorn_server.started
 
     def as_resource(
@@ -390,11 +603,23 @@ class LLMProxy:
         model: str | None = None,
         sampling_parameters: Dict[str, Any] | None = None,
     ) -> LLM:
-        """
-        Return an `LLM` Resource pointing at this proxy (OpenAI-compatible /v1).
+        """Create an ``LLM`` resource pointing at this proxy with rollout context.
 
-        Each resource is binded to a particular rollout and attempt, so that we can
-        trace the request back to the rollout and attempt.
+        The returned endpoint is:
+            ``http://{host}:{port}/rollout/{rollout_id}/attempt/{attempt_id}``
+
+        Args:
+            rollout_id: Rollout identifier used for span attribution.
+            attempt_id: Attempt identifier used for span attribution.
+            model: Logical model name to use. If omitted and exactly one model
+                is configured, that model is used.
+            sampling_parameters: Optional default sampling parameters.
+
+        Returns:
+            LLM: Configured resource ready for OpenAI-compatible calls.
+
+        Raises:
+            ValueError: If ``model`` is omitted and zero or multiple models are configured.
         """
         if model is None:
             if len(self.model_list) == 1:
@@ -412,11 +637,14 @@ class LLMProxy:
 
 
 def _get_default_ipv4_address() -> str:
-    """
-    Returns the IPv4 address this machine would use for outbound traffic.
-    Useful as the host IP other machines would connect to on the local network.
+    """Determine the default outbound IPv4 address for this machine.
 
-    Falls back to 127.0.0.1 if it can't be determined.
+    Implementation:
+        Opens a UDP socket and "connects" to a public address to force route
+        selection, then inspects the socket's local address. No packets are sent.
+
+    Returns:
+        str: Best-guess IPv4 like ``192.168.x.y``. Falls back to ``127.0.0.1``.
     """
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
