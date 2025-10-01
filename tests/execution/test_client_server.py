@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import multiprocessing
 import signal
 import socket
 import sys
@@ -19,6 +20,7 @@ from agentlightning.execution.client_server import ClientServerExecutionStrategy
 from agentlightning.execution.events import Event
 from agentlightning.store.base import LightningStore
 from agentlightning.store.client_server import LightningStoreClient
+from agentlightning.store.memory import InMemoryLightningStore
 
 from ..store.dummy_store import DummyLightningStore, minimal_dummy_store
 
@@ -97,6 +99,40 @@ async def _kbint_in_algorithm(store: LightningStore, event: Event) -> None:
     raise KeyboardInterrupt()
 
 
+def _subprocess_algorithm_write_util(store: LightningStore) -> None:
+    """Subprocess that writes to the store."""
+
+    async def do_work() -> None:
+        # This should auto-delegate to HTTP client in subprocess
+        await store.enqueue_rollout(input={"origin": "algo-subprocess"})
+
+    asyncio.run(do_work())
+
+
+async def _subprocess_algorithm(store: LightningStore, event: Event) -> None:
+    """Algorithm that spawns a subprocess to write to the store."""
+    # Spawn subprocess to write
+    ctx = multiprocessing.get_context()
+    process = ctx.Process(target=_subprocess_algorithm_write_util, args=(store,))
+    process.start()
+    await asyncio.to_thread(process.join, timeout=5.0)
+
+    if process.is_alive():
+        process.terminate()
+        process.join()
+        raise RuntimeError("Subprocess hung")
+
+    assert process.exitcode == 0
+
+    event.set()
+    # Wait for client to see the signal
+    await asyncio.sleep(0.5)
+
+    # Algorithm should see the write
+    algo_rollouts = await store.query_rollouts()
+    assert len(algo_rollouts) == 1, "Algorithm should see the write"
+
+
 async def _noop_runner(store: LightningStore, worker_id: int, event: Event) -> None:
     _ = (store, worker_id)
     await asyncio.sleep(0)
@@ -138,6 +174,18 @@ async def _timeout_error_in_runner(store: LightningStore, worker_id: int, event:
     _ = worker_id
     event.set()
     raise TimeoutError("runner timeout")
+
+
+async def _waiting_for_rollout_runner(store: LightningStore, worker_id: int, event: Event) -> None:
+    """Runner that waits for algorithm signal then checks store."""
+    # Wait for algorithm to finish writing
+    t0 = time.monotonic()
+    while not event.is_set() and time.monotonic() - t0 < 5.0:
+        await asyncio.sleep(0.05)
+
+    # Runner should see the write via HTTP
+    runner_rollouts = await store.query_rollouts()
+    assert len(runner_rollouts) == 1, "Runner should see the write"
 
 
 # =========================
@@ -870,6 +918,45 @@ def test_execute_both_main_algo_runner_ignores_stop(store: LightningStore) -> No
     # Should complete without hanging despite runners ignoring signals
     with pytest.raises(RuntimeError, match="Subprocesses failed:"):
         strat.execute(algorithm=algo, runner=_runner_ignores_stop_forever, store=store)
+
+
+@pytest.mark.parametrize("main_process", ["algorithm", "runner"])
+def test_subprocess_spawned_in_algorithm_visible_to_all(main_process: str) -> None:
+    """
+    Test that when the algorithm spawns a subprocess that writes to the store,
+    those writes are visible to:
+    - The algorithm itself (via LightningStoreServer auto-delegation)
+    - The runner processes (via HTTP client)
+    - The main pytest process (only when main_process='algorithm')
+
+    When main_process='runner', the algorithm runs in a subprocess, so the main
+    pytest process won't see the changes (they're isolated to that subprocess).
+    """
+    port: int = _free_port()
+    store = InMemoryLightningStore()
+
+    strat = ClientServerExecutionStrategy(
+        role="both",
+        main_process=main_process,  # type: ignore
+        n_runners=1,
+        server_host="127.0.0.1",
+        server_port=port,
+        graceful_timeout=2.0,
+        terminate_timeout=2.0,
+    )
+
+    strat.execute(algorithm=_subprocess_algorithm, runner=_waiting_for_rollout_runner, store=store)
+
+    # Main process check depends on which process the algorithm ran in
+    if main_process == "algorithm":
+        # Algorithm ran in main process, so main process should see the write
+        main_rollouts = asyncio.run(store.query_rollouts())
+        assert len(main_rollouts) == 1, "Main process should see write when algorithm runs in main process"
+    else:
+        # Algorithm ran in subprocess, main process won't see the write
+        # (it's isolated to the subprocess's copy of the store)
+        main_rollouts = asyncio.run(store.query_rollouts())
+        assert len(main_rollouts) == 0, "Main process should NOT see write when algorithm runs in subprocess"
 
 
 def test_execute_main_runner_store_state_isolated_in_subprocess(store: DummyLightningStore) -> None:
