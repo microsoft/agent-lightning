@@ -537,7 +537,7 @@ class LLMProxy:
         initialize()
 
         # Persist a temp worker config for LiteLLM and point the proxy at it.
-        self._config_file = tempfile.mktemp(suffix=".yaml")
+        self._config_file = tempfile.NamedTemporaryFile(suffix=".yaml", delete=False).name
         with open(self._config_file, "w") as fp:
             yaml.safe_dump(
                 {
