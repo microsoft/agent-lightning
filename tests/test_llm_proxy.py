@@ -1,20 +1,49 @@
 # Copyright (c) Microsoft. All rights reserved.
 
+"""Test the LLMProxy class. Still under development.
+
+General TODOs:
+
+1. Add tests for update model list and server restart
+2. Add tests for retries
+3. Add tests for timeout
+4. Add tests for multiple models in model list
+5. Add tests for multi-modal models
+
+There are some specific TODOs for each test function.
+"""
+
 import ast
+import asyncio
+import json
 import os
+import random
 import socket
 import subprocess
 import sys
 import time
 from contextlib import closing
-from typing import Any, Optional
+from typing import Any, List, Optional, cast
 
+import anthropic
 import httpx
 import openai
 import pytest
+from opentelemetry.sdk.trace import ReadableSpan
 
-from agentlightning.llm_proxy import LLMProxy
+from agentlightning.llm_proxy import LightningSpanExporter, LLMProxy
 from agentlightning.store.memory import InMemoryLightningStore
+from agentlightning.tracer.types import Span
+from agentlightning.types import LLM
+
+try:
+    import torch  # type: ignore
+
+    GPU_AVAILABLE = torch.cuda.is_available()
+except Exception:
+    GPU_AVAILABLE = False  # type: ignore
+
+pytest.mark.skipif(not GPU_AVAILABLE, reason="GPU not available")
 
 VLLM_AVAILABLE = False
 
@@ -226,7 +255,6 @@ async def test_basic_integration(qwen25_model: RemoteOpenAIServer):
 
     rollout = await store.start_rollout(None)
 
-    proxy.initialize()
     proxy.start()
 
     resource = proxy.as_resource(rollout.rollout_id, rollout.attempt.attempt_id)
@@ -293,3 +321,314 @@ async def test_basic_integration(qwen25_model: RemoteOpenAIServer):
     assert litellm_span.attributes["gen_ai.completion.0.role"] == "assistant", "Expected assistant role in completion"
     assert "gen_ai.completion.0.content" in litellm_span.attributes, "gen_ai.completion.0.content not found"
     assert "gen_ai.completion.0.finish_reason" in litellm_span.attributes, "gen_ai.completion.0.finish_reason not found"
+
+
+def _make_proxy_and_store(qwen25_model: RemoteOpenAIServer, *, retries: int = 0):
+    store = InMemoryLightningStore()
+    proxy = LLMProxy(
+        port=_get_free_port(),
+        model_list=[
+            {
+                "model_name": "gpt-4o-arbitrary",
+                "litellm_params": {
+                    "model": "hosted_vllm/" + qwen25_model.model,
+                    "api_base": qwen25_model.url_for("v1"),
+                },
+            }
+        ],
+        store=store,
+        num_retries=retries,
+    )
+    proxy.start()
+    return proxy, store
+
+
+async def _new_resource(proxy: LLMProxy, store: InMemoryLightningStore):
+    rollout = await store.start_rollout(None)
+    return proxy.as_resource(rollout.rollout_id, rollout.attempt.attempt_id), rollout
+
+
+def _get_client_for_resource(resource: LLM):
+    return openai.OpenAI(base_url=resource.endpoint, api_key="token-abc123", timeout=120, max_retries=0)
+
+
+def _get_async_client_for_resource(resource: LLM):
+    return openai.AsyncOpenAI(base_url=resource.endpoint, api_key="token-abc123", timeout=120, max_retries=0)
+
+
+def _find_span(spans: list[Span], name: str):
+    return [s for s in spans if s.name == name]
+
+
+def _attr(s: Span, key: str, default: Any = None):  # type: ignore
+    return s.attributes.get(key, default)
+
+
+@pytest.mark.asyncio
+async def test_multiple_requests_one_attempt(qwen25_model: RemoteOpenAIServer):
+    proxy, store = _make_proxy_and_store(qwen25_model)
+    try:
+        resource, rollout = await _new_resource(proxy, store)
+        client = _get_client_for_resource(resource)
+
+        for i in range(3):
+            r = client.chat.completions.create(
+                model="gpt-4o-arbitrary",
+                messages=[{"role": "user", "content": f"Say ping {i}"}],
+                stream=False,
+            )
+            assert r.choices[0].message.content
+
+        spans = await store.query_spans(rollout.rollout_id, rollout.attempt.attempt_id)
+        assert len(spans) > 0
+        # Different requests have different sequence_ids
+        assert {s.sequence_id for s in spans} == {1, 2, 3}
+        # At least 3 requests recorded
+        assert len(_find_span(spans, "raw_gen_ai_request")) == 3
+        # TODO: Check response contents and token ids for the 3 requests respectively
+    finally:
+        proxy.stop()
+
+
+@pytest.mark.asyncio
+async def test_ten_concurrent_requests(qwen25_model: RemoteOpenAIServer):
+    proxy, store = _make_proxy_and_store(qwen25_model)
+    try:
+        resource, rollout = await _new_resource(proxy, store)
+        aclient = _get_async_client_for_resource(resource)
+
+        async def _one(i: int):
+            r = await aclient.chat.completions.create(
+                model="gpt-4o-arbitrary",
+                messages=[{"role": "user", "content": f"Return #{i}"}],
+                stream=False,
+            )
+            return r.choices[0].message.content
+
+        outs = await asyncio.gather(*[_one(i) for i in range(10)])
+        assert len([o for o in outs if o]) == 10
+
+        spans = await store.query_spans(rollout.rollout_id, rollout.attempt.attempt_id)
+        assert len(_find_span(spans, "raw_gen_ai_request")) == 10
+        assert {s.sequence_id for s in spans} == {1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+        # TODO: Check whether the sequence ids get mixed up or not
+    finally:
+        proxy.stop()
+
+
+@pytest.mark.asyncio
+async def test_anthropic_client_compat(qwen25_model: RemoteOpenAIServer):
+    # litellm proxy accepts Anthropic schema and forwards to OpenAI backend
+    proxy, store = _make_proxy_and_store(qwen25_model)
+    try:
+        resource, rollout = await _new_resource(proxy, store)
+
+        a = anthropic.Anthropic(base_url=resource.endpoint, api_key="token-abc123", timeout=120)
+        msg = a.messages.create(
+            model="gpt-4o-arbitrary",
+            max_tokens=64,
+            messages=[{"role": "user", "content": "Respond with the word: OK"}],
+        )
+        # Anthropic SDK returns content list
+        txt = "".join([b.text for b in msg.content if b.type == "text"])
+        assert "OK" in txt.upper()
+
+        spans = await store.query_spans(rollout.rollout_id, rollout.attempt.attempt_id)
+        assert len(spans) > 0
+    finally:
+        proxy.stop()
+
+
+@pytest.mark.asyncio
+async def test_tool_call_roundtrip(qwen25_model: RemoteOpenAIServer):
+    proxy, store = _make_proxy_and_store(qwen25_model)
+    try:
+        resource, rollout = await _new_resource(proxy, store)
+        client = _get_client_for_resource(resource)
+
+        tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "echo",
+                    "description": "Echo a string",
+                    "parameters": {"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"]},
+                },
+            }
+        ]
+
+        r1 = client.chat.completions.create(
+            model="gpt-4o-arbitrary",
+            messages=[{"role": "user", "content": "Call the echo tool with text=hello"}],
+            tools=cast(Any, tools),
+            tool_choice="auto",
+            stream=False,
+        )
+        # If the small model does not tool-call, skip gracefully
+        tool_calls = r1.choices[0].message.tool_calls or []
+        if not tool_calls:
+            pytest.skip("model did not emit tool calls in this environment")
+
+        call = tool_calls[0]
+        assert call.type == "function"
+        assert call.function and call.function.name == "echo"
+        args = json.loads(call.function.arguments)
+        assert "text" in args
+
+        r2 = client.chat.completions.create(
+            model="gpt-4o-arbitrary",
+            messages=cast(
+                Any,
+                [
+                    {"role": "user", "content": "Call the echo tool with text=hello"},
+                    {
+                        "role": "assistant",
+                        "tool_calls": [
+                            {
+                                "id": call.id,
+                                "type": "function",
+                                "function": {"name": "echo", "arguments": call.function.arguments},
+                            }
+                        ],
+                    },
+                    {"role": "tool", "tool_call_id": call.id, "name": "echo", "content": args["text"]},
+                ],
+            ),
+            stream=False,
+        )
+        assert args["text"] in (r2.choices[0].message.content or "")
+
+        spans = await store.query_spans(rollout.rollout_id, rollout.attempt.attempt_id)
+        assert len(_find_span(spans, "litellm_request")) == 2
+        assert len(_find_span(spans, "raw_gen_ai_request")) == 2
+
+        # TODO: Check response contents and token ids for the 2 requests respectively
+    finally:
+        proxy.stop()
+
+
+@pytest.mark.asyncio
+async def test_streaming_chunks(qwen25_model: RemoteOpenAIServer):
+    proxy, store = _make_proxy_and_store(qwen25_model)
+    try:
+        resource, rollout = await _new_resource(proxy, store)
+        client = _get_client_for_resource(resource)
+
+        stream = client.chat.completions.create(
+            model="gpt-4o-arbitrary",
+            messages=[{"role": "user", "content": "Say the word STREAM once"}],
+            stream=True,
+        )
+        collected: list[str] = []
+        for evt in stream:
+            for c in evt.choices:
+                if c.delta and getattr(c.delta, "content", None):
+                    assert isinstance(c.delta.content, str)
+                    collected.append(c.delta.content)
+        assert "STREAM" in "".join(collected).upper()
+
+        spans = await store.query_spans(rollout.rollout_id, rollout.attempt.attempt_id)
+        assert len(spans) > 0
+        # TODO: didn't test the token ids in streaming chunks here
+    finally:
+        proxy.stop()
+
+
+class _FakeSpanContext:
+    def __init__(self, span_id: int):
+        self.span_id = span_id
+
+
+class _FakeParent:
+    def __init__(self, span_id: int):
+        self.span_id = span_id
+
+
+class _FakeReadableSpan:
+    def __init__(self, span_id: int, parent_id: int | None, attrs: dict[str, str]):
+        self._ctx = _FakeSpanContext(span_id)
+        self.parent = None if parent_id is None else _FakeParent(parent_id)
+        self.attributes = attrs
+        self.name = f"span-{span_id}"
+
+    def get_span_context(self):
+        return self._ctx
+
+
+class _FakeStore(InMemoryLightningStore):
+    def __init__(self):
+        super().__init__()
+        self.added: list[tuple[str, str, int, _FakeReadableSpan]] = []
+
+    async def add_otel_span(
+        self, rollout_id: str, attempt_id: str, readable_span: ReadableSpan, sequence_id: int | None = None
+    ) -> Span:
+        assert isinstance(sequence_id, int)
+        assert isinstance(readable_span, _FakeReadableSpan)
+        self.added.append((rollout_id, attempt_id, sequence_id, readable_span))
+        return cast(Span, None)
+
+
+@pytest.mark.asyncio
+async def test_exporter_tree_and_flush_headers_parsing():
+    store = _FakeStore()
+    exporter = LightningSpanExporter(store)
+
+    # Build a root and two children. Headers distributed across spans.
+    root = _FakeReadableSpan(1, None, {"metadata.requester_custom_headers": "{'x-rollout-id': 'r1'}"})
+    child_a = _FakeReadableSpan(2, 1, {"metadata.requester_custom_headers": "{'x-attempt-id': 'a9'}"})
+    child_b = _FakeReadableSpan(3, 1, {"metadata.requester_custom_headers": "{'x-sequence-id': '7'}"})
+
+    # Push to buffer and export
+    res = exporter.export(cast(List[ReadableSpan], [root, child_a, child_b]))
+    assert res.name == "SUCCESS"
+
+    # Give event loop a moment to run exporter coroutine
+    await asyncio.sleep(0.1)
+
+    # Should have flushed all three with merged headers
+    assert len(store.added) == 3
+    for rid, aid, sid, sp in store.added:
+        assert rid == "r1"
+        assert aid == "a9"
+        assert sid == 7
+        assert isinstance(sp, _FakeReadableSpan)
+
+    exporter.shutdown()
+
+
+def test_exporter_helpers():
+    store = _FakeStore()
+    exporter = LightningSpanExporter(store)
+
+    # Tree: 10(root) -> 11(child) -> 12(grandchild); 20(root2)
+    s10 = _FakeReadableSpan(10, None, {})
+    s11 = _FakeReadableSpan(11, 10, {})
+    s12 = _FakeReadableSpan(12, 11, {})
+    s20 = _FakeReadableSpan(20, None, {})
+
+    for _ in range(10):
+        exporter._buffer = cast(List[ReadableSpan], [s10, s11, s12, s20])  # pyright: ignore[reportPrivateUsage]
+        random.shuffle(exporter._buffer)  # pyright: ignore[reportPrivateUsage]
+
+        roots = list(exporter._get_root_span_ids())  # pyright: ignore[reportPrivateUsage]
+        assert set(roots) == {10, 20}
+
+        subtree_ids = set(exporter._get_subtrees(10))  # pyright: ignore[reportPrivateUsage]
+        assert subtree_ids == {10, 11, 12}
+
+        popped = exporter._pop_subtrees(10)  # pyright: ignore[reportPrivateUsage]
+        assert {sp.get_span_context().span_id for sp in popped} == {  # pyright: ignore[reportOptionalMemberAccess]
+            10,
+            11,
+            12,
+        }
+        # Remaining buffer has only s20
+        assert {
+            sp.get_span_context().span_id  # pyright: ignore[reportOptionalMemberAccess]
+            for sp in exporter._buffer  # pyright: ignore[reportPrivateUsage]
+        } == {20}
+
+    exporter.shutdown()
+
+    # TODO: add more complex tests for the exporter helper

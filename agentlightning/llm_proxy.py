@@ -23,7 +23,6 @@ from litellm.proxy.proxy_server import app, save_worker_config  # pyright: ignor
 from opentelemetry.sdk.trace import ReadableSpan
 from opentelemetry.sdk.trace.export import SpanExporter, SpanExportResult
 
-from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.types import LLM
 
 from .store.base import LightningStore
@@ -50,6 +49,60 @@ def _get_pre_call_data(args: Any, kwargs: Any) -> Dict[str, Any]:
     return cast(Dict[str, Any], data)
 
 
+# We need global state because litellm is based on a global app.
+# Repeatedly initializing the app with different stores will cause errors.
+_initialized: bool = False
+_global_store: LightningStore | None = None
+
+
+def get_global_store() -> LightningStore:
+    if _global_store is None:
+        raise ValueError("Global store is not initialized. Please start a LLMProxy first.")
+    return _global_store
+
+
+def initialize() -> None:
+    global _initialized
+    if _initialized:
+        return
+
+    # Add middleware here because it relies on "self.store".
+    @app.middleware("http")
+    async def rollout_attempt_middleware(  # pyright: ignore[reportUnusedFunction]
+        request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        path = request.url.path
+
+        match = re.match(r"^/rollout/([^/]+)/attempt/([^/]+)(/.*)?$", path)
+        if match:
+            rollout_id = match.group(1)
+            attempt_id = match.group(2)
+            new_path = match.group(3) if match.group(3) is not None else "/"
+
+            request.scope["path"] = new_path
+            request.scope["raw_path"] = new_path.encode()
+
+            sequence_id = await get_global_store().get_next_span_sequence_id(rollout_id, attempt_id)
+
+            request.scope["headers"] = list(request.scope["headers"]) + [
+                (b"x-rollout-id", rollout_id.encode()),
+                (b"x-attempt-id", attempt_id.encode()),
+                (b"x-sequence-id", str(sequence_id).encode()),
+            ]
+
+        response = await call_next(request)
+        return response
+
+    litellm.callbacks.extend(  # pyright: ignore[reportUnknownMemberType]
+        [
+            AddReturnTokenIds(),
+            LightningOpenTelemetry(),
+        ]
+    )
+
+    _initialized = True
+
+
 class AddReturnTokenIds(CustomLogger):
     """Callback to add requests for return_token_ids to the request data."""
 
@@ -65,9 +118,8 @@ class AddReturnTokenIds(CustomLogger):
 
 class LightningSpanExporter(SpanExporter):
 
-    def __init__(self, store: LightningStore):
-        self.store = store
-
+    def __init__(self, store: Optional[LightningStore] = None):
+        self._store = store
         self._buffer: List[ReadableSpan] = []
         self._lock = threading.RLock()
 
@@ -75,6 +127,11 @@ class LightningSpanExporter(SpanExporter):
         self._loop = asyncio.new_event_loop()
         self._loop_thread = threading.Thread(target=self._run_loop, name="LightningSpanExporterLoop", daemon=True)
         self._loop_thread.start()
+
+    def _get_store(self) -> LightningStore:
+        if self._store is None:
+            return get_global_store()
+        return self._store
 
     def _run_loop(self) -> None:
         asyncio.set_event_loop(self._loop)
@@ -174,7 +231,7 @@ class LightningSpanExporter(SpanExporter):
 
             # Store the spans to the store.
             for span in subtree_spans:
-                await self.store.add_otel_span(
+                await self._get_store().add_otel_span(
                     rollout_id=rollout_id, attempt_id=attempt_id, sequence_id=sequence_id_decimal, readable_span=span
                 )
 
@@ -220,8 +277,7 @@ class LightningOpenTelemetry(OpenTelemetry):
     It also stores every span to the lightning store so that we can use it for training.
     """
 
-    def __init__(self, store: LightningStore):
-        self.store = store
+    def __init__(self, store: LightningStore | None = None):
         config = OpenTelemetryConfig(exporter=LightningSpanExporter(store))
         super().__init__(config=config)  # pyright: ignore[reportUnknownMemberType]
 
@@ -258,41 +314,6 @@ class LLMProxy:
             self.restart()
         # Do nothing if the server is not running.
 
-    def initialize(self) -> None:
-        # Add middleware here because it relies on "self.store".
-        @app.middleware("http")
-        async def rollout_attempt_middleware(  # pyright: ignore[reportUnusedFunction]
-            request: Request, call_next: Callable[[Request], Awaitable[Response]]
-        ) -> Response:
-            path = request.url.path
-
-            match = re.match(r"^/rollout/([^/]+)/attempt/([^/]+)(/.*)?$", path)
-            if match:
-                rollout_id = match.group(1)
-                attempt_id = match.group(2)
-                new_path = match.group(3) if match.group(3) is not None else "/"
-
-                request.scope["path"] = new_path
-                request.scope["raw_path"] = new_path.encode()
-
-                sequence_id = await self.store.get_next_span_sequence_id(rollout_id, attempt_id)
-
-                request.scope["headers"] = list(request.scope["headers"]) + [
-                    (b"x-rollout-id", rollout_id.encode()),
-                    (b"x-attempt-id", attempt_id.encode()),
-                    (b"x-sequence-id", str(sequence_id).encode()),
-                ]
-
-            response = await call_next(request)
-            return response
-
-        litellm.callbacks.extend(  # pyright: ignore[reportUnknownMemberType]
-            [
-                AddReturnTokenIds(),
-                LightningOpenTelemetry(self.store),
-            ]
-        )
-
     def _wait_until_started(self, startup_timeout: float = 20.0):
         """Block until the uvicorn Server flips .started or we time out/exiting."""
         start = time.time()
@@ -309,6 +330,12 @@ class LLMProxy:
             time.sleep(0.01)
 
     def start(self):
+        global _global_store
+
+        _global_store = self.store
+
+        initialize()  # initialize the middleware if needed
+
         self._config_file = tempfile.mktemp(suffix=".yaml")
         with open(self._config_file, "w") as fp:
             yaml.safe_dump(
@@ -400,48 +427,3 @@ def _get_default_ipv4_address() -> str:
         return "127.0.0.1"
     finally:
         s.close()
-
-
-async def main():
-    store = InMemoryLightningStore()
-    proxy = LLMProxy(
-        store=store,
-        host="0.0.0.0",
-        port=9000,
-        model_list=[
-            {
-                "model_name": "gpt-4o",
-                "litellm_params": {
-                    "model": "hosted_vllm/Qwen/Qwen2.5-0.5B-Instruct",
-                    "api_base": "http://127.0.0.1:8000/v1",
-                },
-            }
-        ],
-        litellm_config={},
-    )
-
-    rollout = await store.start_rollout(None)
-
-    proxy.initialize()
-    proxy.start()
-
-    resource = proxy.as_resource(rollout.rollout_id, rollout.attempt.attempt_id)
-
-    import openai
-
-    client = openai.OpenAI(base_url=resource.endpoint, api_key="token-abc123")
-    response = client.chat.completions.create(
-        model="gpt-4o",
-        messages=[{"role": "user", "content": "Hello, world!"}],
-        stream=False,
-    )
-    print(response)
-
-    proxy.stop()
-
-    await store.update_attempt(rollout.rollout_id, rollout.attempt.attempt_id, status="succeeded")
-    print(await store.query_spans(rollout.rollout_id, rollout.attempt.attempt_id))
-
-
-if __name__ == "__main__":
-    asyncio.run(main())

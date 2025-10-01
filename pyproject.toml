@@ -55,6 +55,7 @@ agent = [
   "sqlparse",
   "nltk",
   "uv",
+  "anthropic",
 ]
 
 [build-system]
