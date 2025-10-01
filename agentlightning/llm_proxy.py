@@ -452,6 +452,10 @@ class LLMProxy:
     * ``stop()`` tears down the server and removes the temp config file.
     * ``restart()`` convenience wrapper to stop then start.
 
+    Usage Note:
+    As the LLM Proxy sets up an OpenTelemetry tracer, it's recommended to run it in a different
+    process from the main runner (i.e., tracer from agents).
+
     Args:
         port: TCP port to bind.
         model_list: LiteLLM ``model_list`` entries.

@@ -35,6 +35,7 @@ from agentlightning.llm_proxy import LightningSpanExporter, LLMProxy
 from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.tracer.types import Span
 from agentlightning.types import LLM
+from tests.tracer.utils import clear_tracer_provider
 
 try:
     import torch  # type: ignore
@@ -229,7 +230,7 @@ def qwen25_model():
         model="Qwen/Qwen2.5-0.5B-Instruct",
         vllm_serve_args=[
             "--gpu-memory-utilization",
-            "0.8",
+            "0.7",
             "--enable-auto-tool-choice",
             "--tool-call-parser",
             "hermes",
@@ -248,6 +249,12 @@ def test_qwen25_model_sanity(qwen25_model: RemoteOpenAIServer):
         stream=False,
     )
     assert response.choices[0].message.content is not None
+
+
+@pytest.fixture(scope="module", autouse=True)
+def setup_module():
+    clear_tracer_provider()
+    yield
 
 
 @pytest.mark.asyncio
