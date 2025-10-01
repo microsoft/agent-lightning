@@ -43,8 +43,7 @@ try:
     GPU_AVAILABLE = torch.cuda.is_available()
 except Exception:
     GPU_AVAILABLE = False  # type: ignore
-
-pytest.mark.skipif(not GPU_AVAILABLE, reason="GPU not available")
+    pytest.skip(reason="GPU not available")
 
 VLLM_AVAILABLE = False
 VLLM_UNAVAILABLE_REASON = ""
