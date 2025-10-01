@@ -41,6 +41,8 @@ jobs:
           compression-level: 0
       - name: Run tests
         run: |
+          set -ex
+          . .venv/bin/activate
           pytest -v tests
         env:
           PYTEST_ADDOPTS: "--color=yes"
