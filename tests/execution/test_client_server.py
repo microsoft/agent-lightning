@@ -870,3 +870,46 @@ def test_execute_both_main_algo_runner_ignores_stop(store: LightningStore) -> No
     # Should complete without hanging despite runners ignoring signals
     with pytest.raises(RuntimeError, match="Subprocesses failed:"):
         strat.execute(algorithm=algo, runner=_runner_ignores_stop_forever, store=store)
+
+
+def test_execute_main_runner_store_state_isolated_in_subprocess(store: DummyLightningStore) -> None:
+    """
+    When main_process='runner', the algorithm runs in a subprocess with the store.
+    Any state modifications made during execution remain in that subprocess and
+    are NOT reflected in the original store object passed to execute().
+    """
+    port: int = _free_port()
+
+    async def runner(store: LightningStore, worker_id: int, event: Event) -> None:
+        _ = (store, worker_id)
+        # Runner completes quickly
+        await asyncio.sleep(0.05)
+        event.set()
+
+    async def algo(store: LightningStore, event: Event) -> None:
+        # Algorithm modifies the store
+        await store.enqueue_rollout(input={"x": 42})
+        # Wait for runner to signal completion
+        t0: float = time.monotonic()
+        while not event.is_set() and time.monotonic() - t0 < 1.0:
+            await asyncio.sleep(0.005)
+
+    # Record initial state
+    initial_call_count = len(store.calls)
+
+    strat = ClientServerExecutionStrategy(
+        role="both",
+        main_process="runner",
+        n_runners=1,
+        server_host="127.0.0.1",
+        server_port=port,
+        graceful_timeout=5.0,
+        terminate_timeout=5.0,
+    )
+    strat.execute(algorithm=algo, runner=runner, store=store)
+
+    # Verify the original store object was NOT modified
+    # (the enqueue_rollout call happened in the subprocess)
+    assert (
+        len(store.calls) == initial_call_count
+    ), "Store state should not be modified in main process when main_process='runner'"

@@ -21,32 +21,37 @@ logger = logging.getLogger(__name__)
 class ClientServerExecutionStrategy(ExecutionStrategy):
     """Run algorithm (server) and runners (clients) as separate processes over HTTP.
 
-    Execution Roles:
+    **Execution Roles:**
+
     - "algorithm": Start the HTTP server (`LightningStoreServer`) in-process and run the
-        algorithm bundle against it.
-
+      algorithm bundle against it.
     - "runner": Connect to an already running server via `LightningStoreClient` and
-        execute runner bundles (optionally in multiple processes).
-
+      execute runner bundles (optionally in multiple processes).
     - "both": Spawn the runner processes first, then launch the algorithm/server
-        bundle on the main process. This mode orchestrates the full loop locally.
+      bundle on the main process. This mode orchestrates the full loop locally.
 
     When role == "both", you may choose which side runs on the main process via
     `main_process` (debug helper). Running the runner bundle on the main process
     is only supported with `n_runners == 1`.
 
-    Abort / Stop Model (four-step escalation):
+    Important: When `main_process == "runner"`, the algorithm runs in a subprocess
+    with the LightningStore server. This means any state modifications made during
+    execution remain in that subprocess and are NOT reflected in the original store
+    object passed to `execute()`. The main process runner accesses the store only
+    through the HTTP client interface.
+
+    **Abort / Stop Model (four-step escalation):**
 
     1. Cooperative stop:
-        A shared :class:`~agentlightning.execution.events.MultiprocessingEvent`
-        (`stop_evt`) is passed to *all* bundles. Bundles should check it to exit.
-        Any crash (algorithm or runner) sets `stop_evt` so the other side can
-        stop cooperatively. Ctrl+C on the main process also flips the event.
+       A shared :class:`~agentlightning.execution.events.MultiprocessingEvent`
+       (`stop_evt`) is passed to *all* bundles. Bundles should check it to exit.
+       Any crash (algorithm or runner) sets `stop_evt` so the other side can
+       stop cooperatively. Ctrl+C on the main process also flips the event.
     2. KeyboardInterrupt synth:
-        Remaining subprocesses receive `SIGINT` to trigger `KeyboardInterrupt`
-        handlers.
+       Remaining subprocesses receive `SIGINT` to trigger `KeyboardInterrupt`
+       handlers.
     3. Termination:
-        Stubborn subprocesses get `terminate()` (SIGTERM on POSIX).
+       Stubborn subprocesses get `terminate()` (SIGTERM on POSIX).
     4. Kill:
         As a last resort we call `kill()` (SIGKILL on POSIX).
 
@@ -155,6 +160,7 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
         *,
         ctx: BaseContext,
     ) -> list[multiprocessing.Process]:
+        """Used when `role == "runner"` or `role == "both"` and `n_runners > 1`."""
         processes: list[multiprocessing.Process] = []
 
         def _runner_sync(runner: RunnerBundle, worker_id: int, stop_evt: Event) -> None:
@@ -181,6 +187,8 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
         *,
         ctx: BaseContext,
     ) -> multiprocessing.Process:
+        """Used when `main_process == "runner"`."""
+
         def _algorithm_sync(algorithm: AlgorithmBundle, store: LightningStore, stop_evt: Event) -> None:
             asyncio.run(self._execute_algorithm(algorithm, store, stop_evt))
 
@@ -227,6 +235,7 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
         processes: list[multiprocessing.Process],
         stop_evt: Event,
     ) -> None:
+        """4-step escalation shutdown of ``processes``."""
         if not processes:
             logger.debug("No subprocesses to shutdown")
             return
