@@ -16,7 +16,7 @@ dependencies = [
   "aiohttp",
   "opentelemetry-api>=1.35",
   "opentelemetry-sdk>=1.35",
-  "opentelemetry-exporter-otlp-proto-grpc",
+  "opentelemetry-exporter-otlp>=1.35",
   "litellm[proxy]",
   "pydantic>=2.11",
   "openai",

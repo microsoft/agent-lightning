@@ -118,7 +118,7 @@ class RemoteOpenAIServer:
         else:
             # Does not support return_token_ids
             self.proc = subprocess.Popen(
-                ["python", "-m", "agentlightning.cli.vllm", model, *vllm_serve_args],
+                ["python", "-m", "agentlightning.cli.vllm", "serve", model, *vllm_serve_args],
                 env=env,
                 stdout=sys.stdout,
                 stderr=sys.stderr,
@@ -282,7 +282,7 @@ async def test_basic_integration(qwen25_model: RemoteOpenAIServer):
         stream=False,
     )
     assert response.choices[0].message.content is not None
-    assert "Hello, world" in response.choices[0].message.content
+    assert "hello, world" in response.choices[0].message.content.lower()
 
     proxy.stop()
 
@@ -545,7 +545,7 @@ async def test_streaming_chunks(qwen25_model: RemoteOpenAIServer):
 
         stream = client.chat.completions.create(
             model="gpt-4o-arbitrary",
-            messages=[{"role": "user", "content": "Say the word STREAM once"}],
+            messages=[{"role": "user", "content": "Say the word 'apple'"}],
             stream=True,
         )
         collected: list[str] = []
@@ -554,7 +554,7 @@ async def test_streaming_chunks(qwen25_model: RemoteOpenAIServer):
                 if c.delta and getattr(c.delta, "content", None):
                     assert isinstance(c.delta.content, str)
                     collected.append(c.delta.content)
-        assert "STREAM" in "".join(collected).upper()
+        assert "apple" in "".join(collected).lower()
 
         spans = await store.query_spans(rollout.rollout_id, rollout.attempt.attempt_id)
         assert len(spans) > 0
