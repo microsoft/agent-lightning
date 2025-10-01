@@ -7,15 +7,16 @@ import asyncio
 import logging
 import os
 import re
+import socket
 import tempfile
 import threading
 import time
-from typing import Any, Dict, Iterable, List, Optional, Sequence, TypedDict, Union, cast
+from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Sequence, TypedDict, Union, cast
 
 import litellm
 import uvicorn
 import yaml
-from fastapi import FastAPI, Request
+from fastapi import Request, Response
 from litellm.integrations.custom_logger import CustomLogger
 from litellm.integrations.opentelemetry import OpenTelemetry, OpenTelemetryConfig
 from litellm.proxy.proxy_server import app, save_worker_config  # pyright: ignore[reportUnknownVariableType]
@@ -25,7 +26,7 @@ from opentelemetry.sdk.trace.export import SpanExporter, SpanExportResult
 from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.types import LLM
 
-from .store.base import LightningStore, LightningStoreWatchDog
+from .store.base import LightningStore
 
 logger = logging.getLogger(__name__)
 
@@ -229,18 +230,18 @@ class LLMProxy:
 
     def __init__(
         self,
-        store: LightningStore,
-        host: str,
         port: int,
         model_list: List[ModelConfig],
-        litellm_config: Dict[str, Any],
+        store: LightningStore,
+        host: str | None = None,
+        litellm_config: Dict[str, Any] | None = None,
         num_retries: int = 0,
     ):
         self.store = store
-        self.host = host
+        self.host = host or _get_default_ipv4_address()
         self.port = port
         self.model_list = model_list
-        self.litellm_config = litellm_config
+        self.litellm_config = litellm_config or {}
 
         self.litellm_config.setdefault("litellm_settings", {})
         self.litellm_config["litellm_settings"].setdefault("num_retries", num_retries)
@@ -250,10 +251,19 @@ class LLMProxy:
         self._uvicorn_server = None
         self._ready_event = threading.Event()
 
+    def update_model_list(self, model_list: List[ModelConfig]) -> None:
+        """Update the model list and restart the server."""
+        self.model_list = model_list
+        if self.is_running():
+            self.restart()
+        # Do nothing if the server is not running.
+
     def initialize(self) -> None:
         # Add middleware here because it relies on "self.store".
         @app.middleware("http")
-        async def rollout_attempt_middleware(request: Request, call_next):
+        async def rollout_attempt_middleware(  # pyright: ignore[reportUnusedFunction]
+            request: Request, call_next: Callable[[Request], Awaitable[Response]]
+        ) -> Response:
             path = request.url.path
 
             match = re.match(r"^/rollout/([^/]+)/attempt/([^/]+)(/.*)?$", path)
@@ -276,8 +286,8 @@ class LLMProxy:
             response = await call_next(request)
             return response
 
-        litellm.callbacks.extend(
-            [  # pyright: ignore[reportUnknownMemberType]
+        litellm.callbacks.extend(  # pyright: ignore[reportUnknownMemberType]
+            [
                 AddReturnTokenIds(),
                 LightningOpenTelemetry(self.store),
             ]
@@ -311,7 +321,7 @@ class LLMProxy:
 
         save_worker_config(config=self._config_file)
 
-        self._uvicorn_server = uvicorn.Server(uvicorn.Config(app, host=self.host, port=self.port))
+        self._uvicorn_server = uvicorn.Server(uvicorn.Config(app, host="0.0.0.0", port=self.port))
 
         def run_server():
             assert self._uvicorn_server is not None
@@ -323,12 +333,28 @@ class LLMProxy:
         self._wait_until_started()
 
     def stop(self):
+        if not self.is_running():
+            logger.warning("LLMProxy is not running. Nothing to stop.")
+            return
+
         if self._config_file and os.path.exists(self._config_file):
             os.unlink(self._config_file)
 
         if self._server_thread is not None and self._uvicorn_server is not None and self._uvicorn_server.started:
             self._uvicorn_server.should_exit = True
-            self._server_thread.join(timeout=20.0)  # Allow time for graceful shutdown.
+            self._server_thread.join(timeout=10.0)  # Allow time for graceful shutdown.
+            self._server_thread = None
+            self._uvicorn_server = None
+            self._config_file = None
+            self._ready_event.clear()
+
+    def restart(self) -> None:
+        if self.is_running():
+            self.stop()
+        self.start()
+
+    def is_running(self) -> bool:
+        return self._uvicorn_server is not None and self._uvicorn_server.started
 
     def as_resource(
         self,
@@ -358,8 +384,26 @@ class LLMProxy:
         )
 
 
+def _get_default_ipv4_address() -> str:
+    """
+    Returns the IPv4 address this machine would use for outbound traffic.
+    Useful as the host IP other machines would connect to on the local network.
+
+    Falls back to 127.0.0.1 if it can't be determined.
+    """
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        # Doesn't actually contact 8.8.8.8; just forces the OS to pick a route.
+        s.connect(("8.8.8.8", 80))
+        return s.getsockname()[0]
+    except Exception:
+        return "127.0.0.1"
+    finally:
+        s.close()
+
+
 async def main():
-    store = InMemoryLightningStore(watchdog=LightningStoreWatchDog(10.0, 5.0))
+    store = InMemoryLightningStore()
     proxy = LLMProxy(
         store=store,
         host="0.0.0.0",
@@ -376,7 +420,7 @@ async def main():
         litellm_config={},
     )
 
-    rollout = await store.add_rollout(None)
+    rollout = await store.start_rollout(None)
 
     proxy.initialize()
     proxy.start()
