@@ -1,4 +1,5 @@
-# test_client_server_execution_strategy.py
+# Copyright (c) Microsoft. All rights reserved.
+
 from __future__ import annotations
 
 import asyncio
