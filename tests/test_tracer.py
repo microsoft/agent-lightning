@@ -792,7 +792,9 @@ def test_run_with_agentops_tracer(agent_func):
     global _langchain_callback_handler
     _langchain_callback_handler = tracer.get_langchain_callback_handler()
 
+    loop = asyncio.new_event_loop()
     try:
+        asyncio.set_event_loop(loop)
         tracer.trace_run(
             run_one,
             agent_func,
@@ -831,6 +833,8 @@ def test_run_with_agentops_tracer(agent_func):
     finally:
         tracer.teardown_worker(0)
         tracer.teardown()
+        loop.close()
+        asyncio.set_event_loop(None)
 
 
 @pytest.mark.parametrize("agent_func", list(iterate_over_agents()), ids=lambda f: f.__name__)
