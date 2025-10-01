@@ -68,6 +68,8 @@ from agentlightning.tracer.agentops import AgentOpsTracer, LightningSpanProcesso
 from agentlightning.tracer.http import HttpTracer
 from agentlightning.types import Triplet
 
+from .tracer.utils import clear_tracer_provider
+
 USE_OPENAI = os.environ.get("USE_OPENAI", "false").lower() == "true"
 if USE_OPENAI:
     OPENAI_BASE_URL = os.environ.get("OPENAI_BASE_URL", os.environ["OPENAI_API_BASE"])
@@ -781,6 +783,12 @@ def create_prompt_caches() -> None:
 
     else:
         run_all()
+
+
+@pytest.fixture(scope="module", autouse=True)
+def setup_module():
+    clear_tracer_provider()
+    yield
 
 
 @pytest.mark.parametrize("agent_func", list(iterate_over_agents()), ids=lambda f: f.__name__)
