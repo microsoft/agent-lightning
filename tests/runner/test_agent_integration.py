@@ -4,24 +4,20 @@ import asyncio
 import multiprocessing
 import os
 import time
-from contextlib import contextmanager
 from multiprocessing.synchronize import Event as MpEvent
-from typing import Any, Dict, Iterator, Optional
+from typing import Any, Dict, Optional, cast
 
 import openai
 import pytest
-from opentelemetry import trace as trace_api
 
 from agentlightning.litagent import LitAgent
 from agentlightning.llm_proxy import LLMProxy
 from agentlightning.reward import emit_reward
 from agentlightning.runner import AgentRunnerV2
-from agentlightning.store.base import LightningStore
 from agentlightning.store.client_server import LightningStoreClient, LightningStoreServer
 from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.tracer.agentops import AgentOpsTracer
-from agentlightning.tracer.base import BaseTracer
-from agentlightning.types.core import LLM, AttemptedRollout
+from agentlightning.types.core import LLM, AttemptedRollout, NamedResources, RolloutV2
 
 from ..common.network import get_free_port
 from ..common.tracer import clear_tracer_provider
@@ -34,7 +30,7 @@ async def init_runner(
     resources: Optional[Dict[str, LLM]] = None,
 ) -> tuple[AgentRunnerV2[Any], InMemoryLightningStore]:
     store = InMemoryLightningStore()
-    llm_resource = resources or {"llm": LLM(endpoint="http://localhost", model="dummy")}
+    llm_resource: NamedResources = resources or {"llm": LLM(endpoint="http://localhost", model="dummy")}  # type: ignore[assignment]
     await store.update_resources("default", llm_resource)
 
     runner = AgentRunnerV2[Any](tracer=AgentOpsTracer(), poll_interval=0.01)
@@ -57,7 +53,7 @@ def setup_module():
 @pytest.mark.asyncio
 async def test_runner_integration_basic_rollout() -> None:
     class EchoAgent(LitAgent[str]):
-        async def validation_rollout_async(self, task: str, *, resources: Dict[str, Any], rollout: Any) -> None:
+        async def validation_rollout_async(self, task: str, resources: Dict[str, Any], rollout: Any) -> None:
             emit_reward(1.0)
 
     import logging
@@ -88,8 +84,8 @@ async def test_runner_integration_basic_rollout() -> None:
 )
 async def test_runner_integration_with_openai() -> None:
     class OpenAIAgent(LitAgent[str]):
-        async def validation_rollout_async(self, task: str, *, resources: Dict[str, LLM], rollout: Any) -> float:
-            llm = resources["llm"]
+        async def validation_rollout_async(self, task: str, resources: NamedResources, rollout: RolloutV2) -> float:
+            llm = cast(LLM, resources["llm"])
             client = openai.AsyncOpenAI(base_url=llm.endpoint, api_key=llm.api_key)
             response = await client.chat.completions.create(
                 model=llm.model,
@@ -123,8 +119,8 @@ async def test_runner_integration_with_litellm_proxy() -> None:
     litellm = pytest.importorskip("litellm")
 
     class LiteLLMAgent(LitAgent[str]):
-        def validation_rollout(self, task: str, *, resources: Dict[str, LLM], rollout: Any) -> float:
-            llm = resources["llm"]
+        def validation_rollout(self, task: str, resources: NamedResources, rollout: RolloutV2) -> float:
+            llm = cast(LLM, resources["llm"])
             response = litellm.completion(
                 model=llm.model,
                 messages=[{"role": "user", "content": task}],
@@ -169,12 +165,11 @@ async def test_runner_integration_with_spawned_litellm_proxy(server: RemoteOpenA
         pytest.skip("GPU not available")
 
     class ProxyAgent(LitAgent[str]):
-        async def validation_rollout_async(
-            self, task: str, *, resources: Dict[str, LLM], rollout: AttemptedRollout
-        ) -> float:
-            llm_resource = resources["llm"]
+        async def validation_rollout_async(self, task: str, resources: NamedResources, rollout: RolloutV2) -> float:
+            attempted_rollout = cast(AttemptedRollout, rollout)
+            llm_resource = cast(LLM, resources["llm"])
             client = openai.AsyncOpenAI(
-                base_url=llm_resource.base_url(rollout.rollout_id, rollout.attempt.attempt_id),
+                base_url=llm_resource.base_url(attempted_rollout.rollout_id, attempted_rollout.attempt.attempt_id),
                 api_key=llm_resource.api_key,
             )
             response = await client.chat.completions.create(
@@ -223,21 +218,20 @@ async def test_runner_integration_with_spawned_litellm_proxy(server: RemoteOpenA
         assert rollouts and rollouts[0].status == "succeeded"
 
         spans = await client_store.query_spans(rollouts[0].rollout_id, "latest")
-        for span in spans:
-            first_spans = [span for span in spans if span.sequence_id == 1]
-            assert len(first_spans) > 1
-            assert any("llm.hosted_vllm.choices" in span.attributes for span in first_spans)
-            assert any("llm.hosted_vllm.prompt_token_ids" in span.attributes for span in first_spans)
-            assert any("gen_ai.prompt.0.content" in span.attributes for span in first_spans)
+        first_spans = [span for span in spans if span.sequence_id == 1]
+        assert len(first_spans) > 1
+        assert any("llm.hosted_vllm.choices" in span.attributes for span in first_spans)
+        assert any("llm.hosted_vllm.prompt_token_ids" in span.attributes for span in first_spans)
+        assert any("gen_ai.prompt.0.content" in span.attributes for span in first_spans)
 
-            second_spans = [span for span in spans if span.sequence_id == 2]
-            assert len(second_spans) == 1
-            assert second_spans[0].name == "openai.chat.completion"
+        second_spans = [span for span in spans if span.sequence_id == 2]
+        assert len(second_spans) == 1
+        assert second_spans[0].name == "openai.chat.completion"
 
-            third_spans = [span for span in spans if span.sequence_id == 3]
-            assert len(third_spans) == 1
-            assert third_spans[0].name == "agentlightning.reward"
-            assert third_spans[0].attributes.get("reward") == 0.5
+        third_spans = [span for span in spans if span.sequence_id == 3]
+        assert len(third_spans) == 1
+        assert third_spans[0].name == "agentlightning.reward"
+        assert third_spans[0].attributes.get("reward") == 0.5
     finally:
         teardown_runner(runner)
         process.terminate()

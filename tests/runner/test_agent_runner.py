@@ -10,6 +10,7 @@ from opentelemetry.sdk.trace import ReadableSpan, TracerProvider
 from opentelemetry.trace import SpanContext, TraceFlags, TraceState
 from opentelemetry.trace.status import Status, StatusCode
 
+from agentlightning.execution.events import Event, ThreadingEvent
 from agentlightning.litagent import LitAgent
 from agentlightning.reward import emit_reward, get_last_reward
 from agentlightning.runner import AgentRunnerV2
@@ -155,9 +156,7 @@ class RecordingHook(Hook):
     ) -> None:
         self.calls.append("on_trace_start")
 
-    async def on_trace_end(
-        self, *, agent: LitAgent[Any], runner: BaseRunner[Any], tracer: BaseTracer, rollout: RolloutV2
-    ) -> None:
+    async def on_trace_end(self, *, agent: LitAgent[Any], runner: BaseRunner[Any], tracer: BaseTracer) -> None:
         self.calls.append("on_trace_end")
 
     async def on_rollout_end(
@@ -177,12 +176,10 @@ async def test_step_records_spans_for_none_result() -> None:
     tracer = DummyTracer()
 
     class AsyncSpanAgent(LitAgent[Dict[str, Any]]):
-        async def validation_rollout_async(
-            self, task: Dict[str, Any], *, resources: Dict[str, Any], rollout: Any
-        ) -> None:
+        async def validation_rollout_async(self, task: Dict[str, Any], resources: Dict[str, Any], rollout: Any) -> None:
             span = tracer.record_span("work", {"task_id": task["task_id"]})
-            store = self.runner.get_store()
-            await store.add_otel_span(rollout.rollout_id, rollout.attempt.attempt_id, span)
+            store = self.runner.get_store()  # type: ignore[attr-defined]
+            await store.add_otel_span(rollout.rollout_id, rollout.attempt.attempt_id, span)  # type: ignore[attr-defined]
             return None
 
     agent = AsyncSpanAgent()
@@ -315,16 +312,14 @@ async def test_iter_respects_max_tasks() -> None:
 
 @pytest.mark.asyncio
 async def test_iter_stops_when_event_is_set() -> None:
-    stop_event = asyncio.Event()
+    stop_event = ThreadingEvent()
 
     class StoppableAgent(LitAgent[Dict[str, Any]]):
         def __init__(self) -> None:
             super().__init__()
             self.processed: List[int] = []
 
-        async def training_rollout_async(
-            self, task: Dict[str, Any], *, resources: Dict[str, Any], rollout: Any
-        ) -> None:
+        async def training_rollout_async(self, task: Dict[str, Any], resources: Dict[str, Any], rollout: Any) -> None:
             self.processed.append(task["idx"])
             if len(self.processed) == 1:
                 stop_event.set()
@@ -339,7 +334,7 @@ async def test_iter_stops_when_event_is_set() -> None:
 
     iter_task = asyncio.create_task(runner.iter(event=stop_event))
     try:
-        await asyncio.wait_for(stop_event.wait(), timeout=1)
+        await asyncio.wait_for(asyncio.to_thread(stop_event.wait, timeout=1), timeout=2)
         await asyncio.wait_for(iter_task, timeout=1)
     finally:
         teardown_runner(runner)
@@ -352,7 +347,7 @@ async def test_iter_stops_when_event_is_set() -> None:
 
 @pytest.mark.asyncio
 async def test_iter_waits_when_queue_empty_calls_sleep(monkeypatch: pytest.MonkeyPatch) -> None:
-    stop_event = asyncio.Event()
+    stop_event = ThreadingEvent()
 
     class IdleAgent(LitAgent[Any]):
         def training_rollout(self, task: Any, resources: Any, rollout: Any) -> None:
@@ -363,7 +358,7 @@ async def test_iter_waits_when_queue_empty_calls_sleep(monkeypatch: pytest.Monke
 
     sleep_calls = 0
 
-    async def fake_sleep(event: Optional[asyncio.Event] = None) -> None:
+    async def fake_sleep(event: Optional[Event] = None) -> None:
         nonlocal sleep_calls
         sleep_calls += 1
         if event is not None:
@@ -388,14 +383,12 @@ async def test_async_validation_rollout_used() -> None:
             self.training_calls = 0
 
         async def validation_rollout_async(
-            self, task: Dict[str, Any], *, resources: Dict[str, Any], rollout: Any
+            self, task: Dict[str, Any], resources: Dict[str, Any], rollout: Any
         ) -> float:
             self.validation_calls += 1
             return 0.0
 
-        async def training_rollout_async(
-            self, task: Dict[str, Any], *, resources: Dict[str, Any], rollout: Any
-        ) -> float:
+        async def training_rollout_async(self, task: Dict[str, Any], resources: Dict[str, Any], rollout: Any) -> float:
             self.training_calls += 1
             return 0.0
 
