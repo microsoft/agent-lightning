@@ -5,6 +5,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import threading
+import time
+from contextlib import suppress
 from typing import Any, Dict, List, Literal, Optional, Sequence, Union
 
 import aiohttp
@@ -91,9 +94,11 @@ class LightningStoreServer(LightningStore):
         self.app: FastAPI | None = FastAPI(title="LightningStore Server")
         self._setup_routes()
         self._uvicorn_config: uvicorn.Config | None = uvicorn.Config(
-            self.app, host=self.host, port=self.port, log_level="info"
+            self.app, host="0.0.0.0", port=self.port, log_level="info"
         )
         self._uvicorn_server: uvicorn.Server | None = uvicorn.Server(self._uvicorn_config)
+
+        self._serving_thread: Optional[threading.Thread] = None
 
         # Process-awareness:
         # LightningStoreServer holds a plain Python object (self.store) in one process
@@ -148,8 +153,23 @@ class LightningStoreServer(LightningStore):
         """
         assert self._uvicorn_server is not None
         logger.info(f"Starting server at {self.endpoint}")
-        asyncio.create_task(self._uvicorn_server.serve())
-        await asyncio.sleep(1)  # Allow time for server to start up.
+
+        def run_server_forever():
+            asyncio.run(self._uvicorn_server.serve())
+
+        self._serving_thread = threading.Thread(target=run_server_forever, daemon=True)
+        self._serving_thread.start()
+
+        # Wait for /health to be available
+        current_time = time.time()
+        while time.time() - current_time < 10:
+            async with aiohttp.ClientSession() as session:
+                with suppress(Exception):
+                    async with session.get(f"{self.endpoint}/health") as response:
+                        if response.status == 200:
+                            return
+            await asyncio.sleep(0.1)
+        raise RuntimeError("Server failed to start within the 10 seconds.")
 
     async def stop(self):
         """Gracefully stops the running FastAPI server.
@@ -160,7 +180,9 @@ class LightningStoreServer(LightningStore):
         if self._uvicorn_server.started:
             logger.info("Stopping server...")
             self._uvicorn_server.should_exit = True
-            await asyncio.sleep(1)  # Allow time for graceful shutdown.
+            if self._serving_thread is not None:
+                self._serving_thread.join(timeout=10)
+            self._serving_thread = None
             logger.info("Server stopped.")
 
     def _backend(self) -> LightningStore:
@@ -178,6 +200,11 @@ class LightningStoreServer(LightningStore):
     def _setup_routes(self):
         """Set up FastAPI routes for all store operations."""
         assert self.app is not None
+
+        @self.app.get("/health")
+        async def health():  # pyright: ignore[reportUnusedFunction]
+            print("health check")
+            return {"status": "ok"}
 
         @self.app.post("/start_rollout", response_model=AttemptedRollout)
         async def start_rollout(request: RolloutRequest):  # pyright: ignore[reportUnusedFunction]

@@ -101,9 +101,7 @@ def emit_reward(reward: float) -> ReadableSpan:
         raise ValueError(f"Reward must be a number, got: {type(reward)}")
 
     # Check for tracer initialization
-    if (
-        hasattr(trace_api, "_TRACER_PROVIDER") and trace_api._TRACER_PROVIDER is None
-    ):  # pyright: ignore[reportPrivateUsage]
+    if hasattr(trace_api, "_TRACER_PROVIDER") and trace_api._TRACER_PROVIDER is None:  # type: ignore
         raise RuntimeError("Tracer is not initialized. Cannot emit a meaningful span.")
 
     tracer_provider = get_tracer_provider()
