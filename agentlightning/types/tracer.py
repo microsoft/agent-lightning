@@ -252,4 +252,4 @@ class SpanNames(str, Enum):
     We will add more spans related to error handling in the future.
     """
 
-    REWARD = "reward"
+    REWARD = "agentlightning.reward"

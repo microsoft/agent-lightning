@@ -203,7 +203,6 @@ class LightningStoreServer(LightningStore):
 
         @self.app.get("/health")
         async def health():  # pyright: ignore[reportUnusedFunction]
-            print("health check")
             return {"status": "ok"}
 
         @self.app.post("/start_rollout", response_model=AttemptedRollout)
@@ -262,6 +261,7 @@ class LightningStoreServer(LightningStore):
 
         @self.app.post("/add_span", response_model=Span)
         async def add_span(span: Span):  # pyright: ignore[reportUnusedFunction]
+            print("server receiving otel span:", span)
             return await self.store.add_span(span)
 
         @self.app.get("/get_next_span_sequence_id/{rollout_id}/{attempt_id}", response_model=int)
@@ -420,18 +420,56 @@ class LightningStoreClient(LightningStore):
 
     def __init__(self, server_address: str):
         self.server_address = server_address.rstrip("/")
-        self.session: Optional[aiohttp.ClientSession] = None
+        self.session: Dict[int, aiohttp.ClientSession] = None
+        self._sessions = {}  # id(loop) -> ClientSession
+        self._lock = threading.RLock()
 
     async def _get_session(self) -> aiohttp.ClientSession:
-        """Get or create aiohttp session."""
-        if self.session is None or self.session.closed:
-            self.session = aiohttp.ClientSession()
-        return self.session
+        # In the proxy process, FastAPI middleware calls
+        # client_store.get_next_span_sequence_id(...). With
+        # reuse_session=True, _get_session() creates and caches a
+        # single ClientSession bound to the uvicorn event loop.
+        #
+        # Later, the OpenTelemetry exporter (LightningSpanExporter)
+        # runs its flush on its own private event loop (in a different
+        # thread) and calls client_store.add_otel_span(...) ->
+        # client_store.add_span(...).
+        #
+        # If we reuse one session across all, the exporter tries to reuse the
+        # same cached ClientSession that was created on the uvicorn
+        # loop. aiohttp.ClientSession is not loop-agnostic or
+        # thread-safe. Using it from another loop can hang on the
+        # first request. That's why we need a map from loop to session.
+
+        loop = asyncio.get_running_loop()
+        key = id(loop)
+        with self._lock:
+            sess = self._sessions.get(key)
+            if sess is None or sess.closed:
+                sess = aiohttp.ClientSession()
+                self._sessions[key] = sess
+        return sess
 
     async def close(self):
         """Close the HTTP session."""
-        if self.session and not self.session.closed:
-            await self.session.close()
+        with self._lock:
+            sessions = list(self._sessions.values())
+            self._sessions.clear()
+
+        # close them on their own loops to avoid warnings
+        async def _close(sess):
+            if not sess.closed:
+                await sess.close()
+
+        # If called from one loop, best-effort close here.
+        for s in sessions:
+            try:
+                await _close(s)
+            except RuntimeError:
+                # If created on a different loop/thread, schedule a thread-safe close
+                # Fallback: close without awaiting (library tolerates it in practice),
+                # or keep a per-loop shutdown hook where they were created.
+                pass
 
     async def start_rollout(
         self,

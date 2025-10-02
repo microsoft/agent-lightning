@@ -182,7 +182,7 @@ async def test_runner_integration_with_spawned_litellm_proxy(server: RemoteOpenA
                 messages=[{"role": "user", "content": task}],
             )
             assert response.choices, "Proxy should return at least one choice"
-            return 0.0
+            return 0.5
 
     agent = ProxyAgent()
     runner, store = await init_runner(agent)
@@ -206,6 +206,7 @@ async def test_runner_integration_with_spawned_litellm_proxy(server: RemoteOpenA
     )
 
     def run_proxy_server(proxy: LLMProxy, event: MpEvent):
+        clear_tracer_provider()
         proxy.start()
         event.set()
         time.sleep(3600)  # Keep the server running
@@ -218,12 +219,25 @@ async def test_runner_integration_with_spawned_litellm_proxy(server: RemoteOpenA
     try:
         await runner.step("Say hello to Agent Lightning", resources={"llm": proxy.as_resource()})
 
-        rollouts = await store.query_rollouts()
+        rollouts = await client_store.query_rollouts()
         assert rollouts and rollouts[0].status == "succeeded"
 
-        spans = await store.query_spans(rollouts[0].rollout_id, "latest")
+        spans = await client_store.query_spans(rollouts[0].rollout_id, "latest")
         for span in spans:
-            print(span)
+            first_spans = [span for span in spans if span.sequence_id == 1]
+            assert len(first_spans) > 1
+            assert any("llm.hosted_vllm.choices" in span.attributes for span in first_spans)
+            assert any("llm.hosted_vllm.prompt_token_ids" in span.attributes for span in first_spans)
+            assert any("gen_ai.prompt.0.content" in span.attributes for span in first_spans)
+
+            second_spans = [span for span in spans if span.sequence_id == 2]
+            assert len(second_spans) == 1
+            assert second_spans[0].name == "openai.chat.completion"
+
+            third_spans = [span for span in spans if span.sequence_id == 3]
+            assert len(third_spans) == 1
+            assert third_spans[0].name == "agentlightning.reward"
+            assert third_spans[0].attributes.get("reward") == 0.5
     finally:
         teardown_runner(runner)
         process.terminate()
