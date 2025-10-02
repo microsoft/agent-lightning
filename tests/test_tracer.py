@@ -22,6 +22,7 @@ import asyncio
 import difflib
 import inspect
 import json
+import multiprocessing
 import os
 import pprint
 import re
@@ -68,7 +69,7 @@ from agentlightning.tracer.agentops import AgentOpsTracer, LightningSpanProcesso
 from agentlightning.tracer.http import HttpTracer
 from agentlightning.types import Triplet
 
-from .common.tracer import clear_tracer_provider
+from .common.tracer import clear_agentops_init, clear_tracer_provider
 
 USE_OPENAI = os.environ.get("USE_OPENAI", "false").lower() == "true"
 if USE_OPENAI:
@@ -785,14 +786,30 @@ def create_prompt_caches() -> None:
         run_all()
 
 
-@pytest.fixture(scope="module", autouse=True)
-def setup_module():
-    clear_tracer_provider()
-    yield
+@pytest.mark.parametrize("agent_func_name", [f.__name__ for f in iterate_over_agents()], ids=str)
+def test_run_with_agentops_tracer(agent_func_name: str):
+    """AgentOps tracer tests are notoriously problematic and does not work well with other tests."""
+    ctx = multiprocessing.get_context("spawn")
+    proc = ctx.Process(target=_test_run_with_agentops_tracer_impl, args=(agent_func_name,))
+    proc.start()
+    proc.join(10)
+
+    if proc.is_alive():
+        proc.terminate()
+        proc.join(5)
+        if proc.is_alive():
+            proc.kill()
+
+        assert False, "Child process hung. Check test output for details."
+
+    assert proc.exitcode == 0, (
+        f"Child process for {agent_func_name!r} failed with exit code {proc.exitcode}. "
+        "Check child traceback in test output."
+    )
 
 
-@pytest.mark.parametrize("agent_func", list(iterate_over_agents()), ids=lambda f: f.__name__)
-def test_run_with_agentops_tracer(agent_func):
+def _test_run_with_agentops_tracer_impl(agent_func_name: str):
+    agent_func = next(f for f in iterate_over_agents() if f.__name__ == agent_func_name)
     tracer = AgentOpsTracer()
     tracer.init()
     tracer.init_worker(0)
@@ -800,9 +817,7 @@ def test_run_with_agentops_tracer(agent_func):
     global _langchain_callback_handler
     _langchain_callback_handler = tracer.get_langchain_callback_handler()
 
-    loop = asyncio.new_event_loop()
     try:
-        asyncio.set_event_loop(loop)
         tracer.trace_run(
             run_one,
             agent_func,
@@ -841,8 +856,6 @@ def test_run_with_agentops_tracer(agent_func):
     finally:
         tracer.teardown_worker(0)
         tracer.teardown()
-        loop.close()
-        asyncio.set_event_loop(None)
 
 
 @pytest.mark.parametrize("agent_func", list(iterate_over_agents()), ids=lambda f: f.__name__)

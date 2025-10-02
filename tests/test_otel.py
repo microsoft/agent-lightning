@@ -1,5 +1,7 @@
 # Copyright (c) Microsoft. All rights reserved.
 
+# pyright: reportPrivateUsage=false
+
 """Unit tests for LightningSpanProcessor."""
 
 import asyncio
@@ -7,6 +9,7 @@ import multiprocessing
 import pickle
 import threading
 import time
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -58,7 +61,6 @@ def test_initialization_and_shutdown():
     assert processor._loop_thread.name == "otel-loop"
 
     # Verify shutdown stops everything
-    loop = processor._loop
     thread = processor._loop_thread
     processor.shutdown()
 
@@ -165,7 +167,7 @@ def test_store_integration_complete():
     # Test 3: Verify writes happen in loop thread
     execution_thread = None
 
-    async def track_thread(*args, **kwargs):
+    async def track_thread(*args: Any, **kwargs: Any):
         nonlocal execution_thread
         execution_thread = threading.current_thread()
 
@@ -233,7 +235,7 @@ def test_concurrent_access():
     spans_per_thread = 5
     barrier = threading.Barrier(num_threads)
 
-    def process_spans(thread_id):
+    def process_spans(thread_id: int) -> None:
         barrier.wait()  # Synchronize all threads to start together
         for i in range(spans_per_thread):
             span = create_span(f"thread{thread_id}_span{i}")
@@ -258,7 +260,7 @@ def test_multiprocessing_behavior():
     """Test processor behavior across process boundaries."""
 
     # Test 1: Creating new processor in subprocess works
-    def subprocess_task(result_queue):
+    def subprocess_task(result_queue: "multiprocessing.Queue[tuple[str, Any]]") -> None:
         try:
             processor = LightningSpanProcessor()
 
@@ -274,7 +276,7 @@ def test_multiprocessing_behavior():
         except Exception as e:
             result_queue.put(("error", str(e)))
 
-    result_queue = multiprocessing.Queue()
+    result_queue: multiprocessing.Queue[tuple[str, Any]] = multiprocessing.Queue()
     process = multiprocessing.Process(target=subprocess_task, args=(result_queue,))
     process.start()
     process.join(timeout=5)
@@ -315,9 +317,9 @@ def test_edge_cases():
 
     # Mock thread.join to verify timeout parameter
     original_join = processor2._loop_thread.join
-    join_timeout = None
+    join_timeout: float | None = None
 
-    def mock_join(timeout=None):
+    def mock_join(timeout: float | None = None) -> None:
         nonlocal join_timeout
         join_timeout = timeout
         return original_join(timeout=timeout)
@@ -334,7 +336,7 @@ def test_store_write_timeout():
     store = create_mock_store()
 
     # Create a slow async function that exceeds timeout
-    async def slow_write(*args, **kwargs):
+    async def slow_write(*args: Any, **kwargs: Any) -> None:
         await asyncio.sleep(10)
 
     store.add_otel_span = AsyncMock(side_effect=slow_write)
@@ -359,8 +361,8 @@ def test_multiple_processors_in_same_process():
     # Both should have independent loops and threads
     assert processor1._loop is not processor2._loop
     assert processor1._loop_thread is not processor2._loop_thread
-    assert processor1._loop.is_running()
-    assert processor2._loop.is_running()
+    assert processor1._loop is not None and processor1._loop.is_running()
+    assert processor2._loop is not None and processor2._loop.is_running()
 
     # Both should work independently
     span1 = create_span("p1_span")

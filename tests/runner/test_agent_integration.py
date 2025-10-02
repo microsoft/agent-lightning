@@ -21,7 +21,7 @@ from agentlightning.types.core import LLM, AttemptedRollout, NamedResources, Rol
 
 from ..common.network import get_free_port
 from ..common.tracer import clear_tracer_provider
-from ..common.vllm import RemoteOpenAIServer
+from ..common.vllm import VLLM_AVAILABLE, RemoteOpenAIServer
 
 
 async def init_runner(
@@ -134,8 +134,10 @@ async def test_runner_integration_with_litellm_proxy() -> None:
     assert rollouts and rollouts[0].status == "succeeded"
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def server():
+    if not VLLM_AVAILABLE:
+        pytest.skip("vLLM is not available")
     vllm_port = get_free_port()
     with RemoteOpenAIServer(
         model="Qwen/Qwen2.5-0.5B-Instruct",
@@ -164,7 +166,7 @@ async def test_runner_integration_with_spawned_litellm_proxy(server: RemoteOpenA
             llm_resource = cast(LLM, resources["llm"])
             client = openai.AsyncOpenAI(
                 base_url=llm_resource.base_url(attempted_rollout.rollout_id, attempted_rollout.attempt.attempt_id),
-                api_key=llm_resource.api_key,
+                api_key="dummy",
             )
             response = await client.chat.completions.create(
                 model=llm_resource.model,

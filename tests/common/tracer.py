@@ -1,5 +1,7 @@
 # Copyright (c) Microsoft. All rights reserved.
 
+import agentops
+import agentops.sdk.core as agentops_core
 import opentelemetry.trace as trace_api
 
 
@@ -25,3 +27,9 @@ def clear_tracer_provider() -> None:
         if hasattr(trace_api._TRACER_PROVIDER_SET_ONCE, "_flag"):
             if trace_api._TRACER_PROVIDER_SET_ONCE._flag:  # type: ignore
                 trace_api._TRACER_PROVIDER_SET_ONCE._flag = False  # type: ignore
+
+
+def clear_agentops_init() -> None:
+    """Make agentops.init() runnable again."""
+    agentops.get_client().initialized = False
+    agentops_core.tracer._initialized = False
