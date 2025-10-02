@@ -1,5 +1,12 @@
 # Copyright (c) Microsoft. All rights reserved.
 
+"""Agent runner implementation for executing agent rollouts.
+
+This module provides the concrete implementation of the runner interface,
+handling the execution of agent rollouts with support for tracing, hooks,
+and distributed worker coordination.
+"""
+
 from __future__ import annotations
 
 import asyncio
@@ -36,9 +43,29 @@ logger = logging.getLogger(__name__)
 
 
 class AgentRunnerV2(BaseRunner[T_task]):
-    """The runner for the agent."""
+    """Runner implementation for executing agent tasks with distributed support.
+
+    This runner manages the complete lifecycle of agent rollout execution,
+    including task polling, resource management, tracing, and hooks. It supports
+    both continuous iteration over tasks from the store and single-step execution.
+
+    Type Parameters:
+        T_task: The type of task input that the agent will process.
+
+    Attributes:
+        worker_id: The unique identifier for this worker process.
+    """
 
     def __init__(self, tracer: BaseTracer, max_tasks: Optional[int] = None, poll_interval: float = 5.0) -> None:
+        """Initialize the agent runner.
+
+        Args:
+            tracer: The tracer instance for recording execution traces and spans.
+            max_tasks: Maximum number of tasks to process in iter() mode. If None,
+                the runner will continue indefinitely until interrupted.
+            poll_interval: Time in seconds to wait between polling attempts when
+                no tasks are available in the store.
+        """
         super().__init__()
         self._tracer = tracer
         self._max_tasks = max_tasks
@@ -51,7 +78,18 @@ class AgentRunnerV2(BaseRunner[T_task]):
         self.worker_id: Optional[int] = None
 
     def init(self, agent: LitAgent[T_task], *, hooks: Optional[Sequence[Hook]] = None, **kwargs: Any) -> None:
-        """Initialize the runner with the agent."""
+        """Initialize the runner with the agent.
+
+        This sets up the agent-runner relationship, registers hooks, and
+        initializes the tracer.
+
+        Args:
+            agent: The LitAgent instance to be managed by this runner.
+            hooks: Optional sequence of Hook objects to be called at various
+                lifecycle stages (on_trace_start, on_trace_end, on_rollout_start,
+                on_rollout_end).
+            **kwargs: Additional initialization arguments (currently unused).
+        """
         self._agent = agent
         self._agent.set_runner(self)
         self._hooks = [*hooks] if hooks is not None else []
@@ -59,14 +97,31 @@ class AgentRunnerV2(BaseRunner[T_task]):
         self._tracer.init()
 
     def init_worker(self, worker_id: int, store: LightningStore, **kwargs: Any) -> None:
-        """Initialize the runner for each worker with worker_id and store."""
+        """Initialize the runner for each worker with worker_id and store.
+
+        This method is called once per worker in a distributed setup to provide
+        the worker with its ID and store connection.
+
+        Args:
+            worker_id: Unique identifier for this worker process.
+            store: The LightningStore instance for task coordination and data persistence.
+            **kwargs: Additional worker-specific initialization arguments (currently unused).
+        """
         self._store = store
         self.worker_id = worker_id
 
         self._tracer.init_worker(worker_id)
 
     def teardown(self, *args: Any, **kwargs: Any) -> None:
-        """Teardown the runner."""
+        """Teardown the runner and clean up all resources.
+
+        This method resets all internal state including the agent, store,
+        hooks, and worker ID, and calls the tracer's teardown method.
+
+        Args:
+            *args: Additional teardown arguments (currently unused).
+            **kwargs: Additional teardown keyword arguments (currently unused).
+        """
         self._agent = None
         self._store = None
         self.worker_id = None
@@ -75,29 +130,67 @@ class AgentRunnerV2(BaseRunner[T_task]):
         self._tracer.teardown()
 
     def teardown_worker(self, worker_id: int, *args: Any, **kwargs: Any) -> None:
-        """Teardown the runner for each worker."""
+        """Teardown the runner for a specific worker.
+
+        This method cleans up worker-specific resources and resets the worker ID.
+
+        Args:
+            worker_id: The unique identifier of the worker being torn down.
+            *args: Additional teardown arguments (currently unused).
+            **kwargs: Additional teardown keyword arguments (currently unused).
+        """
         self.worker_id = None
 
         self._tracer.teardown_worker(worker_id)
 
     def get_agent(self) -> LitAgent[T_task]:
-        """Get the agent."""
+        """Get the agent instance.
+
+        Returns:
+            The LitAgent instance managed by this runner.
+
+        Raises:
+            ValueError: If the agent has not been initialized via init().
+        """
         if self._agent is None:
             raise ValueError("Agent not initialized. Call init() first.")
         return self._agent
 
     def get_store(self) -> LightningStore:
-        """Get the store."""
+        """Get the store instance.
+
+        Returns:
+            The LightningStore instance for this worker.
+
+        Raises:
+            ValueError: If the store has not been initialized via init_worker().
+        """
         if self._store is None:
             raise ValueError("Store not initialized. Call init_worker() first.")
         return self._store
 
     def get_worker_id(self) -> str:
-        """Get the worker id."""
+        """Get the formatted worker ID string.
+
+        Returns:
+            A formatted string like "Worker-0" if initialized, or "Worker-Unknown"
+            if the worker ID has not been set.
+        """
         return f"Worker-{self.worker_id}" if self.worker_id is not None else "Worker-Unknown"
 
     def _log_prefix(self, rollout_id: Optional[str] = None) -> str:
-        """Generates a standardized log prefix for the current worker."""
+        """Generate a standardized log prefix for the current worker.
+
+        This creates a consistent prefix format for log messages to identify
+        which worker and rollout the message is associated with.
+
+        Args:
+            rollout_id: Optional rollout ID to include in the prefix.
+
+        Returns:
+            A formatted log prefix string like "[Worker 0 | Rollout xyz]",
+            "[Worker 0]", "[Rollout xyz]", or "[Default Worker]".
+        """
         if self.worker_id is not None:
             if rollout_id:
                 return f"[Worker {self.worker_id} | Rollout {rollout_id}]"
@@ -113,7 +206,18 @@ class AgentRunnerV2(BaseRunner[T_task]):
         *args: Any,
         **kwargs: Any,
     ) -> None:
-        """Trigger the hooks."""
+        """Trigger all registered hooks of a specific type.
+
+        This method calls the specified hook method on all registered hooks,
+        catching and logging any exceptions that occur during hook execution
+        to prevent them from disrupting the main execution flow.
+
+        Args:
+            hook_type: The type of hook to trigger. Valid values are:
+                "on_trace_start", "on_trace_end", "on_rollout_start", "on_rollout_end".
+            *args: Positional arguments to pass to the hook methods.
+            **kwargs: Keyword arguments to pass to the hook methods.
+        """
         for hook in self._hooks:
             try:
                 await getattr(hook, hook_type)(*args, **kwargs)
@@ -197,7 +301,15 @@ class AgentRunnerV2(BaseRunner[T_task]):
         return trace_spans
 
     async def _sleep_until_next_poll(self, event: Optional[Event] = None) -> None:
-        """Sleep until the next poll interval."""
+        """Sleep until the next poll interval, with optional event-based interruption.
+
+        If an event is provided, the method will check it periodically (every 0.1s)
+        and return early if the event is set.
+
+        Args:
+            event: Optional Event object that can be used to interrupt the sleep.
+                If set during the sleep period, the method returns immediately.
+        """
         if event is None:
             await asyncio.sleep(self._poll_interval)
             return
@@ -209,6 +321,18 @@ class AgentRunnerV2(BaseRunner[T_task]):
                 return
 
     async def _step_impl(self, next_rollout: AttemptedRollout, raise_on_exception: bool = False) -> None:
+        """Execute a single rollout implementation.
+
+        This is the core method that handles the execution of a single rollout,
+        including resource fetching, hook triggering, agent invocation, tracing,
+        and result processing.
+
+        Args:
+            next_rollout: The rollout to execute, containing input data, mode,
+                and resources information.
+            raise_on_exception: If True, exceptions during rollout execution will
+                be re-raised. If False, exceptions are logged but not propagated.
+        """
         store = self.get_store()
         agent = self.get_agent()
 
@@ -295,9 +419,19 @@ class AgentRunnerV2(BaseRunner[T_task]):
                 await store.update_attempt(rollout_id, next_rollout.attempt.attempt_id, status="succeeded")
 
     async def iter(self, *, event: Optional[Event] = None) -> None:
-        """Run the runner, iterate over the tasks in the store. Abort if the event is set.
+        """Run the runner, continuously iterating over tasks in the store.
 
-        Silence all the exceptions.
+        This method polls the store for new rollouts and executes them until:
+        - The event is set (if provided)
+        - The max_tasks limit is reached (if configured)
+        - No more tasks are available
+
+        All exceptions during rollout execution are caught and logged but not
+        propagated, allowing the runner to continue processing subsequent tasks.
+
+        Args:
+            event: Optional Event object to signal the runner to stop. The runner
+                will check this event periodically and stop gracefully when set.
         """
         num_tasks_processed = 0
         logger.info(f"{self._log_prefix()} Started async rollouts (max: {self._max_tasks or 'unlimited'}).")
@@ -342,9 +476,24 @@ class AgentRunnerV2(BaseRunner[T_task]):
         mode: Optional[RolloutMode] = None,
         event: Optional[Event] = None,
     ) -> None:
-        """Step the runner, execute one task.
+        """Execute a single task directly, bypassing the task queue.
 
-        Raise if the step fails.
+        This method creates a new rollout for the given input and executes it
+        immediately. Unlike iter(), exceptions are propagated to the caller.
+
+        Args:
+            input: The task input to be processed by the agent.
+            resources: Optional named resources to be used for this specific task.
+                If provided, a new resources entry will be created in the store.
+                If not provided, the latest resources from the store will be used.
+            mode: Optional rollout mode ("train" or "validation"). If not provided,
+                the agent's default mode will be used.
+            event: Optional Event object to signal interruption (currently unused
+                but included for interface consistency).
+
+        Raises:
+            Exception: Any exception that occurs during rollout execution will be
+                re-raised to the caller.
         """
         store = self.get_store()
 
