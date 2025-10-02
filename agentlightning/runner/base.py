@@ -28,9 +28,6 @@ class BaseRunner(ParallelWorkerBase, Generic[T_task]):
     This abstract base class defines the interface that all runner implementations
     must follow. Runners are responsible for executing agent tasks, managing the
     execution lifecycle, and coordinating with the store.
-
-    Type Parameters:
-        T_task: The type of task input that the agent will process.
     """
 
     def init(self, agent: LitAgent[T_task], **kwargs: Any) -> None:

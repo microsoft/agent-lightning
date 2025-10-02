@@ -49,9 +49,6 @@ class AgentRunnerV2(BaseRunner[T_task]):
     including task polling, resource management, tracing, and hooks. It supports
     both continuous iteration over tasks from the store and single-step execution.
 
-    Type Parameters:
-        T_task: The type of task input that the agent will process.
-
     Attributes:
         worker_id: The unique identifier for this worker process.
     """
