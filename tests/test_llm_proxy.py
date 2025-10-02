@@ -369,7 +369,7 @@ async def test_streaming_chunks(qwen25_model: RemoteOpenAIServer):
 
         stream = client.chat.completions.create(
             model="gpt-4o-arbitrary",
-            messages=[{"role": "user", "content": "Repeat the word 'apple'"}],
+            messages=[{"role": "user", "content": "Say the word 'apple'"}],
             stream=True,
         )
         collected: list[str] = []
