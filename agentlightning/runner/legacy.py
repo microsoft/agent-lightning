@@ -59,6 +59,19 @@ class AgentRunner(BaseRunner[Any]):
         self.worker_id = worker_id
         self.max_tasks = max_tasks
 
+    # These methods are overridden by BaseRunner, getting them back to old behavior.
+    def init(self, *args: Any, **kwargs: Any) -> None:
+        pass
+
+    def init_worker(self, worker_id: int, *args: Any, **kwargs: Any) -> None:
+        self.worker_id = worker_id
+
+    def teardown_worker(self, worker_id: int, *args: Any, **kwargs: Any) -> None:
+        pass
+
+    def teardown(self, *args: Any, **kwargs: Any) -> None:
+        pass
+
     def _log_prefix(self, rollout_id: Optional[str] = None) -> str:
         """Generates a standardized log prefix for the current worker."""
         if self.worker_id is not None:

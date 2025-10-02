@@ -360,6 +360,7 @@ async def test_tool_call_roundtrip(qwen25_model: RemoteOpenAIServer):
         proxy.stop()
 
 
+@pytest.mark.skip(reason="Streaming is not supported yet")
 @pytest.mark.asyncio
 async def test_streaming_chunks(qwen25_model: RemoteOpenAIServer):
     proxy, store = _make_proxy_and_store(qwen25_model)

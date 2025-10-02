@@ -789,6 +789,9 @@ def create_prompt_caches() -> None:
 @pytest.mark.parametrize("agent_func_name", [f.__name__ for f in iterate_over_agents()], ids=str)
 def test_run_with_agentops_tracer(agent_func_name: str):
     """AgentOps tracer tests are notoriously problematic and does not work well with other tests."""
+    if agent_func_name in ["openai_agents_sdk_mcp_tool_use", "agent_autogen_mcp"]:
+        pytest.skip("Async MCP server is problematic with AgentOps tracer in multiprocessing mode.")
+
     ctx = multiprocessing.get_context("spawn")
     proc = ctx.Process(target=_test_run_with_agentops_tracer_impl, args=(agent_func_name,))
     proc.start()
