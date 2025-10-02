@@ -154,8 +154,10 @@ class LightningStoreServer(LightningStore):
         assert self._uvicorn_server is not None
         logger.info(f"Starting server at {self.endpoint}")
 
+        uvicorn_server = self._uvicorn_server
+
         def run_server_forever():
-            asyncio.run(self._uvicorn_server.serve())
+            asyncio.run(uvicorn_server.serve())
 
         self._serving_thread = threading.Thread(target=run_server_forever, daemon=True)
         self._serving_thread.start()
@@ -420,8 +422,7 @@ class LightningStoreClient(LightningStore):
 
     def __init__(self, server_address: str):
         self.server_address = server_address.rstrip("/")
-        self.session: Dict[int, aiohttp.ClientSession] = None
-        self._sessions = {}  # id(loop) -> ClientSession
+        self._sessions: Dict[int, aiohttp.ClientSession] = {}  # id(loop) -> ClientSession
         self._lock = threading.RLock()
 
     async def _get_session(self) -> aiohttp.ClientSession:
@@ -457,7 +458,7 @@ class LightningStoreClient(LightningStore):
             self._sessions.clear()
 
         # close them on their own loops to avoid warnings
-        async def _close(sess):
+        async def _close(sess: aiohttp.ClientSession):
             if not sess.closed:
                 await sess.close()
 
