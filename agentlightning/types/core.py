@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field, model_validator
 from .tracer import Span
 
 if TYPE_CHECKING:
+    from agentlightning.litagent import LitAgent
     from agentlightning.runner.base import BaseRunner
     from agentlightning.tracer.base import BaseTracer
 
@@ -211,7 +212,6 @@ RolloutRawResultV2 = Union[
     float,  # only final reward
     List[ReadableSpan],  # constructed OTEL spans by user
     List[Span],  # constructed Span objects by user
-    RolloutV2,  # complete RolloutV2 object
 ]
 
 
@@ -352,27 +352,62 @@ class Dataset(Protocol, Generic[T_co]):
 class Hook(ParallelWorkerBase):
     """Base class for defining hooks in the agent runner's lifecycle."""
 
-    async def on_rollout_start(self, rollout: RolloutV2, runner: BaseRunner[Any], tracer: BaseTracer) -> None:
-        """Hook called immediately before a rollout begins.
+    async def on_trace_start(
+        self, *, agent: LitAgent[Any], runner: BaseRunner[Any], tracer: BaseTracer, rollout: RolloutV2
+    ) -> None:
+        """Hook called immediately after the tracer enters the trace context but before the rollout begins.
 
         Args:
-            task: The :class:`Task` object that will be processed.
+            agent: The :class:`LitAgent` instance associated with the runner.
             runner: The :class:`BaseRunner` managing the rollout.
-            tracer: The tracer instance associated with the runner.
+            tracer: The :class:`BaseTracer` instance associated with the runner.
+            rollout: The :class:`RolloutV2` object that will be processed.
+
+        Subclasses can override this method to implement custom logic such as logging,
+        metric collection, or resource setup. By default, this is a no-op.
+        """
+
+    async def on_trace_end(self, *, agent: LitAgent[Any], runner: BaseRunner[Any], tracer: BaseTracer) -> None:
+        """Hook called immediately after the rollout completes but before the tracer exits the trace context.
+
+        Args:
+            agent: The :class:`LitAgent` instance associated with the runner.
+            runner: The :class:`BaseRunner` managing the rollout.
+            tracer: The :class:`BaseTracer` instance associated with the runner.
+            rollout: The :class:`RolloutV2` object that has been processed.
+
+        Subclasses can override this method to implement custom logic such as logging,
+        metric collection, or resource cleanup. By default, this is a no-op.
+        """
+
+    async def on_rollout_start(self, *, agent: LitAgent[Any], runner: BaseRunner[Any], rollout: RolloutV2) -> None:
+        """Hook called immediately before a rollout *attempt* begins.
+
+        Args:
+            agent: The :class:`LitAgent` instance associated with the runner.
+            runner: The :class:`BaseRunner` managing the rollout.
+            rollout: The :class:`RolloutV2` object that will be processed.
 
         Subclasses can override this method to implement custom logic such as
         logging, metric collection, or resource setup. By default, this is a
         no-op.
         """
 
-    async def on_rollout_end(self, rollout: RolloutV2, runner: BaseRunner[Any], tracer: BaseTracer) -> None:
-        """Hook called after a rollout completes.
+    async def on_rollout_end(
+        self,
+        *,
+        agent: LitAgent[Any],
+        runner: BaseRunner[Any],
+        rollout: RolloutV2,
+        spans: Union[List[ReadableSpan], List[Span]],
+    ) -> None:
+        """Hook called after a rollout *attempt* completes.
 
         Args:
-            task: The :class:`Task` object that was processed.
-            rollout: The resulting :class:`Rollout` object.
+            agent: The :class:`LitAgent` instance associated with the runner.
             runner: The :class:`BaseRunner` managing the rollout.
-            tracer: The tracer instance associated with the runner.
+            rollout: The :class:`RolloutV2` object that has been processed.
+            spans: The spans that have been added to the store.
 
         Subclasses can override this method for cleanup or additional
         logging. By default, this is a no-op.

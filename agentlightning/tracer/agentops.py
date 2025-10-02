@@ -137,6 +137,8 @@ class AgentOpsTracer(BaseTracer):
         try:
             # new versions
             instance = agentops.sdk.core.tracer
+            # TODO: The span processor cannot be deleted once added.
+            # This might be a problem if the tracer is entered and exited multiple times.
             instance.provider.add_span_processor(self._lightning_span_processor)  # type: ignore
         except AttributeError:
             # old versions
@@ -221,7 +223,6 @@ class LightningSpanProcessor(SpanProcessor):
         self._rollout_id: Optional[str] = None
         self._attempt_id: Optional[str] = None
         self._lock = threading.Lock()
-        self._loop: asyncio.AbstractEventLoop | None = None
 
     @contextmanager
     def with_context(self, store: LightningStore, rollout_id: str, attempt_id: str):
@@ -230,15 +231,11 @@ class LightningSpanProcessor(SpanProcessor):
                 self._store = store
                 self._rollout_id = rollout_id
                 self._attempt_id = attempt_id
-                self._loop = asyncio.new_event_loop()
                 yield self
             finally:
                 self._store = None
                 self._rollout_id = None
                 self._attempt_id = None
-                if self._loop:
-                    self._loop.close()
-                self._loop = None
 
     def __enter__(self):
         self._last_trace = None
@@ -247,6 +244,8 @@ class LightningSpanProcessor(SpanProcessor):
 
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any):
         self._store = None
+        self._rollout_id = None
+        self._attempt_id = None
 
     def spans(self) -> List[ReadableSpan]:
         """
@@ -269,9 +268,16 @@ class LightningSpanProcessor(SpanProcessor):
         if not span.context or not span.context.trace_flags.sampled:
             return
 
-        if self._store is not None and self._rollout_id is not None and self._attempt_id is not None and self._loop:
+        if self._store is not None and self._rollout_id is not None and self._attempt_id is not None:
             # Submit add_otel_span to the event loop and wait for it to complete
-            self._loop.run_until_complete(self._store.add_otel_span(self._rollout_id, self._attempt_id, span))
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                # no running loop in this thread
+                asyncio.run(self._store.add_otel_span(self._rollout_id, self._attempt_id, span))
+            else:
+                # schedule without blocking this callback
+                loop.create_task(self._store.add_otel_span(self._rollout_id, self._attempt_id, span))
 
         self._spans.append(span)
 

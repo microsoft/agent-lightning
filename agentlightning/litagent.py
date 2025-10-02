@@ -8,12 +8,10 @@ import logging
 import weakref
 from typing import TYPE_CHECKING, Any, Callable, Coroutine, Generic, Optional, TypeVar, Union
 
-from agentlightning.runner.base import BaseRunner
-
-from .types import LLM, NamedResources, Rollout, RolloutRawResult, RolloutV2, Task
+from .types import LLM, NamedResources, Rollout, RolloutRawResultV2, RolloutV2, Task
 
 if TYPE_CHECKING:
-    from .runner import AgentRunner
+    from .runner import BaseRunner
     from .tracer import BaseTracer
     from .trainer import Trainer
 
@@ -170,7 +168,7 @@ class LitAgent(Generic[T]):
         logging. By default, this is a no-op.
         """
 
-    def rollout(self, task: T, resources: NamedResources, rollout: RolloutV2) -> RolloutRawResult:
+    def rollout(self, task: T, resources: NamedResources, rollout: RolloutV2) -> RolloutRawResultV2:
         """Main entry point for executing a rollout.
 
         This method determines whether to call the synchronous or
@@ -199,7 +197,7 @@ class LitAgent(Generic[T]):
         """
         raise NotImplementedError("Agents must implement the `rollout` method.")
 
-    async def rollout_async(self, task: T, resources: NamedResources, rollout: RolloutV2) -> RolloutRawResult:
+    async def rollout_async(self, task: T, resources: NamedResources, rollout: RolloutV2) -> RolloutRawResultV2:
         """Asynchronous version of the main rollout method.
 
         This method determines whether to call the synchronous or
@@ -225,7 +223,7 @@ class LitAgent(Generic[T]):
         """
         raise NotImplementedError("Agents must implement the `rollout_async` method for async operations.")
 
-    def training_rollout(self, task: T, resources: NamedResources, rollout: RolloutV2) -> RolloutRawResult:
+    def training_rollout(self, task: T, resources: NamedResources, rollout: RolloutV2) -> RolloutRawResultV2:
         """Defines the agent's behavior for a single training task.
 
         This method should contain the logic for how the agent processes an
@@ -241,7 +239,7 @@ class LitAgent(Generic[T]):
         """
         return self.rollout(task, resources, rollout)
 
-    def validation_rollout(self, task: T, resources: NamedResources, rollout: RolloutV2) -> RolloutRawResult:
+    def validation_rollout(self, task: T, resources: NamedResources, rollout: RolloutV2) -> RolloutRawResultV2:
         """Defines the agent's behavior for a single validation task.
 
         By default, this method redirects to `training_rollout`. Override it
@@ -259,7 +257,9 @@ class LitAgent(Generic[T]):
         """
         return self.rollout(task, resources, rollout)
 
-    async def training_rollout_async(self, task: T, resources: NamedResources, rollout: RolloutV2) -> RolloutRawResult:
+    async def training_rollout_async(
+        self, task: T, resources: NamedResources, rollout: RolloutV2
+    ) -> RolloutRawResultV2:
         """Asynchronous version of `training_rollout`.
 
         This method should be implemented by agents that perform asynchronous
@@ -278,7 +278,7 @@ class LitAgent(Generic[T]):
 
     async def validation_rollout_async(
         self, task: T, resources: NamedResources, rollout: RolloutV2
-    ) -> RolloutRawResult:
+    ) -> RolloutRawResultV2:
         """Asynchronous version of `validation_rollout`.
 
         By default, this method redirects to `training_rollout_async`.
@@ -297,10 +297,10 @@ class LitAgent(Generic[T]):
 
 
 LlmRolloutFunc = Union[
-    Callable[[T, LLM, Rollout], RolloutRawResult],
-    Callable[[T, LLM], RolloutRawResult],
-    Callable[[T, LLM, Rollout], Coroutine[Any, Any, RolloutRawResult]],
-    Callable[[T, LLM], Coroutine[Any, Any, RolloutRawResult]],
+    Callable[[T, LLM, Rollout], RolloutRawResultV2],
+    Callable[[T, LLM], RolloutRawResultV2],
+    Callable[[T, LLM, Rollout], Coroutine[Any, Any, RolloutRawResultV2]],
+    Callable[[T, LLM], Coroutine[Any, Any, RolloutRawResultV2]],
 ]
 
 
@@ -339,7 +339,7 @@ class LitAgentLLM(LitAgent[T]):
     def is_async(self) -> bool:
         return self._is_async
 
-    def rollout(self, task: T, resources: NamedResources, rollout: RolloutV2) -> RolloutRawResult:
+    def rollout(self, task: T, resources: NamedResources, rollout: RolloutV2) -> RolloutRawResultV2:
         """Execute a synchronous rollout using the wrapped function.
 
         Args:
@@ -361,7 +361,7 @@ class LitAgentLLM(LitAgent[T]):
         else:
             return self.llm_rollout_func(task, llm=llm)  # type: ignore
 
-    async def rollout_async(self, task: T, resources: NamedResources, rollout: RolloutV2) -> RolloutRawResult:
+    async def rollout_async(self, task: T, resources: NamedResources, rollout: RolloutV2) -> RolloutRawResultV2:
         """Execute an asynchronous rollout using the wrapped function.
 
         Args:
