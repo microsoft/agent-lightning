@@ -5,6 +5,7 @@ from typing import Any, Awaitable, Callable, Iterator, List, Optional
 
 from opentelemetry.sdk.trace import ReadableSpan
 
+from agentlightning.store.base import LightningStore
 from agentlightning.types import ParallelWorkerBase
 
 
@@ -44,7 +45,14 @@ class BaseTracer(ParallelWorkerBase):
     """
 
     @contextmanager
-    def trace_context(self, name: Optional[str] = None) -> Iterator[Any]:
+    def trace_context(
+        self,
+        name: Optional[str] = None,
+        *,
+        store: Optional[LightningStore] = None,
+        rollout_id: Optional[str] = None,
+        attempt_id: Optional[str] = None,
+    ) -> Iterator[Any]:
         """
         Starts a new tracing context. This should be used as a context manager.
 
@@ -53,8 +61,13 @@ class BaseTracer(ParallelWorkerBase):
         within the `with` block are collected and made available via
         `get_last_trace`.
 
+        If a store is provided, the spans will be added to the store when tracing.
+
         Args:
             name: The name for the root span of this trace context.
+            store: The store to add the spans to.
+            rollout_id: The rollout ID to add the spans to.
+            attempt_id: The attempt ID to add the spans to.
         """
         raise NotImplementedError()
 

@@ -11,7 +11,9 @@ from agentlightning.adapter import TraceTripletAdapter
 from agentlightning.client import AgentLightningClient
 from agentlightning.litagent import LitAgent, is_v0_1_rollout_api
 from agentlightning.tracer.base import BaseTracer
-from agentlightning.types import ParallelWorkerBase, Rollout, RolloutRawResult, Triplet
+from agentlightning.types import Rollout, RolloutRawResult, Triplet
+
+from .base import BaseRunner
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +22,7 @@ __all__ = [
 ]
 
 
-class AgentRunner(ParallelWorkerBase):
+class AgentRunner(BaseRunner[Any]):
     """Manages the agent's execution loop and integrates with AgentOps.
 
     This class orchestrates the interaction between the agent (`LitAgent`) and
@@ -135,7 +137,7 @@ class AgentRunner(ParallelWorkerBase):
             return result.model_copy(update=result_dict)
         return Rollout(**result_dict)
 
-    def run(self) -> bool:
+    def run(self) -> bool:  # type: ignore
         """Poll the task and rollout once synchronously."""
         self.agent.set_runner(self)  # Ensure the agent has a reference to this runner
 
@@ -197,7 +199,7 @@ class AgentRunner(ParallelWorkerBase):
 
         return True
 
-    def iter(self) -> int:
+    def iter(self) -> int:  # type: ignore
         """Executes the synchronous polling and rollout loop."""
         num_tasks_processed = 0
         logger.info(f"{self._log_prefix()} Started sync rollouts (max: {self.max_tasks or 'unlimited'}).")

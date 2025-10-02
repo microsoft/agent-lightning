@@ -7,7 +7,6 @@ from typing import Any, Dict, List, Literal, Optional, Sequence
 
 from opentelemetry.sdk.trace import ReadableSpan
 
-from agentlightning.tracer import Span
 from agentlightning.types import (
     Attempt,
     AttemptedRollout,
@@ -17,6 +16,7 @@ from agentlightning.types import (
     RolloutConfig,
     RolloutStatus,
     RolloutV2,
+    Span,
     TaskInput,
 )
 

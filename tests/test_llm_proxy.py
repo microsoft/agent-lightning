@@ -33,8 +33,7 @@ from opentelemetry.sdk.trace import ReadableSpan
 
 from agentlightning.llm_proxy import LightningSpanExporter, LLMProxy
 from agentlightning.store.memory import InMemoryLightningStore
-from agentlightning.tracer.types import Span
-from agentlightning.types import LLM
+from agentlightning.types import LLM, Span
 from tests.tracer.utils import clear_tracer_provider
 
 try:

@@ -13,7 +13,6 @@ from fastapi import FastAPI
 from opentelemetry.sdk.trace import ReadableSpan
 from pydantic import BaseModel, Field
 
-from agentlightning.tracer import Span
 from agentlightning.types import (
     Attempt,
     AttemptedRollout,
@@ -23,6 +22,7 @@ from agentlightning.types import (
     RolloutConfig,
     RolloutStatus,
     RolloutV2,
+    Span,
     TaskInput,
 )
 

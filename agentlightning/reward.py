@@ -6,6 +6,10 @@ import warnings
 from typing import Any, Callable, Literal, Optional, TypedDict, TypeVar
 
 from agentops.sdk.decorators import operation
+from opentelemetry.trace import Span as OtelSpan
+from opentelemetry.trace import get_tracer_provider
+
+from agentlightning.types.tracer import SpanNames
 
 
 class RewardSpanData(TypedDict):
@@ -69,3 +73,18 @@ def reward(fn: FnType) -> FnType:
             return result
 
         return wrapper  # type: ignore
+
+
+def emit_reward(reward: float) -> OtelSpan:
+    """
+    Record a new reward as a new span.
+    """
+    # TODO: check for tracer initialization
+    tracer_provider = get_tracer_provider()
+
+    tracer = tracer_provider.get_tracer("agentlightning")
+    span = tracer.start_span(SpanNames.REWARD.value, attributes={"reward": reward})
+    # Do nothing; it's just a number
+    with span:
+        pass
+    return span

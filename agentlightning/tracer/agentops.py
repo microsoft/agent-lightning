@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
+import threading
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, Iterator, List, Optional
 
@@ -15,6 +17,7 @@ from opentelemetry.sdk.trace import ReadableSpan
 
 from agentlightning.instrumentation import instrument_all, uninstrument_all
 from agentlightning.instrumentation.agentops import AgentOpsServerManager
+from agentlightning.store.base import LightningStore
 
 from .base import BaseTracer
 
@@ -148,12 +151,22 @@ class AgentOpsTracer(BaseTracer):
             logger.info(f"[Worker {worker_id}] Instrumentation removed.")
 
     @contextmanager
-    def trace_context(self, name: Optional[str] = None) -> Iterator[LightningSpanProcessor]:
+    def trace_context(
+        self,
+        name: Optional[str] = None,
+        *,
+        store: Optional[LightningStore] = None,
+        rollout_id: Optional[str] = None,
+        attempt_id: Optional[str] = None,
+    ) -> Iterator[LightningSpanProcessor]:
         """
         Starts a new tracing context. This should be used as a context manager.
 
         Args:
             name: Optional name for the tracing context.
+            store: Optional store to add the spans to.
+            rollout_id: Optional rollout ID to add the spans to.
+            attempt_id: Optional attempt ID to add the spans to.
 
         Yields:
             The LightningSpanProcessor instance to collect spans.
@@ -202,7 +215,30 @@ class AgentOpsTracer(BaseTracer):
 
 class LightningSpanProcessor(SpanProcessor):
 
-    _spans: List[ReadableSpan] = []
+    def __init__(self):
+        self._spans: List[ReadableSpan] = []
+        self._store: Optional[LightningStore] = None
+        self._rollout_id: Optional[str] = None
+        self._attempt_id: Optional[str] = None
+        self._lock = threading.Lock()
+        self._loop: asyncio.AbstractEventLoop | None = None
+
+    @contextmanager
+    def with_context(self, store: LightningStore, rollout_id: str, attempt_id: str):
+        with self._lock:
+            try:
+                self._store = store
+                self._rollout_id = rollout_id
+                self._attempt_id = attempt_id
+                self._loop = asyncio.new_event_loop()
+                yield self
+            finally:
+                self._store = None
+                self._rollout_id = None
+                self._attempt_id = None
+                if self._loop:
+                    self._loop.close()
+                self._loop = None
 
     def __enter__(self):
         self._last_trace = None
@@ -210,7 +246,7 @@ class LightningSpanProcessor(SpanProcessor):
         return self
 
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any):
-        pass
+        self._store = None
 
     def spans(self) -> List[ReadableSpan]:
         """
@@ -232,6 +268,10 @@ class LightningSpanProcessor(SpanProcessor):
         # Skip if span is not sampled
         if not span.context or not span.context.trace_flags.sampled:
             return
+
+        if self._store is not None and self._rollout_id is not None and self._attempt_id is not None and self._loop:
+            # Submit add_otel_span to the event loop and wait for it to complete
+            self._loop.run_until_complete(self._store.add_otel_span(self._rollout_id, self._attempt_id, span))
 
         self._spans.append(span)
 

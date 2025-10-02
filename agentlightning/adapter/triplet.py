@@ -11,7 +11,7 @@ from opentelemetry import trace as trace_api
 from opentelemetry.sdk.trace import ReadableSpan
 from pydantic import BaseModel
 
-from agentlightning.types import Triplet
+from agentlightning.types import SpanNames, Triplet
 
 from .base import TraceAdapter
 
@@ -289,6 +289,10 @@ class TraceTree:
                         return json.loads(output)
                     except json.JSONDecodeError:
                         return {}
+
+        # Latest emit reward format
+        if self.span.name == SpanNames.REWARD.value and self.span.attributes:
+            return {"type": "reward", "value": self.span.attributes.get("reward", None)}
         return {}
 
     def is_reward_span(self) -> bool:

@@ -2,10 +2,30 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Any, Callable, Dict, Generic, List, Literal, Optional, Protocol, TypeVar, Union, cast
+from typing import (
+    TYPE_CHECKING,
+    Annotated,
+    Any,
+    Callable,
+    Dict,
+    Generic,
+    List,
+    Literal,
+    Optional,
+    Protocol,
+    TypeVar,
+    Union,
+    cast,
+)
 
 from opentelemetry.sdk.trace import ReadableSpan
 from pydantic import BaseModel, Field, model_validator
+
+from .tracer import Span
+
+if TYPE_CHECKING:
+    from agentlightning.runner.base import BaseRunner
+    from agentlightning.tracer.base import BaseTracer
 
 __all__ = [
     "Triplet",
@@ -14,6 +34,7 @@ __all__ = [
     "TaskInput",
     "TaskIfAny",
     "RolloutRawResult",
+    "RolloutRawResultV2",
     "Resource",
     "LLM",
     "PromptTemplate",
@@ -29,6 +50,7 @@ __all__ = [
     "RolloutV2",
     "Attempt",
     "AttemptedRollout",
+    "Hook",
 ]
 
 T_co = TypeVar("T_co", covariant=True)
@@ -184,6 +206,14 @@ class TaskIfAny(BaseModel):
 
 RolloutRawResult = Union[None, float, List[Triplet], List[Dict[str, Any]], List[ReadableSpan], Rollout]
 
+RolloutRawResultV2 = Union[
+    None,  # nothing (relies on tracer)
+    float,  # only final reward
+    List[ReadableSpan],  # constructed OTEL spans by user
+    List[Span],  # constructed Span objects by user
+    RolloutV2,  # complete RolloutV2 object
+]
+
 
 class Resource(BaseModel):
     """
@@ -317,3 +347,33 @@ class Dataset(Protocol, Generic[T_co]):
     def __getitem__(self, index: int) -> T_co: ...
 
     def __len__(self) -> int: ...
+
+
+class Hook(ParallelWorkerBase):
+    """Base class for defining hooks in the agent runner's lifecycle."""
+
+    async def on_rollout_start(self, rollout: RolloutV2, runner: BaseRunner[Any], tracer: BaseTracer) -> None:
+        """Hook called immediately before a rollout begins.
+
+        Args:
+            task: The :class:`Task` object that will be processed.
+            runner: The :class:`BaseRunner` managing the rollout.
+            tracer: The tracer instance associated with the runner.
+
+        Subclasses can override this method to implement custom logic such as
+        logging, metric collection, or resource setup. By default, this is a
+        no-op.
+        """
+
+    async def on_rollout_end(self, rollout: RolloutV2, runner: BaseRunner[Any], tracer: BaseTracer) -> None:
+        """Hook called after a rollout completes.
+
+        Args:
+            task: The :class:`Task` object that was processed.
+            rollout: The resulting :class:`Rollout` object.
+            runner: The :class:`BaseRunner` managing the rollout.
+            tracer: The tracer instance associated with the runner.
+
+        Subclasses can override this method for cleanup or additional
+        logging. By default, this is a no-op.
+        """

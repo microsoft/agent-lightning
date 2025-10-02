@@ -21,13 +21,13 @@ from unittest.mock import Mock
 import pytest
 
 from agentlightning.store.memory import InMemoryLightningStore
-from agentlightning.tracer import Span
 from agentlightning.types import (
     LLM,
     PromptTemplate,
     ResourcesUpdate,
     RolloutConfig,
     RolloutV2,
+    Span,
 )
 
 # Core CRUD Operations Tests

@@ -10,16 +10,18 @@ from opentelemetry.sdk.trace import ReadableSpan
 
 from agentlightning.store.base import UNSET, LightningStore
 from agentlightning.store.threading import LightningStoreThreaded
-from agentlightning.tracer import Span
-from agentlightning.tracer.types import Resource, SpanContext, TraceStatus
 from agentlightning.types import (
     Attempt,
     AttemptedRollout,
     AttemptStatus,
     NamedResources,
+    Resource,
     ResourcesUpdate,
     RolloutV2,
+    Span,
+    SpanContext,
     TaskInput,
+    TraceStatus,
 )
 
 from .dummy_store import DummyLightningStore
