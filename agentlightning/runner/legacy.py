@@ -1,5 +1,7 @@
 # Copyright (c) Microsoft. All rights reserved.
 
+# type: ignore
+
 import json
 import logging
 import time

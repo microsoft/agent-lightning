@@ -261,7 +261,7 @@ class Trainer(ParallelWorkerBase):
                 max_tasks=self.max_tasks,
                 worker_id=worker_id,
             )
-            loop.init_worker(worker_id)
+            loop.init_worker(worker_id)  # type: ignore
             if is_async:
                 num_processed = asyncio.run(loop.iter_async())
             else:
