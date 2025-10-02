@@ -397,7 +397,9 @@ class Hook(ParallelWorkerBase):
         metric collection, or resource setup. By default, this is a no-op.
         """
 
-    async def on_trace_end(self, *, agent: LitAgent[Any], runner: BaseRunner[Any], tracer: BaseTracer) -> None:
+    async def on_trace_end(
+        self, *, agent: LitAgent[Any], runner: BaseRunner[Any], tracer: BaseTracer, rollout: RolloutV2
+    ) -> None:
         """Hook called immediately after the rollout completes but before the tracer exits the trace context.
 
         Args:

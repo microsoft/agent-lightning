@@ -1,7 +1,9 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 import asyncio
 import random
 from contextlib import contextmanager
-from typing import Any, Dict, Iterator, List, Optional, Sequence
+from typing import Any, Dict, Iterator, List, Optional, Sequence, cast
 
 import pytest
 from opentelemetry import trace as trace_api
@@ -156,7 +158,9 @@ class RecordingHook(Hook):
     ) -> None:
         self.calls.append("on_trace_start")
 
-    async def on_trace_end(self, *, agent: LitAgent[Any], runner: BaseRunner[Any], tracer: BaseTracer) -> None:
+    async def on_trace_end(
+        self, *, agent: LitAgent[Any], runner: BaseRunner[Any], tracer: BaseTracer, rollout: RolloutV2
+    ) -> None:
         self.calls.append("on_trace_end")
 
     async def on_rollout_end(
@@ -178,7 +182,7 @@ async def test_step_records_spans_for_none_result() -> None:
     class AsyncSpanAgent(LitAgent[Dict[str, Any]]):
         async def validation_rollout_async(self, task: Dict[str, Any], resources: Dict[str, Any], rollout: Any) -> None:
             span = tracer.record_span("work", {"task_id": task["task_id"]})
-            store = self.runner.get_store()  # type: ignore[attr-defined]
+            store = cast(AgentRunnerV2[Dict[str, Any]], self.runner).get_store()
             await store.add_otel_span(rollout.rollout_id, rollout.attempt.attempt_id, span)  # type: ignore[attr-defined]
             return None
 
