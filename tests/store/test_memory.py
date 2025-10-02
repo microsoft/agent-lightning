@@ -22,13 +22,7 @@ import pytest
 
 from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.tracer import Span
-from agentlightning.types import (
-    LLM,
-    PromptTemplate,
-    ResourcesUpdate,
-    RolloutConfig,
-    RolloutV2,
-)
+from agentlightning.types import LLM, PromptTemplate, ResourcesUpdate, RolloutConfig, RolloutV2
 
 # Core CRUD Operations Tests
 
@@ -1282,3 +1276,141 @@ async def test_full_lifecycle_success(inmemory_store: InMemoryLightningStore, mo
     assert final_attempt is not None
     assert final_attempt.status == "succeeded"
     assert final_attempt.end_time is not None
+
+
+# Retry and requeue interactions -------------------------------------------------
+
+
+def _retry_config() -> RolloutConfig:
+    """Helper to create a rollout config that retries unresponsive attempts."""
+
+    return RolloutConfig(max_attempts=2, retry_condition=["unresponsive"])
+
+
+@pytest.mark.asyncio
+async def test_requeued_attempt_recovers_before_retry(
+    inmemory_store: InMemoryLightningStore, mock_readable_span: Mock
+) -> None:
+    """A requeued attempt that resumes should be removed from the queue."""
+
+    attempted = await inmemory_store.start_rollout(input={"foo": "bar"})
+    await inmemory_store.update_rollout(rollout_id=attempted.rollout_id, config=_retry_config())
+
+    await inmemory_store.update_attempt(
+        rollout_id=attempted.rollout_id, attempt_id=attempted.attempt.attempt_id, status="unresponsive"
+    )
+
+    rollout = await inmemory_store.get_rollout_by_id(attempted.rollout_id)
+    assert rollout is not None
+    assert rollout.status == "requeuing"
+
+    await inmemory_store.add_otel_span(attempted.rollout_id, attempted.attempt.attempt_id, mock_readable_span)
+
+    latest_attempt = await inmemory_store.get_latest_attempt(attempted.rollout_id)
+    assert latest_attempt is not None
+    assert latest_attempt.attempt_id == attempted.attempt.attempt_id
+    assert latest_attempt.status == "running"
+
+    rollout = await inmemory_store.get_rollout_by_id(attempted.rollout_id)
+    assert rollout is not None
+    assert rollout.status == "running"
+
+    # Queue should no longer return the rollout for retry.
+    assert await inmemory_store.dequeue_rollout() is None
+
+
+@pytest.mark.asyncio
+async def test_requeued_attempt_succeeds_without_new_attempt(
+    inmemory_store: InMemoryLightningStore, mock_readable_span: Mock
+) -> None:
+    """Recovered attempts can finish successfully without spawning a retry."""
+
+    attempted = await inmemory_store.start_rollout(input={"foo": "bar"})
+    await inmemory_store.update_rollout(rollout_id=attempted.rollout_id, config=_retry_config())
+
+    await inmemory_store.update_attempt(
+        rollout_id=attempted.rollout_id, attempt_id=attempted.attempt.attempt_id, status="unresponsive"
+    )
+
+    await inmemory_store.add_otel_span(attempted.rollout_id, attempted.attempt.attempt_id, mock_readable_span)
+
+    await inmemory_store.update_attempt(
+        rollout_id=attempted.rollout_id, attempt_id=attempted.attempt.attempt_id, status="succeeded"
+    )
+
+    rollout = await inmemory_store.get_rollout_by_id(attempted.rollout_id)
+    assert rollout is not None
+    assert rollout.status == "succeeded"
+
+    latest_attempt = await inmemory_store.get_latest_attempt(attempted.rollout_id)
+    assert latest_attempt is not None
+    assert latest_attempt.status == "succeeded"
+    assert latest_attempt.end_time is not None
+
+    assert await inmemory_store.dequeue_rollout() is None
+
+
+@pytest.mark.asyncio
+async def test_requeued_attempt_fails_without_new_attempt(
+    inmemory_store: InMemoryLightningStore, mock_readable_span: Mock
+) -> None:
+    """Recovered attempts that fail should mark the rollout failed without retries."""
+
+    attempted = await inmemory_store.start_rollout(input={"foo": "bar"})
+    await inmemory_store.update_rollout(rollout_id=attempted.rollout_id, config=_retry_config())
+
+    await inmemory_store.update_attempt(
+        rollout_id=attempted.rollout_id, attempt_id=attempted.attempt.attempt_id, status="unresponsive"
+    )
+
+    await inmemory_store.add_otel_span(attempted.rollout_id, attempted.attempt.attempt_id, mock_readable_span)
+
+    await inmemory_store.update_attempt(
+        rollout_id=attempted.rollout_id, attempt_id=attempted.attempt.attempt_id, status="failed"
+    )
+
+    rollout = await inmemory_store.get_rollout_by_id(attempted.rollout_id)
+    assert rollout is not None
+    assert rollout.status == "failed"
+
+    latest_attempt = await inmemory_store.get_latest_attempt(attempted.rollout_id)
+    assert latest_attempt is not None
+    assert latest_attempt.status == "failed"
+    assert latest_attempt.end_time is not None
+
+    assert await inmemory_store.dequeue_rollout() is None
+
+
+@pytest.mark.asyncio
+async def test_requeued_attempt_recovers_after_retry_started(
+    inmemory_store: InMemoryLightningStore, mock_readable_span: Mock
+) -> None:
+    """Data from an old attempt should not disrupt a newly started retry."""
+
+    attempted = await inmemory_store.start_rollout(input={"foo": "bar"})
+    await inmemory_store.update_rollout(rollout_id=attempted.rollout_id, config=_retry_config())
+
+    await inmemory_store.update_attempt(
+        rollout_id=attempted.rollout_id, attempt_id=attempted.attempt.attempt_id, status="unresponsive"
+    )
+
+    # Start a new attempt by dequeuing the rollout from the queue.
+    retried = await inmemory_store.dequeue_rollout()
+    assert retried is not None
+    assert retried.attempt.sequence_id == 2
+
+    await inmemory_store.add_otel_span(attempted.rollout_id, attempted.attempt.attempt_id, mock_readable_span)
+
+    latest_attempt = await inmemory_store.get_latest_attempt(attempted.rollout_id)
+    assert latest_attempt is not None
+    assert latest_attempt.attempt_id == retried.attempt.attempt_id
+    assert latest_attempt.sequence_id == 2
+
+    # The old attempt is still marked running but does not change the rollout state.
+    first_attempts = await inmemory_store.query_attempts(attempted.rollout_id)
+    assert first_attempts[0].status == "running"
+    rollout = await inmemory_store.get_rollout_by_id(attempted.rollout_id)
+    assert rollout is not None
+    assert rollout.status == "preparing"
+
+    assert await inmemory_store.dequeue_rollout() is None

@@ -389,14 +389,21 @@ class InMemoryLightningStore(LightningStore):
 
         # Update attempt heartbeat
         current_attempt.last_heartbeat_time = time.time()
-        if current_attempt.status == "preparing":
+        if current_attempt.status in ["preparing", "unresponsive", "timeout"]:
             current_attempt.status = "running"
 
         # If the status has already timed out or failed, do not change it
 
         # Update rollout status if it's the latest attempt
-        if rollout.status == "preparing" and current_attempt == latest_attempt:
-            rollout.status = "running"
+        if current_attempt == latest_attempt:
+            if rollout.status == "preparing":
+                rollout.status = "running"
+            elif rollout.status in ["queuing", "requeuing"]:
+                try:
+                    self._task_queue.remove(rollout)
+                except ValueError:
+                    pass
+                rollout.status = "running"
 
         return span
 
@@ -543,6 +550,18 @@ class InMemoryLightningStore(LightningStore):
         # If requeuing, add back to queue
         elif is_queuing(rollout) and rollout not in self._task_queue:
             self._task_queue.append(rollout)
+
+        # If the rollout is no longer in a queueing state, remove it from the queue.
+        if (
+            not isinstance(status, Unset)
+            and not is_queuing(rollout)
+            and rollout in self._task_queue
+        ):
+            try:
+                self._task_queue.remove(rollout)
+            except ValueError:
+                # Another coroutine may have already removed the rollout from the queue.
+                pass
 
         # Re-validate the rollout to ensure legality
         RolloutV2.model_validate(rollout.model_dump())
