@@ -13,6 +13,7 @@ import agentops
 import agentops.sdk.core
 from agentops.sdk.core import TracingCore
 from agentops.sdk.processors import SpanProcessor
+from litellm import ThreadPoolExecutor
 from opentelemetry.sdk.trace import ReadableSpan
 
 from agentlightning.instrumentation import instrument_all, uninstrument_all
@@ -176,8 +177,18 @@ class AgentOpsTracer(BaseTracer):
         if not self._lightning_span_processor:
             raise RuntimeError("LightningSpanProcessor is not initialized. Call init_worker() first.")
 
-        with self._lightning_span_processor:
-            yield self._lightning_span_processor
+        if not self._lightning_span_processor:
+            raise RuntimeError("LightningSpanProcessor is not initialized. Call init_worker() first.")
+
+        if store is not None and rollout_id is not None and attempt_id is not None:
+            ctx = self._lightning_span_processor.with_context(store=store, rollout_id=rollout_id, attempt_id=attempt_id)
+            with ctx as processor:
+                yield processor
+        elif store is None and rollout_id is None and attempt_id is None:
+            with self._lightning_span_processor:
+                yield self._lightning_span_processor
+        else:
+            raise ValueError("store, rollout_id, and attempt_id must be either all provided or all None")
 
     def get_last_trace(self) -> List[ReadableSpan]:
         """
@@ -219,6 +230,8 @@ class LightningSpanProcessor(SpanProcessor):
 
     def __init__(self):
         self._spans: List[ReadableSpan] = []
+
+        # Store related context and states
         self._store: Optional[LightningStore] = None
         self._rollout_id: Optional[str] = None
         self._attempt_id: Optional[str] = None
@@ -269,15 +282,18 @@ class LightningSpanProcessor(SpanProcessor):
             return
 
         if self._store is not None and self._rollout_id is not None and self._attempt_id is not None:
+            print(self._store, self._rollout_id, self._attempt_id)
             # Submit add_otel_span to the event loop and wait for it to complete
             try:
                 loop = asyncio.get_running_loop()
             except RuntimeError:
                 # no running loop in this thread
                 asyncio.run(self._store.add_otel_span(self._rollout_id, self._attempt_id, span))
+                print("asyncio.run", span)
             else:
                 # schedule without blocking this callback
-                loop.create_task(self._store.add_otel_span(self._rollout_id, self._attempt_id, span))
+                loop.run_until_complete(self._store.add_otel_span(self._rollout_id, self._attempt_id, span))
+                print("loop.create_task", span)
 
         self._spans.append(span)
 

@@ -20,6 +20,7 @@ from typing import (
     cast,
 )
 
+import opentelemetry.trace as trace_api
 from agentops.sdk.decorators import operation
 from opentelemetry.sdk.trace import ReadableSpan
 from opentelemetry.trace import get_tracer_provider
@@ -102,7 +103,12 @@ def emit_reward(reward: float) -> ReadableSpan:
     if not isinstance(reward, float):
         raise ValueError(f"Reward must be a number, got: {type(reward)}")
 
-    # TODO: check for tracer initialization
+    # Check for tracer initialization
+    if (
+        hasattr(trace_api, "_TRACER_PROVIDER") and trace_api._TRACER_PROVIDER is None
+    ):  # pyright: ignore[reportPrivateUsage]
+        raise RuntimeError("Tracer is not initialized. Cannot emit a meaningful span.")
+
     tracer_provider = get_tracer_provider()
 
     tracer = tracer_provider.get_tracer("agentlightning")

@@ -1,7 +1,7 @@
 import asyncio
 import random
 from contextlib import contextmanager
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, Iterator, List, Optional, Sequence
 
 import pytest
 from opentelemetry import trace as trace_api
@@ -13,10 +13,12 @@ from opentelemetry.trace.status import Status, StatusCode
 from agentlightning.litagent import LitAgent
 from agentlightning.reward import emit_reward, get_last_reward
 from agentlightning.runner import AgentRunnerV2
+from agentlightning.runner.base import BaseRunner
+from agentlightning.store.base import LightningStore
 from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.tracer.base import BaseTracer
 from agentlightning.types import Hook, RolloutV2, Span
-from agentlightning.types.core import LLM
+from agentlightning.types.core import LLM, PromptTemplate
 from agentlightning.types.tracer import SpanNames
 
 trace_api.set_tracer_provider(TracerProvider())
@@ -81,10 +83,10 @@ class DummyTracer(BaseTracer):
         self,
         name: Optional[str] = None,
         *,
-        store: Optional[InMemoryLightningStore] = None,
+        store: Optional[LightningStore] = None,
         rollout_id: Optional[str] = None,
         attempt_id: Optional[str] = None,
-    ) -> Sequence[ReadableSpan]:
+    ) -> Iterator[List[ReadableSpan]]:
         previous = self._contexts[-1] if self._contexts else None
         current = {
             "name": name,
@@ -143,18 +145,18 @@ class RecordingHook(Hook):
     def __init__(self) -> None:
         super().__init__()
         self.calls: List[str] = []
-        self.received_spans: Optional[Sequence[ReadableSpan | Span]] = None
+        self.received_spans: Optional[List[ReadableSpan] | List[Span]] = None
 
-    async def on_rollout_start(self, *, agent: LitAgent[Any], runner: AgentRunnerV2[Any], rollout: RolloutV2) -> None:
+    async def on_rollout_start(self, *, agent: LitAgent[Any], runner: BaseRunner[Any], rollout: RolloutV2) -> None:
         self.calls.append("on_rollout_start")
 
     async def on_trace_start(
-        self, *, agent: LitAgent[Any], runner: AgentRunnerV2[Any], tracer: BaseTracer, rollout: RolloutV2
+        self, *, agent: LitAgent[Any], runner: BaseRunner[Any], tracer: BaseTracer, rollout: RolloutV2
     ) -> None:
         self.calls.append("on_trace_start")
 
     async def on_trace_end(
-        self, *, agent: LitAgent[Any], runner: AgentRunnerV2[Any], tracer: BaseTracer, rollout: RolloutV2
+        self, *, agent: LitAgent[Any], runner: BaseRunner[Any], tracer: BaseTracer, rollout: RolloutV2
     ) -> None:
         self.calls.append("on_trace_end")
 
@@ -162,9 +164,9 @@ class RecordingHook(Hook):
         self,
         *,
         agent: LitAgent[Any],
-        runner: AgentRunnerV2[Any],
+        runner: BaseRunner[Any],
         rollout: RolloutV2,
-        spans: Sequence[ReadableSpan] | Sequence[Span],
+        spans: List[ReadableSpan] | List[Span],
     ) -> None:
         self.calls.append("on_rollout_end")
         self.received_spans = spans
@@ -213,6 +215,33 @@ async def test_step_emits_reward_for_float_result() -> None:
     spans = await store.query_spans(rollout_id, attempt_id)
     rewards = [span.attributes.get("reward") for span in spans if span.name == SpanNames.REWARD.value]
     assert rewards == [0.75]
+
+
+@pytest.mark.asyncio
+async def test_step_handles_non_llm_resource() -> None:
+    class PromptAgent(LitAgent[str]):
+        def validation_rollout(self, task: str, resources: Dict[str, Any], rollout: Any) -> float:
+            template = resources["template"]
+            assert isinstance(template, PromptTemplate)
+            rendered = template.template.format(name=task)
+            assert task in rendered
+            return 0.1
+
+    agent = PromptAgent()
+    runner, store, _ = await setup_runner(agent)
+    try:
+        await store.update_resources(
+            "prompt-resource",
+            {"template": PromptTemplate(template="Hello {name}!", engine="f-string")},
+        )
+        await runner.step("Ada")
+    finally:
+        teardown_runner(runner)
+
+    rollout_id, attempt_id = await assert_single_attempt_succeeded(store)
+    spans = await store.query_spans(rollout_id, attempt_id)
+    rewards = [span.attributes.get("reward") for span in spans if span.name == SpanNames.REWARD.value]
+    assert rewards == [0.1]
 
 
 @pytest.mark.asyncio
