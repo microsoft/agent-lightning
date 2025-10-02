@@ -1,9 +1,11 @@
 # Copyright (c) Microsoft. All rights reserved.
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import time
-from typing import TYPE_CHECKING, Any, List, Literal, Optional, Sequence, Tuple, TypeVar, cast
+from typing import TYPE_CHECKING, Any, List, Literal, Optional, Sequence, TypeVar, cast
 
 from opentelemetry.sdk.trace import ReadableSpan
 
@@ -37,28 +39,37 @@ class AgentRunnerV2(BaseRunner[T_task]):
         self._agent: Optional[LitAgent[T_task]] = None
         self._hooks: Sequence[Hook] = []
         self._store: Optional[LightningStore] = None
-        self._worker_id: Optional[int] = None
+        self.worker_id: Optional[int] = None
 
-    def init(self, agent: LitAgent[T_task], *, hooks: Sequence[Hook], **kwargs: Any) -> None:
+    def init(self, agent: LitAgent[T_task], *, hooks: Optional[Sequence[Hook]] = None, **kwargs: Any) -> None:
         """Initialize the runner with the agent."""
         self._agent = agent
         self._agent.set_runner(self)
-        self._hooks = [*hooks]
+        self._hooks = [*hooks] if hooks is not None else []
+
+        self._tracer.init()
 
     def init_worker(self, worker_id: int, store: LightningStore, **kwargs: Any) -> None:
         """Initialize the runner for each worker with worker_id and store."""
         self._store = store
-        self._worker_id = worker_id
+        self.worker_id = worker_id
+
+        self._tracer.init_worker(worker_id)
 
     def teardown(self, *args: Any, **kwargs: Any) -> None:
         """Teardown the runner."""
         self._agent = None
         self._store = None
-        self._worker_id = None
+        self.worker_id = None
+        self._hooks = []
+
+        self._tracer.teardown()
 
     def teardown_worker(self, worker_id: int, *args: Any, **kwargs: Any) -> None:
         """Teardown the runner for each worker."""
-        self._worker_id = None
+        self.worker_id = None
+
+        self._tracer.teardown_worker(worker_id)
 
     def get_agent(self) -> LitAgent[T_task]:
         """Get the agent."""
@@ -74,11 +85,11 @@ class AgentRunnerV2(BaseRunner[T_task]):
 
     def get_worker_id(self) -> str:
         """Get the worker id."""
-        return f"Worker-{self._worker_id}" if self._worker_id is not None else "Worker-Unknown"
+        return f"Worker-{self.worker_id}" if self.worker_id is not None else "Worker-Unknown"
 
     def _log_prefix(self, rollout_id: Optional[str] = None) -> str:
         """Generates a standardized log prefix for the current worker."""
-        if self._worker_id is not None:
+        if self.worker_id is not None:
             if rollout_id:
                 return f"[Worker {self.worker_id} | Rollout {rollout_id}]"
             else:
@@ -123,10 +134,12 @@ class AgentRunnerV2(BaseRunner[T_task]):
 
         # Case 1: result is a float (final reward)
         if isinstance(raw_result, float):
+            # Preserve the existing spans before another span is emitted
+            trace_spans = list(self._tracer.get_last_trace())
             # This will emit another span to the tracer
             reward_span = emit_reward(raw_result)
             await store.add_otel_span(rollout.rollout_id, rollout.attempt.attempt_id, reward_span)
-            trace_spans = self._tracer.get_last_trace() + [reward_span]
+            trace_spans.append(reward_span)
 
         if isinstance(raw_result, list):
             # For rollout methods that return a list, we assume that the returned spans
@@ -174,8 +187,11 @@ class AgentRunnerV2(BaseRunner[T_task]):
 
         return trace_spans
 
-    async def _sleep_until_next_poll(self, event: Event) -> None:
+    async def _sleep_until_next_poll(self, event: Optional[Event] = None) -> None:
         """Sleep until the next poll interval."""
+        if event is None:
+            await asyncio.sleep(self._poll_interval)
+            return
         current_time = time.time()
         next_time = current_time + self._poll_interval
         while time.time() < next_time:
@@ -183,7 +199,7 @@ class AgentRunnerV2(BaseRunner[T_task]):
             if event.is_set():
                 return
 
-    async def _step_impl(self, next_rollout: AttemptedRollout, event: Event) -> None:
+    async def _step_impl(self, next_rollout: AttemptedRollout, raise_on_exception: bool = False) -> None:
         store = self.get_store()
         agent = self.get_agent()
 
@@ -197,8 +213,11 @@ class AgentRunnerV2(BaseRunner[T_task]):
             logger.debug(f"{self._log_prefix(rollout_id)} No 'resources_id'. Fetching latest resources.")
             resources_update = await store.get_latest_resources()
         if not resources_update:
-            logger.error(f"{self._log_prefix(rollout_id)} Failed to fetch resources. Skipping.")
-            return
+            if raise_on_exception:
+                raise RuntimeError(f"{self._log_prefix(rollout_id)} Failed to fetch resources")
+            else:
+                logger.error(f"{self._log_prefix(rollout_id)} Failed to fetch resources. Skipping.")
+                return
 
         trace_spans: List[ReadableSpan] | List[Span] = []
         has_exception: bool = False
@@ -242,7 +261,7 @@ class AgentRunnerV2(BaseRunner[T_task]):
             end_time = time.time()
             logger.info(
                 f"{self._log_prefix(rollout_id)} Completed in "
-                f"{end_time - start_time:.2f}s. Triplet length: {len(trace_spans)}. "
+                f"{end_time - start_time:.2f}s. Collected {len(trace_spans)} span(s). "
                 f"Final reward: {last_reward}"
             )
 
@@ -250,6 +269,8 @@ class AgentRunnerV2(BaseRunner[T_task]):
             logger.exception(f"{self._log_prefix(rollout_id)} Exception during rollout.")
             has_exception = True
 
+            if raise_on_exception:
+                raise
         finally:
             try:
                 await self._trigger_hooks(
@@ -264,16 +285,21 @@ class AgentRunnerV2(BaseRunner[T_task]):
             else:
                 await store.update_attempt(rollout_id, next_rollout.attempt.attempt_id, status="succeeded")
 
-    async def iter(self, event: Event) -> None:
-        """Run the runner, iterate over the tasks in the store. Abort if the event is set."""
+    async def iter(self, event: Optional[Event] = None) -> None:
+        """Run the runner, iterate over the tasks in the store. Abort if the event is set.
+
+        Silence all the exceptions.
+        """
         num_tasks_processed = 0
         logger.info(f"{self._log_prefix()} Started async rollouts (max: {self._max_tasks or 'unlimited'}).")
         store = self.get_store()
 
-        while not event.is_set() and (self._max_tasks is None or num_tasks_processed < self._max_tasks):
+        while not (event is not None and event.is_set()) and (
+            self._max_tasks is None or num_tasks_processed < self._max_tasks
+        ):
             # Retrieve the next rollout
             next_rollout: Optional[RolloutV2] = None
-            while not event.is_set():
+            while not (event is not None and event.is_set()):
                 logger.debug(f"{self._log_prefix()} Try to poll for next rollout.")
                 next_rollout = await store.dequeue_rollout()
                 if next_rollout is None:
@@ -289,7 +315,7 @@ class AgentRunnerV2(BaseRunner[T_task]):
             )
 
             # Execute the step
-            await self._step_impl(next_rollout, event)
+            await self._step_impl(next_rollout)
 
             num_tasks_processed += 1
             if num_tasks_processed % 10 == 0 or num_tasks_processed == 1:
@@ -297,7 +323,10 @@ class AgentRunnerV2(BaseRunner[T_task]):
 
         logger.info(f"{self._log_prefix()} Finished async rollouts. Processed {num_tasks_processed} tasks.")
 
-    async def step(self, input: T_task, event: Event) -> None:
-        """Step the runner, execute one task."""
+    async def step(self, input: T_task, event: Optional[Event] = None) -> None:
+        """Step the runner, execute one task.
+
+        Raise if the step fails.
+        """
         attempted_rollout = await self.get_store().start_rollout(input=input)
-        await self._step_impl(attempted_rollout, event)
+        await self._step_impl(attempted_rollout, raise_on_exception=True)
