@@ -56,12 +56,6 @@ async def test_runner_integration_basic_rollout() -> None:
         async def validation_rollout_async(self, task: str, resources: Dict[str, Any], rollout: Any) -> None:
             emit_reward(1.0)
 
-    import logging
-
-    from agentlightning.logging import configure_logger
-
-    configure_logger(level=logging.DEBUG)
-
     agent = EchoAgent()
     runner, store = await init_runner(agent)
     try:
