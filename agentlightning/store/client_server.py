@@ -263,7 +263,6 @@ class LightningStoreServer(LightningStore):
 
         @self.app.post("/add_span", response_model=Span)
         async def add_span(span: Span):  # pyright: ignore[reportUnusedFunction]
-            print("server receiving otel span:", span)
             return await self.store.add_span(span)
 
         @self.app.get("/get_next_span_sequence_id/{rollout_id}/{attempt_id}", response_model=int)
