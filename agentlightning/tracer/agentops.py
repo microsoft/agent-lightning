@@ -7,13 +7,12 @@ import logging
 import os
 import threading
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any, Iterator, List, Optional
+from typing import TYPE_CHECKING, Any, Awaitable, Iterator, List, Optional
 
 import agentops
 import agentops.sdk.core
 from agentops.sdk.core import TracingCore
 from agentops.sdk.processors import SpanProcessor
-from litellm import ThreadPoolExecutor
 from opentelemetry.sdk.trace import ReadableSpan
 
 from agentlightning.instrumentation import instrument_all, uninstrument_all
@@ -227,7 +226,6 @@ class AgentOpsTracer(BaseTracer):
 
 
 class LightningSpanProcessor(SpanProcessor):
-
     def __init__(self):
         self._spans: List[ReadableSpan] = []
 
@@ -237,18 +235,20 @@ class LightningSpanProcessor(SpanProcessor):
         self._attempt_id: Optional[str] = None
         self._lock = threading.Lock()
 
-    @contextmanager
-    def with_context(self, store: LightningStore, rollout_id: str, attempt_id: str):
-        with self._lock:
-            try:
-                self._store = store
-                self._rollout_id = rollout_id
-                self._attempt_id = attempt_id
-                yield self
-            finally:
-                self._store = None
-                self._rollout_id = None
-                self._attempt_id = None
+        # private asyncio loop running in a daemon thread
+        self._loop_ready = threading.Event()
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._loop_thread = threading.Thread(target=self._loop_runner, name="otel-loop", daemon=True)
+        self._loop_thread.start()
+        self._loop_ready.wait()  # loop is ready
+
+    def _loop_runner(self):
+        loop = asyncio.new_event_loop()
+        self._loop = loop
+        asyncio.set_event_loop(loop)
+        self._loop_ready.set()
+        loop.run_forever()
+        loop.close()
 
     def __enter__(self):
         self._last_trace = None
@@ -260,6 +260,22 @@ class LightningSpanProcessor(SpanProcessor):
         self._rollout_id = None
         self._attempt_id = None
 
+    def _await_in_loop(self, coro: Awaitable[Any], timeout: Optional[float] = None) -> Any:
+        # submit to the dedicated loop and wait synchronously
+        if self._loop is None:
+            raise RuntimeError("Loop is not initialized. This should not happen.")
+        fut = asyncio.run_coroutine_threadsafe(coro, self._loop)  # type: ignore
+        return fut.result(timeout=timeout)  # raises on error  # type: ignore
+
+    def shutdown(self) -> None:
+        if self._loop:
+            self._loop.call_soon_threadsafe(self._loop.stop)
+            self._loop_thread.join(timeout=5)
+            self._loop = None
+
+    def force_flush(self, timeout_millis: int = 30000) -> bool:
+        return True
+
     def spans(self) -> List[ReadableSpan]:
         """
         Get the list of spans collected by this processor.
@@ -269,6 +285,22 @@ class LightningSpanProcessor(SpanProcessor):
             List of ReadableSpan objects collected during tracing.
         """
         return self._spans
+
+    def with_context(self, store: LightningStore, rollout_id: str, attempt_id: str):
+        # simple context manager without nesting into asyncio
+        class _Ctx:
+            def __enter__(_):  # type: ignore
+                with self._lock:
+                    self._store, self._rollout_id, self._attempt_id = store, rollout_id, attempt_id
+                    self._last_trace = None
+                    self._spans = []
+                return self
+
+            def __exit__(_, exc_type, exc, tb):  # type: ignore
+                with self._lock:
+                    self._store = self._rollout_id = self._attempt_id = None
+
+        return _Ctx()
 
     def on_end(self, span: ReadableSpan) -> None:
         """
@@ -281,24 +313,15 @@ class LightningSpanProcessor(SpanProcessor):
         if not span.context or not span.context.trace_flags.sampled:
             return
 
-        if self._store is not None and self._rollout_id is not None and self._attempt_id is not None:
-            print(self._store, self._rollout_id, self._attempt_id)
-            # Submit add_otel_span to the event loop and wait for it to complete
+        if self._store and self._rollout_id and self._attempt_id:
             try:
-                loop = asyncio.get_running_loop()
-            except RuntimeError:
-                # no running loop in this thread
-                asyncio.run(self._store.add_otel_span(self._rollout_id, self._attempt_id, span))
-                print("asyncio.run", span)
-            else:
-                # schedule without blocking this callback
-                loop.run_until_complete(self._store.add_otel_span(self._rollout_id, self._attempt_id, span))
-                print("loop.create_task", span)
+                # Submit add_otel_span to the event loop and wait for it to complete
+                self._await_in_loop(
+                    self._store.add_otel_span(self._rollout_id, self._attempt_id, span),
+                    timeout=5.0,
+                )
+            except Exception:
+                # log; on_end MUST NOT raise
+                logger.exception(f"Error adding span to store: {span.name}")
 
         self._spans.append(span)
-
-    def shutdown(self) -> None:
-        pass
-
-    def force_flush(self, timeout_millis: int = 30000) -> bool:
-        return True

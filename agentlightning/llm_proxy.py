@@ -23,7 +23,7 @@ from litellm.proxy.proxy_server import app, save_worker_config  # pyright: ignor
 from opentelemetry.sdk.trace import ReadableSpan
 from opentelemetry.sdk.trace.export import SpanExporter, SpanExportResult
 
-from agentlightning.types import LLM
+from agentlightning.types import LLM, ProxyLLM
 
 from .store.base import LightningStore
 
@@ -602,8 +602,8 @@ class LLMProxy:
 
     def as_resource(
         self,
-        rollout_id: str,
-        attempt_id: str,
+        rollout_id: str | None = None,
+        attempt_id: str | None = None,
         model: str | None = None,
         sampling_parameters: Dict[str, Any] | None = None,
     ) -> LLM:
@@ -613,8 +613,8 @@ class LLMProxy:
             ``http://{host}:{port}/rollout/{rollout_id}/attempt/{attempt_id}``
 
         Args:
-            rollout_id: Rollout identifier used for span attribution.
-            attempt_id: Attempt identifier used for span attribution.
+            rollout_id: Rollout identifier used for span attribution. If None, will instantiate a ProxyLLM resource.
+            attempt_id: Attempt identifier used for span attribution. If None, will instantiate a ProxyLLM resource.
             model: Logical model name to use. If omitted and exactly one model
                 is configured, that model is used.
             sampling_parameters: Optional default sampling parameters.
@@ -633,11 +633,20 @@ class LLMProxy:
                     f"Multiple or zero models found in model_list: {self.model_list}. Please specify the model."
                 )
 
-        return LLM(
-            endpoint=f"http://{self.host}:{self.port}/rollout/{rollout_id}/attempt/{attempt_id}",
-            model=model,
-            sampling_parameters=dict(sampling_parameters or {}),
-        )
+        if rollout_id is None and attempt_id is None:
+            return ProxyLLM(
+                endpoint=f"http://{self.host}:{self.port}",
+                model=model,
+                sampling_parameters=dict(sampling_parameters or {}),
+            )
+        elif rollout_id is not None and attempt_id is not None:
+            return LLM(
+                endpoint=f"http://{self.host}:{self.port}/rollout/{rollout_id}/attempt/{attempt_id}",
+                model=model,
+                sampling_parameters=dict(sampling_parameters or {}),
+            )
+        else:
+            raise ValueError("Either rollout_id and attempt_id must be provided, or neither.")
 
 
 def _get_default_ipv4_address() -> str:

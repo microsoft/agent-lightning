@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+import uuid
 from typing import TYPE_CHECKING, Any, List, Literal, Optional, Sequence, TypeVar, cast
 
 from opentelemetry.sdk.trace import ReadableSpan
@@ -14,7 +15,15 @@ from agentlightning.reward import emit_reward, get_last_reward
 from agentlightning.store.base import LightningStore
 from agentlightning.tracer.agentops import AgentOpsTracer
 from agentlightning.tracer.base import BaseTracer
-from agentlightning.types import AttemptedRollout, Hook, RolloutRawResultV2, RolloutV2, Span
+from agentlightning.types import (
+    AttemptedRollout,
+    Hook,
+    NamedResources,
+    RolloutMode,
+    RolloutRawResultV2,
+    RolloutV2,
+    Span,
+)
 
 if TYPE_CHECKING:
     from agentlightning.execution.events import Event
@@ -285,7 +294,7 @@ class AgentRunnerV2(BaseRunner[T_task]):
             else:
                 await store.update_attempt(rollout_id, next_rollout.attempt.attempt_id, status="succeeded")
 
-    async def iter(self, event: Optional[Event] = None) -> None:
+    async def iter(self, *, event: Optional[Event] = None) -> None:
         """Run the runner, iterate over the tasks in the store. Abort if the event is set.
 
         Silence all the exceptions.
@@ -325,10 +334,26 @@ class AgentRunnerV2(BaseRunner[T_task]):
 
         logger.info(f"{self._log_prefix()} Finished async rollouts. Processed {num_tasks_processed} tasks.")
 
-    async def step(self, input: T_task, event: Optional[Event] = None) -> None:
+    async def step(
+        self,
+        input: T_task,
+        *,
+        resources: Optional[NamedResources] = None,
+        mode: Optional[RolloutMode] = None,
+        event: Optional[Event] = None,
+    ) -> None:
         """Step the runner, execute one task.
 
         Raise if the step fails.
         """
-        attempted_rollout = await self.get_store().start_rollout(input=input)
+        store = self.get_store()
+
+        if resources is not None:
+            # TODO: move this to store.add_resources()
+            resources_id = "resource-" + str(uuid.uuid4())
+            await store.update_resources(resources_id=resources_id, resources=resources)
+        else:
+            resources_id = None
+
+        attempted_rollout = await self.get_store().start_rollout(input=input, mode=mode, resources_id=resources_id)
         await self._step_impl(attempted_rollout, raise_on_exception=True)

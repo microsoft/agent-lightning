@@ -36,8 +36,10 @@ __all__ = [
     "TaskIfAny",
     "RolloutRawResult",
     "RolloutRawResultV2",
+    "RolloutMode",
     "Resource",
     "LLM",
+    "ProxyLLM",
     "PromptTemplate",
     "ResourceUnion",
     "NamedResources",
@@ -114,6 +116,8 @@ AttemptStatus = Literal[
     "timeout",  # the worker has been emitting new logs, but have been working on the task for too long
 ]
 
+RolloutMode = Literal["train", "val", "test"]
+
 
 class Attempt(BaseModel):
     """An attempt to execute a rollout. A rollout can have multiple attempts if retries are needed."""
@@ -155,7 +159,7 @@ class RolloutV2(BaseModel):
     start_time: float
     end_time: Optional[float] = None
 
-    mode: Optional[Literal["train", "val", "test"]] = None
+    mode: Optional[RolloutMode] = None
     resources_id: Optional[str] = None
 
     # Overall scheduling/running information
@@ -188,7 +192,7 @@ class Task(BaseModel):
     rollout_id: str
     input: TaskInput
 
-    mode: Optional[Literal["train", "val", "test"]] = None
+    mode: Optional[RolloutMode] = None
     resources_id: Optional[str] = None
 
     # Optional fields for tracking task lifecycle
@@ -240,6 +244,32 @@ class LLM(Resource):
     api_key: Optional[str] = None
     sampling_parameters: Dict[str, Any] = Field(default_factory=dict)
 
+    def base_url(self, *args: Any, **kwargs: Any) -> str:
+        return self.endpoint
+
+
+class ProxyLLM(LLM):
+    """Proxy LLM resource that is tailored by `llm_proxy.LLMProxy`."""
+
+    resource_type: Literal["proxy_llm"] = "proxy_llm"  # type: ignore
+
+    def base_url(self, rollout_id: str, attempt_id: str) -> str:
+        prefix = self.endpoint
+        if prefix.endswith("/"):
+            prefix = prefix[:-1]
+        if prefix.endswith("/v1"):
+            prefix = prefix[:-3]
+            has_v1 = True
+        else:
+            has_v1 = False
+        # Now the prefix should look like "http://localhost:11434"
+
+        # Append the rollout and attempt id to the prefix
+        prefix = prefix + f"/rollout/{rollout_id}/attempt/{attempt_id}"
+        if has_v1:
+            prefix = prefix + "/v1"
+        return prefix
+
 
 class PromptTemplate(Resource):
     """
@@ -258,7 +288,7 @@ class PromptTemplate(Resource):
 
 
 # Use discriminated union for proper deserialization
-ResourceUnion = Annotated[Union[LLM, PromptTemplate], Field(discriminator="resource_type")]
+ResourceUnion = Annotated[Union[LLM, ProxyLLM, PromptTemplate], Field(discriminator="resource_type")]
 NamedResources = Dict[str, ResourceUnion]
 """
 A dictionary-like class to hold named resources.

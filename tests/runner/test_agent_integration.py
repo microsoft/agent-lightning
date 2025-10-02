@@ -3,7 +3,9 @@
 import asyncio
 import multiprocessing
 import os
+import time
 from contextlib import contextmanager
+from multiprocessing.synchronize import Event as MpEvent
 from typing import Any, Dict, Iterator, Optional
 
 import openai
@@ -15,10 +17,11 @@ from agentlightning.llm_proxy import LLMProxy
 from agentlightning.reward import emit_reward
 from agentlightning.runner import AgentRunnerV2
 from agentlightning.store.base import LightningStore
+from agentlightning.store.client_server import LightningStoreClient, LightningStoreServer
 from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.tracer.agentops import AgentOpsTracer
 from agentlightning.tracer.base import BaseTracer
-from agentlightning.types.core import LLM
+from agentlightning.types.core import LLM, AttemptedRollout
 
 from ..common.network import get_free_port
 from ..common.tracer import clear_tracer_provider
@@ -165,7 +168,29 @@ async def test_runner_integration_with_spawned_litellm_proxy(server: RemoteOpenA
     if not torch.cuda.is_available():
         pytest.skip("GPU not available")
 
-    proxy_store = InMemoryLightningStore()
+    class ProxyAgent(LitAgent[str]):
+        async def validation_rollout_async(
+            self, task: str, *, resources: Dict[str, LLM], rollout: AttemptedRollout
+        ) -> float:
+            llm_resource = resources["llm"]
+            client = openai.AsyncOpenAI(
+                base_url=llm_resource.base_url(rollout.rollout_id, rollout.attempt.attempt_id),
+                api_key=llm_resource.api_key,
+            )
+            response = await client.chat.completions.create(
+                model=llm_resource.model,
+                messages=[{"role": "user", "content": task}],
+            )
+            assert response.choices, "Proxy should return at least one choice"
+            return 0.0
+
+    agent = ProxyAgent()
+    runner, store = await init_runner(agent)
+
+    server_store = LightningStoreServer(store=store, host="127.0.0.1", port=get_free_port())
+    await server_store.start()
+    client_store = LightningStoreClient(server_store.endpoint)
+
     proxy = LLMProxy(
         port=get_free_port(),
         model_list=[
@@ -177,39 +202,33 @@ async def test_runner_integration_with_spawned_litellm_proxy(server: RemoteOpenA
                 },
             }
         ],
-        store=proxy_store,
+        store=client_store,
     )
 
-    process = multiprocessing.Process(target=proxy.start)
-    process.start()
+    def run_proxy_server(proxy: LLMProxy, event: MpEvent):
+        proxy.start()
+        event.set()
+        time.sleep(3600)  # Keep the server running
 
-    class ProxyAgent(LitAgent[str]):
-        async def validation_rollout_async(self, task: str, *, resources: Dict[str, LLM], rollout: Any) -> float:
-            llm_resource = resources["llm"]
-            client = openai.AsyncOpenAI(base_url=llm_resource.endpoint, api_key=llm_resource.api_key)
-            response = await client.chat.completions.create(
-                model=llm_resource.model,
-                messages=[{"role": "user", "content": task}],
-            )
-            assert response.choices, "Proxy should return at least one choice"
-            return 0.0
+    event = multiprocessing.Event()
+    process = multiprocessing.Process(target=run_proxy_server, args=(proxy, event))
+    process.start()
+    event.wait(timeout=30)
 
     try:
-        agent = ProxyAgent()
-        runner, store = await init_runner(agent)
-        try:
-            llm_resource = LLM(
-                endpoint=f"http://{proxy.host}:{proxy.port}",
-                model="gpt-4o-arbitrary",
-                api_key="token-abc123",
-            )
-            await store.update_resources("proxy-resource", {"llm": llm_resource})
-            await runner.step("Say hello to Agent Lightning")
-        finally:
-            teardown_runner(runner)
+        await runner.step("Say hello to Agent Lightning", resources={"llm": proxy.as_resource()})
 
         rollouts = await store.query_rollouts()
         assert rollouts and rollouts[0].status == "succeeded"
+
+        spans = await store.query_spans(rollouts[0].rollout_id, "latest")
+        for span in spans:
+            print(span)
     finally:
+        teardown_runner(runner)
         process.terminate()
-        await asyncio.to_thread(process.join, timeout=10)
+        await client_store.close()
+        await server_store.stop()
+        await asyncio.to_thread(process.join, timeout=1)
+        if process.is_alive():
+            process.kill()

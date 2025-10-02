@@ -337,7 +337,7 @@ async def test_iter_stops_when_event_is_set() -> None:
     for idx in range(3):
         await store.enqueue_rollout({"idx": idx}, mode="train")
 
-    iter_task = asyncio.create_task(runner.iter(stop_event))
+    iter_task = asyncio.create_task(runner.iter(event=stop_event))
     try:
         await asyncio.wait_for(stop_event.wait(), timeout=1)
         await asyncio.wait_for(iter_task, timeout=1)
@@ -372,7 +372,7 @@ async def test_iter_waits_when_queue_empty_calls_sleep(monkeypatch: pytest.Monke
     monkeypatch.setattr(runner, "_sleep_until_next_poll", fake_sleep)
 
     try:
-        await runner.iter(stop_event)
+        await runner.iter(event=stop_event)
     finally:
         teardown_runner(runner)
 

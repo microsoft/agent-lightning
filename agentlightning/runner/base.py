@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Generic, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, Optional, TypeVar
 
 from agentlightning.litagent import LitAgent
 from agentlightning.store.base import LightningStore
-from agentlightning.types import ParallelWorkerBase
+from agentlightning.types import NamedResources, ParallelWorkerBase, RolloutMode
 
 if TYPE_CHECKING:
     from agentlightning.execution.events import Event
@@ -35,10 +35,17 @@ class BaseRunner(ParallelWorkerBase, Generic[T_task]):
     def teardown_worker(self, worker_id: int, *args: Any, **kwargs: Any) -> None:
         raise NotImplementedError()
 
-    async def iter(self, event: Event) -> None:
+    async def iter(self, *, event: Optional[Event] = None) -> None:
         """Run the runner, iterate over the tasks in the store. Abort if the event is set."""
         raise NotImplementedError()
 
-    async def step(self, input: T_task, event: Event) -> None:
+    async def step(
+        self,
+        input: T_task,
+        *,
+        resources: Optional[NamedResources] = None,
+        mode: Optional[RolloutMode] = None,
+        event: Optional[Event] = None,
+    ) -> None:
         """Step the runner, execute one task."""
         raise NotImplementedError()
