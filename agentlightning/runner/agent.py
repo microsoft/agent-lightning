@@ -305,6 +305,8 @@ class AgentRunnerV2(BaseRunner[T_task]):
                 if next_rollout is None:
                     logger.debug(f"{self._log_prefix()} No rollout to poll. Waiting for {self._poll_interval} seconds.")
                     await self._sleep_until_next_poll(event)
+                else:
+                    break
 
             if next_rollout is None:
                 return
