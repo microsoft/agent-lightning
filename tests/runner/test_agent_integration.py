@@ -224,10 +224,10 @@ async def test_runner_integration_with_spawned_litellm_proxy(server: RemoteOpenA
         assert len(second_spans) == 1
         assert second_spans[0].name == "openai.chat.completion"
 
-        third_spans = [span for span in spans if span.sequence_id == 3]
-        assert len(third_spans) == 1
-        assert third_spans[0].name == "agentlightning.reward"
-        assert third_spans[0].attributes.get("reward") == 0.5
+        last_spans = [span for span in spans if span.sequence_id == max(span.sequence_id for span in spans)]
+        assert len(last_spans) == 1
+        assert last_spans[0].name == "agentlightning.reward"
+        assert last_spans[0].attributes.get("reward") == 0.5
     finally:
         teardown_runner(runner)
         process.terminate()
