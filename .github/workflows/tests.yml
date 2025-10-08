@@ -121,6 +121,6 @@ jobs:
           compression-level: 0
       - name: Run tests
         run: |
-          pytest -v tests
+          pytest -v --durations=0 tests
         env:
           PYTEST_ADDOPTS: "--color=yes"

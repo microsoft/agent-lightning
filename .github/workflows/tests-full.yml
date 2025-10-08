@@ -43,7 +43,7 @@ jobs:
         run: |
           set -ex
           . .venv/bin/activate
-          pytest -v tests
+          pytest -v --durations=0 tests
         env:
           PYTEST_ADDOPTS: "--color=yes"
           OPENAI_BASE_URL: ${{ secrets.OPENAI_API_BASE }}  # We will use BASE_URL instead of API_BASE in pytest
