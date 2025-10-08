@@ -649,7 +649,7 @@ class LLMProxy:
         else:
             logger.error("LLMProxy server is not stopped successfully.")
 
-    def restart(self) -> None:
+    def restart(self, *, _port: int | None = None) -> None:
         """Restart the proxy if running, else start it.
 
         Convenience wrapper calling ``stop()`` followed by ``start()``.
@@ -657,6 +657,8 @@ class LLMProxy:
         logger.info("Restarting LLMProxy server...")
         if self.is_running():
             self.stop()
+        if _port is not None:
+            self.port = _port
         self.start()
 
     def is_running(self) -> bool:

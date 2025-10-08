@@ -307,7 +307,9 @@ class AgentModeDaemon:
         )
 
         if self.llm_proxy.is_running():
-            self.llm_proxy.restart()
+            # FIXME: Need to switch to a different port right now
+            # because the forked processes carried the old fd
+            self.llm_proxy.restart(_port=_find_available_port())
         else:
             self.llm_proxy.start()
 
@@ -342,7 +344,7 @@ class AgentModeDaemon:
         self.clear_data_and_server()
         if server_addresses != self.backend_llm_server_addresses:
             self.backend_llm_server_addresses = server_addresses
-            if self.mode == "v1" or not self.llm_proxy.is_running():
+            if self.mode == "v1" and not self.llm_proxy.is_running():
                 self._update_proxy_server_v1()
         self.is_train = is_train
 
