@@ -31,7 +31,9 @@ def sync_http_function():
 
 async def async_http_function():
     """A simple asynchronous function that makes HTTP requests."""
-    async with aiohttp.ClientSession() as session:
+    async with aiohttp.ClientSession(
+        auto_decompress=True, headers={"Accept-Encoding": "gzip, deflate"}  # exclude zstd/brotli
+    ) as session:
         async with session.get("https://httpbingo.org/get") as response:
             get_data = await response.json()
             get_status = response.status
