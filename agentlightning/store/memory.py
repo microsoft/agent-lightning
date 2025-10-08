@@ -402,7 +402,9 @@ class InMemoryLightningStore(LightningStore):
                 try:
                     self._task_queue.remove(rollout)
                 except ValueError:
-                    pass
+                    logger.warning(
+                        f"Trying to remove rollout {rollout.rollout_id} from the queue but it's not in the queue."
+                    )
                 rollout.status = "running"
 
         return span
@@ -557,7 +559,9 @@ class InMemoryLightningStore(LightningStore):
                 self._task_queue.remove(rollout)
             except ValueError:
                 # Another coroutine may have already removed the rollout from the queue.
-                pass
+                logger.warning(
+                    f"Trying to remove rollout {rollout.rollout_id} from the queue but it's not in the queue."
+                )
 
         # Re-validate the rollout to ensure legality
         RolloutV2.model_validate(rollout.model_dump())

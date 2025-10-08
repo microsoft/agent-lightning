@@ -1284,7 +1284,7 @@ async def test_full_lifecycle_success(inmemory_store: InMemoryLightningStore, mo
     assert final_attempt.end_time is not None
 
 
-# Retry and requeue interactions -------------------------------------------------
+# Retry and requeue interactions
 
 
 def _retry_config() -> RolloutConfig:
