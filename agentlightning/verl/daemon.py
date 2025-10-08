@@ -501,6 +501,9 @@ class AgentModeDaemon:
                     rollout_ids=list(self._task_id_to_original_sample.keys()), timeout=0
                 )
             for rollout in completed_batch:
+                if rollout.rollout_id in self._completed_rollouts_v0:
+                    # Already processed, skip
+                    continue
                 if isinstance(rollout, RolloutV2):
                     rollout = await self._validate_data_v1(rollout)
                 else:
