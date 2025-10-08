@@ -17,8 +17,10 @@ from agentlightning.tracer.http import HttpTracer
 
 def sync_http_function():
     """A simple synchronous function that makes HTTP requests."""
-    response = requests.get("https://httpbingo.org/get")
-    response2 = requests.post("https://httpbingo.org/post", json={"test": "data"})
+    s = requests.Session()
+    s.headers.update({"Accept-Encoding": "gzip, deflate"})  # no zstd
+    response = s.get("https://httpbingo.org/get")
+    response2 = s.post("https://httpbingo.org/post", json={"test": "data"})
     return {
         "get_status": response.status_code,
         "post_status": response2.status_code,
@@ -29,7 +31,9 @@ def sync_http_function():
 
 async def async_http_function():
     """A simple asynchronous function that makes HTTP requests."""
-    async with aiohttp.ClientSession() as session:
+    async with aiohttp.ClientSession(
+        auto_decompress=True, headers={"Accept-Encoding": "gzip, deflate"}  # exclude zstd/brotli
+    ) as session:
         async with session.get("https://httpbingo.org/get") as response:
             get_data = await response.json()
             get_status = response.status

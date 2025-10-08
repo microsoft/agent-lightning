@@ -37,6 +37,9 @@ class HttpTracer(BaseTracer):
     and we do not recommend using it in production.
     It is primarily for demonstration and testing purposes.
 
+    Deprecated: This tracer is deprecated and will be removed in a future version.
+    Please use LLMProxy as an alternative.
+
     Attributes:
         include_headers: Whether to include HTTP headers in the spans.
             Headers may contain sensitive information. Use with caution.

@@ -69,7 +69,7 @@ from agentlightning.tracer.agentops import AgentOpsTracer, LightningSpanProcesso
 from agentlightning.tracer.http import HttpTracer
 from agentlightning.types import Triplet
 
-from .common.tracer import clear_agentops_init, clear_tracer_provider
+from ..common.tracer import clear_agentops_init, clear_tracer_provider
 
 USE_OPENAI = os.environ.get("USE_OPENAI", "false").lower() == "true"
 if USE_OPENAI:
@@ -110,7 +110,7 @@ class MockOpenAICompatibleServer:
         self._setup_routes()
 
     def _load_prompt_caches(self):
-        cache_path = os.path.join(os.path.dirname(__file__), "assets/prompt_caches.jsonl")
+        cache_path = os.path.join(os.path.dirname(__file__), "../assets/prompt_caches.jsonl")
         caches = []
         if os.path.exists(cache_path):
             with open(cache_path, "r") as f:
@@ -280,7 +280,7 @@ def agent_langchain_tooluse() -> None:
 def agent_langgraph() -> None:
     """An agent built with LangGraph for stateful, cyclical workflows."""
     llm = init_chat_model("openai:" + OPENAI_MODEL, openai_api_base=OPENAI_BASE_URL, openai_api_key=OPENAI_API_KEY)
-    db = SQLDatabase.from_uri("sqlite:///" + os.path.join(os.path.dirname(__file__), "assets/chinook.db"))
+    db = SQLDatabase.from_uri("sqlite:///" + os.path.join(os.path.dirname(__file__), "../assets/chinook.db"))
     toolkit = SQLDatabaseToolkit(db=db, llm=llm)
     tools = toolkit.get_tools()
 
@@ -769,7 +769,7 @@ def create_prompt_caches() -> None:
         with tracer.trace_context():
             run_all()
 
-        with open(os.path.join(os.path.dirname(__file__), "assets/prompt_caches.jsonl"), "w") as f:
+        with open(os.path.join(os.path.dirname(__file__), "../assets/prompt_caches.jsonl"), "w") as f:
             for span in tracer._last_records.requests.values():
                 if span.url.startswith(OPENAI_BASE_URL) and span.status_code < 400 and span.response.content:
                     f.write(
