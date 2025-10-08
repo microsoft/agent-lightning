@@ -69,7 +69,7 @@ from agentlightning.tracer.agentops import AgentOpsTracer, LightningSpanProcesso
 from agentlightning.tracer.http import HttpTracer
 from agentlightning.types import Triplet
 
-from .common.tracer import clear_agentops_init, clear_tracer_provider
+from ..common.tracer import clear_agentops_init, clear_tracer_provider
 
 USE_OPENAI = os.environ.get("USE_OPENAI", "false").lower() == "true"
 if USE_OPENAI:
