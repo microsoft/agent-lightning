@@ -453,13 +453,11 @@ class AgentModeDaemon:
         spans = await self.store.query_spans(rollout.rollout_id, attempt_id="latest")
 
         # Convert spans to triplets using the adapter
-        print("??? Spans:", spans)
         if not spans:
             # No triplets found, will emit a warning later.
             triplets = []
         else:
             triplets = self.adapter.adapt(spans)
-        print("??? Triplets:", triplets)
 
         # Extract final reward from triplets
         final_reward: Optional[float] = None
