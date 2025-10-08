@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from enum import Enum
 from typing import Any, Dict, List, Optional, Sequence, Union
 
 from opentelemetry import trace as trace_api
@@ -11,6 +12,19 @@ from opentelemetry.sdk.trace import Event as OtelEvent
 from opentelemetry.sdk.trace import ReadableSpan
 from opentelemetry.trace.status import Status as OtelStatus
 from pydantic import BaseModel
+
+__all__ = [
+    "AttributeValue",
+    "Attributes",
+    "TraceState",
+    "SpanContext",
+    "TraceStatus",
+    "Event",
+    "Link",
+    "Resource",
+    "Span",
+    "SpanNames",
+]
 
 
 def convert_timestamp(timestamp: Optional[int]) -> Optional[float]:
@@ -229,3 +243,13 @@ class Span(BaseModel):
                 ],
             ),
         )
+
+
+class SpanNames(str, Enum):
+    """Standard span name values for AgentLightning.
+
+    Currently only reward spans are supported.
+    We will add more spans related to error handling in the future.
+    """
+
+    REWARD = "agentlightning.reward"

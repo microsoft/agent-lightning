@@ -2,10 +2,31 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Any, Callable, Dict, Generic, List, Literal, Optional, Protocol, TypeVar, Union, cast
+from typing import (
+    TYPE_CHECKING,
+    Annotated,
+    Any,
+    Callable,
+    Dict,
+    Generic,
+    List,
+    Literal,
+    Optional,
+    Protocol,
+    TypeVar,
+    Union,
+    cast,
+)
 
 from opentelemetry.sdk.trace import ReadableSpan
 from pydantic import BaseModel, Field, model_validator
+
+from .tracer import Span
+
+if TYPE_CHECKING:
+    from agentlightning.litagent import LitAgent
+    from agentlightning.runner.base import BaseRunner
+    from agentlightning.tracer.base import BaseTracer
 
 __all__ = [
     "Triplet",
@@ -14,8 +35,11 @@ __all__ = [
     "TaskInput",
     "TaskIfAny",
     "RolloutRawResult",
+    "RolloutRawResultV2",
+    "RolloutMode",
     "Resource",
     "LLM",
+    "ProxyLLM",
     "PromptTemplate",
     "ResourceUnion",
     "NamedResources",
@@ -29,6 +53,7 @@ __all__ = [
     "RolloutV2",
     "Attempt",
     "AttemptedRollout",
+    "Hook",
 ]
 
 T_co = TypeVar("T_co", covariant=True)
@@ -91,6 +116,8 @@ AttemptStatus = Literal[
     "timeout",  # the worker has been emitting new logs, but have been working on the task for too long
 ]
 
+RolloutMode = Literal["train", "val", "test"]
+
 
 class Attempt(BaseModel):
     """An attempt to execute a rollout. A rollout can have multiple attempts if retries are needed."""
@@ -132,7 +159,7 @@ class RolloutV2(BaseModel):
     start_time: float
     end_time: Optional[float] = None
 
-    mode: Optional[Literal["train", "val", "test"]] = None
+    mode: Optional[RolloutMode] = None
     resources_id: Optional[str] = None
 
     # Overall scheduling/running information
@@ -165,7 +192,7 @@ class Task(BaseModel):
     rollout_id: str
     input: TaskInput
 
-    mode: Optional[Literal["train", "val", "test"]] = None
+    mode: Optional[RolloutMode] = None
     resources_id: Optional[str] = None
 
     # Optional fields for tracking task lifecycle
@@ -183,6 +210,13 @@ class TaskIfAny(BaseModel):
 
 
 RolloutRawResult = Union[None, float, List[Triplet], List[Dict[str, Any]], List[ReadableSpan], Rollout]
+
+RolloutRawResultV2 = Union[
+    None,  # nothing (relies on tracer)
+    float,  # only final reward
+    List[ReadableSpan],  # constructed OTEL spans by user
+    List[Span],  # constructed Span objects by user
+]
 
 
 class Resource(BaseModel):
@@ -210,6 +244,32 @@ class LLM(Resource):
     api_key: Optional[str] = None
     sampling_parameters: Dict[str, Any] = Field(default_factory=dict)
 
+    def base_url(self, *args: Any, **kwargs: Any) -> str:
+        return self.endpoint
+
+
+class ProxyLLM(LLM):
+    """Proxy LLM resource that is tailored by `llm_proxy.LLMProxy`."""
+
+    resource_type: Literal["proxy_llm"] = "proxy_llm"  # type: ignore
+
+    def base_url(self, rollout_id: str, attempt_id: str) -> str:
+        prefix = self.endpoint
+        if prefix.endswith("/"):
+            prefix = prefix[:-1]
+        if prefix.endswith("/v1"):
+            prefix = prefix[:-3]
+            has_v1 = True
+        else:
+            has_v1 = False
+        # Now the prefix should look like "http://localhost:11434"
+
+        # Append the rollout and attempt id to the prefix
+        prefix = prefix + f"/rollout/{rollout_id}/attempt/{attempt_id}"
+        if has_v1:
+            prefix = prefix + "/v1"
+        return prefix
+
 
 class PromptTemplate(Resource):
     """
@@ -228,7 +288,7 @@ class PromptTemplate(Resource):
 
 
 # Use discriminated union for proper deserialization
-ResourceUnion = Annotated[Union[LLM, PromptTemplate], Field(discriminator="resource_type")]
+ResourceUnion = Annotated[Union[LLM, ProxyLLM, PromptTemplate], Field(discriminator="resource_type")]
 NamedResources = Dict[str, ResourceUnion]
 """
 A dictionary-like class to hold named resources.
@@ -317,3 +377,70 @@ class Dataset(Protocol, Generic[T_co]):
     def __getitem__(self, index: int) -> T_co: ...
 
     def __len__(self) -> int: ...
+
+
+class Hook(ParallelWorkerBase):
+    """Base class for defining hooks in the agent runner's lifecycle."""
+
+    async def on_trace_start(
+        self, *, agent: LitAgent[Any], runner: BaseRunner[Any], tracer: BaseTracer, rollout: RolloutV2
+    ) -> None:
+        """Hook called immediately after the tracer enters the trace context but before the rollout begins.
+
+        Args:
+            agent: The :class:`LitAgent` instance associated with the runner.
+            runner: The :class:`BaseRunner` managing the rollout.
+            tracer: The :class:`BaseTracer` instance associated with the runner.
+            rollout: The :class:`RolloutV2` object that will be processed.
+
+        Subclasses can override this method to implement custom logic such as logging,
+        metric collection, or resource setup. By default, this is a no-op.
+        """
+
+    async def on_trace_end(
+        self, *, agent: LitAgent[Any], runner: BaseRunner[Any], tracer: BaseTracer, rollout: RolloutV2
+    ) -> None:
+        """Hook called immediately after the rollout completes but before the tracer exits the trace context.
+
+        Args:
+            agent: The :class:`LitAgent` instance associated with the runner.
+            runner: The :class:`BaseRunner` managing the rollout.
+            tracer: The :class:`BaseTracer` instance associated with the runner.
+            rollout: The :class:`RolloutV2` object that has been processed.
+
+        Subclasses can override this method to implement custom logic such as logging,
+        metric collection, or resource cleanup. By default, this is a no-op.
+        """
+
+    async def on_rollout_start(self, *, agent: LitAgent[Any], runner: BaseRunner[Any], rollout: RolloutV2) -> None:
+        """Hook called immediately before a rollout *attempt* begins.
+
+        Args:
+            agent: The :class:`LitAgent` instance associated with the runner.
+            runner: The :class:`BaseRunner` managing the rollout.
+            rollout: The :class:`RolloutV2` object that will be processed.
+
+        Subclasses can override this method to implement custom logic such as
+        logging, metric collection, or resource setup. By default, this is a
+        no-op.
+        """
+
+    async def on_rollout_end(
+        self,
+        *,
+        agent: LitAgent[Any],
+        runner: BaseRunner[Any],
+        rollout: RolloutV2,
+        spans: Union[List[ReadableSpan], List[Span]],
+    ) -> None:
+        """Hook called after a rollout *attempt* completes.
+
+        Args:
+            agent: The :class:`LitAgent` instance associated with the runner.
+            runner: The :class:`BaseRunner` managing the rollout.
+            rollout: The :class:`RolloutV2` object that has been processed.
+            spans: The spans that have been added to the store.
+
+        Subclasses can override this method for cleanup or additional
+        logging. By default, this is a no-op.
+        """

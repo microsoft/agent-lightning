@@ -1,5 +1,7 @@
 # Copyright (c) Microsoft. All rights reserved.
 
+# type: ignore
+
 import json
 import logging
 import time
@@ -7,16 +9,22 @@ from typing import Any, Dict, List, Optional, cast
 
 from opentelemetry.sdk.trace import ReadableSpan
 
-from .adapter import TraceTripletAdapter
-from .client import AgentLightningClient
-from .litagent import LitAgent, is_v0_1_rollout_api
-from .tracer.base import BaseTracer
-from .types import ParallelWorkerBase, Rollout, RolloutRawResult, Triplet
+from agentlightning.adapter import TraceTripletAdapter
+from agentlightning.client import AgentLightningClient
+from agentlightning.litagent import LitAgent, is_v0_1_rollout_api
+from agentlightning.tracer.base import BaseTracer
+from agentlightning.types import Rollout, RolloutRawResult, Triplet
+
+from .base import BaseRunner
 
 logger = logging.getLogger(__name__)
 
+__all__ = [
+    "AgentRunner",
+]
 
-class AgentRunner(ParallelWorkerBase):
+
+class AgentRunner(BaseRunner[Any]):
     """Manages the agent's execution loop and integrates with AgentOps.
 
     This class orchestrates the interaction between the agent (`LitAgent`) and
@@ -50,6 +58,19 @@ class AgentRunner(ParallelWorkerBase):
         # Worker-specific attributes
         self.worker_id = worker_id
         self.max_tasks = max_tasks
+
+    # These methods are overridden by BaseRunner, getting them back to old behavior.
+    def init(self, *args: Any, **kwargs: Any) -> None:
+        pass
+
+    def init_worker(self, worker_id: int, *args: Any, **kwargs: Any) -> None:
+        self.worker_id = worker_id
+
+    def teardown_worker(self, worker_id: int, *args: Any, **kwargs: Any) -> None:
+        pass
+
+    def teardown(self, *args: Any, **kwargs: Any) -> None:
+        pass
 
     def _log_prefix(self, rollout_id: Optional[str] = None) -> str:
         """Generates a standardized log prefix for the current worker."""
@@ -131,7 +152,7 @@ class AgentRunner(ParallelWorkerBase):
             return result.model_copy(update=result_dict)
         return Rollout(**result_dict)
 
-    def run(self) -> bool:
+    def run(self) -> bool:  # type: ignore
         """Poll the task and rollout once synchronously."""
         self.agent.set_runner(self)  # Ensure the agent has a reference to this runner
 
@@ -193,7 +214,7 @@ class AgentRunner(ParallelWorkerBase):
 
         return True
 
-    def iter(self) -> int:
+    def iter(self) -> int:  # type: ignore
         """Executes the synchronous polling and rollout loop."""
         num_tasks_processed = 0
         logger.info(f"{self._log_prefix()} Started sync rollouts (max: {self.max_tasks or 'unlimited'}).")

@@ -1,11 +1,15 @@
 # Copyright (c) Microsoft. All rights reserved.
 
+import logging
 from contextlib import contextmanager
-from typing import Any, Awaitable, Callable, Iterator, List, Optional
+from typing import Any, Awaitable, Callable, Iterator, List, Optional, cast
 
 from opentelemetry.sdk.trace import ReadableSpan
 
-from agentlightning.types import ParallelWorkerBase
+from agentlightning.store.base import LightningStore
+from agentlightning.types import ParallelWorkerBase, SpanNames
+
+logger = logging.getLogger(__name__)
 
 
 class BaseTracer(ParallelWorkerBase):
@@ -44,7 +48,14 @@ class BaseTracer(ParallelWorkerBase):
     """
 
     @contextmanager
-    def trace_context(self, name: Optional[str] = None) -> Iterator[Any]:
+    def trace_context(
+        self,
+        name: Optional[str] = None,
+        *,
+        store: Optional[LightningStore] = None,
+        rollout_id: Optional[str] = None,
+        attempt_id: Optional[str] = None,
+    ) -> Iterator[Any]:
         """
         Starts a new tracing context. This should be used as a context manager.
 
@@ -53,8 +64,13 @@ class BaseTracer(ParallelWorkerBase):
         within the `with` block are collected and made available via
         `get_last_trace`.
 
+        If a store is provided, the spans will be added to the store when tracing.
+
         Args:
             name: The name for the root span of this trace context.
+            store: The store to add the spans to.
+            rollout_id: The rollout ID to add the spans to.
+            attempt_id: The attempt ID to add the spans to.
         """
         raise NotImplementedError()
 
@@ -66,6 +82,19 @@ class BaseTracer(ParallelWorkerBase):
             A list of OpenTelemetry `ReadableSpan` objects.
         """
         raise NotImplementedError()
+
+    def get_last_reward(self) -> Optional[float]:
+        """
+        Retrieves the finalest reward from the most recent trace.
+        The behavior by default is to traverse the trace backward until the first reward span.
+        """
+        for span in reversed(self.get_last_trace()):
+            if span.name == SpanNames.REWARD.value and span.attributes:
+                reward = span.attributes.get("reward", None)
+                if not isinstance(reward, float):
+                    logger.error(f"Reward is not a number, got: {type(reward)}. This may cause undefined behaviors.")
+                return cast(float, reward)
+        return None
 
     def trace_run(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         """

@@ -14,6 +14,7 @@ import time
 from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Sequence, TypedDict, Union, cast
 
 import litellm
+import opentelemetry.trace as trace_api
 import uvicorn
 import yaml
 from fastapi import Request, Response
@@ -23,7 +24,7 @@ from litellm.proxy.proxy_server import app, save_worker_config  # pyright: ignor
 from opentelemetry.sdk.trace import ReadableSpan
 from opentelemetry.sdk.trace.export import SpanExporter, SpanExportResult
 
-from agentlightning.types import LLM
+from agentlightning.types import LLM, ProxyLLM
 
 from .store.base import LightningStore
 
@@ -208,13 +209,35 @@ class LightningSpanExporter(SpanExporter):
     def __init__(self, store: Optional[LightningStore] = None):
         self._store = store
         self._buffer: List[ReadableSpan] = []
-        self._lock = threading.RLock()
+        self._lock: Optional[threading.RLock] = None
 
         # Single dedicated event loop running in a daemon thread.
         # This decouples OTEL SDK threads from our async store I/O.
-        self._loop = asyncio.new_event_loop()
-        self._loop_thread = threading.Thread(target=self._run_loop, name="LightningSpanExporterLoop", daemon=True)
-        self._loop_thread.start()
+        # Deferred creation until first use.
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._loop_thread: Optional[threading.Thread] = None
+
+    def _ensure_loop(self) -> asyncio.AbstractEventLoop:
+        """Lazily initialize the event loop and thread on first use.
+
+        Returns:
+            asyncio.AbstractEventLoop: The initialized event loop.
+        """
+        if self._loop is None:
+            self._loop = asyncio.new_event_loop()
+            self._loop_thread = threading.Thread(target=self._run_loop, name="LightningSpanExporterLoop", daemon=True)
+            self._loop_thread.start()
+        return self._loop
+
+    def _ensure_lock(self) -> threading.RLock:
+        """Lazily initialize the lock on first use.
+
+        Returns:
+            threading.RLock: The initialized lock.
+        """
+        if self._lock is None:
+            self._lock = threading.RLock()
+        return self._lock
 
     def _get_store(self) -> LightningStore:
         """Return the LightningStore to use.
@@ -231,6 +254,7 @@ class LightningSpanExporter(SpanExporter):
 
     def _run_loop(self) -> None:
         """Run the private asyncio loop forever on the exporter thread."""
+        assert self._loop is not None, "Loop should be initialized before thread starts"
         asyncio.set_event_loop(self._loop)
         self._loop.run_forever()
 
@@ -240,13 +264,18 @@ class LightningSpanExporter(SpanExporter):
         Safe to call at process exit.
 
         """
+        if self._loop is None:
+            return
+
         try:
 
             def _stop():
+                assert self._loop is not None
                 self._loop.stop()
 
             self._loop.call_soon_threadsafe(_stop)
-            self._loop_thread.join(timeout=2.0)
+            if self._loop_thread is not None:
+                self._loop_thread.join(timeout=2.0)
             self._loop.close()
         except Exception:
             logger.exception("Error during exporter shutdown")
@@ -264,18 +293,19 @@ class LightningSpanExporter(SpanExporter):
             SpanExportResult: SUCCESS on flush success, else FAILURE.
         """
         # Buffer append under lock to protect against concurrent exporters.
-        with self._lock:
+        with self._ensure_lock():
             for span in spans:
                 self._buffer.append(span)
 
-        # Run the async flush on our private loop, synchronously from caller’s POV.
+        # Run the async flush on our private loop, synchronously from caller's POV.
         async def _locked_flush():
             # Take the lock inside the coroutine to serialize with other flushes.
-            with self._lock:
+            with self._ensure_lock():
                 return await self._maybe_flush()
 
         try:
-            fut = asyncio.run_coroutine_threadsafe(_locked_flush(), self._loop)
+            loop = self._ensure_loop()
+            fut = asyncio.run_coroutine_threadsafe(_locked_flush(), loop)
             fut.result()  # Bubble up any exceptions from the coroutine.
         except Exception as e:
             logger.exception("Export flush failed: %s", e)
@@ -433,6 +463,14 @@ class LightningOpenTelemetry(OpenTelemetry):
 
     def __init__(self, store: LightningStore | None = None):
         config = OpenTelemetryConfig(exporter=LightningSpanExporter(store))
+
+        # Check for tracer initialization
+        if (
+            hasattr(trace_api, "_TRACER_PROVIDER")
+            and trace_api._TRACER_PROVIDER is not None  # pyright: ignore[reportPrivateUsage]
+        ):
+            logger.error("Tracer is already initialized. OpenTelemetry may not work as expected.")
+
         super().__init__(config=config)  # pyright: ignore[reportUnknownMemberType]
 
 
@@ -602,8 +640,8 @@ class LLMProxy:
 
     def as_resource(
         self,
-        rollout_id: str,
-        attempt_id: str,
+        rollout_id: str | None = None,
+        attempt_id: str | None = None,
         model: str | None = None,
         sampling_parameters: Dict[str, Any] | None = None,
     ) -> LLM:
@@ -613,8 +651,8 @@ class LLMProxy:
             ``http://{host}:{port}/rollout/{rollout_id}/attempt/{attempt_id}``
 
         Args:
-            rollout_id: Rollout identifier used for span attribution.
-            attempt_id: Attempt identifier used for span attribution.
+            rollout_id: Rollout identifier used for span attribution. If None, will instantiate a ProxyLLM resource.
+            attempt_id: Attempt identifier used for span attribution. If None, will instantiate a ProxyLLM resource.
             model: Logical model name to use. If omitted and exactly one model
                 is configured, that model is used.
             sampling_parameters: Optional default sampling parameters.
@@ -633,11 +671,20 @@ class LLMProxy:
                     f"Multiple or zero models found in model_list: {self.model_list}. Please specify the model."
                 )
 
-        return LLM(
-            endpoint=f"http://{self.host}:{self.port}/rollout/{rollout_id}/attempt/{attempt_id}",
-            model=model,
-            sampling_parameters=dict(sampling_parameters or {}),
-        )
+        if rollout_id is None and attempt_id is None:
+            return ProxyLLM(
+                endpoint=f"http://{self.host}:{self.port}",
+                model=model,
+                sampling_parameters=dict(sampling_parameters or {}),
+            )
+        elif rollout_id is not None and attempt_id is not None:
+            return LLM(
+                endpoint=f"http://{self.host}:{self.port}/rollout/{rollout_id}/attempt/{attempt_id}",
+                model=model,
+                sampling_parameters=dict(sampling_parameters or {}),
+            )
+        else:
+            raise ValueError("Either rollout_id and attempt_id must be provided, or neither.")
 
 
 def _get_default_ipv4_address() -> str:

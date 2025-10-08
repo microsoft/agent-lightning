@@ -22,6 +22,7 @@ import asyncio
 import difflib
 import inspect
 import json
+import multiprocessing
 import os
 import pprint
 import re
@@ -68,7 +69,7 @@ from agentlightning.tracer.agentops import AgentOpsTracer, LightningSpanProcesso
 from agentlightning.tracer.http import HttpTracer
 from agentlightning.types import Triplet
 
-from .tracer.utils import clear_tracer_provider
+from ..common.tracer import clear_agentops_init, clear_tracer_provider
 
 USE_OPENAI = os.environ.get("USE_OPENAI", "false").lower() == "true"
 if USE_OPENAI:
@@ -109,7 +110,7 @@ class MockOpenAICompatibleServer:
         self._setup_routes()
 
     def _load_prompt_caches(self):
-        cache_path = os.path.join(os.path.dirname(__file__), "assets/prompt_caches.jsonl")
+        cache_path = os.path.join(os.path.dirname(__file__), "../assets/prompt_caches.jsonl")
         caches = []
         if os.path.exists(cache_path):
             with open(cache_path, "r") as f:
@@ -279,7 +280,7 @@ def agent_langchain_tooluse() -> None:
 def agent_langgraph() -> None:
     """An agent built with LangGraph for stateful, cyclical workflows."""
     llm = init_chat_model("openai:" + OPENAI_MODEL, openai_api_base=OPENAI_BASE_URL, openai_api_key=OPENAI_API_KEY)
-    db = SQLDatabase.from_uri("sqlite:///" + os.path.join(os.path.dirname(__file__), "assets/chinook.db"))
+    db = SQLDatabase.from_uri("sqlite:///" + os.path.join(os.path.dirname(__file__), "../assets/chinook.db"))
     toolkit = SQLDatabaseToolkit(db=db, llm=llm)
     tools = toolkit.get_tools()
 
@@ -768,7 +769,7 @@ def create_prompt_caches() -> None:
         with tracer.trace_context():
             run_all()
 
-        with open(os.path.join(os.path.dirname(__file__), "assets/prompt_caches.jsonl"), "w") as f:
+        with open(os.path.join(os.path.dirname(__file__), "../assets/prompt_caches.jsonl"), "w") as f:
             for span in tracer._last_records.requests.values():
                 if span.url.startswith(OPENAI_BASE_URL) and span.status_code < 400 and span.response.content:
                     f.write(
@@ -785,14 +786,33 @@ def create_prompt_caches() -> None:
         run_all()
 
 
-@pytest.fixture(scope="module", autouse=True)
-def setup_module():
-    clear_tracer_provider()
-    yield
+@pytest.mark.parametrize("agent_func_name", [f.__name__ for f in iterate_over_agents()], ids=str)
+def test_run_with_agentops_tracer(agent_func_name: str):
+    """AgentOps tracer tests are notoriously problematic and does not work well with other tests."""
+    if agent_func_name in ["openai_agents_sdk_mcp_tool_use", "agent_autogen_mcp"]:
+        pytest.skip("Async MCP server is problematic with AgentOps tracer in multiprocessing mode.")
+
+    ctx = multiprocessing.get_context("spawn")
+    proc = ctx.Process(target=_test_run_with_agentops_tracer_impl, args=(agent_func_name,))
+    proc.start()
+    proc.join(10)
+
+    if proc.is_alive():
+        proc.terminate()
+        proc.join(5)
+        if proc.is_alive():
+            proc.kill()
+
+        assert False, "Child process hung. Check test output for details."
+
+    assert proc.exitcode == 0, (
+        f"Child process for {agent_func_name!r} failed with exit code {proc.exitcode}. "
+        "Check child traceback in test output."
+    )
 
 
-@pytest.mark.parametrize("agent_func", list(iterate_over_agents()), ids=lambda f: f.__name__)
-def test_run_with_agentops_tracer(agent_func):
+def _test_run_with_agentops_tracer_impl(agent_func_name: str):
+    agent_func = next(f for f in iterate_over_agents() if f.__name__ == agent_func_name)
     tracer = AgentOpsTracer()
     tracer.init()
     tracer.init_worker(0)
@@ -800,9 +820,7 @@ def test_run_with_agentops_tracer(agent_func):
     global _langchain_callback_handler
     _langchain_callback_handler = tracer.get_langchain_callback_handler()
 
-    loop = asyncio.new_event_loop()
     try:
-        asyncio.set_event_loop(loop)
         tracer.trace_run(
             run_one,
             agent_func,
@@ -841,8 +859,6 @@ def test_run_with_agentops_tracer(agent_func):
     finally:
         tracer.teardown_worker(0)
         tracer.teardown()
-        loop.close()
-        asyncio.set_event_loop(None)
 
 
 @pytest.mark.parametrize("agent_func", list(iterate_over_agents()), ids=lambda f: f.__name__)

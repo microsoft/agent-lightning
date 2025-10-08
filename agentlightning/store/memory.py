@@ -12,7 +12,6 @@ from typing import Any, Callable, Counter, Dict, List, Literal, Optional, Sequen
 
 from opentelemetry.sdk.trace import ReadableSpan
 
-from agentlightning.tracer import Span
 from agentlightning.types import (
     Attempt,
     AttemptedRollout,
@@ -22,6 +21,7 @@ from agentlightning.types import (
     RolloutConfig,
     RolloutStatus,
     RolloutV2,
+    Span,
     TaskInput,
 )
 
@@ -552,11 +552,7 @@ class InMemoryLightningStore(LightningStore):
             self._task_queue.append(rollout)
 
         # If the rollout is no longer in a queueing state, remove it from the queue.
-        if (
-            not isinstance(status, Unset)
-            and not is_queuing(rollout)
-            and rollout in self._task_queue
-        ):
+        if not isinstance(status, Unset) and not is_queuing(rollout) and rollout in self._task_queue:
             try:
                 self._task_queue.remove(rollout)
             except ValueError:

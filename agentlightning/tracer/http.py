@@ -37,6 +37,9 @@ class HttpTracer(BaseTracer):
     and we do not recommend using it in production.
     It is primarily for demonstration and testing purposes.
 
+    Deprecated: This tracer is deprecated and will be removed in a future version.
+    Please use LLMProxy as an alternative.
+
     Attributes:
         include_headers: Whether to include HTTP headers in the spans.
             Headers may contain sensitive information. Use with caution.
@@ -76,7 +79,7 @@ class HttpTracer(BaseTracer):
         logger.info(f"[Worker {worker_id}] HttpTracer initialized.")
 
     @contextmanager
-    def trace_context(self, name: Optional[str] = None) -> Iterator[HTTPRecords]:
+    def trace_context(self, name: Optional[str] = None, **kwargs: Any) -> Iterator[HTTPRecords]:
         """
         Starts a new HTTP tracing context. This should be used as a context manager.
 

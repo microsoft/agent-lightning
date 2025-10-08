@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
+import threading
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any, Iterator, List, Optional
+from typing import TYPE_CHECKING, Any, Awaitable, Iterator, List, Optional
 
 import agentops
 import agentops.sdk.core
@@ -15,6 +17,7 @@ from opentelemetry.sdk.trace import ReadableSpan
 
 from agentlightning.instrumentation import instrument_all, uninstrument_all
 from agentlightning.instrumentation.agentops import AgentOpsServerManager
+from agentlightning.store.base import LightningStore
 
 from .base import BaseTracer
 
@@ -134,6 +137,8 @@ class AgentOpsTracer(BaseTracer):
         try:
             # new versions
             instance = agentops.sdk.core.tracer
+            # TODO: The span processor cannot be deleted once added.
+            # This might be a problem if the tracer is entered and exited multiple times.
             instance.provider.add_span_processor(self._lightning_span_processor)  # type: ignore
         except AttributeError:
             # old versions
@@ -148,12 +153,22 @@ class AgentOpsTracer(BaseTracer):
             logger.info(f"[Worker {worker_id}] Instrumentation removed.")
 
     @contextmanager
-    def trace_context(self, name: Optional[str] = None) -> Iterator[LightningSpanProcessor]:
+    def trace_context(
+        self,
+        name: Optional[str] = None,
+        *,
+        store: Optional[LightningStore] = None,
+        rollout_id: Optional[str] = None,
+        attempt_id: Optional[str] = None,
+    ) -> Iterator[LightningSpanProcessor]:
         """
         Starts a new tracing context. This should be used as a context manager.
 
         Args:
             name: Optional name for the tracing context.
+            store: Optional store to add the spans to.
+            rollout_id: Optional rollout ID to add the spans to.
+            attempt_id: Optional attempt ID to add the spans to.
 
         Yields:
             The LightningSpanProcessor instance to collect spans.
@@ -161,8 +176,15 @@ class AgentOpsTracer(BaseTracer):
         if not self._lightning_span_processor:
             raise RuntimeError("LightningSpanProcessor is not initialized. Call init_worker() first.")
 
-        with self._lightning_span_processor:
-            yield self._lightning_span_processor
+        if store is not None and rollout_id is not None and attempt_id is not None:
+            ctx = self._lightning_span_processor.with_context(store=store, rollout_id=rollout_id, attempt_id=attempt_id)
+            with ctx as processor:
+                yield processor
+        elif store is None and rollout_id is None and attempt_id is None:
+            with self._lightning_span_processor:
+                yield self._lightning_span_processor
+        else:
+            raise ValueError("store, rollout_id, and attempt_id must be either all provided or all None")
 
     def get_last_trace(self) -> List[ReadableSpan]:
         """
@@ -201,8 +223,29 @@ class AgentOpsTracer(BaseTracer):
 
 
 class LightningSpanProcessor(SpanProcessor):
+    def __init__(self):
+        self._spans: List[ReadableSpan] = []
 
-    _spans: List[ReadableSpan] = []
+        # Store related context and states
+        self._store: Optional[LightningStore] = None
+        self._rollout_id: Optional[str] = None
+        self._attempt_id: Optional[str] = None
+        self._lock = threading.Lock()
+
+        # private asyncio loop running in a daemon thread
+        self._loop_ready = threading.Event()
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._loop_thread = threading.Thread(target=self._loop_runner, name="otel-loop", daemon=True)
+        self._loop_thread.start()
+        self._loop_ready.wait()  # loop is ready
+
+    def _loop_runner(self):
+        loop = asyncio.new_event_loop()
+        self._loop = loop
+        asyncio.set_event_loop(loop)
+        self._loop_ready.set()
+        loop.run_forever()
+        loop.close()
 
     def __enter__(self):
         self._last_trace = None
@@ -210,7 +253,25 @@ class LightningSpanProcessor(SpanProcessor):
         return self
 
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any):
-        pass
+        self._store = None
+        self._rollout_id = None
+        self._attempt_id = None
+
+    def _await_in_loop(self, coro: Awaitable[Any], timeout: Optional[float] = None) -> Any:
+        # submit to the dedicated loop and wait synchronously
+        if self._loop is None:
+            raise RuntimeError("Loop is not initialized. This should not happen.")
+        fut = asyncio.run_coroutine_threadsafe(coro, self._loop)  # type: ignore
+        return fut.result(timeout=timeout)  # raises on error  # type: ignore
+
+    def shutdown(self) -> None:
+        if self._loop:
+            self._loop.call_soon_threadsafe(self._loop.stop)
+            self._loop_thread.join(timeout=5)
+            self._loop = None
+
+    def force_flush(self, timeout_millis: int = 30000) -> bool:
+        return True
 
     def spans(self) -> List[ReadableSpan]:
         """
@@ -221,6 +282,22 @@ class LightningSpanProcessor(SpanProcessor):
             List of ReadableSpan objects collected during tracing.
         """
         return self._spans
+
+    def with_context(self, store: LightningStore, rollout_id: str, attempt_id: str):
+        # simple context manager without nesting into asyncio
+        class _Ctx:
+            def __enter__(_):  # type: ignore
+                with self._lock:
+                    self._store, self._rollout_id, self._attempt_id = store, rollout_id, attempt_id
+                    self._last_trace = None
+                    self._spans = []
+                return self
+
+            def __exit__(_, exc_type, exc, tb):  # type: ignore
+                with self._lock:
+                    self._store = self._rollout_id = self._attempt_id = None
+
+        return _Ctx()
 
     def on_end(self, span: ReadableSpan) -> None:
         """
@@ -233,10 +310,15 @@ class LightningSpanProcessor(SpanProcessor):
         if not span.context or not span.context.trace_flags.sampled:
             return
 
+        if self._store and self._rollout_id and self._attempt_id:
+            try:
+                # Submit add_otel_span to the event loop and wait for it to complete
+                self._await_in_loop(
+                    self._store.add_otel_span(self._rollout_id, self._attempt_id, span),
+                    timeout=5.0,
+                )
+            except Exception:
+                # log; on_end MUST NOT raise
+                logger.exception(f"Error adding span to store: {span.name}")
+
         self._spans.append(span)
-
-    def shutdown(self) -> None:
-        pass
-
-    def force_flush(self, timeout_millis: int = 30000) -> bool:
-        return True

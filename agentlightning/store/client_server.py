@@ -5,6 +5,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import threading
+import time
+from contextlib import suppress
 from typing import Any, Dict, List, Literal, Optional, Sequence, Union
 
 import aiohttp
@@ -13,7 +16,6 @@ from fastapi import FastAPI
 from opentelemetry.sdk.trace import ReadableSpan
 from pydantic import BaseModel, Field
 
-from agentlightning.tracer import Span
 from agentlightning.types import (
     Attempt,
     AttemptedRollout,
@@ -23,6 +25,7 @@ from agentlightning.types import (
     RolloutConfig,
     RolloutStatus,
     RolloutV2,
+    Span,
     TaskInput,
 )
 
@@ -91,9 +94,11 @@ class LightningStoreServer(LightningStore):
         self.app: FastAPI | None = FastAPI(title="LightningStore Server")
         self._setup_routes()
         self._uvicorn_config: uvicorn.Config | None = uvicorn.Config(
-            self.app, host=self.host, port=self.port, log_level="info"
+            self.app, host="0.0.0.0", port=self.port, log_level="info"
         )
         self._uvicorn_server: uvicorn.Server | None = uvicorn.Server(self._uvicorn_config)
+
+        self._serving_thread: Optional[threading.Thread] = None
 
         # Process-awareness:
         # LightningStoreServer holds a plain Python object (self.store) in one process
@@ -148,8 +153,25 @@ class LightningStoreServer(LightningStore):
         """
         assert self._uvicorn_server is not None
         logger.info(f"Starting server at {self.endpoint}")
-        asyncio.create_task(self._uvicorn_server.serve())
-        await asyncio.sleep(1)  # Allow time for server to start up.
+
+        uvicorn_server = self._uvicorn_server
+
+        def run_server_forever():
+            asyncio.run(uvicorn_server.serve())
+
+        self._serving_thread = threading.Thread(target=run_server_forever, daemon=True)
+        self._serving_thread.start()
+
+        # Wait for /health to be available
+        current_time = time.time()
+        while time.time() - current_time < 10:
+            async with aiohttp.ClientSession() as session:
+                with suppress(Exception):
+                    async with session.get(f"{self.endpoint}/health") as response:
+                        if response.status == 200:
+                            return
+            await asyncio.sleep(0.1)
+        raise RuntimeError("Server failed to start within the 10 seconds.")
 
     async def stop(self):
         """Gracefully stops the running FastAPI server.
@@ -160,7 +182,9 @@ class LightningStoreServer(LightningStore):
         if self._uvicorn_server.started:
             logger.info("Stopping server...")
             self._uvicorn_server.should_exit = True
-            await asyncio.sleep(1)  # Allow time for graceful shutdown.
+            if self._serving_thread is not None:
+                self._serving_thread.join(timeout=10)
+            self._serving_thread = None
             logger.info("Server stopped.")
 
     def _backend(self) -> LightningStore:
@@ -178,6 +202,10 @@ class LightningStoreServer(LightningStore):
     def _setup_routes(self):
         """Set up FastAPI routes for all store operations."""
         assert self.app is not None
+
+        @self.app.get("/health")
+        async def health():  # pyright: ignore[reportUnusedFunction]
+            return {"status": "ok"}
 
         @self.app.post("/start_rollout", response_model=AttemptedRollout)
         async def start_rollout(request: RolloutRequest):  # pyright: ignore[reportUnusedFunction]
@@ -393,18 +421,55 @@ class LightningStoreClient(LightningStore):
 
     def __init__(self, server_address: str):
         self.server_address = server_address.rstrip("/")
-        self.session: Optional[aiohttp.ClientSession] = None
+        self._sessions: Dict[int, aiohttp.ClientSession] = {}  # id(loop) -> ClientSession
+        self._lock = threading.RLock()
 
     async def _get_session(self) -> aiohttp.ClientSession:
-        """Get or create aiohttp session."""
-        if self.session is None or self.session.closed:
-            self.session = aiohttp.ClientSession()
-        return self.session
+        # In the proxy process, FastAPI middleware calls
+        # client_store.get_next_span_sequence_id(...). With
+        # reuse_session=True, _get_session() creates and caches a
+        # single ClientSession bound to the uvicorn event loop.
+        #
+        # Later, the OpenTelemetry exporter (LightningSpanExporter)
+        # runs its flush on its own private event loop (in a different
+        # thread) and calls client_store.add_otel_span(...) ->
+        # client_store.add_span(...).
+        #
+        # If we reuse one session across all, the exporter tries to reuse the
+        # same cached ClientSession that was created on the uvicorn
+        # loop. aiohttp.ClientSession is not loop-agnostic or
+        # thread-safe. Using it from another loop can hang on the
+        # first request. That's why we need a map from loop to session.
+
+        loop = asyncio.get_running_loop()
+        key = id(loop)
+        with self._lock:
+            sess = self._sessions.get(key)
+            if sess is None or sess.closed:
+                sess = aiohttp.ClientSession()
+                self._sessions[key] = sess
+        return sess
 
     async def close(self):
         """Close the HTTP session."""
-        if self.session and not self.session.closed:
-            await self.session.close()
+        with self._lock:
+            sessions = list(self._sessions.values())
+            self._sessions.clear()
+
+        # close them on their own loops to avoid warnings
+        async def _close(sess: aiohttp.ClientSession):
+            if not sess.closed:
+                await sess.close()
+
+        # If called from one loop, best-effort close here.
+        for s in sessions:
+            try:
+                await _close(s)
+            except RuntimeError:
+                # If created on a different loop/thread, schedule a thread-safe close
+                # Fallback: close without awaiting (library tolerates it in practice),
+                # or keep a per-loop shutdown hook where they were created.
+                pass
 
     async def start_rollout(
         self,

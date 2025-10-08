@@ -8,10 +8,10 @@ import logging
 import weakref
 from typing import TYPE_CHECKING, Any, Callable, Coroutine, Generic, Optional, TypeVar, Union
 
-from .types import LLM, NamedResources, Rollout, RolloutRawResult, Task
+from .types import LLM, NamedResources, Rollout, RolloutRawResultV2, RolloutV2, Task
 
 if TYPE_CHECKING:
-    from .runner import AgentRunner
+    from .runner import BaseRunner
     from .tracer import BaseTracer
     from .trainer import Trainer
 
@@ -57,7 +57,7 @@ class LitAgent(Generic[T]):
         """
         self.trained_agents = trained_agents
         self._trainer_ref: weakref.ReferenceType[Trainer] | None = None
-        self._runner_ref: weakref.ReferenceType[AgentRunner] | None = None
+        self._runner_ref: weakref.ReferenceType[BaseRunner[T]] | None = None
 
     @property
     def is_async(self) -> bool:
@@ -114,22 +114,22 @@ class LitAgent(Generic[T]):
         """
         return self.trainer.tracer
 
-    def set_runner(self, runner: AgentRunner) -> None:
+    def set_runner(self, runner: BaseRunner[T]) -> None:
         """
         Set the runner for this agent.
 
         Args:
-            runner: The AgentRunner instance that will handle the execution of rollouts.
+            runner: The runner instance that will handle the execution of rollouts.
         """
         self._runner_ref = weakref.ref(runner)
 
     @property
-    def runner(self) -> AgentRunner:
+    def runner(self) -> BaseRunner[T]:
         """
         Get the runner for this agent.
 
         Returns:
-            The AgentRunner instance associated with this agent.
+            The runner instance associated with this agent.
         """
         if self._runner_ref is None:
             raise ValueError("Runner has not been set for this agent.")
@@ -138,12 +138,14 @@ class LitAgent(Generic[T]):
             raise ValueError("Runner reference is no longer valid (object has been garbage collected).")
         return runner
 
-    def on_rollout_start(self, task: Task, runner: AgentRunner, tracer: BaseTracer) -> None:
+    def on_rollout_start(self, task: Task, runner: BaseRunner[T], tracer: BaseTracer) -> None:
         """Hook called immediately before a rollout begins.
+
+        Deprecated in favor of `on_rollout_start` in the `Hook` interface.
 
         Args:
             task: The :class:`Task` object that will be processed.
-            runner: The :class:`AgentRunner` managing the rollout.
+            runner: The :class:`BaseRunner` managing the rollout.
             tracer: The tracer instance associated with the runner.
 
         Subclasses can override this method to implement custom logic such as
@@ -151,20 +153,22 @@ class LitAgent(Generic[T]):
         no-op.
         """
 
-    def on_rollout_end(self, task: Task, rollout: Rollout, runner: AgentRunner, tracer: BaseTracer) -> None:
+    def on_rollout_end(self, task: Task, rollout: RolloutV2, runner: BaseRunner[T], tracer: BaseTracer) -> None:
         """Hook called after a rollout completes.
+
+        Deprecated in favor of `on_rollout_end` in the `Hook` interface.
 
         Args:
             task: The :class:`Task` object that was processed.
             rollout: The resulting :class:`Rollout` object.
-            runner: The :class:`AgentRunner` managing the rollout.
+            runner: The :class:`BaseRunner` managing the rollout.
             tracer: The tracer instance associated with the runner.
 
         Subclasses can override this method for cleanup or additional
         logging. By default, this is a no-op.
         """
 
-    def rollout(self, task: T, resources: NamedResources, rollout: Rollout) -> RolloutRawResult:
+    def rollout(self, task: T, resources: NamedResources, rollout: RolloutV2) -> RolloutRawResultV2:
         """Main entry point for executing a rollout.
 
         This method determines whether to call the synchronous or
@@ -193,7 +197,7 @@ class LitAgent(Generic[T]):
         """
         raise NotImplementedError("Agents must implement the `rollout` method.")
 
-    async def rollout_async(self, task: T, resources: NamedResources, rollout: Rollout) -> RolloutRawResult:
+    async def rollout_async(self, task: T, resources: NamedResources, rollout: RolloutV2) -> RolloutRawResultV2:
         """Asynchronous version of the main rollout method.
 
         This method determines whether to call the synchronous or
@@ -219,7 +223,7 @@ class LitAgent(Generic[T]):
         """
         raise NotImplementedError("Agents must implement the `rollout_async` method for async operations.")
 
-    def training_rollout(self, task: T, resources: NamedResources, rollout: Rollout) -> RolloutRawResult:
+    def training_rollout(self, task: T, resources: NamedResources, rollout: RolloutV2) -> RolloutRawResultV2:
         """Defines the agent's behavior for a single training task.
 
         This method should contain the logic for how the agent processes an
@@ -235,7 +239,7 @@ class LitAgent(Generic[T]):
         """
         return self.rollout(task, resources, rollout)
 
-    def validation_rollout(self, task: T, resources: NamedResources, rollout: Rollout) -> RolloutRawResult:
+    def validation_rollout(self, task: T, resources: NamedResources, rollout: RolloutV2) -> RolloutRawResultV2:
         """Defines the agent's behavior for a single validation task.
 
         By default, this method redirects to `training_rollout`. Override it
@@ -253,7 +257,9 @@ class LitAgent(Generic[T]):
         """
         return self.rollout(task, resources, rollout)
 
-    async def training_rollout_async(self, task: T, resources: NamedResources, rollout: Rollout) -> RolloutRawResult:
+    async def training_rollout_async(
+        self, task: T, resources: NamedResources, rollout: RolloutV2
+    ) -> RolloutRawResultV2:
         """Asynchronous version of `training_rollout`.
 
         This method should be implemented by agents that perform asynchronous
@@ -270,7 +276,9 @@ class LitAgent(Generic[T]):
         """
         return await self.rollout_async(task, resources, rollout)
 
-    async def validation_rollout_async(self, task: T, resources: NamedResources, rollout: Rollout) -> RolloutRawResult:
+    async def validation_rollout_async(
+        self, task: T, resources: NamedResources, rollout: RolloutV2
+    ) -> RolloutRawResultV2:
         """Asynchronous version of `validation_rollout`.
 
         By default, this method redirects to `training_rollout_async`.
@@ -289,10 +297,10 @@ class LitAgent(Generic[T]):
 
 
 LlmRolloutFunc = Union[
-    Callable[[T, LLM, Rollout], RolloutRawResult],
-    Callable[[T, LLM], RolloutRawResult],
-    Callable[[T, LLM, Rollout], Coroutine[Any, Any, RolloutRawResult]],
-    Callable[[T, LLM], Coroutine[Any, Any, RolloutRawResult]],
+    Callable[[T, LLM, Rollout], RolloutRawResultV2],
+    Callable[[T, LLM], RolloutRawResultV2],
+    Callable[[T, LLM, Rollout], Coroutine[Any, Any, RolloutRawResultV2]],
+    Callable[[T, LLM], Coroutine[Any, Any, RolloutRawResultV2]],
 ]
 
 
@@ -331,7 +339,7 @@ class LitAgentLLM(LitAgent[T]):
     def is_async(self) -> bool:
         return self._is_async
 
-    def rollout(self, task: T, resources: NamedResources, rollout: Rollout) -> RolloutRawResult:
+    def rollout(self, task: T, resources: NamedResources, rollout: RolloutV2) -> RolloutRawResultV2:
         """Execute a synchronous rollout using the wrapped function.
 
         Args:
@@ -353,7 +361,7 @@ class LitAgentLLM(LitAgent[T]):
         else:
             return self.llm_rollout_func(task, llm=llm)  # type: ignore
 
-    async def rollout_async(self, task: T, resources: NamedResources, rollout: Rollout) -> RolloutRawResult:
+    async def rollout_async(self, task: T, resources: NamedResources, rollout: RolloutV2) -> RolloutRawResultV2:
         """Execute an asynchronous rollout using the wrapped function.
 
         Args:

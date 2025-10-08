@@ -15,8 +15,7 @@ from opentelemetry.sdk.trace import ReadableSpan
 from agentlightning.store.base import UNSET
 from agentlightning.store.client_server import LightningStoreClient, LightningStoreServer
 from agentlightning.store.memory import InMemoryLightningStore
-from agentlightning.tracer import Span
-from agentlightning.tracer.types import Resource, TraceStatus
+from agentlightning.types import Resource, Span, TraceStatus
 
 
 def _get_free_port() -> int:
