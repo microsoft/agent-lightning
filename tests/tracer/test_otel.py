@@ -2,13 +2,14 @@
 
 # pyright: reportPrivateUsage=false
 
-"""Unit tests for LightningSpanProcessor."""
+from __future__ import annotations
 
 import asyncio
 import multiprocessing
 import pickle
 import threading
 import time
+from multiprocessing.connection import Connection
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -16,8 +17,12 @@ import pytest
 from opentelemetry.sdk.trace import ReadableSpan
 from opentelemetry.trace import SpanContext, TraceFlags
 
+from agentlightning.reward import emit_reward, find_reward_spans, get_reward_value, reward
 from agentlightning.store.base import LightningStore
 from agentlightning.tracer.agentops import LightningSpanProcessor
+from agentlightning.tracer.otel import OtelTracer
+
+from ..common.tracer import clear_agentops_init, clear_tracer_provider
 
 
 def create_span(name: str, sampled: bool = True, with_context: bool = True) -> MagicMock:
@@ -404,3 +409,110 @@ def test_context_manager_reusability():
     assert processor._store is None
 
     processor.shutdown()
+
+
+def _otel_reward_subprocess(mode: str, conn: Connection[tuple[str, Any]]) -> None:
+    tracer: OtelTracer | None = None
+    try:
+        try:
+            clear_agentops_init()
+        except Exception:
+            # Some environments ship a minimal agentops stub without tracer helpers.
+            pass
+        clear_tracer_provider()
+
+        tracer = OtelTracer()
+        tracer.init_worker(0)
+
+        if mode == "decorator":
+            expected_reward = 2.5
+
+            @reward
+            def compute_reward() -> float:
+                return expected_reward
+
+            with tracer.trace_context(name="reward-decorator"):
+                returned = compute_reward()
+                if returned != expected_reward:
+                    raise AssertionError(f"Expected reward {expected_reward}, got {returned}")
+
+        elif mode == "emit":
+            expected_reward = 4.5
+            with tracer.trace_context(name="reward-emit"):
+                emit_reward(expected_reward)
+        else:
+            raise ValueError(f"Unsupported mode: {mode}")
+
+        spans = tracer.get_last_trace()
+        total_spans = len(spans)
+        reward_spans = find_reward_spans(spans)
+        if not reward_spans:
+            raise AssertionError("No reward spans captured by OtelTracer.")
+
+        actual_reward = get_reward_value(reward_spans[-1])
+        if actual_reward is None:
+            raise AssertionError("Captured reward span does not contain a reward value.")
+
+        conn.send(
+            (
+                "success",
+                {
+                    "mode": mode,
+                    "reward": actual_reward,
+                    "expected_reward": expected_reward,
+                    "total_spans": total_spans,
+                    "reward_spans": len(reward_spans),
+                },
+            )
+        )
+    except Exception as exc:  # pragma: no cover - defensive path
+        try:
+            conn.send(("error", repr(exc)))
+        except Exception:
+            pass
+    finally:
+        if tracer is not None:
+            tracer.teardown_worker(0)
+        conn.close()
+
+
+def _run_otel_reward_test(mode: str) -> dict[str, Any]:
+    ctx = multiprocessing.get_context("spawn")
+    parent_conn, child_conn = ctx.Pipe(duplex=False)
+    proc = ctx.Process(target=_otel_reward_subprocess, args=(mode, child_conn))
+    proc.start()
+    proc.join(15.0)
+
+    if proc.is_alive():
+        proc.terminate()
+        proc.join(5)
+        pytest.fail(f"Subprocess for mode {mode!r} hung.")
+
+    try:
+        if not parent_conn.poll(1.0):
+            pytest.fail(f"No result from subprocess for mode {mode!r}: timed out")
+        status, payload = parent_conn.recv()
+    finally:
+        parent_conn.close()
+
+    if status != "success":
+        pytest.fail(f"Subprocess for mode {mode!r} failed: {payload}")
+
+    assert proc.exitcode == 0, f"Subprocess for mode {mode!r} exited with code {proc.exitcode}"
+    return payload
+
+
+def test_otel_tracer_captures_reward_from_decorator():
+    payload = _run_otel_reward_test("decorator")
+    assert payload["reward_spans"] == 1
+    assert payload["total_spans"] == 1
+    assert payload["reward"] == pytest.approx(payload["expected_reward"])  # pyright: ignore[reportUnknownMemberType]
+    assert payload["expected_reward"] == pytest.approx(2.5)  # pyright: ignore[reportUnknownMemberType]
+
+
+def test_otel_tracer_captures_reward_from_emit_reward():
+    payload = _run_otel_reward_test("emit")
+    assert payload["reward_spans"] == 1
+    assert payload["total_spans"] == 1
+    assert payload["reward"] == pytest.approx(payload["expected_reward"])  # pyright: ignore[reportUnknownMemberType]
+    assert payload["expected_reward"] == pytest.approx(4.5)  # pyright: ignore[reportUnknownMemberType]

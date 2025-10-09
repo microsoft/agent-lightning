@@ -532,7 +532,6 @@ def rollout(func: Union[LlmRolloutFunc[T], Callable[..., Any]]) -> LitAgent[T]:
 
     Args:
         func: A function that defines the agent's behavior.
-        trained_agents: Optional string representing trained agents.
 
     Returns:
         A callable LitAgent subclass instance that preserves the original function's
