@@ -9,11 +9,11 @@ import threading
 import time
 import traceback
 from contextlib import suppress
-from typing import Any, Dict, List, Literal, Optional, Sequence, Union
+from typing import Any, Awaitable, Callable, Dict, List, Literal, Optional, Sequence, Union
 
 import aiohttp
 import uvicorn
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from opentelemetry.sdk.trace import ReadableSpan
 from pydantic import BaseModel, Field
@@ -96,7 +96,7 @@ class LightningStoreServer(LightningStore):
         self.app: FastAPI | None = FastAPI(title="LightningStore Server")
         self._setup_routes()
         self._uvicorn_config: uvicorn.Config | None = uvicorn.Config(
-            self.app, host="0.0.0.0", port=self.port, log_level="info"
+            self.app, host="0.0.0.0", port=self.port, log_level="error"
         )
         self._uvicorn_server: uvicorn.Server | None = uvicorn.Server(self._uvicorn_config)
 
@@ -225,6 +225,25 @@ class LightningStoreServer(LightningStore):
                     "traceback": traceback.format_exc(),
                 },
             )
+
+        @self.app.middleware("http")
+        async def _log_time(  # pyright: ignore[reportUnusedFunction]
+            request: Request, call_next: Callable[[Request], Awaitable[Response]]
+        ):
+            start = time.perf_counter()
+            response = await call_next(request)
+            duration = (time.perf_counter() - start) * 1000
+            client = request.client
+            if client is None:
+                client_address = "unknown"
+            else:
+                client_address = f"{client.host}:{client.port}"
+            logger.info(
+                f"{client_address} - "
+                f'"{request.method} {request.url.path} HTTP/{request.scope["http_version"]}" '
+                f"{response.status_code} in {duration:.2f} ms"
+            )
+            return response
 
         @self.app.get("/health")
         async def health():  # pyright: ignore[reportUnusedFunction]
