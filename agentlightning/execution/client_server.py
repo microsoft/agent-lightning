@@ -97,7 +97,7 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
                 raise ValueError("role must be provided via argument or AGL_CURRENT_ROLE env var")
             if role_env not in ("algorithm", "runner", "both"):
                 raise ValueError("role must be one of 'algorithm', 'runner', or 'both'")
-            role = cast(Literal["algorithm", "runner", "both"], role_env)
+            role = role_env
 
         if server_host is None:
             server_host = os.getenv("AGL_SERVER_HOST", "localhost")
