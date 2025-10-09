@@ -97,11 +97,11 @@ def main():
             "critic_warmup": 0,
             "logger": ["console", "wandb"],
             "project_name": "AgentLightningCI",
-            "experiment_name": "train_verl_v0_2",
+            "experiment_name": "train_verl_v0_2_llm_proxy",
             "nnodes": 1,
-            "test_freq": 3,
+            "test_freq": 2,
             "total_epochs": 1,
-            "total_training_steps": 3,
+            "total_training_steps": 2,
         },
     }
 
@@ -115,7 +115,7 @@ def main():
 
     tracer = OtelTracer()
     adapter = LlmProxyTripletAdapter()
-    trainer = Trainer(algorithm=VERL(rl_training_config), n_workers=4, tracer=tracer, adapter=adapter)
+    trainer = Trainer(algorithm=VERL(rl_training_config), n_workers=10, tracer=tracer, adapter=adapter)
     trainer.fit_v2(calc_agent, train_dataset, val_dataset=val_dataset)  # type: ignore
 
 

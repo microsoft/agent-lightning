@@ -133,6 +133,20 @@ jobs:
           WANDB_API_KEY: ${{ secrets.WANDB_API_KEY }}
         id: calc_x_train_v0_2
 
+      - name: Calc-X training v0.2 LLM Proxy
+        run: |
+          set -ex
+          source .venv/bin/activate
+          cd examples/calc_x
+          ../../scripts/restart_ray.sh
+          sleep 5
+          PYTHONUNBUFFERED=1 python calc_agent_v0_2_llm_proxy.py
+          sleep 10
+        shell: bash
+        env:
+          WANDB_API_KEY: ${{ secrets.WANDB_API_KEY }}
+        id: calc_x_train_v0_2_llm_proxy
+
       - name: Spider training
         run: |
           set -ex
