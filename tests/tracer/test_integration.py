@@ -796,7 +796,7 @@ def test_run_with_agentops_tracer(agent_func_name: str):
     ctx = multiprocessing.get_context("spawn")
     proc = ctx.Process(target=_test_run_with_agentops_tracer_impl, args=(agent_func_name,))
     proc.start()
-    proc.join(10)
+    proc.join(30.0)  # On GPU server, the time is around 10 seconds.
 
     if proc.is_alive():
         proc.terminate()
