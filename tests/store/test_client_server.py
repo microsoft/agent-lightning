@@ -8,9 +8,12 @@ import sys
 from typing import AsyncGenerator, Tuple
 from unittest.mock import patch
 
+import aiohttp
 import pytest
 import pytest_asyncio
+from aiohttp import ClientConnectorError, ClientResponseError, ServerDisconnectedError
 from opentelemetry.sdk.trace import ReadableSpan
+from yarl import URL
 
 from agentlightning.store.base import UNSET
 from agentlightning.store.client_server import LightningStoreClient, LightningStoreServer
@@ -378,3 +381,143 @@ async def test_subprocess_client_operations_work_but_direct_store_access_fails()
 
     finally:
         await server.stop()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "status,endpoint,make_app_error",
+    [
+        (400, "/enqueue_rollout", True),  # server-marked app error -> 400 -> no retry
+        (404, "/update_rollout", False),  # non-408 4xx -> no retry
+    ],
+)
+async def test_no_retry_on_4xx_application_and_non408(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient],
+    monkeypatch,
+    status: int,
+    endpoint: str,
+    make_app_error: bool,
+) -> None:
+    server, client = server_client
+
+    if make_app_error:
+        # Force app-side exception so server returns 400 via exception handler.
+        call_count = {"n": 0}
+        original = server.store.enqueue_rollout
+
+        async def boom(*args, **kwargs):
+            call_count["n"] += 1
+            raise RuntimeError("synthetic app error")
+
+        monkeypatch.setattr(server.store, "enqueue_rollout", boom, raising=True)
+
+        with pytest.raises(ClientResponseError) as ei:
+            await client.enqueue_rollout(input={"origin": "should-fail"})
+        assert ei.value.status == 400
+        assert call_count["n"] == 1
+
+        monkeypatch.setattr(server.store, "enqueue_rollout", original, raising=True)
+    else:
+        # Raise 404 once for /update_rollout; client must not retry.
+        original_post = aiohttp.ClientSession.post
+        calls = {"n": 0}
+
+        async def post_404(self, url, *args, **kwargs):
+            if str(url).endswith(endpoint):
+                calls["n"] += 1
+                req_info = aiohttp.RequestInfo(url=URL(str(url)), method="POST", headers={}, real_url=URL(str(url)))
+                raise ClientResponseError(request_info=req_info, history=(), status=status, message="not found")
+            return await original_post(self, url, *args, **kwargs)
+
+        monkeypatch.setattr(aiohttp.ClientSession, "post", post_404, raising=True)
+
+        with pytest.raises(ClientResponseError) as ei:
+            await client.update_rollout("nonexistent", status="running")
+        assert ei.value.status == 404
+        assert calls["n"] == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("exc_cls", [ServerDisconnectedError, asyncio.TimeoutError])
+async def test_retry_on_transient_network_errors_then_success(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient], monkeypatch, exc_cls
+) -> None:
+    server, client = server_client
+
+    original_post = aiohttp.ClientSession.post
+    counters = {"post_calls": 0}
+
+    async def flaky_post(self, url, *args, **kwargs):
+        if str(url).endswith("/start_rollout"):
+            if counters["post_calls"] == 0:
+                counters["post_calls"] += 1
+                # raise chosen transient network exception
+                raise exc_cls()
+        return await original_post(self, url, *args, **kwargs)
+
+    monkeypatch.setattr(aiohttp.ClientSession, "post", flaky_post, raising=True)
+
+    attempted = await client.start_rollout(input={"origin": f"retry-ok-{exc_cls.__name__}"})
+    assert attempted.rollout_id
+    assert counters["post_calls"] == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", [500, 408])
+async def test_retry_on_transient_http_status_then_success(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient], monkeypatch, status
+) -> None:
+    server, client = server_client
+
+    original_post = aiohttp.ClientSession.post
+    fired = {"once": False}
+
+    async def post_then_ok(self, url, *args, **kwargs):
+        if str(url).endswith("/enqueue_rollout") and not fired["once"]:
+            fired["once"] = True
+            req_info = aiohttp.RequestInfo(url=URL(str(url)), method="POST", headers={}, real_url=URL(str(url)))
+            raise ClientResponseError(request_info=req_info, history=(), status=status, message="transient")
+        return await original_post(self, url, *args, **kwargs)
+
+    monkeypatch.setattr(aiohttp.ClientSession, "post", post_then_ok, raising=True)
+
+    res = await client.enqueue_rollout(input={"origin": f"after-{status}"})
+    assert res.rollout_id
+    assert fired["once"] is True
+
+
+@pytest.mark.asyncio
+async def test_unhealthy_health_probe_stops_retries(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient], monkeypatch
+) -> None:
+    server, client = server_client
+
+    original_post = aiohttp.ClientSession.post
+    post_calls = {"n": 0}
+
+    async def failing_post(self, url, *args, **kwargs):
+        if str(url).endswith("/start_rollout"):
+            post_calls["n"] += 1
+            raise ServerDisconnectedError("synthetic disconnect")
+        return await original_post(self, url, *args, **kwargs)
+
+    async def failing_health_get(self, url, *args, **kwargs):
+        if str(url).endswith("/health"):
+            # health never becomes available
+            raise ClientConnectorError(connection_key=None, os_error=None)
+        return await aiohttp.ClientSession.get(self, url, *args, **kwargs)  # pragma: no cover
+
+    monkeypatch.setattr(aiohttp.ClientSession, "post", failing_post, raising=True)
+    monkeypatch.setattr(aiohttp.ClientSession, "get", failing_health_get, raising=True)
+
+    with pytest.raises(ServerDisconnectedError):
+        await client.start_rollout(input={"origin": "unhealthy"})
+    # Only the initial attempt, since health checks fail
+    assert post_calls["n"] == 1
+
+
+@pytest.mark.asyncio
+async def test_wait_for_rollouts_timeout_guard_raises(server_client) -> None:
+    _, client = server_client
+    with pytest.raises(ValueError):
+        await client.wait_for_rollouts(rollout_ids=["dummy"], timeout=0.2)
