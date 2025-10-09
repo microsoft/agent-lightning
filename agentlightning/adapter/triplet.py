@@ -599,6 +599,11 @@ class LlmProxyTripletAdapter(TraceAdapter[List[Triplet]]):
     Converting telemetry data emitted by the LLM Proxy to triplet data.
     This adapter is very experimental. Should only be used when the TraceTripletAdapter does not work at all.
 
+    IMPORTANT: Do NOT rely on timestamps here. Proxy spans can be emitted from different
+    machines with unsynchronized clocks. We therefore treat `sequence_id` as the only
+    reliable ordering primitive and perform "first occurrence" reward matching using
+    sequence order only.
+
     Strategy:
 
     1) Sort spans by (sequence_id, start_time).
@@ -607,8 +612,8 @@ class LlmProxyTripletAdapter(TraceAdapter[List[Triplet]]):
        - raw_gen_ai_request      (llm.hosted_vllm.* stringified fields)
     3) Extract rewards from spans whose attributes contain an AgentOps-style
        reward payload or explicit REWARD span.
-    4) First-occurrence matching: iterate spans in time order; on reward, assign
-       to the most recent unmatched LLM call that ended before the reward started.
+    4) For each reward with sequence R, assign it to the most recent *unmatched* LLM call
+       with sequence < R. Ignore timestamps completely.
     """
 
     def _literal_eval_maybe(self, v: Any) -> Any:
@@ -692,22 +697,25 @@ class LlmProxyTripletAdapter(TraceAdapter[List[Triplet]]):
 
         return None
 
+    def _request_id_from_attrs(self, attrs: Dict[str, Any]) -> Optional[str]:
+        # Prefer OpenAI-like id if present, else proxy raw id.
+        rid = attrs.get("gen_ai.response.id") or attrs.get("llm.hosted_vllm.id")
+        return str(rid) if isinstance(rid, str) and rid else None
+
     def adapt(self, source: List[Span], /) -> List[Triplet]:  # type: ignore
         # 1) Sort deterministically by (sequence_id, start_time).
         spans = sorted(
             source,
-            key=lambda s: (
-                getattr(s, "sequence_id", 0) if getattr(s, "sequence_id", None) is not None else 0,
-                s.start_time if s.start_time is not None else 0,
-            ),
+            key=lambda s: (s.sequence_id, s.start_time),
         )
 
         # 2) Collect LLM calls with token IDs.
-        llm_items: list[dict[str, Any]] = []
+        llm_items: List[Dict[str, Any]] = []
+        seen_request_ids: set[str] = set()
         for s in spans:
             attrs = s.attributes or {}
-            prompt_ids: list[int] = []
-            resp_ids: list[int] = []
+            prompt_ids: List[int] = []
+            resp_ids: List[int] = []
 
             if s.name == "raw_gen_ai_request":
                 prompt_ids, resp_ids = self._extract_tokens_from_raw(attrs)
@@ -716,40 +724,46 @@ class LlmProxyTripletAdapter(TraceAdapter[List[Triplet]]):
                 prompt_ids, resp_ids = self._extract_tokens_from_openai(attrs)
 
             if prompt_ids and resp_ids:
+                rid = self._request_id_from_attrs(attrs)
+                if rid:
+                    # Duplicated request ID. This request is already handled.
+                    if rid in seen_request_ids:
+                        continue
+                    seen_request_ids.add(rid)
                 llm_items.append(
                     dict(
                         span=s,
-                        end_time=s.end_time or 0,
-                        response_id=(attrs.get("gen_ai.response.id") or None),
+                        seq=s.sequence_id,
+                        response_id=resp_ids,
                         prompt_ids=prompt_ids,
-                        resp_ids=resp_ids,
                     )
                 )
 
-        # 3) First-occurrence reward matching.
-        # Iterate all spans in time order. Assign first reward after each LLM end.
-        time_sorted = sorted(spans, key=lambda s: s.start_time if s.start_time is not None else 0)
-        # Map span_id -> reward
-        assigned: dict[str, Optional[float]] = {}
-        # Keep candidates in the order they finish.
-        candidates = sorted(llm_items, key=lambda x: x["end_time"])
+        # Order LLM items by sequence only.
+        llm_items.sort(key=lambda x: x["seq"])
 
-        for s in time_sorted:
-            reward = self._maybe_reward_value(s)
-            if reward is None:
-                continue
-            # Find most recent unmatched LLM whose end_time < reward.start_time
-            r_start = s.start_time or 0
-            for item in reversed(candidates):
-                if item["span"].span_id in assigned:
+        # Collect rewards by sequence only.
+        rewards: List[Tuple[int, Optional[float]]] = []
+        for s in spans:
+            val = self._maybe_reward_value(s)
+            if val is not None:
+                rewards.append((s.sequence_id, val))
+
+        # First-occurrence matching by sequence_id only:
+        # For reward at sequence R, assign to the most recent unmatched LLM with seq < R.
+        assigned: Dict[str, Optional[float]] = {}
+        for r_seq, r_val in sorted(rewards, key=lambda x: x[0]):
+            for item in reversed(llm_items):
+                sid = item["span"].span_id
+                if sid in assigned:
                     continue
-                if item["end_time"] <= r_start:
-                    assigned[item["span"].span_id] = reward
+                if item["seq"] < r_seq:
+                    assigned[sid] = r_val
                     break
 
-        # 4) Build Triplets in the original LLM chronological order.
-        triplets: list[Triplet] = []
-        for item in candidates:
+        # Build triplets in LLM sequence order.
+        triplets: List[Triplet] = []
+        for item in llm_items:
             s = item["span"]
             triplets.append(
                 Triplet(
@@ -757,8 +771,8 @@ class LlmProxyTripletAdapter(TraceAdapter[List[Triplet]]):
                     response={"token_ids": item["resp_ids"]},
                     reward=assigned.get(s.span_id, None),
                     metadata=dict(
-                        response_id=item["response_id"],
-                        agent_name=None,
+                        # This is called response_id to align with the other adapters.
+                        response_id=item["request_id"],
                     ),
                 )
             )
