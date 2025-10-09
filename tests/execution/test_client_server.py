@@ -65,6 +65,62 @@ def store() -> DummyLightningStore:
 
 
 # =========================
+# Environment configuration
+# =========================
+
+
+def _clear_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("AGL_CURRENT_ROLE", raising=False)
+    monkeypatch.delenv("AGL_SERVER_HOST", raising=False)
+    monkeypatch.delenv("AGL_SERVER_PORT", raising=False)
+
+
+def test_env_configuration(monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_env(monkeypatch)
+    port = _free_port()
+    monkeypatch.setenv("AGL_CURRENT_ROLE", "both")
+    monkeypatch.setenv("AGL_SERVER_HOST", "0.0.0.0")
+    monkeypatch.setenv("AGL_SERVER_PORT", str(port))
+
+    strat = ClientServerExecutionStrategy(main_process="runner")
+
+    assert strat.role == "both"
+    assert strat.server_host == "0.0.0.0"
+    assert strat.server_port == port
+    assert strat.main_process == "runner"
+
+
+def test_env_defaults_when_unset(monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_env(monkeypatch)
+    monkeypatch.setenv("AGL_CURRENT_ROLE", "algorithm")
+
+    strat = ClientServerExecutionStrategy()
+
+    assert strat.server_host == "localhost"
+    assert strat.server_port == 4747
+    assert strat.main_process == "algorithm"
+
+
+def test_env_invalid_port(monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_env(monkeypatch)
+    monkeypatch.setenv("AGL_CURRENT_ROLE", "algorithm")
+    monkeypatch.setenv("AGL_SERVER_PORT", "not-an-int")
+
+    with pytest.raises(ValueError, match="AGL_SERVER_PORT must be an integer"):
+        ClientServerExecutionStrategy()
+
+
+def test_env_missing_role(monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_env(monkeypatch)
+
+    with pytest.raises(
+        ValueError,
+        match="role must be provided via argument or AGL_CURRENT_ROLE env var",
+    ):
+        ClientServerExecutionStrategy()
+
+
+# =========================
 # Async bundles for tests
 # =========================
 

@@ -64,9 +64,9 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
 
     def __init__(
         self,
-        role: Literal["algorithm", "runner", "both"],
-        server_host: str = "localhost",
-        server_port: int = 4747,
+        role: Literal["algorithm", "runner", "both"] | None = None,
+        server_host: str | None = None,
+        server_port: int | None = None,
         n_runners: int = 1,
         graceful_timeout: float = 5.0,
         terminate_timeout: float = 5.0,
@@ -75,19 +75,43 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
         """Configure the strategy.
 
         Args:
-            role: Which side(s) to run in this process.
+            role: Which side(s) to run in this process. When omitted, the
+                :envvar:`AGL_CURRENT_ROLE` environment variable is used.
             server_host: Interface the HTTP server binds to when running the
-                algorithm bundle locally.
+                algorithm bundle locally. Defaults to :envvar:`AGL_SERVER_HOST`
+                or ``"localhost"`` if unset.
             server_port: Port for the HTTP server in "algorithm"/"both" modes.
+                Defaults to :envvar:`AGL_SERVER_PORT` or ``4747`` if unset.
             n_runners: Number of runner processes to spawn in "runner"/"both".
             graceful_timeout: How long to wait (seconds) after setting the stop
                 event before escalating to signals.
             terminate_timeout: How long to wait between escalation steps beyond
                 the cooperative phase (re-used for SIGINT, terminate, and kill).
             main_process: Which bundle runs on the main process when
-                `role == "both"`. `"runner"` requires `n_runners == 1` and
-                is primarily intended for debugging.
+                `role == "both"`. `"runner"` requires `n_runners == 1` and is
+                primarily intended for debugging.
         """
+        if role is None:
+            role_env = os.getenv("AGL_CURRENT_ROLE")
+            if role_env is None:
+                raise ValueError("role must be provided via argument or AGL_CURRENT_ROLE env var")
+            if role_env not in ("algorithm", "runner", "both"):
+                raise ValueError("role must be one of 'algorithm', 'runner', or 'both'")
+            role = cast(Literal["algorithm", "runner", "both"], role_env)
+
+        if server_host is None:
+            server_host = os.getenv("AGL_SERVER_HOST", "localhost")
+
+        if server_port is None:
+            server_port_env = os.getenv("AGL_SERVER_PORT")
+            if server_port_env is None:
+                server_port = 4747
+            else:
+                try:
+                    server_port = int(server_port_env)
+                except ValueError as exc:
+                    raise ValueError("AGL_SERVER_PORT must be an integer") from exc
+
         self.role = role
         self.n_runners = n_runners
         self.server_host = server_host
