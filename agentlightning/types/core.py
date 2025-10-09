@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import logging
 from typing import (
     TYPE_CHECKING,
@@ -276,8 +277,6 @@ class ProxyLLM(LLM):
                 initialized = False
 
             if initialized:
-                import inspect
-
                 # Check the call stack to see if we're being called from base_url
                 frame = inspect.currentframe()
                 if frame and frame.f_back:

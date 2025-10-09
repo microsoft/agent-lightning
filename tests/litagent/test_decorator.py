@@ -8,7 +8,7 @@ from typing import Any, cast
 import pytest
 
 from agentlightning.litagent import LitAgentLLM, llm_rollout, rollout
-from agentlightning.types import LLM
+from agentlightning.types import LLM, Attempt, AttemptedRollout, NamedResources, ProxyLLM
 
 
 @llm_rollout
@@ -146,3 +146,110 @@ async def test_async_function_with_rollout():
 
     # Should be marked as async
     assert async_agent.is_async
+
+
+def test_llm_rollout_strip_proxy_true_strips_proxy_llm():
+    """Test that @llm_rollout(strip_proxy=True) strips ProxyLLM to LLM."""
+
+    @llm_rollout(strip_proxy=True)
+    def agent_strip_true(task: Any, llm: LLM) -> float:
+        """An agent with strip_proxy=True."""
+        # Return the type of llm to verify it was stripped
+        return cast(float, type(llm).__name__)
+
+    # Create a ProxyLLM resource
+    proxy_llm = ProxyLLM(
+        endpoint="http://localhost:11434",
+        model="test-model",
+    )
+
+    # Create an AttemptedRollout
+    rollout = AttemptedRollout(
+        rollout_id="rollout-123",
+        input="test task",
+        start_time=0.0,
+        attempt=Attempt(
+            rollout_id="rollout-123",
+            attempt_id="attempt-456",
+            sequence_id=1,
+            start_time=0.0,
+        ),
+    )
+
+    # Run rollout with ProxyLLM
+    resources = cast(NamedResources, {"llm": proxy_llm})
+    result = agent_strip_true.rollout("test", resources, rollout)
+
+    # The LLM should be stripped to regular LLM (not ProxyLLM)
+    assert result == "LLM"
+
+
+def test_llm_rollout_strip_proxy_false_preserves_proxy_llm():
+    """Test that @llm_rollout(strip_proxy=False) preserves ProxyLLM."""
+
+    @llm_rollout(strip_proxy=False)
+    def agent_strip_false(task: Any, llm: LLM) -> float:
+        """An agent with strip_proxy=False."""
+        # Return the type of llm to verify it was not stripped
+        return cast(float, type(llm).__name__)
+
+    # Create a ProxyLLM resource
+    proxy_llm = ProxyLLM(
+        endpoint="http://localhost:11434",
+        model="test-model",
+    )
+
+    # Create an AttemptedRollout
+    rollout = AttemptedRollout(
+        rollout_id="rollout-123",
+        input="test task",
+        start_time=0.0,
+        attempt=Attempt(
+            rollout_id="rollout-123",
+            attempt_id="attempt-456",
+            sequence_id=1,
+            start_time=0.0,
+        ),
+    )
+
+    # Run rollout with ProxyLLM
+    resources = cast(NamedResources, {"llm": proxy_llm})
+    result = agent_strip_false.rollout("test", resources, rollout)
+
+    # The LLM should remain as ProxyLLM
+    assert result == "ProxyLLM"
+
+
+def test_llm_rollout_strip_proxy_default_strips_proxy_llm():
+    """Test that @llm_rollout defaults to strip_proxy=True."""
+
+    @llm_rollout
+    def agent_default(task: Any, llm: LLM) -> float:
+        """An agent with default strip_proxy."""
+        return cast(float, type(llm).__name__)
+
+    # Create a ProxyLLM resource
+    proxy_llm = ProxyLLM(
+        endpoint="http://localhost:11434",
+        model="test-model",
+    )
+
+    # Create an AttemptedRollout
+    rollout = AttemptedRollout(
+        rollout_id="rollout-123",
+        input="test task",
+        start_time=0.0,
+        attempt=Attempt(
+            rollout_id="rollout-123",
+            attempt_id="attempt-456",
+            sequence_id=1,
+            start_time=0.0,
+        ),
+    )
+
+    # Run rollout with ProxyLLM
+    resources = cast(NamedResources, {"llm": proxy_llm})
+    result = agent_default.rollout("test", resources, rollout)
+
+    # The LLM should be stripped to regular LLM (default behavior)
+    assert result == "LLM"
