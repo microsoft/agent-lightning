@@ -32,7 +32,7 @@ def _mk_span(
 
 
 def _raw_attrs_with_tokens(
-    prompt_ids: List[int], resp_ids: List[int], *, response_id: str, model: str = "Qwen/Qwen2.5-0.5B-Instruct"
+    prompt_ids: List[int], resp_ids: List[int], *, response_id: str, model: str = "my/own-model"
 ):
     """
     Build attributes for a 'raw_gen_ai_request' span mirroring the sample.

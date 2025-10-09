@@ -298,6 +298,12 @@ class ProxyLLM(LLM):
         )
 
     def base_url(self, rollout_id: Optional[str], attempt_id: Optional[str]) -> str:
+        if rollout_id is None and attempt_id is None:
+            return self.endpoint
+
+        if not (isinstance(rollout_id, str) and isinstance(attempt_id, str)):
+            raise ValueError("rollout_id and attempt_id must be strings or all be empty")
+
         prefix = self.endpoint
         if prefix.endswith("/"):
             prefix = prefix[:-1]

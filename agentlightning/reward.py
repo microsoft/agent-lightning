@@ -19,6 +19,7 @@ from typing import (
     cast,
 )
 
+import agentops
 import opentelemetry.trace as trace_api
 from agentops.sdk.decorators import operation
 from opentelemetry.sdk.trace import ReadableSpan
@@ -38,8 +39,7 @@ FnType = TypeVar("FnType", bound=Callable[..., Any])
 
 
 def _agentops_initialized() -> bool:
-    import agentops
-
+    """Check if AgentOps is initialized in the current context."""
     return agentops.get_client().initialized
 
 
