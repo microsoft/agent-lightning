@@ -734,8 +734,9 @@ class LlmProxyTripletAdapter(TraceAdapter[List[Triplet]]):
                     dict(
                         span=s,
                         seq=s.sequence_id,
-                        response_id=resp_ids,
+                        response_ids=resp_ids,
                         prompt_ids=prompt_ids,
+                        request_id=rid,
                     )
                 )
 
@@ -768,7 +769,7 @@ class LlmProxyTripletAdapter(TraceAdapter[List[Triplet]]):
             triplets.append(
                 Triplet(
                     prompt={"token_ids": item["prompt_ids"]},
-                    response={"token_ids": item["resp_ids"]},
+                    response={"token_ids": item["response_ids"]},
                     reward=assigned.get(s.span_id, None),
                     metadata=dict(
                         # This is called response_id to align with the other adapters.

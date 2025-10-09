@@ -83,19 +83,6 @@ class BaseTracer(ParallelWorkerBase):
         """
         raise NotImplementedError()
 
-    def get_last_reward(self) -> Optional[float]:
-        """
-        Retrieves the finalest reward from the most recent trace.
-        The behavior by default is to traverse the trace backward until the first reward span.
-        """
-        for span in reversed(self.get_last_trace()):
-            if span.name == SpanNames.REWARD.value and span.attributes:
-                reward = span.attributes.get("reward", None)
-                if not isinstance(reward, float):
-                    logger.error(f"Reward is not a number, got: {type(reward)}. This may cause undefined behaviors.")
-                return cast(float, reward)
-        return None
-
     def trace_run(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         """
         A convenience wrapper to trace the execution of a single synchronous function.
