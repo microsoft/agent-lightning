@@ -5,12 +5,13 @@ import contextlib
 import multiprocessing
 import socket
 import sys
-from typing import AsyncGenerator, Tuple
+from typing import Any, AsyncGenerator, Tuple, cast
 from unittest.mock import patch
 
 import aiohttp
 import pytest
 import pytest_asyncio
+from _pytest.monkeypatch import MonkeyPatch
 from aiohttp import ClientConnectorError, ClientResponseError, ServerDisconnectedError
 from opentelemetry.sdk.trace import ReadableSpan
 from yarl import URL
@@ -46,6 +47,19 @@ def _make_span(rollout_id: str, attempt_id: str, sequence_id: int, name: str) ->
         parent=None,
         resource=Resource(attributes={}, schema_url=""),
     )
+
+
+class MockResponse:
+    """Wrapper that passes through to the original aiohttp context manager."""
+
+    def __init__(self, context_manager: Any):
+        self._cm = context_manager
+
+    async def __aenter__(self) -> aiohttp.ClientResponse:
+        return await self._cm.__aenter__()
+
+    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        await self._cm.__aexit__(exc_type, exc_val, exc_tb)
 
 
 @pytest_asyncio.fixture
@@ -393,7 +407,7 @@ async def test_subprocess_client_operations_work_but_direct_store_access_fails()
 )
 async def test_no_retry_on_4xx_application_and_non408(
     server_client: Tuple[LightningStoreServer, LightningStoreClient],
-    monkeypatch,
+    monkeypatch: MonkeyPatch,
     status: int,
     endpoint: str,
     make_app_error: bool,
@@ -405,7 +419,7 @@ async def test_no_retry_on_4xx_application_and_non408(
         call_count = {"n": 0}
         original = server.store.enqueue_rollout
 
-        async def boom(*args, **kwargs):
+        async def boom(*args: Any, **kwargs: Any) -> Any:
             call_count["n"] += 1
             raise RuntimeError("synthetic app error")
 
@@ -422,12 +436,14 @@ async def test_no_retry_on_4xx_application_and_non408(
         original_post = aiohttp.ClientSession.post
         calls = {"n": 0}
 
-        async def post_404(self, url, *args, **kwargs):
+        def post_404(self: aiohttp.ClientSession, url: Any, *args: Any, **kwargs: Any) -> MockResponse:
             if str(url).endswith(endpoint):
                 calls["n"] += 1
-                req_info = aiohttp.RequestInfo(url=URL(str(url)), method="POST", headers={}, real_url=URL(str(url)))
+                req_info = aiohttp.RequestInfo(
+                    url=URL(str(url)), method="POST", headers=cast(Any, {}), real_url=URL(str(url))
+                )
                 raise ClientResponseError(request_info=req_info, history=(), status=status, message="not found")
-            return await original_post(self, url, *args, **kwargs)
+            return MockResponse(original_post(self, url, *args, **kwargs))
 
         monkeypatch.setattr(aiohttp.ClientSession, "post", post_404, raising=True)
 
@@ -440,20 +456,20 @@ async def test_no_retry_on_4xx_application_and_non408(
 @pytest.mark.asyncio
 @pytest.mark.parametrize("exc_cls", [ServerDisconnectedError, asyncio.TimeoutError])
 async def test_retry_on_transient_network_errors_then_success(
-    server_client: Tuple[LightningStoreServer, LightningStoreClient], monkeypatch, exc_cls
+    server_client: Tuple[LightningStoreServer, LightningStoreClient], monkeypatch: MonkeyPatch, exc_cls: type[Exception]
 ) -> None:
-    server, client = server_client
+    _server, client = server_client
 
     original_post = aiohttp.ClientSession.post
     counters = {"post_calls": 0}
 
-    async def flaky_post(self, url, *args, **kwargs):
+    def flaky_post(self: aiohttp.ClientSession, url: Any, *args: Any, **kwargs: Any) -> MockResponse:
         if str(url).endswith("/start_rollout"):
             if counters["post_calls"] == 0:
                 counters["post_calls"] += 1
                 # raise chosen transient network exception
                 raise exc_cls()
-        return await original_post(self, url, *args, **kwargs)
+        return MockResponse(original_post(self, url, *args, **kwargs))
 
     monkeypatch.setattr(aiohttp.ClientSession, "post", flaky_post, raising=True)
 
@@ -465,19 +481,21 @@ async def test_retry_on_transient_network_errors_then_success(
 @pytest.mark.asyncio
 @pytest.mark.parametrize("status", [500, 408])
 async def test_retry_on_transient_http_status_then_success(
-    server_client: Tuple[LightningStoreServer, LightningStoreClient], monkeypatch, status
+    server_client: Tuple[LightningStoreServer, LightningStoreClient], monkeypatch: MonkeyPatch, status: int
 ) -> None:
-    server, client = server_client
+    _server, client = server_client
 
     original_post = aiohttp.ClientSession.post
     fired = {"once": False}
 
-    async def post_then_ok(self, url, *args, **kwargs):
+    def post_then_ok(self: aiohttp.ClientSession, url: Any, *args: Any, **kwargs: Any) -> MockResponse:
         if str(url).endswith("/enqueue_rollout") and not fired["once"]:
             fired["once"] = True
-            req_info = aiohttp.RequestInfo(url=URL(str(url)), method="POST", headers={}, real_url=URL(str(url)))
+            req_info = aiohttp.RequestInfo(
+                url=URL(str(url)), method="POST", headers=cast(Any, {}), real_url=URL(str(url))
+            )
             raise ClientResponseError(request_info=req_info, history=(), status=status, message="transient")
-        return await original_post(self, url, *args, **kwargs)
+        return MockResponse(original_post(self, url, *args, **kwargs))
 
     monkeypatch.setattr(aiohttp.ClientSession, "post", post_then_ok, raising=True)
 
@@ -488,24 +506,25 @@ async def test_retry_on_transient_http_status_then_success(
 
 @pytest.mark.asyncio
 async def test_unhealthy_health_probe_stops_retries(
-    server_client: Tuple[LightningStoreServer, LightningStoreClient], monkeypatch
+    server_client: Tuple[LightningStoreServer, LightningStoreClient], monkeypatch: MonkeyPatch
 ) -> None:
-    server, client = server_client
+    _server, client = server_client
 
     original_post = aiohttp.ClientSession.post
+    original_get = aiohttp.ClientSession.get
     post_calls = {"n": 0}
 
-    async def failing_post(self, url, *args, **kwargs):
+    def failing_post(self: aiohttp.ClientSession, url: Any, *args: Any, **kwargs: Any) -> MockResponse:
         if str(url).endswith("/start_rollout"):
             post_calls["n"] += 1
             raise ServerDisconnectedError("synthetic disconnect")
-        return await original_post(self, url, *args, **kwargs)
+        return MockResponse(original_post(self, url, *args, **kwargs))
 
-    async def failing_health_get(self, url, *args, **kwargs):
+    def failing_health_get(self: aiohttp.ClientSession, url: Any, *args: Any, **kwargs: Any) -> MockResponse:
         if str(url).endswith("/health"):
             # health never becomes available
-            raise ClientConnectorError(connection_key=None, os_error=None)
-        return await aiohttp.ClientSession.get(self, url, *args, **kwargs)  # pragma: no cover
+            raise ClientConnectorError(connection_key=None, os_error=None)  # type: ignore
+        return MockResponse(original_get(self, url, *args, **kwargs))
 
     monkeypatch.setattr(aiohttp.ClientSession, "post", failing_post, raising=True)
     monkeypatch.setattr(aiohttp.ClientSession, "get", failing_health_get, raising=True)
@@ -517,7 +536,9 @@ async def test_unhealthy_health_probe_stops_retries(
 
 
 @pytest.mark.asyncio
-async def test_wait_for_rollouts_timeout_guard_raises(server_client) -> None:
+async def test_wait_for_rollouts_timeout_guard_raises(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient],
+) -> None:
     _, client = server_client
     with pytest.raises(ValueError):
         await client.wait_for_rollouts(rollout_ids=["dummy"], timeout=0.2)
