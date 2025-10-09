@@ -385,6 +385,7 @@ class AgentRunnerV2(BaseRunner[T_task]):
                     hook_type="on_trace_end", agent=agent, runner=self, tracer=self._tracer, rollout=next_rollout
                 )
 
+            # Possible exceptions in post_process will be caught in the overall exception handler
             trace_spans = await self._post_process_rollout_result(next_rollout, result)
             last_reward = get_last_reward(trace_spans)
 
@@ -409,11 +410,16 @@ class AgentRunnerV2(BaseRunner[T_task]):
             except Exception:
                 logger.exception(f"{self._log_prefix(rollout_id)} Exception during on_rollout_end hook.")
 
-            if has_exception:
-                # possibly timed out and cancelled?
-                await store.update_attempt(rollout_id, next_rollout.attempt.attempt_id, status="failed")
-            else:
-                await store.update_attempt(rollout_id, next_rollout.attempt.attempt_id, status="succeeded")
+            try:
+                if has_exception:
+                    # possibly timed out and cancelled?
+                    await store.update_attempt(rollout_id, next_rollout.attempt.attempt_id, status="failed")
+                else:
+                    await store.update_attempt(rollout_id, next_rollout.attempt.attempt_id, status="succeeded")
+            except Exception:
+                logger.exception(
+                    f"{self._log_prefix(rollout_id)} Exception during update_attempt. Giving up the update."
+                )
 
     async def iter(self, *, event: Optional[Event] = None) -> None:
         """Run the runner, continuously iterating over tasks in the store.
@@ -451,10 +457,14 @@ class AgentRunnerV2(BaseRunner[T_task]):
             if next_rollout is None:
                 return
 
-            # Claim the rollout but updating the current worker id
-            await store.update_attempt(
-                next_rollout.rollout_id, next_rollout.attempt.attempt_id, worker_id=self.get_worker_id()
-            )
+            try:
+                # Claim the rollout but updating the current worker id
+                await store.update_attempt(
+                    next_rollout.rollout_id, next_rollout.attempt.attempt_id, worker_id=self.get_worker_id()
+                )
+            except Exception:
+                logger.exception(f"{self._log_prefix()} Exception during update_attempt, giving up the rollout.")
+                continue
 
             # Execute the step
             await self._step_impl(next_rollout)

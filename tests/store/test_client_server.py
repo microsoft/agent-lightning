@@ -542,3 +542,150 @@ async def test_wait_for_rollouts_timeout_guard_raises(
     _, client = server_client
     with pytest.raises(ValueError):
         await client.wait_for_rollouts(rollout_ids=["dummy"], timeout=0.2)
+
+
+@pytest.mark.asyncio
+async def test_retry_mechanism_with_custom_delays_and_health_recovery(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """
+    Test the complete retry mechanism including:
+    - Custom retry delays are respected
+    - Health checks are performed between retries
+    - Multiple failures are recovered from
+    - Final success after health recovery
+    """
+    store = InMemoryLightningStore()
+    port = _get_free_port()
+    server = LightningStoreServer(store, "127.0.0.1", port)
+    await server.start()
+
+    # Client with custom short delays for faster testing
+    client = LightningStoreClient(
+        server.endpoint,
+        retry_delays=(0.01, 0.02),
+        health_retry_delays=(0.01,),
+    )
+
+    try:
+        original_post = aiohttp.ClientSession.post
+        original_get = aiohttp.ClientSession.get
+        counters = {"post_attempts": 0, "health_checks": 0}
+        timestamps: list[float] = []
+
+        def monitored_post(self: aiohttp.ClientSession, url: Any, *args: Any, **kwargs: Any) -> MockResponse:
+            if str(url).endswith("/start_rollout"):
+                import time
+
+                counters["post_attempts"] += 1
+                timestamps.append(time.time())
+
+                # Fail first 2 attempts with network error
+                if counters["post_attempts"] <= 2:
+                    raise ServerDisconnectedError(f"synthetic disconnect #{counters['post_attempts']}")
+
+            return MockResponse(original_post(self, url, *args, **kwargs))
+
+        def monitored_get(self: aiohttp.ClientSession, url: Any, *args: Any, **kwargs: Any) -> MockResponse:
+            if str(url).endswith("/health"):
+                counters["health_checks"] += 1
+            return MockResponse(original_get(self, url, *args, **kwargs))
+
+        monkeypatch.setattr(aiohttp.ClientSession, "post", monitored_post, raising=True)
+        monkeypatch.setattr(aiohttp.ClientSession, "get", monitored_get, raising=True)
+
+        # Execute request that will fail twice then succeed
+        attempted = await client.start_rollout(input={"origin": "retry-test"})
+
+        # Verify success
+        assert attempted.rollout_id is not None
+
+        # Verify retry behavior
+        assert counters["post_attempts"] == 3, "Should make initial attempt + 2 retries"
+        assert counters["health_checks"] >= 2, "Should check health after each network failure"
+
+        # Verify delays were respected (timestamps should be spaced)
+        if len(timestamps) >= 3:
+            delay1 = timestamps[1] - timestamps[0]
+            delay2 = timestamps[2] - timestamps[1]
+            # First delay should be ~0.01s (first retry_delay)
+            assert delay1 >= 0.01 and delay1 < 0.05, "First retry delay not respected"
+            # Second delay should be ~0.02s (second retry_delay)
+            assert delay2 >= 0.02 and delay2 < 0.06, "Second retry delay not respected"
+
+    finally:
+        await client.close()
+        await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_client_response_error_with_different_status_codes(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient],
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """
+    Test that client handles different HTTP status codes correctly:
+    - 400-499 (except 408): no retry, immediate failure
+    - 408: retry (request timeout is transient)
+    - 500-599: retry (server errors are transient)
+    """
+    _server, client = server_client
+
+    original_post = aiohttp.ClientSession.post
+
+    # Test 403 Forbidden - should NOT retry
+    def post_403(self: aiohttp.ClientSession, url: Any, *args: Any, **kwargs: Any) -> MockResponse:
+        if str(url).endswith("/start_rollout"):
+            req_info = aiohttp.RequestInfo(
+                url=URL(str(url)), method="POST", headers=cast(Any, {}), real_url=URL(str(url))
+            )
+            raise ClientResponseError(request_info=req_info, history=(), status=403, message="forbidden")
+        return MockResponse(original_post(self, url, *args, **kwargs))
+
+    monkeypatch.setattr(aiohttp.ClientSession, "post", post_403, raising=True)
+
+    with pytest.raises(ClientResponseError) as exc_info:
+        await client.start_rollout(input={"test": "403"})
+    assert exc_info.value.status == 403
+
+    # Test 503 Service Unavailable - should retry and succeed
+    call_count = {"n": 0}
+
+    def post_503_then_ok(self: aiohttp.ClientSession, url: Any, *args: Any, **kwargs: Any) -> MockResponse:
+        if str(url).endswith("/enqueue_rollout"):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                req_info = aiohttp.RequestInfo(
+                    url=URL(str(url)), method="POST", headers=cast(Any, {}), real_url=URL(str(url))
+                )
+                raise ClientResponseError(request_info=req_info, history=(), status=503, message="service unavailable")
+        return MockResponse(original_post(self, url, *args, **kwargs))
+
+    monkeypatch.setattr(aiohttp.ClientSession, "post", post_503_then_ok, raising=True)
+
+    result = await client.enqueue_rollout(input={"test": "503"})
+    assert result.rollout_id is not None
+    assert call_count["n"] == 2  # Failed once, then succeeded
+
+
+@pytest.mark.asyncio
+async def test_get_next_span_sequence_id_returns_proper_int(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient],
+) -> None:
+    """Test that get_next_span_sequence_id correctly converts JSON number to int."""
+    _, client = server_client
+
+    attempted = await client.start_rollout(input={"test": True})
+
+    # First call should return 1
+    seq_id_1 = await client.get_next_span_sequence_id(attempted.rollout_id, attempted.attempt.attempt_id)
+    assert isinstance(seq_id_1, int)
+    assert seq_id_1 == 1
+
+    # Second call should return 2
+    seq_id_2 = await client.get_next_span_sequence_id(attempted.rollout_id, attempted.attempt.attempt_id)
+    assert isinstance(seq_id_2, int)
+    assert seq_id_2 == 2
+
+    # Verify monotonic increment
+    assert seq_id_2 == seq_id_1 + 1

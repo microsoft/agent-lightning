@@ -510,7 +510,9 @@ class LightningStoreClient(LightningStore):
                     logger.warning(f"Server is not healthy yet. Retrying in {delay} seconds.")
             if i < len(self._health_retry_delays):
                 await asyncio.sleep(delay)
-        logger.error(f"Server is not healthy at {self.server_address}/health after {self._health_retry_delays} retries")
+        logger.error(
+            f"Server is not healthy at {self.server_address}/health after {len(self._health_retry_delays)} retries"
+        )
         return False
 
     async def _request_json(
@@ -626,8 +628,26 @@ class LightningStoreClient(LightningStore):
         return RolloutV2.model_validate(data)
 
     async def dequeue_rollout(self) -> Optional[AttemptedRollout]:
-        data = await self._request_json("get", "/dequeue_rollout")
-        return AttemptedRollout.model_validate(data) if data else None
+        """
+        Dequeue a rollout from the server queue.
+
+        Returns:
+            AttemptedRollout if a rollout is available, None if queue is empty.
+
+        Note:
+            This method does NOT retry on failures. If any exception occurs (network error,
+            server error, etc.), it logs the error and returns None immediately.
+        """
+        session = await self._get_session()
+        url = f"{self.server_address}/dequeue_rollout"
+        try:
+            async with session.get(url) as resp:
+                resp.raise_for_status()
+                data = await resp.json()
+                return AttemptedRollout.model_validate(data) if data else None
+        except Exception as e:
+            logger.error(f"dequeue_rollout failed with exception: {e}", exc_info=True)
+            return None
 
     async def start_attempt(self, rollout_id: str) -> AttemptedRollout:
         data = await self._request_json(
@@ -655,12 +675,46 @@ class LightningStoreClient(LightningStore):
         return [Attempt.model_validate(item) for item in data]
 
     async def get_latest_attempt(self, rollout_id: str) -> Optional[Attempt]:
-        data = await self._request_json("get", f"/get_latest_attempt/{rollout_id}")
-        return Attempt.model_validate(data) if data else None
+        """
+        Get the latest attempt for a rollout.
+
+        Args:
+            rollout_id: ID of the rollout to query.
+
+        Returns:
+            Attempt if found, None if not found or if all retries are exhausted.
+
+        Note:
+            This method retries on transient failures (network errors, 5xx status codes).
+            If all retries fail, it logs the error and returns None instead of raising an exception.
+        """
+        try:
+            data = await self._request_json("get", f"/get_latest_attempt/{rollout_id}")
+            return Attempt.model_validate(data) if data else None
+        except Exception as e:
+            logger.error(f"get_latest_attempt failed after all retries for rollout_id={rollout_id}: {e}", exc_info=True)
+            return None
 
     async def get_rollout_by_id(self, rollout_id: str) -> Optional[RolloutV2]:
-        data = await self._request_json("get", f"/get_rollout_by_id/{rollout_id}")
-        return RolloutV2.model_validate(data) if data else None
+        """
+        Get a rollout by its ID.
+
+        Args:
+            rollout_id: ID of the rollout to retrieve.
+
+        Returns:
+            RolloutV2 if found, None if not found or if all retries are exhausted.
+
+        Note:
+            This method retries on transient failures (network errors, 5xx status codes).
+            If all retries fail, it logs the error and returns None instead of raising an exception.
+        """
+        try:
+            data = await self._request_json("get", f"/get_rollout_by_id/{rollout_id}")
+            return RolloutV2.model_validate(data) if data else None
+        except Exception as e:
+            logger.error(f"get_rollout_by_id failed after all retries for rollout_id={rollout_id}: {e}", exc_info=True)
+            return None
 
     async def update_resources(self, resources_id: str, resources: NamedResources) -> ResourcesUpdate:
         data = await self._request_json(
@@ -671,12 +725,45 @@ class LightningStoreClient(LightningStore):
         return ResourcesUpdate.model_validate(data)
 
     async def get_resources_by_id(self, resources_id: str) -> Optional[ResourcesUpdate]:
-        data = await self._request_json("get", f"/get_resources_by_id/{resources_id}")
-        return ResourcesUpdate.model_validate(data) if data else None
+        """
+        Get resources by their ID.
+
+        Args:
+            resources_id: ID of the resources to retrieve.
+
+        Returns:
+            ResourcesUpdate if found, None if not found or if all retries are exhausted.
+
+        Note:
+            This method retries on transient failures (network errors, 5xx status codes).
+            If all retries fail, it logs the error and returns None instead of raising an exception.
+        """
+        try:
+            data = await self._request_json("get", f"/get_resources_by_id/{resources_id}")
+            return ResourcesUpdate.model_validate(data) if data else None
+        except Exception as e:
+            logger.error(
+                f"get_resources_by_id failed after all retries for resources_id={resources_id}: {e}", exc_info=True
+            )
+            return None
 
     async def get_latest_resources(self) -> Optional[ResourcesUpdate]:
-        data = await self._request_json("get", "/get_latest_resources")
-        return ResourcesUpdate.model_validate(data) if data else None
+        """
+        Get the latest resources.
+
+        Returns:
+            ResourcesUpdate if found, None if not found or if all retries are exhausted.
+
+        Note:
+            This method retries on transient failures (network errors, 5xx status codes).
+            If all retries fail, it logs the error and returns None instead of raising an exception.
+        """
+        try:
+            data = await self._request_json("get", "/get_latest_resources")
+            return ResourcesUpdate.model_validate(data) if data else None
+        except Exception as e:
+            logger.error(f"get_latest_resources failed after all retries: {e}", exc_info=True)
+            return None
 
     async def add_span(self, span: Span) -> Span:
         data = await self._request_json("post", "/add_span", json=span.model_dump(mode="json"))
