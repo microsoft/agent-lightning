@@ -112,7 +112,7 @@ def main():
     print("First 5 rows of val dataset:")
     print(val_dataset[:5])  # type: ignore
 
-    trainer = Trainer(algorithm=VERL(rl_training_config), n_workers=2)
+    trainer = Trainer(algorithm=VERL(rl_training_config), n_workers=4)
     trainer.fit_v2(calc_agent, train_dataset, val_dataset=val_dataset)  # type: ignore
 
 
