@@ -10,7 +10,7 @@ import time
 import warnings
 from typing import Any, Callable, Dict, List, Optional, Sequence, TypeVar, Union
 
-from agentlightning.adapter import TraceTripletAdapter
+from agentlightning.adapter import TraceAdapter, TraceTripletAdapter
 from agentlightning.algorithm.base import BaseAlgorithm
 from agentlightning.client import AgentLightningClient
 from agentlightning.execution.base import ExecutionStrategy
@@ -78,7 +78,7 @@ class Trainer(ParallelWorkerBase):
         n_runners: Optional[int] = None,
         max_rollouts: Optional[int] = None,
         tracer: ComponentSpec[BaseTracer] = None,
-        adapter: ComponentSpec[TraceTripletAdapter] = None,
+        adapter: ComponentSpec[TraceAdapter[Any]] = None,
         store: ComponentSpec[LightningStore] = None,
         runner: ComponentSpec[BaseRunner[Any]] = None,
         strategy: ComponentSpec[ExecutionStrategy] = None,
@@ -199,16 +199,16 @@ class Trainer(ParallelWorkerBase):
             type_error_fmt="Algorithm factory returned {type_name}, which is not a BaseAlgorithm subclass.",
         )
 
-    def _make_adapter(self, adapter: ComponentSpec[TraceTripletAdapter]) -> TraceTripletAdapter:
+    def _make_adapter(self, adapter: ComponentSpec[TraceAdapter[Any]]) -> TraceAdapter[Any]:
         return build_component(
             adapter,
-            expected_type=TraceTripletAdapter,
+            expected_type=TraceAdapter,
             spec_name="adapter",
             default_factory=TraceTripletAdapter,
             dict_requires_type=False,
             dict_default_cls=TraceTripletAdapter,
-            invalid_spec_error_fmt="Invalid adapter type: {actual_type}. Expected TraceTripletAdapter, dict, or None.",
-            type_error_fmt="Adapter factory returned {type_name}, which is not a TraceTripletAdapter subclass.",
+            invalid_spec_error_fmt="Invalid adapter type: {actual_type}. Expected TraceAdapter, dict, or None.",
+            type_error_fmt="Adapter factory returned {type_name}, which is not a TraceAdapter subclass.",
         )
 
     def _make_store(self, store: ComponentSpec[LightningStore]) -> LightningStore:
@@ -492,6 +492,8 @@ class Trainer(ParallelWorkerBase):
 
         # Now we are in child processes, so we can safely set up the environment.
         agent.set_trainer(self)
+        if not isinstance(self.triplet_exporter, TraceTripletAdapter):
+            raise ValueError("triplet_exporter must be a TraceTripletAdapter for the legacy trainer.")
         # TODO: this should be set elsewhere
         if agent.trained_agents:
             self.triplet_exporter.agent_match = agent.trained_agents

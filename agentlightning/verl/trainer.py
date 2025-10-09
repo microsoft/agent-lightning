@@ -33,7 +33,7 @@ from verl.trainer.ppo.ray_trainer import (
 from verl.utils.metric import reduce_metrics
 from verl.utils.tracking import Tracking
 
-from agentlightning.adapter import TraceAdapter, TraceTripletAdapter
+from agentlightning.adapter import BaseTraceTripletAdapter, TraceAdapter
 from agentlightning.llm_proxy import LLMProxy
 from agentlightning.store.base import LightningStore
 
@@ -291,8 +291,8 @@ class AgentLightningTrainer(RayPPOTrainer):
         self._load_checkpoint()
 
         assert self.async_rollout_mode, "If agent mode is enabled, async server must be enabled"
-        if self.adapter is not None and not isinstance(self.adapter, TraceTripletAdapter):
-            raise ValueError("Adapter must be a TraceTripletAdapter for currently VERL implementation.")
+        if self.adapter is not None and not isinstance(self.adapter, BaseTraceTripletAdapter):
+            raise ValueError("Adapter must be a BaseTraceTripletAdapter for currently VERL implementation.")
         self.agent_mode_daemon = AgentModeDaemon(
             self.config.agentlightning.port,
             self.config.actor_rollout_ref.rollout.n,

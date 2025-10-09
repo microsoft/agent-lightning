@@ -485,6 +485,9 @@ class LightningStoreClient(LightningStore):
         self._retry_delays = tuple(float(d) for d in retry_delays)
         self._health_retry_delays = tuple(float(d) for d in health_retry_delays)
 
+        # Store whether the dequeue was successful in history
+        self._dequeue_was_successful: bool = False
+
     async def _get_session(self) -> aiohttp.ClientSession:
         # In the proxy process, FastAPI middleware calls
         # client_store.get_next_span_sequence_id(...). With
@@ -663,9 +666,12 @@ class LightningStoreClient(LightningStore):
             async with session.get(url) as resp:
                 resp.raise_for_status()
                 data = await resp.json()
+                self._dequeue_was_successful = True
                 return AttemptedRollout.model_validate(data) if data else None
         except Exception as e:
-            logger.error(f"dequeue_rollout failed with exception: {e}", exc_info=True)
+            if self._dequeue_was_successful:
+                logger.error(f"dequeue_rollout failed with exception: {e}", exc_info=True)
+            # Else ignore the exception because the server is not ready yet
             return None
 
     async def start_attempt(self, rollout_id: str) -> AttemptedRollout:

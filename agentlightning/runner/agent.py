@@ -463,6 +463,7 @@ class AgentRunnerV2(BaseRunner[T_task]):
                     next_rollout.rollout_id, next_rollout.attempt.attempt_id, worker_id=self.get_worker_id()
                 )
             except Exception:
+                # This exception could happen if the rollout is dequeued and the other end died for some reason
                 logger.exception(f"{self._log_prefix()} Exception during update_attempt, giving up the rollout.")
                 continue
 

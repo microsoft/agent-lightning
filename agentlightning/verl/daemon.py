@@ -18,7 +18,7 @@ from tensordict import TensorDict
 from verl import DataProto
 
 from agentlightning import LLM, AgentLightningServer, NamedResources, Rollout, configure_logger
-from agentlightning.adapter.triplet import TraceTripletAdapter
+from agentlightning.adapter.triplet import BaseTraceTripletAdapter, TraceTripletAdapter
 from agentlightning.llm_proxy import LLMProxy, ModelConfig
 from agentlightning.store.base import LightningStore
 from agentlightning.types import RolloutV2, Task
@@ -138,7 +138,7 @@ class AgentModeDaemon:
         mode: Literal["v0", "v1"] = "v1",
         llm_proxy: LLMProxy | None = None,
         store: LightningStore | None = None,
-        adapter: TraceTripletAdapter | None = None,
+        adapter: BaseTraceTripletAdapter | None = None,
     ):
         self.mode = mode
 
@@ -485,8 +485,6 @@ class AgentModeDaemon:
             triplets=triplets,
             metadata=rollout.metadata or {},
         )
-
-        print("Converted RolloutV2 to RolloutLegacy:", result_rollout)
 
         # Run the same validation as v0
         self._validate_data(result_rollout)

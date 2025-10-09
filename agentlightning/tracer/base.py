@@ -2,12 +2,12 @@
 
 import logging
 from contextlib import contextmanager
-from typing import Any, Awaitable, Callable, Iterator, List, Optional, cast
+from typing import Any, Awaitable, Callable, Iterator, List, Optional
 
 from opentelemetry.sdk.trace import ReadableSpan
 
 from agentlightning.store.base import LightningStore
-from agentlightning.types import ParallelWorkerBase, SpanNames
+from agentlightning.types import ParallelWorkerBase
 
 logger = logging.getLogger(__name__)
 
