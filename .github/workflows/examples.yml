@@ -19,6 +19,8 @@ jobs:
     steps:
       - name: Check GPU status
         run: nvidia-smi
+      - name: Check disk space
+        run: df -h
       - uses: actions/checkout@v4
       - name: Create a virtual environment
         run: python3 -m venv .venv

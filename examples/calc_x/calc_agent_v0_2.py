@@ -84,7 +84,7 @@ def main():
                 "fsdp_config": {"param_offload": True},
             },
             "model": {
-                "path": "Qwen/Qwen2.5-1.5B-Instruct",
+                "path": "Qwen/Qwen2.5-0.5B-Instruct",
                 "use_remove_padding": True,
                 "enable_gradient_checkpointing": True,
             },
@@ -97,7 +97,7 @@ def main():
             "project_name": "AgentLightningCI",
             "experiment_name": "train_verl_v0_2",
             "nnodes": 1,
-            "save_freq": 256,
+            "save_freq": 3,
             "test_freq": 3,
             "total_epochs": 1,
             "total_training_steps": 3,

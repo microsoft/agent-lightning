@@ -49,7 +49,6 @@ PYTHONUNBUFFERED=1 python -m agentlightning.verl \
     trainer.project_name=${PROJECT_NAME} \
     trainer.experiment_name=${EXPERIMENT_NAME} \
     trainer.nnodes=1 \
-    trainer.save_freq=256 \
     trainer.test_freq=1 \
     trainer.total_epochs=1 \
     trainer.total_training_steps=1 $@
