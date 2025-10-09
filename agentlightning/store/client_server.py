@@ -517,7 +517,7 @@ class LightningStoreClient(LightningStore):
         Returns True if healthy, False otherwise.
         """
         logger.info(f"Waiting for server to be healthy at {self.server_address}/health")
-        for i, delay in enumerate([*self._health_retry_delays, 0.0]):
+        for delay in [*self._health_retry_delays, 0.0]:
             try:
                 async with session.get(f"{self.server_address}/health") as r:
                     if r.status == 200:
@@ -527,10 +527,10 @@ class LightningStoreClient(LightningStore):
                 # swallow and retry
                 if delay > 0.0:
                     logger.warning(f"Server is not healthy yet. Retrying in {delay} seconds.")
-            if i < len(self._health_retry_delays):
+            if delay > 0.0:
                 await asyncio.sleep(delay)
         logger.error(
-            f"Server is not healthy at {self.server_address}/health after {len(self._health_retry_delays)} retries"
+            f"Server is not healthy at {self.server_address}/health after {len(self._health_retry_delays)} retry attempts"
         )
         return False
 
