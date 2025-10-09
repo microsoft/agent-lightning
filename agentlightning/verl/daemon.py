@@ -486,6 +486,8 @@ class AgentModeDaemon:
             metadata=rollout.metadata or {},
         )
 
+        print("Converted RolloutV2 to RolloutLegacy:", result_rollout)
+
         # Run the same validation as v0
         self._validate_data(result_rollout)
 

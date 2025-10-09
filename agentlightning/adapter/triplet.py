@@ -592,3 +592,175 @@ class TraceTripletAdapter(TraceAdapter[List[Triplet]]):
             reward_match=self.reward_match,
         )
         return trajectory
+
+
+class LlmProxyTripletAdapter(TraceAdapter[List[Triplet]]):
+    """
+    Converting telemetry data emitted by the LLM Proxy to triplet data.
+    This adapter is very experimental. Should only be used when the TraceTripletAdapter does not work at all.
+
+    Strategy:
+
+    1) Sort spans by (sequence_id, start_time).
+    2) Extract LLM calls that expose prompt/response token IDs from either:
+       - litellm_request         (sometimes only metadata, ignore if no token ids)
+       - raw_gen_ai_request      (llm.hosted_vllm.* stringified fields)
+    3) Extract rewards from spans whose attributes contain an AgentOps-style
+       reward payload or explicit REWARD span.
+    4) First-occurrence matching: iterate spans in time order; on reward, assign
+       to the most recent unmatched LLM call that ended before the reward started.
+    """
+
+    def _literal_eval_maybe(self, v: Any) -> Any:
+        import ast
+
+        if isinstance(v, str):
+            try:
+                return ast.literal_eval(v)
+            except Exception:
+                return v
+        return v
+
+    def _extract_tokens_from_raw(self, attrs: Dict[str, Any]) -> Tuple[List[int], List[int]]:
+        """Extract token ids from raw_gen_ai_request attributes.
+
+        - llm.hosted_vllm.prompt_token_ids: string -> List[int]
+        - llm.hosted_vllm.response_token_ids: string -> List[List[int]] -> take first
+        - llm.hosted_vllm.choices: string -> [{'token_ids': [...]}] -> take first
+        """
+        prompt_ids: List[int] = []
+        resp_ids: List[int] = []
+
+        # prompt
+        p = attrs.get("llm.hosted_vllm.prompt_token_ids")
+        p = self._literal_eval_maybe(p)
+        if isinstance(p, list) and all(isinstance(x, int) for x in p):  # type: ignore
+            prompt_ids = cast(List[int], p)
+
+        # response preferred path
+        r = attrs.get("llm.hosted_vllm.response_token_ids")
+        r = self._literal_eval_maybe(r)
+        if isinstance(r, list) and len(r) > 0 and isinstance(r[0], list):  # type: ignore
+            first = cast(List[Any], r[0])
+            if all(isinstance(x, int) for x in first):
+                resp_ids = cast(List[int], first)
+
+        # fallback via choices
+        if not resp_ids:
+            choices = attrs.get("llm.hosted_vllm.choices")
+            choices = self._literal_eval_maybe(choices)
+            if isinstance(choices, list) and choices:
+                cand = cast(Any, choices[0])
+                if isinstance(cand, dict):
+                    tids = cast(Dict[str, Any], cand).get("token_ids")
+                    if isinstance(tids, list) and all(isinstance(x, int) for x in tids):  # type: ignore
+                        resp_ids = cast(List[int], tids)
+
+        return prompt_ids, resp_ids
+
+    def _extract_tokens_from_openai(self, attrs: Dict[str, Any]) -> Tuple[List[int], List[int]]:
+        prompt_ids = cast(Any, attrs.get("prompt_token_ids") or [])
+        resp_ids = cast(Any, attrs.get("response_token_ids") or [])
+        prompt_ids = self._literal_eval_maybe(prompt_ids)
+        resp_ids = self._literal_eval_maybe(resp_ids)
+        if not (isinstance(prompt_ids, list) and all(isinstance(x, int) for x in prompt_ids)):  # type: ignore
+            prompt_ids = []
+        if not (isinstance(resp_ids, list) and all(isinstance(x, int) for x in resp_ids)):  # type: ignore
+            resp_ids = []
+        return cast(List[int], prompt_ids), cast(List[int], resp_ids)
+
+    def _maybe_reward_value(self, span: Span) -> Optional[float]:
+        """
+        Parse reward from typical AgentOps payload or explicit REWARD span.
+        """
+        attrs = span.attributes or {}
+
+        # AgentOps new/old keys
+        for k in ("agentops.task.output", "agentops.entity.output"):
+            v = attrs.get(k)
+            v = self._literal_eval_maybe(v)
+            if isinstance(v, dict) and cast(Dict[str, Any], v).get("type") == "reward":
+                rv = cast(Dict[str, Any], v).get("value", None)
+                if rv is None or isinstance(rv, (int, float)):
+                    return None if rv is None else float(rv)
+
+        # Explicit reward span
+        if span.name == SpanNames.REWARD.value:
+            rv = attrs.get("reward", None)
+            if rv is None or isinstance(rv, (int, float)):
+                return None if rv is None else float(rv)
+
+        return None
+
+    def adapt(self, source: List[Span], /) -> List[Triplet]:  # type: ignore
+        # 1) Sort deterministically by (sequence_id, start_time).
+        spans = sorted(
+            source,
+            key=lambda s: (
+                getattr(s, "sequence_id", 0) if getattr(s, "sequence_id", None) is not None else 0,
+                s.start_time if s.start_time is not None else 0,
+            ),
+        )
+
+        # 2) Collect LLM calls with token IDs.
+        llm_items: list[dict[str, Any]] = []
+        for s in spans:
+            attrs = s.attributes or {}
+            prompt_ids: list[int] = []
+            resp_ids: list[int] = []
+
+            if s.name == "raw_gen_ai_request":
+                prompt_ids, resp_ids = self._extract_tokens_from_raw(attrs)
+            elif s.name == "litellm_request":
+                # Some proxies never include token ids here. Ignore unless present.
+                prompt_ids, resp_ids = self._extract_tokens_from_openai(attrs)
+
+            if prompt_ids and resp_ids:
+                llm_items.append(
+                    dict(
+                        span=s,
+                        end_time=s.end_time or 0,
+                        response_id=(attrs.get("gen_ai.response.id") or None),
+                        prompt_ids=prompt_ids,
+                        resp_ids=resp_ids,
+                    )
+                )
+
+        # 3) First-occurrence reward matching.
+        # Iterate all spans in time order. Assign first reward after each LLM end.
+        time_sorted = sorted(spans, key=lambda s: s.start_time if s.start_time is not None else 0)
+        # Map span_id -> reward
+        assigned: dict[str, Optional[float]] = {}
+        # Keep candidates in the order they finish.
+        candidates = sorted(llm_items, key=lambda x: x["end_time"])
+
+        for s in time_sorted:
+            reward = self._maybe_reward_value(s)
+            if reward is None:
+                continue
+            # Find most recent unmatched LLM whose end_time < reward.start_time
+            r_start = s.start_time or 0
+            for item in reversed(candidates):
+                if item["span"].span_id in assigned:
+                    continue
+                if item["end_time"] <= r_start:
+                    assigned[item["span"].span_id] = reward
+                    break
+
+        # 4) Build Triplets in the original LLM chronological order.
+        triplets: list[Triplet] = []
+        for item in candidates:
+            s = item["span"]
+            triplets.append(
+                Triplet(
+                    prompt={"token_ids": item["prompt_ids"]},
+                    response={"token_ids": item["resp_ids"]},
+                    reward=assigned.get(s.span_id, None),
+                    metadata=dict(
+                        response_id=item["response_id"],
+                        agent_name=None,
+                    ),
+                )
+            )
+
+        return triplets
