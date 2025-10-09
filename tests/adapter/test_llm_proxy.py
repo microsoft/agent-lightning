@@ -217,3 +217,125 @@ def test_reward_none():
     assert triplets[0].response["token_ids"] == resp_ids
     assert triplets[0].reward is None
     assert triplets[0].metadata["response_id"] == "chatcmpl-BUG"
+
+
+def test_rewards_before_or_equal_sequence_are_skipped():
+    """
+    Rewards that appear before an LLM call (or share its sequence id) should be ignored.
+    Only the first reward strictly after the LLM call should apply.
+    """
+    prompt_ids = [9, 9, 9]
+    resp_ids = [8, 8, 8]
+    spans = [
+        _mk_span(
+            span_id="reward-early",
+            name="agentops_reward_operation.task",
+            seq=1,
+            start=10,
+            end=11,
+            attrs=_agentops_reward_attrs(1.0),
+        ),
+        _mk_span(
+            span_id="llm-call",
+            name="raw_gen_ai_request",
+            seq=2,
+            start=20,
+            end=21,
+            attrs=_raw_attrs_with_tokens(prompt_ids, resp_ids, response_id="chatcmpl-SKIP"),
+        ),
+        _mk_span(
+            span_id="reward-same-seq",
+            name="agentops_reward_operation.task",
+            seq=2,
+            start=22,
+            end=23,
+            attrs=_agentops_reward_attrs(2.0),
+        ),
+        _mk_span(
+            span_id="reward-late",
+            name="agentops_reward_operation.task",
+            seq=3,
+            start=30,
+            end=31,
+            attrs=_agentops_reward_attrs(3.5),
+        ),
+    ]
+
+    adapter = LlmProxyTripletAdapter()
+    triplets = adapter.adapt(spans)
+
+    assert len(triplets) == 1
+    triplet = triplets[0]
+    assert triplet.prompt["token_ids"] == prompt_ids
+    assert triplet.response["token_ids"] == resp_ids
+    # Only the reward after the LLM call should attach.
+    assert triplet.reward == 3.5
+
+
+def test_multiple_rewards_attach_to_latest_unmatched_llm_calls():
+    """
+    Rewards should attach to the most recent unmatched LLM call whose sequence id is smaller.
+    Later rewards backfill older unmatched LLM calls.
+    """
+    p1, r1 = [1, 1], [2, 2]
+    p2, r2 = [3, 3], [4, 4]
+    p3, r3 = [5, 5], [6, 6]
+    spans = [
+        _mk_span(
+            span_id="llm-1",
+            name="raw_gen_ai_request",
+            seq=2,
+            start=100,
+            end=110,
+            attrs=_raw_attrs_with_tokens(p1, r1, response_id="chatcmpl-A"),
+        ),
+        _mk_span(
+            span_id="llm-2",
+            name="raw_gen_ai_request",
+            seq=4,
+            start=120,
+            end=130,
+            attrs=_raw_attrs_with_tokens(p2, r2, response_id="chatcmpl-B"),
+        ),
+        _mk_span(
+            span_id="llm-3",
+            name="raw_gen_ai_request",
+            seq=6,
+            start=140,
+            end=150,
+            attrs=_raw_attrs_with_tokens(p3, r3, response_id="chatcmpl-C"),
+        ),
+        _mk_span(
+            span_id="reward-1",
+            name="agentops_reward_operation.task",
+            seq=5,
+            start=200,
+            end=201,
+            attrs=_agentops_reward_attrs(0.1),
+        ),
+        _mk_span(
+            span_id="reward-2",
+            name="agentops_reward_operation.task",
+            seq=7,
+            start=210,
+            end=211,
+            attrs=_agentops_reward_attrs(0.2),
+        ),
+        _mk_span(
+            span_id="reward-3",
+            name="agentops_reward_operation.task",
+            seq=8,
+            start=220,
+            end=221,
+            attrs=_agentops_reward_attrs(0.3),
+        ),
+    ]
+
+    adapter = LlmProxyTripletAdapter()
+    triplets = adapter.adapt(spans)
+
+    assert len(triplets) == 3
+    # Triplets are emitted in LLM sequence order.
+    assert triplets[0].reward == 0.3  # backfilled by the last reward
+    assert triplets[1].reward == 0.1  # first reward targets the latest prior call (seq=4)
+    assert triplets[2].reward == 0.2  # second reward picks up the remaining unmatched call (seq=6)

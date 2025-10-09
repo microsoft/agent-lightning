@@ -2,5 +2,6 @@
 
 from .agentops import AgentOpsTracer
 from .base import BaseTracer
+from .otel import OtelTracer
 
-__all__ = ["AgentOpsTracer", "BaseTracer"]
+__all__ = ["AgentOpsTracer", "BaseTracer", "OtelTracer"]
