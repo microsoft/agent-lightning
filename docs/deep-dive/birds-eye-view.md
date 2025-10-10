@@ -15,18 +15,20 @@ sequenceDiagram
     participant Agent
 
     loop Over the dataset
-        Algo->>Store: add_resources + enqueue_rollout
+        Algo-->>Store: add_resources + enqueue_rollout
         Store-->>Runner: dequeue_rollout → AttemptedRollout
         Store-->>Runner: get_latest_resources
-        Runner->>Store: update_attempt("running", worker_id)
+        Runner-->>Store: update_attempt("running", worker_id)
         Runner->>Agent: rollout + resources
-        Agent-->>Runner: reward / spans
-        Runner->>Store: add_span or add_otel_span
-        Runner->>Store: update_attempt("finished", status)
+        Agent->>Runner: reward / spans
+        Runner-->>Store: add_span or add_otel_span
+        Runner-->>Store: update_attempt("finished", status)
         Store-->>Algo: query_rollouts + spans
         Algo-->>Algo: Update resources (optional)
     end
 ```
+
+*Solid lines are instantaneous calls, dashed lines are async / long-running.*
 
 ### Key Terms on the Arrows
 
@@ -64,19 +66,52 @@ sequenceDiagram
         Runner->>Agent: training_rollout / validation_rollout
         loop For each finished span
             Agent-->>Tracer: openai.chat.completion invoked<br>agent.execute invoked<br>...
-            Agent-->>Tracer: emit/return reward
-            Tracer->>Store: add_otel_span(rollout_id, attempt_id, span)
+            Agent->>Tracer: emit intermediate reward
+            Tracer-->>Store: add_otel_span(rollout_id, attempt_id, span)
         end
-        Runner->>Store: update_attempt(status)
+        Agent->>Runner: final reward + extra spans (if any)
+        Runner-->>Store: add_span(rollout_id, attempt_id, span)
+        Runner-->>Store: update_attempt(status)
     end
     Tracer->>Agent: Unapply instrumentation
 ```
 
-The above diagram shows the overall data flow between store, tracer and agent. The implementation is slightly different from the ideal diagram. The spans are not actually emitted actively by the agent, instead they are "caught" by the tracer by hooking and instrumenting key methods used in the agents. The tracers use a special callback (exporter) to monitor those events and logs to the store. Before the rollout starts, the runner enters a tracing context before invoking the agent, which wires the store identifiers into the tracer. Every span completion then streams back to the store through `LightningSpanProcessor.on_end`, so the agent's instrumentation lands in `add_otel_span`. If the agent's rollout method returns a numeric reward, the runner emits one more OpenTelemetry span before finalizing the attempt.
+The above diagram shows the overall data flow between store, tracer and agent. In realistic, it's a bit more complicated than that. The spans are not actually emitted actively by the agent, instead they are "caught" by the tracer by hooking and instrumenting key methods used in the agents. The tracers use a special callback (exporter) to monitor those events and logs to the store. Before the rollout starts, the runner enters a `trace_context` before invoking the agent, which wires the store identifiers into the tracer (illustrated in the following figure). Every span completion then streams back to the store through `LightningSpanProcessor.on_end`, so the agent's instrumentation lands in `add_otel_span`. If the agent's rollout method returns a numeric reward, the runner emits one more OpenTelemetry span before finalizing the attempt.
+
+### Hooks
+
+Hooks are user-defined callbacks to augment an existing runner's behavior. Currently, hooks can be called at the beginning and the end of trace and rollout.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Store
+    participant Runner
+    participant Tracer
+    participant Hook
+    participant Agent
+
+    loop Until no more rollouts
+        Store-->>Runner: dequeue_rollout → AttemptedRollout
+        Store-->>Runner: get_latest_resources
+
+        Runner->>Agent: training_rollout / validation_rollout
+        Tracer->>Agent: enter_trace_context
+        loop For each finished span
+            Agent-->>Tracer: openai.chat.completion invoked<br>agent.execute invoked<br>...
+            Agent->>Tracer: emit intermediate reward
+            Tracer-->>Store: add_otel_span(rollout_id, attempt_id, span)
+        end
+        Agent->>Runner: final reward + extra spans (if any)
+        Tracer->>Agent: exit_trace_context
+        Runner-->>Store: add_span(rollout_id, attempt_id, span)
+        Runner-->>Store: update_attempt(status)
+    end
+```
 
 ### Adapter
 
-The adapter is the algorithm's bridge between raw traces and learning signals. Users can configure an adapter before `algorithm.run` starts, so every algorithm instance can later call `adapter.adapt(...)` on spans fetched from the store.
+The adapter is the algorithm's bridge between raw traces and learning signals. Users can configure an adapter in the algorithm before `algorithm.run` starts, so that the algorithm instance can later call `adapter.adapt(...)` on spans fetched from the store to conveniently converts the spans into a format suitable for learning.
 
 The runner streams spans into the store as it executes rollouts, and algorithms query those spans to construct data needed for learning. For example, the VERL algorithm collects spans for each completed rollout, converts them with `TraceTripletAdapter` (by default), which implements `adapt` by traversing OpenTelemetry spans, aligning prompts, responses, and reward spans into `Triplet` records (details below) that downstream RL fine-tuning code can consume. The figure below summarizes the relationship.
 
@@ -113,30 +148,58 @@ sequenceDiagram
     loop Over the Dataset
         Algo->>Algo: Launch LLM Inference Engine<br>(optional)
         Algo->>LLMProxy: Register Inference Engine<br>(optional)
-        Algo->>Store: enqueue_rollout
+        Algo-->>Store: enqueue_rollout
         LLMProxy->>Store: Proxy URL added as Resource
         Store-->>Runner: dequeue_rollout → AttemptedRollout
         Store-->>Runner: get_latest_resources
         Runner->>Agent: rollout + resources<br>(LLM Proxy URL as resource)
         loop Defined by Agent
             Agent-->>LLMProxy: LLM calls
-            LLMProxy->>Store: add_span or add_otel_span
+            LLMProxy-->>Store: add_span or add_otel_span
             LLMProxy-->>Agent: LLM responses
             Agent-->>Runner: rewards
-            Runner->>Store: add_span or add_otel_span
+            Runner-->>Store: add_span or add_otel_span
         end
-        Runner->>Store: update_attempt("finished", status)
+        Runner-->>Store: update_attempt("finished", status)
         Store-->>Algo: query_rollouts + spans
         Algo-->>Algo: Update LLM Weights<br>(optional)
     end
 ```
 
+In this diagram, the store receives spans from both the proxy and the runner. We will see a problem later with parallelism where the proxy and runner are in different machines.
 
 ### Trainer
 
-Lifecycle of all components. All components above can live as long as the trainer. Some member variables relationships are injected into the components by the trainer.
+Trainer is a high-level interface for users to initiate the whole learning process. Trainer manages almost all the components mentioned above, including algorithm, store, runner, agent, tracer, adapter and LLM proxy. All the components can be configured via the trainer interface and lives as long as the trainer lives.
 
-TODO: a diagram showing the lifecycle of all components.
+Some components are injected into other components as member variables or weak references. For example, the store is injected into the algorithm and runner. The tracer and agent are injected into the runner. The adapter and LLM proxy are injected into the algorithm. The store is further injected into the tracer, adapter and LLM proxy by the runner and algorithm respectively.
+
+```mermaid
+flowchart LR
+    %% Ownership (constructed/held by Trainer)
+    Trainer --has--> Tracer["Tracer (AgentOpsTracer*)"]
+    Trainer --has--> Adapter["Adapter (TraceTripletAdapter*)"]
+    Trainer -.has.-> Store["LightningStore (InMemory* default)"]
+    Trainer -.has.-> Runner["Runner (AgentRunner* default)"]
+    Trainer -.has.-> Algorithm["Algorithm (no default)"]
+    Trainer -.has.-> LLMProxy["LLM Proxy (no default)"]
+
+    %% Trainer passes references
+    Algorithm -.uses.-> Trainer
+    Algorithm -.injects.-> Store
+    Algorithm -.injects.-> Adapter
+    Algorithm -.injects.-> LLMProxy
+
+    Runner -.injects.-> Agent["Agent (LitAgent)"]
+    Runner -.injects.-> Store
+    Runner -.has.-> Tracer
+
+    %% Cross-wiring done at runtime
+    LLMProxy -.set_store().-> Store
+
+    %% Agent awareness
+    Agent -.set_trainer().-> Trainer
+```
 
 ## Inside an RL Algorithm (VERL Example)
 
