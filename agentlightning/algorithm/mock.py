@@ -83,7 +83,7 @@ class MockAlgorithm(BaseAlgorithm):
         try:
             adapter = self.get_adapter()
             spans = await store.query_spans(rollout_id=rollout_id, attempt_id="latest")
-            transformed_data = await adapter.adapt(spans)
+            transformed_data = adapter.adapt(spans)
             logger.info(f"[Rollout {rollout_id}] Adapted data: {transformed_data}")
         except ValueError:
             logger.warning("No adapter set for MockAlgorithm. Skipping trace adaptation.")

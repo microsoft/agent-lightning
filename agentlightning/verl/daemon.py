@@ -141,12 +141,12 @@ class AgentModeDaemon:
         adapter: BaseTraceTripletAdapter | None = None,
     ):
         self.mode = mode
+        self.llm_timeout_seconds = llm_timeout_seconds
 
         # Server and Task Configuration
         if mode == "v0":
             assert port is not None
             self.server_port = port
-            self.llm_timeout_seconds = llm_timeout_seconds
             self.server = AgentLightningServer(
                 host="0.0.0.0", port=self.server_port, task_timeout_seconds=self.llm_timeout_seconds
             )
