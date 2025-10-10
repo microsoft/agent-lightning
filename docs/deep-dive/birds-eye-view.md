@@ -80,34 +80,39 @@ The above diagram shows the overall data flow between store, tracer and agent. I
 
 ### Hooks
 
-Hooks are user-defined callbacks to augment an existing runner's behavior. Currently, hooks can be called at the beginning and the end of trace and rollout.
+Hooks are user-defined callbacks to augment an existing runner's behavior. Currently, hooks live within the runner and can be called at the beginning and the end of trace and rollout.
 
 ```mermaid
 sequenceDiagram
     autonumber
     participant Store
+    participant Hooks
     participant Runner
     participant Tracer
-    participant Hook
     participant Agent
+
+    Note over Runner,Hooks: Runner manages hooks as member
 
     loop Until no more rollouts
         Store-->>Runner: dequeue_rollout → AttemptedRollout
         Store-->>Runner: get_latest_resources
 
+        Runner->>Hooks: on_rollout_start(agent, runner, rollout)
         Runner->>Agent: training_rollout / validation_rollout
         Tracer->>Agent: enter_trace_context
-        loop For each finished span
-            Agent-->>Tracer: openai.chat.completion invoked<br>agent.execute invoked<br>...
-            Agent->>Tracer: emit intermediate reward
-            Tracer-->>Store: add_otel_span(rollout_id, attempt_id, span)
-        end
-        Agent->>Runner: final reward + extra spans (if any)
+        activate Tracer
+        Runner->>Hooks: on_trace_start(agent, runner, tracer, rollout)
+        Note over Runner,Agent: Agent rollout omitted
+        Runner->>Hooks: on_trace_end(agent, runner, tracer, rollout)
         Tracer->>Agent: exit_trace_context
+        deactivate Tracer
+        Agent->>Runner: final reward + extra spans (if any)
         Runner-->>Store: add_span(rollout_id, attempt_id, span)
-        Runner-->>Store: update_attempt(status)
+        Runner->>Hooks: on_rollout_end(agent, runner, rollout, status)
     end
 ```
+
+This diagram shows the 4 hooks that Agent-lightning currently supports. Users should pay special attention to the difference between `on_trace_end` and `on_rollout_end`. The former is called right before the tracer exits the trace context, while the latter is called after the runner finalizes the attempt in the store.
 
 ### Adapter
 
@@ -166,39 +171,75 @@ sequenceDiagram
     end
 ```
 
-In this diagram, the store receives spans from both the proxy and the runner. We will see a problem later with parallelism where the proxy and runner are in different machines.
+In this diagram, the store receives spans from both the proxy and the runner. We will see a problem later with parallelism where the proxy and runner are in different machines, and spans need to obtain a special counter from the store to ensure the ordering of spans.
 
 ### Trainer
 
-Trainer is a high-level interface for users to initiate the whole learning process. Trainer manages almost all the components mentioned above, including algorithm, store, runner, agent, tracer, adapter and LLM proxy. All the components can be configured via the trainer interface and lives as long as the trainer lives.
+The Trainer is the high-level orchestrator that initializes and connects all major components—algorithm, runner, store, tracer, adapter, LLM proxy, and hooks. The components can have a lifecycle as long as the trainer. The trainer defines their lifecycles and injects shared dependencies so that execution, tracing, and learning operate within a consistent environment.
 
-Some components are injected into other components as member variables or weak references. For example, the store is injected into the algorithm and runner. The tracer and agent are injected into the runner. The adapter and LLM proxy are injected into the algorithm. The store is further injected into the tracer, adapter and LLM proxy by the runner and algorithm respectively.
+**Roles and Relationships:**
+
+1. **Owns:** components that the trainer constructs and manages directly (e.g., runner, tracer).
+2. **Injects:** components passed into others as dependencies.
+3. **References:** weak links for coordination without ownership.
+4. **Uses:** components that are temporarily interacted with.
+
+For example, the store is injected into the algorithm and runner. The tracer and agent are injected into the runner. The adapter and LLM proxy are injected into the algorithm. The store is further injected into the tracer, adapter and LLM proxy by the runner and algorithm respectively.
 
 ```mermaid
-flowchart LR
-    %% Ownership (constructed/held by Trainer)
-    Trainer --has--> Tracer["Tracer (AgentOpsTracer*)"]
-    Trainer --has--> Adapter["Adapter (TraceTripletAdapter*)"]
-    Trainer -.has.-> Store["LightningStore (InMemory* default)"]
-    Trainer -.has.-> Runner["Runner (AgentRunner* default)"]
-    Trainer -.has.-> Algorithm["Algorithm (no default)"]
-    Trainer -.has.-> LLMProxy["LLM Proxy (no default)"]
+flowchart TD
+    %% === Left side: Algorithm domain ===
+    subgraph L["Algorithm Side"]
+        Algorithm["Algorithm<br>(no default)"]
+        Adapter["Adapter<br>(TraceTripletAdapter*)"]
+        LLMProxy["LLM Proxy<br>(no default)"]
+        Algorithm -.injects.-> Adapter
+        Algorithm -.injects.-> LLMProxy
+    end
+    linkStyle 0,1 stroke:#896978,stroke-width:2px;
 
-    %% Trainer passes references
-    Algorithm -.uses.-> Trainer
+    %% === Middle: Core trainer and store ===
+    subgraph M["Core"]
+        Trainer["Trainer"]
+        Store["LightningStore<br>(InMemory* default)"]
+        Trainer --has--> Algorithm
+        Trainer --has--> Store
+        Trainer --has--> Adapter
+        Trainer --has--> LLMProxy
+    end
+    linkStyle 2,3,4,5 stroke:#839791,stroke-width:2px;
+
+    %% === Right side: Runner side ===
+    subgraph R["Runner Side"]
+        Runner["Runner<br>(AgentRunnerV2* default)"]
+        Tracer["Tracer<br>(AgentOpsTracer*)"]
+        Hooks["Hooks (empty default)"]
+        Agent["Agent<br>(LitAgent*)"]
+        Runner -.injects.-> Tracer
+        Runner -.injects.-> Store
+        Runner -.injects.-> Agent
+        Runner -.injects.-> Hooks
+        Tracer -.injects.-> Store
+        Hooks -.uses.-> Runner
+        Hooks -.uses.-> Agent
+        Hooks -.uses.-> Tracer
+    end
+    linkStyle 6,7,8,9,10 stroke:#896978,stroke-width:2px;
+    linkStyle 11,12,13 stroke:#7a89c2,stroke-width:2px;
+
+    %% === Cross-section connections ===
+    Trainer --has--> Runner
+    Trainer --has--> Tracer
+    Trainer --has--> Hooks
+    Trainer --uses--> Agent
     Algorithm -.injects.-> Store
-    Algorithm -.injects.-> Adapter
-    Algorithm -.injects.-> LLMProxy
-
-    Runner -.injects.-> Agent["Agent (LitAgent)"]
-    Runner -.injects.-> Store
-    Runner -.has.-> Tracer
-
-    %% Cross-wiring done at runtime
-    LLMProxy -.set_store().-> Store
-
-    %% Agent awareness
-    Agent -.set_trainer().-> Trainer
+    LLMProxy -.injects.-> Store
+    Agent -.references.-> Trainer
+    Runner -.references.-> Trainer
+    Algorithm -.references.-> Trainer
+    linkStyle 14,15,16 stroke:#839791,stroke-width:2px;
+    linkStyle 17,20,21,22 stroke:#7a89c2,stroke-width:2px;
+    linkStyle 18,19 stroke:#896978,stroke-width:2px;
 ```
 
 ## Inside an RL Algorithm (VERL Example)
