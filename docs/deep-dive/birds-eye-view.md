@@ -1,14 +1,14 @@
-# The Bird's Eye View of Agent Lightning
+# The Bird's Eye View of Agent-lightning
 
-This article summarizes how agent-lightning (as of v0.2) wires algorithms, runners, and stores together and shows where auxiliary components (tracer, adapters, proxies) plug into the loop. Each section provides a diagram for a different perspective of the system.
+This article summarizes how Agent-lightning (as of v0.2) wires algorithms, runners, and stores together and shows where auxiliary components (tracer, adapters, proxies) plug into the loop. Each section provides a diagram for a different perspective of the system.
 
 ## Algorithm ↔ Runner ↔ Store data flow
 
-At its heart, Agent Lightning is built on three main components that work in a coordinated loop:
+At its heart, Agent-lightning is built on three main components that work in a coordinated loop:
 
-- **Algorithm:** The "brain" of the system. It decides what tasks to run, learns from the results, and updates resources (like AI models or prompts).
-- **Runner:** The "worker" of the system. It executes tasks assigned by the algorithm, runs the agent, and records the results.
-- **LightningStore:** The central "database" and message queue. It acts as the single source of truth, storing tasks, results, and resources, and enabling communication between the Algorithm and Runner.
+* **Algorithm:** The "brain" of the system. It decides what tasks to run, learns from the results, and updates resources (like AI models or prompts).
+* **Runner:** The "worker" of the system. It executes tasks assigned by the algorithm, runs the agent, and records the results.
+* **LightningStore:** The central "database" and message queue. It acts as the single source of truth, storing tasks, results, and resources, and enabling communication between the Algorithm and Runner.
 
 The typical data flow in a training loop is as follows: The **Algorithm** enqueues tasks (called **Rollouts**) into the **Store**. A **Runner** then dequeues a task, executes it, and streams the results (called **Spans**) back to the Store. Once the task is complete, the Algorithm can query the new data from the Store to learn and update its resources.
 
@@ -40,18 +40,18 @@ Solid lines represent direct calls, while dashed lines are asynchronous or long-
 
 ### Key Terminology
 
-We define the following terms which may be helpful for understanding the diagram above.
+We define the following terms, which may be helpful for understanding the diagram above.
 
-- **Resources:** A collection of assets to be tuned or trained. Agents perform rollouts against resources and collect span data. Algorithms use those data to update the resources. In case of RL training, the resources are a tunable model. In case of prompt tuning, the resources are the prompt templates.
-- **Rollout:** A unit of work that an agent performs against a resource. A rollout (noun) can be incomplete, in which case it's also known as **"task"**, **"sample"** or **"job"** (these terms are used interchangeably). The agent executes its own defined workflow against the rollout -- this process is also called "rollout" (verb). After the execution, the rollout (noun) is considered *complete*.
-- **Attempt:** A single execution of a rollout. One rollout can have multiple attempts in case of failures or timeouts.
-- **Span:** During the rollout, the agent can generate multiple spans (also known as "traces" or "events"). The recorded spans are collected in the store, which serves as the crucial part for understanding the agents' behavior and optimizing the agents.
-- **Reward:** Reward is a special span that is semantically defined as a number judging the quality of the rollout for a period of time during the rollout.
-- **Dataset:** A collection of incomplete rollouts (i.e., tasks) for the agent to play with. The three datasets (i.e., train, val, dev) serve as the initial input for the algorithm to enqueue the first batch of rollouts.
+* **Resources:** A collection of assets to be tuned or trained. Agents perform rollouts against resources and collect span data. Algorithms use those data to update the resources. In RL training, the resources are a tunable model. In prompt tuning, the resources are prompt templates.
+* **Rollout:** A unit of work that an agent performs against a resource. A rollout (noun) can be incomplete, in which case it is also known as a **task**, **sample**, or **job** (these terms are used interchangeably). The agent executes its own defined workflow against the rollout — the process is also called "to rollout" (verb). After execution, the rollout (noun) is considered *complete*.
+* **Attempt:** A single execution of a rollout. One rollout can have multiple attempts in case of failures or timeouts.
+* **Span:** During the rollout, the agent can generate multiple spans (also known as "traces" or "events"). The recorded spans are collected in the store, which is crucial for understanding agent behavior and optimizing agents.
+* **Reward:** A special span that is defined as a number judging the quality of the rollout during some period of the rollout.
+* **Dataset:** A collection of incomplete rollouts (i.e., tasks) for the agent to process. The three datasets (train, val, dev) serve as the initial input for the algorithm to enqueue the first batch of rollouts.
 
 ### Store
 
-As discussed previously, the store is the central hub for all data in Agent-lightning. The store exposes a set of APIs for algorithms and runners to interact with the data, and the most important ones are:
+As discussed previously, the store is the central hub for all data in Agent-lightning. The store exposes a set of APIs for algorithms and runners to interact with the data; the most important ones are:
 
 ```python
 from agentlightning.types import AttemptedRollout, ResourcesUpdate, Span, TaskInput
@@ -71,19 +71,21 @@ class LightningStore:
     async def query_spans(self, rollout_id: str, ...): ...
 
     async def update_attempt(self, rollout_id: str, attempt_id: str, status: str, ...): ...
+
+    ...
 ```
 
-As readers can see from the APIs, the essential capability of the store is to provide a queue for rollouts, and a storage for resources, spans, and attempts. Developers should implement the store carefully to ensure the data integrity and consistency, especially when there are multiple runners working in parallel in multiple attempts.
+As the APIs show, the store essentially provides a queue for rollouts and storage for resources, spans, and attempts. Developers should implement the store carefully to ensure data integrity and consistency, especially when multiple runners work in parallel across multiple attempts.
 
-The store is designed to be extensible. Users can implement their own store by inheriting from `LightningStore` and overriding the methods. Agent-lightning provides a few reference implementations, such as `InMemoryLightningStore` (default), and `SqliteLightningStore` (under construction). When parallelized, the store can also need special wrappers to ensure thread/process safety, or delegates the computing to a store in another process or on another machine.
+The store is designed to be extensible. Users can implement their own store by inheriting from `LightningStore` and overriding methods. Agent-lightning provides a few reference implementations, such as `InMemoryLightningStore` (default) and `SqliteLightningStore` (under construction). When parallelized, the store may need special wrappers to ensure thread/process safety or delegate computation to a store in another process or machine.
 
 ## Supporting Components in the Loop
 
-While the core loop is simple, Agent Lightning provides several components to make development easier and more powerful.
+While the core loop is simple, Agent-lightning provides several components to make development easier and more powerful.
 
 ### Tracer
 
-Tracer is a component within the Runner responsible for recording detailed spans (event) during an agent's execution and sending them to the Store. Instead of requiring the agent to manually log every span, the Tracer automatically instruments key methods (e.g., LLM calls) and captures their inputs, outputs, and metadata. This provides a rich, detailed log of the agent's behavior with minimal effort.
+The tracer is a component within the Runner that records detailed spans (events) during an agent's execution and sends them to the Store. Instead of requiring the agent to manually log every span, the tracer automatically instruments key methods (e.g., LLM calls) and captures their inputs, outputs, and metadata. This provides a detailed log of the agent's behavior with minimal effort.
 
 ```mermaid
 sequenceDiagram
@@ -112,7 +114,7 @@ sequenceDiagram
     Tracer->>Agent: Unapply instrumentation
 ```
 
-The above diagram shows the overall data flow between store, tracer and agent. In realistic, it's a bit more complicated than that. The spans are not actually emitted actively by the agent, instead they are "caught" by the tracer by hooking and instrumenting key methods used in the agents. The tracers use a special callback (exporter) to monitor those events and logs to the store. Before the rollout starts, the runner enters a `trace_context` before invoking the agent, which wires the store identifiers into the tracer (illustrated in the following figure). Every span completion then streams back to the store through `LightningSpanProcessor.on_end`, so the agent's instrumentation lands in `add_otel_span`. If the agent's rollout method returns a numeric reward, the runner emits one more OpenTelemetry span before finalizing the attempt.
+The above diagram shows the overall data flow between store, tracer and agent. In realistic, it's a bit more complicated than that. Spans are not emitted actively by the agent; they are intercepted by the tracer by hooking and instrumenting key methods used in the agents.  The tracer uses a callback (called exporter) to monitor events and log to the store. Before a rollout starts, the runner enters a `trace_context` before invoking the agent, wiring store identifiers into the tracer. Each span completion streams back to the store through `LightningSpanProcessor.on_end`, so the agent’s instrumentation lands in `add_otel_span`. If the agent’s rollout method returns a numeric reward, the runner emits one more OpenTelemetry span before finalizing the attempt.
 
 ### Hooks
 
@@ -292,20 +294,18 @@ flowchart TD
 
 ## Putting It All Together: A Reinforcement Learning Example (VERL)
 
-VERL's integration demonstrates how the algorithm consumes the shared infrastructure. Currently the code lives within `agentlightning.algorithm.verl` and `agentlightning.verl` for historical reasons. `agentlightning.verl` is the legacy code, which contains many overlapping and misleading terms (such as the overusing of `Trainer`). `agentlightning.algorithm.verl` is a simpler wrapper to comply with the new algorithm interface.
+VERL shows how an algorithm consumes the shared infrastructure. For historical reasons, code lives in `agentlightning.algorithm.verl` and `agentlightning.verl`. The latter is legacy and reuses terms like `Trainer` in confusing ways. The former is a thin wrapper that conforms to the new algorithm interface. Future versions will merge the two.
 
-As readers may know, the basic problem formulation of Reinforcement Learning is to learn a policy that performs actions upon some states to maximize the expected cumulative reward in an environment. In the context of agents, the policy is typically represented by a language model that generates text (action) based on input prompts (state). To make the language model learnable, there is another need for numeric rewards to judge the quality of the generated text. The (state, action, reward) **triplet** is the fundamental data structure for RL algorithms to learn from.
+Reinforcement learning aims to learn a policy that takes actions in states to maximize expected reward. For agents, the policy is usually a language model. Inputs are prompts (state). Outputs are generated text (action). A numeric score judges quality (reward). The `(state, action, reward)` **triplet** is the basic learning unit.
 
-In Agent-lightning's setup, the environment is implicit in the agent's code, which is a simple workflow that orchestrates one or many LLM calls, and agents judge itself by some rules or another LLM calls. The agents emit many spans during the rollout, which essentially contains all the data needed for RL training. The algorithm's job are several parts:
+In Agent-lightning, the environment is implicit in the agent’s workflow, which orchestrates one or more LLM calls and often self-judges using rules or additional model calls. During a rollout, the agent emits spans that contain everything needed for RL training, including LLM call traces and numeric judge/reward signals. The "algorithm", on the other hand, have more responsibilities.
 
 1. Providing a language model deployment that is currently learning and improving for the agent to interact with;
 2. Preparing the tasks that the agents will perform;
 3. Querying the spans generated, extracting triplets, and converting them into a format that the underlying RL library can consume;
 4. Updating the language model based on the learning signals.
 
-The VERL integration in Agent-lightning covers all these parts. The language model deployment (i.e., chat completion endpoint) is created by the algorithm using `vLLM` and wrapped with `FSDP` for distributed training, both managed by VERL. The tasks are enqueued by the algorithm from the dataset. The spans are queried by the algorithm after rollouts finish, and converted into triplets by `TraceTripletAdapter`. Finally, the triplets are fed into VERL's native training loop to update the language model weights.
-
-The following diagram is a comprehensive sequence diagram that shows how VERL's integration works in Agent-lightning. It's probably the most complicated diagram in this article -- it includes multiple components introduced above, such as the LLM proxy, store and adapter. It's a good knowledge check for readers to see if they can identify the components and their roles in the diagram.
+In the VERL integration, the algorithm launches a chat completion endpoint using `vLLM` and wraps training with `FSDP` for distributed optimization. It enqueues tasks from the dataset. After rollouts finish, it queries spans and converts them to triplets with `TraceTripletAdapter`. VERL’s native training loop then consumes these triplets to update model weights. The workflow can be summarized in the following diagram.
 
 ```mermaid
 sequenceDiagram
@@ -350,15 +350,17 @@ sequenceDiagram
     end
 ```
 
-**Note:** There are interactions between different components injected into or owned by algorithms in the diagram, such as the output of the adapter feeding into the FSDP optimizer. This is for simplicity of illustration and slightly different from the actual implementation, where it's the algorithm main controller that orchestrates the data flow between components.
+**Notes:**
 
-Also note that the VERL's native setup is a bit different. VERL uses a more classic RLHF setup where each action is formulated as one single token instead of a chunk of text. The state is the entire conversation history (including system, user and assistant messages) before the current token. The reward only is given at the end of the conversation. To integrate Agent-lightning with VERL, when updating the language model, we need to convert each (state, action, reward) triplet into one VERL trajectory, which is a `DataProto` containing keys like `input_ids`, `position_ids`, `attention_mask`, and `token_level_scores`. This part comes after the triplets are generated by the adapter, and is not depicted in the diagram above.
+1. There are interactions between different components injected into or owned by algorithms in the diagram, such as the output of the adapter feeding into the FSDP optimizer. This is for simplicity of illustration and slightly different from the actual implementation, where it's the algorithm main controller that orchestrates the data flow between components.
+
+2. **On mapping to VERL.** VERL uses a classic RLHF setup where each action is a single token, the state is the full conversation history up to that token, and reward is given at the end. This is very different from our setup where each action is actually  a chunk of text, although they are both called RL! Therefore, after the adapter produces triplets, the algorithm converts each `(state, action, reward)` into a VERL trajectory (`DataProto`) with keys like `input_ids`, `position_ids`, `attention_mask`, and `token_level_scores`. That conversion happens after triplet generation and is not shown in the diagram.
 
 ## Execution Strategies and Parallelism
 
-Up to this point, you might have observed from the diagram above that there is absolutely no communication between (1) runner and agents and (2) algorithm. The only overlap of them is the trainer and store. This observation is very clear with the diagram within the trainer section, and it's by design. This design allows us to flexibly scale the runner and algorithm independently, which is crucial for large-scale training.
+Readers might have observed from the diagram above that there is absolutely no communication between (1) runner and agents and (2) algorithm. The only overlap of them is the trainer and store. This observation is very clear with the diagram within the trainer section. This design allows us to flexibly scale the runner and algorithm independently, which is crucial for large-scale training.
 
-Agent-lightning creates two bundles (i.e., executable procedures) to separate the runner side and algorithm side. The runner bundle contains the runner, tracer, hooks, and agent. The algorithm bundle contains the algorithm, adapter, and LLM proxy. The store is shared between the two bundles. The trainer is a lightweight component that initializes and connects the two bundles.
+Agent-lightning packages two executable bundles: a runner bundle (runner, tracer, hooks, agent) and an algorithm bundle (algorithm, adapter, LLM proxy). Both share the store. The trainer initializes and connects the bundles.
 
 ```mermaid
 graph TD
@@ -383,19 +385,21 @@ graph TD
     linkStyle 0,1,2,3,4 opacity:0;
 ```
 
-Execution strategies, created and owned by trainer, serves mainly 4 purposes. Firstly, they dictate the placements of the two bundles -- whether they reside in the same thread, the same process, the same machine, or different machines. Secondly, the execution strategy also wraps the store and implements how the store is shared between the two bundles.
+An **execution strategy**, defined and owned by the trainer, governs how algorithm and runner bundles are placed, connected, scaled, and aborted. It serves four primary purposes.
 
-Furthermore, the execution strategy is capable of replicating the runner bundle to multiple threads, multiple processes, or even multiple machines, to scale out the runner side. The algorithm side however is much more complex to parallelize, and since there have been many mature libraries to scale out model training (e.g., DeepSpeed, Megatron), we leave the algorithm side as a single process for now, and scaling should happen within the algorithm implementation itself.
+Execution strategies first determine **bundle placement** — whether the two bundles run in the same thread, process, machine, or across separate machines. They also define **store management**, wrapping the store and specifying how data is shared between bundles.
 
-Aborting is another core feature of execution strategies. Aborting can come from multiple reasons, in case of normal exiting, algorithm failures, runner failures, or user interrupts. The creator of the bundles (i.e., trainer) should make the bundles abortable by exposing a way to signal cancellation. In case of normal exiting, when the algorithm bundle exits, the strategy sets the signal to the runner bundle to abort. However, if the runner bundle exits, the strategy does **NOT** signal the algorithm bundle to abort, because the algorithm bundle can still be running and processing the completed rollouts. Failure and user interrupts are another case. For both cases, the strategy should signal both bundles to abort. If the any bundles fails to abort, the strategy should force kill the bundle at its best effort.
+In terms of **scalability**, the strategy can replicate the runner bundle across multiple threads, processes, or machines to expand throughput on the runner side. The algorithm side remains single-process due to the complexity of parallelization. Mature frameworks such as *DeepSpeed* and *Megatron* already support distributed model training, so scaling of the algorithm bundle is delegated to those implementations.
 
-Agent-lightning currently supports two strategies: shared-memory and client-server, detailed below.
+**Abort handling** is another core responsibility. Aborts may be triggered by normal exits, failures in either bundle, or user interrupts. The trainer must include cancellation interfaces for the bundles so that bundles can be cleanly aborted. When the algorithm bundle exits normally, the strategy signals the runner bundle to terminate. If the runner exits first, no signal is sent to the algorithm, as it may still be processing completed rollouts. In cases of failure or user interruption, the strategy signals both bundles to abort; if a bundle fails to respond, the strategy should attempt a forceful termination.
+
+Agent-lightning currently provides two execution strategies: **shared-memory** and **client-server**, described in the following sections.
 
 ### Shared-memory Strategy
 
-When `SharedMemoryExecutionStrategy` is used, the algorithm and runner bundles run as threads in one single process. The strategy wraps the store with a `LightningStoreThreaded` facade that guards every store call with a lock so concurrent access is safe.
+`SharedMemoryExecutionStrategy` runs algorithm and runner bundles as threads in one process. The strategy wraps the store with `LightningStoreThreaded`, which guards calls with a lock for safe concurrency.
 
-This approach is ideal for lightweight debugging because all components share the same Python heap and do not require serialization (such as prompt tuning with small agents). Not applicable for RL training or agents that need heavy computing.
+This is good for lightweight debugging because components share one Python heap and avoid serialization. It is not suitable for heavy RL training or compute-intensive agents.
 
 ```mermaid
 flowchart TB
@@ -423,11 +427,13 @@ flowchart TB
     LightningStoreFacade -->|thread-safe delegates| BaseStore
 ```
 
-The strategy has a configurable main thread. If the main thread is configured to be the algorithm thread, the main thread runs the algorithm bundle, and spawns multiple threads for the runner bundle. If the main thread is configured to be a runner thread, `n_runners` must be set to 1, and the runner bundle lives in the main thread.
+You can configure which role runs on the main thread. If the main thread runs the algorithm, it is able to spawn multiple runner threads. If it runs a runner, `n_runners` must be 1 and the runner lives on the main thread.
 
 ### Client-server Strategy
 
-`ClientServerExecutionStrategy` separates concerns across processes. The algorithm bundle starts a `LightningStoreServer` (HTTP API) that wraps the original store and communicates with the server wrapper directly. Runner bundles connect through `LightningStoreClient` objects that mirror the store interface over REST. One tricky part is that `LightingStoreServer` also has integrated one client inside, which is designed to make algorithms which launch additional subprocesses (for example, a dedicated LLM proxy worker) convenient. Those subprocesses communicates using the client with the algorithms' main process. Currently this design introduces an extra wrapper that helps debugging and improves fault tolerance. We might revisit this design in the future and enforce the client to be the only way to communicate with the store.
+`ClientServerExecutionStrategy` splits concerns across processes. The algorithm bundle starts a `LightningStoreServer` (HTTP API) that wraps the underlying store. Runners connect via `LightningStoreClient` to call the same interface over REST. The server embeds a client to support algorithm-launched subprocesses (e.g., an LLM proxy worker) that need to talk back to the algorithm’s process through the same API.
+
+Currently this design introduces an extra wrapper in the Server side (as shown in the diagram), which helps debugging and improves fault tolerance. We might revisit this design in the future and enforce the client to be the only way to communicate with the store.
 
 ```mermaid
 flowchart TD
@@ -476,14 +482,14 @@ flowchart TD
 
 ## Online/Continuous Learning
 
-Continuous learning setups keep the algorithm loop running alongside opportunistic and spontaneous runner iterations. Here are the key differences from the batch setup:
+Continuous learning keeps the algorithm loop running while runners report tasks and spans opportunistically. Key differences from batch mode:
 
-1. The algorithm does not `enqueue_rollout` from a fixed dataset. Instead, the rollout tasks and spans are all reported spontaneously by the runners.
-2. The algorithm can `wait_for_rollouts`, but there will be no more expected `rollout_ids`. Instead, the algorithm needs to periodically poll the store for new rollouts and spans or wait for a particular number of new rollouts to arrive.
-3. The runner does not use `iter()` to exhaust rollouts from the store queue. Instead, the runner uses `step(task)` to process one rollout initiated by the user or by a "bigger loop". It also notifies the store that "I'm starting a rollout" before invoking the agent, so that the store can have it recorded.
-4. User or the bigger loop has more control of the store --- what resources the next `step` should use, whether to when to retry, etc.
+1. The algorithm does not enqueue rollouts from a fixed dataset. Runners report tasks/rollouts and spans spontaneously.
+2. The algorithm can wait for rollouts with a expected set of rollout IDs, but more oftenly polls for new rollouts and spans or waits for a count to arrive.
+3. The runner processes one rollout at a time via `step(task)` instead of exhausting a task queue. It notifies the store when starting a rollout so the store records it.
+4. A user or higher-level loop controls which resources the next step uses and when to retry.
 
-All other components like spans, adapters and LLM proxies still work in the same way. The diagram below illustrates the continuous learning setup.
+Spans, adapters, and LLM proxies work the same way.
 
 ```mermaid
 sequenceDiagram
