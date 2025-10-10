@@ -1,0 +1,15 @@
+.md-grid {
+  max-width: 80rem;
+}
+
+@media screen and (min-width: 100em) {
+  html {
+    font-size: 115%;
+  }
+}
+
+@media screen and (min-width: 125em) {
+  html {
+    font-size: 125%;
+  }
+}

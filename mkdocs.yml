@@ -84,7 +84,11 @@ nav:
   - How-To Guides:
     - Train SQL Agent: how-to/train-sql-agent.md
   - Deep Dive:
-    - Server-Client Architecture: deep-dive/server-client-architecture.md
+    - Bird's Eye View: deep-dive/birds-eye-view.md
+    - Server-Client Architecture (Legacy): deep-dive/server-client-architecture.md
   - API Reference:
     - Core: reference/core.md
     - RL: reference/rl.md
+
+extra_css:
+  - stylesheets/extra.css
