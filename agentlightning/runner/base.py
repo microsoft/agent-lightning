@@ -9,17 +9,21 @@ execution lifecycle of agents and coordinating with the store.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Generic, Optional, TypeVar
+import logging
+from contextlib import contextmanager
+from typing import TYPE_CHECKING, Any, Generic, Iterator, Optional, Sequence, TypeVar
 
 from agentlightning.litagent import LitAgent
 from agentlightning.store.base import LightningStore
-from agentlightning.types import NamedResources, ParallelWorkerBase, RolloutMode
+from agentlightning.types import Hook, NamedResources, ParallelWorkerBase, RolloutMode
 
 if TYPE_CHECKING:
     from agentlightning.execution.events import Event
 
 
 T_task = TypeVar("T_task")
+
+logger = logging.getLogger(__name__)
 
 
 class BaseRunner(ParallelWorkerBase, Generic[T_task]):
@@ -108,6 +112,42 @@ class BaseRunner(ParallelWorkerBase, Generic[T_task]):
             NotImplementedError: Must be implemented by subclasses.
         """
         raise NotImplementedError()
+
+    @contextmanager
+    def run_context(
+        self, *, agent: LitAgent[T_task], store: LightningStore, hooks: Optional[Sequence[Hook]] = None
+    ) -> Iterator[BaseRunner[T_task]]:
+        """Context manager for quickly init and teardown the runner,
+        so that you can debug the runner without a trainer environment.
+
+        Args:
+            agent: The LitAgent instance to be managed by this runner.
+                   It should be the same agent that is to be run within the context.
+            store: The LightningStore instance for task coordination and data persistence.
+                   If you don't have one, you can easily create one with `InMemoryLightningStore()`.
+            hooks: Optional sequence of Hook instances to be used by the runner.
+                   Only some runners support hooks.
+        """
+        _initialized: bool = False
+        _worker_initialized: bool = False
+        try:
+            self.init(agent=agent, hooks=hooks)
+            _initialized = True
+            self.init_worker(worker_id=0, store=store)
+            _worker_initialized = True
+            yield self
+        finally:
+            try:
+                if _worker_initialized:
+                    self.teardown_worker(worker_id=0)
+            except Exception:
+                logger.error("Error during runner worker teardown", exc_info=True)
+
+            try:
+                if _initialized:
+                    self.teardown()
+            except Exception:
+                logger.error("Error during runner teardown", exc_info=True)
 
     async def iter(self, *, event: Optional[Event] = None) -> None:
         """Run the runner, continuously iterating over tasks in the store.
