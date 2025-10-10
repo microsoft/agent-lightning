@@ -139,7 +139,7 @@ class MockAlgorithm(FastAlgorithm):
         val_dataset_length = len(val_dataset) if val_dataset is not None else 0
         if train_dataset_length == 0 and val_dataset_length == 0:
             logger.error(
-                "DummyAlgorithm requires at least a train_dataset or val_dataset to run. No train_dataset or val_dataset is provided. Exiting."
+                "MockAlgorithm requires at least a train_dataset or val_dataset to run. No train_dataset or val_dataset is provided. Exiting."
             )
             return
 
