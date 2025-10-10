@@ -13,3 +13,27 @@
     font-size: 135%;
   }
 }
+
+[data-md-color-primary="agl"] {
+  --md-primary-fg-color:        #c45259;
+  --md-primary-fg-color--light: #e8b4b7;
+  --md-primary-fg-color--dark:  #9a3038;
+}
+
+[data-md-color-accent="agl"] {
+  --md-accent-fg-color:         #f69047;
+  --md-accent-fg-color--light:  #fcc59e;
+  --md-accent-fg-color--dark:   #da6005;
+}
+
+/* Documentation version warning banner */
+.version-warning {
+  background-color: #FFD15D18;
+  padding: 1em;
+  font-weight: 500;
+  position: relative;
+  z-index: 1000;
+  border: 2px solid #FFD15D;
+  border-radius: 0.25em;
+  margin-bottom: 2em;
+}

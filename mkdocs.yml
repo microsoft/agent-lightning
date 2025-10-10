@@ -5,18 +5,19 @@ repo_name: agent-lightning
 
 theme:
   name: material
+  custom_dir: docs/overrides
   logo: assets/favicon-white.svg
   favicon: assets/favicon.svg
   palette:
     - scheme: default
-      primary: red
-      accent: red
+      primary: agl
+      accent: agl
       toggle:
         icon: material/brightness-7
         name: Switch to dark mode
     - scheme: slate
-      primary: red
-      accent: red
+      primary: agl
+      accent: agl
       toggle:
         icon: material/brightness-4
         name: Switch to light mode
