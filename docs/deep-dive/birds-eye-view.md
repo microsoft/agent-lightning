@@ -399,14 +399,14 @@ flowchart TB
         subgraph RunnerThread3 [Thread 3]
             RunnerN[Runner bundle #N]
         end
-        LightningStore[LightningStoreThreaded]
+        LightningStoreFacade[LightningStoreThreaded]
         BaseStore[Underlying LightningStore]
     end
-    Algorithm -- async calls --> LightningStore
-    Runner1 -- async calls --> LightningStore
-    Runner2 -- async calls --> LightningStore
-    RunnerN -- async calls --> LightningStore
-    LightningStore -->|thread-safe delegates| BaseStore
+    Algorithm -- async calls --> LightningStoreFacade
+    Runner1 -- async calls --> LightningStoreFacade
+    Runner2 -- async calls --> LightningStoreFacade
+    RunnerN -- async calls --> LightningStoreFacade
+    LightningStoreFacade -->|thread-safe delegates| BaseStore
 ```
 
 The strategy has a configurable main thread. If the main thread is configured to be the algorithm thread, the main thread runs the algorithm bundle, and spawns multiple threads for the runner bundle. If the main thread is configured to be a runner thread, `n_runners` must be set to 1, and the runner bundle lives in the main thread.
