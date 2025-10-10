@@ -4,7 +4,15 @@ This article summarizes how agent-lightning (as of v0.2) wires algorithms, runne
 
 ## Algorithm ↔ Runner ↔ Store data flow
 
-At the very high level, Agent-lightning bundles the configured algorithm and runner and asks the "execution strategy" (details below) to execute them against the same `LightningStore` instance. The algorithm (in an automatic-interactive setting) typically enqueues work (new rollouts and resource updates) while the runner dequeues and executes those tasks, streaming traces and status updates back into the store. Once rollouts finish, the algorithm can query the completed data and apply adapters to convert the data for learning signals. The diagram below highlights the steady-state flow. We consider a very simple setup without any optional components and parallelism.
+At its heart, Agent Lightning is built on three main components that work in a coordinated loop:
+
+- **Algorithm:** The "brain" of the system. It decides what tasks to run, learns from the results, and updates resources (like AI models or prompts).
+- **Runner:** The "worker" of the system. It executes tasks assigned by the algorithm, runs the agent, and records the results.
+- **LightningStore:** The central "database" and message queue. It acts as the single source of truth, storing tasks, results, and resources, and enabling communication between the Algorithm and Runner.
+
+The typical data flow in a training loop is as follows: The **Algorithm** enqueues tasks (called **Rollouts**) into the **Store**. A **Runner** then dequeues a task, executes it, and streams the results (called **Spans**) back to the Store. Once the task is complete, the Algorithm can query the new data from the Store to learn and update its resources.
+
+The diagram below shows this fundamental interaction in a simple, non-parallel setup.
 
 ```mermaid
 sequenceDiagram
@@ -28,22 +36,22 @@ sequenceDiagram
     end
 ```
 
-*Solid lines are instantaneous calls, dashed lines are async / long-running.*
+Solid lines represent direct calls, while dashed lines are asynchronous or long-running operations.
 
-### Key Terms on the Arrows
+### Key Terminology
 
 We define the following terms which may be helpful for understanding the diagram above.
 
-- **Resources:** A collection of assets to be tuned or trained. Agents perform rollouts against resources and collect span data. Algorithms use those data to update the resources. In case of RL training, the resources are the tunable model. In case of prompt tuning, the resources are the prompt templates.
-- **Rollout:** A unit of work that an agent performs against a resource. A rollout (noun) can be incomplete, in which case it's also known as **"task"**, **"sample"** or **"job"** (these terms are used interchangeably). The agent executes its own defined workflow against the rollout -- this process is also called "rollout" (verb). After running is complete, the rollout (noun) is completed.
+- **Resources:** A collection of assets to be tuned or trained. Agents perform rollouts against resources and collect span data. Algorithms use those data to update the resources. In case of RL training, the resources are a tunable model. In case of prompt tuning, the resources are the prompt templates.
+- **Rollout:** A unit of work that an agent performs against a resource. A rollout (noun) can be incomplete, in which case it's also known as **"task"**, **"sample"** or **"job"** (these terms are used interchangeably). The agent executes its own defined workflow against the rollout -- this process is also called "rollout" (verb). After the execution, the rollout (noun) is considered *complete*.
 - **Attempt:** A single execution of a rollout. One rollout can have multiple attempts in case of failures or timeouts.
 - **Span:** During the rollout, the agent can generate multiple spans (also known as "traces" or "events"). The recorded spans are collected in the store, which serves as the crucial part for understanding the agents' behavior and optimizing the agents.
 - **Reward:** Reward is a special span that is semantically defined as a number judging the quality of the rollout for a period of time during the rollout.
 - **Dataset:** A collection of incomplete rollouts (i.e., tasks) for the agent to play with. The three datasets (i.e., train, val, dev) serve as the initial input for the algorithm to enqueue the first batch of rollouts.
 
-## Store
+### Store
 
-The store is the central hub for all data in agent-lightning. It serves as the source of truth for resources, rollouts, attempts, and spans. The store exposes a set of APIs for algorithms and runners to interact with the data, and the most important ones are:
+As discussed previously, the store is the central hub for all data in Agent-lightning. The store exposes a set of APIs for algorithms and runners to interact with the data, and the most important ones are:
 
 ```python
 from agentlightning.types import AttemptedRollout, ResourcesUpdate, Span, TaskInput
@@ -65,17 +73,17 @@ class LightningStore:
     async def update_attempt(self, rollout_id: str, attempt_id: str, status: str, ...): ...
 ```
 
-As you can see from the APIs, the essential capability of the store is to provide a queue for rollouts, and a storage for resources, spans, and attempts. The store should be carefully implemented to ensure the data integrity and consistency, especially when there are multiple runners working in parallel in multiple attempts.
+As readers can see from the APIs, the essential capability of the store is to provide a queue for rollouts, and a storage for resources, spans, and attempts. Developers should implement the store carefully to ensure the data integrity and consistency, especially when there are multiple runners working in parallel in multiple attempts.
 
 The store is designed to be extensible. Users can implement their own store by inheriting from `LightningStore` and overriding the methods. Agent-lightning provides a few reference implementations, such as `InMemoryLightningStore` (default), and `SqliteLightningStore` (under construction). When parallelized, the store can also need special wrappers to ensure thread/process safety, or delegates the computing to a store in another process or on another machine.
 
 ## Supporting Components in the Loop
 
-Although the diagram above is simple and clear, it doesn't show many supporting components that Agent-lightning offers to make writing agents, runners, and algorithms easier. Here we introduce the key components and how they fit into the loop.
+While the core loop is simple, Agent Lightning provides several components to make development easier and more powerful.
 
 ### Tracer
 
-Tracer is a component that serves as a member variable of runners to record spans during the agents' rollout and send it to the store.
+Tracer is a component within the Runner responsible for recording detailed spans (event) during an agent's execution and sending them to the Store. Instead of requiring the agent to manually log every span, the Tracer automatically instruments key methods (e.g., LLM calls) and captures their inputs, outputs, and metadata. This provides a rich, detailed log of the agent's behavior with minimal effort.
 
 ```mermaid
 sequenceDiagram
@@ -108,7 +116,9 @@ The above diagram shows the overall data flow between store, tracer and agent. I
 
 ### Hooks
 
-Hooks are user-defined callbacks to augment an existing runner's behavior. Currently, hooks live within the runner and can be called at the beginning and the end of trace and rollout.
+Hooks are user-defined callback functions that allow you to augment a Runner's behavior at specific points in its lifecycle. You can use hooks to add custom logging, set up resources before a rollout begins, or tear them down after it ends. Hooks can be triggered at four key moments: `on_rollout_start`, `on_trace_start`, `on_trace_end`, and `on_rollout_end`.
+
+Users should pay special attention to the difference between `on_trace_end` and `on_rollout_end`. The former is called right before the tracer exits the trace context, while the latter is called after the runner processes the final leftover rewards and spans, and finalizes the attempt in the store.
 
 ```mermaid
 sequenceDiagram
@@ -140,13 +150,11 @@ sequenceDiagram
     end
 ```
 
-This diagram shows the 4 hooks that Agent-lightning currently supports. Users should pay special attention to the difference between `on_trace_end` and `on_rollout_end`. The former is called right before the tracer exits the trace context, while the latter is called after the runner finalizes the attempt in the store.
-
 ### Adapter
 
-The adapter is the algorithm's bridge between raw traces and learning signals. Users can configure an adapter in the algorithm before `algorithm.run` starts, so that the algorithm instance can later call `adapter.adapt(...)` on spans fetched from the store to conveniently converts the spans into a format suitable for learning.
+The Adapter is a component used by the Algorithm to transform raw data from the Store into a format suitable for learning. Runners stream raw spans into the Store during execution. Later, the Algorithm queries these spans and uses an Adapter to convert them into structured data, like training examples for a reinforcement learning model.
 
-The runner streams spans into the store as it executes rollouts, and algorithms query those spans to construct data needed for learning. For example, the VERL algorithm collects spans for each completed rollout, converts them with `TraceTripletAdapter` (by default), which implements `adapt` by traversing OpenTelemetry spans, aligning prompts, responses, and reward spans into `Triplet` records (details below) that downstream RL fine-tuning code can consume. The figure below summarizes the relationship.
+For instance, the `TraceTripletAdapter` processes OpenTelemetry spans to create `(prompt, response, reward)` triplets, which are the fundamental data structure for many RL fine-tuning algorithms.
 
 ```mermaid
 flowchart LR
@@ -158,14 +166,20 @@ flowchart LR
 
 ### LLM Proxy
 
-The LLM proxy is an optional bridge between the runner's LLM calls and the algorithm's resource management. `LLMProxy` is associated with a store and it's handed over to the algorithm. LLM Proxy is added as a special resource that redirects to LLM endpoint. This endpoint can be:
+The LLM Proxy is an optional bridge component that sits between an agent and the algorithms' resources. It acts as a centralized endpoint for all LLM calls. Usually the proxy URL is added to the store as a special resource, so that the runner can fetch it along with other resources when dequeuing a rollout. During rollouts, the runner invokes the proxy's HTTP endpoint instead of calling a model backend directly.
+
+This design offers several benefits:
+
+1. **Instrumentation:** It automatically captures detailed traces of LLM interactions (prompts, responses, metadata) and sends them to the Store, complementing the Tracer, especially when the agent's code is hard to instrument directly.
+2. **Backend Abstraction:** It provides a unified interface for various LLM backends (OpenAI, Anthropic, local models) and can add features like retry logic, rate limiting, and caching.
+3. **Resource Management:** The Algorithm can dynamically update which LLM the agent uses (e.g., swapping to a newly fine-tuned model) by simply swapping the backend model the proxy is using, without interrupting the agent's code.
+
+The benefits above seem to be all discussed within the context of model fine-tuning. As a matter of fact, the proxy can be useful for prompt tuning as well. The algorithm can register one of the following two types of endpoints into the proxy:
 
 1. **Endpoint served by the algorithm:** If the algorithm is internally updating the LLM weights (e.g., RL), it can launch an LLM inference engine (i.e., a model server) and register the endpoint URL with the proxy. The proxy then forwards all LLM calls to that endpoint.
 2. **Third-party LLM endpoint:** If the algorithm is not updating the LLM weights (e.g., prompt tuning), it can register a third-party LLM endpoint into the proxy.
 
-During rollouts, the runner invokes the proxy's HTTP endpoint instead of calling a model backend directly. The proxy augments each request with rollout/attempt metadata, tracks which rollout is initiating the current request, and then records OpenTelemetry spans via `LightningSpanExporter`. **LLM Proxy serves as an effective complement to the tracer.** The tracer instruments the agent's code, while the proxy instruments the LLM calls, which is crucial when instrumenting agent's code is difficult. Together they form a complete picture of the agent's behavior.
-
-Functionally, the proxy acts as a "shield" in front of LLM calls. It's also a convenient way to integrate diverse LLM backends (e.g., OpenAI, Azure, Anthropic, local models) without changing the agent code. It can also be used to support diverse LLM clients (e.g., Anthropic API), add retry logic, rate limiting and caching.
+We show a diagram below that illustrates how the proxy fits into the overall data flow.
 
 ```mermaid
 sequenceDiagram
@@ -205,9 +219,9 @@ In this diagram, the store receives spans from both the proxy and the runner. We
 
 ### Trainer
 
-The Trainer is the high-level orchestrator that initializes and connects all major components—algorithm, runner, store, tracer, adapter, LLM proxy, and hooks. The components can have a lifecycle as long as the trainer. The trainer defines their lifecycles and injects shared dependencies so that execution, tracing, and learning operate within a consistent environment.
+The Trainer is the high-level orchestrator that initializes and connects all major components -- algorithm, runner, store, tracer, adapter, LLM proxy, and hooks. The components can have a lifecycle as long as the trainer. The trainer manages their lifecycles and handles dependency injection, ensuring that every part of the system operates within a consistent and shared environment.
 
-**Roles and Relationships:**
+Below, we demonstrate how the components relate to each other and their roles. We first clarify the roles and relationships shown in the diagram:
 
 1. **Owns:** components that the trainer constructs and manages directly (e.g., runner, tracer).
 2. **Injects:** components passed into others as dependencies.
@@ -276,7 +290,7 @@ flowchart TD
     style R fill:none;
 ```
 
-## Inside an RL Algorithm (VERL Example)
+## Putting It All Together: A Reinforcement Learning Example (VERL)
 
 VERL's integration demonstrates how the algorithm consumes the shared infrastructure. Currently the code lives within `agentlightning.algorithm.verl` and `agentlightning.verl` for historical reasons. `agentlightning.verl` is the legacy code, which contains many overlapping and misleading terms (such as the overusing of `Trainer`). `agentlightning.algorithm.verl` is a simpler wrapper to comply with the new algorithm interface.
 
