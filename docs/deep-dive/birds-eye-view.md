@@ -244,7 +244,64 @@ flowchart TD
 
 ## Inside an RL Algorithm (VERL Example)
 
-TODO: talk about LLM inference engine (and the proxy shield), resource (LLM endpoint), triplets (adapter output).
+VERL's integration demonstrates how the algorithm consumes the shared infrastructure. Currently the code lives within `agentlightning.algorithm.verl` and `agentlightning.verl` for historical reasons. `agentlightning.algorithm.verl` is a simpler wrapper to comply with the new algorithm interface.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Adapter as TraceTripletAdapter
+    participant Algo as Algorithm<br>Main Process
+    participant vLLM as vLLM Chat<br>Completion Endpoint
+    participant FSDP as FSDP / Megatron<br>Trainer
+    participant Store as LightningStore
+    participant Runner
+    participant Agent
+    participant LLMProxy as LLM Proxy
+
+    Note over Algo,LLMProxy: Algorithm manages LLMProxy as member
+    Note over Algo,Adapter: Algorithm manages Adapter as member
+
+    loop Over the Dataset
+        Algo->>Algo: Launch LLM Inference Engine<br>(optional)
+        Algo->>LLMProxy: Register Inference Engine<br>(optional)
+        Algo-->>Store: enqueue_rollout + add_resources
+        LLMProxy->>Store: Proxy URL added as Resource
+        Store-->>Runner: dequeue_rollout → AttemptedRollout
+        Store-->>Runner: get_latest_resources
+        Runner->>Agent: rollout + resources<br>(LLM Proxy URL as resource)
+        loop Defined by Agent
+            Agent-->>LLMProxy: LLM calls
+            LLMProxy-->>Store: add_span or add_otel_span
+            LLMProxy-->>Agent: LLM responses
+            Agent-->>Runner: rewards
+            Runner-->>Store: add_span or add_otel_span
+        end
+        Runner-->>Store: update_attempt("finished", status)
+        Store-->>Algo: query_rollouts + spans
+        Algo->>Adapter: adapt(spans) → (prompt, response, reward) triplets
+        Algo-->>Algo: Update LLM Weights<br>(optional)
+    end
+```
+
+1. **LLM inference engine via proxy shield:** `AgentModeDaemon` calls
+   `LLMProxy.as_resource()` to materialize a named resource describing how to
+   contact the inference backend (model name, sampling parameters, etc.). The
+   resource identifier is stored in the `LightningStore` so every rollout uses a
+   consistent logical model while the proxy handles request rewriting and
+   telemetry capture.
+2. **Resources as algorithm state:** Before enqueueing rollouts, the daemon (on
+   behalf of the algorithm) uploads the current resource snapshot to the store.
+   When runners dequeue work, they fetch the same resource version, guaranteeing
+   they evaluate the policy corresponding to the current PPO iteration.
+3. **Triplets derived from adapter output:** After runners finish, the daemon
+   queries spans for each rollout and feeds them through the injected
+   `TraceTripletAdapter`. The resulting `(prompt, response, reward)` triplets are
+   converted into VERL’s `DataProto` batches, powering downstream advantage and
+   gradient computations.
+
+Because all three concerns—model routing, resource versioning, and trace
+interpretation—flow through the store boundary, VERL can scale across processes
+without bespoke communication channels.
 
 ## Execution Strategies and Parallelism
 
