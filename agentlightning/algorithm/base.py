@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import weakref
-from typing import TYPE_CHECKING, Any, Awaitable, Optional, Union, overload
+from typing import TYPE_CHECKING, Any, Awaitable, Optional, Union
 
 from agentlightning.adapter import TraceAdapter
 from agentlightning.client import AgentLightningClient

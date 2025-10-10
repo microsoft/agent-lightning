@@ -21,7 +21,7 @@ from agentlightning import LLM, AgentLightningServer, NamedResources, Rollout, c
 from agentlightning.adapter.triplet import BaseTraceTripletAdapter, TraceTripletAdapter
 from agentlightning.llm_proxy import LLMProxy, ModelConfig
 from agentlightning.store.base import LightningStore
-from agentlightning.types import RolloutV2, Task
+from agentlightning.types import RolloutConfig, RolloutV2, Task
 
 configure_logger()
 
@@ -401,6 +401,13 @@ class AgentModeDaemon:
                         mode="train" if is_train else "val",
                         resources_id=resources_id,
                         metadata=task_metadata,
+                    )
+                    await self.store.update_rollout(
+                        rollout_id=rollout.rollout_id,
+                        config=RolloutConfig(
+                            unresponsive_seconds=self.llm_timeout_seconds,
+                            timeout_seconds=self.llm_timeout_seconds,
+                        ),
                     )
                     rollout_id = rollout.rollout_id
 
