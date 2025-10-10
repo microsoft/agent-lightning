@@ -5,7 +5,7 @@ from __future__ import annotations
 import functools
 import inspect
 import weakref
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Generic, Literal, Optional, TypeVar, Union, overload
+from typing import TYPE_CHECKING, Any, Awaitable, Dict, Generic, Literal, Optional, Protocol, TypeVar, Union, overload
 
 from agentlightning.adapter import TraceAdapter
 from agentlightning.client import AgentLightningClient
@@ -162,8 +162,58 @@ class FastAlgorithm(BaseAlgorithm):
 
 
 # Algorithm function signature types
-AlgorithmFuncSync = Callable[[Optional[Dataset[Any]], Optional[Dataset[Any]]], None]
-AlgorithmFuncAsync = Callable[[Optional[Dataset[Any]], Optional[Dataset[Any]]], Awaitable[None]]
+# We've missed a lot of combinations here.
+# Let's add them in future.
+
+
+class AlgorithmFuncSyncFull(Protocol):
+    def __call__(
+        self,
+        *,
+        store: LightningStore,
+        train_dataset: Optional[Dataset[Any]],
+        val_dataset: Optional[Dataset[Any]],
+        llm_proxy: Optional[LLMProxy],
+        adapter: Optional[TraceAdapter[Any]],
+        initial_resources: Optional[NamedResources],
+    ) -> None: ...
+
+
+class AlgorithmFuncSyncOnlyStore(Protocol):
+    def __call__(self, *, store: LightningStore) -> None: ...
+
+
+class AlgorithmFuncSyncOnlyDataset(Protocol):
+    def __call__(self, *, train_dataset: Optional[Dataset[Any]], val_dataset: Optional[Dataset[Any]]) -> None: ...
+
+
+class AlgorithmFuncAsyncFull(Protocol):
+    def __call__(
+        self,
+        *,
+        store: LightningStore,
+        train_dataset: Optional[Dataset[Any]],
+        val_dataset: Optional[Dataset[Any]],
+        llm_proxy: Optional[LLMProxy],
+        adapter: Optional[TraceAdapter[Any]],
+        initial_resources: Optional[NamedResources],
+    ) -> Awaitable[None]: ...
+
+
+class AlgorithmFuncAsyncOnlyStore(Protocol):
+    def __call__(self, *, store: LightningStore) -> Awaitable[None]: ...
+
+
+class AlgorithmFuncAsyncOnlyDataset(Protocol):
+    def __call__(
+        self, *, train_dataset: Optional[Dataset[Any]], val_dataset: Optional[Dataset[Any]]
+    ) -> Awaitable[None]: ...
+
+
+AlgorithmFuncAsync = Union[AlgorithmFuncAsyncOnlyStore, AlgorithmFuncAsyncOnlyDataset, AlgorithmFuncAsyncFull]
+
+AlgorithmFuncSync = Union[AlgorithmFuncSyncOnlyStore, AlgorithmFuncSyncOnlyDataset, AlgorithmFuncSyncFull]
+
 AlgorithmFunc = Union[AlgorithmFuncSync, AlgorithmFuncAsync]
 
 
@@ -195,7 +245,8 @@ class FunctionalAlgorithm(BaseAlgorithm, Generic[AF]):
                            (train_dataset, val_dataset) -> None
         """
         super().__init__()
-        self.algorithm_func = algorithm_func
+        self._algorithm_func = algorithm_func
+        self._sig = inspect.signature(algorithm_func)
         self._is_async = inspect.iscoroutinefunction(algorithm_func)
 
         # Copy function metadata to preserve type hints and other attributes
@@ -215,6 +266,9 @@ class FunctionalAlgorithm(BaseAlgorithm, Generic[AF]):
         val_dataset: Optional[Dataset[Any]] = None,
     ) -> Awaitable[None]: ...
 
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        return self._algorithm_func(*args, **kwargs)  # type: ignore
+
     def run(
         self,
         train_dataset: Optional[Dataset[Any]] = None,
@@ -229,23 +283,40 @@ class FunctionalAlgorithm(BaseAlgorithm, Generic[AF]):
         Returns:
             None or Awaitable[None] if the function is async.
         """
-        if self._is_async:
-            # Return the coroutine for async functions
-            return self.algorithm_func(train_dataset, val_dataset)  # type: ignore
-        else:
-            # Execute sync function directly
-            return self.algorithm_func(train_dataset, val_dataset)  # type: ignore
+        kwargs: Dict[str, Any] = {}
+        if "store" in self._sig.parameters:
+            kwargs["store"] = self.get_store()
+        if "adapter" in self._sig.parameters:
+            kwargs["adapter"] = self.get_adapter()
+        if "llm_proxy" in self._sig.parameters:
+            kwargs["llm_proxy"] = self.get_llm_proxy()
+        if "initial_resources" in self._sig.parameters:
+            kwargs["initial_resources"] = self.get_initial_resources()
+        if "train_dataset" in self._sig.parameters:
+            kwargs["train_dataset"] = train_dataset
+        elif train_dataset is not None:
+            raise TypeError(
+                f"train_dataset is provided but not supported by the algorithm function: {self._algorithm_func}"
+            )
+        if "val_dataset" in self._sig.parameters:
+            kwargs["val_dataset"] = val_dataset
+        elif val_dataset is not None:
+            raise TypeError(
+                f"val_dataset is provided but not supported by the algorithm function: {self._algorithm_func}"
+            )
+        # both sync and async functions can be called with the same signature
+        return self._algorithm_func(**kwargs)  # type: ignore
 
 
 @overload
-def algorithm(func: AlgorithmFuncSync) -> FunctionalAlgorithm[Literal[False]]: ...
+def algo(func: AlgorithmFuncSync) -> FunctionalAlgorithm[Literal[False]]: ...
 
 
 @overload
-def algorithm(func: AlgorithmFuncAsync) -> FunctionalAlgorithm[Literal[True]]: ...
+def algo(func: AlgorithmFuncAsync) -> FunctionalAlgorithm[Literal[True]]: ...
 
 
-def algorithm(func: AlgorithmFunc) -> Union[FunctionalAlgorithm[Literal[False]], FunctionalAlgorithm[Literal[True]]]:
+def algo(func: AlgorithmFunc) -> Union[FunctionalAlgorithm[Literal[False]], FunctionalAlgorithm[Literal[True]]]:
     """Create a BaseAlgorithm from a function.
 
     This decorator allows you to define an algorithm using a simple function
@@ -262,14 +333,14 @@ def algorithm(func: AlgorithmFunc) -> Union[FunctionalAlgorithm[Literal[False]],
         type hints and behavior while providing all algorithm functionality.
 
     Example:
-        @algorithm
+        @algo
         def my_algorithm(train_dataset, val_dataset):
             # Algorithm logic here
             for task in train_dataset:
                 # Process training tasks
                 pass
 
-        @algorithm
+        @algo
         async def my_async_algorithm(train_dataset, val_dataset):
             # Async algorithm logic here
             async for task in train_dataset:
