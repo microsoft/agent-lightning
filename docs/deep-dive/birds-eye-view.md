@@ -17,13 +17,14 @@ sequenceDiagram
     loop Over the dataset
         Algo->>Store: add_resources + enqueue_rollout
         Store-->>Runner: dequeue_rollout → AttemptedRollout
+        Store-->>Runner: get_latest_resources
         Runner->>Store: update_attempt("running", worker_id)
         Runner->>Agent: rollout + resources
-        Agent-->>Runner: reward/triplets/spans
+        Agent-->>Runner: reward / spans
         Runner->>Store: add_span or add_otel_span
         Runner->>Store: update_attempt("finished", status)
         Store-->>Algo: query_rollouts + spans
-        Algo-->>Algo: update_resources (optional)
+        Algo-->>Algo: Update resources (optional)
     end
 ```
 
@@ -59,6 +60,7 @@ sequenceDiagram
     Tracer->>Agent: Apply instrumentation
     loop Until no more rollouts
         Store-->>Runner: dequeue_rollout → AttemptedRollout
+        Store-->>Runner: get_latest_resources
         Runner->>Agent: training_rollout / validation_rollout
         loop For each finished span
             Agent-->>Tracer: openai.chat.completion invoked<br>agent.execute invoked<br>...
@@ -68,20 +70,67 @@ sequenceDiagram
         Runner->>Store: update_attempt(status)
     end
     Tracer->>Agent: Unapply instrumentation
-
 ```
 
 The above diagram shows the overall data flow between store, tracer and agent. The implementation is slightly different from the ideal diagram. The spans are not actually emitted actively by the agent, instead they are "caught" by the tracer by hooking and instrumenting key methods used in the agents. The tracers use a special callback (exporter) to monitor those events and logs to the store. Before the rollout starts, the runner enters a tracing context before invoking the agent, which wires the store identifiers into the tracer. Every span completion then streams back to the store through `LightningSpanProcessor.on_end`, so the agent's instrumentation lands in `add_otel_span`. If the agent's rollout method returns a numeric reward, the runner emits one more OpenTelemetry span before finalizing the attempt.
 
 ### Adapter
 
-TODO: relationship between adapter, store, algorithm.
+The adapter is the algorithm's bridge between raw traces and learning signals. Users can configure an adapter before `algorithm.run` starts, so every algorithm instance can later call `adapter.adapt(...)` on spans fetched from the store.
+
+The runner streams spans into the store as it executes rollouts, and algorithms query those spans to construct data needed for learning. For example, the VERL algorithm collects spans for each completed rollout, converts them with `TraceTripletAdapter` (by default), which implements `adapt` by traversing OpenTelemetry spans, aligning prompts, responses, and reward spans into `Triplet` records (details below) that downstream RL fine-tuning code can consume. The figure below summarizes the relationship.
+
+```mermaid
+flowchart LR
+    Runner -- (1) add_otel_span --> Store
+    Store -- (2) query_spans --> Algorithm
+    Algorithm -- (3) spans --> Adapter
+    Adapter -- (4) transformed data --> Algorithm
+```
 
 ### LLM Proxy
 
-TODO: relationship between llm_proxy, store, algorithm.
+The LLM proxy is an optional bridge between the runner's LLM calls and the algorithm's resource management. `LLMProxy` is associated with a store and it's handed over to the algorithm. LLM Proxy is added as a special resource that redirects to LLM endpoint. This endpoint can be:
 
-state the functionality of LLM Proxy.
+1. **Endpoint served by the algorithm:** If the algorithm is internally updating the LLM weights (e.g., RL), it can launch an LLM inference engine (i.e., a model server) and register the endpoint URL with the proxy. The proxy then forwards all LLM calls to that endpoint.
+2. **Third-party LLM endpoint:** If the algorithm is not updating the LLM weights (e.g., prompt tuning), it can register a third-party LLM endpoint into the proxy.
+
+During rollouts, the runner invokes the proxy's HTTP endpoint instead of calling a model backend directly. The proxy augments each request with rollout/attempt metadata, tracks which rollout is initiating the current request, and then records OpenTelemetry spans via `LightningSpanExporter`.
+
+Functionally, the proxy acts as a "shield" in front of LLM calls. It's also a convenient way to integrate diverse LLM backends (e.g., OpenAI, Azure, Anthropic, local models) without changing the agent code. It can also be used to support diverse LLM clients (e.g., Anthropic API), add retry logic, rate limiting and caching.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Algo as Algorithm
+    participant LLMProxy as LLM Proxy
+    participant Store
+    participant Runner
+    participant Agent
+
+    Note over Algo,LLMProxy: Algorithm manages LLMProxy as member
+
+    loop Over the Dataset
+        Algo->>Algo: Launch LLM Inference Engine<br>(optional)
+        Algo->>LLMProxy: Register Inference Engine<br>(optional)
+        Algo->>Store: enqueue_rollout
+        LLMProxy->>Store: Proxy URL added as Resource
+        Store-->>Runner: dequeue_rollout → AttemptedRollout
+        Store-->>Runner: get_latest_resources
+        Runner->>Agent: rollout + resources<br>(LLM Proxy URL as resource)
+        loop Defined by Agent
+            Agent-->>LLMProxy: LLM calls
+            LLMProxy->>Store: add_span or add_otel_span
+            LLMProxy-->>Agent: LLM responses
+            Agent-->>Runner: rewards
+            Runner->>Store: add_span or add_otel_span
+        end
+        Runner->>Store: update_attempt("finished", status)
+        Store-->>Algo: query_rollouts + spans
+        Algo-->>Algo: Update LLM Weights<br>(optional)
+    end
+```
+
 
 ### Trainer
 
@@ -94,6 +143,8 @@ TODO: a diagram showing the lifecycle of all components.
 TODO: talk about LLM inference engine (and the proxy shield), resource (LLM endpoint), triplets (adapter output).
 
 ## Execution Strategies and Parallelism
+
+A key observation from the diagram above is that there is absolutely no communication between (1) runner and agents and (2) algorithm. The only overlap of them is the store.
 
 TODO: talk about bundles: algorithm bundle and runner bundle. Runner can be forked and parallelized. Bundles communicate with each other through the store.
 
