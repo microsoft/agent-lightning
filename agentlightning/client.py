@@ -1,5 +1,7 @@
 # Copyright (c) Microsoft. All rights reserved.
 
+"""Legacy client for interacting with a legacy Agent Lightning server."""
+
 import asyncio
 import logging
 import time

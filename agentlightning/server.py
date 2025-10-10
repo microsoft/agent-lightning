@@ -1,5 +1,7 @@
 # Copyright (c) Microsoft. All rights reserved.
 
+"""Legacy server for the Agent Lightning framework. Deprecated in favor of agentlightning.store."""
+
 from __future__ import annotations
 
 import asyncio

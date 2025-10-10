@@ -41,6 +41,26 @@ jobs:
           name: dependencies-${{ matrix.setup }}
           path: requirements-freeze.txt
           compression-level: 0
+
+      - name: APO example (legacy)
+        run: |
+          set -ex
+          . .venv/bin/activate
+          cd examples/apo
+          python legacy_apo_client.py &
+          sleep 3  # Wait for the client to be up
+          python legacy_apo_server.py
+          pkill -f legacy_apo_client.py && echo "SIGTERM sent to legacy_apo_client.py" || echo "No legacy_apo_client.py process found"
+          while pgrep -f legacy_apo_client.py; do
+            echo "Waiting for legacy_apo_client.py to finish..."
+            sleep 5
+          done
+          echo "legacy_apo_client.py has finished."
+          sleep 10
+        env:
+          OPENAI_API_BASE: ${{ secrets.OPENAI_API_BASE }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
       - name: Prepare Spider dataset
         run: |
           set -ex
