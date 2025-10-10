@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any, Awaitable, Optional, Union
 from agentlightning.adapter import TraceAdapter
 from agentlightning.client import AgentLightningClient
 from agentlightning.store.base import LightningStore
-from agentlightning.types import Dataset
+from agentlightning.types import Dataset, NamedResources
 
 if TYPE_CHECKING:
     from agentlightning.llm_proxy import LLMProxy
@@ -21,6 +21,7 @@ class BaseAlgorithm:
     _trainer_ref: weakref.ReferenceType[Trainer] | None = None
     _llm_proxy_ref: weakref.ReferenceType["LLMProxy"] | None = None
     _store: LightningStore | None = None
+    _initial_resources: NamedResources | None = None
     _adapter_ref: weakref.ReferenceType[TraceAdapter[Any]] | None = None
 
     def set_trainer(self, trainer: Trainer) -> None:
@@ -105,6 +106,18 @@ class BaseAlgorithm:
             raise ValueError("Store has not been set for this algorithm.")
         return self._store
 
+    def get_initial_resources(self) -> Optional[NamedResources]:
+        """
+        Get the initial resources for this algorithm.
+        """
+        return self._initial_resources
+
+    def set_initial_resources(self, resources: NamedResources) -> None:
+        """
+        Set the initial resources for this algorithm.
+        """
+        self._initial_resources = resources
+
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         return self.run(*args, **kwargs)
 
@@ -112,14 +125,12 @@ class BaseAlgorithm:
         self,
         train_dataset: Optional[Dataset[Any]] = None,
         val_dataset: Optional[Dataset[Any]] = None,
-        dev_dataset: Optional[Dataset[Any]] = None,
     ) -> Union[None, Awaitable[None]]:
         """Subclasses should implement this method to implement the algorithm.
 
         Args:
             train_dataset: The dataset to train on. Not all algorithms require a training dataset.
             val_dataset: The dataset to validate on. Not all algorithms require a validation dataset.
-            dev_dataset: The dataset to use for development. Not all algorithms require a dev dataset.
 
         Returns:
             Algorithm should refrain from returning anything. It should just run the algorithm.
@@ -138,3 +149,11 @@ class BaseAlgorithm:
             The AgentLightningClient instance associated with this algorithm.
         """
         raise NotImplementedError("Subclasses must implement get_client().")
+
+
+class FastAlgorithm(BaseAlgorithm):
+    """Algorithm that can run fast and qualify for dev mode.
+
+    Fast algorithms enable agent developers to quickly iterate on agent development
+    without waiting for a long training to complete.
+    """

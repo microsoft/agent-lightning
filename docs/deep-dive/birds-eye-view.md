@@ -47,7 +47,7 @@ We define the following terms, which may be helpful for understanding the diagra
 * **Attempt:** A single execution of a rollout. One rollout can have multiple attempts in case of failures or timeouts.
 * **Span:** During the rollout, the agent can generate multiple spans (also known as "traces" or "events"). The recorded spans are collected in the store, which is crucial for understanding agent behavior and optimizing agents.
 * **Reward:** A special span that is defined as a number judging the quality of the rollout during some period of the rollout.
-* **Dataset:** A collection of incomplete rollouts (i.e., tasks) for the agent to process. The three datasets (train, val, dev) serve as the initial input for the algorithm to enqueue the first batch of rollouts.
+* **Dataset:** A collection of incomplete rollouts (i.e., tasks) for the agent to process. The dual datasets (train, val) serve as the initial input for the algorithm to enqueue the first batch of rollouts.
 
 ### Store
 

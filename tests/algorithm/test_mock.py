@@ -112,20 +112,21 @@ async def _mock_runner(
 @pytest.mark.asyncio
 async def test_mock_algorithm_collects_rollout_logs(caplog: pytest.LogCaptureFixture) -> None:
     store = InMemoryLightningStore()
-    algorithm = MockAlgorithm(resources=_make_resources(), polling_interval=0.01)
+    await store.update_resources("default", _make_resources())
+    algorithm = MockAlgorithm(polling_interval=0.01)
     algorithm.set_store(store)
     adapter = _AdapterStub()
     algorithm.set_adapter(adapter)
 
     caplog.set_level(logging.INFO, logger=LOGGER_NAME)
 
-    dev_dataset = ["train-sample", "validation-sample"]
-    expected_rollouts = len(dev_dataset)
+    train_dataset = ["train-sample", "validation-sample"]
+    expected_rollouts = len(train_dataset)
     artifacts: List[_RolloutArtifacts] = []
 
     runner_task = asyncio.create_task(_mock_runner(store=store, expected=expected_rollouts, artifacts=artifacts))
     try:
-        await algorithm.run(dev_dataset=cast(Dataset[Any], dev_dataset))
+        await algorithm.run(train_dataset=cast(Dataset[Any], train_dataset))
         await asyncio.wait_for(runner_task, timeout=2)
     finally:
         if not runner_task.done():

@@ -12,6 +12,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, TypeVar, Union
 
 from agentlightning.adapter import TraceAdapter, TraceTripletAdapter
 from agentlightning.algorithm.base import BaseAlgorithm
+from agentlightning.algorithm.mock import MockAlgorithm
 from agentlightning.client import AgentLightningClient
 from agentlightning.execution.base import ExecutionStrategy
 from agentlightning.execution.client_server import ClientServerExecutionStrategy
@@ -23,7 +24,7 @@ from agentlightning.store.base import LightningStore
 from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.tracer.agentops import AgentOpsTracer
 from agentlightning.tracer.base import BaseTracer
-from agentlightning.types import Dataset, Hook, ParallelWorkerBase
+from agentlightning.types import Dataset, Hook, NamedResources, ParallelWorkerBase
 
 from .init_utils import build_component, instantiate_component
 from .registry import ExecutionStrategyRegistry
@@ -48,7 +49,9 @@ class Trainer(ParallelWorkerBase):
         algorithm: An instance of `BaseAlgorithm` to use for training.
         store: An instance of `LightningStore` to use for storing tasks and traces.
         runner: An instance of `BaseRunner` to use for running the agent.
-        dev: If True, rollouts are run against the dev endpoint provided in `fit`.
+        initial_resources: An instance of `Resources` to use for bootstrapping the fit/dev process.
+            The resources will be handed over to the algorithm.
+            Note that not all algorithms support seeding resources.
         n_runners: Number of agent runners to run in parallel.
         max_rollouts: Maximum number of rollouts to process per runner. If None,
                       workers run until no more rollouts are available.
@@ -69,6 +72,8 @@ class Trainer(ParallelWorkerBase):
         triplet_exporter: An instance of `TraceTripletAdapter` to export triplets from traces,
                           or a dictionary with the initialization parameters for the exporter.
                           Deprecated. Use `adapter` instead.
+        dev: If True, rollouts are run against the dev endpoint provided in `fit`.
+             Deprecated in favor of `dev()` method.
     """
 
     def __init__(
@@ -77,6 +82,7 @@ class Trainer(ParallelWorkerBase):
         dev: bool = False,
         n_runners: Optional[int] = None,
         max_rollouts: Optional[int] = None,
+        initial_resources: Optional[NamedResources] = None,
         tracer: ComponentSpec[BaseTracer] = None,
         adapter: ComponentSpec[TraceAdapter[Any]] = None,
         store: ComponentSpec[LightningStore] = None,
@@ -91,7 +97,7 @@ class Trainer(ParallelWorkerBase):
         hooks: Optional[Union[Hook, Sequence[Hook]]] = None,
     ):
         super().__init__()
-        self.dev = dev
+        self._dev = dev
         self.daemon = daemon
         self._client: AgentLightningClient | None = None  # Will be initialized in fit or fit_v0
 
@@ -148,6 +154,9 @@ class Trainer(ParallelWorkerBase):
         self.triplet_exporter = self.adapter  # Backwards compatibility
 
         self.algorithm = self._make_algorithm(algorithm)
+
+        # We might be able to support a list of resources in future.
+        self.initial_resources = initial_resources
 
         # The active store for the current execution context
         self.store = self._make_store(store)
@@ -300,19 +309,55 @@ class Trainer(ParallelWorkerBase):
         train_dataset: Optional[Dataset[T_co]] = None,
         *,
         val_dataset: Optional[Dataset[T_co]] = None,
-        dev_dataset: Optional[Dataset[T_co]] = None,
     ) -> None:
-        """Run the training loop using the configured strategy, store, and runner."""
+        """Run the training loop using the configured strategy, store, and runner.
+
+        Args:
+            agent: The LitAgent instance to be trained on.
+            train_dataset: The dataset to train on.
+            val_dataset: The dataset to validate on.
+        """
         agent.set_trainer(self)
 
         algorithm_bundle = functools.partial(
             self._algorithm_bundle,
             train_dataset=train_dataset,
             val_dataset=val_dataset,
-            dev_dataset=dev_dataset,
+            algorithm=self.algorithm,
         )
         runner_bundle = functools.partial(self._runner_bundle, agent=agent)
 
+        self.strategy.execute(algorithm_bundle, runner_bundle, self.store)
+
+    def dev(
+        self,
+        agent: LitAgent[T_co],
+        train_dataset: Optional[Dataset[T_co]] = None,
+        *,
+        val_dataset: Optional[Dataset[T_co]] = None,
+    ) -> None:
+        """Dry run the training loop with a FastAlgorithm and the real runner.
+
+        Args:
+            agent: The LitAgent instance to be trained on.
+            train_dataset: The dataset to train on.
+            val_dataset: The dataset to validate on.
+        """
+        agent.set_trainer(self)
+
+        # Sanity check
+        if self.algorithm is None:
+            algorithm = MockAlgorithm()
+        else:
+            algorithm = self.algorithm
+
+        algorithm_bundle = functools.partial(
+            self._algorithm_bundle,
+            train_dataset=train_dataset,
+            val_dataset=val_dataset,
+            algorithm=algorithm,
+        )
+        runner_bundle = functools.partial(self._runner_bundle, agent=agent)
         self.strategy.execute(algorithm_bundle, runner_bundle, self.store)
 
     async def _algorithm_bundle(
@@ -321,34 +366,34 @@ class Trainer(ParallelWorkerBase):
         event: Event,
         train_dataset: Optional[Dataset[T_co]],
         val_dataset: Optional[Dataset[T_co]],
-        dev_dataset: Optional[Dataset[T_co]],
+        algorithm: Optional[BaseAlgorithm],
     ) -> None:
-        if self.algorithm is not None:
-            self.algorithm.set_trainer(self)
-            self.algorithm.set_store(store)
-            self.algorithm.set_adapter(self.adapter)
+        if algorithm is not None:
+            algorithm.set_trainer(self)
+            algorithm.set_store(store)
+            algorithm.set_adapter(self.adapter)
+            if self.initial_resources is not None:
+                algorithm.set_initial_resources(self.initial_resources)
             if self.llm_proxy is not None:
                 self.llm_proxy.set_store(store)
-                self.algorithm.set_llm_proxy(self.llm_proxy)
+                algorithm.set_llm_proxy(self.llm_proxy)
 
-        if self.algorithm is None:
+        if algorithm is None:
             while not event.is_set():
                 await asyncio.sleep(0.1)
             return
         try:
-            if inspect.iscoroutinefunction(self.algorithm.run):
-                await self.algorithm.run(
+            if inspect.iscoroutinefunction(algorithm.run):
+                await algorithm.run(
                     train_dataset=train_dataset,
                     val_dataset=val_dataset,
-                    dev_dataset=dev_dataset,
                 )
             else:
                 # This will block the event loop to maximize the debugging experience
                 # It's the responsibility of the execution strategy to enable async execution
-                self.algorithm.run(
+                algorithm.run(
                     train_dataset=train_dataset,
                     val_dataset=val_dataset,
-                    dev_dataset=dev_dataset,
                 )
         except Exception:
             logger.exception("Algorithm bundle encountered an error.")
@@ -408,7 +453,7 @@ class Trainer(ParallelWorkerBase):
         dev_data: Union[str, AgentLightningClient, Dataset[Any], None] = None,
     ) -> Union[str, AgentLightningClient]:
         """Determine which backend to use for initialization."""
-        if self.dev:
+        if self._dev:
             if dev_data is None:
                 raise ValueError("dev_data must be provided when dev=True.")
             client = self._extract_client_from_data(dev_data)
@@ -597,7 +642,6 @@ class Trainer(ParallelWorkerBase):
         # Extract datasets for algorithm if available
         train_dataset = self._extract_dataset_from_data(train_data)
         val_dataset = self._extract_dataset_from_data(val_data) if val_data else None
-        dev_dataset = self._extract_dataset_from_data(dev_data) if dev_data else None
 
         # Initialize the algorithm with trainer if provided
         if self.algorithm is not None:
@@ -607,7 +651,7 @@ class Trainer(ParallelWorkerBase):
         # Determine the backend to use for client-server mode
         backend = self._determine_backend(train_data, dev_data)
 
-        if self.dev:
+        if self._dev:
             logger.warning(f"Running in dev mode. Using dev backend: {backend}")
         else:
             logger.debug(f"Running in non-dev mode. Using backend: {backend}")
@@ -640,7 +684,6 @@ class Trainer(ParallelWorkerBase):
                     self.algorithm.run(
                         train_dataset=train_dataset,
                         val_dataset=val_dataset,
-                        dev_dataset=dev_dataset,
                     )
             else:
                 logger.info(f"Running with n_workers={self.n_workers} ({mode} multiprocessing).")
@@ -663,7 +706,6 @@ class Trainer(ParallelWorkerBase):
                         self.algorithm.run(
                             train_dataset=train_dataset,
                             val_dataset=val_dataset,
-                            dev_dataset=dev_dataset,
                         )
                         logger.info("Algorithm exits. Killing the workers.")
                         self._terminate_processes(processes)
@@ -693,7 +735,6 @@ class Trainer(ParallelWorkerBase):
                         self.algorithm.run(
                             train_dataset=train_dataset,
                             val_dataset=val_dataset,
-                            dev_dataset=dev_dataset,
                         )
                         logger.info("Algorithm exits. Killing the workers.")
                         self._terminate_processes(processes)

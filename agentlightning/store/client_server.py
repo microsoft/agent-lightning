@@ -487,6 +487,7 @@ class LightningStoreClient(LightningStore):
 
         # Store whether the dequeue was successful in history
         self._dequeue_was_successful: bool = False
+        self._dequeue_first_unsuccessful: bool = True
 
     async def _get_session(self) -> aiohttp.ClientSession:
         # In the proxy process, FastAPI middleware calls
@@ -670,7 +671,9 @@ class LightningStoreClient(LightningStore):
                 return AttemptedRollout.model_validate(data) if data else None
         except Exception as e:
             if self._dequeue_was_successful:
-                logger.error(f"dequeue_rollout failed with exception: {e}", exc_info=True)
+                if self._dequeue_first_unsuccessful:
+                    logger.error(f"dequeue_rollout failed with exception: {e}", exc_info=True)
+                    self._dequeue_first_unsuccessful = False
             # Else ignore the exception because the server is not ready yet
             return None
 

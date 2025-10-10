@@ -27,11 +27,7 @@ class VERL(BaseAlgorithm):
         self,
         train_dataset: Optional[Dataset[Any]] = None,
         val_dataset: Optional[Dataset[Any]] = None,
-        dev_dataset: Optional[Dataset[Any]] = None,
     ) -> None:
-        if dev_dataset is not None:
-            raise ValueError("dev_dataset is not supported for VERL.")
-
         try:
             store = self.get_store()
         except Exception:
