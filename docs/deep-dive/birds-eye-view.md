@@ -46,6 +46,8 @@ We define the following terms which may be helpful for understanding the diagram
 The store is the central hub for all data in agent-lightning. It serves as the source of truth for resources, rollouts, attempts, and spans. The store exposes a set of APIs for algorithms and runners to interact with the data, and the most important ones are:
 
 ```python
+from agentlightning.types import AttemptedRollout, ResourcesUpdate, Span, TaskInput
+
 class LightningStore:
 
     async def enqueue_rollout(self, input: TaskInput, ...) -> Rollout: ...
@@ -424,7 +426,7 @@ flowchart TD
         end
         subgraph Algorithm Bundle
             Algorithm[Algorithm Main Process]
-            subgraph LLM Proxy Subprocess
+            subgraph Another subprocess
                 LLMProxy[LLM Proxy]
             end
         end
@@ -460,4 +462,47 @@ flowchart TD
 
 ## Online/Continuous Learning
 
-TODO: using an continuous `algorithm.run` with continuous `runner.step()`. Explain where resources and samples come from.
+Continuous learning setups keep the algorithm loop running alongside opportunistic and spontaneous runner iterations. Here are the key differences from the batch setup:
+
+1. The algorithm does not `enqueue_rollout` from a fixed dataset. Instead, the rollout tasks and spans are all reported spontaneously by the runners.
+2. The algorithm can `wait_for_rollouts`, but there will be no more expected `rollout_ids`. Instead, the algorithm needs to periodically poll the store for new rollouts and spans or wait for a particular number of new rollouts to arrive.
+3. The runner does not use `iter()` to exhaust rollouts from the store queue. Instead, the runner uses `step(task)` to process one rollout initiated by the user or by a "bigger loop". It also notifies the store that "I'm starting a rollout" before invoking the agent, so that the store can have it recorded.
+4. User or the bigger loop has more control of the store --- what resources the next `step` should use, whether to when to retry, etc.
+
+All other components like spans, adapters and LLM proxies still work in the same way. The diagram below illustrates the continuous learning setup.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant Runner
+    participant Agent
+    participant Store as LightningStore
+    participant Algorithm
+
+    Note over Algorithm: Algorithm is long-running and loops continuously
+
+    loop Continuous Learning Loop
+        activate User
+        opt Decide what to do next
+            User-->>Store: get_resources_by_id
+            Store-->>User: Resources
+            User-->>User: Prepare input for next step
+        end
+        User->>Runner: step(input, resources)
+        activate Runner
+        Runner-->>Store: Notify: start_rollout(input)
+        Runner->>Agent: rollout(input, resources)
+        Agent-->>Runner: add_span / reward spans
+        Runner-->>Store: add_span or add_otel_span
+        Runner-->>Store: update_attempt(status="finished")
+        deactivate Runner
+        deactivate User
+        Algorithm->>Store: poll for new rollouts and spans
+        opt If there is enough new data
+            Store-->>Algorithm: new spans
+            Algorithm->>Algorithm: adapt spans → learning signal
+            Algorithm->>Store: update_resources
+        end
+    end
+```
