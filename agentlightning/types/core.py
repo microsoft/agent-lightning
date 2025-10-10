@@ -248,7 +248,7 @@ class LLM(Resource):
     api_key: Optional[str] = None
     sampling_parameters: Dict[str, Any] = Field(default_factory=dict)
 
-    def base_url(self, *args: Any, **kwargs: Any) -> str:
+    def get_base_url(self, *args: Any, **kwargs: Any) -> str:
         """The base_url to put into openai.OpenAI.
 
         Users are encouraged to use `base_url` to get the LLM endpoint instead of accessing `endpoint` directly.
@@ -284,20 +284,20 @@ class ProxyLLM(LLM):
                     if caller_name != "base_url":
                         logger.warning(
                             "Accessing 'endpoint' directly on ProxyLLM is discouraged. "
-                            "Use 'base_url(rollout_id, attempt_id)' instead to get the properly formatted endpoint."
+                            "Use 'get_base_url(rollout_id, attempt_id)' instead to get the properly formatted endpoint."
                         )
         return super().__getattribute__(name)
 
     def with_attempted_rollout(self, rollout: AttemptedRollout) -> LLM:
         """Bake the rollout and attempt id into the endpoint."""
         return LLM(
-            endpoint=self.base_url(rollout.rollout_id, rollout.attempt.attempt_id),
+            endpoint=self.get_base_url(rollout.rollout_id, rollout.attempt.attempt_id),
             model=self.model,
             sampling_parameters=self.sampling_parameters,
             api_key=self.api_key,
         )
 
-    def base_url(self, rollout_id: Optional[str], attempt_id: Optional[str]) -> str:
+    def get_base_url(self, rollout_id: Optional[str], attempt_id: Optional[str]) -> str:
         if rollout_id is None and attempt_id is None:
             return self.endpoint
 

@@ -125,7 +125,7 @@ async def test_async_function_with_llm_rollout():
     assert result == "Async processed: test with llm"
 
     # Should be marked as async
-    assert async_agent.is_async
+    assert async_agent.is_async()
 
 
 @pytest.mark.asyncio
@@ -145,7 +145,7 @@ async def test_async_function_with_rollout():
     assert result == "Async processed: test with llm"
 
     # Should be marked as async
-    assert async_agent.is_async
+    assert async_agent.is_async()
 
 
 def test_llm_rollout_strip_proxy_true_strips_proxy_llm():

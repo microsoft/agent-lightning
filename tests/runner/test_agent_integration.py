@@ -165,7 +165,7 @@ async def test_runner_integration_with_spawned_litellm_proxy(server: RemoteOpenA
             attempted_rollout = cast(AttemptedRollout, rollout)
             llm_resource = cast(LLM, resources["llm"])
             client = openai.AsyncOpenAI(
-                base_url=llm_resource.base_url(attempted_rollout.rollout_id, attempted_rollout.attempt.attempt_id),
+                base_url=llm_resource.get_base_url(attempted_rollout.rollout_id, attempted_rollout.attempt.attempt_id),
                 api_key="dummy",
             )
             response = await client.chat.completions.create(

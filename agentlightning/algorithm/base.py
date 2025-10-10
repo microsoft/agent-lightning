@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import weakref
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Awaitable, Optional, Union, overload
 
 from agentlightning.adapter import TraceAdapter
 from agentlightning.client import AgentLightningClient
@@ -32,8 +32,7 @@ class BaseAlgorithm:
         """
         self._trainer_ref = weakref.ref(trainer)
 
-    @property
-    def trainer(self) -> Trainer:
+    def get_trainer(self) -> Trainer:
         """
         Get the trainer for this algorithm.
 
@@ -56,8 +55,7 @@ class BaseAlgorithm:
         """
         self._llm_proxy_ref = weakref.ref(llm_proxy) if llm_proxy is not None else None
 
-    @property
-    def llm_proxy(self) -> Optional[LLMProxy]:
+    def get_llm_proxy(self) -> Optional[LLMProxy]:
         """
         Retrieve the configured LLM proxy instance, if one has been set.
 
@@ -79,8 +77,7 @@ class BaseAlgorithm:
         """
         self._adapter_ref = weakref.ref(adapter)
 
-    @property
-    def adapter(self) -> TraceAdapter[Any]:
+    def get_adapter(self) -> TraceAdapter[Any]:
         """
         Retrieve the adapter for this algorithm to communicate with the runners.
         """
@@ -100,8 +97,7 @@ class BaseAlgorithm:
         """
         self._store = store
 
-    @property
-    def store(self) -> LightningStore:
+    def get_store(self) -> LightningStore:
         """
         Retrieve the store for this algorithm to communicate with the runners.
         """
@@ -117,12 +113,13 @@ class BaseAlgorithm:
         train_dataset: Optional[Dataset[Any]] = None,
         val_dataset: Optional[Dataset[Any]] = None,
         dev_dataset: Optional[Dataset[Any]] = None,
-    ) -> None:
+    ) -> Union[None, Awaitable[None]]:
         """Subclasses should implement this method to implement the algorithm.
 
         Args:
             train_dataset: The dataset to train on. Not all algorithms require a training dataset.
             val_dataset: The dataset to validate on. Not all algorithms require a validation dataset.
+            dev_dataset: The dataset to use for development. Not all algorithms require a dev dataset.
 
         Returns:
             Algorithm should refrain from returning anything. It should just run the algorithm.

@@ -366,7 +366,7 @@ class AgentRunnerV2(BaseRunner[T_task]):
                 # NOTE: This is the most costly step in the whole function
                 # If the rollout method becomes unresponsive or timeouts, there is nothing we can do within the runner.
                 # We might need some mechanisms in execution strategy to restart the runner. But that's a future work.
-                if agent.is_async:
+                if agent.is_async():
                     rollout_method = (
                         agent.training_rollout_async if next_rollout.mode == "train" else agent.validation_rollout_async
                     )

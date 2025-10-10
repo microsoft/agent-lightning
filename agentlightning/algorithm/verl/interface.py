@@ -33,7 +33,7 @@ class VERL(BaseAlgorithm):
             raise ValueError("dev_dataset is not supported for VERL.")
 
         try:
-            store = self.store
+            store = self.get_store()
         except Exception:
             print("Store is not set. Assuming v0 execution mode.")
             run_ppo(
@@ -46,8 +46,8 @@ class VERL(BaseAlgorithm):
             )
         else:
             print("Store is set. Assuming v1 execution mode.")
-            llm_proxy = self.llm_proxy
-            adapter = self.adapter
+            llm_proxy = self.get_llm_proxy()
+            adapter = self.get_adapter()
             run_ppo(
                 self.config,
                 train_dataset=train_dataset,

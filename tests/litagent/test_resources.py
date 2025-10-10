@@ -21,7 +21,7 @@ def test_proxy_llm_endpoint_direct_access_emits_warning(caplog: pytest.LogCaptur
 
 
 def test_proxy_llm_base_url_no_warning(caplog: pytest.LogCaptureFixture):
-    """Test that using base_url() method does not emit a warning."""
+    """Test that using get_base_url() method does not emit a warning."""
     llm = ProxyLLM(
         endpoint="http://localhost:11434",
         model="gpt-4o-arbitrary",
@@ -29,7 +29,7 @@ def test_proxy_llm_base_url_no_warning(caplog: pytest.LogCaptureFixture):
     )
 
     # Using base_url should not emit a warning
-    url = llm.base_url("rollout-123", "attempt-456")
+    url = llm.get_base_url("rollout-123", "attempt-456")
     assert url == "http://localhost:11434/rollout/rollout-123/attempt/attempt-456"
     assert "Accessing 'endpoint' directly on ProxyLLM is discouraged" not in caplog.text
 
@@ -42,7 +42,7 @@ def test_proxy_llm_base_url_returns_endpoint_when_none():
         sampling_parameters={"temperature": 0.7},
     )
 
-    url = llm.base_url(None, None)
+    url = llm.get_base_url(None, None)
     assert url == "http://localhost:11434/v1"
 
 
@@ -64,4 +64,4 @@ def test_proxy_llm_base_url_validates_inputs(rollout_id: object, attempt_id: obj
     )
 
     with pytest.raises(ValueError, match="must be strings or all be empty"):
-        llm.base_url(rollout_id, attempt_id)  # type: ignore
+        llm.get_base_url(rollout_id, attempt_id)  # type: ignore

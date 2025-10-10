@@ -70,7 +70,6 @@ class LitAgent(Generic[T]):
         self._trainer_ref: weakref.ReferenceType[Trainer] | None = None
         self._runner_ref: weakref.ReferenceType[BaseRunner[T]] | None = None
 
-    @property
     def is_async(self) -> bool:
         """
         Check if the agent implements asynchronous rollout methods.
@@ -100,8 +99,7 @@ class LitAgent(Generic[T]):
         """
         self._trainer_ref = weakref.ref(trainer)
 
-    @property
-    def trainer(self) -> Trainer:
+    def get_trainer(self) -> Trainer:
         """
         Get the trainer for this agent.
 
@@ -116,7 +114,11 @@ class LitAgent(Generic[T]):
         return trainer
 
     @property
-    def tracer(self) -> BaseTracer:
+    def trainer(self) -> Trainer:
+        """Convenient shortcut of self.get_trainer()."""
+        return self.get_trainer()
+
+    def get_tracer(self) -> BaseTracer:
         """
         Get the tracer for this agent.
 
@@ -124,6 +126,11 @@ class LitAgent(Generic[T]):
             The BaseTracer instance associated with this agent.
         """
         return self.trainer.tracer
+
+    @property
+    def tracer(self) -> BaseTracer:
+        """Convenient shortcut of self.get_tracer()."""
+        return self.get_tracer()
 
     def set_runner(self, runner: BaseRunner[T]) -> None:
         """
@@ -134,8 +141,7 @@ class LitAgent(Generic[T]):
         """
         self._runner_ref = weakref.ref(runner)
 
-    @property
-    def runner(self) -> BaseRunner[T]:
+    def get_runner(self) -> BaseRunner[T]:
         """
         Get the runner for this agent.
 
@@ -148,6 +154,11 @@ class LitAgent(Generic[T]):
         if runner is None:
             raise ValueError("Runner reference is no longer valid (object has been garbage collected).")
         return runner
+
+    @property
+    def runner(self) -> BaseRunner[T]:
+        """Convenient shortcut of self.get_runner()."""
+        return self.get_runner()
 
     def on_rollout_start(self, task: Task, runner: BaseRunner[T], tracer: BaseTracer) -> None:
         """Hook called immediately before a rollout begins.
@@ -365,7 +376,6 @@ class LitAgentLLM(LitAgent[T]):
         """Make the agent instance callable, preserving the original function behavior."""
         return self.llm_rollout_func(*args, **kwargs)  # type: ignore
 
-    @property
     def is_async(self) -> bool:
         return self._is_async
 

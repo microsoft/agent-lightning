@@ -618,7 +618,7 @@ class Trainer(ParallelWorkerBase):
 
         # Determine if the agent is asynchronous
 
-        mode = "asynchronous" if agent.is_async else "synchronous"
+        mode = "asynchronous" if agent.is_async() else "synchronous"
 
         try:
             if self.n_workers == 1:
@@ -631,7 +631,7 @@ class Trainer(ParallelWorkerBase):
                     )
                     # Ideally the single worker should be run in a separate thread or process.
 
-                num_tasks = self._worker_main_loop(agent, 0, agent.is_async)
+                num_tasks = self._worker_main_loop(agent, 0, agent.is_async())
                 logger.info(f"Single worker mode finished. Tasks processed: {num_tasks}")
 
                 # If algorithm is provided and we have datasets, run algorithm after worker completes
@@ -648,7 +648,7 @@ class Trainer(ParallelWorkerBase):
                     process_name = f"AgentLightning-Worker-{i}"
                     p = multiprocessing.Process(
                         target=self._worker_main_loop,
-                        args=(agent, i, agent.is_async),
+                        args=(agent, i, agent.is_async()),
                         daemon=self.daemon,
                         name=process_name,
                     )
