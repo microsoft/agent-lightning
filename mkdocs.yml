@@ -69,7 +69,7 @@ plugins:
 extra:
   version:
     provider: mike
-    default: latest
+    default: stable
   source_commit: !ENV [SOURCE_COMMIT, 'main']
 
 extra_javascript:
