@@ -12,7 +12,7 @@ from agentlightning.runner import AgentRunnerV2
 from agentlightning.store.base import LightningStore
 from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.tracer.base import BaseTracer
-from agentlightning.types import Hook, RolloutV2
+from agentlightning.types import LLM, Hook, RolloutV2
 
 from ..common.tracer import clear_tracer_provider
 
@@ -144,7 +144,7 @@ async def test_run_context_with_hooks() -> None:
 
     with runner.run_context(agent=agent, store=store, hooks=[hook]):
         # Verify hooks were registered
-        assert runner._hooks == [hook]
+        assert runner._hooks == [hook]  # pyright: ignore[reportPrivateUsage]
 
 
 @pytest.mark.asyncio
@@ -180,9 +180,13 @@ async def test_run_context_no_teardown_worker_if_init_worker_fails() -> None:
 
     runner.init_worker = failing_init_worker  # type: ignore[method-assign]
 
-    with pytest.raises(RuntimeError, match="init_worker failed"):
-        with runner.run_context(agent=agent, store=store):
-            pass
+    try:
+        with pytest.raises(RuntimeError, match="init_worker failed"):
+            with runner.run_context(agent=agent, store=store):
+                pass
+    finally:
+        # Restore original method
+        runner.init_worker = original_init_worker  # type: ignore[method-assign]
 
     # Verify teardown was called but teardown_worker was not
     assert tracer.init_called
@@ -207,9 +211,13 @@ async def test_run_context_no_teardown_if_init_fails() -> None:
 
     runner.init = failing_init  # type: ignore[method-assign]
 
-    with pytest.raises(RuntimeError, match="init failed"):
-        with runner.run_context(agent=agent, store=store):
-            pass
+    try:
+        with pytest.raises(RuntimeError, match="init failed"):
+            with runner.run_context(agent=agent, store=store):
+                pass
+    finally:
+        # Restore original method
+        runner.init = original_init  # type: ignore[method-assign]
 
     # Verify neither init_worker nor teardown methods were called
     assert not tracer.init_called
@@ -235,8 +243,12 @@ async def test_run_context_handles_teardown_worker_exception(caplog: pytest.LogC
 
     runner.teardown_worker = failing_teardown_worker  # type: ignore[method-assign]
 
-    with runner.run_context(agent=agent, store=store):
-        pass
+    try:
+        with runner.run_context(agent=agent, store=store):
+            pass
+    finally:
+        # Restore original method
+        runner.teardown_worker = original_teardown_worker  # type: ignore[method-assign]
 
     # Verify both teardown methods were attempted
     assert tracer.teardown_worker_called
@@ -263,8 +275,12 @@ async def test_run_context_handles_teardown_exception(caplog: pytest.LogCaptureF
 
     runner.teardown = failing_teardown  # type: ignore[method-assign]
 
-    with runner.run_context(agent=agent, store=store):
-        pass
+    try:
+        with runner.run_context(agent=agent, store=store):
+            pass
+    finally:
+        # Restore original method
+        runner.teardown = original_teardown  # type: ignore[method-assign]
 
     # Verify both teardown methods were attempted
     assert tracer.teardown_worker_called
@@ -291,9 +307,6 @@ async def test_run_context_can_be_used_for_step() -> None:
     agent = CountingAgent()
     store = InMemoryLightningStore()
     runner = AgentRunnerV2[str](tracer=tracer)
-
-    # Set up resources
-    from agentlightning.types.core import LLM
 
     await store.update_resources("default", {"llm": LLM(endpoint="http://localhost", model="dummy")})
 
