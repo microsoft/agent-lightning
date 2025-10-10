@@ -281,7 +281,7 @@ class ProxyLLM(LLM):
                 frame = inspect.currentframe()
                 if frame and frame.f_back:
                     caller_name = frame.f_back.f_code.co_name
-                    if caller_name != "base_url":
+                    if caller_name != "get_base_url":
                         logger.warning(
                             "Accessing 'endpoint' directly on ProxyLLM is discouraged. "
                             "Use 'get_base_url(rollout_id, attempt_id)' instead to get the properly formatted endpoint."
