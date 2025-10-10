@@ -135,7 +135,7 @@ The LLM proxy is an optional bridge between the runner's LLM calls and the algor
 1. **Endpoint served by the algorithm:** If the algorithm is internally updating the LLM weights (e.g., RL), it can launch an LLM inference engine (i.e., a model server) and register the endpoint URL with the proxy. The proxy then forwards all LLM calls to that endpoint.
 2. **Third-party LLM endpoint:** If the algorithm is not updating the LLM weights (e.g., prompt tuning), it can register a third-party LLM endpoint into the proxy.
 
-During rollouts, the runner invokes the proxy's HTTP endpoint instead of calling a model backend directly. The proxy augments each request with rollout/attempt metadata, tracks which rollout is initiating the current request, and then records OpenTelemetry spans via `LightningSpanExporter`.
+During rollouts, the runner invokes the proxy's HTTP endpoint instead of calling a model backend directly. The proxy augments each request with rollout/attempt metadata, tracks which rollout is initiating the current request, and then records OpenTelemetry spans via `LightningSpanExporter`. **LLM Proxy serves as an effective complement to the tracer.** The tracer instruments the agent's code, while the proxy instruments the LLM calls, which is crucial when instrumenting agent's code is difficult. Together they form a complete picture of the agent's behavior.
 
 Functionally, the proxy acts as a "shield" in front of LLM calls. It's also a convenient way to integrate diverse LLM backends (e.g., OpenAI, Azure, Anthropic, local models) without changing the agent code. It can also be used to support diverse LLM clients (e.g., Anthropic API), add retry logic, rate limiting and caching.
 
@@ -160,8 +160,10 @@ sequenceDiagram
         Runner->>Agent: rollout + resources<br>(LLM Proxy URL as resource)
         loop Defined by Agent
             Agent-->>LLMProxy: LLM calls
+            activate LLMProxy
             LLMProxy-->>Store: add_span or add_otel_span
             LLMProxy-->>Agent: LLM responses
+            deactivate LLMProxy
             Agent-->>Runner: rewards
             Runner-->>Store: add_span or add_otel_span
         end
@@ -244,44 +246,67 @@ flowchart TD
 
 ## Inside an RL Algorithm (VERL Example)
 
-VERL's integration demonstrates how the algorithm consumes the shared infrastructure. Currently the code lives within `agentlightning.algorithm.verl` and `agentlightning.verl` for historical reasons. `agentlightning.algorithm.verl` is a simpler wrapper to comply with the new algorithm interface.
+VERL's integration demonstrates how the algorithm consumes the shared infrastructure. Currently the code lives within `agentlightning.algorithm.verl` and `agentlightning.verl` for historical reasons. `agentlightning.verl` is the legacy code, which contains many overlapping and misleading terms (such as the overusing of `Trainer`). `agentlightning.algorithm.verl` is a simpler wrapper to comply with the new algorithm interface.
+
+As readers may know, the basic problem formulation of Reinforcement Learning is to learn a policy that performs actions upon some states to maximize the expected cumulative reward in an environment. In the context of agents, the policy is typically represented by a language model that generates text (action) based on input prompts (state). To make the language model learnable, there is another need for numeric rewards to judge the quality of the generated text. The (state, action, reward) **triplet** is the fundamental data structure for RL algorithms to learn from.
+
+In Agent-lightning's setup, the environment is implicit in the agent's code, which is a simple workflow that orchestrates one or many LLM calls, and agents judge itself by some rules or another LLM calls. The agents emit many spans during the rollout, which essentially contains all the data needed for RL training. The algorithm's job are several parts:
+
+1. Providing a language model deployment that is currently learning and improving for the agent to interact with;
+2. Preparing the tasks that the agents will perform;
+3. Querying the spans generated, extracting triplets, and converting them into a format that the underlying RL library can consume;
+4. Updating the language model based on the learning signals.
+
+The VERL integration in Agent-lightning covers all these parts. The language model deployment (i.e., chat completion endpoint) is created by the algorithm using `vLLM` and wrapped with `FSDP` for distributed training, both managed by VERL. The tasks are enqueued by the algorithm from the dataset. The spans are queried by the algorithm after rollouts finish, and converted into triplets by `TraceTripletAdapter`. Finally, the triplets are fed into VERL's native training loop to update the language model weights.
+
+The following diagram is a comprehensive sequence diagram that shows how VERL's integration works in Agent-lightning. It includes multiple components introduced above, such as the LLM proxy, store and adapter. It's a good knowledge check for readers to see if they can identify the components and their roles in the diagram.
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant Adapter as TraceTripletAdapter
-    participant Algo as Algorithm<br>Main Process
     participant vLLM as vLLM Chat<br>Completion Endpoint
-    participant FSDP as FSDP / Megatron<br>Trainer
-    participant Store as LightningStore
-    participant Runner
-    participant Agent
+    participant FSDP as FSDP / Megatron<br>Weights Optimizer
+    participant Algo as Algorithm<br>Main Controller<br>(Main Process)
+    participant Adapter as TraceTripletAdapter
     participant LLMProxy as LLM Proxy
+    participant Store as LightningStore
+    participant Runner as Runner + Agent
 
-    Note over Algo,LLMProxy: Algorithm manages LLMProxy as member
-    Note over Algo,Adapter: Algorithm manages Adapter as member
+    Note over Algo,LLMProxy: LLMProxy and Adapter are injected by Trainer as member
+    Note over vLLM,Algo: Algorithm creates and owns vLLM and FSDP
 
-    loop Over the Dataset
-        Algo->>Algo: Launch LLM Inference Engine<br>(optional)
-        Algo->>LLMProxy: Register Inference Engine<br>(optional)
-        Algo-->>Store: enqueue_rollout + add_resources
+    loop Over the Dataset in Batches
+        Algo->>vLLM: Create Chat Completion Endpoint
+        activate vLLM
+        vLLM->>LLMProxy: Registered as Backend Endpoint
         LLMProxy->>Store: Proxy URL added as Resource
-        Store-->>Runner: dequeue_rollout → AttemptedRollout
-        Store-->>Runner: get_latest_resources
-        Runner->>Agent: rollout + resources<br>(LLM Proxy URL as resource)
-        loop Defined by Agent
-            Agent-->>LLMProxy: LLM calls
-            LLMProxy-->>Store: add_span or add_otel_span
-            LLMProxy-->>Agent: LLM responses
-            Agent-->>Runner: rewards
-            Runner-->>Store: add_span or add_otel_span
+        par Over data samples in the batch
+            Algo-->>Store: enqueue_rollout
+            Store-->>Runner: Dequeue Rollout +<br>Resources (i.e., URL)
+            loop One Rollout Attempt
+                Runner-->>LLMProxy: LLM calls
+                LLMProxy-->>vLLM: Forwarded LLM calls
+                vLLM-->>LLMProxy: LLM responses
+                LLMProxy-->>Store: add_span / add_otel_span
+                LLMProxy-->>Runner: Forwarded LLM responses
+                Runner-->>Store: add_span / add_otel_span <br> (by tracer, including rewards)
+            end
+            Runner-->>Store: update_attempt("finished", status)
         end
-        Runner-->>Store: update_attempt("finished", status)
-        Store-->>Algo: query_rollouts + spans
-        Algo->>Adapter: adapt(spans) → (prompt, response, reward) triplets
-        Algo-->>Algo: Update LLM Weights<br>(optional)
+        Algo-->>Store: Poll for completed rollouts + spans
+        Algo->>vLLM: Chat Completion Endpoint Sleeps
+        deactivate vLLM
+        Algo->>Adapter: adapt(spans)
+        Adapter->>FSDP: Triplets (state, action, reward)
+        activate FSDP
+        FSDP-->>Algo: Updated LLM weights
+        deactivate FSDP
     end
 ```
+
+**Note:** There are interactions between different components injected into or owned by algorithms in the diagram, such as the output of the adapter feeding into the FSDP optimizer. This is for simplicity of illustration and slightly different from the actual implementation, where it's the algorithm main controller that orchestrates the data flow between components.
+
+Also note that the VERL's native setup is a bit different. VERL uses a more classic RLHF setup where each action is formulated as one single token instead of a chunk of text. The state is the entire conversation history (including system, user and assistant messages) before the current token. The reward only is given at the end of the conversation. To integrate Agent-lightning with VERL, when updating the language model, we need to convert each (state, action, reward) triplet into one VERL trajectory, which is a `DataProto` containing keys like `input_ids`, `position_ids`, `attention_mask`, and `token_level_scores`. This part comes after the triplets are generated by the adapter, and is not depicted in the diagram above.
 
 1. **LLM inference engine via proxy shield:** `AgentModeDaemon` calls
    `LLMProxy.as_resource()` to materialize a named resource describing how to
