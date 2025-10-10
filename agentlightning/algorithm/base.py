@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import functools
+import inspect
 import weakref
-from typing import TYPE_CHECKING, Any, Awaitable, Optional, Union
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Generic, Literal, Optional, TypeVar, Union, overload
 
 from agentlightning.adapter import TraceAdapter
 from agentlightning.client import AgentLightningClient
@@ -157,3 +159,127 @@ class FastAlgorithm(BaseAlgorithm):
     Fast algorithms enable agent developers to quickly iterate on agent development
     without waiting for a long training to complete.
     """
+
+
+# Algorithm function signature types
+AlgorithmFuncSync = Callable[[Optional[Dataset[Any]], Optional[Dataset[Any]]], None]
+AlgorithmFuncAsync = Callable[[Optional[Dataset[Any]], Optional[Dataset[Any]]], Awaitable[None]]
+AlgorithmFunc = Union[AlgorithmFuncSync, AlgorithmFuncAsync]
+
+
+AsyncFlag = Literal[True, False]
+AF = TypeVar("AF", bound=AsyncFlag)
+
+
+class FunctionalAlgorithm(BaseAlgorithm, Generic[AF]):
+    """A BaseAlgorithm that wraps a function-based algorithm implementation.
+
+    This class allows users to define algorithm behavior using a simple function
+    that takes train_dataset and val_dataset parameters, rather than implementing
+    a full BaseAlgorithm subclass.
+    """
+
+    @overload
+    def __init__(self: "FunctionalAlgorithm[Literal[False]]", algorithm_func: AlgorithmFuncSync) -> None: ...
+
+    @overload
+    def __init__(self: "FunctionalAlgorithm[Literal[True]]", algorithm_func: AlgorithmFuncAsync) -> None: ...
+
+    def __init__(self, algorithm_func: Union[AlgorithmFuncSync, AlgorithmFuncAsync]) -> None:
+        """
+        Initialize the FunctionalAlgorithm with an algorithm function.
+
+        Args:
+            algorithm_func: A function that defines the algorithm's behavior.
+                           Can be sync or async with signature:
+                           (train_dataset, val_dataset) -> None
+        """
+        super().__init__()
+        self.algorithm_func = algorithm_func
+        self._is_async = inspect.iscoroutinefunction(algorithm_func)
+
+        # Copy function metadata to preserve type hints and other attributes
+        functools.update_wrapper(self, algorithm_func)  # type: ignore
+
+    @overload
+    def run(
+        self: "FunctionalAlgorithm[Literal[False]]",
+        train_dataset: Optional[Dataset[Any]] = None,
+        val_dataset: Optional[Dataset[Any]] = None,
+    ) -> None: ...
+
+    @overload
+    def run(
+        self: "FunctionalAlgorithm[Literal[True]]",
+        train_dataset: Optional[Dataset[Any]] = None,
+        val_dataset: Optional[Dataset[Any]] = None,
+    ) -> Awaitable[None]: ...
+
+    def run(
+        self,
+        train_dataset: Optional[Dataset[Any]] = None,
+        val_dataset: Optional[Dataset[Any]] = None,
+    ) -> Union[None, Awaitable[None]]:
+        """Execute the algorithm using the wrapped function.
+
+        Args:
+            train_dataset: The dataset to train on.
+            val_dataset: The dataset to validate on.
+
+        Returns:
+            None or Awaitable[None] if the function is async.
+        """
+        if self._is_async:
+            # Return the coroutine for async functions
+            return self.algorithm_func(train_dataset, val_dataset)  # type: ignore
+        else:
+            # Execute sync function directly
+            return self.algorithm_func(train_dataset, val_dataset)  # type: ignore
+
+
+@overload
+def algorithm(func: AlgorithmFuncSync) -> FunctionalAlgorithm[Literal[False]]: ...
+
+
+@overload
+def algorithm(func: AlgorithmFuncAsync) -> FunctionalAlgorithm[Literal[True]]: ...
+
+
+def algorithm(func: AlgorithmFunc) -> Union[FunctionalAlgorithm[Literal[False]], FunctionalAlgorithm[Literal[True]]]:
+    """Create a BaseAlgorithm from a function.
+
+    This decorator allows you to define an algorithm using a simple function
+    instead of creating a full BaseAlgorithm subclass. The returned FunctionalAlgorithm
+    instance is callable, preserving the original function's behavior.
+
+    Args:
+        func: A function that defines the algorithm's behavior with signature:
+              (train_dataset, val_dataset) -> None
+              Can be sync or async.
+
+    Returns:
+        A callable FunctionalAlgorithm instance that preserves the original function's
+        type hints and behavior while providing all algorithm functionality.
+
+    Example:
+        @algorithm
+        def my_algorithm(train_dataset, val_dataset):
+            # Algorithm logic here
+            for task in train_dataset:
+                # Process training tasks
+                pass
+
+        @algorithm
+        async def my_async_algorithm(train_dataset, val_dataset):
+            # Async algorithm logic here
+            async for task in train_dataset:
+                # Process training tasks asynchronously
+                pass
+
+        # Function is still callable with original behavior
+        my_algorithm(train_data, val_data)
+
+        # Algorithm methods are also available
+        my_algorithm.run(train_data, val_data)
+    """
+    return FunctionalAlgorithm(func)

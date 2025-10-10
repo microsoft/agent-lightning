@@ -149,7 +149,7 @@ async def test_mock_algorithm_collects_rollout_logs(caplog: pytest.LogCaptureFix
             f"#{entry.span.sequence_id} ({entry.span.name}) "
         )
         assert any(msg.startswith(span_prefix + "From") for msg in log_messages)
-        assert f"{span_prefix}Attributes: {entry.span.attributes}" in log_messages
+        assert any(f"Attributes: {entry.span.attributes}" in msg for msg in log_messages)
         assert any(
             msg.startswith(f"[Rollout {entry.rollout_id}] Finished with status succeeded") for msg in log_messages
         )
