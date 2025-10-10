@@ -109,3 +109,13 @@ def uninstrument_all():
             warnings.warn("agentops_langchain is installed but uninstrument_agentops_langchain could not be imported.")
     else:
         warnings.warn("Agentops-langchain integration is not installed. It's therefore not uninstrumented.")
+
+
+__all__ = [
+    "AGENTOPS_INSTALLED",
+    "AGENTOPS_LANGCHAIN_INSTALLED",
+    "LITELLM_INSTALLED",
+    "VLLM_INSTALLED",
+    "instrument_all",
+    "uninstrument_all",
+]
