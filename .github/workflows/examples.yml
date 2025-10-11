@@ -172,7 +172,8 @@ jobs:
           sleep 10
         shell: bash
         env:
-          WANDB_API_KEY: ${{ secrets.WANDB_API_KEY }}
+          WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
+          WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
         id: calc_x_train
 
       - name: Validate Calc-X training
@@ -181,7 +182,8 @@ jobs:
           . .venv/bin/activate
           python scripts/validate_example_wandb.py ${{ steps.calc_x_train.outputs.project_name }} ${{ steps.calc_x_train.outputs.run_name }}
         env:
-          WANDB_API_KEY: ${{ secrets.WANDB_API_KEY }}
+          WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
+          WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
 
       - name: Calc-X training v0.2
         run: |
@@ -194,7 +196,8 @@ jobs:
           sleep 10
         shell: bash
         env:
-          WANDB_API_KEY: ${{ secrets.WANDB_API_KEY }}
+          WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
+          WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
         id: calc_x_train_v0_2
 
       - name: Calc-X training v0.2 LLM Proxy
@@ -208,7 +211,8 @@ jobs:
           sleep 10
         shell: bash
         env:
-          WANDB_API_KEY: ${{ secrets.WANDB_API_KEY }}
+          WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
+          WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
         id: calc_x_train_v0_2_llm_proxy
 
       - name: Spider training
@@ -230,7 +234,8 @@ jobs:
         shell: bash
         env:
           VERL_API_BASE: http://localhost:9991/
-          WANDB_API_KEY: ${{ secrets.WANDB_API_KEY }}
+          WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
+          WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
         id: spider_train
         if: success() || failure()
 
@@ -240,7 +245,8 @@ jobs:
           . .venv/bin/activate
           python scripts/validate_example_wandb.py ${{ steps.spider_train.outputs.project_name }} ${{ steps.spider_train.outputs.run_name }}
         env:
-          WANDB_API_KEY: ${{ secrets.WANDB_API_KEY }}
+          WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
+          WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
 
       - name: Cleanup
         run: ./scripts/cleanup.sh
