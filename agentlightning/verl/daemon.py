@@ -369,9 +369,8 @@ class AgentModeDaemon:
         if self.mode == "v0":
             resources_id = await self.server.update_resources(resources)
         else:
-            # This should be replaced with store.add_resources()
-            resources_id = "resource-" + str(uuid.uuid4())
-            await self.store.update_resources(resources_id=resources_id, resources=resources)
+            resources_update = await self.store.add_resources(resources)
+            resources_id = resources_update.resources_id
 
         # 2. Queue tasks for agents to process
         keys = list(data.keys())

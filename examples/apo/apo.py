@@ -31,7 +31,7 @@ async def apo_algorithm(*, store: LightningStore):
         print(f"\n[Algo] Updating prompt template to: '{prompt}'")
         resources: NamedResources = {"system_prompt": PromptTemplate(template=prompt, engine="f-string")}
         # How the resource is used fully depends on the client implementation.
-        await store.update_resources("resource-defult", resources)
+        await store.add_resources(resources)
 
         # 2. The algorithm queues up a task from a dataset
         print("[Algo] Queuing task for clients...")

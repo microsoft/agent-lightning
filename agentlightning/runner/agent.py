@@ -506,9 +506,8 @@ class AgentRunnerV2(BaseRunner[T_task]):
         store = self.get_store()
 
         if resources is not None:
-            # TODO: move this to store.add_resources()
-            resources_id = "resource-" + str(uuid.uuid4())
-            await store.update_resources(resources_id=resources_id, resources=resources)
+            resources_update = await store.add_resources(resources)
+            resources_id = resources_update.resources_id
         else:
             resources_id = None
 
