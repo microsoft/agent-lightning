@@ -48,7 +48,6 @@ experiment = [
 agent = [
   "autogen-agentchat",
   "autogen-ext[openai]",
-  "litellm[proxy]",
   "mcp",
   "openai-agents",
   "langgraph",

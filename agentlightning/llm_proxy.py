@@ -506,8 +506,8 @@ class LLMProxy:
     def __init__(
         self,
         port: int,
-        model_list: List[ModelConfig],
-        store: LightningStore,
+        model_list: List[ModelConfig] | None = None,
+        store: Optional[LightningStore] = None,
         host: str | None = None,
         litellm_config: Dict[str, Any] | None = None,
         num_retries: int = 0,
@@ -515,7 +515,7 @@ class LLMProxy:
         self.store = store
         self.host = host or _get_default_ipv4_address()
         self.port = port
-        self.model_list = model_list
+        self.model_list = model_list or []
         self.litellm_config = litellm_config or {}
 
         # Ensure num_retries is present inside the litellm_settings block.
@@ -579,6 +579,9 @@ class LLMProxy:
         if self.is_running():
             # Trigger restart
             self.stop()
+
+        if not self.store:
+            raise ValueError("Store is not set. Please set the store before starting the LLMProxy.")
 
         global _global_store
 
