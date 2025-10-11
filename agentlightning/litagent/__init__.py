@@ -5,9 +5,8 @@ from .litagent import *
 
 __all__ = [
     "LitAgent",
-    "LitAgentLLM",
     "is_v0_1_rollout_api",
     "llm_rollout",
-    # "prompt_rollout",
+    "prompt_rollout",
     "rollout",
 ]

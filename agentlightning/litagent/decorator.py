@@ -5,7 +5,7 @@ from __future__ import annotations
 import functools
 import inspect
 import logging
-from typing import Any, Awaitable, Callable, Protocol, TypeVar, Union, cast, overload
+from typing import Any, Awaitable, Callable, Dict, Protocol, TypeGuard, TypeVar, Union, overload
 
 from agentlightning.types import (
     LLM,
@@ -24,9 +24,8 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T")
 
 __all__ = [
-    "LitAgentLLM",
     "llm_rollout",
-    # "prompt_rollout",
+    "prompt_rollout",
     "rollout",
 ]
 
@@ -84,36 +83,51 @@ PromptRolloutFunc = Union[
 ]
 
 
-class LitAgentLLM(LitAgent[T]):
+class FunctionalLitAgentFunc(Protocol[T_contra]):
+    def __call__(
+        self, task: T_contra, *args: Any, **kwargs: Any
+    ) -> Union[RolloutRawResultV2, Awaitable[RolloutRawResultV2]]: ...
+
+
+class FunctionalLitAgent(LitAgent[T]):
     """A specialized LitAgent that wraps a function-based rollout that accepts
-    dynamically a task input and a configured LLM.
+    dynamically a task input and a configured resource (LLM / prompt template / ...).
 
     This class allows users to define agent behavior using a simple function
-    that takes task input and an LLM resource, rather than implementing a full
+    that takes task input and a resource, rather than implementing a full
     LitAgent subclass.
     """
 
-    def __init__(self, llm_rollout_func: LlmRolloutFunc[T], *, strip_proxy: bool = True) -> None:
+    def __init__(self, rollout_func: FunctionalLitAgentFunc[T], *, strip_proxy: bool = True) -> None:
         """
-        Initialize the LitAgentLLM with an LLM rollout function.
+        Initialize the FunctionalLitAgent with an functional rollout function.
 
         Args:
-            llm_rollout_func: A function that defines the agent's behavior.
-                              Can be sync or async, and can optionally accept a Rollout parameter.
+            rollout_func: A function that defines the agent's behavior.
+                          Can be sync or async, and can optionally accept a Rollout parameter.
             strip_proxy: Whether to strip the ProxyLLM resource into a LLM resource.
         """
         super().__init__()
-        self.llm_rollout_func = llm_rollout_func
-        self.strip_proxy = strip_proxy
-        self._is_async = inspect.iscoroutinefunction(llm_rollout_func)
-        self._accepts_rollout = "rollout" in inspect.signature(llm_rollout_func).parameters
+        self._rollout_func = rollout_func
+        self._strip_proxy = strip_proxy
+        self._is_async = inspect.iscoroutinefunction(rollout_func)
+        self._sig = inspect.signature(rollout_func)
 
         # Copy function metadata to preserve type hints and other attributes
-        functools.update_wrapper(self, llm_rollout_func)  # type: ignore
+        functools.update_wrapper(self, rollout_func)  # type: ignore
+
+    def _accepts_rollout(self) -> bool:
+        return "rollout" in self._sig.parameters
+
+    def _accepts_llm(self) -> bool:
+        return "llm" in self._sig.parameters
+
+    def _accepts_prompt_template(self) -> bool:
+        return "prompt_template" in self._sig.parameters
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         """Make the agent instance callable, preserving the original function behavior."""
-        return self.llm_rollout_func(*args, **kwargs)  # type: ignore
+        return self._rollout_func(*args, **kwargs)  # type: ignore
 
     def is_async(self) -> bool:
         return self._is_async
@@ -130,21 +144,10 @@ class LitAgentLLM(LitAgent[T]):
             The result from the wrapped rollout function.
         """
         if self._is_async:
-            raise RuntimeError("This LitAgentLLM uses an async function. Use rollout_async instead.")
+            raise RuntimeError(f"{self._rollout_func} is asynchronous. Use rollout_async instead.")
 
-        # Find the first LLM resource
-        llm = self._get_llm_resource(resources)
-
-        # Strip ProxyLLM if needed
-        if self.strip_proxy:
-            llm = self._strip_proxy(llm, rollout)
-
-        if self._accepts_rollout:
-            llm_rollout_func = cast(LlmRolloutFuncSync3[T], self.llm_rollout_func)
-            return llm_rollout_func(task, llm=llm, rollout=rollout)
-        else:
-            llm_rollout_func = cast(LlmRolloutFuncSync2[T], self.llm_rollout_func)
-            return llm_rollout_func(task, llm=llm)
+        kwargs = self._get_kwargs(resources, rollout)
+        return self._rollout_func(task, **kwargs)  # type: ignore
 
     async def rollout_async(self, task: T, resources: NamedResources, rollout: RolloutV2) -> RolloutRawResultV2:
         """Execute an asynchronous rollout using the wrapped function.
@@ -158,27 +161,32 @@ class LitAgentLLM(LitAgent[T]):
             The result from the wrapped rollout function.
         """
         if not self._is_async:
-            raise RuntimeError("This LitAgentLLM uses a sync function. Use rollout instead.")
+            raise RuntimeError(f"{self._rollout_func} is synchronous. Use rollout instead.")
 
-        # Find the first LLM resource
-        llm = self._get_llm_resource(resources)
+        kwargs = self._get_kwargs(resources, rollout)
+        return await self._rollout_func(task, **kwargs)  # type: ignore
 
-        # Strip ProxyLLM if needed
-        if self.strip_proxy:
-            llm = self._strip_proxy(llm, rollout)
+    def _get_kwargs(self, resources: NamedResources, rollout: RolloutV2) -> Dict[str, Any]:
+        """Extract the kwargs needed for the rollout function."""
 
-        if self._accepts_rollout:
-            llm_rollout_func = cast(LlmRolloutFuncAsync3[T], self.llm_rollout_func)
-            return await llm_rollout_func(task, llm=llm, rollout=rollout)
-        else:
-            llm_rollout_func = cast(LlmRolloutFuncAsync2[T], self.llm_rollout_func)
-            return await llm_rollout_func(task, llm=llm)
+        kwargs: Dict[str, Any] = {}
+        if self._accepts_rollout():
+            kwargs["rollout"] = rollout
+        if self._accepts_llm():
+            kwargs["llm"] = self._get_llm_resource(resources, rollout)
+        if self._accepts_prompt_template():
+            kwargs["prompt_template"] = self._get_prompt_template_resource(resources, rollout)
 
-    def _get_llm_resource(self, resources: NamedResources) -> LLM:
+        return kwargs
+
+    def _get_llm_resource(self, resources: NamedResources, rollout: RolloutV2) -> LLM:
         """Extract the first LLM resource from the resources dictionary.
+
+        Strip the ProxyLLM resource into a LLM resource if needed.
 
         Args:
             resources: Dictionary of named resources.
+            rollout: The rollout object with metadata.
 
         Returns:
             The first LLM resource found.
@@ -196,9 +204,41 @@ class LitAgentLLM(LitAgent[T]):
 
         if resource_found is None:
             raise ValueError("No LLM resource found in the provided resources.")
+
+        if self._strip_proxy:
+            resource_found = self._strip_proxy_helper(resource_found, rollout)
+
         return resource_found
 
-    def _strip_proxy(self, proxy_llm: LLM, rollout: RolloutV2) -> LLM:
+    def _get_prompt_template_resource(self, resources: NamedResources, rollout: RolloutV2) -> PromptTemplate:
+        """Extract the first PromptTemplate resource from the resources dictionary.
+
+        Args:
+            resources: Dictionary of named resources.
+            rollout: The rollout object with metadata. Not used in this method.
+
+        Returns:
+            The first PromptTemplate resource found.
+
+        Raises:
+            ValueError: If no PromptTemplate resource is found.
+        """
+        resource_found: PromptTemplate | None = None
+        for name, resource in resources.items():
+            if isinstance(resource, PromptTemplate):
+                if resource_found is not None:
+                    logger.warning(
+                        f"Multiple prompt template resources found in resources. Using the first one: '{name}'."
+                    )
+                    break
+                resource_found = resource
+
+        if resource_found is None:
+            raise ValueError("No prompt template resource found in the provided resources.")
+
+        return resource_found
+
+    def _strip_proxy_helper(self, proxy_llm: LLM, rollout: RolloutV2) -> LLM:
         """Strip the ProxyLLM resource into a LLM resource."""
 
         if not isinstance(proxy_llm, ProxyLLM):
@@ -214,20 +254,20 @@ class LitAgentLLM(LitAgent[T]):
 
 
 @overload
-def llm_rollout(func: LlmRolloutFunc[T]) -> LitAgentLLM[T]: ...
+def llm_rollout(func: LlmRolloutFunc[T]) -> FunctionalLitAgent[T]: ...
 
 
 @overload
-def llm_rollout(*, strip_proxy: bool = True) -> Callable[[LlmRolloutFunc[T]], LitAgentLLM[T]]: ...
+def llm_rollout(*, strip_proxy: bool = True) -> Callable[[LlmRolloutFunc[T]], FunctionalLitAgent[T]]: ...
 
 
 def llm_rollout(
     func: LlmRolloutFunc[T] | None = None, *, strip_proxy: bool = True
-) -> LitAgentLLM[T] | Callable[[LlmRolloutFunc[T]], LitAgentLLM[T]]:
-    """Create a LitAgentLLM from a function that takes (task, llm[, rollout]).
+) -> FunctionalLitAgent[T] | Callable[[LlmRolloutFunc[T]], FunctionalLitAgent[T]]:
+    """Create a FunctionalLitAgent from a function that takes (task, llm[, rollout]).
 
     This decorator allows you to define an agent using a simple function
-    instead of creating a full LitAgent subclass. The returned LitAgentLLM
+    instead of creating a full LitAgent subclass. The returned FunctionalLitAgent
     instance is callable, preserving the original function's behavior.
 
     Args:
@@ -240,7 +280,7 @@ def llm_rollout(
                      Defaults to True.
 
     Returns:
-        A callable LitAgentLLM instance that preserves the original function's
+        A callable FunctionalLitAgent instance that preserves the original function's
         type hints and behavior while providing all agent functionality.
 
     Example:
@@ -261,8 +301,9 @@ def llm_rollout(
         result = my_agent.rollout(task, resources, rollout)
     """
 
-    def decorator(f: LlmRolloutFunc[T]) -> LitAgentLLM[T]:
-        return LitAgentLLM(f, strip_proxy=strip_proxy)
+    def decorator(f: LlmRolloutFunc[T]) -> FunctionalLitAgent[T]:
+        _validate_llm_rollout_func(f)
+        return FunctionalLitAgent(f, strip_proxy=strip_proxy)
 
     if func is None:
         # Called with arguments: @llm_rollout(strip_proxy=False)
@@ -272,10 +313,62 @@ def llm_rollout(
         return decorator(func)
 
 
-# def prompt_rollout(func: PromptRolloutFunc[T]) -> LitAgent[T]:
+def _validate_llm_rollout_func(func: Any) -> TypeGuard[LlmRolloutFunc[Any]]:
+    """Validate the function signature of a LLM rollout function."""
+    sig = inspect.signature(func)
+    params = list(sig.parameters.keys())
+    if len(params) < 2:
+        raise ValueError(f"Function {func} must have at least 2 parameters.")
+    if params[0] != "task":
+        raise ValueError(f"Function {func} must be a positional parameter called 'task'.")
+    if "llm" not in params:
+        raise ValueError(f"Function {func} must have a positional parameter called 'llm'.")
+
+    return True
 
 
-def rollout(func: Union[LlmRolloutFunc[T], Callable[..., Any]]) -> LitAgent[T]:
+@overload
+def prompt_rollout(func: PromptRolloutFunc[T]) -> FunctionalLitAgent[T]: ...
+
+
+@overload
+def prompt_rollout() -> Callable[[PromptRolloutFunc[T]], FunctionalLitAgent[T]]: ...
+
+
+def prompt_rollout(
+    func: PromptRolloutFunc[T] | None = None,
+) -> FunctionalLitAgent[T] | Callable[[PromptRolloutFunc[T]], FunctionalLitAgent[T]]:
+    """Create a FunctionalLitAgent from a function that takes (task, prompt_template[, rollout]).
+
+    This decorator helps users who want to tune the prompt template within their agents.
+    Algorithms manage and update the prompt template, agents use the prompt template and then rollout.
+    """
+
+    def decorator(f: PromptRolloutFunc[T]) -> FunctionalLitAgent[T]:
+        _validate_prompt_rollout_func(f)
+        return FunctionalLitAgent(f)
+
+    if func is None:
+        return decorator
+    else:
+        return decorator(func)
+
+
+def _validate_prompt_rollout_func(func: Any) -> TypeGuard[PromptRolloutFunc[Any]]:
+    """Validate the function signature of a prompt rollout function."""
+    sig = inspect.signature(func)
+    params = list(sig.parameters.keys())
+    if len(params) < 2:
+        raise ValueError(f"Function {func} must have at least 2 parameters.")
+    if params[0] != "task":
+        raise ValueError(f"Function {func} must be a positional parameter called 'task'.")
+    if "prompt_template" not in params:
+        raise ValueError(f"Function {func} must have a positional parameter called 'prompt_template'.")
+
+    return True
+
+
+def rollout(func: Union[LlmRolloutFunc[T], PromptRolloutFunc[T], Callable[..., Any]]) -> FunctionalLitAgent[T]:
     """Create a LitAgent from a function, automatically detecting the appropriate type.
 
     This function inspects the provided callable and creates the appropriate
@@ -307,19 +400,20 @@ def rollout(func: Union[LlmRolloutFunc[T], Callable[..., Any]]) -> LitAgent[T]:
     Raises:
         NotImplementedError: If the function signature doesn't match any known patterns.
     """
-    sig = inspect.signature(func)
-    params = list(sig.parameters.keys())
-
     # Check if it matches the LLM rollout API pattern
-    # Should have at least 2 params, with the second one being 'llm' or typed as LLM
-    if len(params) >= 2:
-        second_param = sig.parameters[params[1]]
-        # Check if the second parameter is named 'llm' or has LLM type annotation
-        if second_param.name == "llm" or (
-            second_param.annotation != inspect.Parameter.empty
-            and (second_param.annotation == LLM or str(second_param.annotation).endswith("LLM"))
-        ):
+    sig = inspect.signature(func)
+
+    try:
+        if _validate_llm_rollout_func(func):
             return llm_rollout(func)
+    except ValueError:
+        pass
+
+    try:
+        if _validate_prompt_rollout_func(func):
+            return prompt_rollout(func)
+    except ValueError:
+        pass
 
     raise NotImplementedError(
         f"Function signature {sig} does not match any known agent patterns. "

@@ -7,7 +7,8 @@ from typing import Any, cast
 
 import pytest
 
-from agentlightning.litagent import LitAgentLLM, llm_rollout, rollout
+from agentlightning.litagent import llm_rollout, rollout
+from agentlightning.litagent.decorator import FunctionalLitAgent
 from agentlightning.types import LLM, Attempt, AttemptedRollout, NamedResources, ProxyLLM
 
 
@@ -48,8 +49,8 @@ def test_llm_rollout_preserves_metadata():
 
 
 def test_llm_rollout_returns_litagent_instance():
-    """Test that @llm_rollout returns a LitAgentLLM instance."""
-    assert isinstance(sample_llm_rollout_func, LitAgentLLM)
+    """Test that @llm_rollout returns a FunctionalLitAgent instance."""
+    assert isinstance(sample_llm_rollout_func, FunctionalLitAgent)
 
     # Should have agent methods
     assert hasattr(sample_llm_rollout_func, "rollout")
@@ -90,8 +91,8 @@ def test_rollout_preserves_metadata():
 
 
 def test_rollout_returns_litagent_instance():
-    """Test that @rollout returns a LitAgent instance (actually LitAgentLLM for this pattern)."""
-    assert isinstance(sample_rollout_func, LitAgentLLM)
+    """Test that @rollout returns a LitAgent instance (actually FunctionalLitAgent for this pattern)."""
+    assert isinstance(sample_rollout_func, FunctionalLitAgent)
 
     # Should have agent methods
     assert hasattr(sample_rollout_func, "rollout")

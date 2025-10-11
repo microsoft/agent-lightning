@@ -146,6 +146,7 @@ class PromptTemplate(Resource):
 
 
 # Use discriminated union for proper deserialization
+# TODO: migrate to use a registry
 ResourceUnion = Annotated[Union[LLM, ProxyLLM, PromptTemplate], Field(discriminator="resource_type")]
 NamedResources = Dict[str, ResourceUnion]
 """
