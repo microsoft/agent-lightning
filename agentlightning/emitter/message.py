@@ -2,7 +2,7 @@
 
 import logging
 
-from agentlightning.types.tracer import SpanNames
+from agentlightning.types import SpanAttributeNames, SpanNames
 
 from .utils import get_tracer
 
@@ -22,7 +22,7 @@ def emit_message(message: str) -> None:
     tracer = get_tracer()
     span = tracer.start_span(
         SpanNames.MESSAGE.value,
-        attributes={"message": message},
+        attributes={SpanAttributeNames.MESSAGE.value: message},
     )
     logger.debug("Emitting message span with message: %s", message)
     with span:

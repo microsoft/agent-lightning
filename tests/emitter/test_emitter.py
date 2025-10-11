@@ -10,7 +10,7 @@ from agentlightning.emitter import emit_exception, emit_message, emit_object
 from agentlightning.emitter import exception as exception_module
 from agentlightning.emitter import message as message_module
 from agentlightning.emitter import object as object_module
-from agentlightning.types.tracer import SpanNames
+from agentlightning.types.tracer import SpanAttributeNames, SpanNames
 
 
 class DummySpan:
@@ -51,7 +51,7 @@ def test_emit_message_valid(monkeypatch: pytest.MonkeyPatch) -> None:
     emit_message("hello world")
 
     assert tracer.last_name == SpanNames.MESSAGE.value
-    assert tracer.last_attributes == {"message": "hello world"}
+    assert tracer.last_attributes == {SpanAttributeNames.MESSAGE.value: "hello world"}
 
 
 def test_emit_message_requires_string(caplog: pytest.LogCaptureFixture) -> None:
@@ -70,7 +70,7 @@ def test_emit_object_serializes_payload(monkeypatch: pytest.MonkeyPatch) -> None
 
     assert tracer.last_name == SpanNames.OBJECT.value
     assert tracer.last_attributes is not None
-    assert json.loads(tracer.last_attributes["object"]) == payload
+    assert json.loads(tracer.last_attributes[SpanAttributeNames.OBJECT.value]) == payload
 
 
 def test_emit_object_requires_json_serializable(caplog: pytest.LogCaptureFixture) -> None:
