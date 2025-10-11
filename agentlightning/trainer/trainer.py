@@ -2,7 +2,6 @@
 
 import asyncio
 import functools
-import inspect
 import logging
 import multiprocessing
 import signal
@@ -383,8 +382,8 @@ class Trainer(ParallelWorkerBase):
                 await asyncio.sleep(0.1)
             return
         try:
-            if inspect.iscoroutinefunction(algorithm.run):
-                await algorithm.run(
+            if algorithm.is_async():
+                await algorithm.run(  # type: ignore
                     train_dataset=train_dataset,
                     val_dataset=val_dataset,
                 )

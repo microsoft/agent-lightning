@@ -6,6 +6,7 @@ import asyncio
 import functools
 import hashlib
 import logging
+import threading
 import time
 import uuid
 from collections import deque
@@ -108,8 +109,8 @@ class InMemoryLightningStore(LightningStore):
         # Attempt tracking
         self._attempts: Dict[str, List[Attempt]] = {}  # rollout_id -> list of attempts
 
-        # Completion tracking for wait_for_rollouts
-        self._completion_events: Dict[str, asyncio.Event] = {}
+        # Completion tracking for wait_for_rollouts (cross-loop safe)
+        self._completion_events: Dict[str, threading.Event] = {}
 
     @_healthcheck_wrapper
     async def start_rollout(
@@ -150,7 +151,7 @@ class InMemoryLightningStore(LightningStore):
             self._rollouts[rollout.rollout_id] = rollout
 
             # Manully added rollout is not added to task queue. It's already preparing
-            self._completion_events.setdefault(rollout.rollout_id, asyncio.Event())
+            self._completion_events.setdefault(rollout.rollout_id, threading.Event())
 
             return AttemptedRollout(**rollout.model_dump(), attempt=attempt)
 
@@ -181,7 +182,7 @@ class InMemoryLightningStore(LightningStore):
 
             self._rollouts[rollout.rollout_id] = rollout
             self._task_queue.append(rollout)  # add it to the end of the queue
-            self._completion_events.setdefault(rollout.rollout_id, asyncio.Event())
+            self._completion_events.setdefault(rollout.rollout_id, threading.Event())
 
             return rollout
 
@@ -268,7 +269,7 @@ class InMemoryLightningStore(LightningStore):
                 self._attempts[rollout_id] = []
             self._attempts[rollout_id].append(attempt)
 
-            self._completion_events.setdefault(rollout.rollout_id, asyncio.Event())
+            self._completion_events.setdefault(rollout.rollout_id, threading.Event())
 
             return AttemptedRollout(**rollout.model_dump(), attempt=attempt)
 
@@ -456,16 +457,25 @@ class InMemoryLightningStore(LightningStore):
                     completed_rollouts.append(rollout)
                     return
 
+            # No timeout, return immediately
+            if timeout is not None and timeout <= 0:
+                return
+
             # If not completed and we have an event, wait for completion
             if rollout_id in self._completion_events:
                 try:
-                    await asyncio.wait_for(self._completion_events[rollout_id].wait(), timeout=timeout)
+                    evt = self._completion_events[rollout_id]
+                    # Block on the threading.Event in a worker thread, and bound it with asyncio timeout.
+                    # Do not pass a timeout to evt.wait(); let asyncio handle cancellation.
+                    await asyncio.wait_for(asyncio.to_thread(evt.wait), timeout=timeout)
                     async with self._lock:
                         rollout = self._rollouts.get(rollout_id)
                         if rollout and is_finished(rollout):
                             completed_rollouts.append(rollout)
                 except asyncio.TimeoutError:
                     pass
+
+            # Rollout not found, return
 
         # Wait for all rollouts concurrently
         await asyncio.gather(*[wait_for_rollout(rid) for rid in rollout_ids], return_exceptions=True)
@@ -572,7 +582,7 @@ class InMemoryLightningStore(LightningStore):
 
         # Set end time for finished rollouts
         # Rollout is only finished when it succeeded or fail with no more retries.
-        if status is not UNSET and is_finished(rollout):
+        if not isinstance(status, Unset) and is_finished(rollout):
             rollout.end_time = time.time()
             # Signal completion
             if rollout_id in self._completion_events:

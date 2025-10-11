@@ -26,6 +26,10 @@ class BaseAlgorithm:
     _initial_resources: NamedResources | None = None
     _adapter_ref: weakref.ReferenceType[TraceAdapter[Any]] | None = None
 
+    def is_async(self) -> bool:
+        """Return True if the algorithm is asynchronous."""
+        return inspect.iscoroutinefunction(self.run)
+
     def set_trainer(self, trainer: Trainer) -> None:
         """
         Set the trainer for this algorithm.
@@ -251,6 +255,9 @@ class FunctionalAlgorithm(BaseAlgorithm, Generic[AF]):
 
         # Copy function metadata to preserve type hints and other attributes
         functools.update_wrapper(self, algorithm_func)  # type: ignore
+
+    def is_async(self) -> bool:
+        return self._is_async
 
     @overload
     def run(
