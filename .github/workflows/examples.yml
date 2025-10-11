@@ -61,6 +61,19 @@ jobs:
           OPENAI_API_BASE: ${{ secrets.OPENAI_API_BASE }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
+      - name: APO example
+        run: |
+          set -ex
+          . .venv/bin/activate
+          cd examples/apo
+          python apo.py | tee _ci_apo.log
+          # Check whether the log contains "Best prompt found:"
+          grep "Best prompt found:" _ci_apo.log
+        env:
+          # New versions follow OPENAI_BASE_URL instead of OPENAI_API_BASE
+          OPENAI_BASE_URL: ${{ secrets.OPENAI_API_BASE }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
       - name: Prepare Spider dataset
         run: |
           set -ex

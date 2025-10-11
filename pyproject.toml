@@ -20,6 +20,7 @@ dependencies = [
   "litellm[proxy]",
   "pydantic>=2.11",
   "openai",
+  "rich",
 ]
 
 [project.optional-dependencies]
