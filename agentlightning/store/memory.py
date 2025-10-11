@@ -463,17 +463,28 @@ class InMemoryLightningStore(LightningStore):
 
             # If not completed and we have an event, wait for completion
             if rollout_id in self._completion_events:
-                try:
-                    evt = self._completion_events[rollout_id]
-                    # Block on the threading.Event in a worker thread, and bound it with asyncio timeout.
-                    # Do not pass a timeout to evt.wait(); let asyncio handle cancellation.
-                    await asyncio.wait_for(asyncio.to_thread(evt.wait), timeout=timeout)
+                evt = self._completion_events[rollout_id]
+
+                # Wait for the event with proper timeout handling
+                # evt.wait() returns True if event was set, False if timeout occurred
+                if timeout is None:
+                    # Wait indefinitely by polling with finite timeouts
+                    # This allows threads to exit cleanly on shutdown
+                    while True:
+                        result = await asyncio.to_thread(evt.wait, 10.0)  # Poll every 10 seconds
+                        if result:  # Event was set
+                            break
+                        # Loop and check again (continues indefinitely since timeout=None)
+                else:
+                    # Wait with the specified timeout
+                    result = await asyncio.to_thread(evt.wait, timeout)
+
+                # If event was set (not timeout), check if rollout is finished
+                if result:
                     async with self._lock:
                         rollout = self._rollouts.get(rollout_id)
                         if rollout and is_finished(rollout):
                             completed_rollouts.append(rollout)
-                except asyncio.TimeoutError:
-                    pass
 
             # Rollout not found, return
 
