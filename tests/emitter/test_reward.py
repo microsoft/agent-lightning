@@ -5,13 +5,12 @@ from dataclasses import dataclass
 from typing import Any, Dict, Optional, cast
 
 from agentlightning.reward import (
-    SpanLike,
     find_final_reward,
     find_reward_spans,
     get_reward_value,
     is_reward_span,
 )
-from agentlightning.types.tracer import SpanNames
+from agentlightning.types import SpanLike, SpanNames
 
 
 @dataclass

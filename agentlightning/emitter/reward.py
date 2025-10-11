@@ -15,17 +15,16 @@ from typing import (
     Sequence,
     TypedDict,
     TypeVar,
-    Union,
     cast,
 )
 
 import agentops
-import opentelemetry.trace as trace_api
 from agentops.sdk.decorators import operation
 from opentelemetry.sdk.trace import ReadableSpan
-from opentelemetry.trace import get_tracer_provider
 
-from agentlightning.types import Span, SpanNames
+from agentlightning.types import SpanLike, SpanNames
+
+from .utils import get_tracer
 
 logger = logging.getLogger(__name__)
 
@@ -129,13 +128,7 @@ def emit_reward(reward: float) -> ReadableSpan:
     if not isinstance(reward, float):
         raise ValueError(f"Reward must be a number, got: {type(reward)}")
 
-    # Check for tracer initialization
-    if hasattr(trace_api, "_TRACER_PROVIDER") and trace_api._TRACER_PROVIDER is None:  # type: ignore
-        raise RuntimeError("Tracer is not initialized. Cannot emit a meaningful span.")
-
-    tracer_provider = get_tracer_provider()
-
-    tracer = tracer_provider.get_tracer("agentlightning")
+    tracer = get_tracer()
     span = tracer.start_span(SpanNames.REWARD.value, attributes={"reward": reward})
     # Do nothing; it's just a number
     with span:
@@ -143,9 +136,6 @@ def emit_reward(reward: float) -> ReadableSpan:
     if not isinstance(span, ReadableSpan):
         raise ValueError(f"Span is not a ReadableSpan: {span}")
     return span
-
-
-SpanLike = Union[ReadableSpan, Span]
 
 
 def get_reward_value(span: SpanLike) -> Optional[float]:

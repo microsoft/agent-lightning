@@ -25,6 +25,7 @@ __all__ = [
     "Resource",
     "Span",
     "SpanNames",
+    "SpanLike",
 ]
 
 
@@ -312,3 +313,6 @@ class SpanNames(str, Enum):
     OBJECT = "agentlightning.object"
     EXCEPTION = "agentlightning.exception"
     VIRTUAL = "agentlightning.virtual"
+
+
+SpanLike = Union[ReadableSpan, Span]

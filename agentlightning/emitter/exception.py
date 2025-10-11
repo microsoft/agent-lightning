@@ -3,22 +3,13 @@
 import logging
 import traceback
 
-import opentelemetry.trace as trace_api
 from opentelemetry.semconv.attributes import exception_attributes
-from opentelemetry.trace import get_tracer_provider
 
 from agentlightning.types.tracer import SpanNames
 
+from .utils import get_tracer
+
 logger = logging.getLogger(__name__)
-
-
-def _get_tracer() -> trace_api.Tracer:
-    """Return the tracer used for AgentLightning spans."""
-    if hasattr(trace_api, "_TRACER_PROVIDER") and trace_api._TRACER_PROVIDER is None:  # type: ignore[attr-defined]
-        raise RuntimeError("Tracer is not initialized. Cannot emit a meaningful span.")
-
-    tracer_provider = get_tracer_provider()
-    return tracer_provider.get_tracer("agentlightning")
 
 
 def emit_exception(exception: BaseException) -> None:
@@ -27,7 +18,7 @@ def emit_exception(exception: BaseException) -> None:
         logger.error(f"Expected an BaseException instance, got: {type(exception)}. Skip emit_exception.")
         return
 
-    tracer = _get_tracer()
+    tracer = get_tracer()
     stacktrace = "".join(traceback.format_exception(type(exception), exception, exception.__traceback__))
     attributes = {
         exception_attributes.EXCEPTION_TYPE: type(exception).__name__,

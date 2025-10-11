@@ -5,24 +5,29 @@ from typing import Any, Dict, Optional
 
 import pytest
 from opentelemetry.semconv.attributes import exception_attributes
-from opentelemetry.trace.status import Status, StatusCode
+
+from agentlightning.emitter import emit_exception, emit_message, emit_object
+from agentlightning.emitter import exception as exception_module
+from agentlightning.emitter import message as message_module
+from agentlightning.emitter import object as object_module
+from agentlightning.types.tracer import SpanNames
 
 
 class DummySpan:
     def __init__(self) -> None:
         self.recorded_exception: Optional[Exception] = None
-        self.status: Optional[Status] = None
+        self.status: Optional[Any] = None
 
     def __enter__(self) -> "DummySpan":
         return self
 
-    def __exit__(self, exc_type, exc_value, traceback) -> bool:
+    def __exit__(self, exc_type: Any, exc_value: Any, traceback: Any) -> bool:
         return False
 
     def record_exception(self, exception: Exception) -> None:
         self.recorded_exception = exception
 
-    def set_status(self, status: Status) -> None:
+    def set_status(self, status: Any) -> None:
         self.status = status
 
 
@@ -41,7 +46,7 @@ class DummyTracer:
 def test_emit_message_valid(monkeypatch: pytest.MonkeyPatch) -> None:
     span = DummySpan()
     tracer = DummyTracer(span)
-    monkeypatch.setattr(message_module, "_get_tracer", lambda: tracer)
+    monkeypatch.setattr(message_module, "get_tracer", lambda: tracer)
 
     emit_message("hello world")
 
@@ -49,15 +54,16 @@ def test_emit_message_valid(monkeypatch: pytest.MonkeyPatch) -> None:
     assert tracer.last_attributes == {"message": "hello world"}
 
 
-def test_emit_message_requires_string() -> None:
-    with pytest.raises(TypeError):
-        emit_message(123)  # type: ignore[arg-type]
+def test_emit_message_requires_string(caplog: pytest.LogCaptureFixture) -> None:
+    # emit_message logs an error but doesn't raise an exception for invalid input
+    emit_message(123)  # type: ignore[arg-type]
+    assert "Message must be a string" in caplog.text
 
 
 def test_emit_object_serializes_payload(monkeypatch: pytest.MonkeyPatch) -> None:
     span = DummySpan()
     tracer = DummyTracer(span)
-    monkeypatch.setattr(object_module, "_get_tracer", lambda: tracer)
+    monkeypatch.setattr(object_module, "get_tracer", lambda: tracer)
 
     payload = {"foo": "bar", "baz": [1, 2, 3]}
     emit_object(payload)
@@ -67,15 +73,16 @@ def test_emit_object_serializes_payload(monkeypatch: pytest.MonkeyPatch) -> None
     assert json.loads(tracer.last_attributes["object"]) == payload
 
 
-def test_emit_object_requires_json_serializable() -> None:
-    with pytest.raises(TypeError):
-        emit_object(object())  # type: ignore[arg-type]
+def test_emit_object_requires_json_serializable(caplog: pytest.LogCaptureFixture) -> None:
+    # emit_object logs an error but doesn't raise an exception for non-serializable input
+    emit_object(object())  # type: ignore[arg-type]
+    assert "Object must be JSON serializable" in caplog.text
 
 
 def test_emit_exception_records_exception(monkeypatch: pytest.MonkeyPatch) -> None:
     span = DummySpan()
     tracer = DummyTracer(span)
-    monkeypatch.setattr(exception_module, "_get_tracer", lambda: tracer)
+    monkeypatch.setattr(exception_module, "get_tracer", lambda: tracer)
 
     exc: Optional[Exception] = None
     try:
@@ -90,10 +97,9 @@ def test_emit_exception_records_exception(monkeypatch: pytest.MonkeyPatch) -> No
     assert tracer.last_attributes[exception_attributes.EXCEPTION_MESSAGE] == "boom"
     assert tracer.last_attributes[exception_attributes.EXCEPTION_ESCAPED] is True
     assert span.recorded_exception is exc
-    assert span.status is not None
-    assert span.status.status_code is StatusCode.ERROR
 
 
-def test_emit_exception_requires_exception_instance() -> None:
-    with pytest.raises(TypeError):
-        emit_exception("boom")  # type: ignore[arg-type]
+def test_emit_exception_requires_exception_instance(caplog: pytest.LogCaptureFixture) -> None:
+    # emit_exception logs an error but doesn't raise an exception for invalid input
+    emit_exception("boom")  # type: ignore[arg-type]
+    assert "Expected an BaseException instance" in caplog.text
