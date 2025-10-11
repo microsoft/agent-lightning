@@ -7,7 +7,7 @@ pip install --no-cache-dir packaging ninja numpy pandas ipython ipykernel gdown 
 pip install --no-cache-dir torch==2.8.0 torchvision==0.23.0 --index-url https://download.pytorch.org/whl/cu128
 pip install --no-cache-dir flash-attn --no-build-isolation
 # This must match pytorch version.
-pip install --no-cache-dir vllm==0.10.2
+pip install --no-cache-dir vllm==0.11.0
 # Latest VERL release version.
 pip install --no-cache-dir verl
 
