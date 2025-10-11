@@ -19,7 +19,7 @@ from yarl import URL
 from agentlightning.store.base import UNSET
 from agentlightning.store.client_server import LightningStoreClient, LightningStoreServer
 from agentlightning.store.memory import InMemoryLightningStore
-from agentlightning.types import Resource, Span, TraceStatus
+from agentlightning.types import LLM, PromptTemplate, Resource, Span, TraceStatus
 
 
 def _get_free_port() -> int:
@@ -74,6 +74,73 @@ async def server_client() -> AsyncGenerator[Tuple[LightningStoreServer, Lightnin
     finally:
         await client.close()
         await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_add_resources_via_server(server_client: Tuple[LightningStoreServer, LightningStoreClient]) -> None:
+    """Test that add_resources works correctly via server."""
+    server, _ = server_client
+
+    # Add resources using add_resources
+    llm = LLM(
+        resource_type="llm",
+        endpoint="http://localhost:8080/v1",
+        model="test-model",
+        sampling_parameters={"temperature": 0.7},
+    )
+    prompt = PromptTemplate(resource_type="prompt_template", template="Hello {name}!", engine="f-string")
+
+    resources_update = await server.add_resources(cast(Any, {"main_llm": llm, "greeting": prompt}))
+
+    # Verify resources_id was auto-generated
+    assert resources_update.resources_id.startswith("rs-")
+    assert len(resources_update.resources_id) == 15  # "rs-" + 12 char hash
+
+    # Verify resources can be retrieved
+    retrieved = await server.get_resources_by_id(resources_update.resources_id)
+    assert retrieved is not None
+    assert retrieved.resources_id == resources_update.resources_id
+    assert isinstance(retrieved.resources["main_llm"], LLM)
+    assert retrieved.resources["main_llm"].model == "test-model"
+
+    # Verify it's set as latest
+    latest = await server.get_latest_resources()
+    assert latest is not None
+    assert latest.resources_id == resources_update.resources_id
+
+
+@pytest.mark.asyncio
+async def test_add_resources_via_client(server_client: Tuple[LightningStoreServer, LightningStoreClient]) -> None:
+    """Test that add_resources works correctly via HTTP client."""
+    from typing import cast
+
+    from agentlightning.types import LLM
+
+    _, client = server_client
+
+    # Add resources using add_resources via HTTP
+    llm = LLM(
+        resource_type="llm",
+        endpoint="http://localhost:9000/v1",
+        model="client-model",
+        sampling_parameters={"temperature": 0.5},
+    )
+
+    resources_update = await client.add_resources(cast(Any, {"client_llm": llm}))
+
+    # Verify resources_id was auto-generated
+    assert resources_update.resources_id.startswith("rs-")
+
+    # Verify resources can be retrieved via client
+    retrieved = await client.get_resources_by_id(resources_update.resources_id)
+    assert retrieved is not None
+    assert isinstance(retrieved.resources["client_llm"], LLM)
+    assert retrieved.resources["client_llm"].model == "client-model"
+
+    # Verify it's set as latest
+    latest = await client.get_latest_resources()
+    assert latest is not None
+    assert latest.resources_id == resources_update.resources_id
 
 
 @pytest.mark.asyncio

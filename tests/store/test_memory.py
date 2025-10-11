@@ -43,7 +43,7 @@ async def test_enqueue_rollout_creates_rollout(inmemory_store: InMemoryLightning
         input=sample, mode="train", resources_id="res-123", metadata=metadata
     )
 
-    assert rollout.rollout_id.startswith("rollout-")
+    assert rollout.rollout_id.startswith("ro-")
     assert rollout.input == sample
     assert rollout.mode == "train"
     assert rollout.resources_id == "res-123"
@@ -60,8 +60,8 @@ async def test_add_rollout_initializes_attempt(inmemory_store: InMemoryLightning
     attempt_rollout = await inmemory_store.start_rollout(input=sample, mode="val", resources_id="res-add")
 
     assert attempt_rollout.status == "preparing"
-    assert attempt_rollout.rollout_id.startswith("rollout-")
-    assert attempt_rollout.attempt.attempt_id.startswith("attempt-")
+    assert attempt_rollout.rollout_id.startswith("ro-")
+    assert attempt_rollout.attempt.attempt_id.startswith("at-")
     assert attempt_rollout.attempt.sequence_id == 1
     assert attempt_rollout.attempt.status == "preparing"
 
@@ -343,6 +343,73 @@ async def test_requeue_mechanism(inmemory_store: InMemoryLightningStore) -> None
 
 
 @pytest.mark.asyncio
+async def test_add_resources_generates_id_and_stores(inmemory_store: InMemoryLightningStore) -> None:
+    """Test that add_resources generates a resources_id and stores the resources."""
+    # Initially no resources
+    assert await inmemory_store.get_latest_resources() is None
+
+    # Add resources using add_resources (auto-generates ID)
+    llm = LLM(
+        resource_type="llm",
+        endpoint="http://localhost:8080/v1",
+        model="test-model",
+        sampling_parameters={"temperature": 0.7},
+    )
+    prompt = PromptTemplate(resource_type="prompt_template", template="Hello {name}!", engine="f-string")
+
+    resources_update = await inmemory_store.add_resources({"main_llm": llm, "greeting": prompt})
+
+    # Verify resources_id was auto-generated with correct prefix
+    assert resources_update.resources_id.startswith("rs-")
+    assert len(resources_update.resources_id) == 15  # "rs-" + 12 char hash
+
+    # Verify resources were stored correctly
+    assert isinstance(resources_update.resources["main_llm"], LLM)
+    assert resources_update.resources["main_llm"].model == "test-model"
+    assert isinstance(resources_update.resources["greeting"], PromptTemplate)
+    assert resources_update.resources["greeting"].template == "Hello {name}!"
+
+    # Verify it's set as latest
+    latest = await inmemory_store.get_latest_resources()
+    assert latest is not None
+    assert latest.resources_id == resources_update.resources_id
+    assert latest.resources["main_llm"].model == "test-model"  # type: ignore
+
+    # Verify we can retrieve by ID
+    retrieved = await inmemory_store.get_resources_by_id(resources_update.resources_id)
+    assert retrieved is not None
+    assert retrieved.resources_id == resources_update.resources_id
+
+
+@pytest.mark.asyncio
+async def test_add_resources_multiple_times_generates_unique_ids(inmemory_store: InMemoryLightningStore) -> None:
+    """Test that multiple calls to add_resources generate unique IDs."""
+    llm1 = LLM(resource_type="llm", endpoint="http://localhost:8080", model="model-v1")
+    llm2 = LLM(resource_type="llm", endpoint="http://localhost:8080", model="model-v2")
+
+    update1 = await inmemory_store.add_resources({"llm": llm1})
+    update2 = await inmemory_store.add_resources({"llm": llm2})
+
+    # IDs should be different
+    assert update1.resources_id != update2.resources_id
+    assert update1.resources_id.startswith("rs-")
+    assert update2.resources_id.startswith("rs-")
+
+    # Both should be retrievable
+    retrieved1 = await inmemory_store.get_resources_by_id(update1.resources_id)
+    retrieved2 = await inmemory_store.get_resources_by_id(update2.resources_id)
+    assert retrieved1 is not None
+    assert retrieved2 is not None
+    assert retrieved1.resources["llm"].model == "model-v1"  # type: ignore
+    assert retrieved2.resources["llm"].model == "model-v2"  # type: ignore
+
+    # Latest should be the second one
+    latest = await inmemory_store.get_latest_resources()
+    assert latest is not None
+    assert latest.resources_id == update2.resources_id
+
+
+@pytest.mark.asyncio
 async def test_resource_lifecycle(inmemory_store: InMemoryLightningStore) -> None:
     """Test adding, updating, and retrieving resources."""
     # Initially no resources
@@ -442,7 +509,7 @@ async def test_span_sequence_generation(inmemory_store: InMemoryLightningStore, 
     assert span2.sequence_id == 4
 
     # Different attempt reuses the same rollout_id
-    seq_id = await inmemory_store.get_next_span_sequence_id(rollout.rollout_id, "attempt-2")
+    seq_id = await inmemory_store.get_next_span_sequence_id(rollout.rollout_id, "attempt-does-not-exist")
     assert seq_id == 5
 
 
@@ -976,7 +1043,7 @@ async def test_add_attempt_creates_new_attempt(inmemory_store: InMemoryLightning
     assert attempted_rollout.attempt.sequence_id == 1
     assert attempted_rollout.attempt.status == "preparing"
     assert attempted_rollout.attempt.rollout_id == rollout.rollout_id
-    assert attempted_rollout.attempt.attempt_id.startswith("attempt-")
+    assert attempted_rollout.attempt.attempt_id.startswith("at-")
 
     # Verify attempt is stored
     attempts = await inmemory_store.query_attempts(rollout.rollout_id)

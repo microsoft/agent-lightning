@@ -22,6 +22,7 @@ T = TypeVar("T")
 
 __all__ = [
     "LitAgent",
+    "is_v0_1_rollout_api",
 ]
 
 

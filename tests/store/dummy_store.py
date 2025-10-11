@@ -70,6 +70,10 @@ class DummyLightningStore(LightningStore):
         self.calls.append(("get_latest_attempt", (rollout_id,), {}))
         return self.return_values["get_latest_attempt"]
 
+    async def add_resources(self, resources: NamedResources) -> ResourcesUpdate:
+        self.calls.append(("add_resources", (resources,), {}))
+        return self.return_values["add_resources"]
+
     async def update_resources(self, resources_id: str, resources: NamedResources) -> ResourcesUpdate:
         self.calls.append(("update_resources", (resources_id, resources), {}))
         return self.return_values["update_resources"]
@@ -162,6 +166,7 @@ def minimal_dummy_store() -> DummyLightningStore:
             "query_attempts": [],
             "get_rollout_by_id": None,
             "get_latest_attempt": None,
+            "add_resources": None,
             "update_resources": None,
             "get_resources_by_id": None,
             "get_latest_resources": None,

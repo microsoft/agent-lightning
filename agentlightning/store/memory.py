@@ -330,7 +330,10 @@ class InMemoryLightningStore(LightningStore):
         """
         resources_id = _generate_resources_id()
         async with self._lock:
-            return await self.update_resources(resources_id, resources)
+            update = ResourcesUpdate(resources_id=resources_id, resources=resources)
+            self._resources[resources_id] = update
+            self._latest_resources_id = resources_id
+            return update
 
     @_healthcheck_wrapper
     async def update_resources(self, resources_id: str, resources: NamedResources) -> ResourcesUpdate:

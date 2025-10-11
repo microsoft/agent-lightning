@@ -7,7 +7,15 @@ import inspect
 import logging
 from typing import Any, Awaitable, Callable, Protocol, TypeVar, Union, cast, overload
 
-from agentlightning.types import LLM, AttemptedRollout, NamedResources, ProxyLLM, RolloutRawResultV2, RolloutV2
+from agentlightning.types import (
+    LLM,
+    AttemptedRollout,
+    NamedResources,
+    PromptTemplate,
+    ProxyLLM,
+    RolloutRawResultV2,
+    RolloutV2,
+)
 
 from .litagent import LitAgent
 
@@ -47,6 +55,32 @@ LlmRolloutFunc = Union[
     LlmRolloutFuncSync3[T_contra],
     LlmRolloutFuncAsync2[T_contra],
     LlmRolloutFuncAsync3[T_contra],
+]
+
+
+class PromptRolloutFuncSync2(Protocol[T_contra]):
+    def __call__(self, task: T_contra, prompt_template: PromptTemplate) -> RolloutRawResultV2: ...
+
+
+class PromptRolloutFuncAsync2(Protocol[T_contra]):
+    def __call__(self, task: T_contra, prompt_template: PromptTemplate) -> Awaitable[RolloutRawResultV2]: ...
+
+
+class PromptRolloutFuncSync3(Protocol[T_contra]):
+    def __call__(self, task: T_contra, prompt_template: PromptTemplate, rollout: RolloutV2) -> RolloutRawResultV2: ...
+
+
+class PromptRolloutFuncAsync3(Protocol[T_contra]):
+    def __call__(
+        self, task: T_contra, prompt_template: PromptTemplate, rollout: RolloutV2
+    ) -> Awaitable[RolloutRawResultV2]: ...
+
+
+PromptRolloutFunc = Union[
+    PromptRolloutFuncSync2[T_contra],
+    PromptRolloutFuncSync3[T_contra],
+    PromptRolloutFuncAsync2[T_contra],
+    PromptRolloutFuncAsync3[T_contra],
 ]
 
 
