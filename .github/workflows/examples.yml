@@ -74,6 +74,18 @@ jobs:
           OPENAI_BASE_URL: ${{ secrets.OPENAI_API_BASE }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
+      - name: APO example debug sanity check
+        run: |
+          set -ex
+          . .venv/bin/activate
+          cd examples/apo
+          python apo_debug.py --mode runner
+          python apo_debug.py --mode trainer
+        env:
+          # New versions follow OPENAI_BASE_URL instead of OPENAI_API_BASE
+          OPENAI_BASE_URL: ${{ secrets.OPENAI_API_BASE }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
       - name: Prepare Spider dataset
         run: |
           set -ex

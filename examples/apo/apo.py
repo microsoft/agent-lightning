@@ -88,6 +88,7 @@ async def apo_rollout(task: str, prompt_template: PromptTemplate) -> float:
     )
 
     text = result.choices[0].message.content
+    console.print(f"[bold yellow][Rollout][/bold yellow] LLM returned: {text}")
 
     return await llm_judge(task, text)
 
