@@ -303,9 +303,12 @@ class Span(BaseModel):
 class SpanNames(str, Enum):
     """Standard span name values for AgentLightning.
 
-    Currently only reward spans are supported.
+    Currently reward, message, object and exception spans are supported.
     We will add more spans related to error handling in the future.
     """
 
     REWARD = "agentlightning.reward"
+    MESSAGE = "agentlightning.message"
+    OBJECT = "agentlightning.object"
+    EXCEPTION = "agentlightning.exception"
     VIRTUAL = "agentlightning.virtual"
