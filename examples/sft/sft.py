@@ -64,6 +64,8 @@ def vllm_server(
     max_model_len: int = 32768,
     gpu_memory_utilization: float = 0.7,
     quantization: Optional[str] = "bitsandbytes",
+    auto_tool_choice: bool = True,
+    tool_call_parser: Optional[str] = "hermes",
 ):
     """Serves a vLLM model from command line.
 
@@ -75,6 +77,8 @@ def vllm_server(
         max_model_len: The maximum model length.
         gpu_memory_utilization: The GPU memory utilization for the server. Set it lower to avoid OOM.
         quantization: The quantization method.
+        auto_tool_choice: Whether to enable auto tool choice.
+        tool_call_parser: The tool call parser to use.
     """
     proc: Optional[subprocess.Popen[bytes]] = None
     try:
@@ -89,6 +93,11 @@ def vllm_server(
         if quantization is not None:
             vllm_serve_args.append("--quantization")
             vllm_serve_args.append(quantization)
+        if auto_tool_choice:
+            vllm_serve_args.append("--enable-auto-tool-choice")
+        if tool_call_parser is not None:
+            vllm_serve_args.append("--tool-call-parser")
+            vllm_serve_args.append(tool_call_parser)
 
         proc = subprocess.Popen(["vllm", "serve", model_path, *vllm_serve_args])
 
@@ -123,10 +132,13 @@ def vllm_server(
 
 @algo
 async def sft_algorithm(*, store: LightningStore, train_dataset: Dataset[GsmProblem], llm_proxy: LLMProxy):
-    MAX_ITERATIONS = 3
+    MAX_ITERATIONS = 1
     VLLM_PORT = 12316
 
-    model_path: str = "unsloth/Qwen3-4B-Instruct-2507"
+    # Download the model before starting the script:
+    # hf download unsloth/Qwen3-4B-Instruct-2507 --local-dir models/version_0
+    model_path = "models/version_0"
+
     for iteration in range(MAX_ITERATIONS):
         console.print(f"\n[bold red][Algo][/bold red] Starting iteration {iteration}")
         # 1. Rollout to get trace data
@@ -155,11 +167,11 @@ async def sft_algorithm(*, store: LightningStore, train_dataset: Dataset[GsmProb
             # Create tasks for runners to run, associating them with the proxy address
             rollouts: List[RolloutV2] = []
             for data in train_dataset:
-                await store.enqueue_rollout(
+                rollouts.append(await store.enqueue_rollout(
                     input=data,
                     mode="train",
                     resources_id=resources_update.resources_id,
-                )
+                ))
 
             console.print(f"[bold red][Algo][/bold red] Enqueued {len(rollouts)} rollouts")
 
@@ -253,7 +265,8 @@ def math_agent_sft():
         algorithm=sft_algorithm,
         llm_proxy=LLMProxy(port=12358)
     )
-    trainer.fit_v2(math_agent, train_dataset=_load_dataset())
+    dataset = _load_dataset(limit=1)
+    trainer.fit_v2(math_agent, train_dataset=dataset)
 
 
 if __name__ == "__main__":
