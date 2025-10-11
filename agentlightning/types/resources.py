@@ -144,6 +144,15 @@ class PromptTemplate(Resource):
     template: str
     engine: Literal["jinja", "f-string", "poml"]
 
+    def format(self, **kwargs: Any) -> str:
+        """Format the prompt template with the given kwargs."""
+        if self.engine == "f-string":
+            return self.template.format(**kwargs)
+        else:
+            raise NotImplementedError(
+                "Formatting prompt templates for non-f-string engines with format() helper is not supported yet."
+            )
+
 
 # Use discriminated union for proper deserialization
 # TODO: migrate to use a registry
