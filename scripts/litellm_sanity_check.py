@@ -1,4 +1,5 @@
 # Copyright (c) Microsoft. All rights reserved.
+
 """Utility script to perform a sanity check on LiteLLM proxy server."""
 
 import sys
