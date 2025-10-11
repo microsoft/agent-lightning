@@ -5,7 +5,7 @@ import traceback
 
 from opentelemetry.semconv.attributes import exception_attributes
 
-from agentlightning.types.tracer import SpanNames
+from agentlightning.types import SpanNames
 
 from .utils import get_tracer
 
