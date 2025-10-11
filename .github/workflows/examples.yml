@@ -42,6 +42,25 @@ jobs:
           path: requirements-freeze.txt
           compression-level: 0
 
+      - name: Launch LiteLLM Proxy
+        run: |
+          set -ex
+          . .venv/bin/activate
+          litellm --config scripts/litellm_ci.yaml --port 12306 &
+          sleep 10  # Wait for the proxy to be up
+        env:
+          AZURE_API_BASE: ${{ secrets.AZURE_API_BASE }}
+          AZURE_API_KEY: ${{ secrets.AZURE_API_KEY }}
+
+      - name: Verify LiteLLM Proxy
+        run: |
+          set -ex
+          . .venv/bin/activate
+          python scripts/litellm_sanity_check.py
+        env:
+          OPENAI_BASE_URL: http://localhost:12306/
+          OPENAI_API_KEY: dummy
+
       - name: APO example (legacy)
         run: |
           set -ex
@@ -58,8 +77,8 @@ jobs:
           echo "legacy_apo_client.py has finished."
           sleep 10
         env:
-          OPENAI_API_BASE: ${{ secrets.OPENAI_API_BASE }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_API_BASE: http://localhost:12306/
+          OPENAI_API_KEY: dummy
 
       - name: APO example
         run: |
@@ -71,8 +90,8 @@ jobs:
           grep "Best prompt found:" _ci_apo.log
         env:
           # New versions follow OPENAI_BASE_URL instead of OPENAI_API_BASE
-          OPENAI_BASE_URL: ${{ secrets.OPENAI_API_BASE }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_BASE_URL: http://localhost:12306/
+          OPENAI_API_KEY: dummy
 
       - name: APO example debug sanity check
         run: |
@@ -83,8 +102,8 @@ jobs:
           python apo_debug.py --mode trainer
         env:
           # New versions follow OPENAI_BASE_URL instead of OPENAI_API_BASE
-          OPENAI_BASE_URL: ${{ secrets.OPENAI_API_BASE }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_BASE_URL: http://localhost:12306/
+          OPENAI_API_KEY: dummy
 
       - name: Prepare Spider dataset
         run: |
@@ -110,8 +129,8 @@ jobs:
           python sql_agent.py --trainer.n-workers 1 --trainer.dev true --trainer.max-tasks 2
         env:
           VERL_API_BASE: http://localhost:9999/
-          OPENAI_API_BASE: ${{ secrets.OPENAI_API_BASE }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_API_BASE: http://localhost:12306/
+          OPENAI_API_KEY: dummy
       - name: Calc-X MCP sanity check
         run: |
           set -ex
@@ -119,8 +138,8 @@ jobs:
           cd examples/calc_x
           python tests/test_mcp_calculator.py
         env:
-          OPENAI_API_BASE: ${{ secrets.OPENAI_API_BASE }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_API_BASE: http://localhost:12306/
+          OPENAI_API_KEY: dummy
       - name: Calc-X sanity check
         run: |
           set -ex
@@ -128,8 +147,8 @@ jobs:
           cd examples/calc_x
           python calc_agent_dev.py
         env:
-          OPENAI_API_BASE: ${{ secrets.OPENAI_API_BASE }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_API_BASE: http://localhost:12306/
+          OPENAI_API_KEY: dummy
 
       # Calc-X training suddenly works after running the sanity check.
       # And it has to be run before Spider training.
