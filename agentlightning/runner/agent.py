@@ -12,13 +12,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-import uuid
 from typing import TYPE_CHECKING, Any, List, Literal, Optional, Sequence, TypeVar, cast
 
 from opentelemetry.sdk.trace import ReadableSpan
 
 from agentlightning.litagent import LitAgent
-from agentlightning.reward import emit_reward, get_last_reward
+from agentlightning.reward import emit_reward, find_final_reward
 from agentlightning.store.base import LightningStore
 from agentlightning.tracer.agentops import AgentOpsTracer
 from agentlightning.tracer.base import BaseTracer
@@ -387,7 +386,7 @@ class AgentRunnerV2(BaseRunner[T_task]):
 
             # Possible exceptions in post_process will be caught in the overall exception handler
             trace_spans = await self._post_process_rollout_result(next_rollout, result)
-            last_reward = get_last_reward(trace_spans)
+            last_reward = find_final_reward(trace_spans)
 
             end_time = time.time()
             logger.info(

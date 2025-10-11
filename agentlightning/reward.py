@@ -199,7 +199,7 @@ def find_reward_spans(spans: Sequence[SpanLike]) -> List[SpanLike]:
     return [span for span in spans if is_reward_span(span)]
 
 
-def get_last_reward(spans: Sequence[SpanLike]) -> Optional[float]:
+def find_final_reward(spans: Sequence[SpanLike]) -> Optional[float]:
     """
     Get the last reward value from a list of spans.
 

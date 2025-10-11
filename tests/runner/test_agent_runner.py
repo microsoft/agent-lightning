@@ -14,7 +14,7 @@ from opentelemetry.trace.status import Status, StatusCode
 
 from agentlightning.execution.events import Event, ThreadingEvent
 from agentlightning.litagent import LitAgent
-from agentlightning.reward import emit_reward, get_last_reward
+from agentlightning.reward import emit_reward, find_final_reward
 from agentlightning.runner import AgentRunnerV2
 from agentlightning.runner.base import BaseRunner
 from agentlightning.store.base import LightningStore
@@ -194,7 +194,7 @@ async def test_step_records_spans_for_none_result() -> None:
     rollout_id, attempt_id = await assert_single_attempt_succeeded(store)
     spans = await store.query_spans(rollout_id, attempt_id)
     assert [span.name for span in spans] == ["work"]
-    assert get_last_reward(spans) is None
+    assert find_final_reward(spans) is None
 
 
 @pytest.mark.asyncio

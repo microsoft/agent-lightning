@@ -100,12 +100,14 @@ class FunctionalLitAgent(LitAgent[T]):
 
     def __init__(self, rollout_func: FunctionalLitAgentFunc[T], *, strip_proxy: bool = True) -> None:
         """
-        Initialize the FunctionalLitAgent with an functional rollout function.
+        Initialize the FunctionalLitAgent with a functional rollout function.
 
         Args:
             rollout_func: A function that defines the agent's behavior.
                           Can be sync or async, and can optionally accept a Rollout parameter.
-            strip_proxy: Whether to strip the ProxyLLM resource into a LLM resource.
+                          The function signature determines which resources are injected (llm, prompt_template, etc.).
+            strip_proxy: Whether to strip the ProxyLLM resource into a LLM resource when the function accepts an llm parameter.
+                         Defaults to True.
         """
         super().__init__()
         self._rollout_func = rollout_func
@@ -167,7 +169,19 @@ class FunctionalLitAgent(LitAgent[T]):
         return await self._rollout_func(task, **kwargs)  # type: ignore
 
     def _get_kwargs(self, resources: NamedResources, rollout: RolloutV2) -> Dict[str, Any]:
-        """Extract the kwargs needed for the rollout function."""
+        """Extract the kwargs needed for the rollout function based on its signature.
+
+        Dynamically builds the kwargs dictionary by inspecting the function signature and
+        including only the parameters the function accepts. This allows flexible function
+        signatures that can request any combination of: rollout, llm, and/or prompt_template.
+
+        Args:
+            resources: Dictionary of named resources available for the rollout.
+            rollout: The rollout object with metadata.
+
+        Returns:
+            A dictionary of kwargs to pass to the rollout function.
+        """
 
         kwargs: Dict[str, Any] = {}
         if self._accepts_rollout():
@@ -239,7 +253,22 @@ class FunctionalLitAgent(LitAgent[T]):
         return resource_found
 
     def _strip_proxy_helper(self, proxy_llm: LLM, rollout: RolloutV2) -> LLM:
-        """Strip the ProxyLLM resource into a LLM resource."""
+        """Strip the ProxyLLM resource into a concrete LLM resource.
+
+        This method resolves ProxyLLM instances to their concrete LLM implementation
+        by attaching the attempted rollout context. This is only used when the function
+        signature accepts an 'llm' parameter and strip_proxy is True.
+
+        Args:
+            proxy_llm: The LLM resource, which may be a ProxyLLM.
+            rollout: The rollout object with metadata.
+
+        Returns:
+            The concrete LLM resource.
+
+        Raises:
+            ValueError: If the rollout is not an AttemptedRollout (required for stripping ProxyLLM).
+        """
 
         if not isinstance(proxy_llm, ProxyLLM):
             # Not a ProxyLLM, nothing to strip here.
@@ -314,7 +343,23 @@ def llm_rollout(
 
 
 def _validate_llm_rollout_func(func: Any) -> TypeGuard[LlmRolloutFunc[Any]]:
-    """Validate the function signature of a LLM rollout function."""
+    """Validate the function signature of a LLM rollout function.
+
+    Ensures the function follows the expected pattern for LLM-based rollouts:
+    - Must have at least 2 parameters
+    - First parameter must be named 'task'
+    - Must have a parameter named 'llm'
+    - Optionally can have a 'rollout' parameter
+
+    Args:
+        func: The function to validate.
+
+    Returns:
+        True if the function signature is valid.
+
+    Raises:
+        ValueError: If the function signature does not match the expected pattern.
+    """
     sig = inspect.signature(func)
     params = list(sig.parameters.keys())
     if len(params) < 2:
@@ -340,8 +385,34 @@ def prompt_rollout(
 ) -> FunctionalLitAgent[T] | Callable[[PromptRolloutFunc[T]], FunctionalLitAgent[T]]:
     """Create a FunctionalLitAgent from a function that takes (task, prompt_template[, rollout]).
 
-    This decorator helps users who want to tune the prompt template within their agents.
-    Algorithms manage and update the prompt template, agents use the prompt template and then rollout.
+    This decorator is designed for agents that work with tunable prompt templates. It enables
+    a workflow where algorithms manage and optimize the prompt template, while agents consume
+    the template to perform rollouts. This is particularly useful for prompt optimization scenarios.
+
+    Args:
+        func: A function that defines the agent's behavior. Can be:
+              - sync: (task, prompt_template) -> result
+              - sync with rollout: (task, prompt_template, rollout) -> result
+              - async: async (task, prompt_template) -> result
+              - async with rollout: async (task, prompt_template, rollout) -> result
+
+    Returns:
+        A callable FunctionalLitAgent instance that preserves the original function's
+        type hints and behavior while providing all agent functionality.
+
+    Example:
+        @prompt_rollout
+        def my_agent(task, prompt_template):
+            # Use the prompt template to generate a response
+            messages = prompt_template.format(task=task.input)
+            # ... perform rollout with the formatted prompt
+            return response
+
+        # Function is still callable with original behavior
+        result = my_agent(task, prompt_template)
+
+        # Agent methods are also available
+        result = my_agent.rollout(task, resources, rollout)
     """
 
     def decorator(f: PromptRolloutFunc[T]) -> FunctionalLitAgent[T]:
@@ -355,7 +426,23 @@ def prompt_rollout(
 
 
 def _validate_prompt_rollout_func(func: Any) -> TypeGuard[PromptRolloutFunc[Any]]:
-    """Validate the function signature of a prompt rollout function."""
+    """Validate the function signature of a prompt rollout function.
+
+    Ensures the function follows the expected pattern for prompt-template-based rollouts:
+    - Must have at least 2 parameters
+    - First parameter must be named 'task'
+    - Must have a parameter named 'prompt_template'
+    - Optionally can have a 'rollout' parameter
+
+    Args:
+        func: The function to validate.
+
+    Returns:
+        True if the function signature is valid.
+
+    Raises:
+        ValueError: If the function signature does not match the expected pattern.
+    """
     sig = inspect.signature(func)
     params = list(sig.parameters.keys())
     if len(params) < 2:
@@ -372,30 +459,42 @@ def rollout(func: Union[LlmRolloutFunc[T], PromptRolloutFunc[T], Callable[..., A
     """Create a LitAgent from a function, automatically detecting the appropriate type.
 
     This function inspects the provided callable and creates the appropriate
-    agent type based on its signature. The returned agent instance is callable,
-    preserving the original function's behavior and type hints.
+    agent type based on its signature. It supports both LLM-based and prompt-template-based
+    agents. The returned agent instance is callable, preserving the original function's
+    behavior and type hints.
 
     Args:
-        func: A function that defines the agent's behavior.
+        func: A function that defines the agent's behavior. Supported signatures:
+              - (task, llm[, rollout]) for LLM-based agents
+              - (task, prompt_template[, rollout]) for prompt-template-based agents
 
     Returns:
-        A callable LitAgent subclass instance that preserves the original function's
+        A callable FunctionalLitAgent instance that preserves the original function's
         type hints and behavior while providing all agent functionality.
 
     Example:
+        # LLM-based agent
         @rollout
-        def my_agent(task, llm):
+        def my_llm_agent(task, llm):
             client = OpenAI(base_url=llm.endpoint)
             response = client.chat.completions.create(
                 model=llm.model,
                 messages=[{"role": "user", "content": task.input}],
             )
+            return response
+
+        # Prompt-template-based agent
+        @rollout
+        def my_prompt_agent(task, prompt_template):
+            messages = prompt_template.format(task=task.input)
+            # ... perform rollout with the formatted prompt
+            return response
 
         # Function is still callable with original behavior
-        result = my_agent(task, llm)
+        result = my_llm_agent(task, llm)
 
         # Agent methods are also available
-        result = my_agent.rollout(task, resources, rollout)
+        result = my_llm_agent.rollout(task, resources, rollout)
 
     Raises:
         NotImplementedError: If the function signature doesn't match any known patterns.
@@ -417,5 +516,6 @@ def rollout(func: Union[LlmRolloutFunc[T], PromptRolloutFunc[T], Callable[..., A
 
     raise NotImplementedError(
         f"Function signature {sig} does not match any known agent patterns. "
-        "Expected signatures: (task, llm[, rollout]) or async (task, llm[, rollout])"
+        "Expected signatures: (task, llm[, rollout]) or (task, prompt_template[, rollout]). "
+        "Functions can be sync or async."
     )

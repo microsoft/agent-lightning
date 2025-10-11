@@ -6,8 +6,8 @@ from typing import Any, Dict, Optional, cast
 
 from agentlightning.reward import (
     SpanLike,
+    find_final_reward,
     find_reward_spans,
-    get_last_reward,
     get_reward_value,
     is_reward_span,
 )
@@ -84,20 +84,20 @@ def test_find_reward_spans_filters_correctly() -> None:
     assert spans == [reward_span]
 
 
-def test_get_last_reward_returns_last_reward_value() -> None:
+def test_find_final_reward_returns_last_reward_value() -> None:
     spans = [
         make_span(name="first", attributes={}),
         make_span(name=SpanNames.REWARD.value, attributes={"reward": 1.0}),
         make_span(name="agentops", attributes={"agentops.task.output": {"type": "reward", "value": 5.5}}),
     ]
 
-    assert get_last_reward(spans) == 5.5
+    assert find_final_reward(spans) == 5.5
 
 
-def test_get_last_reward_returns_none_when_no_reward() -> None:
+def test_find_final_reward_returns_none_when_no_reward() -> None:
     spans = [
         make_span(name="first", attributes={}),
         make_span(name="second", attributes={"agentops.task.output": {"foo": "bar"}}),
     ]
 
-    assert get_last_reward(spans) is None
+    assert find_final_reward(spans) is None
