@@ -19,3 +19,4 @@ actor_rollout_ref:
       custom_async_server:
         path: pkg://agentlightning.verl.async_server
         name: PatchedvLLMServer
+    trace_agg_mode: transition # transition or trajectory
