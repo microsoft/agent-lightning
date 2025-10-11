@@ -13,13 +13,13 @@ from agentlightning.algorithm.mock import MockAlgorithm
 from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.types import (
     LLM,
+    Dataset,
     NamedResources,
     Resource,
     Span,
     SpanContext,
     TraceStatus,
 )
-from agentlightning.types.core import Dataset
 
 LOGGER_NAME = "agentlightning.algorithm.mock"
 

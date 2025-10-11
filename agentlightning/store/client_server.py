@@ -61,6 +61,10 @@ class RolloutId(BaseModel):
     rollout_id: str
 
 
+class AddResourcesRequest(BaseModel):
+    resources: NamedResources
+
+
 class UpdateRolloutRequest(BaseModel):
     rollout_id: str
     input: Union[TaskInput, PydanticUnset] = Field(default_factory=PydanticUnset)
@@ -291,6 +295,10 @@ class LightningStoreServer(LightningStore):
         async def get_rollout_by_id(rollout_id: str):  # pyright: ignore[reportUnusedFunction]
             return await self.store.get_rollout_by_id(rollout_id)
 
+        @self.app.post("/add_resources", response_model=ResourcesUpdate)
+        async def add_resources(resources: AddResourcesRequest):  # pyright: ignore[reportUnusedFunction]
+            return await self.store.add_resources(resources.resources)
+
         @self.app.post("/update_resources", response_model=ResourcesUpdate)
         async def update_resources(update: ResourcesUpdate):  # pyright: ignore[reportUnusedFunction]
             return await self.store.update_resources(update.resources_id, update.resources)
@@ -384,6 +392,9 @@ class LightningStoreServer(LightningStore):
 
     async def get_rollout_by_id(self, rollout_id: str) -> Optional[RolloutV2]:
         return await self._backend().get_rollout_by_id(rollout_id)
+
+    async def add_resources(self, resources: NamedResources) -> ResourcesUpdate:
+        return await self._backend().add_resources(resources)
 
     async def update_resources(self, resources_id: str, resources: NamedResources) -> ResourcesUpdate:
         return await self._backend().update_resources(resources_id, resources)
@@ -743,6 +754,11 @@ class LightningStoreClient(LightningStore):
         except Exception as e:
             logger.error(f"get_rollout_by_id failed after all retries for rollout_id={rollout_id}: {e}", exc_info=True)
             return None
+
+    async def add_resources(self, resources: NamedResources) -> ResourcesUpdate:
+        request = AddResourcesRequest(resources=resources)
+        data = await self._request_json("post", "/add_resources", json=request.model_dump())
+        return ResourcesUpdate.model_validate(data)
 
     async def update_resources(self, resources_id: str, resources: NamedResources) -> ResourcesUpdate:
         data = await self._request_json(

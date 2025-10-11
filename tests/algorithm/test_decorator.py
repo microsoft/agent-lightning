@@ -10,7 +10,7 @@ import pytest
 
 from agentlightning.algorithm.base import FunctionalAlgorithm, algo
 from agentlightning.store.base import LightningStore
-from agentlightning.types.core import Dataset
+from agentlightning.types import Dataset
 
 
 @algo

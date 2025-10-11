@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import hashlib
 import logging
 import time
 import uuid
@@ -64,6 +65,22 @@ def _healthcheck_wrapper(func: T_callable) -> T_callable:
     return cast(T_callable, wrapper)
 
 
+def _generate_resources_id() -> str:
+    short_id = hashlib.sha1(uuid.uuid4().bytes).hexdigest()[:12]
+    return "rs-" + short_id
+
+
+def _generate_rollout_id() -> str:
+    short_id = hashlib.sha1(uuid.uuid4().bytes).hexdigest()[:12]
+    return "ro-" + short_id
+
+
+def _generate_attempt_id() -> str:
+    """We don't need that long because attempts are limited to rollouts."""
+    short_id = hashlib.sha1(uuid.uuid4().bytes).hexdigest()[:8]
+    return "at-" + short_id
+
+
 class InMemoryLightningStore(LightningStore):
     """
     In-memory implementation of LightningStore using Python data structures.
@@ -106,7 +123,7 @@ class InMemoryLightningStore(LightningStore):
         Notify the store that I'm about to run a rollout.
         """
         async with self._lock:
-            rollout_id = f"rollout-{uuid.uuid4()}"
+            rollout_id = _generate_rollout_id()
             current_time = time.time()
 
             rollout = RolloutV2(
@@ -120,7 +137,7 @@ class InMemoryLightningStore(LightningStore):
             )
 
             # Create the initial attempt
-            attempt_id = f"attempt-{uuid.uuid4()}"
+            attempt_id = _generate_attempt_id()
             attempt = Attempt(
                 rollout_id=rollout.rollout_id,
                 attempt_id=attempt_id,
@@ -149,7 +166,7 @@ class InMemoryLightningStore(LightningStore):
         Adds a new task to the queue with specific metadata and returns its unique ID.
         """
         async with self._lock:
-            rollout_id = f"rollout-{uuid.uuid4()}"
+            rollout_id = _generate_rollout_id()
             current_time = time.time()
 
             rollout = RolloutV2(
@@ -189,7 +206,7 @@ class InMemoryLightningStore(LightningStore):
                     rollout.status = "preparing"
 
                     # Create a new attempt (could be first attempt or retry)
-                    attempt_id = f"attempt-{uuid.uuid4()}"
+                    attempt_id = _generate_attempt_id()
                     current_time = time.time()
 
                     # Get existing attempts to determine sequence number
@@ -235,7 +252,7 @@ class InMemoryLightningStore(LightningStore):
             # This attempt is from user trigger
 
             # Create new attempt
-            attempt_id = f"attempt-{uuid.uuid4()}"
+            attempt_id = _generate_attempt_id()
             current_time = time.time()
 
             attempt = Attempt(
@@ -305,6 +322,15 @@ class InMemoryLightningStore(LightningStore):
             if not attempts:
                 return None
             return max(attempts, key=lambda a: a.sequence_id)
+
+    @_healthcheck_wrapper
+    async def add_resources(self, resources: NamedResources) -> ResourcesUpdate:
+        """
+        Safely stores a new version of named resources and sets it as the latest.
+        """
+        resources_id = _generate_resources_id()
+        async with self._lock:
+            return await self.update_resources(resources_id, resources)
 
     @_healthcheck_wrapper
     async def update_resources(self, resources_id: str, resources: NamedResources) -> ResourcesUpdate:

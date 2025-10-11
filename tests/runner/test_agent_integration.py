@@ -17,7 +17,7 @@ from agentlightning.runner import AgentRunnerV2
 from agentlightning.store.client_server import LightningStoreClient, LightningStoreServer
 from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.tracer.agentops import AgentOpsTracer
-from agentlightning.types.core import LLM, AttemptedRollout, NamedResources, RolloutV2
+from agentlightning.types import LLM, AttemptedRollout, NamedResources, RolloutV2
 
 from ..common.network import get_free_port
 from ..common.tracer import clear_tracer_provider

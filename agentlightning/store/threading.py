@@ -84,6 +84,10 @@ class LightningStoreThreaded(LightningStore):
         with self._lock:
             return await self.store.get_latest_attempt(rollout_id)
 
+    async def add_resources(self, resources: NamedResources) -> ResourcesUpdate:
+        with self._lock:
+            return await self.store.add_resources(resources)
+
     async def update_resources(self, resources_id: str, resources: NamedResources) -> ResourcesUpdate:
         with self._lock:
             return await self.store.update_resources(resources_id, resources)
