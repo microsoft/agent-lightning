@@ -49,6 +49,14 @@ jobs:
         env:
           AZURE_API_BASE: ${{ secrets.AZURE_API_BASE }}
           AZURE_API_KEY: ${{ secrets.AZURE_API_KEY }}
+      - name: Verify LiteLLM Proxy
+        run: |
+          set -ex
+          . .venv/bin/activate
+          python scripts/litellm_sanity_check.py
+        env:
+          OPENAI_BASE_URL: http://localhost:12306/
+          OPENAI_API_KEY: dummy
 
       - name: Run tests
         run: |
