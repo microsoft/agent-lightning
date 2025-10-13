@@ -329,6 +329,7 @@ async def sft_one_iter(
 async def sft_algorithm(*, store: LightningStore) -> None:
     train_dataset = load_math_dataset()
 
+    # Constants for the SFT algorithm
     MAX_ITERATIONS = 2
     VLLM_PORT = 12316
     LLM_PROXY_PORT = 12358
