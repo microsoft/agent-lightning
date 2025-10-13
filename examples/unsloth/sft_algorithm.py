@@ -38,6 +38,7 @@ from agentlightning import Trainer, configure_logger
 from agentlightning.adapter.triplet import LlmProxyTripletAdapter
 from agentlightning.algorithm.base import algo
 from agentlightning.llm_proxy import LLMProxy, ModelConfig
+from agentlightning.store.base import LightningStore
 from agentlightning.store.client_server import LightningStoreClient
 from agentlightning.types import Dataset, RolloutV2
 
@@ -212,7 +213,8 @@ async def sft_one_iter(
 
         while True:
             completed_rollouts = await store.wait_for_rollouts(
-                rollout_ids=[rollout.rollout_id for rollout in rollouts], timeout=30
+                rollout_ids=[rollout.rollout_id for rollout in rollouts],
+                timeout=0.0,  # Timeout must be a very small value to avoid blocking the store server
             )
             if len(completed_rollouts) >= len(rollouts):
                 console.print(f"[bold red][Algo][/bold red] Received all {len(rollouts)} rollouts")
@@ -220,6 +222,7 @@ async def sft_one_iter(
             console.print(
                 f"[bold red][Algo][/bold red] Received {len(completed_rollouts)} rollouts, waiting for more..."
             )
+            await asyncio.sleep(5.0)
 
     # LLM server can be shutdown now as we perform the training
 

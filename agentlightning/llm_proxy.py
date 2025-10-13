@@ -621,6 +621,9 @@ class LLMProxy:
 
         logger.info("Starting LLMProxy server thread...")
         self._ready_event.clear()
+        # FIXME: This thread should either be reused or the whole proxy should live in another process.
+        # Problem 1: in litellm worker, <Queue at 0x70f1d028cd90 maxsize=50000> is bound to a different event loop
+        # Problem 2: Proxy has conflicted opentelemetry setup with the main process.
         self._server_thread = threading.Thread(target=run_server, daemon=True)
         self._server_thread.start()
         self._wait_until_started()

@@ -21,8 +21,12 @@ def unsloth_training(model_path: str, sft_dataset: HuggingFaceDataset, next_mode
         next_model_path: The path to save the trained model.
     """
 
-    from trl import SFTConfig, SFTTrainer  # type: ignore
     from unsloth import FastLanguageModel
+
+    # The two imports must come in this order to make unsloth patch work.
+    if True:
+        # The SFTTrainer is actually patched by unsloth.
+        from trl import SFTConfig, SFTTrainer  # type: ignore
 
     model, tokenizer = FastLanguageModel.from_pretrained(  # type: ignore
         model_name=model_path,

@@ -71,4 +71,4 @@ def spawn_runners(*, store: LightningStore, n_runners: int) -> None:
 if __name__ == "__main__":
     configure_logger()
     store = LightningStoreClient("http://localhost:4747")
-    spawn_runners(store=store, n_runners=10)
+    spawn_runners(store=store, n_runners=4)
