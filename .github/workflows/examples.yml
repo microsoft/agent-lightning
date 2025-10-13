@@ -143,6 +143,9 @@ jobs:
             echo "models/version_2 does not exist"
             exit 1
           fi
+        env:
+          WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
+          WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
 
       - name: Prepare Spider dataset
         run: |

@@ -69,6 +69,7 @@ def unsloth_training(model_path: str, sft_dataset: HuggingFaceDataset, next_mode
             weight_decay=0.01,
             lr_scheduler_type="linear",
             seed=3407,
+            # FIXME: For some reason, report_to="none" still tries to report to W&B when it's installed.
             report_to="none",  # Use this for W&B etc
         ),
     )
