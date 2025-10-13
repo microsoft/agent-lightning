@@ -86,6 +86,45 @@ jobs:
           OPENAI_BASE_URL: ${{ secrets.OPENAI_API_BASE }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
+      - name: Prepare Unsloth model
+        run: |
+          set -ex
+          . .venv/bin/activate
+          cd examples/unsloth
+          rm -rf models
+          hf download unsloth/Qwen3-4B-Instruct-2507 --local-dir models/version_0
+
+      - name: Unsloth SFT example
+        run: |
+          set -ex
+          . .venv/bin/activate
+          cd examples/unsloth
+
+          agl store --port 4747 &
+          sleep 5
+          python sft_rollout_runners.py &
+          sleep 5
+          python sft_algorithm.py
+
+          pkill -f agl && echo "SIGTERM sent to agl" || echo "No agl process found"
+          while pgrep -f agl; do
+            echo "Waiting for agl to finish..."
+            sleep 5
+          done
+          pkill -f sft_rollout_runners.py && echo "SIGTERM sent to sft_rollout_runners.py" || echo "No sft_rollout_runners.py process found"
+          while pgrep -f sft_rollout_runners.py; do
+            echo "Waiting for sft_rollout_runners.py to finish..."
+            sleep 5
+          done
+          echo "sft_rollout_runners.py has finished."
+          sleep 10
+
+          # Check models/version_2 must exist
+          if [ ! -d "models/version_2" ]; then
+            echo "models/version_2 does not exist"
+            exit 1
+          fi
+
       - name: Prepare Spider dataset
         run: |
           set -ex
