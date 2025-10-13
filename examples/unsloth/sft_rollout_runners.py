@@ -58,7 +58,7 @@ def spawn_runners(*, store: LightningStore, n_runners: int) -> None:
     """
 
     runners = [
-        multiprocessing.Process(target=run_rollout, kwargs={"store": store, "worker_id": worker_id}, daemon=True)
+        multiprocessing.Process(target=run_rollout, kwargs={"store": store, "worker_id": worker_id})
         for worker_id in range(n_runners)
     ]
     for runner in runners:
