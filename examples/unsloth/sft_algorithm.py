@@ -43,6 +43,15 @@ console = Console()
 
 
 class HuggingFaceDatasetRecord(TypedDict):
+    """Type definition for a HuggingFace dataset record used in SFT training.
+
+    Attributes:
+        input_ids: Token IDs for the entire input sequence (prompt + response).
+        attention_mask: Attention mask (all 1s for this use case).
+        labels: Token IDs for training labels (-100 for prompt tokens, actual token IDs for response).
+        reward: The reward associated with this training sample.
+    """
+
     input_ids: List[int]
     attention_mask: List[int]
     labels: List[int]
@@ -322,6 +331,21 @@ async def sft_one_iter(
 
 
 async def sft_algorithm(*, store: LightningStore) -> None:
+    """Run the complete SFT algorithm with multiple iterations.
+
+    This is the main entry point for running the SFT training pipeline. It sets up
+    the LLM proxy, data adapter, and runs multiple iterations of model training.
+
+    The function performs these steps for each iteration:
+    1. Serves the current model via vLLM
+    2. Collects rollout data using the model
+    3. Converts trace data to training triplets
+    4. Trains the model on top-performing examples
+    5. Saves the improved model for the next iteration
+
+    Args:
+        store: The LightningStore instance for managing rollouts and trace data.
+    """
     train_dataset = load_math_dataset()
 
     # Constants for the SFT algorithm

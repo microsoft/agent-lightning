@@ -27,6 +27,21 @@ console = Console()
 
 
 class UnslothSupervisedFinetuning(BaseAlgorithm):
+    """Supervised Fine-Tuning (SFT) algorithm implementation using Unsloth.
+
+    This class implements a complete SFT training loop that:
+    1. Runs rollouts with the current model
+    2. Collects and ranks training data by reward
+    3. Fine-tunes the model on top-performing examples
+    4. Iterates for multiple rounds of improvement
+
+    Args:
+        max_iterations: The maximum number of SFT iterations to perform.
+        vllm_port: The port to use for the vLLM inference server.
+        train_triplet_fraction: The fraction of top-performing triplets to use for training (0.0 to 1.0).
+        initial_model_path: The path to the initial model to start training from.
+    """
+
     def __init__(self, *, max_iterations: int, vllm_port: int, train_triplet_fraction: float, initial_model_path: str):
         # LLM proxy and data adapter are created by the trainer and we can directly use them
         self.max_iterations = max_iterations
@@ -37,6 +52,15 @@ class UnslothSupervisedFinetuning(BaseAlgorithm):
     async def run(
         self, train_dataset: Optional[Dataset[GsmProblem]] = None, val_dataset: Optional[Dataset[GsmProblem]] = None
     ):
+        """Execute the SFT training loop. Managed by trainer.
+
+        Args:
+            train_dataset: The training dataset of GSM problems to use for rollouts.
+            val_dataset: Optional validation dataset (not currently used in SFT).
+
+        Raises:
+            ValueError: If train_dataset is None, or required components are missing.
+        """
         store = self.get_store()
         llm_proxy = self.get_llm_proxy()
         data_adapter = self.get_adapter()

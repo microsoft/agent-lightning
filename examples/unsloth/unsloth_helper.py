@@ -1,5 +1,13 @@
 # Copyright (c) Microsoft. All rights reserved.
 
+"""Helper module for Unsloth training with LoRA.
+
+This module provides utilities for training language models using the Unsloth library,
+which optimizes training performance with 4-bit quantization and LoRA (Low-Rank Adaptation).
+
+The training function should be run in a separate process to ensure GPU memory is properly freed.
+"""
+
 from typing import List, TypedDict
 
 from datasets import Dataset as HuggingFaceDataset  # type: ignore

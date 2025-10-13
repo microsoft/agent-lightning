@@ -37,11 +37,25 @@ console = Console()
 
 
 class GsmProblem(TypedDict):
+    """Type definition for a GSM-hard math problem.
+
+    Reference link: https://huggingface.co/datasets/reasoning-machines/gsm-hard
+
+    Attributes:
+        input: The math problem question as a string.
+        target: The expected numeric answer.
+    """
+
     input: str
     target: float
 
 
 def _download_dataset() -> None:  # pyright: ignore[reportUnusedFunction]
+    """Download the GSM-hard dataset from Hugging Face.
+
+    Downloads the first 64 samples from the dataset and saves them to data_gsmhard.jsonl.
+    This function is provided as a utility to help set up the dataset for the first time.
+    """
     ds = load_dataset("reasoning-machines/gsm-hard", split="train")
     df = ds.to_list()  # type: ignore
     with open("data_gsmhard.jsonl", "w") as f:
@@ -53,6 +67,14 @@ def _download_dataset() -> None:  # pyright: ignore[reportUnusedFunction]
 
 
 def load_math_dataset(limit: Optional[int] = None) -> Dataset[GsmProblem]:
+    """Load the GSM-hard math dataset from the local JSONL file.
+
+    Args:
+        limit: Optional maximum number of problems to load. If None, loads all problems.
+
+    Returns:
+        A list of GsmProblem instances.
+    """
     with open("data_gsmhard.jsonl", "r") as f:
         problems = [GsmProblem(**json.loads(line)) for line in f]
     if limit is not None:
@@ -104,6 +126,18 @@ async def math_agent(task: GsmProblem, llm: LLM) -> float:
 
 
 def compute_reward(result: Any, target: float) -> float:
+    """Compute the reward for a math agent's answer.
+
+    The answer is expected to be formatted as: ### <answer> ###.
+    The reward is 1.0 if the extracted answer is numerically close to the target, 0.0 otherwise.
+
+    Args:
+        result: The agent's output containing the answer.
+        target: The expected correct answer.
+
+    Returns:
+        1.0 if the answer is correct (within numerical tolerance), 0.0 otherwise.
+    """
     result_str = str(result)
     answer_extracted = re.search(r"###\s*(.+?)(\s*###|$)", result_str)
     if answer_extracted:
@@ -119,6 +153,11 @@ def compute_reward(result: Any, target: float) -> float:
 
 
 def math_agent_dry_run() -> None:
+    """Run a dry run of the math agent on a small dataset.
+
+    This is a simple test function that runs the math agent on the first 4 problems
+    using a single worker. Useful for testing the setup and configuration.
+    """
     dataset = load_math_dataset(limit=4)
     trainer = Trainer(
         n_workers=1,
