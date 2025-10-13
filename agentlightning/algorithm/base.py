@@ -5,7 +5,19 @@ from __future__ import annotations
 import functools
 import inspect
 import weakref
-from typing import TYPE_CHECKING, Any, Awaitable, Dict, Generic, Literal, Optional, Protocol, TypeVar, Union, overload
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Awaitable,
+    Dict,
+    Generic,
+    Literal,
+    Optional,
+    Protocol,
+    TypeVar,
+    Union,
+    overload,
+)
 
 from agentlightning.adapter import TraceAdapter
 from agentlightning.client import AgentLightningClient
@@ -218,7 +230,19 @@ AlgorithmFuncAsync = Union[AlgorithmFuncAsyncOnlyStore, AlgorithmFuncAsyncOnlyDa
 
 AlgorithmFuncSync = Union[AlgorithmFuncSyncOnlyStore, AlgorithmFuncSyncOnlyDataset, AlgorithmFuncSyncFull]
 
-AlgorithmFunc = Union[AlgorithmFuncSync, AlgorithmFuncAsync]
+
+class AlgorithmFuncSyncFallback(Protocol):
+    def __call__(self, *args: Any, **kwargs: Any) -> Any: ...
+
+
+class AlgorithmFuncAsyncFallback(Protocol):
+    def __call__(self, *args: Any, **kwargs: Any) -> Awaitable[Any]: ...
+
+
+AlgorithmFuncSyncLike = Union[AlgorithmFuncSync, AlgorithmFuncSyncFallback]
+AlgorithmFuncAsyncLike = Union[AlgorithmFuncAsync, AlgorithmFuncAsyncFallback]
+
+AlgorithmFunc = Union[AlgorithmFuncSyncLike, AlgorithmFuncAsyncLike]
 
 
 AsyncFlag = Literal[True, False]
@@ -234,12 +258,12 @@ class FunctionalAlgorithm(BaseAlgorithm, Generic[AF]):
     """
 
     @overload
-    def __init__(self: "FunctionalAlgorithm[Literal[False]]", algorithm_func: AlgorithmFuncSync) -> None: ...
+    def __init__(self: "FunctionalAlgorithm[Literal[False]]", algorithm_func: AlgorithmFuncSyncLike) -> None: ...
 
     @overload
-    def __init__(self: "FunctionalAlgorithm[Literal[True]]", algorithm_func: AlgorithmFuncAsync) -> None: ...
+    def __init__(self: "FunctionalAlgorithm[Literal[True]]", algorithm_func: AlgorithmFuncAsyncLike) -> None: ...
 
-    def __init__(self, algorithm_func: Union[AlgorithmFuncSync, AlgorithmFuncAsync]) -> None:
+    def __init__(self, algorithm_func: Union[AlgorithmFuncSyncLike, AlgorithmFuncAsyncLike]) -> None:
         """
         Initialize the FunctionalAlgorithm with an algorithm function.
 
@@ -271,7 +295,7 @@ class FunctionalAlgorithm(BaseAlgorithm, Generic[AF]):
         self: "FunctionalAlgorithm[Literal[True]]",
         train_dataset: Optional[Dataset[Any]] = None,
         val_dataset: Optional[Dataset[Any]] = None,
-    ) -> Awaitable[None]: ...
+    ) -> Awaitable[Any]: ...
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         return self._algorithm_func(*args, **kwargs)  # type: ignore
@@ -280,7 +304,7 @@ class FunctionalAlgorithm(BaseAlgorithm, Generic[AF]):
         self,
         train_dataset: Optional[Dataset[Any]] = None,
         val_dataset: Optional[Dataset[Any]] = None,
-    ) -> Union[None, Awaitable[None]]:
+    ) -> Union[None, Awaitable[Any]]:
         """Execute the algorithm using the wrapped function.
 
         Args:
@@ -288,7 +312,7 @@ class FunctionalAlgorithm(BaseAlgorithm, Generic[AF]):
             val_dataset: The dataset to validate on.
 
         Returns:
-            None or Awaitable[None] if the function is async.
+            None or Awaitable[Any] if the function is async.
         """
         kwargs: Dict[str, Any] = {}
         if "store" in self._sig.parameters:
@@ -316,14 +340,29 @@ class FunctionalAlgorithm(BaseAlgorithm, Generic[AF]):
 
 
 @overload
+def algo(func: AlgorithmFuncAsync) -> FunctionalAlgorithm[Literal[True]]: ...
+
+
+@overload
+def algo(func: AlgorithmFuncAsyncFallback) -> FunctionalAlgorithm[Any]: ...
+
+
+@overload
 def algo(func: AlgorithmFuncSync) -> FunctionalAlgorithm[Literal[False]]: ...
 
 
 @overload
-def algo(func: AlgorithmFuncAsync) -> FunctionalAlgorithm[Literal[True]]: ...
+def algo(func: AlgorithmFuncSyncFallback) -> FunctionalAlgorithm[Any]: ...
 
 
-def algo(func: AlgorithmFunc) -> Union[FunctionalAlgorithm[Literal[False]], FunctionalAlgorithm[Literal[True]]]:
+def algo(
+    func: Union[
+        AlgorithmFuncSync,
+        AlgorithmFuncAsync,
+        AlgorithmFuncSyncFallback,
+        AlgorithmFuncAsyncFallback,
+    ],
+) -> Union[FunctionalAlgorithm[Literal[False]], FunctionalAlgorithm[Literal[True]]]:
     """Create a BaseAlgorithm from a function.
 
     This decorator allows you to define an algorithm using a simple function

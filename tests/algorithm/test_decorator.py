@@ -247,27 +247,27 @@ def test_algorithm_without_datasets():
 def test_algorithm_raises_error_on_unsupported_train_dataset():
     """Test that TypeError is raised when train_dataset is provided but not supported."""
 
-    @algo  # type: ignore
+    @algo
     def no_train_algo(*, val_dataset: Optional[Dataset[Any]]) -> None:
         """Algorithm that only accepts val_dataset."""
         pass
 
     # Providing train_dataset should raise TypeError
     with pytest.raises(TypeError, match="train_dataset is provided but not supported"):
-        no_train_algo.run(train_dataset=cast(Dataset[Any], ["data"]), val_dataset=None)  # type: ignore
+        no_train_algo.run(train_dataset=cast(Dataset[Any], ["data"]), val_dataset=None)
 
 
 def test_algorithm_raises_error_on_unsupported_val_dataset():
     """Test that TypeError is raised when val_dataset is provided but not supported."""
 
-    @algo  # type: ignore
+    @algo
     def no_val_algo(*, train_dataset: Optional[Dataset[Any]]) -> None:
         """Algorithm that only accepts train_dataset."""
         pass
 
     # Providing val_dataset should raise TypeError
     with pytest.raises(TypeError, match="val_dataset is provided but not supported"):
-        no_val_algo.run(train_dataset=None, val_dataset=cast(Dataset[Any], ["data"]))  # type: ignore
+        no_val_algo.run(train_dataset=None, val_dataset=cast(Dataset[Any], ["data"]))
 
 
 def test_algorithm_with_all_injected_parameters():
@@ -342,7 +342,7 @@ def test_algorithm_with_only_store():
 async def test_async_algorithm_with_injected_parameters():
     """Test that async algorithms also support parameter injection."""
 
-    @algo  # type: ignore
+    @algo
     async def async_full_algo(
         *,
         store: LightningStore,
