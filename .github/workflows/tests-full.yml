@@ -39,6 +39,25 @@ jobs:
           name: dependencies-${{ matrix.setup }}
           path: requirements-freeze.txt
           compression-level: 0
+
+      - name: Launch LiteLLM Proxy
+        run: |
+          set -ex
+          . .venv/bin/activate
+          litellm --config scripts/litellm_ci.yaml --port 12306 &
+          sleep 10  # Wait for the proxy to be up
+        env:
+          AZURE_API_BASE: ${{ secrets.AZURE_API_BASE }}
+          AZURE_API_KEY: ${{ secrets.AZURE_API_KEY }}
+      - name: Verify LiteLLM Proxy
+        run: |
+          set -ex
+          . .venv/bin/activate
+          python scripts/litellm_sanity_check.py
+        env:
+          OPENAI_BASE_URL: http://localhost:12306/
+          OPENAI_API_KEY: dummy
+
       - name: Run tests
         run: |
           set -ex
@@ -46,5 +65,5 @@ jobs:
           pytest -v --durations=0 tests
         env:
           PYTEST_ADDOPTS: "--color=yes"
-          OPENAI_BASE_URL: ${{ secrets.OPENAI_API_BASE }}  # We will use BASE_URL instead of API_BASE in pytest
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_BASE_URL: http://localhost:12306/
+          OPENAI_API_KEY: dummy
