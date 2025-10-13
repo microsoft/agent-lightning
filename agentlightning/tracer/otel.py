@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 class OtelTracer(BaseTracer):
     """Tracer that provides a basic OpenTelemetry tracer provider.
 
-    You should be able to collect signals like rewards with this tracer,
+    You should be able to collect agent-lightning signals like rewards with this tracer,
     but no other function instrumentations like `openai.chat.completion`.
     """
 

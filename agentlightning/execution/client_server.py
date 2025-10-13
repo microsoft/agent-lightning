@@ -195,7 +195,7 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
         for i in range(self.n_runners):
             process = cast(
                 multiprocessing.Process,
-                ctx.Process(target=_runner_sync, args=(runner, i, stop_evt), name=f"runner-{i}"),  # type: ignore
+                ctx.Process(target=_runner_sync, args=(runner, i, stop_evt), name=f"runner-{i}", daemon=True),  # type: ignore
             )
             process.start()
             logger.debug("Spawned runner process %s (pid=%s)", process.name, process.pid)
@@ -218,7 +218,7 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
 
         process = cast(
             multiprocessing.Process,
-            ctx.Process(target=_algorithm_sync, args=(algorithm, store, stop_evt), name="algorithm"),  # type: ignore
+            ctx.Process(target=_algorithm_sync, args=(algorithm, store, stop_evt), name="algorithm", daemon=True),  # type: ignore
         )
         process.start()
         logger.debug("Spawned algorithm process %s (pid=%s)", process.name, process.pid)

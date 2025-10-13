@@ -1,27 +1,45 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-from contextlib import contextmanager
+"""This sample shows the implementation of a basic SFT algorithm.
+
+It requires a model to be downloaded and a store server before running.
+
+First download the model:
+
+```bash
+hf download unsloth/Qwen3-4B-Instruct-2507 --local-dir models/version_0
+```
+
+Then run the store server:
+
+```bash
+agl store --port 4747
+```
+"""
+
+import asyncio
 import multiprocessing
 import os
 import random
 import socket
 import subprocess
 import time
+from contextlib import contextmanager
 from typing import List, Optional, TypedDict
-import httpx
 
+import httpx
+from datasets import Dataset as HuggingFaceDataset  # type: ignore
+from datasets import load_dataset
+from math_agent import GsmProblem, load_math_dataset, math_agent
 from rich.console import Console
-from datasets import Dataset as HuggingFaceDataset, load_dataset  # type: ignore
+from unsloth_helper import unsloth_training
 
 from agentlightning import Trainer, configure_logger
 from agentlightning.adapter.triplet import LlmProxyTripletAdapter
 from agentlightning.algorithm.base import algo
 from agentlightning.llm_proxy import LLMProxy, ModelConfig
-from agentlightning.store.base import LightningStore
-from agentlightning.types import RolloutV2, Dataset
-
-from math_agent import load_math_dataset, GsmProblem, math_agent
-from unsloth_helper import unsloth_training
+from agentlightning.store.client_server import LightningStoreClient
+from agentlightning.types import Dataset, RolloutV2
 
 console = Console()
 
@@ -123,6 +141,7 @@ async def sft_one_iter(
     llm_proxy: LLMProxy,
     data_adapter: LlmProxyTripletAdapter,
     triplet_fraction: float,
+    vllm_port: int,
 ) -> str:
     """One iteration of SFT.
 
@@ -138,6 +157,7 @@ async def sft_one_iter(
         llm_proxy: The LLM proxy instance. Used to shield between the inference endpoint and the rollout runners.
         data_adapter: The data adapter instance. This is used to convert the trace data recorded by LLM proxy.
         triplet_fraction: The fraction of triplets to use for SFT.
+        vllm_port: The port to serve vLLM chat completion endpoint.
 
     Returns:
         The path to the saved model (next generation).
@@ -150,7 +170,7 @@ async def sft_one_iter(
         raise ValueError(f"Model path {model_path} does not exist.")
 
     # First launch the vLLM server
-    with vllm_server(model_path, find_available_port()) as server_address:
+    with vllm_server(model_path, vllm_port) as server_address:
         # Update the model list of the LLM proxy and start it
         model_list: List[ModelConfig] = [
             {
@@ -163,10 +183,6 @@ async def sft_one_iter(
         ]
         console.print(f"[bold red][Algo][/bold red] Updating model list and restarting LLM proxy: {model_list}")
         llm_proxy.update_model_list(model_list)
-        # It's generally a good idea to switch to a different port for the LLM proxy
-        # if you are using the main process to launch the LLM proxy,
-        # because the forked processes might carry the old fd
-        llm_proxy.update_port(find_available_port())
         # Restart the LLM proxy after backend model list update
         # If LLM proxy has never been started, it will be started
         llm_proxy.restart()
@@ -286,7 +302,9 @@ async def sft_one_iter(
     next_model_path = f"models/version_{iteration + 1}"
 
     context = multiprocessing.get_context("spawn")  # This has to be spawn, otherwise torch.cuda won't be initialized
-    unsloth_process = context.Process(target=unsloth_training, args=(model_path, sft_dataset, next_model_path))
+    unsloth_process = context.Process(
+        target=unsloth_training, args=(model_path, sft_dataset, next_model_path), daemon=True
+    )
     unsloth_process.start()
     unsloth_process.join(timeout=600.0)
     if unsloth_process.is_alive():
@@ -305,10 +323,12 @@ async def sft_one_iter(
     return next_model_path
 
 
-@algo
-async def sft_algorithm(*, store: LightningStore, train_dataset: Dataset[GsmProblem]):
+async def sft_algorithm(*, store: LightningStore) -> None:
+    train_dataset = load_math_dataset()
+
     MAX_ITERATIONS = 2
     VLLM_PORT = 12316
+    LLM_PROXY_PORT = 12358
     TRAIN_TRIPLET_FRACTION = 0.5
 
     # Download the model before starting the script:
@@ -316,7 +336,7 @@ async def sft_algorithm(*, store: LightningStore, train_dataset: Dataset[GsmProb
     model_path = "models/version_0"
 
     # Create the LLM proxy for rollout worker access and trace data collection
-    llm_proxy = LLMProxy(port=find_available_port(), store=store)
+    llm_proxy = LLMProxy(port=LLM_PROXY_PORT, store=store)
 
     # This data adapter util is used to convert the trace data recorded by LLM proxy
     # into a format suitable for SFT
@@ -331,17 +351,15 @@ async def sft_algorithm(*, store: LightningStore, train_dataset: Dataset[GsmProb
             llm_proxy=llm_proxy,
             data_adapter=data_adapter,
             triplet_fraction=TRAIN_TRIPLET_FRACTION,
+            vllm_port=VLLM_PORT,
         )
 
     console.print(f"[bold red][Algo][/bold red] Final model path: {model_path}")
 
 
-def math_agent_sft():
-    trainer = Trainer(n_workers=4, algorithm=sft_algorithm, llm_proxy=LLMProxy(port=12358))
-    dataset = load_math_dataset(limit=32)
-    trainer.fit_v2(math_agent, train_dataset=dataset)
-
-
 if __name__ == "__main__":
     configure_logger()
-    math_agent_sft()
+
+    store = LightningStoreClient("http://localhost:4747")
+
+    asyncio.run(sft_algorithm(store=store))

@@ -9,13 +9,13 @@ import asyncio
 from typing import Iterable
 
 from agentlightning.logging import configure_logger
-from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.store.client_server import LightningStoreServer
+from agentlightning.store.memory import InMemoryLightningStore
 
 
 def main(argv: Iterable[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run a LightningStore server")
-    parser.add_argument("--port", type=int, default=8000, help="Port to run the server on")
+    parser.add_argument("--port", type=int, default=4747, help="Port to run the server on")
     args = parser.parse_args(list(argv) if argv is not None else None)
 
     configure_logger()

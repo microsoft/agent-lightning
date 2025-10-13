@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 """Agent Lightning command line interface entry point."""
 
 from __future__ import annotations
@@ -13,9 +15,8 @@ _SUBCOMMANDS: Dict[str, Tuple[str, str]] = {
     "agentops": ("agentlightning.cli.agentops_server", "Start the AgentOps server manager."),
 }
 
-_DESCRIPTION = (
-    "Agent Lightning CLI entry point.\n\nAvailable subcommands:\n"
-    + "\n".join(f"  {name:<10}{desc}" for name, (_, desc) in _SUBCOMMANDS.items())
+_DESCRIPTION = "Agent Lightning CLI entry point.\n\nAvailable subcommands:\n" + "\n".join(
+    f"  {name:<10}{desc}" for name, (_, desc) in _SUBCOMMANDS.items()
 )
 
 

@@ -20,20 +20,18 @@ import json
 import os
 import re
 from typing import Any, Optional, TypedDict, cast
-import numpy as np
 
+import numpy as np
+from agents import Agent, ModelSettings, OpenAIChatCompletionsModel, Runner
+from agents.mcp import MCPServerStdio
+from datasets import load_dataset  # type: ignore
 from openai import AsyncOpenAI
 from rich.console import Console
-from datasets import load_dataset  # type: ignore
+from trl import SFTConfig, SFTTrainer  # type: ignore
 
 from agentlightning import Trainer, configure_logger
 from agentlightning.litagent import rollout
 from agentlightning.types import LLM, Dataset
-
-from agents import Agent, ModelSettings, OpenAIChatCompletionsModel, Runner
-from agents.mcp import MCPServerStdio
-
-from trl import SFTTrainer, SFTConfig  # type: ignore
 
 console = Console()
 

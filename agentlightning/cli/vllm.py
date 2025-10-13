@@ -6,9 +6,11 @@ from typing import Iterable
 
 
 def main(argv: Iterable[str] | None = None) -> int:
-    from agentlightning.instrumentation.vllm import instrument_vllm
-    from vllm.entrypoints.cli.main import main as vllm_main
     import sys
+
+    from vllm.entrypoints.cli.main import main as vllm_main
+
+    from agentlightning.instrumentation.vllm import instrument_vllm
 
     instrument_vllm()
     if argv is not None:

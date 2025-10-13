@@ -2,8 +2,8 @@
 
 from typing import List, TypedDict
 
-from rich.console import Console
 from datasets import Dataset as HuggingFaceDataset  # type: ignore
+from rich.console import Console
 
 from agentlightning.store.base import LightningStore
 
@@ -21,8 +21,8 @@ def unsloth_training(model_path: str, sft_dataset: HuggingFaceDataset, next_mode
         next_model_path: The path to save the trained model.
     """
 
+    from trl import SFTConfig, SFTTrainer  # type: ignore
     from unsloth import FastLanguageModel
-    from trl import SFTTrainer, SFTConfig  # type: ignore
 
     model, tokenizer = FastLanguageModel.from_pretrained(  # type: ignore
         model_name=model_path,
