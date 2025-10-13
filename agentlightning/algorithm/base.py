@@ -16,6 +16,7 @@ from typing import (
     Protocol,
     TypeVar,
     Union,
+    cast,
     overload,
 )
 
@@ -295,7 +296,7 @@ class FunctionalAlgorithm(BaseAlgorithm, Generic[AF]):
         self: "FunctionalAlgorithm[Literal[True]]",
         train_dataset: Optional[Dataset[Any]] = None,
         val_dataset: Optional[Dataset[Any]] = None,
-    ) -> Awaitable[Any]: ...
+    ) -> Awaitable[None]: ...
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         return self._algorithm_func(*args, **kwargs)  # type: ignore
@@ -304,7 +305,7 @@ class FunctionalAlgorithm(BaseAlgorithm, Generic[AF]):
         self,
         train_dataset: Optional[Dataset[Any]] = None,
         val_dataset: Optional[Dataset[Any]] = None,
-    ) -> Union[None, Awaitable[Any]]:
+    ) -> Union[None, Awaitable[None]]:
         """Execute the algorithm using the wrapped function.
 
         Args:
@@ -312,7 +313,7 @@ class FunctionalAlgorithm(BaseAlgorithm, Generic[AF]):
             val_dataset: The dataset to validate on.
 
         Returns:
-            None or Awaitable[Any] if the function is async.
+            None or Awaitable[None] if the function is async.
         """
         kwargs: Dict[str, Any] = {}
         if "store" in self._sig.parameters:
@@ -336,7 +337,10 @@ class FunctionalAlgorithm(BaseAlgorithm, Generic[AF]):
                 f"val_dataset is provided but not supported by the algorithm function: {self._algorithm_func}"
             )
         # both sync and async functions can be called with the same signature
-        return self._algorithm_func(**kwargs)  # type: ignore
+        result = self._algorithm_func(**kwargs)  # type: ignore[misc]
+        if self._is_async:
+            return cast(Awaitable[None], result)
+        return None
 
 
 @overload
