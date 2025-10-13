@@ -13,6 +13,7 @@ agl store --port 4747
 
 import asyncio
 import multiprocessing
+import time
 
 from math_agent import GsmProblem, math_agent
 from rich.console import Console
@@ -26,7 +27,7 @@ from agentlightning.tracer import OtelTracer
 console = Console()
 
 
-async def rollout_runner(*, store: LightningStore, worker_id: int) -> None:
+def rollout_runner(*, store: LightningStore, worker_id: int) -> None:
     """A rollout runner.
 
     Args:
