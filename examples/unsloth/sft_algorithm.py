@@ -62,7 +62,7 @@ def find_available_port() -> int:
 def vllm_server(
     model_path: str,
     port: int,
-    startup_timeout: float = 60.0,
+    startup_timeout: float = 300.0,
     terminate_timeout: float = 10.0,
     max_model_len: int = 32768,
     gpu_memory_utilization: float = 0.7,
