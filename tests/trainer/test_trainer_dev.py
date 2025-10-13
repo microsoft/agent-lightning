@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 """Tests for Trainer.dev requirements."""
 
 from __future__ import annotations
