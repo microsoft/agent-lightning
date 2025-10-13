@@ -10,7 +10,7 @@ import warnings
 from typing import Any, Callable, Dict, List, Optional, Sequence, TypeVar, Union
 
 from agentlightning.adapter import TraceAdapter, TraceTripletAdapter
-from agentlightning.algorithm.base import BaseAlgorithm
+from agentlightning.algorithm.base import BaseAlgorithm, FastAlgorithm
 from agentlightning.algorithm.mock import MockAlgorithm
 from agentlightning.client import AgentLightningClient
 from agentlightning.execution.base import ExecutionStrategy
@@ -341,6 +341,9 @@ class Trainer(ParallelWorkerBase):
             agent: The LitAgent instance to be trained on.
             train_dataset: The dataset to train on.
             val_dataset: The dataset to validate on.
+
+        Raises:
+            TypeError: If the configured algorithm is not a :class:`FastAlgorithm`.
         """
         agent.set_trainer(self)
 
@@ -349,6 +352,12 @@ class Trainer(ParallelWorkerBase):
             algorithm = MockAlgorithm()
         else:
             algorithm = self.algorithm
+
+        if not isinstance(algorithm, FastAlgorithm):
+            raise TypeError(
+                "Trainer.dev() requires an algorithm that inherits from FastAlgorithm. "
+                f"Received {type(algorithm).__name__}."
+            )
 
         algorithm_bundle = functools.partial(
             self._algorithm_bundle,
