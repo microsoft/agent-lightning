@@ -21,7 +21,6 @@ import asyncio
 import multiprocessing
 import os
 import random
-import socket
 import subprocess
 import time
 from contextlib import contextmanager
@@ -29,14 +28,12 @@ from typing import List, Optional, TypedDict
 
 import httpx
 from datasets import Dataset as HuggingFaceDataset  # type: ignore
-from datasets import load_dataset
-from math_agent import GsmProblem, load_math_dataset, math_agent
+from math_agent import GsmProblem, load_math_dataset
 from rich.console import Console
 from unsloth_helper import unsloth_training
 
-from agentlightning import Trainer, configure_logger
-from agentlightning.adapter.triplet import LlmProxyTripletAdapter
-from agentlightning.algorithm.base import algo
+from agentlightning import configure_logger
+from agentlightning.adapter.triplet import BaseTraceTripletAdapter, LlmProxyTripletAdapter
 from agentlightning.llm_proxy import LLMProxy, ModelConfig
 from agentlightning.store.base import LightningStore
 from agentlightning.store.client_server import LightningStoreClient
@@ -50,12 +47,6 @@ class HuggingFaceDatasetRecord(TypedDict):
     attention_mask: List[int]
     labels: List[int]
     reward: float
-
-
-def find_available_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("", 0))
-        return s.getsockname()[1]
 
 
 @contextmanager
@@ -140,7 +131,7 @@ async def sft_one_iter(
     model_path: str,
     train_dataset: Dataset[GsmProblem],
     llm_proxy: LLMProxy,
-    data_adapter: LlmProxyTripletAdapter,
+    data_adapter: BaseTraceTripletAdapter,
     triplet_fraction: float,
     vllm_port: int,
 ) -> str:
@@ -282,6 +273,10 @@ async def sft_one_iter(
                         "labels": labels,
                         "reward": recent_reward,
                     }
+                )
+            else:
+                console.print(
+                    f"[bold red][Algo][/bold red] Skip triplet because it has no prompt or response: {triplet}"
                 )
 
     # IMPORTANT: Shuffle the triplets and rank them by reward
