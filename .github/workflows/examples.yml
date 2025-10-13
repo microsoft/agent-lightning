@@ -295,6 +295,23 @@ jobs:
           WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
         if: ${{ (success() || failure()) && matrix.setup == 'latest' }}
 
+      - name: Unsloth SFT example all-in-one
+        run: |
+          set -ex
+          . .venv/bin/activate
+          cd examples/unsloth
+          rm -rf models/version_1 models/version_2
+
+          python sft_allinone.py
+          if [ ! -d "models/version_2" ]; then
+            echo "models/version_2 does not exist"
+            exit 1
+          fi
+        env:
+          WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
+          WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
+        if: matrix.setup == 'latest'
+
       # Cleanup
       - name: Cleanup
         run: ./scripts/cleanup.sh

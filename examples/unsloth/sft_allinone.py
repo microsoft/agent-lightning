@@ -79,6 +79,7 @@ if __name__ == "__main__":
         initial_model_path="models/version_0",
     )
     trainer = Trainer(
+        n_runners=4,
         algorithm=algo,
         llm_proxy=LLMProxy(port=12358),
         # Uncomment the following two lines if you want to rely on proxy-side trace data collection
