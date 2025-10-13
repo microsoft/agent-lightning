@@ -547,6 +547,14 @@ class LLMProxy:
             self.restart()
         # Do nothing if the server is not running.
 
+    def update_port(self, port: int) -> None:
+        """Update the port for the proxy.
+
+        Args:
+            port: The new port to use for the proxy.
+        """
+        self.port = port
+
     def _wait_until_started(self, startup_timeout: float = 20.0):
         """Block until the uvicorn server reports started or timeout.
 
