@@ -23,6 +23,9 @@ dependencies = [
   "rich",
 ]
 
+[project.scripts]
+agl = "agentlightning.cli:main"
+
 [project.optional-dependencies]
 dev = [
   "flake8",
@@ -58,6 +61,16 @@ agent = [
   "nltk",
   "uv",
   "anthropic",
+]
+trl = [
+  "unsloth",
+  "unsloth_zoo",
+  "bitsandbytes",
+  "peft>=0.17.0",
+  "datasets",
+  "transformers>=4.55.0",
+  "trl>=0.21.0",
+  "kernels",
 ]
 
 [build-system]
