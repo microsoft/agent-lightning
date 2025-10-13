@@ -27,7 +27,7 @@ from agentlightning.tracer import OtelTracer
 console = Console()
 
 
-def rollout_runner(*, store: LightningStore, worker_id: int) -> None:
+def run_rollout(*, store: LightningStore, worker_id: int) -> None:
     """A rollout runner.
 
     Args:
@@ -49,31 +49,23 @@ def rollout_runner(*, store: LightningStore, worker_id: int) -> None:
 def spawn_runners(*, store: LightningStore, n_runners: int) -> None:
     """Spawn a set of rollout runners.
 
+    It's just replicating the `run_rollout` function in multiple processes.
+    You can also replace this function with a bash script.
+
     Args:
         store: The LightningStore instance.
+        n_runners: The number of runners to spawn.
     """
 
     runners = [
-        multiprocessing.Process(target=rollout_runner, kwargs={"store": store, "worker_id": worker_id}, daemon=True)
+        multiprocessing.Process(target=run_rollout, kwargs={"store": store, "worker_id": worker_id}, daemon=True)
         for worker_id in range(n_runners)
     ]
-    try:
-        for runner in runners:
-            runner.start()
+    for runner in runners:
+        runner.start()
 
-        for runner in runners:
-            runner.join()
-    except KeyboardInterrupt:
-        console.print("[bold green]Runners:[/bold green] [red]KeyboardInterrupt[/red] received. Terminating runners...")
-        for runner in runners:
-            runner.terminate()
-        deadline = time.time() + 10
-        for runner in runners:
-            if runner.is_alive():
-                runner.join(timeout=max(deadline - time.time(), 0))
-            for runner in runners:
-                if runner.is_alive():
-                    runner.kill()
+    for runner in runners:
+        runner.join()
 
 
 if __name__ == "__main__":
