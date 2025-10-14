@@ -23,7 +23,7 @@ from agentlightning.types import Dataset, NamedResources, PromptTemplate, Rollou
 
 logger = logging.getLogger(__name__)
 
-T_task = TypeVar("T_task", bound=Dict[str, Any])
+T_task = TypeVar("T_task")
 
 
 class RolloutResultForAPO(TypedDict):
@@ -32,12 +32,13 @@ class RolloutResultForAPO(TypedDict):
     status: RolloutStatus
     final_reward: Optional[float]
     spans: List[Dict[str, Any]]
-    messages: List[Dict[str, Any]]
+    messages: List[Any]
 
 
 GRADIENT_PROMPT_FILES = [
     Path(__file__).parent / "prompts" / "text_gradient_variant01.poml",
     Path(__file__).parent / "prompts" / "text_gradient_variant02.poml",
+    Path(__file__).parent / "prompts" / "text_gradient_variant03.poml",
 ]
 
 APPLY_EDIT_PROMPT_FILES = [
@@ -318,7 +319,7 @@ class APO(BaseAlgorithm, Generic[T_task]):
                 status=r.status,
                 final_reward=find_final_reward(spans),
                 spans=[span.model_dump() for span in spans],
-                messages=[m.model_dump() for m in messages],
+                messages=messages,
             )
             logger.info(
                 f"Rollout result for {r.rollout_id}: status {rollout_result['status']} "

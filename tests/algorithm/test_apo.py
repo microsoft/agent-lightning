@@ -7,7 +7,6 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 from openai import AsyncOpenAI
-from pydantic import BaseModel
 
 import agentlightning.algorithm.apo.apo as apo_module
 from agentlightning.adapter import TraceAdapter
@@ -28,18 +27,14 @@ from agentlightning.types import (
 )
 
 
-class DummyMessage(BaseModel):
-    payload: str
-
-
 class DummyTraceMessagesAdapter(TraceMessagesAdapter):
     def __init__(self) -> None:
         super().__init__()
         self.seen_spans: Sequence[Span] | None = None
 
-    def adapt(self, source: List[Span], /) -> List[DummyMessage]:  # type: ignore[override]
+    def adapt(self, source: List[Span], /) -> List[Dict[str, Any]]:  # type: ignore[override]
         self.seen_spans = list(source)
-        return [DummyMessage(payload="converted")]
+        return [dict(payload="converted")]
 
 
 class WrongAdapter(TraceAdapter[List[int]]):
@@ -405,7 +400,7 @@ async def test_get_rollout_results_adapts_spans() -> None:
     assert adapter.seen_spans[0] == span1
     assert adapter.seen_spans[1] == span2
     # Verify messages were converted
-    assert results[0]["messages"] == [DummyMessage(payload="converted").model_dump()]
+    assert results[0]["messages"] == [{"payload": "converted"}]
     # Verify spans were serialized
     assert len(results[0]["spans"]) == 2
     assert results[0]["spans"][0]["rollout_id"] == "r-1"
