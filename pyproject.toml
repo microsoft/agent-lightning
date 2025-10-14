@@ -23,6 +23,9 @@ dependencies = [
   "rich",
 ]
 
+[project.scripts]
+agl = "agentlightning.cli:main"
+
 [project.optional-dependencies]
 dev = [
   "flake8",
@@ -48,7 +51,6 @@ experiment = [
 agent = [
   "autogen-agentchat",
   "autogen-ext[openai]",
-  "litellm[proxy]",
   "mcp",
   "openai-agents",
   "langgraph",
@@ -59,6 +61,16 @@ agent = [
   "nltk",
   "uv",
   "anthropic",
+]
+trl = [
+  "unsloth",
+  "unsloth_zoo",
+  "bitsandbytes",
+  "peft",
+  "datasets",
+  "transformers",
+  "trl",
+  "kernels",
 ]
 
 [build-system]

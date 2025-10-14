@@ -39,6 +39,21 @@ def _patch_new_agentops():
         if return_value is not None and hasattr(return_value, "response_token_ids"):  # type: ignore
             attributes["response_token_ids"] = list(return_value.response_token_ids[0])  # type: ignore
 
+        # For LiteLLM Proxy (v0.2) with vLLM return_token_ids, response_token_ids now lives in choices
+        if (
+            not attributes.get("response_token_ids")
+            and return_value is not None
+            and hasattr(return_value, "choices")  # type: ignore
+            and return_value.choices  # type: ignore
+            and isinstance(return_value.choices, list)  # type: ignore
+        ):
+            first_choice = return_value.choices[0]  # type: ignore
+            if hasattr(first_choice, "token_ids"):  # type: ignore
+                attributes["response_token_ids"] = list(first_choice.token_ids)  # type: ignore
+            # newer versions of OpenAI client SDK
+            elif hasattr(first_choice, "provider_specific_fields") and "token_ids" in first_choice.provider_specific_fields:  # type: ignore
+                attributes["response_token_ids"] = list(first_choice.provider_specific_fields["token_ids"])  # type: ignore
+
         # For LiteLLM, response is a openai._legacy_response.LegacyAPIResponse
         if (
             return_value is not None

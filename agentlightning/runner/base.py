@@ -115,7 +115,12 @@ class BaseRunner(ParallelWorkerBase, Generic[T_task]):
 
     @contextmanager
     def run_context(
-        self, *, agent: LitAgent[T_task], store: LightningStore, hooks: Optional[Sequence[Hook]] = None
+        self,
+        *,
+        agent: LitAgent[T_task],
+        store: LightningStore,
+        hooks: Optional[Sequence[Hook]] = None,
+        worker_id: Optional[int] = None,
     ) -> Iterator[BaseRunner[T_task]]:
         """Context manager for quickly init and teardown the runner,
         so that you can debug the runner without a trainer environment.
@@ -127,6 +132,7 @@ class BaseRunner(ParallelWorkerBase, Generic[T_task]):
                    If you don't have one, you can easily create one with `InMemoryLightningStore()`.
             hooks: Optional sequence of Hook instances to be used by the runner.
                    Only some runners support hooks.
+            worker_id: Optional worker ID to be used by the runner.
         """
         _initialized: bool = False
         _worker_initialized: bool = False
@@ -139,7 +145,7 @@ class BaseRunner(ParallelWorkerBase, Generic[T_task]):
         finally:
             try:
                 if _worker_initialized:
-                    self.teardown_worker(worker_id=0)
+                    self.teardown_worker(worker_id=worker_id if worker_id is not None else 0)
             except Exception:
                 logger.error("Error during runner worker teardown", exc_info=True)
 

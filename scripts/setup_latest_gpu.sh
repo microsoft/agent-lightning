@@ -11,6 +11,6 @@ pip install --no-cache-dir vllm==0.10.2
 # Latest VERL release version.
 pip install --no-cache-dir verl
 
-pip install --no-cache-dir -e .[dev,agent]
+pip install --no-cache-dir -e .[dev,agent,trl]
 # Upgrade agentops to the latest version
 pip install --no-cache-dir -U agentops

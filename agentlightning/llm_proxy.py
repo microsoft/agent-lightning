@@ -506,8 +506,8 @@ class LLMProxy:
     def __init__(
         self,
         port: int,
-        model_list: List[ModelConfig],
-        store: LightningStore,
+        model_list: List[ModelConfig] | None = None,
+        store: Optional[LightningStore] = None,
         host: str | None = None,
         litellm_config: Dict[str, Any] | None = None,
         num_retries: int = 0,
@@ -515,7 +515,7 @@ class LLMProxy:
         self.store = store
         self.host = host or _get_default_ipv4_address()
         self.port = port
-        self.model_list = model_list
+        self.model_list = model_list or []
         self.litellm_config = litellm_config or {}
 
         # Ensure num_retries is present inside the litellm_settings block.
@@ -546,6 +546,14 @@ class LLMProxy:
         if self.is_running():
             self.restart()
         # Do nothing if the server is not running.
+
+    def update_port(self, port: int) -> None:
+        """Update the port for the proxy.
+
+        Args:
+            port: The new port to use for the proxy.
+        """
+        self.port = port
 
     def _wait_until_started(self, startup_timeout: float = 20.0):
         """Block until the uvicorn server reports started or timeout.
@@ -580,6 +588,9 @@ class LLMProxy:
             # Trigger restart
             self.stop()
 
+        if not self.store:
+            raise ValueError("Store is not set. Please set the store before starting the LLMProxy.")
+
         global _global_store
 
         _global_store = self.store
@@ -610,6 +621,9 @@ class LLMProxy:
 
         logger.info("Starting LLMProxy server thread...")
         self._ready_event.clear()
+        # FIXME: This thread should either be reused or the whole proxy should live in another process.
+        # Problem 1: in litellm worker, <Queue at 0x70f1d028cd90 maxsize=50000> is bound to a different event loop
+        # Problem 2: Proxy has conflicted opentelemetry setup with the main process.
         self._server_thread = threading.Thread(target=run_server, daemon=True)
         self._server_thread.start()
         self._wait_until_started()

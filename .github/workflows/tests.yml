@@ -52,7 +52,7 @@ jobs:
           python-version: '3.12'
       - name: Install dependencies
         run: |
-          ./scripts/setup_stable_full.sh
+          ./scripts/setup_type_checking.sh
       - name: Run Black
         run: black --check .
       - name: Run isort

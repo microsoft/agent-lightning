@@ -170,15 +170,37 @@ class LightningStoreServer(LightningStore):
         self._serving_thread.start()
 
         # Wait for /health to be available
+        if not await self._server_health_check():
+            raise RuntimeError("Server failed to start within the 10 seconds.")
+
+    async def _server_health_check(self) -> bool:
+        """Checks if the server is healthy."""
         current_time = time.time()
         while time.time() - current_time < 10:
             async with aiohttp.ClientSession() as session:
                 with suppress(Exception):
                     async with session.get(f"{self.endpoint}/health") as response:
                         if response.status == 200:
-                            return
+                            return True
             await asyncio.sleep(0.1)
-        raise RuntimeError("Server failed to start within the 10 seconds.")
+        return False
+
+    async def run_forever(self):
+        """Runs the FastAPI server indefinitely.
+
+        You need to call this method in the same process as the server was created in.
+        """
+        assert self._uvicorn_server is not None
+
+        async def _wait_till_healthy():
+            health = await self._server_health_check()
+            if not health:
+                raise RuntimeError("Server did not become healthy within the 10 seconds.")
+            logger.info("Store server is online at %s", self.endpoint)
+
+        # We run _wait_till_healthy and self._uvicorn_server.serve in parallel
+        # until one of them raises an exception.
+        await asyncio.gather(_wait_till_healthy(), self._uvicorn_server.serve())
 
     async def stop(self):
         """Gracefully stops the running FastAPI server.
