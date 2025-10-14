@@ -19,7 +19,7 @@ python math_agent.py
 import json
 import os
 import re
-from typing import Any, Optional, TypedDict, cast
+from typing import Any, Optional, TypedDict
 
 import numpy as np
 from agents import Agent, ModelSettings, OpenAIChatCompletionsModel, Runner
@@ -56,7 +56,7 @@ def _download_dataset() -> None:  # pyright: ignore[reportUnusedFunction]
     Downloads the first 64 samples from the dataset and saves them to data_gsmhard.jsonl.
     This function is provided as a utility to help set up the dataset for the first time.
     """
-    ds = load_dataset("reasoning-machines/gsm-hard", split="train")
+    ds = load_dataset("reasoning-machines/gsm-hard", split="train")  # pyright: ignore[reportUnknownVariableType]
     df = ds.to_list()  # type: ignore
     with open("data_gsmhard.jsonl", "w") as f:
         for i, row in enumerate(df):  # type: ignore
@@ -79,7 +79,7 @@ def load_math_dataset(limit: Optional[int] = None) -> Dataset[GsmProblem]:
         problems = [GsmProblem(**json.loads(line)) for line in f]
     if limit is not None:
         problems = problems[:limit]
-    return cast(Dataset[GsmProblem], problems)
+    return problems
 
 
 @rollout

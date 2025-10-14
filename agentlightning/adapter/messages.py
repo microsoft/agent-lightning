@@ -10,7 +10,6 @@ from openai.types.chat import (
     ChatCompletionMessageFunctionToolCallParam,
     ChatCompletionMessageParam,
 )
-from openai.types.shared_params import FunctionDefinition
 from pydantic import TypeAdapter
 
 from agentlightning.types import Span
@@ -96,6 +95,7 @@ def convert_to_openai_messages(prompt_completion_list: List[_RawSpanInfo]) -> Ge
 
             if role == "assistant" and "tool_calls" in msg:
                 # Use the tool_calls directly
+                # This branch is usually not used in the wild.
                 tool_calls: List[ChatCompletionMessageFunctionToolCallParam] = [
                     ChatCompletionMessageFunctionToolCallParam(
                         id=call["id"],
@@ -104,7 +104,9 @@ def convert_to_openai_messages(prompt_completion_list: List[_RawSpanInfo]) -> Ge
                     )
                     for call in msg["tool_calls"]
                 ]
-                messages.append(ChatCompletionAssistantMessageParam(role="assistant", tool_calls=tool_calls))
+                messages.append(
+                    ChatCompletionAssistantMessageParam(role="assistant", content=None, tool_calls=tool_calls)
+                )
             else:
                 # Normal user/system/tool content
                 message = cast(
@@ -139,13 +141,13 @@ def convert_to_openai_messages(prompt_completion_list: List[_RawSpanInfo]) -> Ge
             tools = [
                 ChatCompletionFunctionToolParam(
                     type="function",
-                    function=FunctionDefinition(
-                        name=fn["name"],
-                        description=fn.get("description", ""),
-                        parameters=(
+                    function={
+                        "name": fn["name"],
+                        "description": fn.get("description", ""),
+                        "parameters": (
                             json.loads(fn["parameters"]) if isinstance(fn["parameters"], str) else fn["parameters"]
                         ),
-                    ),
+                    },
                 )
                 for fn in pc_entry["request"]["functions"]
             ]
