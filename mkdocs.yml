@@ -80,9 +80,10 @@ nav:
   - Home: index.md
   - Quickstart:
     - Installation: quickstart/installation.md
-    - Getting Started: quickstart/getting-started.md
+    - Train the First Agent: quickstart/train-first-agent.md
+    - Write the First Algorithm: quickstart/write-first-algorithm.md
   - How-To Guides:
-    - Train SQL Agent: how-to/train-sql-agent.md
+    - Train SQL Agent with RL: how-to/train-sql-agent.md
   - Deep Dive:
     - Bird's Eye View: deep-dive/birds-eye-view.md
     - Server-Client Architecture (Legacy): deep-dive/server-client-architecture.md
