@@ -12,6 +12,7 @@ from typing import (
     Literal,
     Optional,
     Protocol,
+    SupportsIndex,
     TypeVar,
     Union,
     cast,
@@ -264,7 +265,7 @@ class Dataset(Protocol, Generic[T_co]):
     You don't have to inherit from this class; you can use a simple list if you want to.
     """
 
-    def __getitem__(self, index: int) -> T_co: ...
+    def __getitem__(self, index: SupportsIndex, /) -> T_co: ...
 
     def __len__(self) -> int: ...
 
