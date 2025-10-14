@@ -2,23 +2,25 @@
 
 import json
 from collections import defaultdict
-from typing import Any, Dict, Generator, List, Optional, Sequence, TypedDict, Union, cast
+from typing import Any, Dict, Generator, Iterable, List, Optional, TypedDict, Union, cast
 
-from openai.types.chat.chat_completion_function_tool_param import ChatCompletionFunctionToolParam
-from openai.types.chat.chat_completion_message import ChatCompletionMessage
-from openai.types.chat.chat_completion_message_function_tool_call import ChatCompletionMessageFunctionToolCall, Function
-from openai.types.chat.chat_completion_message_param import ChatCompletionMessageParam
+from openai.types.chat import (
+    ChatCompletionAssistantMessageParam,
+    ChatCompletionFunctionToolParam,
+    ChatCompletionMessageFunctionToolCallParam,
+    ChatCompletionMessageParam,
+)
 from openai.types.shared_params import FunctionDefinition
-from pydantic import BaseModel, TypeAdapter
+from pydantic import TypeAdapter
 
 from agentlightning.types import Span
 
 from .base import TraceAdapter
 
 
-class OpenAIMessages(BaseModel):
-    messages: List[Union[ChatCompletionMessage, ChatCompletionMessageParam]]
-    tools: Optional[List[ChatCompletionFunctionToolParam]] = None
+class OpenAIMessages(TypedDict):
+    messages: List[ChatCompletionMessageParam]
+    tools: Optional[List[ChatCompletionFunctionToolParam]]
 
 
 class _RawSpanInfo(TypedDict):
@@ -26,6 +28,7 @@ class _RawSpanInfo(TypedDict):
     completion: List[Dict[str, Any]]
     request: Dict[str, Any]
     response: Dict[str, Any]
+    tools: List[Dict[str, Any]]
 
 
 def group_genai_dict(data: Dict[str, Any], prefix: str) -> Union[Dict[str, Any], List[Any]]:
@@ -77,22 +80,15 @@ def group_genai_dict(data: Dict[str, Any], prefix: str) -> Union[Dict[str, Any],
     return result
 
 
-def convert_to_openai_messages(
-    prompt_completion_list: List[_RawSpanInfo], tool_requests: List[Dict[str, Any]]
-) -> Generator[OpenAIMessages, None, None]:
+def convert_to_openai_messages(prompt_completion_list: List[_RawSpanInfo]) -> Generator[OpenAIMessages, None, None]:
     """
     Convert raw tool call traces + prompt/completion list
     into OpenAI fine-tuning JSONL format (tool calling style).
 
-    Since promopt-completions sometimes do not contain the generated tool calls,
-    the tool call requests need to be provided separately.
-    The tool calls are then matched in a first-come-first-served basis to the tool call requests.
-
     https://learn.microsoft.com/en-us/azure/ai-foundry/openai/how-to/fine-tuning-functions
     """
     for pc_entry in prompt_completion_list:
-        messages: List[Union[ChatCompletionMessage, ChatCompletionMessageParam]] = []
-        tools: List[ChatCompletionFunctionToolParam] = []
+        messages: List[ChatCompletionMessageParam] = []
 
         # Extract messages
         for msg in pc_entry["prompt"]:
@@ -100,17 +96,15 @@ def convert_to_openai_messages(
 
             if role == "assistant" and "tool_calls" in msg:
                 # Use the tool_calls directly
-                tool_calls: Sequence[ChatCompletionMessageFunctionToolCall] = []
-                for call in msg["tool_calls"]:
-                    function = Function(name=call["name"], arguments=call["arguments"])
-                    tool_calls.append(
-                        ChatCompletionMessageFunctionToolCall(
-                            id=call["id"],
-                            type="function",
-                            function=function,
-                        )
+                tool_calls: List[ChatCompletionMessageFunctionToolCallParam] = [
+                    ChatCompletionMessageFunctionToolCallParam(
+                        id=call["id"],
+                        type="function",
+                        function={"name": call["name"], "arguments": call["arguments"]},
                     )
-                messages.append(ChatCompletionMessage(role="assistant", tool_calls=list(tool_calls)))
+                    for call in msg["tool_calls"]
+                ]
+                messages.append(ChatCompletionAssistantMessageParam(role="assistant", tool_calls=tool_calls))
             else:
                 # Normal user/system/tool content
                 message = cast(
@@ -124,46 +118,40 @@ def convert_to_openai_messages(
         # Extract completions (assistant outputs after tool responses)
         for comp in pc_entry["completion"]:
             if comp.get("role") == "assistant":
-                if comp.get("content"):
-                    message = ChatCompletionMessage(role="assistant", content=comp["content"])
-                    messages.append(message)
-                elif comp.get("finish_reason") == "tool_calls":
-                    if len(tool_requests) == 0:
-                        raise ValueError("No tool requests available for tool_calls completion")
-                    tool_req = tool_requests.pop(0)
-                    # TODO: this is a hack because tracing frameworks did not report the tool call properly (?)
-                    message = ChatCompletionMessage(
-                        role="assistant",
-                        tool_calls=[
-                            ChatCompletionMessageFunctionToolCall(
-                                id=tool_req["call"]["id"],
-                                type=tool_req["call"]["type"],
-                                function=Function(name=tool_req["name"], arguments=tool_req["parameters"]),
-                            )
-                        ],
+                content = comp.get("content")
+                if pc_entry["tools"]:
+                    tool_calls = [
+                        ChatCompletionMessageFunctionToolCallParam(
+                            id=tool["call"]["id"],
+                            type=tool["call"]["type"],
+                            function={"name": tool["name"], "arguments": tool["parameters"]},
+                        )
+                        for tool in pc_entry["tools"]
+                    ]
+                    messages.append(
+                        ChatCompletionAssistantMessageParam(role="assistant", content=content, tool_calls=tool_calls)
                     )
-                    messages.append(message)
                 else:
-                    raise ValueError(f"Unsupported assistant completion: {comp}")
+                    messages.append(ChatCompletionAssistantMessageParam(role="assistant", content=content))
 
         # Build tools definitions (if available)
         if "functions" in pc_entry["request"]:
-            for fn in pc_entry["request"]["functions"]:
-                tools.append(
-                    ChatCompletionFunctionToolParam(
-                        type="function",
-                        function=FunctionDefinition(
-                            name=fn["name"],
-                            description=fn.get("description", ""),
-                            parameters=(
-                                json.loads(fn["parameters"]) if isinstance(fn["parameters"], str) else fn["parameters"]
-                            ),
+            tools = [
+                ChatCompletionFunctionToolParam(
+                    type="function",
+                    function=FunctionDefinition(
+                        name=fn["name"],
+                        description=fn.get("description", ""),
+                        parameters=(
+                            json.loads(fn["parameters"]) if isinstance(fn["parameters"], str) else fn["parameters"]
                         ),
-                    )
+                    ),
                 )
+                for fn in pc_entry["request"]["functions"]
+            ]
             yield OpenAIMessages(messages=messages, tools=tools)
         else:
-            yield OpenAIMessages(messages=messages, tools=tools)
+            yield OpenAIMessages(messages=messages, tools=None)
 
 
 class TraceMessagesAdapter(TraceAdapter[List[OpenAIMessages]]):
@@ -185,19 +173,26 @@ class TraceMessagesAdapter(TraceAdapter[List[OpenAIMessages]]):
         List[OpenAIMessages]: A list of structured message conversations with associated tools
     """
 
+    def get_tool_calls(self, completion: Span, all_spans: List[Span], /) -> Iterable[Dict[str, Any]]:
+        """Find tool calls in the trace. Returns a dict with the tool call id, name, and arguments.
+
+        The spans that are direct children of the completion span are the tool calls.
+        """
+        # Get all the spans that are children of the completion span
+        children = [span for span in all_spans if span.parent_id == completion.span_id]
+        # Get the tool calls from the children
+        for maybe_tool_call in children:
+            tool_call = group_genai_dict(maybe_tool_call.attributes, "tool")
+            if not isinstance(tool_call, dict):
+                raise ValueError(f"Extracted tool call from trace is not a dict: {tool_call}")
+            if tool_call:
+                yield tool_call
+
     def adapt(self, source: List[Span], /) -> List[OpenAIMessages]:
-        raw_tool_calls: List[Dict[str, Any]] = []
         raw_prompt_completions: List[_RawSpanInfo] = []
 
         for span in source:
             attributes = {k: v for k, v in span.attributes.items()}
-
-            # Otherwise we strip all the tool calls and prompts and responses
-            tool_call = group_genai_dict(dict(attributes), "tool")
-            if not isinstance(tool_call, dict):
-                raise ValueError(f"Extracted tool call from trace is not a dict: {tool_call}")
-            if tool_call:
-                raw_tool_calls.append(tool_call)
 
             # Get all related information from the trace span
             prompt = group_genai_dict(attributes, "gen_ai.prompt") or []
@@ -213,8 +208,11 @@ class TraceMessagesAdapter(TraceAdapter[List[OpenAIMessages]]):
             if not isinstance(response, dict):
                 raise ValueError(f"Extracted response from trace is not a dict: {response}")
             if prompt or completion or request or response:
+                tools = list(self.get_tool_calls(span, source)) or []
                 raw_prompt_completions.append(
-                    _RawSpanInfo(prompt=prompt or [], completion=completion, request=request, response=response)
+                    _RawSpanInfo(
+                        prompt=prompt or [], completion=completion, request=request, response=response, tools=tools
+                    )
                 )
 
-        return list(convert_to_openai_messages(raw_prompt_completions, raw_tool_calls))
+        return list(convert_to_openai_messages(raw_prompt_completions))

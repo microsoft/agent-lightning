@@ -1,12 +1,29 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 import json
-import re
-import time
 import traceback
-from typing import List, Tuple, TypedDict
+from typing import List, Tuple, TypedDict, cast
 
 from openai import OpenAI
+from openai.types.chat import (
+    ChatCompletionAssistantMessageParam,
+    ChatCompletionMessageFunctionToolCallParam,
+    ChatCompletionMessageParam,
+    ChatCompletionToolMessageParam,
+    ChatCompletionToolParam,
+)
+from pydantic import BaseModel, Field
+from rich.console import Console
 
 from agentlightning.litagent import rollout
+from agentlightning.types import Dataset, PromptTemplate
+
+console = Console()
+
+
+class JudgeResponse(BaseModel):
+    reason: str = Field(description="The reason for the score. No more than 100 characters.")
+    score: float = Field(description="The score for the match on a 0-1 scale. Be critical.")
 
 
 class Room(TypedDict):
@@ -36,11 +53,12 @@ class RoomRequirement(TypedDict):
 
 
 class RoomSelectionTask(TypedDict):
+    id: str
     task_input: RoomRequirement
     expected_choice: str
 
 
-tools = [
+TOOL_DEFINITIONS: List[ChatCompletionToolParam] = [
     {
         "type": "function",
         "function": {
@@ -60,52 +78,89 @@ tools = [
 ]
 
 
-# @rollout
-def room_selector(task: RoomSelectionTask):
-    client = OpenAI()
-
-    system = (
-        "You are a scheduling assistant.\n"
-        "Hard constraints: free for slot, capacity >= attendees, includes all required equipment, "
-        "accessible==True if requested.\n"
-        "Tie-break scoring (lower is better):\n"
-        "  1) capacity_slack = capacity - attendees (minimize)\n"
-        "  2) extra_equipment = provided_equipment_count - required_equipment_count (minimize)\n"
-        "  3) distance_m (minimize)\n"
-        "  4) fewer total booked blocks that day (minimize)\n"
-        "Return No Room if no room is found that satisfies the constraints.\n"
-        "Return strictly:\n"
-        "final_choice: <ROOM_ID>\nreason: <one line stating the decisive criteria>\n"
+def prompt_template_baseline() -> PromptTemplate:
+    return PromptTemplate(
+        template="Find a room on {date} at {time} for {duration_min} minutes, {attendees} attendees. Needs: {needs}. Accessible required: {accessible_required}",
+        engine="f-string",
     )
 
-    print("=== Task ===")
-    print(task)
 
-    task_input = task["task_input"]
+@rollout
+def room_selector(task: RoomSelectionTask, prompt_template: PromptTemplate) -> float:
+    """An agent to select a room based on the given requirements.
 
-    messages = [
-        {"role": "system", "content": system},
+    Oracle System Prompt (works with 100% accuracy with gpt-5 mini low reasoning effort):
+
+        You are a scheduling assistant.
+        Hard constraints: free for slot, capacity >= attendees, includes all required equipment,
+        accessible==True if requested.
+        Tie-break scoring (lower is better):
+        1) capacity_slack = capacity - attendees (minimize)
+        2) extra_equipment = provided_equipment_count - required_equipment_count (minimize)
+        3) distance_m (minimize)
+        4) fewer total booked blocks that day (minimize)
+        Return No Room if no room is found that satisfies the constraints.
+        Return strictly:
+        final_choice: <ROOM_ID>
+        reason: <one line stating the decisive criteria>
+
+    Oracle User Prompt Template:
+
+        Find a room on {task_input['date']} at {task_input['time']} for {task_input['duration_min']} minutes,
+        {task_input['attendees']} attendees. Needs: {', '.join(task_input['needs']) or 'none'}.
+        Accessible required: {task_input['accessible_required']}
+
+    The current implementation greatly simply the oracle prompt and prompt template is provided by a parameter.
+    The prompt template should be tuned by Agent-lightning's APO algorithm.
+    It also should work with a very small model like gpt-4.1-nano.
+    """
+
+    client = OpenAI()
+    model = "gpt-4.1-nano"
+
+    user_message = prompt_template.format(**task["task_input"])
+
+    messages: List[ChatCompletionMessageParam] = [
+        {"role": "system", "content": "You are a scheduling assistant."},
         {
             "role": "user",
-            "content": (
-                f"Find a room on {task_input['date']} at {task_input['time']} for {task_input['duration_min']} minutes, "
-                f"{task_input['attendees']} attendees. Needs: {', '.join(task_input['needs']) or 'none'}. "
-                f"Accessible required: {task_input['accessible_required']}"
-            ),
+            "content": user_message,
         },
     ]
 
-    resp = client.chat.completions.create(
-        model="gpt-5-mini",
-        messages=messages,
-        tools=tools,
-        tool_choice="auto",
-        reasoning_effort="low",
-    )
-    messages.append(resp.choices[0].message)
+    console.print(f"[bold yellow]=== User Message ===[/bold yellow]")
+    console.print(user_message)
 
-    for tc in resp.choices[0].message.tool_calls or []:
-        if tc.function.name == "get_rooms_and_availability":
+    resp = client.chat.completions.create(
+        model=model,
+        messages=messages,
+        tools=TOOL_DEFINITIONS,
+        tool_choice="auto",
+        # Uncomment for gpt-5
+        # reasoning_effort="low",
+    )
+
+    console.print(f"[bold yellow]=== Assistant Message ===[/bold yellow]")
+    console.print(resp.choices[0].message)
+
+    # Parse and process the tool calls
+    tool_calls = resp.choices[0].message.tool_calls
+    if tool_calls:
+
+        tool_call_params: List[ChatCompletionMessageFunctionToolCallParam] = []
+        tool_results: List[ChatCompletionToolMessageParam] = []
+        for tc in tool_calls:
+            if tc.type != "function":
+                raise ValueError(f"Tool call is not a function: {tc}")
+            if tc.function.name != "get_rooms_and_availability":
+                raise ValueError(f"Tool call is not get_rooms_and_availability: {tc}")
+            tool_call_params.append(
+                ChatCompletionMessageFunctionToolCallParam(
+                    id=tc.id,
+                    type="function",
+                    function={"name": tc.function.name, "arguments": tc.function.arguments},
+                )
+            )
             args = json.loads(tc.function.arguments)
             try:
                 tool_output = get_rooms_and_availability(args["date"], args["time"], args["duration_min"])
@@ -114,42 +169,64 @@ def room_selector(task: RoomSelectionTask):
                     "error": str(e),
                     "traceback": traceback.format_exc(),
                 }
-            messages.append(
-                {
-                    "role": "tool",
-                    "tool_call_id": tc.id,
-                    "name": tc.function.name,
-                    "content": json.dumps(tool_output),
-                }
+            console.print(f"[bold yellow]=== Tool Message ===[/bold yellow]")
+            console.print(tool_output)
+            tool_results.append(
+                ChatCompletionToolMessageParam(
+                    role="tool",
+                    tool_call_id=tc.id,
+                    content=json.dumps(tool_output),
+                )
             )
 
-    final = client.chat.completions.create(
-        model="gpt-5-mini",
-        messages=messages,
-        reasoning_effort="low",
-    )
-    answer_text = final.choices[0].message.content
-    print("=== Model Answer ===\n", answer_text)
+        # Update the messages for hte next call
+        messages.append(
+            ChatCompletionAssistantMessageParam(
+                role="assistant",
+                content=resp.choices[0].message.content,
+                tool_calls=tool_call_params,
+            )
+        )
+        messages.extend(tool_results)
+
+        next_resp = client.chat.completions.create(
+            model=model,
+            messages=messages,
+        )
+        console.print(f"[bold yellow]=== Final Assistant Message ===[/bold yellow]")
+        console.print(next_resp.choices[0].message.content)
+        final_message = next_resp.choices[0].message.content
+
+    else:
+        final_message = resp.choices[0].message.content
 
     # Judge exact choice against expected
     expected_choice = task["expected_choice"]
 
-    judge_prompt = f"""Task output:
-    {answer_text}
-
-    Task expected answer:
-    final_choice: {expected_choice}
-
-    Score the match on a 0-1 scale. Return JSON: {{"score": <0..1>, "reason": "<brief>"}}
-    """
-    judge = client.chat.completions.create(
+    judge_prompt = (
+        f"You are a strict grader of exact room choice."
+        f"Task output:\n{final_message}\n\n"
+        f"Task expected answer:\n{expected_choice}\n\n"
+        f"Score the match on a 0-1 scale. Be critical.\n"
+        f"Bear in mind that the score can be partially correct (between 0 and 1)."
+    )
+    judge = client.chat.completions.parse(
         model="gpt-4.1-mini",
         messages=[
-            {"role": "system", "content": "Be a strict grader of exact room choice."},
             {"role": "user", "content": judge_prompt},
         ],
+        response_format=JudgeResponse,
     )
-    print("=== Judge ===\n", judge.choices[0].message.content)
+
+    judge_result = judge.choices[0].message.content
+    console.print(f"[bold yellow]=== Judge ===[/bold yellow]")
+    console.print(judge_result)
+
+    judge_result_parsed = JudgeResponse.model_validate_json(judge_result)  # type: ignore
+
+    console.print(f"[bold yellow]=== Judge Score ===[/bold yellow]")
+    console.print(judge_result_parsed.score)
+    return judge_result_parsed.score
 
 
 # Local tool database (there might be multiple plausible fits)
@@ -238,27 +315,39 @@ def get_rooms_and_availability(date: str, time_str: str, duration_min: int) -> A
     return {"rooms": avail}
 
 
-if __name__ == "__main__":
-    for line in open("room_tasks_merged.jsonl"):
+def load_room_tasks() -> Dataset[RoomSelectionTask]:
+    tasks: List[RoomSelectionTask] = []
+    for line in open("room_tasks.jsonl"):
         task = json.loads(line)
+        tasks.append(RoomSelectionTask(**task))
+    return cast(Dataset[RoomSelectionTask], tasks)
 
-        room_selector(task)
 
-        # from agentlightning.tracer import AgentOpsTracer
-        # from agentlightning.types import Span
-
-        # tracer = AgentOpsTracer()
-        # tracer.init()
-        # tracer.init_worker(0)
-        # with tracer.trace_context():
-        #     room_selector(task)
-        # spans = []
-        # for span in tracer.get_last_trace():
-        #     spans.append(Span.from_opentelemetry(span, "dummy", "dummy", 0))
-        #     print(" Span name: ", span.name, "Span attributes:", span.attributes)
-        # from agentlightning.adapter.messages import TraceMessagesAdapter
-
-        # adapter = TraceMessagesAdapter()
-        # messages = adapter.adapt(spans)
-        # print(messages)
+if __name__ == "__main__":
+    tasks = load_room_tasks()
+    for task in tasks:
+        # room_selector(task, prompt_template_baseline())
         # break
+
+        from agentlightning.tracer import AgentOpsTracer
+        from agentlightning.types import Span
+
+        tracer = AgentOpsTracer()
+        tracer.init()
+        tracer.init_worker(0)
+        with tracer.trace_context():
+            room_selector(task, prompt_template_baseline())
+        spans = []
+        for span in tracer.get_last_trace():
+            spans.append(Span.from_opentelemetry(span, "dummy", "dummy", 0))
+            console.print(
+                spans[-1].span_id, spans[-1].parent_id, " Span name: ", span.name, "Span attributes:", span.attributes
+            )
+        from agentlightning.adapter.messages import TraceMessagesAdapter
+
+        adapter = TraceMessagesAdapter()
+        messages = adapter.adapt(spans)
+        for message in messages:
+            console.print(message)
+        # print(messages)
+        break
