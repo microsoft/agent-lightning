@@ -343,6 +343,7 @@ def test_trace_messages_adapter_handles_multiple_tool_calls():
                 {"content": system_prompt, "role": "system"},
                 {"content": user_prompt, "role": "user"},
                 {
+                    "content": None,
                     "role": "assistant",
                     "tool_calls": [
                         {
