@@ -10,16 +10,24 @@ from typing import Any, List, Optional
 from agentlightning.llm_proxy import ModelConfig
 from agentlightning.types import Dataset, RolloutStatus, RolloutV2
 
-from .base import FastAlgorithm
+from .base import BaseAlgorithm
 
 logger = logging.getLogger(__name__)
+
+
+class FastAlgorithm(BaseAlgorithm):
+    """Algorithm that can run fast and qualify for dev mode.
+
+    Fast algorithms enable agent developers to quickly iterate on agent development
+    without waiting for a long training to complete.
+    """
 
 
 def _timestamp_to_iso_str(timestamp: float) -> str:
     return datetime.fromtimestamp(timestamp).isoformat()
 
 
-class MockAlgorithm(FastAlgorithm):
+class Baseline(FastAlgorithm):
     """A dummy implementation of algorithm interface that puts all dataset into the queue, and waits for all rollouts to complete.
 
     Logs all collected spans and rewards.

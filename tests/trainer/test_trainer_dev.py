@@ -8,8 +8,7 @@ from typing import Any
 
 import pytest
 
-from agentlightning.algorithm.base import BaseAlgorithm
-from agentlightning.algorithm.mock import MockAlgorithm
+from agentlightning.algorithm import BaseAlgorithm, Baseline
 from agentlightning.execution.base import ExecutionStrategy
 from agentlightning.litagent import LitAgent
 from agentlightning.trainer import Trainer
@@ -46,7 +45,7 @@ def test_dev_requires_fast_algorithm() -> None:
 
 def test_dev_allows_fast_algorithm() -> None:
     strategy = DummyStrategy()
-    trainer = Trainer(strategy=strategy, algorithm=MockAlgorithm())
+    trainer = Trainer(strategy=strategy, algorithm=Baseline())
     agent = DummyAgent()
 
     trainer.dev(agent)

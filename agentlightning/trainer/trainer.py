@@ -10,8 +10,7 @@ import warnings
 from typing import Any, Callable, Dict, List, Optional, Sequence, TypeVar, Union
 
 from agentlightning.adapter import TraceAdapter, TracerTraceToTriplet
-from agentlightning.algorithm.base import BaseAlgorithm, FastAlgorithm
-from agentlightning.algorithm.mock import MockAlgorithm
+from agentlightning.algorithm import BaseAlgorithm, Baseline, FastAlgorithm
 from agentlightning.client import AgentLightningClient
 from agentlightning.execution.base import ExecutionStrategy
 from agentlightning.execution.client_server import ClientServerExecutionStrategy
@@ -349,7 +348,7 @@ class Trainer(ParallelWorkerBase):
 
         # Sanity check
         if self.algorithm is None:
-            algorithm = MockAlgorithm()
+            algorithm = Baseline()
         else:
             algorithm = self.algorithm
 
