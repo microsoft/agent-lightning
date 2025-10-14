@@ -20,8 +20,7 @@ from agentlightning.runner.base import BaseRunner
 from agentlightning.store.base import LightningStore
 from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.tracer.base import BaseTracer
-from agentlightning.types import LLM, Hook, PromptTemplate, RolloutV2, Span, SpanNames
-from agentlightning.types.resources import NamedResources
+from agentlightning.types import LLM, Hook, NamedResources, PromptTemplate, RolloutV2, Span, SpanNames
 
 trace_api.set_tracer_provider(TracerProvider())
 
