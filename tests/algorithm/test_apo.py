@@ -2,7 +2,7 @@
 
 # pyright: reportPrivateUsage=false
 
-from typing import Any, Dict, Iterator, List, Optional, Sequence, cast
+from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple, cast
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -11,7 +11,7 @@ from openai import AsyncOpenAI
 import agentlightning.algorithm.apo.apo as apo_module
 from agentlightning.adapter import TraceAdapter
 from agentlightning.adapter.messages import TraceMessagesAdapter
-from agentlightning.algorithm.apo.apo import APO, RolloutResultForAPO, batch_iter_over_dataset
+from agentlightning.algorithm.apo.apo import APO, RolloutResultForAPO, VersionedPromptTemplate, batch_iter_over_dataset
 from agentlightning.types import (
     Dataset,
     NamedResources,
@@ -44,20 +44,31 @@ class WrongAdapter(TraceAdapter[List[int]]):
 
 class DummyStore:
     def __init__(self) -> None:
-        self.add_resources_calls: List[NamedResources] = []
+        self.update_resources_calls: List[Tuple[str, NamedResources]] = []
         self.enqueue_calls: List[Dict[str, Any]] = []
         self.wait_calls: List[Dict[str, Any]] = []
         self.wait_results_queue: List[List[RolloutV2]] = []
         self.query_spans_map: Dict[str, List[Span]] = {}
         self._counter = 0
 
-    async def add_resources(self, resources: NamedResources) -> None:
-        self.add_resources_calls.append(resources)
+    async def update_resources(self, resources_id: str, resources: NamedResources) -> Mock:
+        self.update_resources_calls.append((resources_id, resources))
+        update_mock = Mock()
+        update_mock.resources_id = resources_id
+        return update_mock
 
-    async def enqueue_rollout(self, *, input: Dict[str, Any], mode: str) -> Mock:
+    async def enqueue_rollout(
+        self,
+        *,
+        input: Dict[str, Any],
+        mode: str,
+        resources_id: Optional[str] = None,
+    ) -> Mock:
         rollout_id = f"rollout-{self._counter}"
         self._counter += 1
-        self.enqueue_calls.append({"rollout_id": rollout_id, "input": input, "mode": mode})
+        self.enqueue_calls.append(
+            {"rollout_id": rollout_id, "input": input, "mode": mode, "resources_id": resources_id}
+        )
         result = Mock()
         result.rollout_id = rollout_id
         return result
@@ -253,6 +264,7 @@ async def test_compute_textual_gradient_samples_batch(monkeypatch: pytest.Monkey
     create_mock = AsyncMock(return_value=make_completion("critique"))
     client = make_openai_client(create_mock)
     apo = APO[Any](client, gradient_model="test-gradient-model", gradient_batch_size=2, diversity_temperature=0.8)
+    versioned_prompt = apo._create_versioned_prompt(PromptTemplate(template="prompt", engine="f-string"))
     rollouts: List[RolloutResultForAPO] = [
         RolloutResultForAPO(status="succeeded", final_reward=float(i), spans=[], messages=[]) for i in range(3)
     ]
@@ -261,7 +273,7 @@ async def test_compute_textual_gradient_samples_batch(monkeypatch: pytest.Monkey
     monkeypatch.setattr(apo_module.random, "sample", sample_mock)
     monkeypatch.setattr(apo_module.random, "choice", lambda seq: seq[0])  # type: ignore
 
-    result = await apo.compute_textual_gradient("prompt", rollouts)
+    result = await apo.compute_textual_gradient(versioned_prompt, rollouts)
 
     assert result == "critique"
     sample_mock.assert_called_once_with(rollouts, 2)
@@ -280,6 +292,7 @@ async def test_compute_textual_gradient_uses_all_rollouts_when_insufficient(monk
     create_mock = AsyncMock(return_value=make_completion("critique"))
     client = make_openai_client(create_mock)
     apo = APO[Any](client, gradient_batch_size=3)
+    versioned_prompt = apo._create_versioned_prompt(PromptTemplate(template="prompt", engine="f-string"))
     rollouts: List[RolloutResultForAPO] = [
         RolloutResultForAPO(status="succeeded", final_reward=1.0, spans=[], messages=[])
     ]
@@ -288,7 +301,7 @@ async def test_compute_textual_gradient_uses_all_rollouts_when_insufficient(monk
     monkeypatch.setattr(apo_module.random, "sample", sample_mock)
     monkeypatch.setattr(apo_module.random, "choice", lambda seq: seq[0])  # type: ignore
 
-    result = await apo.compute_textual_gradient("prompt", rollouts)
+    result = await apo.compute_textual_gradient(versioned_prompt, rollouts)
 
     assert result == "critique"
 
@@ -321,11 +334,12 @@ async def test_textual_gradient_and_apply_edit_returns_new_prompt(monkeypatch: p
 
     monkeypatch.setattr(apo_module.poml, "poml", poml_side_effect)
 
+    versioned_prompt = apo._create_versioned_prompt(PromptTemplate(template="old prompt", engine="f-string"))
     rollouts: List[RolloutResultForAPO] = [
         RolloutResultForAPO(status="succeeded", final_reward=1.0, spans=[], messages=[])
     ]
 
-    result = await apo.textual_gradient_and_apply_edit("old prompt", rollouts)
+    result = await apo.textual_gradient_and_apply_edit(versioned_prompt, rollouts)
 
     assert result == "new prompt"
     assert create_mock.await_count == 2
@@ -356,11 +370,12 @@ async def test_textual_gradient_and_apply_edit_returns_original_if_no_critique(m
     monkeypatch.setattr(apo_module.random, "choice", lambda seq: seq[0])  # type: ignore
     monkeypatch.setattr(apo_module.random, "sample", lambda population, k: list(population)[:k])  # type: ignore
 
+    versioned_prompt = apo._create_versioned_prompt(PromptTemplate(template="old prompt", engine="f-string"))
     rollouts: List[RolloutResultForAPO] = [
         RolloutResultForAPO(status="succeeded", final_reward=1.0, spans=[], messages=[])
     ]
 
-    result = await apo.textual_gradient_and_apply_edit("old prompt", rollouts)
+    result = await apo.textual_gradient_and_apply_edit(versioned_prompt, rollouts)
 
     # Should return original prompt when gradient computation fails
     assert result == "old prompt"
@@ -443,7 +458,10 @@ async def test_evaluate_prompt_on_batch_runs_rollouts() -> None:
         ]
     )
 
-    rollout_results, average = await apo.evaluate_prompt_on_batch("test prompt", "seed", dataset, mode="train")
+    prompt_template = PromptTemplate(template="test prompt", engine="f-string")
+    versioned_prompt = apo._create_versioned_prompt(prompt_template)
+
+    rollout_results, average = await apo.evaluate_prompt_on_batch(versioned_prompt, "seed", dataset, mode="train")
 
     # Verify results
     assert len(rollout_results) == 2
@@ -454,9 +472,11 @@ async def test_evaluate_prompt_on_batch_runs_rollouts() -> None:
     assert average == pytest.approx(0.5)  # type: ignore
 
     # Verify resource was added with correct prompt
-    assert len(store.add_resources_calls) == 1
-    assert "seed" in store.add_resources_calls[0]
-    added_resource = store.add_resources_calls[0]["seed"]
+    assert len(store.update_resources_calls) == 1
+    resources_id, resources_payload = store.update_resources_calls[0]
+    assert resources_id == versioned_prompt.version
+    assert "seed" in resources_payload
+    added_resource = resources_payload["seed"]
     assert isinstance(added_resource, PromptTemplate)
     assert added_resource.template == "test prompt"
     assert added_resource.engine == "f-string"
@@ -465,8 +485,10 @@ async def test_evaluate_prompt_on_batch_runs_rollouts() -> None:
     assert len(store.enqueue_calls) == 2
     assert store.enqueue_calls[0]["input"] == dataset[0]
     assert store.enqueue_calls[0]["mode"] == "train"
+    assert store.enqueue_calls[0]["resources_id"] == versioned_prompt.version
     assert store.enqueue_calls[1]["input"] == dataset[1]
     assert store.enqueue_calls[1]["mode"] == "train"
+    assert store.enqueue_calls[1]["resources_id"] == versioned_prompt.version
 
     # Verify wait was called with correct rollout IDs
     assert len(store.wait_calls) == 1
@@ -512,26 +534,27 @@ def test_initialize_beam_requires_val_dataset() -> None:
 
 def test_sample_parent_prompts_replicates_when_beam_too_small(monkeypatch: pytest.MonkeyPatch) -> None:
     apo = APO[Any](Mock(spec=AsyncOpenAI), beam_width=3)
-    beam = [PromptTemplate(template="Seed", engine="f-string")]
+    beam_prompt = apo._create_versioned_prompt(PromptTemplate(template="Seed", engine="f-string"))
+    beam = [beam_prompt]
     monkeypatch.setattr(apo_module.random, "sample", lambda population, k: (_ for _ in ()).throw(AssertionError()))  # type: ignore
 
     sampled = apo._sample_parent_prompts(beam, round_num=0)
 
     assert len(sampled) == apo.beam_width
-    assert all(prompt is beam[0] for prompt in sampled)
+    assert all(index == 0 and prompt is beam_prompt for index, prompt in sampled)
 
 
 def test_sample_parent_prompts_uses_random_sample(monkeypatch: pytest.MonkeyPatch) -> None:
     apo = APO[Any](Mock(spec=AsyncOpenAI), beam_width=2)
-    prompt_a = PromptTemplate(template="A", engine="f-string")
-    prompt_b = PromptTemplate(template="B", engine="f-string")
-    prompt_c = PromptTemplate(template="C", engine="f-string")
+    prompt_a = apo._create_versioned_prompt(PromptTemplate(template="A", engine="f-string"))
+    prompt_b = apo._create_versioned_prompt(PromptTemplate(template="B", engine="f-string"))
+    prompt_c = apo._create_versioned_prompt(PromptTemplate(template="C", engine="f-string"))
 
-    monkeypatch.setattr(apo_module.random, "sample", lambda population, k: [prompt_a, prompt_c])  # type: ignore
+    monkeypatch.setattr(apo_module.random, "sample", lambda population, k: [0, 2])  # type: ignore
 
     sampled = apo._sample_parent_prompts([prompt_a, prompt_b, prompt_c], round_num=1)
 
-    assert sampled == [prompt_a, prompt_c]
+    assert sampled == [(0, prompt_a), (2, prompt_c)]
 
 
 @pytest.mark.asyncio
@@ -543,7 +566,7 @@ async def test_generate_candidate_prompts_creates_branch_factor_children() -> No
     apo.set_store(store)  # type: ignore
     apo.set_adapter(adapter)
 
-    parent_prompt = PromptTemplate(template="Seed", engine="f-string")
+    parent_prompt = apo._create_versioned_prompt(PromptTemplate(template="Seed", engine="f-string"))
     grad_batches: Iterator[Sequence[Dict[str, Any]]] = iter(
         [
             [{"task": "a"}],
@@ -563,25 +586,30 @@ async def test_generate_candidate_prompts_creates_branch_factor_children() -> No
 
     counter = 0
 
-    async def edit_side_effect(current_prompt: str, rollout: List[RolloutResultForAPO]) -> str:
+    async def edit_side_effect(
+        current_prompt: VersionedPromptTemplate,
+        rollout: List[RolloutResultForAPO],
+        **_: Any,
+    ) -> str:
         nonlocal counter
         counter += 1
-        return f"{current_prompt}-{counter}"
+        return f"{current_prompt.prompt_template.template}-{counter}"
 
     apo.textual_gradient_and_apply_edit = AsyncMock(side_effect=edit_side_effect)
 
-    candidates = await apo._generate_candidate_prompts([parent_prompt], "seed", grad_batches, round_num=0)
+    candidates = await apo._generate_candidate_prompts([(0, parent_prompt)], "seed", grad_batches, round_num=0)
 
     # Verify correct number of candidates generated
     assert len(candidates) == apo.branch_factor
-    assert {candidate.template for candidate in candidates} == {"Seed-1", "Seed-2"}
-    assert all(candidate.engine == "f-string" for candidate in candidates)
+    assert {candidate.prompt_template.template for candidate in candidates} == {"Seed-1", "Seed-2"}
+    assert all(candidate.prompt_template.engine == "f-string" for candidate in candidates)
 
     # Verify evaluate_prompt_on_batch was called for each candidate generation
     assert len(store.enqueue_calls) == 2
     assert store.enqueue_calls[0]["input"] == {"task": "a"}
     assert store.enqueue_calls[1]["input"] == {"task": "b"}
     assert all(call["mode"] == "train" for call in store.enqueue_calls)
+    assert all(call["resources_id"] == parent_prompt.version for call in store.enqueue_calls)
 
     # Verify textual_gradient_and_apply_edit was called correct number of times
     assert apo.textual_gradient_and_apply_edit.await_count == 2
@@ -598,7 +626,7 @@ async def test_generate_candidate_prompts_skips_failed_generations() -> None:
     apo.set_store(store)  # type: ignore
     apo.set_adapter(adapter)
 
-    parent_prompt = PromptTemplate(template="Seed", engine="f-string")
+    parent_prompt = apo._create_versioned_prompt(PromptTemplate(template="Seed", engine="f-string"))
     grad_batches: Iterator[Sequence[Dict[str, Any]]] = iter([[{"task": f"t{i}"}] for i in range(3)])
 
     # Set up rollouts
@@ -615,20 +643,24 @@ async def test_generate_candidate_prompts_skips_failed_generations() -> None:
     # Mock to return None for second call, valid prompts for others
     call_count = 0
 
-    async def edit_side_effect(current_prompt: str, rollout: List[RolloutResultForAPO]) -> Optional[str]:
+    async def edit_side_effect(
+        current_prompt: VersionedPromptTemplate,
+        rollout: List[RolloutResultForAPO],
+        **_: Any,
+    ) -> Optional[str]:
         nonlocal call_count
         call_count += 1
         if call_count == 2:
             return None  # Simulate failure
-        return f"{current_prompt}-{call_count}"
+        return f"{current_prompt.prompt_template.template}-{call_count}"
 
     apo.textual_gradient_and_apply_edit = AsyncMock(side_effect=edit_side_effect)
 
-    candidates = await apo._generate_candidate_prompts([parent_prompt], "seed", grad_batches, round_num=0)
+    candidates = await apo._generate_candidate_prompts([(0, parent_prompt)], "seed", grad_batches, round_num=0)
 
     # Should only have 2 candidates (one failed)
     assert len(candidates) == 2
-    assert {candidate.template for candidate in candidates} == {"Seed-1", "Seed-3"}
+    assert {candidate.prompt_template.template for candidate in candidates} == {"Seed-1", "Seed-3"}
     # Verify all three attempts were made
     assert apo.textual_gradient_and_apply_edit.await_count == 3
 
@@ -637,14 +669,20 @@ async def test_generate_candidate_prompts_skips_failed_generations() -> None:
 async def test_evaluate_and_select_beam_sorts_by_score() -> None:
     apo = APO[Any](Mock(spec=AsyncOpenAI), beam_width=2)
     candidates = [
-        PromptTemplate(template="A", engine="f-string"),
-        PromptTemplate(template="B", engine="f-string"),
-        PromptTemplate(template="C", engine="f-string"),
+        apo._create_versioned_prompt(PromptTemplate(template="A", engine="f-string")),
+        apo._create_versioned_prompt(PromptTemplate(template="B", engine="f-string")),
+        apo._create_versioned_prompt(PromptTemplate(template="C", engine="f-string")),
     ]
     scores = {"A": 1.0, "B": 0.2, "C": 2.0}
 
-    async def evaluate(prompt: str, resource_name: str, dataset: Sequence[Dict[str, Any]], mode: str) -> Any:
-        return [], scores[prompt]
+    async def evaluate(
+        prompt: VersionedPromptTemplate,
+        resource_name: str,
+        dataset: Sequence[Dict[str, Any]],
+        mode: str,
+        **_: Any,
+    ) -> Any:
+        return [], scores[prompt.prompt_template.template]
 
     apo.evaluate_prompt_on_batch = AsyncMock(side_effect=evaluate)  # type: ignore[assignment]
 
@@ -652,7 +690,7 @@ async def test_evaluate_and_select_beam_sorts_by_score() -> None:
 
     selected = await apo._evaluate_and_select_beam(candidates, "seed", val_iterator, round_num=0)
 
-    assert [prompt.template for prompt in selected] == ["C", "A"]
+    assert [prompt.prompt_template.template for prompt in selected] == ["C", "A"]
 
 
 @pytest.mark.asyncio
@@ -661,7 +699,7 @@ async def test_evaluate_and_select_beam_raises_on_empty_candidates() -> None:
     client = Mock(spec=AsyncOpenAI)
     apo = APO[Any](client, beam_width=2)
     # Empty candidate list
-    candidates: List[PromptTemplate] = []
+    candidates: List[VersionedPromptTemplate] = []
 
     val_iterator: Iterator[Sequence[Dict[str, Any]]] = iter([[{"task": "val"}]])
 
@@ -672,31 +710,35 @@ async def test_evaluate_and_select_beam_raises_on_empty_candidates() -> None:
 @pytest.mark.asyncio
 async def test_update_best_prompt_updates_history() -> None:
     apo = APO[Any](Mock(spec=AsyncOpenAI))
-    old_prompt = PromptTemplate(template="Old", engine="f-string")
-    new_prompt = PromptTemplate(template="New", engine="f-string")
-    apo._history_best_prompt = old_prompt
+    old_versioned = apo._create_versioned_prompt(PromptTemplate(template="Old", engine="f-string"))
+    new_versioned = apo._create_versioned_prompt(PromptTemplate(template="New", engine="f-string"))
+    apo._history_best_prompt = old_versioned.prompt_template
     apo._history_best_score = 0.5
+    apo._history_best_version = old_versioned.version
     apo.evaluate_prompt_on_batch = AsyncMock(return_value=([], 1.2))  # type: ignore[assignment]
 
-    await apo._update_best_prompt([new_prompt], "seed", [{"task": "val"}], round_num=0)  # type: ignore
+    await apo._update_best_prompt([new_versioned], "seed", [{"task": "val"}], round_num=0)  # type: ignore
 
-    assert apo._history_best_prompt is new_prompt
+    assert apo._history_best_prompt is new_versioned.prompt_template
     assert apo._history_best_score == pytest.approx(1.2)  # type: ignore
+    assert apo._history_best_version == new_versioned.version
 
 
 @pytest.mark.asyncio
 async def test_update_best_prompt_keeps_history_when_not_improved() -> None:
     apo = APO[Any](Mock(spec=AsyncOpenAI))
-    old_prompt = PromptTemplate(template="Old", engine="f-string")
-    new_prompt = PromptTemplate(template="New", engine="f-string")
-    apo._history_best_prompt = old_prompt
+    old_versioned = apo._create_versioned_prompt(PromptTemplate(template="Old", engine="f-string"))
+    new_versioned = apo._create_versioned_prompt(PromptTemplate(template="New", engine="f-string"))
+    apo._history_best_prompt = old_versioned.prompt_template
     apo._history_best_score = 2.0
+    apo._history_best_version = old_versioned.version
     apo.evaluate_prompt_on_batch = AsyncMock(return_value=([], 1.5))  # type: ignore[assignment]
 
-    await apo._update_best_prompt([new_prompt], "seed", [{"task": "val"}], round_num=0)  # type: ignore
+    await apo._update_best_prompt([new_versioned], "seed", [{"task": "val"}], round_num=0)  # type: ignore
 
-    assert apo._history_best_prompt is old_prompt
+    assert apo._history_best_prompt is old_versioned.prompt_template
     assert apo._history_best_score == pytest.approx(2.0)  # type: ignore
+    assert apo._history_best_version == old_versioned.version
 
 
 def test_apo_init_defaults_run_initial_validation_to_true() -> None:
@@ -879,8 +921,9 @@ async def test_run_updates_best_prompt_with_real_openai_client(monkeypatch: pyte
     edit_call = create_mock.await_args_list[1]
     assert edit_call.kwargs["model"] == apo.apply_edit_model
 
-    # Verify resources were added (seed prompt + new candidate prompts)
-    assert len(store.add_resources_calls) >= 2
+    # Verify resources were updated (seed prompt + new candidate prompts)
+    assert len(store.update_resources_calls) >= 2
+    assert all(isinstance(entry[0], str) for entry in store.update_resources_calls)
 
     # Verify rollouts were enqueued (1 train + multiple val)
     assert len(store.enqueue_calls) >= 3
