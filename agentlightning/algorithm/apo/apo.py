@@ -7,6 +7,7 @@ APO with textual gradients that read rollout spans and outputs to modify the pro
 - rollout: same pattern as your example, but task is a dict (T_task)
 """
 
+import asyncio
 import logging
 import random
 import time
@@ -112,7 +113,7 @@ class APO(BaseAlgorithm, Generic[T_task]):
         beam_width: int = 4,
         branch_factor: int = 4,
         beam_rounds: int = 3,
-        rollout_batch_timeout: float = 600.0,
+        rollout_batch_timeout: float = 3600.0,
         run_initial_validation: bool = True,
     ):
         """
@@ -374,6 +375,8 @@ class APO(BaseAlgorithm, Generic[T_task]):
             if len(finished) >= len(rollout_ids):
                 logger.info(f"All {len(rollout_ids)} rollouts finished within timeout.")
                 break
+            # Sleep to avoid busy-waiting
+            await asyncio.sleep(2.0)
 
         rollout_results = await self.get_rollout_results(finished)
         final_rewards = [rr["final_reward"] for rr in rollout_results]

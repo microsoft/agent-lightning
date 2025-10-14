@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any, Generic, Iterator, Optional, Sequence, Ty
 
 from agentlightning.litagent import LitAgent
 from agentlightning.store.base import LightningStore
-from agentlightning.types import Hook, NamedResources, ParallelWorkerBase, RolloutMode
+from agentlightning.types import Hook, NamedResources, ParallelWorkerBase, RolloutMode, RolloutV2
 
 if TYPE_CHECKING:
     from agentlightning.execution.events import Event
@@ -178,7 +178,7 @@ class BaseRunner(ParallelWorkerBase, Generic[T_task]):
         resources: Optional[NamedResources] = None,
         mode: Optional[RolloutMode] = None,
         event: Optional[Event] = None,
-    ) -> None:
+    ) -> RolloutV2:
         """Execute a single task with the given input.
 
         This method provides fine-grained control for executing individual tasks
@@ -192,6 +192,9 @@ class BaseRunner(ParallelWorkerBase, Generic[T_task]):
                 the default mode will be used.
             event: Optional Event object to signal interruption. When set, the
                 runner may abort the current execution.
+
+        Returns:
+            The completed rollout.
 
         Raises:
             NotImplementedError: Must be implemented by subclasses.
