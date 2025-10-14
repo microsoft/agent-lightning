@@ -184,7 +184,7 @@ trainer = Trainer(
     adapter=TraceMessagesAdapter(),
 )
 
-# 2. Load datasets
+# 2. Load datasets: They can be list of task objects consumable by `room_selector`.
 dataset_train, dataset_val = ...
 
 # 3. Start the training process!
@@ -204,7 +204,6 @@ The APO algorithm successfully improved the agent's performance. We ran the exam
 * `beam_width` = 2
 * `branch_factor` = 2
 * `beam_rounds` = 2
-
 
 The validation accuracy on the 29 samples of datasets steadily increase from 0.569 (baseline) to 0.638 (after round 1) to **0.721** (after round 2). (In another run, it's from 0.534 to 0.628 to 0.645). The tuning takes around 10 minutes with 8 runners.
 
