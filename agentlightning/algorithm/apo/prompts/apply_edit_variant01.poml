@@ -13,10 +13,10 @@
   </output-format>
   <human-msg>
     <cp caption="Current Prompt Template">
-      <text>{{ prompt_template }}</text>
+      <text whiteSpace="pre">{{ prompt_template }}</text>
     </cp>
     <cp caption="Critique">
-      <text>{{ critique }}</text>
+      <text whiteSpace="pre">{{ critique }}</text>
     </cp>
   </human-msg>
 </poml>

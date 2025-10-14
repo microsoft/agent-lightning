@@ -13,7 +13,7 @@ import random
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Generic, Iterator, List, Optional, Sequence, Tuple, TypedDict, TypeVar, cast
+from typing import Any, Counter, Dict, Generic, Iterator, List, Optional, Sequence, Tuple, TypedDict, TypeVar, cast
 
 import poml
 from openai import AsyncOpenAI
@@ -123,6 +123,8 @@ class APO(BaseAlgorithm, Generic[T_task]):
         beam_rounds: int = 3,
         rollout_batch_timeout: float = 3600.0,
         run_initial_validation: bool = True,
+        # Internal flags for debugging
+        _poml_trace: bool = False,
     ):
         """
         Initialize the APO algorithm with configuration parameters.
@@ -159,6 +161,8 @@ class APO(BaseAlgorithm, Generic[T_task]):
         self._history_best_version: Optional[str] = None
 
         self._version_counter: int = 0
+
+        self._poml_trace = _poml_trace
 
     def _create_versioned_prompt(
         self,
@@ -457,7 +461,7 @@ class APO(BaseAlgorithm, Generic[T_task]):
                 messages=messages,
             )
             self._log(
-                logging.INFO,
+                logging.DEBUG,
                 f"Rollout result for {r.rollout_id}: status {rollout_result['status']} with final reward {rollout_result['final_reward']}. "
                 f"{len(rollout_result['spans'])} spans and {len(rollout_result['messages'])} messages.",
                 prefix=effective_prefix,
@@ -548,10 +552,11 @@ class APO(BaseAlgorithm, Generic[T_task]):
         final_rewards = [rr["final_reward"] for rr in rollout_results]
 
         avg = float(sum([r or 0.0 for r in final_rewards]) / max(1, len(final_rewards)))
+        status_counter = Counter([rr["status"] for rr in rollout_results])
 
         self._log(
             logging.INFO,
-            f"Evaluated {len(rollout_results)} rollouts. Rewards: {final_rewards}. Average reward: {avg}",
+            f"Evaluated {len(rollout_results)} rollouts. Statuses: {status_counter}. Rewards: {final_rewards}, average is {avg}",
             prefix=effective_prefix,
         )
         return rollout_results, avg
@@ -698,7 +703,7 @@ class APO(BaseAlgorithm, Generic[T_task]):
                 )
                 self._log(
                     logging.INFO,
-                    f"New prompt template created from parent {prompt.version}: {new_prompt_template}",
+                    f"New prompt template created from parent {prompt.version}:\n```\n{new_prompt}\n```",
                     prefix=candidate_prefix,
                 )
                 candidates.append(versioned_candidate)
@@ -845,6 +850,9 @@ class APO(BaseAlgorithm, Generic[T_task]):
         """
         # Initialize beam search
         resource_name, seed_prompt, grad_iterator, val_iterator = self._initialize_beam(train_dataset, val_dataset)
+
+        if self._poml_trace:
+            poml.set_trace(trace_dir="pomltrace")
 
         # Validation datasets are guaranteed to be non-None after initialization
         assert val_dataset is not None

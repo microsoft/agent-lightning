@@ -8,3 +8,4 @@ agentops.log
 unsloth/models/
 unsloth/unsloth_compiled_cache/
 unsloth/unsloth_training_checkpoints/
+apo/pomltrace/

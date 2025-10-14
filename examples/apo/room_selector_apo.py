@@ -39,7 +39,13 @@ def main() -> None:
     openai_client = AsyncOpenAI()
 
     algo = APO[RoomSelectionTask](
-        openai_client, val_batch_size=10, gradient_batch_size=4, beam_width=2, branch_factor=2, beam_rounds=2
+        openai_client,
+        val_batch_size=10,
+        gradient_batch_size=4,
+        beam_width=2,
+        branch_factor=2,
+        beam_rounds=2,
+        _poml_trace=True,
     )
     trainer = Trainer(
         algorithm=algo,
