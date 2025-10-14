@@ -21,6 +21,7 @@ from agentlightning.store.base import LightningStore
 from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.tracer.base import BaseTracer
 from agentlightning.types import LLM, Hook, PromptTemplate, RolloutV2, Span, SpanNames
+from agentlightning.types.resources import NamedResources
 
 trace_api.set_tracer_provider(TracerProvider())
 
@@ -491,3 +492,166 @@ async def test_hooks_triggered_in_order() -> None:
     rollout_id, attempt_id = await assert_single_attempt_succeeded(store)
     spans = await store.query_spans(rollout_id, attempt_id)
     assert [span.name for span in spans] == ["hook-span"]
+
+
+@pytest.mark.asyncio
+async def test_step_returns_completed_rollout() -> None:
+    """Test that step() returns a RolloutV2 object after execution."""
+
+    class SimpleAgent(LitAgent[Dict[str, Any]]):
+        def validation_rollout(self, task: Dict[str, Any], resources: Dict[str, Any], rollout: Any) -> float:
+            return 0.85
+
+    agent = SimpleAgent()
+    runner, store, _ = await setup_runner(agent)
+    try:
+        result = await runner.step({"task": "test"})
+    finally:
+        teardown_runner(runner)
+
+    # Verify the result is a RolloutV2 object
+    assert isinstance(result, RolloutV2)
+    assert result.status == "succeeded"
+    assert result.input == {"task": "test"}
+
+    # Verify the rollout was stored correctly
+    rollouts = await store.query_rollouts()
+    assert len(rollouts) == 1
+    assert rollouts[0].rollout_id == result.rollout_id
+
+
+@pytest.mark.asyncio
+async def test_step_returns_rollout_with_spans() -> None:
+    """Test that the returned rollout can be used to query spans."""
+
+    class SpanAgent(LitAgent[Dict[str, Any]]):
+        def validation_rollout(
+            self, task: Dict[str, Any], resources: Dict[str, Any], rollout: Any
+        ) -> List[ReadableSpan]:
+            return [create_readable_span("test-span-1"), create_readable_span("test-span-2")]
+
+    agent = SpanAgent()
+    runner, store, _ = await setup_runner(agent)
+    try:
+        result = await runner.step({"task": "test"})
+    finally:
+        teardown_runner(runner)
+
+    # Verify we can query spans using the returned rollout
+    attempts = await store.query_attempts(result.rollout_id)
+    assert len(attempts) > 0
+    spans = await store.query_spans(result.rollout_id, attempts[-1].attempt_id)
+    assert len(spans) == 2
+    assert [span.name for span in spans] == ["test-span-1", "test-span-2"]
+
+
+@pytest.mark.asyncio
+async def test_step_raises_when_rollout_fetch_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test that step() raises RuntimeError when completed rollout cannot be fetched."""
+
+    class SimpleAgent(LitAgent[Dict[str, Any]]):
+        def validation_rollout(self, task: Dict[str, Any], resources: Dict[str, Any], rollout: Any) -> float:
+            return 0.5
+
+    agent = SimpleAgent()
+    runner, store, _ = await setup_runner(agent)
+
+    # Mock get_rollout_by_id to return None
+    original_get_rollout = store.get_rollout_by_id
+
+    async def mock_get_rollout_by_id(rollout_id: str) -> Optional[RolloutV2]:
+        return None
+
+    monkeypatch.setattr(store, "get_rollout_by_id", mock_get_rollout_by_id)
+
+    try:
+        with pytest.raises(RuntimeError, match="Failed to fetch completed rollout by id after step"):
+            await runner.step({"task": "test"})
+    finally:
+        monkeypatch.setattr(store, "get_rollout_by_id", original_get_rollout)
+        teardown_runner(runner)
+
+
+@pytest.mark.asyncio
+async def test_step_impl_returns_rollout_id() -> None:
+    """Test that _step_impl returns the rollout_id after execution."""
+
+    class SimpleAgent(LitAgent[Dict[str, Any]]):
+        def validation_rollout(self, task: Dict[str, Any], resources: Dict[str, Any], rollout: Any) -> float:
+            return 0.9
+
+    agent = SimpleAgent()
+    runner, store, _ = await setup_runner(agent)
+
+    # Create an attempted rollout
+    attempted_rollout = await store.start_rollout(input={"task": "test"}, mode="val")
+
+    try:
+        # Call _step_impl directly and verify it returns rollout_id
+        result = await runner._step_impl(  # pyright: ignore[reportPrivateUsage]
+            attempted_rollout, raise_on_exception=True
+        )
+    finally:
+        teardown_runner(runner)
+
+    # Verify the result is a string (rollout_id)
+    assert isinstance(result, str)
+    assert result == attempted_rollout.rollout_id
+
+
+@pytest.mark.asyncio
+async def test_step_impl_returns_rollout_id_on_resource_failure() -> None:
+    """Test that _step_impl returns rollout_id even when resources fail to fetch."""
+
+    class SimpleAgent(LitAgent[Dict[str, Any]]):
+        def validation_rollout(self, task: Dict[str, Any], resources: Dict[str, Any], rollout: Any) -> float:
+            return 0.9
+
+    agent = SimpleAgent()
+    runner, store, _ = await setup_runner(agent)
+
+    # Create an attempted rollout with invalid resources_id
+    attempted_rollout = await store.start_rollout(input={"task": "test"}, mode="val", resources_id="invalid-id")
+
+    try:
+        # Call _step_impl with raise_on_exception=False (to test the early return path)
+        result = await runner._step_impl(  # pyright: ignore[reportPrivateUsage]
+            attempted_rollout, raise_on_exception=False
+        )
+    finally:
+        teardown_runner(runner)
+
+    # Verify the result is a string (rollout_id) even on early return
+    assert isinstance(result, str)
+    assert result == attempted_rollout.rollout_id
+
+
+@pytest.mark.asyncio
+async def test_step_with_custom_resources_returns_rollout() -> None:
+    """Test that step() with custom resources returns a valid RolloutV2."""
+
+    class ResourceAgent(LitAgent[Dict[str, Any]]):
+        def validation_rollout(self, task: Dict[str, Any], resources: Dict[str, Any], rollout: Any) -> float:
+            # Verify we received the custom LLM
+            llm = resources.get("llm")
+            assert llm is not None
+            assert llm.model == "custom-model"
+            return 0.95
+
+    agent = ResourceAgent()
+    runner, _store, _ = await setup_runner(agent)
+
+    custom_resources: NamedResources = {"llm": LLM(endpoint="http://custom", model="custom-model")}
+
+    try:
+        result = await runner.step({"task": "test"}, resources=custom_resources)
+    finally:
+        teardown_runner(runner)
+
+    # Verify the result is a valid RolloutV2
+    assert isinstance(result, RolloutV2)
+    assert result.status == "succeeded"
+    assert result.input == {"task": "test"}
+
+    # Verify the rollout has the correct resources_id
+    assert result.resources_id is not None
