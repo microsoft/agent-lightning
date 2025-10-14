@@ -1,8 +1,9 @@
 # Copyright (c) Microsoft. All rights reserved.
 
+import asyncio
 import json
 import traceback
-from typing import List, Tuple, TypedDict, cast
+from typing import List, Optional, Tuple, TypedDict, cast
 
 from openai import OpenAI
 from openai.types.chat import (
@@ -15,7 +16,12 @@ from openai.types.chat import (
 from pydantic import BaseModel, Field
 from rich.console import Console
 
+from agentlightning.adapter.messages import TraceMessagesAdapter
 from agentlightning.litagent import rollout
+from agentlightning.reward import find_final_reward
+from agentlightning.runner.agent import AgentRunnerV2
+from agentlightning.store.memory import InMemoryLightningStore
+from agentlightning.tracer.agentops import AgentOpsTracer
 from agentlightning.types import Dataset, PromptTemplate
 
 console = Console()
@@ -83,6 +89,33 @@ def prompt_template_baseline() -> PromptTemplate:
         template="Find a room on {date} at {time} for {duration_min} minutes, {attendees} attendees. Needs: {needs}. Accessible required: {accessible_required}",
         engine="f-string",
     )
+
+
+def room_selection_grader(client: OpenAI, final_message: Optional[str], expected_choice: str) -> float:
+    judge_prompt = (
+        f"You are a strict grader of exact room choice."
+        f"Task output:\n{final_message}\n\n"
+        f"Task expected answer:\n{expected_choice}\n\n"
+        f"Score the match on a 0-1 scale. Be critical.\n"
+        f"Bear in mind that the score can be partially correct (between 0 and 1)."
+    )
+    judge = client.chat.completions.parse(
+        model="gpt-4.1-mini",
+        messages=[
+            {"role": "user", "content": judge_prompt},
+        ],
+        response_format=JudgeResponse,
+    )
+
+    judge_result = judge.choices[0].message.content
+    console.print(f"[bold yellow]=== Judge ===[/bold yellow]")
+    console.print(judge_result)
+
+    judge_result_parsed = JudgeResponse.model_validate_json(judge_result)  # type: ignore
+
+    console.print(f"[bold yellow]=== Judge Score ===[/bold yellow]")
+    console.print(judge_result_parsed.score)
+    return judge_result_parsed.score
 
 
 @rollout
@@ -200,33 +233,7 @@ def room_selector(task: RoomSelectionTask, prompt_template: PromptTemplate) -> f
     else:
         final_message = resp.choices[0].message.content
 
-    # Judge exact choice against expected
-    expected_choice = task["expected_choice"]
-
-    judge_prompt = (
-        f"You are a strict grader of exact room choice."
-        f"Task output:\n{final_message}\n\n"
-        f"Task expected answer:\n{expected_choice}\n\n"
-        f"Score the match on a 0-1 scale. Be critical.\n"
-        f"Bear in mind that the score can be partially correct (between 0 and 1)."
-    )
-    judge = client.chat.completions.parse(
-        model="gpt-4.1-mini",
-        messages=[
-            {"role": "user", "content": judge_prompt},
-        ],
-        response_format=JudgeResponse,
-    )
-
-    judge_result = judge.choices[0].message.content
-    console.print(f"[bold yellow]=== Judge ===[/bold yellow]")
-    console.print(judge_result)
-
-    judge_result_parsed = JudgeResponse.model_validate_json(judge_result)  # type: ignore
-
-    console.print(f"[bold yellow]=== Judge Score ===[/bold yellow]")
-    console.print(judge_result_parsed.score)
-    return judge_result_parsed.score
+    return room_selection_grader(client, final_message, task["expected_choice"])
 
 
 # Local tool database (there might be multiple plausible fits)
@@ -323,31 +330,28 @@ def load_room_tasks() -> Dataset[RoomSelectionTask]:
     return cast(Dataset[RoomSelectionTask], tasks)
 
 
-if __name__ == "__main__":
+async def debug_room_selector(limit: int = 1):
+    # Prepare all the components to run the agent
+    runner = AgentRunnerV2[RoomSelectionTask](AgentOpsTracer())
+    store = InMemoryLightningStore()
+    prompt_template = prompt_template_baseline()
     tasks = load_room_tasks()
-    for task in tasks:
-        # room_selector(task, prompt_template_baseline())
-        # break
+    with runner.run_context(agent=room_selector, store=store):
+        for task in tasks:
+            console.print("[bold green]=== Task ===[/bold green]", task, sep="\n")
+            # Run the agent
+            rollout = await runner.step(tasks[0], resources={"main_prompt": prompt_template})
+            # Get the spans and convert them to messages
+            # Useful for debugging and analysis
+            spans = await store.query_spans(rollout.rollout_id)
+            adapter = TraceMessagesAdapter()
+            messages = adapter.adapt(spans)
+            for message_idx, message in enumerate(messages):
+                console.print(f"[bold purple]=== Postmortem Message #{message_idx} ===[/bold purple]")
+                console.print(json.dumps(message))
+            reward = find_final_reward(spans)
+            console.print("[bold purple]=== Postmortem Reward ===[/bold purple]", reward, sep="\n")
 
-        from agentlightning.tracer import AgentOpsTracer
-        from agentlightning.types import Span
 
-        tracer = AgentOpsTracer()
-        tracer.init()
-        tracer.init_worker(0)
-        with tracer.trace_context():
-            room_selector(task, prompt_template_baseline())
-        spans = []
-        for span in tracer.get_last_trace():
-            spans.append(Span.from_opentelemetry(span, "dummy", "dummy", 0))
-            console.print(
-                spans[-1].span_id, spans[-1].parent_id, " Span name: ", span.name, "Span attributes:", span.attributes
-            )
-        from agentlightning.adapter.messages import TraceMessagesAdapter
-
-        adapter = TraceMessagesAdapter()
-        messages = adapter.adapt(spans)
-        for message in messages:
-            console.print(message)
-        # print(messages)
-        break
+if __name__ == "__main__":
+    asyncio.run(debug_room_selector())
