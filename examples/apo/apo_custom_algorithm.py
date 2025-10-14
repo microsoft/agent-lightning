@@ -1,26 +1,51 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-"""This is the APO example written in the legacy client-server style (agent-lightning v0.1).
+"""This sample code shows how to run a custom algorithm and rollout runner separately.
 
-New users should refer to the `examples/apo/apo.py` for the modern APO example.
+You can run this in two modes:
+
+1. Algorithm mode - runs the optimization algorithm:
+```bash
+python apo_custom_algorithm.py algo
+```
+
+2. Runner mode - runs the rollout runner:
+```bash
+python apo_custom_algorithm.py runner
+```
+
+To use both together, you need to run them in parallel along with the store:
+```bash
+agl store
+python apo_custom_algorithm.py algo
+python apo_custom_algorithm.py runner
+```
+
+Or use the integrated version in `apo_custom_algorithm_trainer.py`:
+```bash
+python apo_custom_algorithm_trainer.py
+```
 """
 
+import argparse
+import asyncio
 from typing import List, Optional
 
 from openai import AsyncOpenAI
 from rich.console import Console
 
-from agentlightning import Trainer, configure_logger
-from agentlightning.algorithm.base import algo
-from agentlightning.litagent.decorator import rollout
+from agentlightning import configure_logger
+from agentlightning.litagent import rollout
 from agentlightning.reward import find_final_reward
+from agentlightning.runner import AgentRunnerV2
 from agentlightning.store.base import LightningStore
+from agentlightning.store.client_server import LightningStoreClient
+from agentlightning.tracer import AgentOpsTracer
 from agentlightning.types import NamedResources, PromptTemplate, Span
 
 console = Console()
 
 
-@algo
 async def apo_algorithm(*, store: LightningStore):
     """
     An example of how a prompt optimization works.
@@ -54,8 +79,14 @@ async def apo_algorithm(*, store: LightningStore):
         console.print(f"{algo_marker} Task '{rollout.rollout_id}' is now available for clients.")
 
         # 3. The algorithm waits for clients to process the task
-        rollouts = await store.wait_for_rollouts(rollout_ids=[rollout.rollout_id], timeout=30)
-        assert rollouts, "Expected a completed rollout from the client."
+        for _ in range(30):  # Wait for at most 30 seconds
+            rollouts = await store.wait_for_rollouts(rollout_ids=[rollout.rollout_id], timeout=0.01)
+            if rollouts:
+                break
+            await asyncio.sleep(1.0)
+        else:
+            raise RuntimeError("Expected a completed rollout from the client, but got none.")
+
         console.print(f"{algo_marker} Received Result: {rollouts[0]}")
         if rollouts[0].status != "succeeded":
             raise RuntimeError(f"Rollout {rollout.rollout_id} did not succeed. Status: {rollouts[0].status}")
@@ -127,7 +158,35 @@ Return only a number between 0 and 1. No text, punctuation, or explanation."""
         return 0.0
 
 
+async def apo_runner(*, store: LightningStore):
+    """
+    A runner that iteratively receives new rollout tasks from the store and executes them.
+    """
+
+    runner = AgentRunnerV2[str](tracer=AgentOpsTracer())
+    with runner.run_context(agent=apo_rollout, store=store):
+        await runner.iter()
+
+
+async def main():
+    store = LightningStoreClient("http://localhost:4747")
+    parser = argparse.ArgumentParser(description="Run APO custom algorithm in different modes")
+    parser.add_argument(
+        "mode", choices=["algo", "runner"], help="Mode to run: 'algo' for algorithm or 'runner' for rollout runner"
+    )
+    args = parser.parse_args()
+
+    try:
+        if args.mode == "algo":
+            # Run the algorithm mode
+            await apo_algorithm(store=store)
+        elif args.mode == "runner":
+            # Run the runner mode
+            await apo_runner(store=store)
+    finally:
+        await store.close()
+
+
 if __name__ == "__main__":
     configure_logger()
-    trainer = Trainer(n_workers=1, algorithm=apo_algorithm)
-    trainer.fit_v2(apo_rollout)
+    asyncio.run(main())

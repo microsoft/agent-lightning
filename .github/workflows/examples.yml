@@ -110,7 +110,7 @@ jobs:
           set -ex
           . .venv/bin/activate
           cd examples/apo
-          python apo.py | tee _ci_apo.log
+          python apo_custom_algorithm_trainer.py | tee _ci_apo.log
           # Check whether the log contains "Best prompt found:"
           grep "Best prompt found:" _ci_apo.log
         env:
