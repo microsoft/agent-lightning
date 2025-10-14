@@ -8,10 +8,10 @@ from openai import AsyncOpenAI
 from rich.console import Console
 
 from agentlightning import Trainer, configure_logger
-from agentlightning.algorithm.base import algo
+from agentlightning.algorithm import algo
 from agentlightning.litagent.decorator import rollout
 from agentlightning.reward import find_final_reward
-from agentlightning.store.base import LightningStore
+from agentlightning.store import LightningStore
 from agentlightning.types import NamedResources, PromptTemplate, Span
 
 console = Console()

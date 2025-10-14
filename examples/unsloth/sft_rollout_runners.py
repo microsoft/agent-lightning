@@ -19,8 +19,7 @@ from rich.console import Console
 
 from agentlightning import configure_logger
 from agentlightning.runner import AgentRunnerV2
-from agentlightning.store.base import LightningStore
-from agentlightning.store.client_server import LightningStoreClient
+from agentlightning.store import LightningStore, LightningStoreClient
 from agentlightning.tracer import OtelTracer
 
 console = Console()

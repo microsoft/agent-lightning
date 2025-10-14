@@ -10,7 +10,7 @@ from apo import apo_rollout
 
 from agentlightning import Trainer, configure_logger
 from agentlightning.runner import AgentRunnerV2
-from agentlightning.store.memory import InMemoryLightningStore
+from agentlightning.store import InMemoryLightningStore
 from agentlightning.tracer import OtelTracer
 from agentlightning.types import Dataset, PromptTemplate
 

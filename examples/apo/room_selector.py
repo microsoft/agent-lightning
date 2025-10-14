@@ -20,7 +20,7 @@ from agentlightning.adapter import TraceToMessages
 from agentlightning.litagent import rollout
 from agentlightning.reward import find_final_reward
 from agentlightning.runner.agent import AgentRunnerV2
-from agentlightning.store.memory import InMemoryLightningStore
+from agentlightning.store import InMemoryLightningStore
 from agentlightning.tracer.agentops import AgentOpsTracer
 from agentlightning.types import Dataset, PromptTemplate
 

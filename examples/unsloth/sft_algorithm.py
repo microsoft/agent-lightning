@@ -35,8 +35,7 @@ from unsloth_helper import unsloth_training
 from agentlightning import configure_logger
 from agentlightning.adapter import LlmProxyTraceToTriplet, TraceToTripletBase
 from agentlightning.llm_proxy import LLMProxy, ModelConfig
-from agentlightning.store.base import LightningStore
-from agentlightning.store.client_server import LightningStoreClient
+from agentlightning.store import LightningStore, LightningStoreClient
 from agentlightning.types import Dataset, RolloutV2
 
 console = Console()
