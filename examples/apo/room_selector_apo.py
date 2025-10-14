@@ -9,7 +9,7 @@ from openai import AsyncOpenAI
 from room_selector import RoomSelectionTask, load_room_tasks, prompt_template_baseline, room_selector
 
 from agentlightning import Trainer, configure_logger
-from agentlightning.adapter.messages import TraceMessagesAdapter
+from agentlightning.adapter import TraceToMessages
 from agentlightning.algorithm.apo import APO
 from agentlightning.types import Dataset
 
@@ -59,7 +59,7 @@ def main() -> None:
         },
         # APO algorithm needs an adapter to process the traces produced by rollouts
         # Use this adapter to convert spans to messages
-        adapter=TraceMessagesAdapter(),
+        adapter=TraceToMessages(),
     )
     dataset_train, dataset_val = load_train_val_dataset()
     trainer.fit_v2(agent=room_selector, train_dataset=dataset_train, val_dataset=dataset_val)

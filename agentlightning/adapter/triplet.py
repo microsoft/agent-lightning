@@ -521,13 +521,13 @@ class TraceTree:
         )
 
 
-class BaseTraceTripletAdapter(TraceAdapter[List[Triplet]]):
+class TraceToTripletBase(TraceAdapter[List[Triplet]]):
     """
     Base class for trace triplet adapters.
     """
 
 
-class TraceTripletAdapter(BaseTraceTripletAdapter):
+class TracerTraceToTriplet(TraceToTripletBase):
     """
     An adapter to convert OpenTelemetry spans to triplet data.
 
@@ -600,10 +600,10 @@ class TraceTripletAdapter(BaseTraceTripletAdapter):
         return trajectory
 
 
-class LlmProxyTripletAdapter(BaseTraceTripletAdapter):
+class LlmProxyTraceToTriplet(TraceToTripletBase):
     """
     Converting telemetry data emitted by the LLM Proxy to triplet data.
-    This adapter is very experimental. Should only be used when the TraceTripletAdapter does not work at all.
+    This adapter is very experimental. Should only be used when the TracerTraceToTriplet does not work at all.
 
     IMPORTANT: Do NOT rely on timestamps here. Proxy spans can be emitted from different
     machines with unsynchronized clocks. We therefore treat `sequence_id` as the only

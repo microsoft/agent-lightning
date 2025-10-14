@@ -18,7 +18,7 @@ from tensordict import TensorDict
 from verl import DataProto
 
 from agentlightning import LLM, AgentLightningServer, NamedResources, Rollout, configure_logger
-from agentlightning.adapter.triplet import BaseTraceTripletAdapter, TraceTripletAdapter
+from agentlightning.adapter.triplet import TracerTraceToTriplet, TraceToTripletBase
 from agentlightning.llm_proxy import LLMProxy, ModelConfig
 from agentlightning.store.base import LightningStore
 from agentlightning.types import RolloutConfig, RolloutV2, Task
@@ -138,7 +138,7 @@ class AgentModeDaemon:
         mode: Literal["v0", "v1"] = "v1",
         llm_proxy: LLMProxy | None = None,
         store: LightningStore | None = None,
-        adapter: BaseTraceTripletAdapter | None = None,
+        adapter: TraceToTripletBase | None = None,
     ):
         self.mode = mode
         self.llm_timeout_seconds = llm_timeout_seconds
@@ -164,7 +164,7 @@ class AgentModeDaemon:
                 # Reuse the existing LLM proxy (probably configured by user)
                 self.llm_proxy = llm_proxy
             if adapter is None:
-                self.adapter = TraceTripletAdapter()
+                self.adapter = TracerTraceToTriplet()
             else:
                 # Reuse the one from trainer
                 self.adapter = adapter

@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional, cast
 
 from opentelemetry.sdk.trace import ReadableSpan
 
-from agentlightning.adapter import TraceTripletAdapter
+from agentlightning.adapter import TracerTraceToTriplet
 from agentlightning.client import AgentLightningClient
 from agentlightning.litagent import LitAgent, is_v0_1_rollout_api
 from agentlightning.tracer.base import BaseTracer
@@ -45,7 +45,7 @@ class AgentRunner(BaseRunner[Any]):
         agent: LitAgent[Any],
         client: AgentLightningClient,
         tracer: BaseTracer,
-        triplet_exporter: TraceTripletAdapter,
+        triplet_exporter: TracerTraceToTriplet,
         worker_id: Optional[int] = None,
         max_tasks: Optional[int] = None,
     ):
@@ -129,7 +129,7 @@ class AgentRunner(BaseRunner[Any]):
                 trace = [json.loads(readable_span.to_json()) for readable_span in spans]
                 trace_spans = spans
 
-        # Always extract triplets from the trace using TraceTripletAdapter
+        # Always extract triplets from the trace using TracerTraceToTriplet
         if trace_spans:
             triplets = self.triplet_exporter(trace_spans)
 

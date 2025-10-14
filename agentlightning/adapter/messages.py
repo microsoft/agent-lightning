@@ -156,7 +156,7 @@ def convert_to_openai_messages(prompt_completion_list: List[_RawSpanInfo]) -> Ge
             yield OpenAIMessages(messages=messages, tools=None)
 
 
-class TraceMessagesAdapter(TraceAdapter[List[OpenAIMessages]]):
+class TraceToMessages(TraceAdapter[List[OpenAIMessages]]):
     """
     Adapter that converts OpenTelemetry trace spans into OpenAI-compatible message format.
 

@@ -16,7 +16,7 @@ from openai.types.chat import (
 from pydantic import BaseModel, Field
 from rich.console import Console
 
-from agentlightning.adapter.messages import TraceMessagesAdapter
+from agentlightning.adapter import TraceToMessages
 from agentlightning.litagent import rollout
 from agentlightning.reward import find_final_reward
 from agentlightning.runner.agent import AgentRunnerV2
@@ -349,7 +349,7 @@ async def debug_room_selector(limit: int = 1):
             # Get the spans and convert them to messages
             # Useful for debugging and analysis
             spans = await store.query_spans(rollout.rollout_id)
-            adapter = TraceMessagesAdapter()
+            adapter = TraceToMessages()
             messages = adapter.adapt(spans)
             for message_idx, message in enumerate(messages):
                 console.print(f"[bold purple]=== Postmortem Message #{message_idx} ===[/bold purple]")

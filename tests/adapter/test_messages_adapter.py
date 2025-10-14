@@ -3,7 +3,7 @@
 import json
 from typing import Any, Dict, Optional
 
-from agentlightning.adapter.messages import TraceMessagesAdapter
+from agentlightning.adapter.messages import TraceToMessages
 from agentlightning.types import Resource, Span, TraceStatus
 
 
@@ -137,7 +137,7 @@ def test_trace_messages_adapter_builds_expected_conversations():
         ),
     ]
 
-    adapter = TraceMessagesAdapter()
+    adapter = TraceToMessages()
 
     expected = [
         {
@@ -303,7 +303,7 @@ def test_trace_messages_adapter_handles_multiple_tool_calls():
         ),
     ]
 
-    adapter = TraceMessagesAdapter()
+    adapter = TraceToMessages()
 
     expected = [
         {

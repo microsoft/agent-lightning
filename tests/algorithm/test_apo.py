@@ -10,7 +10,7 @@ from openai import AsyncOpenAI
 
 import agentlightning.algorithm.apo.apo as apo_module
 from agentlightning.adapter import TraceAdapter
-from agentlightning.adapter.messages import TraceMessagesAdapter
+from agentlightning.adapter.messages import TraceToMessages
 from agentlightning.algorithm.apo.apo import APO, RolloutResultForAPO, VersionedPromptTemplate, batch_iter_over_dataset
 from agentlightning.types import (
     Dataset,
@@ -27,7 +27,7 @@ from agentlightning.types import (
 )
 
 
-class DummyTraceMessagesAdapter(TraceMessagesAdapter):
+class DummyTraceMessagesAdapter(TraceToMessages):
     def __init__(self) -> None:
         super().__init__()
         self.seen_spans: Sequence[Span] | None = None

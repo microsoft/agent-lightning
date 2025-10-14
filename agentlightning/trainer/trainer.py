@@ -9,7 +9,7 @@ import time
 import warnings
 from typing import Any, Callable, Dict, List, Optional, Sequence, TypeVar, Union
 
-from agentlightning.adapter import TraceAdapter, TraceTripletAdapter
+from agentlightning.adapter import TraceAdapter, TracerTraceToTriplet
 from agentlightning.algorithm.base import BaseAlgorithm, FastAlgorithm
 from agentlightning.algorithm.mock import MockAlgorithm
 from agentlightning.client import AgentLightningClient
@@ -60,7 +60,7 @@ class Trainer(ParallelWorkerBase):
                 If None, a default `AgentOpsTracer` will be created with the current settings.
         hooks: A sequence of `Hook` instances to be called at various lifecycle stages (e.g., on_trace_start,
                on_trace_end, on_rollout_start, on_rollout_end).
-        adapter: An instance of `TraceTripletAdapter` to export data consumble by algorithms from traces.
+        adapter: An instance of `TracerTraceToTriplet` to export data consumble by algorithms from traces.
         llm_proxy: An instance of `LLMProxy` to use for intercepting the LLM calls.
                    If not provided, algorithm will create one on its own.
         n_workers: Number of agent workers to run in parallel. Deprecated in favor of `n_runners`.
@@ -68,7 +68,7 @@ class Trainer(ParallelWorkerBase):
         daemon: Whether worker processes should be daemons. Daemon processes
                 are terminated automatically when the main process exits. Deprecated.
                 Only have effect with `fit_v0`.
-        triplet_exporter: An instance of `TraceTripletAdapter` to export triplets from traces,
+        triplet_exporter: An instance of `TracerTraceToTriplet` to export triplets from traces,
                           or a dictionary with the initialization parameters for the exporter.
                           Deprecated. Use `adapter` instead.
         dev: If True, rollouts are run against the dev endpoint provided in `fit`.
@@ -92,7 +92,7 @@ class Trainer(ParallelWorkerBase):
         n_workers: Optional[int] = None,
         max_tasks: Optional[int] = None,
         daemon: bool = True,
-        triplet_exporter: ComponentSpec[TraceTripletAdapter] = None,
+        triplet_exporter: ComponentSpec[TracerTraceToTriplet] = None,
         hooks: Optional[Union[Hook, Sequence[Hook]]] = None,
     ):
         super().__init__()
@@ -212,9 +212,9 @@ class Trainer(ParallelWorkerBase):
             adapter,
             expected_type=TraceAdapter,
             spec_name="adapter",
-            default_factory=TraceTripletAdapter,
+            default_factory=TracerTraceToTriplet,
             dict_requires_type=False,
-            dict_default_cls=TraceTripletAdapter,
+            dict_default_cls=TracerTraceToTriplet,
             invalid_spec_error_fmt="Invalid adapter type: {actual_type}. Expected TraceAdapter, dict, or None.",
             type_error_fmt="Adapter factory returned {type_name}, which is not a TraceAdapter subclass.",
         )
@@ -545,8 +545,8 @@ class Trainer(ParallelWorkerBase):
 
         # Now we are in child processes, so we can safely set up the environment.
         agent.set_trainer(self)
-        if not isinstance(self.triplet_exporter, TraceTripletAdapter):
-            raise ValueError("triplet_exporter must be a TraceTripletAdapter for the legacy trainer.")
+        if not isinstance(self.triplet_exporter, TracerTraceToTriplet):
+            raise ValueError("triplet_exporter must be a TracerTraceToTriplet for the legacy trainer.")
         # TODO: this should be set elsewhere
         if agent.trained_agents:
             self.triplet_exporter.agent_match = agent.trained_agents

@@ -33,7 +33,7 @@ from rich.console import Console
 from unsloth_helper import unsloth_training
 
 from agentlightning import configure_logger
-from agentlightning.adapter.triplet import BaseTraceTripletAdapter, LlmProxyTripletAdapter
+from agentlightning.adapter import LlmProxyTraceToTriplet, TraceToTripletBase
 from agentlightning.llm_proxy import LLMProxy, ModelConfig
 from agentlightning.store.base import LightningStore
 from agentlightning.store.client_server import LightningStoreClient
@@ -140,7 +140,7 @@ async def sft_one_iter(
     model_path: str,
     train_dataset: Dataset[GsmProblem],
     llm_proxy: LLMProxy,
-    data_adapter: BaseTraceTripletAdapter,
+    data_adapter: TraceToTripletBase,
     triplet_fraction: float,
     vllm_port: int,
 ) -> str:
@@ -363,7 +363,7 @@ async def sft_algorithm(*, store: LightningStore) -> None:
 
     # This data adapter util is used to convert the trace data recorded by LLM proxy
     # into a format suitable for SFT
-    data_adapter = LlmProxyTripletAdapter()
+    data_adapter = LlmProxyTraceToTriplet()
 
     for iteration in range(MAX_ITERATIONS):
         model_path = await sft_one_iter(

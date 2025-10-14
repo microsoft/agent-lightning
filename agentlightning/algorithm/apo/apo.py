@@ -18,7 +18,7 @@ from typing import Any, Counter, Dict, Generic, Iterator, List, Optional, Sequen
 import poml
 from openai import AsyncOpenAI
 
-from agentlightning.adapter.messages import TraceMessagesAdapter
+from agentlightning.adapter.messages import TraceToMessages
 from agentlightning.algorithm.base import BaseAlgorithm
 from agentlightning.reward import find_final_reward
 from agentlightning.types import Dataset, NamedResources, PromptTemplate, RolloutMode, RolloutStatus, RolloutV2
@@ -232,19 +232,19 @@ class APO(BaseAlgorithm, Generic[T_task]):
                 return name, resource
         raise ValueError("No prompt template resource found in initial_resources")
 
-    def get_adapter(self) -> TraceMessagesAdapter:
+    def get_adapter(self) -> TraceToMessages:
         """
         Get the adapter for converting spans to messages.
 
         Returns:
-            The TraceMessagesAdapter instance for this algorithm.
+            The TraceToMessages instance for this algorithm.
 
         Raises:
-            ValueError: If the adapter is not a TraceMessagesAdapter.
+            ValueError: If the adapter is not a TraceToMessages.
         """
         adapter = super().get_adapter()
-        if not isinstance(adapter, TraceMessagesAdapter):
-            raise ValueError("Adapter must be a TraceMessagesAdapter for APO algorithm")
+        if not isinstance(adapter, TraceToMessages):
+            raise ValueError("Adapter must be a TraceToMessages for APO algorithm")
         return adapter
 
     def get_best_prompt(self) -> PromptTemplate:
