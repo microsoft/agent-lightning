@@ -3,7 +3,7 @@
 """Test that @algo decorator preserves function executability."""
 
 import inspect
-from typing import Any, Optional, cast
+from typing import Any, Optional
 from unittest.mock import MagicMock
 
 import pytest
@@ -81,7 +81,7 @@ def test_algorithm_run_method():
     val_data = ["val1"]
 
     # Call run method
-    test_algo.run(cast(Dataset[Any], train_data), cast(Dataset[Any], val_data))
+    test_algo.run(train_data, val_data)
 
     # Verify execution
     assert test_algo.executed  # type: ignore
@@ -146,7 +146,7 @@ async def test_async_algorithm_run_method():
 
     # Run method should return an awaitable
     assert async_algo.is_async()
-    result = async_algo.run(cast(Dataset[Any], train_data), cast(Dataset[Any], val_data))
+    result = async_algo.run(train_data, val_data)
     assert inspect.iscoroutine(result)
 
     # Await the result
@@ -254,7 +254,7 @@ def test_algorithm_raises_error_on_unsupported_train_dataset():
 
     # Providing train_dataset should raise TypeError
     with pytest.raises(TypeError, match="train_dataset is provided but not supported"):
-        no_train_algo.run(train_dataset=cast(Dataset[Any], ["data"]), val_dataset=None)
+        no_train_algo.run(train_dataset=["data"], val_dataset=None)
 
 
 def test_algorithm_raises_error_on_unsupported_val_dataset():
@@ -267,7 +267,7 @@ def test_algorithm_raises_error_on_unsupported_val_dataset():
 
     # Providing val_dataset should raise TypeError
     with pytest.raises(TypeError, match="val_dataset is provided but not supported"):
-        no_val_algo.run(train_dataset=None, val_dataset=cast(Dataset[Any], ["data"]))
+        no_val_algo.run(train_dataset=None, val_dataset=["data"])
 
 
 def test_algorithm_with_all_injected_parameters():
@@ -306,7 +306,7 @@ def test_algorithm_with_all_injected_parameters():
     val_data = ["val"]
 
     # Run the algorithm
-    full_algo.run(cast(Dataset[Any], train_data), cast(Dataset[Any], val_data))
+    full_algo.run(train_data, val_data)
 
     # Verify all parameters were injected correctly
     assert full_algo.store == mock_store  # type: ignore
@@ -356,7 +356,7 @@ async def test_async_algorithm_with_injected_parameters():
     async_full_algo.set_store(mock_store)  # type: ignore
 
     train_data = ["async-train"]
-    await async_full_algo.run(cast(Dataset[Any], train_data))  # type: ignore
+    await async_full_algo.run(train_data)  # type: ignore
 
     assert async_full_algo.store == mock_store  # type: ignore
     assert async_full_algo.train == train_data  # type: ignore
