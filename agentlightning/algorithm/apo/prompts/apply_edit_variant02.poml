@@ -1,8 +1,11 @@
+<!-- Conservative Edit Prompt -->
+
 <poml>
-  <p>Revise the prompt to address all critique points. Preserve variable names in curly-brackets.</p>
-  <hint>Add a rubric: mechanism first, 1 support fact, less than 100 words.</hint>
+  <p>Revise the prompt to address ONE critique point clearly and effectively. Preserve all variable names in curly-brackets.</p>
+  <p>Do not address more than one critique point. Focus on the single most critical issue.</p>
+  <p>Keep the new prompt close in tone, length, and structure to the original.</p>
   <output-format>
-    Return only the new full prompt. No extra explanations, punctuations or diff.
+    Return only the revised full prompt. Do not include explanations, comparisons, or other text.
   </output-format>
   <human-msg>
     <cp caption="PROMPT" level="3">

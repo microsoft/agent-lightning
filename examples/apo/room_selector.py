@@ -105,6 +105,7 @@ def room_selection_grader(client: OpenAI, final_message: Optional[str], expected
             {"role": "user", "content": judge_prompt},
         ],
         response_format=JudgeResponse,
+        temperature=0.0,
     )
 
     judge_result = judge.choices[0].message.content
@@ -169,6 +170,8 @@ def room_selector(task: RoomSelectionTask, prompt_template: PromptTemplate) -> f
         messages=messages,
         tools=TOOL_DEFINITIONS,
         tool_choice="auto",
+        # Minimize the randomness
+        temperature=0.0,
         # Uncomment for gpt-5
         # reasoning_effort="low",
     )
@@ -225,6 +228,8 @@ def room_selector(task: RoomSelectionTask, prompt_template: PromptTemplate) -> f
         next_resp = client.chat.completions.create(
             model=model,
             messages=messages,
+            # Minimize the randomness
+            temperature=0.0,
         )
         console.print(f"[bold yellow]=== Final Assistant Message ===[/bold yellow]")
         console.print(next_resp.choices[0].message.content)
