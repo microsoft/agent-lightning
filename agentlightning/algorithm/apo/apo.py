@@ -112,6 +112,7 @@ class APO(BaseAlgorithm, Generic[T_task]):
         branch_factor: int = 4,
         beam_rounds: int = 3,
         rollout_batch_timeout: float = 600.0,
+        run_initial_validation: bool = True,
     ):
         """
         Initialize the APO algorithm with configuration parameters.
@@ -128,6 +129,8 @@ class APO(BaseAlgorithm, Generic[T_task]):
                 by applying textual gradient edits. This controls the expansion of the search tree.
             beam_rounds: Number of beam search rounds to perform.
             rollout_batch_timeout: Maximum time in seconds to wait for rollout batch completion.
+            run_initial_validation: If True, runs validation on the seed prompt before starting
+                optimization to establish a baseline score. Defaults to True.
         """
         self.async_openai_client = async_openai_client
         self.gradient_model = gradient_model
@@ -139,6 +142,7 @@ class APO(BaseAlgorithm, Generic[T_task]):
         self.branch_factor = branch_factor
         self.beam_rounds = beam_rounds
         self.rollout_batch_timeout = rollout_batch_timeout
+        self.run_initial_validation = run_initial_validation
 
         self._history_best_prompt: Optional[PromptTemplate] = None
         self._history_best_score: float = float("-inf")
@@ -582,6 +586,16 @@ class APO(BaseAlgorithm, Generic[T_task]):
 
         # Start with seed prompt in the beam
         beam: List[PromptTemplate] = [seed_prompt]
+
+        # Optionally evaluate seed prompt on validation set to establish baseline
+        if self.run_initial_validation:
+            logger.info("Evaluating seed prompt on validation dataset before optimization...")
+            _, seed_score = await self.evaluate_prompt_on_batch(
+                seed_prompt.template, resource_name, cast(Sequence[T_task], val_dataset), mode="val"
+            )
+            logger.info(f"Seed prompt baseline score: {seed_score:.3f}")
+            self._history_best_prompt = seed_prompt
+            self._history_best_score = seed_score
 
         # Run beam search for specified number of rounds
         for rnd in range(self.beam_rounds):

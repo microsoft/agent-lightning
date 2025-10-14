@@ -169,6 +169,7 @@ def test_apo_init_sets_configuration() -> None:
         branch_factor=3,
         beam_rounds=4,
         rollout_batch_timeout=42.0,
+        run_initial_validation=False,
     )
 
     assert apo.async_openai_client is client
@@ -181,6 +182,7 @@ def test_apo_init_sets_configuration() -> None:
     assert apo.branch_factor == 3
     assert apo.beam_rounds == 4
     assert apo.rollout_batch_timeout == 42.0
+    assert apo.run_initial_validation is False
     assert apo._history_best_prompt is None
     assert apo._history_best_score == float("-inf")
 
@@ -702,6 +704,122 @@ async def test_update_best_prompt_keeps_history_when_not_improved() -> None:
     assert apo._history_best_score == pytest.approx(2.0)  # type: ignore
 
 
+def test_apo_init_defaults_run_initial_validation_to_true() -> None:
+    """Test that run_initial_validation defaults to True when not specified."""
+    client = Mock(spec=AsyncOpenAI)
+    apo = APO[Any](client)
+
+    assert apo.run_initial_validation is True
+
+
+@pytest.mark.asyncio
+async def test_run_performs_initial_validation_when_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test that initial validation runs on seed prompt when run_initial_validation=True."""
+    async_client = Mock(spec=AsyncOpenAI)
+    apo = APO[Any](
+        async_client,
+        gradient_batch_size=1,
+        val_batch_size=1,
+        beam_width=1,
+        branch_factor=1,
+        beam_rounds=0,  # No optimization rounds, just initial validation
+        run_initial_validation=True,
+    )
+    seed_prompt = PromptTemplate(template="Seed", engine="f-string")
+    apo.set_initial_resources({"seed": seed_prompt})
+
+    store = DummyStore()
+    apo._test_adapter = adapter = DummyTraceMessagesAdapter()  # type: ignore
+    apo.set_store(store)  # type: ignore
+    apo.set_adapter(adapter)
+
+    # Set up initial validation rollout
+    store.query_spans_map["rollout-0"] = [make_reward_span("rollout-0", "attempt", 0.75, sequence_id=1)]
+    store.wait_results_queue.append(
+        [
+            RolloutV2(
+                rollout_id="rollout-0",
+                input={"task": "val"},
+                start_time=0.0,
+                status="succeeded",
+                mode="val",
+            )
+        ]
+    )
+
+    monkeypatch.setattr(apo_module.random, "shuffle", lambda seq: None)  # type: ignore
+
+    val_dataset = [{"task": "val"}]
+    await apo.run(train_dataset=[{"task": "train"}], val_dataset=val_dataset)  # type: ignore
+
+    # Verify initial validation was performed
+    assert apo._history_best_prompt is seed_prompt
+    assert apo._history_best_score == pytest.approx(0.75)  # type: ignore
+
+    # Verify a validation rollout was enqueued for initial validation
+    val_calls = [c for c in store.enqueue_calls if c["mode"] == "val"]
+    assert len(val_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_run_skips_initial_validation_when_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test that initial validation is skipped when run_initial_validation=False."""
+    create_mock = AsyncMock(side_effect=[make_completion("critique text"), make_completion("improved prompt")])
+    async_client = make_openai_client(create_mock)
+
+    apo = APO[Any](
+        async_client,
+        gradient_batch_size=1,
+        val_batch_size=1,
+        beam_width=1,
+        branch_factor=1,
+        beam_rounds=1,
+        run_initial_validation=False,  # Disable initial validation
+    )
+    seed_prompt = PromptTemplate(template="Seed", engine="f-string")
+    apo.set_initial_resources({"seed": seed_prompt})
+
+    store = DummyStore()
+    apo._test_adapter = adapter = DummyTraceMessagesAdapter()  # type: ignore
+    apo.set_store(store)  # type: ignore
+    apo.set_adapter(adapter)
+
+    # Set up spans for rollouts (train + val for candidates + final val)
+    rollout_rewards = [0.4, 0.5, 0.6, 1.1]
+    for i, reward in enumerate(rollout_rewards):
+        store.query_spans_map[f"rollout-{i}"] = [make_reward_span(f"rollout-{i}", "attempt", reward, sequence_id=1)]
+        store.wait_results_queue.append(
+            [
+                RolloutV2(
+                    rollout_id=f"rollout-{i}",
+                    input={"task": f"data-{i}"},
+                    start_time=0.0,
+                    status="succeeded",
+                    mode="train" if i == 0 else "val",
+                )
+            ]
+        )
+
+    monkeypatch.setattr(apo_module.random, "shuffle", lambda seq: None)  # type: ignore
+    monkeypatch.setattr(apo_module.random, "sample", lambda population, k: list(population)[:k])  # type: ignore
+    monkeypatch.setattr(apo_module.random, "choice", lambda seq: seq[0])  # type: ignore
+
+    train_dataset = [{"task": "train"}]
+    val_dataset = [{"task": "val"}]
+
+    await apo.run(train_dataset=train_dataset, val_dataset=val_dataset)  # type: ignore
+
+    # Verify best prompt was updated through normal optimization (not initial validation)
+    best_prompt = apo.get_best_prompt()
+    assert best_prompt.template == "improved prompt"
+
+    # Count validation rollouts - should NOT include initial validation
+    # Only candidate evaluation + final best prompt evaluation
+    val_calls = [c for c in store.enqueue_calls if c["mode"] == "val"]
+    # With run_initial_validation=False, we expect: 2 val calls (seed+new candidate) + 1 final val = 3 total
+    assert len(val_calls) == 3
+
+
 @pytest.mark.asyncio
 async def test_run_updates_best_prompt_with_real_openai_client(monkeypatch: pytest.MonkeyPatch) -> None:
     """Integration test for the full run method with minimal mocking."""
@@ -715,6 +833,7 @@ async def test_run_updates_best_prompt_with_real_openai_client(monkeypatch: pyte
         beam_width=1,
         branch_factor=1,
         beam_rounds=1,
+        run_initial_validation=False,  # Skip initial validation for this test
     )
     seed_prompt = PromptTemplate(template="Seed", engine="f-string")
     apo.set_initial_resources({"seed": seed_prompt})
@@ -726,9 +845,9 @@ async def test_run_updates_best_prompt_with_real_openai_client(monkeypatch: pyte
     apo.set_adapter(adapter)
 
     # Set up spans for all expected rollouts
-    # For 1 round with beam_width=1, branch_factor=1, we expect:
+    # For 1 round with beam_width=1, branch_factor=1, run_initial_validation=False, we expect:
     # 1. Training rollout for gradient computation
-    # 2. Validation rollout for candidate evaluation (seed + new candidate = 2)
+    # 2. Validation rollouts for candidate evaluation (seed + new candidate = 2)
     # 3. Final validation rollout on full dataset for best prompt
     rollout_rewards = [0.4, 0.5, 0.6, 1.1]
     for i, reward in enumerate(rollout_rewards):
