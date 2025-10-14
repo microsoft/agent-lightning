@@ -72,6 +72,9 @@ trl = [
   "trl",
   "kernels",
 ]
+apo = [
+  "poml",
+]
 
 [build-system]
 requires = ["hatchling"]
