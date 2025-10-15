@@ -1,43 +1,42 @@
-# Algorithm References
+## Algorithm-side References
 
-AgentLightning includes several popular and frequently requested algorithms in its built-in library, allowing agent developers to use them directly. These algorithms are designed to be compatible with most agent scenarios.
+!!! note
 
-## APO
+    This reference covers APIs that are designed to be used at "Algorithm Side".
+    For built-in algorithms, see [Algorithm Zoo](./algorithm-zoo.md).
 
-### Installation
+## Base Class and Decorators
 
-```bash
-pip install agentlightning[apo]
-```
+::: agentlightning.BaseAlgorithm
 
-### Tutorials Using APO
+::: agentlightning.algo
 
-TBD
+## Fast Algorithms (for Debugging)
 
-### References
+::: agentlightning.FastAlgorithm
 
-::: agentlightning.algorithm.apo
+::: agentlightning.Baseline
 
-## VERL
+## Adapter
 
-### Installation
+::: agentlightning.TraceAdapter
 
-```bash
-pip install agentlightning[verl]
-```
+::: agentlightning.Adapter
 
-!!! warning
+::: agentlightning.TraceToTripletBase
 
-    For best results, follow the steps in the [installation guide](../quickstart/installation.md) to set up VERL and its dependencies. Installing VERL directly with `pip install agentlightning[verl]` can cause issues unless you already have a compatible version of PyTorch installed.
+::: agentlightning.TracerTraceToTriplet
 
-### Tutorials Using VERL
+::: agentlightning.LlmProxyTraceToTriplet
 
-TBD
+::: agentlightning.TraceToMessages
 
-### References - Entrypoint
+## LLM Proxy
 
-::: agentlightning.algorithm.verl
+::: agentlightning.LLMProxy
 
-### References - Implementation
+::: agentlightning.llm_proxy.ModelConfig
 
-::: agentlightning.verl
+::: agentlightning.llm_proxy.LightningSpanExporter
+
+::: agentlightning.llm_proxy.AddReturnTokenIds

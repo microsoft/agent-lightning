@@ -7,6 +7,10 @@
     This document is a work in progress and might not be updated with the latest changes.
     Try to use `agl -h` to get the latest help message.
 
+!!! tip
+
+    Agent-lightning also provides utilities to help you build your own CLI for [LitAgent](agentlightning.LitAgent) and [Trainer](agentlightning.Trainer). See [Trainer](./trainer.md) for references.
+
 ## agl
 
 ```text
