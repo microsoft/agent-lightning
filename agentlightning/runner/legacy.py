@@ -1,7 +1,5 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-# type: ignore
-
 import json
 import logging
 import time
@@ -14,7 +12,7 @@ from agentlightning.client import AgentLightningClient
 from agentlightning.litagent import LitAgent
 from agentlightning.litagent.litagent import is_v0_1_rollout_api
 from agentlightning.tracer.base import BaseTracer
-from agentlightning.types import Rollout, RolloutRawResultLegacy, Triplet
+from agentlightning.types import RolloutLegacy, RolloutRawResultLegacy, Triplet
 
 from .base import BaseRunner
 
@@ -77,26 +75,26 @@ class LegacyAgentRunner(BaseRunner[Any]):
         """Generates a standardized log prefix for the current worker."""
         if self.worker_id is not None:
             if rollout_id:
-                return f"[Worker {self.worker_id} | Rollout {rollout_id}]"
+                return f"[Worker {self.worker_id} | RolloutLegacy {rollout_id}]"
             else:
                 return f"[Worker {self.worker_id}]"
         if rollout_id:
-            return f"[Rollout {rollout_id}]"
+            return f"[RolloutLegacy {rollout_id}]"
         return "[Default Worker]"
 
     def _to_rollout_object(
         self,
         result: RolloutRawResultLegacy,
         rollout_id: str,
-    ) -> Rollout:
-        """Standardizes the agent's return value into a Rollout object.
+    ) -> RolloutLegacy:
+        """Standardizes the agent's return value into a RolloutLegacy object.
 
         Args:
             result: The output from the agent's rollout method.
             rollout_id: The unique identifier for the current task.
 
         Returns:
-            A standardized `Rollout` object for reporting to the server.
+            A standardized `RolloutLegacy` object for reporting to the server.
         """
         trace: Any = None
         final_reward: Optional[float] = None
@@ -117,8 +115,8 @@ class LegacyAgentRunner(BaseRunner[Any]):
         # Case 4: result is a list of dict (trace JSON)
         if isinstance(result, list) and all(isinstance(t, dict) for t in result):
             trace = result
-        # Case 5: result is a Rollout object
-        if isinstance(result, Rollout):
+        # Case 5: result is a RolloutLegacy object
+        if isinstance(result, RolloutLegacy):
             final_reward = result.final_reward
             triplets = result.triplets
             trace = result.trace
@@ -132,13 +130,13 @@ class LegacyAgentRunner(BaseRunner[Any]):
 
         # Always extract triplets from the trace using TracerTraceToTriplet
         if trace_spans:
-            triplets = self.triplet_exporter(trace_spans)
+            triplets = self.triplet_exporter(trace_spans)  # type: ignore
 
         # If the agent has triplets, use the last one for final reward if not set
         if triplets and triplets[-1].reward is not None and final_reward is None:
             final_reward = triplets[-1].reward
 
-        # Create the Rollout object with standardized fields
+        # Create the RolloutLegacy object with standardized fields
         result_dict: Dict[str, Any] = {
             "rollout_id": rollout_id,
         }
@@ -149,9 +147,9 @@ class LegacyAgentRunner(BaseRunner[Any]):
         if trace is not None:
             result_dict["trace"] = trace
 
-        if isinstance(result, Rollout):
+        if isinstance(result, RolloutLegacy):
             return result.model_copy(update=result_dict)
-        return Rollout(**result_dict)
+        return RolloutLegacy(**result_dict)
 
     def run(self) -> bool:  # type: ignore
         """Poll the task and rollout once synchronously."""
@@ -174,7 +172,7 @@ class LegacyAgentRunner(BaseRunner[Any]):
             logger.error(f"{self._log_prefix(rollout_id)} Failed to fetch resources. Skipping.")
             return False
 
-        rollout_obj = Rollout(rollout_id=task.rollout_id, task=task)  # Default empty rollout
+        rollout_obj = RolloutLegacy(rollout_id=task.rollout_id, task=task)  # Default empty rollout
 
         try:
             try:
@@ -194,8 +192,8 @@ class LegacyAgentRunner(BaseRunner[Any]):
                         ),
                     )  # type: ignore
                 else:
-                    result = rollout_method(task.input, resources=resources_update.resources, rollout=rollout_obj)
-                rollout_obj = self._to_rollout_object(result, task.rollout_id)
+                    result = rollout_method(task.input, resources=resources_update.resources, rollout=rollout_obj)  # type: ignore
+                rollout_obj = self._to_rollout_object(result, task.rollout_id)  # type: ignore
                 end_time = time.time()
                 logger.info(
                     f"{self._log_prefix(rollout_id)} Completed in "
@@ -208,7 +206,7 @@ class LegacyAgentRunner(BaseRunner[Any]):
             logger.exception(f"{self._log_prefix(rollout_id)} Exception during rollout.")
         finally:
             try:
-                self.agent.on_rollout_end(task, rollout_obj, self, self.tracer)
+                self.agent.on_rollout_end(task, rollout_obj, self, self.tracer)  # type: ignore
             except Exception:
                 logger.exception(f"{self._log_prefix(rollout_id)} Exception during on_rollout_end hook.")
             self.client.post_rollout(rollout_obj)
@@ -251,7 +249,7 @@ class LegacyAgentRunner(BaseRunner[Any]):
             logger.error(f"{self._log_prefix(rollout_id)} Failed to fetch resources. Skipping.")
             return False
 
-        rollout_obj = Rollout(rollout_id=task.rollout_id, task=task)  # Default empty rollout
+        rollout_obj = RolloutLegacy(rollout_id=task.rollout_id, task=task)  # Default empty rollout
 
         try:
             try:
@@ -273,8 +271,8 @@ class LegacyAgentRunner(BaseRunner[Any]):
                         ),
                     )  # type: ignore
                 else:
-                    result = await rollout_method(task.input, resources=resources_update.resources, rollout=rollout_obj)
-                rollout_obj = self._to_rollout_object(result, task.rollout_id)
+                    result = await rollout_method(task.input, resources=resources_update.resources, rollout=rollout_obj)  # type: ignore
+                rollout_obj = self._to_rollout_object(result, task.rollout_id)  # type: ignore
                 end_time = time.time()
                 logger.info(
                     f"{self._log_prefix(rollout_id)} Completed in "
@@ -286,7 +284,7 @@ class LegacyAgentRunner(BaseRunner[Any]):
             logger.exception(f"{self._log_prefix(rollout_id)} Exception during rollout.")
         finally:
             try:
-                self.agent.on_rollout_end(task, rollout_obj, self, self.tracer)
+                self.agent.on_rollout_end(task, rollout_obj, self, self.tracer)  # type: ignore
             except Exception:
                 logger.exception(f"{self._log_prefix(rollout_id)} Exception during on_rollout_end hook.")
             await self.client.post_rollout_async(rollout_obj)
