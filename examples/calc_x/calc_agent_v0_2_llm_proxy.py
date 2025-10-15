@@ -116,7 +116,7 @@ def main():
     tracer = OtelTracer()
     adapter = LlmProxyTraceToTriplet()
     trainer = Trainer(algorithm=VERL(rl_training_config), n_workers=10, tracer=tracer, adapter=adapter)
-    trainer.fit_v2(calc_agent, train_dataset, val_dataset=val_dataset)  # type: ignore
+    trainer.fit(calc_agent, train_dataset, val_dataset=val_dataset)  # type: ignore
 
 
 if __name__ == "__main__":

@@ -123,7 +123,7 @@ def main():
     print(val_dataset[:5])  # type: ignore
 
     trainer = Trainer(algorithm=verl_algorithm(), n_workers=4)
-    trainer.fit_v2(calc_agent, train_dataset, val_dataset=val_dataset)  # type: ignore
+    trainer.fit(calc_agent, train_dataset, val_dataset=val_dataset)  # type: ignore
 
 
 if __name__ == "__main__":

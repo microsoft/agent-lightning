@@ -66,7 +66,7 @@ from agentlightning.trainer import Trainer
 
 agent = SimpleAgent()
 trainer = Trainer(n_workers=2)  # Create 2 parallel workers
-trainer.fit(agent, "http://127.0.0.1:9997")
+trainer.fit_v0(agent, "http://127.0.0.1:9997")
 ```
 
 The trainer creates separate processes for each worker, allowing them to execute tasks independently. This parallelization significantly speeds up the optimization process - with 2 workers, you can test prompts twice as fast.

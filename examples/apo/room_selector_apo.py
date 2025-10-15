@@ -62,7 +62,7 @@ def main() -> None:
         adapter=TraceToMessages(),
     )
     dataset_train, dataset_val = load_train_val_dataset()
-    trainer.fit_v2(agent=room_selector, train_dataset=dataset_train, val_dataset=dataset_val)
+    trainer.fit(agent=room_selector, train_dataset=dataset_train, val_dataset=dataset_val)
 
 
 if __name__ == "__main__":

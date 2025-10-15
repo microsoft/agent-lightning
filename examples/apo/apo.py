@@ -127,4 +127,4 @@ Return only a number between 0 and 1. No text, punctuation, or explanation."""
 if __name__ == "__main__":
     configure_logger()
     trainer = Trainer(n_workers=1, algorithm=apo_algorithm)
-    trainer.fit_v2(apo_rollout)
+    trainer.fit(apo_rollout)

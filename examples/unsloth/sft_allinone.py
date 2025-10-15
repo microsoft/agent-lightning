@@ -112,4 +112,4 @@ if __name__ == "__main__":
         # adapter=LlmProxyTraceToTriplet(),
         # tracer=OtelTracer(),
     )
-    trainer.fit_v2(math_agent, load_math_dataset())
+    trainer.fit(math_agent, load_math_dataset())

@@ -194,7 +194,7 @@ class TaskRunner:
             adapter=adapter,
         )
         trainer.init_workers()
-        trainer.fit()
+        trainer.fit_v0()
 
 
 if __name__ == "__main__":
