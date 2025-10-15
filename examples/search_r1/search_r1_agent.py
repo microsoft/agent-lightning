@@ -8,7 +8,8 @@ import requests
 from openai import OpenAI
 from qa_em import compute_score_em
 
-from agentlightning import LLM, LitAgent, NamedResources, Trainer, configure_logger, reward
+from agentlightning import LLM, LitAgent, Trainer, configure_logger, reward
+from agentlightning.types import NamedResources, RolloutRawResultV2, RolloutV2
 
 configure_logger()
 
@@ -42,17 +43,14 @@ def postprocess_response(response: str) -> str:
 
 def extract_action(response: str) -> Tuple[Optional[str], str]:
     """Process (text-based) predictions from llm into actions and validity flags."""
-    if isinstance(response, str):  # for llm output
-        pattern = r"<(search|answer)>(.*?)</\1>"
-        match = re.search(pattern, response, re.DOTALL)
-        if match:
-            content = match.group(2).strip()  # Return only the content inside the tags
-            action: Optional[str] = match.group(1)
-        else:
-            content = ""
-            action = None
+    pattern = r"<(search|answer)>(.*?)</\1>"
+    match = re.search(pattern, response, re.DOTALL)
+    if match:
+        content = match.group(2).strip()  # Return only the content inside the tags
+        action: Optional[str] = match.group(1)
     else:
-        raise ValueError(f"Invalid prediction type: {type(response)}")
+        content = ""
+        action = None
     return action, content
 
 
@@ -106,21 +104,20 @@ def call_llm(
         temperature=temperature,
         max_tokens=max_tokens,
     )
-    return response.choices[0].message.content
+    return response.choices[0].message.content or ""
 
 
 class Searchr1Agent(LitAgent[Any]):
     async def training_rollout_async(
         self,
         task: Any,
-        rollout_id: str,
         resources: NamedResources,
+        rollout: RolloutV2,
         temperature: float = 1.0,
-    ) -> Any:
+    ) -> RolloutRawResultV2:
         prompt = INSTRUCTION_FORMAT + task["question"]
         answer_list: List[str] = cast(List[str], task["golden_answers"])
-
-        llm: LLM = resources.get("main_llm")
+        llm: LLM = cast(LLM, resources.get("main_llm"))
         client = OpenAI(
             base_url=llm.endpoint,
             api_key=os.environ.get("OPENAI_API_KEY", "token-abc123"),
@@ -160,11 +157,11 @@ class Searchr1Agent(LitAgent[Any]):
     async def validation_rollout_async(
         self,
         task: Any,
-        rollout_id: str,
         resources: NamedResources,
-    ) -> Any:
+        rollout: RolloutV2,
+    ) -> RolloutRawResultV2:
         # Use the same resources; set temperature to 0.0 for deterministic validation.
-        return await self.training_rollout_async(task, rollout_id, resources, temperature=0.0)
+        return await self.training_rollout_async(task, resources, rollout, temperature=0.0)
 
 
 if __name__ == "__main__":

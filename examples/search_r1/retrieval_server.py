@@ -35,7 +35,7 @@ BatchScores = List[Scores]
 
 
 def load_corpus(corpus_path: str) -> Any:
-    corpus: Any = datasets.load_dataset("json", data_files=corpus_path, split="train", num_proc=4)
+    corpus: Any = datasets.load_dataset("json", data_files=corpus_path, split="train", num_proc=4)  # type: ignore
     return corpus
 
 
@@ -54,14 +54,14 @@ def load_docs(corpus: Any, doc_idxs: Sequence[int]) -> Docs:
 
 def load_model(model_path: str, use_fp16: bool = False) -> Tuple[torch.nn.Module, Any]:
     # we call AutoConfig to ensure trust_remote_code init side-effects
-    _model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
-    model: torch.nn.Module = AutoModel.from_pretrained(model_path, trust_remote_code=True)
-    model.eval()
-    model.cuda()
+    _model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)  # type: ignore
+    model: torch.nn.Module = AutoModel.from_pretrained(model_path, trust_remote_code=True)  # type: ignore
+    model.eval()  # type: ignore
+    model.cuda()  # type: ignore
     if use_fp16:
-        model = model.half()
-    tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=True, trust_remote_code=True)
-    return model, tokenizer
+        model = model.half()  # type: ignore
+    tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=True, trust_remote_code=True)  # type: ignore
+    return model, tokenizer  # type: ignore
 
 
 def pooling(
@@ -100,7 +100,7 @@ class Encoder:
         self.model, self.tokenizer = load_model(model_path=model_path, use_fp16=use_fp16)
         self.model.eval()
 
-    @torch.no_grad()
+    @torch.no_grad()  # type: ignore
     def encode(self, query_list: Union[List[str], str], is_query: bool = True) -> NDArray[np.float32]:
         # processing query for different encoders
         if isinstance(query_list, str):
@@ -141,7 +141,7 @@ class Encoder:
             if "dpr" not in self.model_name.lower():
                 query_emb = torch.nn.functional.normalize(query_emb, dim=-1)
 
-        query_np: NDArray[np.float32] = query_emb.detach().cpu().numpy().astype(np.float32, order="C")
+        query_np: NDArray[np.float32] = query_emb.detach().cpu().numpy().astype(np.float32, order="C")  # type: ignore
 
         # cleanup
         del inputs, output
@@ -222,7 +222,7 @@ class BM25Retriever(BaseRetriever):
         except Exception:  # pragma: no cover - typing convenience
             LuceneSearcher = Any  # type: ignore[assignment]
 
-        self.searcher: Any = LuceneSearcher(self.index_path)
+        self.searcher: Any = LuceneSearcher(self.index_path)  # type: ignore
         self.contain_doc: bool = self._check_contain_doc()
         if not self.contain_doc:
             self.corpus: Any = load_corpus(self.corpus_path)
@@ -339,7 +339,7 @@ class DenseRetriever(BaseRetriever):
             batch_idxs = batch_idxs_np.tolist()
 
             # load_docs is not vectorized, but is a python list approach
-            flat_idxs: List[int] = sum(batch_idxs, [])
+            flat_idxs: List[int] = sum(batch_idxs, [])  # type: ignore
             batch_results_flat = load_docs(self.corpus, flat_idxs)
             # chunk them back
             chunked: List[Docs] = [batch_results_flat[i * k : (i + 1) * k] for i in range(len(batch_idxs))]
