@@ -37,3 +37,10 @@
   border-radius: 0.25em;
   margin-bottom: 2em;
 }
+
+/* To center images */
+.center {
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
+}

@@ -139,7 +139,7 @@ A prompt template is a reusable instruction for the agent, often containing plac
 
 Training in Agent-lightning revolves around a clear, managed loop, orchestrated by the **Trainer**. The diagram below illustrates this core interaction:
 
-![Loop of Tasks and Spans](../assets/tasks-spans-loop.svg){ align=center }
+![Loop of Tasks and Spans](../assets/tasks-spans-loop.svg){ .center }
 
 **The Loop Explained:**
 

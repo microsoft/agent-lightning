@@ -1,6 +1,6 @@
 # Write the First Algorithm with Agent-lightning
 
-In the [first tutorial](https://www.google.com/search?q=./train-first-agent.md), "Train the First Agent," we introduced the `Trainer` and showed how to use a pre-built algorithm like **Automatic Prompt Optimization (APO)** to improve an agent's performance. The `Trainer` handled all the complex interactions, letting us focus on the agent's logic.
+In the [first tutorial](https://www.google.com/search?q=./train-first-agent.md), "Train the First Agent," we introduced the [Trainer][agentlightning.Trainer] and showed how to use a pre-built algorithm like **Automatic Prompt Optimization (APO)** to improve an agent's performance. The [Trainer][agentlightning.Trainer] handled all the complex interactions, letting us focus on the agent's logic.
 
 Now, we'll go a step deeper. What if you have a unique training idea that doesn't fit a standard algorithm? This tutorial will show you how to write your own custom algorithm from scratch. We'll build a simple algorithm that systematically tests a list of prompt templates and identifies the one with the highest reward.
 
@@ -11,7 +11,7 @@ By the end, you'll understand the core mechanics of how the **Algorithm**, **Run
 
 ## Core Concepts for Training
 
-Before diving into the `Store`, let's define two key concepts that are central to any training process in Agent-lightning: **Resources** and the **Tracer**.
+Before diving into the [LightningStore][agentlightning.LightningStore], let's define two key concepts that are central to any training process in Agent-lightning: **Resources** and the **Tracer**.
 
 ### Resources: The Tunable Assets
 
@@ -46,11 +46,11 @@ The LightningStore acts as the central database and message queue for the entire
 
 This architecture is key to Agent-lightning's scalability. Since the Algorithm and Runners only talk to the Store, they can run in different processes or even on different machines.
 
-![Store Architecture](../assets/store-api-visualized.svg)
+![Store Architecture](../assets/store-api-visualized.svg){ .center }
 
 !!! tip "A Mental Model of What the Store Contains"
 
-    The `Store` isn't just a simple database; it's an organized system for managing the entire training lifecycle. Here's what it keeps track of:
+    The [LightningStore][agentlightning.LightningStore] isn't just a simple database; it's an organized system for managing the entire training lifecycle. Here's what it keeps track of:
 
     * **Task Queue**: A queue of pending **Rollouts** waiting for a Runner to pick them up, interactable via `enqueue_rollout` and `dequeue_rollout`.
     * **Rollouts**: The record of a single task. A rollout contains metadata about the task and tracks all **Attempts** to complete it, interactable via `query_rollouts` and `wait_for_rollouts`.
@@ -69,7 +69,7 @@ Let's build an algorithm that finds the best system prompt from a predefined lis
 5.  Query the Store to get the final reward from the rollout's spans.
 6.  After testing all templates, compare the rewards and declare the best one.
 
-We can implement this as a simple Python function that interacts directly with the `Store`.
+We can implement this as a simple Python function that interacts directly with the [LightningStore][agentlightning.LightningStore].
 
 ```python
 async def find_best_prompt(store, prompts_to_test, task_input):
@@ -123,10 +123,10 @@ Our algorithm needs an **agent** to execute the tasks and a **runner** to manage
 
 The runner is a long-lived worker process. Its job is simple:
 
-1.  Connect to the `Store`.
-2.  Enter a loop, constantly asking the `Store` for new tasks (`dequeue_rollout`).
+1.  Connect to the [LightningStore][agentlightning.LightningStore] via a [LightningStoreClient][agentlightning.LightningStoreClient].
+2.  Enter a loop, constantly asking the [LightningStore][agentlightning.LightningStore] for new tasks (`dequeue_rollout`).
 3.  When it gets a task, it runs the `simple_agent` function.
-4.  Crucially, the runner wraps the agent execution with a **Tracer**. The tracer automatically captures all the important events (like the LLM call and the final reward) as spans and sends them back to the `Store`.
+4.  Crucially, the runner wraps the agent execution with a **Tracer**. The tracer automatically captures all the important events (like the LLM call and the final reward) as spans and sends them back to the [LightningStore][agentlightning.LightningStore].
 
 ```python
 # Connecting to Store
@@ -263,3 +263,13 @@ The store terminal shows a detailed log of every interaction, confirming its rol
 ... "POST /wait_for_rollouts HTTP/1.1" 200 ...
 ... "GET /query_spans/ro-c67eaa9016b6 HTTP/1.1" 200 ...
 ```
+
+!!! info "So Where is Trainer?"
+
+    You might be wondering why the [last tutorial](./train-first-agent.md) focused on the [Trainer][agentlightning.Trainer] class, but we haven't used it here.
+
+    Think of the [Trainer][agentlightning.Trainer] as a convenient wrapper that manages the entire training process for you. It's perfect when you want to apply a pre-built algorithm to your agent without worrying about the underlying mechanics. The [Trainer][agentlightning.Trainer] handles starting the [LightningStore][agentlightning.LightningStore], coordinating the [Runners][agentlightning.BaseRunner], managing their lifecycles, and handling errors.
+
+    In this tutorial, however, our goal is to *build a new algorithm*. To do that, we need to interact directly with the core components: the [Store][agentlightning.LightningStore], the [Runner][agentlightning.BaseRunner], and the algorithm logic itself. Running them separately gives you more control and clearer, isolated logs, which is ideal for development and debugging.
+
+    Once your custom algorithm is mature, you can package it to comply with our standard interface ([@algo][agentlightning.algo] or [BaseAlgorithm][agentlightning.BaseAlgorithm]). This allows you to use it with the [Trainer][agentlightning.Trainer] again, getting all the benefits of automated lifecycle management while using your own custom logic.
