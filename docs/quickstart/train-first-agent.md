@@ -95,7 +95,7 @@ def room_selector(task: RoomSelectionTask, prompt_template: PromptTemplate) -> f
     return reward
 ```
 
-## Core Concepts: Tasks, Rollouts, and Spans
+## Core Concepts: Tasks, Rollouts, Spans, and Prompt Templates
 
 To understand how Agent-lightning works, you need to know these key terms.
 
@@ -125,18 +125,26 @@ A span represents a single unit of work or an operation within a **rollout**. Sp
 
 The picture below from [ADK](https://google.github.io/adk-docs/observability/cloud-trace/) shows a typical rollout, where each rectangle in the waterfall visualizes a span. As can be seen in the visualization, spans can be sequential, parallel or nested among each other. In other frameworks, the terminilogy might be slightly different. Agent-lightning follows the terminalogies used by OpenTelemetry to avoid confusion.
 
-![](../assets/agentops-waterfall-visualization.jpg)
+![AgentOps Waterfall Visualization](../assets/agentops-waterfall-visualization.jpg)
+
+### Prompt Template
+
+A prompt template is a reusable instruction for the agent, often containing placeholders that can be filled in with specific details from a task. It is a key **"resource"** that the algorithm learns and improves over time.
+
+!!! tip "Analogy"
+
+    If the task is the recipe request, the prompt template is the master recipe card that the chef follows. The algorithm's job is to edit this recipe card to make the instructions clearer and the final dish better.
 
 ## The Training Loop: How the Magic Happens
 
 Training in Agent-lightning revolves around a clear, managed loop, orchestrated by the **Trainer**. The diagram below illustrates this core interaction:
 
-![](../assets/tasks-spans-loop.svg)
+![Loop of Tasks and Spans](../assets/tasks-spans-loop.svg){ align=center }
 
 **The Loop Explained:**
 
-- **Algorithm to Agent (via Trainer):** The **Algorithm** (the "brain") decides which Tasks the Agent should attempt. These tasks are passed to the agent by the Trainer.
-- **Agent to Algorithm (via Trainer):** For each task it receives, the Agent performs a Rollout, executing its logic and potentially using tools. During this rollout, the runner that runs the agent captures Spans that detail every step. The agent also calculates a Reward for its performance on the task. These spans and rewards are then sent back to the Algorithm via the Trainer.
+- **Algorithm to Agent (via Trainer):** The **Algorithm** (the "brain") creates an improved **Prompt Template** and selects **Tasks**. The Trainer then sends both to the Trainer.
+- **Agent to Algorithm (via Trainer):** For each task it receives, the Agent uses the provided prompt template to perform a Rollout, executing its logic and potentially using tools. During this rollout, the runner that runs the agent captures Spans that detail every step. The agent also calculates a Reward for its performance on the task. These spans and rewards are then sent back to the Algorithm via the Trainer.
 - **Algorithm Learning:** The Algorithm then analyzes these spans and rewards to learn how to improve the agent's behavior, for example, by generating a better prompt. This improved prompt is then used in the next iteration of tasks.
 
 This cycle continues, allowing the agent to continuously learn and get better at solving tasks.
@@ -149,9 +157,9 @@ This cycle continues, allowing the agent to continuously learn and get better at
 
 The algorithm is the smart part of the system that drives the improvement. In this tutorial, we use **APO** (Automatic Prompt Optimization). It works in a few steps:
 
-1. **Evaluate:** The algorithm first asks for rollouts to be run using the current prompt to see how well it performs.
+1. **Evaluate:** The algorithm first asks for rollouts to be run using the current prompt template to see how well it performs.
 2. **Critique:** It then looks at the detailed spans from those rollouts. Using a powerful LLM (`gpt-5-mini`), it generates a "textual gradient", which is a natural language critique of the prompt. For example: "The prompt is ambiguous about how to handle tie-breakers for equally good rooms."
-3. **Rewrite:** Finally, it gives the critique and the original prompt to another LLM (`gpt-4.1-mini`) and asks it to apply the edits, generating a new, improved prompt.
+3. **Rewrite:** Finally, it gives the critique and the original prompt to another LLM (`gpt-4.1-mini`) and asks it to apply the edits, generating a new, improved prompt template.
 
 This cycle repeats, with each round producing a slightly better prompt. To use it, you simply initialize the APO class with your desired hyperparameters.
 
