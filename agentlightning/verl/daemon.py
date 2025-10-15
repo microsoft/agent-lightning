@@ -17,7 +17,7 @@ from flask import Flask, Response, abort, request
 from tensordict import TensorDict
 from verl import DataProto
 
-from agentlightning import LLM, AgentLightningServer, NamedResources, Rollout, configure_logger
+from agentlightning import LLM, AgentLightningServer, NamedResources, RolloutLegacy, configure_logger
 from agentlightning.adapter.triplet import TracerTraceToTriplet, TraceToTripletBase
 from agentlightning.llm_proxy import LLMProxy, ModelConfig
 from agentlightning.store.base import LightningStore
@@ -183,7 +183,7 @@ class AgentModeDaemon:
         # Internal State
         self.backend_llm_server_addresses: List[str] = []
         self._total_tasks_queued = 0
-        self._completed_rollouts_v0: Dict[str, Rollout] = {}
+        self._completed_rollouts_v0: Dict[str, RolloutLegacy] = {}
         self._task_id_to_original_sample: Dict[str, Dict[str, Any]] = {}
         self._server_thread: Optional[threading.Thread] = None
         self._proxy_thread: Optional[threading.Thread] = None
@@ -434,7 +434,7 @@ class AgentModeDaemon:
             print(f"Failed to set up data on server: {e}")
             raise
 
-    def _validate_data(self, rollout: Rollout):
+    def _validate_data(self, rollout: RolloutLegacy):
         if rollout.final_reward is None:
             print(
                 f"Warning: Reward is None for rollout {rollout.rollout_id}, will be auto-set to {self.reward_fillna_value}."
@@ -448,8 +448,8 @@ class AgentModeDaemon:
         elif any(not r.prompt.get("token_ids", []) for r in rollout.triplets):
             print(f"Warning: Rollout {rollout.rollout_id} contains empty prompt: {rollout.triplets}")
 
-    async def _validate_data_v1(self, rollout: RolloutV2) -> Rollout:
-        """Convert RolloutV2 to Rollout and validate.
+    async def _validate_data_v1(self, rollout: RolloutV2) -> RolloutLegacy:
+        """Convert RolloutV2 to RolloutLegacy and validate.
 
         1. Task: construct from RolloutV2
         2. Triplets: obtained by querying spans and feeding into the adapter
@@ -484,7 +484,7 @@ class AgentModeDaemon:
         )
 
         # Create the Rollout object (without trace and logs as per user's note)
-        result_rollout = Rollout(
+        result_rollout = RolloutLegacy(
             rollout_id=rollout.rollout_id,
             task=task,
             final_reward=final_reward,
@@ -736,7 +736,7 @@ class AgentModeDaemon:
         # This implementation assumes that `set_up_data_and_server` is called
         # for each new run, effectively starting a fresh batch.
 
-    def _fillna_reward(self, rollout: Rollout):
+    def _fillna_reward(self, rollout: RolloutLegacy):
         if rollout.final_reward is None:
             if self.reward_fillna_value is not None:  # type: ignore
                 final_reward = self.reward_fillna_value

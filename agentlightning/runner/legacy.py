@@ -13,7 +13,7 @@ from agentlightning.adapter import TracerTraceToTriplet
 from agentlightning.client import AgentLightningClient
 from agentlightning.litagent import LitAgent, is_v0_1_rollout_api
 from agentlightning.tracer.base import BaseTracer
-from agentlightning.types import Rollout, RolloutRawResult, Triplet
+from agentlightning.types import Rollout, RolloutRawResultLegacy, Triplet
 
 from .base import BaseRunner
 
@@ -85,7 +85,7 @@ class LegacyAgentRunner(BaseRunner[Any]):
 
     def _to_rollout_object(
         self,
-        result: RolloutRawResult,
+        result: RolloutRawResultLegacy,
         rollout_id: str,
     ) -> Rollout:
         """Standardizes the agent's return value into a Rollout object.
@@ -187,7 +187,7 @@ class LegacyAgentRunner(BaseRunner[Any]):
                 # Pass the task input, not the whole task object
                 if is_v0_1_rollout_api(rollout_method):
                     result = cast(
-                        RolloutRawResult,
+                        RolloutRawResultLegacy,
                         rollout_method(
                             task.input, rollout_id=rollout_obj.rollout_id, resources=resources_update.resources  # type: ignore
                         ),
@@ -266,7 +266,7 @@ class LegacyAgentRunner(BaseRunner[Any]):
                 # Pass the task input, not the whole task object
                 if is_v0_1_rollout_api(rollout_method):
                     result = cast(
-                        RolloutRawResult,
+                        RolloutRawResultLegacy,
                         await rollout_method(
                             task.input, rollout_id=rollout_obj.rollout_id, resources=resources_update.resources  # type: ignore
                         ),

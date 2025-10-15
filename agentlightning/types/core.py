@@ -30,11 +30,11 @@ if TYPE_CHECKING:
 
 __all__ = [
     "Triplet",
-    "Rollout",
+    "RolloutLegacy",
     "Task",
     "TaskInput",
     "TaskIfAny",
-    "RolloutRawResult",
+    "RolloutRawResultLegacy",
     "RolloutRawResultV2",
     "RolloutMode",
     "GenericResponse",
@@ -61,7 +61,7 @@ class Triplet(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
-class Rollout(BaseModel):
+class RolloutLegacy(BaseModel):
     """The standard reporting object from client to server."""
 
     rollout_id: str
@@ -202,7 +202,7 @@ class TaskIfAny(BaseModel):
     task: Optional[Task] = None
 
 
-RolloutRawResult = Union[None, float, List[Triplet], List[Dict[str, Any]], List[ReadableSpan], Rollout]
+RolloutRawResultLegacy = Union[None, float, List[Triplet], List[Dict[str, Any]], List[ReadableSpan], RolloutLegacy]
 
 RolloutRawResultV2 = Union[
     None,  # nothing (relies on tracer)

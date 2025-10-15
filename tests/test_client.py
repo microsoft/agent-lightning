@@ -17,7 +17,7 @@ from agentlightning import (
     NamedResources,
     PromptTemplate,
     ResourcesUpdate,
-    Rollout,
+    RolloutLegacy,
     Task,
     Triplet,
 )
@@ -131,7 +131,7 @@ async def test_full_lifecycle_async(
     assert res_update.resources_id == resources_id
 
     # 4. Client posts a completed rollout
-    rollout_payload = Rollout(
+    rollout_payload = RolloutLegacy(
         rollout_id=rollout_id,
         final_reward=0.95,
         triplets=[Triplet(prompt="q", response="a", reward=1.0)],
@@ -181,7 +181,7 @@ async def test_full_lifecycle_sync(
         assert res_update.resources_id == resources_id
 
         # 4. Client posts a completed rollout
-        rollout_payload = Rollout(rollout_id=rollout_id, final_reward=0.88)
+        rollout_payload = RolloutLegacy(rollout_id=rollout_id, final_reward=0.88)
         response = client.post_rollout(rollout_payload)
         assert response is not None
         assert response.get("status") == "ok"
@@ -315,7 +315,7 @@ def test_local_client_core_functionality(sample_resources: NamedResources):
     assert latest.resources_id == "version123"
 
     # Test rollout posting
-    rollout = Rollout(rollout_id="test_rollout", final_reward=0.9)
+    rollout = RolloutLegacy(rollout_id="test_rollout", final_reward=0.9)
     result = client2.post_rollout(rollout)
     assert result is not None
     assert result["status"] == "received"
@@ -370,7 +370,7 @@ async def test_local_client_async_methods(sample_resources: NamedResources):
     assert latest is not None
     assert latest.resources_id == "local"
 
-    rollout = Rollout(rollout_id="async_rollout", final_reward=0.8)
+    rollout = RolloutLegacy(rollout_id="async_rollout", final_reward=0.8)
     result = await client.post_rollout_async(rollout)
     assert result is not None
     assert result["rollout_id"] == "async_rollout"

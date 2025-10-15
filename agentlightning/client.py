@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional, Union
 import aiohttp
 import requests
 
-from .types import NamedResources, ResourcesUpdate, Rollout, Task, TaskIfAny, TaskInput
+from .types import NamedResources, ResourcesUpdate, RolloutLegacy, Task, TaskIfAny, TaskInput
 
 logger = logging.getLogger(__name__)
 
@@ -140,7 +140,7 @@ class AgentLightningClient:
             return resources_update
         return None
 
-    async def post_rollout_async(self, rollout: Rollout) -> Optional[Dict[str, Any]]:
+    async def post_rollout_async(self, rollout: RolloutLegacy) -> Optional[Dict[str, Any]]:
         """Posts a completed rollout to the server asynchronously.
 
         Args:
@@ -242,7 +242,7 @@ class AgentLightningClient:
             return resources_update
         return None
 
-    def post_rollout(self, rollout: Rollout) -> Optional[Dict[str, Any]]:
+    def post_rollout(self, rollout: RolloutLegacy) -> Optional[Dict[str, Any]]:
         """Posts a completed rollout to the server synchronously.
 
         Args:
@@ -298,10 +298,10 @@ class DevTaskLoader(AgentLightningClient):
             self._resources_update = ResourcesUpdate(resources_id="local", resources=resources)
 
         # Store rollouts posted back to the loader for easy debugging of local runs
-        self._rollouts: List[Rollout] = []
+        self._rollouts: List[RolloutLegacy] = []
 
     @property
-    def rollouts(self) -> List[Rollout]:
+    def rollouts(self) -> List[RolloutLegacy]:
         """Return rollouts that have been posted back to the loader."""
         return self._rollouts
 
@@ -347,7 +347,7 @@ class DevTaskLoader(AgentLightningClient):
         logger.debug("DevTaskLoader returning latest resources.")
         return self._resources_update
 
-    def post_rollout(self, rollout: Rollout) -> Optional[Dict[str, Any]]:
+    def post_rollout(self, rollout: RolloutLegacy) -> Optional[Dict[str, Any]]:
         logger.debug(f"DevTaskLoader received rollout for task: {rollout.rollout_id}")
         self._rollouts.append(rollout)
         return {"status": "received", "rollout_id": rollout.rollout_id}
@@ -361,7 +361,7 @@ class DevTaskLoader(AgentLightningClient):
     async def get_latest_resources_async(self) -> Optional[ResourcesUpdate]:
         return self.get_latest_resources()
 
-    async def post_rollout_async(self, rollout: Rollout) -> Optional[Dict[str, Any]]:
+    async def post_rollout_async(self, rollout: RolloutLegacy) -> Optional[Dict[str, Any]]:
         return self.post_rollout(rollout)
 
     def __repr__(self):
