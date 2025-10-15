@@ -316,6 +316,12 @@ class Trainer(TrainerLegacy):
             train_dataset: The dataset to train on.
             val_dataset: The dataset to validate on.
         """
+        if isinstance(train_dataset, str):
+            raise ValueError(
+                "Trainer.fit no longer accepts a string URL as of v0.2. "
+                "To continue using a string URL, please use Trainer.fit_v0 instead. "
+                "See documentation for how to migrate to latest version: https://microsoft.github.io/agent-lightning/stable/"
+            )
         agent.set_trainer(self)
 
         algorithm_bundle = functools.partial(
