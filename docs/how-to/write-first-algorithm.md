@@ -1,6 +1,6 @@
 # Write the First Algorithm with Agent-lightning
 
-In the [first tutorial](https://www.google.com/search?q=./train-first-agent.md), "Train the First Agent," we introduced the [Trainer][agentlightning.Trainer] and showed how to use a pre-built algorithm like **Automatic Prompt Optimization (APO)** to improve an agent's performance. The [Trainer][agentlightning.Trainer] handled all the complex interactions, letting us focus on the agent's logic.
+In the [first tutorial](./train-first-agent.md), "Train the First Agent," we introduced the [Trainer][agentlightning.Trainer] and showed how to use a pre-built algorithm like **Automatic Prompt Optimization (APO)** to improve an agent's performance. The [Trainer][agentlightning.Trainer] handled all the complex interactions, letting us focus on the agent's logic.
 
 Now, we'll go a step deeper. What if you have a unique training idea that doesn't fit a standard algorithm? This tutorial will show you how to write your own custom algorithm from scratch. We'll build a simple algorithm that systematically tests a list of prompt templates and identifies the one with the highest reward.
 
