@@ -183,7 +183,7 @@ from agentlightning import Trainer
 # 1. Configure the Trainer with the algorithm and initial prompt
 trainer = Trainer(
     algorithm=algo,
-    n_runners=8, # Run 8 agents in parallel
+    n_runners=8, # Run 8 agents in parallel to try out the prompts
     initial_resources={
         # The initial prompt template to be tuned
         "prompt_template": prompt_template_baseline()

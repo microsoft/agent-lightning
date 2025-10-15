@@ -34,17 +34,12 @@ from typing import List, Optional
 from openai import AsyncOpenAI
 from rich.console import Console
 
-from agentlightning import Trainer, configure_logger
-from agentlightning.algorithm import algo
-from agentlightning.litagent.decorator import rollout
-from agentlightning.reward import find_final_reward
-from agentlightning.store import LightningStore
-from agentlightning.types import NamedResources, PromptTemplate, Span
+import agentlightning as agl
 
 console = Console()
 
 
-async def apo_algorithm(*, store: LightningStore):
+async def apo_algorithm(*, store: agl.LightningStore):
     """
     An example of how a prompt optimization works.
     """
@@ -61,10 +56,10 @@ async def apo_algorithm(*, store: LightningStore):
     for prompt in prompt_candidates:
         # 1. The optimization algorithm updates the prompt template
         console.print(f"\n{algo_marker} Updating prompt template to: '{prompt}'")
-        resources: NamedResources = {
+        resources: agl.NamedResources = {
             # The "main_prompt" can be replaced with any name you like
             # As long as the PromptTemplate type is used, the rollout function will recognize it
-            "main_prompt": PromptTemplate(template=prompt, engine="f-string")
+            "main_prompt": agl.PromptTemplate(template=prompt, engine="f-string")
         }
         # How the resource is used fully depends on the client implementation.
         await store.add_resources(resources)
@@ -94,7 +89,7 @@ async def apo_algorithm(*, store: LightningStore):
         await log_llm_span(spans)
 
         # 4. The algorithm records the final reward for sorting
-        final_reward = find_final_reward(spans)
+        final_reward = agl.find_final_reward(spans)
         assert final_reward is not None, "Expected a final reward from the client."
         console.print(f"{algo_marker} Final reward: {final_reward}")
         prompt_and_rewards.append((prompt, final_reward))
@@ -104,8 +99,8 @@ async def apo_algorithm(*, store: LightningStore):
     console.print(f"[bold red][Algo][/bold red] Best prompt found: '{best_prompt[0]}' with reward {best_prompt[1]}")
 
 
-@rollout
-async def apo_rollout(task: str, prompt_template: PromptTemplate) -> float:
+@agl.rollout
+async def apo_rollout(task: str, prompt_template: agl.PromptTemplate) -> float:
     # This relies on a public OpenAI service
     client = AsyncOpenAI()
 
@@ -122,7 +117,7 @@ async def apo_rollout(task: str, prompt_template: PromptTemplate) -> float:
     return await llm_judge(task, text)
 
 
-async def log_llm_span(spans: List[Span]) -> None:
+async def log_llm_span(spans: List[agl.Span]) -> None:
     """Logs the LLM related spans that records prompts and responses."""
     for span in spans:
         if "chat.completion" in span.name:
@@ -156,18 +151,18 @@ Return only a number between 0 and 1. No text, punctuation, or explanation."""
         return 0.0
 
 
-async def apo_runner(*, store: LightningStore):
+async def apo_runner(*, store: agl.LightningStore):
     """
     A runner that iteratively receives new rollout tasks from the store and executes them.
     """
 
-    runner = AgentRunnerV2[str](tracer=AgentOpsTracer())
+    runner = agl.LitAgentRunner[str](tracer=agl.AgentOpsTracer())
     with runner.run_context(agent=apo_rollout, store=store):
         await runner.iter()
 
 
 async def main():
-    store = LightningStoreClient("http://localhost:4747")
+    store = agl.LightningStoreClient("http://localhost:4747")
     parser = argparse.ArgumentParser(description="Run APO custom algorithm in different modes")
     parser.add_argument(
         "mode", choices=["algo", "runner"], help="Mode to run: 'algo' for algorithm or 'runner' for rollout runner"
@@ -186,5 +181,5 @@ async def main():
 
 
 if __name__ == "__main__":
-    configure_logger()
+    agl.configure_logger()
     asyncio.run(main())

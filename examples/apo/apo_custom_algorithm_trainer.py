@@ -20,8 +20,8 @@ from apo_custom_algorithm import apo_algorithm, apo_rollout
 from rich.console import Console
 
 from agentlightning import Trainer, configure_logger
-from agentlightning.algorithm.base import algo
-from agentlightning.store.base import LightningStore
+from agentlightning.algorithm import algo
+from agentlightning.store import LightningStore
 
 console = Console()
 
@@ -41,4 +41,4 @@ async def apo_algorithm_usable_in_trainer(*, store: LightningStore):
 if __name__ == "__main__":
     configure_logger()
     trainer = Trainer(n_workers=1, algorithm=apo_algorithm_usable_in_trainer)
-    trainer.fit_v2(apo_rollout)
+    trainer.fit(apo_rollout)
