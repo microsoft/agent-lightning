@@ -14,6 +14,13 @@ import setproctitle
 
 logger = logging.getLogger(__name__)
 
+__all__ = [
+    "instrument_agentops",
+    "uninstrument_agentops",
+    "agentops_local_server",
+    "AgentOpsServerManager",
+]
+
 # Module-level storage for originals
 _original_handle_chat_attributes: Callable[..., Any] | None = None
 _original_handle_response: Callable[..., Any] | None = None
@@ -156,6 +163,7 @@ def instrument_agentops():
 
 
 def uninstrument_agentops():
+    """Uninstrument agentops to stop capturing token IDs."""
     try:
         _unpatch_new_agentops()
     except Exception:
@@ -197,6 +205,8 @@ def _run_server(**kwargs: Any):  # type: ignore
 
 
 class AgentOpsServerManager:
+    """Manages a AgentOps local server to bypass the online service of AgentOps."""
+
     def __init__(self, daemon: bool = True, port: int | None = None):
         self.server_process: multiprocessing.Process | None = None
         self.server_port = port
