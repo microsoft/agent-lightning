@@ -9,6 +9,11 @@ from verl.utils.dataset.rl_dataset import RLHFDataset
 
 from agentlightning.types import Dataset
 
+__all__ = [
+    "AgentDataset",
+    "LoadedDataset",
+]
+
 
 class AgentDataset(RLHFDataset):
 

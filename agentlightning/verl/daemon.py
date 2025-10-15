@@ -25,6 +25,12 @@ from agentlightning.types import Rollout, RolloutConfig, Task
 
 configure_logger()
 
+__all__ = [
+    "AgentModeDaemon",
+    "get_left_padded_ids_and_attention_mask",
+    "get_right_padded_ids_and_attention_mask",
+]
+
 
 def get_left_padded_ids_and_attention_mask(
     ids: List[int], max_length: int, pad_token_id: int

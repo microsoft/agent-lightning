@@ -39,6 +39,10 @@ from agentlightning.store.base import LightningStore
 
 from .daemon import AgentModeDaemon
 
+__all__ = [
+    "AgentLightningTrainer",
+]
+
 
 @contextmanager
 def _timer(name: str, timing_raw: Dict[str, float]):
