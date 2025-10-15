@@ -20,7 +20,7 @@ This tutorial will show you how to write an agent that can handle various tasks 
 
 The simplest way to create an agent is by writing a standard Python function and marking it with the [@rollout][agentlightning.rollout] decorator. This approach is perfect for agents with straightforward logic that doesn't require complex state management.
 
-Agent-lightning automatically inspects your function's signature and injects the required resources. For example, if your function has a parameter named `prompt_template`, Agent-lightning will find the `PromptTemplate` resource for the current rollout and pass it in.
+Agent-lightning automatically inspects your function's signature and injects the required resources. For example, if your function has a parameter named `prompt_template`, Agent-lightning will find the [PromptTemplate][agentlightning.PromptTemplate] resource for the current rollout and pass it in.
 
 Let's revisit the `room_selector` agent from the first tutorial:
 
@@ -80,7 +80,11 @@ def flight_assistant(task: FlightBookingTask, llm: LLM, rollout: Rollout) -> flo
 
     # Use the tuned LLM resource to create an OpenAI client
     client = OpenAI(
+        # This endpoint could be a proxy to a proxy to a proxy ...
+        # It could be different every time `flight_assistant` is called
+        # But it should be OpenAI-API compatible
         base_url=llm.endpoint,
+
         # Use a dummy key if not provided
         # Usually this does not matter because the training LLM is often not guarded by an API key
         # But you can use `or os.environ["OPENAI_API_KEY"]` to make the function compatible with 3rd-party LLMs
@@ -110,6 +114,7 @@ The value your agent function returns (i.e., the return value of the function de
 * **`None`**: Returning `None` tells the runner that trace collection is being handled entirely by the [Tracer][agentlightning.BaseTracer] through auto-instrumentation (e.g., via AgentOps). In this case, the runner will simply retrieve the spans that the tracer has already captured.
 
 !!! important "Emitting the Final Reward"
+
     When returning `None`, you must still ensure a final reward is logged. You can do this by using the [`emit_reward`][agentlightning.emit_reward] function (covered in the Emitter section below) or by wrapping your reward calculation function with the [`@reward`][agentlightning.reward.reward] decorator.
 
 * **`list[ReadableSpan]`** or **`list[Span]`**: For advanced use cases, you can manually construct and return a complete list of all spans for the rollout. This gives you full control over the trace data. You can return either a list of OpenTelemetry `ReadableSpan` objects or Agent-lightning's native `Span` objects.
@@ -120,9 +125,9 @@ For most users, returning a **`float`** for simple agents or returning **`None`*
 
 For more complex agents that require state, helper methods, or distinct logic for training versus validation, you can create a class that inherits from `LitAgent`. This object-oriented approach provides more structure and control over the agent's lifecycle.
 
-To create a class-based agent, you subclass `agentlightning.agent.LitAgent` and implement the `rollout` method.
+To create a class-based agent, you subclass [agentlightning.LitAgent] and implement its `rollout` method.
 
-Here's how the `room_selector` could be implemented as a class:
+Here's how the `room_selector` could be implemented as a class. The rollout method has a slightly different signature than the function-based agent, mainly in how it handles the resources. With [`@rollout`][agentlightning.rollout] decorator,
 
 ```python
 from agentlightning.agent import LitAgent
