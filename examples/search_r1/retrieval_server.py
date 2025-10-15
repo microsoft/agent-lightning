@@ -51,7 +51,7 @@ def load_docs(corpus: Any, doc_idxs: Sequence[int]) -> Docs:
     return results
 
 
-def def load_model(model_path: str, use_fp16: bool = False) -> Tuple[torch.nn.Module, Any]:
+def load_model(model_path: str, use_fp16: bool = False) -> Tuple[torch.nn.Module, Any]:
     # we call AutoConfig to ensure trust_remote_code init side-effects
     _model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
     model: torch.nn.Module = AutoModel.from_pretrained(model_path, trust_remote_code=True)
