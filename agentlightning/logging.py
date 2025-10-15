@@ -2,6 +2,8 @@
 
 import logging
 
+__all__ = ["configure_logger"]
+
 
 def configure_logger(level: int = logging.INFO, name: str = "agentlightning") -> logging.Logger:
     logger = logging.getLogger(name)
