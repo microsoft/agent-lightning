@@ -14,14 +14,17 @@ class Adapter(Generic[T_from, T_to]):
     """Base class for synchronous adapters that convert data from one format to another.
 
     This class defines a simple protocol for transformation:
+
     - The `__call__` method makes adapters callable, so they can be used like functions.
     - Subclasses must implement the `adapt` method to define the actual conversion logic.
 
     Type parameters:
-        T_from: The source data type (input).
-        T_to: The target data type (output).
+
+    - T_from: The source data type (input).
+    - T_to: The target data type (output).
 
     Example:
+
         >>> class IntToStrAdapter(Adapter[int, str]):
         ...     def adapt(self, source: int) -> str:
         ...         return str(source)
@@ -56,10 +59,6 @@ class Adapter(Generic[T_from, T_to]):
 
         Returns:
             Data converted to the target format.
-
-        Raises:
-            NotImplementedError: If the method is not implemented
-            in a subclass.
         """
         raise NotImplementedError("Adapter.adapt() is not implemented")
 

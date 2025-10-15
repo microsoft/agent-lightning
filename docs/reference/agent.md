@@ -1,8 +1,6 @@
 # Agent Developer APIs
 
-## Customizing Agents
-
-### Decorators
+## Customizing Agents - Decorators
 
 !!! tip
 
@@ -10,17 +8,15 @@
 
 ::: agentlightning.rollout
 
-### Decorator Implementations
-
 !!! warning
 
-    The following two decorators are implementations of [`agentlightning.rollout`](agentlightning.rollout). They are not recommended for new users.
+    The following two decorators are implementations of [`agentlightning.rollout`][agentlightning.rollout]. They are not recommended for new users.
 
 ::: agentlightning.llm_rollout
 
 ::: agentlightning.prompt_rollout
 
-### Class-based Agents
+## Class-based Agents
 
 ::: agentlightning.LitAgent
 
@@ -34,7 +30,7 @@
 
 ::: agentlightning.emit_exception
 
-### Reward Helpers
+## Reward Helpers
 
 ::: agentlightning.find_final_reward
 
@@ -44,6 +40,6 @@
 
 ::: agentlightning.is_reward_span
 
-### Legacy Decorators
+## Legacy Emitter Decorators
 
 ::: agentlightning.reward

@@ -3,7 +3,7 @@
 !!! note
 
     This reference covers APIs that are designed to be used at "Algorithm Side".
-    For built-in algorithms, see [Algorithm Zoo](./algorithm-zoo.md).
+    For built-in algorithms, see [Algorithm Zoo](../algorithm-zoo/index.md).
 
 ## Base Class and Decorators
 

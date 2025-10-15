@@ -9,7 +9,7 @@
 
 !!! tip
 
-    Agent-lightning also provides utilities to help you build your own CLI for [LitAgent](agentlightning.LitAgent) and [Trainer](agentlightning.Trainer). See [Trainer](./trainer.md) for references.
+    Agent-lightning also provides utilities to help you build your own CLI for [LitAgent][agentlightning.LitAgent] and [Trainer][agentlightning.Trainer]. See [Trainer](./trainer.md) for references.
 
 ## agl
 

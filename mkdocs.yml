@@ -61,6 +61,7 @@ plugins:
             show_symbol_type_heading: true
             show_symbol_type_toc: true
             docstring_style: google
+  - autorefs
   - mike:
       version_selector: true
       css_dir: css
@@ -83,12 +84,22 @@ nav:
     - Getting Started: quickstart/getting-started.md
   - How-To Guides:
     - Train SQL Agent: how-to/train-sql-agent.md
+  - Algorithm Zoo:
+    - Overview: algorithm-zoo/index.md
+    - APO: algorithm-zoo/apo.md
+    - VERL: algorithm-zoo/verl.md
   - Deep Dive:
     - Bird's Eye View: deep-dive/birds-eye-view.md
     - Server-Client Architecture (Legacy): deep-dive/server-client-architecture.md
-  - API Reference:
-    - Core: reference/core.md
-    - RL: reference/rl.md
+  - API References:
+    - Agent: reference/agent.md
+    - Algorithm: reference/algorithm.md
+    - Command Line: reference/cli.md
+    - Instrumentation: reference/instrumentation.md
+    - Runner: reference/runner.md
+    - Store: reference/store.md
+    - Trainer: reference/trainer.md
+    - Types: reference/types.md
 
 extra_css:
   - stylesheets/extra.css

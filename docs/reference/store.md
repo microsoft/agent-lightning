@@ -4,18 +4,12 @@
 
 ## Store Implementations
 
-### In-memory Store
-
 ::: agentlightning.InMemoryLightningStore
 
-## Store Wrappers
-
-### Client-Server Wrapper
+## Client-Server and Thread-safe Wrappers
 
 ::: agentlightning.LightningStoreServer
 
 ::: agentlightning.LightningStoreClient
-
-### Thread-safe Wrapper
 
 ::: agentlightning.LightningStoreThreaded

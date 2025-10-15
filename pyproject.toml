@@ -44,6 +44,7 @@ dev = [
   "mkdocs-git-revision-date-localized-plugin",
   "mkdocs-git-authors-plugin",
   "mkdocs-macros-plugin",
+  "mkdocs-autorefs",
 ]
 experiment = [
   "random-word",
