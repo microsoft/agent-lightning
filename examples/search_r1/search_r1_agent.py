@@ -8,8 +8,7 @@ import requests
 from openai import OpenAI
 from qa_em import compute_score_em
 
-from agentlightning import LLM, LitAgent, Trainer, configure_logger, reward
-from agentlightning.types import NamedResources, RolloutRawResultV2, RolloutV2
+from agentlightning import LLM, LitAgent, NamedResources, Trainer, configure_logger, reward
 
 configure_logger()
 
@@ -112,9 +111,9 @@ class Searchr1Agent(LitAgent[Any]):
         self,
         task: Any,
         resources: NamedResources,
-        rollout: RolloutV2,
+        rollout: Any,
         temperature: float = 1.0,
-    ) -> RolloutRawResultV2:
+    ) -> Any:
         prompt = INSTRUCTION_FORMAT + task["question"]
         answer_list: List[str] = cast(List[str], task["golden_answers"])
         llm: LLM = cast(LLM, resources.get("main_llm"))
@@ -158,8 +157,8 @@ class Searchr1Agent(LitAgent[Any]):
         self,
         task: Any,
         resources: NamedResources,
-        rollout: RolloutV2,
-    ) -> RolloutRawResultV2:
+        rollout: Any,
+    ) -> Any:
         # Use the same resources; set temperature to 0.0 for deterministic validation.
         return await self.training_rollout_async(task, resources, rollout, temperature=0.0)
 
