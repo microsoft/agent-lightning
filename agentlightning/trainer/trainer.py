@@ -11,7 +11,7 @@ from agentlightning.algorithm import BaseAlgorithm, Baseline, FastAlgorithm
 from agentlightning.client import AgentLightningClient
 from agentlightning.execution.base import ExecutionStrategy
 from agentlightning.execution.client_server import ClientServerExecutionStrategy
-from agentlightning.execution.events import Event
+from agentlightning.execution.events import ExecutionEvent
 from agentlightning.litagent import LitAgent
 from agentlightning.llm_proxy import LLMProxy
 from agentlightning.runner import BaseRunner, LitAgentRunner
@@ -371,7 +371,7 @@ class Trainer(TrainerLegacy):
     async def _algorithm_bundle(
         self,
         store: LightningStore,
-        event: Event,
+        event: ExecutionEvent,
         train_dataset: Optional[Dataset[T_co]],
         val_dataset: Optional[Dataset[T_co]],
         algorithm: Optional[BaseAlgorithm],
@@ -407,7 +407,9 @@ class Trainer(TrainerLegacy):
             logger.exception("Algorithm bundle encountered an error.")
             raise
 
-    async def _runner_bundle(self, store: LightningStore, worker_id: int, event: Event, agent: LitAgent[T_co]) -> None:
+    async def _runner_bundle(
+        self, store: LightningStore, worker_id: int, event: ExecutionEvent, agent: LitAgent[T_co]
+    ) -> None:
         runner_instance: BaseRunner[Any] | None = None
         runner_initialized = False
         worker_initialized = False

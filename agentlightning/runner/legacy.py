@@ -11,7 +11,8 @@ from opentelemetry.sdk.trace import ReadableSpan
 
 from agentlightning.adapter import TracerTraceToTriplet
 from agentlightning.client import AgentLightningClient
-from agentlightning.litagent import LitAgent, is_v0_1_rollout_api
+from agentlightning.litagent import LitAgent
+from agentlightning.litagent.litagent import is_v0_1_rollout_api
 from agentlightning.tracer.base import BaseTracer
 from agentlightning.types import Rollout, RolloutRawResultLegacy, Triplet
 

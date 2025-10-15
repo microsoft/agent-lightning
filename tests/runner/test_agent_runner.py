@@ -12,7 +12,7 @@ from opentelemetry.sdk.trace import ReadableSpan, TracerProvider
 from opentelemetry.trace import SpanContext, TraceFlags, TraceState
 from opentelemetry.trace.status import Status, StatusCode
 
-from agentlightning.execution.events import Event, ThreadingEvent
+from agentlightning.execution.events import ExecutionEvent, ThreadingEvent
 from agentlightning.litagent import LitAgent
 from agentlightning.reward import emit_reward, find_final_reward
 from agentlightning.runner import LitAgentRunner
@@ -360,7 +360,7 @@ async def test_iter_waits_when_queue_empty_calls_sleep(monkeypatch: pytest.Monke
 
     sleep_calls = 0
 
-    async def fake_sleep(event: Optional[Event] = None) -> None:
+    async def fake_sleep(event: Optional[ExecutionEvent] = None) -> None:
         nonlocal sleep_calls
         sleep_calls += 1
         if event is not None:

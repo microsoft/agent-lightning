@@ -14,6 +14,8 @@ from .base import BaseAlgorithm
 
 logger = logging.getLogger(__name__)
 
+__all__ = ["FastAlgorithm", "Baseline"]
+
 
 class FastAlgorithm(BaseAlgorithm):
     """Algorithm that can run fast and qualify for dev mode.

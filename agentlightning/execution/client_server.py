@@ -13,7 +13,7 @@ from agentlightning.store.base import LightningStore
 from agentlightning.store.client_server import LightningStoreClient, LightningStoreServer
 
 from .base import AlgorithmBundle, ExecutionStrategy, RunnerBundle
-from .events import Event, MultiprocessingEvent
+from .events import ExecutionEvent, MultiprocessingEvent
 
 logger = logging.getLogger(__name__)
 
@@ -127,7 +127,9 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
                 raise ValueError("main_process='runner' requires n_runners to be 1")
         self.main_process = main_process
 
-    async def _execute_algorithm(self, algorithm: AlgorithmBundle, store: LightningStore, stop_evt: Event) -> None:
+    async def _execute_algorithm(
+        self, algorithm: AlgorithmBundle, store: LightningStore, stop_evt: ExecutionEvent
+    ) -> None:
         logger.info("Starting LightningStore server on %s:%s", self.server_host, self.server_port)
         server_store = LightningStoreServer(store, host=self.server_host, port=self.server_port)
         server_started = False
@@ -155,7 +157,7 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
                 else:
                     logger.debug("LightningStore server shutdown completed")
 
-    async def _execute_runner(self, runner: RunnerBundle, worker_id: int, stop_evt: Event) -> None:
+    async def _execute_runner(self, runner: RunnerBundle, worker_id: int, stop_evt: ExecutionEvent) -> None:
         client_store = LightningStoreClient(f"http://{self.server_host}:{self.server_port}")
         try:
             logger.debug("Runner %s connecting to server at %s:%s", worker_id, self.server_host, self.server_port)
@@ -180,14 +182,14 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
     def _spawn_runners(
         self,
         runner: RunnerBundle,
-        stop_evt: Event,
+        stop_evt: ExecutionEvent,
         *,
         ctx: BaseContext,
     ) -> list[multiprocessing.Process]:
         """Used when `role == "runner"` or `role == "both"` and `n_runners > 1`."""
         processes: list[multiprocessing.Process] = []
 
-        def _runner_sync(runner: RunnerBundle, worker_id: int, stop_evt: Event) -> None:
+        def _runner_sync(runner: RunnerBundle, worker_id: int, stop_evt: ExecutionEvent) -> None:
             # Runners are executed in child processes; each process owns its own
             # event loop to keep the asyncio scheduler isolated.
             asyncio.run(self._execute_runner(runner, worker_id, stop_evt))
@@ -207,13 +209,13 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
         self,
         algorithm: AlgorithmBundle,
         store: LightningStore,
-        stop_evt: Event,
+        stop_evt: ExecutionEvent,
         *,
         ctx: BaseContext,
     ) -> multiprocessing.Process:
         """Used when `main_process == "runner"`."""
 
-        def _algorithm_sync(algorithm: AlgorithmBundle, store: LightningStore, stop_evt: Event) -> None:
+        def _algorithm_sync(algorithm: AlgorithmBundle, store: LightningStore, stop_evt: ExecutionEvent) -> None:
             asyncio.run(self._execute_algorithm(algorithm, store, stop_evt))
 
         process = cast(
@@ -257,7 +259,7 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
     def _shutdown_processes(
         self,
         processes: list[multiprocessing.Process],
-        stop_evt: Event,
+        stop_evt: ExecutionEvent,
     ) -> None:
         """4-step escalation shutdown of ``processes``."""
         if not processes:

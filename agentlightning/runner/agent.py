@@ -32,7 +32,7 @@ from agentlightning.types import (
 )
 
 if TYPE_CHECKING:
-    from agentlightning.execution.events import Event
+    from agentlightning.execution.events import ExecutionEvent
 
 from .base import BaseRunner
 
@@ -296,14 +296,14 @@ class LitAgentRunner(BaseRunner[T_task]):
 
         return trace_spans
 
-    async def _sleep_until_next_poll(self, event: Optional[Event] = None) -> None:
+    async def _sleep_until_next_poll(self, event: Optional[ExecutionEvent] = None) -> None:
         """Sleep until the next poll interval, with optional event-based interruption.
 
         If an event is provided, the method will check it periodically (every 0.1s)
         and return early if the event is set.
 
         Args:
-            event: Optional Event object that can be used to interrupt the sleep.
+            event: Optional ExecutionEvent object that can be used to interrupt the sleep.
                 If set during the sleep period, the method returns immediately.
         """
         if event is None:
@@ -422,7 +422,7 @@ class LitAgentRunner(BaseRunner[T_task]):
 
         return rollout_id
 
-    async def iter(self, *, event: Optional[Event] = None) -> None:
+    async def iter(self, *, event: Optional[ExecutionEvent] = None) -> None:
         """Run the runner, continuously iterating over tasks in the store.
 
         This method polls the store for new rollouts and executes them until:
@@ -434,7 +434,7 @@ class LitAgentRunner(BaseRunner[T_task]):
         propagated, allowing the runner to continue processing subsequent tasks.
 
         Args:
-            event: Optional Event object to signal the runner to stop. The runner
+            event: Optional ExecutionEvent object to signal the runner to stop. The runner
                 will check this event periodically and stop gracefully when set.
         """
         num_tasks_processed = 0
@@ -483,7 +483,7 @@ class LitAgentRunner(BaseRunner[T_task]):
         *,
         resources: Optional[NamedResources] = None,
         mode: Optional[RolloutMode] = None,
-        event: Optional[Event] = None,
+        event: Optional[ExecutionEvent] = None,
     ) -> Rollout:
         """Execute a single task directly, bypassing the task queue.
 
@@ -497,7 +497,7 @@ class LitAgentRunner(BaseRunner[T_task]):
                 If not provided, the latest resources from the store will be used.
             mode: Optional rollout mode ("train" or "validation"). If not provided,
                 the agent's default mode will be used.
-            event: Optional Event object to signal interruption (currently unused
+            event: Optional ExecutionEvent object to signal interruption (currently unused
                 but included for interface consistency).
 
         Returns:

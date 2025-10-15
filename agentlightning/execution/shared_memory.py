@@ -11,7 +11,7 @@ from agentlightning.store.base import LightningStore
 from agentlightning.store.threading import LightningStoreThreaded
 
 from .base import AlgorithmBundle, ExecutionStrategy, RunnerBundle
-from .events import Event, ThreadingEvent
+from .events import ExecutionEvent, ThreadingEvent
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +54,7 @@ class SharedMemoryExecutionStrategy(ExecutionStrategy):
         self.graceful_delay = graceful_delay
         self.poll_interval = poll_interval
 
-    async def _run_until_completed_or_canceled(self, coro: Awaitable[Any], stop_evt: Event) -> Any:
+    async def _run_until_completed_or_canceled(self, coro: Awaitable[Any], stop_evt: ExecutionEvent) -> Any:
         """Run `coro` until it finishes or a cooperative stop is requested.
 
         Control flow:
@@ -149,7 +149,7 @@ class SharedMemoryExecutionStrategy(ExecutionStrategy):
         self,
         algorithm: AlgorithmBundle,
         store: LightningStore,
-        stop_evt: Event,
+        stop_evt: ExecutionEvent,
         thread_exceptions: Optional[SimpleQueue[BaseException]],
     ) -> None:
         try:
@@ -168,7 +168,7 @@ class SharedMemoryExecutionStrategy(ExecutionStrategy):
         runner: RunnerBundle,
         store: LightningStore,
         worker_id: int,
-        stop_evt: Event,
+        stop_evt: ExecutionEvent,
         thread_exceptions: Optional[SimpleQueue[BaseException]],
     ) -> None:
         try:

@@ -6,7 +6,7 @@ from multiprocessing.context import BaseContext
 from typing import Optional, Protocol
 
 
-class Event(Protocol):
+class ExecutionEvent(Protocol):
     """
     A minimal protocol similar to threading.Event.
 
