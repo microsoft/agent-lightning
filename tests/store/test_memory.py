@@ -25,8 +25,8 @@ from agentlightning.types import (
     LLM,
     PromptTemplate,
     ResourcesUpdate,
+    Rollout,
     RolloutConfig,
-    RolloutV2,
     Span,
 )
 
@@ -285,7 +285,7 @@ async def test_dequeue_rollout_skips_non_queuing_status(inmemory_store: InMemory
 @pytest.mark.asyncio
 async def test_fifo_ordering(inmemory_store: InMemoryLightningStore) -> None:
     """Test that queue maintains FIFO order."""
-    rollouts: List[RolloutV2] = []
+    rollouts: List[Rollout] = []
     for i in range(5):
         r = await inmemory_store.enqueue_rollout(input={"order": i})
         rollouts.append(r)
@@ -631,7 +631,7 @@ async def test_wait_for_rollouts(inmemory_store: InMemoryLightningStore) -> None
     _r3 = await inmemory_store.enqueue_rollout(input={"id": 3})
 
     # Start waiting for r1 and r2
-    async def wait_for_completion() -> List[RolloutV2]:
+    async def wait_for_completion() -> List[Rollout]:
         return await inmemory_store.wait_for_rollouts(rollout_ids=[r1.rollout_id, r2.rollout_id], timeout=5.0)
 
     wait_task = asyncio.create_task(wait_for_completion())
@@ -917,7 +917,7 @@ async def test_wait_polling_interval_with_timeout_none(inmemory_store: InMemoryL
 async def test_concurrent_task_addition(inmemory_store: InMemoryLightningStore) -> None:
     """Test adding tasks concurrently."""
 
-    async def enqueue_rollout(index: int) -> RolloutV2:
+    async def enqueue_rollout(index: int) -> Rollout:
         return await inmemory_store.enqueue_rollout(input={"index": index})
 
     # Add 50 tasks concurrently
@@ -941,7 +941,7 @@ async def test_concurrent_pop_operations(inmemory_store: InMemoryLightningStore)
     for i in range(20):
         await inmemory_store.enqueue_rollout(input={"index": i})
 
-    async def pop_task() -> RolloutV2 | None:
+    async def pop_task() -> Rollout | None:
         return await inmemory_store.dequeue_rollout()
 
     # Pop concurrently (more attempts than available)

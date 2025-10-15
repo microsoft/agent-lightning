@@ -21,7 +21,7 @@ from agentlightning import LLM, AgentLightningServer, NamedResources, RolloutLeg
 from agentlightning.adapter.triplet import TracerTraceToTriplet, TraceToTripletBase
 from agentlightning.llm_proxy import LLMProxy, ModelConfig
 from agentlightning.store.base import LightningStore
-from agentlightning.types import RolloutConfig, RolloutV2, Task
+from agentlightning.types import Rollout, RolloutConfig, Task
 
 configure_logger()
 
@@ -448,10 +448,10 @@ class AgentModeDaemon:
         elif any(not r.prompt.get("token_ids", []) for r in rollout.triplets):
             print(f"Warning: Rollout {rollout.rollout_id} contains empty prompt: {rollout.triplets}")
 
-    async def _validate_data_v1(self, rollout: RolloutV2) -> RolloutLegacy:
-        """Convert RolloutV2 to RolloutLegacy and validate.
+    async def _validate_data_v1(self, rollout: Rollout) -> RolloutLegacy:
+        """Convert Rollout to RolloutLegacy and validate.
 
-        1. Task: construct from RolloutV2
+        1. Task: construct from Rollout
         2. Triplets: obtained by querying spans and feeding into the adapter
         3. Final reward: extracted from last triplet's reward, searching backwards if not found
         """
@@ -474,7 +474,7 @@ class AgentModeDaemon:
                     final_reward = triplet.reward
                     break
 
-        # Construct the Task object from RolloutV2
+        # Construct the Task object from Rollout
         task = Task(
             rollout_id=rollout.rollout_id,
             input=rollout.input,
@@ -510,7 +510,7 @@ class AgentModeDaemon:
                 if rollout.rollout_id in self._completed_rollouts_v0:
                     # Already processed, skip
                     continue
-                if isinstance(rollout, RolloutV2):
+                if isinstance(rollout, Rollout):
                     rollout = await self._validate_data_v1(rollout)
                 else:
                     self._validate_data(rollout)

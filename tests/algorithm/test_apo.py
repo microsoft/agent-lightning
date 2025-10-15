@@ -19,7 +19,7 @@ from agentlightning.types import (
 )
 from agentlightning.types import Resource as SpanResource
 from agentlightning.types import (
-    RolloutV2,
+    Rollout,
     Span,
     SpanContext,
     SpanNames,
@@ -47,7 +47,7 @@ class DummyStore:
         self.update_resources_calls: List[Tuple[str, NamedResources]] = []
         self.enqueue_calls: List[Dict[str, Any]] = []
         self.wait_calls: List[Dict[str, Any]] = []
-        self.wait_results_queue: List[List[RolloutV2]] = []
+        self.wait_results_queue: List[List[Rollout]] = []
         self.query_spans_map: Dict[str, List[Span]] = {}
         self._counter = 0
 
@@ -73,7 +73,7 @@ class DummyStore:
         result.rollout_id = rollout_id
         return result
 
-    async def wait_for_rollouts(self, rollout_ids: Sequence[str], timeout: float) -> List[RolloutV2]:
+    async def wait_for_rollouts(self, rollout_ids: Sequence[str], timeout: float) -> List[Rollout]:
         self.wait_calls.append({"rollout_ids": tuple(rollout_ids), "timeout": timeout})
         if self.wait_results_queue:
             return self.wait_results_queue.pop(0)
@@ -391,7 +391,7 @@ async def test_get_rollout_results_adapts_spans() -> None:
     apo.set_store(store)  # type: ignore
     apo.set_adapter(adapter)
 
-    rollout = RolloutV2(
+    rollout = Rollout(
         rollout_id="r-1",
         input={"task": "value"},
         start_time=0.0,
@@ -441,14 +441,14 @@ async def test_evaluate_prompt_on_batch_runs_rollouts() -> None:
 
     store.wait_results_queue.append(
         [
-            RolloutV2(
+            Rollout(
                 rollout_id="rollout-0",
                 input=dataset[0],
                 start_time=0.0,
                 status="succeeded",
                 mode="train",
             ),
-            RolloutV2(
+            Rollout(
                 rollout_id="rollout-1",
                 input=dataset[1],
                 start_time=0.0,
@@ -579,8 +579,8 @@ async def test_generate_candidate_prompts_creates_branch_factor_children() -> No
     store.query_spans_map["rollout-1"] = [make_reward_span("rollout-1", "attempt", 0.6, sequence_id=1)]
     store.wait_results_queue.extend(
         [
-            [RolloutV2(rollout_id="rollout-0", input={"task": "a"}, start_time=0.0, status="succeeded", mode="train")],
-            [RolloutV2(rollout_id="rollout-1", input={"task": "b"}, start_time=0.0, status="succeeded", mode="train")],
+            [Rollout(rollout_id="rollout-0", input={"task": "a"}, start_time=0.0, status="succeeded", mode="train")],
+            [Rollout(rollout_id="rollout-1", input={"task": "b"}, start_time=0.0, status="succeeded", mode="train")],
         ]
     )
 
@@ -634,7 +634,7 @@ async def test_generate_candidate_prompts_skips_failed_generations() -> None:
         store.query_spans_map[f"rollout-{i}"] = [make_reward_span(f"rollout-{i}", "attempt", 0.5, sequence_id=1)]
         store.wait_results_queue.append(
             [
-                RolloutV2(
+                Rollout(
                     rollout_id=f"rollout-{i}", input={"task": f"t{i}"}, start_time=0.0, status="succeeded", mode="train"
                 )
             ]
@@ -774,7 +774,7 @@ async def test_run_performs_initial_validation_when_enabled(monkeypatch: pytest.
     store.query_spans_map["rollout-0"] = [make_reward_span("rollout-0", "attempt", 0.75, sequence_id=1)]
     store.wait_results_queue.append(
         [
-            RolloutV2(
+            Rollout(
                 rollout_id="rollout-0",
                 input={"task": "val"},
                 start_time=0.0,
@@ -827,7 +827,7 @@ async def test_run_skips_initial_validation_when_disabled(monkeypatch: pytest.Mo
         store.query_spans_map[f"rollout-{i}"] = [make_reward_span(f"rollout-{i}", "attempt", reward, sequence_id=1)]
         store.wait_results_queue.append(
             [
-                RolloutV2(
+                Rollout(
                     rollout_id=f"rollout-{i}",
                     input={"task": f"data-{i}"},
                     start_time=0.0,
@@ -891,7 +891,7 @@ async def test_run_updates_best_prompt_with_real_openai_client(monkeypatch: pyte
         store.query_spans_map[f"rollout-{i}"] = [make_reward_span(f"rollout-{i}", "attempt", reward, sequence_id=1)]
         store.wait_results_queue.append(
             [
-                RolloutV2(
+                Rollout(
                     rollout_id=f"rollout-{i}",
                     input={"task": f"data-{i}"},
                     start_time=0.0,

@@ -3,9 +3,9 @@
 import time
 from typing import Awaitable, Callable, List, cast
 
-from agentlightning.types import Attempt, AttemptedRollout, AttemptStatus, RolloutConfig, RolloutStatus, RolloutV2
+from agentlightning.types import Attempt, AttemptedRollout, AttemptStatus, Rollout, RolloutConfig, RolloutStatus
 
-UpdateRolloutStatus = Callable[[str, RolloutStatus], Awaitable[RolloutV2]]
+UpdateRolloutStatus = Callable[[str, RolloutStatus], Awaitable[Rollout]]
 UpdateAttemptStatus = Callable[[str, str, AttemptStatus], Awaitable[Attempt]]
 
 
@@ -13,7 +13,7 @@ async def propagate_status(
     update_rollout_status: UpdateRolloutStatus,  # this should be unlocked
     attempt: Attempt,
     config: RolloutConfig,
-) -> RolloutV2:
+) -> Rollout:
     """
     Propagate the status of an attempt to the rollout.
 

@@ -12,7 +12,7 @@ from agentlightning.runner import LitAgentRunner
 from agentlightning.store.base import LightningStore
 from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.tracer.base import BaseTracer
-from agentlightning.types import LLM, Hook, RolloutV2
+from agentlightning.types import LLM, Hook, Rollout
 
 from ..common.tracer import clear_tracer_provider
 
@@ -84,18 +84,16 @@ class RecordingHook(Hook):
         super().__init__()
         self.calls: List[str] = []
 
-    async def on_rollout_start(self, *, agent: LitAgent[Any], runner: Any, rollout: RolloutV2) -> None:
+    async def on_rollout_start(self, *, agent: LitAgent[Any], runner: Any, rollout: Rollout) -> None:
         self.calls.append("on_rollout_start")
 
-    async def on_trace_start(
-        self, *, agent: LitAgent[Any], runner: Any, tracer: BaseTracer, rollout: RolloutV2
-    ) -> None:
+    async def on_trace_start(self, *, agent: LitAgent[Any], runner: Any, tracer: BaseTracer, rollout: Rollout) -> None:
         self.calls.append("on_trace_start")
 
-    async def on_trace_end(self, *, agent: LitAgent[Any], runner: Any, tracer: BaseTracer, rollout: RolloutV2) -> None:
+    async def on_trace_end(self, *, agent: LitAgent[Any], runner: Any, tracer: BaseTracer, rollout: Rollout) -> None:
         self.calls.append("on_trace_end")
 
-    async def on_rollout_end(self, *, agent: LitAgent[Any], runner: Any, rollout: RolloutV2, spans: Any) -> None:
+    async def on_rollout_end(self, *, agent: LitAgent[Any], runner: Any, rollout: Rollout, spans: Any) -> None:
         self.calls.append("on_rollout_end")
 
 

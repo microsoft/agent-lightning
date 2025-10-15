@@ -9,6 +9,7 @@ import logging
 import threading
 import time
 import uuid
+import warnings
 from contextlib import asynccontextmanager
 from typing import Any, Dict, List, Literal, Optional
 
@@ -176,6 +177,9 @@ class AgentLightningServer:
             port: The port to bind the server to.
             task_timeout_seconds: Time in seconds after which a claimed task is considered stale and requeued.
         """
+        warnings.warn(
+            "AgentLightningServer is deprecated. Please use LightningStoreServer instead.", DeprecationWarning
+        )
         self.host = host
         self.port = port
         self.endpoint = f"http://{host}:{port}"

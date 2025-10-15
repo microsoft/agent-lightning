@@ -17,7 +17,7 @@ from agentlightning.runner import LitAgentRunner
 from agentlightning.store.client_server import LightningStoreClient, LightningStoreServer
 from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.tracer.agentops import AgentOpsTracer
-from agentlightning.types import LLM, AttemptedRollout, NamedResources, RolloutV2
+from agentlightning.types import LLM, AttemptedRollout, NamedResources, Rollout
 
 from ..common.network import get_free_port
 from ..common.tracer import clear_tracer_provider
@@ -78,7 +78,7 @@ async def test_runner_integration_basic_rollout() -> None:
 )
 async def test_runner_integration_with_openai() -> None:
     class OpenAIAgent(LitAgent[str]):
-        async def validation_rollout_async(self, task: str, resources: NamedResources, rollout: RolloutV2) -> float:
+        async def validation_rollout_async(self, task: str, resources: NamedResources, rollout: Rollout) -> float:
             llm = cast(LLM, resources["llm"])
             client = openai.AsyncOpenAI(base_url=llm.endpoint, api_key=llm.api_key)
             response = await client.chat.completions.create(
@@ -113,7 +113,7 @@ async def test_runner_integration_with_litellm_proxy() -> None:
     litellm = pytest.importorskip("litellm")
 
     class LiteLLMAgent(LitAgent[str]):
-        def validation_rollout(self, task: str, resources: NamedResources, rollout: RolloutV2) -> float:
+        def validation_rollout(self, task: str, resources: NamedResources, rollout: Rollout) -> float:
             llm = cast(LLM, resources["llm"])
             response = litellm.completion(
                 model=llm.model,
@@ -161,7 +161,7 @@ async def test_runner_integration_with_spawned_litellm_proxy(server: RemoteOpenA
         pytest.skip("GPU not available")
 
     class ProxyAgent(LitAgent[str]):
-        async def validation_rollout_async(self, task: str, resources: NamedResources, rollout: RolloutV2) -> float:
+        async def validation_rollout_async(self, task: str, resources: NamedResources, rollout: Rollout) -> float:
             attempted_rollout = cast(AttemptedRollout, rollout)
             llm_resource = cast(LLM, resources["llm"])
             client = openai.AsyncOpenAI(

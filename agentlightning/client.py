@@ -6,6 +6,7 @@ import asyncio
 import logging
 import time
 import urllib.parse
+import warnings
 from typing import Any, Dict, List, Optional, Union
 
 import aiohttp
@@ -39,6 +40,9 @@ class AgentLightningClient:
             poll_interval: The interval in seconds to wait between polling for new tasks.
             timeout: The timeout in seconds for HTTP requests.
         """
+        warnings.warn(
+            "AgentLightningClient is deprecated. Please use LightningStoreClient instead.", DeprecationWarning
+        )
         self.endpoint = endpoint
         self.task_count = 0
         self.poll_interval = poll_interval
@@ -280,6 +284,7 @@ class DevTaskLoader(AgentLightningClient):
             resources: Either NamedResources or ResourcesUpdate object.
             **kwargs: Additional arguments passed to the parent AgentLightningClient.
         """
+        warnings.warn("DevTaskLoader is deprecated. Please use Trainer.dev instead.", DeprecationWarning)
         super().__init__(endpoint="local://", **kwargs)
         self._tasks = tasks.copy()
         if len(self._tasks) == 0:

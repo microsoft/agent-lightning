@@ -20,7 +20,7 @@ from agentlightning.runner.base import BaseRunner
 from agentlightning.store.base import LightningStore
 from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.tracer.base import BaseTracer
-from agentlightning.types import LLM, Hook, NamedResources, PromptTemplate, RolloutV2, Span, SpanNames
+from agentlightning.types import LLM, Hook, NamedResources, PromptTemplate, Rollout, Span, SpanNames
 
 trace_api.set_tracer_provider(TracerProvider())
 
@@ -148,16 +148,16 @@ class RecordingHook(Hook):
         self.calls: List[str] = []
         self.received_spans: Optional[List[ReadableSpan] | List[Span]] = None
 
-    async def on_rollout_start(self, *, agent: LitAgent[Any], runner: BaseRunner[Any], rollout: RolloutV2) -> None:
+    async def on_rollout_start(self, *, agent: LitAgent[Any], runner: BaseRunner[Any], rollout: Rollout) -> None:
         self.calls.append("on_rollout_start")
 
     async def on_trace_start(
-        self, *, agent: LitAgent[Any], runner: BaseRunner[Any], tracer: BaseTracer, rollout: RolloutV2
+        self, *, agent: LitAgent[Any], runner: BaseRunner[Any], tracer: BaseTracer, rollout: Rollout
     ) -> None:
         self.calls.append("on_trace_start")
 
     async def on_trace_end(
-        self, *, agent: LitAgent[Any], runner: BaseRunner[Any], tracer: BaseTracer, rollout: RolloutV2
+        self, *, agent: LitAgent[Any], runner: BaseRunner[Any], tracer: BaseTracer, rollout: Rollout
     ) -> None:
         self.calls.append("on_trace_end")
 
@@ -166,7 +166,7 @@ class RecordingHook(Hook):
         *,
         agent: LitAgent[Any],
         runner: BaseRunner[Any],
-        rollout: RolloutV2,
+        rollout: Rollout,
         spans: List[ReadableSpan] | List[Span],
     ) -> None:
         self.calls.append("on_rollout_end")
@@ -495,7 +495,7 @@ async def test_hooks_triggered_in_order() -> None:
 
 @pytest.mark.asyncio
 async def test_step_returns_completed_rollout() -> None:
-    """Test that step() returns a RolloutV2 object after execution."""
+    """Test that step() returns a Rollout object after execution."""
 
     class SimpleAgent(LitAgent[Dict[str, Any]]):
         def validation_rollout(self, task: Dict[str, Any], resources: Dict[str, Any], rollout: Any) -> float:
@@ -508,8 +508,8 @@ async def test_step_returns_completed_rollout() -> None:
     finally:
         teardown_runner(runner)
 
-    # Verify the result is a RolloutV2 object
-    assert isinstance(result, RolloutV2)
+    # Verify the result is a Rollout object
+    assert isinstance(result, Rollout)
     assert result.status == "succeeded"
     assert result.input == {"task": "test"}
 
@@ -558,7 +558,7 @@ async def test_step_raises_when_rollout_fetch_fails(monkeypatch: pytest.MonkeyPa
     # Mock get_rollout_by_id to return None
     original_get_rollout = store.get_rollout_by_id
 
-    async def mock_get_rollout_by_id(rollout_id: str) -> Optional[RolloutV2]:
+    async def mock_get_rollout_by_id(rollout_id: str) -> Optional[Rollout]:
         return None
 
     monkeypatch.setattr(store, "get_rollout_by_id", mock_get_rollout_by_id)
@@ -627,7 +627,7 @@ async def test_step_impl_returns_rollout_id_on_resource_failure() -> None:
 
 @pytest.mark.asyncio
 async def test_step_with_custom_resources_returns_rollout() -> None:
-    """Test that step() with custom resources returns a valid RolloutV2."""
+    """Test that step() with custom resources returns a valid Rollout."""
 
     class ResourceAgent(LitAgent[Dict[str, Any]]):
         def validation_rollout(self, task: Dict[str, Any], resources: Dict[str, Any], rollout: Any) -> float:
@@ -647,8 +647,8 @@ async def test_step_with_custom_resources_returns_rollout() -> None:
     finally:
         teardown_runner(runner)
 
-    # Verify the result is a valid RolloutV2
-    assert isinstance(result, RolloutV2)
+    # Verify the result is a valid Rollout
+    assert isinstance(result, Rollout)
     assert result.status == "succeeded"
     assert result.input == {"task": "test"}
 

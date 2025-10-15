@@ -13,8 +13,8 @@ from agentlightning.types import (
     NamedResources,
     PromptTemplate,
     ProxyLLM,
-    RolloutRawResultV2,
-    RolloutV2,
+    Rollout,
+    RolloutRawResult,
 )
 
 from .litagent import LitAgent
@@ -34,19 +34,19 @@ T_contra = TypeVar("T_contra", contravariant=True)
 
 
 class LlmRolloutFuncSync2(Protocol[T_contra]):
-    def __call__(self, task: T_contra, llm: LLM) -> RolloutRawResultV2: ...
+    def __call__(self, task: T_contra, llm: LLM) -> RolloutRawResult: ...
 
 
 class LlmRolloutFuncSync3(Protocol[T_contra]):
-    def __call__(self, task: T_contra, llm: LLM, rollout: RolloutV2) -> RolloutRawResultV2: ...
+    def __call__(self, task: T_contra, llm: LLM, rollout: Rollout) -> RolloutRawResult: ...
 
 
 class LlmRolloutFuncAsync2(Protocol[T_contra]):
-    def __call__(self, task: T_contra, llm: LLM) -> Awaitable[RolloutRawResultV2]: ...
+    def __call__(self, task: T_contra, llm: LLM) -> Awaitable[RolloutRawResult]: ...
 
 
 class LlmRolloutFuncAsync3(Protocol[T_contra]):
-    def __call__(self, task: T_contra, llm: LLM, rollout: RolloutV2) -> Awaitable[RolloutRawResultV2]: ...
+    def __call__(self, task: T_contra, llm: LLM, rollout: Rollout) -> Awaitable[RolloutRawResult]: ...
 
 
 LlmRolloutFunc = Union[
@@ -58,21 +58,21 @@ LlmRolloutFunc = Union[
 
 
 class PromptRolloutFuncSync2(Protocol[T_contra]):
-    def __call__(self, task: T_contra, prompt_template: PromptTemplate) -> RolloutRawResultV2: ...
+    def __call__(self, task: T_contra, prompt_template: PromptTemplate) -> RolloutRawResult: ...
 
 
 class PromptRolloutFuncAsync2(Protocol[T_contra]):
-    def __call__(self, task: T_contra, prompt_template: PromptTemplate) -> Awaitable[RolloutRawResultV2]: ...
+    def __call__(self, task: T_contra, prompt_template: PromptTemplate) -> Awaitable[RolloutRawResult]: ...
 
 
 class PromptRolloutFuncSync3(Protocol[T_contra]):
-    def __call__(self, task: T_contra, prompt_template: PromptTemplate, rollout: RolloutV2) -> RolloutRawResultV2: ...
+    def __call__(self, task: T_contra, prompt_template: PromptTemplate, rollout: Rollout) -> RolloutRawResult: ...
 
 
 class PromptRolloutFuncAsync3(Protocol[T_contra]):
     def __call__(
-        self, task: T_contra, prompt_template: PromptTemplate, rollout: RolloutV2
-    ) -> Awaitable[RolloutRawResultV2]: ...
+        self, task: T_contra, prompt_template: PromptTemplate, rollout: Rollout
+    ) -> Awaitable[RolloutRawResult]: ...
 
 
 PromptRolloutFunc = Union[
@@ -86,7 +86,7 @@ PromptRolloutFunc = Union[
 class FunctionalLitAgentFunc(Protocol[T_contra]):
     def __call__(
         self, task: T_contra, *args: Any, **kwargs: Any
-    ) -> Union[RolloutRawResultV2, Awaitable[RolloutRawResultV2]]: ...
+    ) -> Union[RolloutRawResult, Awaitable[RolloutRawResult]]: ...
 
 
 class FunctionalLitAgent(LitAgent[T]):
@@ -134,7 +134,7 @@ class FunctionalLitAgent(LitAgent[T]):
     def is_async(self) -> bool:
         return self._is_async
 
-    def rollout(self, task: T, resources: NamedResources, rollout: RolloutV2) -> RolloutRawResultV2:
+    def rollout(self, task: T, resources: NamedResources, rollout: Rollout) -> RolloutRawResult:
         """Execute a synchronous rollout using the wrapped function.
 
         Args:
@@ -151,7 +151,7 @@ class FunctionalLitAgent(LitAgent[T]):
         kwargs = self._get_kwargs(resources, rollout)
         return self._rollout_func(task, **kwargs)  # type: ignore
 
-    async def rollout_async(self, task: T, resources: NamedResources, rollout: RolloutV2) -> RolloutRawResultV2:
+    async def rollout_async(self, task: T, resources: NamedResources, rollout: Rollout) -> RolloutRawResult:
         """Execute an asynchronous rollout using the wrapped function.
 
         Args:
@@ -168,7 +168,7 @@ class FunctionalLitAgent(LitAgent[T]):
         kwargs = self._get_kwargs(resources, rollout)
         return await self._rollout_func(task, **kwargs)  # type: ignore
 
-    def _get_kwargs(self, resources: NamedResources, rollout: RolloutV2) -> Dict[str, Any]:
+    def _get_kwargs(self, resources: NamedResources, rollout: Rollout) -> Dict[str, Any]:
         """Extract the kwargs needed for the rollout function based on its signature.
 
         Dynamically builds the kwargs dictionary by inspecting the function signature and
@@ -193,7 +193,7 @@ class FunctionalLitAgent(LitAgent[T]):
 
         return kwargs
 
-    def _get_llm_resource(self, resources: NamedResources, rollout: RolloutV2) -> LLM:
+    def _get_llm_resource(self, resources: NamedResources, rollout: Rollout) -> LLM:
         """Extract the first LLM resource from the resources dictionary.
 
         Strip the ProxyLLM resource into a LLM resource if needed.
@@ -224,7 +224,7 @@ class FunctionalLitAgent(LitAgent[T]):
 
         return resource_found
 
-    def _get_prompt_template_resource(self, resources: NamedResources, rollout: RolloutV2) -> PromptTemplate:
+    def _get_prompt_template_resource(self, resources: NamedResources, rollout: Rollout) -> PromptTemplate:
         """Extract the first PromptTemplate resource from the resources dictionary.
 
         Args:
@@ -252,7 +252,7 @@ class FunctionalLitAgent(LitAgent[T]):
 
         return resource_found
 
-    def _strip_proxy_helper(self, proxy_llm: LLM, rollout: RolloutV2) -> LLM:
+    def _strip_proxy_helper(self, proxy_llm: LLM, rollout: Rollout) -> LLM:
         """Strip the ProxyLLM resource into a concrete LLM resource.
 
         This method resolves ProxyLLM instances to their concrete LLM implementation
@@ -274,7 +274,7 @@ class FunctionalLitAgent(LitAgent[T]):
             # Not a ProxyLLM, nothing to strip here.
             return proxy_llm
 
-        # Rollout is still a RolloutV2 here because API is not stabilized yet.
+        # Rollout is still a Rollout here because API is not stabilized yet.
         # In practice, it must be an AttemptedRollout.
         if not isinstance(rollout, AttemptedRollout):
             raise ValueError("Rollout is not an AttemptedRollout.")

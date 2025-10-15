@@ -19,7 +19,7 @@ from agentlightning.types import (
     NamedResources,
     Resource,
     ResourcesUpdate,
-    RolloutV2,
+    Rollout,
     Span,
     SpanContext,
     TaskInput,
@@ -113,7 +113,7 @@ async def test_threaded_store_delegates_all_methods() -> None:
         sequence_id=1,
         start_time=0.0,
     )
-    base_rollout = RolloutV2(
+    base_rollout = Rollout(
         rollout_id=rollout_id,
         input=task_input,
         start_time=0.0,
@@ -132,7 +132,7 @@ async def test_threaded_store_delegates_all_methods() -> None:
     span = make_span(rollout_id, attempt_id)
     readable_span = MagicMock(spec=ReadableSpan)
 
-    updated_rollout = RolloutV2(
+    updated_rollout = Rollout(
         rollout_id=rollout_id,
         input=task_input,
         start_time=1.0,

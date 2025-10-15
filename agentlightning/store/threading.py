@@ -13,9 +13,9 @@ from agentlightning.types import (
     AttemptStatus,
     NamedResources,
     ResourcesUpdate,
+    Rollout,
     RolloutConfig,
     RolloutStatus,
-    RolloutV2,
     Span,
     TaskInput,
 )
@@ -51,7 +51,7 @@ class LightningStoreThreaded(LightningStore):
         mode: Literal["train", "val", "test"] | None = None,
         resources_id: str | None = None,
         metadata: Dict[str, Any] | None = None,
-    ) -> RolloutV2:
+    ) -> Rollout:
         with self._lock:
             return await self.store.enqueue_rollout(input, mode, resources_id, metadata)
 
@@ -68,7 +68,7 @@ class LightningStoreThreaded(LightningStore):
         *,
         status: Optional[Sequence[RolloutStatus]] = None,
         rollout_ids: Optional[Sequence[str]] = None,
-    ) -> List[RolloutV2]:
+    ) -> List[Rollout]:
         with self._lock:
             return await self.store.query_rollouts(status=status, rollout_ids=rollout_ids)
 
@@ -76,7 +76,7 @@ class LightningStoreThreaded(LightningStore):
         with self._lock:
             return await self.store.query_attempts(rollout_id)
 
-    async def get_rollout_by_id(self, rollout_id: str) -> Optional[RolloutV2]:
+    async def get_rollout_by_id(self, rollout_id: str) -> Optional[Rollout]:
         with self._lock:
             return await self.store.get_rollout_by_id(rollout_id)
 
@@ -114,7 +114,7 @@ class LightningStoreThreaded(LightningStore):
         with self._lock:
             return await self.store.add_otel_span(rollout_id, attempt_id, readable_span, sequence_id)
 
-    async def wait_for_rollouts(self, *, rollout_ids: List[str], timeout: Optional[float] = None) -> List[RolloutV2]:
+    async def wait_for_rollouts(self, *, rollout_ids: List[str], timeout: Optional[float] = None) -> List[Rollout]:
         # This method does not change the state of the store, and it's not thread-safe.
         return await self.store.wait_for_rollouts(rollout_ids=rollout_ids, timeout=timeout)
 
@@ -139,7 +139,7 @@ class LightningStoreThreaded(LightningStore):
         status: RolloutStatus | Unset = UNSET,
         config: RolloutConfig | Unset = UNSET,
         metadata: Optional[Dict[str, Any]] | Unset = UNSET,
-    ) -> RolloutV2:
+    ) -> Rollout:
         with self._lock:
             return await self.store.update_rollout(
                 rollout_id=rollout_id,

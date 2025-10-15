@@ -25,9 +25,9 @@ from agentlightning.types import (
     AttemptedRollout,
     Hook,
     NamedResources,
+    Rollout,
     RolloutMode,
-    RolloutRawResultV2,
-    RolloutV2,
+    RolloutRawResult,
     Span,
 )
 
@@ -221,7 +221,7 @@ class LitAgentRunner(BaseRunner[T_task]):
                 logger.exception(f"{self._log_prefix()} Exception during {hook_type} hook {hook}.")
 
     async def _post_process_rollout_result(
-        self, rollout: AttemptedRollout, raw_result: RolloutRawResultV2
+        self, rollout: AttemptedRollout, raw_result: RolloutRawResult
     ) -> List[ReadableSpan] | List[Span]:
         """Standardizes the agent's return value and report what's needed to report to the store.
 
@@ -445,7 +445,7 @@ class LitAgentRunner(BaseRunner[T_task]):
             self._max_rollouts is None or num_tasks_processed < self._max_rollouts
         ):
             # Retrieve the next rollout
-            next_rollout: Optional[RolloutV2] = None
+            next_rollout: Optional[Rollout] = None
             while not (event is not None and event.is_set()):
                 logger.debug(f"{self._log_prefix()} Try to poll for next rollout.")
                 next_rollout = await store.dequeue_rollout()
@@ -484,7 +484,7 @@ class LitAgentRunner(BaseRunner[T_task]):
         resources: Optional[NamedResources] = None,
         mode: Optional[RolloutMode] = None,
         event: Optional[Event] = None,
-    ) -> RolloutV2:
+    ) -> Rollout:
         """Execute a single task directly, bypassing the task queue.
 
         This method creates a new rollout for the given input and executes it

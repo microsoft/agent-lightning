@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Any, List, Optional
 
 from agentlightning.llm_proxy import ModelConfig
-from agentlightning.types import Dataset, RolloutStatus, RolloutV2
+from agentlightning.types import Dataset, Rollout, RolloutStatus
 
 from .base import BaseAlgorithm
 
@@ -61,7 +61,7 @@ class Baseline(FastAlgorithm):
 
         self._finished_rollout_count = 0
 
-    async def _handle_rollout_finish(self, rollout: RolloutV2) -> None:
+    async def _handle_rollout_finish(self, rollout: Rollout) -> None:
         store = self.get_store()
 
         rollout_id = rollout.rollout_id

@@ -36,7 +36,7 @@ from agentlightning import configure_logger
 from agentlightning.adapter import LlmProxyTraceToTriplet, TraceToTripletBase
 from agentlightning.llm_proxy import LLMProxy, ModelConfig
 from agentlightning.store import LightningStore, LightningStoreClient
-from agentlightning.types import Dataset, RolloutV2
+from agentlightning.types import Dataset, Rollout
 
 console = Console()
 
@@ -195,7 +195,7 @@ async def sft_one_iter(
         )
 
         # Create tasks for runners to run, associating them with the proxy address
-        rollouts: List[RolloutV2] = []
+        rollouts: List[Rollout] = []
         for data in train_dataset:
             rollouts.append(
                 await store.enqueue_rollout(
@@ -208,7 +208,7 @@ async def sft_one_iter(
         console.print(f"[bold red][Algo][/bold red] Enqueued {len(rollouts)} rollouts")
 
         # Wait for the tasks to complete
-        completed_rollouts: List[RolloutV2] = []
+        completed_rollouts: List[Rollout] = []
 
         while True:
             completed_rollouts = await store.wait_for_rollouts(

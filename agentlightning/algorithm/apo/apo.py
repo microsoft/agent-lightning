@@ -21,7 +21,7 @@ from openai import AsyncOpenAI
 from agentlightning.adapter.messages import TraceToMessages
 from agentlightning.algorithm.base import BaseAlgorithm
 from agentlightning.reward import find_final_reward
-from agentlightning.types import Dataset, NamedResources, PromptTemplate, RolloutMode, RolloutStatus, RolloutV2
+from agentlightning.types import Dataset, NamedResources, PromptTemplate, Rollout, RolloutMode, RolloutStatus
 
 logger = logging.getLogger(__name__)
 
@@ -393,7 +393,7 @@ class APO(BaseAlgorithm, Generic[T_task]):
 
     async def get_rollout_results(
         self,
-        rollout: List[RolloutV2],
+        rollout: List[Rollout],
         *,
         prefix: Optional[str] = None,
     ) -> List[RolloutResultForAPO]:
@@ -476,7 +476,7 @@ class APO(BaseAlgorithm, Generic[T_task]):
             rollout_ids.append(r.rollout_id)
 
         deadline = time.time() + self.rollout_batch_timeout
-        finished: List[RolloutV2] = []
+        finished: List[Rollout] = []
         while time.time() < deadline:
             finished = await store.wait_for_rollouts(rollout_ids=rollout_ids, timeout=0.0)
             if len(finished) >= len(rollout_ids):
