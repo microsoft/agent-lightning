@@ -42,4 +42,4 @@
 
 ## Legacy Emitter Decorators
 
-::: agentlightning.reward
+::: agentlightning.reward.reward
