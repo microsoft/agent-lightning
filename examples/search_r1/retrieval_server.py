@@ -1,12 +1,21 @@
+# Copyright (c) Microsoft. All rights reserved.
 # Copied and adapted from https://github.com/PeterGriffinJin/Search-R1/blob/main/search_r1/search/retrieval_server.py
+
 import argparse
 import json
-import os
 import warnings
-from typing import Dict, List, Optional
+from typing import (
+    Any,
+    Dict,
+    List,
+    Optional,
+    Sequence,
+    Tuple,
+    Union,
+)
 
 import datasets
-import faiss
+import faiss  # type: ignore[reportMissingTypeStubs]
 import numpy as np
 import torch
 import uvicorn
@@ -14,40 +23,65 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 from tqdm import tqdm
 from transformers import AutoConfig, AutoModel, AutoTokenizer
+from numpy.typing import NDArray
+
+# ---- Small helpers / aliases
+Doc = Dict[str, Any]
+Docs = List[Doc]
+BatchDocs = List[Docs]
+Scores = List[float]
+BatchScores = List[Scores]
 
 
-def load_corpus(corpus_path: str):
-    corpus = datasets.load_dataset("json", data_files=corpus_path, split="train", num_proc=4)
+def load_corpus(corpus_path: str) -> Any:
+    corpus: Any = datasets.load_dataset(
+        "json", data_files=corpus_path, split="train", num_proc=4
+    )
     return corpus
 
 
-def read_jsonl(file_path):
-    data = []
+def read_jsonl(file_path: str) -> List[Dict[str, Any]]:
+    data: List[Dict[str, Any]] = []
     with open(file_path, "r") as f:
         for line in f:
             data.append(json.loads(line))
     return data
 
 
-def load_docs(corpus, doc_idxs):
-    results = [corpus[int(idx)] for idx in doc_idxs]
+def load_docs(corpus: Any, doc_idxs: Sequence[int]) -> Docs:
+    results: Docs = [corpus[int(idx)] for idx in doc_idxs]
     return results
 
 
-def load_model(model_path: str, use_fp16: bool = False):
-    model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
-    model = AutoModel.from_pretrained(model_path, trust_remote_code=True)
+def load_model(
+    model_path: str, use_fp16: bool = False
+) -> Tuple[torch.nn.Module, Any]:
+    # we call AutoConfig to ensure trust_remote_code init side-effects
+    _model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
+    model: torch.nn.Module = AutoModel.from_pretrained(
+        model_path, trust_remote_code=True
+    )
     model.eval()
     model.cuda()
     if use_fp16:
         model = model.half()
-    tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=True, trust_remote_code=True)
+    tokenizer = AutoTokenizer.from_pretrained(
+        model_path, use_fast=True, trust_remote_code=True
+    )
     return model, tokenizer
 
 
-def pooling(pooler_output, last_hidden_state, attention_mask=None, pooling_method="mean"):
+def pooling(
+    pooler_output: torch.Tensor,
+    last_hidden_state: torch.Tensor,
+    attention_mask: Optional[torch.Tensor] = None,
+    pooling_method: str = "mean",
+) -> torch.Tensor:
     if pooling_method == "mean":
-        last_hidden = last_hidden_state.masked_fill(~attention_mask[..., None].bool(), 0.0)
+        assert attention_mask is not None, "attention_mask is required for mean pooling"
+        last_hidden = last_hidden_state.masked_fill(
+            ~attention_mask[..., None].bool(), 0.0
+        )
         return last_hidden.sum(dim=1) / attention_mask.sum(dim=1)[..., None]
     elif pooling_method == "cls":
         return last_hidden_state[:, 0]
@@ -58,7 +92,14 @@ def pooling(pooler_output, last_hidden_state, attention_mask=None, pooling_metho
 
 
 class Encoder:
-    def __init__(self, model_name, model_path, pooling_method, max_length, use_fp16):
+    def __init__(
+        self,
+        model_name: str,
+        model_path: str,
+        pooling_method: str,
+        max_length: int,
+        use_fp16: bool,
+    ) -> None:
         self.model_name = model_name
         self.model_path = model_path
         self.pooling_method = pooling_method
@@ -69,7 +110,9 @@ class Encoder:
         self.model.eval()
 
     @torch.no_grad()
-    def encode(self, query_list: List[str], is_query=True) -> np.ndarray:
+    def encode(
+        self, query_list: Union[List[str], str], is_query: bool = True
+    ) -> NDArray[np.float32]:
         # processing query for different encoders
         if isinstance(query_list, str):
             query_list = [query_list]
@@ -83,197 +126,44 @@ class Encoder:
         if "bge" in self.model_name.lower():
             if is_query:
                 query_list = [
-                    f"Represent this sentence for searching relevant passages: {query}" for query in query_list
+                    f"Represent this sentence for searching relevant passages: {query}"
+                    for query in query_list
                 ]
 
-        inputs = self.tokenizer(
+        inputs: Dict[str, torch.Tensor] = self.tokenizer(
             query_list, max_length=self.max_length, padding=True, truncation=True, return_tensors="pt"
-        )
+        )  # type: ignore[call-arg]
         inputs = {k: v.cuda() for k, v in inputs.items()}
 
         if "T5" in type(self.model).__name__:
             # T5-based retrieval model
-            decoder_input_ids = torch.zeros((inputs["input_ids"].shape[0], 1), dtype=torch.long).to(
-                inputs["input_ids"].device
+            decoder_input_ids = torch.zeros(
+                (inputs["input_ids"].shape[0], 1), dtype=torch.long
+            ).to(inputs["input_ids"].device)
+            output = self.model(
+                **inputs, decoder_input_ids=decoder_input_ids, return_dict=True
             )
-            output = self.model(**inputs, decoder_input_ids=decoder_input_ids, return_dict=True)
             query_emb = output.last_hidden_state[:, 0, :]
         else:
             output = self.model(**inputs, return_dict=True)
             query_emb = pooling(
-                output.pooler_output, output.last_hidden_state, inputs["attention_mask"], self.pooling_method
+                output.pooler_output,
+                output.last_hidden_state,
+                inputs["attention_mask"],
+                self.pooling_method,
             )
             if "dpr" not in self.model_name.lower():
                 query_emb = torch.nn.functional.normalize(query_emb, dim=-1)
 
-        query_emb = query_emb.detach().cpu().numpy()
-        query_emb = query_emb.astype(np.float32, order="C")
+        query_np: NDArray[np.float32] = (
+            query_emb.detach().cpu().numpy().astype(np.float32, order="C")
+        )
 
+        # cleanup
         del inputs, output
         torch.cuda.empty_cache()
 
-        return query_emb
-
-
-class BaseRetriever:
-    def __init__(self, config):
-        self.config = config
-        self.retrieval_method = config.retrieval_method
-        self.topk = config.retrieval_topk
-
-        self.index_path = config.index_path
-        self.corpus_path = config.corpus_path
-
-    def _search(self, query: str, num: int, return_score: bool):
-        raise NotImplementedError
-
-    def _batch_search(self, query_list: List[str], num: int, return_score: bool):
-        raise NotImplementedError
-
-    def search(self, query: str, num: int = None, return_score: bool = False):
-        return self._search(query, num, return_score)
-
-    def batch_search(self, query_list: List[str], num: int = None, return_score: bool = False):
-        return self._batch_search(query_list, num, return_score)
-
-
-class BM25Retriever(BaseRetriever):
-    def __init__(self, config):
-        super().__init__(config)
-        from pyserini.search.lucene import LuceneSearcher
-
-        self.searcher = LuceneSearcher(self.index_path)
-        self.contain_doc = self._check_contain_doc()
-        if not self.contain_doc:
-            self.corpus = load_corpus(self.corpus_path)
-        self.max_process_num = 8
-
-    def _check_contain_doc(self):
-        return self.searcher.doc(0).raw() is not None
-
-    def _search(self, query: str, num: int = None, return_score: bool = False):
-        if num is None:
-            num = self.topk
-        hits = self.searcher.search(query, num)
-        if len(hits) < 1:
-            if return_score:
-                return [], []
-            else:
-                return []
-        scores = [hit.score for hit in hits]
-        if len(hits) < num:
-            warnings.warn("Not enough documents retrieved!")
-        else:
-            hits = hits[:num]
-
-        if self.contain_doc:
-            all_contents = [json.loads(self.searcher.doc(hit.docid).raw())["contents"] for hit in hits]
-            results = [
-                {
-                    "title": content.split("\n")[0].strip('"'),
-                    "text": "\n".join(content.split("\n")[1:]),
-                    "contents": content,
-                }
-                for content in all_contents
-            ]
-        else:
-            results = load_docs(self.corpus, [hit.docid for hit in hits])
-
-        if return_score:
-            return results, scores
-        else:
-            return results
-
-    def _batch_search(self, query_list: List[str], num: int = None, return_score: bool = False):
-        results = []
-        scores = []
-        for query in query_list:
-            item_result, item_score = self._search(query, num, True)
-            results.append(item_result)
-            scores.append(item_score)
-        if return_score:
-            return results, scores
-        else:
-            return results
-
-
-class DenseRetriever(BaseRetriever):
-    def __init__(self, config):
-        super().__init__(config)
-        self.index = faiss.read_index(self.index_path)
-        if config.faiss_gpu:
-            co = faiss.GpuMultipleClonerOptions()
-            co.useFloat16 = True
-            co.shard = True
-            self.index = faiss.index_cpu_to_all_gpus(self.index, co=co)
-
-        self.corpus = load_corpus(self.corpus_path)
-        self.encoder = Encoder(
-            model_name=self.retrieval_method,
-            model_path=config.retrieval_model_path,
-            pooling_method=config.retrieval_pooling_method,
-            max_length=config.retrieval_query_max_length,
-            use_fp16=config.retrieval_use_fp16,
-        )
-        self.topk = config.retrieval_topk
-        self.batch_size = config.retrieval_batch_size
-
-    def _search(self, query: str, num: int = None, return_score: bool = False):
-        if num is None:
-            num = self.topk
-        query_emb = self.encoder.encode(query)
-        scores, idxs = self.index.search(query_emb, k=num)
-        idxs = idxs[0]
-        scores = scores[0]
-        results = load_docs(self.corpus, idxs)
-        if return_score:
-            return results, scores.tolist()
-        else:
-            return results
-
-    def _batch_search(self, query_list: List[str], num: int = None, return_score: bool = False):
-        if isinstance(query_list, str):
-            query_list = [query_list]
-        if num is None:
-            num = self.topk
-
-        results = []
-        scores = []
-        for start_idx in tqdm(range(0, len(query_list), self.batch_size), desc="Retrieval process: "):
-            query_batch = query_list[start_idx : start_idx + self.batch_size]
-            batch_emb = self.encoder.encode(query_batch)
-            batch_scores, batch_idxs = self.index.search(batch_emb, k=num)
-            batch_scores = batch_scores.tolist()
-            batch_idxs = batch_idxs.tolist()
-
-            # load_docs is not vectorized, but is a python list approach
-            flat_idxs = sum(batch_idxs, [])
-            batch_results = load_docs(self.corpus, flat_idxs)
-            # chunk them back
-            batch_results = [batch_results[i * num : (i + 1) * num] for i in range(len(batch_idxs))]
-
-            results.extend(batch_results)
-            scores.extend(batch_scores)
-
-            del batch_emb, batch_scores, batch_idxs, query_batch, flat_idxs, batch_results
-            torch.cuda.empty_cache()
-
-        if return_score:
-            return results, scores
-        else:
-            return results
-
-
-def get_retriever(config):
-    if config.retrieval_method == "bm25":
-        return BM25Retriever(config)
-    else:
-        return DenseRetriever(config)
-
-
-#####################################
-# FastAPI server below
-#####################################
+        return query_np
 
 
 class Config:
@@ -296,7 +186,7 @@ class Config:
         retrieval_query_max_length: int = 256,
         retrieval_use_fp16: bool = False,
         retrieval_batch_size: int = 128,
-    ):
+    ) -> None:
         self.retrieval_method = retrieval_method
         self.retrieval_topk = retrieval_topk
         self.index_path = index_path
@@ -311,17 +201,202 @@ class Config:
         self.retrieval_batch_size = retrieval_batch_size
 
 
+class BaseRetriever:
+    def __init__(self, config: Config) -> None:
+        self.config = config
+        self.retrieval_method: str = config.retrieval_method
+        self.topk: int = config.retrieval_topk
+
+        self.index_path: str = config.index_path
+        self.corpus_path: str = config.corpus_path
+
+    def _search(self, query: str, num: Optional[int], return_score: bool) -> Union[Docs, Tuple[Docs, Scores]]:
+        raise NotImplementedError
+
+    def _batch_search(
+        self, query_list: List[str], num: Optional[int], return_score: bool
+    ) -> Union[BatchDocs, Tuple[BatchDocs, BatchScores]]:
+        raise NotImplementedError
+
+    def search(self, query: str, num: Optional[int] = None, return_score: bool = False) -> Union[Docs, Tuple[Docs, Scores]]:
+        return self._search(query, num, return_score)
+
+    def batch_search(
+        self, query_list: List[str], num: Optional[int] = None, return_score: bool = False
+    ) -> Union[BatchDocs, Tuple[BatchDocs, BatchScores]]:
+        return self._batch_search(query_list, num, return_score)
+
+
+class BM25Retriever(BaseRetriever):
+    def __init__(self, config: Config) -> None:
+        super().__init__(config)
+        # import locally to avoid hard dependency at import/type time
+        try:
+            from pyserini.search.lucene import LuceneSearcher  # type: ignore
+        except Exception:  # pragma: no cover - typing convenience
+            LuceneSearcher = Any  # type: ignore[assignment]
+
+        self.searcher: Any = LuceneSearcher(self.index_path)
+        self.contain_doc: bool = self._check_contain_doc()
+        if not self.contain_doc:
+            self.corpus: Any = load_corpus(self.corpus_path)
+        self.max_process_num: int = 8
+
+    def _check_contain_doc(self) -> bool:
+        doc = self.searcher.doc(0)
+        try:
+            _ = doc.raw()
+            return True
+        except Exception:
+            return False
+
+    def _search(self, query: str, num: Optional[int] = None, return_score: bool = False) -> Union[Docs, Tuple[Docs, Scores]]:
+        k = self.topk if num is None else num
+        hits: List[Any] = self.searcher.search(query, k)
+        if len(hits) < 1:
+            if return_score:
+                return [], []
+            else:
+                return []
+        scores: Scores = [float(hit.score) for hit in hits]
+        if len(hits) < k:
+            warnings.warn("Not enough documents retrieved!")
+        else:
+            hits = hits[:k]
+
+        if self.contain_doc:
+            all_contents: List[str] = [
+                json.loads(self.searcher.doc(hit.docid).raw())["contents"] for hit in hits
+            ]
+            results: Docs = [
+                {
+                    "title": content.split("\n")[0].strip('"'),
+                    "text": "\n".join(content.split("\n")[1:]),
+                    "contents": content,
+                }
+                for content in all_contents
+            ]
+        else:
+            results = load_docs(self.corpus, [int(hit.docid) for hit in hits])
+
+        if return_score:
+            return results, scores
+        else:
+            return results
+
+    def _batch_search(
+        self, query_list: List[str], num: Optional[int] = None, return_score: bool = False
+    ) -> Union[BatchDocs, Tuple[BatchDocs, BatchScores]]:
+        results: BatchDocs = []
+        scores: BatchScores = []
+        for query in query_list:
+            item_result, item_score = self._search(query, num, True)  # type: ignore[misc]
+            results.append(item_result)  # type: ignore[arg-type]
+            scores.append(item_score)    # type: ignore[arg-type]
+        if return_score:
+            return results, scores
+        else:
+            return results
+
+
+class DenseRetriever(BaseRetriever):
+    def __init__(self, config: Config) -> None:
+        super().__init__(config)
+        index: Any = faiss.read_index(self.index_path)  # type: ignore[no-untyped-call]
+        if config.faiss_gpu:
+            # Some faiss GPU helpers may be missing type stubs; treat as Any.
+            co: Any = faiss.GpuMultipleClonerOptions()  # type: ignore[attr-defined]
+            co.useFloat16 = True
+            co.shard = True
+            index = faiss.index_cpu_to_all_gpus(index, co=co)  # type: ignore[no-untyped-call]
+
+        self.index: Any = index
+        self.corpus: Any = load_corpus(self.corpus_path)
+        self.encoder = Encoder(
+            model_name=self.retrieval_method,
+            model_path=config.retrieval_model_path,
+            pooling_method=config.retrieval_pooling_method,
+            max_length=config.retrieval_query_max_length,
+            use_fp16=config.retrieval_use_fp16,
+        )
+        self.topk = config.retrieval_topk
+        self.batch_size = config.retrieval_batch_size
+
+    def _search(self, query: str, num: Optional[int] = None, return_score: bool = False) -> Union[Docs, Tuple[Docs, Scores]]:
+        k = self.topk if num is None else num
+        query_emb = self.encoder.encode(query)
+        scores_np, idxs_np = self.index.search(query_emb, k=k)  # type: ignore[no-untyped-call]
+        idxs: Sequence[int] = list(map(int, idxs_np[0]))
+        scores: Scores = [float(s) for s in scores_np[0]]
+        results = load_docs(self.corpus, idxs)
+        if return_score:
+            return results, scores
+        else:
+            return results
+
+    def _batch_search(
+        self, query_list: List[str], num: Optional[int] = None, return_score: bool = False
+    ) -> Union[BatchDocs, Tuple[BatchDocs, BatchScores]]:
+        if isinstance(query_list, str):
+            query_list = [query_list]
+        k = self.topk if num is None else num
+
+        results: BatchDocs = []
+        scores: BatchScores = []
+        for start_idx in tqdm(range(0, len(query_list), self.batch_size), desc="Retrieval process: "):
+            query_batch = query_list[start_idx : start_idx + self.batch_size]
+            batch_emb = self.encoder.encode(query_batch)
+            batch_scores_np, batch_idxs_np = self.index.search(batch_emb, k=k)  # type: ignore[no-untyped-call]
+            batch_scores = batch_scores_np.tolist()
+            batch_idxs = batch_idxs_np.tolist()
+
+            # load_docs is not vectorized, but is a python list approach
+            flat_idxs: List[int] = sum(batch_idxs, [])
+            batch_results_flat = load_docs(self.corpus, flat_idxs)
+            # chunk them back
+            chunked: List[Docs] = [
+                batch_results_flat[i * k : (i + 1) * k] for i in range(len(batch_idxs))
+            ]
+
+            results.extend(chunked)
+            scores.extend(batch_scores)
+
+            del batch_emb, batch_scores, batch_idxs, query_batch, flat_idxs, batch_results_flat
+            torch.cuda.empty_cache()
+
+        if return_score:
+            return results, scores
+        else:
+            return results
+
+
+def get_retriever(config: Config) -> BaseRetriever:
+    if config.retrieval_method == "bm25":
+        return BM25Retriever(config)
+    else:
+        return DenseRetriever(config)
+
+
+#####################################
+# FastAPI server below
+#####################################
+
+
 class QueryRequest(BaseModel):
     queries: List[str]
     topk: Optional[int] = None
     return_scores: bool = False
 
 
-app = FastAPI()
+app: FastAPI = FastAPI()
+
+# Globals created under __main__; keep typed placeholders for pyright
+config: Config  # will be set in __main__
+retriever: BaseRetriever  # will be set in __main__
 
 
 @app.post("/retrieve")
-def retrieve_endpoint(request: QueryRequest):
+def retrieve_endpoint(request: QueryRequest) -> Dict[str, Any]:
     """
     Endpoint that accepts queries and performs retrieval.
     Input format:
@@ -335,18 +410,24 @@ def retrieve_endpoint(request: QueryRequest):
         request.topk = config.retrieval_topk  # fallback to default
 
     # Perform batch retrieval
-    results, scores = retriever.batch_search(
-        query_list=request.queries, num=request.topk, return_score=request.return_scores
+    search_out = retriever.batch_search(
+        query_list=request.queries, num=int(request.topk), return_score=request.return_scores
     )
 
+    # Unpack depending on return_scores
+    if request.return_scores:
+        results, scores = search_out  # type: ignore[misc]
+    else:
+        results = search_out  # type: ignore[assignment]
+        scores = None
+
     # Format response
-    resp = []
-    for i, single_result in enumerate(results):
-        if request.return_scores:
-            # If scores are returned, combine them with results
-            combined = []
+    resp: List[Any] = []
+    for i, single_result in enumerate(results):  # type: ignore[arg-type]
+        if request.return_scores and scores is not None:
+            combined: List[Dict[str, Any]] = []
             for doc, score in zip(single_result, scores[i]):
-                combined.append({"document": doc, "score": score})
+                combined.append({"document": doc, "score": float(score)})
             resp.append(combined)
         else:
             resp.append(single_result)
@@ -380,8 +461,8 @@ if __name__ == "__main__":
         retrieval_method=args.retriever_name,  # or "dense"
         index_path=args.index_path,
         corpus_path=args.corpus_path,
-        retrieval_topk=args.topk,
-        faiss_gpu=args.faiss_gpu,
+        retrieval_topk=int(args.topk),
+        faiss_gpu=bool(args.faiss_gpu),
         retrieval_model_path=args.retriever_model,
         retrieval_pooling_method="mean",
         retrieval_query_max_length=256,

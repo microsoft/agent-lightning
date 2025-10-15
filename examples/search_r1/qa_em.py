@@ -1,28 +1,29 @@
-# Copied and adapted from https://github.com/PeterGriffinJin/Search-R1/blob/main/verl/utils/reward_score/qa_em.py
-
 import random
 import re
 import string
+from typing import Mapping, Optional, Sequence, Union
 
 
-def normalize_answer(s):
-    def remove_articles(text):
+def normalize_answer(s: str) -> str:
+    """Lowercase, remove punctuation/articles, and normalize whitespace."""
+
+    def remove_articles(text: str) -> str:
         return re.sub(r"\b(a|an|the)\b", " ", text)
 
-    def white_space_fix(text):
+    def white_space_fix(text: str) -> str:
         return " ".join(text.split())
 
-    def remove_punc(text):
+    def remove_punc(text: str) -> str:
         exclude = set(string.punctuation)
         return "".join(ch for ch in text if ch not in exclude)
 
-    def lower(text):
+    def lower(text: str) -> str:
         return text.lower()
 
     return white_space_fix(remove_articles(remove_punc(lower(s))))
 
 
-def em_check(prediction, golden_answers):
+def em_check(prediction: str, golden_answers: Union[str, Sequence[str]]) -> int:
     if isinstance(golden_answers, str):
         golden_answers = [golden_answers]
     normalized_prediction = normalize_answer(prediction)
@@ -35,7 +36,7 @@ def em_check(prediction, golden_answers):
     return score
 
 
-def subem_check(prediction, golden_answers):
+def subem_check(prediction: str, golden_answers: Union[str, Sequence[str]]) -> int:
     if isinstance(golden_answers, str):
         golden_answers = [golden_answers]
     normalized_prediction = normalize_answer(prediction)
@@ -48,20 +49,14 @@ def subem_check(prediction, golden_answers):
     return score
 
 
-def extract_solution(solution_str):
-    """Extract the equation from the solution string."""
-    # Remove everything before the first "Assistant:"
-    # if "Assistant:" in solution_str:
-    #     solution_str = solution_str.split("Assistant:", 1)[1]
-    # elif "<|im_start|>assistant" in solution_str:
-    #     solution_str = solution_str.split("<|im_start|>assistant", 1)[1]
-    # else:
-    #     return None
-    # solution_str = solution_str.split('\n')[-1]
+def extract_solution(solution_str: str) -> Optional[str]:
+    """Extract the last <answer>...</answer> span from a solution string.
 
+    Returns None if fewer than two such spans are present, to match original behavior.
+    """
     answer_pattern = r"<answer>(.*?)</answer>"
-    match = re.finditer(answer_pattern, solution_str, re.DOTALL)
-    matches = list(match)
+    match_iter = re.finditer(answer_pattern, solution_str, re.DOTALL)
+    matches = list(match_iter)
 
     # If there are 0 or exactly 1 matches, return None
     if len(matches) <= 1:
@@ -71,16 +66,14 @@ def extract_solution(solution_str):
     return matches[-1].group(1).strip()
 
 
-def compute_score_em(solution_str, ground_truth, method="strict", format_score=0.0, score=1.0):
-    """The scoring function for exact match (EM).
-
-    Args:
-        solution_str: the solution text
-        ground_truth: the ground truth
-        method: the method to extract the solution, choices are 'strict' and 'flexible'
-        format_score: the score for the format
-        score: the score for the correct answer
-    """
+def compute_score_em(
+    solution_str: str,
+    ground_truth: Union[str, Sequence[str]],
+    method: str = "strict",
+    format_score: float = 0.0,
+    score: float = 1.0,
+) -> float:
+    """Scoring function for exact match (EM)."""
     answer = extract_solution(solution_str=solution_str)
     do_print = random.randint(1, 64) == 1
 
@@ -91,7 +84,7 @@ def compute_score_em(solution_str, ground_truth, method="strict", format_score=0
         print(f"Solution string: {solution_str}")
 
     if answer is None:
-        return 0
+        return 0.0
     else:
         if em_check(answer, ground_truth):
             return score
@@ -99,16 +92,14 @@ def compute_score_em(solution_str, ground_truth, method="strict", format_score=0
             return format_score
 
 
-def compute_score_subem(solution_str, ground_truth, method="strict", format_score=0.0, score=1.0):
-    """The scoring function for substring exact match (EM).
-
-    Args:
-        solution_str: the solution text
-        ground_truth: the ground truth
-        method: the method to extract the solution, choices are 'strict' and 'flexible'
-        format_score: the score for the format
-        score: the score for the correct answer
-    """
+def compute_score_subem(
+    solution_str: str,
+    ground_truth: Mapping[str, Union[str, Sequence[str]]],
+    method: str = "strict",
+    format_score: float = 0.0,
+    score: float = 1.0,
+) -> float:
+    """Scoring function for substring exact match (EM)."""
     answer = extract_solution(solution_str=solution_str)
     do_print = random.randint(1, 64) == 1
 
@@ -119,7 +110,7 @@ def compute_score_subem(solution_str, ground_truth, method="strict", format_scor
         print(f"Solution string: {solution_str}")
 
     if answer is None:
-        return 0
+        return 0.0
     else:
         if subem_check(answer, ground_truth["target"]):
             return score

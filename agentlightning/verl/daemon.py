@@ -563,10 +563,10 @@ class AgentModeDaemon:
                 print(f"Warning: No triplets found for test rollout {rollout.rollout_id}.")
                 sample_stat_list.append({"reward": final_reward})
                 continue
+            response_length_list = [len(triplet.response.get("token_ids", [])) for triplet in rollout.triplets]
             if "data_source" in self._task_id_to_original_sample[rollout_id]:
                 # When a test sample includes a 'data_source' field, record per-source statistics for test results.
                 data_source = self._task_id_to_original_sample[rollout_id]["data_source"]
-                response_length_list = [len(triplet.response.get("token_ids", [])) for triplet in rollout.triplets]
                 sample_stat_list_by_source[data_source].append(
                     {
                         "sum_response_length": np.sum(response_length_list),
@@ -583,7 +583,7 @@ class AgentModeDaemon:
                     "reward": final_reward,
                 }
             )
-        metric_dict = {}
+        metric_dict: Dict[str, Any] = {}
 
         stats_w_trace = [stat for stat in sample_stat_list if "sum_response_length" in stat]
         stats_w_trace_by_source = {
