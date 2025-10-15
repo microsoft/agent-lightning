@@ -18,7 +18,7 @@ from math_agent import GsmProblem, math_agent
 from rich.console import Console
 
 from agentlightning import configure_logger
-from agentlightning.runner import AgentRunnerV2
+from agentlightning.runner import LitAgentRunner
 from agentlightning.store import LightningStore, LightningStoreClient
 from agentlightning.tracer import OtelTracer
 
@@ -36,7 +36,7 @@ def run_rollout(*, store: LightningStore, worker_id: int) -> None:
     # a simple OtelTracer to collect the rewards is enough.
     tracer = OtelTracer()
 
-    runner = AgentRunnerV2[GsmProblem](tracer=tracer)
+    runner = LitAgentRunner[GsmProblem](tracer=tracer)
 
     console.print(f"[bold green]Runners: [/bold green] Rollout runner {worker_id} started.")
 

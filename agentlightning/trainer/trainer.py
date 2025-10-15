@@ -17,7 +17,7 @@ from agentlightning.execution.client_server import ClientServerExecutionStrategy
 from agentlightning.execution.events import Event
 from agentlightning.litagent import LitAgent
 from agentlightning.llm_proxy import LLMProxy
-from agentlightning.runner import AgentRunner, AgentRunnerV2, BaseRunner
+from agentlightning.runner import BaseRunner, LegacyAgentRunner, LitAgentRunner
 from agentlightning.store.base import LightningStore
 from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.tracer.agentops import AgentOpsTracer
@@ -282,7 +282,7 @@ class Trainer(ParallelWorkerBase):
             optional_defaults["max_rollouts"] = lambda: self.max_rollouts
 
         def default_runner_factory() -> BaseRunner[Any]:
-            return instantiate_component(AgentRunnerV2, optional_defaults=optional_defaults)
+            return instantiate_component(LitAgentRunner, optional_defaults=optional_defaults)
 
         return build_component(
             runner,
@@ -558,7 +558,7 @@ class Trainer(ParallelWorkerBase):
 
         try:
             client = self.client()
-            loop = AgentRunner(
+            loop = LegacyAgentRunner(
                 agent=agent,
                 client=client,
                 tracer=self.tracer,

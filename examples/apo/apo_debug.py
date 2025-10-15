@@ -9,7 +9,7 @@ from typing import cast
 from apo import apo_rollout
 
 from agentlightning import Trainer, configure_logger
-from agentlightning.runner import AgentRunnerV2
+from agentlightning.runner import LitAgentRunner
 from agentlightning.store import InMemoryLightningStore
 from agentlightning.tracer import OtelTracer
 from agentlightning.types import Dataset, PromptTemplate
@@ -26,7 +26,7 @@ async def debug_with_runner():
     # Tracer is used to record the events (spans) in background during the agent's execution.
     # If you don't need any tracing functionality yet, you can use a dummy OtelTracer.
     tracer = OtelTracer()
-    runner = AgentRunnerV2[str](tracer)
+    runner = LitAgentRunner[str](tracer)
 
     # You also need a store here to store the data collected.
     store = InMemoryLightningStore()

@@ -19,7 +19,7 @@ from rich.console import Console
 from agentlightning.adapter import TraceToMessages
 from agentlightning.litagent import rollout
 from agentlightning.reward import find_final_reward
-from agentlightning.runner.agent import AgentRunnerV2
+from agentlightning.runner import LitAgentRunner
 from agentlightning.store import InMemoryLightningStore
 from agentlightning.tracer.agentops import AgentOpsTracer
 from agentlightning.types import Dataset, PromptTemplate
@@ -337,7 +337,7 @@ def load_room_tasks() -> Dataset[RoomSelectionTask]:
 
 async def debug_room_selector(limit: int = 1):
     # Prepare all the components to run the agent
-    runner = AgentRunnerV2[RoomSelectionTask](AgentOpsTracer())
+    runner = LitAgentRunner[RoomSelectionTask](AgentOpsTracer())
     store = InMemoryLightningStore()
     prompt_template = prompt_template_baseline()
     tasks = load_room_tasks()

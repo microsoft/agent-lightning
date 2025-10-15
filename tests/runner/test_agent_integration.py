@@ -13,7 +13,7 @@ import pytest
 from agentlightning.litagent import LitAgent
 from agentlightning.llm_proxy import LLMProxy
 from agentlightning.reward import emit_reward
-from agentlightning.runner import AgentRunnerV2
+from agentlightning.runner import LitAgentRunner
 from agentlightning.store.client_server import LightningStoreClient, LightningStoreServer
 from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.tracer.agentops import AgentOpsTracer
@@ -28,18 +28,18 @@ async def init_runner(
     agent: LitAgent[Any],
     *,
     resources: Optional[Dict[str, LLM]] = None,
-) -> tuple[AgentRunnerV2[Any], InMemoryLightningStore]:
+) -> tuple[LitAgentRunner[Any], InMemoryLightningStore]:
     store = InMemoryLightningStore()
     llm_resource: NamedResources = resources or {"llm": LLM(endpoint="http://localhost", model="dummy")}  # type: ignore[assignment]
     await store.update_resources("default", llm_resource)
 
-    runner = AgentRunnerV2[Any](tracer=AgentOpsTracer(), poll_interval=0.01)
+    runner = LitAgentRunner[Any](tracer=AgentOpsTracer(), poll_interval=0.01)
     runner.init(agent)
     runner.init_worker(worker_id=0, store=store)
     return runner, store
 
 
-def teardown_runner(runner: AgentRunnerV2[Any]) -> None:
+def teardown_runner(runner: LitAgentRunner[Any]) -> None:
     runner.teardown_worker(worker_id=0)
     runner.teardown()
 

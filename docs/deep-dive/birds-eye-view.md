@@ -257,7 +257,7 @@ flowchart TD
 
     %% === Right side: Runner side ===
     subgraph R["Runner Side"]
-        Runner["Runner<br>(AgentRunnerV2* default)"]
+        Runner["Runner<br>(LitAgentRunner* default)"]
         Tracer["Tracer<br>(AgentOpsTracer*)"]
         Hooks["Hooks (empty default)"]
         Agent["Agent<br>(LitAgent*)"]

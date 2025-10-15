@@ -15,7 +15,7 @@ from opentelemetry.trace.status import Status, StatusCode
 from agentlightning.execution.events import Event, ThreadingEvent
 from agentlightning.litagent import LitAgent
 from agentlightning.reward import emit_reward, find_final_reward
-from agentlightning.runner import AgentRunnerV2
+from agentlightning.runner import LitAgentRunner
 from agentlightning.runner.base import BaseRunner
 from agentlightning.store.base import LightningStore
 from agentlightning.store.memory import InMemoryLightningStore
@@ -117,18 +117,18 @@ async def setup_runner(
     max_rollouts: Optional[int] = None,
     poll_interval: float = 0.01,
     hooks: Sequence[Hook] = (),
-) -> tuple[AgentRunnerV2[Any], InMemoryLightningStore, DummyTracer]:
+) -> tuple[LitAgentRunner[Any], InMemoryLightningStore, DummyTracer]:
     tracer = tracer or DummyTracer()
     store = InMemoryLightningStore()
     await store.update_resources("default", {"llm": LLM(endpoint="http://localhost", model="dummy")})
 
-    runner = AgentRunnerV2[Any](tracer=tracer, max_rollouts=max_rollouts, poll_interval=poll_interval)
+    runner = LitAgentRunner[Any](tracer=tracer, max_rollouts=max_rollouts, poll_interval=poll_interval)
     runner.init(agent=agent, hooks=hooks)
     runner.init_worker(worker_id=0, store=store)
     return runner, store, tracer
 
 
-def teardown_runner(runner: AgentRunnerV2[Any]) -> None:
+def teardown_runner(runner: LitAgentRunner[Any]) -> None:
     runner.teardown_worker(worker_id=0)
     runner.teardown()
 
@@ -180,7 +180,7 @@ async def test_step_records_spans_for_none_result() -> None:
     class AsyncSpanAgent(LitAgent[Dict[str, Any]]):
         async def validation_rollout_async(self, task: Dict[str, Any], resources: Dict[str, Any], rollout: Any) -> None:
             span = tracer.record_span("work", {"task_id": task["task_id"]})
-            store = cast(AgentRunnerV2[Dict[str, Any]], self.runner).get_store()
+            store = cast(LitAgentRunner[Dict[str, Any]], self.runner).get_store()
             await store.add_otel_span(rollout.rollout_id, rollout.attempt.attempt_id, span)  # type: ignore[attr-defined]
             return None
 

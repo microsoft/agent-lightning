@@ -20,11 +20,11 @@ from .base import BaseRunner
 logger = logging.getLogger(__name__)
 
 __all__ = [
-    "AgentRunner",
+    "LegacyAgentRunner",
 ]
 
 
-class AgentRunner(BaseRunner[Any]):
+class LegacyAgentRunner(BaseRunner[Any]):
     """Manages the agent's execution loop and integrates with AgentOps.
 
     This class orchestrates the interaction between the agent (`LitAgent`) and

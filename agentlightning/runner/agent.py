@@ -41,7 +41,7 @@ T_task = TypeVar("T_task")
 logger = logging.getLogger(__name__)
 
 
-class AgentRunnerV2(BaseRunner[T_task]):
+class LitAgentRunner(BaseRunner[T_task]):
     """Runner implementation for executing agent tasks with distributed support.
 
     This runner manages the complete lifecycle of agent rollout execution,

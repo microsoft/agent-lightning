@@ -1,11 +1,11 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-from .agent import AgentRunnerV2
+from .agent import LitAgentRunner
 from .base import BaseRunner
-from .legacy import AgentRunner
+from .legacy import LegacyAgentRunner
 
 __all__ = [
     "BaseRunner",
-    "AgentRunner",
-    "AgentRunnerV2",
+    "LegacyAgentRunner",
+    "LitAgentRunner",
 ]
