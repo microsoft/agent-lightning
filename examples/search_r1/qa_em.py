@@ -1,8 +1,8 @@
 # Copied and adapted from https://github.com/PeterGriffinJin/Search-R1/blob/main/verl/utils/reward_score/qa_em.py
 
+import random
 import re
 import string
-import random
 
 
 def normalize_answer(s):

@@ -1,20 +1,19 @@
 # Copied and adapted from https://github.com/PeterGriffinJin/Search-R1/blob/main/search_r1/search/retrieval_server.py
+import argparse
 import json
 import os
 import warnings
-from typing import List, Dict, Optional
-import argparse
+from typing import Dict, List, Optional
 
-import faiss
-import torch
-import numpy as np
-from transformers import AutoConfig, AutoTokenizer, AutoModel
-from tqdm import tqdm
 import datasets
-
+import faiss
+import numpy as np
+import torch
 import uvicorn
 from fastapi import FastAPI
 from pydantic import BaseModel
+from tqdm import tqdm
+from transformers import AutoConfig, AutoModel, AutoTokenizer
 
 
 def load_corpus(corpus_path: str):
