@@ -4,6 +4,7 @@ import re
 import string
 import random
 
+
 def normalize_answer(s):
     def remove_articles(text):
         return re.sub(r"\b(a|an|the)\b", " ", text)
@@ -58,19 +59,19 @@ def extract_solution(solution_str):
     #     return None
     # solution_str = solution_str.split('\n')[-1]
 
-    answer_pattern = r'<answer>(.*?)</answer>'
+    answer_pattern = r"<answer>(.*?)</answer>"
     match = re.finditer(answer_pattern, solution_str, re.DOTALL)
     matches = list(match)
-    
+
     # If there are 0 or exactly 1 matches, return None
     if len(matches) <= 1:
         return None
-    
+
     # If there are 2 or more matches, return the last one
     return matches[-1].group(1).strip()
 
 
-def compute_score_em(solution_str, ground_truth, method='strict', format_score=0., score=1.):
+def compute_score_em(solution_str, ground_truth, method="strict", format_score=0.0, score=1.0):
     """The scoring function for exact match (EM).
 
     Args:
@@ -82,13 +83,13 @@ def compute_score_em(solution_str, ground_truth, method='strict', format_score=0
     """
     answer = extract_solution(solution_str=solution_str)
     do_print = random.randint(1, 64) == 1
-    
+
     if do_print:
         print(f"--------------------------------")
         print(f"Golden answers: {ground_truth}")
         print(f"Extracted answer: {answer}")
         print(f"Solution string: {solution_str}")
-    
+
     if answer is None:
         return 0
     else:
@@ -98,7 +99,7 @@ def compute_score_em(solution_str, ground_truth, method='strict', format_score=0
             return format_score
 
 
-def compute_score_subem(solution_str, ground_truth, method='strict', format_score=0., score=1.):
+def compute_score_subem(solution_str, ground_truth, method="strict", format_score=0.0, score=1.0):
     """The scoring function for substring exact match (EM).
 
     Args:
@@ -110,17 +111,17 @@ def compute_score_subem(solution_str, ground_truth, method='strict', format_scor
     """
     answer = extract_solution(solution_str=solution_str)
     do_print = random.randint(1, 64) == 1
-    
+
     if do_print:
         print(f"--------------------------------")
         print(f"Golden answers: {ground_truth['target']}")
         print(f"Extracted answer: {answer}")
         print(f"Solution string: {solution_str}")
-    
+
     if answer is None:
         return 0
     else:
-        if subem_check(answer, ground_truth['target']):
+        if subem_check(answer, ground_truth["target"]):
             return score
         else:
             return format_score

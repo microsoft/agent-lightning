@@ -13,12 +13,12 @@ echo "Starting training script..."
 python -m agentlightning.verl \
     algorithm.adv_estimator=grpo \
     data.train_files=${DATA_DIR}/train.parquet \
-    data.val_files=${DATA_DIR}//test.parquet \
+    data.val_files=${DATA_DIR}/test.parquet \
     actor_rollout_ref.rollout.tensor_model_parallel_size=${ROLLOUT_TP_SIZE} \
     trainer.n_gpus_per_node=${N_GPUS} \
     data.train_batch_size=512 \
     actor_rollout_ref.rollout.n=5 \
-    actor_rollout_ref.actor.ppo_mini_batch_size=64 \
+    actor_rollout_ref.actor.ppo_mini_batch_size=128 \
     actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=4 \
     actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu=4 \
     actor_rollout_ref.rollout.multi_turn.format=hermes \
@@ -53,4 +53,4 @@ python -m agentlightning.verl \
     trainer.save_freq=10 \
     trainer.test_freq=20 \
     trainer.total_epochs=15 \
-    trainer.total_training_steps=300 
+    trainer.total_training_steps=300
