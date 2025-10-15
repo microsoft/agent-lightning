@@ -177,10 +177,11 @@ class AttemptedRollout(Rollout):
 
 
 TaskInput = Any
+"""Task input type. Can be any type."""
 
 
 class Task(BaseModel):
-    """A task (rollout request) to be processed by the client agent."""
+    """A task (rollout request) to be processed by the client agent. Deprecated."""
 
     rollout_id: str
     input: TaskInput

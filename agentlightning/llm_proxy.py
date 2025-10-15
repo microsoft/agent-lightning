@@ -30,6 +30,10 @@ from .store.base import LightningStore
 
 logger = logging.getLogger(__name__)
 
+__all__ = [
+    "LLMProxy",
+]
+
 
 class ModelConfig(TypedDict):
     """LiteLLM model registration entry.

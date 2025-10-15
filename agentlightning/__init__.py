@@ -9,6 +9,7 @@ from .config import *
 from .emitter import *
 from .execution import *
 from .litagent import *
+from .llm_proxy import *
 from .logging import *
 from .runner import *
 from .server import AgentLightningServer  # deprecated  # type: ignore
