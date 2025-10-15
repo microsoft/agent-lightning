@@ -1,4 +1,5 @@
 # Copyright (c) Microsoft. All rights reserved.
+
 # Copied and adapted from https://github.com/PeterGriffinJin/Search-R1/blob/main/search_r1/search/retrieval_server.py
 
 import argparse
