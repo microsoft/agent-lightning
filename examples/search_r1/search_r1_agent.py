@@ -2,7 +2,7 @@
 
 import os
 import re
-from typing import Any, Dict, List, Optional, Tuple, cast, TypedDict
+from typing import Any, Dict, List, Optional, Tuple, TypedDict, cast
 
 import requests
 from openai import OpenAI
@@ -13,9 +13,7 @@ from agentlightning import LLM, LitAgent, NamedResources, Trainer, configure_log
 configure_logger()
 
 # Copied and adapted from https://github.com/PeterGriffinJin/Search-R1/blob/main/scripts/data_process/nq_search.py
-INSTRUCTION_FORMAT = (
-    """Answer the given question. You must conduct reasoning inside <think> and </think> first every time you get new information. After reasoning, if you find you lack some knowledge, you can call a search engine by <search> query </search> and it will return the top searched results between <information> and </information>. You can search as many times as your want. If you find no further external knowledge needed, you can directly provide the answer inside <answer> and </answer>, without detailed illustrations. For example, <answer> Beijing </answer>. Question: """
-)
+INSTRUCTION_FORMAT = """Answer the given question. You must conduct reasoning inside <think> and </think> first every time you get new information. After reasoning, if you find you lack some knowledge, you can call a search engine by <search> query </search> and it will return the top searched results between <information> and </information>. You can search as many times as your want. If you find no further external knowledge needed, you can directly provide the answer inside <answer> and </answer>, without detailed illustrations. For example, <answer> Beijing </answer>. Question: """
 
 
 class Document(TypedDict):
@@ -29,9 +27,7 @@ class RetrievalItem(TypedDict):
 @reward
 async def eval(prediction: str, ground_truth: List[str]) -> float:
     reward_score = float(compute_score_em(prediction, ground_truth))
-    print(
-        f"pred: {prediction} | {type(ground_truth)} gold_answer: {ground_truth} | res: {reward_score}"
-    )
+    print(f"pred: {prediction} | {type(ground_truth)} gold_answer: {ground_truth} | res: {reward_score}")
     return reward_score
 
 
@@ -143,9 +139,7 @@ class Searchr1Agent(LitAgent[Any]):
             turn_env_feedback = execute_response(valid_turn_response)
             if len(turn_env_feedback) == 0:
                 finished_flag = True
-            print(
-                f"TURN ID {turn_id} | RESP: {turn_response} | ENV FEEDBACK: {turn_env_feedback}"
-            )
+            print(f"TURN ID {turn_id} | RESP: {turn_response} | ENV FEEDBACK: {turn_env_feedback}")
             rollout_content += turn_response + turn_env_feedback
 
         if not finished_flag:

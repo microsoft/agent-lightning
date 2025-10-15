@@ -20,10 +20,10 @@ import numpy as np
 import torch
 import uvicorn
 from fastapi import FastAPI
+from numpy.typing import NDArray
 from pydantic import BaseModel
 from tqdm import tqdm
 from transformers import AutoConfig, AutoModel, AutoTokenizer
-from numpy.typing import NDArray
 
 # ---- Small helpers / aliases
 Doc = Dict[str, Any]
@@ -34,9 +34,7 @@ BatchScores = List[Scores]
 
 
 def load_corpus(corpus_path: str) -> Any:
-    corpus: Any = datasets.load_dataset(
-        "json", data_files=corpus_path, split="train", num_proc=4
-    )
+    corpus: Any = datasets.load_dataset("json", data_files=corpus_path, split="train", num_proc=4)
     return corpus
 
 
@@ -53,21 +51,15 @@ def load_docs(corpus: Any, doc_idxs: Sequence[int]) -> Docs:
     return results
 
 
-def load_model(
-    model_path: str, use_fp16: bool = False
-) -> Tuple[torch.nn.Module, Any]:
+def def load_model(model_path: str, use_fp16: bool = False) -> Tuple[torch.nn.Module, Any]:
     # we call AutoConfig to ensure trust_remote_code init side-effects
     _model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
-    model: torch.nn.Module = AutoModel.from_pretrained(
-        model_path, trust_remote_code=True
-    )
+    model: torch.nn.Module = AutoModel.from_pretrained(model_path, trust_remote_code=True)
     model.eval()
     model.cuda()
     if use_fp16:
         model = model.half()
-    tokenizer = AutoTokenizer.from_pretrained(
-        model_path, use_fast=True, trust_remote_code=True
-    )
+    tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=True, trust_remote_code=True)
     return model, tokenizer
 
 
@@ -79,9 +71,7 @@ def pooling(
 ) -> torch.Tensor:
     if pooling_method == "mean":
         assert attention_mask is not None, "attention_mask is required for mean pooling"
-        last_hidden = last_hidden_state.masked_fill(
-            ~attention_mask[..., None].bool(), 0.0
-        )
+        last_hidden = last_hidden_state.masked_fill(~attention_mask[..., None].bool(), 0.0)
         return last_hidden.sum(dim=1) / attention_mask.sum(dim=1)[..., None]
     elif pooling_method == "cls":
         return last_hidden_state[:, 0]
@@ -110,9 +100,7 @@ class Encoder:
         self.model.eval()
 
     @torch.no_grad()
-    def encode(
-        self, query_list: Union[List[str], str], is_query: bool = True
-    ) -> NDArray[np.float32]:
+    def encode(self, query_list: Union[List[str], str], is_query: bool = True) -> NDArray[np.float32]:
         # processing query for different encoders
         if isinstance(query_list, str):
             query_list = [query_list]
@@ -126,8 +114,7 @@ class Encoder:
         if "bge" in self.model_name.lower():
             if is_query:
                 query_list = [
-                    f"Represent this sentence for searching relevant passages: {query}"
-                    for query in query_list
+                    f"Represent this sentence for searching relevant passages: {query}" for query in query_list
                 ]
 
         inputs: Dict[str, torch.Tensor] = self.tokenizer(
@@ -137,12 +124,10 @@ class Encoder:
 
         if "T5" in type(self.model).__name__:
             # T5-based retrieval model
-            decoder_input_ids = torch.zeros(
-                (inputs["input_ids"].shape[0], 1), dtype=torch.long
-            ).to(inputs["input_ids"].device)
-            output = self.model(
-                **inputs, decoder_input_ids=decoder_input_ids, return_dict=True
+            decoder_input_ids = torch.zeros((inputs["input_ids"].shape[0], 1), dtype=torch.long).to(
+                inputs["input_ids"].device
             )
+            output = self.model(**inputs, decoder_input_ids=decoder_input_ids, return_dict=True)
             query_emb = output.last_hidden_state[:, 0, :]
         else:
             output = self.model(**inputs, return_dict=True)
@@ -155,9 +140,7 @@ class Encoder:
             if "dpr" not in self.model_name.lower():
                 query_emb = torch.nn.functional.normalize(query_emb, dim=-1)
 
-        query_np: NDArray[np.float32] = (
-            query_emb.detach().cpu().numpy().astype(np.float32, order="C")
-        )
+        query_np: NDArray[np.float32] = query_emb.detach().cpu().numpy().astype(np.float32, order="C")
 
         # cleanup
         del inputs, output
@@ -218,7 +201,9 @@ class BaseRetriever:
     ) -> Union[BatchDocs, Tuple[BatchDocs, BatchScores]]:
         raise NotImplementedError
 
-    def search(self, query: str, num: Optional[int] = None, return_score: bool = False) -> Union[Docs, Tuple[Docs, Scores]]:
+    def search(
+        self, query: str, num: Optional[int] = None, return_score: bool = False
+    ) -> Union[Docs, Tuple[Docs, Scores]]:
         return self._search(query, num, return_score)
 
     def batch_search(
@@ -250,7 +235,9 @@ class BM25Retriever(BaseRetriever):
         except Exception:
             return False
 
-    def _search(self, query: str, num: Optional[int] = None, return_score: bool = False) -> Union[Docs, Tuple[Docs, Scores]]:
+    def _search(
+        self, query: str, num: Optional[int] = None, return_score: bool = False
+    ) -> Union[Docs, Tuple[Docs, Scores]]:
         k = self.topk if num is None else num
         hits: List[Any] = self.searcher.search(query, k)
         if len(hits) < 1:
@@ -265,9 +252,7 @@ class BM25Retriever(BaseRetriever):
             hits = hits[:k]
 
         if self.contain_doc:
-            all_contents: List[str] = [
-                json.loads(self.searcher.doc(hit.docid).raw())["contents"] for hit in hits
-            ]
+            all_contents: List[str] = [json.loads(self.searcher.doc(hit.docid).raw())["contents"] for hit in hits]
             results: Docs = [
                 {
                     "title": content.split("\n")[0].strip('"'),
@@ -292,7 +277,7 @@ class BM25Retriever(BaseRetriever):
         for query in query_list:
             item_result, item_score = self._search(query, num, True)  # type: ignore[misc]
             results.append(item_result)  # type: ignore[arg-type]
-            scores.append(item_score)    # type: ignore[arg-type]
+            scores.append(item_score)  # type: ignore[arg-type]
         if return_score:
             return results, scores
         else:
@@ -322,7 +307,9 @@ class DenseRetriever(BaseRetriever):
         self.topk = config.retrieval_topk
         self.batch_size = config.retrieval_batch_size
 
-    def _search(self, query: str, num: Optional[int] = None, return_score: bool = False) -> Union[Docs, Tuple[Docs, Scores]]:
+    def _search(
+        self, query: str, num: Optional[int] = None, return_score: bool = False
+    ) -> Union[Docs, Tuple[Docs, Scores]]:
         k = self.topk if num is None else num
         query_emb = self.encoder.encode(query)
         scores_np, idxs_np = self.index.search(query_emb, k=k)  # type: ignore[no-untyped-call]
@@ -354,9 +341,7 @@ class DenseRetriever(BaseRetriever):
             flat_idxs: List[int] = sum(batch_idxs, [])
             batch_results_flat = load_docs(self.corpus, flat_idxs)
             # chunk them back
-            chunked: List[Docs] = [
-                batch_results_flat[i * k : (i + 1) * k] for i in range(len(batch_idxs))
-            ]
+            chunked: List[Docs] = [batch_results_flat[i * k : (i + 1) * k] for i in range(len(batch_idxs))]
 
             results.extend(chunked)
             scores.extend(batch_scores)
