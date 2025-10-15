@@ -112,7 +112,7 @@ async def _mock_runner(
 async def test_mock_algorithm_collects_rollout_logs(caplog: pytest.LogCaptureFixture) -> None:
     store = InMemoryLightningStore()
     await store.update_resources("default", _make_resources())
-    algorithm = Baseline(polling_interval=0.01)
+    algorithm = Baseline(polling_interval=0.01, span_verbosity="key_values")
     algorithm.set_store(store)
     adapter = _AdapterStub()
     algorithm.set_adapter(adapter)
@@ -158,3 +158,92 @@ async def test_mock_algorithm_collects_rollout_logs(caplog: pytest.LogCaptureFix
             and entry.attempt_id in msg
             for msg in log_messages
         )
+
+
+@pytest.mark.asyncio
+async def test_baseline_does_not_skip_samples_when_queue_full() -> None:
+    """Test that Baseline waits and retries when queue is full instead of skipping samples.
+
+    This is a regression test for a bug where samples would be skipped when the queue
+    exceeded max_queue_length. The fix wraps the queue check in a while loop to ensure
+    all samples are eventually processed.
+    """
+    store = InMemoryLightningStore()
+    await store.update_resources("default", _make_resources())
+
+    # Use a small max_queue_length and fast polling to test queue full behavior
+    algorithm = Baseline(polling_interval=0.01, max_queue_length=1)
+    algorithm.set_store(store)
+
+    # Create a dataset with 5 samples
+    train_dataset = [f"sample-{i}" for i in range(5)]
+    expected_rollouts = len(train_dataset)
+
+    # Track which samples were enqueued
+    enqueued_samples: List[Any] = []
+    artifacts: List[_RolloutArtifacts] = []
+
+    async def _slow_runner() -> None:
+        """A slow runner that creates backpressure by processing rollouts with delays."""
+        processed = 0
+        while processed < expected_rollouts:
+            attempted = await store.dequeue_rollout()
+            if attempted is None:
+                await asyncio.sleep(0.01)
+                continue
+
+            attempt = attempted.attempt
+            rollout_id = attempted.rollout_id
+            rollout = await store.get_rollout_by_id(rollout_id)
+
+            # Track the sample that was enqueued
+            if rollout:
+                enqueued_samples.append(rollout.input)
+
+            await store.update_attempt(
+                rollout_id,
+                attempt.attempt_id,
+                status="running",
+                worker_id="slow-runner",
+            )
+
+            # Add a delay to create backpressure and cause queue to fill up
+            await asyncio.sleep(0.05)
+
+            span = _build_span(rollout_id, attempt.attempt_id, sequence_id=1, index=processed + 1)
+            await store.add_span(span)
+            await store.update_attempt(rollout_id, attempt.attempt_id, status="succeeded")
+            await store.update_rollout(rollout_id, status="succeeded")
+
+            artifacts.append(
+                _RolloutArtifacts(
+                    rollout_id=rollout_id,
+                    attempt_id=attempt.attempt_id,
+                    attempt_sequence=attempt.sequence_id,
+                    span=span,
+                )
+            )
+            processed += 1
+
+    runner_task = asyncio.create_task(_slow_runner())
+    try:
+        await algorithm.run(train_dataset=train_dataset)
+        await asyncio.wait_for(runner_task, timeout=5)
+    finally:
+        if not runner_task.done():
+            runner_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await runner_task
+
+    # Verify that ALL samples were enqueued and processed (no samples skipped)
+    assert (
+        len(enqueued_samples) == expected_rollouts
+    ), f"Expected {expected_rollouts} samples to be enqueued, but got {len(enqueued_samples)}"
+    assert (
+        len(artifacts) == expected_rollouts
+    ), f"Expected {expected_rollouts} rollouts to be processed, but got {len(artifacts)}"
+
+    # Verify that the enqueued samples match the dataset (in order)
+    assert (
+        enqueued_samples == train_dataset
+    ), f"Enqueued samples {enqueued_samples} do not match dataset {train_dataset}"

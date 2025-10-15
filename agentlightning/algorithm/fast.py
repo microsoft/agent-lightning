@@ -192,17 +192,22 @@ class Baseline(FastAlgorithm):
             harvest_tasks: List[asyncio.Task[None]] = []
             logger.info(f"Proceeding epoch {epoch + 1}/{self.n_epochs}.")
             for index in train_indices + val_indices:
-                queuing_rollouts = await store.query_rollouts(status=["queuing", "requeuing"])
-                if len(queuing_rollouts) <= self.max_queue_length:
-                    # Only enqueue a new rollout when there is at most "max_queue_length" rollout in the queue.
-                    sample = concatenated_dataset[index]
-                    mode = "train" if index in train_indices else "val"
-                    rollout = await store.enqueue_rollout(input=sample, mode=mode, resources_id=resources_id)
-                    harvest_tasks.append(asyncio.create_task(self._harvest_rollout_spans(rollout.rollout_id)))
-                    logger.info(f"Enqueued rollout {rollout.rollout_id} in {mode} mode with sample: {sample}")
-                else:
-                    # Sleep a bit and try again later.
-                    await asyncio.sleep(self.polling_interval)
+                logger.info(
+                    f"Processing index {index}. {len(train_indices)} train indices and {len(val_indices)} val indices in total."
+                )
+                while True:
+                    queuing_rollouts = await store.query_rollouts(status=["queuing", "requeuing"])
+                    if len(queuing_rollouts) <= self.max_queue_length:
+                        # Only enqueue a new rollout when there is at most "max_queue_length" rollout in the queue.
+                        sample = concatenated_dataset[index]
+                        mode = "train" if index in train_indices else "val"
+                        rollout = await store.enqueue_rollout(input=sample, mode=mode, resources_id=resources_id)
+                        harvest_tasks.append(asyncio.create_task(self._harvest_rollout_spans(rollout.rollout_id)))
+                        logger.info(f"Enqueued rollout {rollout.rollout_id} in {mode} mode with sample: {sample}")
+                        break
+                    else:
+                        # Sleep a bit and try again later.
+                        await asyncio.sleep(self.polling_interval)
 
             # Wait for all harvest tasks to complete
             logger.info(f"Waiting for {len(harvest_tasks)} harvest tasks to complete...")
