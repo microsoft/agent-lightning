@@ -26,6 +26,16 @@
     options:
       show_source: true
 
+## Adapters and Stores
+
+::: agentlightning.adapter
+    options:
+      show_source: true
+
+::: agentlightning.store
+    options:
+      show_source: true
+
 ## Server Side
 
 ::: agentlightning.server
