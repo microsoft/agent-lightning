@@ -156,7 +156,7 @@ sequenceDiagram
 
 The Adapter is a component used by the Algorithm to transform raw data from the Store into a format suitable for learning. Runners stream raw spans into the Store during execution. Later, the Algorithm queries these spans and uses an Adapter to convert them into structured data, like training examples for a reinforcement learning model.
 
-For instance, the `TraceTripletAdapter` processes OpenTelemetry spans to create `(prompt, response, reward)` triplets, which are the fundamental data structure for many RL fine-tuning algorithms.
+For instance, the `TracerTraceToTriplet` processes OpenTelemetry spans to create `(prompt, response, reward)` triplets, which are the fundamental data structure for many RL fine-tuning algorithms.
 
 ```mermaid
 flowchart LR
@@ -237,7 +237,7 @@ flowchart TD
     %% === Left side: Algorithm domain ===
     subgraph L["Algorithm Side"]
         Algorithm["Algorithm<br>(no default)"]
-        Adapter["Adapter<br>(TraceTripletAdapter*)"]
+        Adapter["Adapter<br>(TracerTraceToTriplet*)"]
         LLMProxy["LLM Proxy<br>(no default)"]
         Algorithm -.injects.-> Adapter
         Algorithm -.injects.-> LLMProxy
@@ -257,7 +257,7 @@ flowchart TD
 
     %% === Right side: Runner side ===
     subgraph R["Runner Side"]
-        Runner["Runner<br>(AgentRunnerV2* default)"]
+        Runner["Runner<br>(LitAgentRunner* default)"]
         Tracer["Tracer<br>(AgentOpsTracer*)"]
         Hooks["Hooks (empty default)"]
         Agent["Agent<br>(LitAgent*)"]
@@ -305,7 +305,7 @@ In Agent-lightning, the environment is implicit in the agent’s workflow, which
 3. Querying the spans generated, extracting triplets, and converting them into a format that the underlying RL library can consume;
 4. Updating the language model based on the learning signals.
 
-In the VERL integration, the algorithm launches a chat completion endpoint using `vLLM` and wraps training with `FSDP` for distributed optimization. It enqueues tasks from the dataset. After rollouts finish, it queries spans and converts them to triplets with `TraceTripletAdapter`. VERL’s native training loop then consumes these triplets to update model weights. The workflow can be summarized in the following diagram.
+In the VERL integration, the algorithm launches a chat completion endpoint using `vLLM` and wraps training with `FSDP` for distributed optimization. It enqueues tasks from the dataset. After rollouts finish, it queries spans and converts them to triplets with `TracerTraceToTriplet`. VERL’s native training loop then consumes these triplets to update model weights. The workflow can be summarized in the following diagram.
 
 ```mermaid
 sequenceDiagram
@@ -313,7 +313,7 @@ sequenceDiagram
     participant vLLM as vLLM Chat<br>Completion Endpoint
     participant FSDP as FSDP / Megatron<br>Weights Optimizer
     participant Algo as Algorithm<br>Main Controller<br>(Main Process)
-    participant Adapter as TraceTripletAdapter
+    participant Adapter as TracerTraceToTriplet
     participant LLMProxy as LLM Proxy
     participant Store as LightningStore
     participant Runner as Runner + Agent

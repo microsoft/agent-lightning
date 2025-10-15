@@ -156,7 +156,7 @@ def convert_to_openai_messages(prompt_completion_list: List[_RawSpanInfo]) -> Ge
             yield OpenAIMessages(messages=messages, tools=None)
 
 
-class TraceMessagesAdapter(TraceAdapter[List[OpenAIMessages]]):
+class TraceToMessages(TraceAdapter[List[OpenAIMessages]]):
     """
     Adapter that converts OpenTelemetry trace spans into OpenAI-compatible message format.
 
@@ -170,9 +170,6 @@ class TraceMessagesAdapter(TraceAdapter[List[OpenAIMessages]]):
     - Extracting and matching tool calls with their corresponding requests
     - Building proper OpenAI ChatCompletionMessage objects with roles, content, and tool calls
     - Generating function definitions for tools used in conversations
-
-    Returns:
-        List[OpenAIMessages]: A list of structured message conversations with associated tools
     """
 
     def get_tool_calls(self, completion: Span, all_spans: List[Span], /) -> Iterable[Dict[str, Any]]:

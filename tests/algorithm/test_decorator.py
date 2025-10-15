@@ -8,7 +8,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from agentlightning.algorithm.base import FunctionalAlgorithm, algo
+from agentlightning.algorithm.decorator import FunctionalAlgorithm, algo
 from agentlightning.store.base import LightningStore
 from agentlightning.types import Dataset
 

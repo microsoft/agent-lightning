@@ -8,7 +8,7 @@ from typing import Any, List, Optional
 import pytest
 from _pytest.logging import LogCaptureFixture
 
-from agentlightning.execution.events import Event, ThreadingEvent
+from agentlightning.execution.events import ExecutionEvent, ThreadingEvent
 from agentlightning.execution.shared_memory import SharedMemoryExecutionStrategy
 from agentlightning.store.base import LightningStore
 
@@ -35,7 +35,7 @@ def make_cooperative_algorithm(
     finished: List[str],
     poll_delay: float = 0.005,
 ):
-    async def algo(store: LightningStore, event: Event) -> None:
+    async def algo(store: LightningStore, event: ExecutionEvent) -> None:
         started.append("algo")
         # cooperatively exit when asked
         while not event.is_set():
@@ -50,7 +50,7 @@ def make_cooperative_runner(
     finished: List[int],
     poll_delay: float = 0.005,
 ):
-    async def runner(store: LightningStore, worker_id: int, event: Event) -> None:
+    async def runner(store: LightningStore, worker_id: int, event: ExecutionEvent) -> None:
         started.append(worker_id)
         while not event.is_set():
             await asyncio.sleep(poll_delay)
@@ -114,7 +114,7 @@ def test_run_until_stops_gracefully_with_event(caplog: LogCaptureFixture):
 
     evt = ThreadingEvent()
 
-    async def cooperative(event: Event):
+    async def cooperative(event: ExecutionEvent):
         # Stop promptly after event flips
         while not event.is_set():
             await asyncio.sleep(0.005)
@@ -194,7 +194,7 @@ def test_run_algorithm_sets_stop_on_exception(store: DummyLightningStore):
 
     evt = ThreadingEvent()
 
-    async def boom(store: LightningStore, event: Event) -> None:
+    async def boom(store: LightningStore, event: ExecutionEvent) -> None:
         await asyncio.sleep(0.005)
         raise ValueError("algo crash")
 
@@ -209,7 +209,7 @@ def test_run_runner_sets_stop_on_exception(store: DummyLightningStore):
 
     evt = ThreadingEvent()
 
-    async def boom(store: LightningStore, worker_id: int, event: Event) -> None:
+    async def boom(store: LightningStore, worker_id: int, event: ExecutionEvent) -> None:
         await asyncio.sleep(0.005)
         raise RuntimeError("runner crash")
 
@@ -233,7 +233,7 @@ def test_execute_main_algorithm_normal_stop_sets_event(store: DummyLightningStor
     runner = make_cooperative_runner(started_r, finished_r, poll_delay=0.005)
 
     # Algorithm finishes quickly; then execute() should set stop_evt for runners.
-    async def algo(store: LightningStore, event: Event) -> None:
+    async def algo(store: LightningStore, event: ExecutionEvent) -> None:
         started_a.append("algo")
         await asyncio.sleep(0.02)
         finished_a.append("algo")
@@ -257,13 +257,13 @@ def test_execute_main_runner_waits_for_algorithm_natural_finish(store: DummyLigh
 
     strat = SharedMemoryExecutionStrategy(n_runners=1, main_thread="runner", graceful_delay=0.02, join_timeout=0.2)
 
-    async def algo(store: LightningStore, event: Event) -> None:
+    async def algo(store: LightningStore, event: ExecutionEvent) -> None:
         captured_evt[0] = event
         started_a.append("algo")
         await asyncio.sleep(0.05)  # natural finish
         finished_a.append("algo")
 
-    async def runner(store: LightningStore, worker_id: int, event: Event) -> None:
+    async def runner(store: LightningStore, worker_id: int, event: ExecutionEvent) -> None:
         started_r.append(worker_id)
         await asyncio.sleep(0.01)  # finish quickly
         finished_r.append(worker_id)
@@ -286,7 +286,7 @@ def test_execute_runner_crash_propagates_and_stops_algorithm(store: DummyLightni
 
     strat = SharedMemoryExecutionStrategy(n_runners=1, main_thread="algorithm", graceful_delay=0.02, join_timeout=0.3)
 
-    async def algo(store: LightningStore, event: Event) -> None:
+    async def algo(store: LightningStore, event: ExecutionEvent) -> None:
         started_a.append("algo")
         # wait until stop evt set (by runner crash)
         while not event.is_set():
@@ -294,7 +294,7 @@ def test_execute_runner_crash_propagates_and_stops_algorithm(store: DummyLightni
         saw_stop.append(True)
         finished_a.append("algo")
 
-    async def bad_runner(store: LightningStore, worker_id: int, event: Event) -> None:
+    async def bad_runner(store: LightningStore, worker_id: int, event: ExecutionEvent) -> None:
         await asyncio.sleep(0.02)
         raise RuntimeError("boom")
 
@@ -314,11 +314,11 @@ def test_execute_ctrl_c_on_algorithm_stops_runners(store: DummyLightningStore, c
 
     strat = SharedMemoryExecutionStrategy(n_runners=2, main_thread="algorithm", graceful_delay=0.02, join_timeout=0.3)
 
-    async def algo_kbi(store: LightningStore, event: Event) -> None:
+    async def algo_kbi(store: LightningStore, event: ExecutionEvent) -> None:
         await asyncio.sleep(0.01)
         raise KeyboardInterrupt()
 
-    async def runner(store: LightningStore, worker_id: int, event: Event) -> None:
+    async def runner(store: LightningStore, worker_id: int, event: ExecutionEvent) -> None:
         runner_started.append(worker_id)
         while not event.is_set():
             await asyncio.sleep(0.005)
@@ -340,14 +340,14 @@ def test_execute_ctrl_c_on_runner_stops_algorithm(store: DummyLightningStore, ca
 
     strat = SharedMemoryExecutionStrategy(n_runners=1, main_thread="runner", graceful_delay=0.02, join_timeout=0.3)
 
-    async def algo(store: LightningStore, event: Event) -> None:
+    async def algo(store: LightningStore, event: ExecutionEvent) -> None:
         algo_started.append("a")
         # Await stop_evt after KBI from runner
         while not event.is_set():
             await asyncio.sleep(0.005)
         algo_finished.append("a")
 
-    async def runner_kbi(store: LightningStore, worker_id: int, event: Event) -> None:
+    async def runner_kbi(store: LightningStore, worker_id: int, event: ExecutionEvent) -> None:
         await asyncio.sleep(0.01)
         raise KeyboardInterrupt()
 

@@ -8,7 +8,7 @@ from calc_agent import eval, get_agent
 from datasets import Dataset
 
 from agentlightning import LLM, Trainer, rollout
-from agentlightning.adapter import LlmProxyTripletAdapter
+from agentlightning.adapter import LlmProxyTraceToTriplet
 from agentlightning.algorithm.verl import VERL
 from agentlightning.tracer import OtelTracer
 
@@ -114,9 +114,9 @@ def main():
     print(val_dataset[:5])  # type: ignore
 
     tracer = OtelTracer()
-    adapter = LlmProxyTripletAdapter()
+    adapter = LlmProxyTraceToTriplet()
     trainer = Trainer(algorithm=VERL(rl_training_config), n_workers=10, tracer=tracer, adapter=adapter)
-    trainer.fit_v2(calc_agent, train_dataset, val_dataset=val_dataset)  # type: ignore
+    trainer.fit(calc_agent, train_dataset, val_dataset=val_dataset)  # type: ignore
 
 
 if __name__ == "__main__":

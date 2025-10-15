@@ -31,6 +31,8 @@ CliConfigurable = Any
 
 logger = logging.getLogger(__name__)
 
+__all__ = ["lightning_cli"]
+
 # TypeVars for precise return type hinting with overloads
 _C = TypeVar("_C", bound=CliConfigurable)
 _C1 = TypeVar("_C1", bound=CliConfigurable)

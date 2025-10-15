@@ -44,6 +44,7 @@ dev = [
   "mkdocs-git-revision-date-localized-plugin",
   "mkdocs-git-authors-plugin",
   "mkdocs-macros-plugin",
+  "mkdocs-autorefs",
 ]
 experiment = [
   "random-word",
@@ -62,15 +63,26 @@ agent = [
   "uv",
   "anthropic",
 ]
+apo = [
+  "poml",
+]
+
+# This is used for type checking.
+# Generally, we do not recommend using install .[verl] to install those dependencies.
 trl = [
-  "unsloth",
-  "unsloth_zoo",
+  # https://github.com/unslothai/unsloth/issues/3451
+  "unsloth<=2025.10.1",
+  "unsloth_zoo<=2025.10.1",
   "bitsandbytes",
   "peft",
   "datasets",
   "transformers",
   "trl",
   "kernels",
+]
+verl = [
+  "verl==0.5.0",
+  "vllm>=0.8.4,<0.11.0",
 ]
 
 [build-system]
@@ -79,7 +91,7 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["agentlightning"]
-include = ["**/*.yaml", "**/*.yml"]
+include = ["**/*.yaml", "**/*.yml", "**/*.poml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

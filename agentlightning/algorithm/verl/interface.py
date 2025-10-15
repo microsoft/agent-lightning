@@ -12,6 +12,18 @@ from agentlightning.verl.entrypoint import run_ppo  # type: ignore
 
 
 class VERL(BaseAlgorithm):
+    """Algorithm leveraging VERL as the backend framework.
+
+    **Note on Customization:**
+
+    At present, we recommend copying the source code from VERL and modifying it as needed to suit your requirements.
+    Native support for customizing training logic will be provided in future releases.
+
+    Args:
+        config: The VERL configuration, matching what is typically provided when running VERL via the command line.
+            This config will be merged with VERL's base configuration and processed by Hydra.
+    """
+
     def __init__(self, config: dict[str, Any]):
         super().__init__()
 

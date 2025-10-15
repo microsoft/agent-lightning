@@ -12,23 +12,23 @@ from agentlightning.types import (
     AttemptStatus,
     NamedResources,
     ResourcesUpdate,
+    Rollout,
     RolloutConfig,
     RolloutStatus,
-    RolloutV2,
     Span,
     TaskInput,
 )
 
 
-def is_queuing(rollout: RolloutV2) -> bool:
+def is_queuing(rollout: Rollout) -> bool:
     return rollout.status == "queuing" or rollout.status == "requeuing"
 
 
-def is_running(rollout: RolloutV2) -> bool:
+def is_running(rollout: Rollout) -> bool:
     return rollout.status == "preparing" or rollout.status == "running"
 
 
-def is_finished(rollout: RolloutV2) -> bool:
+def is_finished(rollout: Rollout) -> bool:
     return rollout.status == "failed" or rollout.status == "succeeded" or rollout.status == "cancelled"
 
 
@@ -88,7 +88,7 @@ class LightningStore:
         mode: Literal["train", "val", "test"] | None = None,
         resources_id: str | None = None,
         metadata: Dict[str, Any] | None = None,
-    ) -> RolloutV2:
+    ) -> Rollout:
         """
         Adds a new task to the queue with specific metadata and
         returns the rollout object with its unique ID.
@@ -134,7 +134,7 @@ class LightningStore:
 
     async def query_rollouts(
         self, *, status: Optional[Sequence[RolloutStatus]] = None, rollout_ids: Optional[Sequence[str]] = None
-    ) -> List[RolloutV2]:
+    ) -> List[Rollout]:
         """
         Query and retrieve rollouts filtered by their status.
         If no status is provided, returns all rollouts.
@@ -148,7 +148,7 @@ class LightningStore:
         """
         raise NotImplementedError()
 
-    async def get_rollout_by_id(self, rollout_id: str) -> Optional[RolloutV2]:
+    async def get_rollout_by_id(self, rollout_id: str) -> Optional[Rollout]:
         """
         Safely retrieves a specific rollout by its ID.
         """
@@ -181,7 +181,7 @@ class LightningStore:
         """
         raise NotImplementedError()
 
-    async def wait_for_rollouts(self, *, rollout_ids: List[str], timeout: Optional[float] = None) -> List[RolloutV2]:
+    async def wait_for_rollouts(self, *, rollout_ids: List[str], timeout: Optional[float] = None) -> List[Rollout]:
         """
         Wait for specified rollouts to complete with a timeout.
         Returns the completed rollouts, potentially incomplete if timeout is reached.
@@ -219,7 +219,7 @@ class LightningStore:
         status: RolloutStatus | Unset = UNSET,
         config: RolloutConfig | Unset = UNSET,
         metadata: Optional[Dict[str, Any]] | Unset = UNSET,
-    ) -> RolloutV2:
+    ) -> Rollout:
         """
         Update the rollout status and related metadata.
 

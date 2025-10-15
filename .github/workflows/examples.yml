@@ -129,6 +129,17 @@ jobs:
           OPENAI_BASE_URL: http://localhost:12306/
           OPENAI_API_KEY: dummy
 
+      - name: APO built-in algorithm
+        run: |
+          set -ex
+          . .venv/bin/activate
+          cd examples/apo
+          python room_selector_apo.py
+        env:
+          OPENAI_BASE_URL: http://localhost:12306/
+          OPENAI_API_KEY: dummy
+        if: success() || failure()
+
       - name: Spider sanity check
         run: |
           set -ex
@@ -139,6 +150,7 @@ jobs:
           VERL_API_BASE: http://localhost:9999/
           OPENAI_API_BASE: http://localhost:12306/
           OPENAI_API_KEY: dummy
+        if: success() || failure()
       - name: Calc-X MCP sanity check
         run: |
           set -ex

@@ -17,6 +17,12 @@ from agentlightning.types import Dataset
 from .dataset import AgentDataset, LoadedDataset
 from .trainer import AgentLightningTrainer
 
+__all__ = [
+    "main",
+    "run_ppo",
+    "TaskRunner",
+]
+
 
 @hydra.main(config_path="pkg://agentlightning/verl", config_name="config", version_base=None)
 def main(config):

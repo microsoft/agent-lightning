@@ -1,0 +1,16 @@
+<poml>
+  <role>You are a prompt engineer.</role>
+  <task>Analyze where the current prompt failed to elicit the right mechanism.</task>
+  <cp caption="Current Prompt Template">
+    <text whiteSpace="pre">{{ prompt_template }}</text>
+  </cp>
+  <cp caption="Sample Runs with Current Prompt Template">
+    <p>The following are the OpenTelemetry spans collected from the sample runs with the current prompt template. They should contain both prompt, responses and rewards.</p>
+    <cp for="experiment in experiments" caption="Sample Run #{{ loop.index + 1 }} Diagnostics">
+      <object for="span in experiment.spans" data="{{ span }}" />
+    </cp>
+  </cp>
+  <output-format>
+    Write 3-5 short bullets titled 'Critique:' focusing on missing constraints, ordering, or formatting.
+  </output-format>
+</poml>

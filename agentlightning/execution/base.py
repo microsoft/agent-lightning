@@ -5,18 +5,18 @@ from typing import Protocol
 
 from agentlightning.store.base import LightningStore
 
-from .events import Event
+from .events import ExecutionEvent
 
 logger = logging.getLogger(__name__)
 
 
 class AlgorithmBundle(Protocol):
-    async def __call__(self, store: LightningStore, event: Event) -> None:
+    async def __call__(self, store: LightningStore, event: ExecutionEvent) -> None:
         """Initalization and execution logic."""
 
 
 class RunnerBundle(Protocol):
-    async def __call__(self, store: LightningStore, worker_id: int, event: Event) -> None:
+    async def __call__(self, store: LightningStore, worker_id: int, event: ExecutionEvent) -> None:
         """Initalization and execution logic."""
 
 

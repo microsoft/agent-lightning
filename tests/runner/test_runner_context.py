@@ -8,11 +8,11 @@ from opentelemetry import trace as trace_api
 from opentelemetry.sdk.trace import ReadableSpan, TracerProvider
 
 from agentlightning.litagent import LitAgent
-from agentlightning.runner import AgentRunnerV2
+from agentlightning.runner import LitAgentRunner
 from agentlightning.store.base import LightningStore
 from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.tracer.base import BaseTracer
-from agentlightning.types import LLM, Hook, RolloutV2
+from agentlightning.types import LLM, Hook, Rollout
 
 from ..common.tracer import clear_tracer_provider
 
@@ -84,18 +84,16 @@ class RecordingHook(Hook):
         super().__init__()
         self.calls: List[str] = []
 
-    async def on_rollout_start(self, *, agent: LitAgent[Any], runner: Any, rollout: RolloutV2) -> None:
+    async def on_rollout_start(self, *, agent: LitAgent[Any], runner: Any, rollout: Rollout) -> None:
         self.calls.append("on_rollout_start")
 
-    async def on_trace_start(
-        self, *, agent: LitAgent[Any], runner: Any, tracer: BaseTracer, rollout: RolloutV2
-    ) -> None:
+    async def on_trace_start(self, *, agent: LitAgent[Any], runner: Any, tracer: BaseTracer, rollout: Rollout) -> None:
         self.calls.append("on_trace_start")
 
-    async def on_trace_end(self, *, agent: LitAgent[Any], runner: Any, tracer: BaseTracer, rollout: RolloutV2) -> None:
+    async def on_trace_end(self, *, agent: LitAgent[Any], runner: Any, tracer: BaseTracer, rollout: Rollout) -> None:
         self.calls.append("on_trace_end")
 
-    async def on_rollout_end(self, *, agent: LitAgent[Any], runner: Any, rollout: RolloutV2, spans: Any) -> None:
+    async def on_rollout_end(self, *, agent: LitAgent[Any], runner: Any, rollout: Rollout, spans: Any) -> None:
         self.calls.append("on_rollout_end")
 
 
@@ -105,7 +103,7 @@ async def test_run_context_basic_lifecycle() -> None:
     tracer = DummyTracer()
     agent = DummyAgent()
     store = InMemoryLightningStore()
-    runner = AgentRunnerV2[Dict[str, Any]](tracer=tracer)
+    runner = LitAgentRunner[Dict[str, Any]](tracer=tracer)
 
     with runner.run_context(agent=agent, store=store):
         # Verify initialization happened
@@ -127,7 +125,7 @@ async def test_run_context_yields_runner() -> None:
     tracer = DummyTracer()
     agent = DummyAgent()
     store = InMemoryLightningStore()
-    runner = AgentRunnerV2[Dict[str, Any]](tracer=tracer)
+    runner = LitAgentRunner[Dict[str, Any]](tracer=tracer)
 
     with runner.run_context(agent=agent, store=store) as yielded_runner:
         assert yielded_runner is runner
@@ -139,7 +137,7 @@ async def test_run_context_with_hooks() -> None:
     tracer = DummyTracer()
     agent = DummyAgent()
     store = InMemoryLightningStore()
-    runner = AgentRunnerV2[Dict[str, Any]](tracer=tracer)
+    runner = LitAgentRunner[Dict[str, Any]](tracer=tracer)
     hook = RecordingHook()
 
     with runner.run_context(agent=agent, store=store, hooks=[hook]):
@@ -153,7 +151,7 @@ async def test_run_context_teardown_on_exception_in_context() -> None:
     tracer = DummyTracer()
     agent = DummyAgent()
     store = InMemoryLightningStore()
-    runner = AgentRunnerV2[Dict[str, Any]](tracer=tracer)
+    runner = LitAgentRunner[Dict[str, Any]](tracer=tracer)
 
     with pytest.raises(RuntimeError, match="test error"):
         with runner.run_context(agent=agent, store=store):
@@ -170,7 +168,7 @@ async def test_run_context_no_teardown_worker_if_init_worker_fails() -> None:
     tracer = DummyTracer()
     agent = DummyAgent()
     store = InMemoryLightningStore()
-    runner = AgentRunnerV2[Dict[str, Any]](tracer=tracer)
+    runner = LitAgentRunner[Dict[str, Any]](tracer=tracer)
 
     # Mock init_worker to raise an exception
     original_init_worker = runner.init_worker
@@ -201,7 +199,7 @@ async def test_run_context_no_teardown_if_init_fails() -> None:
     tracer = DummyTracer()
     agent = DummyAgent()
     store = InMemoryLightningStore()
-    runner = AgentRunnerV2[Dict[str, Any]](tracer=tracer)
+    runner = LitAgentRunner[Dict[str, Any]](tracer=tracer)
 
     # Mock init to raise an exception
     original_init = runner.init
@@ -232,7 +230,7 @@ async def test_run_context_handles_teardown_worker_exception(caplog: pytest.LogC
     tracer = DummyTracer()
     agent = DummyAgent()
     store = InMemoryLightningStore()
-    runner = AgentRunnerV2[Dict[str, Any]](tracer=tracer)
+    runner = LitAgentRunner[Dict[str, Any]](tracer=tracer)
 
     # Mock teardown_worker to raise an exception
     original_teardown_worker = runner.teardown_worker
@@ -264,7 +262,7 @@ async def test_run_context_handles_teardown_exception(caplog: pytest.LogCaptureF
     tracer = DummyTracer()
     agent = DummyAgent()
     store = InMemoryLightningStore()
-    runner = AgentRunnerV2[Dict[str, Any]](tracer=tracer)
+    runner = LitAgentRunner[Dict[str, Any]](tracer=tracer)
 
     # Mock teardown to raise an exception
     original_teardown = runner.teardown
@@ -306,7 +304,7 @@ async def test_run_context_can_be_used_for_step() -> None:
     tracer = DummyTracer()
     agent = CountingAgent()
     store = InMemoryLightningStore()
-    runner = AgentRunnerV2[str](tracer=tracer)
+    runner = LitAgentRunner[str](tracer=tracer)
 
     await store.update_resources("default", {"llm": LLM(endpoint="http://localhost", model="dummy")})
 

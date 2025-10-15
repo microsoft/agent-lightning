@@ -44,4 +44,4 @@ if __name__ == "__main__":
     dotenv.load_dotenv()
     agent = SimpleAgent()
     trainer = Trainer(n_workers=2)
-    trainer.fit(agent, "http://127.0.0.1:9997")
+    trainer.fit_v0(agent, "http://127.0.0.1:9997")

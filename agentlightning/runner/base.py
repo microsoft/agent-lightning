@@ -13,12 +13,13 @@ import logging
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, Generic, Iterator, Optional, Sequence, TypeVar
 
+from agentlightning.execution.events import ExecutionEvent
 from agentlightning.litagent import LitAgent
 from agentlightning.store.base import LightningStore
-from agentlightning.types import Hook, NamedResources, ParallelWorkerBase, RolloutMode
+from agentlightning.types import Hook, NamedResources, ParallelWorkerBase, Rollout, RolloutMode
 
 if TYPE_CHECKING:
-    from agentlightning.execution.events import Event
+    from agentlightning.execution.events import ExecutionEvent
 
 
 T_task = TypeVar("T_task")
@@ -155,14 +156,14 @@ class BaseRunner(ParallelWorkerBase, Generic[T_task]):
             except Exception:
                 logger.error("Error during runner teardown", exc_info=True)
 
-    async def iter(self, *, event: Optional[Event] = None) -> None:
+    async def iter(self, *, event: Optional[ExecutionEvent] = None) -> None:
         """Run the runner, continuously iterating over tasks in the store.
 
         This method runs in a loop, polling the store for new tasks and executing
         them until interrupted by the event or when no more tasks are available.
 
         Args:
-            event: Optional Event object that can be used to signal the runner
+            event: Optional ExecutionEvent object that can be used to signal the runner
                 to stop gracefully. When set, the runner should finish its current
                 task and exit the iteration loop.
 
@@ -177,8 +178,8 @@ class BaseRunner(ParallelWorkerBase, Generic[T_task]):
         *,
         resources: Optional[NamedResources] = None,
         mode: Optional[RolloutMode] = None,
-        event: Optional[Event] = None,
-    ) -> None:
+        event: Optional[ExecutionEvent] = None,
+    ) -> Rollout:
         """Execute a single task with the given input.
 
         This method provides fine-grained control for executing individual tasks
@@ -190,8 +191,11 @@ class BaseRunner(ParallelWorkerBase, Generic[T_task]):
                 If not provided, the latest resources from the store will be used.
             mode: Optional rollout mode (e.g., "train", "test"). If not provided,
                 the default mode will be used.
-            event: Optional Event object to signal interruption. When set, the
+            event: Optional ExecutionEvent object to signal interruption. When set, the
                 runner may abort the current execution.
+
+        Returns:
+            The completed rollout.
 
         Raises:
             NotImplementedError: Must be implemented by subclasses.

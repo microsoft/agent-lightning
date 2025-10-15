@@ -33,11 +33,10 @@ from rich.console import Console
 from unsloth_helper import unsloth_training
 
 from agentlightning import configure_logger
-from agentlightning.adapter.triplet import BaseTraceTripletAdapter, LlmProxyTripletAdapter
+from agentlightning.adapter import LlmProxyTraceToTriplet, TraceToTripletBase
 from agentlightning.llm_proxy import LLMProxy, ModelConfig
-from agentlightning.store.base import LightningStore
-from agentlightning.store.client_server import LightningStoreClient
-from agentlightning.types import Dataset, RolloutV2
+from agentlightning.store import LightningStore, LightningStoreClient
+from agentlightning.types import Dataset, Rollout
 
 console = Console()
 
@@ -140,7 +139,7 @@ async def sft_one_iter(
     model_path: str,
     train_dataset: Dataset[GsmProblem],
     llm_proxy: LLMProxy,
-    data_adapter: BaseTraceTripletAdapter,
+    data_adapter: TraceToTripletBase,
     triplet_fraction: float,
     vllm_port: int,
 ) -> str:
@@ -196,7 +195,7 @@ async def sft_one_iter(
         )
 
         # Create tasks for runners to run, associating them with the proxy address
-        rollouts: List[RolloutV2] = []
+        rollouts: List[Rollout] = []
         for data in train_dataset:
             rollouts.append(
                 await store.enqueue_rollout(
@@ -209,7 +208,7 @@ async def sft_one_iter(
         console.print(f"[bold red][Algo][/bold red] Enqueued {len(rollouts)} rollouts")
 
         # Wait for the tasks to complete
-        completed_rollouts: List[RolloutV2] = []
+        completed_rollouts: List[Rollout] = []
 
         while True:
             completed_rollouts = await store.wait_for_rollouts(
@@ -363,7 +362,7 @@ async def sft_algorithm(*, store: LightningStore) -> None:
 
     # This data adapter util is used to convert the trace data recorded by LLM proxy
     # into a format suitable for SFT
-    data_adapter = LlmProxyTripletAdapter()
+    data_adapter = LlmProxyTraceToTriplet()
 
     for iteration in range(MAX_ITERATIONS):
         model_path = await sft_one_iter(

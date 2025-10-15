@@ -12,7 +12,8 @@ from autogen_core.models import ModelFamily
 from autogen_ext.models.openai import OpenAIChatCompletionClient
 from autogen_ext.tools.mcp import McpWorkbench, StdioServerParams
 
-from agentlightning import LLM, LitAgent, NamedResources, Trainer, configure_logger, reward
+from agentlightning import LLM, LitAgent, NamedResources, Trainer, configure_logger
+from agentlightning.reward import reward
 
 configure_logger()
 
@@ -140,4 +141,4 @@ class CalcAgent(LitAgent[Any]):
 
 
 if __name__ == "__main__":
-    Trainer(n_workers=10).fit(CalcAgent(), "http://localhost:9999/")
+    Trainer(n_workers=10).fit_v0(CalcAgent(), "http://localhost:9999/")
