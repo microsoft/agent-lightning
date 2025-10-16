@@ -309,6 +309,9 @@ def lightning_cli(cls1: Type[_C1], cls2: Type[_C2], cls3: Type[_C3], cls4: Type[
 def lightning_cli(*classes: Type[CliConfigurable]) -> Tuple[CliConfigurable, ...]: ...
 
 
+# FIXME: lightning_cli needs to be fixed to comply with the latest trainer implementation.
+
+
 def lightning_cli(*classes: Type[CliConfigurable]) -> CliConfigurable | Tuple[CliConfigurable, ...]:  # type: ignore
     """
     Parses command-line arguments to configure and instantiate provided CliConfigurable classes.

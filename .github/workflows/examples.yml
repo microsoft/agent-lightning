@@ -145,9 +145,8 @@ jobs:
           set -ex
           . .venv/bin/activate
           cd examples/spider
-          python sql_agent.py --trainer.n-workers 1 --trainer.dev true --trainer.max-tasks 2
+          python sql_agent.py
         env:
-          VERL_API_BASE: http://localhost:9999/
           OPENAI_API_BASE: http://localhost:12306/
           OPENAI_API_KEY: dummy
         if: success() || failure()
@@ -245,18 +244,10 @@ jobs:
           cd examples/spider
           ../../scripts/restart_ray.sh
           sleep 5
-          PYTHONUNBUFFERED=1 python sql_agent.py --trainer.n-workers 10 &
-          bash train_ci.sh
-          pkill -f sql_agent.py && echo "SIGTERM sent to sql_agent.py" || echo "No sql_agent.py process found"
-          while pgrep -f sql_agent.py; do
-            echo "Waiting for sql_agent.py to finish..."
-            sleep 5
-          done
-          echo "sql_agent.py has finished."
+          PYTHONUNBUFFERED=1 python train_sql_agent.py fast
           sleep 10
         shell: bash
         env:
-          VERL_API_BASE: http://localhost:9991/
           WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
           WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
         id: spider_train

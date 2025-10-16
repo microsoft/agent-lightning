@@ -61,6 +61,24 @@ async def test_enqueue_rollout_creates_rollout(inmemory_store: InMemoryLightning
 
 
 @pytest.mark.asyncio
+async def test_enqueue_rollout_accepts_config(inmemory_store: InMemoryLightningStore) -> None:
+    """Rollout-specific configs can be provided when enqueuing tasks."""
+    config = RolloutConfig(timeout_seconds=12.0, max_attempts=3, retry_condition=["timeout"])
+
+    rollout = await inmemory_store.enqueue_rollout(input={"sample": True}, config=config)
+
+    assert rollout.config.timeout_seconds == 12.0
+    assert rollout.config.max_attempts == 3
+    assert rollout.config.retry_condition == ["timeout"]
+
+    stored = await inmemory_store.get_rollout_by_id(rollout.rollout_id)
+    assert stored is not None
+    assert stored.config.timeout_seconds == 12.0
+    assert stored.config.max_attempts == 3
+    assert stored.config.retry_condition == ["timeout"]
+
+
+@pytest.mark.asyncio
 async def test_add_rollout_initializes_attempt(inmemory_store: InMemoryLightningStore) -> None:
     """Test that add_rollout immediately tracks a preparing attempt."""
     sample = {"payload": "value"}
@@ -85,6 +103,24 @@ async def test_add_rollout_initializes_attempt(inmemory_store: InMemoryLightning
     latest_attempt = await inmemory_store.get_latest_attempt(attempt_rollout.rollout_id)
     assert latest_attempt is not None
     assert latest_attempt.attempt_id == attempt_rollout.attempt.attempt_id
+
+
+@pytest.mark.asyncio
+async def test_start_rollout_accepts_config(inmemory_store: InMemoryLightningStore) -> None:
+    """Custom rollout config is preserved for started rollouts."""
+    config = RolloutConfig(unresponsive_seconds=5.0, max_attempts=2, retry_condition=["unresponsive"])
+
+    attempt_rollout = await inmemory_store.start_rollout(input={"payload": "value"}, config=config)
+
+    assert attempt_rollout.config.unresponsive_seconds == 5.0
+    assert attempt_rollout.config.max_attempts == 2
+    assert attempt_rollout.config.retry_condition == ["unresponsive"]
+
+    stored = await inmemory_store.get_rollout_by_id(attempt_rollout.rollout_id)
+    assert stored is not None
+    assert stored.config.unresponsive_seconds == 5.0
+    assert stored.config.max_attempts == 2
+    assert stored.config.retry_condition == ["unresponsive"]
 
 
 @pytest.mark.asyncio
@@ -776,6 +812,45 @@ async def test_span_triggers_status_transition(
 
 
 # Rollout Lifecycle Tests
+
+
+@pytest.mark.asyncio
+async def test_span_does_not_reset_timeout_attempt(
+    inmemory_store: InMemoryLightningStore, mock_readable_span: Mock
+) -> None:
+    """Adding a span to a timed-out attempt should not mark it running again."""
+
+    rollout = await inmemory_store.enqueue_rollout(input={"test": "timeout-span"})
+
+    # Create the first attempt
+    dequeued = await inmemory_store.dequeue_rollout()
+    assert dequeued is not None
+    attempt_id = dequeued.attempt.attempt_id
+
+    # Simulate the attempt timing out
+    await inmemory_store.update_attempt(
+        rollout_id=rollout.rollout_id,
+        attempt_id=attempt_id,
+        status="timeout",
+    )
+
+    attempts_before = await inmemory_store.query_attempts(rollout.rollout_id)
+    assert attempts_before[0].status == "timeout"
+
+    rollout_before = await inmemory_store.get_rollout_by_id(rollout.rollout_id)
+    assert rollout_before is not None
+    assert rollout_before.status != "running"
+
+    # Adding a new span should keep the attempt in timeout state
+    await inmemory_store.add_otel_span(rollout.rollout_id, attempt_id, mock_readable_span)
+
+    attempts_after = await inmemory_store.query_attempts(rollout.rollout_id)
+    assert attempts_after[0].status == "timeout"
+    assert attempts_after[0].last_heartbeat_time is not None
+
+    rollout_after = await inmemory_store.get_rollout_by_id(rollout.rollout_id)
+    assert rollout_after is not None
+    assert rollout_after.status == rollout_before.status
 
 
 @pytest.mark.asyncio

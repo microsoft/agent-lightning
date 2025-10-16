@@ -66,6 +66,7 @@ class LightningStore:
         input: TaskInput,
         mode: Literal["train", "val", "test"] | None = None,
         resources_id: str | None = None,
+        config: RolloutConfig | None = None,
         metadata: Dict[str, Any] | None = None,
     ) -> AttemptedRollout:
         """
@@ -87,6 +88,7 @@ class LightningStore:
         input: TaskInput,
         mode: Literal["train", "val", "test"] | None = None,
         resources_id: str | None = None,
+        config: RolloutConfig | None = None,
         metadata: Dict[str, Any] | None = None,
     ) -> Rollout:
         """

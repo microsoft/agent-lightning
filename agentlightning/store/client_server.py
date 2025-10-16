@@ -44,6 +44,7 @@ class RolloutRequest(BaseModel):
     input: TaskInput
     mode: Optional[Literal["train", "val", "test"]] = None
     resources_id: Optional[str] = None
+    config: Optional[RolloutConfig] = None
     metadata: Optional[Dict[str, Any]] = None
 
 
@@ -90,6 +91,8 @@ class LightningStoreServer(LightningStore):
     Delegates all operations to an underlying store implementation.
 
     Healthcheck and watchdog relies on the underlying store.
+
+    `agl store` is a convenient CLI to start a store server.
     """
 
     def __init__(self, store: LightningStore, host: str, port: int):
@@ -281,6 +284,7 @@ class LightningStoreServer(LightningStore):
                 input=request.input,
                 mode=request.mode,
                 resources_id=request.resources_id,
+                config=request.config,
                 metadata=request.metadata,
             )
 
@@ -290,6 +294,7 @@ class LightningStoreServer(LightningStore):
                 input=request.input,
                 mode=request.mode,
                 resources_id=request.resources_id,
+                config=request.config,
                 metadata=request.metadata,
             )
 
@@ -382,18 +387,20 @@ class LightningStoreServer(LightningStore):
         input: TaskInput,
         mode: Literal["train", "val", "test"] | None = None,
         resources_id: str | None = None,
+        config: RolloutConfig | None = None,
         metadata: Dict[str, Any] | None = None,
     ) -> AttemptedRollout:
-        return await self._backend().start_rollout(input, mode, resources_id, metadata)
+        return await self._backend().start_rollout(input, mode, resources_id, config, metadata)
 
     async def enqueue_rollout(
         self,
         input: TaskInput,
         mode: Literal["train", "val", "test"] | None = None,
         resources_id: str | None = None,
+        config: RolloutConfig | None = None,
         metadata: Dict[str, Any] | None = None,
     ) -> Rollout:
-        return await self._backend().enqueue_rollout(input, mode, resources_id, metadata)
+        return await self._backend().enqueue_rollout(input, mode, resources_id, config, metadata)
 
     async def dequeue_rollout(self) -> Optional[AttemptedRollout]:
         return await self._backend().dequeue_rollout()
@@ -544,7 +551,8 @@ class LightningStoreClient(LightningStore):
         with self._lock:
             sess = self._sessions.get(key)
             if sess is None or sess.closed:
-                sess = aiohttp.ClientSession()
+                timeout = aiohttp.ClientTimeout(total=30.0, connect=5.0, sock_connect=5.0, sock_read=30.0)
+                sess = aiohttp.ClientSession(timeout=timeout)
                 self._sessions[key] = sess
         return sess
 
@@ -608,7 +616,7 @@ class LightningStoreClient(LightningStore):
             except aiohttp.ClientResponseError as cre:
                 # Respect app-level 4xx as final (server marks app faults as 400)
                 # 4xx => application issue; do not retry (except 408 which is transient)
-                logger.exception(f"ClientResponseError: {cre.status} {cre.message}")
+                logger.debug(f"ClientResponseError: {cre.status} {cre.message}", exc_info=True)
                 if 400 <= cre.status < 500 and cre.status != 408:
                     raise
                 # 5xx and others will be retried below if they raise
@@ -624,7 +632,7 @@ class LightningStoreClient(LightningStore):
                 asyncio.TimeoutError,
             ) as net_exc:
                 # Network/session issue: probe health before retrying
-                logger.exception(f"Network/session issue: {net_exc}")
+                logger.debug(f"Network/session issue: {net_exc}", exc_info=True)
                 last_exc = net_exc
                 logger.info(f"Network/session issue will be retried. Retrying the request {method}: {path}")
                 if not await self._wait_until_healthy(session):
@@ -660,12 +668,19 @@ class LightningStoreClient(LightningStore):
         input: TaskInput,
         mode: Literal["train", "val", "test"] | None = None,
         resources_id: str | None = None,
+        config: RolloutConfig | None = None,
         metadata: Dict[str, Any] | None = None,
     ) -> AttemptedRollout:
         data = await self._request_json(
             "post",
             "/start_rollout",
-            json=RolloutRequest(input=input, mode=mode, resources_id=resources_id, metadata=metadata).model_dump(),
+            json=RolloutRequest(
+                input=input,
+                mode=mode,
+                resources_id=resources_id,
+                config=config,
+                metadata=metadata,
+            ).model_dump(exclude_none=False),
         )
         return AttemptedRollout.model_validate(data)
 
@@ -674,12 +689,19 @@ class LightningStoreClient(LightningStore):
         input: TaskInput,
         mode: Literal["train", "val", "test"] | None = None,
         resources_id: str | None = None,
+        config: RolloutConfig | None = None,
         metadata: Dict[str, Any] | None = None,
     ) -> Rollout:
         data = await self._request_json(
             "post",
             "/enqueue_rollout",
-            json=RolloutRequest(input=input, mode=mode, resources_id=resources_id, metadata=metadata).model_dump(),
+            json=RolloutRequest(
+                input=input,
+                mode=mode,
+                resources_id=resources_id,
+                config=config,
+                metadata=metadata,
+            ).model_dump(exclude_none=False),
         )
         return Rollout.model_validate(data)
 
@@ -860,6 +882,15 @@ class LightningStoreClient(LightningStore):
         return span
 
     async def wait_for_rollouts(self, *, rollout_ids: List[str], timeout: Optional[float] = None) -> List[Rollout]:
+        """Wait for rollouts to complete.
+
+        Args:
+            rollout_ids: List of rollout IDs to wait for.
+            timeout: Timeout in seconds. If not None, the method will raise a ValueError if the timeout is greater than 0.1 seconds.
+
+        Returns:
+            List of rollouts that are completed.
+        """
         if timeout is not None and timeout > 0.1:
             raise ValueError(
                 "Timeout must be less than 0.1 seconds in LightningStoreClient to avoid blocking the event loop"

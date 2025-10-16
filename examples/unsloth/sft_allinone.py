@@ -19,14 +19,14 @@ from sft_algorithm import sft_one_iter
 
 from agentlightning import Trainer, configure_logger
 from agentlightning.adapter import TraceToTripletBase
-from agentlightning.algorithm import BaseAlgorithm
+from agentlightning.algorithm import Algorithm
 from agentlightning.llm_proxy import LLMProxy
 from agentlightning.types import Dataset
 
 console = Console()
 
 
-class UnslothSupervisedFinetuning(BaseAlgorithm):
+class UnslothSupervisedFinetuning(Algorithm):
     """Supervised Fine-Tuning (SFT) algorithm implementation using Unsloth.
 
     This class implements a complete SFT training loop that:

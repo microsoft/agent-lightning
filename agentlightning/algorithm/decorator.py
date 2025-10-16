@@ -26,7 +26,7 @@ from agentlightning.types import Dataset, NamedResources
 if TYPE_CHECKING:
     from agentlightning.llm_proxy import LLMProxy
 
-from .base import BaseAlgorithm
+from .base import Algorithm
 
 # Algorithm function signature types
 # We've missed a lot of combinations here.
@@ -100,12 +100,12 @@ AsyncFlag = Literal[True, False]
 AF = TypeVar("AF", bound=AsyncFlag)
 
 
-class FunctionalAlgorithm(BaseAlgorithm, Generic[AF]):
-    """A BaseAlgorithm that wraps a function-based algorithm implementation.
+class FunctionalAlgorithm(Algorithm, Generic[AF]):
+    """A Algorithm that wraps a function-based algorithm implementation.
 
     This class allows users to define algorithm behavior using a simple function
     that takes train_dataset and val_dataset parameters, rather than implementing
-    a full BaseAlgorithm subclass.
+    a full Algorithm subclass.
     """
 
     @overload
@@ -217,10 +217,10 @@ def algo(
         AlgorithmFuncAsyncFallback,
     ],
 ) -> Union[FunctionalAlgorithm[Literal[False]], FunctionalAlgorithm[Literal[True]]]:
-    """Create a BaseAlgorithm from a function.
+    """Create a Algorithm from a function.
 
     This decorator allows you to define an algorithm using a simple function
-    instead of creating a full BaseAlgorithm subclass. The returned FunctionalAlgorithm
+    instead of creating a full Algorithm subclass. The returned FunctionalAlgorithm
     instance is callable, preserving the original function's behavior.
 
     Args:

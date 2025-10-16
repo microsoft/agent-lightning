@@ -73,6 +73,7 @@ def _clear_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("AGL_CURRENT_ROLE", raising=False)
     monkeypatch.delenv("AGL_SERVER_HOST", raising=False)
     monkeypatch.delenv("AGL_SERVER_PORT", raising=False)
+    monkeypatch.delenv("AGL_MANAGED_STORE", raising=False)
 
 
 def test_env_configuration(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -99,6 +100,7 @@ def test_env_defaults_when_unset(monkeypatch: pytest.MonkeyPatch) -> None:
     assert strat.server_host == "localhost"
     assert strat.server_port == 4747
     assert strat.main_process == "algorithm"
+    assert strat.managed_store is True
 
 
 def test_env_invalid_port(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -118,6 +120,172 @@ def test_env_missing_role(monkeypatch: pytest.MonkeyPatch) -> None:
         match="role must be provided via argument or AGL_CURRENT_ROLE env var",
     ):
         ClientServerExecutionStrategy()
+
+
+def test_env_managed_store(monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_env(monkeypatch)
+    monkeypatch.setenv("AGL_CURRENT_ROLE", "algorithm")
+    monkeypatch.setenv("AGL_MANAGED_STORE", "0")
+
+    strat = ClientServerExecutionStrategy()
+
+    assert strat.managed_store is False
+
+
+def test_explicit_managed_store_overrides_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_env(monkeypatch)
+    monkeypatch.setenv("AGL_MANAGED_STORE", "0")
+
+    strat = ClientServerExecutionStrategy(role="algorithm", managed_store=True)
+
+    assert strat.managed_store is True
+
+
+def test_env_managed_store_invalid(monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_env(monkeypatch)
+    monkeypatch.setenv("AGL_CURRENT_ROLE", "algorithm")
+    monkeypatch.setenv("AGL_MANAGED_STORE", "maybe")
+
+    with pytest.raises(ValueError, match="AGL_MANAGED_STORE must be one of"):
+        ClientServerExecutionStrategy()
+
+
+# =========================
+# Managed store behaviour
+# =========================
+
+
+def test_execute_algorithm_managed_store_starts_server(
+    monkeypatch: pytest.MonkeyPatch, store: DummyLightningStore
+) -> None:
+    created: list["RecordingServer"] = []
+
+    class RecordingServer(LightningStore):  # type: ignore[misc]
+        def __init__(self, wrapped: LightningStore, host: str, port: int) -> None:
+            self.wrapped = wrapped
+            self.host = host
+            self.port = port
+            self.endpoint = f"http://{host}:{port}"
+            self.started = False
+            self.stopped = False
+            created.append(self)
+
+        async def start(self) -> None:
+            self.started = True
+
+        async def stop(self) -> None:
+            self.stopped = True
+
+    monkeypatch.setattr("agentlightning.execution.client_server.LightningStoreServer", RecordingServer)
+
+    strat = ClientServerExecutionStrategy(
+        role="algorithm",
+        managed_store=True,
+        server_host="127.0.0.1",
+        server_port=8123,
+    )
+
+    seen_store: list[LightningStore] = []
+
+    async def algo(store: LightningStore, event: ExecutionEvent) -> None:
+        seen_store.append(store)
+        event.set()
+
+    asyncio.run(strat._execute_algorithm(algo, store, DummyEvt()))  # pyright: ignore[reportPrivateUsage]
+
+    assert len(created) == 1
+    server = created[0]
+    assert server.wrapped is store
+    assert server.started is True
+    assert server.stopped is True
+    assert seen_store and isinstance(seen_store[0], RecordingServer)
+
+
+def test_execute_algorithm_unmanaged_uses_provided_store(
+    monkeypatch: pytest.MonkeyPatch, store: DummyLightningStore
+) -> None:
+    class ShouldNotBeCalled:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            raise AssertionError("Server wrapper should not be constructed when unmanaged")
+
+    monkeypatch.setattr("agentlightning.execution.client_server.LightningStoreServer", ShouldNotBeCalled)
+
+    strat = ClientServerExecutionStrategy(role="algorithm", managed_store=False)
+
+    seen: dict[str, LightningStore] = {}
+
+    async def algo(store: LightningStore, event: ExecutionEvent) -> None:
+        seen["store"] = store
+        event.set()
+
+    asyncio.run(strat._execute_algorithm(algo, store, DummyEvt()))  # pyright: ignore[reportPrivateUsage]
+
+    assert seen["store"] is store
+
+
+def test_execute_runner_managed_creates_and_closes_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    class RecordingClient(LightningStore):  # type: ignore[misc]
+        def __init__(self, url: str) -> None:
+            self.url = url
+            self.closed = False
+
+        async def close(self) -> None:
+            self.closed = True
+
+    monkeypatch.setattr("agentlightning.execution.client_server.LightningStoreClient", RecordingClient)
+
+    strat = ClientServerExecutionStrategy(
+        role="runner",
+        managed_store=True,
+        server_host="localhost",
+        server_port=9001,
+    )
+
+    seen: dict[str, LightningStore] = {}
+
+    async def runner(store: LightningStore, worker_id: int, event: ExecutionEvent) -> None:
+        seen["store"] = store
+        event.set()
+
+    asyncio.run(strat._execute_runner(runner, 0, DummyEvt()))  # pyright: ignore[reportPrivateUsage]
+
+    client = seen["store"]
+    assert isinstance(client, RecordingClient)
+    assert client.url == "http://localhost:9001"
+    assert client.closed is True
+
+
+def test_execute_runner_unmanaged_requires_store() -> None:
+    strat = ClientServerExecutionStrategy(role="runner", managed_store=False)
+
+    async def runner(store: LightningStore, worker_id: int, event: ExecutionEvent) -> None:
+        _ = (store, worker_id, event)
+
+    with pytest.raises(ValueError, match="Runner store must be provided"):
+        asyncio.run(strat._execute_runner(runner, 0, DummyEvt()))  # pyright: ignore[reportPrivateUsage]
+
+
+def test_execute_runner_unmanaged_uses_provided_store() -> None:
+    strat = ClientServerExecutionStrategy(role="runner", managed_store=False)
+
+    class ProvidedStore(LightningStore):
+        def __init__(self) -> None:
+            self.close_calls = 0
+
+        async def close(self) -> None:
+            self.close_calls += 1
+
+    provided = ProvidedStore()
+    seen: dict[str, LightningStore] = {}
+
+    async def runner(store: LightningStore, worker_id: int, event: ExecutionEvent) -> None:
+        seen["store"] = store
+        event.set()
+
+    asyncio.run(strat._execute_runner(runner, 1, DummyEvt(), store=provided))  # pyright: ignore[reportPrivateUsage]
+
+    assert seen["store"] is provided
+    assert provided.close_calls == 0
 
 
 # =========================

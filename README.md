@@ -1,6 +1,6 @@
-<div style="text-align:center; margin-bottom:20px;">
-  <img src="docs/assets/readme-banner.svg" alt="Agent-lightning-banner" style="max-width:600px"/>
-</div>
+<p align="center">
+  <img src="docs/assets/readme-banner.svg" alt="Agent-lightning-banner" style="width:600px"/>
+</p>
 
 # Agent Lightning⚡
 

@@ -25,8 +25,8 @@ from .tracer import Span
 
 if TYPE_CHECKING:
     from agentlightning.litagent import LitAgent
-    from agentlightning.runner.base import BaseRunner
-    from agentlightning.tracer.base import BaseTracer
+    from agentlightning.runner.base import Runner
+    from agentlightning.tracer.base import Tracer
 
 __all__ = [
     "Triplet",
@@ -53,7 +53,7 @@ T_co = TypeVar("T_co", covariant=True)
 
 
 class Triplet(BaseModel):
-    """A standard structure for a single turn in a trajectory."""
+    """A standard structure for a single turn in a RL trajectory."""
 
     prompt: Any
     response: Any
@@ -115,53 +115,67 @@ RolloutMode = Literal["train", "val", "test"]
 class Attempt(BaseModel):
     """An attempt to execute a rollout. A rollout can have multiple attempts if retries are needed."""
 
-    rollout_id: str  # the rollout this attempt belongs to
-    attempt_id: str  # the universal id for current attempt
-    sequence_id: int  # the sequence number of the attempt, starting from 1
-    start_time: float  # time when the attempt has started
-    end_time: Optional[float] = None  # time when the attempt has ended
-
+    rollout_id: str
+    """The rollout which this attempt belongs to."""
+    attempt_id: str
+    """The universal id for current attempt."""
+    sequence_id: int
+    """The sequence number of the attempt, starting from 1."""
+    start_time: float
+    """The time when the attempt has started."""
+    end_time: Optional[float] = None
+    """The time when the attempt has ended."""
     status: AttemptStatus = "preparing"
-    # The rollout worker which is executing this attempt
+    """The status of the attempt."""
     worker_id: Optional[str] = None
+    """The rollout worker which is executing this attempt."""
 
-    last_heartbeat_time: Optional[float] = None  # last time when the worker has reported progress
+    last_heartbeat_time: Optional[float] = None
+    """The last time when the worker has reported progress (i.e., a span)."""
 
-    # A bucket for any other relevant information
     metadata: Optional[Dict[str, Any]] = None
+    """A bucket for any other relevant information."""
 
 
 class RolloutConfig(BaseModel):
     """Configurations for rollout execution."""
 
-    timeout_seconds: Optional[float] = None  # none indicates no timeout
-    unresponsive_seconds: Optional[float] = None  # none indicates no unresponsive timeout
-    max_attempts: int = Field(default=1, ge=1)  # including the first attempt
-    retry_condition: List[AttemptStatus] = Field(
-        default_factory=cast(Callable[[], List[AttemptStatus]], list)
-    )  # list of statuses that should trigger a retry
+    timeout_seconds: Optional[float] = None
+    """The timeout for the rollout, in seconds. None indicates no timeout."""
+    unresponsive_seconds: Optional[float] = None
+    """The unresponsive timeout for the rollout, in seconds. None indicates no unresponsive timeout."""
+    max_attempts: int = Field(default=1, ge=1)
+    """The maximum number of attempts for the rollout, including the first attempt."""
+    retry_condition: List[AttemptStatus] = Field(default_factory=cast(Callable[[], List[AttemptStatus]], list))
+    """The list of statuses that should trigger a retry."""
 
 
 class Rollout(BaseModel):
     rollout_id: str
+    """The universal id for the rollout."""
 
-    # Inputs
     input: TaskInput
+    """The input of the rollout, also known as a task."""
 
     # Time to track the lifecycle of the rollout
     start_time: float
+    """The time when the rollout has started."""
     end_time: Optional[float] = None
+    """The time when the rollout has ended."""
 
     mode: Optional[RolloutMode] = None
+    """The mode of the rollout (e.g., train, val, test)."""
     resources_id: Optional[str] = None
+    """The id of the resources used by the rollout."""
 
-    # Overall scheduling/running information
     status: RolloutStatus = "queuing"
+    """The status of the rollout."""
 
     config: RolloutConfig = Field(default_factory=RolloutConfig)
+    """The configuration of the rollout, e.g., retry policy."""
 
-    # A bucket for any other relevant information
     metadata: Optional[Dict[str, Any]] = None
+    """A bucket for any other relevant information."""
 
 
 class AttemptedRollout(Rollout):
@@ -275,14 +289,14 @@ class Hook(ParallelWorkerBase):
     """Base class for defining hooks in the agent runner's lifecycle."""
 
     async def on_trace_start(
-        self, *, agent: LitAgent[Any], runner: BaseRunner[Any], tracer: BaseTracer, rollout: Rollout
+        self, *, agent: LitAgent[Any], runner: Runner[Any], tracer: Tracer, rollout: Rollout
     ) -> None:
         """Hook called immediately after the tracer enters the trace context but before the rollout begins.
 
         Args:
             agent: The :class:`LitAgent` instance associated with the runner.
-            runner: The :class:`BaseRunner` managing the rollout.
-            tracer: The :class:`BaseTracer` instance associated with the runner.
+            runner: The :class:`Runner` managing the rollout.
+            tracer: The :class:`Tracer` instance associated with the runner.
             rollout: The :class:`Rollout` object that will be processed.
 
         Subclasses can override this method to implement custom logic such as logging,
@@ -290,26 +304,26 @@ class Hook(ParallelWorkerBase):
         """
 
     async def on_trace_end(
-        self, *, agent: LitAgent[Any], runner: BaseRunner[Any], tracer: BaseTracer, rollout: Rollout
+        self, *, agent: LitAgent[Any], runner: Runner[Any], tracer: Tracer, rollout: Rollout
     ) -> None:
         """Hook called immediately after the rollout completes but before the tracer exits the trace context.
 
         Args:
             agent: The :class:`LitAgent` instance associated with the runner.
-            runner: The :class:`BaseRunner` managing the rollout.
-            tracer: The :class:`BaseTracer` instance associated with the runner.
+            runner: The :class:`Runner` managing the rollout.
+            tracer: The :class:`Tracer` instance associated with the runner.
             rollout: The :class:`Rollout` object that has been processed.
 
         Subclasses can override this method to implement custom logic such as logging,
         metric collection, or resource cleanup. By default, this is a no-op.
         """
 
-    async def on_rollout_start(self, *, agent: LitAgent[Any], runner: BaseRunner[Any], rollout: Rollout) -> None:
+    async def on_rollout_start(self, *, agent: LitAgent[Any], runner: Runner[Any], rollout: Rollout) -> None:
         """Hook called immediately before a rollout *attempt* begins.
 
         Args:
             agent: The :class:`LitAgent` instance associated with the runner.
-            runner: The :class:`BaseRunner` managing the rollout.
+            runner: The :class:`Runner` managing the rollout.
             rollout: The :class:`Rollout` object that will be processed.
 
         Subclasses can override this method to implement custom logic such as
@@ -321,7 +335,7 @@ class Hook(ParallelWorkerBase):
         self,
         *,
         agent: LitAgent[Any],
-        runner: BaseRunner[Any],
+        runner: Runner[Any],
         rollout: Rollout,
         spans: Union[List[ReadableSpan], List[Span]],
     ) -> None:
@@ -329,7 +343,7 @@ class Hook(ParallelWorkerBase):
 
         Args:
             agent: The :class:`LitAgent` instance associated with the runner.
-            runner: The :class:`BaseRunner` managing the rollout.
+            runner: The :class:`Runner` managing the rollout.
             rollout: The :class:`Rollout` object that has been processed.
             spans: The spans that have been added to the store.
 

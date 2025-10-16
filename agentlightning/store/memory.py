@@ -207,6 +207,7 @@ class InMemoryLightningStore(LightningStore):
         input: TaskInput,
         mode: Literal["train", "val", "test"] | None = None,
         resources_id: str | None = None,
+        config: RolloutConfig | None = None,
         metadata: Dict[str, Any] | None = None,
     ) -> AttemptedRollout:
         """
@@ -216,6 +217,9 @@ class InMemoryLightningStore(LightningStore):
             rollout_id = _generate_rollout_id()
             current_time = time.time()
 
+            rollout_config = config.model_copy(deep=True) if config is not None else RolloutConfig()
+            rollout_metadata = dict(metadata) if metadata is not None else {}
+
             rollout = Rollout(
                 rollout_id=rollout_id,
                 input=input,
@@ -223,7 +227,8 @@ class InMemoryLightningStore(LightningStore):
                 resources_id=resources_id or self._latest_resources_id,
                 start_time=current_time,
                 status="preparing",
-                metadata=metadata or {},
+                config=rollout_config,
+                metadata=rollout_metadata,
             )
 
             # Create the initial attempt
@@ -250,6 +255,7 @@ class InMemoryLightningStore(LightningStore):
         input: TaskInput,
         mode: Literal["train", "val", "test"] | None = None,
         resources_id: str | None = None,
+        config: RolloutConfig | None = None,
         metadata: Dict[str, Any] | None = None,
     ) -> Rollout:
         """
@@ -259,6 +265,9 @@ class InMemoryLightningStore(LightningStore):
             rollout_id = _generate_rollout_id()
             current_time = time.time()
 
+            rollout_config = config.model_copy(deep=True) if config is not None else RolloutConfig()
+            rollout_metadata = dict(metadata) if metadata is not None else {}
+
             rollout = Rollout(
                 rollout_id=rollout_id,
                 input=input,
@@ -266,7 +275,8 @@ class InMemoryLightningStore(LightningStore):
                 resources_id=resources_id or self._latest_resources_id,
                 start_time=current_time,
                 status="queuing",  # should be queuing
-                metadata=metadata or {},
+                config=rollout_config,
+                metadata=rollout_metadata,
             )
 
             self._rollouts[rollout.rollout_id] = rollout
@@ -510,7 +520,7 @@ class InMemoryLightningStore(LightningStore):
 
         # Update attempt heartbeat
         current_attempt.last_heartbeat_time = time.time()
-        if current_attempt.status in ["preparing", "unresponsive", "timeout"]:
+        if current_attempt.status in ["preparing", "unresponsive"]:
             current_attempt.status = "running"
 
         # If the status has already timed out or failed, do not change it

@@ -20,7 +20,7 @@ from agentlightning.litagent import LitAgent
 from agentlightning.reward import emit_reward, find_final_reward
 from agentlightning.store.base import LightningStore
 from agentlightning.tracer.agentops import AgentOpsTracer
-from agentlightning.tracer.base import BaseTracer
+from agentlightning.tracer.base import Tracer
 from agentlightning.types import (
     AttemptedRollout,
     Hook,
@@ -34,14 +34,14 @@ from agentlightning.types import (
 if TYPE_CHECKING:
     from agentlightning.execution.events import ExecutionEvent
 
-from .base import BaseRunner
+from .base import Runner
 
 T_task = TypeVar("T_task")
 
 logger = logging.getLogger(__name__)
 
 
-class LitAgentRunner(BaseRunner[T_task]):
+class LitAgentRunner(Runner[T_task]):
     """Runner implementation for executing agent tasks with distributed support.
 
     This runner manages the complete lifecycle of agent rollout execution,
@@ -52,7 +52,7 @@ class LitAgentRunner(BaseRunner[T_task]):
         worker_id: The unique identifier for this worker process.
     """
 
-    def __init__(self, tracer: BaseTracer, max_rollouts: Optional[int] = None, poll_interval: float = 5.0) -> None:
+    def __init__(self, tracer: Tracer, max_rollouts: Optional[int] = None, poll_interval: float = 5.0) -> None:
         """Initialize the agent runner.
 
         Args:
@@ -138,6 +138,15 @@ class LitAgentRunner(BaseRunner[T_task]):
         self.worker_id = None
 
         self._tracer.teardown_worker(worker_id)
+
+    @property
+    def tracer(self) -> Tracer:
+        """Get the tracer instance.
+
+        Returns:
+            The Tracer instance used by this runner.
+        """
+        return self._tracer
 
     def get_agent(self) -> LitAgent[T_task]:
         """Get the agent instance.

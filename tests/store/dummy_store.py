@@ -12,6 +12,7 @@ from agentlightning.types import (
     NamedResources,
     ResourcesUpdate,
     Rollout,
+    RolloutConfig,
     RolloutStatus,
     Span,
     TaskInput,
@@ -29,9 +30,10 @@ class DummyLightningStore(LightningStore):
         input: TaskInput,
         mode: Optional[str] = None,
         resources_id: Optional[str] = None,
+        config: Optional[RolloutConfig] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> AttemptedRollout:
-        self.calls.append(("start_rollout", (input, mode, resources_id, metadata), {}))
+        self.calls.append(("start_rollout", (input, mode, resources_id, config, metadata), {}))
         return self.return_values["start_rollout"]
 
     async def enqueue_rollout(
@@ -39,9 +41,10 @@ class DummyLightningStore(LightningStore):
         input: TaskInput,
         mode: Optional[str] = None,
         resources_id: Optional[str] = None,
+        config: Optional[RolloutConfig] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> Rollout:
-        self.calls.append(("enqueue_rollout", (input, mode, resources_id, metadata), {}))
+        self.calls.append(("enqueue_rollout", (input, mode, resources_id, config, metadata), {}))
         return self.return_values["enqueue_rollout"]
 
     async def dequeue_rollout(self) -> Optional[AttemptedRollout]:

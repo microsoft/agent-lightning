@@ -1,20 +1,23 @@
 # Copyright (c) Microsoft. All rights reserved.
 
+from __future__ import annotations
+
 import json
 from collections import defaultdict
-from typing import Any, Dict, Generator, Iterable, List, Optional, TypedDict, Union, cast
+from typing import TYPE_CHECKING, Any, Dict, Generator, Iterable, List, Optional, TypedDict, Union, cast
 
-from openai.types.chat import (
-    ChatCompletionAssistantMessageParam,
-    ChatCompletionFunctionToolParam,
-    ChatCompletionMessageFunctionToolCallParam,
-    ChatCompletionMessageParam,
-)
 from pydantic import TypeAdapter
 
 from agentlightning.types import Span
 
 from .base import TraceAdapter
+
+if TYPE_CHECKING:
+    from openai.types.chat import (
+        ChatCompletionFunctionToolParam,
+        ChatCompletionMessageFunctionToolCallParam,
+        ChatCompletionMessageParam,
+    )
 
 
 class OpenAIMessages(TypedDict):
@@ -86,6 +89,15 @@ def convert_to_openai_messages(prompt_completion_list: List[_RawSpanInfo]) -> Ge
 
     https://learn.microsoft.com/en-us/azure/ai-foundry/openai/how-to/fine-tuning-functions
     """
+
+    # Import locally to avoid legacy OpenAI version type import errors
+    from openai.types.chat import (
+        ChatCompletionAssistantMessageParam,
+        ChatCompletionFunctionToolParam,
+        ChatCompletionMessageFunctionToolCallParam,
+        ChatCompletionMessageParam,
+    )
+
     for pc_entry in prompt_completion_list:
         messages: List[ChatCompletionMessageParam] = []
 

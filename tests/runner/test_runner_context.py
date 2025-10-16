@@ -11,7 +11,7 @@ from agentlightning.litagent import LitAgent
 from agentlightning.runner import LitAgentRunner
 from agentlightning.store.base import LightningStore
 from agentlightning.store.memory import InMemoryLightningStore
-from agentlightning.tracer.base import BaseTracer
+from agentlightning.tracer.base import Tracer
 from agentlightning.types import LLM, Hook, Rollout
 
 from ..common.tracer import clear_tracer_provider
@@ -26,7 +26,7 @@ def setup_module():
     trace_api.set_tracer_provider(TracerProvider())
 
 
-class DummyTracer(BaseTracer):
+class DummyTracer(Tracer):
     """Minimal tracer for testing."""
 
     def __init__(self) -> None:
@@ -87,10 +87,10 @@ class RecordingHook(Hook):
     async def on_rollout_start(self, *, agent: LitAgent[Any], runner: Any, rollout: Rollout) -> None:
         self.calls.append("on_rollout_start")
 
-    async def on_trace_start(self, *, agent: LitAgent[Any], runner: Any, tracer: BaseTracer, rollout: Rollout) -> None:
+    async def on_trace_start(self, *, agent: LitAgent[Any], runner: Any, tracer: Tracer, rollout: Rollout) -> None:
         self.calls.append("on_trace_start")
 
-    async def on_trace_end(self, *, agent: LitAgent[Any], runner: Any, tracer: BaseTracer, rollout: Rollout) -> None:
+    async def on_trace_end(self, *, agent: LitAgent[Any], runner: Any, tracer: Tracer, rollout: Rollout) -> None:
         self.calls.append("on_trace_end")
 
     async def on_rollout_end(self, *, agent: LitAgent[Any], runner: Any, rollout: Rollout, spans: Any) -> None:

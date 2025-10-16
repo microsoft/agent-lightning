@@ -19,7 +19,7 @@ import poml
 from openai import AsyncOpenAI
 
 from agentlightning.adapter.messages import TraceToMessages
-from agentlightning.algorithm.base import BaseAlgorithm
+from agentlightning.algorithm.base import Algorithm
 from agentlightning.reward import find_final_reward
 from agentlightning.types import Dataset, NamedResources, PromptTemplate, Rollout, RolloutMode, RolloutStatus
 
@@ -91,7 +91,7 @@ def batch_iter_over_dataset(dataset: Dataset[T_task], batch_size: int) -> Iterat
                     current_batch = []
 
 
-class APO(BaseAlgorithm, Generic[T_task]):
+class APO(Algorithm, Generic[T_task]):
     """Automatic Prompt Optimization (APO) algorithm using textual gradients and beam search.
 
     APO is an iterative prompt optimization algorithm that uses LLM-generated textual gradients

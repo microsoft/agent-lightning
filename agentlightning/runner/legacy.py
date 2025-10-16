@@ -11,10 +11,10 @@ from agentlightning.adapter import TracerTraceToTriplet
 from agentlightning.client import AgentLightningClient
 from agentlightning.litagent import LitAgent
 from agentlightning.litagent.litagent import is_v0_1_rollout_api
-from agentlightning.tracer.base import BaseTracer
+from agentlightning.tracer.base import Tracer
 from agentlightning.types import RolloutLegacy, RolloutRawResultLegacy, Triplet
 
-from .base import BaseRunner
+from .base import Runner
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +23,7 @@ __all__ = [
 ]
 
 
-class LegacyAgentRunner(BaseRunner[Any]):
+class LegacyAgentRunner(Runner[Any]):
     """Manages the agent's execution loop and integrates with AgentOps.
 
     This class orchestrates the interaction between the agent (`LitAgent`) and
@@ -43,7 +43,7 @@ class LegacyAgentRunner(BaseRunner[Any]):
         self,
         agent: LitAgent[Any],
         client: AgentLightningClient,
-        tracer: BaseTracer,
+        tracer: Tracer,
         triplet_exporter: TracerTraceToTriplet,
         worker_id: Optional[int] = None,
         max_tasks: Optional[int] = None,
@@ -58,7 +58,7 @@ class LegacyAgentRunner(BaseRunner[Any]):
         self.worker_id = worker_id
         self.max_tasks = max_tasks
 
-    # These methods are overridden by BaseRunner, getting them back to old behavior.
+    # These methods are overridden by Runner, getting them back to old behavior.
     def init(self, *args: Any, **kwargs: Any) -> None:
         pass
 
