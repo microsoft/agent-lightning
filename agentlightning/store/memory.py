@@ -5,8 +5,6 @@ from __future__ import annotations
 import asyncio
 import functools
 import hashlib
-import importlib
-import importlib.util
 import logging
 import sys
 import threading
@@ -119,13 +117,14 @@ def _generate_attempt_id() -> str:
 def _detect_total_memory_bytes() -> int:
     """Best-effort detection of the total available system memory in bytes."""
 
-    psutil_spec = importlib.util.find_spec("psutil")
-    if psutil_spec is not None:
-        psutil = importlib.import_module("psutil")
-        return int(psutil.virtual_memory().total)
+    try:
+        import psutil
 
-    # Fallback to 8GB if memory cannot be detected.
-    return 8 * 1024**3
+        return int(psutil.virtual_memory().total)
+    except ImportError:
+        # Fallback to 8GB if memory cannot be detected.
+        logger.error("psutil is not installed. Falling back to 8GB of memory in total.")
+        return 8 * 1024**3
 
 
 class InMemoryLightningStore(LightningStore):
