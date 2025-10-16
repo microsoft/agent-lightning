@@ -584,10 +584,14 @@ class InMemoryLightningStore(LightningStore):
 
         candidates.sort(key=lambda item: item[0])
 
+        logger.info(f"Evicting spans for {len(candidates)} rollouts to free up memory...")
+        memory_consumed_before = self._total_span_bytes
         for _, rollout_id in candidates:
             if self._total_span_bytes <= self._safe_threshold_bytes:
                 break
+            logger.debug(f"Evicting spans for rollout {rollout_id} to free up memory...")
             self._evict_spans_for_rollout(rollout_id)
+        logger.info(f"Freed up {memory_consumed_before - self._total_span_bytes} bytes of memory")
 
     def _evict_spans_for_rollout(self, rollout_id: str) -> None:
         spans = self._spans.pop(rollout_id, [])
