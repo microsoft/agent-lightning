@@ -61,7 +61,7 @@ dataset: Dataset[RoomSelectionTask] = [
 Trainer().fit(agent=room_selector, train_dataset=dataset)
 ```
 
-Behind the scenes, the [`@rollout`][agentlightning.rollout] decorator wraps your function in a `FunctionalLitAgent` object, which is a subclass of [LitAgent][agentlightning.LitAgent] introduced below, making it compatible with the [Trainer][agentlightning.Trainer] and [Runner][agentlightning.BaseRunner]. It supports parameters like `task`, `prompt_template`, `llm`, and `rollout`, giving you flexible access to the execution context.
+Behind the scenes, the [`@rollout`][agentlightning.rollout] decorator wraps your function in a `FunctionalLitAgent` object, which is a subclass of [LitAgent][agentlightning.LitAgent] introduced below, making it compatible with the [Trainer][agentlightning.Trainer] and [Runner][agentlightning.Runner]. It supports parameters like `task`, `prompt_template`, `llm`, and `rollout`, giving you flexible access to the execution context.
 
 Here is another example with more advanced usage with `llm` and `rollout` as parameters. The `llm` parameter gives you an OpenAI-compatible LLM endpoint to interact with, which can be tuned under the hood by algorithms. The `rollout` parameter gives you the full [Rollout][agentlightning.Rollout] object, which contains the rollout ID, rollout mode (training or validation), etc.
 
@@ -111,7 +111,7 @@ The value your agent function returns (i.e., the return value of the function de
 
 * **`float`**: This is the simplest and most common return type. The `float` is treated as the **final reward** for the entire rollout. Agent-lightning automatically creates a final reward span based on this value.
 
-* **`None`**: Returning `None` tells the runner that trace collection is being handled entirely by the [Tracer][agentlightning.BaseTracer] through auto-instrumentation (e.g., via AgentOps). In this case, the runner will simply retrieve the spans that the tracer has already captured.
+* **`None`**: Returning `None` tells the runner that trace collection is being handled entirely by the [Tracer][agentlightning.Tracer] through auto-instrumentation (e.g., via AgentOps). In this case, the runner will simply retrieve the spans that the tracer has already captured.
 
 !!! important "Emitting the Final Reward"
 
@@ -203,7 +203,7 @@ The `LitAgent` class provides several methods you can override for more fine-gra
 
 While returning a single float for the final reward is sufficient for many algorithms, some advanced scenarios require richer feedback. For instance, an algorithm might learn more effectively if it receives intermediate rewards throughout a multi-step task.
 
-Agent-lightning provides an **emitter** module that allows you to record custom spans from within your agent's logic. Remember, the [Tracer][agentlightning.BaseTracer] automatically instruments many common operations (like LLM calls), but the emitter is for your own, domain-specific events.
+Agent-lightning provides an **emitter** module that allows you to record custom spans from within your agent's logic. Remember, the [Tracer][agentlightning.Tracer] automatically instruments many common operations (like LLM calls), but the emitter is for your own, domain-specific events.
 
 You can find the emitter functions from [agentlightning.emitter](../reference/agent.md).
 
