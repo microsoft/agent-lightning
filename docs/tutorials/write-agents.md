@@ -125,7 +125,7 @@ For most users, returning a **`float`** for simple agents or returning **`None`*
 
 For more complex agents that require state, helper methods, or distinct logic for training versus validation, you can create a class that inherits from `LitAgent`. This object-oriented approach provides more structure and control over the agent's lifecycle.
 
-To create a class-based agent, you subclass [agentlightning.LitAgent] and implement its `rollout` method.
+To create a class-based agent, you subclass [agentlightning.LitAgent][] and implement its `rollout` method.
 
 Here's how the `room_selector` could be implemented as a class. The rollout method has a slightly different signature than the function-based agent, mainly in how it handles the resources. Algorithms send [NamedResourcce][agentlightning.NamedResources] (which is a mapping from resource key to [Resource][agentlightning.Resource]) to agent. With [`@rollout`][agentlightning.rollout] decorator, the resource with correctly matched type will be automatically injected into the rollout method. However, when you use a class-based agent, you need to manually access the resource from the `resources` dictionary. Built-in algorithms listed their resource key naming conventions [here](../algorithm-zoo/index.md).
 
@@ -211,10 +211,10 @@ You can find the emitter functions from [agentlightning.emitter](../reference/ag
 
 Here are the primary emitter functions:
 
-* `emit_reward(value: float)`: Records an intermediate reward.
-* `emit_message(message: str)`: Records a simple log message as a span.
-* `emit_exception(exception: BaseException)`: Records a Python exception, including its type, message, and stack trace.
-* `emit_object(obj: Any)`: Records any JSON-serializable object, perfect for structured data.
+* [`emit_reward(value: float)`][agentlightning.emit_reward]: Records an intermediate reward.
+* [`emit_message(message: str)`][agentlightning.emit_message]: Records a simple log message as a span.
+* [`emit_exception(exception: BaseException)`][agentlightning.emit_exception]: Records a Python exception, including its type, message, and stack trace.
+* [`emit_object(obj: Any)`][agentlightning.emit_object]: Records any JSON-serializable object, perfect for structured data.
 
 Let's see an example of an agent using these emitters to provide detailed feedback.
 
