@@ -14,7 +14,7 @@ Usage:
     python train_sql_agent.py qwen    # Standard Qwen model training
     python train_sql_agent.py llama   # LLaMA model training
 
-The script uses reinforcement learning with VERL (Versatile Efficient RL) algorithm
+The script uses reinforcement learning with VERL framework
 to train agents on the Spider dataset for text-to-SQL generation tasks.
 """
 
@@ -114,7 +114,7 @@ def config_train_fast() -> Dict[str, Any]:
 
     config = deepcopy(RL_TRAINING_CONFIG)
     config["actor_rollout_ref"]["rollout"]["gpu_memory_utilization"] = 0.6
-    config["model"]["path"] = "Qwen/Qwen2.5-Coder-0.5B-Instruct"
+    config["actor_rollout_ref"]["model"]["path"] = "Qwen/Qwen2.5-Coder-0.5B-Instruct"
     config["data"]["val_files"] = "data/test_dev.parquet"
     config["trainer"]["total_epochs"] = 1
     config["trainer"]["total_training_steps"] = 1
@@ -132,11 +132,14 @@ def config_train_qwen() -> Dict[str, Any]:
 
 
 def config_train_llama() -> Dict[str, Any]:
-    """A configuration for training with LLaMA-3.2-3B-Instruct."""
+    """A configuration for training with LLaMA-3.2-1B-Instruct.
+
+    You will need a `HF_TOKEN` set to run with this config.
+    """
 
     config = deepcopy(RL_TRAINING_CONFIG)
     config["actor_rollout_ref"]["rollout"]["multi_turn"]["format"] = "llama3_json"
-    config["actor_rollout_ref"]["model"]["path"] = "meta-llama/Llama-3.2-3B-Instruct"
+    config["actor_rollout_ref"]["model"]["path"] = "meta-llama/Llama-3.2-1B-Instruct"
     return config
 
 
