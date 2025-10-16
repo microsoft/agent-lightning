@@ -26,10 +26,9 @@
       "legend": { "position": "top" },
       "title": { "display": true, "text": "Website Performance in 2025" }
     },
-    "interaction": { "mode": "index", "intersect": false },
     "scales": {
       "y": { "beginAtZero": true, "title": { "display": true, "text": "Count" } },
-      "x": { "title": { "display": true, "text": "Month" } }
+      "x": { "title": { "display": true, "text": "Month" }, "offset": false, "alignToPixels": true }
     }
   }
 }'></canvas>

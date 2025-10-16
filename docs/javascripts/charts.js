@@ -56,47 +56,6 @@ function applyThemeDefaults() {
   }
 }
 
-// ---- Auto-growth animation presets --------------------------------------
-// Bars grow from baseline; line “draws” from baseline too.
-function growFromBaselineAnimations(chartType, chart) {
-  const yScale = Object.values(chart.scales).find((s) => s.axis === "y");
-  const xScale = Object.values(chart.scales).find((s) => s.axis === "x");
-  const baseY = yScale ? yScale.getPixelForValue(0) : undefined;
-  const baseX = xScale ? xScale.getPixelForValue(0) : undefined;
-
-  // delays for a nice cascade
-  const baseDelay = 40;
-
-  // We only support line charts for now
-  if (chartType === "line") {
-    return {
-      animations: {
-        y: {
-          from: (ctx) => baseY,
-          duration: 800,
-          easing: "easeOutCubic",
-        },
-        // optional little point fade-in
-        radius: {
-          from: 0,
-          to: 3,
-          duration: 300,
-          delay: (ctx) => ctx.dataIndex * baseDelay,
-        },
-      },
-      // subtle curve looks nicer with draw-in
-      elements: { line: { tension: 0.3 } },
-    };
-  }
-
-  // fallback
-  return {
-    animations: {
-      y: { from: (ctx) => baseY, duration: 700, easing: "easeOutCubic" },
-    },
-  };
-}
-
 // ---- Dataset color defaults (Material primary/accent) --------------------
 const colorScheme = ["#c45259", "#5276c4", "#f69047", "#7cc452", "#c2b00a"];
 
@@ -132,9 +91,8 @@ function deepMerge(target, src) {
 }
 
 // ---- Build final config for a canvas ------------------------------------
-function buildConfig(baseCfg, chart) {
+function buildConfig(baseCfg) {
   const type = (baseCfg.type || "").toLowerCase();
-  const animDefaults = growFromBaselineAnimations(type, chart);
 
   // site-wide chart defaults
   const globalDefaults = {
@@ -147,13 +105,14 @@ function buildConfig(baseCfg, chart) {
         tooltip: { enabled: true },
       },
       layout: { padding: { top: 8, right: 8, bottom: 0, left: 0 } },
+      normalized: true,
+      alignToPixels: true,
     },
   };
 
   const merged = deepMerge({}, globalDefaults);
   applyDatasetDefaults(baseCfg);
   deepMerge(merged, baseCfg); // user config wins
-  deepMerge(merged, animDefaults); // but we still add the grow-from-0 anims
   return merged;
 }
 
@@ -175,14 +134,7 @@ function buildConfig(baseCfg, chart) {
 
       const ctx = canvas.getContext("2d");
 
-      // Create a temporary chart so we can compute scales for animation “from”
-      const tempChart = new Chart(ctx, {
-        type: cfg.type || "bar",
-        data: cfg.data || {},
-      });
-      tempChart.destroy();
-
-      const finalCfg = buildConfig(cfg, tempChart);
+      const finalCfg = buildConfig(cfg);
       const chart = new Chart(ctx, finalCfg);
       registry.set(canvas, chart);
     });

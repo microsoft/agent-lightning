@@ -148,7 +148,7 @@ def train(config: Dict[str, Any], active_agent: Optional[str]) -> None:
 
     agent = LitSQLAgent()
     algorithm = agl.VERL(config)
-    trainer = agl.Trainer(n_workers=10, algorithm=algorithm, adapter={"agent_match": active_agent})
+    trainer = agl.Trainer(n_runners=10, algorithm=algorithm, adapter={"agent_match": active_agent})
     print("Adapter agent match acknowledged:", trainer.adapter.agent_match)  # type: ignore
 
     train_data = pd.read_parquet(config["data"]["train_files"]).to_dict(orient="records")  # type: ignore
