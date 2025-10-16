@@ -605,6 +605,45 @@ async def test_span_triggers_status_transition(
 
 
 @pytest.mark.asyncio
+async def test_span_does_not_reset_timeout_attempt(
+    inmemory_store: InMemoryLightningStore, mock_readable_span: Mock
+) -> None:
+    """Adding a span to a timed-out attempt should not mark it running again."""
+
+    rollout = await inmemory_store.enqueue_rollout(input={"test": "timeout-span"})
+
+    # Create the first attempt
+    dequeued = await inmemory_store.dequeue_rollout()
+    assert dequeued is not None
+    attempt_id = dequeued.attempt.attempt_id
+
+    # Simulate the attempt timing out
+    await inmemory_store.update_attempt(
+        rollout_id=rollout.rollout_id,
+        attempt_id=attempt_id,
+        status="timeout",
+    )
+
+    attempts_before = await inmemory_store.query_attempts(rollout.rollout_id)
+    assert attempts_before[0].status == "timeout"
+
+    rollout_before = await inmemory_store.get_rollout_by_id(rollout.rollout_id)
+    assert rollout_before is not None
+    assert rollout_before.status != "running"
+
+    # Adding a new span should keep the attempt in timeout state
+    await inmemory_store.add_otel_span(rollout.rollout_id, attempt_id, mock_readable_span)
+
+    attempts_after = await inmemory_store.query_attempts(rollout.rollout_id)
+    assert attempts_after[0].status == "timeout"
+    assert attempts_after[0].last_heartbeat_time is not None
+
+    rollout_after = await inmemory_store.get_rollout_by_id(rollout.rollout_id)
+    assert rollout_after is not None
+    assert rollout_after.status == rollout_before.status
+
+
+@pytest.mark.asyncio
 async def test_completion_sets_end_time(inmemory_store: InMemoryLightningStore) -> None:
     """Test that completing a rollout sets end_time."""
     rollout = await inmemory_store.enqueue_rollout(input={"test": "data"})

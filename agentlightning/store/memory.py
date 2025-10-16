@@ -419,7 +419,7 @@ class InMemoryLightningStore(LightningStore):
 
         # Update attempt heartbeat
         current_attempt.last_heartbeat_time = time.time()
-        if current_attempt.status in ["preparing", "unresponsive", "timeout"]:
+        if current_attempt.status in ["preparing", "unresponsive"]:
             current_attempt.status = "running"
 
         # If the status has already timed out or failed, do not change it
