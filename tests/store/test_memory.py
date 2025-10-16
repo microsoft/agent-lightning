@@ -662,7 +662,7 @@ def test_estimate_model_size_counts_nested_models() -> None:
 
 def test_estimate_model_size_handles_span_objects() -> None:
     status = TraceStatus(status_code="OK", description="fine")
-    context = SpanContext(trace_id="trace", span_id="parent", is_remote=False, trace_state={})
+    context = SpanContext(trace_id="trace", span_id="parent", is_remote=False, trace_state={"foo": "bar"})
     event = Event(name="step", attributes={"detail": "value"}, timestamp=1.0)
     link = Link(context=context, attributes=None)
     resource = Resource(attributes={"service.name": "unit"}, schema_url="schema")
@@ -688,7 +688,7 @@ def test_estimate_model_size_handles_span_objects() -> None:
 
     status_expected = sys.getsizeof(status) + sys.getsizeof(status.status_code) + sys.getsizeof(status.description)
 
-    trace_state_values = context.trace_state.values() if context.trace_state is not None else ()
+    trace_state_values = context.trace_state.values()
     context_expected = (
         sys.getsizeof(context)
         + sys.getsizeof(context.trace_id)
