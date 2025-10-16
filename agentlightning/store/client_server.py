@@ -677,7 +677,7 @@ class LightningStoreClient(LightningStore):
                 resources_id=resources_id,
                 config=config,
                 metadata=metadata,
-            ).model_dump(),
+            ).model_dump(exclude_none=False),
         )
         return AttemptedRollout.model_validate(data)
 
@@ -698,7 +698,7 @@ class LightningStoreClient(LightningStore):
                 resources_id=resources_id,
                 config=config,
                 metadata=metadata,
-            ).model_dump(),
+            ).model_dump(exclude_none=False),
         )
         return Rollout.model_validate(data)
 
