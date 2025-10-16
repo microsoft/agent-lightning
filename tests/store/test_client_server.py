@@ -19,7 +19,7 @@ from yarl import URL
 from agentlightning.store.base import UNSET
 from agentlightning.store.client_server import LightningStoreClient, LightningStoreServer
 from agentlightning.store.memory import InMemoryLightningStore
-from agentlightning.types import LLM, PromptTemplate, Resource, Span, TraceStatus
+from agentlightning.types import LLM, PromptTemplate, Resource, RolloutConfig, Span, TraceStatus
 
 
 def _get_free_port() -> int:
@@ -154,15 +154,22 @@ async def test_client_server_end_to_end(
     assert await server.get_resources_by_id("server-resources") is not None
     assert await server.get_latest_resources() is not None
 
-    await server.start_rollout(input={"origin": "server"})
-    queued_rollout = await server.enqueue_rollout(input={"origin": "server-queue"})
+    server_start_config = RolloutConfig(timeout_seconds=8.5)
+    attempted_server = await server.start_rollout(input={"origin": "server"}, config=server_start_config)
+    assert attempted_server.config.timeout_seconds == 8.5
+
+    server_queue_config = RolloutConfig(unresponsive_seconds=4.2, max_attempts=2)
+    queued_rollout = await server.enqueue_rollout(input={"origin": "server-queue"}, config=server_queue_config)
+    assert queued_rollout.config.unresponsive_seconds == 4.2
     dequeued = await server.dequeue_rollout()
     started_attempt = await server.start_attempt(queued_rollout.rollout_id)
 
     await server.query_rollouts()
     await server.query_attempts(queued_rollout.rollout_id)
     assert await server.get_latest_attempt(queued_rollout.rollout_id) is not None
-    assert await server.get_rollout_by_id(queued_rollout.rollout_id) is not None
+    stored_server_rollout = await server.get_rollout_by_id(queued_rollout.rollout_id)
+    assert stored_server_rollout is not None
+    assert stored_server_rollout.config.unresponsive_seconds == 4.2
 
     assert dequeued is not None
 
@@ -198,8 +205,18 @@ async def test_client_server_end_to_end(
     assert await client.get_resources_by_id("client-resources") is not None
     assert await client.get_latest_resources() is not None
 
-    _attempted = await client.start_rollout(input={"origin": "client"}, mode="train", metadata={"step": 0})
-    enqueued = await client.enqueue_rollout(input={"origin": "client-queue"})
+    client_start_config = RolloutConfig(timeout_seconds=3.0, retry_condition=["timeout"])
+    attempted_client = await client.start_rollout(
+        input={"origin": "client"},
+        mode="train",
+        config=client_start_config,
+        metadata={"step": 0},
+    )
+    assert attempted_client.config.timeout_seconds == 3.0
+
+    client_queue_config = RolloutConfig(unresponsive_seconds=6.0)
+    enqueued = await client.enqueue_rollout(input={"origin": "client-queue"}, config=client_queue_config)
+    assert enqueued.config.unresponsive_seconds == 6.0
     dequeued_client = await client.dequeue_rollout()
     assert dequeued_client is not None
     started_client_attempt = await client.start_attempt(dequeued_client.rollout_id)
@@ -210,7 +227,9 @@ async def test_client_server_end_to_end(
     attempts = await client.query_attempts(dequeued_client.rollout_id)
     assert attempts
     assert await client.get_latest_attempt(dequeued_client.rollout_id) is not None
-    assert await client.get_rollout_by_id(dequeued_client.rollout_id) is not None
+    stored_client_rollout = await client.get_rollout_by_id(dequeued_client.rollout_id)
+    assert stored_client_rollout is not None
+    assert stored_client_rollout.config.unresponsive_seconds == 6.0
 
     client_span = _make_span(dequeued_client.rollout_id, dequeued_client.attempt.attempt_id, 101, "client-span")
     stored_span = await client.add_span(client_span)

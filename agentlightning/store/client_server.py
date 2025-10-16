@@ -44,6 +44,7 @@ class RolloutRequest(BaseModel):
     input: TaskInput
     mode: Optional[Literal["train", "val", "test"]] = None
     resources_id: Optional[str] = None
+    config: Optional[RolloutConfig] = None
     metadata: Optional[Dict[str, Any]] = None
 
 
@@ -281,6 +282,7 @@ class LightningStoreServer(LightningStore):
                 input=request.input,
                 mode=request.mode,
                 resources_id=request.resources_id,
+                config=request.config,
                 metadata=request.metadata,
             )
 
@@ -290,6 +292,7 @@ class LightningStoreServer(LightningStore):
                 input=request.input,
                 mode=request.mode,
                 resources_id=request.resources_id,
+                config=request.config,
                 metadata=request.metadata,
             )
 
@@ -382,18 +385,20 @@ class LightningStoreServer(LightningStore):
         input: TaskInput,
         mode: Literal["train", "val", "test"] | None = None,
         resources_id: str | None = None,
+        config: RolloutConfig | None = None,
         metadata: Dict[str, Any] | None = None,
     ) -> AttemptedRollout:
-        return await self._backend().start_rollout(input, mode, resources_id, metadata)
+        return await self._backend().start_rollout(input, mode, resources_id, config, metadata)
 
     async def enqueue_rollout(
         self,
         input: TaskInput,
         mode: Literal["train", "val", "test"] | None = None,
         resources_id: str | None = None,
+        config: RolloutConfig | None = None,
         metadata: Dict[str, Any] | None = None,
     ) -> Rollout:
-        return await self._backend().enqueue_rollout(input, mode, resources_id, metadata)
+        return await self._backend().enqueue_rollout(input, mode, resources_id, config, metadata)
 
     async def dequeue_rollout(self) -> Optional[AttemptedRollout]:
         return await self._backend().dequeue_rollout()
@@ -660,12 +665,19 @@ class LightningStoreClient(LightningStore):
         input: TaskInput,
         mode: Literal["train", "val", "test"] | None = None,
         resources_id: str | None = None,
+        config: RolloutConfig | None = None,
         metadata: Dict[str, Any] | None = None,
     ) -> AttemptedRollout:
         data = await self._request_json(
             "post",
             "/start_rollout",
-            json=RolloutRequest(input=input, mode=mode, resources_id=resources_id, metadata=metadata).model_dump(),
+            json=RolloutRequest(
+                input=input,
+                mode=mode,
+                resources_id=resources_id,
+                config=config,
+                metadata=metadata,
+            ).model_dump(),
         )
         return AttemptedRollout.model_validate(data)
 
@@ -674,12 +686,19 @@ class LightningStoreClient(LightningStore):
         input: TaskInput,
         mode: Literal["train", "val", "test"] | None = None,
         resources_id: str | None = None,
+        config: RolloutConfig | None = None,
         metadata: Dict[str, Any] | None = None,
     ) -> Rollout:
         data = await self._request_json(
             "post",
             "/enqueue_rollout",
-            json=RolloutRequest(input=input, mode=mode, resources_id=resources_id, metadata=metadata).model_dump(),
+            json=RolloutRequest(
+                input=input,
+                mode=mode,
+                resources_id=resources_id,
+                config=config,
+                metadata=metadata,
+            ).model_dump(),
         )
         return Rollout.model_validate(data)
 
