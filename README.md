@@ -1,4 +1,4 @@
-<p style="text-align:center; margin-bottom:20px;">
+<p align="center">
   <img src="docs/assets/readme-banner.svg" alt="Agent-lightning-banner" style="width:600px"/>
 </p>
 
