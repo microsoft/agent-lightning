@@ -10,7 +10,7 @@ from typing import Any, Awaitable, Callable, List, Literal, Optional, Tuple
 from agentlightning.store.base import LightningStore
 from agentlightning.store.threading import LightningStoreThreaded
 
-from .base import AlgorithmBundle, ExecutionStrategy, RunnerBundle
+from .base import AlgorithmBundle, ExecutionStrategy, RunnerBundle, resolve_managed_store_flag
 from .events import ExecutionEvent, ThreadingEvent
 
 logger = logging.getLogger(__name__)
@@ -43,6 +43,7 @@ class SharedMemoryExecutionStrategy(ExecutionStrategy):
         join_timeout: float = 15.0,
         graceful_delay: float = 5.0,
         poll_interval: float = 0.05,
+        managed_store: bool | None = None,
     ) -> None:
         if main_thread not in ("algorithm", "runner"):
             raise ValueError("main_thread must be 'algorithm' or 'runner'")
@@ -53,6 +54,7 @@ class SharedMemoryExecutionStrategy(ExecutionStrategy):
         self.join_timeout = join_timeout
         self.graceful_delay = graceful_delay
         self.poll_interval = poll_interval
+        self.managed_store = resolve_managed_store_flag(managed_store)
 
     async def _run_until_completed_or_canceled(self, coro: Awaitable[Any], stop_evt: ExecutionEvent) -> Any:
         """Run `coro` until it finishes or a cooperative stop is requested.
@@ -191,7 +193,10 @@ class SharedMemoryExecutionStrategy(ExecutionStrategy):
 
         # Create stop event and thread-safe store.
         stop_evt = ThreadingEvent()
-        thread_safe_store = LightningStoreThreaded(store)
+        if self.managed_store:
+            thread_safe_store = LightningStoreThreaded(store)
+        else:
+            thread_safe_store = store
 
         thread_exceptions: SimpleQueue[BaseException] = SimpleQueue()
         raised_from_thread: Optional[BaseException] = None

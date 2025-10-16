@@ -73,6 +73,7 @@ def _clear_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("AGL_CURRENT_ROLE", raising=False)
     monkeypatch.delenv("AGL_SERVER_HOST", raising=False)
     monkeypatch.delenv("AGL_SERVER_PORT", raising=False)
+    monkeypatch.delenv("AGL_MANAGED_STORE", raising=False)
 
 
 def test_env_configuration(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -99,6 +100,7 @@ def test_env_defaults_when_unset(monkeypatch: pytest.MonkeyPatch) -> None:
     assert strat.server_host == "localhost"
     assert strat.server_port == 4747
     assert strat.main_process == "algorithm"
+    assert strat.managed_store is True
 
 
 def test_env_invalid_port(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -117,6 +119,25 @@ def test_env_missing_role(monkeypatch: pytest.MonkeyPatch) -> None:
         ValueError,
         match="role must be provided via argument or AGL_CURRENT_ROLE env var",
     ):
+        ClientServerExecutionStrategy()
+
+
+def test_env_managed_store(monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_env(monkeypatch)
+    monkeypatch.setenv("AGL_CURRENT_ROLE", "algorithm")
+    monkeypatch.setenv("AGL_MANAGED_STORE", "0")
+
+    strat = ClientServerExecutionStrategy()
+
+    assert strat.managed_store is False
+
+
+def test_env_managed_store_invalid(monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_env(monkeypatch)
+    monkeypatch.setenv("AGL_CURRENT_ROLE", "algorithm")
+    monkeypatch.setenv("AGL_MANAGED_STORE", "maybe")
+
+    with pytest.raises(ValueError, match="AGL_MANAGED_STORE must be one of"):
         ClientServerExecutionStrategy()
 
 
