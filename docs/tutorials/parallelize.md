@@ -1,3 +1,9 @@
 # Scaling out Algorithms and Rollouts
 
-TBD
+## Parallelizing Rollouts with Trainer
+
+## Client-server Architecture
+
+## Execution Strategy
+
+## Parallelizing Algorithms
