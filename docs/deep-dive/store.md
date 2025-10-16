@@ -10,7 +10,7 @@ At a high level:
 
 * **Task Queue** – [`enqueue_rollout`][agentlightning.LightningStore.enqueue_rollout] adds work; workers poll with [`dequeue_rollout`][agentlightning.LightningStore.dequeue_rollout]. When a rollout is dequeued, it automatically creates a new attempt associated with itself.
 * **Rollouts** – A rollout is one unit of work. It has input, metadata, links to resources, and a lifecycle (`queuing → preparing → running → ...`). Valid [RolloutStatus][agentlightning.RolloutStatus] are **`queuing`**, `preparing`, `running`, `succeeded`, `failed`, **`requeuing`**, **`cancelled`**. For algorithms and runners, the rollout can be seen as a whole, without worrying about the internal attempts.
-* **Attempts** – Each rollout can have multiple executions (retries). Attempts track `status`, `start_time`, `end_time`, `last_heartbeat_time` and link to spans. Valid [AttemptStatus][agentlightning.AttemptStatus] are `preparing`, `running`, `succeeded`, `failed`, `requeuing`, `cancelled`.
+* **Attempts** – Each rollout can have multiple executions (retries). Attempts track [`status`][agentlightning.Attempt.status], [`start_time`][agentlightning.Attempt.start_time], [`end_time`][agentlightning.Attempt.end_time], [`last_heartbeat_time`][agentlightning.Attempt.last_heartbeat_time] and link to spans. Valid [AttemptStatus][agentlightning.AttemptStatus] are `preparing`, `running`, `succeeded`, `failed`, `requeuing`, `cancelled`.
 * **Spans** – Structured trace events produced by the Tracer during an attempt. Spans are ordered by a **monotonic sequence id** per `(rollout_id, attempt_id)`.
 * **Resources** – Versioned, named bundles (e.g., prompt templates) referenced by rollouts.
 
@@ -66,13 +66,12 @@ Each attempt begins in **preparing**, created either when a rollout is dequeued 
 * If heartbeats stop arriving for too long, the watchdog marks it **unresponsive**.
 * A new span from the runner can immediately revive an **unresponsive** attempt back to **running**.
 
-**What's a Watchdog?** TBD
+!!! info "What's a Watchdog?"
+
+    The watchdog enforces timing and liveness rules defined by each rollout’s [`RolloutConfig`][agentlightning.RolloutConfig]. It’s not a separate thread or service, but a function periodically invoked (e.g., before store mutations) to keep attempts healthy and consistent.
 
 This simple model allows the system to distinguish between normal termination, abnormal stalling, and recoverable interruption without additional state flags.
 
-!!! tip
-
-    [`add_span`][agentlightning.LightningStore.add_span] or [`add_otel_span`][agentlightning.LightningStore.add_otel_span] both appends a span *and* acts as a heartbeat that can revive `unresponsive` → `running`.
 
 ## Rollout Transition Map
 
@@ -80,10 +79,10 @@ Rollout status is an **aggregated view** of its latest attempt’s status, with 
 
 A rollout’s retry behavior is controlled by [`Rollout.config`][agentlightning.types.Rollout] (a [`RolloutConfig`][agentlightning.types.RolloutConfig]). The key fields are:
 
-* `timeout_seconds` – maximum wall-clock time for an attempt before it is marked `timeout`.
-* `unresponsive_seconds` – maximum silence between heartbeats before an attempt is marked `unresponsive`.
-* `max_attempts` – total number of attempts allowed for the rollout (including the first).
-* `retry_condition` – which attempt terminal statuses should trigger a retry (e.g., `["failed", "timeout", "unresponsive"]`).
+* [`timeout_seconds`][agentlightning.RolloutConfig.timeout_seconds] – maximum wall-clock time for an attempt before it is marked `timeout`.
+* [`unresponsive_seconds`][agentlightning.RolloutConfig.unresponsive_seconds] – maximum silence between heartbeats before an attempt is marked `unresponsive`.
+* [`max_attempts`][agentlightning.RolloutConfig.max_attempts] – total number of attempts allowed for the rollout (including the first).
+* [`retry_condition`][agentlightning.RolloutConfig.retry_condition] – which attempt terminal statuses should trigger a retry (e.g., `["failed", "timeout", "unresponsive"]`).
 
 **How it plays out:** The runner works on attempt `k`. If the attempt ends in a status that is listed in `retry_condition`, and `k < max_attempts`, the rollout moves to **requeuing** and the store creates attempt `k+1`. Otherwise, the rollout becomes **failed** (or **succeeded** if the runner marked it so). `timeout_seconds` and `unresponsive_seconds` are enforced by the watchdog and feed into the same decision flow.
 
@@ -120,9 +119,9 @@ rollout = await store.enqueue_rollout(input, config=cfg)
 
 ## Spans
 
-Every traceable operation in a rollout is stored as a [Span][agentlightning.Span]. Spans not only capture fine-grained instrumentation but also act as periodic heartbeats that demonstrate liveness. The first span marks activation; each subsequent one both extends the trace and refreshes the attempt’s `last_heartbeat_time`. If no span arrives within the configured `unresponsive_seconds`, the watchdog downgrades the attempt to **unresponsive** until activity resumes.
+Every traceable operation in a rollout is stored as a [Span][agentlightning.Span]. Spans not only capture fine-grained instrumentation but also act as periodic heartbeats that demonstrate liveness. The first span marks activation; each subsequent one both extends the trace and refreshes the attempt’s [`last_heartbeat_time`][agentlightning.Attempt.last_heartbeat_time]. If no span arrives within the configured [`unresponsive_seconds`][agentlightning.RolloutConfig.unresponsive_seconds], the watchdog downgrades the attempt to **unresponsive** until activity resumes.
 
-Spans are indexed by `(rollout_id, attempt_id, sequence_id)` where the sequence is monotonic. Tracing analysis tools like [Adapter][agentlightning.Adapter] usually rely on "time order" to reconstruct the trace. However, in a distributed system, the recorded start time and end time of a span are not necessarily in the right order when they aggregated into a central store. Therefore, we enforce every span creation to retrieve a monotonically increasing `sequence_id` from the store before adding the span.
+Spans are indexed by `(rollout_id, attempt_id, sequence_id)` where the sequence is monotonic. Tracing analysis tools like [Adapter][agentlightning.Adapter] usually rely on "time order" to reconstruct the trace. However, in a distributed system, the recorded start time and end time of a span are not necessarily in the right order when they aggregated into a central store. Therefore, we enforce every span creation to retrieve a monotonically increasing [`sequence_id`][agentlightning.Span.sequence_id] from the store before adding the span.
 
 !!! note
 
@@ -130,14 +129,18 @@ Spans are indexed by `(rollout_id, attempt_id, sequence_id)` where the sequence 
 
 ### OpenTelemetry conversion
 
-Runners often produce OpenTelemetry `ReadableSpan` objects directly. The store normalizes them into [`Span`][agentlightning.Span] as follows:
+Runners often produce [OpenTelemetry `ReadableSpan`](https://opentelemetry.io/docs/concepts/signals/traces/#attributes) objects directly. The store normalizes them into [`Span`][agentlightning.Span] as follows:
 
-1. The runner first requests `sequence_id = get_next_span_sequence_id(rollout_id, attempt_id)`. This guarantees ordering within the attempt regardless of clock skew.
+1. The runner first requests [`get_next_span_sequence_id`][agentlightning.LightningStore.get_next_span_sequence_id] via `sequence_id = await store.get_next_span_sequence_id(rollout_id, attempt_id)`. This guarantees ordering within the attempt regardless of clock skew.
 2. `trace_id`, `span_id`, `parent_id`, `name`, `status`, timestamps, attributes, events, links, and resource are copied from the OTEL span. Timestamps are auto-normalized to seconds (nanoseconds are converted).
 3. OTEL `SpanContext` and parent context are preserved so downstream tools can correlate traces across systems.
 4. ny additional serializable fields present on the `ReadableSpan` are retained in the stored span (after safe JSON serialization), which keeps the representation forward-compatible.
 
 Programmatically this is encapsulated by [`Span.from_opentelemetry(readable_span, rollout_id, attempt_id, sequence_id)`][agentlightning.Span.from_opentelemetry]; [`store.add_otel_span(...)`][agentlightning.LightningStore.add_otel_span] simply wraps the fetch-then-add flow. The end result is a store span that is stable to sort, merge, and query, while still preserving the richness of the original OTEL payload.
+
+!!! tip
+
+    [`add_span`][agentlightning.LightningStore.add_span] or [`add_otel_span`][agentlightning.LightningStore.add_otel_span] both appends a span *and* acts as a heartbeat that can revive `unresponsive` → `running`.
 
 ## Thread Safety
 

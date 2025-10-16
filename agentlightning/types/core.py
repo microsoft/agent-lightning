@@ -131,7 +131,7 @@ class Attempt(BaseModel):
     """The rollout worker which is executing this attempt."""
 
     last_heartbeat_time: Optional[float] = None
-    """The last time when the worker has reported progress."""
+    """The last time when the worker has reported progress (i.e., a span)."""
 
     metadata: Optional[Dict[str, Any]] = None
     """A bucket for any other relevant information."""

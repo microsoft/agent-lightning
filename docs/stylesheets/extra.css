@@ -14,6 +14,10 @@
   }
 }
 
+.md-typeset .admonition {
+  font-size: 0.72rem;
+}
+
 [data-md-color-primary="agl"] {
   --md-primary-fg-color:        #c45259;
   --md-primary-fg-color--light: #e8b4b7;
