@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from agentlightning.algorithm import BaseAlgorithm, Baseline
+from agentlightning.algorithm import Algorithm, Baseline
 from agentlightning.execution.base import ExecutionStrategy
 from agentlightning.litagent import LitAgent
 from agentlightning.trainer import Trainer
@@ -28,7 +28,7 @@ class DummyAgent(LitAgent[Any]):
     """Minimal agent for exercising Trainer.dev."""
 
 
-class SlowAlgorithm(BaseAlgorithm):
+class SlowAlgorithm(Algorithm):
     """Algorithm that does not qualify as FastAlgorithm."""
 
     def run(self, train_dataset=None, val_dataset=None):  # type: ignore[override]

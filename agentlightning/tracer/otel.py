@@ -12,12 +12,12 @@ from opentelemetry.sdk.trace import ReadableSpan, TracerProvider
 from agentlightning.store.base import LightningStore
 
 from .agentops import LightningSpanProcessor  # FIXME: This import should be from otel to agentops
-from .base import BaseTracer
+from .base import Tracer
 
 logger = logging.getLogger(__name__)
 
 
-class OtelTracer(BaseTracer):
+class OtelTracer(Tracer):
     """Tracer that provides a basic OpenTelemetry tracer provider.
 
     You should be able to collect agent-lightning signals like rewards with this tracer,

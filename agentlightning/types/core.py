@@ -25,8 +25,8 @@ from .tracer import Span
 
 if TYPE_CHECKING:
     from agentlightning.litagent import LitAgent
-    from agentlightning.runner.base import BaseRunner
-    from agentlightning.tracer.base import BaseTracer
+    from agentlightning.runner.base import Runner
+    from agentlightning.tracer.base import Tracer
 
 __all__ = [
     "Triplet",
@@ -275,14 +275,14 @@ class Hook(ParallelWorkerBase):
     """Base class for defining hooks in the agent runner's lifecycle."""
 
     async def on_trace_start(
-        self, *, agent: LitAgent[Any], runner: BaseRunner[Any], tracer: BaseTracer, rollout: Rollout
+        self, *, agent: LitAgent[Any], runner: Runner[Any], tracer: Tracer, rollout: Rollout
     ) -> None:
         """Hook called immediately after the tracer enters the trace context but before the rollout begins.
 
         Args:
             agent: The :class:`LitAgent` instance associated with the runner.
-            runner: The :class:`BaseRunner` managing the rollout.
-            tracer: The :class:`BaseTracer` instance associated with the runner.
+            runner: The :class:`Runner` managing the rollout.
+            tracer: The :class:`Tracer` instance associated with the runner.
             rollout: The :class:`Rollout` object that will be processed.
 
         Subclasses can override this method to implement custom logic such as logging,
@@ -290,26 +290,26 @@ class Hook(ParallelWorkerBase):
         """
 
     async def on_trace_end(
-        self, *, agent: LitAgent[Any], runner: BaseRunner[Any], tracer: BaseTracer, rollout: Rollout
+        self, *, agent: LitAgent[Any], runner: Runner[Any], tracer: Tracer, rollout: Rollout
     ) -> None:
         """Hook called immediately after the rollout completes but before the tracer exits the trace context.
 
         Args:
             agent: The :class:`LitAgent` instance associated with the runner.
-            runner: The :class:`BaseRunner` managing the rollout.
-            tracer: The :class:`BaseTracer` instance associated with the runner.
+            runner: The :class:`Runner` managing the rollout.
+            tracer: The :class:`Tracer` instance associated with the runner.
             rollout: The :class:`Rollout` object that has been processed.
 
         Subclasses can override this method to implement custom logic such as logging,
         metric collection, or resource cleanup. By default, this is a no-op.
         """
 
-    async def on_rollout_start(self, *, agent: LitAgent[Any], runner: BaseRunner[Any], rollout: Rollout) -> None:
+    async def on_rollout_start(self, *, agent: LitAgent[Any], runner: Runner[Any], rollout: Rollout) -> None:
         """Hook called immediately before a rollout *attempt* begins.
 
         Args:
             agent: The :class:`LitAgent` instance associated with the runner.
-            runner: The :class:`BaseRunner` managing the rollout.
+            runner: The :class:`Runner` managing the rollout.
             rollout: The :class:`Rollout` object that will be processed.
 
         Subclasses can override this method to implement custom logic such as
@@ -321,7 +321,7 @@ class Hook(ParallelWorkerBase):
         self,
         *,
         agent: LitAgent[Any],
-        runner: BaseRunner[Any],
+        runner: Runner[Any],
         rollout: Rollout,
         spans: Union[List[ReadableSpan], List[Span]],
     ) -> None:
@@ -329,7 +329,7 @@ class Hook(ParallelWorkerBase):
 
         Args:
             agent: The :class:`LitAgent` instance associated with the runner.
-            runner: The :class:`BaseRunner` managing the rollout.
+            runner: The :class:`Runner` managing the rollout.
             rollout: The :class:`Rollout` object that has been processed.
             spans: The spans that have been added to the store.
 

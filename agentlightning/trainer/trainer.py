@@ -7,18 +7,18 @@ import warnings
 from typing import Any, Callable, Dict, Optional, Sequence, TypeVar, Union
 
 from agentlightning.adapter import TraceAdapter, TracerTraceToTriplet
-from agentlightning.algorithm import BaseAlgorithm, Baseline, FastAlgorithm
+from agentlightning.algorithm import Algorithm, Baseline, FastAlgorithm
 from agentlightning.client import AgentLightningClient
 from agentlightning.execution.base import ExecutionStrategy
 from agentlightning.execution.client_server import ClientServerExecutionStrategy
 from agentlightning.execution.events import ExecutionEvent
 from agentlightning.litagent import LitAgent
 from agentlightning.llm_proxy import LLMProxy
-from agentlightning.runner import BaseRunner, LitAgentRunner
+from agentlightning.runner import LitAgentRunner, Runner
 from agentlightning.store.base import LightningStore
 from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.tracer.agentops import AgentOpsTracer
-from agentlightning.tracer.base import BaseTracer
+from agentlightning.tracer.base import Tracer
 from agentlightning.types import Dataset, Hook, NamedResources
 
 from .init_utils import build_component, instantiate_component
@@ -42,9 +42,9 @@ class Trainer(TrainerLegacy):
     running a client-side agent fleet.
 
     Attributes:
-        algorithm: An instance of `BaseAlgorithm` to use for training.
+        algorithm: An instance of `Algorithm` to use for training.
         store: An instance of `LightningStore` to use for storing tasks and traces.
-        runner: An instance of `BaseRunner` to use for running the agent.
+        runner: An instance of `Runner` to use for running the agent.
         initial_resources: An instance of `Resources` to use for bootstrapping the fit/dev process.
             The resources will be handed over to the algorithm.
             Note that not all algorithms support seeding resources.
@@ -79,12 +79,12 @@ class Trainer(TrainerLegacy):
         n_runners: Optional[int] = None,
         max_rollouts: Optional[int] = None,
         initial_resources: Optional[NamedResources] = None,
-        tracer: ComponentSpec[BaseTracer] = None,
+        tracer: ComponentSpec[Tracer] = None,
         adapter: ComponentSpec[TraceAdapter[Any]] = None,
         store: ComponentSpec[LightningStore] = None,
-        runner: ComponentSpec[BaseRunner[Any]] = None,
+        runner: ComponentSpec[Runner[Any]] = None,
         strategy: ComponentSpec[ExecutionStrategy] = None,
-        algorithm: ComponentSpec[BaseAlgorithm] = None,
+        algorithm: ComponentSpec[Algorithm] = None,
         llm_proxy: ComponentSpec[LLMProxy] = None,
         n_workers: Optional[int] = None,
         max_tasks: Optional[int] = None,
@@ -179,7 +179,7 @@ class Trainer(TrainerLegacy):
                 "The cleanup must be handled manually."
             )
 
-    def _make_tracer(self, tracer: ComponentSpec[BaseTracer]) -> BaseTracer:
+    def _make_tracer(self, tracer: ComponentSpec[Tracer]) -> Tracer:
         """Creates a tracer instance based on the provided configuration."""
         default_factory = lambda: AgentOpsTracer(
             agentops_managed=True,
@@ -188,23 +188,23 @@ class Trainer(TrainerLegacy):
         )
         return build_component(
             tracer,
-            expected_type=BaseTracer,
+            expected_type=Tracer,
             spec_name="tracer",
             default_factory=default_factory,
             dict_requires_type=True,
-            invalid_spec_error_fmt="Invalid tracer type: {actual_type}. Expected BaseTracer, str, dict, or None.",
-            type_error_fmt="Tracer factory returned {type_name}, which is not a BaseTracer subclass.",
+            invalid_spec_error_fmt="Invalid tracer type: {actual_type}. Expected Tracer, str, dict, or None.",
+            type_error_fmt="Tracer factory returned {type_name}, which is not a Tracer subclass.",
         )
 
-    def _make_algorithm(self, algorithm: ComponentSpec[BaseAlgorithm]) -> Optional[BaseAlgorithm]:
+    def _make_algorithm(self, algorithm: ComponentSpec[Algorithm]) -> Optional[Algorithm]:
         """Creates an algorithm instance based on the provided configuration."""
         return build_component(
             algorithm,
-            expected_type=BaseAlgorithm,
+            expected_type=Algorithm,
             spec_name="algorithm",
             allow_none=True,
-            invalid_spec_error_fmt="Invalid algorithm type: {actual_type}. Expected BaseAlgorithm, str, dict, or None.",
-            type_error_fmt="Algorithm factory returned {type_name}, which is not a BaseAlgorithm subclass.",
+            invalid_spec_error_fmt="Invalid algorithm type: {actual_type}. Expected Algorithm, str, dict, or None.",
+            type_error_fmt="Algorithm factory returned {type_name}, which is not a Algorithm subclass.",
         )
 
     def _make_adapter(self, adapter: ComponentSpec[TraceAdapter[Any]]) -> TraceAdapter[Any]:
@@ -277,22 +277,22 @@ class Trainer(TrainerLegacy):
             type_error_fmt="llm_proxy factory returned {type_name}, which is not an LLMProxy subclass.",
         )
 
-    def _make_runner(self, runner: ComponentSpec[BaseRunner[Any]]) -> BaseRunner[Any]:
+    def _make_runner(self, runner: ComponentSpec[Runner[Any]]) -> Runner[Any]:
         optional_defaults: Dict[str, Callable[[], Any]] = {"tracer": lambda: self.tracer}
         if self.max_rollouts is not None:
             optional_defaults["max_rollouts"] = lambda: self.max_rollouts
 
-        def default_runner_factory() -> BaseRunner[Any]:
+        def default_runner_factory() -> Runner[Any]:
             return instantiate_component(LitAgentRunner, optional_defaults=optional_defaults)
 
         return build_component(
             runner,
-            expected_type=BaseRunner,
+            expected_type=Runner,
             spec_name="runner",
             default_factory=default_runner_factory,
             optional_defaults=optional_defaults,
-            invalid_spec_error_fmt="Invalid runner type: {actual_type}. Expected BaseRunner, callable, str, dict, or None.",
-            type_error_fmt="Runner factory returned {type_name}, which is not a BaseRunner subclass.",
+            invalid_spec_error_fmt="Invalid runner type: {actual_type}. Expected Runner, callable, str, dict, or None.",
+            type_error_fmt="Runner factory returned {type_name}, which is not a Runner subclass.",
         )
 
     def _normalize_hooks(self, hooks: Optional[Union[Hook, Sequence[Hook]]]) -> Sequence[Hook]:
@@ -374,7 +374,7 @@ class Trainer(TrainerLegacy):
         event: ExecutionEvent,
         train_dataset: Optional[Dataset[T_co]],
         val_dataset: Optional[Dataset[T_co]],
-        algorithm: Optional[BaseAlgorithm],
+        algorithm: Optional[Algorithm],
     ) -> None:
         if algorithm is not None:
             algorithm.set_trainer(self)
@@ -410,7 +410,7 @@ class Trainer(TrainerLegacy):
     async def _runner_bundle(
         self, store: LightningStore, worker_id: int, event: ExecutionEvent, agent: LitAgent[T_co]
     ) -> None:
-        runner_instance: BaseRunner[Any] | None = None
+        runner_instance: Runner[Any] | None = None
         runner_initialized = False
         worker_initialized = False
         try:
