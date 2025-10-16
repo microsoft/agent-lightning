@@ -1,8 +1,9 @@
 # Copyright (c) Microsoft. All rights reserved.
 
+import asyncio
 import logging
-from contextlib import contextmanager
-from typing import Any, Awaitable, Callable, Iterator, List, Optional
+from contextlib import asynccontextmanager
+from typing import Any, AsyncGenerator, Callable, List, Optional
 
 from opentelemetry.sdk.trace import ReadableSpan
 
@@ -47,15 +48,15 @@ class Tracer(ParallelWorkerBase):
     ```
     """
 
-    @contextmanager
-    def trace_context(
+    @asynccontextmanager
+    async def trace_context(
         self,
         name: Optional[str] = None,
         *,
         store: Optional[LightningStore] = None,
         rollout_id: Optional[str] = None,
         attempt_id: Optional[str] = None,
-    ) -> Iterator[Any]:
+    ) -> AsyncGenerator[Any, None]:
         """
         Starts a new tracing context. This should be used as a context manager.
 
@@ -74,6 +75,18 @@ class Tracer(ParallelWorkerBase):
         """
         raise NotImplementedError()
 
+        yield  # This is what makes this a context manager
+
+    def trace_context_sync(self, *args: Any, **kwargs: Any) -> Any:
+        """
+        Starts a new tracing context. This should be used as a context manager.
+
+        Args:
+            *args: Positional arguments to pass to the trace_context method.
+            **kwargs: Keyword arguments to pass to the trace_context method.
+        """
+        raise NotImplementedError()
+
     def get_last_trace(self) -> List[ReadableSpan]:
         """
         Retrieves the raw list of captured spans from the most recent trace.
@@ -83,24 +96,9 @@ class Tracer(ParallelWorkerBase):
         """
         raise NotImplementedError()
 
-    def trace_run(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+    async def trace_run(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         """
-        A convenience wrapper to trace the execution of a single synchronous function.
-
-        Args:
-            func: The synchronous function to execute and trace.
-            *args: Positional arguments to pass to the function.
-            **kwargs: Keyword arguments to pass to the function.
-
-        Returns:
-            The return value of the function.
-        """
-        with self.trace_context(name=func.__name__):
-            return func(*args, **kwargs)
-
-    async def trace_run_async(self, func: Callable[..., Awaitable[Any]], *args: Any, **kwargs: Any) -> Any:
-        """
-        A convenience wrapper to trace the execution of a single asynchronous function.
+        A convenience wrapper to trace the execution of a single asynchronous/synchoronous function.
 
         Args:
             func: The asynchronous function to execute and trace.
@@ -110,5 +108,8 @@ class Tracer(ParallelWorkerBase):
         Returns:
             The return value of the function.
         """
-        with self.trace_context(name=func.__name__):
-            return await func(*args, **kwargs)
+        async with self.trace_context(name=func.__name__):
+            if asyncio.iscoroutinefunction(func):
+                return await func(*args, **kwargs)
+            else:
+                return func(*args, **kwargs)

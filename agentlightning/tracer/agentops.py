@@ -6,8 +6,8 @@ import asyncio
 import logging
 import os
 import threading
-from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any, Awaitable, Iterator, List, Optional
+from contextlib import asynccontextmanager
+from typing import TYPE_CHECKING, Any, AsyncGenerator, Awaitable, List, Optional
 
 import agentops
 import agentops.sdk.core
@@ -152,15 +152,15 @@ class AgentOpsTracer(Tracer):
             self.uninstrument(worker_id)
             logger.info(f"[Worker {worker_id}] Instrumentation removed.")
 
-    @contextmanager
-    def trace_context(
+    @asynccontextmanager
+    async def trace_context(
         self,
         name: Optional[str] = None,
         *,
         store: Optional[LightningStore] = None,
         rollout_id: Optional[str] = None,
         attempt_id: Optional[str] = None,
-    ) -> Iterator[LightningSpanProcessor]:
+    ) -> AsyncGenerator[LightningSpanProcessor, None]:
         """
         Starts a new tracing context. This should be used as a context manager.
 

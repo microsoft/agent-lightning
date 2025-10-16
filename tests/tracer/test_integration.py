@@ -67,7 +67,6 @@ from typing_extensions import TypedDict
 from agentlightning.adapter.triplet import TracerTraceToTriplet, TraceTree
 from agentlightning.reward import reward
 from agentlightning.tracer.agentops import AgentOpsTracer, LightningSpanProcessor
-from agentlightning.tracer.http import HttpTracer
 from agentlightning.types import Span, Triplet
 
 from ..common.tracer import clear_agentops_init, clear_tracer_provider
@@ -687,9 +686,11 @@ def run_with_agentops_tracer() -> None:
     _langchain_callback_handler = tracer.get_langchain_callback_handler()
 
     for agent_func in iterate_over_agents():
-        tracer.trace_run(
-            run_one,
-            agent_func,
+        asyncio.run(
+            tracer.trace_run(
+                run_one,
+                agent_func,
+            )
         )
         tree = TraceTree.from_spans(tracer.get_last_trace())
         # for span in tree.traverse():
@@ -730,63 +731,6 @@ def run_with_agentops_tracer() -> None:
     tracer.teardown()
 
 
-def run_with_http_tracer() -> None:
-    import httpdbg.hooks.all
-
-    @contextmanager
-    def empty_hook(*args, **kwargs):
-        yield
-
-    httpdbg.hooks.all.hook_fastapi = empty_hook
-    httpdbg.hooks.all.hook_uvicorn = empty_hook
-
-    tracer = HttpTracer()
-    tracer.init()
-    tracer.init_worker(0)
-
-    for agent_func in iterate_over_agents():
-        print(agent_func)
-        if "mcp" in agent_func.__name__ or "openai_agents_sdk" in agent_func.__name__:
-            # FIXME: MCP server is not yet supported with HTTP tracer
-            continue
-        tracer.trace_run(
-            run_one,
-            agent_func,
-        )
-
-        print(tracer.get_last_trace())
-
-    tracer.teardown_worker(0)
-    tracer.teardown()
-
-
-def create_prompt_caches() -> None:
-    """Create prompt caches for the agent frameworks.
-    This should only be run once to populate the caches.
-    """
-
-    if USE_OPENAI:
-        tracer = HttpTracer()
-        with tracer.trace_context():
-            run_all()
-
-        with open(os.path.join(os.path.dirname(__file__), "../assets/prompt_caches.jsonl"), "w") as f:
-            for span in tracer._last_records.requests.values():
-                if span.url.startswith(OPENAI_BASE_URL) and span.status_code < 400 and span.response.content:
-                    f.write(
-                        json.dumps(
-                            {
-                                "request": json.loads(span.request.content.decode()),
-                                "response": json.loads(span.response.content.decode()),
-                            }
-                        )
-                        + "\n"
-                    )
-
-    else:
-        run_all()
-
-
 @pytest.mark.parametrize("agent_func_name", [f.__name__ for f in iterate_over_agents()], ids=str)
 def test_run_with_agentops_tracer(agent_func_name: str):
     """AgentOps tracer tests are notoriously problematic and does not work well with other tests."""
@@ -822,9 +766,11 @@ def _test_run_with_agentops_tracer_impl(agent_func_name: str):
     _langchain_callback_handler = tracer.get_langchain_callback_handler()
 
     try:
-        tracer.trace_run(
-            run_one,
-            agent_func,
+        asyncio.run(
+            tracer.trace_run(
+                run_one,
+                agent_func,
+            )
         )
 
         last_trace_normalized = [
@@ -867,34 +813,6 @@ def _test_run_with_agentops_tracer_impl(agent_func_name: str):
         tracer.teardown()
 
 
-@pytest.mark.parametrize("agent_func", list(iterate_over_agents()), ids=lambda f: f.__name__)
-def test_run_with_http_tracer(agent_func):
-    pytest.skip("HTTP tracer tests are disabled for now due to issues on GitHub Actions.")
-
-    import httpdbg.hooks.all
-
-    @contextmanager
-    def empty_hook(*args, **kwargs):
-        yield
-
-    httpdbg.hooks.all.hook_fastapi = empty_hook
-    httpdbg.hooks.all.hook_uvicorn = empty_hook
-
-    tracer = HttpTracer()
-    tracer.init()
-    tracer.init_worker(0)
-
-    try:
-        tracer.trace_run(
-            run_one,
-            agent_func,
-        )
-        assert len(tracer.get_last_trace()) > 0
-    finally:
-        tracer.teardown_worker(0)
-        tracer.teardown()
-
-
 def _debug_with_agentops():
     """This function is for debugging purposes only."""
     assert "AGENTOPS_API_KEY" in os.environ, "AGENTOPS_API_KEY is not set"
@@ -911,6 +829,4 @@ def _debug_with_agentops():
 
 
 if __name__ == "__main__":
-    # run_with_agentops_tracer()
-    run_with_http_tracer()
-    # _debug_with_agentops()
+    run_with_agentops_tracer()
