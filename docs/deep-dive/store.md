@@ -6,6 +6,8 @@ TBD: introduction
 
 ![Store Architecture](../assets/store-api-visualized.svg){ .center }
 
+TBD: Rollout and task share the same interface...
+
 ## Attempt Status Transitions
 
 ```mermaid
@@ -56,6 +58,10 @@ If you must approach from the source code, the following public operations will 
 * [`update_rollout(status=cancelled)`][agentlightning.LightningStore.update_rollout] → explicit cancel path (no private helpers involved)
 
 TBD: refine the part above. Be critical.
+
+## Spans
+
+TBD: talk about span storage binded to rollout id and attempt id. Talk about how to add span and query spans. Talk about sequence_id (and why we need it).
 
 ## Thread and Multiprocessing Safety
 
