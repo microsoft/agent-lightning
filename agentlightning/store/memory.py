@@ -6,13 +6,29 @@ import asyncio
 import functools
 import hashlib
 import importlib
+import importlib.util
 import logging
 import sys
 import threading
 import time
 import uuid
 from collections import deque
-from typing import Any, Callable, Counter, Dict, List, Literal, Optional, Sequence, Set, TypeVar, cast
+from collections.abc import Iterable
+from collections.abc import Mapping as MappingABC
+from typing import (
+    Any,
+    Callable,
+    Counter,
+    Dict,
+    List,
+    Literal,
+    Mapping,
+    Optional,
+    Sequence,
+    Set,
+    TypeVar,
+    cast,
+)
 
 from opentelemetry.sdk.trace import ReadableSpan
 from pydantic import BaseModel
@@ -38,16 +54,19 @@ T_callable = TypeVar("T_callable", bound=Callable[..., Any])
 logger = logging.getLogger(__name__)
 
 
-def estimate_model_size(obj) -> int:
+def estimate_model_size(obj: Any) -> int:
     """Rough recursive size estimate for Pydantic BaseModel instances."""
 
     if isinstance(obj, BaseModel):
-        return sum(estimate_model_size(v) for v in obj.__dict__.values()) + sys.getsizeof(obj)
-    if isinstance(obj, dict):
-        return sum(estimate_model_size(v) for v in obj.values()) + sys.getsizeof(obj)
+        values = cast(Iterable[Any], obj.__dict__.values())
+        return sum(estimate_model_size(value) for value in values) + sys.getsizeof(cast(object, obj))
+    if isinstance(obj, MappingABC):
+        mapping = cast(Mapping[Any, Any], obj)
+        return sum(estimate_model_size(value) for value in mapping.values()) + sys.getsizeof(cast(object, obj))
     if isinstance(obj, (list, tuple, set)):
-        return sum(estimate_model_size(v) for v in obj) + sys.getsizeof(obj)
-    return sys.getsizeof(obj)
+        iterable = cast(Iterable[Any], obj)
+        return sum(estimate_model_size(value) for value in iterable) + sys.getsizeof(cast(object, obj))
+    return sys.getsizeof(cast(object, obj))
 
 
 def _healthcheck_wrapper(func: T_callable) -> T_callable:
@@ -523,12 +542,11 @@ class InMemoryLightningStore(LightningStore):
                 if not (0 < value <= 1):
                     raise ValueError(f"{name} ratio must be greater than 0 and at most 1")
             resolved = int(capacity_bytes * value)
-        elif isinstance(value, int):
-            if value < 0:
-                raise ValueError(f"{name} must be non-negative")
-            resolved = value
         else:
-            raise TypeError(f"{name} must be a float ratio or int bytes")
+            value_int = value
+            if value_int < 0:
+                raise ValueError(f"{name} must be non-negative")
+            resolved = value_int
 
         if resolved < minimum:
             raise ValueError(f"{name} must be at least {minimum} bytes")
@@ -549,21 +567,15 @@ class InMemoryLightningStore(LightningStore):
         if self._total_span_bytes <= self._eviction_threshold_bytes:
             return
 
-        candidates = sorted(
-            (
-                (
-                    (
-                        self._rollouts.get(rollout_id).start_time
-                        if self._rollouts.get(rollout_id)
-                        else spans[0].start_time or 0.0
-                    ),
-                    rollout_id,
-                )
-                for rollout_id, spans in self._spans.items()
-                if spans
-            ),
-            key=lambda item: item[0],
-        )
+        candidates: List[tuple[float, str]] = []
+        for rollout_id, spans in self._spans.items():
+            if not spans:
+                continue
+            rollout = self._rollouts.get(rollout_id)
+            start_time = rollout.start_time if rollout is not None else (spans[0].start_time or 0.0)
+            candidates.append((start_time, rollout_id))
+
+        candidates.sort(key=lambda item: item[0])
 
         for _, rollout_id in candidates:
             if self._total_span_bytes <= self._safe_threshold_bytes:

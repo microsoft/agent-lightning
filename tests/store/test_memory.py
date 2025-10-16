@@ -16,7 +16,7 @@ Test categories:
 import asyncio
 import sys
 import time
-from typing import List
+from typing import List, Optional, cast
 from unittest.mock import Mock
 
 import pytest
@@ -25,6 +25,7 @@ from pydantic import BaseModel
 from agentlightning.store.memory import InMemoryLightningStore, estimate_model_size
 from agentlightning.types import (
     LLM,
+    AttemptedRollout,
     Event,
     Link,
     PromptTemplate,
@@ -588,7 +589,7 @@ async def test_span_eviction_removes_oldest_rollouts(mock_readable_span: Mock, m
         span_size_estimator=lambda span: 20,
     )
 
-    attempted_rollouts = []
+    attempted_rollouts: List[AttemptedRollout] = []
     for index in range(4):
         attempted = await store.start_rollout(input={"index": index})
         attempted_rollouts.append(attempted)
@@ -609,8 +610,8 @@ def test_memory_threshold_accepts_byte_values() -> None:
         safe_memory_threshold=20,
     )
 
-    assert store._eviction_threshold_bytes == 150
-    assert store._safe_threshold_bytes == 20
+    assert store._eviction_threshold_bytes == 150  # pyright: ignore[reportPrivateUsage]
+    assert store._safe_threshold_bytes == 20  # pyright: ignore[reportPrivateUsage]
 
 
 def test_memory_threshold_accepts_ratios_with_zero_safe(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -620,8 +621,8 @@ def test_memory_threshold_accepts_ratios_with_zero_safe(monkeypatch: pytest.Monk
         safe_memory_threshold=0.0,
     )
 
-    assert store._eviction_threshold_bytes == int(200 * 0.6)
-    assert store._safe_threshold_bytes == 0
+    assert store._eviction_threshold_bytes == int(200 * 0.6)  # pyright: ignore[reportPrivateUsage]
+    assert store._safe_threshold_bytes == 0  # pyright: ignore[reportPrivateUsage]
 
 
 def test_invalid_safe_threshold_raises_value_error() -> None:
@@ -687,13 +688,14 @@ def test_estimate_model_size_handles_span_objects() -> None:
 
     status_expected = sys.getsizeof(status) + sys.getsizeof(status.status_code) + sys.getsizeof(status.description)
 
+    trace_state_values = context.trace_state.values() if context.trace_state is not None else ()
     context_expected = (
         sys.getsizeof(context)
         + sys.getsizeof(context.trace_id)
         + sys.getsizeof(context.span_id)
         + sys.getsizeof(context.is_remote)
         + sys.getsizeof(context.trace_state)
-        + sum(sys.getsizeof(v) for v in context.trace_state.values())
+        + sum(sys.getsizeof(v) for v in trace_state_values)
     )
 
     event_attributes_expected = sys.getsizeof(event.attributes) + sys.getsizeof("value")
@@ -702,12 +704,11 @@ def test_estimate_model_size_handles_span_objects() -> None:
     )
     events_expected = sys.getsizeof(span.events) + event_expected
 
-    if link.attributes is None:
-        link_attributes_expected = sys.getsizeof(None)
-    else:
-        link_attributes_expected = sys.getsizeof(link.attributes) + sum(
-            sys.getsizeof(v) for v in link.attributes.values()
-        )
+    link_attributes = cast(Optional[dict[str, str]], link.attributes)
+    link_attribute_values = link_attributes.values() if link_attributes is not None else ()
+    link_attributes_expected = sys.getsizeof(link_attributes if link_attributes is not None else None) + sum(
+        sys.getsizeof(v) for v in link_attribute_values
+    )
     link_expected = sys.getsizeof(link) + context_expected + link_attributes_expected
     links_expected = sys.getsizeof(span.links) + link_expected
 
