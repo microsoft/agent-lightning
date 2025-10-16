@@ -134,6 +134,14 @@ class InMemoryLightningStore(LightningStore):
 
     The methods in this class should generally not call each other,
     especially those that are locked.
+
+    Args:
+        eviction_memory_threshold: The threshold for evicting spans in bytes.
+            By default, it's 70% of the total VRAM available.
+        safe_memory_threshold: The threshold for safe memory usage in bytes.
+            By default, it's 80% of the eviction threshold.
+        span_size_estimator: A function to estimate the size of a span in bytes.
+            By default, it's a simple size estimator that uses sys.getsizeof.
     """
 
     def __init__(
