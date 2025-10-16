@@ -6,5 +6,5 @@ For customizing algorithms, see [Algorithm-side References](../reference/algorit
 
 | Algorithm | Optimizing Resources | Description |
 | --------- | ------------------- | ----------- |
-| [APO](./apo.md) | [PromptTemplate][agentlightning.PromptTemplate] | Automatic Prompt Optimization (APO) algorithm using textual gradients and beam search. |
-| [VERL](./verl.md) | [LLM][agentlightning.LLM] | Reinforcement Learning with [VERL framework](https://github.com/volcengine/verl). |
+| [APO](./apo.md) | `{<initial_prompt_key>: [PromptTemplate][agentlightning.PromptTemplate]}` | Automatic Prompt Optimization (APO) algorithm using textual gradients and beam search. |
+| [VERL](./verl.md) | `{"main_llm": [LLM][agentlightning.LLM]}` | Reinforcement Learning with [VERL framework](https://github.com/volcengine/verl). |

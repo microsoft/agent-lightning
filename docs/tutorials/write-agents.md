@@ -67,7 +67,7 @@ Here is another example with more advanced usage with `llm` and `rollout` as par
 
 ```python
 from openai import OpenAI
-from agentlightning.types import LLM, Rollout
+from agentlightning import LLM, Rollout
 
 class FlightBookingTask(TypedDict):
     request: str
@@ -127,14 +127,13 @@ For more complex agents that require state, helper methods, or distinct logic fo
 
 To create a class-based agent, you subclass [agentlightning.LitAgent] and implement its `rollout` method.
 
-Here's how the `room_selector` could be implemented as a class. The rollout method has a slightly different signature than the function-based agent, mainly in how it handles the resources. With [`@rollout`][agentlightning.rollout] decorator,
+Here's how the `room_selector` could be implemented as a class. The rollout method has a slightly different signature than the function-based agent, mainly in how it handles the resources. Algorithms send [NamedResourcce][agentlightning.NamedResources] (which is a mapping from resource key to [Resource][agentlightning.Resource]) to agent. With [`@rollout`][agentlightning.rollout] decorator, the resource with correctly matched type will be automatically injected into the rollout method. However, when you use a class-based agent, you need to manually access the resource from the `resources` dictionary. Built-in algorithms listed their resource key naming conventions [here](../algorithm-zoo/index.md).
 
 ```python
-from agentlightning.agent import LitAgent
-from agentlightning.types import NamedResources, Rollout
+import agentlightning as agl
 
-class RoomSelectorAgent(LitAgent[RoomSelectionTask]):
-    def rollout(self, task: RoomSelectionTask, resources: NamedResources, rollout: Rollout) -> float:
+class RoomSelectorAgent(agl.LitAgent[RoomSelectionTask]):
+    def rollout(self, task: RoomSelectionTask, resources: agl.NamedResources, rollout: agl.Rollout) -> float:
         # 1. Access the prompt_template from the resources dictionary
         prompt_template = resources["prompt_template"]
 
@@ -159,7 +158,46 @@ The `LitAgent` class provides several methods you can override for more fine-gra
 * `training_rollout()` / `validation_rollout()`: Implement these if you need different behavior during training (e.g., with exploration) and validation (e.g., with deterministic choices).
 * `rollout_async()` / `training_rollout_async()` / `validation_rollout_async()`: Implement the asynchronous versions of these methods if your agent uses `asyncio`.
 
------
+!!! note
+
+    Rollout is always executed in an asynchoronous context no matter whether the agent is asynchronous or synchronous. If your synchronous agent contains some `asyncio.run()` calls, it might raise an error that there is already an event loop running. To avoid blocking the event loop, it's recommended to offload the inner async operations to a separate thread. Here is a sample code:
+
+    ```python
+    import asyncio
+    import queue
+    import threading
+
+    def run_sync_ephemeral(coro) -> Any:
+        """
+        Run an async coroutine from sync code.
+        - If no loop in this thread: use asyncio.run() directly.
+        - If already in an event loop: spawn a worker thread that calls asyncio.run()
+        (which creates and closes a brand-new event loop per call).
+        """
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            # No running loop in this thread; safe to use asyncio.run
+            return asyncio.run(coro)
+
+        # Already in a running loop -> execute in a worker thread
+        q = queue.Queue[Any]()
+
+        def worker():
+            try:
+                result = asyncio.run(coro)  # creates & closes its own loop
+                q.put((True, result))
+            except BaseException as e:
+                q.put((False, e))
+
+        t = threading.Thread(target=worker, daemon=True)
+        t.start()
+        ok, payload = q.get()
+        t.join()
+        if ok:
+            return payload
+        raise payload
+    ```
 
 ## Using the Emitter
 
@@ -167,7 +205,7 @@ While returning a single float for the final reward is sufficient for many algor
 
 Agent-lightning provides an **emitter** module that allows you to record custom spans from within your agent's logic. Remember, the [Tracer][agentlightning.BaseTracer] automatically instruments many common operations (like LLM calls), but the emitter is for your own, domain-specific events.
 
-You can import the emitter functions from `agentlightning.emitter`.
+You can find the emitter functions from [agentlightning.emitter](../reference/agent.md).
 
 ### Emitting Rewards, Messages, and More
 
@@ -181,34 +219,33 @@ Here are the primary emitter functions:
 Let's see an example of an agent using these emitters to provide detailed feedback.
 
 ```python
-from agentlightning import rollout
-from agentlightning.emitter import emit_reward, emit_message, emit_exception, emit_object
+import agentlightning as agl
 
-@rollout
+@agl.rollout
 def multi_step_agent(task: dict, prompt_template: PromptTemplate) -> float:
     try:
         # Step 1: Initial planning
-        emit_message("Starting planning phase.")
+        agl.emit_message("Starting planning phase.")
         plan = generate_plan(task, prompt_template)
-        emit_object({"plan_steps": len(plan), "first_step": plan[0]})
+        agl.emit_object({"plan_steps": len(plan), "first_step": plan[0]})
 
         # Award a small reward for a valid plan
         plan_reward = grade_plan(plan)
-        emit_reward(plan_reward)
+        agl.emit_reward(plan_reward)
 
         # Step 2: Execute the plan
-        emit_message(f"Executing {len(plan)}-step plan.")
+        agl.emit_message(f"Executing {len(plan)}-step plan.")
         execution_result = execute_plan(plan)
 
         # Step 3: Final evaluation
-        final_reward = grade_final_result(execution_result, task["expected_output"])
+        final_reward = custom_grade_final_result(execution_result, task["expected_output"])
 
         # The return value is treated as the final reward for the rollout
         return final_reward
 
     except ValueError as e:
         # Record the specific error and return a failure reward
-        emit_exception(e)
+        agl.emit_exception(e)
         return 0.0
 ```
 
