@@ -1,14 +1,10 @@
 # SQL Agent with Agent Lightning
 
-> This tutorial is tested with `verl==0.5.0` and `vllm==0.10.0`.
-
-This example demonstrates how to build and train a self-correcting SQL agent. It leverages [Agent Lightning]({{ config.repo_url }}) and the `verl` framework for Reinforcement Learning (RL) based training, and LangGraph to define the agent's complex, cyclical reasoning workflow. The goal is to fine-tune a Large Language Model (LLM) to accurately convert natural language questions into executable SQL queries.
+This walkthrough follows the Agent-lightning v0.2 Spider example and focuses on how the pieces fit together: a LangGraph-based SQL agent wrapped as a [`LitAgent`][agentlightning.LitAgent], the [`VERL`][agentlightning.algorithm.verl.VERL] reinforcement learning algorithm, and the Agent-lightning [`Trainer`][agentlightning.Trainer] that drives both training and debugging. The CLI in [`examples/spider/train_sql_agent.py`]({{ config.repo_url }}/tree/{{ config.extra.source_commit }}/examples/spider/train_sql_agent.py) is the full sample script. However, we recommend understanding the underlying components, which will help you adapt the workflow to your own agents.
 
 ## SQL Agent Implementation
 
-The design of Agent-lightning **allows flexible integration with various agent frameworks**, including AutoGen, CrewAI, OpenAI Agent SDK, LangGraph, and more. It can also work without agent frameworks, allowing you to train an agent built from scratch with Python code. See [our example gallery]({{ config.repo_url }}/tree/{{ config.extra.source_commit }}/examples) for more details.
-
-The core of the agent is a state machine built with LangGraph, which allows for a robust and transparent workflow. The agent's logic, as visualized below, starts by writing a query, executes it, and then enters a refinement loop where it checks and rewrites the query until it is deemed correct or a turn limit is reached.
+Agent-lightning integrates smoothly with [Agent Framework](https://github.com/microsoft/agent-framework), [AutoGen](https://github.com/microsoft/autogen), [CrewAI](https://www.crewai.com/), [LangGraph](https://github.com/langchain-ai/langgraph), [OpenAI Agents SDK](https://github.com/openai/openai-agents-python) and other orchestration frameworks, or with hand-written Python logic. The Spider example uses LangGraph to express a cyclic workflow that mirrors how an analyst iterates on SQL. The graph below (rendered directly from [`sql_agent.py`]({{ config.repo_url }}/tree/{{ config.extra.source_commit }}/examples/spider/sql_agent.py)) shows how the agent drafts, executes, critiques, and rewrites queries until it is satisfied with the answer.
 
 ```mermaid
 ---
@@ -34,110 +30,174 @@ graph LR;
         classDef last fill:#cccccc
 ```
 
-This workflow is implemented in the `SQLAgent` class within `sql_agent.py`. It consists of the following key steps:
+!!! note
 
-1. **write_query**: Given a user's question and database schema, the agent makes an initial attempt to write a SQL query.
-2. **execute_query**: The generated query is run against the target database.
-3. **check_query**: The agent analyzes the original query and its execution result (or error) to check for mistakes. It uses a specific prompt (`CHECK_QUERY_PROMPT`) to determine if the query is correct.
-4. **rewrite_query**: If the `check_query` step finds errors, the agent enters this step. It uses the feedback from the previous step to generate a corrected SQL query. The process then loops back to `check_query` for re-evaluation.
-5. **END**: The loop terminates when `check_query` confirms the query is correct or the maximum number of turns (`max_turns`) is exceeded. One turn corresponds to a complete cycle of `write_query` (if first round), `execute_query`, `check_query`, and potentially `rewrite_query`.
+    The graph above shows the workflow of the SQL agent. The agent goes through the following steps:
 
-We aim to train **write_query** and **rewrite_query** step in the setup of this example. The **check_query** step is not trained but will share the same LLM weights as the other steps.
+    1. **write_query**: Given a user's question and database schema, the agent makes an initial attempt to write a SQL query.
+    2. **execute_query**: The generated query is run against the target database.
+    3. **check_query**: The agent analyzes the original query and its execution result (or error) to check for mistakes. It uses a specific prompt (`CHECK_QUERY_PROMPT`) to determine if the query is correct.
+    4. **rewrite_query**: If the `check_query` step finds errors, the agent enters this step. It uses the feedback from the previous step to generate a corrected SQL query. The process then loops back to `check_query` for re-evaluation.
+    5. **END**: The loop terminates when `check_query` confirms the query is correct or the maximum number of turns (`max_turns`) is exceeded. One turn corresponds to a complete cycle of `write_query` (if first round), `execute_query`, `check_query`, and potentially `rewrite_query`.
 
-## Client-Server Training with Agent Lightning
+For the setup of this tutorial, we use RL to optimise the `write_query` and `rewrite_query` turns. The `check_query` turn shares the same underlying weight-updating LLM, but the trace data generated from that turn is not used for learning.
 
-The training process uses a distributed client-server architecture designed by Agent Lightning to efficiently fine-tune the underlying LLM. This separation allows for scalable data generation across multiple clients while centralizing the computationally intensive model training on a dedicated server with GPUs, and also provides opportunities for customizing algorithms and training strategies (like [prompt optimization]({{ config.repo_url }}/tree/{{ config.extra.source_commit }}/examples/apo)) with minimal code changes.
+## From LangGraph to LitAgent
 
-* **Training Server (`agentlightning.verl`)**: The server, launched with the first command below, manages the core training loop. It runs an RL algorithm (with `verl` of course) and hosts an OpenAI-compatible LLM endpoint (with `verl`'s async server). The server's sole purpose is to receive interaction data from clients and update the LLM's weights to improve its performance. [This link]({{ config.repo_url }}/tree/{{ config.extra.source_commit }}/agentlightning/verl) points to the implementation of the server, which is built upon `verl`.
-* **Agent Clients (`sql_agent.py`)**: The clients run the LangGraph agent logic described above. They connect to the server to fetch tasks (natural language questions) and use the server's **OpenAI-compatible endpoint** for all generation steps (`write_query`, `check_query`, `rewrite_query`). After completing a task, the client exports its interaction traces (traced by [AgentOps](https://www.agentops.ai/) and filtered by trace hierarchy), evaluates its correctness to calculate a reward, and sends the entire interaction history (the "trajectory") back to the server for training. To adapt any agent to an "agent client", you do not need to change the agent logic, but only need to invoke the client's `run` method with `agentlightning.trainer`.
+The bridge between LangGraph and Agent-lightning is the `LitSQLAgent` class in [`sql_agent.py`]({{ config.repo_url }}/tree/{{ config.extra.source_commit }}/examples/spider/sql_agent.py). It subclasses [agl.LitAgent][agentlightning.LitAgent] so the runner can supply resources ([LLMs][agentlightning.LLM], etc.) for each rollout. The snippet below highlights the key responsibilities:
 
-![Difference between the original agent and modified agent client](../assets/sql-agent-diff.png)
+```python
+class LitSQLAgent(agl.LitAgent[Dict[str, Any]]):
+    def rollout(
+        self,
+        task: Dict[str, Any],
+        resources: agl.NamedResources,
+        rollout: agl.Rollout
+    ) -> float | None:
+        llm: agl.LLM = resources["main_llm"]
+        agent = SQLAgent(
+            "sqlite:///" + db_path,
+            max_turns=self.max_turns,
+            table_info_truncate=self.table_info_truncate,
+            execution_truncate=self.execution_truncate,
+            endpoint=llm.get_base_url(rollout.rollout_id, rollout.attempt.attempt_id),
+            verl_replacement={"model": llm.model, **llm.sampling_parameters},
+        ).graph()
+        result = agent.invoke({"question": question}, {
+            "callbacks": [self.tracer.get_langchain_handler()],
+            "recursion_limit": 100,
+        })
+        reward = evaluate_query(result["query"], ground_truth, db_path, raise_on_error=False)
+        return reward
+```
 
-## Running the Example
+TODO: add explanation for langchain handler here
 
-1. Prepare the dataset: download from [here](https://drive.google.com/file/d/1oi9J1jZP9TyM35L85CL3qeGWl2jqlnL6/view) and unzip it to the `data` folder. It's basically a [Spider V1](https://yale-lily.github.io/spider) dataset converted to Parquet format. The dataset contains about 8000 training samples and about 2000 test samples, from which we sampled 500 samples for evaluation.
-   ```bash
-   pip install gdown
-   gdown --fuzzy https://drive.google.com/file/d/1oi9J1jZP9TyM35L85CL3qeGWl2jqlnL6/view
-   unzip -q spider-data.zip -d data
-   rm spider-data.zip
-   ```
+- `resources["main_llm"]` is injected by the runner. Calling `get_base_url` retrieves the private OpenAI-compatible endpoint that VERL exposes for this rollout.
+- The LangGraph agent is unchanged apart from receiving that endpoint and the evaluation schema. This keeps the authoring experience close to standard LangChain/LangGraph development.
+- The rollout returns a sparse reward (`1.0` for execution match, else `0.0`) using the Spider evaluator bundled in `spider_eval`.
 
-2. Install the required dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
+Keep the full file open while you read this tutorial—the comments and prompts in `sql_agent.py` explain how the LangGraph state machine is assembled.
 
-3. Launch the training server:
-   ```bash
-   python -m agentlightning.verl \
-       agentlightning.port=9997 \
-       algorithm.adv_estimator=grpo \
-       data.train_files=data/train_spider.parquet \
-       data.val_files=data/test_dev_500.parquet \
-       actor_rollout_ref.rollout.tensor_model_parallel_size=1 \
-       trainer.n_gpus_per_node=1 \
-       data.train_batch_size=32 \
-       actor_rollout_ref.rollout.n=4 \
-       actor_rollout_ref.actor.ppo_mini_batch_size=32 \
-       actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=4 \
-       actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu=4 \
-       actor_rollout_ref.rollout.multi_turn.format=hermes \
-       actor_rollout_ref.model.path=meta-llama/Llama-3.2-3B-Instruct \
-       data.max_prompt_length=4096 \
-       data.max_response_length=2048 \
-       data.truncation='error' \
-       trainer.val_before_train=True \
-       actor_rollout_ref.actor.optim.lr=1e-6 \
-       actor_rollout_ref.model.use_remove_padding=True \
-       actor_rollout_ref.actor.use_kl_loss=False \
-       actor_rollout_ref.actor.kl_loss_coef=0.000 \
-       actor_rollout_ref.actor.entropy_coeff=0 \
-       actor_rollout_ref.actor.clip_ratio_low=0.2 \
-       actor_rollout_ref.actor.clip_ratio_high=0.3 \
-       actor_rollout_ref.model.enable_gradient_checkpointing=True \
-       actor_rollout_ref.actor.fsdp_config.param_offload=True \
-       actor_rollout_ref.actor.fsdp_config.optimizer_offload=True \
-       actor_rollout_ref.rollout.name=vllm \
-       actor_rollout_ref.rollout.gpu_memory_utilization=0.8 \
-       actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=8 \
-       actor_rollout_ref.ref.fsdp_config.param_offload=True \
-       algorithm.use_kl_in_reward=False \
-       trainer.critic_warmup=0 \
-       trainer.logger=['console','wandb'] \
-       trainer.project_name=AgentLightning \
-       trainer.experiment_name=train_sql_agent \
-       trainer.nnodes=1 \
-       trainer.save_freq=256 \
-       trainer.test_freq=32 \
-       trainer.total_epochs=2
-    ```
+## Configuring VERL for Reinforcement Learning
 
-4. Launch agent clients that connect with the server:
-   ```bash
-   export VERL_API_BASE=http://localhost:9997/  # Same as the server port. This is used for receiving tasks and sending results.
-   python sql_agent.py \
-       --litsqlagent.trained-agents write \  # Will only train the write and rewrite agent.
-       --trainer.n-workers 16 \
-       --litsqlagent.val-temperature 0
-   ```
+The reinforcement learning payload lives in `examples/spider/train_sql_agent.py` as a plain Python dictionary. It mirrors the shell arguments from the original v0.1 example but is easier to tweak programmatically:
 
-There is no hard requirement in the launching order of the server and clients. But remember to kill the long-running agent clients after the training is done.
+```python
+RL_TRAINING_CONFIG: Dict[str, Any] = {
+    "algorithm": {"adv_estimator": "grpo", "use_kl_in_reward": False},
+    "data": {
+        "train_files": "data/train_spider.parquet",
+        "val_files": "data/test_dev_500.parquet",
+        "train_batch_size": 32,
+        "max_prompt_length": 4096,
+        "max_response_length": 2048,
+        "truncation": "error",
+    },
+    "actor_rollout_ref": {
+        "rollout": {"name": "vllm", "n": 4, "multi_turn": {"format": "hermes"}, ...},
+        "actor": {"ppo_mini_batch_size": 32, "optim": {"lr": 1e-6}, ...},
+        "ref": {"log_prob_micro_batch_size_per_gpu": 8, ...},
+        "model": {"path": "Qwen/Qwen2.5-Coder-1.5B-Instruct", ...},
+    },
+    "trainer": {"n_gpus_per_node": 1, "test_freq": 32, "total_epochs": 2, ...},
+}
+```
 
-## Debug the Agent without verl
+- `actor_rollout_ref.rollout` controls the vLLM serving stack (tensor parallelism, GPU utilisation, conversation format).
+- `actor` and `ref` are the PPO actor/reference models; both are configured for Qwen 1.5B in the default profile.
+- `trainer` contains VERL-side metadata such as WandB settings. Adjust these fields if you export to a different experiment tracking system.
 
-You can run the agent client alone without the `verl` server. This is useful for debugging the agent logic and SQL execution.
+`config_train_fast`, `config_train_qwen`, and `config_train_llama` deep-copy this template and override a handful of fields (model path, epoch counts, evaluation set) to suit different runtime budgets.
 
-1. Copy `.env.example` to `.env` and fill in your OpenAI API key. `VERL_API_BASE` does not really matter here because you are not connecting to the server end.
+## Orchestrating Training with `Trainer`
 
-2. Run the agent client:
-   ```bash
-   dotenv run python sql_agent.py \
-       --litsqlagent.trained-agents write \  # Will only select the trajectories related to write and rewrite.
-       --trainer.n-workers 1 \  # For debug, use single process.
-       --trainer.dev true  # Enable the dev debug mode.
-   ```
+The `train` function in `train_sql_agent.py` shows the minimal components you need to launch an Agent-lightning experiment:
+
+```python
+def train(config: Dict[str, Any], active_agent: Optional[str]) -> None:
+    agent = LitSQLAgent()
+    algorithm = agl.VERL(config)
+    trainer = agl.Trainer(
+        n_runners=10,
+        algorithm=algorithm,
+        adapter={"agent_match": active_agent},
+    )
+    train_data = pd.read_parquet(config["data"]["train_files"]).to_dict("records")
+    val_data = pd.read_parquet(config["data"]["val_files"]).to_dict("records")
+    trainer.fit(agent, train_dataset=train_data, val_dataset=val_data)
+```
+
+- `agl.VERL(config)` spins up VERL and its OpenAI-compatible proxy. The Trainer will forward rollout requests to that endpoint automatically.
+- `n_runners` governs how many concurrent rollouts hit the server. Start small, then scale up once Ray and vLLM are stable on your hardware.
+- The adapter filters trajectories. Passing `--active-agent` on the CLI sets `agent_match`, ensuring VERL only ingests spans produced by the agent variant you want to optimise.
+- Pandas converts each Parquet record into a Python dict, so the `LitAgent` receives the Spider fields (`question`, `query`, `db_id`, etc.) without additional schema glue.
+
+The training script’s CLI simply selects which `config_train_*` helper to call. Inspect the file instead of copying snippets blindly—understanding how `Trainer`, `VERL`, and `LitSQLAgent` interact will make it easier to plug in your own agents.
+
+## Dry-Run the Pipeline with `Trainer.dev`
+
+Before committing hours of GPU time, dry-run the agent with `Trainer.dev()`. It swaps in the lightweight `Baseline` fast algorithm, enqueues up to ten tasks, and prints every span that the agent emits. Because it drives the same runner stack as full training, it is ideal for verifying schema access and LangGraph control flow.
+
+```python
+trainer.dev(
+    agent,
+    train_dataset=train_data[:10],
+    val_dataset=val_data[:10],
+)
+```
+
+Run this inside a Python session or adapt the script to include a `--dev` flag. Once the spans look healthy and rewards are non-zero, switch back to `trainer.fit(...)` for full RL training.
+
+## Project Setup
+
+### Dataset
+
+The trainer expects three Parquet files inside `examples/spider/data`: `train_spider.parquet`, `test_dev_500.parquet`, and `test_dev.parquet`. Download the curated bundle provided alongside the repository:
+
+```bash
+cd examples/spider
+pip install gdown  # included in the 'experiment' optional dependency
+gdown --fuzzy https://drive.google.com/file/d/1oi9J1jZP9TyM35L85CL3qeGWl2jqlnL6/view
+unzip -q spider-data.zip -d data
+rm spider-data.zip
+```
+
+If you prefer to build the files yourself, fetch [Spider 1.0](https://yale-lily.github.io/spider) and run `python spider_eval/convert_dataset.py`. Set `VERL_SPIDER_DATA_DIR` if you store the dataset outside the default `data` directory.
+
+### Dependencies
+
+Create a clean environment, activate it, and install Agent-lightning with the extras required by this tutorial:
+
+```bash
+pip install -e ".[agent,experiment,trl,verl]"
+```
+
+The optional extras pull in LangChain/LangGraph (`agent`), dataset utilities and `gdown` (`experiment`), Transformers and TRL (`trl`), and VERL with vLLM (`verl`). Plan on using a GPU with at least 40 GB of memory for the full training profiles.
+
+## Launch Training
+
+From `examples/spider`, call the helper script with the profile that matches your runtime budget:
+
+```bash
+python train_sql_agent.py fast   # Smoke test / CI configuration
+python train_sql_agent.py qwen   # Default Qwen-2.5-Coder-1.5B run
+python train_sql_agent.py llama  # LLaMA-3.2-1B with llama3_json prompts
+```
+
+The script prints the derived `project_name` and `experiment_name`, instantiates `LitSQLAgent`, and launches `trainer.fit(...)`. Provide `--active-agent my_agent_variant` if you log multiple agent names and only want to train one of them. For the LLaMA profile, export an `HF_TOKEN` before running so vLLM can download the weights.
+
+## Debugging the Agent without VERL
+
+`sql_agent.py` also exposes a `debug_sql_agent()` helper that runs the LangGraph workflow against a local or hosted OpenAI-compatible endpoint. Set `OPENAI_API_BASE` and `OPENAI_API_KEY`, then run:
+
+```bash
+cd examples/spider
+python sql_agent.py
+```
+
+This path skips VERL entirely, executes ten development samples, and prints the generated SQL alongside the reward. Use it to validate prompt formatting, schema truncation, and database connectivity before you introduce RL.
 
 ## Evaluation
 
-Full evaluation results with multiple experiment configurations, were run with a legacy version of Agent-lightning (v0.1.1), `verl==0.5.0` and `vllm==0.10.0`. The results are available [here](https://medium.com/@yugez/training-ai-agents-to-write-and-self-correct-sql-with-reinforcement-learning-571ed31281ad).
+Baseline evaluation results collected with Agent-lightning v0.1.1, `verl==0.5.0`, and `vllm==0.10.0` are available [in this write-up](https://medium.com/@yugez/training-ai-agents-to-write-and-self-correct-sql-with-reinforcement-learning-571ed31281ad). The v0.2 pipeline follows the same execution-match metric, so you can compare new experiments directly against those historical runs.
