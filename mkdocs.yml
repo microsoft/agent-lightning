@@ -44,6 +44,7 @@ markdown_extensions:
       alternate_style: true
   - toc:
       permalink: true
+  - attr_list
 
 plugins:
   - search
@@ -80,17 +81,24 @@ extra_javascript:
 nav:
   - Home: index.md
   - Quickstart:
-    - Installation: quickstart/installation.md
-    - Getting Started: quickstart/getting-started.md
-  - How-To Guides:
-    - Train SQL Agent: how-to/train-sql-agent.md
+    - Installation: tutorials/installation.md
+    - Train the First Agent: how-to/train-first-agent.md
+    - Write the First Algorithm: how-to/write-first-algorithm.md
+  - How-To Recipes:
+    - SFT with Unsloth: how-to/unsloth-sft.md
+    - Train SQL Agent with RL: how-to/train-sql-agent.md
+  - Learning More:
+    - Write Agents: tutorials/write-agents.md
+    - Debugging: tutorials/debug.md
+    - Parallelize: tutorials/parallelize.md
   - Algorithm Zoo:
     - Overview: algorithm-zoo/index.md
     - APO: algorithm-zoo/apo.md
     - VERL: algorithm-zoo/verl.md
   - Deep Dive:
     - Bird's Eye View: deep-dive/birds-eye-view.md
-    - Server-Client Architecture (Legacy): deep-dive/server-client-architecture.md
+    - Understanding Store: deep-dive/store.md
+    - Understanding Tracing: deep-dive/tracing.md
   - API References:
     - Agent: reference/agent.md
     - Algorithm: reference/algorithm.md

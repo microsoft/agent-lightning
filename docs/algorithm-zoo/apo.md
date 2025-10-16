@@ -18,7 +18,7 @@ pip install agentlightning[apo]
 
 ## Tutorials Using APO
 
-TBD
+- [Train the First Agent with APO](../how-to/train-first-agent.md) - A step-by-step guide to training your first agent using APO.
 
 ## References
 

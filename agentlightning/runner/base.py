@@ -27,7 +27,7 @@ T_task = TypeVar("T_task")
 logger = logging.getLogger(__name__)
 
 
-class BaseRunner(ParallelWorkerBase, Generic[T_task]):
+class Runner(ParallelWorkerBase, Generic[T_task]):
     """Base class for all runners.
 
     This abstract base class defines the interface that all runner implementations
@@ -122,7 +122,7 @@ class BaseRunner(ParallelWorkerBase, Generic[T_task]):
         store: LightningStore,
         hooks: Optional[Sequence[Hook]] = None,
         worker_id: Optional[int] = None,
-    ) -> Iterator[BaseRunner[T_task]]:
+    ) -> Iterator[Runner[T_task]]:
         """Context manager for quickly init and teardown the runner,
         so that you can debug the runner without a trainer environment.
 

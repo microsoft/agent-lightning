@@ -22,11 +22,11 @@ pip install agentlightning[verl]
 
 !!! warning
 
-    For best results, follow the steps in the [installation guide](../quickstart/installation.md) to set up VERL and its dependencies. Installing VERL directly with `pip install agentlightning[verl]` can cause issues unless you already have a compatible version of PyTorch installed.
+    For best results, follow the steps in the [installation guide](../tutorials/installation.md) to set up VERL and its dependencies. Installing VERL directly with `pip install agentlightning[verl]` can cause issues unless you already have a compatible version of PyTorch installed.
 
 ## Tutorials Using VERL
 
-TBD
+- [Train SQL Agent with RL](../how-to/train-sql-agent.md) - A practical example of training a SQL agent using VERL.
 
 ## References - Entrypoint
 

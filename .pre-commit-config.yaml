@@ -8,6 +8,7 @@ repos:
         exclude: ^mkdocs\.yml$
       - id: check-toml
       - id: check-added-large-files
+        args: ["--maxkb=1024"]
       - id: check-shebang-scripts-are-executable
       - id: detect-private-key
   - repo: https://github.com/pycqa/isort

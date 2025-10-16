@@ -9,11 +9,11 @@ import warnings
 from typing import Any, List, Optional, TypeVar, Union
 
 from agentlightning.adapter import TraceAdapter, TracerTraceToTriplet
-from agentlightning.algorithm import BaseAlgorithm
+from agentlightning.algorithm import Algorithm
 from agentlightning.client import AgentLightningClient
 from agentlightning.litagent import LitAgent
 from agentlightning.runner import LegacyAgentRunner
-from agentlightning.tracer.base import BaseTracer
+from agentlightning.tracer.base import Tracer
 from agentlightning.types import Dataset, ParallelWorkerBase
 
 logger = logging.getLogger(__name__)
@@ -31,8 +31,8 @@ class TrainerLegacy(ParallelWorkerBase):
         It won't be used in practice.
         """
         self._dev = kwargs.pop("dev", False)
-        self.algorithm: Optional[BaseAlgorithm] = kwargs.pop("algorithm", None)
-        self.tracer: BaseTracer = kwargs.pop("tracer", None)
+        self.algorithm: Optional[Algorithm] = kwargs.pop("algorithm", None)
+        self.tracer: Tracer = kwargs.pop("tracer", None)
         self.n_workers: int = kwargs.pop("n_workers", None)
         self.max_tasks: Optional[int] = kwargs.pop("max_tasks", None)
         self.daemon: bool = kwargs.pop("daemon", True)

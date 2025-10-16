@@ -16,10 +16,10 @@ from agentlightning.execution.events import ExecutionEvent, ThreadingEvent
 from agentlightning.litagent import LitAgent
 from agentlightning.reward import emit_reward, find_final_reward
 from agentlightning.runner import LitAgentRunner
-from agentlightning.runner.base import BaseRunner
+from agentlightning.runner.base import Runner
 from agentlightning.store.base import LightningStore
 from agentlightning.store.memory import InMemoryLightningStore
-from agentlightning.tracer.base import BaseTracer
+from agentlightning.tracer.base import Tracer
 from agentlightning.types import LLM, Hook, NamedResources, PromptTemplate, Rollout, Span, SpanNames
 
 trace_api.set_tracer_provider(TracerProvider())
@@ -64,7 +64,7 @@ def create_agent_span(
     )
 
 
-class DummyTracer(BaseTracer):
+class DummyTracer(Tracer):
     def __init__(self) -> None:
         super().__init__()
         self._last_trace: List[ReadableSpan] = []
@@ -148,16 +148,16 @@ class RecordingHook(Hook):
         self.calls: List[str] = []
         self.received_spans: Optional[List[ReadableSpan] | List[Span]] = None
 
-    async def on_rollout_start(self, *, agent: LitAgent[Any], runner: BaseRunner[Any], rollout: Rollout) -> None:
+    async def on_rollout_start(self, *, agent: LitAgent[Any], runner: Runner[Any], rollout: Rollout) -> None:
         self.calls.append("on_rollout_start")
 
     async def on_trace_start(
-        self, *, agent: LitAgent[Any], runner: BaseRunner[Any], tracer: BaseTracer, rollout: Rollout
+        self, *, agent: LitAgent[Any], runner: Runner[Any], tracer: Tracer, rollout: Rollout
     ) -> None:
         self.calls.append("on_trace_start")
 
     async def on_trace_end(
-        self, *, agent: LitAgent[Any], runner: BaseRunner[Any], tracer: BaseTracer, rollout: Rollout
+        self, *, agent: LitAgent[Any], runner: Runner[Any], tracer: Tracer, rollout: Rollout
     ) -> None:
         self.calls.append("on_trace_end")
 
@@ -165,7 +165,7 @@ class RecordingHook(Hook):
         self,
         *,
         agent: LitAgent[Any],
-        runner: BaseRunner[Any],
+        runner: Runner[Any],
         rollout: Rollout,
         spans: List[ReadableSpan] | List[Span],
     ) -> None:

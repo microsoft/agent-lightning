@@ -1,5 +1,5 @@
 <div style="text-align:center; margin-bottom:20px;">
-  <img src="docs/assets/readme-banner.png" alt="Agent-lightning-banner" style="max-width:600px"/>
+  <img src="docs/assets/readme-banner.svg" alt="Agent-lightning-banner" style="max-width:600px"/>
 </div>
 
 # Agent Lightning⚡

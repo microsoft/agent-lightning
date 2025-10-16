@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class BaseTracer(ParallelWorkerBase):
+class Tracer(ParallelWorkerBase):
     """
     An abstract base class for tracers.
 

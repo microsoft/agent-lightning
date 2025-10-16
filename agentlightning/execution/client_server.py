@@ -12,7 +12,7 @@ from typing import Callable, Iterable, Literal, cast
 from agentlightning.store.base import LightningStore
 from agentlightning.store.client_server import LightningStoreClient, LightningStoreServer
 
-from .base import AlgorithmBundle, ExecutionStrategy, RunnerBundle
+from .base import AlgorithmBundle, ExecutionStrategy, RunnerBundle, resolve_managed_store_flag
 from .events import ExecutionEvent, MultiprocessingEvent
 
 logger = logging.getLogger(__name__)
@@ -71,6 +71,7 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
         graceful_timeout: float = 5.0,
         terminate_timeout: float = 5.0,
         main_process: Literal["algorithm", "runner"] = "algorithm",
+        managed_store: bool | None = None,
     ) -> None:
         """Configure the strategy.
 
@@ -90,6 +91,10 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
             main_process: Which bundle runs on the main process when
                 `role == "both"`. `"runner"` requires `n_runners == 1` and is
                 primarily intended for debugging.
+            managed_store: When ``True`` (default) the strategy constructs
+                LightningStore client/server wrappers automatically. When
+                ``False`` the provided ``store`` is passed directly to the
+                bundles, allowing callers to manage store wrappers manually.
         """
         if role is None:
             role_env = os.getenv("AGL_CURRENT_ROLE")
@@ -126,19 +131,26 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
             if n_runners != 1:
                 raise ValueError("main_process='runner' requires n_runners to be 1")
         self.main_process = main_process
+        self.managed_store = resolve_managed_store_flag(managed_store)
 
     async def _execute_algorithm(
         self, algorithm: AlgorithmBundle, store: LightningStore, stop_evt: ExecutionEvent
     ) -> None:
-        logger.info("Starting LightningStore server on %s:%s", self.server_host, self.server_port)
-        server_store = LightningStoreServer(store, host=self.server_host, port=self.server_port)
-        server_started = False
+        wrapper_store: LightningStore | None = None
+        if self.managed_store:
+            logger.info("Starting LightningStore server on %s:%s", self.server_host, self.server_port)
+            wrapper_store = LightningStoreServer(store, host=self.server_host, port=self.server_port)
+            server_started = False
+        else:
+            wrapper_store = store
+            server_started = False
 
         try:
-            await server_store.start()
-            server_started = True
-            logger.debug("Algorithm bundle starting against endpoint %s", server_store.endpoint)
-            await algorithm(server_store, stop_evt)
+            if self.managed_store and isinstance(wrapper_store, LightningStoreServer):
+                await wrapper_store.start()
+                server_started = True
+                logger.debug("Algorithm bundle starting against endpoint %s", wrapper_store.endpoint)
+            await algorithm(wrapper_store, stop_evt)
             logger.debug("Algorithm bundle completed successfully")
         except KeyboardInterrupt:
             logger.warning("Algorithm received KeyboardInterrupt; signaling stop event")
@@ -149,18 +161,34 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
             stop_evt.set()
             raise
         finally:
-            if server_started:
+            if self.managed_store and isinstance(wrapper_store, LightningStoreServer) and server_started:
                 try:
-                    await server_store.stop()
+                    await wrapper_store.stop()
                 except Exception:
                     logger.exception("Error stopping LightningStore server")
                 else:
                     logger.debug("LightningStore server shutdown completed")
 
-    async def _execute_runner(self, runner: RunnerBundle, worker_id: int, stop_evt: ExecutionEvent) -> None:
-        client_store = LightningStoreClient(f"http://{self.server_host}:{self.server_port}")
+    async def _execute_runner(
+        self,
+        runner: RunnerBundle,
+        worker_id: int,
+        stop_evt: ExecutionEvent,
+        *,
+        store: LightningStore | None = None,
+    ) -> None:
+        client_store: LightningStore | None
+        if self.managed_store:
+            client_store = LightningStoreClient(f"http://{self.server_host}:{self.server_port}")
+        else:
+            if store is None:
+                raise ValueError("Runner store must be provided when managed_store is False")
+            client_store = store
         try:
-            logger.debug("Runner %s connecting to server at %s:%s", worker_id, self.server_host, self.server_port)
+            if self.managed_store:
+                logger.debug("Runner %s connecting to server at %s:%s", worker_id, self.server_host, self.server_port)
+            else:
+                logger.debug("Runner %s executing with provided store", worker_id)
             await runner(client_store, worker_id, stop_evt)
             logger.debug("Runner %s completed successfully", worker_id)
         except KeyboardInterrupt:
@@ -172,12 +200,13 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
             stop_evt.set()
             raise
         finally:
-            try:
-                await client_store.close()
-            except Exception:
-                logger.exception("Error closing LightningStore client for runner %s", worker_id)
-            else:
-                logger.debug("Runner %s closed LightningStore client", worker_id)
+            if self.managed_store and isinstance(client_store, LightningStoreClient):
+                try:
+                    await client_store.close()
+                except Exception:
+                    logger.exception("Error closing LightningStore client for runner %s", worker_id)
+                else:
+                    logger.debug("Runner %s closed LightningStore client", worker_id)
 
     def _spawn_runners(
         self,
@@ -185,19 +214,22 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
         stop_evt: ExecutionEvent,
         *,
         ctx: BaseContext,
+        store: LightningStore | None = None,
     ) -> list[multiprocessing.Process]:
         """Used when `role == "runner"` or `role == "both"` and `n_runners > 1`."""
         processes: list[multiprocessing.Process] = []
 
-        def _runner_sync(runner: RunnerBundle, worker_id: int, stop_evt: ExecutionEvent) -> None:
+        def _runner_sync(
+            runner: RunnerBundle, worker_id: int, stop_evt: ExecutionEvent, store: LightningStore | None
+        ) -> None:
             # Runners are executed in child processes; each process owns its own
             # event loop to keep the asyncio scheduler isolated.
-            asyncio.run(self._execute_runner(runner, worker_id, stop_evt))
+            asyncio.run(self._execute_runner(runner, worker_id, stop_evt, store=store))
 
         for i in range(self.n_runners):
             process = cast(
                 multiprocessing.Process,
-                ctx.Process(target=_runner_sync, args=(runner, i, stop_evt), name=f"runner-{i}"),  # type: ignore
+                ctx.Process(target=_runner_sync, args=(runner, i, stop_evt, store), name=f"runner-{i}"),  # type: ignore
             )
             process.start()
             logger.debug("Spawned runner process %s (pid=%s)", process.name, process.pid)

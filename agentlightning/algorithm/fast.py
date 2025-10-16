@@ -10,14 +10,14 @@ from typing import Any, List, Literal, Optional
 from agentlightning.llm_proxy import ModelConfig
 from agentlightning.types import Attempt, Dataset, Rollout, RolloutStatus, Span
 
-from .base import BaseAlgorithm
+from .base import Algorithm
 
 logger = logging.getLogger(__name__)
 
 __all__ = ["FastAlgorithm", "Baseline"]
 
 
-class FastAlgorithm(BaseAlgorithm):
+class FastAlgorithm(Algorithm):
     """Algorithm that can run fast and qualify for dev mode.
 
     Fast algorithms enable agent developers to quickly iterate on agent development

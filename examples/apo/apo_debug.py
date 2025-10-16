@@ -6,7 +6,7 @@ import argparse
 import asyncio
 from typing import cast
 
-from apo import apo_rollout
+from apo_custom_algorithm import apo_rollout
 
 from agentlightning import Trainer, configure_logger
 from agentlightning.runner import LitAgentRunner

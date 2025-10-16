@@ -5,13 +5,13 @@ from typing import Any, Optional
 from hydra import compose, initialize
 from omegaconf import OmegaConf
 
-from agentlightning.algorithm.base import BaseAlgorithm
+from agentlightning.algorithm.base import Algorithm
 from agentlightning.client import AgentLightningClient
 from agentlightning.types import Dataset
 from agentlightning.verl.entrypoint import run_ppo  # type: ignore
 
 
-class VERL(BaseAlgorithm):
+class VERL(Algorithm):
     """Algorithm leveraging VERL as the backend framework.
 
     **Note on Customization:**

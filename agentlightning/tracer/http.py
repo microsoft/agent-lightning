@@ -19,12 +19,12 @@ from opentelemetry.trace.span import (
     TraceState,
 )
 
-from .base import BaseTracer
+from .base import Tracer
 
 logger = logging.getLogger(__name__)
 
 
-class HttpTracer(BaseTracer):
+class HttpTracer(Tracer):
     """
     A tracer implementation that captures HTTP requests using httpdbg.
 

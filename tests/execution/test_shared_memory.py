@@ -3,7 +3,7 @@
 import asyncio
 import logging
 import time
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 import pytest
 from _pytest.logging import LogCaptureFixture
@@ -18,6 +18,41 @@ from ..store.dummy_store import DummyLightningStore, minimal_dummy_store
 @pytest.fixture
 def store() -> DummyLightningStore:
     return minimal_dummy_store()
+
+
+def test_env_managed_store(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AGL_MANAGED_STORE", "false")
+
+    strat = SharedMemoryExecutionStrategy()
+
+    assert strat.managed_store is False
+
+
+def test_explicit_managed_store_overrides_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AGL_MANAGED_STORE", "0")
+
+    strat = SharedMemoryExecutionStrategy(managed_store=True)
+
+    assert strat.managed_store is True
+
+
+def test_execute_uses_unmanaged_store_directly(store: DummyLightningStore) -> None:
+    strat = SharedMemoryExecutionStrategy(managed_store=False)
+    used: Dict[str, LightningStore] = {}
+
+    async def algo(store: LightningStore, event: ExecutionEvent) -> None:
+        used["algo"] = store
+        event.set()
+
+    async def runner(store: LightningStore, worker_id: int, event: ExecutionEvent) -> None:
+        used["runner"] = store
+        while not event.is_set():
+            await asyncio.sleep(0.01)
+
+    strat.execute(algo, runner, store)
+
+    assert used["algo"] is store
+    assert used["runner"] is store
 
 
 def tiny_sleep(seconds: float) -> float:

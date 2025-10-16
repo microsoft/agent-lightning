@@ -199,14 +199,14 @@ def test_multiple_algorithm_instances():
 
 
 def test_algorithm_base_algorithm_methods():
-    """Test that BaseAlgorithm methods are available."""
+    """Test that Algorithm methods are available."""
 
     @algo
     def test_algo(*, train_dataset: Optional[Dataset[Any]], val_dataset: Optional[Dataset[Any]]) -> None:
         """Test algorithm."""
         pass
 
-    # Should have all BaseAlgorithm methods
+    # Should have all Algorithm methods
     assert hasattr(test_algo, "set_trainer")
     assert hasattr(test_algo, "get_trainer")
     assert hasattr(test_algo, "set_llm_proxy")
