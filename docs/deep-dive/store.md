@@ -1,6 +1,6 @@
 # Understanding Store
 
-The **LightningStore** is the central coordination point for Agent-lightning. It holds the task queue, rollouts, attempts, spans, and versioned resources, and exposes a small API both Runners and Algorithms use to communicate. This document explains what’s in the store, how statuses transition, how spans are recorded, and the concurrency model (threads & processes).
+The **[`LightningStore`][agentlightning.LightningStore]** is the central coordination point for Agent-lightning. It holds the task queue, rollouts, attempts, spans, and versioned resources, and exposes a small API both Runners and Algorithms use to communicate. This document explains what’s in the store, how statuses transition, how spans are recorded, and the concurrency model (threads & processes).
 
 ## What’s in the Store?
 
@@ -15,6 +15,8 @@ At a high level:
 * **Resources** – Versioned, named bundles (e.g., prompt templates) referenced by rollouts.
 
 Rollout and Task share the same surface in practice: [`Rollout.input`][agentlightning.types.Rollout] is the task input. The queue stores rollouts that are not yet running; [Runners][agentlightning.Runner] dequeue them and update the same rollout’s status as work progresses.
+
+All [`LightningStore`][agentlightning.LightningStore] implementations must inherit from [`LightningStore`][agentlightning.LightningStore] and override the methods to implement the storage logic.
 
 ## Attempt Status Transitions
 
@@ -92,89 +94,59 @@ TBD: add tutorials on RolloutConfig and how to config the retry policy.
 
 ## Spans
 
-Spans are the time-ordered trace records for an attempt.
+Every traceable operation in a rollout is stored as a [Span][agentlightning.Span]. Spans not only capture fine-grained instrumentation but also act as periodic heartbeats that demonstrate liveness. The first span marks activation; each subsequent one both extends the trace and refreshes the attempt’s `last_heartbeat_time`. If no span arrives within the configured `unresponsive_seconds`, the watchdog downgrades the attempt to **unresponsive** until activity resumes.
 
-* **Identity & Ordering**: Spans are keyed by `(rollout_id, attempt_id, sequence_id)`. The server guarantees **monotonic** `sequence_id` per attempt:
+Spans are indexed by `(rollout_id, attempt_id, sequence_id)` where the sequence is monotonic. Tracing analysis tools like [Adapter][agentlightning.Adapter] usually rely on "time order" to reconstruct the trace. However, in a distributed system, the recorded start time and end time of a span are not necessarily in the right order when they aggregated into a central store. Therefore, we enforce every span creation to retrieve a monotonically increasing `sequence_id` from the store before adding the span.
 
-  * Runners call `get_next_span_sequence_id(rollout_id, attempt_id)` to fetch the next id.
-  * Then they call `add_span(span)` (or `add_otel_span(...)`, which composes the two).
-* **Heartbeat**: Any `add_span` (including `add_otel_span`) updates `last_heartbeat_time`. This is what lets the watchdog mark/unmark `unresponsive`.
-* **OpenTelemetry**: `add_otel_span(rollout_id, attempt_id, readable_span, sequence_id=None)` converts a `ReadableSpan` to a Store span. If `sequence_id` is omitted, the client fetches it first.
-* **Querying**: `query_spans(rollout_id, attempt_id=None|"latest")` returns all spans for a rollout, optionally scoped to one attempt.
+!!! note
 
-Common patterns:
+    In practice, one `sequence_id` can be used to create multiple spans. In that case, the orders between the mulitple spans are determined by the order of `start_time` and `end_time` of the spans.
 
-* First span for an attempt is treated as **activation** (sets `running`).
-* A dedicated “reward” span (e.g., `name="reward"`, numeric value in attributes) is a simple way to record the final score used by algorithms.
+TBD: talk about opentelemetry span and how to convert it to a store span.
 
-## Thread and Multiprocessing Safety
+## Thread Safety
 
-There are two related but distinct concerns: *thread safety* and *process isolation*.
+**[`LightningStoreThreaded`][agentlightning.LightningStoreThreaded]** is a subclass of [`LightningStore`][agentlightning.LightningStore] that wraps anoter underlying store to make a store instance safe for multi-threaded callers. It wraps every state-mutating call in a mutex. Specifically:
 
-### Thread safety
+* Methods like [`start_rollout`][agentlightning.LightningStore.start_rollout], [`enqueue_rollout`][agentlightning.LightningStore.enqueue_rollout], [`update_attempt`][agentlightning.LightningStore.update_attempt], [`add_span`][agentlightning.LightningStore.add_span], etc. are guarded by a lock.
+* Non-mutating, potentially blocking calls remain pass-through by design (e.g., [`wait_for_rollouts`][agentlightning.LightningStore.wait_for_rollouts]), as they don’t modify shared state and should not hold the lock for long periods.
 
-Use **`LightningStoreThreaded`** to make a store instance safe for multi-threaded callers. It wraps every state-mutating call in a mutex:
 
-* Methods like `start_rollout`, `enqueue_rollout`, `update_attempt`, `add_span`, etc. are guarded by a lock.
-* Non-mutating, potentially blocking calls remain pass-through by design (e.g., `wait_for_rollouts`), as they don’t modify shared state and should not hold the lock for long periods.
+## Process Safety and Client-server Store
 
-```python
-thread_safe_store = LightningStoreThreaded(real_store)
-# Safe to share across threads creating attempts, adding spans, etc.
-```
+**[`LightningStoreServer`][agentlightning.LightningStoreServer]** wraps another underlying store and runs a FastAPI app to expose the store API over HTTP. [`LightningStoreClient`][agentlightning.LightningStoreClient] is a small [`LightningStore`][agentlightning.LightningStore] implementation that talks to the HTTP API.
 
-### Process boundaries & the HTTP server
+The server tracks the creator PID. In the owner process it delegates directly to the in-memory store; in other processes it lazily constructs a [`LightningStoreClient`][agentlightning.LightningStoreClient] to talk to the HTTP API. This prevents accidental cross-process mutation of the wrong memory image. When the server is pickled (e.g., via `multiprocessing`), only the minimal fields are serialized, but **NOT** the FastAPI/uvicorn objects. Subprocesses won’t accidentally carry live server state. Forked subprocess shall also use [`LightningStoreClient`][agentlightning.LightningStoreClient] to communicate with the server in the main process.
 
-**`LightningStoreServer`** runs a FastAPI app and delegates to an underlying store. Important details:
-
-* **Owner-process guard**: The server tracks the **creator PID**. In the owner process it delegates directly to the in-memory store; in other processes it lazily constructs a **`LightningStoreClient`** to talk to the HTTP API. This prevents accidental cross-process mutation of the wrong memory image.
-* **Pickling behavior**: When the server is pickled (e.g., via `multiprocessing`), only the minimal fields are serialized—**not** the FastAPI/uvicorn objects. Subprocesses won’t accidentally carry live server state.
-* **Health checks & retries** (client): `LightningStoreClient` retries network/5xx failures using a small backoff, and probes `/health` between attempts. Application exceptions inside the server are wrapped as **HTTP 400** with a traceback—these are **not retried**.
-* **Event-loop-aware sessions**: The client maintains a **per-event-loop** `aiohttp.ClientSession` map so that tracer callbacks (often on separate loops/threads) don’t hang by reusing a session from another loop.
+On the client side, the client retries network/5xx failures using a small backoff, and probes `/health` between attempts. Application exceptions inside the server are wrapped as HTTP 400 with a traceback—these are **not retried**. The client also maintains a **per-event-loop** `aiohttp.ClientSession` map so that tracer callbacks (often on separate loops/threads) don’t hang by reusing a session from another loop.
 
 Minimal lifecycle:
 
 ```python
+import agentlightning as agl
+
 # Server (owner process)
-server = LightningStoreServer(store=in_memory_store, host="0.0.0.0", port=4747)
+in_memory_store = agl.InMemoryLightningStore()
+server = agl.LightningStoreServer(store=in_memory_store, host="0.0.0.0", port=4747)
 await server.start()      # starts uvicorn in a daemon thread and waits for /health
-await server.run_forever()  # or keep your own event loop and stop via await server.stop()
+# or keep your own event loop and stop via await server.stop()
+# await server.run_forever()
 
 # Client (same or different process)
-client = LightningStoreClient("http://localhost:4747")
+client = agl.LightningStoreClient("http://localhost:4747")
+
+print(await client.query_rollouts(status=["queuing"]))
+
+await client.close()
+await server.stop()
 ```
 
-> Note: `LightningStoreClient.wait_for_rollouts` intentionally enforces a tiny timeout (≤ 0.1s) to avoid blocking event loops. Poll with short timeouts or compose with `asyncio.wait_for` at a higher layer.
+Another approach is to use a dedicated command line to start a long running server process, possibly sharable across multiple processes. In the main process, you can always use [`LightningStoreClient`][agentlightning.LightningStoreClient] to communicate with the server.
 
-## API Reference by Role
+```bash
+agl store --port 4747
+```
 
-**Algorithm** typically calls:
+!!! note
 
-* `add_resources(resources)` → `ResourcesUpdate` (versioned id)
-* `enqueue_rollout(input, resources_id=...)` → `Rollout`
-* `wait_for_rollouts([rollout_id], timeout=...)` → [Rollout]
-* `query_rollouts(status=..., rollout_ids=...)` → [Rollout]
-* `query_spans(rollout_id, attempt_id="latest")` → [Span]
-
-**Runner** typically calls:
-
-* `dequeue_rollout()` → `AttemptedRollout | None`
-* `start_attempt(rollout_id)` (if creating an attempt out-of-band)
-* `get_next_span_sequence_id(rollout_id, attempt_id)` → int
-* `add_span(span)` / `add_otel_span(rollout_id, attempt_id, readable_span, sequence_id=None)` → Span
-* `update_attempt(..., status=...)` → Attempt
-
-**Admin / control plane** can call:
-
-* `update_rollout(..., status="cancelled")` to cancel explicitly.
-* `update_resources(...)`, `get_latest_resources()`, etc.
-
-## Example: From Status Changes to Rollout Transitions
-
-When a Runner posts the first span for a new attempt:
-
-1. `add_otel_span(...)` updates the attempt’s `last_heartbeat_time` and implicitly flips attempt to **running** (first activation).
-2. `propagate_status()` updates the rollout from `preparing/queuing` to **running**.
-3. If the Runner later sets `update_attempt(status="failed")` and the rollout config says to retry, the rollout moves to **requeuing** and a new attempt is created. Otherwise, it becomes **failed**.
-
-If the watchdog tick observes `now - last_heartbeat > unresponsive_seconds`, it flips the attempt to **unresponsive**. Any subsequent `add_[otel_]span()` from the Runner brings it back to **running**.
+    [`LightningStoreClient.wait_for_rollouts`][agentlightning.LightningStoreClient.wait_for_rollouts] intentionally enforces a tiny timeout (≤ 0.1s) to avoid blocking event loops. Poll with short timeouts or compose with `asyncio.wait_for` at a higher layer.

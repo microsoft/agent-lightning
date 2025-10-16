@@ -862,6 +862,15 @@ class LightningStoreClient(LightningStore):
         return span
 
     async def wait_for_rollouts(self, *, rollout_ids: List[str], timeout: Optional[float] = None) -> List[Rollout]:
+        """Wait for rollouts to complete.
+
+        Args:
+            rollout_ids: List of rollout IDs to wait for.
+            timeout: Timeout in seconds. If not None, the method will raise a ValueError if the timeout is greater than 0.1 seconds.
+
+        Returns:
+            List of rollouts that are completed.
+        """
         if timeout is not None and timeout > 0.1:
             raise ValueError(
                 "Timeout must be less than 0.1 seconds in LightningStoreClient to avoid blocking the event loop"
