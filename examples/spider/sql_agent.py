@@ -474,7 +474,7 @@ class LitSQLAgent(agl.LitAgent[Dict[str, Any]]):
                 execution_truncate=self.execution_truncate,
                 debug=False,
                 db_schema=schema,
-                endpoint=llm.endpoint,
+                endpoint=llm.get_base_url(rollout.rollout_id, rollout.attempt.attempt_id),  # type: ignore
                 verl_replacement=(
                     {"model": llm.model, **llm.sampling_parameters}
                     if rollout.mode == "train"
