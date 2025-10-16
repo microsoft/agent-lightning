@@ -180,7 +180,7 @@ class LegacyAgentRunner(Runner[Any]):
             except Exception:
                 logger.exception(f"{self._log_prefix(rollout_id)} Exception during on_rollout_start hook.")
 
-            with self.tracer.trace_context(name=f"rollout_{rollout_id}"):
+            with self.tracer._trace_context_sync(name=f"rollout_{rollout_id}"):  # pyright: ignore[reportPrivateUsage]
                 start_time = time.time()
                 rollout_method = self.agent.training_rollout if task.mode == "train" else self.agent.validation_rollout
                 # Pass the task input, not the whole task object
@@ -257,7 +257,7 @@ class LegacyAgentRunner(Runner[Any]):
             except Exception:
                 logger.exception(f"{self._log_prefix(rollout_id)} Exception during on_rollout_start hook.")
 
-            with self.tracer.trace_context(name=f"rollout_{rollout_id}"):
+            async with self.tracer.trace_context(name=f"rollout_{rollout_id}"):
                 start_time = time.time()
                 rollout_method = (
                     self.agent.training_rollout_async if task.mode == "train" else self.agent.validation_rollout_async

@@ -78,7 +78,7 @@ if USE_OPENAI:
     OPENAI_MODEL = "gpt-4.1-mini"
     OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
 else:
-    OPENAI_BASE_URL = "http://127.0.0.1:8000/v1"
+    OPENAI_BASE_URL = "http://127.0.0.1:58000/v1"
     OPENAI_MODEL = "gpt-4.1-mini"
     OPENAI_API_KEY = "token-abc123"
 
@@ -101,7 +101,7 @@ class MockOpenAICompatibleServer:
     Now supports replaying from prompt caches.
     """
 
-    def __init__(self, host: str = "127.0.0.1", port: int = 8000) -> None:
+    def __init__(self, host: str = "127.0.0.1", port: int = 58000) -> None:
         self.host = host
         self.port = port
         self.app = FastAPI()
@@ -767,7 +767,7 @@ def create_prompt_caches() -> None:
 
     if USE_OPENAI:
         tracer = HttpTracer()
-        with tracer.trace_context():
+        with tracer._trace_context_sync():
             run_all()
 
         with open(os.path.join(os.path.dirname(__file__), "../assets/prompt_caches.jsonl"), "w") as f:

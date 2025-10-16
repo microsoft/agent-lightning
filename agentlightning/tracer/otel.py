@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import logging
-from contextlib import contextmanager
-from typing import Iterator, List, Optional
+from contextlib import asynccontextmanager
+from typing import AsyncGenerator, List, Optional
 
 import opentelemetry.trace as trace_api
 from opentelemetry.sdk.trace import ReadableSpan, TracerProvider
@@ -49,15 +49,15 @@ class OtelTracer(Tracer):
         logger.info(f"[Worker {worker_id}] Tearing down OpenTelemetry tracer...")
         self._tracer_provider = None
 
-    @contextmanager
-    def trace_context(
+    @asynccontextmanager
+    async def trace_context(
         self,
         name: Optional[str] = None,
         *,
         store: Optional[LightningStore] = None,
         rollout_id: Optional[str] = None,
         attempt_id: Optional[str] = None,
-    ) -> Iterator[LightningSpanProcessor]:
+    ) -> AsyncGenerator[LightningSpanProcessor, None]:
         """
         Starts a new tracing context. This should be used as a context manager.
 
