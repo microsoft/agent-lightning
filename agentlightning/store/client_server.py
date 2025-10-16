@@ -90,6 +90,8 @@ class LightningStoreServer(LightningStore):
     Delegates all operations to an underlying store implementation.
 
     Healthcheck and watchdog relies on the underlying store.
+
+    `agl store` is a convenient CLI to start a store server.
     """
 
     def __init__(self, store: LightningStore, host: str, port: int):
