@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from agentlightning.trainer import Trainer
 
 
-class BaseAlgorithm:
+class Algorithm:
     """Algorithm is the strategy, or tuner to train the agent."""
 
     _trainer_ref: weakref.ReferenceType[Trainer] | None = None

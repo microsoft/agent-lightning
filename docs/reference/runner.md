@@ -8,7 +8,7 @@
 
 ::: agentlightning.LitAgentRunner
 
-::: agentlightning.BaseRunner
+::: agentlightning.Runner
 
 ## Tracer
 
@@ -16,4 +16,4 @@
 
 ::: agentlightning.OtelTracer
 
-::: agentlightning.BaseTracer
+::: agentlightning.Tracer

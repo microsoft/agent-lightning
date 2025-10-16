@@ -35,7 +35,7 @@ async def apo_algorithm_usable_in_trainer(*, store: LightningStore):
 
         apo_algorithm_usable_in_trainer = algo(apo_algorithm)
     """
-    return apo_algorithm(store=store)
+    return await apo_algorithm(store=store)
 
 
 if __name__ == "__main__":

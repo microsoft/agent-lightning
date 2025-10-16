@@ -11,8 +11,8 @@ from typing import TYPE_CHECKING, Any, Callable, Generic, Optional, TypeVar
 from agentlightning.types import NamedResources, Rollout, RolloutRawResult, Task
 
 if TYPE_CHECKING:
-    from agentlightning.runner import BaseRunner
-    from agentlightning.tracer import BaseTracer
+    from agentlightning.runner import Runner
+    from agentlightning.tracer import Tracer
     from agentlightning.trainer import Trainer
 
 
@@ -62,7 +62,7 @@ class LitAgent(Generic[T]):
         self.trained_agents = trained_agents
 
         self._trainer_ref: weakref.ReferenceType[Trainer] | None = None
-        self._runner_ref: weakref.ReferenceType[BaseRunner[T]] | None = None
+        self._runner_ref: weakref.ReferenceType[Runner[T]] | None = None
 
     def is_async(self) -> bool:
         """
@@ -112,21 +112,21 @@ class LitAgent(Generic[T]):
         """Convenient shortcut of self.get_trainer()."""
         return self.get_trainer()
 
-    def get_tracer(self) -> BaseTracer:
+    def get_tracer(self) -> Tracer:
         """
         Get the tracer for this agent.
 
         Returns:
-            The BaseTracer instance associated with this agent.
+            The Tracer instance associated with this agent.
         """
         return self.trainer.tracer
 
     @property
-    def tracer(self) -> BaseTracer:
+    def tracer(self) -> Tracer:
         """Convenient shortcut of self.get_tracer()."""
         return self.get_tracer()
 
-    def set_runner(self, runner: BaseRunner[T]) -> None:
+    def set_runner(self, runner: Runner[T]) -> None:
         """
         Set the runner for this agent.
 
@@ -135,7 +135,7 @@ class LitAgent(Generic[T]):
         """
         self._runner_ref = weakref.ref(runner)
 
-    def get_runner(self) -> BaseRunner[T]:
+    def get_runner(self) -> Runner[T]:
         """
         Get the runner for this agent.
 
@@ -150,18 +150,18 @@ class LitAgent(Generic[T]):
         return runner
 
     @property
-    def runner(self) -> BaseRunner[T]:
+    def runner(self) -> Runner[T]:
         """Convenient shortcut of self.get_runner()."""
         return self.get_runner()
 
-    def on_rollout_start(self, task: Task, runner: BaseRunner[T], tracer: BaseTracer) -> None:
+    def on_rollout_start(self, task: Task, runner: Runner[T], tracer: Tracer) -> None:
         """Hook called immediately before a rollout begins.
 
         Deprecated in favor of `on_rollout_start` in the `Hook` interface.
 
         Args:
             task: The :class:`Task` object that will be processed.
-            runner: The :class:`BaseRunner` managing the rollout.
+            runner: The :class:`Runner` managing the rollout.
             tracer: The tracer instance associated with the runner.
 
         Subclasses can override this method to implement custom logic such as
@@ -169,7 +169,7 @@ class LitAgent(Generic[T]):
         no-op.
         """
 
-    def on_rollout_end(self, task: Task, rollout: Rollout, runner: BaseRunner[T], tracer: BaseTracer) -> None:
+    def on_rollout_end(self, task: Task, rollout: Rollout, runner: Runner[T], tracer: Tracer) -> None:
         """Hook called after a rollout completes.
 
         Deprecated in favor of `on_rollout_end` in the `Hook` interface.
@@ -177,7 +177,7 @@ class LitAgent(Generic[T]):
         Args:
             task: The :class:`Task` object that was processed.
             rollout: The resulting :class:`Rollout` object.
-            runner: The :class:`BaseRunner` managing the rollout.
+            runner: The :class:`Runner` managing the rollout.
             tracer: The tracer instance associated with the runner.
 
         Subclasses can override this method for cleanup or additional

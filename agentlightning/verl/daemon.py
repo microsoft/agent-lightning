@@ -7,6 +7,7 @@ import socket
 import threading
 import time
 import uuid
+from collections import defaultdict
 from collections.abc import Mapping
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
@@ -558,13 +559,28 @@ class AgentModeDaemon:
         assert len(self._completed_rollouts_v0) == self._total_tasks_queued
 
         sample_stat_list: List[Dict[str, Any]] = []
-        for _, rollout in self._completed_rollouts_v0.items():
+        sample_stat_list_by_source: Dict[str, List[Dict[str, Any]]] = defaultdict(
+            list
+        )  # FIXME: Evaluate whether grouping stats by source is actually needed.
+
+        for rollout_id, rollout in self._completed_rollouts_v0.items():
             final_reward = self._fillna_reward(rollout)
             if not rollout.triplets:
                 print(f"Warning: No triplets found for test rollout {rollout.rollout_id}.")
                 sample_stat_list.append({"reward": final_reward})
                 continue
             response_length_list = [len(triplet.response.get("token_ids", [])) for triplet in rollout.triplets]
+            if "data_source" in self._task_id_to_original_sample[rollout_id]:
+                # When a test sample includes a 'data_source' field, record per-source statistics for test results.
+                data_source = self._task_id_to_original_sample[rollout_id]["data_source"]
+                sample_stat_list_by_source[data_source].append(
+                    {
+                        "sum_response_length": np.sum(response_length_list),
+                        "mean_response_length": np.mean(response_length_list) if response_length_list else 0,
+                        "turn_count": len(rollout.triplets),
+                        "reward": final_reward,
+                    }
+                )
             sample_stat_list.append(
                 {
                     "sum_response_length": np.sum(response_length_list),
@@ -573,18 +589,45 @@ class AgentModeDaemon:
                     "reward": final_reward,
                 }
             )
+        metric_dict: Dict[str, Any] = {}
 
         stats_w_trace = [stat for stat in sample_stat_list if "sum_response_length" in stat]
-        return {
-            "val/n_rollouts": len(sample_stat_list),
-            "val/n_rollouts_w_trace": len(stats_w_trace),
-            "val/reward": np.mean(
-                [stat["reward"] for stat in sample_stat_list]
-            ),  # each rollout must have a reward (fillna if missing)
-            "val/mean_response_length": np.mean([stat["mean_response_length"] for stat in stats_w_trace]),
-            "val/sum_response_length": np.mean([stat["sum_response_length"] for stat in stats_w_trace]),
-            "val/turn_count": np.mean([stat["turn_count"] for stat in stats_w_trace]),
+        stats_w_trace_by_source = {
+            data_source: [stat for stat in sample_stats if "sum_response_length" in stat]
+            for data_source, sample_stats in sample_stat_list_by_source.items()
         }
+        for data_source, sample_stats in sample_stat_list_by_source.items():
+            metric_dict.update(
+                {
+                    f"val/{data_source}/n_rollouts": len(sample_stats),
+                    f"val/{data_source}/n_rollouts_w_trace": len(stats_w_trace_by_source[data_source]),
+                    f"val/{data_source}/reward": np.mean(
+                        [stat["reward"] for stat in sample_stats]
+                    ),  # each rollout must have a reward (fillna if missing)
+                    f"val/{data_source}/mean_response_length": np.mean(
+                        [stat["mean_response_length"] for stat in stats_w_trace_by_source[data_source]]
+                    ),
+                    f"val/{data_source}/sum_response_length": np.mean(
+                        [stat["sum_response_length"] for stat in stats_w_trace_by_source[data_source]]
+                    ),
+                    f"val/{data_source}/turn_count": np.mean(
+                        [stat["turn_count"] for stat in stats_w_trace_by_source[data_source]]
+                    ),
+                }
+            )
+        metric_dict.update(
+            {
+                "val/n_rollouts": len(sample_stat_list),
+                "val/n_rollouts_w_trace": len(stats_w_trace),
+                "val/reward": np.mean(
+                    [stat["reward"] for stat in sample_stat_list]
+                ),  # each rollout must have a reward (fillna if missing)
+                "val/mean_response_length": np.mean([stat["mean_response_length"] for stat in stats_w_trace]),
+                "val/sum_response_length": np.mean([stat["sum_response_length"] for stat in stats_w_trace]),
+                "val/turn_count": np.mean([stat["turn_count"] for stat in stats_w_trace]),
+            }
+        )
+        return metric_dict
 
     def get_train_data_batch(self, max_prompt_length: int, max_response_length: int, device: torch.device):
         """

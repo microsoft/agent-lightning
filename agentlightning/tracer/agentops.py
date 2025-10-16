@@ -19,7 +19,7 @@ from agentlightning.instrumentation import instrument_all, uninstrument_all
 from agentlightning.instrumentation.agentops import AgentOpsServerManager
 from agentlightning.store.base import LightningStore
 
-from .base import BaseTracer
+from .base import Tracer
 
 if TYPE_CHECKING:
     from agentops.integration.callbacks.langchain import LangchainCallbackHandler
@@ -28,7 +28,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class AgentOpsTracer(BaseTracer):
+class AgentOpsTracer(Tracer):
     """Traces agent execution using AgentOps.
 
     This tracer provides functionality to capture execution details using the

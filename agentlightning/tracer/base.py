@@ -12,7 +12,7 @@ from agentlightning.types import ParallelWorkerBase
 logger = logging.getLogger(__name__)
 
 
-class BaseTracer(ParallelWorkerBase):
+class Tracer(ParallelWorkerBase):
     """
     An abstract base class for tracers.
 

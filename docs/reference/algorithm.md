@@ -7,7 +7,7 @@
 
 ## Base Class and Decorators
 
-::: agentlightning.BaseAlgorithm
+::: agentlightning.Algorithm
 
 ::: agentlightning.algo
 
