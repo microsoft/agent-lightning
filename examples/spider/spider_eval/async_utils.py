@@ -3,9 +3,10 @@
 import asyncio
 import queue
 import threading
+from typing import Any, Coroutine
 
 
-def run_sync_ephemeral(coro):
+def run_sync_ephemeral(coro: Coroutine[Any, Any, Any]) -> Any:
     """
     Run an async coroutine from sync code.
     - If no loop in this thread: use asyncio.run() directly.
@@ -19,7 +20,7 @@ def run_sync_ephemeral(coro):
         return asyncio.run(coro)
 
     # Already in a running loop -> execute in a worker thread
-    q = queue.Queue()
+    q = queue.Queue[Any]()
 
     def worker():
         try:
