@@ -160,35 +160,58 @@ class Resource(BaseModel):
 
 
 class Span(BaseModel):
+    """Agent-Lightning's core span data type.
+
+    Corresponding to `opentelemetry.sdk.trace.ReadableSpan`.
+    However, only parts of the fields are preserved officially.
+    The other fields are preserved as extra fields.
+    """
 
     class Config:
         allow_extra = True  # allow extra fields if needed
 
     rollout_id: str
+    """The rollout which this span belongs to."""
     attempt_id: str
-    # The ID to make spans ordered within a single attempt
+    """The attempt which this span belongs to."""
     sequence_id: int
+    """The ID to make spans ordered within a single attempt."""
 
     # Current ID (in hex, formatted via trace_api.format_*)
     trace_id: str  # one rollout can have traces coming from multiple places
+    """The trace ID of the span. One rollout/attempt can have multiple traces.
+    This ID comes from the OpenTelemetry trace ID generator.
+    """
     span_id: str
+    """The span ID of the span. This ID comes from the OpenTelemetry span ID generator."""
     parent_id: Optional[str]
+    """The parent span ID of the span."""
 
     # Core ReadableSpan fields
     name: str
+    """The name of the span. See https://opentelemetry.io/docs/concepts/signals/traces/"""
     status: TraceStatus
+    """The status of the span. See https://opentelemetry.io/docs/concepts/signals/traces/"""
     attributes: Attributes
+    """The attributes of the span. See https://opentelemetry.io/docs/concepts/signals/traces/"""
     events: List[Event]
+    """The events of the span. See https://opentelemetry.io/docs/concepts/signals/traces/"""
     links: List[Link]
+    """The links of the span. See https://opentelemetry.io/docs/concepts/signals/traces/"""
 
     # Timestamps
     start_time: Optional[float]
+    """The start time of the span. See https://opentelemetry.io/docs/concepts/signals/traces/"""
     end_time: Optional[float]
+    """The end time of the span. See https://opentelemetry.io/docs/concepts/signals/traces/"""
 
     # Other parsable fields
     context: Optional[SpanContext]
+    """The context of the span. See https://opentelemetry.io/docs/concepts/signals/traces/"""
     parent: Optional[SpanContext]
+    """The parent context of the span. See https://opentelemetry.io/docs/concepts/signals/traces/"""
     resource: Resource
+    """The resource of the span. See https://opentelemetry.io/docs/concepts/signals/traces/"""
 
     # Preserve other fields in the readable span as extra fields
     # Make sure that are json serializable (so no bytes, complex objects, ...)
@@ -201,6 +224,15 @@ class Span(BaseModel):
         attempt_id: str,
         sequence_id: int,
     ) -> "Span":
+        """Convert an [OpenTelemetry ReadableSpan](https://opentelemetry.io/docs/concepts/signals/traces/)
+        to an Agent-Lightning Span.
+
+        Args:
+            src: The OpenTelemetry ReadableSpan to convert.
+            rollout_id: The rollout ID.
+            attempt_id: The attempt ID.
+            sequence_id: The sequence ID.
+        """
         context = src.get_span_context()
         if context is None:
             trace_id = span_id = 0
