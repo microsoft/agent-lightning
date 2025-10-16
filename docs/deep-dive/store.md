@@ -91,7 +91,8 @@ A minimal example of how to use `RolloutConfig`:
 ```python
 from agentlightning import RolloutConfig
 
-# Retry on explicit failures or timeouts, up to 3 attempts in total.cfg = RolloutConfig(
+# Retry on explicit failures or timeouts, up to 3 attempts in total.
+cfg = RolloutConfig(
     timeout_seconds=600,
     unresponsive_seconds=120,
     max_attempts=3,
@@ -134,7 +135,7 @@ Runners often produce [OpenTelemetry `ReadableSpan`](https://opentelemetry.io/do
 1. The runner first requests [`get_next_span_sequence_id`][agentlightning.LightningStore.get_next_span_sequence_id] via `sequence_id = await store.get_next_span_sequence_id(rollout_id, attempt_id)`. This guarantees ordering within the attempt regardless of clock skew.
 2. `trace_id`, `span_id`, `parent_id`, `name`, `status`, timestamps, attributes, events, links, and resource are copied from the OTEL span. Timestamps are auto-normalized to seconds (nanoseconds are converted).
 3. OTEL `SpanContext` and parent context are preserved so downstream tools can correlate traces across systems.
-4. ny additional serializable fields present on the `ReadableSpan` are retained in the stored span (after safe JSON serialization), which keeps the representation forward-compatible.
+4. Any additional serializable fields present on the `ReadableSpan` are retained in the stored span (after safe JSON serialization), which keeps the representation forward-compatible.
 
 Programmatically this is encapsulated by [`Span.from_opentelemetry(readable_span, rollout_id, attempt_id, sequence_id)`][agentlightning.Span.from_opentelemetry]; [`store.add_otel_span(...)`][agentlightning.LightningStore.add_otel_span] simply wraps the fetch-then-add flow. The end result is a store span that is stable to sort, merge, and query, while still preserving the richness of the original OTEL payload.
 
