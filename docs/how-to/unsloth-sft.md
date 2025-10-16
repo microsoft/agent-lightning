@@ -2,17 +2,35 @@
 
 
 <div style="height:320px">
-<canvas id="sales" data-chart='{
-  "type": "bar",
+<canvas data-chart='{
+  "type": "line",
   "data": {
-    "labels": ["Q1", "Q2", "Q3", "Q4"],
-    "datasets": [{"label": "Sales", "data": [3, 5, 2, 6]}]
+    "labels": ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
+    "datasets": [
+      {
+        "label": "Visitors",
+        "data": [1200, 1350, 1280, 1500, 1750, 1900, 2100, 2300, 2250, 2400, 2500, 2700],
+        "tension": 0.35,
+        "fill": false
+      },
+      {
+        "label": "Signups",
+        "data": [80, 95, 110, 150, 200, 220, 260, 280, 270, 300, 320, 350],
+        "tension": 0.35,
+        "fill": false
+      }
+    ]
   },
   "options": {
-    "animation": { "duration": 700, "easing": "easeOutCubic" },
-    "plugins": { "legend": { "display": true } },
-    "responsive": true,
-    "maintainAspectRatio": false
+    "plugins": {
+      "legend": { "position": "top" },
+      "title": { "display": true, "text": "Website Performance in 2025" }
+    },
+    "interaction": { "mode": "index", "intersect": false },
+    "scales": {
+      "y": { "beginAtZero": true, "title": { "display": true, "text": "Count" } },
+      "x": { "title": { "display": true, "text": "Month" } }
+    }
   }
 }'></canvas>
 </div>
