@@ -140,45 +140,4 @@ You can run the agent client alone without the `verl` server. This is useful for
 
 ## Evaluation
 
-The example is evaluated using Llama-3.2-Instruct models. The models are trained on the Spider dataset for 2 epochs, with evaluation performed on a randomly selected subset of 500 test samples to compute held-out accuracy. The default setup for running agent clients during evaluation is as follows:
-
-```bash
-python sql_agent.py \
-   --litsqlagent.trained-agents write \
-   --trainer.n-workers 16 \
-   --trainer.daemon true \
-   --litsqlagent.val-temperature 0 \
-   --litsqlagent.max-turns 3 \
-   --litsqlagent.table-info-truncate 2048 \
-   --litsqlagent.execution-truncate 2048
-```
-
-The setup of training server is the same as the command above.
-
-### W&B Report
-
-[link](https://api.wandb.ai/links/ultmaster/4cid500g)
-
-### Performance Metrics
-
-![](../assets/sql-agent-val-reward-curve.png)
-
-| Model         | Size   |   Context |   Max Turns | Agents                        |   Acc (Initial) |   Acc (Final) | Transitions   |   Prompt Length | Response Length   |
-|---------------|--------|-----------|-------------|-------------------------------|-----------------|---------------|---------------|-----------------|-------------------|
-| Llama3.2      | 1B     |      2048 |           3 | write&#124;rewrite            |            21   |          49.6 | 2.87 → 3.08   |           821.2 | 319.2 → 249.4     |
-| Llama3.2      | 3B     |      2048 |           3 | write&#124;rewrite            |            51.8 |          66.4 | 2.20 → 2.72   |           865.6 | 116.2 → 314.3     |
-
-**Notes:**
-
-1. **Context Length**: Controlled via `--litsqlagent.table-info-truncate <context-length>` and `--litsqlagent.execution-truncate <context-length>`
-2. **Max Turns**: Set using `--litsqlagent.max-turns <max-turns>`
-3. **Agents**: Specified with `--litsqlagent.agents <regex>` (defaults to `write`, which matches both write and rewrite agents)
-4. **Transitions**: Represents the number of prompt-response pairs traced (collected) during each rollout. Note that this differs from the turn count in the SQL agent workflow, where one turn may encompass 2-3 transitions in the check-rewrite cycle. The number of transitions is also related to which *agents* get involved in the training.
-5. **Prompt/Response Length**: Average token count per **traced** prompt/transition response.
-
-### Efficiency Metrics
-
-| Model         | Size   |   Context |   Max Turns | Agents                        |   # GPUs |   # Steps |   Time (h) |   Time/Step (s) |   Rollout Time (%) |   Update Actor Time (%) |
-|---------------|--------|-----------|-------------|-------------------------------|----------|-----------|------------|-----------------|--------------------|-------------------------|
-| Llama3.2      | 1B     |      2048 |           3 | write&#124;rewrite            |        1 |       436 |      13.06 |            98.9 |               66.7 |                    25.2 |
-| Llama3.2      | 3B     |      2048 |           3 | write&#124;rewrite            |        2 |       436 |      10.3  |           181.3 |               63.9 |                    27.9 |
+Full evaluation results with multiple experiment configurations, were run with a legacy version of Agent-lightning (v0.1.1), `verl==0.5.0` and `vllm==0.10.0`. The results are available [here](https://medium.com/@yugez/training-ai-agents-to-write-and-self-correct-sql-with-reinforcement-learning-571ed31281ad).
