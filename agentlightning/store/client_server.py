@@ -551,7 +551,8 @@ class LightningStoreClient(LightningStore):
         with self._lock:
             sess = self._sessions.get(key)
             if sess is None or sess.closed:
-                sess = aiohttp.ClientSession()
+                timeout = aiohttp.ClientTimeout(total=30.0, connect=5.0, sock_connect=5.0, sock_read=30.0)
+                sess = aiohttp.ClientSession(timeout=timeout)
                 self._sessions[key] = sess
         return sess
 
@@ -615,7 +616,7 @@ class LightningStoreClient(LightningStore):
             except aiohttp.ClientResponseError as cre:
                 # Respect app-level 4xx as final (server marks app faults as 400)
                 # 4xx => application issue; do not retry (except 408 which is transient)
-                logger.exception(f"ClientResponseError: {cre.status} {cre.message}")
+                logger.debug(f"ClientResponseError: {cre.status} {cre.message}", exc_info=True)
                 if 400 <= cre.status < 500 and cre.status != 408:
                     raise
                 # 5xx and others will be retried below if they raise
@@ -631,7 +632,7 @@ class LightningStoreClient(LightningStore):
                 asyncio.TimeoutError,
             ) as net_exc:
                 # Network/session issue: probe health before retrying
-                logger.exception(f"Network/session issue: {net_exc}")
+                logger.debug(f"Network/session issue: {net_exc}", exc_info=True)
                 last_exc = net_exc
                 logger.info(f"Network/session issue will be retried. Retrying the request {method}: {path}")
                 if not await self._wait_until_healthy(session):

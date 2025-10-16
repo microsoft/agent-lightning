@@ -5,10 +5,10 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime
-from typing import Any, List, Optional
+from typing import Any, List, Literal, Optional
 
 from agentlightning.llm_proxy import ModelConfig
-from agentlightning.types import Dataset, Rollout, RolloutStatus
+from agentlightning.types import Attempt, Dataset, Rollout, RolloutStatus, Span
 
 from .base import Algorithm
 
@@ -52,16 +52,37 @@ class Baseline(FastAlgorithm):
         train_split: float = 0.5,
         polling_interval: float = 5.0,
         max_queue_length: int = 4,
+        span_verbosity: Literal["keys", "key_values", "none"] = "keys",
     ) -> None:
         super().__init__()
         self.n_epochs = n_epochs
         self.train_split = train_split
         self.polling_interval = polling_interval
         self.max_queue_length = max_queue_length
+        self.span_verbosity = span_verbosity
         if not (0.0 < self.train_split < 1.0):
             raise ValueError("train_split must be between 0 and 1.")
 
         self._finished_rollout_count = 0
+
+    def _span_to_string(self, rollout_id: str, attempt: Attempt, span: Span) -> str:
+        if self.span_verbosity == "none":
+            return ""
+
+        prefix_msg = f"[Rollout {rollout_id} | Attempt {attempt.attempt_id} | Span {span.span_id}] #{span.sequence_id} ({span.name}) "
+        elapsed = f"{span.end_time - span.start_time:.2f}" if span.start_time and span.end_time else "unknown"
+
+        msg = (
+            prefix_msg
+            + f"From {_timestamp_to_iso_str(span.start_time) if span.start_time else 'unknown'}, "
+            + f"to {_timestamp_to_iso_str(span.end_time) if span.end_time else 'unknown'}, "
+            + f"{elapsed} seconds. "
+        )
+        if self.span_verbosity == "key_values":
+            msg += f"Attributes: {span.attributes}"
+        else:
+            msg += f"Attribute keys: {list(span.attributes.keys())}"
+        return msg
 
     async def _handle_rollout_finish(self, rollout: Rollout) -> None:
         store = self.get_store()
@@ -80,14 +101,8 @@ class Baseline(FastAlgorithm):
             )
             spans = await store.query_spans(rollout_id=rollout_id)
             for span in spans:
-                prefix_msg = f"[Rollout {rollout_id} | Attempt {attempt.attempt_id} | Span {span.span_id}] #{span.sequence_id} ({span.name}) "
-                elapsed = f"{span.end_time - span.start_time:.2f}" if span.start_time and span.end_time else "unknown"
-                logger.info(
-                    prefix_msg
-                    + f"From {_timestamp_to_iso_str(span.start_time) if span.start_time else 'unknown'}, "
-                    + f"to {_timestamp_to_iso_str(span.end_time) if span.end_time else 'unknown'}, "
-                    + f"{elapsed} seconds. Attributes: {span.attributes}"
-                )
+                if self.span_verbosity != "none":
+                    logger.info(self._span_to_string(rollout.rollout_id, attempt, span))
 
         # Attempts to adapt the spans using the adapter if provided
         try:
@@ -158,6 +173,8 @@ class Baseline(FastAlgorithm):
         ]
         train_indices = list(range(0, train_dataset_length))
         val_indices = list(range(train_dataset_length, train_dataset_length + val_dataset_length))
+        logger.debug(f"Train indices: {train_indices}")
+        logger.debug(f"Val indices: {val_indices}")
 
         store = self.get_store()
 
@@ -175,18 +192,24 @@ class Baseline(FastAlgorithm):
             harvest_tasks: List[asyncio.Task[None]] = []
             logger.info(f"Proceeding epoch {epoch + 1}/{self.n_epochs}.")
             for index in train_indices + val_indices:
-                queuing_rollouts = await store.query_rollouts(status=["queuing", "requeuing"])
-                if len(queuing_rollouts) <= self.max_queue_length:
-                    # Only enqueue a new rollout when there is at most "max_queue_length" rollout in the queue.
-                    sample = concatenated_dataset[index]
-                    mode = "train" if index in train_indices else "val"
-                    rollout = await store.enqueue_rollout(input=sample, mode=mode, resources_id=resources_id)
-                    harvest_tasks.append(asyncio.create_task(self._harvest_rollout_spans(rollout.rollout_id)))
-                    logger.info(f"Enqueued rollout {rollout.rollout_id} in {mode} mode with sample: {sample}")
-                else:
-                    # Sleep a bit and try again later.
-                    await asyncio.sleep(self.polling_interval)
+                logger.info(
+                    f"Processing index {index}. {len(train_indices)} train indices and {len(val_indices)} val indices in total."
+                )
+                while True:
+                    queuing_rollouts = await store.query_rollouts(status=["queuing", "requeuing"])
+                    if len(queuing_rollouts) <= self.max_queue_length:
+                        # Only enqueue a new rollout when there is at most "max_queue_length" rollout in the queue.
+                        sample = concatenated_dataset[index]
+                        mode = "train" if index in train_indices else "val"
+                        rollout = await store.enqueue_rollout(input=sample, mode=mode, resources_id=resources_id)
+                        harvest_tasks.append(asyncio.create_task(self._harvest_rollout_spans(rollout.rollout_id)))
+                        logger.info(f"Enqueued rollout {rollout.rollout_id} in {mode} mode with sample: {sample}")
+                        break
+                    else:
+                        # Sleep a bit and try again later.
+                        await asyncio.sleep(self.polling_interval)
 
             # Wait for all harvest tasks to complete
+            logger.info(f"Waiting for {len(harvest_tasks)} harvest tasks to complete...")
             if len(harvest_tasks) > 0:
                 await asyncio.gather(*harvest_tasks)

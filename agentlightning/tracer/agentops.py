@@ -13,6 +13,7 @@ import agentops
 import agentops.sdk.core
 from agentops.sdk.core import TracingCore
 from agentops.sdk.processors import SpanProcessor
+from opentelemetry.instrumentation.utils import suppress_instrumentation
 from opentelemetry.sdk.trace import ReadableSpan
 
 from agentlightning.instrumentation import instrument_all, uninstrument_all
@@ -197,7 +198,7 @@ class AgentOpsTracer(Tracer):
             raise RuntimeError("LightningSpanProcessor is not initialized. Call init_worker() first.")
         return self._lightning_span_processor.spans()
 
-    def get_langchain_callback_handler(self, tags: List[str] | None = None) -> LangchainCallbackHandler:
+    def get_langchain_handler(self, tags: List[str] | None = None) -> LangchainCallbackHandler:
         """
         Get the Langchain callback handler for integrating with Langchain.
 
@@ -220,6 +221,8 @@ class AgentOpsTracer(Tracer):
                 "AgentOps client not initialized when creating LangchainCallbackHandler. API key may be missing."
             )
         return LangchainCallbackHandler(api_key=api_key, tags=tags)
+
+    get_langchain_callback_handler = get_langchain_handler  # alias
 
 
 class LightningSpanProcessor(SpanProcessor):
@@ -261,6 +264,32 @@ class LightningSpanProcessor(SpanProcessor):
         # submit to the dedicated loop and wait synchronously
         if self._loop is None:
             raise RuntimeError("Loop is not initialized. This should not happen.")
+
+        # If already on the exporter loop thread, schedule and return immediately.
+        # ---------------------------------------------------------------------------
+        # WHY THIS CONDITIONAL EXISTS:
+        # In rare cases, span.end() is triggered from a LangchainCallbackHandler.__del__
+        # (or another finalizer) while the Python garbage collector is running on the
+        # *same thread* that owns our exporter event loop ("otel-loop").
+        #
+        # When that happens, on_end() executes on the exporter loop thread itself.
+        # If we were to call `asyncio.run_coroutine_threadsafe(...).result()` here,
+        # it would deadlock immediately — because the loop cannot both wait on and run
+        # the same coroutine. The Future stays pending forever and the loop stops
+        # processing scheduled callbacks.
+        #
+        # To avoid that self-deadlock, we detect when on_end() runs on the exporter
+        # loop thread. If so, we *schedule* the coroutine on the loop (fire-and-forget)
+        # instead of blocking with .result().
+        #
+        # This situation can occur because Python calls __del__ in whatever thread
+        # releases the last reference, which can easily be our loop thread if the
+        # object is dereferenced during loop._run_once().
+        # ---------------------------------------------------------------------------
+        if threading.current_thread() is self._loop_thread:
+            self._loop.call_soon_threadsafe(asyncio.create_task, coro)  # type: ignore
+            return None
+
         fut = asyncio.run_coroutine_threadsafe(coro, self._loop)  # type: ignore
         return fut.result(timeout=timeout)  # raises on error  # type: ignore
 
@@ -313,10 +342,11 @@ class LightningSpanProcessor(SpanProcessor):
         if self._store and self._rollout_id and self._attempt_id:
             try:
                 # Submit add_otel_span to the event loop and wait for it to complete
-                self._await_in_loop(
-                    self._store.add_otel_span(self._rollout_id, self._attempt_id, span),
-                    timeout=5.0,
-                )
+                with suppress_instrumentation():
+                    self._await_in_loop(
+                        self._store.add_otel_span(self._rollout_id, self._attempt_id, span),
+                        timeout=60.0,
+                    )
             except Exception:
                 # log; on_end MUST NOT raise
                 logger.exception(f"Error adding span to store: {span.name}")

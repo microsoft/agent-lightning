@@ -1,13 +1,18 @@
 # Copyright (c) Microsoft. All rights reserved.
 
+from __future__ import annotations
+
 import logging
 from contextlib import contextmanager
-from typing import Any, Awaitable, Callable, Iterator, List, Optional
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Iterator, List, Optional
 
 from opentelemetry.sdk.trace import ReadableSpan
 
 from agentlightning.store.base import LightningStore
 from agentlightning.types import ParallelWorkerBase
+
+if TYPE_CHECKING:
+    from langchain.callbacks.base import BaseCallbackHandler  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -112,3 +117,11 @@ class Tracer(ParallelWorkerBase):
         """
         with self.trace_context(name=func.__name__):
             return await func(*args, **kwargs)
+
+    def get_langchain_handler(self) -> Optional[BaseCallbackHandler]:  # type: ignore
+        """Get a handler to install in langchain agent callback.
+
+        Agents are expected to use this handler in their agents to enable tracing.
+        """
+        logger.warning(f"{self.__class__.__name__} does not provide a LangChain callback handler.")
+        return None

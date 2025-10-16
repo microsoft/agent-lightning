@@ -139,6 +139,15 @@ class LitAgentRunner(Runner[T_task]):
 
         self._tracer.teardown_worker(worker_id)
 
+    @property
+    def tracer(self) -> Tracer:
+        """Get the tracer instance.
+
+        Returns:
+            The Tracer instance used by this runner.
+        """
+        return self._tracer
+
     def get_agent(self) -> LitAgent[T_task]:
         """Get the agent instance.
 
