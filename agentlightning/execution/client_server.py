@@ -178,10 +178,8 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
         store: LightningStore | None = None,
     ) -> None:
         client_store: LightningStore | None
-        managed_client = False
         if self.managed_store:
             client_store = LightningStoreClient(f"http://{self.server_host}:{self.server_port}")
-            managed_client = True
         else:
             if store is None:
                 raise ValueError("Runner store must be provided when managed_store is False")
@@ -202,7 +200,7 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
             stop_evt.set()
             raise
         finally:
-            if managed_client and isinstance(client_store, LightningStoreClient):
+            if self.managed_store and isinstance(client_store, LightningStoreClient):
                 try:
                     await client_store.close()
                 except Exception:

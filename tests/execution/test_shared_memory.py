@@ -28,16 +28,24 @@ def test_env_managed_store(monkeypatch: pytest.MonkeyPatch) -> None:
     assert strat.managed_store is False
 
 
+def test_explicit_managed_store_overrides_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AGL_MANAGED_STORE", "0")
+
+    strat = SharedMemoryExecutionStrategy(managed_store=True)
+
+    assert strat.managed_store is True
+
+
 def test_execute_uses_unmanaged_store_directly(store: DummyLightningStore) -> None:
     strat = SharedMemoryExecutionStrategy(managed_store=False)
     used: Dict[str, LightningStore] = {}
 
-    async def algo(st: LightningStore, event: ExecutionEvent) -> None:
-        used["algo"] = st
+    async def algo(store: LightningStore, event: ExecutionEvent) -> None:
+        used["algo"] = store
         event.set()
 
-    async def runner(st: LightningStore, worker_id: int, event: ExecutionEvent) -> None:
-        used["runner"] = st
+    async def runner(store: LightningStore, worker_id: int, event: ExecutionEvent) -> None:
+        used["runner"] = store
         while not event.is_set():
             await asyncio.sleep(0.01)
 
