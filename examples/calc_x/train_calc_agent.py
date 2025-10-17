@@ -120,8 +120,8 @@ def train(
         external_store_address: Connects to an external store instead of creating a new one in memory.
     """
     # Load datasets (respect CLI file paths)
-    train_dataset = cast(agl.Dataset[MathProblem], HuggingFaceDataset.from_parquet(train_file).to_list())
-    val_dataset = cast(agl.Dataset[MathProblem], HuggingFaceDataset.from_parquet(val_file).to_list())
+    train_dataset = cast(agl.Dataset[MathProblem], HuggingFaceDataset.from_parquet(train_file).to_list())  # type: ignore
+    val_dataset = cast(agl.Dataset[MathProblem], HuggingFaceDataset.from_parquet(val_file).to_list())  # type: ignore
 
     print("First 5 rows of train dataset:")
     print(train_dataset[:5])  # type: ignore
