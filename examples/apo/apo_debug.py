@@ -16,7 +16,7 @@ from agentlightning.types import Dataset, PromptTemplate
 
 
 async def debug_with_runner():
-    """This appraoch requires no dataset, no trainer, and no algorithm.
+    """This approach requires no dataset, no trainer, and no algorithm.
 
     It only needs a runner and you can run get full control of the runner.
     However, you need to manually create other components like tracer and store,
