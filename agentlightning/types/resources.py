@@ -52,9 +52,13 @@ class LLM(Resource):
 
     resource_type: Literal["llm"] = "llm"
     endpoint: str
+    """The URL of the LLM API endpoint."""
     model: str
+    """The identifier for the model to be used (e.g., 'gpt-4o')."""
     api_key: Optional[str] = None
+    """The API key for the LLM API."""
     sampling_parameters: Dict[str, Any] = Field(default_factory=dict)
+    """A dictionary of hyperparameters for model inference, such as temperature, top_p, etc."""
 
     def get_base_url(self, *args: Any, **kwargs: Any) -> str:
         """The base_url to put into openai.OpenAI.
@@ -106,6 +110,16 @@ class ProxyLLM(LLM):
         )
 
     def get_base_url(self, rollout_id: Optional[str], attempt_id: Optional[str]) -> str:
+        """Get the base URL for the LLM endpoint.
+        Embed the rollout and attempt id into the endpoint.
+
+        Args:
+            rollout_id: The rollout ID.
+            attempt_id: The attempt ID.
+
+        Returns:
+            The base URL for the LLM endpoint.
+        """
         if rollout_id is None and attempt_id is None:
             return self.endpoint
 

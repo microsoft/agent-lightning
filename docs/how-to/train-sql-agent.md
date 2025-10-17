@@ -1,10 +1,14 @@
 # SQL Agent with Agent Lightning
 
-This walkthrough follows the Agent-lightning v0.2 SQL Agent example and focuses on how the pieces fit together: a LangGraph-based SQL agent wrapped as a [`LitAgent`][agentlightning.LitAgent], the [`VERL`][agentlightning.algorithm.verl.VERL] reinforcement learning algorithm, and the Agent-lightning [`Trainer`][agentlightning.Trainer] that drives both training and debugging. The CLI in [`examples/spider/train_sql_agent.py`]({{ config.repo_url }}/tree/{{ config.extra.source_commit }}/examples/spider/train_sql_agent.py) is the full sample script. However, we recommend understanding the underlying components, which will help you adapt the workflow to your own agents.
+This walkthrough builds upon the **Agent-lightning v0.2 SQL Agent** example and explains how the system components integrate: a **LangGraph-based SQL agent** wrapped as a [`LitAgent`][agentlightning.LitAgent], the **[`VERL`][agentlightning.algorithm.verl.VERL] reinforcement learning (RL) algorithm**, and the **[`Trainer`][agentlightning.Trainer]** that coordinates both training and debugging.
 
-## SQL Agent Implementation
+The command-line interface in [`examples/spider/train_sql_agent.py`]({{ config.repo_url }}/tree/{{ config.extra.source_commit }}/examples/spider/train_sql_agent.py) provides a complete runnable example. However, this document focuses on understanding the underlying architecture so you can effectively adapt the workflow to your own agents.
 
-Agent-lightning integrates smoothly with [Agent Framework](https://github.com/microsoft/agent-framework), [AutoGen](https://github.com/microsoft/autogen), [CrewAI](https://www.crewai.com/), [LangGraph](https://github.com/langchain-ai/langgraph), [OpenAI Agents SDK](https://github.com/openai/openai-agents-python) and other orchestration frameworks, or with hand-written Python logic. The SQL Agent example uses LangGraph to express a cyclic workflow that mirrors how an analyst iterates on SQL. The graph below (rendered directly from [`sql_agent.py`]({{ config.repo_url }}/tree/{{ config.extra.source_commit }}/examples/spider/sql_agent.py)) shows how the agent drafts, executes, critiques, and rewrites queries until it is satisfied with the answer.
+## SQL Agent Architecture
+
+Agent-lightning integrates seamlessly with various orchestration frameworks, including [Agent Framework](https://github.com/microsoft/agent-framework), [AutoGen](https://github.com/microsoft/autogen), [CrewAI](https://www.crewai.com/), [LangGraph](https://github.com/langchain-ai/langgraph), and the [OpenAI Agents SDK](https://github.com/openai/openai-agents-python). It can also interoperate with custom Python logic.
+
+In this example, **LangGraph** defines a cyclic workflow that mirrors an analyst’s iterative SQL development process. The following graph (rendered directly from [`sql_agent.py`]({{ config.repo_url }}/tree/{{ config.extra.source_commit }}/examples/spider/sql_agent.py)) illustrates how the agent drafts, executes, critiques, and refines queries until a satisfactory result is achieved.
 
 ```mermaid
 ---
@@ -31,18 +35,17 @@ graph LR;
 ```
 
 !!! note
+    The workflow proceeds through the following stages:
 
-    The graph above shows the workflow of the SQL agent. The agent goes through the following steps:
+    1. **write_query** – Generates an initial SQL query from the user’s question and the database schema.
+    2. **execute_query** – Executes the generated query against the target database.
+    3. **check_query** – Evaluates the query and its results (or errors) using a specialized prompt (`CHECK_QUERY_PROMPT`) to detect issues.
+    4. **rewrite_query** – If issues are identified, the agent rewrites the query using feedback from the previous step and re-enters the loop.
+    5. **END** – The cycle terminates when the query is validated or the maximum iteration count (`max_turns`) is reached. Each *turn* consists of one full loop through the `write_query`, `execute_query`, `check_query`, and (if applicable) `rewrite_query` stages.
 
-    1. **write_query**: Given a user's question and database schema, the agent makes an initial attempt to write a SQL query.
-    2. **execute_query**: The generated query is run against the target database.
-    3. **check_query**: The agent analyzes the original query and its execution result (or error) to check for mistakes. It uses a specific prompt (`CHECK_QUERY_PROMPT`) to determine if the query is correct.
-    4. **rewrite_query**: If the `check_query` step finds errors, the agent enters this step. It uses the feedback from the previous step to generate a corrected SQL query. The process then loops back to `check_query` for re-evaluation.
-    5. **END**: The loop terminates when `check_query` confirms the query is correct or the maximum number of turns (`max_turns`) is exceeded. One turn corresponds to a complete cycle of `write_query` (if first round), `execute_query`, `check_query`, and potentially `rewrite_query`.
+In this tutorial, **reinforcement learning (RL)** is used to optimize the `write_query` and `rewrite_query` stages. While the `check_query` step shares the same underlying LLM weights, its trace data is not used for learning.
 
-For the setup of this tutorial, we use RL to optimise the `write_query` and `rewrite_query` turns. The `check_query` turn shares the same underlying weight-updating LLM, but the trace data generated from that turn is not used for learning.
-
-It's not a necessary step but a good idea to keep your SQL Agent written in LangGraph in a separate file, and wrap it in a function like:
+To keep the design modular and maintainable, it is recommended to define the LangGraph-based SQL Agent in a separate file and expose it via a builder function such as:
 
 ```python
 def build_langgraph_sql_agent(
@@ -63,15 +66,17 @@ def build_langgraph_sql_agent(
     return builder.compile().graph()
 ```
 
-This makes your project cleaner and easier to debug and maintain. Also, this file is independant from any Agent-lightning upgrades.
+This approach isolates your LangGraph logic from Agent-lightning version changes, improving both readability and debuggability.
 
-## From LangGraph to LitAgent
+## Bridging LangGraph and Agent-lightning
 
 !!! tip
 
-    Keep [`sql_agent.py`]({{ config.repo_url }}/tree/{{ config.extra.source_commit }}/examples/spider/sql_agent.py) open while you read this part. That's the core file that bridges LangGraph and Agent-lightning.
+    Keep [`sql_agent.py`]({{ config.repo_url }}/tree/{{ config.extra.source_commit }}/examples/spider/sql_agent.py) open while reviewing this section. This file provides the critical link between LangGraph and Agent-lightning.
 
-The bridge between LangGraph and Agent-lightning is the [`LitSQLAgent`][agentlightning.LitSQLAgent] class in [`sql_agent.py`]({{ config.repo_url }}/tree/{{ config.extra.source_commit }}/examples/spider/sql_agent.py). It subclasses [agl.LitAgent][agentlightning.LitAgent] so the runner can supply resources ([LLMs][agentlightning.LLM], etc.) for each rollout. The snippet below highlights the key responsibilities. Note that this is only a pseudo-code to demonstrate the key steps. The real situations with the real dataset involves a bit more complexity with database paths and evaluations.
+The **[`LitSQLAgent`][agentlightning.LitSQLAgent]** class defined in [`sql_agent.py`]({{ config.repo_url }}/tree/{{ config.extra.source_commit }}/examples/spider/sql_agent.py) acts as the bridge. It subclasses [`agl.LitAgent`][agentlightning.LitAgent], allowing the runner to provision shared resources (e.g., [LLMs][agentlightning.LLM]) for each rollout.
+
+Below is a simplified illustration of the key logic (note: this is conceptual pseudocode; the actual implementation includes dataset-specific details):
 
 ```python
 class LitSQLAgent(agl.LitAgent[Dict[str, Any]]):
@@ -91,7 +96,6 @@ class LitSQLAgent(agl.LitAgent[Dict[str, Any]]):
             database_path="sqlite:///" + task["db_id"],
             max_turns=self.max_turns,
             truncate_length=self.truncate_length,
-            # Use what the algorithm wants you to use for this rollout.
             openai_base_url=llm.get_base_url(rollout.rollout_id, rollout.attempt.attempt_id),
             model=llm.model,
             sampling_parameters=llm.sampling_parameters,
@@ -104,18 +108,29 @@ class LitSQLAgent(agl.LitAgent[Dict[str, Any]]):
         return reward
 ```
 
-You can see `LitSQLAgent` is just a very light-weighted wrapper around the LangGraph agent. It's just producing the correct signature for the [`rollout`][agentlightning.LitAgent.rollout] method, and then calling the LangGraph agent with the correct resources. Let's look at detailed steps in the [`rollout`][agentlightning.LitAgent.rollout] method.
+The `LitSQLAgent` serves as a lightweight wrapper around the LangGraph agent, providing the correct interface for the [`rollout`][agentlightning.LitAgent.rollout] method. It constructs the LangGraph agent, invokes it, and returns the evaluation result as a reward signal.
 
-The resources are coming from the algorithm. This `"main_llm"` key is a convention between agent and [VERL][agentlightning.algorithm.verl.VERL]. It's to inject an OpenAI-compatible endpoint that the algorithm wants you to use for this rollout. The endpoint can be used by two approaches:
+The `"main_llm"` resource key is a convention used to inject an OpenAI-compatible endpoint from the **VERL** algorithm during rollout. Two approaches are supported:
 
-1. Directly using `llm.endpoint`. This is the simplest approach and it's the same as the original v0.1 example.
-2. Using [`get_base_url`][agentlightning.ProxyLLM.get_base_url] method. By passing [`rollout.rollout_id`][agentlightning.Rollout.rollout_id] and [`rollout.attempt.attempt_id`][agentlightning.Attempt.attempt_id] into the [`get_base_url`][agentlightning.ProxyLLM.get_base_url] method, you are letting the algorithm know who is calling this endpoint. This is the recommended approach, because it allows the algorithm to classify the caller and collect the trace data for each caller, which can then be used as a fallback data source when tracer at the runner side does not work. Read [Working with Traces](../tutorials/traces.md) for more details.
+1. **Direct access** – Use [`llm.endpoint`][agentlightning.LLM.endpoint] for a simple integration (identical to the v0.1 example).
+2. **Context-aware access** – Use [`get_base_url`][agentlightning.ProxyLLM.get_base_url] with [`rollout.rollout_id`][agentlightning.Rollout.rollout_id] and [`rollout.attempt.attempt_id`][agentlightning.Attempt.attempt_id].
+   This approach enables per-caller trace attribution, improving debugging and fallback trace collection when runner-side tracers are unavailable. For details, see [Working with Traces](../tutorials/traces.md).
 
-Another tricky part is `evaluate_query` function. One of the most commonly asked questions about agent training is how to properly get the reward signals for an agent rollout. Luckily, this problem is not so difficult with the [Spider dataset](https://yale-lily.github.io/spider) we are using. The dataset provides around 8000 training samples where each of them has a query, an associated database schema, and a ground truth query. We can use the [Spider evaluator](https://github.com/taoyds/test-suite-sql-eval) to see whether the generated query and the ground truth query produced the same result on the database. It's important that the ground-truth query is never exposed to the agent during the training process; otherwise there will be data leakage! In this example code, we make the reward a return value of [`LitAgent.rollout`][agentlightning.LitAgent.rollout] method, so that the agent runner will help you send the reward signal back to the algorithm.
+## Reward Signal and Evaluation
+
+The `evaluate_query` function provides the reward mechanism for RL training. In agent training, obtaining a consistent and meaningful reward signal is often challenging, but this is luckily simplified when using the [**Spider dataset**](https://yale-lily.github.io/spider). The dataset includes ~8k samples containing natural-language questions, database schemas, and ground-truth SQL queries.
+
+Using the [**Spider evaluator**](https://github.com/taoyds/test-suite-sql-eval), the agent's generated query is executed and compared to the ground-truth query on the target database. The two queries are considered equivalent if they produce identical execution results.
+
+!!! attention
+
+    The ground-truth queries must **never** be exposed to the agent during training to prevent data leakage.
+
+In this setup, the reward is returned directly from the [`rollout`][agentlightning.LitAgent.rollout] method, enabling the runner to forward it back to the RL algorithm.
 
 !!! warning
 
-    You might see some examples using [`emit_reward`][agentlightning.emit_reward] method to send the reward signal back to the algorithm. It's important that you never "emit" a reward and return a reward value at the same time. This will cause a reward being sent twice to the algorithm!
+    Avoid using [`emit_reward`][agentlightning.emit_reward] in conjunction with returning a reward value. Doing both will cause the algorithm to receive duplicate reward signals, leading to inconsistent training behavior.
 
 ## Configuring VERL for Reinforcement Learning
 
