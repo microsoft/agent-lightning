@@ -1,6 +1,6 @@
-# SQL Agent with Agent Lightning
+# Train SQL Agent with Agent-lightning and VERL
 
-This walkthrough builds upon the **Agent-lightning v0.2 SQL Agent** example and explains how the system components integrate: a **LangGraph-based SQL agent** wrapped as a [`LitAgent`][agentlightning.LitAgent], the **[`VERL`][agentlightning.algorithm.verl.VERL] reinforcement learning (RL) algorithm**, and the **[`Trainer`][agentlightning.Trainer]** that coordinates both training and debugging.
+This walkthrough builds upon the **Agent-lightning v0.2 SQL Agent** example and explains how the system components integrate: a **LangGraph-based SQL agent** wrapped as a [`LitAgent`][agentlightning.LitAgent], the **[`VERL`][agentlightning.algorithm.verl.VERL] reinforcement learning (RL) algorithm**, and the **[`Trainer`][agentlightning.Trainer]**, which coordinates both training and debugging.
 
 The command-line interface in [`examples/spider/train_sql_agent.py`]({{ config.repo_url }}/tree/{{ config.extra.source_commit }}/examples/spider/train_sql_agent.py) provides a complete runnable example. However, this document focuses on understanding the underlying architecture so you can effectively adapt the workflow to your own agents.
 
@@ -35,6 +35,7 @@ graph LR;
 ```
 
 !!! note
+
     The workflow proceeds through the following stages:
 
     1. **write_query** – Generates an initial SQL query from the user’s question and the database schema.
@@ -111,15 +112,15 @@ class LitSQLAgent(agl.LitAgent[Dict[str, Any]]):
 
 The `LitSQLAgent` serves as a lightweight wrapper around the LangGraph agent, providing the correct interface for the [`rollout`][agentlightning.LitAgent.rollout] method. It constructs the LangGraph agent, invokes it, and returns the evaluation result as a reward signal.
 
-The `"main_llm"` resource key is a convention between agent and [VERL][agentlightning.algorithm.verl.VERL]. It's used to inject an OpenAI-compatible endpoint from the [VERL][agentlightning.algorithm.verl.VERL] algorithm during rollout. Two approaches are supported to use this [agentlightning.LLM] resource:
+The `"main_llm"` resource key is a convention between the agent and [VERL][agentlightning.algorithm.verl.VERL]. It is used to inject an OpenAI-compatible endpoint from the [VERL][agentlightning.algorithm.verl.VERL] algorithm during rollout. Two approaches are supported to use this [agentlightning.LLM] resource:
 
 1. **Direct access** – Use [`llm.endpoint`][agentlightning.LLM.endpoint] for a simple integration (identical to the v0.1 example).
 2. **Context-aware access** – Use [`get_base_url`][agentlightning.ProxyLLM.get_base_url] with [`rollout.rollout_id`][agentlightning.Rollout.rollout_id] and [`rollout.attempt.attempt_id`][agentlightning.Attempt.attempt_id].
-   This approach enables per-caller trace attribution, improving trace collection per rollout/attempt when runner-side tracers are unavailable. For details, see [Working with Traces](../tutorials/traces.md).
+   This approach enables per-caller trace attribution, improving trace collection per rollout or attempt when runner-side tracers are unavailable. For details, see [Working with Traces](../tutorials/traces.md).
 
 ## Reward Signal and Evaluation
 
-The `evaluate_query` function provides the reward mechanism for RL training. In agent training, obtaining a consistent and meaningful reward signal is often challenging, but this is luckily simplified when using the [**Spider dataset**](https://yale-lily.github.io/spider). The dataset includes ~8k samples containing natural-language questions, database schemas, and ground-truth SQL queries.
+The `evaluate_query` function provides the reward mechanism for RL training. In agent training, obtaining a consistent and meaningful reward signal is often challenging. Fortunately, this is simplified when using the [**Spider dataset**](https://yale-lily.github.io/spider). The dataset includes ~8k samples containing natural-language questions, database schemas, and ground-truth SQL queries.
 
 Using the [**Spider evaluator**](https://github.com/taoyds/test-suite-sql-eval), the agent's generated query is executed and compared to the ground-truth query on the target database. The two queries are considered equivalent if they produce identical execution results.
 
@@ -135,16 +136,16 @@ In this setup, the reward is returned directly from the [`rollout`][agentlightni
 
 ## Configuring VERL for Reinforcement Learning
 
-View [`examples/spider/train_sql_agent.py`]({{ config.repo_url }}/tree/{{ config.extra.source_commit }}/examples/spider/train_sql_agent.py) for a full reinforcement learning configuration, which is a plain Python dictionary. It mirrors (and actually IS) the [shell arguments](https://verl.readthedocs.io/en/latest/index.html) to launch training in VERL framework but is easier to tweak programmatically:
+View [`examples/spider/train_sql_agent.py`]({{ config.repo_url }}/tree/{{ config.extra.source_commit }}/examples/spider/train_sql_agent.py) for a full reinforcement learning configuration, which is a plain Python dictionary. It mirrors (and actually *is*) the [shell arguments](https://verl.readthedocs.io/en/latest/index.html) used to launch training in the VERL framework but is easier to tweak programmatically:
 
 ```python
 verl_config: Dict[str, Any] = {
     "algorithm": {"adv_estimator": "grpo", "use_kl_in_reward": False},
     "data": {
         # train_files and val_files are no longer needed here
-        # because the data are read in agl.Trainer
+        # because data are read in agl.Trainer
         ...,
-        # Controls the how many tasks are pooled per step
+        # Controls how many tasks are pooled per step
         # (multiplied by actor_rollout_ref.rollout.n)
         "train_batch_size": 32,
         # Prompt and responses larger than these lengths are truncated
@@ -182,7 +183,7 @@ verl_config: Dict[str, Any] = {
 }
 ```
 
-This is equivalent to passing the following flags to [VERL's CLI](https://verl.readthedocs.io/en/latest/index.html):
+This is equivalent to the following CLI invocation:
 
 ```bash
 python3 -m verl.trainer.main_ppo \
@@ -205,15 +206,13 @@ python3 -m verl.trainer.main_ppo \
 ```
 
 !!! warning
-
-    We used to provide a CLI called `python -m agentlightning.verl` to launch the training in v0.1. This is no longer the recommended approach. Instead, use [`agl.Trainer`][agentlightning.Trainer] to run VERL and agent runners together, or use the approaches shown in [debugging tutorial](../tutorials/debug.md) if you want a more isolated experience similar to v0.1.
-
+    We used to provide a CLI called `python -m agentlightning.verl` to launch training in v0.1. This is no longer the recommended approach. Instead, use [`agl.Trainer`][agentlightning.Trainer] to run VERL and agent runners together, or follow the [debugging tutorial](../tutorials/debug.md) if you want an isolated experience similar to v0.1.
 ## Orchestrating Training with [`Trainer`][agentlightning.Trainer]
 
-[`Trainer`][agentlightning.Trainer] is the high-level orchestrator that brings together the agent, algorithm, dataset, and distributed runners. The benefit of using [`Trainer`][agentlightning.Trainer] are:
+[`Trainer`][agentlightning.Trainer] is the high-level orchestrator that integrates the agent, algorithm, dataset, and distributed runners. The key benefits of using the [`Trainer`][agentlightning.Trainer] are:
 
-1. We can launch everything in one code line: `trainer.fit(...)`.
-2. It exposes multiple configuration options such as `n_runners` to control parallelism and `adapter` to control how algorithms interpret the trace data produced by the agent.
+1. It allows you to launch everything with a single line of code: `trainer.fit(...)`.
+2. It exposes configuration options such as `n_runners` to control parallelism and `adapter` to define how algorithms interpret the trace data produced by the agent.
 
 An example usage is shown below:
 
@@ -232,17 +231,18 @@ val_data = pd.read_parquet("data/test_dev_500.parquet").to_dict("records")
 trainer.fit(agent, train_dataset=train_data, val_dataset=val_data)
 ```
 
-Firstly, `agl.VERL(verl_config)` spins up [`VERL`][agentlightning.algorithm.verl.VERL] and its OpenAI-compatible proxy. `train_data` and `val_data` go into [`VERL`][agentlightning.algorithm.verl.VERL] and it enqueues tasks to a centralized task queue (in [`LightningStore`][agentlightning.LightningStore]) available to the runners.
+First, `agl.VERL(verl_config)` launches the [`VERL`][agentlightning.algorithm.verl.VERL] algorithm and its OpenAI-compatible proxy. The `train_data` and `val_data` are passed into [`VERL`][agentlightning.algorithm.verl.VERL], which enqueues tasks to a centralized task queue managed by the [`LightningStore`][agentlightning.LightningStore], accessible to all runners.
 
-When [`Trainer.fit`][agentlightning.Trainer.fit] is called, it launches 10 concurrent runners (as specified by `n_runners=10`), each of which pulls tasks from the centralized task queue, executes the agent's [`rollout`][agentlightning.LitAgent.rollout] method, collects traces, and returns rewards to VERL for training.
+When [`Trainer.fit`][agentlightning.Trainer.fit] is called, it launches 10 concurrent runners (as specified by `n_runners=10`). Each runner pulls tasks from the centralized task queue, executes the agent’s [`rollout`][agentlightning.LitAgent.rollout] method, collects traces, and returns rewards to VERL for training.
 
-The [`Adapter`][agentlightning.Adapter], as discussed above, accepts the traces emitted by the agent and runners. Passing `agent_match`, ensuring [`VERL`][agentlightning.algorithm.verl.VERL] only ingests spans produced by the agent you want to optimize. In the example above, we have at least 3 agents, one for `write_query`, one for `rewrite_query`, and one for `check_query`. By setting `agent_match` to a regex like `"write"`, it matches both `write_query` and `rewrite_query` agents, allowing VERL to optimize both stages simultaneously. It can be also set to `"write|check"` or `None` to simultaneously optimize all three agents if desired.
+The [`Adapter`][agentlightning.Adapter], as discussed earlier, is used at the algorithm side, and receives the traces emitted by the agent and runners. The `agent_match` parameter ensures [`VERL`][agentlightning.algorithm.verl.VERL] only ingests spans from the specific agent you want to optimize.
+In the example above, there are at least three agents—`write_query`, `rewrite_query`, and `check_query`. By setting `agent_match` to a regex like `"write"`, both `write_query` and `rewrite_query` agents are optimized simultaneously. You can also set it to `"write|check"` or `None` to include all agents if desired.
 
 ## Dry-Run the Pipeline with [`Trainer.dev`][agentlightning.Trainer.dev]
 
-Before committing hours of GPU time, dry-run the agent with [`Trainer.dev()`][agentlightning.Trainer.dev]. It swaps in the lightweight [`Baseline`][agentlightning.Baseline] fast algorithm, enqueues up to ten tasks, and prints every span that the agent emits. Because it drives the same runner stack as full training, it is ideal for verifying schema access and LangGraph control flow.
+Before committing hours of GPU time, you can **dry-run** the agent with [`Trainer.dev()`][agentlightning.Trainer.dev]. This method swaps in the lightweight [`Baseline`][agentlightning.Baseline] algorithm, enqueues up to ten tasks, and prints every span emitted by the agent. Because it uses the same runner stack as full training, it’s ideal for verifying database connections and LangGraph control flow.
 
-To begin with, the agent will need a valid OpenAI-compatible endpoint, because no VERL will create one for you in this mode. You can use OpenAI's official API or a local LLM endpoint deployed on your own. Wrap them into:
+To begin, the agent needs a valid OpenAI-compatible endpoint since VERL is not active in this mode. You can use OpenAI’s official API or your own local LLM endpoint. Wrap it as follows:
 
 ```python
 trainer = agl.Trainer(
@@ -257,22 +257,25 @@ trainer = agl.Trainer(
 )
 ```
 
-Then call [`trainer.dev(...)`][agentlightning.Trainer.dev] with a small number of tasks:
+Then, call [`trainer.dev(...)`][agentlightning.Trainer.dev] with a small number of tasks:
 
 ```python
 dev_data = pd.read_parquet("data/test_dev_500.parquet").to_dict("records")[:10]
 trainer.dev(agent, dev_dataset=dev_data)
 ```
 
-Run this inside a Python session or adapt the script to include a `--dev` flag. Once the spans look healthy and rewards are non-zero, switch back to [`trainer.fit(...)`][agentlightning.Trainer.fit] for full RL training.
+Run this in a Python session or adapt your script to include a `--dev` flag. Once the spans appear healthy and the rewards are non-zero, switch back to [`trainer.fit(...)`][agentlightning.Trainer.fit] for full RL training.
 
 ## Running the Sample Code
 
-The following is a tutorial on how to run the complete example code in [`examples/spider`]({{ config.repo_url }}/tree/{{ config.extra.source_commit }}/examples/spider).
+The following tutorial explains how to run the complete example in [`examples/spider`]({{ config.repo_url }}/tree/{{ config.extra.source_commit }}/examples/spider).
 
 ### Dataset
 
-The trainer expects three Parquet files inside `examples/spider/data`: `train_spider.parquet`, `test_dev_500.parquet`, and `test_dev.parquet`. Download the curated bundle provided alongside the repository:
+The trainer expects three Parquet files inside `examples/spider/data`:
+`train_spider.parquet`, `test_dev_500.parquet`, and `test_dev.parquet`.
+
+Download the curated dataset bundle provided with the repository:
 
 ```bash
 cd examples/spider
@@ -282,41 +285,62 @@ unzip -q spider-data.zip -d data
 rm spider-data.zip
 ```
 
-If you prefer to build the files yourself, fetch [Spider 1.0](https://yale-lily.github.io/spider) and run `python spider_eval/convert_dataset.py`. Set `VERL_SPIDER_DATA_DIR` if you store the dataset outside the default `data` directory.
+If you prefer to generate the files yourself, download [Spider 1.0](https://yale-lily.github.io/spider) and run:
+
+```bash
+python spider_eval/convert_dataset.py
+```
+
+Set `VERL_SPIDER_DATA_DIR` if you store the dataset outside the default `data` directory.
 
 ### Dependencies
 
-Create a clean environment, activate it, and install Agent-lightning with the extras of VERL required by [this tutorial](../tutorials/installation.md). Install LangChain related dependencies as needed. Plan on using a GPU with at least 40 GB of memory for the full training profiles.
+Create a clean virtual environment, activate it, and install Agent-lightning with the VERL extras required by [this tutorial](../tutorials/installation.md). Install LangChain-related dependencies as needed.
+
+For full training profiles, plan to use a GPU with at least **40 GB** of memory.
 
 ### Launch Training
 
-From [`examples/spider`]({{ config.repo_url }}/tree/{{ config.extra.source_commit }}/examples/spider), call the helper script with the profile that matches your runtime budget:
+From [`examples/spider`]({{ config.repo_url }}/tree/{{ config.extra.source_commit }}/examples/spider), run one of the helper scripts depending on your model preference:
 
 ```bash
 python train_sql_agent.py qwen   # Default Qwen-2.5-Coder-1.5B run
 python train_sql_agent.py llama  # LLaMA-3.2-1B with llama3_json tool parser
 ```
 
-The script instantiates `LitSQLAgent`, and launches [`trainer.fit`][agentlightning.Trainer.fit]. Provide `--active-agent my_agent_variant` if you log multiple agent names and only want to train one of them. For the LLaMA profile, export an `HF_TOKEN` before running so VERL can download the weights.
+The script instantiates `LitSQLAgent` and launches [`trainer.fit`][agentlightning.Trainer.fit].
+Provide `--active-agent my_agent_variant` if you only want to train one of the agents in the graph.
+
+For the LLaMA profile, export an `HF_TOKEN` before running so VERL can download the model weights.
 
 ### Debugging the Agent without VERL
 
-[`sql_agent.py`]({{ config.repo_url }}/tree/{{ config.extra.source_commit }}/examples/spider/sql_agent.py) also exposes a `debug_sql_agent()` helper that runs the LangGraph workflow against a local or hosted OpenAI-compatible endpoint before you start VERL. Set `OPENAI_API_BASE` and `OPENAI_API_KEY`, then run:
+[`sql_agent.py`]({{ config.repo_url }}/tree/{{ config.extra.source_commit }}/examples/spider/sql_agent.py) also provides a `debug_sql_agent()` helper to run the LangGraph workflow directly against a local or hosted OpenAI-compatible endpoint before using VERL.
+
+Set the following environment variables, then execute the file:
 
 ```bash
+export OPENAI_API_BASE=<your_api_base>
+export OPENAI_API_KEY=<your_api_key>
 cd examples/spider
 python sql_agent.py
 ```
 
+This allows you to verify that the workflow and prompts behave as expected before reinforcement learning is introduced.
+
 ### Evaluation
 
-The following are results running `python train_sql_agent.py qwen` on a single 80GB GPU. The training completes in ~12 hours. The training curve below are smoothened by aggregating every 16 steps for better visualization.
+The following results were obtained by running `python train_sql_agent.py qwen` on a single 80 GB GPU.
+Training completes in approximately **12 hours**.
+The training curves below are smoothed by aggregating every 16 steps for better visualization.
 
-More evaluation results were collected with a legacy version: Agent-lightning v0.1.1, `verl==0.5.0`, and `vllm==0.10.0`. They are available [in this write-up](https://medium.com/@yugez/training-ai-agents-to-write-and-self-correct-sql-with-reinforcement-learning-571ed31281ad).
+Additional evaluation results were collected with a legacy version — Agent-lightning v0.1.1, `verl==0.5.0`, and `vllm==0.10.0`.
+You can find them in this write-up:
+[Training AI Agents to Write and Self-Correct SQL with Reinforcement Learning](https://medium.com/@yugez/training-ai-agents-to-write-and-self-correct-sql-with-reinforcement-learning-571ed31281ad)
 
 
 <div style="height:400px">
-<canvas data-chart='{"type": "line", "data": {"labels": [0.0, 16.0, 32.0, 48.0, 64.0, 80.0, 96.0, 112.0, 128.0, 144.0, 160.0, 176.0, 192.0, 208.0, 224.0, 240.0, 256.0, 272.0, 288.0, 304.0, 320.0, 336.0, 352.0, 368.0, 384.0, 400.0, 416.0, 432.0], "datasets": [{"label": "Training", "data": [0.4609375, 0.5041666666666667, 0.5790441176470589, 0.6015625, 0.6070772058823529, 0.6208333333333333, 0.6668198529411765, 0.66875, 0.6709558823529411, 0.6708333333333333, 0.6847426470588235, 0.6791666666666667, 0.6819852941176471, 0.690625, 0.7008272058823529, 0.7453125, 0.7398897058823529, 0.7119791666666667, 0.7224264705882353, 0.7114583333333333, 0.7431066176470589, 0.7427083333333333, 0.75, 0.7302083333333333, 0.7247242647058824, 0.7390625, 0.7463235294117647, 0.7376302083333334], "spanGaps": true}, {"label": "Validation", "data": [0.342, null, 0.594, null, 0.642, null, 0.66, null, 0.676, null, 0.676, null, 0.694, null, 0.712, null, 0.702, null, 0.678, null, 0.702, null, 0.702, null, 0.674, null, 0.734, 0.722], "spanGaps": true}]}, "options": {"interaction": {"mode": "nearest", "intersect": false}, "plugins": {"legend": {"display": true, "position": "top"}, "title": {"display": true, "text": "SQL Agent Training Result (agent match = write)"}}, "scales": {"x": {"title": {"display": true, "text": "Step (aggregated)"}}, "y": {"title": {"display": true, "text": "Accuracy"}}}}}'></canvas>
+<canvas data-chart='{"type": "line", "data": {"labels": [0.0, 16.0, 32.0, 48.0, 64.0, 80.0, 96.0, 112.0, 128.0, 144.0, 160.0, 176.0, 192.0, 208.0, 224.0, 240.0, 256.0, 272.0, 288.0, 304.0, 320.0, 336.0, 352.0, 368.0, 384.0, 400.0, 416.0, 432.0], "datasets": [{"label": "Training", "data": [0.4609375, 0.5041666666666667, 0.5790441176470589, 0.6015625, 0.6070772058823529, 0.6208333333333333, 0.6668198529411765, 0.66875, 0.6709558823529411, 0.6708333333333333, 0.6847426470588235, 0.6791666666666667, 0.6819852941176471, 0.690625, 0.7008272058823529, 0.7453125, 0.7398897058823529, 0.7119791666666667, 0.7224264705882353, 0.7114583333333333, 0.7431066176470589, 0.7427083333333333, 0.75, 0.7302083333333333, 0.7247242647058824, 0.7390625, 0.7463235294117647, 0.7376302083333334], "spanGaps": true}, {"label": "Validation", "data": [0.342, null, 0.594, null, 0.642, null, 0.66, null, 0.676, null, 0.676, null, 0.694, null, 0.712, null, 0.702, null, 0.678, null, 0.702, null, 0.702, null, 0.674, null, 0.734, 0.722], "spanGaps": true}]}, "options": {"interaction": {"mode": "nearest", "intersect": false}, "plugins": {"legend": {"display": true, "position": "top"}, "title": {"display": true, "text": "SQL Agent Training Result (agent_match = write)"}}, "scales": {"x": {"title": {"display": true, "text": "Step (aggregated)"}}, "y": {"title": {"display": true, "text": "Accuracy"}}}}}'></canvas>
 </div>
 
 <div style="height:400px">
