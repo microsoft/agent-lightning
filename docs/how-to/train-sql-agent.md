@@ -112,7 +112,7 @@ class LitSQLAgent(agl.LitAgent[Dict[str, Any]]):
 
 The `LitSQLAgent` serves as a lightweight wrapper around the LangGraph agent, providing the correct interface for the [`rollout`][agentlightning.LitAgent.rollout] method. It constructs the LangGraph agent, invokes it, and returns the evaluation result as a reward signal.
 
-The `"main_llm"` resource key is a convention between the agent and [VERL][agentlightning.algorithm.verl.VERL]. It is used to inject an OpenAI-compatible endpoint from the [VERL][agentlightning.algorithm.verl.VERL] algorithm during rollout. Two approaches are supported to use this [agentlightning.LLM] resource:
+The `"main_llm"` resource key is a convention between the agent and [VERL][agentlightning.algorithm.verl.VERL]. It is used to inject an OpenAI-compatible endpoint from the [VERL][agentlightning.algorithm.verl.VERL] algorithm during rollout. Two approaches are supported to use this [agentlightning.LLM][] resource:
 
 1. **Direct access** – Use [`llm.endpoint`][agentlightning.LLM.endpoint] for a simple integration (identical to the v0.1 example).
 2. **Context-aware access** – Use [`get_base_url`][agentlightning.ProxyLLM.get_base_url] with [`rollout.rollout_id`][agentlightning.Rollout.rollout_id] and [`rollout.attempt.attempt_id`][agentlightning.Attempt.attempt_id].
