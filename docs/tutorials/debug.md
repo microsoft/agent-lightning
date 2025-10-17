@@ -1,10 +1,12 @@
 # Debugging and Troubleshooting
 
-Debugging an agent workflow is much easier when you can peel back the layers—run the rollout logic in isolation, dry-run the trainer loop, then exercise the full algorithm and runner stack. The [`examples/apo/apo_debug.py`]({{ config.repo_url }}/tree/{{ config.extra.source_commit }}/examples/apo/apo_debug.py) script showcases these techniques in a compact form. This guide breaks them down and explains when to reach for each tool.
+Debugging an agent workflow is much easier when you can peel back the layers: run the rollout logic in isolation, dry-run the trainer loop, then exercise the full algorithm and runner stack. The [`examples/apo/apo_debug.py`]({{ src("examples/apo/apo_debug.py") }}) script showcases these techniques in a compact form. This guide breaks them down and explains when to reach for each tool.
 
-## Inspect a Runner in Isolation
+## Using [`Runner`][agentlightning.Runner] in Isolation
 
-The runner is a long-lived worker that wraps your `LitAgent` with tracing and resource management. Use `LitAgentRunner.run_context` to initialise and tear down all of that infrastructure without starting a trainer. The pattern below mirrors the `debug_with_runner` coroutine in `apo_debug.py`.
+[`Runner`][agentlightning.Runner] is a long-lived worker that wraps your [`LitAgent`][agentlightning.Runner] with tracing and resource management. [`Runner`][agentlightning.Runner] is a core building block
+
+Use [`LitAgentRunner.run_context`][agentlightning.LitAgentRunner.run_context] to initialize and tear down all of that infrastructure without starting a trainer. The pattern below mirrors the `debug_with_runner` coroutine in `apo_debug.py`.
 
 ```python
 from agentlightning.runner import LitAgentRunner

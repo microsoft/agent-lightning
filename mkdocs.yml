@@ -52,7 +52,8 @@ plugins:
       enable_creation_date: true
       type: timeago
   - git-authors
-  - macros
+  - macros:
+      module_name: docs/macros/source_links
   - mkdocstrings:
       handlers:
         python:
