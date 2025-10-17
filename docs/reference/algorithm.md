@@ -19,9 +19,11 @@
 
 ## Adapter
 
+::: agentlightning.Adapter
+
 ::: agentlightning.TraceAdapter
 
-::: agentlightning.Adapter
+::: agentlightning.OtelTraceAdapter
 
 ::: agentlightning.TraceToTripletBase
 

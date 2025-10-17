@@ -78,7 +78,7 @@ sequenceDiagram
 
 ### Custom Tracer
 
-If none of the built-in tracers fits your environment, the first option to consider is to [return the spans](./write-agents.md) directly from your agent implementation. If that's not possible, or you want to support a series of agents, you can then implement your own tracer by subclassing [`Tracer`][agentlightning.Tracer].
+If none of the built-in tracers fit your environment, the first option to consider is to [return the spans](./write-agents.md) directly from your agent implementation. If that's not possible, or you want to support multiple agents in a unified effort, you can implement your own tracer by subclassing [`Tracer`][agentlightning.Tracer].
 
 Custom tracers must implement at least [`trace_context`][agentlightning.Tracer.trace_context]. The [`trace_context`][agentlightning.Tracer.trace_context] coroutine should install or activate whatever instrumentation you need, then yield a span processor that ultimately adds spans to the store. You can reuse the `LightningSpanProcessor` if you produce OpenTelemetry `ReadableSpan` objects, or call [`LightningStore.add_span`][agentlightning.LightningStore.add_span] directly if you generate [`Span`][agentlightning.Span] instances yourself.
 
@@ -86,25 +86,25 @@ Advanced tracers often run auxiliary services (for example, starting a telemetry
 
 ## Reading Traces
 
-Generally there are two approaches to read traces. When you only need a quick look, [`Tracer.get_last_trace`][agentlightning.Tracer.get_last_trace] returns the raw OpenTelemetry spans captured most recently. For historical analysis use the [`LightningStore.query_spans`][agentlightning.LightningStore.query_spans] API, which yields normalized [`Span`][agentlightning.Span] objects keyed by rollout id and attempt id. Combine those queries with [`LightningStore.query_rollouts`][agentlightning.LightningStore.query_rollouts] to align spans with rollout status, retries, and timing information.
+Generally, there are two approaches to reading traces. When you only need a quick look, [`Tracer.get_last_trace`][agentlightning.Tracer.get_last_trace] returns the raw OpenTelemetry spans captured most recently. For historical analysis, use the [`LightningStore.query_spans`][agentlightning.LightningStore.query_spans] API, which yields normalized [`Span`][agentlightning.Span] objects keyed by rollout ID and attempt ID. Combine those queries with [`LightningStore.query_rollouts`][agentlightning.LightningStore.query_rollouts] to align spans with rollout status, retries, and timing information.
 
-Spans arrive asynchronously, originate from different processes, and form hierarchies rather than simple lists. The attributes of each span is tedious and unfriendly to human readers. That combination makes raw traces time-consuming to inspect, especially when you only care about specific signals such as rewards, LLM prompts, responses, or tool outputs. Understanding how the store exposes traces and how adapters reshape them will save hours when debugging or training.
+Spans arrive asynchronously, originate from different processes, and form hierarchies rather than simple lists. The attributes of each span are tedious and unfriendly to human readers. This combination makes raw traces time-consuming to inspect, especially when you only care about specific signals such as rewards, LLM prompts, responses, or tool outputs. Understanding how the store exposes traces and how adapters reshape them will save hours when debugging or training.
 
 !!! note "Why traces can be difficult to read?"
 
-    The trace tree for a single rollout typically mixes multiple abstraction layers: a planner span may contain several LLM spans, each of which contains tool execution spans, which can themselves trigger nested agent invocations. There are also instrumentations at different levels. For example, when a request delegates to another library (e.g., from LangChain to OpenAI), two libraries might emit spans for the same request. On the very top, there could be concurrently running agents which may flush spans slightly out of order. Sorting by `sequence_id` restores the chronological view, but interpreting the tree requires additional context about parent-child relationships and rollout metadata.
+    The trace tree for a single rollout typically mixes multiple abstraction layers: a planner span may contain several LLM spans, each of which contains tool execution spans that can themselves trigger nested agent invocations. There are also instrumentations at different levels. For example, when a request delegates to another library (e.g., from LangChain to OpenAI), two libraries might emit spans for the same request. At the top level, there could be concurrently running agents that may flush spans slightly out of order. Sorting by `sequence_id` restores the chronological view, but interpreting the tree requires additional context about parent-child relationships and rollout metadata.
 
 ### Adapter
 
 [Adapters][agentlightning.Adapter] transform lists of spans into higher-level data structures that training algorithms can consume directly. Agent-lightning provides several adapters out of the box:
 
-- [`TracerTraceToTriplet`][agentlightning.TracerTraceToTriplet] converts spans into `(prompt, response, reward)` triplets, which power reinforcement-learning algorithms such as [VERL](../algorithm-zoo/verl.md) and connect trace data to gradient updates.
-- [`TraceToMessages`][agentlightning.TraceToMessages] rewrites spans into OpenAI chat message JSON suitable for supervised fine-tuning or eval harnesses.
-- [`LlmProxyTraceToTriplet`][agentlightning.LlmProxyTraceToTriplet] mirrors [`TracerTraceToTriplet`][agentlightning.TracerTraceToTriplet] but understands spans emitted by [LLMProxy][agentlightning.LLMProxy]. It's experimental and might be merged with [`TracerTraceToTriplet`][agentlightning.TracerTraceToTriplet] in the future.
+* [`TracerTraceToTriplet`][agentlightning.TracerTraceToTriplet] converts spans into `(prompt, response, reward)` triplets, which power reinforcement-learning algorithms such as [VERL](../algorithm-zoo/verl.md) and connect trace data to gradient updates.
+* [`TraceToMessages`][agentlightning.TraceToMessages] rewrites spans into OpenAI chat message JSON suitable for supervised fine-tuning or evaluation harnesses.
+* [`LlmProxyTraceToTriplet`][agentlightning.LlmProxyTraceToTriplet] mirrors [`TracerTraceToTriplet`][agentlightning.TracerTraceToTriplet] but understands spans emitted by [LLMProxy][agentlightning.LLMProxy]. It is experimental and might be merged with [`TracerTraceToTriplet`][agentlightning.TracerTraceToTriplet] in the future.
 
-Adapters are regular Python callable instances, so you can plug them into [`Trainer`][agentlightning.Trainer] via the `adapter` argument, or call them manually during exploration. When used in [`Trainer`][agentlightning.Trainer], adapters are bundled into the [`Algorithm`][agentlightning.Algorithm] before the algorithm is run, through [`Algorithm.set_adapter`][agentlightning.Algorithm.set_adapter] method.
+Adapters are regular Python callable instances, so you can plug them into [`Trainer`][agentlightning.Trainer] via the `adapter` argument, or call them manually during exploration. When used in [`Trainer`][agentlightning.Trainer], adapters are bundled into the [`Algorithm`][agentlightning.Algorithm] before the algorithm runs, through the [`Algorithm.set_adapter`][agentlightning.Algorithm.set_adapter] method.
 
-You can also customize [`Adapter`][agentlightning.Adapter] by extending the implementations above or subclassing the base class. If you need a bespoke format, subclass [`TraceAdapter`][agentlightning.TraceAdapter] (for store spans) or [`OtelTraceAdapter`][agentlightning.OtelTraceAdapter] (for raw OpenTelemetry spans) and implement `adapt`.
+You can also customize an [`Adapter`][agentlightning.Adapter] by extending the implementations above or subclassing the base class. If you need a bespoke format, subclass [`TraceAdapter`][agentlightning.TraceAdapter] (for store spans) or [`OtelTraceAdapter`][agentlightning.OtelTraceAdapter] (for raw OpenTelemetry spans) and implement `adapt` (these two classes can usually share the same implementation).
 
 ### Reading Rewards
 
@@ -118,4 +118,4 @@ reward = find_final_reward(spans)
 print(f"Final reward: {reward}")
 ```
 
-[`find_reward_spans`][agentlightning.find_reward_spans] returns every reward span so you can visualize intermediate shaping signals, while [`find_final_reward`][agentlightning.find_final_reward] extracts the last non-null reward per attempt. While they can be convenient, they do not really help you understand the relationship with reward spans and other spans, neither chronologically nor hierarchically. Using [`Adapter`][agentlightning.Adapter], especially the same one as the one used in the algorithm you want to use, is still the recommended way to inspect your generated spans.
+[`find_reward_spans`][agentlightning.find_reward_spans] returns every reward span so you can visualize intermediate shaping signals, while [`find_final_reward`][agentlightning.find_final_reward] extracts the last non-null reward per attempt. While these helpers are convenient, they don’t necessarily help you understand the chronological or hierarchical relationships between reward spans and other spans. Using an [`Adapter`][agentlightning.Adapter] — especially the same one used in the algorithm you’re working with — remains the recommended way to inspect your generated spans.
