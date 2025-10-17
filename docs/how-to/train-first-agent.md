@@ -213,6 +213,10 @@ The APO algorithm successfully improved the agent's performance. We ran the exam
 * `branch_factor` = 2
 * `beam_rounds` = 2
 
-The validation accuracy on the 29 samples of datasets steadily increase from 0.569 (baseline) to 0.638 (after round 1) to **0.721** (after round 2). (In another run, it's from 0.534 to 0.628 to 0.645). The tuning takes around 10 minutes with 8 runners.
+The validation accuracy on the 29 samples of datasets steadily increase from 0.569 (baseline) to **0.721** (after round 2). The tuning takes around 10 minutes with 8 runners. We ran twice, and the results are shown in the chart below.
+
+<div style="height:400px">
+<canvas data-chart='{ "type": "line", "data": { "labels": ["Baseline", "After round 1", "After round 2"], "datasets": [ { "label": "Run #1", "data": [0.569, 0.638, 0.721], "spanGaps": true }, { "label": "Run #2", "data": [0.534, 0.628, 0.645], "spanGaps": true } ] }, "options": { "interaction": { "mode": "nearest", "intersect": false }, "plugins": { "legend": { "display": true, "position": "top" }, "title": { "display": true, "text": "Validation Accuracy Across Rounds" } }, "scales": { "x": { "title": { "display": true, "text": "Round" } }, "y": { "title": { "display": true, "text": "Accuracy" } } } } }'></canvas>
+</div>
 
 This demonstrates how Agent-lightning can efficiently and automatically enhance your agent's capabilities with just a few lines of code.

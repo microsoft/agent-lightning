@@ -94,6 +94,7 @@ nav:
   - Learning More:
     - Write Agents: tutorials/write-agents.md
     - Debugging: tutorials/debug.md
+    - Working with Traces: tutorials/traces.md
     - Parallelize: tutorials/parallelize.md
   - Algorithm Zoo:
     - Overview: algorithm-zoo/index.md
@@ -102,7 +103,7 @@ nav:
   - Deep Dive:
     - Bird's Eye View: deep-dive/birds-eye-view.md
     - Understanding Store: deep-dive/store.md
-    - Understanding Tracing: deep-dive/tracing.md
+    - Serving LLM: deep-dive/serving-llm.md
   - API References:
     - Agent: reference/agent.md
     - Algorithm: reference/algorithm.md
