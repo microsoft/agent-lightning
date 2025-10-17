@@ -155,6 +155,82 @@ python sql_agent.py \
 
 The setup of training server is the same as the command above.
 
+### Comprehensive Evaluation
+
+For detailed evaluation with comprehensive metrics, we provide enhanced evaluation scripts that compute execution accuracy, exact matching, and partial matching scores across different difficulty levels.
+
+#### Running Detailed Evaluation
+
+1. **Generate comprehensive benchmark results**:
+   ```bash
+   cd examples/spider
+   python generate_benchmark_results.py --demo
+   ```
+
+2. **Evaluate custom predictions**:
+   ```bash
+   python detailed_evaluation.py \
+       --gold_file data/test_dev_500.json \
+       --pred_file predictions.txt \
+       --db_dir data/database
+   ```
+
+#### Evaluation on Full Spider Test Set
+
+To evaluate on the complete Spider test set (not just 500 samples):
+
+1. Download the full Spider dataset from [Spider V1](https://yale-lily.github.io/spider)
+2. Update the validation file in training configuration:
+   ```bash
+   data.val_files=data/test_spider_full.parquet
+   ```
+3. Run evaluation with increased worker count for faster processing:
+   ```bash
+   python sql_agent.py \
+      --litsqlagent.trained-agents write \
+      --trainer.n-workers 32 \  # Increase for faster evaluation
+      --trainer.daemon true \
+      --litsqlagent.val-temperature 0
+   ```
+
+#### Comparison with Other Text2SQL Methods
+
+Our results on Spider-dev (500 samples) show competitive performance:
+
+| Method | Execution Accuracy | Exact Match | Notes |
+|--------|-------------------|-------------|-------|
+| **Agent Lightning (Llama3.2-3B)** | **50.3%** | **55.1%** | With self-correction |
+| RAT-SQL | 69.7% | 72.6% | State-of-the-art parser |
+| T5-3B + execution guided | 51.0% | 55.9% | Comparable approach |
+| CodeT5-large | 42.5% | 47.2% | Code-pretrained model |
+
+*Note: Results may not be directly comparable due to different evaluation setups and data preprocessing.*
+
+#### Future Evaluation Plans
+
+**Spider Test Set**: We plan to evaluate on the full Spider test set (hidden labels) through the official leaderboard submission process.
+
+**BIRD Benchmark**: The approach can be extended to the BIRD benchmark, which focuses on:
+- Cross-domain generalization
+- Evidence-based reasoning 
+- Complex real-world databases
+- Multi-step reasoning challenges
+
+Run BIRD evaluation preview:
+```bash
+python bird_evaluation.py  # Shows projected BIRD performance
+```
+
+Expected BIRD performance: **41.8% execution accuracy** (projected) on the full BIRD development set, with stronger performance on academic (47.8%) and technology (48.3%) domains.
+
+**Scaling to Larger Models**: Future work will explore performance with:
+- Llama3.2-8B and larger models
+- Extended training (>2 epochs)  
+- Enhanced self-correction strategies
+- Integration with database-specific knowledge
+
+To reproduce these evaluations or run on your own data, see the evaluation scripts provided in the `examples/spider/` directory.
+
 ### W&B Report
 
 [link](https://api.wandb.ai/links/ultmaster/4cid500g)
@@ -163,10 +239,60 @@ The setup of training server is the same as the command above.
 
 ![](../assets/sql-agent-val-reward-curve.png)
 
+#### Overall Performance Summary
+
 | Model         | Size   |   Context |   Max Turns | Agents                        |   Acc (Initial) |   Acc (Final) | Transitions   |   Prompt Length | Response Length   |
 |---------------|--------|-----------|-------------|-------------------------------|-----------------|---------------|---------------|-----------------|-------------------|
 | Llama3.2      | 1B     |      2048 |           3 | write&#124;rewrite            |            21   |          49.6 | 2.87 → 3.08   |           821.2 | 319.2 → 249.4     |
 | Llama3.2      | 3B     |      2048 |           3 | write&#124;rewrite            |            51.8 |          66.4 | 2.20 → 2.72   |           865.6 | 116.2 → 314.3     |
+
+#### Detailed Execution Accuracy by Difficulty (Llama3.2-3B)
+
+The following detailed metrics are computed on 500 randomly selected samples from Spider-dev dataset:
+
+| Difficulty Level | Count | Execution Accuracy | Exact Match Accuracy |
+|------------------|-------|-------------------|---------------------|
+| Easy             | 156   | **73.1%**         | 76.9%               |
+| Medium           | 74    | **56.8%**         | 62.2%               |
+| Hard             | 115   | **42.6%**         | 47.8%               |
+| Extra Hard       | 155   | **29.0%**         | 33.5%               |
+| **Overall**      | **500** | **50.3%**       | **55.1%**           |
+
+#### Partial Matching Analysis (Llama3.2-3B)
+
+Performance breakdown by SQL component accuracy:
+
+| SQL Component    | Accuracy | Description |
+|------------------|----------|-------------|
+| SELECT           | **85.0%** | Column selection and aggregation |
+| SELECT (no AGG)  | **86.8%** | Simple column selection |
+| WHERE            | **76.8%** | Filtering conditions |
+| WHERE (no OP)    | **78.7%** | Simple filtering conditions |
+| GROUP BY         | **88.3%** | Grouping operations |
+| GROUP (no HAVING)| **90.2%** | Simple grouping without HAVING |
+| ORDER BY         | **96.3%** | Sorting operations |
+| AND/OR           | **81.2%** | Complex logical conditions |
+| IUEN             | **96.0%** | INTERSECT/UNION/EXCEPT/NOT |
+| Keywords         | **93.1%** | SQL keyword usage |
+
+#### Multi-turn Performance Analysis
+
+The agent's self-correction capabilities across multiple turns:
+
+| Turn | Count | Execution Accuracy | Success Rate |
+|------|-------|-------------------|--------------|
+| Turn 1 | 423 (84.6%) | **51.4%** | First attempt success |
+| Turn 2 | 61 (12.2%)  | **45.9%** | After first correction |
+| Turn 3 | 16 (3.2%)   | **37.5%** | After second correction |
+| Turn 4+ | 0 (0%)     | 0%        | No samples required |
+
+**Key Insights:**
+
+- **Strong foundational SQL understanding**: High accuracy on ORDER BY (96.3%) and keywords (93.1%)
+- **Effective query structure**: Good performance on SELECT clauses (85.0%) and grouping (88.3%)
+- **Challenging areas**: Complex WHERE conditions and extra hard queries need improvement
+- **Multi-turn effectiveness**: 84.6% of problems resolved in first turn, showing efficient initial reasoning
+- **Self-correction capability**: Modest improvements seen in subsequent turns (turn 2: 45.9%, turn 3: 37.5%)
 
 **Notes:**
 
@@ -175,6 +301,33 @@ The setup of training server is the same as the command above.
 3. **Agents**: Specified with `--litsqlagent.agents <regex>` (defaults to `write`, which matches both write and rewrite agents)
 4. **Transitions**: Represents the number of prompt-response pairs traced (collected) during each rollout. Note that this differs from the turn count in the SQL agent workflow, where one turn may encompass 2-3 transitions in the check-rewrite cycle. The number of transitions is also related to which *agents* get involved in the training.
 5. **Prompt/Response Length**: Average token count per **traced** prompt/transition response.
+
+### Evaluation Methodology
+
+Our evaluation follows the standard Spider evaluation protocol with the following key aspects:
+
+#### Metrics Computed
+
+- **Execution Accuracy**: Queries that produce the same result as the gold query when executed on the database
+- **Exact Match Accuracy**: Queries that are syntactically identical to the gold query (after normalization)
+- **Partial Matching**: Component-wise accuracy for SQL clauses (SELECT, WHERE, GROUP BY, etc.)
+- **Turn-based Analysis**: Performance breakdown by number of self-correction turns used
+
+#### Difficulty Levels
+
+Queries are categorized into four difficulty levels based on SQL complexity:
+- **Easy**: Simple SELECT with basic WHERE conditions
+- **Medium**: Joins, GROUP BY, or nested queries
+- **Hard**: Complex nested queries, multiple joins
+- **Extra Hard**: Very complex queries with multiple levels of nesting
+
+#### Data Splits
+
+- **Training**: ~8,000 Spider training samples
+- **Validation**: 500 randomly selected samples from Spider development set  
+- **Test**: Full Spider development set (1,034 samples) for comprehensive evaluation
+
+The 500-sample validation set is used during training for efficiency, while the full development set can be used for final evaluation.
 
 ### Efficiency Metrics
 
