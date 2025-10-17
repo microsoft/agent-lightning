@@ -72,11 +72,8 @@ class OtelTraceAdapter(Adapter[List[ReadableSpan], T_to], Generic[T_to]):
 
     Subclasses should override `adapt` to define the desired conversion.
 
-    Type parameters:
-        T_to: The target data type that spans should be converted into.
-
     Example:
-        >>> class TraceToDictAdapter(TraceAdapter[dict]):
+        >>> class TraceToDictAdapter(OtelTraceAdapter[dict]):
         ...     def adapt(self, spans: List[ReadableSpan]) -> dict:
         ...         return {"count": len(spans)}
         ...
