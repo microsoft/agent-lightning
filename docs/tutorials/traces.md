@@ -26,11 +26,20 @@ Therefore, we added another instrumentation layer inside [`AgentOpsTracer`][agen
 
 ### OpenTelemetry Tracer
 
+implements a basic OpenTelemetry tracer provider so that you can use standard OpenTelemetry SDK to report spans. Introduce basic OpenTelemetry SDK API to add spans.
+
 ### LLM Proxy
+
+talk about server-side tracing, and why this is important (e.g., when agent side tracing is not possible, such as the agent is written in a different programming language or running in an isolated process)
 
 ### Custom Tracer
 
+talk about trace_context interface.
+
+talk about no tracer and directly returns all the spans as the agent's output.
+
 ### Distributed Tracing
+talk about sequence_id etc.
 
 ## Reading Traces
 
