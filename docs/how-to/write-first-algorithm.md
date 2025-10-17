@@ -15,6 +15,8 @@ Before diving into the [LightningStore][agentlightning.LightningStore], let's de
 
 ### Resources: The Tunable Assets
 
+[](){ #introduction-to-resources }
+
 **Resources** are the assets your algorithm is trying to improve. Think of them as the "recipe" an agent uses to perform its task. This recipe can be:
 
   * A **prompt template** that guides an LLM.

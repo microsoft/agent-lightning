@@ -127,7 +127,11 @@ For more complex agents that require state, helper methods, or distinct logic fo
 
 To create a class-based agent, you subclass [agentlightning.LitAgent][] and implement its `rollout` method.
 
-Here's how the `room_selector` could be implemented as a class. The rollout method has a slightly different signature than the function-based agent, mainly in how it handles the resources. Algorithms send [NamedResources][agentlightning.NamedResources] (which is a mapping from resource key to [Resource][agentlightning.Resource]) to agent. With [`@rollout`][agentlightning.rollout] decorator, the resource with correctly matched type will be automatically injected into the rollout method. However, when you use a class-based agent, you need to manually access the resource from the `resources` dictionary. Built-in algorithms listed their resource key naming conventions [here](../algorithm-zoo/index.md).
+[](){ #introduction-to-named-resources }
+
+Here's how the `room_selector` could be implemented as a class. The rollout method has a slightly different signature than the function-based agent, mainly in how it handles the resources. Putting it simply, algorithms do not just send a [PromptTemplate][agentlightning.PromptTemplate] to the agents, they instead send [NamedResources][agentlightning.NamedResources], which is a mapping from resource key to [Resource][agentlightning.Resource]. This design is to allow for more advanced features like multi-resource tuning.
+
+With [`@rollout`][agentlightning.rollout] decorator, the resource with correctly matched type will be automatically injected into the rollout method. However, when you use a class-based agent, you need to manually access the resource from the `resources` dictionary. Built-in algorithms listed their resource key naming conventions [here](../algorithm-zoo/index.md).
 
 ```python
 import agentlightning as agl
