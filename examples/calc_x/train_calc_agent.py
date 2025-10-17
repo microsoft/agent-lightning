@@ -1,6 +1,9 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-from typing import Any, Dict, cast
+import argparse
+import os
+from datetime import datetime
+from typing import Any, Dict, Optional, cast
 
 from calc_agent import MathProblem, calc_agent
 from datasets import Dataset as HuggingFaceDataset
@@ -47,7 +50,7 @@ def verl_default_config() -> Dict[str, Any]:
                 "fsdp_config": {"param_offload": True},
             },
             "model": {
-                "path": "Qwen/Qwen2.5-0.5B-Instruct",
+                "path": "Qwen/Qwen2.5-1.5B-Instruct",
                 "use_remove_padding": True,
                 "enable_gradient_checkpointing": True,
             },
@@ -57,21 +60,30 @@ def verl_default_config() -> Dict[str, Any]:
             "val_before_train": True,
             "critic_warmup": 0,
             "logger": ["console", "wandb"],
-            "project_name": "AgentLightningCI",
-            "experiment_name": "train_verl_v0_2",
+            "project_name": "AgentLightning",
+            "experiment_name": "calc_x",
             "nnodes": 1,
-            "save_freq": 3,
-            "test_freq": 3,
-            "total_epochs": 1,
-            "total_training_steps": 3,
+            "save_freq": 64,
+            "test_freq": 32,
+            "total_epochs": 2,
         },
     }
 
 
-def train(*, train_file: str, val_file: str, model: str, llm_proxy: bool, ci: bool, n_runners: int):
-    # TODO: use train_file and val_file from arguments
-    train_dataset = cast(agl.Dataset[MathProblem], HuggingFaceDataset.from_parquet("data/train.parquet").to_list())
-    val_dataset = cast(agl.Dataset[MathProblem], HuggingFaceDataset.from_parquet("data/test_mini.parquet").to_list())
+def train(*, train_file: str, val_file: str, model: Optional[str], llm_proxy: bool, ci: bool, n_runners: int):
+    """The training entrypoint function for Calc-X agent with VERL algorithm.
+
+    Args:
+        train_file: The path to the training parquet file.
+        val_file: The path to the validation parquet file.
+        model: The HF model id or path to override the default model.
+        llm_proxy: Whether to enable LLM Proxy tracing/adapter.
+        ci: Whether to run a minimal CI-style training loop.
+        n_runners: The number of runners for the Trainer.
+    """
+    # Load datasets (respect CLI file paths)
+    train_dataset = cast(agl.Dataset[MathProblem], HuggingFaceDataset.from_parquet(train_file).to_list())
+    val_dataset = cast(agl.Dataset[MathProblem], HuggingFaceDataset.from_parquet(val_file).to_list())
 
     print("First 5 rows of train dataset:")
     print(train_dataset[:5])  # type: ignore
@@ -79,20 +91,69 @@ def train(*, train_file: str, val_file: str, model: str, llm_proxy: bool, ci: bo
     print(val_dataset[:5])  # type: ignore
 
     config = verl_default_config()
-    # TODO: augment config based on function arguments
+
+    if model:
+        config["actor_rollout_ref"]["model"]["path"] = model
+
+    # CI toggle keeps everything else the same but you can tweak the lightweight bits here if desired
+    if ci:
+        # Config the experiment name and project name so that they are available to CI
+        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        EXPERIMENT_NAME = f"calc_x_{timestamp}"
+
+        PROJECT_NAME = "AgentLightningCI"
+
+        # Simulate writing to $GITHUB_OUTPUT if it’s set
+        github_output = os.getenv("GITHUB_OUTPUT")
+        if github_output:
+            with open(github_output, "a") as f:
+                f.write(f"project_name={PROJECT_NAME}\n")
+                f.write(f"run_name={EXPERIMENT_NAME}\n")
+
+        print("Set environment variables:")
+        print(f"PROJECT_NAME={PROJECT_NAME}")
+        print(f"EXPERIMENT_NAME={EXPERIMENT_NAME}")
+
+        # Keep it tiny/light without adding new knobs
+        config["actor_rollout_ref"]["rollout"]["gpu_memory_utilization"] = 0.6
+        config["trainer"]["total_epochs"] = 1
+        config["trainer"]["total_training_steps"] = 6
+        config["trainer"]["test_freq"] = 6
+        config["trainer"]["experiment_name"] = EXPERIMENT_NAME
+        config["trainer"]["project_name"] = PROJECT_NAME
+        config["trainer"].pop("save_freq", None)
 
     algorithm = agl.VERL(config)
 
     if llm_proxy:
-        # We deliberately used a dummy OtelTracer and handles all tracing via LLM Proxy.
-        tracer = agl.OtelTracer()
+        tracer = agl.OtelTracer()  # dummy tracer for LLM Proxy
         adapter = agl.LlmProxyTraceToTriplet()
-
         trainer = agl.Trainer(algorithm=algorithm, n_runners=n_runners, tracer=tracer, adapter=adapter)
     else:
         trainer = agl.Trainer(algorithm=algorithm, n_runners=n_runners)
 
     trainer.fit(calc_agent, train_dataset, val_dataset=val_dataset)
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Train a math calc agent with Agent-lightning + VERL.")
+    parser.add_argument("--train-file", type=str, default="data/train.parquet", help="Path to train parquet file")
+    parser.add_argument("--val-file", type=str, default="data/test.parquet", help="Path to val parquet file")
+    parser.add_argument("--model", type=str, default=None, help="HF model id or path (optional)")
+    parser.add_argument("--llm-proxy", action="store_true", help="Enable LLM Proxy tracing/adapter")
+    parser.add_argument("--ci", action="store_true", help="Run a minimal CI-style training loop")
+    parser.add_argument("--n-runners", type=int, default=10, help="Number of runners for Trainer")
+
+    args = parser.parse_args()
+
+    train(
+        train_file=args.train_file,
+        val_file=args.val_file,
+        model=args.model,
+        llm_proxy=args.llm_proxy,
+        ci=args.ci,
+        n_runners=args.n_runners,
+    )
 
 
 if __name__ == "__main__":

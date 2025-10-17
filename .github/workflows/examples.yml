@@ -164,9 +164,9 @@ jobs:
           set -ex
           . .venv/bin/activate
           cd examples/calc_x
-          python calc_agent_dev.py
+          python legacy_calc_agent_debug.py
         env:
-          OPENAI_API_BASE: http://localhost:12306/
+          OPENAI_BASE_URL: http://localhost:12306/
           OPENAI_API_KEY: dummy
 
       # Calc-X training suddenly works after running the sanity check.
@@ -180,14 +180,14 @@ jobs:
           cd examples/calc_x
           ../../scripts/restart_ray.sh
           sleep 5
-          PYTHONUNBUFFERED=1 python calc_agent.py &
-          bash train_ci.sh
-          pkill -f calc_agent.py && echo "SIGTERM sent to calc_agent.py" || echo "No calc_agent.py process found"
-          while pgrep -f calc_agent.py; do
-            echo "Waiting for calc_agent.py to finish..."
+          PYTHONUNBUFFERED=1 python legacy_calc_agent.py &
+          bash legacy_train.sh
+          pkill -f legacy_calc_agent.py && echo "SIGTERM sent to legacy_calc_agent.py" || echo "No legacy_calc_agent.py process found"
+          while pgrep -f legacy_calc_agent.py; do
+            echo "Waiting for legacy_calc_agent.py to finish..."
             sleep 5
           done
-          echo "calc_agent.py has finished."
+          echo "legacy_calc_agent.py has finished."
           sleep 10
         shell: bash
         env:
@@ -212,7 +212,7 @@ jobs:
           cd examples/calc_x
           ../../scripts/restart_ray.sh
           sleep 5
-          PYTHONUNBUFFERED=1 python calc_agent_v0_2.py
+          PYTHONUNBUFFERED=1 python train_calc_agent.py --val-file data/test_mini.parquet --ci
           sleep 10
         shell: bash
         env:
@@ -228,7 +228,7 @@ jobs:
           cd examples/calc_x
           ../../scripts/restart_ray.sh
           sleep 5
-          PYTHONUNBUFFERED=1 python calc_agent_v0_2_llm_proxy.py
+          PYTHONUNBUFFERED=1 python train_calc_agent.py --val-file data/test_mini.parquet --ci --llm-proxy
           sleep 10
         shell: bash
         env:
