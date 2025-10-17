@@ -11,7 +11,7 @@ on:
 jobs:
   examples:
     runs-on: [self-hosted, 1ES.Pool=agl-runner-gpu]
-    timeout-minutes: 90
+    timeout-minutes: 120
     strategy:
       matrix:
         setup: [stable, latest]
@@ -235,6 +235,39 @@ jobs:
           WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
           WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
         id: calc_x_train_v0_2_llm_proxy
+        if: success() || failure()
+
+      - name: Calc-X training v0.2 External Store
+        run: |
+          set -ex
+          source .venv/bin/activate
+          cd examples/calc_x
+          ../../scripts/restart_ray.sh
+
+          agl store --port 4747 &
+          sleep 5
+          AGL_MANAGED_STORE=0 AGL_CURRENT_ROLE=runner python train_calc_agent.py --external-store-address http://localhost:4747 --val-file data/test_mini.parquet --ci &
+          sleep 5
+          AGL_MANAGED_STORE=0 AGL_CURRENT_ROLE=algorithm python train_calc_agent.py --external-store-address http://localhost:4747 --val-file data/test_mini.parquet --ci
+
+          pkill -f agl && echo "SIGTERM sent to agl" || echo "No agl process found"
+          while pgrep -f agl; do
+            echo "Waiting for agl to finish..."
+            sleep 5
+          done
+          pkill -f train_calc_agent.py && echo "SIGTERM sent to train_calc_agent.py" || echo "No train_calc_agent.py process found"
+          while pgrep -f train_calc_agent.py; do
+            echo "Waiting for train_calc_agent.py to finish..."
+            sleep 5
+          done
+          echo "train_calc_agent.py has finished."
+
+          sleep 10
+        shell: bash
+        env:
+          WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
+          WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
+        id: calc_x_train_v0_2_external_store
         if: success() || failure()
 
       - name: Spider training
