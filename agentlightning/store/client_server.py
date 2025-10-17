@@ -529,6 +529,32 @@ class LightningStoreClient(LightningStore):
         self._dequeue_was_successful: bool = False
         self._dequeue_first_unsuccessful: bool = True
 
+    def __getstate__(self):
+        """
+        When LightningStoreClient is pickled (e.g., passed to a subprocess), we only
+        serialize the server address and retry configurations. The ClientSessions
+        are excluded as they should not be transferred between processes.
+        """
+        return {
+            "server_address": self.server_address,
+            "_retry_delays": self._retry_delays,
+            "_health_retry_delays": self._health_retry_delays,
+        }
+
+    def __setstate__(self, state: Dict[str, Any]):
+        """
+        Restore from pickle by reconstructing only the essential attributes.
+
+        Replicating `__init__` logic to create another client instance in the subprocess.
+        """
+        self.server_address = state["server_address"]
+        self._sessions = {}
+        self._lock = threading.RLock()
+        self._retry_delays = state["_retry_delays"]
+        self._health_retry_delays = state["_health_retry_delays"]
+        self._dequeue_was_successful = False
+        self._dequeue_first_unsuccessful = True
+
     async def _get_session(self) -> aiohttp.ClientSession:
         # In the proxy process, FastAPI middleware calls
         # client_store.get_next_span_sequence_id(...). With
