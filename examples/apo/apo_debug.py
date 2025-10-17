@@ -9,10 +9,11 @@ from typing import cast
 from apo_custom_algorithm import apo_rollout
 
 from agentlightning import Trainer, configure_logger
+from agentlightning.litagent import LitAgent
 from agentlightning.runner import LitAgentRunner
 from agentlightning.store import InMemoryLightningStore
-from agentlightning.tracer import OtelTracer
-from agentlightning.types import Dataset, PromptTemplate
+from agentlightning.tracer import AgentOpsTracer, OtelTracer
+from agentlightning.types import Dataset, Hook, PromptTemplate, Rollout
 
 
 async def debug_with_runner():
@@ -36,6 +37,42 @@ async def debug_with_runner():
 
     # The agent here must be the same agent that will be used in the real run.
     with runner.run_context(agent=apo_rollout, store=store):
+        await runner.step(
+            "Explain why the sky appears blue using principles of light scattering in 100 words.",
+            resources={"main_prompt": resource},
+        )
+
+
+async def debug_with_hooks():
+    """This approach also uses Runner, but allows you to hook into the runner's lifecycle events.
+
+    We use an AgentOpsTracer here so that the tracing is non-empty.
+    """
+    tracer = AgentOpsTracer()
+    # The rest part are the same as debug_with_runner
+    runner = LitAgentRunner[str](tracer)
+    store = InMemoryLightningStore()
+    resource = PromptTemplate(template="You are a helpful assistant. {any_question}", engine="f-string")
+
+    class DebugHook(Hook):
+
+        async def on_trace_end(  # type: ignore
+            self, *, agent: LitAgent[str], runner: LitAgentRunner[str], tracer: AgentOpsTracer, rollout: Rollout
+        ) -> None:
+            """We use `tracer.get_last_trace()` to get all raw OpenTelemetry spans from the Rollout.
+            The last reward span is not available yet.
+            """
+            trace = tracer.get_last_trace()
+            print("Trace spans collected during the rollout:")
+            for span in trace:
+                print(f"- {span.name} (status: {span.status}):\n  {span.attributes}")
+
+    with runner.run_context(
+        agent=apo_rollout,
+        store=store,
+        # Send the hooks into `run_context`
+        hooks=[DebugHook()],
+    ):
         await runner.step(
             "Explain why the sky appears blue using principles of light scattering in 100 words.",
             resources={"main_prompt": resource},
@@ -73,15 +110,17 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Debug APO with runner or trainer approach.")
     parser.add_argument(
         "--mode",
-        choices=["runner", "trainer"],
+        choices=["runner", "hook", "trainer"],
         default="runner",
-        help="Choose which debugging approach to use: 'runner' (default) or 'trainer'.",
+        help="Choose which debugging approach to use: 'runner' (default), 'hook', or 'trainer'.",
     )
 
     args = parser.parse_args()
 
     if args.mode == "runner":
         asyncio.run(debug_with_runner())
+    elif args.mode == "hook":
+        asyncio.run(debug_with_hooks())
     elif args.mode == "trainer":
         # Don't want two mode consecutively in one process,
         # unless you are sure the tracer won't conflict.

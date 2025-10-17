@@ -4,28 +4,34 @@ Debugging an agent workflow is much easier when you can peel back the layers: ru
 
 ## Using [`Runner`][agentlightning.Runner] in Isolation
 
-[`Runner`][agentlightning.Runner] is a long-lived worker that wraps your [`LitAgent`][agentlightning.Runner] with tracing and resource management. [`Runner`][agentlightning.Runner] is a core building block
+[`Runner`][agentlightning.Runner] is a core building block within the Agent-lightning architecture. It's a long-lived worker that wraps your [`LitAgent`][agentlightning.Runner] that is capable of tracing and communicating with the [`LightningStore`][agentlightning.LightningStore]. Normally, users will not need to mind using [`Runner`][agentlightning.Runner] directly as it's auto-managed. This tutorial tells you how to manually create a [`Runner`][agentlightning.Runner] and use it for debugging.
 
-Use [`LitAgentRunner.run_context`][agentlightning.LitAgentRunner.run_context] to initialize and tear down all of that infrastructure without starting a trainer. The pattern below mirrors the `debug_with_runner` coroutine in `apo_debug.py`.
+If you are using [`@rollout`][agentlightning.rollout] or [`LitAgent`][agentlightning.LitAgent] to define your agent logic, both will produce a [`LitAgent`][agentlightning.LitAgent] instance. You can use [`LitAgentRunner`][agentlightning.LitAgentRunner] to run that agent in isolation. Firstly, to create a [`LitAgentRunner`][agentlightning.LitAgentRunner], you need to provide a [`Tracer`][agentlightning.Tracer] instance. [`LitAgentRunner`][agentlightning.LitAgentRunner] will not automatically create a [`Tracer`][agentlightning.Tracer] for you. For tutorials on how to create and use a [`Tracer`][agentlightning.Tracer], please refer to [Working with Traces](./traces.md) tutorial.
+
+[`Runner.run_context`][agentlightning.Runner.run_context] will initialize the [`Runner`][agentlightning.Runner] to a state that it's ready to run a particular agent function. To make this happen, other than the [`Tracer`][agentlightning.Tracer] and the agent, you also need to provide a [`LightningStore`][agentlightning.LightningStore] which is used to collected all the spans generated during the rollout. You can use [`InMemoryLightningStore`][agentlightning.InMemoryLightningStore] for debugging purpose, which keeps all the data in memory without any network calls.
+
+Putting it all together, we have:
 
 ```python
-from agentlightning.runner import LitAgentRunner
-from agentlightning.store import InMemoryLightningStore
-from agentlightning.tracer import OtelTracer
-from agentlightning.types import PromptTemplate
+import agentlightning as agl
 
-tracer = OtelTracer()
-runner = LitAgentRunner[str](tracer)
-store = InMemoryLightningStore()
-
-resource = PromptTemplate(template="You are a helpful assistant. {any_question}", engine="f-string")
+tracer = agl.OtelTracer()
+runner = agl.LitAgentRunner(tracer)
+store = agl.InMemoryLightningStore()
 
 with runner.run_context(agent=apo_rollout, store=store):
+    ...
+```
+
+Now let's talk about what can be done within the `run_context` block. The most important method is `runner.step(...)`, which executes a single rollout of the agent logic. You need to provide the input payload for the rollout as the argument of `runner.step(...)`. The input payload should match what your agent function expects. For example, if your agent function is defined as:
+
+```python
+with runner.run_context(agent=apo_rollout, store=store):
+    resource = agl.PromptTemplate(template="You are a helpful assistant. {any_question}", engine="f-string")
     rollout = await runner.step(
         "Explain why the sky appears blue using principles of light scattering in 100 words.",
         resources={"main_prompt": resource},
     )
-```
 
 - `run_context` guards the runner lifecycle. Under the hood it calls `init`, `init_worker`, and the matching teardown hooks so you get the same instrumentation you would inside a trainer-managed process.
 - `InMemoryLightningStore` keeps rollouts and spans local to the process. Swap in `LightningStoreClient` when you want to share state across processes.

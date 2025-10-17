@@ -123,6 +123,7 @@ jobs:
           . .venv/bin/activate
           cd examples/apo
           python apo_debug.py --mode runner
+          python apo_debug.py --mode hook
           python apo_debug.py --mode trainer
         env:
           # New versions follow OPENAI_BASE_URL instead of OPENAI_API_BASE
