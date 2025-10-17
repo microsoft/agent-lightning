@@ -28,7 +28,7 @@ The context manager then requests sequence numbers from the store, converts Open
 
 ### AgentOps Tracer
 
-[`AgentOpsTracer`][agentlightning.AgentOpsTracer] is the default tracer. It bootstraps the [AgentOps SDK](https://www.agentops.ai/) locally, installs the supplied instrumentation hooks (LangChain, LangGraph, LiteLLM, FastAPI, and others), and forwards everything through a local OpenTelemetry [`TracerProvider`](https://opentelemetry.io/docs/specs/otel/trace/api/). The tracer never calls the hosted AgentOps service; instead it attaches the `LightningSpanProcessor` so spans are captured and shipped straight into the store.
+[`AgentOpsTracer`][agentlightning.AgentOpsTracer] will be the default tracer when [`Trainer`][agentlightning.Trainer] is used but no tracer is explicitly specified. It bootstraps the [AgentOps SDK](https://www.agentops.ai/) locally, installs the supplied instrumentation hooks (LangChain, LangGraph, LiteLLM, FastAPI, and others) provided by [AgentOps Python SDK](https://github.com/AgentOps-AI/agentops), and forwards everything through a local OpenTelemetry [`TracerProvider`](https://opentelemetry.io/docs/specs/otel/trace/api/). The tracer never calls the hosted AgentOps service; instead it attaches the `LightningSpanProcessor` so spans are captured and shipped straight into the store.
 
 Because it shares the AgentOps instrumentation surface, any framework supported by AgentOps automatically gains tracing in Agent-lightning. We layer additional hooks on top of AgentOps to capture features that the SDK misses today:
 
