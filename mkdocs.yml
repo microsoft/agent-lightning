@@ -79,6 +79,7 @@ extra_javascript:
   - https://unpkg.com/mermaid@10.6.1/dist/mermaid.min.js
   - https://unpkg.com/chart.js@4.5.1/dist/chart.umd.min.js
   - javascripts/charts.js
+  - javascripts/move-source-file.js
 
 nav:
   - Home: index.md
