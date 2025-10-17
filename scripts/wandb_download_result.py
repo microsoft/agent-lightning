@@ -5,7 +5,7 @@ import json
 import math
 import sys
 from collections import defaultdict
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 import wandb
@@ -47,19 +47,13 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument(
         "--out",
-        default=None,
-        help="Optional path to write JSON. If omitted, prints to stdout.",
+        default="wandb_result.json",
+        help="Output file name. Default: 'wandb_result.json'",
     )
     p.add_argument(
         "--label-format",
         default="{run}:{metric}",
         help="Dataset label format. You can use {run} and {metric}. Default: '{run}:{metric}'",
-    )
-    p.add_argument(
-        "--max-history",
-        type=int,
-        default=None,
-        help="Optional cap on number of history rows fetched per run (uses W&B history samples).",
     )
     p.add_argument(
         "--strict",
@@ -69,12 +63,12 @@ def parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
-def fetch_runs(api: wandb.Api, entity: str, project: str, run_names: List[str]) -> Dict[str, wandb.apis.public.Run]:
+def fetch_runs(api: wandb.Api, entity: str, project: str, run_names: List[str]) -> Dict[str, wandb.Run]:
     """
     Fetch runs by displayName matching any in run_names.
     """
     name_set = set(run_names)
-    found: Dict[str, wandb.apis.public.Run] = {}
+    found: Dict[str, wandb.Run] = {}
 
     # W&B filtering supports 'displayName'
     # We fetch all runs in the project once, then pick matching ones to be robust across filters/backends.
@@ -95,6 +89,7 @@ def aggregate_history(df: pd.DataFrame, metrics: List[str], step: int) -> pd.Dat
     Given a history dataframe with '_step' and metric columns,
     aggregate by floor(_step/step)*step and average metric values per bin.
     """
+    print(df)
     if "_step" not in df.columns:
         raise ValueError("History dataframe missing required '_step' column.")
 
@@ -119,7 +114,7 @@ def aggregate_history(df: pd.DataFrame, metrics: List[str], step: int) -> pd.Dat
 def build_chartjs(
     per_run_metric_df: Dict[Tuple[str, str], pd.DataFrame],
     label_format: str,
-) -> Dict:
+) -> Dict[str, Any]:
     """
     Build a Chart.js line chart dataset:
       labels: union of all bins across runs (sorted)
@@ -153,7 +148,6 @@ def build_chartjs(
             "datasets": datasets,
         },
         "options": {
-            "responsive": True,
             "interaction": {"mode": "nearest", "intersect": False},
             "plugins": {
                 "legend": {"display": True, "position": "top"},
@@ -195,11 +189,8 @@ def main():
     for run_name, run in runs.items():
         # Ask W&B for specific keys plus _step; cap history if requested
         keys = list(dict.fromkeys(["_step"] + args.metrics))
-        try:
-            hist = run.history(keys=keys, pandas=True, max_rows=args.max_history)
-        except TypeError:
-            # Older wandb doesn't support max_rows
-            hist = run.history(keys=keys, pandas=True)
+        hist = run.history(keys=keys, pandas=True)
+        print(hist)
 
         if hist is None or hist.empty:
             msg = f"No history for run '{run_name}'."
@@ -224,11 +215,7 @@ def main():
         hist["_step"] = hist["_step"].astype(int)
 
         # Aggregate once for all metrics, then split per metric view
-        try:
-            grouped = aggregate_history(hist, args.metrics, args.step)
-        except ValueError as e:
-            print(f"::warning::Run '{run_name}': {e}; skipping.", file=sys.stderr)
-            continue
+        grouped = aggregate_history(hist, args.metrics, args.step)
 
         for metric in args.metrics:
             if metric not in grouped.columns:
