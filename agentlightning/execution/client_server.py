@@ -101,9 +101,10 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
             if role_env is None:
                 # Use both if not specified via env var or argument
                 role = "both"
-            if role_env not in ("algorithm", "runner", "both"):
+            elif role_env not in ("algorithm", "runner", "both"):
                 raise ValueError("role must be one of 'algorithm', 'runner', or 'both'")
-            role = role_env
+            else:
+                role = role_env
 
         if server_host is None:
             server_host = os.getenv("AGL_SERVER_HOST", "localhost")
