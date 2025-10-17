@@ -313,6 +313,14 @@ Provide `--active-agent my_agent_variant` if you only want to train one of the a
 
 For the LLaMA profile, export an `HF_TOKEN` before running so VERL can download the model weights.
 
+!!! tip "Troubleshooting"
+
+    If you have got some Ray worker errors on either `WANDB_API_KEY` not set, or `HF_TOKEN` not set, or data not found, please try to restart the Ray cluster with the helper script: [scripts/restart_ray.sh]({{ config.repo_url }}/tree/{{ config.extra.source_commit }}/scripts/restart_ray.sh), which essentially stops the ray cluster if any, and starts a new one:
+
+    ```bash
+    env RAY_DEBUG=legacy HYDRA_FULL_ERROR=1 VLLM_USE_V1=1 ray start --head --dashboard-host=0.0.0.0
+    ```
+
 ### Debugging the Agent without VERL
 
 [`sql_agent.py`]({{ config.repo_url }}/tree/{{ config.extra.source_commit }}/examples/spider/sql_agent.py) also provides a `debug_sql_agent()` helper to run the LangGraph workflow directly against a local or hosted OpenAI-compatible endpoint before using VERL.
