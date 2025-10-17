@@ -97,7 +97,6 @@ def aggregate_history(df: pd.DataFrame, metrics: List[str], step: int) -> pd.Dat
     Given a history dataframe with '_step' and metric columns,
     aggregate by floor(_step/step)*step and average metric values per bin.
     """
-    print(df)
     if "_step" not in df.columns:
         raise ValueError("History dataframe missing required '_step' column.")
 
