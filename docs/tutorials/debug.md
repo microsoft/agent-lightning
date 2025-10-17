@@ -21,7 +21,7 @@ with runner.run_context(agent=apo_rollout, store=store):
     ...
 ```
 
-Inside the `run_context` block you can call [`runner.step(...)`][agentlightning.Runner.step] to execute a single rollout. The payload includes the task input and any [`NamedResources`][agentlightning.NamedResources] the agent expects. Read [introduction to Resources][introduction-to-resources] and [NamedResources][introduction-to-named-resources] for more details. For example, if your agent references a [`PromptTemplate`][agentlightning.PromptTemplate], pass it through the `resources` argument:
+Inside the [`run_context`][agentlightning.Runner.run_context] block you can call [`runner.step(...)`][agentlightning.Runner.step] to execute a single rollout. The payload includes the task input and any [`NamedResources`][agentlightning.NamedResources] the agent expects. Read [introduction to Resources][introduction-to-resources] and [NamedResources][introduction-to-named-resources] for more details. For example, if your agent references a [`PromptTemplate`][agentlightning.PromptTemplate], pass it through the `resources` argument:
 
 ```python
 with runner.run_context(agent=apo_rollout, store=store):
@@ -153,34 +153,52 @@ Just like [`Runner.run_context`][agentlightning.Runner.run_context], [`Trainer.d
 
 The only limitation is that resources remain static and components like [`LLMProxy`][agentlightning.LLMProxy] are not wired in. For richer dry runs you can subclass [`FastAlgorithm`][agentlightning.FastAlgorithm] and override the pieces you care about.
 
-## Debug the Algorithm/Runner Boundary
+## Debug the Algorithm-Runner Boundary
 
-In this rest of this document, we will explore a bit more on **debugging an algorithm**. Because most algorithms are stateful, debugging algorithms are not as straightforward as debugging the agent. It's also not straightforward to mock an agent to cooperate with the algorithm, which makes even the simplest case of debugging an algorithm quite costly.
+Debugging algorithms in Agent-Lightning is often more challenging than debugging agents. Algorithms are typically **stateful** and depend on several moving parts — runners, stores, and trainers — which makes it difficult to isolate and inspect their behavior. Even mocking an agent to cooperate with an algorithm can be costly and error-prone. To simplify this, Agent-Lightning provides a way to run algorithms in isolation so you can attach a debugger and inspect internal state without interference from other components.
 
-Nevertheless, we seek to provide a way to run algorithms in isolation, so that users can attach a debugger and inspect its internal state. By default, [`Trainer.fit`][agentlightning.Trainer.fit] does run the algorithm in the main process and main thread, but the logs of algorithms, stores, and runners and mixed up and it's difficult to see what's going with the algorithm. In [Write Your First Algorithm](../how-to/write-first-algorithm.md), we have explored standing up the store, algorithm, and runner in isolation when you own the algorithm implementation, but that tutorial did not cover:
+By default, [`Trainer.fit`][agentlightning.Trainer.fit] runs the algorithm in the main process and thread, but its logs are interleaved with those from the store and runners, making it hard to follow what’s happening inside the algorithm itself. In [*Write Your First Algorithm*](../how-to/write-first-algorithm.md), we covered how to stand up a store, algorithm, and runner in isolation for your own implementations. This section extends that approach to cover two common questions:
 
-1. How to run built-in algorithms or class-based algorithms that inherit from [`Algorithm`][agentlightning.Algorithm] in isolation?
-2. What if you still want to use [`Trainer`][agentlightning.Trainer] features such as `n_runners`, `adapter`, or `llm_proxy`? Many algorithms, especially the built-in ones, are not very straightforward to run standalone without the [`Trainer`][agentlightning.Trainer] infrastructure; not to mention how to spawn the multiple runners.
+1. How can I run built-in or class-based algorithms (inheriting from [`Algorithm`][agentlightning.Algorithm]) in isolation?
+2. How can I still use [`Trainer`][agentlightning.Trainer] features like `n_runners`, `adapter`, or `llm_proxy` while debugging?
 
-Below are the steps to follow to solve the above problems. You can still use a [`Trainer`][agentlightning.Trainer] instance to run the algorithm, but instead of letting the [`Trainer`][agentlightning.Trainer] manage the store for you, you create a store on your own, and run [algorithm bundle](./parallelize.md) and [runner bundle](./parallelize.md) separately.
+The solution is to keep using a [`Trainer`][agentlightning.Trainer] instance but **manage the store yourself**, running the algorithm and runner roles separately. This approach mirrors the internal process orchestration of [`Trainer.fit`][agentlightning.Trainer.fit], but with more visibility and control. Below, we show a step-by-step guide to achieve this with the [`calc_agent` example]({{ src("examples/calc_x/train_calc_agent.py") }}).
 
-1. Launch the store manually. In a separate terminal run `agl store`, then create a [`LightningStoreClient`][agentlightning.LightningStoreClient] in your training script and pass it as `store=client` when you instantiate the trainer. Set `AGL_MANAGED_STORE=0` so the trainer does not try to manage the store for you.
-2. Start the runner and algorithm roles in their own terminals. Each process runs the same training script but with different environment variables. This mirrors the separation that `Trainer.fit` normally orchestrates.
-3. Continue using your existing trainer configuration (datasets, adapters, proxies, etc.). Because the store is external and the roles are explicit, you can attach debuggers, add logging, or even simulate failures in one component at a time.
-
-Example commands with [`train_calc_agent.py`]({{ src("examples/calc_x/train_calc_agent.py") }}):
+**1. Launch the store manually.**
+In a separate terminal, start the store:
 
 ```bash
-# In Terminal 1
 agl store --port 4747
+```
 
-# In Terminal 2
+Then, in your training script, create a [`LightningStoreClient`][agentlightning.LightningStoreClient] and pass it to the trainer:
+
+```python
+client = agl.LightningStoreClient("http://localhost:4747")
+trainer = agl.Trainer(store=client, ...)
+```
+
+Set the environment variable `AGL_MANAGED_STORE=0` so the trainer doesn't attempt to manage the store automatically.
+
+**2. Start the runner and algorithm processes separately.**
+Each process should run the same training script, but with different environment variables specifying the current role.
+This setup faithfully mirrors how [`Trainer.fit`][agentlightning.Trainer.fit] orchestrates these components behind the scenes.
+
+```bash
+# Terminal 2 – Runner process
 AGL_MANAGED_STORE=0 AGL_CURRENT_ROLE=runner \
     python train_calc_agent.py --external-store-address http://localhost:4747 --val-file data/test_mini.parquet
 
-# In Terminal 3
+# Terminal 3 – Algorithm process
 AGL_MANAGED_STORE=0 AGL_CURRENT_ROLE=algorithm \
     python train_calc_agent.py --external-store-address http://localhost:4747 --val-file data/test_mini.parquet
 ```
 
-This setup faithfully reproduces the algorithm/runner boundary while leaving the store visible for inspection. Once the issue is resolved you can flip `AGL_MANAGED_STORE` back on and return to the fully managed experience.
+**3. Reuse your existing trainer configuration.**
+You can continue using the same datasets, adapters, and proxies as usual. Because the store is now external, you can:
+
+* Attach debuggers to either the algorithm or runner process
+* Add fine-grained logging or tracing
+* Simulate partial failures or latency in individual components
+
+This setup provides a faithful reproduction of the algorithm–runner interaction while keeping the store visible for inspection. Once you’ve resolved the issue, simply set `AGL_MANAGED_STORE=1` (or omit it) to return to the standard managed training workflow.
