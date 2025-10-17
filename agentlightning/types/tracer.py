@@ -342,17 +342,25 @@ class SpanNames(str, Enum):
     """
 
     REWARD = "agentlightning.reward"
+    """The name of the reward span."""
     MESSAGE = "agentlightning.message"
+    """The name of the message span."""
     OBJECT = "agentlightning.object"
+    """The name of the object span."""
     EXCEPTION = "agentlightning.exception"
+    """The name of the exception span."""
     VIRTUAL = "agentlightning.virtual"
+    """The name of the virtual span. It's used to represent a span
+    that is not associated with any real operations."""
 
 
 class SpanAttributeNames(str, Enum):
     """Standard attribute names for AgentLightning spans."""
 
     MESSAGE = "message"
+    """The name of the message attribute."""
     OBJECT = "object"
+    """The name of the object attribute."""
 
 
 SpanLike = Union[ReadableSpan, Span]

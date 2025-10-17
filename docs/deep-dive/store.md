@@ -164,6 +164,10 @@ For production you will likely want persistence. We’re actively building a SQL
 
 **[`LightningStoreServer`][agentlightning.LightningStoreServer]** wraps another underlying store and runs a FastAPI app to expose the store API over HTTP. [`LightningStoreClient`][agentlightning.LightningStoreClient] is a small [`LightningStore`][agentlightning.LightningStore] implementation that talks to the HTTP API.
 
+!!! warning
+
+    The server HTTP API is not considered a stable API at this moment. Users are encouraged to use the [`LightningStoreClient`][agentlightning.LightningStoreClient] to communicate with the server as a stable interface.
+
 The server tracks the creator PID. In the owner process it delegates directly to the in-memory store; in other processes it lazily constructs a [`LightningStoreClient`][agentlightning.LightningStoreClient] to talk to the HTTP API. This prevents accidental cross-process mutation of the wrong memory image. When the server is pickled (e.g., via `multiprocessing`), only the minimal fields are serialized, but **NOT** the FastAPI/uvicorn objects. Subprocesses won’t accidentally carry live server state. Forked subprocess should also use [`LightningStoreClient`][agentlightning.LightningStoreClient] to communicate with the server in the main process.
 
 On the client side, the client retries network/5xx failures using a small backoff, and probes `/health` between attempts. Application exceptions inside the server are wrapped as HTTP 400 with a traceback—these are **not retried**. The client also maintains a **per-event-loop** `aiohttp.ClientSession` map so that tracer callbacks (often on separate loops/threads) don’t hang by reusing a session from another loop.

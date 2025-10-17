@@ -56,9 +56,11 @@ Swap in an [`AgentOpsTracer`][agentlightning.AgentOpsTracer] instead of [`OtelTr
 ]
 ```
 
-!!! note
+!!! tip
 
-    [`Runner.step`][agentlightning.Runner.step] executes a full rollout even though it is named "step". The companion method [`Runner.iter`][agentlightning.Runner.iter] executes multiple "steps" by continuously pulling new rollout inputs from the store until a stop event is set. Use `iter` once you are confident the single-step path works and you have another worker [`enqueue_rollout`][agentlightning.LightningStore.enqueue_rollout] to the store.
+    Spans too difficult to read? Try using [`Adapter`][agentlightning.Adapter] to convert them into a [more readable format](./traces.md).
+
+[`Runner.step`][agentlightning.Runner.step] executes a full rollout even though it is named "step". The companion method [`Runner.iter`][agentlightning.Runner.iter] executes multiple "steps" by continuously pulling new rollout inputs from the store until a stop event is set. Use `iter` once you are confident the single-step path works and you have another worker [`enqueue_rollout`][agentlightning.LightningStore.enqueue_rollout] to the store.
 
 !!! tip
 
