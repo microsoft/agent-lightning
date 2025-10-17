@@ -1,5 +1,7 @@
 # Working with Traces
 
+Tracer is the secret sauce that enables Agent-lightning to train ANY AI agents.
+
 ## Writing Traces
 
 ### AgentOps Tracer
