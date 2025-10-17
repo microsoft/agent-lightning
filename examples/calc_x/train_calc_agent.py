@@ -20,10 +20,10 @@ Then run the training script with the external store address:
 AGL_MANAGED_STORE=0 python train_calc_agent.py --external-store-address http://localhost:9999
 ```
 
-You can also run algorithms and runners separately if needed:
+Alternatively, you can also run algorithms and runners separately if needed:
 
 ```bash
-AGL_MANAGED_STORE=0 AGL_CURRENT_ROLE=algo python train_calc_agent.py --external-store-address http://localhost:9999
+AGL_MANAGED_STORE=0 AGL_CURRENT_ROLE=algorithm python train_calc_agent.py --external-store-address http://localhost:9999
 AGL_MANAGED_STORE=0 AGL_CURRENT_ROLE=runner python train_calc_agent.py --external-store-address http://localhost:9999
 ```
 """

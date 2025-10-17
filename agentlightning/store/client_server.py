@@ -753,8 +753,9 @@ class LightningStoreClient(LightningStore):
         except Exception as e:
             if self._dequeue_was_successful:
                 if self._dequeue_first_unsuccessful:
-                    logger.error(f"dequeue_rollout failed with exception: {e}", exc_info=True)
+                    logger.warning(f"dequeue_rollout failed with exception: {e}")
                     self._dequeue_first_unsuccessful = False
+            logger.debug("dequeue_rollout failed with exception. Details:", exc_info=True)
             # Else ignore the exception because the server is not ready yet
             return None
 
