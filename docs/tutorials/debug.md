@@ -1,6 +1,6 @@
 # Debugging and Troubleshooting
 
-Debugging an agent workflow is much easier when you can peel back the layers: run the rollout logic in isolation, dry-run the trainer loop, then exercise the full algorithm and runner stack. The [`examples/apo/apo_debug.py`]({{ src("examples/apo/apo_debug.py") }}) script showcases these techniques in a compact form. This guide breaks them down and explains when to reach for each tool.
+If you are training your own agent with Agent-lightning, a majority of the bugs come from the agent is not robust enough or simply buggy. Debugging an agent workflow is much easier when you can peel back the layers: run the rollout logic in isolation, dry-run the trainer loop, then exercise the full algorithm and runner stack. The [`examples/apo/apo_debug.py`]({{ src("examples/apo/apo_debug.py") }}) script showcases these techniques in a compact form. This guide breaks them down and explains when to reach for each tool.
 
 ## Using [`Runner`][agentlightning.Runner] in Isolation
 
@@ -66,11 +66,15 @@ If [`AgentOpsTracer`][agentlightning.AgentOpsTracer] replaces the [`OtelTracer`]
 
 ## Hook into Runner's Lifecycle
 
-
+TBD: write this section based on apo_debug.py with hooks.
 
 ## Dry-Run the Trainer Loop
 
 Once single rollouts behave, switch to the trainer’s dry-run mode. `Trainer.dev` spins up a lightweight fast algorithm ([`agentlightning.Baseline`][agentlightning.Baseline] by default) so you can exercise the same infrastructure as `Trainer.fit` without standing up complex algorithm stacks like RL or SFT.
+
+!!! note
+
+    A major difference between this method and the previous approaches is that with the `n_runners` parameter being set up, it's not easy to attach a debugger like `pdb` to the agent. You might be able to do so in some cases when `n_runners` is set to 1, but it's not guaranteed that one runner will be executed in the main process and main thread.
 
 ```python
 import agentlightning as agl
@@ -121,13 +125,15 @@ The only differences might be that the resources are still static, and features 
 
 ## Debug the Algorithm/Runner Boundary
 
-Many issues surface once the optimisation algorithm and runners have to coordinate through the store. The `apo_custom_algorithm.py` example demonstrates how to debug that interaction in three separate processes: store, algorithm, and runner.
+TBD: complete this section based on the draft.
 
-- **Use a real store implementation.** Instantiate `LightningStoreClient("http://localhost:4747")` so the algorithm and runners talk to the same persistence layer that `Trainer` would manage.
-- **Add and consume resources explicitly.** The algorithm updates resources with `store.add_resources(...)` before enqueuing a rollout. This mirrors what `Trainer` does on your behalf during `fit`, so bugs here usually point to mismatched resource names or payload types.
-- **Poll for rollout completion.** `store.wait_for_rollouts(...)` gives you a simple loop that surfaces when runners fail to pick up tasks. If the wait times out, inspect runner logs or run `runner.step` manually to reproduce the failure case.
-- **Inspect spans and rewards.** Helpers like `log_llm_span` and `find_final_reward` illustrate how to introspect the traces that flow through the store. Keeping these utilities in your algorithm process makes it easier to label “bad” runs for replay in `runner.step`.
+We've seen how to run store, algorithm and runner in isolation with customized algorithm in ../how-to/write-first-algorithm.md. but in reality, it's more difficult to doing so when you are using a built-in algorithm based on [`Algorithm`][agentlightning.Algorithm] class, especially when you still want to use the configuration options like `n_runners`, `adapter`, `llm_proxy` in Trainer. Initializing the algorithm and runner on your own and manages the process is possible but it's non trivial and not recommended.
 
-!!! warning
+Run store in isolation: `agl store` in another terminal and initialize a `LightningStoreClient` before initializing the Trainer. put the store as `store=client` in Trainer init. Set `AGL_MANAGED_STORE=0` in environment variables.
 
-    Avoid mixing debug modes in the same Python process unless you are sure the tracer backend can handle multiple initialisations. The CLI in `apo_debug.py` runs either the runner workflow or the trainer workflow, not both sequentially.
+Then in two terminals, launch the same script with different environment variables: `AGL_CURRENT_ROLE=algorithm` and `AGL_CURRENT_ROLE=runner`
+
+The following is an example:
+
+AGL_MANAGED_STORE=0 AGL_CURRENT_ROLE=runner python train_calc_agent.py --external-store-address http://localhost:4747 --val-file data/test_mini.parquet
+AGL_MANAGED_STORE=0 AGL_CURRENT_ROLE=algorithm python train_calc_agent.py --external-store-address http://localhost:4747 --val-file data/test_mini.parquet
