@@ -8,13 +8,7 @@ function toRGBA(color, a = 1) {
   if (!color) return `rgba(0,0,0,${a})`;
   const m = color.match(/^#?([\da-f]{3}|[\da-f]{6})$/i);
   if (m) {
-    const hex =
-      m[1].length === 3
-        ? m[1]
-            .split("")
-            .map((x) => x + x)
-            .join("")
-        : m[1];
+    const hex = m[1].length === 3 ? m[1].split("").map((x) => x + x).join("") : m[1];
     const r = parseInt(hex.slice(0, 2), 16);
     const g = parseInt(hex.slice(2, 4), 16);
     const b = parseInt(hex.slice(4, 6), 16);
@@ -27,8 +21,7 @@ function toRGBA(color, a = 1) {
 
 // ---- Theme defaults (pulled from MkDocs Material CSS vars) ---------------
 function applyThemeDefaults() {
-  const font =
-    matVar("--md-text-font").replace(/['"]/g, "") || "Roboto, sans-serif";
+  const font = matVar("--md-text-font").replace(/['"]/g, "") || "Roboto, sans-serif";
   const text = matVar("--md-default-fg-color") || "#1f2937";
   const border = matVar("--md-typeset-border-color") || "rgba(0,0,0,.12)";
   const bg = "#777777";
@@ -45,11 +38,10 @@ function applyThemeDefaults() {
   Chart.defaults.plugins.legend.labels.color = text;
   Chart.defaults.plugins.tooltip.titleColor = text;
   Chart.defaults.plugins.tooltip.bodyColor = text;
-  Chart.defaults.plugins.tooltip.backgroundColor = toRGBA(bg, 0.3);
+  Chart.defaults.plugins.tooltip.backgroundColor = toRGBA(bg, 0.5);
   Chart.defaults.plugins.tooltip.borderColor = border;
   Chart.defaults.plugins.tooltip.borderWidth = 1;
 
-  // Sensible global behavior
   Chart.defaults.responsive = true;
   Chart.defaults.maintainAspectRatio = false;
   if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
@@ -62,18 +54,15 @@ const colorScheme = ["#c45259", "#5276c4", "#f69047", "#7cc452", "#c2b00a"];
 
 function applyDatasetDefaults(config) {
   if (!config.data || !Array.isArray(config.data.datasets)) return;
-
   config.data.datasets = config.data.datasets.map((ds, index) => {
     const color = colorScheme[index % colorScheme.length];
-
-    const result = {
+    return {
       ...ds,
       borderColor: toRGBA(color, 0.8),
       backgroundColor: toRGBA(color, 0.3),
       pointBackgroundColor: color,
       pointBorderColor: color,
     };
-    return result;
   });
 }
 
@@ -93,9 +82,6 @@ function deepMerge(target, src) {
 
 // ---- Build final config for a canvas ------------------------------------
 function buildConfig(baseCfg) {
-  const type = (baseCfg.type || "").toLowerCase();
-
-  // site-wide chart defaults
   const globalDefaults = {
     options: {
       responsive: true,
@@ -111,61 +97,91 @@ function buildConfig(baseCfg) {
       animations: {
         y: {
           from: (ctx) => 300,
-          duration: 800,
+          duration: 1500,
           easing: "easeOutCubic",
         },
-        // optional little point fade-in
         radius: {
           from: 0,
           to: 3,
           duration: 300,
-          delay: (ctx) => ctx.dataIndex * 100,
+          delay: (ctx) => ctx.dataIndex * 30,
         },
       },
-      // subtle curve looks nicer with draw-in
       elements: { line: { tension: 0.3 } },
     },
   };
-
   const merged = deepMerge({}, globalDefaults);
   applyDatasetDefaults(baseCfg);
   deepMerge(merged, baseCfg); // user config wins
-  console.log(merged);
   return merged;
 }
 
 (function () {
-  const registry = new WeakMap(); // canvas -> chart
+  // registry stores per-canvas state: { chart, cfg }
+  const registry = new WeakMap(); // canvas -> { chart, cfg }
+
+  // IntersectionObserver to (re)animate when visible
+  const io = new IntersectionObserver(
+    (entries) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+
+        const canvas = entry.target;
+        const state = registry.get(canvas);
+        if (!state || !state.cfg) return;
+
+        // Respect reduced-motion: if disabled, just update without animation
+        const prefersReduced =
+          window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+        // Destroy & rebuild to guarantee a fresh animation
+        if (state.chart) {
+          try {
+            state.chart.destroy();
+          } catch (_) {}
+        }
+        const ctx = canvas.getContext("2d");
+        const cfg = buildConfig(JSON.parse(JSON.stringify(state.cfg)));
+
+        // If reduced motion, skip animations
+        if (prefersReduced) {
+          cfg.options = cfg.options || {};
+          cfg.options.animation = false;
+        }
+
+        state.chart = new Chart(ctx, cfg);
+        registry.set(canvas, state);
+      });
+    },
+    { threshold: 0.3 } // animate when ~30% visible
+  );
 
   // ---- Render all canvases with data-chart JSON ---------------------------
   function renderAll() {
     document.querySelectorAll("canvas[data-chart]").forEach((canvas) => {
-      if (registry.get(canvas)) return; // already initialized
-
-      let cfg;
+      let parsedCfg;
       try {
-        cfg = JSON.parse(canvas.getAttribute("data-chart"));
+        parsedCfg = JSON.parse(canvas.getAttribute("data-chart"));
       } catch (e) {
         console.error("Invalid data-chart JSON:", e, canvas);
         return;
       }
 
-      const ctx = canvas.getContext("2d");
-
-      const finalCfg = buildConfig(cfg);
-      const chart = new Chart(ctx, finalCfg);
-      registry.set(canvas, chart);
+      // store config; chart will be created by IntersectionObserver when visible
+      if (!registry.get(canvas)) {
+        registry.set(canvas, { chart: null, cfg: parsedCfg });
+        io.observe(canvas);
+      }
     });
   }
 
   // ---- Retheme on scheme/primary/accent change ----------------------------
   function retheme() {
     applyThemeDefaults();
-    registry.forEach?.((chart) => chart.update("none"));
-    // Fallback for browsers without WeakMap iteration support:
+    // Update visible charts without forcing animation
     document.querySelectorAll("canvas[data-chart]").forEach((c) => {
-      const ch = registry.get(c);
-      if (ch) ch.update("none");
+      const state = registry.get(c);
+      if (state?.chart) state.chart.update("none");
     });
   }
 
@@ -182,11 +198,7 @@ function buildConfig(baseCfg) {
   }
 
   // Observe theme flips. Attributes might be on <html> or <body>.
-  const attrs = [
-    "data-md-color-scheme",
-    "data-md-color-primary",
-    "data-md-color-accent",
-  ];
+  const attrs = ["data-md-color-scheme", "data-md-color-primary", "data-md-color-accent"];
   const obs = new MutationObserver(retheme);
   obs.observe(document.documentElement, {
     attributes: true,
@@ -194,12 +206,11 @@ function buildConfig(baseCfg) {
     subtree: true,
   });
 
-  // Re-render on SPA navigations (Material)
+  // Re-scan on SPA navigations (Material)
   if (typeof document$ !== "undefined" && document$.subscribe) {
     document$.subscribe(() => {
-      // new canvases may appear after navigation
-      renderAll();
-      retheme();
+      renderAll(); // new canvases
+      retheme();   // keep colors in sync
     });
   }
 })();
