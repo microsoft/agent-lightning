@@ -732,9 +732,9 @@ def test_execute_runner_success_closes_client() -> None:
         LightningStoreClient.close = patched_close  # type: ignore[assignment]
         dummy_store = DummyLightningStore({})
         asyncio.run(
-            strat._execute_runner(
+            strat._execute_runner(  # pyright: ignore[reportPrivateUsage]
                 _noop_runner, worker_id=0, store=dummy_store, stop_evt=DummyEvt()
-            )  # pyright: ignore[reportPrivateUsage]
+            )
         )
     finally:
         LightningStoreClient.close = orig_close  # type: ignore[assignment]
@@ -787,9 +787,9 @@ def test_execute_runner_keyboardinterrupt_sets_stop_and_propagates() -> None:
     dummy_store = DummyLightningStore({})
     with pytest.raises(KeyboardInterrupt):
         asyncio.run(
-            strat._execute_runner(
+            strat._execute_runner(  # pyright: ignore[reportPrivateUsage]
                 _kbint_in_runner, worker_id=0, store=dummy_store, stop_evt=evt
-            )  # pyright: ignore[reportPrivateUsage]
+            )
         )
     assert evt.is_set()
 
