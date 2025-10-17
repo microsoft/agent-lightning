@@ -1,5 +1,33 @@
 # Copyright (c) Microsoft. All rights reserved.
 
+"""The training helper script for Calc-X agent with VERL algorithm.
+
+Example usage:
+
+```bash
+python train_calc_agent.py --train-file data/train.parquet --val-file data/test.parquet --llm-proxy
+```
+
+To use an external store, run a store server first:
+
+```bash
+agl store --port 9999
+```
+
+Then run the training script with the external store address:
+
+```bash
+AGL_MANAGED_STORE=0 python train_calc_agent.py --external-store-address http://localhost:9999
+```
+
+You can also run algorithms and runners separately if needed:
+
+```bash
+AGL_MANAGED_STORE=0 AGL_CURRENT_ROLE=algo python train_calc_agent.py --external-store-address http://localhost:9999
+AGL_MANAGED_STORE=0 AGL_CURRENT_ROLE=runner python train_calc_agent.py --external-store-address http://localhost:9999
+```
+"""
+
 import argparse
 import os
 from datetime import datetime
@@ -70,7 +98,16 @@ def verl_default_config() -> Dict[str, Any]:
     }
 
 
-def train(*, train_file: str, val_file: str, model: Optional[str], llm_proxy: bool, ci: bool, n_runners: int):
+def train(
+    *,
+    train_file: str,
+    val_file: str,
+    model: Optional[str],
+    llm_proxy: bool,
+    ci: bool,
+    n_runners: int,
+    external_store_address: str,
+):
     """The training entrypoint function for Calc-X agent with VERL algorithm.
 
     Args:
@@ -80,6 +117,7 @@ def train(*, train_file: str, val_file: str, model: Optional[str], llm_proxy: bo
         llm_proxy: Whether to enable LLM Proxy tracing/adapter.
         ci: Whether to run a minimal CI-style training loop.
         n_runners: The number of runners for the Trainer.
+        external_store_address: Connects to an external store instead of creating a new one in memory.
     """
     # Load datasets (respect CLI file paths)
     train_dataset = cast(agl.Dataset[MathProblem], HuggingFaceDataset.from_parquet(train_file).to_list())
@@ -125,12 +163,17 @@ def train(*, train_file: str, val_file: str, model: Optional[str], llm_proxy: bo
 
     algorithm = agl.VERL(config)
 
+    if external_store_address:
+        store: Optional[agl.LightningStore] = agl.LightningStoreClient(external_store_address)
+    else:
+        store = None
+
     if llm_proxy:
         tracer = agl.OtelTracer()  # dummy tracer for LLM Proxy
         adapter = agl.LlmProxyTraceToTriplet()
-        trainer = agl.Trainer(algorithm=algorithm, n_runners=n_runners, tracer=tracer, adapter=adapter)
+        trainer = agl.Trainer(algorithm=algorithm, n_runners=n_runners, store=store, tracer=tracer, adapter=adapter)
     else:
-        trainer = agl.Trainer(algorithm=algorithm, n_runners=n_runners)
+        trainer = agl.Trainer(algorithm=algorithm, n_runners=n_runners, store=store)
 
     trainer.fit(calc_agent, train_dataset, val_dataset=val_dataset)
 
@@ -143,8 +186,22 @@ def main():
     parser.add_argument("--llm-proxy", action="store_true", help="Enable LLM Proxy tracing/adapter")
     parser.add_argument("--ci", action="store_true", help="Run a minimal CI-style training loop")
     parser.add_argument("--n-runners", type=int, default=10, help="Number of runners for Trainer")
+    parser.add_argument(
+        "--external-store-address",
+        type=str,
+        default="",
+        help="Connect to an external store instead of creating a new one in memory",
+    )
 
     args = parser.parse_args()
+
+    if args.external_store_address:
+        print(f"Connecting to external store at: {args.external_store_address}")
+        if not os.getenv("AGL_MANAGED_STORE"):
+            raise ValueError(
+                "When using an external store, please set the environment variable AGL_MANAGED_STORE=0. "
+                "Otherwise the trainer will still try to manage the store lifecycle for you!"
+            )
 
     train(
         train_file=args.train_file,
@@ -153,6 +210,7 @@ def main():
         llm_proxy=args.llm_proxy,
         ci=args.ci,
         n_runners=args.n_runners,
+        external_store_address=args.external_store_address,
     )
 
 
