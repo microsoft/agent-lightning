@@ -99,10 +99,12 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
         if role is None:
             role_env = os.getenv("AGL_CURRENT_ROLE")
             if role_env is None:
-                raise ValueError("role must be provided via argument or AGL_CURRENT_ROLE env var")
-            if role_env not in ("algorithm", "runner", "both"):
+                # Use both if not specified via env var or argument
+                role = "both"
+            elif role_env not in ("algorithm", "runner", "both"):
                 raise ValueError("role must be one of 'algorithm', 'runner', or 'both'")
-            role = role_env
+            else:
+                role = role_env
 
         if server_host is None:
             server_host = os.getenv("AGL_SERVER_HOST", "localhost")
@@ -173,16 +175,13 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
         self,
         runner: RunnerBundle,
         worker_id: int,
+        store: LightningStore,
         stop_evt: ExecutionEvent,
-        *,
-        store: LightningStore | None = None,
     ) -> None:
-        client_store: LightningStore | None
         if self.managed_store:
+            # If managed, we actually do not use the provided store
             client_store = LightningStoreClient(f"http://{self.server_host}:{self.server_port}")
         else:
-            if store is None:
-                raise ValueError("Runner store must be provided when managed_store is False")
             client_store = store
         try:
             if self.managed_store:
@@ -211,25 +210,23 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
     def _spawn_runners(
         self,
         runner: RunnerBundle,
+        store: LightningStore,
         stop_evt: ExecutionEvent,
         *,
         ctx: BaseContext,
-        store: LightningStore | None = None,
     ) -> list[multiprocessing.Process]:
         """Used when `role == "runner"` or `role == "both"` and `n_runners > 1`."""
         processes: list[multiprocessing.Process] = []
 
-        def _runner_sync(
-            runner: RunnerBundle, worker_id: int, stop_evt: ExecutionEvent, store: LightningStore | None
-        ) -> None:
+        def _runner_sync(runner: RunnerBundle, worker_id: int, store: LightningStore, stop_evt: ExecutionEvent) -> None:
             # Runners are executed in child processes; each process owns its own
             # event loop to keep the asyncio scheduler isolated.
-            asyncio.run(self._execute_runner(runner, worker_id, stop_evt, store=store))
+            asyncio.run(self._execute_runner(runner, worker_id, store, stop_evt))
 
         for i in range(self.n_runners):
             process = cast(
                 multiprocessing.Process,
-                ctx.Process(target=_runner_sync, args=(runner, i, stop_evt, store), name=f"runner-{i}"),  # type: ignore
+                ctx.Process(target=_runner_sync, args=(runner, i, store, stop_evt), name=f"runner-{i}"),  # type: ignore
             )
             process.start()
             logger.debug("Spawned runner process %s (pid=%s)", process.name, process.pid)
@@ -373,10 +370,10 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
             elif self.role == "runner":
                 if self.n_runners == 1:
                     logger.info("Running runner solely...")
-                    asyncio.run(self._execute_runner(runner, 0, stop_evt))
+                    asyncio.run(self._execute_runner(runner, 0, store, stop_evt))
                 else:
                     logger.info("Spawning runner processes...")
-                    processes = self._spawn_runners(runner, stop_evt, ctx=ctx)
+                    processes = self._spawn_runners(runner, store, stop_evt, ctx=ctx)
                     # Wait for the processes to finish naturally.
                     for process in processes:
                         process.join()
@@ -384,7 +381,7 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
             elif self.role == "both":
                 if self.main_process == "algorithm":
                     logger.info("Spawning runner processes...")
-                    processes = self._spawn_runners(runner, stop_evt, ctx=ctx)
+                    processes = self._spawn_runners(runner, store, stop_evt, ctx=ctx)
                     try:
                         logger.info("Running algorithm...")
                         asyncio.run(self._execute_algorithm(algorithm, store, stop_evt))
@@ -405,7 +402,7 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
                     # the background process spawned above (the provided
                     # store must therefore be picklable when using spawn).
                     logger.info("Running runner...")
-                    asyncio.run(self._execute_runner(runner, 0, stop_evt))
+                    asyncio.run(self._execute_runner(runner, 0, store, stop_evt))
 
                     # Wait for the algorithm process to finish.
                     algorithm_process.join()

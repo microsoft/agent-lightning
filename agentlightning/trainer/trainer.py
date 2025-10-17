@@ -240,7 +240,7 @@ class Trainer(TrainerLegacy):
         optional_defaults: Dict[str, Callable[[], Any]] = {"n_runners": lambda: n_runners}
 
         def default_factory() -> ExecutionStrategy:
-            return ClientServerExecutionStrategy(n_runners=n_runners, role="both")
+            return ClientServerExecutionStrategy(n_runners=n_runners)
 
         return build_component(
             strategy,
@@ -317,11 +317,17 @@ class Trainer(TrainerLegacy):
             val_dataset: The dataset to validate on.
         """
         if isinstance(train_dataset, str):
-            raise ValueError(
-                "Trainer.fit no longer accepts a string URL as of v0.2. "
+            logger.warning(
+                "Trainer.fit will no longer accepts a string URL in future version. "
                 "To continue using a string URL, please use Trainer.fit_v0 instead. "
                 "See documentation for how to migrate to latest version: https://microsoft.github.io/agent-lightning/stable/"
             )
+            return self.fit_v0(  # type: ignore
+                agent,
+                train_dataset,
+                val_dataset,  # type: ignore
+            )
+
         agent.set_trainer(self)
 
         algorithm_bundle = functools.partial(

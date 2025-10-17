@@ -114,12 +114,10 @@ def test_env_invalid_port(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_env_missing_role(monkeypatch: pytest.MonkeyPatch) -> None:
     _clear_env(monkeypatch)
-
-    with pytest.raises(
-        ValueError,
-        match="role must be provided via argument or AGL_CURRENT_ROLE env var",
-    ):
-        ClientServerExecutionStrategy()
+    # When role is None and env var is not set, it defaults to "both"
+    # So this test no longer applies - it should succeed
+    strat = ClientServerExecutionStrategy()
+    assert strat.role == "both"
 
 
 def test_env_managed_store(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -247,7 +245,8 @@ def test_execute_runner_managed_creates_and_closes_client(monkeypatch: pytest.Mo
         seen["store"] = store
         event.set()
 
-    asyncio.run(strat._execute_runner(runner, 0, DummyEvt()))  # pyright: ignore[reportPrivateUsage]
+    dummy_store = DummyLightningStore({})
+    asyncio.run(strat._execute_runner(runner, 0, dummy_store, DummyEvt()))  # pyright: ignore[reportPrivateUsage]
 
     client = seen["store"]
     assert isinstance(client, RecordingClient)
@@ -261,8 +260,9 @@ def test_execute_runner_unmanaged_requires_store() -> None:
     async def runner(store: LightningStore, worker_id: int, event: ExecutionEvent) -> None:
         _ = (store, worker_id, event)
 
-    with pytest.raises(ValueError, match="Runner store must be provided"):
-        asyncio.run(strat._execute_runner(runner, 0, DummyEvt()))  # pyright: ignore[reportPrivateUsage]
+    # When managed_store=False, a store must be provided via the store parameter
+    provided_store = DummyLightningStore({})
+    asyncio.run(strat._execute_runner(runner, 0, provided_store, DummyEvt()))  # pyright: ignore[reportPrivateUsage]
 
 
 def test_execute_runner_unmanaged_uses_provided_store() -> None:
@@ -282,7 +282,7 @@ def test_execute_runner_unmanaged_uses_provided_store() -> None:
         seen["store"] = store
         event.set()
 
-    asyncio.run(strat._execute_runner(runner, 1, DummyEvt(), store=provided))  # pyright: ignore[reportPrivateUsage]
+    asyncio.run(strat._execute_runner(runner, 1, provided, DummyEvt()))  # pyright: ignore[reportPrivateUsage]
 
     assert seen["store"] is provided
     assert provided.close_calls == 0
@@ -730,8 +730,11 @@ def test_execute_runner_success_closes_client() -> None:
     orig_close: Callable[[LightningStoreClient], Any] = LightningStoreClient.close  # type: ignore[attr-defined]
     try:
         LightningStoreClient.close = patched_close  # type: ignore[assignment]
+        dummy_store = DummyLightningStore({})
         asyncio.run(
-            strat._execute_runner(_noop_runner, worker_id=0, stop_evt=DummyEvt())  # pyright: ignore[reportPrivateUsage]
+            strat._execute_runner(  # pyright: ignore[reportPrivateUsage]
+                _noop_runner, worker_id=0, store=dummy_store, stop_evt=DummyEvt()
+            )
         )
     finally:
         LightningStoreClient.close = orig_close  # type: ignore[assignment]
@@ -757,10 +760,11 @@ def test_execute_runner_exception_sets_stop_and_closes_client() -> None:
     evt: DummyEvt = DummyEvt()
     try:
         LightningStoreClient.close = patched_close  # type: ignore[assignment]
+        dummy_store = DummyLightningStore({})
         with pytest.raises(RuntimeError, match="runner boom"):
             asyncio.run(
                 strat._execute_runner(  # pyright: ignore[reportPrivateUsage]
-                    _raise_in_runner, worker_id=7, stop_evt=evt
+                    _raise_in_runner, worker_id=7, store=dummy_store, stop_evt=evt
                 )
             )
     finally:
@@ -780,9 +784,12 @@ def test_execute_runner_keyboardinterrupt_sets_stop_and_propagates() -> None:
         terminate_timeout=0.05,
     )
     evt: DummyEvt = DummyEvt()
+    dummy_store = DummyLightningStore({})
     with pytest.raises(KeyboardInterrupt):
         asyncio.run(
-            strat._execute_runner(_kbint_in_runner, worker_id=0, stop_evt=evt)  # pyright: ignore[reportPrivateUsage]
+            strat._execute_runner(  # pyright: ignore[reportPrivateUsage]
+                _kbint_in_runner, worker_id=0, store=dummy_store, stop_evt=evt
+            )
         )
     assert evt.is_set()
 
@@ -797,10 +804,11 @@ def test_execute_runner_distinguishes_timeout_error() -> None:
         terminate_timeout=0.05,
     )
     evt: DummyEvt = DummyEvt()
+    dummy_store = DummyLightningStore({})
     with pytest.raises(TimeoutError, match="runner timeout"):
         asyncio.run(
             strat._execute_runner(  # pyright: ignore[reportPrivateUsage]
-                _timeout_error_in_runner, worker_id=0, stop_evt=evt
+                _timeout_error_in_runner, worker_id=0, store=dummy_store, stop_evt=evt
             )
         )
     assert evt.is_set()
@@ -819,9 +827,10 @@ def test_spawn_runners_creates_processes_and_they_exit_on_event() -> None:
     stop_evt: ExecutionEvent = MpEvent()
 
     def runner_sync() -> None:
+        dummy_store = DummyLightningStore({})
         asyncio.run(
             strat._execute_runner(  # pyright: ignore[reportPrivateUsage]
-                _runner_wait_for_stop, worker_id=0, stop_evt=stop_evt
+                _runner_wait_for_stop, worker_id=0, store=dummy_store, stop_evt=stop_evt
             )
         )
 

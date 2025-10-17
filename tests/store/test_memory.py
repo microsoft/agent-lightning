@@ -14,20 +14,28 @@ Test categories:
 """
 
 import asyncio
+import sys
 import time
-from typing import List
+from typing import List, Optional, cast
 from unittest.mock import Mock
 
 import pytest
+from pydantic import BaseModel
 
-from agentlightning.store.memory import InMemoryLightningStore
+from agentlightning.store.memory import InMemoryLightningStore, estimate_model_size
 from agentlightning.types import (
     LLM,
+    AttemptedRollout,
+    Event,
+    Link,
     PromptTemplate,
+    Resource,
     ResourcesUpdate,
     Rollout,
     RolloutConfig,
     Span,
+    SpanContext,
+    TraceStatus,
 )
 
 # Core CRUD Operations Tests
@@ -606,6 +614,172 @@ async def test_query_spans_by_attempt(inmemory_store: InMemoryLightningStore, mo
     # Query non-existent attempt
     no_spans = await inmemory_store.query_spans(rollout.rollout_id, attempt_id="nonexistent")
     assert len(no_spans) == 0
+
+
+@pytest.mark.asyncio
+async def test_span_eviction_removes_oldest_rollouts(mock_readable_span: Mock, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("agentlightning.store.memory._detect_total_memory_bytes", lambda: 100)
+    store = InMemoryLightningStore(
+        eviction_memory_threshold=0.5,
+        safe_memory_threshold=0.05,
+        span_size_estimator=lambda span: 20,
+    )
+
+    attempted_rollouts: List[AttemptedRollout] = []
+    for index in range(4):
+        attempted = await store.start_rollout(input={"index": index})
+        attempted_rollouts.append(attempted)
+        await store.add_otel_span(attempted.rollout_id, attempted.attempt.attempt_id, mock_readable_span)
+
+    for attempted in attempted_rollouts[:3]:
+        with pytest.raises(RuntimeError):
+            await store.query_spans(attempted.rollout_id)
+
+    remaining_spans = await store.query_spans(attempted_rollouts[3].rollout_id)
+    assert len(remaining_spans) == 1
+    assert remaining_spans[0].rollout_id == attempted_rollouts[3].rollout_id
+
+
+def test_memory_threshold_accepts_byte_values() -> None:
+    store = InMemoryLightningStore(
+        eviction_memory_threshold=150,
+        safe_memory_threshold=20,
+    )
+
+    assert store._eviction_threshold_bytes == 150  # pyright: ignore[reportPrivateUsage]
+    assert store._safe_threshold_bytes == 20  # pyright: ignore[reportPrivateUsage]
+
+
+def test_memory_threshold_accepts_ratios_with_zero_safe(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("agentlightning.store.memory._detect_total_memory_bytes", lambda: 200)
+    store = InMemoryLightningStore(
+        eviction_memory_threshold=0.6,
+        safe_memory_threshold=0.0,
+    )
+
+    assert store._eviction_threshold_bytes == int(200 * 0.6)  # pyright: ignore[reportPrivateUsage]
+    assert store._safe_threshold_bytes == 0  # pyright: ignore[reportPrivateUsage]
+
+
+def test_invalid_safe_threshold_raises_value_error() -> None:
+    with pytest.raises(ValueError):
+        InMemoryLightningStore(
+            eviction_memory_threshold=50,
+            safe_memory_threshold=100,
+        )
+
+
+def test_estimate_model_size_counts_nested_models() -> None:
+    class Inner(BaseModel):
+        value: int
+        data: List[int]
+
+    class Outer(BaseModel):
+        inner: Inner
+        mapping: dict[str, str]
+        tags: List[str]
+
+    inner = Inner(value=7, data=[1, 2, 3])
+    outer = Outer(inner=inner, mapping={"alpha": "beta"}, tags=["x", "yz"])
+
+    inner_expected = (
+        sys.getsizeof(inner)
+        + sys.getsizeof(inner.value)
+        + sys.getsizeof(inner.data)
+        + sum(sys.getsizeof(item) for item in inner.data)
+    )
+    assert estimate_model_size(inner) == inner_expected
+
+    mapping_expected = sys.getsizeof(outer.mapping) + sum(sys.getsizeof(v) for v in outer.mapping.values())
+    tags_expected = sys.getsizeof(outer.tags) + sum(sys.getsizeof(tag) for tag in outer.tags)
+    outer_expected = sys.getsizeof(outer) + inner_expected + mapping_expected + tags_expected
+    assert estimate_model_size(outer) == outer_expected
+
+
+def test_estimate_model_size_handles_span_objects() -> None:
+    status = TraceStatus(status_code="OK", description="fine")
+    context = SpanContext(trace_id="trace", span_id="parent", is_remote=False, trace_state={"foo": "bar"})
+    event = Event(name="step", attributes={"detail": "value"}, timestamp=1.0)
+    link = Link(context=context, attributes=None)
+    resource = Resource(attributes={"service.name": "unit"}, schema_url="schema")
+
+    span = Span(
+        rollout_id="ro-1",
+        attempt_id="at-1",
+        sequence_id=1,
+        trace_id="trace",
+        span_id="span",
+        parent_id=None,
+        name="operation",
+        status=status,
+        attributes={"foo": "bar", "answer": 42},
+        events=[event],
+        links=[link],
+        start_time=1.0,
+        end_time=2.0,
+        context=None,
+        parent=None,
+        resource=resource,
+    )
+
+    status_expected = sys.getsizeof(status) + sys.getsizeof(status.status_code) + sys.getsizeof(status.description)
+
+    trace_state_values = context.trace_state.values()
+    context_expected = (
+        sys.getsizeof(context)
+        + sys.getsizeof(context.trace_id)
+        + sys.getsizeof(context.span_id)
+        + sys.getsizeof(context.is_remote)
+        + sys.getsizeof(context.trace_state)
+        + sum(sys.getsizeof(v) for v in trace_state_values)
+    )
+
+    event_attributes_expected = sys.getsizeof(event.attributes) + sys.getsizeof("value")
+    event_expected = (
+        sys.getsizeof(event) + sys.getsizeof(event.name) + event_attributes_expected + sys.getsizeof(event.timestamp)
+    )
+    events_expected = sys.getsizeof(span.events) + event_expected
+
+    link_attributes = cast(Optional[dict[str, str]], link.attributes)
+    link_attribute_values = link_attributes.values() if link_attributes is not None else ()
+    link_attributes_expected = sys.getsizeof(link_attributes if link_attributes is not None else None) + sum(
+        sys.getsizeof(v) for v in link_attribute_values
+    )
+    link_expected = sys.getsizeof(link) + context_expected + link_attributes_expected
+    links_expected = sys.getsizeof(span.links) + link_expected
+
+    attributes_expected = (
+        sys.getsizeof(span.attributes) + sys.getsizeof("bar") + sys.getsizeof(span.attributes["answer"])
+    )
+
+    resource_expected = (
+        sys.getsizeof(resource)
+        + sys.getsizeof(resource.attributes)
+        + sum(sys.getsizeof(v) for v in resource.attributes.values())
+        + sys.getsizeof(resource.schema_url)
+    )
+
+    expected_size = (
+        sys.getsizeof(span)
+        + sys.getsizeof(span.rollout_id)
+        + sys.getsizeof(span.attempt_id)
+        + sys.getsizeof(span.sequence_id)
+        + sys.getsizeof(span.trace_id)
+        + sys.getsizeof(span.span_id)
+        + sys.getsizeof(span.parent_id)
+        + sys.getsizeof(span.name)
+        + status_expected
+        + attributes_expected
+        + events_expected
+        + links_expected
+        + sys.getsizeof(span.start_time)
+        + sys.getsizeof(span.end_time)
+        + sys.getsizeof(span.context)
+        + sys.getsizeof(span.parent)
+        + resource_expected
+    )
+
+    assert estimate_model_size(span) == expected_size
 
 
 @pytest.mark.asyncio

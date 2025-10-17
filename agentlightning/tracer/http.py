@@ -5,8 +5,8 @@ import logging
 import multiprocessing
 import queue
 import uuid
-from contextlib import contextmanager
-from typing import Any, Awaitable, Callable, Dict, Iterator, List, Optional, Tuple
+from contextlib import asynccontextmanager, contextmanager
+from typing import Any, AsyncGenerator, Awaitable, Callable, Dict, Iterator, List, Optional, Tuple
 from urllib.parse import urlparse
 
 from httpdbg.hooks.all import httprecord
@@ -78,8 +78,19 @@ class HttpTracer(Tracer):
         super().init_worker(worker_id)
         logger.info(f"[Worker {worker_id}] HttpTracer initialized.")
 
+    @asynccontextmanager
+    async def trace_context(self, name: Optional[str] = None, **kwargs: Any) -> AsyncGenerator[HTTPRecords, None]:
+        """
+        Starts a new HTTP tracing context. This should be used as a context manager.
+
+        Args:
+            name: Optional name for the tracing context.
+        """
+        with self._trace_context_sync(name=name, **kwargs) as records:
+            yield records
+
     @contextmanager
-    def trace_context(self, name: Optional[str] = None, **kwargs: Any) -> Iterator[HTTPRecords]:
+    def _trace_context_sync(self, name: Optional[str] = None, **kwargs: Any) -> Iterator[HTTPRecords]:
         """
         Starts a new HTTP tracing context. This should be used as a context manager.
 

@@ -2,8 +2,8 @@
 
 import asyncio
 import random
-from contextlib import contextmanager
-from typing import Any, Dict, Iterator, List, Optional, Sequence, cast
+from contextlib import asynccontextmanager
+from typing import Any, AsyncGenerator, Dict, List, Optional, Sequence, cast
 
 import pytest
 from opentelemetry import trace as trace_api
@@ -79,15 +79,15 @@ class DummyTracer(Tracer):
     def get_last_trace(self) -> List[ReadableSpan]:
         return list(self._last_trace)
 
-    @contextmanager
-    def trace_context(
+    @asynccontextmanager
+    async def trace_context(
         self,
         name: Optional[str] = None,
         *,
         store: Optional[LightningStore] = None,
         rollout_id: Optional[str] = None,
         attempt_id: Optional[str] = None,
-    ) -> Iterator[List[ReadableSpan]]:
+    ) -> AsyncGenerator[List[ReadableSpan], None]:
         previous = self._contexts[-1] if self._contexts else None
         current = {
             "name": name,

@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import logging
-from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Iterator, List, Optional
+from typing import TYPE_CHECKING, Any, AsyncContextManager, Awaitable, Callable, ContextManager, List, Optional
 
 from opentelemetry.sdk.trace import ReadableSpan
 
@@ -36,9 +35,9 @@ class Tracer(ParallelWorkerBase):
     tracer = YourTracerImplementation()
 
     try:
-        with tracer.trace_context(name="my_traced_task"):
+        async with tracer.trace_context(name="my_traced_task"):
             # ... code to be traced ...
-            run_my_agent_logic()
+            await run_my_agent_logic()
     except Exception as e:
         print(f"An error occurred: {e}")
 
@@ -52,7 +51,6 @@ class Tracer(ParallelWorkerBase):
     ```
     """
 
-    @contextmanager
     def trace_context(
         self,
         name: Optional[str] = None,
@@ -60,7 +58,7 @@ class Tracer(ParallelWorkerBase):
         store: Optional[LightningStore] = None,
         rollout_id: Optional[str] = None,
         attempt_id: Optional[str] = None,
-    ) -> Iterator[Any]:
+    ) -> AsyncContextManager[Any]:
         """
         Starts a new tracing context. This should be used as a context manager.
 
@@ -79,6 +77,17 @@ class Tracer(ParallelWorkerBase):
         """
         raise NotImplementedError()
 
+    def _trace_context_sync(
+        self,
+        name: Optional[str] = None,
+        *,
+        store: Optional[LightningStore] = None,
+        rollout_id: Optional[str] = None,
+        attempt_id: Optional[str] = None,
+    ) -> ContextManager[Any]:
+        """Internal API for CI backward compatibility."""
+        raise NotImplementedError()
+
     def get_last_trace(self) -> List[ReadableSpan]:
         """
         Retrieves the raw list of captured spans from the most recent trace.
@@ -92,6 +101,8 @@ class Tracer(ParallelWorkerBase):
         """
         A convenience wrapper to trace the execution of a single synchronous function.
 
+        Deprecated in favor of customizing Runners.
+
         Args:
             func: The synchronous function to execute and trace.
             *args: Positional arguments to pass to the function.
@@ -100,12 +111,14 @@ class Tracer(ParallelWorkerBase):
         Returns:
             The return value of the function.
         """
-        with self.trace_context(name=func.__name__):
+        with self._trace_context_sync(name=func.__name__):
             return func(*args, **kwargs)
 
     async def trace_run_async(self, func: Callable[..., Awaitable[Any]], *args: Any, **kwargs: Any) -> Any:
         """
         A convenience wrapper to trace the execution of a single asynchronous function.
+
+        Deprecated in favor of customizing Runners.
 
         Args:
             func: The asynchronous function to execute and trace.
@@ -115,7 +128,7 @@ class Tracer(ParallelWorkerBase):
         Returns:
             The return value of the function.
         """
-        with self.trace_context(name=func.__name__):
+        async with self.trace_context(name=func.__name__):
             return await func(*args, **kwargs)
 
     def get_langchain_handler(self) -> Optional[BaseCallbackHandler]:  # type: ignore

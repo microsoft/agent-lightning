@@ -364,7 +364,7 @@ class LitAgentRunner(Runner[T_task]):
             await self._trigger_hooks(hook_type="on_rollout_start", agent=agent, runner=self, rollout=next_rollout)
 
             start_time = time.time()
-            with self._tracer.trace_context(
+            async with self._tracer.trace_context(
                 name=rollout_id, store=store, rollout_id=rollout_id, attempt_id=next_rollout.attempt.attempt_id
             ):
                 await self._trigger_hooks(

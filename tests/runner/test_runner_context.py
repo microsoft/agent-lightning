@@ -1,7 +1,7 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-from contextlib import contextmanager
-from typing import Any, Dict, Iterator, List, Optional
+from contextlib import asynccontextmanager
+from typing import Any, AsyncGenerator, Dict, List, Optional
 
 import pytest
 from opentelemetry import trace as trace_api
@@ -54,15 +54,15 @@ class DummyTracer(Tracer):
     def get_last_trace(self) -> List[ReadableSpan]:
         return list(self._last_trace)
 
-    @contextmanager
-    def trace_context(
+    @asynccontextmanager
+    async def trace_context(
         self,
         name: Optional[str] = None,
         *,
         store: Optional[LightningStore] = None,
         rollout_id: Optional[str] = None,
         attempt_id: Optional[str] = None,
-    ) -> Iterator[List[ReadableSpan]]:
+    ) -> AsyncGenerator[List[ReadableSpan], None]:
         self._last_trace = []
         try:
             yield self._last_trace
