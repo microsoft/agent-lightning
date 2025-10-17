@@ -99,7 +99,8 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
         if role is None:
             role_env = os.getenv("AGL_CURRENT_ROLE")
             if role_env is None:
-                raise ValueError("role must be provided via argument or AGL_CURRENT_ROLE env var")
+                # Use both if not specified via env var or argument
+                role = "both"
             if role_env not in ("algorithm", "runner", "both"):
                 raise ValueError("role must be one of 'algorithm', 'runner', or 'both'")
             role = role_env

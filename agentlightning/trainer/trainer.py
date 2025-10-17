@@ -240,7 +240,7 @@ class Trainer(TrainerLegacy):
         optional_defaults: Dict[str, Callable[[], Any]] = {"n_runners": lambda: n_runners}
 
         def default_factory() -> ExecutionStrategy:
-            return ClientServerExecutionStrategy(n_runners=n_runners, role="both")
+            return ClientServerExecutionStrategy(n_runners=n_runners)
 
         return build_component(
             strategy,
