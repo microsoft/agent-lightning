@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft. All rights reserved.
+
 // ---- CSS helpers ---------------------------------------------------------
 function matVar(name) {
   return getComputedStyle(document.body).getPropertyValue(name).trim();
@@ -13,7 +15,6 @@ function toRGBA(color, a = 1) {
             .map((x) => x + x)
             .join("")
         : m[1];
-    console.log(hex);
     const r = parseInt(hex.slice(0, 2), 16);
     const g = parseInt(hex.slice(2, 4), 16);
     const b = parseInt(hex.slice(4, 6), 16);
@@ -107,12 +108,29 @@ function buildConfig(baseCfg) {
       layout: { padding: { top: 8, right: 8, bottom: 0, left: 0 } },
       normalized: true,
       alignToPixels: true,
+      animations: {
+        y: {
+          from: (ctx) => 300,
+          duration: 800,
+          easing: "easeOutCubic",
+        },
+        // optional little point fade-in
+        radius: {
+          from: 0,
+          to: 3,
+          duration: 300,
+          delay: (ctx) => ctx.dataIndex * 100,
+        },
+      },
+      // subtle curve looks nicer with draw-in
+      elements: { line: { tension: 0.3 } },
     },
   };
 
   const merged = deepMerge({}, globalDefaults);
   applyDatasetDefaults(baseCfg);
   deepMerge(merged, baseCfg); // user config wins
+  console.log(merged);
   return merged;
 }
 

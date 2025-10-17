@@ -1,12 +1,20 @@
 # Copyright (c) Microsoft. All rights reserved.
 
+"""Usage example:
+
+python scripts/wandb_download_result.py AgentLightning \
+    --runs spider_agl_v0_2 \
+    --metrics training/reward val/reward \
+    --out docs/assets/sql-agent-training-result.json \
+    --step 16
+"""
+
 import argparse
 import json
-import math
 import sys
-from collections import defaultdict
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
+import numpy as np
 import pandas as pd
 import wandb
 
@@ -100,8 +108,8 @@ def aggregate_history(df: pd.DataFrame, metrics: List[str], step: int) -> pd.Dat
     keep_mask = df[metrics].notna().any(axis=1)
     df = df.loc[keep_mask].copy()
 
-    # Compute bin
-    df["_bin"] = (df["_step"] // step) * step
+    # Compute bin: bin is rounded to the nearest multiples of step
+    df["_bin"] = np.round(df["_step"] / step) * step
 
     # Group by bin and average each metric
     grouped = df.groupby("_bin", as_index=False)[metrics].mean()
@@ -187,37 +195,31 @@ def main():
     per_run_metric_df: Dict[Tuple[str, str], pd.DataFrame] = {}
 
     for run_name, run in runs.items():
-        # Ask W&B for specific keys plus _step; cap history if requested
-        keys = list(dict.fromkeys(["_step"] + args.metrics))
-        hist = run.history(keys=keys, pandas=True)
-        print(hist)
-
-        if hist is None or hist.empty:
-            msg = f"No history for run '{run_name}'."
-            if args.strict:
-                print(f"::error::{msg}", file=sys.stderr)
-                sys.exit(1)
-            else:
-                print(f"::warning::{msg}", file=sys.stderr)
+        # Fetch each metric separately to avoid losing sparse metrics due to row intersection.
+        for metric in args.metrics:
+            hist = run.history(keys=["_step", metric], pandas=True)
+            if hist is None or hist.empty:
+                msg = f"No history for run '{run_name}' (metric '{metric}')."
+                if args.strict:
+                    print(f"::error::{msg}", file=sys.stderr)
+                    sys.exit(1)
+                else:
+                    print(f"::warning::{msg}", file=sys.stderr)
+                    continue
+            # Ensure numeric _step
+            if "_step" not in hist.columns:
+                print(
+                    f"::warning::Run '{run_name}' has no '_step' column; skipping metric '{metric}'.",
+                    file=sys.stderr,
+                )
                 continue
 
-        # Ensure numeric _step
-        if "_step" not in hist.columns:
-            print(
-                f"::warning::Run '{run_name}' has no '_step' column; skipping.",
-                file=sys.stderr,
-            )
-            continue
-
-        # Clean to numeric where possible
-        hist["_step"] = pd.to_numeric(hist["_step"], errors="coerce")
-        hist = hist.dropna(subset=["_step"])
-        hist["_step"] = hist["_step"].astype(int)
-
-        # Aggregate once for all metrics, then split per metric view
-        grouped = aggregate_history(hist, args.metrics, args.step)
-
-        for metric in args.metrics:
+            # Clean to numeric where possible
+            hist["_step"] = pd.to_numeric(hist["_step"], errors="coerce")
+            hist = hist.dropna(subset=["_step"])
+            hist["_step"] = hist["_step"].astype(int)
+            # Aggregate per metric; dense metrics can be tamed with --step (e.g., 16)
+            grouped = aggregate_history(hist, [metric], args.step)
             if metric not in grouped.columns:
                 msg = f"Metric '{metric}' not found in run '{run_name}'."
                 if args.strict:
@@ -226,8 +228,7 @@ def main():
                 else:
                     print(f"::warning::{msg}", file=sys.stderr)
                     continue
-
-            # Keep only _bin and the metric for simpler merging later
+            # Keep only _bin and the single metric for simpler merging later
             per_run_metric_df[(run_name, metric)] = grouped[["_bin", metric]].copy()
 
     if not per_run_metric_df:
