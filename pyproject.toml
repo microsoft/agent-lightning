@@ -9,7 +9,7 @@ dependencies = [
   "psutil",
   "setproctitle",
   "flask",
-  "agentops<=0.4.21",
+  "agentops>=0.4.13",
   "httpdbg",
   "uvicorn",
   "fastapi",
@@ -17,7 +17,7 @@ dependencies = [
   "opentelemetry-api>=1.35",
   "opentelemetry-sdk>=1.35",
   "opentelemetry-exporter-otlp>=1.35",
-  "litellm[proxy]",
+  "litellm[proxy]>=1.77",
   "pydantic>=2.11",
   "openai",
   "rich",
@@ -34,6 +34,27 @@ verl = [
   "vllm>=0.8.4,<0.11.0",
   "flash-attn",
 ]
+# These are only used to set indexes needed.
+cpu = [
+  "torch"
+]
+gpu = [
+  "torch"
+]
+
+[tool.uv.sources]
+torch = [
+  { index = "torch-gpu", extra = "gpu" },
+  { index = "torch-cpu", extra = "cpu" },
+]
+
+[[tool.uv.index]]
+name = "torch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+
+[[tool.uv.index]]
+name = "torch-gpu"
+url = "https://download.pytorch.org/whl/cu128"
 
 [project.scripts]
 agl = "agentlightning.cli:main"
@@ -67,14 +88,15 @@ experiment = [
 torch-stable = [
   "torch>=2.8.0",
   "torchvision>=0.23.0",
+  "transformers>=4.55.0",
+  "flash-attn>=2.8.3",
+  "vllm>=0.10.2",
+  # LiteLLM can then be upgraded with new vLLM
+  "litellm[proxy]>=1.78",
 ]
 torch-legacy = [
   "torch==2.7.0",
   "torchvision==0.22.0",
-  "torchaudio==2.7.0",
-]
-verl-legacy = [
-  {include-group = "torch-legacy"},
   "transformers==4.53.3",
   "flash-attn==2.8.1",
   "vllm==0.9.2",
@@ -127,6 +149,30 @@ agents = [
   {include-group = "langchain"},
   {include-group = "sql"},
   {include-group = "anthropic"},
+]
+
+[tool.uv]
+conflicts = [
+  [
+    { extra = "cpu" },
+    { extra = "gpu" },
+  ],
+  [
+    { group = "torch-stable" },
+    { group = "torch-legacy" },
+  ],
+]
+environments = [
+  "sys_platform == 'linux'",
+]
+index-strategy = "unsafe-best-match"
+dependency-metadata = [
+  { name = "litellm", provides-extra = ["proxy"], version = "1.77.0", requires-dist = ["openai==1.90.0"] }
+]
+
+[tool.uv.extra-build-dependencies]
+flash-attn = [
+  { requirement = "torch", match-runtime = true },
 ]
 
 [build-system]
