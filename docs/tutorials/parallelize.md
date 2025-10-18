@@ -6,13 +6,13 @@ Agent-lightning splits training into an **algorithm bundle** and a **runner bund
 
 Before we dive into the details of the bundles and execution strategies, let's first revisit how to parallelize rollouts with [`Trainer`][agentlightning.Trainer].
 
-[`Trainer`][agentlightning.Trainer] is the quickest way to dial up parallelism. Even when `n_runners = 1`, calling [`Trainer.fit`][agentlightning.Trainer.fit] runs algorithms and runners in parallel. The algorithm enqueues rollouts; runners (parallelly) dequeue them and execute your [`LitAgent`][agentlightning.LitAgent], and the algorithm collect spans via its [`Adapter`][agentlightning.Adapter] before scheduling the next batch.
+[`Trainer`][agentlightning.Trainer] is the quickest way to dial up parallelism. Even when `n_runners = 1`, calling [`Trainer.fit`][agentlightning.Trainer.fit] runs the algorithm and runners in parallel. The algorithm enqueues rollouts; runners dequeue them and execute your [`LitAgent`][agentlightning.LitAgent], and the algorithm collects spans via its [`Adapter`][agentlightning.Adapter] before scheduling the next batch.
 
 !!! note
 
-    One most important feature of [`Trainer`][agentlightning.Trainer] is the ability to abort things gracefully. For example, if you press `Ctrl+C` in the terminal, the algorithm will abort and the runners will stop executing. Or if the algorithm crashes, the runners will also stop executing.
+    One of the most important features of [`Trainer`][agentlightning.Trainer] is the ability to abort things gracefully. For example, if you press `Ctrl+C` in the terminal, the algorithm will abort and the runners will stop executing. If the algorithm crashes, the runners will also stop executing.
 
-Increase throughput by setting `n_runners` when constructing the trainer. The following example came from [train_calc_agent.py]({{ src("examples/calc_x/train_calc_agent.py") }}). Since backend LLMs usually use techniques like [continuous batching](https://docs.vllm.ai/en/latest/) to increase the throughput, you do not have to worry about overwhelming the backend with too many requests.
+Increase throughput by setting `n_runners` when constructing the trainer. The following example comes from [train_calc_agent.py]({{ src("examples/calc_x/train_calc_agent.py") }}). Since backend LLMs usually use techniques like [continuous batching](https://docs.vllm.ai/en/latest/) to increase throughput, you do not have to worry about overwhelming the backend with too many requests.
 
 ```python
 import agentlightning as agl
@@ -44,25 +44,25 @@ In [`Trainer`][agentlightning.Trainer], there are multiple other initialization 
 
 When [`Trainer`][agentlightning.Trainer] starts, it packages its configuration into two callable **bundles**:
 
-The **algorithm bundle** wraps your [`Algorithm`][agentlightning.Algorithm], adapter, and any LLM proxy, into a single callable that can be aborted via a signal event.
+![Illustration of bundles and execution strategies](../assets/execution-bundles.svg)
+
+The **algorithm bundle** wraps your [`Algorithm`][agentlightning.Algorithm], adapter, and any LLM proxy into a single callable that can be aborted via a signal event.
 
 ```python
 async def algorithm_bundle(store: LightningStore, event: ExecutionEvent) -> None:
     ...
 ```
 
-The **runner bundle** wraps the [`Runner`][agentlightning.Runner], tracer, hooks, and agent, into a single callable that can be aborted via a signal event. Different from algorithm, the runner bundle expected to be replicated.
+The **runner bundle** wraps the [`Runner`][agentlightning.Runner], tracer, hooks, and agent into a single callable that can be aborted via a signal event. Unlike the algorithm bundle, the runner bundle is expected to be replicated.
 
 ```python
 async def runner_bundle(store: LightningStore, worker_id: int, event: ExecutionEvent) -> None:
     ...
 ```
 
-![Illustration of bundles and execution strategies](../assets/execution-bundles.svg)
-
 An **execution strategy** then decides where those bundles are placed (threads vs processes vs multiple machines), how many runner replicas to launch, and how lifecycle events such as shutdown are coordinated.
 
-By default the trainer builds an [`InMemoryLightningStore`][agentlightning.InMemoryLightningStore] if you do not provide one. Because that store has no locking or cross-process transport, the execution strategy is the component that wraps it in thread-safe or HTTP-safe facades ([`LightningStoreThreaded`][agentlightning.LightningStoreThreaded], [`LightningStoreServer`][agentlightning.LightningStoreServer]) before handing it to bundles. For a deeper look at these facades, see [Understanding the Store](../deep-dive/store.md) and [Birds' Eye View](../deep-dive/birds-eye-view.md).
+By default, the trainer builds an [`InMemoryLightningStore`][agentlightning.InMemoryLightningStore] if you do not provide one. Because that store has no locking or cross-process transport, the execution strategy is the component that wraps it in thread-safe or HTTP-safe facades ([`LightningStoreThreaded`][agentlightning.LightningStoreThreaded], [`LightningStoreServer`][agentlightning.LightningStoreServer]) before handing it to bundles. For a deeper look at these facades, see [Understanding the Store](../deep-dive/store.md) and [Birds' Eye View](../deep-dive/birds-eye-view.md).
 
 Agent-lightning provides two built-in execution strategies: [`SharedMemoryExecutionStrategy`][agentlightning.SharedMemoryExecutionStrategy] and [`ClientServerExecutionStrategy`][agentlightning.ClientServerExecutionStrategy]. You can pass a string alias, a configuration dictionary, or a pre-built strategy instance:
 
@@ -144,11 +144,11 @@ The default [`ClientServerExecutionStrategy`][agentlightning.ClientServerExecuti
 If you simply instantiate [`Trainer`][agentlightning.Trainer] (as above), it will send the algorithm bundle and runner bundle to [`ClientServerExecutionStrategy`][agentlightning.ClientServerExecutionStrategy], which will then:
 
 1. Launch \(N+1\) processes: \(N\) runner processes and 1 algorithm process (one of them could live in the main process).
-2. The algorithm process will wrap the received store from [`Trainer`][agentlightning.Trainer] and wrap it in a [`LightningStoreServer`][agentlightning.LightningStoreServer] and start serving it over HTTP.
-3. The runner processes toss away the store and create a new store which is a client that connects to the algorithm process through [`LightningStoreClient`][agentlightning.LightningStoreClient] and start executing the runner bundle.
+2. The algorithm process will take the store received from [`Trainer`][agentlightning.Trainer], wrap it in a [`LightningStoreServer`][agentlightning.LightningStoreServer], and start serving it over HTTP.
+3. The runner processes discard the store and create a new store, which is a client that connects to the algorithm process through [`LightningStoreClient`][agentlightning.LightningStoreClient], and start executing the runner bundle.
 4. The strategy automatically escalates shutdown (cooperative stop → `SIGINT` → `terminate()` → `kill()`) so long-running runners do not linger.
 
-You can override server placement or ports, and whether to automatically wrap the store through constructor arguments or environment variables:
+You can override server placement or ports, and whether to automatically wrap the store, through constructor arguments or environment variables:
 
 ```python
 trainer = agl.Trainer(
@@ -165,13 +165,13 @@ trainer = agl.Trainer(
 
 Set `AGL_SERVER_HOST` and `AGL_SERVER_PORT` if you prefer environment-based configuration. You can also use `AGL_MANAGED_STORE` if you do not want the execution strategy to wrap the store for you. An example is shown in [Debugging with External Store][debug-with-external-store].
 
-The algorithms sometimes require heterogeneous computation resources, such as GPU accelerators, while the runners sometimes require a specific environment to run because many agent frameworks are fragile in their dependencies. A role-based launch pattern helps you place the algorithm on a dedicated machine with more GPU memory while runners can live within another machine with more flexible dependencies. This is possible via `AGL_CURRENT_ROLE="algorithm"` or `AGL_CURRENT_ROLE="runner"` environment variables. When running on different machines, you also need to set `AGL_SERVER_HOST` and `AGL_SERVER_PORT` to the IP address and port of the algorithm machine. You might recognize that this convention is very similar to `MASTER_ADDR` and `MASTER_PORT` in [PyTorch distributed training](https://docs.pytorch.org/docs/stable/notes/ddp.html).
+Algorithms sometimes require heterogeneous computation resources, such as GPU accelerators, while runners sometimes require a specific environment to run because many agent frameworks are fragile in their dependencies. A role-based launch pattern helps you place the algorithm on a dedicated machine with more GPU memory, while runners can live on another machine with more flexible dependencies. This is possible via `AGL_CURRENT_ROLE="algorithm"` or `AGL_CURRENT_ROLE="runner"` environment variables. When running on different machines, you also need to set `AGL_SERVER_HOST` and `AGL_SERVER_PORT` to the IP address and port of the algorithm machine. You might recognize that this convention is very similar to `MASTER_ADDR` and `MASTER_PORT` in [PyTorch distributed training](https://docs.pytorch.org/docs/stable/notes/ddp.html).
 
 ### Shared-memory Strategy
 
-[`SharedMemoryExecutionStrategy`][agentlightning.SharedMemoryExecutionStrategy] keeps everything inside one process. The runner runs on the main thread (by default) while each algorithm lives on a Python thread guarded by [`LightningStoreThreaded`][agentlightning.LightningStoreThreaded].
+[`SharedMemoryExecutionStrategy`][agentlightning.SharedMemoryExecutionStrategy] keeps everything inside one process. The runner runs on the main thread (by default) while the algorithm lives on a Python thread guarded by [`LightningStoreThreaded`][agentlightning.LightningStoreThreaded].
 
-Use it when you want easier debugging with shared breakpoints and no serialization overhead or minimal startup time for unit tests. It's not a good choice for many algorithms that requires heavy model training because [`LightningStoreThreaded`][agentlightning.LightningStoreThreaded] does not work for multiprocessing. Using it in multi-processing algorithms will lead to undefined behaviors.
+Use it when you want easier debugging with shared breakpoints and no serialization overhead, or minimal startup time for unit tests. It's not a good choice for many algorithms that require heavy model training because [`LightningStoreThreaded`][agentlightning.LightningStoreThreaded] does not work for multiprocessing. Using it with multiprocessing algorithms will lead to undefined behavior.
 
 Sample configuration:
 
@@ -182,13 +182,13 @@ trainer = agl.Trainer(
 )
 ```
 
-You can further customize the init parameters of [`SharedMemoryExecutionStrategy`][agentlightning.SharedMemoryExecutionStrategy]. `main_thread="runner"`, the runner occupies the main thread and `n_runners` must be `1`. The strategy respects `AGL_MANAGED_STORE`; set it to `0` to opt out of the `LightningStoreThreaded` wrapper.
+You can further customize the init parameters of [`SharedMemoryExecutionStrategy`][agentlightning.SharedMemoryExecutionStrategy]. With `main_thread="runner"`, the runner occupies the main thread and `n_runners` must be `1`. The strategy respects `AGL_MANAGED_STORE`; set it to `0` to opt out of the `LightningStoreThreaded` wrapper.
 
 ## Parallelizing Algorithms
 
-Runner parallelism scales rollout throughput, but the algorithm loop remains a single-process look inside the execution strategy. We understand that many algorithms actually have parallelization built-in, but that's out of the parallelization scope of Agent-lightning.
+Runner parallelism scales rollout throughput, but the algorithm loop remains a single-process loop inside the execution strategy. We understand that many algorithms have parallelization built in, but that's outside the parallelization scope of Agent-lightning.
 
-Agent-lightning strive to make algorithms' own parallelization work well under our execution strategies. The biggest challenge turns out to come from the store. For example, [`VERL`][agentlightning.algorithm.verl.VERL], uses [Ray](https://www.ray.io/) launches [FSDP](https://docs.pytorch.org/tutorials/intermediate/FSDP_tutorial.html) and [vLLM](https://vllm.ai/) components internally. [`ClientServerExecutionStrategy`][agentlightning.ClientServerExecutionStrategy] has to make sure that the server is not simultaneously serving in multiple processes or Ray workers, and there is only one single authoritative source of truth for all subprocesses to connect to. For subprocesses, they will connect to store via a small [`LightningStoreClient`][agentlightning.LightningStoreClient] bundled within [`LightningStoreServer`][agentlightning.LightningStoreServer].
+Agent-lightning strives to make algorithms’ own parallelization work well under our execution strategies. The biggest challenge turns out to come from the store. For example, [`VERL`][agentlightning.algorithm.verl.VERL] uses [Ray](https://www.ray.io/) and launches [FSDP](https://docs.pytorch.org/tutorials/intermediate/FSDP_tutorial.html) and [vLLM](https://vllm.ai/) components internally. [`ClientServerExecutionStrategy`][agentlightning.ClientServerExecutionStrategy] has to make sure that the server is not simultaneously serving in multiple processes or Ray workers, and that there is only one single authoritative source of truth for all subprocesses to connect to. Subprocesses connect to the store via a small [`LightningStoreClient`][agentlightning.LightningStoreClient] bundled within [`LightningStoreServer`][agentlightning.LightningStoreServer].
 
 !!! note
 
