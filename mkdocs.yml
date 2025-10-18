@@ -42,6 +42,10 @@ markdown_extensions:
   - pymdownx.details
   - pymdownx.tabbed:
       alternate_style: true
+  - pymdownx.arithmatex:
+      generic: true
+      inline_syntax: ["round"]
+      block_syntax: ["block"]
   - toc:
       permalink: true
   - attr_list
@@ -79,8 +83,11 @@ extra:
 extra_javascript:
   - https://unpkg.com/mermaid@10.6.1/dist/mermaid.min.js
   - https://unpkg.com/chart.js@4.5.1/dist/chart.umd.min.js
+  - https://unpkg.com/katex@0/dist/katex.min.js
+  - https://unpkg.com/katex@0/dist/contrib/auto-render.min.js
   - javascripts/charts.js
   - javascripts/move-source-file.js
+  - javascripts/katex.js
 
 nav:
   - Home: index.md
@@ -115,4 +122,5 @@ nav:
     - Types: reference/types.md
 
 extra_css:
+  - https://unpkg.com/katex@0/dist/katex.min.css
   - stylesheets/extra.css

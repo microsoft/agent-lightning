@@ -8,7 +8,7 @@ Before we dive into the details of the bundles and execution strategies, let's f
 
 [`Trainer`][agentlightning.Trainer] is the quickest way to dial up parallelism. Even when `n_runners = 1`, calling [`Trainer.fit`][agentlightning.Trainer.fit] runs algorithms and runners in parallel. The algorithm enqueues rollouts; runners (parallelly) dequeue them and execute your [`LitAgent`][agentlightning.LitAgent], and the algorithm collect spans via its [`Adapter`][agentlightning.Adapter] before scheduling the next batch.
 
-!!! tip
+!!! note
 
     One most important feature of [`Trainer`][agentlightning.Trainer] is the ability to abort things gracefully. For example, if you press `Ctrl+C` in the terminal, the algorithm will abort and the runners will stop executing. Or if the algorithm crashes, the runners will also stop executing.
 
@@ -34,7 +34,7 @@ trainer = agl.Trainer(
 trainer.fit(calc_agent, train_dataset=train_dataset, val_dataset=val_dataset)
 ```
 
-In [`Trainer`][agentlightning.Trainer], there are multiple other initialization parameters that you can use to customize the training process. For example, you can use [`max_rollouts`][agentlightning.Trainer.max_rollouts] to keep smoke tests short. Pass a concrete [`LightningStore`][agentlightning.LightningStore] instance when you need persistence or want to share the queue across multiple scripts.
+In [`Trainer`][agentlightning.Trainer], there are multiple other initialization parameters that you can use to customize the training process. For example, you can use `max_rollouts` to keep smoke tests short. Pass a concrete [`LightningStore`][agentlightning.LightningStore] instance when you need persistence or want to share the queue across multiple scripts.
 
 !!! tip
 
@@ -42,37 +42,57 @@ In [`Trainer`][agentlightning.Trainer], there are multiple other initialization 
 
 ## Bundles and Execution Strategies
 
-TBD: An short introduction of what is a bundle (what's the interface of it) and what is an execution strategy.
+When [`Trainer`][agentlightning.Trainer] starts, it packages its configuration into two callable **bundles**:
+
+The **algorithm bundle** wraps your [`Algorithm`][agentlightning.Algorithm], adapter, and any LLM proxy, into a single callable that can be aborted via a signal event.
+
+```python
+async def algorithm_bundle(store: LightningStore, event: ExecutionEvent) -> None:
+    ...
+```
+
+The **runner bundle** wraps the [`Runner`][agentlightning.Runner], tracer, hooks, and agent, into a single callable that can be aborted via a signal event. Different from algorithm, the runner bundle expected to be replicated.
+
+```python
+async def runner_bundle(store: LightningStore, worker_id: int, event: ExecutionEvent) -> None:
+    ...
+```
 
 ![Illustration of bundles and execution strategies](../assets/execution-bundles.svg)
 
-TBD: explain that trainer creates the bundles and execution strategy decides how to run them together.
-Trainer creates an [`InMemoryLightningStore`][agentlightning.InMemoryLightningStore] if users don't provide one. [`InMemoryLightningStore`][agentlightning.InMemoryLightningStore] does not provide thread-safety and multiprocessing communications by default. It's the execution strategy who wraps the store in a thread-safe or multiprocessing-safe way. See [Understanding the Store](../deep-dive/store.md) for more details.
+An **execution strategy** then decides where those bundles are placed (threads vs processes vs multiple machines), how many runner replicas to launch, and how lifecycle events such as shutdown are coordinated.
 
+By default the trainer builds an [`InMemoryLightningStore`][agentlightning.InMemoryLightningStore] if you do not provide one. Because that store has no locking or cross-process transport, the execution strategy is the component that wraps it in thread-safe or HTTP-safe facades ([`LightningStoreThreaded`][agentlightning.LightningStoreThreaded], [`LightningStoreServer`][agentlightning.LightningStoreServer]) before handing it to bundles. For a deeper look at these facades, see [Understanding the Store](../deep-dive/store.md) and [Birds' Eye View](../deep-dive/birds-eye-view.md).
 
-Execution strategies control where bundles live, how the store is wrapped, and how shutdown is coordinated. The trainer accepts a string alias, a configuration dict, or a pre-built strategy:
+Agent-lightning provides two built-in execution strategies: [`SharedMemoryExecutionStrategy`][agentlightning.SharedMemoryExecutionStrategy] and [`ClientServerExecutionStrategy`][agentlightning.ClientServerExecutionStrategy]. You can pass a string alias, a configuration dictionary, or a pre-built strategy instance:
 
 ```python
 import agentlightning as agl
 
 algorithm = agl.Baseline()
 
-# Short alias for shared-memory strategy (n_runners must be 1 because the runner lives on the main thread)
+# Short alias for the shared-memory strategy.
+# Because the runner lives on the main thread in this mode,
+# n_runners must be 1 unless you move the algorithm to the main thread.
 trainer = agl.Trainer(algorithm=algorithm, n_runners=1, strategy="shm")
 
-# Dict with overrides; algorithm stays on the main thread so we can fan out runners
+# Dict with overrides; keep the algorithm on the main thread so multiple runner threads can spawn.
+# Specifying `n_runners` inside strategy is equivalent to passing `n_runners` to the trainer.
 trainer = agl.Trainer(
     algorithm=algorithm,
-    n_runners=8,
-    strategy={"type": "shm", "main_thread": "algorithm", "managed_store": False},
+    strategy={
+        "type": "shm",
+        "n_runners": 8,
+        "main_thread": "algorithm",
+    },
 )
 
-# Pass an existing strategy instance – Trainer respects the strategy's own n_runners
+# Pass an existing strategy instance – Trainer respects the strategy's own `n_runners`.
 strategy = agl.SharedMemoryExecutionStrategy(main_thread="algorithm", n_runners=4)
-trainer = agl.Trainer(algorithm=algorithm, n_runners=8, strategy=strategy)
+trainer = agl.Trainer(algorithm=algorithm, strategy=strategy)
 ```
 
-If you omit the strategy, the trainer defaults to `ClientServerExecutionStrategy(n_runners=n_runners)`. You can still re-specify the client-server strategy through aliases or configuration to tweak ports and other settings:
+If you omit the strategy, the trainer defaults to `ClientServerExecutionStrategy(n_runners=trainer.n_runners)`. You can still re-specify the client-server strategy through aliases or configuration to tweak ports and other settings:
 
 ```python
 trainer = agl.Trainer(
@@ -96,10 +116,17 @@ trainer = agl.Trainer(algorithm=algorithm, n_runners=8, strategy="cs")
 
 The resulting [`ClientServerExecutionStrategy`][agentlightning.ClientServerExecutionStrategy] picks up the port, role, and managed-store flag from the environment.
 
-
 !!! tip
 
-    The same configuration patterns apply to other trainer components. For example, `trainer = agl.Trainer(algorithm=algorithm, tracer=agl.OtelTracer())` wires in a custom tracer, while `trainer = agl.Trainer(algorithm=algorithm, adapter="agentlightning.adapter.TraceToMessages")` swaps in a different adapter. Passing a dict lets you tweak the init parameters of defaults without naming the class explicitly:
+    The same configuration patterns apply to other trainer components. For example,
+    ```python
+    trainer = agl.Trainer(algorithm=algorithm, tracer=agl.OtelTracer())
+    ```
+    wires in a custom tracer, while
+    ```python
+    trainer = agl.Trainer(algorithm=algorithm, adapter="agentlightning.adapter.TraceToMessages")
+    ```
+    swaps in a different adapter. Passing a dict lets you tweak the init parameters of defaults without naming the class explicitly:
 
     ```python
     trainer = agl.Trainer(
@@ -108,13 +135,15 @@ The resulting [`ClientServerExecutionStrategy`][agentlightning.ClientServerExecu
     )
     ```
 
+The next sections walk through the two built-in strategies and how they affect placement and store access.
+
 ## Client-server Architecture
 
 The default [`ClientServerExecutionStrategy`][agentlightning.ClientServerExecutionStrategy] starts a [`LightningStoreServer`][agentlightning.LightningStoreServer] alongside the algorithm and spawns runner processes that talk to it through [`LightningStoreClient`][agentlightning.LightningStoreClient]. All runners share the HTTP endpoint, so the queue and spans stay consistent across processes or machines.
 
 If you simply instantiate [`Trainer`][agentlightning.Trainer] (as above), it will send the algorithm bundle and runner bundle to [`ClientServerExecutionStrategy`][agentlightning.ClientServerExecutionStrategy], which will then:
 
-1. Launch `N+1` processes: `N` runner processes and 1 algorithm process (one of them could live in the main process).
+1. Launch \(N+1\) processes: \(N\) runner processes and 1 algorithm process (one of them could live in the main process).
 2. The algorithm process will wrap the received store from [`Trainer`][agentlightning.Trainer] and wrap it in a [`LightningStoreServer`][agentlightning.LightningStoreServer] and start serving it over HTTP.
 3. The runner processes toss away the store and create a new store which is a client that connects to the algorithm process through [`LightningStoreClient`][agentlightning.LightningStoreClient] and start executing the runner bundle.
 4. The strategy automatically escalates shutdown (cooperative stop → `SIGINT` → `terminate()` → `kill()`) so long-running runners do not linger.
@@ -124,17 +153,17 @@ You can override server placement or ports, and whether to automatically wrap th
 ```python
 trainer = agl.Trainer(
     algorithm=algorithm,
-    n_runners=4,
+    n_runners=1,
     strategy={
         "type": "cs",
         "server_host": "0.0.0.0",
-        "server_port": 4747,
-        "managed_store": False,
+        "server_port": 9999,
+        "main_process": "runner",
     },
 )
 ```
 
-Set `AGL_SERVER_HOST` and `AGL_SERVER_PORT` if you prefer environment-based configuration. You can also use `AGL_MANAGED_STORE` if you do not want the execution strategy to wrap the store for you. An example is shown in [Debugging with External Store][#debug-with-external-store].
+Set `AGL_SERVER_HOST` and `AGL_SERVER_PORT` if you prefer environment-based configuration. You can also use `AGL_MANAGED_STORE` if you do not want the execution strategy to wrap the store for you. An example is shown in [Debugging with External Store][debug-with-external-store].
 
 The algorithms sometimes require heterogeneous computation resources, such as GPU accelerators, while the runners sometimes require a specific environment to run because many agent frameworks are fragile in their dependencies. A role-based launch pattern helps you place the algorithm on a dedicated machine with more GPU memory while runners can live within another machine with more flexible dependencies. This is possible via `AGL_CURRENT_ROLE="algorithm"` or `AGL_CURRENT_ROLE="runner"` environment variables. When running on different machines, you also need to set `AGL_SERVER_HOST` and `AGL_SERVER_PORT` to the IP address and port of the algorithm machine. You might recognize that this convention is very similar to `MASTER_ADDR` and `MASTER_PORT` in [PyTorch distributed training](https://docs.pytorch.org/docs/stable/notes/ddp.html).
 
@@ -161,6 +190,6 @@ Runner parallelism scales rollout throughput, but the algorithm loop remains a s
 
 Agent-lightning strive to make algorithms' own parallelization work well under our execution strategies. The biggest challenge turns out to come from the store. For example, [`VERL`][agentlightning.algorithm.verl.VERL], uses [Ray](https://www.ray.io/) launches [FSDP](https://docs.pytorch.org/tutorials/intermediate/FSDP_tutorial.html) and [vLLM](https://vllm.ai/) components internally. [`ClientServerExecutionStrategy`][agentlightning.ClientServerExecutionStrategy] has to make sure that the server is not simultaneously serving in multiple processes or Ray workers, and there is only one single authoritative source of truth for all subprocesses to connect to. For subprocesses, they will connect to store via a small [`LightningStoreClient`][agentlightning.LightningStoreClient] bundled within [`LightningStoreServer`][agentlightning.LightningStoreServer].
 
-!!! tip
+!!! note
 
     The [birds' eye view][birds-eye-view-client-server-strategy] illustrates how adapters, proxies, and stores interact when the algorithm spawns additional workers. Use that diagram as a checklist when introducing new distributed components.
