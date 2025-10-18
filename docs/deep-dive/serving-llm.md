@@ -21,7 +21,9 @@ For many algorithms, you’ll start an engine (e.g., **vLLM** or **SGLang**) rig
 
 Weight updates, which happens after one training step is completed, however, can be more tricky. Some frameworks like [vLLM](https://vllm.ai/) support hot-updating the model weights of the inference engine. However, it's generally favored and more straightforward to just restart the engine to load the new weights. For medium-sized tasks with a batch of hundreds of rollouts, the overhead of restarting the engine is usually negligible.
 
-If you’re using Agent-lightning’s [**VERL**][agentlightning.algorithm.verl.VERL] integration, the algorithm can **manage the server for you**. [VERL framework](https://verl.readthedocs.io/en/v0.5.x/advance/agent_loop.html) is really clever in managing all the computation resources and it wraps vLLM/SGLang behind an `AsyncLLMServer` abstraction. You can directly use that server as a LLM endpoint for the agents, but because VERL can create multiple replicas of the vLLM server, it might be safer to let [`LLMProxy`][agentlightning.LLMProxy] guard them for you.
+If you’re using Agent-lightning’s [**VERL**][agentlightning.algorithm.verl.VERL] integration, the algorithm can **manage the server for you**. [VERL framework](https://verl.readthedocs.io/en/v0.5.x/advance/agent_loop.html) is really clever in managing all the computation resources and it wraps vLLM/SGLang behind an `AsyncLLMServer` abstraction. You can directly use that server as a LLM endpoint for the agents. However, since VERL can create multiple replicas of the vLLM server, it might be safer to let [`LLMProxy`][agentlightning.LLMProxy] guard them for you.
+
+A full sequence diagram of how [VERL][agentlightning.algorithm.verl.VERL] works with LLM server and proxy is shown [here][birds-eye-view-verl-example].
 
 ## LLM Proxy
 
@@ -99,7 +101,7 @@ In practice, we found this method is flawed and lead to poor training stability 
 }'></canvas>
 </div>
 
-The reason behind this is in two folds. On one hand, a word might be produced during generation as two tokens (e.g., `H + AVING`), but when you re‑tokenize the text later you get a different split (e.g., `HAV + ING`). The text looks identical, but the IDs might be different from what the model is actually more comfortable with. On the other hand, subtle differences might appear when you try to retokenize a tool call. When a tool call (e.g., `<tool_call>{ "name": ... }</tool_call>`) is parsed, a lot of information such as space characters and formatting might be lost. The tool call parser might also tries to fix some common JSON issues to make the tool call appearing to be correct. But these fixes hide the real problem that the original generated tokens are faulty in the first place, and these faults will never get a chance to be trained and corrected.
+Apart from the chat template drifts with different frameworks (which is really an implementation issue), the reason behind this is in two folds. On one hand, a word might be produced during generation as two tokens (e.g., `H + AVING`), but when you re‑tokenize the text later you get a different split (e.g., `HAV + ING`). The text looks identical, but the IDs might be different from what the model is actually more comfortable with. On the other hand, subtle differences might appear when you try to retokenize a tool call. When a tool call (e.g., `<tool_call>{ "name": ... }</tool_call>`) is parsed, a lot of information such as space characters and formatting might be lost. The tool call parser might also tries to fix some common JSON issues to make the tool call appearing to be correct. But these fixes hide the real problem that the original generated tokens are faulty in the first place, and these faults will never get a chance to be trained and corrected.
 
 **The second approach** is to save the Token IDs directly to the training data. This is the approach taken by many RL practices such as [Tinker](https://thinkingmachines.ai/tinker/). A large problem with this approach is that you end up needing to build a training framework with "tokens" as the first-class citizen. That is to say, the agent has to interact with the inference engine with tokens, so that you can be able to capture them for training.
 
@@ -112,54 +114,3 @@ When Agent-lightning is first released, we implemented an instrumented vLLM serv
 Putting it simply, working with vLLM v0.10.2 or later, our [`LLMProxy`][agentlightning.LLMProxy] will augment the request and add an extra parameter `return_token_ids` to the request. The engine will then return the token IDs along with the response. For earlier versions of vLLM, the augmented version of vLLM is still needed.
 
 Theoretically, saving the token IDs into spans will also have certain limitations. For example, if you are using spans collected from one model to train another model, you will be in trouble if two models use different tokenizers. However in practice, our spans always strive to save both text and token IDs. Therefore, you can always use the retokenization approach as a fallback.
-
----
-
-## Putting it together under Agent-lightning
-
-A typical flow for serving under Agent-lightning looks like this:
-
-1. **Start an engine.** Launch vLLM or SGLang with your checkpoint, context length, and features you need (streaming, tool calling, logprobs). vLLM’s docs cover the OpenAI-compatible server and common flags. ([docs.vllm.ai][2])
-
-2. **Front it with the LLM Proxy.** Register the backend with the proxy; publish the proxy URL as a **resource** in the LightningStore. Runners fetch resources with rollouts and call the proxy instead of the engine directly. The proxy exports OpenTelemetry spans to the store so your traces include prompts, responses, usage, and, when supported by the backend, **token IDs**. ([docs.litellm.ai][5])
-
-3. **Roll out and collect.** Runners stream tokens from the proxy; the proxy and runner side both emit spans. Deterministic span ordering comes from the store’s sequence allocator, which the proxy consults before forwarding.
-
-4. **Adapt for training.** On the algorithm side, query spans and run an adapter (e.g., trace → triplets). If token IDs are present, build datasets directly with `input_ids/labels` instead of re-tokenizing; this keeps the dataset faithful to what the model truly saw.
-
----
-
-## Notes on performance and operability
-
-Throughput is dominated by how well your engine batches and manages memory; PagedAttention and continuous batching are the main levers. At deployment time, confirm the **chat template** the engine uses (vLLM relies on the tokenizer’s `apply_chat_template`), because template changes can introduce subtle tokenization drift. Track template/tokenizer versions in span attributes for auditability. ([GitHub][8])
-
-If you need richer evaluation signals, enable **logprobs** on Chat Completions (OpenAI-compatible shape is supported by vLLM with some caveats that evolved over time). When you need **token IDs**, use the engine’s `return_token_ids` (vLLM) or the equivalent facility; vLLM release notes call out the parameter explicitly. ([GitHub][9])
-
-Finally, remember that some RL libraries and agent loops (e.g., in VERL) still prefer the **IDs-level** interface for end-to-end control. That’s a fine choice when you own the loop; the Agent-lightning story here is to make the IDs available **even when** the agent uses standard Chat Completions. ([verl.readthedocs.io][4])
-
----
-
-## Quick link board (for deeper reading)
-
-* vLLM OpenAI-compatible server docs — how to serve chat completions locally or on Ray/other backends. ([docs.vllm.ai][2])
-* Continuous batching & PagedAttention — why serving is hard and how modern engines fix it. ([Anyscale][10])
-* LiteLLM + OpenTelemetry — tracing hooks you’ll benefit from when using a proxy. ([docs.litellm.ai][5])
-* VERL agent loop — chat vs token-in/token-out APIs; why some RL stacks avoid Chat Completions. ([verl.readthedocs.io][4])
-* vLLM `return_token_ids` — release notes mentioning the parameter to fetch IDs via chat completions. ([GitHub][6])
-
----
-
-### One mental model to carry forward
-
-Agent-lightning does not *serve* your LLM; it organizes **who talks to whom** and **what data is captured**. Put a high-quality engine behind the **LLM Proxy**, ask that engine to **return token IDs** with responses, and let the store’s traces be the single source of truth. That combination preserves fidelity for training and keeps your serving choices flexible as your system evolves.
-
-[1]: https://arxiv.org/abs/2309.06180?utm_source=chatgpt.com "Efficient Memory Management for Large Language Model Serving with PagedAttention"
-[2]: https://docs.vllm.ai/en/latest/serving/openai_compatible_server.html?utm_source=chatgpt.com "OpenAI-Compatible Server - vLLM"
-[3]: https://platform.openai.com/docs/api-reference/chat?utm_source=chatgpt.com "OpenAI's Chat Completion API Documentation"
-[4]: https://verl.readthedocs.io/en/v0.5.x/advance/agent_loop.html?utm_source=chatgpt.com "Agent Loop - verl documentation - Read the Docs"
-[5]: https://docs.litellm.ai/docs/observability/opentelemetry_integration?utm_source=chatgpt.com "OpenTelemetry - Tracing LLMs with any observability tool"
-[6]: https://github.com/vllm-project/vllm/releases?utm_source=chatgpt.com "Releases · vllm-project/vllm"
-[7]: https://cookbook.openai.com/examples/using_logprobs?utm_source=chatgpt.com "Using logprobs"
-[8]: https://github.com/vllm-project/vllm/issues/2012?utm_source=chatgpt.com "\"/v1/chat/completions\" tokenization issue #2012"
-[9]: https://github.com/vllm-project/vllm/issues/3179?utm_source=chatgpt.com "The logprobs in the ChatCompletion's responses is ..."
-[10]: https://www.anyscale.com/blog/continuous-batching-llm-inference?utm_source=chatgpt.com "Achieve 23x LLM Inference Throughput & Reduce p50 ..."
