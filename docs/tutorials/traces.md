@@ -4,11 +4,11 @@ Tracing is the secret capability that lets Agent-lightning train almost any agen
 
 ![OpenTelemetry spans](../assets/opentelemetry-trace.jpg)
 
-Agent-lightning stores every recorded operation as a [`Span`][agentlightning.Span] inside a [`LightningStore`][agentlightning.LightningStore]. The naming comes from the [OpenTelemetry spans](https://opentelemetry.io/docs/concepts/signals/traces/), shown in the screenshot above. A span can represent an LLM call, a tool invocation, a graph edge, an explicit reward emission, or an arbitrary Python code block. Spans form a tree where parent spans describe higher-level steps and children record the detailed work. The sections below walk through how spans are produced and how to interpret them once they reach the store.
+Agent-lightning stores every recorded operation as a [`Span`][agentlightning.Span] inside a [`LightningStore`][agentlightning.LightningStore]. The naming comes from [OpenTelemetry spans](https://opentelemetry.io/docs/concepts/signals/traces/), shown in the screenshot above. A span can represent an LLM call, a tool invocation, a graph edge, an explicit reward emission, or an arbitrary Python code block. Spans form a tree where parent spans describe higher-level steps and children record the detailed work. The sections below walk through how spans are produced and how to interpret them once they reach the store.
 
 ## Writing Spans
 
-Most [`Runner`][agentlightning.Runner] implementations wire a [`Tracer`][agentlightning.Tracer] into the agent’s lifecycle. The tracer is responsible for installing instrumentation, buffering OpenTelemetry spans, and committing them to the [`LightningStore`][agentlightning.LightningStore]. When a runner executes a rollout it allocates a store-backed tracing context:
+Most [`Runner`][agentlightning.Runner] implementations wire a [`Tracer`][agentlightning.Tracer] into the agent’s lifecycle. The tracer is responsible for installing instrumentation, buffering OpenTelemetry spans, and committing them to the [`LightningStore`][agentlightning.LightningStore]. When a runner executes a rollout, it allocates a store-backed tracing context:
 
 ```python
 async with tracer.trace_context(
@@ -28,15 +28,15 @@ The context manager then requests sequence numbers from the store, converts Open
 
 ### AgentOps Tracer
 
-[`AgentOpsTracer`][agentlightning.AgentOpsTracer] will be the default tracer when [`Trainer`][agentlightning.Trainer] is used but no tracer is explicitly specified. It bootstraps the [AgentOps SDK](https://www.agentops.ai/) locally, installs the supplied instrumentation hooks (LangChain, LangGraph, LiteLLM, FastAPI, and others) provided by [AgentOps Python SDK](https://github.com/AgentOps-AI/agentops), and forwards everything through a local OpenTelemetry [`TracerProvider`](https://opentelemetry.io/docs/specs/otel/trace/api/). [`AgentOpsTracer`][agentlightning.AgentOpsTracer] never calls the hosted AgentOps service; instead it attaches a `LightningSpanProcessor` that is implemented by the Agent-lightning team, so spans are captured and shipped straight into the store.
+[`AgentOpsTracer`][agentlightning.AgentOpsTracer] will be the default tracer when [`Trainer`][agentlightning.Trainer] is used but no tracer is explicitly specified. It bootstraps the [AgentOps SDK](https://www.agentops.ai/) locally, installs the supplied instrumentation hooks (LangChain, LangGraph, LiteLLM, FastAPI, and others) provided by the [AgentOps Python SDK](https://github.com/AgentOps-AI/agentops), and forwards everything through a local OpenTelemetry [`TracerProvider`](https://opentelemetry.io/docs/specs/otel/trace/api/). [`AgentOpsTracer`][agentlightning.AgentOpsTracer] never calls the hosted AgentOps service; instead, it attaches a `LightningSpanProcessor` implemented by the Agent-lightning team so that spans are captured and shipped straight into the store.
 
 Because it shares the AgentOps instrumentation surface, any framework supported by AgentOps automatically gains tracing in Agent-lightning. We layer additional hooks on top of AgentOps to capture features that the SDK misses today:
 
-1. Certain providers emit extra metadata — for example [token IDs returned by vLLM](../deep-dive/serving-llm.md) — that are not recorded by the stock SDK. We augment those spans with the missing payloads.
-2. AgentOps constructs parent-child relationships best-effort, but mixed instrumentation (for example, OpenAI Agent SDK alongside direct OpenAI Chat Completion calls) can leave segments disconnected. Our implementation (actually implemented in the [`TracerTraceToTriplet`][agentlightning.TracerTraceToTriplet] adapter) repairs those relationships when the hierarchy can be inferred from rollout context.
+1. Certain providers emit extra metadata — for example, [token IDs returned by vLLM](../deep-dive/serving-llm.md) — that are not recorded by the stock SDK. We augment those spans with the missing payloads.
+2. AgentOps constructs parent-child relationships on a best-effort basis, but mixed instrumentation (for example, OpenAI Agent SDK alongside direct OpenAI Chat Completion calls) can leave segments disconnected. Our implementation (actually implemented in the [`TracerTraceToTriplet`][agentlightning.TracerTraceToTriplet] adapter) repairs those relationships when the hierarchy can be inferred from rollout context.
 3. Some versions of downstream frameworks simply do not emit spans for critical events (LangGraph node entrances are a common example). The tracer installs lightweight shims so those spans appear consistently.
 
-If a vendor integration behaves unexpectedly, users are encouraged to combine the tracer with [Hooks](./debug.md) to inspect the raw spans or diagnosis, and/or implement a specialized tracer for the framework in question.
+If a vendor integration behaves unexpectedly, users are encouraged to combine the tracer with [Hooks](./debug.md) to inspect the raw spans or diagnostics, and/or implement a specialized tracer for the framework in question.
 
 ### OpenTelemetry Tracer
 
@@ -44,15 +44,15 @@ If a vendor integration behaves unexpectedly, users are encouraged to combine th
 
 !!! note
 
-    [Microsoft Agent Framework](https://github.com/microsoft/agent-framework) is a typical example with built-in OpenTelemetry support. Once you had `OBSERVABILITY_SETTINGS.enable_otel = True`, the framework will automatically emit OpenTelemetry spans and [`OtelTracer`][agentlightning.OtelTracer] will be able to capture them. No extra instrumentation is needed.
+    [Microsoft Agent Framework](https://github.com/microsoft/agent-framework) is a typical example with built-in OpenTelemetry support. Once you set `OBSERVABILITY_SETTINGS.enable_otel = True`, the framework will automatically emit OpenTelemetry spans, and [`OtelTracer`][agentlightning.OtelTracer] will be able to capture them. No extra instrumentation is needed.
 
-Inside your agent you can call `opentelemetry.trace.get_trace_provider().get_tracer("my-agent")` and use that tracer to [create spans](https://opentelemetry.io/docs/languages/python/cookbook/) exactly as you would in any OpenTelemetry application. The Lightning span processor attached by [`OtelTracer`][agentlightning.OtelTracer] guarantees that every span is sequenced, converted, and written to the store. Same for emitted rewards ([`emit_reward`][agentlightning.emit_reward]) and other emitter signals, which are just a special case of manually-created spans.
+Inside your agent you can call `opentelemetry.trace.get_trace_provider().get_tracer("my-agent")` and use that tracer to [create spans](https://opentelemetry.io/docs/languages/python/cookbook/) exactly as you would in any OpenTelemetry application. The Lightning span processor attached by [`OtelTracer`][agentlightning.OtelTracer] guarantees that every span is sequenced, converted, and written to the store. The same applies for emitted rewards ([`emit_reward`][agentlightning.emit_reward]) and other emitter signals, which are just a special case of manually-created spans.
 
 ### LLM Proxy
 
-Sometimes the runner can’t observe the agent directly—because it’s in another language or running remotely. [`LLMProxy`][agentlightning.LLMProxy] bridges that gap by instrumenting the server side of LLM calls. It wraps [LiteLLM](https://docs.litellm.ai/) and adds middleware that accepts prefixed routes like `/rollout/{rid}/attempt/{aid}/v1/chat/completions`. Before forwarding, the middleware rewrites the path to `/v1/chat/completions`, fetches a monotonic `sequence_id` from the `LightningStore`, injects `x-rollout-id`, `x-attempt-id`, and `x-sequence-id` into the request headers, and then forwards to the backend LLM endpoint.
+Sometimes the runner can’t observe the agent directly — because it’s in another language or running remotely. [`LLMProxy`][agentlightning.LLMProxy] bridges that gap by instrumenting the server side of LLM calls. It wraps [LiteLLM](https://docs.litellm.ai/) and adds middleware that accepts prefixed routes like `/rollout/{rid}/attempt/{aid}/v1/chat/completions`. Before forwarding, the middleware rewrites the path to `/v1/chat/completions`, fetches a monotonic `sequence_id` from the `LightningStore`, injects `x-rollout-id`, `x-attempt-id`, and `x-sequence-id` into the request headers, and then forwards the request to the backend LLM endpoint.
 
-LiteLLM produces OpenTelemetry spans for the request/response. A custom `LightningSpanExporter` reads the rollout/attempt/sequence identifiers from the recorded request headers and persists each span to the store. Because the `sequence_id` is allocated at the start of the request, traces stay in strict order even across machines with skewed clocks or when responses complete asynchronously.
+LiteLLM produces OpenTelemetry spans for the request/response. A custom `LightningSpanExporter` reads the rollout/attempt/sequence identifiers from the recorded request headers and persists each span to the store. Because the `sequence_id` is allocated at the start of the request, traces stay in strict order even across machines with skewed clocks or asynchronous responses.
 
 ```mermaid
 sequenceDiagram
@@ -74,7 +74,7 @@ sequenceDiagram
 
 !!! note "Distributed Tracing"
 
-    Agent-lightning enforces deterministic span ordering by assigning a monotonic [`sequence_id`][agentlightning.Span.sequence_id] to every span within an attempt. Before calling [`LightningStore.add_span`][agentlightning.LightningStore.add_span] or [`LightningStore.add_otel_span`][agentlightning.LightningStore.add_otel_span], tracers are expected to call [`LightningStore.get_next_span_sequence_id`][agentlightning.LightningStore.get_next_span_sequence_id] to get the next sequence id. This removes clock skew and merges spans produced on different machines or threads. If you implement a custom tracer or exporter, make sure you do this (or respect the one provided in headers by components such as [`LLMProxy`][agentlightning.LLMProxy]); otherwise adapters will struggle to reconstruct the execution tree.
+    Agent-lightning enforces deterministic span ordering by assigning a monotonic [`sequence_id`][agentlightning.Span.sequence_id] to every span within an attempt. Before calling [`LightningStore.add_span`][agentlightning.LightningStore.add_span] or [`LightningStore.add_otel_span`][agentlightning.LightningStore.add_otel_span], tracers are expected to call [`LightningStore.get_next_span_sequence_id`][agentlightning.LightningStore.get_next_span_sequence_id] to get the next sequence id. This removes clock skew and merges spans produced on different machines or threads. If you implement a custom tracer or exporter, make sure you do this (or respect the one provided in headers by components such as [`LLMProxy`][agentlightning.LLMProxy]); otherwise, adapters will struggle to properly reconstruct the execution tree.
 
 ### Custom Tracer
 
@@ -118,4 +118,4 @@ reward = find_final_reward(spans)
 print(f"Final reward: {reward}")
 ```
 
-[`find_reward_spans`][agentlightning.find_reward_spans] returns every reward span so you can visualize intermediate shaping signals, while [`find_final_reward`][agentlightning.find_final_reward] extracts the last non-null reward per attempt. While these helpers are convenient, they don’t necessarily help you understand the chronological or hierarchical relationships between reward spans and other spans. Using an [`Adapter`][agentlightning.Adapter] — especially the same one used in the algorithm you’re working with — remains the recommended way to inspect your generated spans.
+[`find_reward_spans`][agentlightning.find_reward_spans] returns every reward span so you can visualize intermediate shaping signals, while [`find_final_reward`][agentlightning.find_final_reward] extracts the last non-null reward per attempt. While these helpers are convenient, they may not help you fully understand the chronological or hierarchical relationships between reward spans and other spans. Using an [`Adapter`][agentlightning.Adapter] — especially the same one used in the algorithm you’re working with — remains the recommended way to inspect your generated spans.
