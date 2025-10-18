@@ -48,7 +48,10 @@ class SharedMemoryExecutionStrategy(ExecutionStrategy):
         if main_thread not in ("algorithm", "runner"):
             raise ValueError("main_thread must be 'algorithm' or 'runner'")
         if main_thread == "runner" and n_runners != 1:
-            raise ValueError("When main_thread is 'runner', n_runners must be 1")
+            raise ValueError(
+                "When main_thread is 'runner', n_runners must be 1. "
+                "Either use 'algorithm' on the main thread or set n_runners to 1."
+            )
         self.n_runners = n_runners
         self.main_thread = main_thread
         self.join_timeout = join_timeout
