@@ -115,7 +115,7 @@ The value your agent function returns (i.e., the return value of the function de
 
 !!! important "Emitting the Final Reward"
 
-    When returning `None`, you must still ensure a final reward is logged. You can do this by using the [`emit_reward`][agentlightning.emit_reward] function (covered in the Emitter section below) or by wrapping your reward calculation function with the [`@reward`][agentlightning.reward.reward] decorator.
+    When returning `None`, you must still ensure a final reward is logged. You can do this by using the [`emit_reward`][agentlightning.emit_reward] function (covered in the [Emitter section](#using-the-emitter) below) or by wrapping your reward calculation function with the [`@reward`][agentlightning.reward.reward] decorator.
 
 * **`list[ReadableSpan]`** or **`list[Span]`**: For advanced use cases, you can manually construct and return a complete list of all spans for the rollout. This gives you full control over the trace data. You can return either a list of OpenTelemetry `ReadableSpan` objects or Agent-lightning's native `Span` objects.
 
@@ -207,7 +207,7 @@ The `LitAgent` class provides several methods you can override for more fine-gra
 
 While returning a single float for the final reward is sufficient for many algorithms, some advanced scenarios require richer feedback. For instance, an algorithm might learn more effectively if it receives intermediate rewards throughout a multi-step task.
 
-Agent-lightning provides an **emitter** module that allows you to record custom spans from within your agent's logic. Remember, the [Tracer][agentlightning.Tracer] automatically instruments many common operations (like LLM calls), but the emitter is for your own, domain-specific events.
+Agent-lightning provides an **emitter** module that allows you to record custom spans from within your agent's logic. Like many common operations (like LLM calls) that are automatically instrumented by [Tracer][agentlightning.Tracer], the emitter will also send a [Span][agentlightning.Span] that records an Agent-lightning-specific operation. Then algorithms can query and read those spans later. See [Working with Traces](./traces.md) for more details.
 
 You can find the emitter functions from [agentlightning.emitter](../reference/agent.md).
 

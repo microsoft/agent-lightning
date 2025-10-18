@@ -498,6 +498,10 @@ class LLMProxy:
     As the LLM Proxy sets up an OpenTelemetry tracer, it's recommended to run it in a different
     process from the main runner (i.e., tracer from agents).
 
+    !!! warning
+
+        The LLM Proxy does support streaming, but the tracing is still problematic when streaming is enabled.
+
     Args:
         port: TCP port to bind.
         model_list: LiteLLM ``model_list`` entries.
