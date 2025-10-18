@@ -4,7 +4,7 @@
 
     Please make sure you have read [Write the First Algorithm](./write-first-algorithm.md). Although that recipe is based on a simple prompt tuning algorithm, it introduces the core concepts of Agent-lightning and you should be familiar with them before proceeding.
 
-This recipe builds on [Write the First Algorithm](./write-first-algorithm.md). Instead of iterating on a prompt, we will iterate on a large language model with [Unsloth](https://docs.unsloth.ai/)'s SFT Trainer and keep the whole loop inside Agent-lightning. The new pieces you will meet are the **LLM proxy**, the **trace-to-triplet adapter**, a [vLLM](https://github.com/vllm-project/vllm) inference endpoint, and an agent implemented with the [OpenAI Agents SDK](https://openai.github.io/openai-agents-python/).
+This recipe builds on [Write the First Algorithm](./write-first-algorithm.md). Instead of iterating on a prompt, we will iterate on a large language model with [Unsloth](https://docs.unsloth.ai/)'s SFT Trainer and keep the whole loop inside Agent-lightning. The new pieces you will meet are the **LLM proxy**, the **trace-to-triplet adapter**, a [vLLM](https://github.com/vllm-project/vllm) inference endpoint, and an agent implemented with the [OpenAI Agents SDK](https://openai.github.io/openai-agents-python/). The full sample code is available in [`examples/unsloth`]({{ src("examples/unsloth") }}) folder.
 
 !!! warning
 
@@ -37,36 +37,27 @@ You will find the full source code of this iteration in `sft_one_iter` in [sft_a
 Most modern agents do not use the model directly, instead, they use an API like OpenAI chat completion API to interact with the model. Therefore, we need a vLLM-based inference server launched before rollouts. The serving code briefly look like the following. See `vllm_server` function in [sft_algorithm.py]({{ src("examples/unsloth/sft_algorithm.py") }}) if you want to see a more robust version.
 
 ```python
-from contextlib import contextmanager
 from openai import OpenAI
 
-@contextmanager
-def vllm_server(model_path: str, port: int):
-    try:
-        proc = subprocess.Popen([
-            "vllm", "serve", model_path, "--port", str(port),
-            "--enable-auto-tool-choice", "--tool-call-parser", "hermes"
-        ])
+vllm_process = subprocess.Popen([
+    "vllm", "serve", model_path, "--port", str(port),
+    "--enable-auto-tool-choice", "--tool-call-parser", "hermes"
+])
 
-        # Wait for the server to be ready
-        url = f"http://localhost:{port}/health"
-        start = time.time()
-        client = httpx.Client()
+# Wait for the server to be ready
+url = f"http://localhost:{port}/health"
+start = time.time()
+client = httpx.Client()
 
-        while True:
-            if client.get(url).status_code == 200:
-                break
+while True:
+    if client.get(url).status_code == 200:
+        break
 
-        yield f"http://localhost:{port}/v1"
-    finally:
-        # Terminate the server
-        proc.terminate()
+server_address = f"http://localhost:{port}/v1"
 
-# Use the vLLM server
-with vllm_server(model_path, port) as server_address:
-    # Use the server address to interact with the model
-    openai = OpenAI(base_url=server_address)
-    ...
+# Try using the vLLM server
+openai = OpenAI(base_url=server_address)
+...
 ```
 
 In this recipe, we do not expose the server address directly to the agent runners, because we want to install a "middleware" to collect the prompts and responses of all the requests. In general cases, it's up to you to decide whether to hide the vLLM server behind a proxy or not.
@@ -79,6 +70,8 @@ The "middleware" here is [`LLMProxy`][agentlightning.LLMProxy], which is an inde
 The [`LLMProxy`][agentlightning.LLMProxy] accepts a list of model configurations, in the same syntax as LiteLLM's [`model_list`](https://docs.litellm.ai/docs/proxy/configs). Include a `hosted_vllm/` prefix to the models to activate LiteLLM's [vLLM integration](https://docs.litellm.ai/docs/providers/vllm).
 
 ```python
+import agentlightning as agl
+
 llm_proxy = agl.LLMProxy(port=port, store=store)
 model_list = [
     {
@@ -90,26 +83,202 @@ llm_proxy.update_model_list(model_list)
 # If the proxy is not running, it will start automatically.
 llm_proxy.restart()
 # Add the proxy as a resource to the store so that the runners can access it via URL.
-store.add_resources({"main_llm": llm_proxy.as_resource()})
+resource_update = await store.add_resources({"main_llm": llm_proxy.as_resource()})
 ```
 
 ### Spawn Rollout and Collect Spans
 
-TBD
+Once the proxy is registered as a resource, the algorithm schedules work for the rollout runners. Each problem from a training dataset becomes a rollout with the proxy baked into its resources:
+
+```python
+rollouts: list[Rollout] = []
+for sample in train_dataset:
+    rollouts.append(
+        await store.enqueue_rollout(
+            input=sample,
+            mode="train",
+            resources_id=resources_update.resources_id,
+        )
+    )
+```
+
+`resources_id` ties every rollout to the `main_llm` proxy resource we just uploaded. The runners on the other side poll the store ([`LitAgentRunner.iter()`][agentlightning.LitAgentRunner.iter]) and execute the agent for each rollout. On the algorithm side we wait for completions with a non-blocking polling loop:
+
+```python
+completed_rollouts: list[Rollout] = []
+while True:
+    completed_rollouts = await store.wait_for_rollouts(
+        rollout_ids=[r.rollout_id for r in rollouts],
+        timeout=0.0,
+    )
+    if len(completed_rollouts) == len(rollouts):
+        break
+    await asyncio.sleep(5.0)
+```
+
+!!! note
+
+    The `timeout=0.0` is needed here because we actually use a [`LightningStoreClient`][agentlightning.LightningStoreClient], and `wait_for_rollouts` will establish an HTTP connection to that store. Currently, only non-blocking wait requests are supported, which avoids holding the store connection open.
+
+Once the rollouts are completed, we terminate the vLLM server to free up the GPU memory.
+
+```python
+vllm_process.terminate()
+vllm_process.join(timeout=10.0)
+```
 
 ### Adapt the Spans to HuggingFace Dataset
 
-TBD
+[`LlmProxyTraceToTriplet`][agentlightning.LlmProxyTraceToTriplet] converts the proxy’s spans into [`Triplet`][agentlightning.Triplet] objects that contain prompt/response token IDs plus an optional reward. Each rollout’s spans are queried with `"latest"` to fetch the newest attempt:
+
+```python
+spans = await store.query_spans(rollout.rollout_id, "latest")
+data_adapter = agl.LlmProxyTraceToTriplet()
+triplets = data_adapter.adapt(spans)
+```
+
+The adapter may return multiple triplets per rollout (one per `openai.chat.completion`). To bias training toward successful reasoning chains the algorithm walks the triplets in reverse order, keeps the most recent reward, and turns each prompt/response pair into HuggingFace rows:
+
+```python
+for triplet in reversed(triplets):
+    if triplet.prompt["token_ids"] and triplet.response["token_ids"]:
+        if triplet.reward is not None:
+            recent_reward = triplet.reward
+        if recent_reward is None:
+            continue
+
+        input_ids = triplet.prompt["token_ids"] + triplet.response["token_ids"]
+        # We don't train on prompt tokens, so they are masked out by setting to -100.
+        labels = [-100] * len(triplet.prompt["token_ids"]) + triplet.response["token_ids"]
+        # The following is a dataset format required by Unsloth SFT trainer.
+        huggingface_dataset.append(
+            {
+                "input_ids": input_ids,
+                "attention_mask": [1] * len(input_ids),
+                "labels": labels,
+                "reward": recent_reward,
+            }
+        )
+```
+
+After aggregating every rollout we shuffle, sort by reward, and keep the top fractions (e.g., 50%) slice before shuffling again. The resulting list feeds directly into `datasets.Dataset.from_list`, which is the format Unsloth’s SFT trainer expects.
+
+```python
+from datasets import Dataset as HuggingFaceDataset
+
+random.shuffle(all_triplets)
+all_triplets.sort(key=lambda x: x["reward"], reverse=True)
+sliced_triplets = all_triplets[: max(1, int(len(all_triplets) * triplet_fraction))]
+# Shuffle the sliced triplets again
+random.shuffle(sliced_triplets)
+
+sft_dataset = HuggingFaceDataset.from_list(sliced_triplets)
+```
 
 ### Launch Unsloth Training
 
-TBD
+The heavy lifting happens in [`trl.SFTTrainer`](https://huggingface.co/docs/trl/sft_trainer) (see [unsloth_helper.py]({{ src("examples/unsloth/unsloth_helper.py") }}) on how it's used). We launch it in a fresh process created with `multiprocessing.get_context("spawn")` so CUDA memory is reliably reclaimed when training ends. Launching it in the same process will also work for the first iteration, but we found that the memory won't be freed properly for subsequent vLLM serving.
 
-## The Agent: OpenAI Agents SDK with Tooling
+```python
+context = multiprocessing.get_context("spawn")
+unsloth_process = context.Process(
+    target=unsloth_training,
+    args=(model_path, sft_dataset, next_model_path),
+    daemon=True,
+)
+unsloth_process.start()
+unsloth_process.join(timeout=600.0)
+```
 
-`math_agent` is wrapped by the `@rollout` decorator so runners can execute it. It uses the OpenAI Agents SDK (`agents.Agent`, `Runner`) to wire a calculator MCP server and an OpenAI-compatible chat completion model together. The runner injects the `LLM` resource supplied by the proxy, so the agent can stay focused on the task logic: formatting requests with strict instructions (`### <answer> ###`) and computing a reward by comparing the extracted numeric answer to the GSM-hard ground truth.
+Inside the `unsloth_training` subprocess, Unsloth loads the previous checkpoint in 4-bit, applies LoRA adapters, and forwards the Hugging Face dataset to [`trl.SFTTrainer`](https://huggingface.co/docs/trl/sft_trainer) with the configuration defined in [`SFTConfig`](https://huggingface.co/docs/trl/sft_trainer#trl.SFTConfig) (batch size, accumulation steps, learning rate, etc.). The merged 16-bit weights are saved under `models/version_<iteration + 1>` so the next iteration can immediately serve them with vLLM.
 
-TBD: make it more verbose. Include some code snippets.
+```python
+from unsloth import FastLanguageModel
+# TRL is patched by unsloth.
+from trl import SFTConfig, SFTTrainer
+
+model, tokenizer = FastLanguageModel.from_pretrained(
+    model_name=model_path,
+    load_in_4bit=True,  # 4 bit quantization to reduce memory
+)
+
+# Config the model to use LoRA
+model = FastLanguageModel.get_peft_model(
+    model,
+    r=32,
+    ...
+)
+
+trainer = SFTTrainer(
+    model=model,
+    tokenizer=tokenizer,
+    train_dataset=sft_dataset,
+    ...
+)
+
+# The most heavy step here.
+trainer_stats = trainer.train()
+
+# Save in 16-bit for vLLM inference later
+model.save_pretrained_merged(next_model_path, tokenizer, save_method="merged_16bit")
+```
+
+## The Agent: OpenAI Agents SDK with MCP
+
+We build an Agent with [OpenAI Agents SDK](https://openai.github.io/openai-agents-python/) to wire a calculator MCP calculator tool and an OpenAI-compatible chat completion model together. The agents aims to solve a math problem and it returns a reward indicating whether the answer is correct or not. The runner injects the `LLM` resource supplied by the algorithm side:
+
+```python
+import agentlightning as agl
+from agents import Agent, ModelSettings, OpenAIChatCompletionsModel, Runner as OpenAIRunner
+from agents.mcp import MCPServerStdio
+
+class GsmProblem(TypedDict):
+    input: str
+    target: float
+
+def compute_reward(result: str, target: float) -> float:
+    ...
+
+@agl.rollout
+async def math_agent(task: GsmProblem, llm: agl.LLM) -> float:
+    async with MCPServerStdio(
+        name="Calculator via uvx",
+        params={"command": "uvx", "args": ["mcp-server-calculator"]},
+    ) as server:
+        agent = Agent(
+            name="Assistant",
+            instructions=(
+                "Use the calculator tool for every question. "
+                "Return only the numeric answer wrapped like ### <answer> ###."
+            ),
+            mcp_servers=[server],
+            model=OpenAIChatCompletionsModel(
+                model=llm.model,
+                openai_client=AsyncOpenAI(
+                    base_url=llm.endpoint,
+                    api_key=llm.api_key or "dummy",
+                ),
+            ),
+            model_settings=ModelSettings(
+                temperature=llm.sampling_parameters.get("temperature", 0.0),
+            ),
+        )
+        result = await OpenAIRunner.run(agent, task["input"])
+    return compute_reward(result.final_output, task["target"])
+```
+
+!!! tip
+
+    You can test the agent with a dry run:
+
+    ```python
+    llm = agl.LLM(
+        endpoint=os.environ["OPENAI_BASE_URL"],
+        api_key=os.environ["OPENAI_API_KEY"],
+        model="gpt-4.1-mini",
+    )
+    math_agent({"input": "What is 1 + 1?", "target": 2.0}, llm)
+    ```
 
 ## Run this Recipe
 
@@ -173,6 +342,51 @@ spawn_runners(store=store, n_runners=4)
 
 ### Run Everything with Trainer
 
-We also show how to wrap everything into a single script using [`Trainer`][agentlightning.Trainer]. [`sft_allinone.py`]({{ src("examples/unsloth/sft_allinone.py") }}) shows the full example code.
+We also show how to wrap everything into a single script using [`Trainer`][agentlightning.Trainer]. [`sft_allinone.py`]({{ src("examples/unsloth/sft_allinone.py") }}) wires the same components together, replacing the manual management of runners above.
 
-TBD: more details and how to run.
+```python
+class UnslothSupervisedFinetuning(agl.Algorithm):
+
+    async def run(
+        self,
+        train_dataset: Optional[Dataset[GsmProblem]] = None,
+        val_dataset: Optional[Dataset[GsmProblem]] = None,
+    ):
+        # Use the store, llm_proxy, and adapter from the trainer
+        store = self.get_store()
+        llm_proxy = self.get_llm_proxy()
+        data_adapter = self.get_adapter()
+
+        for iteration in range(self.max_iterations):
+            ... # Same logic as sft_algorithm.py
+
+algo = UnslothSupervisedFinetuning(
+    max_iterations=2,
+    vllm_port=12316,
+    train_triplet_fraction=0.5,
+    initial_model_path="models/version_0",
+)
+
+# LLM Proxy can be created before Trainer
+trainer = Trainer(
+    n_runners=4,
+    algorithm=algo,
+    llm_proxy=LLMProxy(port=12358),
+)
+
+trainer.fit(math_agent, load_math_dataset())
+```
+
+You might wonder where is the initialization of [`Adapter`][agentlightning.Adapter] in this code. It turns out that [`TracerTraceToTriplet`][agentlightning.TracerTraceToTriplet] is the default adapter in [`Trainer`][agentlightning.Trainer], and we don't need to create an adapter any more.
+
+Now you can run the example with:
+
+```bash
+python examples/unsloth/sft_allinone.py
+```
+
+It starts a store in-memory for you, launches four worker processes, iterates the SFT loop, and prints the final checkpoint path when done. Adjust `max_iterations`, `train_triplet_fraction`, `n_runners`, or the proxy port to match your hardware or training goals. If you already run an external store or proxy you can also pass those objects into [`Trainer`][agentlightning.Trainer] instead of letting [Trainer manages for you][debug-with-external-store].
+
+!!! info
+
+    As a future plan, we might graduate this example into a more powerful SFT algorithm bundled into [Algorithm Zoo](../algorithm-zoo/index.md). Currently, this `UnslothSupervisedFinetuning` is still for demo purposes.
