@@ -72,6 +72,8 @@ sequenceDiagram
 
 [`LLMProxy`][agentlightning.LLMProxy] actually provides more functionalities than just the middleware for tracing. Read [Serving LLM](../deep-dive/serving-llm.md) for more details.
 
+[](){ #distributed-tracing }
+
 !!! note "Distributed Tracing"
 
     Agent-lightning enforces deterministic span ordering by assigning a monotonic [`sequence_id`][agentlightning.Span.sequence_id] to every span within an attempt. Before calling [`LightningStore.add_span`][agentlightning.LightningStore.add_span] or [`LightningStore.add_otel_span`][agentlightning.LightningStore.add_otel_span], tracers are expected to call [`LightningStore.get_next_span_sequence_id`][agentlightning.LightningStore.get_next_span_sequence_id] to get the next sequence id. This removes clock skew and merges spans produced on different machines or threads. If you implement a custom tracer or exporter, make sure you do this (or respect the one provided in headers by components such as [`LLMProxy`][agentlightning.LLMProxy]); otherwise, adapters will struggle to properly reconstruct the execution tree.

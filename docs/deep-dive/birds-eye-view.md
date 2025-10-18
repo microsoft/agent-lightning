@@ -294,6 +294,8 @@ flowchart TD
 
 ## Putting It All Together: A Reinforcement Learning Example (VERL)
 
+[](){ #birds-eye-view-verl-example }
+
 VERL shows how an algorithm consumes the shared infrastructure. For historical reasons, code lives in `agentlightning.algorithm.verl` and `agentlightning.verl`. The latter is legacy and reuses terms like `Trainer` in confusing ways. The former is a thin wrapper that conforms to the new algorithm interface. Future versions will merge the two.
 
 Reinforcement learning aims to learn a policy that takes actions in states to maximize expected reward. For agents, the policy is usually a language model. Inputs are prompts (state). Outputs are generated text (action). A numeric score judges quality (reward). The `(state, action, reward)` **triplet** is the basic learning unit.
