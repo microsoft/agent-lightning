@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft. All rights reserved.
+
 document.addEventListener('DOMContentLoaded', function () {
   const container = document.querySelector('.md-content__inner');
   if (!container) return;

@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft. All rights reserved.
+
 document$.subscribe(({ body }) => {
   renderMathInElement(body, {
     delimiters: [
