@@ -431,6 +431,8 @@ You can configure which role runs on the main thread. If the main thread runs th
 
 ### Client-server Strategy
 
+[](){ #birds-eye-view-client-server-strategy }
+
 `ClientServerExecutionStrategy` splits concerns across processes. The algorithm bundle starts a `LightningStoreServer` (HTTP API) that wraps the underlying store. Runners connect via `LightningStoreClient` to call the same interface over REST. The server embeds a client to support algorithm-launched subprocesses (e.g., an LLM proxy worker) that need to talk back to the algorithm’s process through the same API.
 
 Currently this design introduces an extra wrapper in the Server side (as shown in the diagram), which helps debugging and improves fault tolerance. We might revisit this design in the future and enforce the client to be the only way to communicate with the store.

@@ -157,6 +157,8 @@ The only limitation is that resources remain static and components like [`LLMPro
 
 ## Debug the Algorithm-Runner Boundary
 
+[](){ #debug-with-external-store }
+
 Debugging algorithms in Agent-Lightning is often more challenging than debugging agents. Algorithms are typically **stateful** and depend on several moving parts — runners, stores, and trainers — which makes it difficult to isolate and inspect their behavior. Even mocking an agent to cooperate with an algorithm can be costly and error-prone. To simplify this, Agent-Lightning provides a way to run algorithms in isolation so you can attach a debugger and inspect internal state without interference from other components.
 
 By default, [`Trainer.fit`][agentlightning.Trainer.fit] runs the algorithm in the main process and thread, but its logs are interleaved with those from the store and runners, making it hard to follow what’s happening inside the algorithm itself. In [*Write Your First Algorithm*](../how-to/write-first-algorithm.md), we covered how to stand up a store, algorithm, and runner in isolation for your own implementations. This section extends that approach to cover two common questions:
