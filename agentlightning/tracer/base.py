@@ -11,7 +11,7 @@ from agentlightning.store.base import LightningStore
 from agentlightning.types import ParallelWorkerBase
 
 if TYPE_CHECKING:
-    from langchain.callbacks.base import BaseCallbackHandler  # type: ignore
+    from langchain_core.callbacks.base import BaseCallbackHandler  # type: ignore
 
 logger = logging.getLogger(__name__)
 
