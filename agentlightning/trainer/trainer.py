@@ -347,15 +347,16 @@ class Trainer(TrainerLegacy):
         *,
         val_dataset: Optional[Dataset[T_co]] = None,
     ) -> None:
-        """Dry run the training loop with a FastAlgorithm and the real runner.
+        """Dry run the training loop with a [`FastAlgorithm`][agentlightning.FastAlgorithm]
+        and the real runner.
 
         Args:
-            agent: The LitAgent instance to be trained on.
+            agent: The [`LitAgent`][agentlightning.LitAgent] instance to be trained on.
             train_dataset: The dataset to train on.
             val_dataset: The dataset to validate on.
 
         Raises:
-            TypeError: If the configured algorithm is not a :class:`FastAlgorithm`.
+            TypeError: If the configured algorithm is not a [`FastAlgorithm`][agentlightning.FastAlgorithm].
         """
         agent.set_trainer(self)
 

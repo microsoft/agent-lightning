@@ -43,7 +43,7 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
     **Abort / Stop Model (four-step escalation):**
 
     1. Cooperative stop:
-       A shared :class:`~agentlightning.execution.events.MultiprocessingEvent`
+       A shared [`MultiprocessingEvent`][agentlightning.MultiprocessingEvent]
        (`stop_evt`) is passed to *all* bundles. Bundles should check it to exit.
        Any crash (algorithm or runner) sets `stop_evt` so the other side can
        stop cooperatively. Ctrl+C on the main process also flips the event.

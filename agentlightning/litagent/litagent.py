@@ -160,12 +160,13 @@ class LitAgent(Generic[T]):
     def on_rollout_start(self, task: Task, runner: Runner[T], tracer: Tracer) -> None:
         """Hook called immediately before a rollout begins.
 
-        Deprecated in favor of `on_rollout_start` in the `Hook` interface.
-
         Args:
-            task: The :class:`Task` object that will be processed.
-            runner: The :class:`Runner` managing the rollout.
-            tracer: The tracer instance associated with the runner.
+            task: The `Task` object that will be processed.
+            runner: The [`Runner`][agentlightning.Runner] managing the rollout.
+            tracer: The [`Tracer`][agentlightning.Tracer] instance associated with the runner.
+
+        Deprecated:
+            In favor of `on_rollout_start` in the [`Hook`][agentlightning.Hook] interface.
 
         Subclasses can override this method to implement custom logic such as
         logging, metric collection, or resource setup. By default, this is a
@@ -178,10 +179,10 @@ class LitAgent(Generic[T]):
         Deprecated in favor of `on_rollout_end` in the `Hook` interface.
 
         Args:
-            task: The :class:`Task` object that was processed.
-            rollout: The resulting :class:`Rollout` object.
-            runner: The :class:`Runner` managing the rollout.
-            tracer: The tracer instance associated with the runner.
+            task: The `Task` object that was processed.
+            rollout: The resulting [`Rollout`][agentlightning.Rollout] object.
+            runner: The [`Runner`][agentlightning.Runner] managing the rollout.
+            tracer: The [`Tracer`][agentlightning.Tracer] instance associated with the runner.
 
         Subclasses can override this method for cleanup or additional
         logging. By default, this is a no-op.

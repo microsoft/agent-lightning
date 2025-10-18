@@ -294,10 +294,10 @@ class Hook(ParallelWorkerBase):
         """Hook called immediately after the tracer enters the trace context but before the rollout begins.
 
         Args:
-            agent: The :class:`LitAgent` instance associated with the runner.
-            runner: The :class:`Runner` managing the rollout.
-            tracer: The :class:`Tracer` instance associated with the runner.
-            rollout: The :class:`Rollout` object that will be processed.
+            agent: The [`LitAgent`][agentlightning.LitAgent] instance associated with the runner.
+            runner: The [`Runner`][agentlightning.Runner] managing the rollout.
+            tracer: The [`Tracer`][agentlightning.Tracer] instance associated with the runner.
+            rollout: The [`Rollout`][agentlightning.Rollout] object that will be processed.
 
         Subclasses can override this method to implement custom logic such as logging,
         metric collection, or resource setup. By default, this is a no-op.
@@ -309,10 +309,10 @@ class Hook(ParallelWorkerBase):
         """Hook called immediately after the rollout completes but before the tracer exits the trace context.
 
         Args:
-            agent: The :class:`LitAgent` instance associated with the runner.
-            runner: The :class:`Runner` managing the rollout.
-            tracer: The :class:`Tracer` instance associated with the runner.
-            rollout: The :class:`Rollout` object that has been processed.
+            agent: The [`LitAgent`][agentlightning.LitAgent] instance associated with the runner.
+            runner: The [`Runner`][agentlightning.Runner] managing the rollout.
+            tracer: The [`Tracer`][agentlightning.Tracer] instance associated with the runner.
+            rollout: The [`Rollout`][agentlightning.Rollout] object that has been processed.
 
         Subclasses can override this method to implement custom logic such as logging,
         metric collection, or resource cleanup. By default, this is a no-op.
@@ -322,9 +322,9 @@ class Hook(ParallelWorkerBase):
         """Hook called immediately before a rollout *attempt* begins.
 
         Args:
-            agent: The :class:`LitAgent` instance associated with the runner.
-            runner: The :class:`Runner` managing the rollout.
-            rollout: The :class:`Rollout` object that will be processed.
+            agent: The [`LitAgent`][agentlightning.LitAgent] instance associated with the runner.
+            runner: The [`Runner`][agentlightning.Runner] managing the rollout.
+            rollout: The [`Rollout`][agentlightning.Rollout] object that will be processed.
 
         Subclasses can override this method to implement custom logic such as
         logging, metric collection, or resource setup. By default, this is a
@@ -342,9 +342,9 @@ class Hook(ParallelWorkerBase):
         """Hook called after a rollout *attempt* completes.
 
         Args:
-            agent: The :class:`LitAgent` instance associated with the runner.
-            runner: The :class:`Runner` managing the rollout.
-            rollout: The :class:`Rollout` object that has been processed.
+            agent: The [`LitAgent`][agentlightning.LitAgent] instance associated with the runner.
+            runner: The [`Runner`][agentlightning.Runner] managing the rollout.
+            rollout: The [`Rollout`][agentlightning.Rollout] object that has been processed.
             spans: The spans that have been added to the store.
 
         Subclasses can override this method for cleanup or additional
