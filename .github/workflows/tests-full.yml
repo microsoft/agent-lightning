@@ -14,55 +14,58 @@ jobs:
     timeout-minutes: 30
     strategy:
       matrix:
-        setup: [stable, latest]
+        include:
+        - python-version: '3.10'
+          setup-script: 'legacy'
+        - python-version: '3.12'
+          setup-script: 'stable'
+        - python-version: '3.13'
+          setup-script: 'latest'
       fail-fast: false
     steps:
       - name: Check GPU status
         run: nvidia-smi
       - uses: actions/checkout@v4
-      - name: Create a virtual environment
-        run: python3 -m venv .venv
-      - name: Install dependencies (${{ matrix.setup }})
-        run: |
-          . .venv/bin/activate
-          ./scripts/setup_${{ matrix.setup }}_gpu.sh
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          python-version: ${{ matrix.python-version }}
+      - name: Upgrade dependencies (latest)
+        run: uv lock --upgrade
+        if: matrix.setup-script == 'latest'
+      - name: Sync dependencies (latest)
+        run: uv sync --locked --extra apo --group dev --group agents --group torch-gpu-stable
+        if: matrix.setup-script == 'latest'
+      - name: Sync dependencies (stable & legacy)
+        run: uv sync --locked --extra apo --group dev --group agents --group torch-gpu-${{ matrix.setup-script }}
+        if: matrix.setup-script != 'latest'
       - name: Freeze dependencies
         run: |
-          . .venv/bin/activate
-          which python
-          which pip
-          which uvx
-          pip list | tee requirements-freeze.txt
+          uv export --format requirements.txt --no-hashes -o requirements-freeze.txt
       - name: Upload dependencies artifact
         uses: actions/upload-artifact@v4
         with:
-          name: dependencies-${{ matrix.setup }}
+          name: dependencies-${{ matrix.python-version }}-${{ matrix.setup-script }}
           path: requirements-freeze.txt
           compression-level: 0
 
       - name: Launch LiteLLM Proxy
         run: |
-          set -ex
-          . .venv/bin/activate
-          litellm --config scripts/litellm_ci.yaml --port 12306 &
+          uv run litellm --config scripts/litellm_ci.yaml --port 12306 &
           sleep 10  # Wait for the proxy to be up
         env:
           AZURE_API_BASE: ${{ secrets.AZURE_API_BASE }}
           AZURE_API_KEY: ${{ secrets.AZURE_API_KEY }}
       - name: Verify LiteLLM Proxy
         run: |
-          set -ex
-          . .venv/bin/activate
-          python scripts/litellm_sanity_check.py
+          uv run scripts/litellm_sanity_check.py
         env:
           OPENAI_BASE_URL: http://localhost:12306/
           OPENAI_API_KEY: dummy
 
       - name: Run tests
         run: |
-          set -ex
-          . .venv/bin/activate
-          pytest -v --durations=0 tests
+          uv run pytest -v --durations=0 tests
         env:
           PYTEST_ADDOPTS: "--color=yes"
           OPENAI_BASE_URL: http://localhost:12306/

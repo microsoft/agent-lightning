@@ -24,7 +24,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
@@ -64,7 +64,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - uses: actions/setup-python@v6
@@ -105,7 +105,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
@@ -121,12 +121,12 @@ jobs:
         if: matrix.setup-script != 'latest'
       - name: Freeze dependencies
         run: |
-          pip list | tee requirements-freeze-${{ matrix.python-version }}-${{ matrix.setup-script }}.txt
+          uv export --format requirements.txt --no-hashes -o requirements-freeze.txt
       - name: Upload dependencies artifact
         uses: actions/upload-artifact@v4
         with:
-          name: dependencies-python-${{ matrix.python-version }}-${{ matrix.setup-script }}
-          path: requirements-freeze-${{ matrix.python-version }}-${{ matrix.setup-script }}.txt
+          name: dependencies-${{ matrix.python-version }}-${{ matrix.setup-script }}
+          path: requirements-freeze.txt
           compression-level: 0
       - name: Run tests
         run: |
