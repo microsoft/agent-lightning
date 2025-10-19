@@ -53,12 +53,12 @@ Unset = _UnsetType  # Alias for convenience
 
 
 class LightningStore:
-    """
-    A centralized, thread-safe, async, data store for the lightning's state.
-    This holds the task queue, versioned resources, and completed rollouts.
+    """Asynchronous persistence layer coordinating rollouts and resources.
 
-    The store has a built-in clock and it should be responsible for tracking the times.
-    All the time-based operations like retry, timeout, etc. should be handled by the store.
+    Implementations back the shared task queue, store rollout attempts,
+    version named resources, and maintain time-based bookkeeping such as retry
+    delays. The interface is intentionally high level so strategies and runners
+    can swap storage backends without changing orchestration logic.
     """
 
     async def start_rollout(
@@ -69,17 +69,24 @@ class LightningStore:
         config: RolloutConfig | None = None,
         metadata: Dict[str, Any] | None = None,
     ) -> AttemptedRollout:
-        """
-        Add one incomplete rollout to the store, and get an attempt created for it.
-        This will immediately sets the rollout to a preparing state, and should be
-        used by whoever is going to execute the rollout.
+        """Create a rollout in ``preparing`` state and allocate its first attempt.
 
-        Return a special rollout with attempt object. Do not update it directly.
+        Args:
+            input: Task payload supplied by the requester.
+            mode: Optional semantic mode, such as ``"train"`` or ``"eval"``.
+            resources_id: Version identifier of the resources snapshot to use.
+            config: Optional rollout configuration metadata.
+            metadata: User-supplied metadata stored alongside the rollout.
 
-        But if the rollout fails or timeouts, it's still possible that the watchdog
-        sends it back to the queue for retry.
+        Returns:
+            Attempt wrapper containing the rollout and the first attempt record.
 
-        To enqueue a rollout to the task queue, use `enqueue_rollout` instead.
+        Raises:
+            NotImplementedError: Subclasses must persist the rollout.
+
+        !!! note
+            Use [enqueue_rollout()][agentlightning.LightningStore.enqueue_rollout]
+            to queue work without taking an immediate attempt.
         """
         raise NotImplementedError()
 
@@ -91,32 +98,63 @@ class LightningStore:
         config: RolloutConfig | None = None,
         metadata: Dict[str, Any] | None = None,
     ) -> Rollout:
-        """
-        Adds a new task to the queue with specific metadata and
-        returns the rollout object with its unique ID.
+        """Enqueue a rollout without starting an attempt immediately.
+
+        Args:
+            input: Task payload supplied by the requester.
+            mode: Optional semantic mode, such as ``"train"`` or ``"eval"``.
+            resources_id: Version identifier of the resources snapshot to use.
+            config: Optional rollout configuration metadata.
+            metadata: User-supplied metadata stored alongside the rollout.
+
+        Returns:
+            Rollout record queued for future execution.
+
+        Raises:
+            NotImplementedError: Subclasses must persist the rollout.
         """
         raise NotImplementedError()
 
     async def dequeue_rollout(self) -> Optional[AttemptedRollout]:
-        """
-        Retrieves the next task from the queue without blocking.
-        Returns None if the queue is empty.
+        """Pop the next rollout from the queue and mark it as ``preparing``.
 
-        Will set the rollout status to preparing.
+        Returns:
+            Attempt wrapper ready for execution, or ``None`` when the queue is
+            empty.
+
+        Raises:
+            NotImplementedError: Subclasses must implement queue retrieval.
         """
         raise NotImplementedError()
 
     async def start_attempt(self, rollout_id: str) -> AttemptedRollout:
-        """
-        Create a new attempt for a given rollout ID and return the attempt details.
+        """Create a new attempt for ``rollout_id``.
+
+        Args:
+            rollout_id: Identifier of the rollout being retried.
+
+        Returns:
+            Attempt wrapper containing the rollout and the newly created attempt.
+
+        Raises:
+            NotImplementedError: Subclasses must implement attempt creation.
         """
         raise NotImplementedError()
 
     async def add_span(self, span: Span) -> Span:
-        """
-        Add a span to the store.
+        """Persist a span emitted during rollout execution.
 
-        This method is responsible for updating the rollout/attempt status to "running" if needed.
+        Implementations should update rollout and attempt state to ``running``
+        when the stored span represents execution progress.
+
+        Args:
+            span: Span metadata to persist.
+
+        Returns:
+            Stored span record.
+
+        Raises:
+            NotImplementedError: Subclasses must implement span persistence.
         """
         raise NotImplementedError()
 
@@ -127,75 +165,154 @@ class LightningStore:
         readable_span: ReadableSpan,
         sequence_id: int | None = None,
     ) -> Span:
-        """
-        Add an opentelemetry span to the store.
+        """Persist an OpenTelemetry span captured for a rollout attempt.
 
-        If sequence_id is not provided, it will be fetched from `get_next_span_sequence_id` and assigned automatically.
+        Args:
+            rollout_id: Identifier of the rollout owning the span.
+            attempt_id: Attempt identifier for the span.
+            readable_span: Span exported by ``opentelemetry``.
+            sequence_id: Explicit sequence number. When omitted, the next value
+                from [get_next_span_sequence_id()][agentlightning.LightningStore.get_next_span_sequence_id]
+                is used.
+
+        Returns:
+            Stored span record.
+
+        Raises:
+            NotImplementedError: Subclasses must implement span persistence.
         """
         raise NotImplementedError()
 
     async def query_rollouts(
         self, *, status: Optional[Sequence[RolloutStatus]] = None, rollout_ids: Optional[Sequence[str]] = None
     ) -> List[Rollout]:
-        """
-        Query and retrieve rollouts filtered by their status.
-        If no status is provided, returns all rollouts.
+        """Return rollouts filtered by status or identifier.
+
+        Args:
+            status: Optional sequence of [`RolloutStatus`][agentlightning.RolloutStatus]
+                values to include.
+            rollout_ids: Optional explicit identifiers to retrieve.
+
+        Returns:
+            Matching rollouts ordered by backend-specific semantics.
+
+        Raises:
+            NotImplementedError: Subclasses must implement the query.
         """
         raise NotImplementedError()
 
     async def query_attempts(self, rollout_id: str) -> List[Attempt]:
-        """
-        Query and retrieve all attempts associated with a specific rollout ID.
-        Returns an empty list if no attempts are found.
+        """Return every attempt created for ``rollout_id``.
+
+        Args:
+            rollout_id: Identifier of the rollout being inspected.
+
+        Returns:
+            All attempts ordered by creation time.
+
+        Raises:
+            NotImplementedError: Subclasses must implement the query.
         """
         raise NotImplementedError()
 
     async def get_rollout_by_id(self, rollout_id: str) -> Optional[Rollout]:
-        """
-        Safely retrieves a specific rollout by its ID.
+        """Fetch a rollout by identifier.
+
+        Args:
+            rollout_id: Identifier to retrieve.
+
+        Returns:
+            Rollout when found, otherwise ``None``.
+
+        Raises:
+            NotImplementedError: Subclasses must implement retrieval.
         """
         raise NotImplementedError()
 
     async def get_latest_attempt(self, rollout_id: str) -> Optional[Attempt]:
-        """
-        Safely retrieves the latest attempt for a given rollout ID.
+        """Fetch the most recent attempt for ``rollout_id``.
+
+        Args:
+            rollout_id: Identifier to inspect.
+
+        Returns:
+            Latest attempt or ``None`` when no attempts exist.
+
+        Raises:
+            NotImplementedError: Subclasses must implement retrieval.
         """
         raise NotImplementedError()
 
     async def get_resources_by_id(self, resources_id: str) -> Optional[ResourcesUpdate]:
-        """
-        Safely retrieves a specific version of named resources by its ID.
+        """Return a specific resources snapshot by identifier.
+
+        Args:
+            resources_id: Identifier of the snapshot.
+
+        Returns:
+            Resources update or ``None`` when missing.
+
+        Raises:
+            NotImplementedError: Subclasses must implement retrieval.
         """
         raise NotImplementedError()
 
     async def get_latest_resources(self) -> Optional[ResourcesUpdate]:
-        """
-        Safely retrieves the latest version of named resources.
+        """Fetch the most recent resources snapshot.
+
+        Returns:
+            Resources update or ``None`` when no resources have been stored.
+
+        Raises:
+            NotImplementedError: Subclasses must implement retrieval.
         """
         raise NotImplementedError()
 
     async def get_next_span_sequence_id(self, rollout_id: str, attempt_id: str) -> int:
-        """
-        Get the next span sequence ID for a given rollout and attempt.
-        This should be used to assign a unique sequence ID to each span within an attempt.
+        """Allocate a monotonically increasing sequence id for span ordering.
 
-        Recommend getting the ID before the operation even begins to avoid racing conditions.
+        Args:
+            rollout_id: Identifier of the rollout emitting spans.
+            attempt_id: Attempt identifier for the span.
+
+        Returns:
+            Sequence number unique within the attempt.
+
+        Raises:
+            NotImplementedError: Subclasses must provide the allocator.
         """
         raise NotImplementedError()
 
     async def wait_for_rollouts(self, *, rollout_ids: List[str], timeout: Optional[float] = None) -> List[Rollout]:
-        """
-        Wait for specified rollouts to complete with a timeout.
-        Returns the completed rollouts, potentially incomplete if timeout is reached.
+        """Block until each rollout completes or ``timeout`` expires.
 
-        TODO: Add support for waiting for 20 new rollouts, or wait until 80% of the pending ids are completed.
+        Args:
+            rollout_ids: Identifiers to wait for.
+            timeout: Maximum number of seconds to wait. ``None`` waits
+                indefinitely.
+
+        Returns:
+            Completed rollouts. Entries may remain incomplete if the timeout is
+            reached.
+
+        Raises:
+            NotImplementedError: Subclasses must implement waiting semantics.
         """
         raise NotImplementedError()
 
     async def query_spans(self, rollout_id: str, attempt_id: str | Literal["latest"] | None = None) -> List[Span]:
-        """
-        Query and retrieve all spans associated with a specific rollout ID.
-        Returns an empty list if no spans are found.
+        """Return spans for ``rollout_id`` and optionally a specific attempt.
+
+        Args:
+            rollout_id: Identifier of the rollout being inspected.
+            attempt_id: Attempt identifier, ``"latest"`` for the newest attempt,
+                or ``None`` to include all attempts.
+
+        Returns:
+            Ordered list of spans.
+
+        Raises:
+            NotImplementedError: Subclasses must implement the query.
         """
         raise NotImplementedError()
 
