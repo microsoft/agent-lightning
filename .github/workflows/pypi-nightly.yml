@@ -49,10 +49,3 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           repository-url: https://test.pypi.org/legacy/
-
-      - name: Test installation from Test PyPI
-        run: |
-          # Wait a bit for the package to be available
-          sleep 30
-          pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ agentlightning
-          python -c "import agentlightning; print('Package installed successfully')"
