@@ -10,10 +10,14 @@ logger = logging.getLogger(__name__)
 
 
 def emit_message(message: str) -> None:
-    """Emit a string message as a span.
+    """Emit a textual message as an OpenTelemetry span.
 
-    OpenTelemetry has a dedicated design of logs by design, but we can also use spans to emit messages.
-    So that it can all be unified in the data store and analyzed together.
+    Args:
+        message: Human readable message to attach as a span attribute.
+
+    !!! note
+        OpenTelemetry distinguishes between logs and spans. Emitting the message as a
+        span keeps all Agent Lightning telemetry in a single data store for analysis.
     """
     if not isinstance(message, str):  # type: ignore
         logger.error(f"Message must be a string, got: {type(message)}. Skip emit_message.")

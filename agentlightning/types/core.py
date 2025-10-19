@@ -1,5 +1,7 @@
 # Copyright (c) Microsoft. All rights reserved.
 
+"""Core data models shared across Agent Lightning components."""
+
 from __future__ import annotations
 
 from typing import (
@@ -53,7 +55,7 @@ T_co = TypeVar("T_co", covariant=True)
 
 
 class Triplet(BaseModel):
-    """A standard structure for a single turn in a RL trajectory."""
+    """Single interaction turn captured during reinforcement learning."""
 
     prompt: Any
     response: Any
@@ -62,7 +64,7 @@ class Triplet(BaseModel):
 
 
 class RolloutLegacy(BaseModel):
-    """The standard reporting object from client to server."""
+    """Legacy reporting payload exchanged with the deprecated HTTP server."""
 
     rollout_id: str
 
@@ -113,7 +115,7 @@ RolloutMode = Literal["train", "val", "test"]
 
 
 class Attempt(BaseModel):
-    """An attempt to execute a rollout. A rollout can have multiple attempts if retries are needed."""
+    """Execution attempt for a rollout, including metadata for retries."""
 
     rollout_id: str
     """The rollout which this attempt belongs to."""
@@ -138,7 +140,7 @@ class Attempt(BaseModel):
 
 
 class RolloutConfig(BaseModel):
-    """Configurations for rollout execution."""
+    """Configuration controlling rollout retries and timeouts."""
 
     timeout_seconds: Optional[float] = None
     """The timeout for the rollout, in seconds. None indicates no timeout."""
@@ -152,34 +154,34 @@ class RolloutConfig(BaseModel):
 
 class Rollout(BaseModel):
     rollout_id: str
-    """The universal id for the rollout."""
+    """Unique identifier for the rollout."""
 
     input: TaskInput
-    """The input of the rollout, also known as a task."""
+    """Task input used to generate the rollout."""
 
     # Time to track the lifecycle of the rollout
     start_time: float
-    """The time when the rollout has started."""
+    """Timestamp when the rollout started."""
     end_time: Optional[float] = None
-    """The time when the rollout has ended."""
+    """Timestamp when the rollout ended."""
 
     mode: Optional[RolloutMode] = None
-    """The mode of the rollout (e.g., train, val, test)."""
+    """Execution mode such as ``"train"``, ``"val"`` or ``"test"``."""
     resources_id: Optional[str] = None
-    """The id of the resources used by the rollout."""
+    """Identifier of the resources required to execute the rollout."""
 
     status: RolloutStatus = "queuing"
-    """The status of the rollout."""
+    """Latest status emitted by the controller."""
 
     config: RolloutConfig = Field(default_factory=RolloutConfig)
-    """The configuration of the rollout, e.g., retry policy."""
+    """Retry and timeout configuration associated with the rollout."""
 
     metadata: Optional[Dict[str, Any]] = None
-    """A bucket for any other relevant information."""
+    """Additional metadata attached to the rollout."""
 
 
 class AttemptedRollout(Rollout):
-    """A rollout along with its active attempt."""
+    """Rollout paired with the currently active attempt."""
 
     attempt: Attempt
 
@@ -191,11 +193,16 @@ class AttemptedRollout(Rollout):
 
 
 TaskInput = Any
-"""Task input type. Can be any type."""
+TaskInput.__doc__ = """Task input type. Accepts arbitrary payloads."""
 
 
 class Task(BaseModel):
-    """A task (rollout request) to be processed by the client agent. Deprecated."""
+    """Rollout request served to client agents.
+
+    !!! warning "Deprecated"
+        The legacy HTTP client/server stack still uses this model. Prefer
+        [`agentlightning.store`][agentlightning.store] APIs for new workflows.
+    """
 
     rollout_id: str
     input: TaskInput
@@ -228,8 +235,12 @@ RolloutRawResult = Union[
 
 
 class GenericResponse(BaseModel):
-    """
-    A generic response message that can be used for various purposes.
+    """Generic server response used by compatibility endpoints.
+
+    Attributes:
+        status: Status string describing the result of the request.
+        message: Optional human readable explanation.
+        data: Arbitrary payload serialized as JSON.
     """
 
     status: str = "success"
@@ -238,19 +249,17 @@ class GenericResponse(BaseModel):
 
 
 class ParallelWorkerBase:
-    """Base class for objects that can be parallelized across multiple worker processes.
+    """Base class for workloads executed across multiple worker processes.
 
-    This class defines the standard lifecycle for parallel processing:
+    The lifecycle is orchestrated by the main process:
 
-    Main Process:
-        1. init() - Initialize the object in the main process
-        2. spawn workers and call init_worker() in each worker
-        3. run() - Execute the main workload in parallel across workers
-        4. teardown_worker() - Clean up resources in each worker
-        5. teardown() - Final cleanup in the main process
+    * `init()` prepares shared state.
+    * Each worker calls `init_worker()` during start-up.
+    * `run()` performs the parallel workload.
+    * Workers call `teardown_worker()` before exiting.
+    * The main process finalizes through `teardown()`.
 
-    Subclasses should implement the run() method and optionally override
-    the lifecycle methods for custom initialization and cleanup behavior.
+    Subclasses must implement `run()` and can override other lifecycle hooks.
     """
 
     def __init__(self) -> None:
