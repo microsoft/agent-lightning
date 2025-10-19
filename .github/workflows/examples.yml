@@ -141,7 +141,7 @@ jobs:
         env:
           OPENAI_BASE_URL: http://localhost:12306/
           OPENAI_API_KEY: dummy
-        if: success() || failure()
+        if: ${{ (success() || failure()) && matrix.setup-script != 'legacy' }}
 
       - name: Spider sanity check
         run: |
