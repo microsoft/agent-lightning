@@ -17,21 +17,26 @@ logger = logging.getLogger(__name__)
 
 
 class SharedMemoryExecutionStrategy(ExecutionStrategy):
-    """Run algorithm and runners in a single process with threads sharing memory.
+    """Execute bundles in a single process with cooperative worker threads.
 
-    Termination & abort model:
+    Stop Model:
 
-    - One shared ThreadingEvent (`stop_evt`) is passed to *all* bundles.
-    - The main thread (only) receives KeyboardInterrupt on Ctrl+C; we set `stop_evt` there.
-    - If any bundle raises, we set `stop_evt` from that thread to stop the rest.
-    - After the main-thread bundle finishes normally:
-      - If main_thread is "algorithm", we also set `stop_evt` to stop the runners.
-      - If main_thread is "runner", we do not set `stop_evt` to stop the algorithm.
-        We instead wait for the algorithm to finish naturally.
-    - Background threads are daemons; we join briefly and log any stragglers.
+    - All bundles share one [`ThreadingEvent`][agentlightning.ThreadingEvent]
+      named `stop_evt`.
+    - Only the main thread receives `KeyboardInterrupt`. When Ctrl+C occurs we
+      set `stop_evt`.
+    - Any exception raised inside a bundle sets `stop_evt` so other threads can
+      unwind cooperatively.
+    - Once the bundle running on the main thread exits successfully the
+      treatment depends on `main_thread`:
+        - `"algorithm"`: the runners are asked to stop by setting `stop_evt`.
+        - `"runner"`: the algorithm keeps running until it exits naturally.
+    - Background threads are marked as daemons. We join them briefly and log any
+      stragglers before shutting down.
 
-    Notes: Signals other than SIGINT (e.g., SIGTERM) are not intercepted; we respect
-    Python's default behavior for them.
+    !!! note
+        Signals other than `SIGINT` (such as `SIGTERM`) are not intercepted;
+        Python's default behavior for those signals is preserved.
     """
 
     alias: str = "shm"
@@ -63,17 +68,19 @@ class SharedMemoryExecutionStrategy(ExecutionStrategy):
         """Run `coro` until it finishes or a cooperative stop is requested.
 
         Control flow:
-          1) Start the bundle coroutine as `task`.
-          2) Start a watcher task that waits for `stop_evt` *without blocking* the loop
-             by periodically polling the threading event.
-          3) When the stop event flips:
-               a) Give the bundle *graceful_delay* seconds to finish on its own,
-                  because well-behaved bundles will check the event and return.
-               b) If still running after the grace period, cancel the bundle task.
-          4) Ensure both tasks are awaited; swallow `CancelledError` where appropriate.
+
+        1. Start the bundle coroutine as `task`.
+        2. Launch a watcher that polls `stop_evt` without blocking the loop.
+        3. When the stop event flips:
+            a. Give the bundle `graceful_delay` seconds to finish on its own,
+               because well-behaved bundles will check the event and return.
+            b. Cancel the bundle task if it is still running after the grace
+               period.
+        4. Await both tasks and swallow `CancelledError` where appropriate.
 
         This is a *backup* mechanism for bundles that might not poll the event
-        frequently; cooperative shutdown (checking `stop_evt` yourself) is still preferred.
+        frequently; cooperative shutdown (checking `stop_evt` inside the
+        bundle) remains the preferred approach.
         """
         task: asyncio.Task[Any] = asyncio.create_task(coro)  # type: ignore
         task_exception: Optional[BaseException] = None
