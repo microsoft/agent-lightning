@@ -17,7 +17,7 @@ dependencies = [
   "opentelemetry-api>=1.35",
   "opentelemetry-sdk>=1.35",
   "opentelemetry-exporter-otlp>=1.35",
-  "litellm[proxy]>=1.77",
+  "litellm[proxy]>=1.72",
   "pydantic>=2.11",
   "openai",
   "rich",
@@ -100,6 +100,7 @@ torch-legacy = [
   "tokenizers>=0.21,<0.22",
   "flash-attn==2.8.1",
   "vllm==0.9.2",
+  "litellm[proxy]==1.72.9",
 ]
 
 # Flash-attention must build with CUDA toolkit.
@@ -187,9 +188,6 @@ environments = [
   "sys_platform == 'linux'",
 ]
 dependency-metadata = [
-  # This version of litellm is used specifically for legacy group.
-  # There's conflict between the litellm's dependent openai version and vllm's openai version.
-  { name = "litellm", provides-extra = ["proxy"], version = "1.77.0", requires-dist = ["openai==1.90.0"] },
   # Conflicts between packaging dependency of pyvers (dependency of tensordict) and agentops.
   { name = "pyvers", version = "0.1.0", requires-dist = ["packaging>=24.0"] },
 ]
