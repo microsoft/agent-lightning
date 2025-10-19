@@ -1,5 +1,10 @@
 # The Bird's Eye View of Agent-lightning
 
+!!! warning "High Volume of Information Ahead"
+
+    This article provides an in-depth exploration of the Agent-lightning architecture.
+    It is not intended as a beginner’s guide or usage tutorial.
+
 This article summarizes how Agent-lightning (as of v0.2) wires the [Algorithm][agentlightning.Algorithm], [Runner][agentlightning.Runner], and [LightningStore][agentlightning.LightningStore] loop together and shows where auxiliary components (the [Tracer][agentlightning.Tracer], [Adapter][agentlightning.Adapter], and [LLM Proxy][agentlightning.LLMProxy]) plug into the loop. Each section provides a diagram for a different perspective of the system.
 
 ## Algorithm ↔ Runner ↔ Store data flow

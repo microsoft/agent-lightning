@@ -16,7 +16,7 @@ In practice, please also bear in mind that tasks, resources, and spans have extr
 
 This tutorial will show you how to write an agent that can handle various tasks and resources and emit all kinds of spans. However, you should understand that agents and algorithms are often co-designed. Supporting new types of resources or spans in an algorithm is often much more complex than just adding them to an agent.
 
-## `@rollout` Decorator
+## [`@rollout`][agentlightning.rollout] Decorator
 
 The simplest way to create an agent is by writing a standard Python function and marking it with the [@rollout][agentlightning.rollout] decorator. This approach is perfect for agents with straightforward logic that doesn't require complex state management.
 
