@@ -14,7 +14,13 @@ jobs:
     timeout-minutes: 120
     strategy:
       matrix:
-        setup: [stable, latest]
+        include:
+        - python-version: '3.10'
+          setup-script: 'legacy'
+        - python-version: '3.12'
+          setup-script: 'stable'
+        - python-version: '3.13'
+          setup-script: 'latest'
       fail-fast: false
     steps:
       - name: Check GPU status
@@ -22,67 +28,62 @@ jobs:
       - name: Check disk space
         run: df -h
       - uses: actions/checkout@v4
-      - name: Create a virtual environment
-        run: python3 -m venv .venv
-      - name: Install dependencies (${{ matrix.setup }})
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          python-version: ${{ matrix.python-version }}
+      - name: Upgrade dependencies (latest)
+        run: uv lock --upgrade
+        if: matrix.setup-script == 'latest'
+      - name: Sync dependencies (latest)
         run: |
-          . .venv/bin/activate
-          ./scripts/setup_${{ matrix.setup }}_gpu.sh
+          uv sync --frozen --no-default-groups --extra apo --extra verl \
+            --group dev --group experiment --group trl --group agents --group torch-gpu-stable
+        if: matrix.setup-script == 'latest'
+      - name: Sync dependencies (stable & legacy)
+        run: |
+          uv sync --frozen --no-default-groups --extra apo --extra verl \
+            --group dev --group experiment --group trl --group agents --group torch-gpu-${{ matrix.setup-script }}
+        if: matrix.setup-script != 'latest'
       - name: Freeze dependencies
         run: |
-          . .venv/bin/activate
-          which python
-          which pip
-          which uvx
-          pip list | tee requirements-freeze.txt
+          set -ex
+          uv pip freeze | tee requirements-freeze.txt
+          echo "UV_LOCKED=1" >> $GITHUB_ENV
+          echo "UV_NO_SYNC=1" >> $GITHUB_ENV
       - name: Upload dependencies artifact
         uses: actions/upload-artifact@v4
         with:
-          name: dependencies-${{ matrix.setup }}
+          name: dependencies-${{ matrix.python-version }}-${{ matrix.setup-script }}
           path: requirements-freeze.txt
           compression-level: 0
 
       - name: Launch LiteLLM Proxy
         run: |
-          set -ex
-          . .venv/bin/activate
-          litellm --config scripts/litellm_ci.yaml --port 12306 &
-          sleep 10  # Wait for the proxy to be up
+          ./scripts/litellm_run.sh
         env:
           AZURE_API_BASE: ${{ secrets.AZURE_API_BASE }}
           AZURE_API_KEY: ${{ secrets.AZURE_API_KEY }}
 
-      - name: Verify LiteLLM Proxy
-        run: |
-          set -ex
-          . .venv/bin/activate
-          python scripts/litellm_sanity_check.py
-        env:
-          OPENAI_BASE_URL: http://localhost:12306/
-          OPENAI_API_KEY: dummy
-
       - name: Prepare Unsloth model
         run: |
           set -ex
-          . .venv/bin/activate
           cd examples/unsloth
           rm -rf models
-          hf download unsloth/Qwen3-4B-Instruct-2507 --local-dir models/version_0
+          uv run hf download unsloth/Qwen3-4B-Instruct-2507 --local-dir models/version_0
 
       - name: Prepare Spider dataset
         run: |
           set -ex
-          . .venv/bin/activate
           cd examples/spider
-          gdown --fuzzy https://drive.google.com/file/d/1oi9J1jZP9TyM35L85CL3qeGWl2jqlnL6/view
+          uv run gdown --fuzzy https://drive.google.com/file/d/1oi9J1jZP9TyM35L85CL3qeGWl2jqlnL6/view
           unzip -q spider-data.zip -d data
           rm spider-data.zip
       - name: Prepare Calc-X dataset
         run: |
           set -ex
-          . .venv/bin/activate
           cd examples/calc_x
-          gdown --fuzzy https://drive.google.com/file/d/1FQMyKLLd6hP9dw9rfZn1EZOWNvKaDsqw/view
+          uv run gdown --fuzzy https://drive.google.com/file/d/1FQMyKLLd6hP9dw9rfZn1EZOWNvKaDsqw/view
           unzip calc-x-data.zip -d data
           rm calc-x-data.zip
 
@@ -90,11 +91,10 @@ jobs:
       - name: APO example (legacy)
         run: |
           set -ex
-          . .venv/bin/activate
           cd examples/apo
-          python legacy_apo_client.py &
+          uv run legacy_apo_client.py &
           sleep 3  # Wait for the client to be up
-          python legacy_apo_server.py
+          uv run legacy_apo_server.py
           pkill -f legacy_apo_client.py && echo "SIGTERM sent to legacy_apo_client.py" || echo "No legacy_apo_client.py process found"
           while pgrep -f legacy_apo_client.py; do
             echo "Waiting for legacy_apo_client.py to finish..."
@@ -108,9 +108,8 @@ jobs:
       - name: APO example
         run: |
           set -ex
-          . .venv/bin/activate
           cd examples/apo
-          python apo_custom_algorithm_trainer.py | tee _ci_apo.log
+          uv run apo_custom_algorithm_trainer.py | tee _ci_apo.log
           # Check whether the log contains "Best prompt found:"
           grep "Best prompt found:" _ci_apo.log
         env:
@@ -120,11 +119,10 @@ jobs:
       - name: APO example debug sanity check
         run: |
           set -ex
-          . .venv/bin/activate
           cd examples/apo
-          python apo_debug.py --mode runner
-          python apo_debug.py --mode hook
-          python apo_debug.py --mode trainer
+          uv run apo_debug.py --mode runner
+          uv run apo_debug.py --mode hook
+          uv run apo_debug.py --mode trainer
         env:
           # New versions follow OPENAI_BASE_URL instead of OPENAI_API_BASE
           OPENAI_BASE_URL: http://localhost:12306/
@@ -133,9 +131,8 @@ jobs:
       - name: APO built-in algorithm
         run: |
           set -ex
-          . .venv/bin/activate
           cd examples/apo
-          python room_selector_apo.py
+          uv run room_selector_apo.py
         env:
           OPENAI_BASE_URL: http://localhost:12306/
           OPENAI_API_KEY: dummy
@@ -144,9 +141,8 @@ jobs:
       - name: Spider sanity check
         run: |
           set -ex
-          . .venv/bin/activate
           cd examples/spider
-          python sql_agent.py
+          uv run sql_agent.py
         env:
           OPENAI_API_BASE: http://localhost:12306/
           OPENAI_API_KEY: dummy
@@ -154,18 +150,16 @@ jobs:
       - name: Calc-X MCP sanity check
         run: |
           set -ex
-          . .venv/bin/activate
           cd examples/calc_x
-          python tests/test_mcp_calculator.py
+          uv run tests/test_mcp_calculator.py
         env:
           OPENAI_API_BASE: http://localhost:12306/
           OPENAI_API_KEY: dummy
       - name: Calc-X sanity check
         run: |
           set -ex
-          . .venv/bin/activate
           cd examples/calc_x
-          python legacy_calc_agent_debug.py
+          uv run legacy_calc_agent_debug.py
         env:
           OPENAI_BASE_URL: http://localhost:12306/
           OPENAI_API_KEY: dummy
@@ -200,8 +194,7 @@ jobs:
       - name: Validate Calc-X training
         run: |
           set -ex
-          . .venv/bin/activate
-          python scripts/validate_example_wandb.py ${{ steps.calc_x_train.outputs.project_name }} ${{ steps.calc_x_train.outputs.run_name }}
+          uv run scripts/validate_example_wandb.py ${{ steps.calc_x_train.outputs.project_name }} ${{ steps.calc_x_train.outputs.run_name }}
         env:
           WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
           WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
@@ -290,8 +283,7 @@ jobs:
       - name: Validate Spider training
         run: |
           set -ex
-          . .venv/bin/activate
-          python scripts/validate_example_wandb.py ${{ steps.spider_train.outputs.project_name }} ${{ steps.spider_train.outputs.run_name }}
+          uv run scripts/validate_example_wandb.py ${{ steps.spider_train.outputs.project_name }} ${{ steps.spider_train.outputs.run_name }}
         env:
           WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
           WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
@@ -300,8 +292,8 @@ jobs:
       - name: Unsloth SFT example
         run: |
           set -ex
-          . .venv/bin/activate
           cd examples/unsloth
+          source .venv/bin/activate
 
           agl store --port 4747 &
           sleep 5
@@ -330,12 +322,12 @@ jobs:
         env:
           WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
           WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
-        if: ${{ (success() || failure()) && matrix.setup == 'latest' }}
+        if: ${{ (success() || failure()) && matrix.setup-script != 'legacy' }}
 
       - name: Unsloth SFT example all-in-one
         run: |
           set -ex
-          . .venv/bin/activate
+          source .venv/bin/activate
           cd examples/unsloth
           rm -rf models/version_1 models/version_2
 
@@ -347,7 +339,7 @@ jobs:
         env:
           WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
           WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
-        if: matrix.setup == 'latest'
+        if: matrix.setup-script != 'legacy'
 
       # Cleanup
       - name: Cleanup
