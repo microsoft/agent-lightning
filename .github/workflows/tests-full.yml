@@ -10,6 +10,8 @@ on:
 
 jobs:
   tests-full:
+    name: Full Test with Python ${{ matrix.python-version }} (${{ matrix.setup-script }})
+
     runs-on: [self-hosted, 1ES.Pool=agl-runner-gpu]
     timeout-minutes: 30
     strategy:
@@ -51,17 +53,10 @@ jobs:
 
       - name: Launch LiteLLM Proxy
         run: |
-          uv run litellm --config scripts/litellm_ci.yaml --port 12306 &
-          sleep 10  # Wait for the proxy to be up
+          ./scripts/litellm_run.sh
         env:
           AZURE_API_BASE: ${{ secrets.AZURE_API_BASE }}
           AZURE_API_KEY: ${{ secrets.AZURE_API_KEY }}
-      - name: Verify LiteLLM Proxy
-        run: |
-          uv run scripts/litellm_sanity_check.py
-        env:
-          OPENAI_BASE_URL: http://localhost:12306/
-          OPENAI_API_KEY: dummy
 
       - name: Run tests
         run: |

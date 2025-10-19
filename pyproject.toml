@@ -97,6 +97,7 @@ torch-legacy = [
   "torch==2.7.0",
   "torchvision==0.22.0",
   "transformers==4.53.3",
+  "tokenizers>=0.21,<0.22",
   "flash-attn==2.8.1",
   "vllm==0.9.2",
 ]
