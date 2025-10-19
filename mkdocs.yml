@@ -62,11 +62,13 @@ plugins:
       handlers:
         python:
           options:
-            show_source: true
+            show_source: false
             show_root_heading: true
             show_symbol_type_heading: true
             show_symbol_type_toc: true
+            docstring_section_style: list
             docstring_style: google
+            heading_level: 3
   - autorefs
   - mike:
       version_selector: true
@@ -120,6 +122,7 @@ nav:
     - Store: reference/store.md
     - Trainer: reference/trainer.md
     - Types: reference/types.md
+    - Internal: reference/internal.md
 
 extra_css:
   - https://unpkg.com/katex@0/dist/katex.min.css

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+"""Typed representations of tunable resources shared between Agent Lightning components."""
+
 import inspect
 import logging
 from typing import (
@@ -32,23 +34,14 @@ __all__ = [
 
 
 class Resource(BaseModel):
-    """
-    Base class for all tunable resources.
-    """
+    """Base class for tunable resources distributed to executors."""
 
     resource_type: Any
+    """Alias of the resource type."""
 
 
 class LLM(Resource):
-    """
-    Provide an LLM endpoint and model name as a resource.
-
-    Attributes:
-        endpoint (str): The URL of the LLM API endpoint.
-        model (str): The identifier for the model to be used (e.g., 'gpt-4o').
-        sampling_parameters (SamplingParameters): A dictionary of hyperparameters
-            for model inference, such as temperature, top_p, etc.
-    """
+    """Resource that identifies an LLM endpoint and its configuration."""
 
     resource_type: Literal["llm"] = "llm"
     endpoint: str
@@ -56,20 +49,25 @@ class LLM(Resource):
     model: str
     """The identifier for the model to be used (e.g., 'gpt-4o')."""
     api_key: Optional[str] = None
-    """The API key for the LLM API."""
+    """Optional secret used to authenticate requests."""
     sampling_parameters: Dict[str, Any] = Field(default_factory=dict)
     """A dictionary of hyperparameters for model inference, such as temperature, top_p, etc."""
 
     def get_base_url(self, *args: Any, **kwargs: Any) -> str:
-        """The base_url to put into openai.OpenAI.
+        """Return the base URL consumed by OpenAI-compatible clients.
 
-        Users are encouraged to use `base_url` to get the LLM endpoint instead of accessing `endpoint` directly.
+        Users are encouraged to use `get_base_url(rollout_id, attempt_id)` to get
+        the LLM endpoint instead of accessing `.endpoint` directly.
         """
         return self.endpoint
 
 
 class ProxyLLM(LLM):
-    """Proxy LLM resource that is tailored by `llm_proxy.LLMProxy`."""
+    """LLM resource that rewrites endpoints through [`LLMProxy`][agentlightning.LLMProxy].
+
+    The proxy injects rollout- and attempt-specific routing information into the
+    endpoint so that downstream services can attribute requests correctly.
+    """
 
     resource_type: Literal["proxy_llm"] = "proxy_llm"  # type: ignore
     _initialized: bool = False
@@ -80,7 +78,7 @@ class ProxyLLM(LLM):
         object.__setattr__(self, "_initialized", True)
 
     def __getattribute__(self, name: str) -> Any:
-        """Override to emit a warning when endpoint is accessed directly."""
+        """Emit a warning when `endpoint` is accessed directly after initialization."""
         # Check if we're accessing endpoint after initialization and not from base_url
         if name == "endpoint":
             try:
@@ -101,7 +99,7 @@ class ProxyLLM(LLM):
         return super().__getattribute__(name)
 
     def with_attempted_rollout(self, rollout: AttemptedRollout) -> LLM:
-        """Bake the rollout and attempt id into the endpoint."""
+        """Bake rollout metadata into a concrete [`LLM`][agentlightning.LLM] instance."""
         return LLM(
             endpoint=self.get_base_url(rollout.rollout_id, rollout.attempt.attempt_id),
             model=self.model,
@@ -110,15 +108,17 @@ class ProxyLLM(LLM):
         )
 
     def get_base_url(self, rollout_id: Optional[str], attempt_id: Optional[str]) -> str:
-        """Get the base URL for the LLM endpoint.
-        Embed the rollout and attempt id into the endpoint.
+        """Return the routed endpoint for a specific rollout/attempt pair.
 
         Args:
-            rollout_id: The rollout ID.
-            attempt_id: The attempt ID.
+            rollout_id: Identifier of the rollout making the request.
+            attempt_id: Identifier of the attempt within that rollout.
 
         Returns:
-            The base URL for the LLM endpoint.
+            Fully qualified endpoint including rollout metadata.
+
+        Raises:
+            ValueError: If exactly one of ``rollout_id`` or ``attempt_id`` is provided.
         """
         if rollout_id is None and attempt_id is None:
             return self.endpoint
@@ -144,22 +144,20 @@ class ProxyLLM(LLM):
 
 
 class PromptTemplate(Resource):
-    """
-    A prompt template as a resource.
-
-    Attributes:
-        template (str): The template string. The format depends on the engine.
-        engine (Literal['jinja', 'f-string', 'poml']): The templating engine
-            to use for rendering the prompt. I imagine users can use their own
-            customized engines, but algos can only well operate on a subset of them.
-    """
+    """Resource describing a reusable prompt template."""
 
     resource_type: Literal["prompt_template"] = "prompt_template"
     template: str
+    """The template string. The format depends on the engine."""
     engine: Literal["jinja", "f-string", "poml"]
+    """The templating engine to use for rendering the prompt."""
 
     def format(self, **kwargs: Any) -> str:
-        """Format the prompt template with the given kwargs."""
+        """Format the prompt using keyword arguments.
+
+        !!! warning
+            Only the `f-string` engine is supported for now.
+        """
         if self.engine == "f-string":
             return self.template.format(**kwargs)
         else:
@@ -172,32 +170,29 @@ class PromptTemplate(Resource):
 # TODO: migrate to use a registry
 ResourceUnion = Annotated[Union[LLM, ProxyLLM, PromptTemplate], Field(discriminator="resource_type")]
 NamedResources = Dict[str, ResourceUnion]
-"""
-A dictionary-like class to hold named resources.
+"""Mapping from resource names to their configured instances.
 
-Example:
+Examples:
+    ```python
     resources: NamedResources = {
-        'main_llm': LLM(
+        "main_llm": LLM(
             endpoint="http://localhost:8080",
             model="llama3",
-            sampling_parameters={'temperature': 0.7, 'max_tokens': 100}
+            sampling_parameters={"temperature": 0.7, "max_tokens": 100},
         ),
-        'system_prompt': PromptTemplate(
+        "system_prompt": PromptTemplate(
             template="You are a helpful assistant.",
-            engine='f-string'
-        )
+            engine="f-string",
+        ),
     }
+    ```
 """
 
 
 class ResourcesUpdate(BaseModel):
-    """
-    A resource update message to be sent from the server to clients.
-
-    This message contains a dictionary of resources that clients should use
-    for subsequent tasks. It is used to update the resources available to
-    clients dynamically.
-    """
+    """Update payload broadcast to clients when resources change."""
 
     resources_id: str
+    """Identifier used to version the resources."""
     resources: NamedResources
+    """Mapping of resource names to their definitions."""

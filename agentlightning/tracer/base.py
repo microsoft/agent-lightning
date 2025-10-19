@@ -25,7 +25,7 @@ class Tracer(ParallelWorkerBase):
     designed to be backend-agnostic, allowing for different implementations
     (e.g., for AgentOps, OpenTelemetry, Docker, etc.).
 
-    The primary interaction pattern is through the `trace_context`
+    The primary interaction pattern is through the [`trace_context`][agentlightning.Tracer.trace_context]
     context manager, which ensures that traces are properly started and captured,
     even in the case of exceptions.
 
@@ -65,7 +65,7 @@ class Tracer(ParallelWorkerBase):
         The implementation should handle the setup and teardown of the tracing
         for the enclosed code block. It must ensure that any spans generated
         within the `with` block are collected and made available via
-        `get_last_trace`.
+        [`get_last_trace`][agentlightning.Tracer.get_last_trace].
 
         If a store is provided, the spans will be added to the store when tracing.
 

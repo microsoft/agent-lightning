@@ -1,8 +1,12 @@
 # Train the First Agent with Agent-lightning
 
-Welcome! This tutorial is your first step into making AI agents smarter using the **Agent-lightning** framework. We'll show you how to take a simple agent and automatically improve its performance through a process called **Automatic Prompt Optimization (APO)**.
+Welcome! This tutorial is your first step into making AI agents smarter using the **Agent-lightning** framework. We'll show you how to take a simple agent and automatically improve its performance through a process called [**Automatic Prompt Optimization (APO)**](../algorithm-zoo/apo.md).
 
 The main goal of Agent-lightning is to provide a structured way to **train your agents**. Just like you train a machine learning model on data, you can train an agent on a task dataset. This could involve using Reinforcement Learning (RL) to teach it new behaviors or, as we'll do today, optimizing its prompts to make it more accurate and reliable.
+
+!!! tip
+
+    You can open the sample code [room_selector_apo.py]({{ src("examples/apo/room_selector_apo.py") }}) and [room_selector.py]({{ src("examples/apo/room_selector.py") }}) as you go through this tutorial.
 
 ## Our Example: The Room Selector Agent
 
@@ -80,14 +84,13 @@ The agent's logic is sound, but its performance heavily depends on its initial p
         return reward
     ```
 
-In Agent-lightning, you wrap this logic in a Python function marked with the `@rollout` decorator, so that the agent can be managed and tuned by Agent-lightning's runner and trainer. The `prompt_template` that the APO algorithm tunes is passed in as an argument:
+In Agent-lightning, you wrap this logic in a Python function marked with the [`@rollout`][agentlightning.rollout] decorator, so that the agent can be managed and tuned by Agent-lightning's runner and trainer. The `prompt_template` that the APO algorithm tunes is passed in as an argument:
 
 ```python
-from agentlightning import rollout
-from agentlightning.types import PromptTemplate
+import agentlightning as agl
 
-@rollout
-def room_selector(task: RoomSelectionTask, prompt_template: PromptTemplate) -> float:
+@agl.rollout
+def room_selector(task: RoomSelectionTask, prompt_template: agl.PromptTemplate) -> float:
     # ... agent logic using the prompt_template ...
 
     # The final reward is determined by a grader function
@@ -103,7 +106,7 @@ To understand how Agent-lightning works, you need to know these key terms.
 
 A task is a specific input or problem statement given to the agent. It defines what the agent needs to accomplish.
 
-!!! tip "Analogy"
+!!! example "Analogy: Task"
 
     If the agent is a chef, a task is the recipe request: "Bake a chocolate cake."
 
@@ -111,7 +114,7 @@ A task is a specific input or problem statement given to the agent. It defines w
 
 A rollout is a single, complete execution of an agent attempting to solve a given **task**. It's the entire story from receiving the task to producing a final result and receiving a reward. A rollout captures a full trace of the agent's execution.
 
-!!! tip "Analogy"
+!!! example "Analogy: Rollout"
 
     A rollout is one full attempt by the chef to bake the chocolate cake, from gathering ingredients to the final taste test.
 
@@ -119,7 +122,7 @@ A rollout is a single, complete execution of an agent attempting to solve a give
 
 A span represents a single unit of work or an operation within a **rollout**. Spans are the building blocks of a trace. They have a start and end time and contain details about the specific operation, like an LLM call, a tool execution, or a reward calculation. For a more precise definition, see the [OpenTelemetry documentation](https://opentelemetry.io/docs/concepts/signals/traces/).
 
-!!! tip "Analogy"
+!!! example "Analogy: Span"
 
     If the rollout is "baking a cake," a span could be "preheating the oven," "mixing flour and sugar," or "adding frosting." Each is a distinct step or unit of work.
 
@@ -131,7 +134,7 @@ The picture below from [ADK](https://google.github.io/adk-docs/observability/clo
 
 A prompt template is a reusable instruction for the agent, often containing placeholders that can be filled in with specific details from a task. It is a key **"resource"** that the algorithm learns and improves over time.
 
-!!! tip "Analogy"
+!!! example "Analogy: Resource (Prompt Template)"
 
     If the task is the recipe request, the prompt template is the master recipe card that the chef follows. The algorithm's job is to edit this recipe card to make the instructions clearer and the final dish better.
 
@@ -155,7 +158,7 @@ This cycle continues, allowing the agent to continuously learn and get better at
 
 ### The Algorithm
 
-The algorithm is the smart part of the system that drives the improvement. In this tutorial, we use **APO** (Automatic Prompt Optimization). It works in a few steps:
+The algorithm is the smart part of the system that drives the improvement. In this tutorial, we use [**APO**][agentlightning.algorithm.apo.APO] (Automatic Prompt Optimization). It works in a few steps:
 
 1. **Evaluate:** The algorithm first asks for rollouts to be run using the current prompt template to see how well it performs.
 2. **Critique:** It then looks at the detailed spans from those rollouts. Using a powerful LLM (`gpt-5-mini`), it generates a "textual gradient", which is a natural language critique of the prompt. For example: "The prompt is ambiguous about how to handle tie-breakers for equally good rooms."
@@ -165,23 +168,23 @@ This cycle repeats, with each round producing a slightly better prompt. To use i
 
 ```python
 # In the main training script: run_apo.py
-from agentlightning.algorithm.apo import APO
 from openai import AsyncOpenAI
 
 openai = AsyncOpenAI()
-algo = APO(openai)
+algo = agl.APO(openai)
 ```
+
+!!! tip
+
+    Make sure you have `OPENAI_API_KEY` set in your environment variables.
 
 ### The Trainer
 
-The Trainer is the central component you'll interact with. It connects everything and manages the entire workflow by running the loop described above. You configure the Trainer, providing the algorithm, the number of parallel runners, and the initial prompt. A single call to `trainer.fit()` kicks off the entire process!
+The Trainer is the central component you'll interact with. It connects everything and manages the entire workflow by running the loop described above. You configure the Trainer, providing the algorithm, the number of parallel runners, and the initial prompt. A single call to [`trainer.fit()`][agentlightning.Trainer.fit] kicks off the entire process!
 
 ```python
-# In the main training script: run_apo.py
-from agentlightning import Trainer
-
 # 1. Configure the Trainer with the algorithm and initial prompt
-trainer = Trainer(
+trainer = agl.Trainer(
     algorithm=algo,
     n_runners=8, # Run 8 agents in parallel to try out the prompts
     initial_resources={
@@ -189,7 +192,7 @@ trainer = Trainer(
         "prompt_template": prompt_template_baseline()
     },
     # This is used to convert the span data into a message format consumable by APO algorithm
-    adapter=TraceMessagesAdapter(),
+    adapter=agl.TraceToMessages(),
 )
 
 # 2. Load datasets: They can be list of task objects consumable by `room_selector`.
@@ -202,6 +205,10 @@ trainer.fit(
     val_dataset=dataset_val
 )
 ```
+
+!!! tip
+
+    [`TraceToMessages`][agentlightning.TraceToMessages] is a convenience adapter that converts spans into OpenAI chat messages. It requires `openai >= 1.100.0` to be installed.
 
 ## Training Results
 

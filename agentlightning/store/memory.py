@@ -210,8 +210,9 @@ class InMemoryLightningStore(LightningStore):
         config: RolloutConfig | None = None,
         metadata: Dict[str, Any] | None = None,
     ) -> AttemptedRollout:
-        """
-        Notify the store that I'm about to run a rollout.
+        """Notify the store that I'm about to run a rollout.
+
+        See [`LightningStore.start_rollout()`][agentlightning.LightningStore.start_rollout] for semantics.
         """
         async with self._lock:
             rollout_id = _generate_rollout_id()
@@ -258,8 +259,9 @@ class InMemoryLightningStore(LightningStore):
         config: RolloutConfig | None = None,
         metadata: Dict[str, Any] | None = None,
     ) -> Rollout:
-        """
-        Adds a new task to the queue with specific metadata and returns its unique ID.
+        """Adds a new task to the queue with specific metadata and returns the rollout.
+
+        See [`LightningStore.enqueue_rollout()`][agentlightning.LightningStore.enqueue_rollout] for semantics.
         """
         async with self._lock:
             rollout_id = _generate_rollout_id()
@@ -287,11 +289,12 @@ class InMemoryLightningStore(LightningStore):
 
     @_healthcheck_wrapper
     async def dequeue_rollout(self) -> Optional[AttemptedRollout]:
-        """
-        Retrieves the next task from the queue without blocking.
-        Returns None if the queue is empty.
+        """Retrieves the next task from the queue without blocking.
+        Returns `None` if the queue is empty.
 
         Will set the rollout status to preparing and create a new attempt.
+
+        See [`LightningStore.dequeue_rollout()`][agentlightning.LightningStore.dequeue_rollout] for semantics.
         """
         async with self._lock:
             # Keep looking until we find a rollout that's still in queuing status
@@ -335,8 +338,9 @@ class InMemoryLightningStore(LightningStore):
 
     @_healthcheck_wrapper
     async def start_attempt(self, rollout_id: str) -> AttemptedRollout:
-        """
-        Create a new attempt for a given rollout ID and return the attempt details.
+        """Creates a new attempt for a given rollout ID and return the attempt details.
+
+        See [`LightningStore.start_attempt()`][agentlightning.LightningStore.start_attempt] for semantics.
         """
         async with self._lock:
             # Get the rollout
@@ -376,9 +380,10 @@ class InMemoryLightningStore(LightningStore):
     async def query_rollouts(
         self, *, status: Optional[Sequence[RolloutStatus]] = None, rollout_ids: Optional[Sequence[str]] = None
     ) -> List[Rollout]:
-        """
-        Query and retrieve rollouts filtered by their status and rollout ids.
+        """Retrieves rollouts filtered by their status and rollout ids.
         If no status is provided, returns all rollouts.
+
+        See [`LightningStore.query_rollouts()`][agentlightning.LightningStore.query_rollouts] for semantics.
         """
         async with self._lock:
             rollouts = list(self._rollouts.values())
@@ -397,25 +402,28 @@ class InMemoryLightningStore(LightningStore):
 
     @_healthcheck_wrapper
     async def get_rollout_by_id(self, rollout_id: str) -> Optional[Rollout]:
-        """
-        Safely retrieves a specific rollout by its ID.
+        """Retrieves a specific rollout by its ID.
+
+        See [`LightningStore.get_rollout_by_id()`][agentlightning.LightningStore.get_rollout_by_id] for semantics.
         """
         async with self._lock:
             return self._rollouts.get(rollout_id)
 
     @_healthcheck_wrapper
     async def query_attempts(self, rollout_id: str) -> List[Attempt]:
-        """
-        Query and retrieve all attempts associated with a specific rollout ID.
+        """Retrieves all attempts associated with a specific rollout ID.
         Returns an empty list if no attempts are found.
+
+        See [`LightningStore.query_attempts()`][agentlightning.LightningStore.query_attempts] for semantics.
         """
         async with self._lock:
             return self._attempts.get(rollout_id, [])
 
     @_healthcheck_wrapper
     async def get_latest_attempt(self, rollout_id: str) -> Optional[Attempt]:
-        """
-        Safely retrieves the latest attempt for a given rollout ID.
+        """Retrieves the latest attempt for a given rollout ID.
+
+        See [`LightningStore.get_latest_attempt()`][agentlightning.LightningStore.get_latest_attempt] for semantics.
         """
         async with self._lock:
             attempts = self._attempts.get(rollout_id, [])
@@ -425,8 +433,9 @@ class InMemoryLightningStore(LightningStore):
 
     @_healthcheck_wrapper
     async def add_resources(self, resources: NamedResources) -> ResourcesUpdate:
-        """
-        Safely stores a new version of named resources and sets it as the latest.
+        """Stores a new version of named resources and sets it as the latest.
+
+        See [`LightningStore.add_resources()`][agentlightning.LightningStore.add_resources] for semantics.
         """
         resources_id = _generate_resources_id()
         async with self._lock:
@@ -439,6 +448,8 @@ class InMemoryLightningStore(LightningStore):
     async def update_resources(self, resources_id: str, resources: NamedResources) -> ResourcesUpdate:
         """
         Safely stores a new version of named resources and sets it as the latest.
+
+        See [`LightningStore.update_resources()`][agentlightning.LightningStore.update_resources] for semantics.
         """
         async with self._lock:
             update = ResourcesUpdate(resources_id=resources_id, resources=resources)
@@ -448,16 +459,18 @@ class InMemoryLightningStore(LightningStore):
 
     @_healthcheck_wrapper
     async def get_resources_by_id(self, resources_id: str) -> Optional[ResourcesUpdate]:
-        """
-        Safely retrieves a specific version of named resources by its ID.
+        """Retrieves a specific version of named resources by its ID.
+
+        See [`LightningStore.get_resources_by_id()`][agentlightning.LightningStore.get_resources_by_id] for semantics.
         """
         async with self._lock:
             return self._resources.get(resources_id)
 
     @_healthcheck_wrapper
     async def get_latest_resources(self) -> Optional[ResourcesUpdate]:
-        """
-        Safely retrieves the latest version of named resources.
+        """Retrieves the latest version of named resources.
+
+        See [`LightningStore.get_latest_resources()`][agentlightning.LightningStore.get_latest_resources] for semantics.
         """
         async with self._lock:
             if self._latest_resources_id:
@@ -465,17 +478,21 @@ class InMemoryLightningStore(LightningStore):
             return None
 
     async def get_next_span_sequence_id(self, rollout_id: str, attempt_id: str) -> int:
-        """
-        Get the next span sequence ID for a given rollout and attempt.
+        """Get the next span sequence ID for a given rollout and attempt.
         The number is strictly increasing for each rollout.
         The store will not issue the same sequence ID twice.
+
+        See [`LightningStore.get_next_span_sequence_id()`][agentlightning.LightningStore.get_next_span_sequence_id] for semantics.
         """
         async with self._lock:
             self._span_sequence_ids[rollout_id] += 1
             return self._span_sequence_ids[rollout_id]
 
     async def add_span(self, span: Span) -> Span:
-        """Persist a pre-converted span."""
+        """Persist a pre-converted span.
+
+        See [`LightningStore.add_span()`][agentlightning.LightningStore.add_span] for semantics.
+        """
         async with self._lock:
             self._span_sequence_ids[span.rollout_id] = max(self._span_sequence_ids[span.rollout_id], span.sequence_id)
             return await self._add_span_unlocked(span)
@@ -483,7 +500,10 @@ class InMemoryLightningStore(LightningStore):
     async def add_otel_span(
         self, rollout_id: str, attempt_id: str, readable_span: ReadableSpan, sequence_id: int | None = None
     ) -> Span:
-        """Add an opentelemetry span to the store."""
+        """Add an opentelemetry span to the store.
+
+        See [`LightningStore.add_otel_span()`][agentlightning.LightningStore.add_otel_span] for semantics.
+        """
         async with self._lock:
             if sequence_id is None:
                 # Issue a new sequence ID for the rollout
@@ -613,11 +633,12 @@ class InMemoryLightningStore(LightningStore):
 
     @_healthcheck_wrapper
     async def wait_for_rollouts(self, *, rollout_ids: List[str], timeout: Optional[float] = None) -> List[Rollout]:
-        """
-        Wait for specified rollouts to complete with a timeout.
+        """Wait for specified rollouts to complete with a timeout.
         Returns the completed rollouts, potentially incomplete if timeout is reached.
 
         This method does not change the state of the store.
+
+        See [`LightningStore.wait_for_rollouts()`][agentlightning.LightningStore.wait_for_rollouts] for semantics.
         """
         completed_rollouts: List[Rollout] = []
 
@@ -670,6 +691,8 @@ class InMemoryLightningStore(LightningStore):
         """
         Query and retrieve all spans associated with a specific rollout ID.
         Returns an empty list if no spans are found.
+
+        See [`LightningStore.query_spans()`][agentlightning.LightningStore.query_spans] for semantics.
         """
         async with self._lock:
             if rollout_id in self._evicted_rollout_span_sets:
@@ -697,8 +720,9 @@ class InMemoryLightningStore(LightningStore):
         config: RolloutConfig | Unset = UNSET,
         metadata: Optional[Dict[str, Any]] | Unset = UNSET,
     ) -> Rollout:
-        """
-        Update the rollout status and related metadata.
+        """Update the rollout status and related metadata.
+
+        See [`LightningStore.update_rollout()`][agentlightning.LightningStore.update_rollout] for semantics.
         """
         async with self._lock:
             return await self._update_rollout_unlocked(
@@ -721,8 +745,9 @@ class InMemoryLightningStore(LightningStore):
         last_heartbeat_time: float | Unset = UNSET,
         metadata: Optional[Dict[str, Any]] | Unset = UNSET,
     ) -> Attempt:
-        """
-        Update a specific or latest attempt for a given rollout.
+        """Update a specific or latest attempt for a given rollout.
+
+        See [`LightningStore.update_attempt()`][agentlightning.LightningStore.update_attempt] for semantics.
         """
         async with self._lock:
             attempt = await self._update_attempt_unlocked(

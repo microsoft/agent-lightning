@@ -7,7 +7,6 @@ import logging
 from datetime import datetime
 from typing import Any, List, Literal, Optional
 
-from agentlightning.llm_proxy import ModelConfig
 from agentlightning.types import Attempt, Dataset, Rollout, RolloutStatus, Span
 
 from .base import Algorithm
@@ -18,10 +17,11 @@ __all__ = ["FastAlgorithm", "Baseline"]
 
 
 class FastAlgorithm(Algorithm):
-    """Algorithm that can run fast and qualify for dev mode.
+    """Base class for lightweight algorithms optimised for developer workflows.
 
-    Fast algorithms enable agent developers to quickly iterate on agent development
-    without waiting for a long training to complete.
+    Fast algorithms prioritise short feedback loops so an agent developer can run
+    small-scale experiments without waiting for long-running training jobs to
+    finish.
     """
 
 
@@ -30,24 +30,38 @@ def _timestamp_to_iso_str(timestamp: float) -> str:
 
 
 class Baseline(FastAlgorithm):
-    """A dummy implementation of algorithm interface that puts all dataset into the queue, and waits for all rollouts to complete.
+    """Reference implementation that streams the full dataset through the rollout queue.
 
-    Logs all collected spans and rewards.
+    The baseline algorithm batches task submissions, waits for each rollout to
+    finish, and logs every collected span and reward. It is primarily useful as
+    a smoke test for the platform plumbing rather than a performant trainer.
 
     Args:
-        model_list: Optional list of models to load into the llm proxy.
-            If both model_list and llm_proxy is provided, llm_proxy will be launched.
-            Not implemented yet.
-        n_epochs: Number of epochs to run through the dev dataset.
-        train_split: Fraction of dev dataset to use for training vs validation. Must be between 0 and 1.
-        polling_interval: Time interval (in seconds) to poll the store for queue length and for completed rollouts.
-        max_queue_length: Maximum number of rollouts to keep in the queue at any time.
+        n_epochs: Number of dataset passes to execute for both the train and val
+            splits during developer experiments.
+        train_split: Fraction of the concatenated dataset to treat as training
+            data. Must be strictly between 0 and 1.
+        polling_interval: Interval, in seconds, to poll the store for queue
+            depth and rollout completion.
+        max_queue_length: Number of rollouts allowed to wait in the queue before
+            throttling additional submissions.
+        span_verbosity: Level of detail to include when logging span metadata.
+
+    Raises:
+        ValueError: If `train_split` falls outside the `(0, 1)` interval.
+
+    Examples:
+        ```python
+        from agentlightning.algorithm.fast import Baseline
+
+        algorithm = Baseline(n_epochs=2, train_split=0.8, span_verbosity="key_values")
+        trainer.fit(algorithm, train_dataset=my_train, val_dataset=my_val)
+        ```
     """
 
     def __init__(
         self,
         *,
-        model_list: Optional[List[ModelConfig]] = None,
         n_epochs: int = 1,
         train_split: float = 0.5,
         polling_interval: float = 5.0,
@@ -66,6 +80,7 @@ class Baseline(FastAlgorithm):
         self._finished_rollout_count = 0
 
     def _span_to_string(self, rollout_id: str, attempt: Attempt, span: Span) -> str:
+        """Format a span for logging based on the configured verbosity."""
         if self.span_verbosity == "none":
             return ""
 
@@ -85,6 +100,7 @@ class Baseline(FastAlgorithm):
         return msg
 
     async def _handle_rollout_finish(self, rollout: Rollout) -> None:
+        """Log attempt metadata and emit adapted traces when a rollout ends."""
         store = self.get_store()
 
         rollout_id = rollout.rollout_id
@@ -97,7 +113,12 @@ class Baseline(FastAlgorithm):
         attempts = await store.query_attempts(rollout_id)
         for attempt in attempts:
             logger.info(
-                f"[Rollout {rollout_id} | Attempt {attempt.sequence_id}] ID: {attempt.attempt_id}. Status: {attempt.status}. Worker: {attempt.worker_id}"
+                "[Rollout %s | Attempt %s] ID: %s. Status: %s. Worker: %s",
+                rollout_id,
+                attempt.sequence_id,
+                attempt.attempt_id,
+                attempt.status,
+                attempt.worker_id,
             )
             spans = await store.query_spans(rollout_id=rollout_id)
             for span in spans:
@@ -116,6 +137,7 @@ class Baseline(FastAlgorithm):
     async def _enqueue_rollouts(
         self, dataset: Dataset[Any], train_indices: List[int], val_indices: List[int], resources_id: str
     ) -> None:
+        """Submit rollouts while respecting the maximum queue length."""
         store = self.get_store()
 
         for index in train_indices + val_indices:
@@ -129,6 +151,7 @@ class Baseline(FastAlgorithm):
             await asyncio.sleep(self.polling_interval)
 
     async def _harvest_rollout_spans(self, rollout_id: str):
+        """Poll rollout status updates until completion and log transitions."""
         store = self.get_store()
         last_status: Optional[RolloutStatus] = None
 
@@ -160,11 +183,12 @@ class Baseline(FastAlgorithm):
         train_dataset: Optional[Dataset[Any]] = None,
         val_dataset: Optional[Dataset[Any]] = None,
     ) -> None:
+        """Execute the baseline loop across the provided datasets."""
         train_dataset_length = len(train_dataset) if train_dataset is not None else 0
         val_dataset_length = len(val_dataset) if val_dataset is not None else 0
         if train_dataset_length == 0 and val_dataset_length == 0:
             logger.error(
-                "MockAlgorithm requires at least a train_dataset or val_dataset to run. No train_dataset or val_dataset is provided. Exiting."
+                "MockAlgorithm requires at least one dataset. Provide train_dataset or val_dataset before running."
             )
             return
 

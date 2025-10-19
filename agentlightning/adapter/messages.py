@@ -21,11 +21,28 @@ if TYPE_CHECKING:
 
 
 class OpenAIMessages(TypedDict):
+    """OpenAI-style chat messages with optional tool definitions.
+
+    Attributes:
+        messages: Ordered chat messages that describe the conversation.
+        tools: Tool specifications available to the assistant, if any.
+    """
+
     messages: List[ChatCompletionMessageParam]
     tools: Optional[List[ChatCompletionFunctionToolParam]]
 
 
 class _RawSpanInfo(TypedDict):
+    """Intermediate representation parsed from a span.
+
+    Attributes:
+        prompt: Prompt messages reconstructed from span attributes.
+        completion: Assistant completions following tool invocations.
+        request: Request payload recorded in the trace.
+        response: Response payload recorded in the trace.
+        tools: Tool call metadata extracted from child spans.
+    """
+
     prompt: List[Dict[str, Any]]
     completion: List[Dict[str, Any]]
     request: Dict[str, Any]
@@ -34,16 +51,20 @@ class _RawSpanInfo(TypedDict):
 
 
 def group_genai_dict(data: Dict[str, Any], prefix: str) -> Union[Dict[str, Any], List[Any]]:
-    """
-    Convert a flat dict with keys like 'gen_ai.prompt.0.role'
-    into structured nested dicts or lists under the given prefix.
+    """Convert flattened trace attributes into nested structures.
+
+    Attributes emitted by the tracing pipeline often arrive as dotted paths (for example
+    `gen_ai.prompt.0.role`). This helper groups those keys into nested dictionaries or lists so that
+    downstream processing can operate on structured data.
 
     Args:
-        data: Flat dictionary (keys are dotted paths).
-        prefix: Top-level key to extract (e.g., 'gen_ai.prompt').
+        data: Flat dictionary whose keys are dotted paths.
+        prefix: Top-level key (for example `gen_ai.prompt`) that determines which attributes are
+            grouped.
 
     Returns:
-        A nested dict (if no index detected) or list (if indexed).
+        A nested dictionary (no numeric index detected) or list (numeric indices detected) containing
+        the grouped values.
     """
     result: Union[Dict[str, Any], List[Any]] = {}
 
@@ -83,11 +104,18 @@ def group_genai_dict(data: Dict[str, Any], prefix: str) -> Union[Dict[str, Any],
 
 
 def convert_to_openai_messages(prompt_completion_list: List[_RawSpanInfo]) -> Generator[OpenAIMessages, None, None]:
-    """
-    Convert raw tool call traces + prompt/completion list
-    into OpenAI fine-tuning JSONL format (tool calling style).
+    """Convert raw trace payloads into OpenAI-style chat messages.
 
-    https://learn.microsoft.com/en-us/azure/ai-foundry/openai/how-to/fine-tuning-functions
+    The function consumes an iterable produced by
+    [`TraceToMessages.adapt()`][agentlightning.TraceToMessages.adapt] and yields
+    structures that match the OpenAI fine-tuning JSONL schema, including tool definitions.
+
+    Args:
+        prompt_completion_list: Raw prompt/completion/tool payloads extracted from a trace.
+
+    Returns:
+        A generator that yields [`OpenAIMessages`][agentlightning.adapter.messages.OpenAIMessages]
+        entries compatible with the OpenAI Functions fine-tuning format.
     """
 
     # Import locally to avoid legacy OpenAI version type import errors
@@ -169,25 +197,29 @@ def convert_to_openai_messages(prompt_completion_list: List[_RawSpanInfo]) -> Ge
 
 
 class TraceToMessages(TraceAdapter[List[OpenAIMessages]]):
-    """
-    Adapter that converts OpenTelemetry trace spans into OpenAI-compatible message format.
+    """Convert trace spans into OpenAI-compatible conversation messages.
 
-    This adapter processes trace spans containing LLM conversation data and transforms them
-    into structured OpenAI message format suitable for fine-tuning or analysis. It extracts
-    prompts, completions, tool calls, and function definitions from trace attributes and
-    reconstructs the conversation flow.
+    The adapter reconstructs prompts, completions, tool calls, and function definitions from
+    `gen_ai.*` span attributes. The resulting objects match the JSONL structure expected by the
+    OpenAI fine-tuning pipeline.
 
-    The adapter handles:
-    - Converting flat trace attributes into structured message objects
-    - Extracting and matching tool calls with their corresponding requests
-    - Building proper OpenAI ChatCompletionMessage objects with roles, content, and tool calls
-    - Generating function definitions for tools used in conversations
+    !!! warning
+        The adapter assumes all spans share a common trace and that tool call spans are direct
+        children of the associated completion span.
     """
 
     def get_tool_calls(self, completion: Span, all_spans: List[Span], /) -> Iterable[Dict[str, Any]]:
-        """Find tool calls in the trace. Returns a dict with the tool call id, name, and arguments.
+        """Yield tool call payloads for a completion span.
 
-        The spans that are direct children of the completion span are the tool calls.
+        Args:
+            completion: The completion span whose descendants should be inspected.
+            all_spans: The complete span list belonging to the trace.
+
+        Yields:
+            Dictionaries describing tool calls with identifiers, names, and arguments.
+
+        Raises:
+            ValueError: If a candidate tool span cannot be converted into a dictionary.
         """
         # Get all the spans that are children of the completion span
         children = [span for span in all_spans if span.parent_id == completion.span_id]
@@ -200,6 +232,15 @@ class TraceToMessages(TraceAdapter[List[OpenAIMessages]]):
                 yield tool_call
 
     def adapt(self, source: List[Span], /) -> List[OpenAIMessages]:
+        """Transform trace spans into OpenAI chat payloads.
+
+        Args:
+            source: Spans containing `gen_ai.*` attributes emitted by the tracing pipeline.
+
+        Returns:
+            A list of [`OpenAIMessages`][agentlightning.adapter.messages.OpenAIMessages] entries that
+            capture prompts, completions, tools, and metadata.
+        """
         raw_prompt_completions: List[_RawSpanInfo] = []
 
         for span in source:

@@ -2,13 +2,13 @@
 
 This walkthrough builds upon the **Agent-lightning v0.2 SQL Agent** example and explains how the system components integrate: a **LangGraph-based SQL agent** wrapped as a [`LitAgent`][agentlightning.LitAgent], the **[`VERL`][agentlightning.algorithm.verl.VERL] reinforcement learning (RL) algorithm**, and the **[`Trainer`][agentlightning.Trainer]**, which coordinates both training and debugging.
 
-The command-line interface in [`examples/spider/train_sql_agent.py`]({{ config.repo_url }}/tree/{{ config.extra.source_commit }}/examples/spider/train_sql_agent.py) provides a complete runnable example. However, this document focuses on understanding the underlying architecture so you can effectively adapt the workflow to your own agents.
+The command-line interface in [`examples/spider/train_sql_agent.py`]({{ src("examples/spider/train_sql_agent.py") }}) provides a complete runnable example. However, this document focuses on understanding the underlying architecture so you can effectively adapt the workflow to your own agents.
 
 ## SQL Agent Architecture
 
 Agent-lightning integrates seamlessly with various orchestration frameworks, including [Agent Framework](https://github.com/microsoft/agent-framework), [AutoGen](https://github.com/microsoft/autogen), [CrewAI](https://www.crewai.com/), [LangGraph](https://github.com/langchain-ai/langgraph), and the [OpenAI Agents SDK](https://github.com/openai/openai-agents-python). It can also interoperate with custom Python logic.
 
-In this example, **LangGraph** defines a cyclic workflow that mirrors an analyst’s iterative SQL development process. The following graph (rendered directly from [`sql_agent.py`]({{ config.repo_url }}/tree/{{ config.extra.source_commit }}/examples/spider/sql_agent.py)) illustrates how the agent drafts, executes, critiques, and refines queries until a satisfactory result is achieved.
+In this example, **LangGraph** defines a cyclic workflow that mirrors an analyst’s iterative SQL development process. The following graph (rendered directly from [`sql_agent.py`]({{ src("examples/spider/sql_agent.py") }})) illustrates how the agent drafts, executes, critiques, and refines queries until a satisfactory result is achieved.
 
 ```mermaid
 ---
@@ -73,9 +73,9 @@ This approach isolates your LangGraph logic from Agent-lightning version changes
 
 !!! tip
 
-    Keep [`sql_agent.py`]({{ config.repo_url }}/tree/{{ config.extra.source_commit }}/examples/spider/sql_agent.py) open on the side while reading this section. This will help you understand how the code snippets shown here work in practice.
+    Keep [`sql_agent.py`]({{ src("examples/spider/sql_agent.py") }}) open on the side while reading this section. This will help you understand how the code snippets shown here work in practice.
 
-The **`LitSQLAgent`** class defined in [`sql_agent.py`]({{ config.repo_url }}/tree/{{ config.extra.source_commit }}/examples/spider/sql_agent.py) acts as the bridge. It subclasses [`agl.LitAgent`][agentlightning.LitAgent], allowing the runner to provision shared resources (e.g., [LLMs][agentlightning.LLM]) for each rollout.
+The **`LitSQLAgent`** class defined in [`sql_agent.py`]({{ src("examples/spider/sql_agent.py") }}) acts as the bridge. It subclasses [`agl.LitAgent`][agentlightning.LitAgent], allowing the runner to provision shared resources (e.g., [LLMs][agentlightning.LLM]) for each rollout.
 
 Below is a simplified illustration of the key logic (note: this is conceptual pseudocode; the actual implementation includes dataset-specific details):
 
@@ -136,7 +136,7 @@ In this setup, the reward is returned directly from the [`rollout`][agentlightni
 
 ## Configuring VERL for Reinforcement Learning
 
-View [`examples/spider/train_sql_agent.py`]({{ config.repo_url }}/tree/{{ config.extra.source_commit }}/examples/spider/train_sql_agent.py) for a full reinforcement learning configuration, which is a plain Python dictionary. It mirrors (and actually *is*) the [shell arguments](https://verl.readthedocs.io/en/latest/index.html) used to launch training in the VERL framework but is easier to tweak programmatically:
+View [`examples/spider/train_sql_agent.py`]({{ src("examples/spider/train_sql_agent.py") }}) for a full reinforcement learning configuration, which is a plain Python dictionary. It mirrors (and actually *is*) the [shell arguments](https://verl.readthedocs.io/en/latest/index.html) used to launch training in the VERL framework but is easier to tweak programmatically:
 
 ```python
 verl_config: Dict[str, Any] = {
@@ -268,7 +268,7 @@ Run this in a Python session or adapt your script to include a `--dev` flag. Onc
 
 ## Running the Sample Code
 
-The following tutorial explains how to run the complete example in [`examples/spider`]({{ config.repo_url }}/tree/{{ config.extra.source_commit }}/examples/spider).
+The following tutorial explains how to run the complete example in [`examples/spider`]({{ src("examples/spider") }}).
 
 ### Dataset
 
@@ -301,7 +301,7 @@ For full training profiles, plan to use a GPU with at least **40 GB** of memory.
 
 ### Launch Training
 
-From [`examples/spider`]({{ config.repo_url }}/tree/{{ config.extra.source_commit }}/examples/spider), run one of the helper scripts depending on your model preference:
+From [`examples/spider`]({{ src("examples/spider") }}), run one of the helper scripts depending on your model preference:
 
 ```bash
 python train_sql_agent.py qwen   # Default Qwen-2.5-Coder-1.5B run
@@ -315,7 +315,7 @@ For the LLaMA profile, export an `HF_TOKEN` before running so VERL can download 
 
 !!! tip "Troubleshooting"
 
-    If you have got some Ray worker errors on either `WANDB_API_KEY` not set, or `HF_TOKEN` not set, or data not found, please try to restart the Ray cluster with the helper script: [scripts/restart_ray.sh]({{ config.repo_url }}/tree/{{ config.extra.source_commit }}/scripts/restart_ray.sh), which essentially stops the ray cluster if any, and starts a new one:
+    If you have got some Ray worker errors on either `WANDB_API_KEY` not set, or `HF_TOKEN` not set, or data not found, please try to restart the Ray cluster with the helper script: [scripts/restart_ray.sh]({{ src("scripts/restart_ray.sh") }}), which essentially stops the ray cluster if any, and starts a new one:
 
     ```bash
     env RAY_DEBUG=legacy HYDRA_FULL_ERROR=1 VLLM_USE_V1=1 ray start --head --dashboard-host=0.0.0.0
@@ -323,7 +323,7 @@ For the LLaMA profile, export an `HF_TOKEN` before running so VERL can download 
 
 ### Debugging the Agent without VERL
 
-[`sql_agent.py`]({{ config.repo_url }}/tree/{{ config.extra.source_commit }}/examples/spider/sql_agent.py) also provides a `debug_sql_agent()` helper to run the LangGraph workflow directly against a local or hosted OpenAI-compatible endpoint before using VERL.
+[`sql_agent.py`]({{ src("examples/spider/sql_agent.py") }}) also provides a `debug_sql_agent()` helper to run the LangGraph workflow directly against a local or hosted OpenAI-compatible endpoint before using VERL.
 
 Set the following environment variables, then execute the file:
 

@@ -34,43 +34,85 @@ ComponentSpec = Union[T, type[T], Callable[[], T], str, Dict[str, Any], None]
 
 
 class Trainer(TrainerLegacy):
-    """Orchestrates the distributed execution of agent rollouts.
+    """High-level orchestration layer that wires Algorithm <-> Runner <-> Store.
 
-    The Trainer is responsible for launching one or more worker processes
-    that run the agent's execution loop. It manages multiprocessing,
-    handles graceful shutdown, and serves as the main entry point for
-    running a client-side agent fleet.
+    A [`Trainer`][agentlightning.Trainer] packages the moving parts of Agent-Lightning's
+    training loop into a single entry point:
 
-    Attributes:
-        algorithm: An instance of `Algorithm` to use for training.
-        store: An instance of `LightningStore` to use for storing tasks and traces.
-        runner: An instance of `Runner` to use for running the agent.
-        initial_resources: An instance of `Resources` to use for bootstrapping the fit/dev process.
-            The resources will be handed over to the algorithm.
-            Note that not all algorithms support seeding resources.
-        n_runners: Number of agent runners to run in parallel.
-        max_rollouts: Maximum number of rollouts to process per runner. If None,
-                      workers run until no more rollouts are available.
-        strategy: An instance of `ExecutionStrategy` to use for spawning the algorithm and runners.
-        tracer: A tracer instance, or a string pointing to the class full name or a dictionary with a 'type' key
-                that specifies the class full name and other initialization parameters.
-                If None, a default `AgentOpsTracer` will be created with the current settings.
-        hooks: A sequence of `Hook` instances to be called at various lifecycle stages (e.g., on_trace_start,
-               on_trace_end, on_rollout_start, on_rollout_end).
-        adapter: An instance of `TracerTraceToTriplet` to export data consumble by algorithms from traces.
-        llm_proxy: An instance of `LLMProxy` to use for intercepting the LLM calls.
-                   If not provided, algorithm will create one on its own.
-        n_workers: Number of agent workers to run in parallel. Deprecated in favor of `n_runners`.
-        max_tasks: Maximum number of tasks to process per runner. Deprecated in favor of `max_rollouts`.
-        daemon: Whether worker processes should be daemons. Daemon processes
-                are terminated automatically when the main process exits. Deprecated.
-                Only have effect with `fit_v0`.
-        triplet_exporter: An instance of `TracerTraceToTriplet` to export triplets from traces,
-                          or a dictionary with the initialization parameters for the exporter.
-                          Deprecated. Use `adapter` instead.
-        dev: If True, rollouts are run against the dev endpoint provided in `fit`.
-             Deprecated in favor of `dev()` method.
+    * **Algorithm lifecycle:** Instantiates or accepts an [`Algorithm`][agentlightning.Algorithm],
+      attaches the current [`LightningStore`][agentlightning.LightningStore], adapter, and
+      initial resources, then executes the algorithm role inside the configured execution strategy.
+    * **Runner fleet:** Spawns one or more [`Runner`][agentlightning.Runner] instances (defaulting
+      to [`LitAgentRunner`][agentlightning.LitAgentRunner]) that hydrate a [`LitAgent`][agentlightning.LitAgent],
+      claim rollouts, stream spans, and respect graceful termination signals from the execution strategy.
+    * **Execution strategy:** Delegates process management to an
+      [`ExecutionStrategy`][agentlightning.ExecutionStrategy] (shared memory, client/server, etc.),
+      so advanced users can swap orchestration backends without changing trainer code.
+    * **Telemetry plumbing:** Ensures tracers, adapters, and optional [`LLMProxy`][agentlightning.LLMProxy]
+      are wired into both algorithm and runners so telemetry flows back into the store.
+
+    The trainer exposes two convenience entry points:
+    [`fit()`][agentlightning.Trainer.fit] for full training and
+    [`dev()`][agentlightning.Trainer.dev] for fast, reproducible dry-runs. See the
+    [Train the First Agent](../how-to/train-first-agent.md) and
+    [Write the First Algorithm](../how-to/write-first-algorithm.md) tutorials for the broader context.
     """
+
+    algorithm: Optional[Algorithm]
+    """An instance of [`Algorithm`][agentlightning.Algorithm] to use for training."""
+
+    store: LightningStore
+    """An instance of [`LightningStore`][agentlightning.LightningStore] to use for storing tasks and traces."""
+
+    runner: Runner[Any]
+    """An instance of [`Runner`][agentlightning.Runner] to use for running the agent."""
+
+    initial_resources: Optional[NamedResources]
+    """An instance of [`NamedResources`][agentlightning.NamedResources] to use for bootstrapping the fit/dev process.
+
+    The resources will be handed over to the algorithm. Note that not all algorithms support seeding resources.
+    """
+
+    n_runners: int
+    """Number of agent runners to run in parallel."""
+
+    max_rollouts: Optional[int]
+    """Maximum number of rollouts to process per runner. If None, workers run until no more rollouts are available."""
+
+    strategy: ExecutionStrategy
+    """An instance of [`ExecutionStrategy`][agentlightning.ExecutionStrategy] to use for spawning the algorithm and runners."""
+
+    tracer: Tracer
+    """A tracer instance, or a string pointing to the class full name or a dictionary with a 'type' key
+    that specifies the class full name and other initialization parameters.
+    If None, a default [`AgentOpsTracer`][agentlightning.AgentOpsTracer] will be created with the current settings."""
+
+    hooks: Sequence[Hook]
+    """A sequence of [`Hook`][agentlightning.Hook] instances to be called at various lifecycle stages (e.g., `on_trace_start`,
+    `on_trace_end`, `on_rollout_start`, `on_rollout_end`)."""
+
+    adapter: TraceAdapter[Any]
+    """An instance of [`TraceAdapter`][agentlightning.TraceAdapter] to export data consumble by algorithms from traces."""
+
+    llm_proxy: Optional[LLMProxy]
+    """An instance of [`LLMProxy`][agentlightning.LLMProxy] to use for intercepting the LLM calls.
+    If not provided, algorithm may create one on its own."""
+
+    n_workers: int
+    """Number of agent workers to run in parallel. Deprecated in favor of `n_runners`."""
+
+    max_tasks: Optional[int]
+    """Maximum number of tasks to process per runner. Deprecated in favor of `max_rollouts`."""
+
+    daemon: bool
+    """Whether worker processes should be daemons. Daemon processes
+    are terminated automatically when the main process exits. Deprecated.
+    Only have effect with `fit_v0`."""
+
+    triplet_exporter: TraceAdapter[Any]
+    """An instance of [`TracerTraceToTriplet`][agentlightning.TracerTraceToTriplet] to export triplets from traces,
+    or a dictionary with the initialization parameters for the exporter.
+    Deprecated. Use [`adapter`][agentlightning.Trainer.adapter] instead."""
 
     def __init__(
         self,
@@ -92,6 +134,12 @@ class Trainer(TrainerLegacy):
         triplet_exporter: ComponentSpec[TracerTraceToTriplet] = None,
         hooks: Optional[Union[Hook, Sequence[Hook]]] = None,
     ):
+        """Configure the trainer and resolve user-provided component specifications.
+
+        Each keyword accepts either a concrete instance, a class, a callable factory, a
+        registry string, or a lightweight configuration dictionary (see
+        [`build_component()`][agentlightning.trainer.init_utils.build_component]).
+        """
         # Do not call super().__init__() here.
         # super().__init__() will call TrainerLegacy's initialization, which is not intended.
         self.worker_id: Optional[int] = None
@@ -180,7 +228,7 @@ class Trainer(TrainerLegacy):
             )
 
     def _make_tracer(self, tracer: ComponentSpec[Tracer]) -> Tracer:
-        """Creates a tracer instance based on the provided configuration."""
+        """Resolve the tracer component from user input, falling back to AgentOpsTracer."""
         default_factory = lambda: AgentOpsTracer(
             agentops_managed=True,
             instrument_managed=True,
@@ -197,7 +245,7 @@ class Trainer(TrainerLegacy):
         )
 
     def _make_algorithm(self, algorithm: ComponentSpec[Algorithm]) -> Optional[Algorithm]:
-        """Creates an algorithm instance based on the provided configuration."""
+        """Resolve the algorithm component, allowing `None` for dev-mode dry runs."""
         return build_component(
             algorithm,
             expected_type=Algorithm,
@@ -208,6 +256,7 @@ class Trainer(TrainerLegacy):
         )
 
     def _make_adapter(self, adapter: ComponentSpec[TraceAdapter[Any]]) -> TraceAdapter[Any]:
+        """Resolve the adapter used to transform spans into algorithm-ready payloads."""
         return build_component(
             adapter,
             expected_type=TraceAdapter,
@@ -220,6 +269,7 @@ class Trainer(TrainerLegacy):
         )
 
     def _make_store(self, store: ComponentSpec[LightningStore]) -> LightningStore:
+        """Resolve the store implementation backing rollouts, attempts, spans, and resources."""
         return build_component(
             store,
             expected_type=LightningStore,
@@ -235,6 +285,7 @@ class Trainer(TrainerLegacy):
         *,
         n_runners: int,
     ) -> ExecutionStrategy:
+        """Resolve the execution strategy and seed defaults such as `n_runners`."""
         if isinstance(strategy, ExecutionStrategy):
             return strategy
         optional_defaults: Dict[str, Callable[[], Any]] = {"n_runners": lambda: n_runners}
@@ -259,6 +310,7 @@ class Trainer(TrainerLegacy):
         *,
         store: LightningStore,
     ) -> Optional[LLMProxy]:
+        """Resolve an optional LLM proxy and ensure it shares the trainer's store instance."""
         if isinstance(llm_proxy, LLMProxy):
             return llm_proxy
 
@@ -278,6 +330,7 @@ class Trainer(TrainerLegacy):
         )
 
     def _make_runner(self, runner: ComponentSpec[Runner[Any]]) -> Runner[Any]:
+        """Resolve the runner responsible for executing the agent inside each worker."""
         optional_defaults: Dict[str, Callable[[], Any]] = {"tracer": lambda: self.tracer}
         if self.max_rollouts is not None:
             optional_defaults["max_rollouts"] = lambda: self.max_rollouts
@@ -296,6 +349,7 @@ class Trainer(TrainerLegacy):
         )
 
     def _normalize_hooks(self, hooks: Optional[Union[Hook, Sequence[Hook]]]) -> Sequence[Hook]:
+        """Coerce hook inputs into an immutable sequence for runner initialization."""
         if hooks is None:
             return ()
         if isinstance(hooks, Hook):
@@ -309,12 +363,20 @@ class Trainer(TrainerLegacy):
         *,
         val_dataset: Optional[Dataset[T_co]] = None,
     ) -> None:
-        """Run the training loop using the configured strategy, store, and runner.
+        """Execute the full algorithm/runner training loop.
+
+        [`Trainer.fit`][agentlightning.Trainer.fit] packages the algorithm and runner bundles,
+        then hands them to the active [`ExecutionStrategy`][agentlightning.ExecutionStrategy].
+        The strategy rarely returns until:
+
+        * The algorithm exhausts the dataset(s) and stops enqueuing rollouts.
+        * `max_rollouts` causes individual runners to exit.
+        * An exception or interrupt cancels the shared [`ExecutionEvent`][agentlightning.ExecutionEvent].
 
         Args:
-            agent: The LitAgent instance to be trained on.
-            train_dataset: The dataset to train on.
-            val_dataset: The dataset to validate on.
+            agent: [`LitAgent`][agentlightning.LitAgent] implementation executed by runners.
+            train_dataset: Optional iterable of rollout inputs consumed by the algorithm.
+            val_dataset: Optional iterable consumed by validation passes.
         """
         if isinstance(train_dataset, str):
             logger.warning(
@@ -347,16 +409,22 @@ class Trainer(TrainerLegacy):
         *,
         val_dataset: Optional[Dataset[T_co]] = None,
     ) -> None:
-        """Dry run the training loop with a [`FastAlgorithm`][agentlightning.FastAlgorithm]
-        and the real runner.
+        """Exercise the infrastructure using a fast, synchronous algorithm.
+
+        [`Trainer.dev`][agentlightning.Trainer.dev] mirrors [`fit()`][agentlightning.Trainer.fit] but
+        insists on an [`Algorithm`][agentlightning.Algorithm] subtype that also derives from
+        [`FastAlgorithm`][agentlightning.FastAlgorithm]. This keeps the loop responsive for
+        debugging while still touching the same store, runners, hooks, and tracer plumbing.
+
+        If no algorithm is provided, a default [`Baseline`][agentlightning.Baseline] algorithm will be used.
 
         Args:
-            agent: The [`LitAgent`][agentlightning.LitAgent] instance to be trained on.
-            train_dataset: The dataset to train on.
-            val_dataset: The dataset to validate on.
+            agent: [`LitAgent`][agentlightning.LitAgent] implementation to execute.
+            train_dataset: Optional iterable passed to the algorithm.
+            val_dataset: Optional iterable passed to the algorithm.
 
         Raises:
-            TypeError: If the configured algorithm is not a [`FastAlgorithm`][agentlightning.FastAlgorithm].
+            TypeError: If the configured algorithm does not inherit from `FastAlgorithm`.
         """
         agent.set_trainer(self)
 
@@ -389,6 +457,15 @@ class Trainer(TrainerLegacy):
         val_dataset: Optional[Dataset[T_co]],
         algorithm: Optional[Algorithm],
     ) -> None:
+        """Internal entry point executed by the strategy for the algorithm role.
+
+        This coroutine is scheduled inside the strategy's process/thread and is responsible
+        for binding algorithm dependencies (store, adapter, initial resources, proxy) before
+        invoking [`Algorithm.run`][agentlightning.Algorithm.run].
+        When `algorithm` is `None` the bundle simply waits for the
+        shared `event` to signal shutdown so runners can still execute (useful for manual queue
+        seeding or external algorithms).
+        """
         if algorithm is not None:
             algorithm.set_trainer(self)
             algorithm.set_store(store)
@@ -423,6 +500,13 @@ class Trainer(TrainerLegacy):
     async def _runner_bundle(
         self, store: LightningStore, worker_id: int, event: ExecutionEvent, agent: LitAgent[T_co]
     ) -> None:
+        """Internal entry point executed by the strategy for each runner role.
+
+        The bundle materializes the configured runner, binds the agent and hooks, associates
+        the worker with the shared store, and then drives the runner's [`iter`][agentlightning.Runner.iter]
+        loop until the execution event is set or an exception occurs. Cleanup mirrors the initialization
+        sequence to keep tracer state, hooks, and agent resources consistent across restarts.
+        """
         runner_instance: Runner[Any] | None = None
         runner_initialized = False
         worker_initialized = False

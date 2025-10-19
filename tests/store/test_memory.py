@@ -28,8 +28,8 @@ from agentlightning.types import (
     AttemptedRollout,
     Event,
     Link,
+    OtelResource,
     PromptTemplate,
-    Resource,
     ResourcesUpdate,
     Rollout,
     RolloutConfig,
@@ -701,7 +701,7 @@ def test_estimate_model_size_handles_span_objects() -> None:
     context = SpanContext(trace_id="trace", span_id="parent", is_remote=False, trace_state={"foo": "bar"})
     event = Event(name="step", attributes={"detail": "value"}, timestamp=1.0)
     link = Link(context=context, attributes=None)
-    resource = Resource(attributes={"service.name": "unit"}, schema_url="schema")
+    resource = OtelResource(attributes={"service.name": "unit"}, schema_url="schema")
 
     span = Span(
         rollout_id="ro-1",

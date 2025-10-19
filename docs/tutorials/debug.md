@@ -101,6 +101,25 @@ with runner.run_context(
 
 Because hooks run inside the runner process you can also attach debuggers or breakpoints directly in the callback implementations.
 
+!!! note
+
+    For a better understanding of where hooks are called, we show a pseudo code of Runner's working flow below:
+
+    ```python
+    resources = await store.get_latest_resources()
+    rollout = ...
+    try:
+        # <-- on_rollout_start
+        with tracer.trace_context(...):
+            # <--- on_trace_start
+            result = await agent.rollout(...)
+            # <--- on_trace_end
+        post_process_result(result)
+    except Exception:
+        # <-- on_rollout_end
+        await store.update_attempt(status=...)
+    ```
+
 ## Dry-Run the Trainer Loop
 
 Once single rollouts behave, switch to the trainer’s dry-run mode. [`Trainer.dev`][agentlightning.Trainer.dev] spins up a lightweight fast algorithm — [`agentlightning.Baseline`][agentlightning.Baseline] by default — so you can exercise the same infrastructure as [`Trainer.fit`][agentlightning.Trainer.fit] without standing up complex stacks like RL or SFT.

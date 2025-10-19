@@ -19,7 +19,7 @@ from yarl import URL
 from agentlightning.store.base import UNSET
 from agentlightning.store.client_server import LightningStoreClient, LightningStoreServer
 from agentlightning.store.memory import InMemoryLightningStore
-from agentlightning.types import LLM, PromptTemplate, Resource, RolloutConfig, Span, TraceStatus
+from agentlightning.types import LLM, OtelResource, PromptTemplate, RolloutConfig, Span, TraceStatus
 
 
 def _get_free_port() -> int:
@@ -45,7 +45,7 @@ def _make_span(rollout_id: str, attempt_id: str, sequence_id: int, name: str) ->
         end_time=None,
         context=None,
         parent=None,
-        resource=Resource(attributes={}, schema_url=""),
+        resource=OtelResource(attributes={}, schema_url=""),
     )
 
 

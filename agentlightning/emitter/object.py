@@ -12,7 +12,15 @@ logger = logging.getLogger(__name__)
 
 
 def emit_object(object: Any) -> None:
-    """Emit any object as a span. Make sure the object is JSON serializable."""
+    """Emit an object's serialized representation as an OpenTelemetry span.
+
+    Args:
+        object: Data structure to encode as JSON and attach to the span payload.
+
+    !!! note
+        The payload must be JSON serializable. Non-serializable objects are ignored and
+        an error is logged to aid debugging.
+    """
     try:
         serialized = json.dumps(object)
     except (TypeError, ValueError):

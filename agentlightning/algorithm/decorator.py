@@ -101,11 +101,12 @@ AF = TypeVar("AF", bound=AsyncFlag)
 
 
 class FunctionalAlgorithm(Algorithm, Generic[AF]):
-    """A Algorithm that wraps a function-based algorithm implementation.
+    """An algorithm wrapper built from a callable implementation.
 
-    This class allows users to define algorithm behavior using a simple function
-    that takes train_dataset and val_dataset parameters, rather than implementing
-    a full Algorithm subclass.
+    Functional algorithms let you provide an ordinary function instead of
+    subclassing [`Algorithm`][agentlightning.Algorithm]. The wrapper inspects
+    the callable signature to supply optional dependencies
+    such as the store, adapter, and LLM proxy.
     """
 
     @overload
@@ -115,13 +116,12 @@ class FunctionalAlgorithm(Algorithm, Generic[AF]):
     def __init__(self: "FunctionalAlgorithm[Literal[True]]", algorithm_func: AlgorithmFuncAsyncLike) -> None: ...
 
     def __init__(self, algorithm_func: Union[AlgorithmFuncSyncLike, AlgorithmFuncAsyncLike]) -> None:
-        """
-        Initialize the FunctionalAlgorithm with an algorithm function.
+        """Wrap a function that implements algorithm behaviour.
 
         Args:
-            algorithm_func: A function that defines the algorithm's behavior.
-                           Can be sync or async with signature:
-                           (train_dataset, val_dataset) -> None
+            algorithm_func: Sync or async callable implementing the algorithm
+                contract. Arguments are detected automatically based on the
+                function signature.
         """
         super().__init__()
         self._algorithm_func = algorithm_func
@@ -156,14 +156,20 @@ class FunctionalAlgorithm(Algorithm, Generic[AF]):
         train_dataset: Optional[Dataset[Any]] = None,
         val_dataset: Optional[Dataset[Any]] = None,
     ) -> Union[None, Awaitable[None]]:
-        """Execute the algorithm using the wrapped function.
+        """Execute the wrapped function with injected dependencies.
 
         Args:
-            train_dataset: The dataset to train on.
-            val_dataset: The dataset to validate on.
+            train_dataset: Optional training dataset passed through when the
+                callable declares a `train_dataset` parameter.
+            val_dataset: Optional validation dataset passed through when the
+                callable declares a `val_dataset` parameter.
 
         Returns:
-            None or Awaitable[None] if the function is async.
+            None for sync callables or an awaitable when the callable is async.
+
+        Raises:
+            TypeError: If a dataset is provided but the function signature does
+                not accept the corresponding argument.
         """
         kwargs: Dict[str, Any] = {}
         if "store" in self._sig.parameters:
@@ -217,40 +223,42 @@ def algo(
         AlgorithmFuncAsyncFallback,
     ],
 ) -> Union[FunctionalAlgorithm[Literal[False]], FunctionalAlgorithm[Literal[True]]]:
-    """Create a Algorithm from a function.
+    """Convert a callable into a [`FunctionalAlgorithm`][agentlightning.algorithm.decorator.FunctionalAlgorithm].
 
-    This decorator allows you to define an algorithm using a simple function
-    instead of creating a full Algorithm subclass. The returned FunctionalAlgorithm
-    instance is callable, preserving the original function's behavior.
+    The decorator inspects the callable signature to decide which dependencies
+    to inject at runtime, enabling concise algorithm definitions that still
+    leverage the full training runtime.
 
     Args:
-        func: A function that defines the algorithm's behavior with signature:
-              (train_dataset, val_dataset) -> None
-              Can be sync or async.
+        func: Function implementing the algorithm logic. May be synchronous or
+            asynchronous. The function can expect all of, or a subset of the following parameters:
+
+            - `store`: [`LightningStore`][agentlightning.store.base.LightningStore],
+            - `train_dataset`: [`Dataset`][agentlightning.Dataset],
+            - `val_dataset`: [`Dataset`][agentlightning.Dataset],
+            - `llm_proxy`: [`LLMProxy`][agentlightning.LLMProxy],
+            - `adapter`: [`TraceAdapter`][agentlightning.TraceAdapter],
+            - `initial_resources`: [`NamedResources`][agentlightning.NamedResources],
+
+            If the function does not expect a parameter, the wrapper will not inject it into the call.
+            Using `*args` and `**kwargs` will not work and no parameters will be injected.
 
     Returns:
-        A callable FunctionalAlgorithm instance that preserves the original function's
-        type hints and behavior while providing all algorithm functionality.
+        FunctionalAlgorithm that proxies the callable while exposing the
+        `Algorithm` interface.
 
-    Example:
-        @algo
-        def my_algorithm(train_dataset, val_dataset):
-            # Algorithm logic here
-            for task in train_dataset:
-                # Process training tasks
-                pass
+    Examples:
+        ```python
+        from agentlightning.algorithm.decorator import algo
 
         @algo
-        async def my_async_algorithm(train_dataset, val_dataset):
-            # Async algorithm logic here
-            async for task in train_dataset:
-                # Process training tasks asynchronously
-                pass
+        def batching_algorithm(*, store, train_dataset, val_dataset):
+            for sample in train_dataset:
+                store.enqueue_rollout(input=sample, mode="train")
 
-        # Function is still callable with original behavior
-        my_algorithm(train_data, val_data)
-
-        # Algorithm methods are also available
-        my_algorithm.run(train_data, val_data)
+        @algo
+        async def async_algorithm(*, store, train_dataset=None, val_dataset=None):
+            await store.enqueue_rollout(input={"prompt": "hello"}, mode="train")
+        ```
     """
     return FunctionalAlgorithm(func)

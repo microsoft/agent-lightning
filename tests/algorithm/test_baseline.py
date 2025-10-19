@@ -14,7 +14,7 @@ from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.types import (
     LLM,
     NamedResources,
-    Resource,
+    OtelResource,
     Span,
     SpanContext,
     TraceStatus,
@@ -65,7 +65,7 @@ def _build_span(rollout_id: str, attempt_id: str, *, sequence_id: int, index: in
         end_time=None,
         context=SpanContext(trace_id=trace_hex, span_id=span_hex, is_remote=False, trace_state={}),
         parent=None,
-        resource=Resource(attributes={}, schema_url=""),
+        resource=OtelResource(attributes={}, schema_url=""),
     )
 
 

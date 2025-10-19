@@ -13,18 +13,20 @@ T_to = TypeVar("T_to")
 class Adapter(Generic[T_from, T_to]):
     """Base class for synchronous adapters that convert data from one format to another.
 
-    This class defines a simple protocol for transformation:
+    The class defines a minimal protocol so that adapters can be treated like callables while
+    still allowing subclasses to supply the concrete transformation logic.
 
-    - The `__call__` method makes adapters callable, so they can be used like functions.
-    - Subclasses must implement the `adapt` method to define the actual conversion logic.
+    !!! note
+        Subclasses must override [`adapt()`][agentlightning.Adapter.adapt] to provide
+        the actual conversion.
 
-    Type parameters:
+    Type Variables:
 
-    - T_from: The source data type (input).
-    - T_to: The target data type (output).
+        T_from: Source data type supplied to the adapter.
 
-    Example:
+        T_to: Target data type produced by the adapter.
 
+    Examples:
         >>> class IntToStrAdapter(Adapter[int, str]):
         ...     def adapt(self, source: int) -> str:
         ...         return str(source)
@@ -37,8 +39,9 @@ class Adapter(Generic[T_from, T_to]):
     def __call__(self, source: T_from, /) -> T_to:
         """Convert the data to the target format.
 
-        This method delegates to `adapt` and allows the adapter
-        to be invoked as a function.
+        This method delegates to [`adapt()`][agentlightning.Adapter.adapt] so that an
+        instance of [`Adapter`][agentlightning.Adapter] can be used like a standard
+        function.
 
         Args:
             source: Input data in the source format.
@@ -51,8 +54,8 @@ class Adapter(Generic[T_from, T_to]):
     def adapt(self, source: T_from, /) -> T_to:
         """Convert the data to the target format.
 
-        Subclasses should override this method with the concrete
-        transformation logic.
+        Subclasses must override this method with the concrete transformation logic. The base
+        implementation raises `NotImplementedError` to make the requirement explicit.
 
         Args:
             source: Input data in the source format.
@@ -66,13 +69,11 @@ class Adapter(Generic[T_from, T_to]):
 class OtelTraceAdapter(Adapter[List[ReadableSpan], T_to], Generic[T_to]):
     """Base class for adapters that convert OpenTelemetry trace spans into other formats.
 
-    This class specializes `Adapter` for working with OpenTelemetry `ReadableSpan`
-    objects. It expects a list of spans as input and produces a custom target format
-    (e.g., reinforcement learning training data, SFT datasets, logs, metrics).
+    This specialization of [`Adapter`][agentlightning.Adapter] expects a list of
+    `opentelemetry.sdk.trace.ReadableSpan` instances and produces any target format, such as
+    reinforcement learning trajectories, structured logs, or analytics-ready payloads.
 
-    Subclasses should override `adapt` to define the desired conversion.
-
-    Example:
+    Examples:
         >>> class TraceToDictAdapter(OtelTraceAdapter[dict]):
         ...     def adapt(self, spans: List[ReadableSpan]) -> dict:
         ...         return {"count": len(spans)}
@@ -86,7 +87,8 @@ class OtelTraceAdapter(Adapter[List[ReadableSpan], T_to], Generic[T_to]):
 class TraceAdapter(Adapter[List[Span], T_to], Generic[T_to]):
     """Base class for adapters that convert trace spans into other formats.
 
-    This class specializes `Adapter` for working with trace spans. It expects a list of
-    Agent-lightning spans as input and produces a custom target format
-    (e.g., reinforcement learning training data, SFT datasets, logs, metrics).
+    This class specializes [`Adapter`][agentlightning.Adapter] for working with
+    [`Span`][agentlightning.Span] instances emitted by Agent Lightning instrumentation.
+    Subclasses receive entire trace slices and return a format suited for the downstream consumer,
+    for example reinforcement learning training data or observability metrics.
     """

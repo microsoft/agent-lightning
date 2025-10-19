@@ -17,7 +17,7 @@ from agentlightning.types import (
     AttemptedRollout,
     AttemptStatus,
     NamedResources,
-    Resource,
+    OtelResource,
     ResourcesUpdate,
     Rollout,
     Span,
@@ -97,7 +97,7 @@ def make_span(rollout_id: str, attempt_id: str, sequence_id: int = 1) -> Span:
         end_time=None,
         context=SpanContext(trace_id="0" * 32, span_id="0" * 16, is_remote=False, trace_state={}),
         parent=None,
-        resource=Resource(attributes={}, schema_url=""),
+        resource=OtelResource(attributes={}, schema_url=""),
     )
 
 
