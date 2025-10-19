@@ -125,8 +125,6 @@ jobs:
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
-      - name: Check versions
-        run: ./scripts/check_python_install.sh
       - name: Upgrade dependencies (latest)
         run: uv lock --upgrade
         if: matrix.setup-script == 'latest'
@@ -141,6 +139,12 @@ jobs:
           name: dependencies-python-${{ matrix.python-version }}-${{ matrix.setup-script }}
           path: requirements-freeze-${{ matrix.python-version }}-${{ matrix.setup-script }}.txt
           compression-level: 0
+      - name: Check versions
+        run: |
+          ls -al .venv/bin
+          # We still want "old python" to be able to run the code.
+          ./scripts/check_python_install.sh
+          python -c "import litellm"
       - name: Run tests
         run: |
           pytest -v --durations=0 tests
