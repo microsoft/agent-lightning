@@ -22,13 +22,14 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e .[dev]
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - name: Sync dependencies
+        run: uv sync --locked --group dev
       - name: Run pre-commit
         uses: pre-commit/action@v3.0.1
       - name: Check Python headers
@@ -47,12 +48,22 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
-      - name: Install dependencies
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - name: Sync dependencies
         run: |
-          ./scripts/setup_type_checking.sh
+          uv sync --locked \
+            --extra apo \
+            --extra verl \
+            --group dev \
+            --group torch-cpu \
+            --group torch-stable \
+            --group trl \
+            --group agents
       - name: Run Black
         run: black --check .
       - name: Run isort
@@ -68,12 +79,14 @@ jobs:
       - uses: actions/checkout@v3
         with:
           fetch-depth: 0
-      - uses: actions/setup-python@v4
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
-      - name: Install documentation dependencies
-        run: |
-          ./scripts/setup_stable.sh
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - name: Sync dependencies
+        run: uv sync --locked --group dev
       - name: Set source commit for docs
         run: |
           echo "SOURCE_COMMIT=${{ github.sha }}" >> $GITHUB_ENV
@@ -92,11 +105,13 @@ jobs:
       matrix:
         include:
           - python-version: '3.10'
+            setup-script: 'legacy'
+          - python-version: '3.11'
             setup-script: 'stable'
           - python-version: '3.12'
+            setup-script: 'stable'
+          - python-version: '3.13'
             setup-script: 'latest'
-          - python-version: '3.12'
-            setup-script: 'stable'
       fail-fast: false
 
     name: Test with Python ${{ matrix.python-version }} (${{ matrix.setup-script }})
@@ -104,12 +119,19 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install dependencies
-        run: |
-          ./scripts/setup_${{ matrix.setup-script }}.sh
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - name: Check versions
+        run: ./scripts/check_python_install.sh
+      - name: Upgrade dependencies (latest)
+        run: uv lock --upgrade
+        if: matrix.setup-script == 'latest'
+      - name: Sync dependencies (${{ matrix.setup-script }})
+        run: uv sync --locked --extra apo --group dev --group agents --group core-${{ matrix.setup-script }}
       - name: Freeze dependencies
         run: |
           pip list | tee requirements-freeze-${{ matrix.python-version }}-${{ matrix.setup-script }}.txt

@@ -32,7 +32,6 @@ apo = [
 verl = [
   "verl>=0.5.0,<0.6.0",
   "vllm>=0.8.4,<0.11.0",
-  "flash-attn",
 ]
 
 [project.scripts]
@@ -63,18 +62,27 @@ experiment = [
   "gdown",
 ]
 
+core-legacy = [
+  "agentops<=0.4.18"
+]
+core-stable = [
+  "agentops>=0.4.21"
+]
+
+# For PyTorch.
 # CPU and GPU groups.
-cpu = [
+torch-cpu = [
   "torch",
   "torchvision",
 ]
-cu128 = [
+torch-cu128 = [
   "torch",
   "torchvision",
 ]
 
 # Training-heavy dependencies.
 torch-stable = [
+  {include-group = "core-stable"},
   # This can work for both CPU and GPU.
   "torch>=2.8.0",
   "torchvision>=0.23.0",
@@ -84,6 +92,7 @@ torch-stable = [
   "litellm[proxy]>=1.78",
 ]
 torch-legacy = [
+  {include-group = "core-legacy"},
   # This can work for both CPU and GPU.
   "torch==2.7.0",
   "torchvision==0.22.0",
@@ -93,25 +102,18 @@ torch-legacy = [
 ]
 
 # Flash-attention must build with CUDA toolkit.
-gpu-stable = [
+# Use this instead of --group torch-stable --group torch-gpu
+torch-gpu-stable = [
   {include-group = "torch-stable"},
-  {include-group = "cu128"},
+  {include-group = "torch-cu128"},
   "flash-attn>=2.8.3",
   "tensordict>=0.9.1",
 ]
-gpu-legacy = [
+# Use this instead of --group torch-legacy --group torch-gpu
+torch-gpu-legacy = [
   {include-group = "torch-legacy"},
-  {include-group = "cu128"},
+  {include-group = "torch-cu128"},
   "flash-attn==2.8.1",
-]
-
-cpu-stable = [
-  {include-group = "torch-stable"},
-  {include-group = "cpu"},
-]
-cpu-legacy = [
-  {include-group = "torch-legacy"},
-  {include-group = "cpu"},
 ]
 
 # For the TRL/Unsloth example.
@@ -168,8 +170,12 @@ agents = [
 [tool.uv]
 conflicts = [
   [
-    { group = "cpu" },
-    { group = "cu128" },
+    { group = "core-legacy" },
+    { group = "core-stable" },
+  ],
+  [
+    { group = "torch-cpu" },
+    { group = "torch-cu128" },
   ],
   [
     { group = "torch-stable" },
@@ -189,8 +195,8 @@ dependency-metadata = [
 
 [tool.uv.sources]
 torch = [
-  { index = "pytorch-cu128", group = "cu128" },
-  { index = "pytorch-cpu", group = "cpu" },
+  { index = "pytorch-cu128", group = "torch-cu128" },
+  { index = "pytorch-cpu", group = "torch-cpu" },
 ]
 
 [[tool.uv.index]]
