@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+export
 
 # Launch LiteLLM Proxy in background
 echo "Starting LiteLLM Proxy on port 12306..."
