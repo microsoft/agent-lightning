@@ -30,18 +30,19 @@ jobs:
           enable-cache: true
           python-version: '3.12'
       - name: Sync dependencies (fast)
-        run: uv sync --locked --group dev
+        run: uv sync --frozen --group dev --no-default-groups
         if: matrix.setup == 'fast'
       - name: Sync dependencies (slow)
         run: |
-          uv sync --locked \
+          uv sync --frozen \
             --extra apo \
             --extra verl \
             --group dev \
             --group torch-cpu \
             --group torch-stable \
             --group trl \
-            --group agents
+            --group agents \
+            --no-default-groups
         if: matrix.setup == 'slow'
       - name: Run pre-commit
         uses: pre-commit/action@v3.0.1
@@ -74,7 +75,7 @@ jobs:
         with:
           enable-cache: true
       - name: Sync dependencies
-        run: uv sync --locked --group dev
+        run: uv sync --frozen --no-default-groups --group dev
       - name: Set source commit for docs
         run: |
           echo "SOURCE_COMMIT=${{ github.sha }}" >> $GITHUB_ENV
@@ -114,14 +115,14 @@ jobs:
         run: uv lock --upgrade
         if: matrix.setup-script == 'latest'
       - name: Sync dependencies (latest)
-        run: uv sync --locked --extra apo --group dev --group agents --group core-stable
+        run: uv sync --frozen --no-default-groups --extra apo --group dev --group agents --group core-stable
         if: matrix.setup-script == 'latest'
       - name: Sync dependencies (stable & legacy)
-        run: uv sync --locked --extra apo --group dev --group agents --group core-${{ matrix.setup-script }}
+        run: uv sync --frozen --no-default-groups --extra apo --group dev --group agents --group core-${{ matrix.setup-script }}
         if: matrix.setup-script != 'latest'
       - name: Freeze dependencies
         run: |
-          uv export --format requirements.txt --no-hashes -o requirements-freeze.txt
+          uv pip freeze | tee requirements-freeze.txt
       - name: Upload dependencies artifact
         uses: actions/upload-artifact@v4
         with:

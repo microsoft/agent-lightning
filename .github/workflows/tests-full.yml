@@ -36,14 +36,14 @@ jobs:
         run: uv lock --upgrade
         if: matrix.setup-script == 'latest'
       - name: Sync dependencies (latest)
-        run: uv sync --locked --extra apo --group dev --group agents --group torch-gpu-stable
+        run: uv sync --frozen --no-default-groups --extra apo --group dev --group agents --group torch-gpu-stable
         if: matrix.setup-script == 'latest'
       - name: Sync dependencies (stable & legacy)
-        run: uv sync --locked --extra apo --group dev --group agents --group torch-gpu-${{ matrix.setup-script }}
+        run: uv sync --frozen --no-default-groups --extra apo --group dev --group agents --group torch-gpu-${{ matrix.setup-script }}
         if: matrix.setup-script != 'latest'
       - name: Freeze dependencies
         run: |
-          uv export --format requirements.txt --no-hashes -o requirements-freeze.txt
+          uv pip freeze | tee requirements-freeze.txt
       - name: Upload dependencies artifact
         uses: actions/upload-artifact@v4
         with:

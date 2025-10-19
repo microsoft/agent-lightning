@@ -188,7 +188,7 @@ environments = [
 ]
 dependency-metadata = [
   # This version of litellm is used specifically for legacy group.
-  # There's conflict between the litellm's dependant openai version and vllm's openai version.
+  # There's conflict between the litellm's dependent openai version and vllm's openai version.
   { name = "litellm", provides-extra = ["proxy"], version = "1.77.0", requires-dist = ["openai==1.90.0"] },
   # Conflicts between packaging dependency of pyvers (dependency of tensordict) and agentops.
   { name = "pyvers", version = "0.1.0", requires-dist = ["packaging>=24.0"] },
