@@ -1,7 +1,11 @@
 # Copyright (c) Microsoft. All rights reserved.
 
 import json
+from importlib.metadata import version
 from typing import Any, Dict, Optional
+
+import pytest
+from packaging.version import Version
 
 from agentlightning.adapter.messages import TraceToMessages
 from agentlightning.types import Resource, Span, TraceStatus
@@ -34,6 +38,14 @@ def make_span(
     )
 
 
+_openai_version = Version(version("openai"))
+_skip_for_openai_lt_1_100_0 = _openai_version < Version("1.100.0")
+
+
+@pytest.mark.skipif(
+    _skip_for_openai_lt_1_100_0,
+    reason="Requires openai>=1.100.0",
+)
 def test_trace_messages_adapter_builds_expected_conversations():
     system_prompt = "You are a scheduling assistant."
     user_prompt = "Find a room."
@@ -193,6 +205,10 @@ def test_trace_messages_adapter_builds_expected_conversations():
     assert adapter.adapt(spans) == expected
 
 
+@pytest.mark.skipif(
+    _skip_for_openai_lt_1_100_0,
+    reason="Requires openai>=1.100.0",
+)
 def test_trace_messages_adapter_handles_multiple_tool_calls():
     system_prompt = "You are a scheduling assistant."
     user_prompt = "Find a room at 16:30 for 30 minutes. Needs projector + confphone. Accessible."
