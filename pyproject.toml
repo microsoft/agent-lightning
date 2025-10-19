@@ -34,33 +34,6 @@ verl = [
   "vllm>=0.8.4,<0.11.0",
   "flash-attn",
 ]
-# These are only used to set indexes needed.
-cpu = [
-  "torch",
-  "torchvision",
-]
-gpu = [
-  "torch",
-  "torchvision",
-]
-
-[tool.uv.sources]
-torch = [
-  { index = "torch-gpu", extra = "gpu" },
-  { index = "torch-cpu", extra = "cpu" },
-]
-
-[[tool.uv.index]]
-name = "pypi"
-url = "https://pypi.org/simple"
-
-[[tool.uv.index]]
-name = "torch-gpu"
-url = "https://download.pytorch.org/whl/cu128"
-
-[[tool.uv.index]]
-name = "torch-cpu"
-url = "https://download.pytorch.org/whl/cpu"
 
 [project.scripts]
 agl = "agentlightning.cli:main"
@@ -90,6 +63,16 @@ experiment = [
   "gdown",
 ]
 
+# CPU and GPU groups.
+cpu = [
+  "torch",
+  "torchvision",
+]
+cu128 = [
+  "torch",
+  "torchvision",
+]
+
 # Training-heavy dependencies.
 torch-stable = [
   # This can work for both CPU and GPU.
@@ -112,12 +95,23 @@ torch-legacy = [
 # Flash-attention must build with CUDA toolkit.
 gpu-stable = [
   {include-group = "torch-stable"},
+  {include-group = "cu128"},
   "flash-attn>=2.8.3",
   "tensordict>=0.9.1",
 ]
 gpu-legacy = [
   {include-group = "torch-legacy"},
+  {include-group = "cu128"},
   "flash-attn==2.8.1",
+]
+
+cpu-stable = [
+  {include-group = "torch-stable"},
+  {include-group = "cpu"},
+]
+cpu-legacy = [
+  {include-group = "torch-legacy"},
+  {include-group = "cpu"},
 ]
 
 # For the TRL/Unsloth example.
@@ -174,25 +168,42 @@ agents = [
 [tool.uv]
 conflicts = [
   [
-    { extra = "cpu" },
-    { extra = "gpu" },
+    { group = "cpu" },
+    { group = "cu128" },
   ],
   [
     { group = "torch-stable" },
     { group = "torch-legacy" },
-  ],
-  [
-    { group = "gpu-stable" },
-    { group = "gpu-legacy" },
   ],
 ]
 environments = [
   "sys_platform == 'linux'",
 ]
 dependency-metadata = [
+  # This version of litellm is used specifically for legacy group.
+  # There's conflict between the litellm's dependant openai version and vllm's openai version.
   { name = "litellm", provides-extra = ["proxy"], version = "1.77.0", requires-dist = ["openai==1.90.0"] },
+  # Conflicts between packaging dependency of pyvers (dependency of tensordict) and agentops.
   { name = "pyvers", version = "0.1.0", requires-dist = ["packaging>=24.0"] },
 ]
+
+[tool.uv.sources]
+torch = [
+  { index = "pytorch-cu128", group = "cu128" },
+  { index = "pytorch-cpu", group = "cpu" },
+]
+
+[[tool.uv.index]]
+name = "pypi"
+url = "https://pypi.org/simple"
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
 
 [tool.uv.extra-build-dependencies]
 flash-attn = [
