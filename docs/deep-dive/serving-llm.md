@@ -53,7 +53,7 @@ Most agents interact with LLMs via **Chat Completion APIs**, exchanging chat mes
 
 **1. Retokenizing chat messages.**
 In this approach, you store chat messages as text and let training algorithms **retokenize** them later, as done in many SFT workflows (e.g., [HuggingFace SFT](https://huggingface.co/docs/trl/sft_trainer)).
-In practice, we’ve found this method unstable and less accurate. The chart below compares training results.
+In practice, we’ve found this method unstable and less accurate. The chart below compares training results. The retokenization approach is run twice. All settings are the same except for the retokenization approach.
 
 <div style="height:400px">
 <canvas data-chart='{
@@ -67,7 +67,7 @@ In practice, we’ve found this method unstable and less accurate. The chart bel
         "spanGaps": true
       },
       {
-        "label": "Retokenization (Run Again)",
+        "label": "Retokenization (Second Run)",
         "data": [0.494, 0.526, 0.536, 0.554, 0.544, 0.556, 0.568, 0.552, 0.45, 0.466, 0.474, 0.47, 0.464, 0.476, 0.488, 0.432],
         "spanGaps": true
       },
