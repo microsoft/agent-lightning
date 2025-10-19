@@ -4,7 +4,7 @@ import json
 from typing import Any, Dict, Optional
 
 from agentlightning.adapter.messages import TraceToMessages
-from agentlightning.types import Resource, Span, TraceStatus
+from agentlightning.types import OtelResource, Span, TraceStatus
 
 
 def make_span(
@@ -30,7 +30,7 @@ def make_span(
         end_time=None,
         context=None,
         parent=None,
-        resource=Resource(attributes={}, schema_url=""),
+        resource=OtelResource(attributes={}, schema_url=""),
     )
 
 

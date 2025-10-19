@@ -665,7 +665,7 @@ class LlmProxyTraceToTriplet(TraceToTripletBase):
         This adapter is experimental and might be merged with
         [`TracerTraceToTriplet`][agentlightning.TracerTraceToTriplet] in the future.
 
-    !!! caution
+    !!! danger
         Do not rely on timestamps when using this adapter. Proxy spans can originate on different
         machines with unsynchronised clocks, so `sequence_id` is treated as the sole source of
         ordering.

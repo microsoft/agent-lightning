@@ -1,6 +1,12 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-"""Legacy client for interacting with a legacy Agent Lightning server."""
+"""Utilities for interacting with legacy Agent Lightning servers.
+
+This module contains compatibility shims that speak the deprecated HTTP
+interface used by older Agent Lightning deployments. Modern code should prefer
+the store-based APIs exposed by `agentlightning.store`, but keeping these
+clients available makes it easier to migrate existing workflows incrementally.
+"""
 
 import asyncio
 import logging
@@ -18,13 +24,24 @@ logger = logging.getLogger(__name__)
 
 
 class AgentLightningClient:
-    """
-    Client for interacting with a version-aware Agent Lightning Server.
+    """Client wrapper for the legacy version-aware Agent Lightning server.
 
-    This client handles polling for tasks, fetching specific versions of resources
-    (like model configurations), and posting completed rollouts back to the server.
-    It provides both synchronous and asynchronous methods for these operations and
-    includes a cache for resources.
+    The client exposes synchronous and asynchronous helpers for polling tasks,
+    retrieving resource bundles, and submitting rollouts. It also maintains a
+    simple in-memory cache keyed by the server-provided resource identifier to
+    avoid redundant network requests.
+
+    !!! warning "Deprecated"
+        [`AgentLightningClient`][agentlightning.client.AgentLightningClient] is part of
+        the legacy client/server stack. New code should rely on the store-based APIs
+        implemented in `agentlightning.store`.
+
+    Attributes:
+        endpoint: Base URL of the Agent Lightning server.
+        poll_interval: Delay in seconds between polling attempts when no task is
+            available.
+        timeout: Timeout in seconds applied to HTTP requests.
+        task_count: Number of tasks claimed during the lifetime of this client.
     """
 
     _next_task_uri = "/task"
@@ -33,12 +50,12 @@ class AgentLightningClient:
     _report_rollout_uri = "/rollout"
 
     def __init__(self, endpoint: str, poll_interval: float = 5.0, timeout: float = 10.0):
-        """Initializes the AgentLightningClient.
+        """Initialize the client.
 
         Args:
-            endpoint: The root URL of the Agent Lightning server.
-            poll_interval: The interval in seconds to wait between polling for new tasks.
-            timeout: The timeout in seconds for HTTP requests.
+            endpoint: Root URL of the Agent Lightning server.
+            poll_interval: Seconds to wait between polling attempts.
+            timeout: Seconds before a request to the server is considered timed out.
         """
         warnings.warn(
             "AgentLightningClient is deprecated. Please use LightningStoreClient instead.", DeprecationWarning
@@ -51,13 +68,13 @@ class AgentLightningClient:
         self._default_headers = {"X-AgentLightning-Client": "true"}
 
     async def _request_json_async(self, url: str) -> Optional[Dict[str, Any]]:
-        """Makes an async GET request to the specified URL and returns the JSON response.
+        """Perform an asynchronous ``GET`` request and parse the JSON payload.
 
         Args:
-            url: The URL to request.
+            url: Fully qualified URL to query.
 
         Returns:
-            The JSON response as a dictionary or None if the request fails.
+            Parsed JSON body as a dictionary if the request succeeds; otherwise ``None``.
         """
         timeout = aiohttp.ClientTimeout(total=self.timeout)
         async with aiohttp.ClientSession(timeout=timeout) as session:
@@ -70,14 +87,14 @@ class AgentLightningClient:
                 return None
 
     async def _post_json_async(self, url: str, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Makes an async POST request with a JSON payload.
+        """Perform an asynchronous ``POST`` request with a JSON body.
 
         Args:
-            url: The URL to post to.
-            payload: The dictionary data to send as JSON.
+            url: Fully qualified URL that accepts the payload.
+            payload: Dictionary that will be serialized and sent as JSON.
 
         Returns:
-            The JSON response as a dictionary or None if the request fails.
+            Parsed JSON body as a dictionary if the request succeeds; otherwise ``None``.
         """
         timeout = aiohttp.ClientTimeout(total=self.timeout)
         async with aiohttp.ClientSession(timeout=timeout) as session:
@@ -90,10 +107,11 @@ class AgentLightningClient:
                 return None
 
     async def poll_next_task_async(self) -> Optional[Task]:
-        """Polls the server asynchronously for the next task until one is available.
+        """Poll the server asynchronously until a task becomes available.
 
         Returns:
-            A Task object containing the task details.
+            The next [`Task`][agentlightning.Task] exposed by the server,
+            or ``None`` if polling fails.
         """
         url = urllib.parse.urljoin(self.endpoint, self._next_task_uri)
         while True:
@@ -108,13 +126,15 @@ class AgentLightningClient:
             await asyncio.sleep(self.poll_interval)
 
     async def get_resources_by_id_async(self, resource_id: str) -> Optional[ResourcesUpdate]:
-        """Fetches a specific version of resources by its ID, using a cache.
+        """Fetch a specific resource bundle by identifier.
 
         Args:
-            resource_id: The ID of the resources to fetch, usually from a Task's metadata.
+            resource_id: Identifier sourced from the task metadata.
 
         Returns:
-            A ResourcesUpdate object containing the versioned resources, or None if not found.
+            Cached or freshly downloaded
+            [`ResourcesUpdate`][agentlightning.ResourcesUpdate], or
+            ``None`` when the server returns an error.
         """
         if resource_id in self._resource_cache:
             logger.debug(f"Found resources '{resource_id}' in cache.")
@@ -130,10 +150,11 @@ class AgentLightningClient:
         return None
 
     async def get_latest_resources_async(self) -> Optional[ResourcesUpdate]:
-        """Fetches the latest available resources from the server.
+        """Fetch the most recent resource bundle advertised by the server.
 
         Returns:
-            A ResourcesUpdate object containing the latest resources.
+            [`ResourcesUpdate`][agentlightning.ResourcesUpdate] for the
+            newest version, or ``None`` when unavailable.
         """
         url = urllib.parse.urljoin(self.endpoint, self._latest_resources_uri)
         response = await self._request_json_async(url)
@@ -145,26 +166,26 @@ class AgentLightningClient:
         return None
 
     async def post_rollout_async(self, rollout: RolloutLegacy) -> Optional[Dict[str, Any]]:
-        """Posts a completed rollout to the server asynchronously.
+        """Submit a completed rollout back to the server.
 
         Args:
-            rollout: A Rollout object containing the results of a task.
+            rollout: Legacy rollout payload produced by the executor.
 
         Returns:
-            The server's JSON response as a dictionary.
+            Parsed JSON response returned by the server, or ``None`` when the request fails.
         """
         url = urllib.parse.urljoin(self.endpoint, self._report_rollout_uri)
         payload = rollout.model_dump(mode="json")
         return await self._post_json_async(url, payload)
 
     def _request_json(self, url: str) -> Optional[Dict[str, Any]]:
-        """Makes a sync GET request to the specified URL and returns the JSON response.
+        """Perform a blocking ``GET`` request and parse the JSON payload.
 
         Args:
-            url: The URL to request.
+            url: Fully qualified URL to query.
 
         Returns:
-            The JSON response as a dictionary or None if the request fails.
+            Parsed JSON body as a dictionary if the request succeeds; otherwise ``None``.
         """
         try:
             response = requests.get(url, timeout=self.timeout, headers=self._default_headers)
@@ -175,14 +196,14 @@ class AgentLightningClient:
             return None
 
     def _post_json(self, url: str, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Makes a sync POST request with a JSON payload.
+        """Perform a blocking ``POST`` request with a JSON payload.
 
         Args:
-            url: The URL to post to.
-            payload: The dictionary data to send as JSON.
+            url: Fully qualified URL that accepts the payload.
+            payload: Dictionary that will be serialized and sent as JSON.
 
         Returns:
-            The JSON response as a dictionary or None if the request fails.
+            Parsed JSON body as a dictionary if the request succeeds; otherwise ``None``.
         """
         try:
             response = requests.post(url, json=payload, timeout=self.timeout, headers=self._default_headers)
@@ -193,10 +214,11 @@ class AgentLightningClient:
             return None
 
     def poll_next_task(self) -> Optional[Task]:
-        """Polls the server synchronously for the next task until one is available.
+        """Poll the server synchronously until a task becomes available.
 
         Returns:
-            A Task object containing the task details, including the required `resources_id`.
+            The next [`Task`][agentlightning.Task] available for execution, or
+            ``None`` if polling fails.
         """
         url = urllib.parse.urljoin(self.endpoint, self._next_task_uri)
         while True:
@@ -211,13 +233,15 @@ class AgentLightningClient:
             time.sleep(self.poll_interval)
 
     def get_resources_by_id(self, resource_id: str) -> Optional[ResourcesUpdate]:
-        """Fetches a specific version of resources by its ID synchronously, using a cache.
+        """Fetch a specific resource bundle by identifier.
 
         Args:
-            resource_id: The ID of the resources to fetch, usually from a Task's metadata.
+            resource_id: Identifier sourced from the task metadata.
 
         Returns:
-            A ResourcesUpdate object containing the versioned resources, or None if not found.
+            Cached or freshly downloaded
+            [`ResourcesUpdate`][agentlightning.ResourcesUpdate], or
+            ``None`` when the server returns an error.
         """
         if resource_id in self._resource_cache:
             logger.debug(f"Found resources '{resource_id}' in cache.")
@@ -233,10 +257,11 @@ class AgentLightningClient:
         return None
 
     def get_latest_resources(self) -> Optional[ResourcesUpdate]:
-        """Fetches the latest available resources from the server synchronously.
+        """Fetch the most recent resource bundle advertised by the server.
 
         Returns:
-            A ResourcesUpdate object containing the latest resources.
+            [`ResourcesUpdate`][agentlightning.ResourcesUpdate] for the
+            newest version, or ``None`` when unavailable.
         """
         url = urllib.parse.urljoin(self.endpoint, self._latest_resources_uri)
         response = self._request_json(url)
@@ -247,13 +272,13 @@ class AgentLightningClient:
         return None
 
     def post_rollout(self, rollout: RolloutLegacy) -> Optional[Dict[str, Any]]:
-        """Posts a completed rollout to the server synchronously.
+        """Submit a completed rollout back to the server.
 
         Args:
-            rollout: A Rollout object containing the results of a task.
+            rollout: Legacy rollout payload produced by the executor.
 
         Returns:
-            The server's JSON response as a dictionary.
+            Parsed JSON response returned by the server, or ``None`` when the request fails.
         """
         url = urllib.parse.urljoin(self.endpoint, self._report_rollout_uri)
         payload = rollout.model_dump(mode="json")
@@ -261,14 +286,16 @@ class AgentLightningClient:
 
 
 class DevTaskLoader(AgentLightningClient):
-    """A local task manager for development that provides sample tasks and resources.
+    """In-memory task loader used for development and integration tests.
 
-    This client mocks the server APIs by maintaining a local queue of tasks and resources
-    within the same process. It's designed for development, testing, and scenarios where
-    a full Agent Lightning server is not needed.
+    The loader mimics the behavior of the legacy HTTP server by storing tasks and
+    resources locally. Polling methods simply iterate over the provided collection,
+    allowing rapid iteration without provisioning any external infrastructure.
 
-    The DevTaskLoader overrides the polling and resource fetching methods to return data
-    from local collections instead of making HTTP requests to a remote server.
+    !!! warning "Deprecated"
+
+        [`DevTaskLoader`][agentlightning.client.DevTaskLoader] is a compatibility shim.
+        Prefer [`Trainer.dev`][agentlightning.Trainer.dev] for new code.
     """
 
     def __init__(
@@ -277,12 +304,17 @@ class DevTaskLoader(AgentLightningClient):
         resources: Union[NamedResources, ResourcesUpdate],
         **kwargs: Any,
     ):
-        """Initializes the DevTaskLoader with pre-defined tasks and resources.
+        """Initialize the loader with predefined tasks and resources.
 
         Args:
-            tasks: Either a List of TaskInput objects or a List of Task objects.
-            resources: Either NamedResources or ResourcesUpdate object.
-            **kwargs: Additional arguments passed to the parent AgentLightningClient.
+            tasks: Sequence of task inputs or preconstructed tasks that will be served in
+                order.
+            resources: Static resources returned for any `resources_id` query.
+            **kwargs: Additional keyword arguments forwarded to the parent client.
+
+        Raises:
+            ValueError: If no tasks are provided or both [`Task`][agentlightning.Task]
+                and [`TaskInput`][agentlightning.TaskInput] instances are mixed.
         """
         warnings.warn("DevTaskLoader is deprecated. Please use Trainer.dev instead.", DeprecationWarning)
         super().__init__(endpoint="local://", **kwargs)
@@ -307,17 +339,18 @@ class DevTaskLoader(AgentLightningClient):
 
     @property
     def rollouts(self) -> List[RolloutLegacy]:
-        """Return rollouts that have been posted back to the loader."""
+        """Return the rollouts posted back to the loader during development runs."""
         return self._rollouts
 
     def poll_next_task(self) -> Optional[Task]:
-        """Returns the next task from the local queue.
+        """Return the next task from the local queue.
 
-        If tasks are TaskInput objects, assembles them into Task objects.
-        If tasks are already Task objects, returns them directly.
+        If [`TaskInput`][agentlightning.TaskInput] instances were provided,
+        they are converted into [`Task`][agentlightning.Task] objects on the
+        fly. Otherwise, the preconstructed tasks are returned in sequence.
 
         Returns:
-            The next Task object from the local task list.
+            Next task to execute.
         """
         if self._task_index >= len(self._tasks):
             self._task_index = 0

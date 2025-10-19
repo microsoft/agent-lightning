@@ -18,6 +18,10 @@
   font-size: 0.72rem;
 }
 
+.md-typeset h4 {
+  font-size: 1.15em;
+}
+
 [data-md-color-primary="agl"] {
   --md-primary-fg-color:        #c45259;
   --md-primary-fg-color--light: #e8b4b7;

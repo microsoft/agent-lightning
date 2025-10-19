@@ -231,7 +231,17 @@ def algo(
 
     Args:
         func: Function implementing the algorithm logic. May be synchronous or
-            asynchronous.
+            asynchronous. The function can expect all of, or a subset of the following parameters:
+
+            - `store`: [`LightningStore`][agentlightning.store.base.LightningStore],
+            - `train_dataset`: [`Dataset`][agentlightning.Dataset],
+            - `val_dataset`: [`Dataset`][agentlightning.Dataset],
+            - `llm_proxy`: [`LLMProxy`][agentlightning.LLMProxy],
+            - `adapter`: [`TraceAdapter`][agentlightning.TraceAdapter],
+            - `initial_resources`: [`NamedResources`][agentlightning.NamedResources],
+
+            If the function does not expect a parameter, the wrapper will not inject it into the call.
+            Using `*args` and `**kwargs` will not work and no parameters will be injected.
 
     Returns:
         FunctionalAlgorithm that proxies the callable while exposing the

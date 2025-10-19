@@ -38,7 +38,7 @@ __all__ = [
 class ModelConfig(TypedDict):
     """LiteLLM model registration entry.
 
-    This mirrors the items in LiteLLM's ``model_list`` section.
+    This mirrors the items in LiteLLM's `model_list` section.
 
     Attributes:
         model_name: Logical model name exposed by the proxy.
@@ -53,8 +53,8 @@ class ModelConfig(TypedDict):
 def _get_pre_call_data(args: Any, kwargs: Any) -> Dict[str, Any]:
     """Extract LiteLLM request payload from hook args.
 
-    The LiteLLM logger hooks receive ``(*args, **kwargs)`` whose third positional
-    argument or ``data=`` kwarg contains the request payload.
+    The LiteLLM logger hooks receive `(*args, **kwargs)` whose third positional
+    argument or `data=` kwarg contains the request payload.
 
     Args:
         args: Positional arguments from the hook.
@@ -93,7 +93,7 @@ def get_global_store() -> LightningStore:
         LightningStore: The active global store.
 
     Raises:
-        ValueError: If the global store has not been set by ``LLMProxy.start()``.
+        ValueError: If the global store has not been set by `LLMProxy.start()`.
     """
     if _global_store is None:
         raise ValueError("Global store is not initialized. Please start a LLMProxy first.")
@@ -164,7 +164,7 @@ def initialize() -> None:
 class AddReturnTokenIds(CustomLogger):
     """LiteLLM logger hook to request token ids from vLLM.
 
-    This mutates the outgoing request payload to include ``return_token_ids=True``
+    This mutates the outgoing request payload to include `return_token_ids=True`
     for backends that support token id return (e.g., vLLM).
 
     See:
@@ -207,7 +207,7 @@ class LightningSpanExporter(SpanExporter):
       internal loop, then waits for completion.
 
     Args:
-        store: Optional explicit LightningStore. If None, uses ``get_global_store()``.
+        store: Optional explicit LightningStore. If None, uses `get_global_store()`.
     """
 
     def __init__(self, store: Optional[LightningStore] = None):
@@ -324,10 +324,10 @@ class LightningSpanExporter(SpanExporter):
             We consider a subtree "ready" if we can identify a root span. We
             then take that root and all its descendants out of the buffer and
             try to reconstruct rollout/attempt/sequence headers by merging any
-            span's ``metadata.requester_custom_headers`` within the subtree.
+            span's `metadata.requester_custom_headers` within the subtree.
 
         Required headers:
-            ``x-rollout-id`` (str), ``x-attempt-id`` (str), ``x-sequence-id`` (str of int)
+            `x-rollout-id` (str), `x-attempt-id` (str), `x-sequence-id` (str of int)
 
         Raises:
             None directly. Logs and skips malformed spans.
@@ -397,7 +397,7 @@ class LightningSpanExporter(SpanExporter):
     def _get_root_span_ids(self) -> Iterable[int]:
         """Yield span_ids for root spans currently in the buffer.
 
-        A root span is defined as one with ``parent is None``.
+        A root span is defined as one with `parent is None`.
 
         Yields:
             int: Span id for each root span found.
@@ -409,7 +409,7 @@ class LightningSpanExporter(SpanExporter):
                     yield span_context.span_id
 
     def _get_subtrees(self, root_span_id: int) -> Iterable[int]:
-        """Yield span_ids in the subtree rooted at ``root_span_id``.
+        """Yield span_ids in the subtree rooted at `root_span_id`.
 
         Depth-first traversal over the current buffer.
 
@@ -459,7 +459,7 @@ class LightningOpenTelemetry(OpenTelemetry):
 
     * Ensures each request is annotated with a per-attempt sequence id so spans
       are ordered deterministically even with clock skew across nodes.
-    * Uses ``LightningSpanExporter`` to persist spans for analytics and training.
+    * Uses [`LightningSpanExporter`][agentlightning.llm_proxy.LightningSpanExporter] to persist spans for analytics and training.
 
     Args:
         store: Optional explicit LightningStore for the exporter.
@@ -486,7 +486,7 @@ class LLMProxy:
     * Serves an OpenAI-compatible API via uvicorn.
     * Adds rollout/attempt routing and headers via middleware.
     * Registers OTEL export and token-id callbacks.
-    * Writes a LiteLLM worker config file with ``model_list`` and settings.
+    * Writes a LiteLLM worker config file with `model_list` and settings.
 
     Lifecycle:
 
@@ -504,11 +504,11 @@ class LLMProxy:
 
     Args:
         port: TCP port to bind.
-        model_list: LiteLLM ``model_list`` entries.
+        model_list: LiteLLM `model_list` entries.
         store: LightningStore used for span sequence and persistence.
         host: Publicly reachable host used in resource endpoints. Defaults to best-guess IPv4.
-        litellm_config: Extra LiteLLM proxy config merged with ``model_list``.
-        num_retries: Default LiteLLM retry count injected into ``litellm_settings``.
+        litellm_config: Extra LiteLLM proxy config merged with `model_list`.
+        num_retries: Default LiteLLM retry count injected into `litellm_settings`.
     """
 
     def __init__(
@@ -588,7 +588,7 @@ class LLMProxy:
         Side effects:
 
         * Sets the module-level global store for middleware/exporter access.
-        * Calls ``initialize()`` once to register middleware and callbacks.
+        * Calls `initialize()` once to register middleware and callbacks.
         * Writes a temporary YAML config consumed by LiteLLM worker.
         * Launches uvicorn in a daemon thread and waits for readiness.
         """
@@ -674,7 +674,7 @@ class LLMProxy:
     def restart(self, *, _port: int | None = None) -> None:
         """Restart the proxy if running, else start it.
 
-        Convenience wrapper calling ``stop()`` followed by ``start()``.
+        Convenience wrapper calling `stop()` followed by `start()`.
         """
         logger.info("Restarting LLMProxy server...")
         if self.is_running():
@@ -698,10 +698,10 @@ class LLMProxy:
         model: str | None = None,
         sampling_parameters: Dict[str, Any] | None = None,
     ) -> LLM:
-        """Create an ``LLM`` resource pointing at this proxy with rollout context.
+        """Create an `LLM` resource pointing at this proxy with rollout context.
 
         The returned endpoint is:
-            ``http://{host}:{port}/rollout/{rollout_id}/attempt/{attempt_id}``
+            `http://{host}:{port}/rollout/{rollout_id}/attempt/{attempt_id}`
 
         Args:
             rollout_id: Rollout identifier used for span attribution. If None, will instantiate a ProxyLLM resource.
@@ -714,7 +714,7 @@ class LLMProxy:
             LLM: Configured resource ready for OpenAI-compatible calls.
 
         Raises:
-            ValueError: If ``model`` is omitted and zero or multiple models are configured.
+            ValueError: If `model` is omitted and zero or multiple models are configured.
         """
         if model is None:
             if len(self.model_list) == 1:
@@ -748,7 +748,7 @@ def _get_default_ipv4_address() -> str:
         selection, then inspects the socket's local address. No packets are sent.
 
     Returns:
-        str: Best-guess IPv4 like ``192.168.x.y``. Falls back to ``127.0.0.1``.
+        str: Best-guess IPv4 like `192.168.x.y`. Falls back to `127.0.0.1`.
     """
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:

@@ -1,6 +1,6 @@
 # Agent Developer APIs
 
-## Customizing Agents - Decorators
+## Agent Decorators
 
 !!! tip
 
