@@ -28,6 +28,10 @@
 
 ::: agentlightning.llm_proxy.AddReturnTokenIds
 
+::: agentlightning.store.base.UNSET
+
+::: agentlightning.store.utils.propagate_status
+
 ## Deprecated APIs
 
 ::: agentlightning.server.AgentLightningServer
