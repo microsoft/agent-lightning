@@ -236,29 +236,29 @@ class Span(BaseModel):
 
     # Core ReadableSpan fields
     name: str
-    """The name of the span. See [OpenTelemetry docs](https://opentelemetry.io/docs/concepts/signals/traces/)"""
+    """The name of the span. See [OpenTelemetry docs](https://opentelemetry.io/docs/concepts/signals/traces/)."""
     status: TraceStatus
-    """The status of the span. See [OpenTelemetry docs](https://opentelemetry.io/docs/concepts/signals/traces/)"""
+    """The status of the span. See [OpenTelemetry docs](https://opentelemetry.io/docs/concepts/signals/traces/)."""
     attributes: Attributes
-    """The attributes of the span. See [OpenTelemetry docs](https://opentelemetry.io/docs/concepts/signals/traces/)"""
+    """The attributes of the span. See [OpenTelemetry docs](https://opentelemetry.io/docs/concepts/signals/traces/)."""
     events: List[Event]
-    """The events of the span. See [OpenTelemetry docs](https://opentelemetry.io/docs/concepts/signals/traces/)"""
+    """The events of the span. See [OpenTelemetry docs](https://opentelemetry.io/docs/concepts/signals/traces/)."""
     links: List[Link]
-    """The links of the span. See [OpenTelemetry docs](https://opentelemetry.io/docs/concepts/signals/traces/)"""
+    """The links of the span. See [OpenTelemetry docs](https://opentelemetry.io/docs/concepts/signals/traces/)."""
 
     # Timestamps
     start_time: Optional[float]
-    """The start time of the span. See [OpenTelemetry docs](https://opentelemetry.io/docs/concepts/signals/traces/)"""
+    """The start time of the span. See [OpenTelemetry docs](https://opentelemetry.io/docs/concepts/signals/traces/)."""
     end_time: Optional[float]
-    """The end time of the span. See [OpenTelemetry docs](https://opentelemetry.io/docs/concepts/signals/traces/)"""
+    """The end time of the span. See [OpenTelemetry docs](https://opentelemetry.io/docs/concepts/signals/traces/)."""
 
     # Other parsable fields
     context: Optional[SpanContext]
-    """The context of the span. See [OpenTelemetry docs](https://opentelemetry.io/docs/concepts/signals/traces/)"""
+    """The context of the span. See [OpenTelemetry docs](https://opentelemetry.io/docs/concepts/signals/traces/)."""
     parent: Optional[SpanContext]
-    """The parent context of the span. See [OpenTelemetry docs](https://opentelemetry.io/docs/concepts/signals/traces/)"""
+    """The parent context of the span. See [OpenTelemetry docs](https://opentelemetry.io/docs/concepts/signals/traces/)."""
     resource: OtelResource
-    """The resource of the span. See [OpenTelemetry docs](https://opentelemetry.io/docs/concepts/signals/traces/)"""
+    """The resource of the span. See [OpenTelemetry docs](https://opentelemetry.io/docs/concepts/signals/traces/)."""
 
     # Preserve other fields in the readable span as extra fields
     # Make sure that are json serializable (so no bytes, complex objects, ...)
