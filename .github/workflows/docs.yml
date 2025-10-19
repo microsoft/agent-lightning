@@ -20,15 +20,14 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
-
-      - name: Install dependencies
-        run: |
-          ./scripts/setup_stable.sh
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - name: Sync dependencies
+        run: uv sync --frozen --no-default-groups --group dev
 
       - name: Configure Git
         run: |
@@ -51,11 +50,11 @@ jobs:
       - name: Deploy versioned docs
         if: startsWith(github.ref, 'refs/tags/')
         run: |
-          mike deploy --push --update-aliases ${{ steps.version.outputs.version }} stable
+          uv run --locked --no-sync mike deploy --push --update-aliases ${{ steps.version.outputs.version }} stable
 
       - name: Deploy dev docs
         if: github.ref == 'refs/heads/main'
         run: |
-          mike deploy --push latest
+          uv run --locked --no-sync mike deploy --push latest
           # Always set stable to default
-          mike set-default --push stable
+          uv run --locked --no-sync mike set-default --push stable
