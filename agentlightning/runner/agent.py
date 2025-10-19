@@ -42,25 +42,24 @@ logger = logging.getLogger(__name__)
 
 
 class LitAgentRunner(Runner[T_task]):
-    """Runner implementation for executing agent tasks with distributed support.
+    """Execute [`LitAgent`][agentlightning.LitAgent] tasks with tracing support.
 
     This runner manages the complete lifecycle of agent rollout execution,
     including task polling, resource management, tracing, and hooks. It supports
     both continuous iteration over tasks from the store and single-step execution.
 
     Attributes:
-        worker_id: The unique identifier for this worker process.
+        worker_id: Identifier for the active worker process, if any.
     """
 
     def __init__(self, tracer: Tracer, max_rollouts: Optional[int] = None, poll_interval: float = 5.0) -> None:
         """Initialize the agent runner.
 
         Args:
-            tracer: The tracer instance for recording execution traces and spans.
-            max_rollouts: Maximum number of tasks to process in iter() mode. If None,
-                the runner will continue indefinitely until interrupted.
-            poll_interval: Time in seconds to wait between polling attempts when
-                no tasks are available in the store.
+            tracer: [`Tracer`][agentlightning.Tracer] used for rollout spans.
+            max_rollouts: Optional cap on iterations processed by
+                [`iter`][agentlightning.LitAgentRunner.iter].
+            poll_interval: Seconds to wait between store polls when no work is available.
         """
         super().__init__()
         self._tracer = tracer
@@ -80,10 +79,9 @@ class LitAgentRunner(Runner[T_task]):
         initializes the tracer.
 
         Args:
-            agent: The LitAgent instance to be managed by this runner.
-            hooks: Optional sequence of Hook objects to be called at various
-                lifecycle stages (on_trace_start, on_trace_end, on_rollout_start,
-                on_rollout_end).
+            agent: [`LitAgent`][agentlightning.LitAgent] instance executed by the runner.
+            hooks: Optional sequence of [`Hook`][agentlightning.Hook]
+                callbacks invoked around tracing and rollout boundaries.
             **kwargs: Additional initialization arguments (currently unused).
         """
         self._agent = agent
@@ -100,7 +98,8 @@ class LitAgentRunner(Runner[T_task]):
 
         Args:
             worker_id: Unique identifier for this worker process.
-            store: The LightningStore instance for task coordination and data persistence.
+            store: [`LightningStore`][agentlightning.LightningStore]
+                used for task coordination and persistence.
             **kwargs: Additional worker-specific initialization arguments (currently unused).
         """
         self._store = store
@@ -131,7 +130,7 @@ class LitAgentRunner(Runner[T_task]):
         This method cleans up worker-specific resources and resets the worker ID.
 
         Args:
-            worker_id: The unique identifier of the worker being torn down.
+            worker_id: Unique identifier of the worker being torn down.
             *args: Additional teardown arguments (currently unused).
             **kwargs: Additional teardown keyword arguments (currently unused).
         """
@@ -155,7 +154,7 @@ class LitAgentRunner(Runner[T_task]):
             The LitAgent instance managed by this runner.
 
         Raises:
-            ValueError: If the agent has not been initialized via init().
+            ValueError: If the agent has not been initialized via [`init`][agentlightning.LitAgentRunner.init].
         """
         if self._agent is None:
             raise ValueError("Agent not initialized. Call init() first.")
@@ -168,7 +167,7 @@ class LitAgentRunner(Runner[T_task]):
             The LightningStore instance for this worker.
 
         Raises:
-            ValueError: If the store has not been initialized via init_worker().
+            ValueError: If the store has not been initialized via [`init_worker`][agentlightning.LitAgentRunner.init_worker].
         """
         if self._store is None:
             raise ValueError("Store not initialized. Call init_worker() first.")
@@ -312,7 +311,7 @@ class LitAgentRunner(Runner[T_task]):
         and return early if the event is set.
 
         Args:
-            event: Optional ExecutionEvent object that can be used to interrupt the sleep.
+            event: Optional [`ExecutionEvent`][agentlightning.ExecutionEvent] object that can be used to interrupt the sleep.
                 If set during the sleep period, the method returns immediately.
         """
         if event is None:
@@ -435,6 +434,7 @@ class LitAgentRunner(Runner[T_task]):
         """Run the runner, continuously iterating over tasks in the store.
 
         This method polls the store for new rollouts and executes them until:
+
         - The event is set (if provided)
         - The max_rollouts limit is reached (if configured)
         - No more tasks are available
@@ -497,7 +497,8 @@ class LitAgentRunner(Runner[T_task]):
         """Execute a single task directly, bypassing the task queue.
 
         This method creates a new rollout for the given input and executes it
-        immediately. Unlike iter(), exceptions are propagated to the caller.
+        immediately. Unlike [`iter()`][agentlightning.LitAgentRunner.iter],
+        exceptions are propagated to the caller.
 
         Args:
             input: The task input to be processed by the agent.
