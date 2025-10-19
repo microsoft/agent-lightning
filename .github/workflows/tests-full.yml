@@ -43,7 +43,9 @@ jobs:
         if: matrix.setup-script != 'latest'
       - name: Freeze dependencies
         run: |
+          set -ex
           uv pip freeze | tee requirements-freeze.txt
+          echo "UV_FROZEN=1" >> $GITHUB_ENV
       - name: Upload dependencies artifact
         uses: actions/upload-artifact@v4
         with:

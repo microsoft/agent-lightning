@@ -47,17 +47,16 @@ jobs:
       - name: Run pre-commit
         uses: pre-commit/action@v3.0.1
       - name: Check Python headers
-        run: |
-          uv run scripts/check_python_headers.py
+        run: uv run --frozen scripts/check_python_headers.py
       - name: Run Black
-        run: uv run black --check .
+        run: uv run --frozen black --check .
       - name: Run isort
-        run: uv run isort --check-only .
+        run: uv run --frozen isort --check-only .
       - name: Run pyright (fast)
-        run: uv run pyright -p pyrightconfig.fast.json
+        run: uv run --frozen pyright -p pyrightconfig.fast.json
         if: matrix.setup == 'fast'
       - name: Run pyright (slow)
-        run: uv run pyright -p pyrightconfig.json
+        run: uv run --frozen pyright -p pyrightconfig.json
         if: matrix.setup == 'slow'
 
   docs:
@@ -80,7 +79,7 @@ jobs:
         run: |
           echo "SOURCE_COMMIT=${{ github.sha }}" >> $GITHUB_ENV
       - name: Build documentation
-        run: uv run mkdocs build --strict
+        run: uv run --frozen mkdocs build --strict
       - name: Upload docs artifact
         uses: actions/upload-artifact@v4
         with:
@@ -122,7 +121,9 @@ jobs:
         if: matrix.setup-script != 'latest'
       - name: Freeze dependencies
         run: |
+          set -ex
           uv pip freeze | tee requirements-freeze.txt
+          echo "UV_FROZEN=1" >> $GITHUB_ENV
       - name: Upload dependencies artifact
         uses: actions/upload-artifact@v4
         with:
