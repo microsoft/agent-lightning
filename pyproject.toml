@@ -17,7 +17,7 @@ dependencies = [
   "opentelemetry-api>=1.35",
   "opentelemetry-sdk>=1.35",
   "opentelemetry-exporter-otlp>=1.35",
-  "litellm[proxy]>=1.72",
+  "litellm[proxy]>=1.74",
   "pydantic>=2.11",
   "openai",
   "rich",
@@ -100,7 +100,7 @@ torch-legacy = [
   "tokenizers>=0.21,<0.22",
   "flash-attn==2.8.1",
   "vllm==0.9.2",
-  "litellm[proxy]==1.72.9",
+  "litellm[proxy]==1.74.15",
 ]
 
 # Flash-attention must build with CUDA toolkit.
@@ -138,13 +138,14 @@ trl = [
 autogen = [
   "autogen-agentchat",
   "autogen-ext[openai]",
-  "mcp",
-  "uv",
+  "mcp>=1.10.0",
+  # UV is required now by default.
+  # No need to include UV here.
+  # "uv",
 ]
 openai-agents = [
   "openai-agents",
   "mcp",
-  "uv",
 ]
 anthropic = [
   "anthropic",
