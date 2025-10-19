@@ -191,6 +191,8 @@ dependency-metadata = [
   # Conflicts between packaging dependency of pyvers (dependency of tensordict) and agentops.
   { name = "pyvers", version = "0.1.0", requires-dist = ["packaging>=24.0"] },
 ]
+# https://github.com/astral-sh/uv/issues/10845
+commandOptions = {run = ["--frozen"]}
 
 [tool.uv.sources]
 torch = [
