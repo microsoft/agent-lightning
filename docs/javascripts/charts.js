@@ -23,7 +23,7 @@ function toRGBA(color, a = 1) {
 function applyThemeDefaults() {
   const font = matVar("--md-text-font").replace(/['"]/g, "") || "Roboto, sans-serif";
   const text = matVar("--md-default-fg-color") || "#1f2937";
-  const border = matVar("--md-typeset-border-color") || "rgba(0,0,0,.12)";
+  const border = "rgba(128, 128, 128, 0.1)"
   const bg = "#777777";
 
   Chart.defaults.font.family = font;
@@ -34,6 +34,7 @@ function applyThemeDefaults() {
 
   Chart.defaults.scale.grid.color = border;
   Chart.defaults.scale.ticks.color = text;
+  Chart.defaults.scale.title.color = text;
 
   Chart.defaults.plugins.legend.labels.color = text;
   Chart.defaults.plugins.tooltip.titleColor = text;
@@ -181,7 +182,15 @@ function buildConfig(baseCfg) {
     // Update visible charts without forcing animation
     document.querySelectorAll("canvas[data-chart]").forEach((c) => {
       const state = registry.get(c);
-      if (state?.chart) state.chart.update("none");
+      if (state?.chart) {
+        // Fix the issue that scale options color are not updated when theme changes
+        const scaleOptions = state.chart.options.scales;
+        for (const key of Object.keys(scaleOptions)) {
+          scaleOptions[key].ticks.color = Chart?.defaults?.scale?.ticks?.color;
+          scaleOptions[key].title.color = Chart?.defaults?.scale?.title?.color;
+        }
+        state.chart.update("none");
+      }
     });
   }
 
