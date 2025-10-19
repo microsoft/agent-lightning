@@ -40,37 +40,63 @@ class Trainer(TrainerLegacy):
     that run the agent's execution loop. It manages multiprocessing,
     handles graceful shutdown, and serves as the main entry point for
     running a client-side agent fleet.
-
-    Attributes:
-        algorithm: An instance of `Algorithm` to use for training.
-        store: An instance of `LightningStore` to use for storing tasks and traces.
-        runner: An instance of `Runner` to use for running the agent.
-        initial_resources: An instance of `Resources` to use for bootstrapping the fit/dev process.
-            The resources will be handed over to the algorithm.
-            Note that not all algorithms support seeding resources.
-        n_runners: Number of agent runners to run in parallel.
-        max_rollouts: Maximum number of rollouts to process per runner. If None,
-                      workers run until no more rollouts are available.
-        strategy: An instance of `ExecutionStrategy` to use for spawning the algorithm and runners.
-        tracer: A tracer instance, or a string pointing to the class full name or a dictionary with a 'type' key
-                that specifies the class full name and other initialization parameters.
-                If None, a default `AgentOpsTracer` will be created with the current settings.
-        hooks: A sequence of `Hook` instances to be called at various lifecycle stages (e.g., on_trace_start,
-               on_trace_end, on_rollout_start, on_rollout_end).
-        adapter: An instance of `TracerTraceToTriplet` to export data consumble by algorithms from traces.
-        llm_proxy: An instance of `LLMProxy` to use for intercepting the LLM calls.
-                   If not provided, algorithm will create one on its own.
-        n_workers: Number of agent workers to run in parallel. Deprecated in favor of `n_runners`.
-        max_tasks: Maximum number of tasks to process per runner. Deprecated in favor of `max_rollouts`.
-        daemon: Whether worker processes should be daemons. Daemon processes
-                are terminated automatically when the main process exits. Deprecated.
-                Only have effect with `fit_v0`.
-        triplet_exporter: An instance of `TracerTraceToTriplet` to export triplets from traces,
-                          or a dictionary with the initialization parameters for the exporter.
-                          Deprecated. Use `adapter` instead.
-        dev: If True, rollouts are run against the dev endpoint provided in `fit`.
-             Deprecated in favor of `dev()` method.
     """
+
+    algorithm: Optional[Algorithm]
+    """An instance of [`Algorithm`][agentlightning.Algorithm] to use for training."""
+
+    store: LightningStore
+    """An instance of [`LightningStore`][agentlightning.LightningStore] to use for storing tasks and traces."""
+
+    runner: Runner[Any]
+    """An instance of [`Runner`][agentlightning.Runner] to use for running the agent."""
+
+    initial_resources: Optional[NamedResources]
+    """An instance of [`Resources`][agentlightning.Resources] to use for bootstrapping the fit/dev process.
+
+    The resources will be handed over to the algorithm. Note that not all algorithms support seeding resources.
+    """
+
+    n_runners: int
+    """Number of agent runners to run in parallel."""
+
+    max_rollouts: Optional[int]
+    """Maximum number of rollouts to process per runner. If None, workers run until no more rollouts are available."""
+
+    strategy: ExecutionStrategy
+    """An instance of [`ExecutionStrategy`][agentlightning.ExecutionStrategy] to use for spawning the algorithm and runners."""
+
+    tracer: Tracer
+    """A tracer instance, or a string pointing to the class full name or a dictionary with a 'type' key
+    that specifies the class full name and other initialization parameters.
+    If None, a default [`AgentOpsTracer`][agentlightning.AgentOpsTracer] will be created with the current settings."""
+
+    hooks: Sequence[Hook]
+    """A sequence of [`Hook`][agentlightning.Hook] instances to be called at various lifecycle stages (e.g., `on_trace_start`,
+    `on_trace_end`, `on_rollout_start`, `on_rollout_end`)."""
+
+    adapter: TraceAdapter[Any]
+    """An instance of [`TraceAdapter`][agentlightning.TraceAdapter] to export data consumble by algorithms from traces."""
+
+    llm_proxy: Optional[LLMProxy]
+    """An instance of [`LLMProxy`][agentlightning.LLMProxy] to use for intercepting the LLM calls.
+    If not provided, algorithm may create one on its own."""
+
+    n_workers: int
+    """Number of agent workers to run in parallel. Deprecated in favor of `n_runners`."""
+
+    max_tasks: Optional[int]
+    """Maximum number of tasks to process per runner. Deprecated in favor of `max_rollouts`."""
+
+    daemon: bool
+    """Whether worker processes should be daemons. Daemon processes
+    are terminated automatically when the main process exits. Deprecated.
+    Only have effect with `fit_v0`."""
+
+    triplet_exporter: TraceAdapter[Any]
+    """An instance of [`TracerTraceToTriplet`][agentlightning.TracerTraceToTriplet] to export triplets from traces,
+    or a dictionary with the initialization parameters for the exporter.
+    Deprecated. Use [`adapter`][agentlightning.Trainer.adapter] instead."""
 
     def __init__(
         self,
