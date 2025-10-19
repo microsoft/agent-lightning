@@ -40,11 +40,16 @@ jobs:
           uv sync --frozen --no-default-groups --extra apo --extra verl \
             --group dev --group experiment --group trl --group agents --group torch-gpu-stable
         if: matrix.setup-script == 'latest'
-      - name: Sync dependencies (stable & legacy)
+      - name: Sync dependencies (stable)
         run: |
           uv sync --frozen --no-default-groups --extra apo --extra verl \
-            --group dev --group experiment --group trl --group agents --group torch-gpu-${{ matrix.setup-script }}
-        if: matrix.setup-script != 'latest'
+            --group dev --group experiment --group trl --group agents --group torch-gpu-stable
+        if: matrix.setup-script == 'stable'
+      - name: Sync dependencies (legacy)
+        run: |
+          uv sync --frozen --no-default-groups --extra apo --extra verl \
+            --group dev --group experiment --group agents --group torch-gpu-legacy
+        if: matrix.setup-script == 'legacy'
       - name: Freeze dependencies
         run: |
           set -ex
@@ -292,8 +297,8 @@ jobs:
       - name: Unsloth SFT example
         run: |
           set -ex
-          cd examples/unsloth
           source .venv/bin/activate
+          cd examples/unsloth
 
           agl store --port 4747 &
           sleep 5
