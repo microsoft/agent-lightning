@@ -178,7 +178,7 @@ The Trainer is the central component you'll interact with. It connects everythin
 
 ```python
 # In the main training script: run_apo.py
-from agentlightning import Trainer
+from agentlightning import Trainer, TraceToMessages
 
 # 1. Configure the Trainer with the algorithm and initial prompt
 trainer = Trainer(
@@ -189,7 +189,7 @@ trainer = Trainer(
         "prompt_template": prompt_template_baseline()
     },
     # This is used to convert the span data into a message format consumable by APO algorithm
-    adapter=TraceMessagesAdapter(),
+    adapter=TraceToMessages(),
 )
 
 # 2. Load datasets: They can be list of task objects consumable by `room_selector`.
@@ -202,6 +202,10 @@ trainer.fit(
     val_dataset=dataset_val
 )
 ```
+
+!!! tip
+
+    [`TraceToMessages`][agentlightning.TraceToMessages] is a convenience adapter that converts spans into OpenAI chat messages. It requires `openai >= 1.100.0` to be installed.
 
 ## Training Results
 

@@ -32,6 +32,8 @@
 
 ::: agentlightning.store.utils.propagate_status
 
+::: agentlightning.tracer.agentops.LightningSpanProcessor
+
 ## Deprecated APIs
 
 ::: agentlightning.server.AgentLightningServer

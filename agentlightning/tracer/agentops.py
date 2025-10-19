@@ -172,7 +172,7 @@ class AgentOpsTracer(Tracer):
             attempt_id: Optional attempt ID to add the spans to.
 
         Yields:
-            The LightningSpanProcessor instance to collect spans.
+            The [`LightningSpanProcessor`][agentlightning.tracer.agentops.LightningSpanProcessor] instance to collect spans.
         """
         with self._trace_context_sync(
             name=name, store=store, rollout_id=rollout_id, attempt_id=attempt_id
@@ -241,6 +241,10 @@ class AgentOpsTracer(Tracer):
 
 
 class LightningSpanProcessor(SpanProcessor):
+    """Span processor that subclasses OpenTelemetry's `SpanProcessor` and adds support to dump traces
+    to a [`LightningStore`][agentlightning.LightningStore].
+    """
+
     def __init__(self):
         self._spans: List[ReadableSpan] = []
 
