@@ -52,7 +52,7 @@ jobs:
           uv pip freeze | tee requirements-freeze.txt
           echo "UV_LOCKED=1" >> $GITHUB_ENV
           echo "UV_NO_SYNC=1" >> $GITHUB_ENV
-          echo "HF_HUB_DISABLE_XET=1" >> $GITHUB_ENV
+          # echo "HF_HUB_DISABLE_XET=1" >> $GITHUB_ENV
       - name: Upload dependencies artifact
         uses: actions/upload-artifact@v4
         with:
