@@ -18,7 +18,7 @@ This installs or upgrades Agent-Lightning to the newest stable version.
 
 !!! tip
 
-    If you intend to use **Agent-Lightning** with **VERL** or run any of its **example scripts**, you’ll need to install some additional dependencies.
+    If you intend to use **Agent-Lightning** with [**VERL**](../algorithm-zoo/verl.md) or run any of its **example scripts**, you’ll need to install some additional dependencies.
     See the sections on [Algorithm-specific installation](#algorithm-specific-installation) and [Example-specific installation](#example-specific-installation) for details.
 
 ### Install the Nightly Build (Latest Features)
@@ -129,7 +129,7 @@ uv sync --frozen \
     --no-default-groups
 ```
 
-For a GPU-equipped machine that are CUDA 12.8 compatible:
+For a GPU-equipped machine that is CUDA 12.8 compatible:
 
 ```bash
 uv sync --frozen \

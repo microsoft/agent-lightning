@@ -23,7 +23,7 @@ Follow the [installation guide](../../docs/tutorials/installation.md) to install
 | `legacy_apo_client.py` | Deprecated APO client implementation compatible with Agent-lightning v0.1.x |
 | `legacy_apo_server.py` | Deprecated APO server implementation compatible with Agent-lightning v0.1.x |
 
-## Tutorial 1: Using Built-in APO Algorithm
+## Sample 1: Using Built-in APO Algorithm
 
 The `room_selector_apo.py` script demonstrates how to use Agent-Lightning's built-in APO (Asynchronous Prompt Optimization) algorithm to train a room booking agent. The agent learns to select meeting rooms based on duration, attendee count, equipment needs, accessibility requirements, and availability.
 
@@ -35,7 +35,7 @@ python room_selector_apo.py
 
 This script initializes the APO algorithm with beam search parameters, loads the room booking dataset, and optimizes the agent's prompt template through iterative training. The algorithm automatically manages the training loop, gradient computation, and prompt updates. Read more about this example in [Train the First Agent with APO](../../docs/how-to/train-first-agent.md).
 
-## Tutorial 2: Creating Custom Algorithms
+## Sample 2: Creating Custom Algorithms
 
 The `apo_custom_algorithm.py` and `apo_custom_algorithm_trainer.py` files teach you how to implement custom training algorithms from scratch. This is useful when the built-in algorithms don't fit your specific needs. See [Custom Algorithm tutorial](../../docs/how-to/write-first-algorithm.md) for more details.
 
@@ -62,7 +62,7 @@ Use the integrated trainer that handles all components:
 python apo_custom_algorithm_trainer.py
 ```
 
-## Tutorial 3: Debugging Agents
+## Sample 3: Debugging Agents
 
 The `apo_debug.py` script demonstrates multiple approaches to debugging agents in Agent-Lightning:
 
