@@ -31,6 +31,9 @@ def configure_logger(level: int = logging.INFO, name: str = "agentlightning") ->
         ```
     """
 
+    import os, platform
+    if platform.system() == "Windows": os.environ["PYTHONUTF8"] = "1"
+
     logger = logging.getLogger(name)
     logger.handlers.clear()  # clear existing handlers
 
