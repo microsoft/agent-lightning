@@ -12,7 +12,7 @@ jobs:
   calc-x:
     name: Calc-X (Python ${{ matrix.python-version }}, ${{ matrix.setup-script }})
     runs-on: [self-hosted, 1ES.Pool=agl-runner-gpu]
-    timeout-minutes: 120
+    timeout-minutes: 90
     strategy:
       matrix:
         include:
@@ -109,7 +109,6 @@ jobs:
           WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
           WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
         id: calc_x_train
-        if: success() || failure()
 
       - name: Validate Calc-X training
         run: |
@@ -133,7 +132,6 @@ jobs:
           WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
           WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
         id: calc_x_train_llm_proxy
-        if: success() || failure()
 
       - name: Calc-X training with external store
         run: |
@@ -166,7 +164,6 @@ jobs:
           WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
           WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
         id: calc_x_train_external_store
-        if: success() || failure()
 
 
   spider:
@@ -359,7 +356,7 @@ jobs:
   unsloth:
     name: Unsloth (Python ${{ matrix.python-version }}, ${{ matrix.setup-script }})
     runs-on: [self-hosted, 1ES.Pool=agl-runner-gpu]
-    timeout-minutes: 30
+    timeout-minutes: 60
     strategy:
       matrix:
         # Legacy versions are not supported for Unsloth examples.
@@ -566,7 +563,6 @@ jobs:
           WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
           WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
         id: calc_x_train
-        if: success() || failure()
 
       - name: Validate Calc-X training
         run: |
