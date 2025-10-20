@@ -35,8 +35,11 @@ def configure_logger(level: int = logging.INFO, name: str = "agentlightning") ->
     # Note: This change does not fully represent support for execution under the windown system.
     # It only fixes console printing issues caused by special characters.
     # TODO: More comprehensive Windows support may be needed in the future.
-    import os, platform
-    if platform.system() == "Windows": os.environ["PYTHONUTF8"] = "1"
+    import os
+    import platform
+
+    if platform.system() == "Windows":
+        os.environ["PYTHONUTF8"] = "1"
 
     logger = logging.getLogger(name)
     logger.handlers.clear()  # clear existing handlers
