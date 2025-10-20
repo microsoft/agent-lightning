@@ -36,7 +36,11 @@ jobs:
       - name: Upgrade dependencies (latest)
         run: uv lock --upgrade
         if: matrix.setup-script == 'latest'
-      - name: Sync dependencies
+      - name: Sync dependencies (latest)
+        run: |
+          uv sync --frozen --no-default-groups --extra verl \
+            --group dev --group experiment --group agents --group torch-gpu-stable
+      - name: Sync dependencies (stable & legacy)
         run: |
           uv sync --frozen --no-default-groups --extra verl \
             --group dev --group experiment --group agents --group torch-gpu-${{ matrix.setup-script }}
@@ -190,7 +194,11 @@ jobs:
       - name: Upgrade dependencies (latest)
         run: uv lock --upgrade
         if: matrix.setup-script == 'latest'
-      - name: Sync dependencies
+      - name: Sync dependencies (latest)
+        run: |
+          uv sync --frozen --no-default-groups --extra verl \
+            --group dev --group experiment --group agents --group torch-gpu-stable
+      - name: Sync dependencies (stable & legacy)
         run: |
           uv sync --frozen --no-default-groups --extra verl \
             --group dev --group experiment --group agents --group torch-gpu-${{ matrix.setup-script }}
@@ -272,10 +280,6 @@ jobs:
           setup-script: 'latest'
       fail-fast: false
     steps:
-      - name: Check GPU status
-        run: nvidia-smi
-      - name: Check disk space
-        run: df -h
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v7
         with:
@@ -284,10 +288,14 @@ jobs:
       - name: Upgrade dependencies (latest)
         run: uv lock --upgrade
         if: matrix.setup-script == 'latest'
-      - name: Sync dependencies
+      - name: Sync dependencies (latest)
         run: |
-          uv sync --frozen --no-default-groups --extra apo --extra verl \
-            --group dev --group experiment --group agents --group torch-gpu-${{ matrix.setup-script }}
+          uv sync --frozen --no-default-groups --extra apo \
+            --group dev --group experiment --group agents --group core-stable
+      - name: Sync dependencies (stable & legacy)
+        run: |
+          uv sync --frozen --no-default-groups --extra apo \
+            --group dev --group experiment --group agents --group core-${{ matrix.setup-script }}
       - name: Freeze dependencies
         run: |
           set -ex
