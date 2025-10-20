@@ -9,7 +9,7 @@ repos:
       - id: check-toml
       - id: check-added-large-files
         args: ["--maxkb=1024"]
-        exclude: ^uv\.lock$
+        exclude: (^uv\.lock$)|(^docs/assets/.*\.svg$)
       - id: check-shebang-scripts-are-executable
       - id: detect-private-key
   - repo: https://github.com/pycqa/isort
