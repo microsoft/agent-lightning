@@ -1,0 +1,110 @@
+name: Examples - Unsloth
+permissions:
+  contents: read
+on:
+  schedule:
+    # Every day at 5 AM UTC+8
+    - cron: '0 21 * * *'
+
+  workflow_dispatch:
+
+jobs:
+  unsloth:
+    name: Unsloth (Python ${{ matrix.python-version }}, ${{ matrix.setup-script }})
+    runs-on: [self-hosted, 1ES.Pool=agl-runner-gpu]
+    timeout-minutes: 60
+    strategy:
+      matrix:
+        # Legacy versions are not supported for Unsloth examples.
+        include:
+        - python-version: '3.12'
+          setup-script: 'stable'
+        - python-version: '3.13'
+          setup-script: 'latest'
+      fail-fast: false
+    steps:
+      - name: Check GPU status
+        run: nvidia-smi
+      - name: Check disk space
+        run: df -h
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          python-version: ${{ matrix.python-version }}
+      - name: Upgrade dependencies (latest)
+        run: uv lock --upgrade
+        if: matrix.setup-script == 'latest'
+      - name: Sync dependencies
+        run: |
+          uv sync --frozen --no-default-groups --extra verl \
+            --group dev --group experiment --group trl --group agents --group torch-gpu-stable
+      - name: Freeze dependencies
+        run: |
+          set -ex
+          uv pip freeze | tee requirements-freeze.txt
+          echo "UV_LOCKED=1" >> $GITHUB_ENV
+          echo "UV_NO_SYNC=1" >> $GITHUB_ENV
+      - name: Upload dependencies artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependencies-unsloth-${{ matrix.python-version }}-${{ matrix.setup-script }}
+          path: requirements-freeze.txt
+          compression-level: 0
+
+      - name: Prepare Unsloth model
+        run: |
+          set -ex
+          cd examples/unsloth
+          rm -rf models
+          uv run hf download unsloth/Qwen3-4B-Instruct-2507 --local-dir models/version_0
+
+      - name: Unsloth SFT example
+        run: |
+          set -ex
+          source .venv/bin/activate
+          cd examples/unsloth
+
+          agl store --port 4747 &
+          sleep 5
+          python sft_rollout_runners.py &
+          sleep 5
+          python sft_algorithm.py
+
+          pkill -f agl && echo "SIGTERM sent to agl" || echo "No agl process found"
+          while pgrep -f agl; do
+            echo "Waiting for agl to finish..."
+            sleep 5
+          done
+          pkill -f sft_rollout_runners.py && echo "SIGTERM sent to sft_rollout_runners.py" || echo "No sft_rollout_runners.py process found"
+          while pgrep -f sft_rollout_runners.py; do
+            echo "Waiting for sft_rollout_runners.py to finish..."
+            sleep 5
+          done
+          echo "sft_rollout_runners.py has finished."
+          sleep 10
+
+          # Check models/version_2 must exist
+          if [ ! -d "models/version_2" ]; then
+            echo "models/version_2 does not exist"
+            exit 1
+          fi
+        env:
+          WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
+          WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
+
+      - name: Unsloth SFT example all-in-one
+        run: |
+          set -ex
+          source .venv/bin/activate
+          cd examples/unsloth
+          rm -rf models/version_1 models/version_2
+
+          python sft_allinone.py
+          if [ ! -d "models/version_2" ]; then
+            echo "models/version_2 does not exist"
+            exit 1
+          fi
+        env:
+          WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
+          WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}

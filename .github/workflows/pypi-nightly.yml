@@ -2,8 +2,8 @@ name: PyPI Nightly Build
 
 on:
   schedule:
-    # Run daily at 6:00 AM UTC
-    - cron: '0 6 * * *'
+    # Run daily at 6:00 AM UTC+8
+    - cron: '0 22 * * *'
   workflow_dispatch:  # Allow manual trigger
 
 jobs:
