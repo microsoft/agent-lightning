@@ -1,0 +1,58 @@
+name: Badge - Compatibility
+
+on:
+  workflow_run:
+    workflows:
+      - Examples - Backward Compatibility
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  badge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Skip non-main runs
+        if: ${{ github.event.workflow_run.head_branch != 'main' }}
+        run: echo "Skipping because branch '${{ github.event.workflow_run.head_branch }}' is not main."
+
+      - name: Verify legacy and stable variants
+        if: ${{ github.event.workflow_run.head_branch == 'main' }}
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const requiredVariants = ['legacy', 'stable'];
+            const runId = context.payload.workflow_run.id;
+            const attempt = context.payload.workflow_run.run_attempt ?? 1;
+
+            const { data } = await github.rest.actions.listJobsForWorkflowRunAttempt({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: runId,
+              attempt_number: attempt,
+              per_page: 100,
+            });
+
+            const jobs = data.jobs ?? [];
+            const failures = [];
+
+            for (const variant of requiredVariants) {
+              const job = jobs.find(job => job.name.toLowerCase().includes(`, ${variant.toLowerCase()})`));
+              if (!job) {
+                failures.push(`Missing job for ${variant}`);
+                continue;
+              }
+              core.info(`${job.name} => ${job.conclusion}`);
+              if (job.conclusion !== 'success') {
+                failures.push(`${job.name} concluded ${job.conclusion}`);
+              }
+            }
+
+            if (failures.length) {
+              core.setFailed(failures.join(' | '));
+            } else {
+              core.info('Legacy and stable variants succeeded.');
+            }
