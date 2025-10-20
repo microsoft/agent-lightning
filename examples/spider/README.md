@@ -1,13 +1,46 @@
 # Spider Example
 
-This example requires a single node with one GPU of at least 40GB memory.
+This example demonstrates how to train a text-to-SQL agent on the Spider dataset using Agent-Lightning with reinforcement learning. It's compatible with Agent-lightning v0.2 or later.
 
-1. Download Spider 1.0 dataset from [here](https://yale-lily.github.io/spider) and unzip it to the `data` folder.
-2. Use `python spider_eval/convert_dataset.py` to convert the dataset to the parquet format.
-3. Start ray: `bash ../../scripts/restart_ray.sh`. To use Wandb, you need to set the WANDB_API_KEY environment variable before starting ray.
-4. Run the agent: `VERL_API_BASE=http://localhost:9999/ python sql_agent.py`. Use `python sql_agent.py --help` to see options like running multiple agents.
-5. In another terminal, launch the training server: `bash train.sh`.
+## Requirements
 
-## Evaluation
+This example depends on LangChain v0.x and several SQL-related libraries. Install the required dependencies with:
 
-Results are coming soon.
+```bash
+pip install "langgraph<1.0" "langchain[openai]<1.0" "langchain-community" "langchain-text-splitters<1.0" "sqlparse" "nltk"
+```
+
+Additionally, follow the [installation guide](../../docs/tutorials/installation.md) to install Agent-Lightning and VERL-related dependencies.
+
+## Dataset
+
+Detailed dataset preparation instructions are available in the [How to Train a SQL Agent](../../docs/how-to/train-sql-agent.md) guide.
+
+## Included Files
+
+| File/Directory | Description |
+|----------------|-------------|
+| `train_sql_agent.py` | Training script for SQL agents with support for multiple model configurations (Qwen, LLaMA, fast mode for CI) |
+| `sql_agent.py` | SQL agent implementation using LangGraph and LangChain, with debugging capabilities |
+| `data/` | Directory containing the Spider dataset files |
+| `spider_eval/` | Evaluation utilities for assessing SQL agent performance |
+
+## Running Examples
+
+### Training
+
+Train a SQL agent using the Qwen2.5-Coder-1.5B-Instruct model with the following command. This requires a single node with at least one 40GB GPU:
+
+```bash
+python train_sql_agent.py qwen
+```
+
+### Debugging
+
+To test and debug the SQL agent interactively:
+
+```bash
+python sql_agent.py
+```
+
+This command requires an OpenAI-compatible API service. Configure your service endpoint and credentials using the `OPENAI_API_BASE` and `OPENAI_API_KEY` environment variables.
