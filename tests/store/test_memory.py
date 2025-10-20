@@ -183,6 +183,27 @@ async def test_get_rollout_by_id(inmemory_store: InMemoryLightningStore) -> None
 
 
 @pytest.mark.asyncio
+async def test_store_lock_rebinds_to_new_event_loop(
+    inmemory_store: InMemoryLightningStore,
+) -> None:
+    """The in-memory store can be reused after switching to a new event loop."""
+
+    rollout = await inmemory_store.enqueue_rollout(input={"foo": "bar"})
+
+    def run_in_new_loop() -> Optional[Rollout]:
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(inmemory_store.get_rollout_by_id(rollout.rollout_id))
+        finally:
+            loop.close()
+
+    retrieved = await asyncio.to_thread(run_in_new_loop)
+
+    assert retrieved is not None
+    assert retrieved.rollout_id == rollout.rollout_id
+
+
+@pytest.mark.asyncio
 async def test_query_rollouts_by_rollout_ids(inmemory_store: InMemoryLightningStore) -> None:
     """Test querying rollouts filtered by rollout IDs."""
     # Create multiple rollouts

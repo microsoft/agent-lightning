@@ -10,6 +10,7 @@ import sys
 import threading
 import time
 import uuid
+import weakref
 from collections import deque
 from collections.abc import Iterable
 from collections.abc import Mapping as MappingABC
@@ -50,6 +51,38 @@ from .utils import healthcheck, propagate_status
 T_callable = TypeVar("T_callable", bound=Callable[..., Any])
 
 logger = logging.getLogger(__name__)
+
+
+class _LoopAwareAsyncLock:
+    """Async lock that transparently rebinds to the current event loop.
+
+    The lock intentionally remains *thread-unsafe*: callers must only use it from
+    one thread at a time. If multiple threads interact with the store, each
+    thread gets its own event loop specific lock.
+    """
+
+    def __init__(self) -> None:
+        self._locks: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Lock]" = weakref.WeakKeyDictionary()
+
+    def _get_lock_for_current_loop(self) -> asyncio.Lock:
+        loop = asyncio.get_running_loop()
+        lock = self._locks.get(loop)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._locks[loop] = lock
+        return lock
+
+    async def __aenter__(self) -> asyncio.Lock:
+        lock = self._get_lock_for_current_loop()
+        await lock.acquire()
+        return lock
+
+    async def __aexit__(self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: Any) -> None:
+        loop = asyncio.get_running_loop()
+        lock = self._locks.get(loop)
+        if lock is None or not lock.locked():
+            raise RuntimeError("Lock released without being acquired")
+        lock.release()
 
 
 def estimate_model_size(obj: Any) -> int:
@@ -151,7 +184,7 @@ class InMemoryLightningStore(LightningStore):
         safe_memory_threshold: float | int | None = None,
         span_size_estimator: Callable[[Span], int] | None = None,
     ):
-        self._lock = asyncio.Lock()
+        self._lock = _LoopAwareAsyncLock()
 
         # Task queue and rollouts storage
         self._task_queue: deque[Rollout] = deque()
