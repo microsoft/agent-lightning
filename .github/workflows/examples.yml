@@ -10,7 +10,7 @@ on:
 
 jobs:
   calc-x:
-    name: Calc-X Examples with Python ${{ matrix.python-version }} (${{ matrix.setup-script }})
+    name: Calc-X (Python ${{ matrix.python-version }}, ${{ matrix.setup-script }})
     runs-on: [self-hosted, 1ES.Pool=agl-runner-gpu]
     timeout-minutes: 120
     strategy:
@@ -40,10 +40,12 @@ jobs:
         run: |
           uv sync --frozen --no-default-groups --extra verl \
             --group dev --group experiment --group agents --group torch-gpu-stable
+        if: matrix.setup-script == 'latest'
       - name: Sync dependencies (stable & legacy)
         run: |
           uv sync --frozen --no-default-groups --extra verl \
             --group dev --group experiment --group agents --group torch-gpu-${{ matrix.setup-script }}
+        if: matrix.setup-script != 'latest'
       - name: Freeze dependencies
         run: |
           set -ex
@@ -168,7 +170,7 @@ jobs:
 
 
   spider:
-    name: Spider Examples with Python ${{ matrix.python-version }} (${{ matrix.setup-script }})
+    name: Spider (Python ${{ matrix.python-version }}, ${{ matrix.setup-script }})
     runs-on: [self-hosted, 1ES.Pool=agl-runner-gpu]
     timeout-minutes: 60
     strategy:
@@ -198,10 +200,12 @@ jobs:
         run: |
           uv sync --frozen --no-default-groups --extra verl \
             --group dev --group experiment --group agents --group torch-gpu-stable
+        if: matrix.setup-script == 'latest'
       - name: Sync dependencies (stable & legacy)
         run: |
           uv sync --frozen --no-default-groups --extra verl \
             --group dev --group experiment --group agents --group torch-gpu-${{ matrix.setup-script }}
+        if: matrix.setup-script != 'latest'
       - name: Freeze dependencies
         run: |
           set -ex
@@ -265,7 +269,7 @@ jobs:
 
 
   apo:
-    name: APO Integrations with Python ${{ matrix.python-version }} (${{ matrix.setup-script }})
+    name: APO (Python ${{ matrix.python-version }}, ${{ matrix.setup-script }})
     # This job is run on GitHub hosted runners rather than self-hosted runners because it needs no GPU.
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -292,10 +296,12 @@ jobs:
         run: |
           uv sync --frozen --no-default-groups --extra apo \
             --group dev --group experiment --group agents --group core-stable
+        if: matrix.setup-script == 'latest'
       - name: Sync dependencies (stable & legacy)
         run: |
           uv sync --frozen --no-default-groups --extra apo \
             --group dev --group experiment --group agents --group core-${{ matrix.setup-script }}
+        if: matrix.setup-script != 'latest'
       - name: Freeze dependencies
         run: |
           set -ex
@@ -351,7 +357,7 @@ jobs:
 
 
   unsloth:
-    name: Unsloth Integrations with Python ${{ matrix.python-version }} (${{ matrix.setup-script }})
+    name: Unsloth (Python ${{ matrix.python-version }}, ${{ matrix.setup-script }})
     runs-on: [self-hosted, 1ES.Pool=agl-runner-gpu]
     timeout-minutes: 30
     strategy:
@@ -452,7 +458,7 @@ jobs:
 
 
   backward-compatibility:
-    name: Backward Compatibility Test with Python ${{ matrix.python-version }} (${{ matrix.setup-script }})
+    name: Backward Compatibility (Python ${{ matrix.python-version }}, ${{ matrix.setup-script }})
     runs-on: [self-hosted, 1ES.Pool=agl-runner-gpu]
     timeout-minutes: 30
     strategy:
