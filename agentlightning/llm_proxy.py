@@ -20,6 +20,7 @@ import yaml
 from fastapi import Request, Response
 from litellm.integrations.custom_logger import CustomLogger
 from litellm.integrations.opentelemetry import OpenTelemetry, OpenTelemetryConfig
+from litellm.litellm_core_utils import logging_worker as litellm_logging_worker
 from litellm.proxy.proxy_server import app, save_worker_config  # pyright: ignore[reportUnknownVariableType]
 from opentelemetry.sdk.trace import ReadableSpan
 from opentelemetry.sdk.trace.export import SpanExporter, SpanExportResult
@@ -81,6 +82,30 @@ def _get_pre_call_data(args: Any, kwargs: Any) -> Dict[str, Any]:
 # Repeatedly initializing the app with different stores will cause errors.
 _initialized: bool = False
 _global_store: LightningStore | None = None
+
+
+def _reset_litellm_logging_worker() -> None:
+    """Reset LiteLLM's global logging worker to the current event loop.
+
+    LiteLLM keeps a module-level ``GLOBAL_LOGGING_WORKER`` singleton that owns an
+    ``asyncio.Queue``. The queue is bound to the event loop where it was created.
+    When the proxy is restarted, Uvicorn spins up a brand new event loop in a new
+    thread. If the existing logging worker (and its queue) are reused, LiteLLM
+    raises ``RuntimeError: <Queue ...> is bound to a different event loop`` the
+    next time it tries to log. Recreating the worker ensures that LiteLLM will
+    lazily initialise a fresh queue on the new loop.
+    """
+
+    litellm_logging_worker.GLOBAL_LOGGING_WORKER = litellm_logging_worker.LoggingWorker()
+
+    # ``GLOBAL_LOGGING_WORKER`` is imported in a few LiteLLM modules at runtime.
+    # Update any already-imported references so future calls use the fresh worker.
+    try:
+        import litellm.utils as litellm_utils
+
+        litellm_utils.GLOBAL_LOGGING_WORKER = litellm_logging_worker.GLOBAL_LOGGING_WORKER
+    except Exception:  # pragma: no cover - best-effort hygiene
+        logger.debug("Unable to propagate LiteLLM logging worker reset.", exc_info=True)
 
 
 def get_global_store() -> LightningStore:
@@ -605,6 +630,9 @@ class LLMProxy:
 
         # Initialize global middleware and callbacks once.
         initialize()
+
+        # Reset LiteLLM's logging worker so its asyncio.Queue binds to the new loop.
+        _reset_litellm_logging_worker()
 
         # Persist a temp worker config for LiteLLM and point the proxy at it.
         self._config_file = tempfile.NamedTemporaryFile(suffix=".yaml", delete=False).name
