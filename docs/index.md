@@ -19,7 +19,7 @@ This documentation is organized into the following parts:
 - How-to Recipes (e.g., [Train SQL Agent with RL](how-to/train-sql-agent.md)) - Practical examples of training agents and customizing algorithms.
 - Learning More (e.g., [Debugging](tutorials/debug.md)) - Guides on specific topics like debugging or parallelization.
 - Algorithm Zoo (e.g., [APO](algorithm-zoo/apo.md)) - References for built-in algorithms.
-- Deep Dive (e.g., [Bird's Eye View](deep-dive/birds-eye-view.md)) - For a deeper understanding of what's Agent-lightning is doing under the hood.
+- Deep Dive (e.g., [Bird's Eye View](deep-dive/birds-eye-view.md)) - For a deeper understanding of what Agent-lightning is doing under the hood.
 - API References (e.g., [Agent](reference/agent.md)) - References for the Agent-lightning Python API.
 
 ## Resources
