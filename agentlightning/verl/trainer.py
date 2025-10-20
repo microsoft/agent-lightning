@@ -57,7 +57,7 @@ def _timer(name: str, timing_raw: Dict[str, float]):
 #     (1) Dropping prompts that exceed the maximum allowed length.
 #     (2) Adjusting the batch size to be a multiple of the mini PPO size.
 # Different suffixes are used to label these two stages accordingly.
-def compute_data_metrics(batch: DataProto, use_critic: bool = True, suffix="") -> Dict[str, Any]:
+def compute_data_metrics(batch: DataProto, use_critic: bool = True, suffix: str = "") -> Dict[str, Any]:
     """
     Computes various metrics from a batch of data for PPO training.
 
