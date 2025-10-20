@@ -62,7 +62,15 @@ class _LoopAwareAsyncLock:
     """
 
     def __init__(self) -> None:
-        self._locks: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Lock]" = weakref.WeakKeyDictionary()
+        self._locks: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Lock] = weakref.WeakKeyDictionary()
+
+    # When serializing and deserializing, we don't need to serialize the locks.
+    # Because another process will have its own set of event loops and its own lock.
+    def __getstate__(self) -> dict[str, Any]:
+        return {}
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        self._locks = weakref.WeakKeyDictionary()
 
     def _get_lock_for_current_loop(self) -> asyncio.Lock:
         loop = asyncio.get_running_loop()
