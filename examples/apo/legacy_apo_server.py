@@ -23,6 +23,7 @@ async def example_apo():
         "You are a helpful assistant.",
         "You are a knowledgeable AI.",
         "You are a friendly chatbot.",
+        "You are an experienced expert."
     ]
 
     prompt_and_rewards: list[tuple[str, float]] = []
