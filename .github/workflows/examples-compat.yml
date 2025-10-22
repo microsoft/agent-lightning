@@ -10,8 +10,6 @@ on:
 
   pull_request:
     types: [reopened, ready_for_review]
-  issue_comment:
-    types: [created]
 
 jobs:
   label-check:
