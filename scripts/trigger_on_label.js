@@ -1,6 +1,6 @@
 // Copyright (c) Microsoft. All rights reserved.
 
-function isTriggeredByComment() {
+function isTriggeredByComment(core, context) {
   if (context.eventName !== "issue_comment") {
     core.notice("[comment check] This workflow is not triggered by a comment.");
     return false;
@@ -33,7 +33,7 @@ module.exports = function triggerOnLabel({ core, context, labelName }) {
   if (!labelName) {
     throw new Error("labelName is required");
   }
-  const triggeredByComment = isTriggeredByComment();
+  const triggeredByComment = isTriggeredByComment(core, context);
 
   if (!triggeredByComment && context.eventName !== "pull_request") {
     core.setOutput("should-run", "true");
@@ -51,7 +51,7 @@ module.exports = function triggerOnLabel({ core, context, labelName }) {
   if (labels.includes(labelName)) {
     core.setOutput("should-run", "true");
     core.notice(
-      `Triggering this workflow because pull request is reopened or ready for review and has the '${labelName}' label.`
+      `Triggering this workflow because pull request has the '${labelName}' label.`
     );
   } else {
     core.setOutput("should-run", "false");
