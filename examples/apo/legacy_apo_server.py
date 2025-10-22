@@ -2,7 +2,7 @@
 
 """This is the APO example written in the legacy client-server style (agent-lightning v0.1).
 
-New users should refer to the `examples/apo/apo.py` for the modern APO example.
+New users should refer to the `examples/apo/legacy_apo_lunch.py` for the modern APO example.
 """
 
 import asyncio
@@ -41,7 +41,7 @@ async def example_apo():
         print(f"[Algo] Task '{task_id}' is now available for clients.")
 
         # 3. The algorithm waits for clients to process the task
-        rollout = await server.poll_completed_rollout(task_id, timeout=30)
+        rollout = await server.poll_completed_rollout(task_id, timeout=60)
         assert rollout, "Expected a completed rollout from the client."
         print(f"[Algo] Received Result: {rollout}")
         reward = rollout.final_reward

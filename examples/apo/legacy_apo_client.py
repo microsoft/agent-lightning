@@ -2,7 +2,7 @@
 
 """This is the APO example written in the legacy client-server style (agent-lightning v0.1).
 
-New users should refer to the `examples/apo/apo.py` for the modern APO example.
+New users should refer to the `examples/apo/legacy_apo_lunch.py` for the modern APO example.
 """
 
 import os
@@ -43,5 +43,7 @@ if __name__ == "__main__":
     configure_logger()
     dotenv.load_dotenv()
     agent = SimpleAgent()
+    # Use 2 workers to simulate multiple clients
+    # max_tasks is optional, limit to 2 tasks here for a quick demo.
     trainer = Trainer(n_workers=2, max_tasks=2)
     trainer.fit_v0(agent, "http://127.0.0.1:9997")
