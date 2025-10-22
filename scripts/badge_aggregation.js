@@ -58,16 +58,14 @@ module.exports = async function badgeAggregation({ github, context, core, depend
   for (const dep of dependencies) {
     const branch = dep.branch || 'main';
 
-    // Prefer the documented method for a specific workflow: listWorkflowRunsForWorkflow.
     // You can pass the workflow file name as workflow_id (e.g. "examples-apo.yml").
-    const { data: runsData } = await github.rest.actions.listWorkflowRunsForWorkflow({
+    const { data: runsData } = await github.rest.actions.listWorkflowRuns({
       owner: context.repo.owner,
       repo: context.repo.repo,
       workflow_id: dep.workflow,
-      branch,
+      branch: 'main',
       status: 'completed',
       per_page: 1, // latest only
-      // (Optional) You could also filter by "created" window if you want to ignore very old runs.
     });
 
     const run = runsData?.workflow_runs?.[0];
