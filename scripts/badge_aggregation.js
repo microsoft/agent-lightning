@@ -63,7 +63,7 @@ module.exports = async function badgeAggregation({ github, context, core, depend
       owner: context.repo.owner,
       repo: context.repo.repo,
       workflow_id: dep.workflow,
-      branch: 'main',
+      branch: 'main', // Always check the main branch status no matter what
       status: 'completed', // only completed runs
       per_page: 1, // latest only
     });
