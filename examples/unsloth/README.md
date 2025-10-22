@@ -1,5 +1,7 @@
 # Unsloth SFT Example
 
+[![unsloth CI status](https://github.com/microsoft/agent-lightning/actions/workflows/examples-unsloth.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/examples-unsloth.yml)
+
 This example demonstrates Supervised Fine-Tuning (SFT) using the Unsloth library for efficient training with 4-bit quantization and LoRA. The example trains a math-solving agent on the GSM-hard dataset. It's compatible with Agent-lightning v0.2 or later.
 
 ## Overview

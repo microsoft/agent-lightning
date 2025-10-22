@@ -1,5 +1,7 @@
 # Calc-X Example
 
+[![calc_x CI status](https://github.com/microsoft/agent-lightning/actions/workflows/examples-calc-x.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/examples-calc-x.yml)
+
 This example demonstrates training a mathematical reasoning agent using Agent-Lightning with the VERL algorithm and AutoGen framework. The agent solves math problems using a calculator tool through the Model Context Protocol (MCP). It's compatible with Agent-lightning v0.2 or later.
 
 ## Requirements

@@ -87,6 +87,16 @@ This project has adopted the [Microsoft Open Source Code of Conduct](https://ope
 
 This project may contain trademarks or logos for projects, products, or services. Authorized use of Microsoft trademarks or logos is subject to and must follow [Microsoft's Trademark & Brand Guidelines](https://www.microsoft.com/en-us/legal/intellectualproperty/trademarks/usage/general). Use of Microsoft trademarks or logos in modified versions of this project must not cause confusion or imply Microsoft sponsorship. Any use of third-party trademarks or logos are subject to those third-party's policies.
 
+## ⚡ CI Workflow Status
+
+| Workflow | Status |
+|----------|--------|
+| `tests.yml` | [![tests workflow status](https://github.com/microsoft/agent-lightning/actions/workflows/tests.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/tests.yml) |
+| `tests-full.yml` | [![tests-full workflow status](https://github.com/microsoft/agent-lightning/actions/workflows/tests-full.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/tests-full.yml) |
+| `badge-examples.yml` | [![examples summary workflow status](https://github.com/microsoft/agent-lightning/actions/workflows/badge-examples.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/badge-examples.yml) |
+| `badge-latest.yml` | [![latest summary workflow status](https://github.com/microsoft/agent-lightning/actions/workflows/badge-latest.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/badge-latest.yml) |
+| `examples-compat.yml` | [![examples compatibility workflow status](https://github.com/microsoft/agent-lightning/actions/workflows/examples-compat.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/examples-compat.yml) |
+
 ## ⚡ Responsible AI
 
 This project has been evaluated and certified to comply with the Microsoft Responsible AI Standard. The team will continue to monitor and maintain the repository, addressing any severe issues, including potential harms, if they arise.
