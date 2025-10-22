@@ -1,56 +1,62 @@
 // Copyright (c) Microsoft. All rights reserved.
 
+function isTriggeredByComment() {
+  if (context.eventName !== "issue_comment") {
+    core.notice("[comment check] This workflow is not triggered by a comment.");
+    return false;
+  }
+
+  const action = context.payload.action;
+  const issue = context.payload.issue;
+  const commentBody = context.payload.comment?.body ?? "";
+
+  // We only react to new comments on PRs.
+  const isPr = !!issue?.pull_request;
+  if (action !== "created" || !isPr) {
+    core.notice(
+      `[comment check] Action '${action}' is not 'created' or the comment is not on a pull request.`
+    );
+    return false;
+  }
+
+  // Require /ci prefix.
+  if (!commentBody.trim().startsWith("/ci")) {
+    core.notice("[comment check] Comment does not start with '/ci'.");
+    return false;
+  }
+
+  core.notice(`[comment check] Comment starts with '/ci'`);
+  return true;
+};
+
 module.exports = function triggerOnLabel({ core, context, labelName }) {
   if (!labelName) {
     throw new Error("labelName is required");
   }
+  const triggeredByComment = isTriggeredByComment();
 
-  if (context.eventName !== "pull_request") {
+  if (!triggeredByComment && context.eventName !== "pull_request") {
     core.setOutput("should-run", "true");
     core.notice("Triggering this workflow because event is not a pull request");
     return;
   }
 
-  const action = context.payload.action;
-  const labels = (context.payload.pull_request?.labels ?? []).map(
+  core.notice(`This workflow is triggered by ${context.eventName}`);
+
+  const labels = (context.payload.pull_request?.labels ?? context.payload.issue?.labels ?? []).map(
     (label) => label.name
   );
+  core.notice(`Pull request labels: ${labels.join(", ")}`);
 
-  if (["reopened", "ready_for_review"].includes(action)) {
-    if (labels.includes(labelName)) {
-      core.setOutput("should-run", "true");
-      core.notice(
-        `Triggering this workflow because pull request is reopened or ready for review and has the '${labelName}' label.`
-      );
-    } else {
-      core.setOutput("should-run", "false");
-      core.notice(
-        `Skipping because pull request is missing the '${labelName}' label.`
-      );
-    }
-    return;
+  if (labels.includes(labelName)) {
+    core.setOutput("should-run", "true");
+    core.notice(
+      `Triggering this workflow because pull request is reopened or ready for review and has the '${labelName}' label.`
+    );
+  } else {
+    core.setOutput("should-run", "false");
+    core.notice(
+      `Skipping because pull request is missing the '${labelName}' label.`
+    );
   }
-
-  if (action === "labeled") {
-    if ((context.payload.label?.name ?? "") === labelName) {
-      core.setOutput("should-run", "true");
-      core.notice(
-        `Triggering this workflow because pull request is labeled with the '${labelName}' label.`
-      );
-    } else {
-      core.setOutput("should-run", "false");
-      core.notice(
-        `Skipping because label '${
-          context.payload.label?.name ?? "unknown"
-        }' does not match '${labelName}'.`
-      );
-    }
-    return;
-  }
-
-  core.setOutput("should-run", "false");
-  core.notice(
-    `Skipping this workflow because action '${action}' is not handled. ` +
-      `This workflow only triggers on: 'reopened', 'ready_for_review', or 'labeled' actions.`
-  );
 };

@@ -9,11 +9,9 @@ on:
   workflow_dispatch:
 
   pull_request:
-    types: [reopened, labeled, ready_for_review]
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('{0}-{1}', github.event_name, github.ref) }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+    types: [reopened, ready_for_review]
+  issue_comment:
+    types: [created]
 
 jobs:
   label-check:
