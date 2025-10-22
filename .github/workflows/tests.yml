@@ -15,6 +15,7 @@ on:
     - cron: '0 0,12 * * *'
 
 jobs:
+
   lint:
     strategy:
       matrix:
