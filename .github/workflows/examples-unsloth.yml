@@ -8,8 +8,23 @@ on:
 
   workflow_dispatch:
 
+  pull_request:
+    types: [opened, reopened, ready_for_review, labeled]
+
 jobs:
+  label-check:
+    name: Label gate (ci-unsloth)
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name != 'pull_request' ||
+      ((github.event.action == 'opened' || github.event.action == 'reopened' || github.event.action == 'ready_for_review')
+        && contains(github.event.pull_request.labels.*.name, 'ci-unsloth')) ||
+      (github.event.action == 'labeled' && github.event.label.name == 'ci-unsloth')
+    steps:
+      - run: echo "Label requirements satisfied"
+
   unsloth:
+    needs: label-check
     name: Unsloth (Python ${{ matrix.python-version }}, ${{ matrix.setup-script }})
     runs-on: [self-hosted, 1ES.Pool=agl-runner-gpu]
     timeout-minutes: 60
