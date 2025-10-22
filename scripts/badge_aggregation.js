@@ -74,11 +74,13 @@ module.exports = async function badgeAggregation({ github, context, core, depend
       continue;
     }
 
+    core.info(`[${dep.label}] Found run ${run.id} with attempt ${run.run_attempt}`);
     // Get the specific attempt we want to inspect (latest attempt for that run).
     const attempt = run.run_attempt ?? 1;
 
     // Robust: paginate jobs in case the workflow has many.
     const jobs = await listAllJobsForAttempt(run.id, attempt);
+    core.info(`[${dep.label}] Found ${jobs.length} jobs: ${jobs.map(j => j.name).join(', ')}`);
 
     // Match each required variant to a job. We look for the variant in parentheses, e.g. "(latest)".
     for (const variant of dep.variants || []) {
