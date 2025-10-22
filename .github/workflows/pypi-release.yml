@@ -66,8 +66,8 @@ jobs:
 
       - name: Verify package contents
         run: |
-          uv run python -m tarfile -l dist/*.tar.gz
-          uv run python -m zipfile -l dist/*.whl
+          uv run --locked --no-sync python -m tarfile -l dist/*.tar.gz
+          uv run --locked --no-sync python -m zipfile -l dist/*.whl
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
