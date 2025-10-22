@@ -82,8 +82,8 @@ jobs:
         run: |
           ./scripts/litellm_run.sh
         env:
-          AZURE_API_BASE: ${{ secrets.AZURE_API_BASE }}
-          AZURE_API_KEY: ${{ secrets.AZURE_API_KEY }}
+          AZURE_API_BASE: ${{ secrets.AZURE_GROUP_SUBSCRIPTION_API_BASE }}
+          AZURE_API_KEY: ${{ secrets.AZURE_GROUP_SUBSCRIPTION_API_KEY }}
 
       - name: Prepare Spider dataset
         run: |
