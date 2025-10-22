@@ -9,8 +9,24 @@ on:
   workflow_dispatch:
 
 jobs:
+  label-check:
+    runs-on: ubuntu-latest
+    outputs:
+      should-run: ${{ steps.evaluate.outputs.should-run }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Decide whether to run
+        id: evaluate
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const evaluateTrigger = require('./scripts/trigger_on_label.js');
+            evaluateTrigger({ core, context, labelName: 'ci-gpu' });
+
   tests-full:
-    name: Full Test with Python ${{ matrix.python-version }} (${{ matrix.setup-script }})
+    needs: label-check
+    if: needs.label-check.outputs.should-run == 'true'
+    name: GPU Test with Python ${{ matrix.python-version }} (${{ matrix.setup-script }})
 
     runs-on: [self-hosted, 1ES.Pool=agl-runner-gpu]
     timeout-minutes: 30
