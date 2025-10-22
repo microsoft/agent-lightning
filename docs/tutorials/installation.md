@@ -2,6 +2,14 @@
 
 This guide explains how to install **Agent-Lightning**. You can install it from **PyPI** (the Python Package Index) for general use or directly from the **source code** if you plan to contribute or need fine-grained control over dependencies.
 
+!!! info "Platform and Hardware Requirements"
+    Agent-Lightning is officially supported on **Linux distributions** (Ubuntu 22.04 or later is recommended).
+    At the moment **macOS and Windows** (outside of WSL2) are not supported.
+
+    The Python runtime must be **Python 3.10 or newer**. We recommend using the latest patch release of Python 3.10, 3.11, or 3.12 to pick up performance and security updates.
+
+    A **GPU is optional**—you only need CUDA-capable hardware if you plan to fine-tune model weights or run GPU-accelerated workloads. CPU-only environments are fully supported for evaluation and inference.
+
 ## Installing from PyPI
 
 The easiest way to get started is by installing Agent-Lightning directly from PyPI. This ensures you get the latest **stable release** of the package, tested for compatibility and reliability.
