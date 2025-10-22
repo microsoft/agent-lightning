@@ -6,45 +6,24 @@ on:
       - Examples - APO
     types: [completed]
 
+  workflow_dispatch:
+
 permissions:
   actions: read
   contents: read
 
 jobs:
   badge:
+    if: ${{ github.event.workflow_run.head_branch == 'main' }}
     runs-on: ubuntu-latest
     steps:
-      - name: Skip non-main runs
-        if: ${{ github.event.workflow_run.head_branch != 'main' }}
-        run: echo "Skipping because branch '${{ github.event.workflow_run.head_branch }}' is not main."
-
-      - name: Verify stable variant
-        if: ${{ github.event.workflow_run.head_branch == 'main' }}
-        uses: actions/github-script@v8
+      - uses: actions/checkout@v4
+      - uses: actions/github-script@v8
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const runId = context.payload.workflow_run.id;
-            const attempt = context.payload.workflow_run.run_attempt ?? 1;
-
-            const { data } = await github.rest.actions.listJobsForWorkflowRunAttempt({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              run_id: runId,
-              attempt_number: attempt,
-              per_page: 100,
-            });
-
-            const jobs = data.jobs ?? [];
-            const job = jobs.find(job => job.name.toLowerCase().includes(', stable)'));
-
-            if (!job) {
-              core.setFailed('Missing stable variant job.');
-              return;
-            }
-
-            core.info(`${job.name} => ${job.conclusion}`);
-
-            if (job.conclusion !== 'success') {
-              core.setFailed(`${job.name} concluded ${job.conclusion}`);
-            }
+            const badgeAggregation = require('./scripts/badge_aggregation.js');
+            const dependencies = [
+              { workflow: 'examples-apo.yml', label: 'apo', variants: ['legacy', 'stable'] },
+            ];
+            await badgeAggregation({ github, context, core, dependencies });
