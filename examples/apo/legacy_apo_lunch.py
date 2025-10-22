@@ -24,6 +24,7 @@ Save their logs into legacy_apo_server.log and legacy_apo_client.log
 import asyncio
 from pathlib import Path
 
+
 async def stream_output(stream, name, pipe_type, buffer):
     """Asynchronously read output stream and print to console, also store in memory buffer"""
     while True:
@@ -34,13 +35,10 @@ async def stream_output(stream, name, pipe_type, buffer):
         print(f"[{name}] {text}")
         buffer.append(text)
 
+
 async def run(cmd, name, buffer):
     """Start a subprocess and launch the logging coroutine"""
-    proc = await asyncio.create_subprocess_exec(
-        *cmd,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE
-    )
+    proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
     print(f"{name} started (pid={proc.pid})")
 
     # concurrently monitor stdout and stderr
@@ -48,6 +46,7 @@ async def run(cmd, name, buffer):
     asyncio.create_task(stream_output(proc.stderr, name, "ERR", buffer))
 
     return proc
+
 
 async def main():
     # prepare in-memory buffers for each process
@@ -66,6 +65,7 @@ async def main():
     Path("legacy_apo_client.log").write_text("\n".join(client_buffer), encoding="utf-8")
 
     print("Logs saved to legacy_apo_server.log and legacy_apo_client.log")
+
 
 if __name__ == "__main__":
     try:
