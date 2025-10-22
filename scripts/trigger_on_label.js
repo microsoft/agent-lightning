@@ -23,6 +23,11 @@ module.exports = function triggerOnLabel({ core, context, labelName }) {
     core.notice(
       `Triggering this workflow because pull request has the '${labelName}' label.`
     );
+  } else if (labels.includes("ci-all")) {
+    core.setOutput("should-run", "true");
+    core.notice(
+      `Triggering this workflow because pull request has the 'ci-all' label.`
+    );
   } else {
     core.setOutput("should-run", "false");
     core.notice(
