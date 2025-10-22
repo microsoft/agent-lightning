@@ -36,5 +36,5 @@ module.exports = function triggerExamples({ core, context, labelName }) {
   }
 
   core.setOutput('should-run', 'false');
-  core.notice(`Skipping because action '${action}' is not handled.`);
+  core.notice(`Skipping because action '${action}' is not handled. This workflow only triggers on: 'reopened', 'ready_for_review', or 'labeled' actions.`);
 };
