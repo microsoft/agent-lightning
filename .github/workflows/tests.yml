@@ -2,6 +2,7 @@ name: CPU Test
 
 permissions:
   contents: read
+  actions: read
 
 on:
   push:
