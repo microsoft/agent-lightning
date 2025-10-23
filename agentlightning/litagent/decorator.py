@@ -353,6 +353,7 @@ def _validate_llm_rollout_func(func: Any) -> TypeGuard[LlmRolloutFunc[Any]]:
     """Validate the function signature of an LLM rollout function.
 
     Ensures the function follows the expected pattern for LLM-based rollouts:
+
     - Must have at least 2 parameters
     - First parameter must be named 'task'
     - Must have a parameter named 'llm'
@@ -434,6 +435,7 @@ def _validate_prompt_rollout_func(func: Any) -> TypeGuard[PromptRolloutFunc[Any]
     """Validate the function signature of a prompt rollout function.
 
     Ensures the function follows the expected pattern for prompt-template-based rollouts:
+
     - Must have at least 2 parameters
     - First parameter must be named 'task'
     - Must have a parameter named 'prompt_template'

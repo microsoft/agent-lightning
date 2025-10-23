@@ -83,12 +83,17 @@ def _str_to_bool(v: str) -> bool:
 
 
 def _get_param_type_details(param_annotation: Any) -> Tuple[Any, bool, bool]:
-    """
-    Determines the core type, if it's Optional, and if it's a List.
-    Returns: (core_type, is_optional, is_list)
-    - For Optional[T]: (T, True, is_list_status_of_T)
-    - For List[T]: (List[T], is_optional_status_of_List, True)
-    - For Optional[List[T]]: (List[T], True, True)
+    """Normalize an annotation into its core type, optionality, and list status.
+
+    Args:
+        param_annotation: The annotation to inspect.
+
+    Returns:
+        A tuple ``(core_type, is_optional, is_list)`` describing the normalized type.
+
+        - For ``Optional[T]`` → ``(T, True, is_list_status_of_T)``
+        - For ``List[T]`` → ``(List[T], is_optional_status_of_List, True)``
+        - For ``Optional[List[T]]`` → ``(List[T], True, True)``
     """
     is_optional = False
     is_list = False

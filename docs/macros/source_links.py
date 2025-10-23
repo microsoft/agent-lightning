@@ -11,13 +11,13 @@ def define_env(env: Any):
     """Expose {{ src('path/to/file.py') }} to link to a file in the repo.
 
     Behavior:
+
         - Builds URL from repo_url + extra.source_commit in mkdocs.yml
         - Verifies that the file exists at build time
         - If file missing: logs a WARNING and returns a visible marker.
             With `mkdocs build --strict`, warnings become errors → build fails.
 
     Examples:
-
         ```
         [`apo_debug.py`]({{ src('examples/apo/apo_debug.py') }})
         ```

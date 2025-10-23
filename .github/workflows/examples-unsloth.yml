@@ -8,7 +8,7 @@ on:
 
   workflow_dispatch:
 
-  pull_request:
+  pull_request_target:
     types: [reopened, ready_for_review]
 
 jobs:
@@ -47,6 +47,8 @@ jobs:
       - name: Check disk space
         run: df -h
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.number && format('refs/pull/{0}/merge', github.event.pull_request.number) || github.ref }}
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true

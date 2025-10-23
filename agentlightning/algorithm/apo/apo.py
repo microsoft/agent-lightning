@@ -99,14 +99,16 @@ class APO(Algorithm, Generic[T_task]):
     computes critiques based on the results, and applies edits to generate improved prompts.
 
     The algorithm operates in rounds, where each round:
+
     1. Samples parent prompts from the current beam
     2. Generates new prompts by computing textual gradients and applying edits
     3. Evaluates all candidates on a validation set
     4. Selects the top-k prompts for the next round
 
     Based on the ideas from:
-    - ProTeGi: https://aclanthology.org/2023.emnlp-main.494.pdf
-    - TextGrad: https://github.com/zou-group/textgrad
+
+    - [ProTeGi](https://aclanthology.org/2023.emnlp-main.494.pdf)
+    - [TextGrad](https://github.com/zou-group/textgrad)
     """
 
     def __init__(
@@ -337,6 +339,7 @@ class APO(Algorithm, Generic[T_task]):
         Generate an improved prompt by computing a textual gradient and applying an edit.
 
         This is the main optimization step that:
+
         1. Computes a critique (textual gradient) based on rollout performance
         2. Uses another LLM to apply the critique and generate an improved prompt
 
@@ -443,6 +446,7 @@ class APO(Algorithm, Generic[T_task]):
         Evaluate a prompt on a batch of tasks by running rollouts and computing average reward.
 
         This method:
+
         1. Adds the prompt as a named resource to the store
         2. Enqueues rollouts for each task in the dataset
         3. Waits for rollouts to complete (with timeout)
@@ -587,6 +591,7 @@ class APO(Algorithm, Generic[T_task]):
         Generate new candidate prompts from parents using textual gradients.
 
         For each parent prompt, generates branch_factor new candidates by:
+
         1. Evaluating the parent on a training batch
         2. Computing textual gradient
         3. Applying edit to generate improved prompt
@@ -814,6 +819,7 @@ class APO(Algorithm, Generic[T_task]):
         Execute the APO algorithm to optimize prompts through beam search with textual gradients.
 
         The algorithm performs iterative prompt optimization over multiple rounds:
+
         - Each round: samples parent prompts, generates new candidates via textual gradients,
           evaluates all candidates on validation data, and keeps the top performers
         - Tracks the historically best prompt across all rounds
