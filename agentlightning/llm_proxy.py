@@ -20,7 +20,6 @@ import yaml
 from fastapi import Request, Response
 from litellm.integrations.custom_logger import CustomLogger
 from litellm.integrations.opentelemetry import OpenTelemetry, OpenTelemetryConfig
-from litellm.litellm_core_utils import logging_worker as litellm_logging_worker
 from litellm.proxy.proxy_server import app, save_worker_config  # pyright: ignore[reportUnknownVariableType]
 from opentelemetry.sdk.trace import ReadableSpan
 from opentelemetry.sdk.trace.export import SpanExporter, SpanExportResult
@@ -96,16 +95,16 @@ def _reset_litellm_logging_worker() -> None:
     lazily initialise a fresh queue on the new loop.
     """
 
-    litellm_logging_worker.GLOBAL_LOGGING_WORKER = litellm_logging_worker.LoggingWorker()
-
     # ``GLOBAL_LOGGING_WORKER`` is imported in a few LiteLLM modules at runtime.
     # Update any already-imported references so future calls use the fresh worker.
     try:
         import litellm.utils as litellm_utils
+        from litellm.litellm_core_utils import logging_worker as litellm_logging_worker
 
-        litellm_utils.GLOBAL_LOGGING_WORKER = litellm_logging_worker.GLOBAL_LOGGING_WORKER
+        litellm_logging_worker.GLOBAL_LOGGING_WORKER = litellm_logging_worker.LoggingWorker()
+        litellm_utils.GLOBAL_LOGGING_WORKER = litellm_logging_worker.GLOBAL_LOGGING_WORKER  # type: ignore[reportAttributeAccessIssue]
     except Exception:  # pragma: no cover - best-effort hygiene
-        logger.debug("Unable to propagate LiteLLM logging worker reset.", exc_info=True)
+        logger.error("Unable to propagate LiteLLM logging worker reset.", exc_info=True)
 
 
 def get_global_store() -> LightningStore:
