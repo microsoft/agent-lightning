@@ -171,6 +171,7 @@ agents = [
 ]
 
 [tool.uv]
+required-version = ">=0.9.5"
 conflicts = [
   [
     { group = "core-legacy" },
@@ -186,7 +187,7 @@ conflicts = [
   ],
 ]
 environments = [
-  "sys_platform == 'linux'",
+  "sys_platform == 'linux' or sys_platform == 'darwin'",
 ]
 dependency-metadata = [
   # Conflicts between packaging dependency of pyvers (dependency of tensordict) and agentops.
