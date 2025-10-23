@@ -17,7 +17,7 @@ import litellm
 import opentelemetry.trace as trace_api
 import uvicorn
 import yaml
-from fastapi import Request, Response
+from fastapi import FastAPI, Request, Response
 from litellm.integrations.custom_logger import CustomLogger
 from litellm.integrations.opentelemetry import OpenTelemetry, OpenTelemetryConfig
 from litellm.proxy.proxy_server import app, save_worker_config  # pyright: ignore[reportUnknownVariableType]
@@ -77,12 +77,6 @@ def _get_pre_call_data(args: Any, kwargs: Any) -> Dict[str, Any]:
     return cast(Dict[str, Any], data)
 
 
-# We need global state because litellm is based on a global app.
-# Repeatedly initializing the app with different stores will cause errors.
-_initialized: bool = False
-_global_store: LightningStore | None = None
-
-
 def _reset_litellm_logging_worker() -> None:
     """Reset LiteLLM's global logging worker to the current event loop.
 
@@ -107,82 +101,25 @@ def _reset_litellm_logging_worker() -> None:
         logger.error("Unable to propagate LiteLLM logging worker reset.", exc_info=True)
 
 
-def get_global_store() -> LightningStore:
-    """Return the globally registered LightningStore.
-
-    Used by components that are initialized without an explicit store
-    (e.g., exporter created inside OpenTelemetry).
-
-    Returns:
-        LightningStore: The active global store.
-
-    Raises:
-        ValueError: If the global store has not been set by `LLMProxy.start()`.
-    """
-    if _global_store is None:
-        raise ValueError("Global store is not initialized. Please start a LLMProxy first.")
-    return _global_store
+_global_callbacks: Optional[List[Any]] = None
+_global_user_middlewares: Optional[List[Any]] = None
 
 
-def initialize() -> None:
-    """Initialize global middleware and LiteLLM callbacks once.
+def _ensure_global_user_middlewares(app: FastAPI) -> List[Any]:
+    """Preserve a copy of `app.user_middlewares` before AGL's middlewares is installed."""
+    global _global_user_middlewares
+    if _global_user_middlewares is None:
+        _global_user_middlewares = app.user_middleware  # type: ignore
+    return _global_user_middlewares
 
-    Idempotent. Installs:
 
-    * A FastAPI middleware that rewrites /rollout/{rid}/attempt/{aid}/... paths,
-      injects rollout/attempt/sequence headers, and forwards downstream.
-    * LiteLLM callbacks for token ids and OpenTelemetry export.
+def _ensure_litellm_callbacks_before_agl() -> List[Any]:
+    """Preserve a copy of `litellm.callbacks` before AGL's callbacks is installed."""
+    global _global_callbacks
 
-    This function does not start any server. It only wires global hooks.
-    """
-    global _initialized
-    if _initialized:
-        return
-
-    # Add middleware here because it relies on the global store.
-    @app.middleware("http")
-    async def rollout_attempt_middleware(  # pyright: ignore[reportUnusedFunction]
-        request: Request, call_next: Callable[[Request], Awaitable[Response]]
-    ) -> Response:
-        # Decode rollout and attempt from the URL prefix. Example:
-        #   /rollout/r123/attempt/a456/v1/chat/completions
-        # becomes
-        #   /v1/chat/completions
-        # while adding request-scoped headers for trace attribution.
-        path = request.url.path
-
-        match = re.match(r"^/rollout/([^/]+)/attempt/([^/]+)(/.*)?$", path)
-        if match:
-            rollout_id = match.group(1)
-            attempt_id = match.group(2)
-            new_path = match.group(3) if match.group(3) is not None else "/"
-
-            # Rewrite the ASGI scope path so downstream sees a clean OpenAI path.
-            request.scope["path"] = new_path
-            request.scope["raw_path"] = new_path.encode()
-
-            # Allocate a monotonic sequence id per (rollout, attempt).
-            sequence_id = await get_global_store().get_next_span_sequence_id(rollout_id, attempt_id)
-
-            # Inject headers so downstream components and exporters can retrieve them.
-            request.scope["headers"] = list(request.scope["headers"]) + [
-                (b"x-rollout-id", rollout_id.encode()),
-                (b"x-attempt-id", attempt_id.encode()),
-                (b"x-sequence-id", str(sequence_id).encode()),
-            ]
-
-        response = await call_next(request)
-        return response
-
-    # Register callbacks once on the global LiteLLM callback list.
-    litellm.callbacks.extend(  # pyright: ignore[reportUnknownMemberType]
-        [
-            AddReturnTokenIds(),
-            LightningOpenTelemetry(),
-        ]
-    )
-
-    _initialized = True
+    if _global_callbacks is None:
+        _global_callbacks = litellm.callbacks  # type: ignore
+    return _global_callbacks
 
 
 class AddReturnTokenIds(CustomLogger):
@@ -234,7 +171,7 @@ class LightningSpanExporter(SpanExporter):
         store: Optional explicit LightningStore. If None, uses `get_global_store()`.
     """
 
-    def __init__(self, store: Optional[LightningStore] = None):
+    def __init__(self, store: LightningStore):
         self._store = store
         self._buffer: List[ReadableSpan] = []
         self._lock: Optional[threading.RLock] = None
@@ -266,19 +203,6 @@ class LightningSpanExporter(SpanExporter):
         if self._lock is None:
             self._lock = threading.RLock()
         return self._lock
-
-    def _get_store(self) -> LightningStore:
-        """Return the LightningStore to use.
-
-        Returns:
-            LightningStore: Explicit store if provided, else the global store.
-
-        Raises:
-            ValueError: If no global store is configured and no explicit store was given.
-        """
-        if self._store is None:
-            return get_global_store()
-        return self._store
 
     def _run_loop(self) -> None:
         """Run the private asyncio loop forever on the exporter thread."""
@@ -414,7 +338,7 @@ class LightningSpanExporter(SpanExporter):
 
             # Persist each span in the subtree with the resolved identifiers.
             for span in subtree_spans:
-                await self._get_store().add_otel_span(
+                await self._store.add_otel_span(
                     rollout_id=rollout_id, attempt_id=attempt_id, sequence_id=sequence_id_decimal, readable_span=span
                 )
 
@@ -489,7 +413,7 @@ class LightningOpenTelemetry(OpenTelemetry):
         store: Optional explicit LightningStore for the exporter.
     """
 
-    def __init__(self, store: LightningStore | None = None):
+    def __init__(self, store: LightningStore):
         config = OpenTelemetryConfig(exporter=LightningSpanExporter(store))
 
         # Check for tracer initialization
@@ -606,6 +530,65 @@ class LLMProxy:
                 break
             time.sleep(0.01)
 
+    def initialize(self):
+        """Initialize global middleware and LiteLLM callbacks once more.
+
+        Installs:
+
+        * A FastAPI middleware that rewrites /rollout/{rid}/attempt/{aid}/... paths,
+        injects rollout/attempt/sequence headers, and forwards downstream.
+        * LiteLLM callbacks for token ids and OpenTelemetry export.
+
+        This function does not start any server. It only wires global hooks.
+        """
+        if self.store is None:
+            raise ValueError("Store is not set. Please set the store before initializing the LLMProxy.")
+        store = self.store
+
+        # Restore the global user middlewares.
+        app.user_middleware = _ensure_global_user_middlewares(app)
+
+        # Add middleware here because it relies on the global store.
+        @app.middleware("http")
+        async def rollout_attempt_middleware(  # pyright: ignore[reportUnusedFunction]
+            request: Request, call_next: Callable[[Request], Awaitable[Response]]
+        ) -> Response:
+            # Decode rollout and attempt from the URL prefix. Example:
+            #   /rollout/r123/attempt/a456/v1/chat/completions
+            # becomes
+            #   /v1/chat/completions
+            # while adding request-scoped headers for trace attribution.
+            path = request.url.path
+
+            match = re.match(r"^/rollout/([^/]+)/attempt/([^/]+)(/.*)?$", path)
+            if match:
+                rollout_id = match.group(1)
+                attempt_id = match.group(2)
+                new_path = match.group(3) if match.group(3) is not None else "/"
+
+                # Rewrite the ASGI scope path so downstream sees a clean OpenAI path.
+                request.scope["path"] = new_path
+                request.scope["raw_path"] = new_path.encode()
+
+                # Allocate a monotonic sequence id per (rollout, attempt).
+                sequence_id = await store.get_next_span_sequence_id(rollout_id, attempt_id)
+
+                # Inject headers so downstream components and exporters can retrieve them.
+                request.scope["headers"] = list(request.scope["headers"]) + [
+                    (b"x-rollout-id", rollout_id.encode()),
+                    (b"x-attempt-id", attempt_id.encode()),
+                    (b"x-sequence-id", str(sequence_id).encode()),
+                ]
+
+            response = await call_next(request)
+            return response
+
+        # Register callbacks once on the global LiteLLM callback list.
+        litellm.callbacks = _ensure_litellm_callbacks_before_agl() + [
+            AddReturnTokenIds(),
+            LightningOpenTelemetry(store),
+        ]
+
     def start(self):
         """Start the proxy server thread and initialize global wiring.
 
@@ -623,12 +606,8 @@ class LLMProxy:
         if not self.store:
             raise ValueError("Store is not set. Please set the store before starting the LLMProxy.")
 
-        global _global_store
-
-        _global_store = self.store
-
         # Initialize global middleware and callbacks once.
-        initialize()
+        self.initialize()
 
         # Reset LiteLLM's logging worker so its asyncio.Queue binds to the new loop.
         _reset_litellm_logging_worker()
