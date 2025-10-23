@@ -707,7 +707,7 @@ class LLMProxy:
             rollout_id: Rollout identifier used for span attribution. If None, will instantiate a ProxyLLM resource.
             attempt_id: Attempt identifier used for span attribution. If None, will instantiate a ProxyLLM resource.
             model: Logical model name to use. If omitted and exactly one model
-                is configured, that model is used.
+                is configured or all models have the same name, that model is used.
             sampling_parameters: Optional default sampling parameters.
 
         Returns:
@@ -719,10 +719,16 @@ class LLMProxy:
         if model is None:
             if len(self.model_list) == 1:
                 model = self.model_list[0]["model_name"]
+            elif len(self.model_list) == 0:
+                raise ValueError("No models found in model_list. Please specify the model.")
             else:
-                raise ValueError(
-                    f"Multiple or zero models found in model_list: {self.model_list}. Please specify the model."
-                )
+                first_model_name = self.model_list[0]["model_name"]
+                if all(model_config["model_name"] == first_model_name for model_config in self.model_list):
+                    model = first_model_name
+                else:
+                    raise ValueError(
+                        f"Multiple models found in model_list: {self.model_list}. Please specify the model."
+                    )
 
         if rollout_id is None and attempt_id is None:
             return ProxyLLM(
