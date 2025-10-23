@@ -128,7 +128,7 @@ class AgentOpsTracer(Tracer):
                 )
 
             if not agentops.get_client().initialized:
-                agentops.init()  # type: ignore
+                agentops.init(auto_start_session=False)  # type: ignore
                 logger.info(f"[Worker {worker_id}] AgentOps client initialized.")
             else:
                 logger.warning(f"[Worker {worker_id}] AgentOps client was already initialized.")
@@ -192,10 +192,12 @@ class AgentOpsTracer(Tracer):
         if not self._lightning_span_processor:
             raise RuntimeError("LightningSpanProcessor is not initialized. Call init_worker() first.")
 
-        if store is not None and rollout_id is not None and attempt_id is not None:
+        if store is not None and rollout_id is not None and attempt_id is not None:            
             ctx = self._lightning_span_processor.with_context(store=store, rollout_id=rollout_id, attempt_id=attempt_id)
             with ctx as processor:
+                trace = agentops.start_trace(name=name)
                 yield processor
+                agentops.end_trace(trace)
         elif store is None and rollout_id is None and attempt_id is None:
             with self._lightning_span_processor:
                 yield self._lightning_span_processor
