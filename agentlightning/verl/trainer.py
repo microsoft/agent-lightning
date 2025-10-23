@@ -63,6 +63,7 @@ class AgentLightningTrainer(RayPPOTrainer):
     RayPPOTrainer and focusing on the agent mode workflow.
 
     Key differences from RayPPOTrainer:
+
     1. Uses AgentModeDaemon for server communication
     2. Simplified data flow without pop/union operations
     3. Direct batch processing through agent daemon

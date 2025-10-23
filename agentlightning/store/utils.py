@@ -57,6 +57,7 @@ async def healthcheck(
     Perform health check on all running rollouts in the store.
 
     This method should be called periodically to:
+
     1. Update rollout status to failed to succeeded when the attempt is done
     2. Check for unresponsive attempts (no heartbeat or spans for a while)
     3. Check for timed-out rollouts (running too long since start_time)

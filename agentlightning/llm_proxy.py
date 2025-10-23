@@ -167,8 +167,8 @@ class AddReturnTokenIds(CustomLogger):
     This mutates the outgoing request payload to include `return_token_ids=True`
     for backends that support token id return (e.g., vLLM).
 
-    See:
-        https://github.com/vllm-project/vllm/pull/22587
+    See also:
+        [vLLM PR #22587](https://github.com/vllm-project/vllm/pull/22587)
     """
 
     async def async_pre_call_hook(self, *args: Any, **kwargs: Any) -> Optional[Union[Exception, str, Dict[str, Any]]]:
