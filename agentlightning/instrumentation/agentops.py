@@ -13,6 +13,13 @@ from typing import Any, Callable, no_type_check
 import flask
 import requests
 import setproctitle
+import requests
+
+from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from agentops.sdk.exporters import AuthenticatedOTLPExporter
+from agentops.client.api import V4Client, V3Client
+
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +33,38 @@ __all__ = [
 # Module-level storage for originals
 _original_handle_chat_attributes: Callable[..., Any] | None = None
 _original_handle_response: Callable[..., Any] | None = None
+_switch = False
+
+
+def set_switch(value: bool):
+    """
+    Set the switch for exporters and clients to control their behavior.
+    """
+    global _switch
+    _switch = value
+    logger.info(f"Switch set to {value} for exporters and clients.")
+
+
+def _patch_exporters():
+    import agentops.sdk.core
+    import agentops.client.api
+
+    agentops.sdk.core.AuthenticatedOTLPExporter = SwitchableAuthenticatedOTLPExporter
+    agentops.sdk.core.OTLPMetricExporter = SwitchableOTLPMetricExporter
+    agentops.sdk.core.OTLPSpanExporter = SwitchableOTLPSpanExporter
+    agentops.client.api.V3Client = SwitchableV3Client
+    agentops.client.api.V4Client = SwitchableV4Client
+
+
+def _unpatch_exporters():
+    import agentops.sdk.core
+    import agentops.client.api
+    
+    agentops.sdk.core.AuthenticatedOTLPExporter = AuthenticatedOTLPExporter
+    agentops.sdk.core.OTLPMetricExporter = OTLPMetricExporter
+    agentops.sdk.core.OTLPSpanExporter = OTLPSpanExporter
+    agentops.client.api.V3Client = V3Client
+    agentops.client.api.V4Client = V4Client
 
 
 def _patch_new_agentops():
@@ -173,6 +212,8 @@ def instrument_agentops():
     Instrument agentops to capture token IDs.
     Automatically detects and uses the appropriate patching method based on the installed agentops version.
     """
+    _patch_exporters()
+
     # Try newest version first (tested for 0.4.16)
     try:
         return _patch_new_agentops()
@@ -192,6 +233,8 @@ def instrument_agentops():
 
 def uninstrument_agentops():
     """Uninstrument agentops to stop capturing token IDs."""
+    _unpatch_exporters()
+
     try:
         _unpatch_new_agentops()
     except Exception:
@@ -313,3 +356,78 @@ class AgentOpsServerManager:
                 f"AgentOps server port {self.server_port} is stored, but server process is not alive. Returning stored port."
             )
         return self.server_port
+
+
+class SwitchableAuthenticatedOTLPExporter(AuthenticatedOTLPExporter):
+
+    def export(self, *args, **kwargs):
+        if _switch:
+            return super().export(*args, **kwargs)
+        else:
+            logger.debug("SwitchableAuthenticatedOTLPExporter is switched off, skipping export.")
+            from opentelemetry.sdk.trace.export import SpanExportResult
+
+            return SpanExportResult.SUCCESS
+
+
+class SwitchableOTLPMetricExporter(OTLPMetricExporter):
+
+    def export(self, *args, **kwargs):
+        if _switch:
+            return super().export(*args, **kwargs)
+        else:
+            logger.debug("SwitchableOTLPMetricExporter is switched off, skipping export.")
+            from opentelemetry.sdk.metrics.export import MetricExportResult
+
+            return MetricExportResult.SUCCESS
+
+
+class SwitchableOTLPSpanExporter(OTLPSpanExporter):
+
+    def export(self, *args, **kwargs):
+        if _switch:
+            return super().export(*args, **kwargs)
+        else:
+            logger.debug("SwitchableOTLPSpanExporter is switched off, skipping export.")
+            from opentelemetry.sdk.trace.export import SpanExportResult
+
+            return SpanExportResult.SUCCESS
+
+
+class SwitchableV3Client(V3Client):
+
+    def fetch_auth_token(self, *args, **kwargs):
+        if _switch:
+            return super().post(*args, **kwargs)
+        else:
+            logger.debug("SwitchableV4Client is switched off, skipping fetch_auth_token request.")
+            return {"token": "dummy", "project_id": "dummy"}
+
+
+    async def async_request(self, *args, **kwargs):
+        if _switch:
+            return await super().async_request(*args, **kwargs)
+        else:
+            logger.debug("SwitchableV3Client is switched off, skipping async_request request.")
+            return {}
+
+
+class SwitchableV4Client(V4Client):
+
+    def post(self, *args, **kwargs):
+        if _switch:
+            return super().post(*args, **kwargs)
+        else:
+            logger.debug("SwitchableV4Client is switched off, skipping post request.")
+            response = requests.Response()
+            response.status_code = 200
+            response._content = b'{}'
+            return response
+
+
+    async def async_request(self, *args, **kwargs):
+        if _switch:
+            return await super().async_request(*args, **kwargs)
+        else:
+            logger.debug("SwitchableV3Client is switched off, skipping async_request request.")
+            return {}
