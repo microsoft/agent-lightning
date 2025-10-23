@@ -4,8 +4,6 @@
 
 ::: agentlightning.Triplet
 
-::: agentlightning.TaskInput
-
 ::: agentlightning.RolloutRawResult
 
 ::: agentlightning.RolloutMode

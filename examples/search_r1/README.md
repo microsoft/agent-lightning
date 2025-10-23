@@ -2,10 +2,20 @@
 
 ## Overview
 
-
-This example implements **Search R1** within Agent Lightning. It also serves as a demonstration of a **framework-free agent training pipeline**, showing how to run end-to-end RL training without relying on specialized frameworks.
+This example implements **Search R1** within Agent Lightning. It also serves as a demonstration of a **framework-free agent training pipeline**, showing how to run end-to-end RL training without relying on specialized frameworks. **It's tested and compatible with Agent-lightning v0.1.x**.
 
 The example is designed to run on a single node with 8 GPUs, each having at least 40 GB of memory.
+
+## Included Files
+
+| File/Directory | Description |
+|----------------|-------------|
+| `data_process.sh` | Prepares the Wikipedia corpus, datasets, and `retriever` conda environment |
+| `retrieval_launch.sh` | Launches the retrieval service backed by the processed corpus |
+| `retrieval_server.py` | FastAPI server that powers document retrieval during training |
+| `search_r1_agent.py` | Agent-Lightning rollout script implementing the Search-R1 workflow |
+| `train.sh` | Starts the RL training server that coordinates GRPO optimization |
+| `qa_em.py` | Exact-match evaluation utilities for validating model predictions |
 
 ---
 

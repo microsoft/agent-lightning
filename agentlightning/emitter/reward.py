@@ -1,5 +1,7 @@
 # Copyright (c) Microsoft. All rights reserved.
 
+"""Helpers for emitting reward spans and integrating with AgentOps telemetry."""
+
 import asyncio
 import inspect
 import json
@@ -47,20 +49,29 @@ FnType = TypeVar("FnType", bound=Callable[..., Any])
 
 
 def _agentops_initialized() -> bool:
-    """Check if AgentOps is initialized in the current context."""
+    """Return `True` when the AgentOps client has been configured."""
     return agentops.get_client().initialized
 
 
 def reward(fn: FnType) -> FnType:
-    """
-    A decorator to wrap a function that computes rewards.
-    It will automatically handle the input and output of the function.
+    """Decorate a reward function so its outputs are tracked as spans.
+
+    The decorator integrates with AgentOps when it is available and falls back to
+    the built-in telemetry otherwise. Both synchronous and asynchronous functions
+    are supported transparently.
+
+    Deprecated:
+        This decorator is deprecated. Use [`emit_reward`][agentlightning.emit_reward] instead.
+
+    Args:
+        fn: Callable that produces a numeric reward.
+
+    Returns:
+        Wrapped callable that preserves the original signature.
     """
 
     def wrap_result(result: Optional[float]) -> RewardSpanData:
-        """
-        Wrap the result of the function in a dict.
-        """
+        """Normalize the reward value into the span payload format."""
         if result is None:
             return {"type": "reward", "value": None}
         if not isinstance(result, (float, int)):  # type: ignore
@@ -119,8 +130,18 @@ def reward(fn: FnType) -> FnType:
 
 
 def emit_reward(reward: float) -> ReadableSpan:
-    """
-    Record a new reward as a new span.
+    """Emit a reward value as an OpenTelemetry span.
+
+    Args:
+        reward: Numeric reward to record. Integers and booleans are converted to
+            floating point numbers for consistency.
+
+    Returns:
+        Readable span capturing the recorded reward.
+
+    Raises:
+        ValueError: If the provided reward cannot be interpreted as a float or the
+            resulting span is not a [`ReadableSpan`](https://opentelemetry.io/docs/concepts/signals/traces/) instance.
     """
     logger.debug(f"Emitting reward: {reward}")
     if isinstance(reward, (int, bool)):
@@ -139,8 +160,13 @@ def emit_reward(reward: float) -> ReadableSpan:
 
 
 def get_reward_value(span: SpanLike) -> Optional[float]:
-    """
-    Get the reward value from a span.
+    """Extract the reward value from a span, if available.
+
+    Args:
+        span: Span object produced by AgentOps or Agent Lightning emitters.
+
+    Returns:
+        The reward encoded in the span or `None` when the span does not represent a reward.
     """
     for key in [
         "agentops.task.output",  # newer versions of agentops
@@ -178,35 +204,31 @@ def get_reward_value(span: SpanLike) -> Optional[float]:
 
 
 def is_reward_span(span: SpanLike) -> bool:
-    """
-    Check if a span is a reward span.
-    """
+    """Return ``True`` when the provided span encodes a reward value."""
     maybe_reward = get_reward_value(span)
     return maybe_reward is not None
 
 
 def find_reward_spans(spans: Sequence[SpanLike]) -> List[SpanLike]:
-    """
-    Find all reward spans in the given list of spans.
+    """Return all reward spans in the provided sequence.
 
     Args:
-        spans: A list of spans (either ReadableSpan or Span).
+        spans: Sequence containing [`ReadableSpan`](https://opentelemetry.io/docs/concepts/signals/traces/) objects or mocked span-like values.
 
     Returns:
-        A list of spans whose name matches the reward span name.
+        List of spans that could be parsed as rewards.
     """
     return [span for span in spans if is_reward_span(span)]
 
 
 def find_final_reward(spans: Sequence[SpanLike]) -> Optional[float]:
-    """
-    Get the last reward value from a list of spans.
+    """Return the last reward value present in the provided spans.
 
     Args:
-        spans: A list of spans (either ReadableSpan or Span).
+        spans: Sequence containing [`ReadableSpan`](https://opentelemetry.io/docs/concepts/signals/traces/) objects or mocked span-like values.
 
     Returns:
-        The reward value from the last reward span, or None if not found.
+        Reward value from the latest reward span, or `None` when none are found.
     """
     for span in reversed(spans):
         reward = get_reward_value(span)

@@ -4,7 +4,8 @@
 
 It's unclear whether or not this file is useful.
 It seems that LiteLLM owns its own telemetry from their own entrance
-https://docs.litellm.ai/docs/observability/agentops_integration
+
+[Related documentation](https://docs.litellm.ai/docs/observability/agentops_integration).
 """
 
 from typing import Any, Optional

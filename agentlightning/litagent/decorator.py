@@ -1,5 +1,7 @@
 # Copyright (c) Microsoft. All rights reserved.
 
+"""Convenience decorators for building lightweight `LitAgent` implementations."""
+
 from __future__ import annotations
 
 import functools
@@ -90,24 +92,25 @@ class FunctionalLitAgentFunc(Protocol[T_contra]):
 
 
 class FunctionalLitAgent(LitAgent[T]):
-    """A specialized LitAgent that wraps a function-based rollout that accepts
-    dynamically a task input and a configured resource (LLM / prompt template / ...).
+    """Adapter that turns plain rollout functions into [`LitAgent`][agentlightning.LitAgent] instances.
 
-    This class allows users to define agent behavior using a simple function
-    that takes task input and a resource, rather than implementing a full
-    LitAgent subclass.
+    The helper inspects the wrapped function to determine which resources to
+    inject, allowing both synchronous and asynchronous callables to participate
+    in the training loop without writing a dedicated subclass.
     """
 
     def __init__(self, rollout_func: FunctionalLitAgentFunc[T], *, strip_proxy: bool = True) -> None:
-        """
-        Initialize the FunctionalLitAgent with a functional rollout function.
+        """Initialize the wrapper around a rollout function.
 
         Args:
-            rollout_func: A function that defines the agent's behavior.
-                          Can be sync or async, and can optionally accept a Rollout parameter.
-                          The function signature determines which resources are injected (llm, prompt_template, etc.).
-            strip_proxy: Whether to strip the ProxyLLM resource into a LLM resource when the function accepts an llm parameter.
-                         Defaults to True.
+            rollout_func: Callable that implements the rollout. It may be synchronous
+                or asynchronous and can optionally receive a
+                [`Rollout`][agentlightning.Rollout] alongside resources such as
+                `llm` or `prompt_template`.
+            strip_proxy: When ``True``, convert
+                [`ProxyLLM`][agentlightning.ProxyLLM] inputs into
+                [`LLM`][agentlightning.LLM] instances before calling the
+                rollout function. Defaults to `True`.
         """
         super().__init__()
         self._rollout_func = rollout_func
@@ -138,12 +141,15 @@ class FunctionalLitAgent(LitAgent[T]):
         """Execute a synchronous rollout using the wrapped function.
 
         Args:
-            task: The task input data.
-            resources: Dictionary of named resources including LLMs.
-            rollout: The rollout object with metadata.
+            task: Task input data.
+            resources: Mapping of named resources available to the agent.
+            rollout: Rollout metadata provided by the runtime.
 
         Returns:
-            The result from the wrapped rollout function.
+            Result produced by the wrapped rollout function.
+
+        Raises:
+            RuntimeError: If the wrapped function is asynchronous.
         """
         if self._is_async:
             raise RuntimeError(f"{self._rollout_func} is asynchronous. Use rollout_async instead.")
@@ -155,12 +161,15 @@ class FunctionalLitAgent(LitAgent[T]):
         """Execute an asynchronous rollout using the wrapped function.
 
         Args:
-            task: The task input data.
-            resources: Dictionary of named resources including LLMs.
-            rollout: The rollout object with metadata.
+            task: Task input data.
+            resources: Mapping of named resources available to the agent.
+            rollout: Rollout metadata provided by the runtime.
 
         Returns:
-            The result from the wrapped rollout function.
+            Result produced by the wrapped rollout coroutine.
+
+        Raises:
+            RuntimeError: If the wrapped function is synchronous.
         """
         if not self._is_async:
             raise RuntimeError(f"{self._rollout_func} is synchronous. Use rollout instead.")
@@ -169,18 +178,19 @@ class FunctionalLitAgent(LitAgent[T]):
         return await self._rollout_func(task, **kwargs)  # type: ignore
 
     def _get_kwargs(self, resources: NamedResources, rollout: Rollout) -> Dict[str, Any]:
-        """Extract the kwargs needed for the rollout function based on its signature.
+        """Prepare keyword arguments expected by the wrapped rollout function.
 
-        Dynamically builds the kwargs dictionary by inspecting the function signature and
+
+        It dynamically builds the `kwargs` dictionary by inspecting the function signature and
         including only the parameters the function accepts. This allows flexible function
         signatures that can request any combination of: rollout, llm, and/or prompt_template.
 
         Args:
-            resources: Dictionary of named resources available for the rollout.
-            rollout: The rollout object with metadata.
+            resources: Mapping of named resources available for the rollout.
+            rollout: Rollout metadata provided by the runtime.
 
         Returns:
-            A dictionary of kwargs to pass to the rollout function.
+            Dictionary of keyword arguments to forward to the rollout function.
         """
 
         kwargs: Dict[str, Any] = {}
@@ -194,19 +204,19 @@ class FunctionalLitAgent(LitAgent[T]):
         return kwargs
 
     def _get_llm_resource(self, resources: NamedResources, rollout: Rollout) -> LLM:
-        """Extract the first LLM resource from the resources dictionary.
+        """Retrieve the first LLM resource from the available resources.
 
         Strip the ProxyLLM resource into a LLM resource if needed.
 
         Args:
-            resources: Dictionary of named resources.
-            rollout: The rollout object with metadata.
+            resources: Mapping of named resources.
+            rollout: Rollout metadata used when stripping proxy endpoints.
 
         Returns:
-            The first LLM resource found.
+            First [`LLM`][agentlightning.LLM] resource encountered.
 
         Raises:
-            ValueError: If no LLM resource is found.
+            ValueError: If no LLM resource is present.
         """
         resource_found: LLM | None = None
         for name, resource in resources.items():
@@ -225,17 +235,17 @@ class FunctionalLitAgent(LitAgent[T]):
         return resource_found
 
     def _get_prompt_template_resource(self, resources: NamedResources, rollout: Rollout) -> PromptTemplate:
-        """Extract the first PromptTemplate resource from the resources dictionary.
+        """Retrieve the first prompt template resource from the available resources.
 
         Args:
-            resources: Dictionary of named resources.
-            rollout: The rollout object with metadata. Not used in this method.
+            resources: Mapping of named resources.
+            rollout: Rollout metadata (unused).
 
         Returns:
-            The first PromptTemplate resource found.
+            First [`PromptTemplate`][agentlightning.PromptTemplate] resource encountered.
 
         Raises:
-            ValueError: If no PromptTemplate resource is found.
+            ValueError: If no prompt template resource is present.
         """
         resource_found: PromptTemplate | None = None
         for name, resource in resources.items():
@@ -253,21 +263,22 @@ class FunctionalLitAgent(LitAgent[T]):
         return resource_found
 
     def _strip_proxy_helper(self, proxy_llm: LLM, rollout: Rollout) -> LLM:
-        """Strip the ProxyLLM resource into a concrete LLM resource.
+        """Convert [`ProxyLLM`][agentlightning.ProxyLLM] instances into concrete LLMs.
 
-        This method resolves ProxyLLM instances to their concrete LLM implementation
+        It resolves ProxyLLM instances to their concrete LLM implementation
         by attaching the attempted rollout context. This is only used when the function
-        signature accepts an 'llm' parameter and strip_proxy is True.
+        signature accepts an `llm` parameter and strip_proxy is True.
 
         Args:
-            proxy_llm: The LLM resource, which may be a ProxyLLM.
-            rollout: The rollout object with metadata.
+            proxy_llm: Candidate LLM resource.
+            rollout: Rollout metadata that provides rollout and attempt identifiers.
 
         Returns:
-            The concrete LLM resource.
+            [`LLM`][agentlightning.LLM] with rollout context baked into the endpoint.
 
         Raises:
-            ValueError: If the rollout is not an AttemptedRollout (required for stripping ProxyLLM).
+            ValueError: If the rollout is not an
+                [`AttemptedRollout`][agentlightning.AttemptedRollout].
         """
 
         if not isinstance(proxy_llm, ProxyLLM):
@@ -293,41 +304,37 @@ def llm_rollout(*, strip_proxy: bool = True) -> Callable[[LlmRolloutFunc[T]], Fu
 def llm_rollout(
     func: LlmRolloutFunc[T] | None = None, *, strip_proxy: bool = True
 ) -> FunctionalLitAgent[T] | Callable[[LlmRolloutFunc[T]], FunctionalLitAgent[T]]:
-    """Create a FunctionalLitAgent from a function that takes (task, llm[, rollout]).
-
-    This decorator allows you to define an agent using a simple function
-    instead of creating a full LitAgent subclass. The returned FunctionalLitAgent
-    instance is callable, preserving the original function's behavior.
+    """Create a [`FunctionalLitAgent`][agentlightning.litagent.decorator.FunctionalLitAgent] for LLM-based rollouts.
 
     Args:
-        func: A function that defines the agent's behavior. Can be:
-              - sync: (task, llm) -> result
-              - sync with rollout: (task, llm, rollout) -> result
-              - async: async (task, llm) -> result
-              - async with rollout: async (task, llm, rollout) -> result
-        strip_proxy: Whether to strip the ProxyLLM resource into a LLM resource.
-                     Defaults to True.
+        func: Callable defining the agent's behaviour. Supported signatures include:
+
+            * `(task, llm) -> result`
+            * `(task, llm, rollout) -> result`
+            * `async (task, llm) -> result`
+            * `async (task, llm, rollout) -> result`
+
+        strip_proxy: When `True`, convert proxy resources into concrete
+            [`LLM`][agentlightning.LLM] instances before calling the
+            function. Defaults to `True`.
 
     Returns:
-        A callable FunctionalLitAgent instance that preserves the original function's
-        type hints and behavior while providing all agent functionality.
+        [`FunctionalLitAgent`][agentlightning.litagent.decorator.FunctionalLitAgent] that
+        wraps the supplied function.
 
-    Example:
+    Examples:
+        ```python
         @llm_rollout
         def my_agent(task, llm):
-            # Agent logic here
-            return response
+            return llm.endpoint
 
         @llm_rollout(strip_proxy=False)
         def my_agent_no_strip(task, llm):
-            # Agent logic here
-            return response
+            return llm.model
 
-        # Function is still callable with original behavior
         result = my_agent(task, llm)
-
-        # Agent methods are also available
         result = my_agent.rollout(task, resources, rollout)
+        ```
     """
 
     def decorator(f: LlmRolloutFunc[T]) -> FunctionalLitAgent[T]:
@@ -343,7 +350,7 @@ def llm_rollout(
 
 
 def _validate_llm_rollout_func(func: Any) -> TypeGuard[LlmRolloutFunc[Any]]:
-    """Validate the function signature of a LLM rollout function.
+    """Validate the function signature of an LLM rollout function.
 
     Ensures the function follows the expected pattern for LLM-based rollouts:
     - Must have at least 2 parameters
@@ -352,10 +359,10 @@ def _validate_llm_rollout_func(func: Any) -> TypeGuard[LlmRolloutFunc[Any]]:
     - Optionally can have a 'rollout' parameter
 
     Args:
-        func: The function to validate.
+        func: Function to inspect.
 
     Returns:
-        True if the function signature is valid.
+        `True` when the signature matches the supported patterns.
 
     Raises:
         ValueError: If the function signature does not match the expected pattern.
@@ -383,36 +390,34 @@ def prompt_rollout() -> Callable[[PromptRolloutFunc[T]], FunctionalLitAgent[T]]:
 def prompt_rollout(
     func: PromptRolloutFunc[T] | None = None,
 ) -> FunctionalLitAgent[T] | Callable[[PromptRolloutFunc[T]], FunctionalLitAgent[T]]:
-    """Create a FunctionalLitAgent from a function that takes (task, prompt_template[, rollout]).
+    """Create a [`FunctionalLitAgent`][agentlightning.litagent.decorator.FunctionalLitAgent] for prompt-based rollouts.
 
     This decorator is designed for agents that work with tunable prompt templates. It enables
     a workflow where algorithms manage and optimize the prompt template, while agents consume
     the template to perform rollouts. This is particularly useful for prompt optimization scenarios.
 
     Args:
-        func: A function that defines the agent's behavior. Can be:
-              - sync: (task, prompt_template) -> result
-              - sync with rollout: (task, prompt_template, rollout) -> result
-              - async: async (task, prompt_template) -> result
-              - async with rollout: async (task, prompt_template, rollout) -> result
+        func: Callable defining the agent's behavior. Supported signatures include:
+
+            * `(task, prompt_template) -> result`
+            * `(task, prompt_template, rollout) -> result`
+            * `async (task, prompt_template) -> result`
+            * `async (task, prompt_template, rollout) -> result`
 
     Returns:
-        A callable FunctionalLitAgent instance that preserves the original function's
-        type hints and behavior while providing all agent functionality.
+        [`FunctionalLitAgent`][agentlightning.litagent.decorator.FunctionalLitAgent] that
+        wraps the supplied function.
 
-    Example:
+    Examples:
+        ```python
         @prompt_rollout
         def my_agent(task, prompt_template):
-            # Use the prompt template to generate a response
             messages = prompt_template.format(task=task.input)
-            # ... perform rollout with the formatted prompt
-            return response
+            return messages
 
-        # Function is still callable with original behavior
         result = my_agent(task, prompt_template)
-
-        # Agent methods are also available
         result = my_agent.rollout(task, resources, rollout)
+        ```
     """
 
     def decorator(f: PromptRolloutFunc[T]) -> FunctionalLitAgent[T]:
@@ -435,10 +440,10 @@ def _validate_prompt_rollout_func(func: Any) -> TypeGuard[PromptRolloutFunc[Any]
     - Optionally can have a 'rollout' parameter
 
     Args:
-        func: The function to validate.
+        func: Function to inspect.
 
     Returns:
-        True if the function signature is valid.
+        `True` when the signature matches the supported patterns.
 
     Raises:
         ValueError: If the function signature does not match the expected pattern.
@@ -456,23 +461,30 @@ def _validate_prompt_rollout_func(func: Any) -> TypeGuard[PromptRolloutFunc[Any]
 
 
 def rollout(func: Union[LlmRolloutFunc[T], PromptRolloutFunc[T], Callable[..., Any]]) -> FunctionalLitAgent[T]:
-    """Create a LitAgent from a function, automatically detecting the appropriate type.
+    """Create a [`FunctionalLitAgent`][agentlightning.litagent.decorator.FunctionalLitAgent] from an arbitrary rollout function.
 
     This function inspects the provided callable and creates the appropriate
     agent type based on its signature. It supports both LLM-based and prompt-template-based
     agents. The returned agent instance is callable, preserving the original function's
     behavior and type hints.
 
+    See [`llm_rollout`][agentlightning.litagent.decorator.llm_rollout] and
+    [`prompt_rollout`][agentlightning.litagent.decorator.prompt_rollout] for more details.
+
     Args:
-        func: A function that defines the agent's behavior. Supported signatures:
-              - (task, llm[, rollout]) for LLM-based agents
-              - (task, prompt_template[, rollout]) for prompt-template-based agents
+        func: Callable that implements the rollout. Supported signatures:
+
+            - `[async ](task, llm[, rollout])` for LLM-based agents
+            - `[async ](task, prompt_template[, rollout])` for prompt-template-based agents
+
+            The supported output types of `func` is same as the return type of [`rollout`][agentlightning.LitAgent.rollout].
 
     Returns:
-        A callable FunctionalLitAgent instance that preserves the original function's
-        type hints and behavior while providing all agent functionality.
+        [`FunctionalLitAgent`][agentlightning.litagent.decorator.FunctionalLitAgent] that
+        wraps the supplied function.
 
-    Example:
+    Examples:
+        ```python
         # LLM-based agent
         @rollout
         def my_llm_agent(task, llm):
@@ -495,6 +507,7 @@ def rollout(func: Union[LlmRolloutFunc[T], PromptRolloutFunc[T], Callable[..., A
 
         # Agent methods are also available
         result = my_llm_agent.rollout(task, resources, rollout)
+        ```
 
     Raises:
         NotImplementedError: If the function signature doesn't match any known patterns.

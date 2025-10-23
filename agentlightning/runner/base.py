@@ -1,11 +1,6 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-"""Base runner interface for executing agent tasks.
-
-This module defines the abstract base class for all runner implementations
-in the agent-lightning framework. Runners are responsible for managing the
-execution lifecycle of agents and coordinating with the store.
-"""
+"""Abstract runner interface for executing agent tasks."""
 
 from __future__ import annotations
 
@@ -28,89 +23,74 @@ logger = logging.getLogger(__name__)
 
 
 class Runner(ParallelWorkerBase, Generic[T_task]):
-    """Base class for all runners.
+    """Abstract base class for long-running agent executors.
 
-    This abstract base class defines the interface that all runner implementations
-    must follow. Runners are responsible for executing agent tasks, managing the
-    execution lifecycle, and coordinating with the store.
+    Runner implementations coordinate [`LitAgent`][agentlightning.LitAgent]
+    instances, acquire work from a [`LightningStore`][agentlightning.LightningStore],
+    and emit [`Rollout`][agentlightning.Rollout] objects. Subclasses decide how
+    to schedule work (polling, streaming, etc.) while this base class provides a
+    minimal lifecycle contract.
     """
 
     def init(self, agent: LitAgent[T_task], **kwargs: Any) -> None:
-        """Initialize the runner with the agent.
+        """Prepare the runner to execute tasks for `agent`.
 
-        This method is called once during setup to configure the runner with
-        the agent it will execute.
+        This method is called only once during the setup for all workers, not for each worker.
 
         Args:
-            agent: The LitAgent instance to be managed by this runner.
-            **kwargs: Additional initialization arguments specific to the runner implementation.
+            agent: Agent instance providing task-specific logic.
+            **kwargs: Optional runner-specific configuration.
 
         Raises:
-            NotImplementedError: Must be implemented by subclasses.
+            NotImplementedError: Subclasses must supply the initialization
+                routine.
         """
         raise NotImplementedError()
 
     def init_worker(self, worker_id: int, store: LightningStore, **kwargs: Any) -> None:
-        """Initialize the runner for each worker with worker_id and store.
+        """Configure worker-local state before processing tasks.
 
-        This method is called once per worker process in a distributed setup.
-        It provides the worker with its unique ID and the store instance for
-        task coordination.
+        This method is called for **each** worker during the setup.
 
         Args:
-            worker_id: Unique identifier for this worker process.
-            store: The LightningStore instance for task coordination and data persistence.
-            **kwargs: Additional worker-specific initialization arguments.
+            worker_id: Unique identifier for this worker process or thread.
+            store: Shared [`LightningStore`][agentlightning.LightningStore]
+                backing task coordination.
+            **kwargs: Optional worker-specific configuration.
 
         Raises:
-            NotImplementedError: Must be implemented by subclasses.
+            NotImplementedError: Subclasses must prepare per-worker resources.
         """
         raise NotImplementedError()
 
     def run(self, *args: Any, **kwargs: Any) -> None:
-        """Undefined method - use iter() or step() instead.
+        """Deprecated synchronous entry point.
 
-        This method is intentionally not implemented as the execution behavior
-        should be defined through iter() for continuous execution or step()
-        for single-task execution.
-
-        Args:
-            *args: Unused positional arguments.
-            **kwargs: Unused keyword arguments.
+        Use [`iter()`][agentlightning.Runner.iter] or [`step()`][agentlightning.Runner.step] instead.
 
         Raises:
-            RuntimeError: Always raised to indicate this method should not be used.
+            RuntimeError: Always raised to direct callers to
+                [iter()][agentlightning.Runner.iter] or
+                [step()][agentlightning.Runner.step].
         """
         raise RuntimeError("The behavior of run() of Runner is undefined. Use iter() or step() instead.")
 
     def teardown(self, *args: Any, **kwargs: Any) -> None:
-        """Clean up runner resources and reset state.
-
-        This method is called once during shutdown to clean up any resources
-        allocated during initialization and reset the runner state.
-
-        Args:
-            *args: Additional teardown arguments.
-            **kwargs: Additional teardown keyword arguments.
+        """Release resources acquired during [`init()`][agentlightning.Runner.init].
 
         Raises:
-            NotImplementedError: Must be implemented by subclasses.
+            NotImplementedError: Subclasses must implement the shutdown routine.
         """
         raise NotImplementedError()
 
     def teardown_worker(self, worker_id: int, *args: Any, **kwargs: Any) -> None:
-        """Clean up worker-specific resources.
-
-        This method is called once per worker during shutdown to clean up
-        any resources specific to that worker.
+        """Release per-worker resources allocated by [`init_worker()`][agentlightning.Runner.init_worker].
 
         Args:
-            worker_id: The unique identifier of the worker being torn down.
-            *args: Additional teardown arguments.
-            **kwargs: Additional teardown keyword arguments.
+            worker_id: Identifier of the worker being torn down.
 
         Raises:
-            NotImplementedError: Must be implemented by subclasses.
+            NotImplementedError: Subclasses must implement the shutdown routine.
         """
         raise NotImplementedError()
 
@@ -123,17 +103,20 @@ class Runner(ParallelWorkerBase, Generic[T_task]):
         hooks: Optional[Sequence[Hook]] = None,
         worker_id: Optional[int] = None,
     ) -> Iterator[Runner[T_task]]:
-        """Context manager for quickly init and teardown the runner,
-        so that you can debug the runner without a trainer environment.
+        """Initialize and tear down a runner within a simple context manager.
+
+        The helper is primarily intended for debugging runner implementations
+        outside of a full [`Trainer`][agentlightning.Trainer] stack.
 
         Args:
-            agent: The LitAgent instance to be managed by this runner.
-                   It should be the same agent that is to be run within the context.
-            store: The LightningStore instance for task coordination and data persistence.
-                   If you don't have one, you can easily create one with `InMemoryLightningStore()`.
-            hooks: Optional sequence of Hook instances to be used by the runner.
-                   Only some runners support hooks.
-            worker_id: Optional worker ID to be used by the runner.
+            agent: Agent executed by this runner.
+            store: Backing [`LightningStore`][agentlightning.LightningStore].
+                If you don't have one, you can easily create one with
+                [`InMemoryLightningStore`][agentlightning.InMemoryLightningStore].
+            hooks: Optional sequence of hooks recognised by the runner.
+                Not all runners support hooks.
+            worker_id: Override the worker identifier used during setup. Defaults
+                to `0`.
         """
         _initialized: bool = False
         _worker_initialized: bool = False
@@ -163,12 +146,11 @@ class Runner(ParallelWorkerBase, Generic[T_task]):
         them until interrupted by the event or when no more tasks are available.
 
         Args:
-            event: Optional ExecutionEvent object that can be used to signal the runner
-                to stop gracefully. When set, the runner should finish its current
-                task and exit the iteration loop.
+            event: Cooperative stop signal. When set, the runner should complete
+                the current unit of work and exit the loop.
 
         Raises:
-            NotImplementedError: Must be implemented by subclasses.
+            NotImplementedError: Subclasses provide the iteration behavior.
         """
         raise NotImplementedError()
 
@@ -186,18 +168,15 @@ class Runner(ParallelWorkerBase, Generic[T_task]):
         directly, bypassing the store's task queue.
 
         Args:
-            input: The task input to be processed by the agent.
-            resources: Optional named resources to be used for this specific task.
-                If not provided, the latest resources from the store will be used.
-            mode: Optional rollout mode (e.g., "train", "test"). If not provided,
-                the default mode will be used.
-            event: Optional ExecutionEvent object to signal interruption. When set, the
-                runner may abort the current execution.
+            input: Task payload consumed by the agent.
+            resources: Optional named resources scoped to this invocation.
+            mode: Optional rollout mode such as `"train"` or `"eval"`.
+            event: Cooperative stop signal for long-running tasks.
 
         Returns:
-            The completed rollout.
+            Completed rollout produced by the agent.
 
         Raises:
-            NotImplementedError: Must be implemented by subclasses.
+            NotImplementedError: Subclasses provide the execution behavior.
         """
         raise NotImplementedError()

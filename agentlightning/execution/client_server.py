@@ -19,45 +19,44 @@ logger = logging.getLogger(__name__)
 
 
 class ClientServerExecutionStrategy(ExecutionStrategy):
-    """Run algorithm (server) and runners (clients) as separate processes over HTTP.
+    """Run algorithm and runner bundles as separate processes over HTTP.
 
-    **Execution Roles:**
+    Execution Roles:
 
-    - "algorithm": Start the HTTP server (`LightningStoreServer`) in-process and run the
-      algorithm bundle against it.
-    - "runner": Connect to an already running server via `LightningStoreClient` and
-      execute runner bundles (optionally in multiple processes).
-    - "both": Spawn the runner processes first, then launch the algorithm/server
-      bundle on the main process. This mode orchestrates the full loop locally.
+    - `"algorithm"`: Start [`LightningStoreServer`][agentlightning.LightningStoreServer]
+      in-process and execute the algorithm bundle against it.
+    - `"runner"`: Connect to an existing server with
+      [`LightningStoreClient`][agentlightning.LightningStoreClient] and run the
+      runner bundle locally (spawning multiple processes when requested).
+    - `"both"`: Spawn runner processes first, then execute the algorithm and
+      server on the same machine. This mode orchestrates the full loop locally.
 
-    When role == "both", you may choose which side runs on the main process via
-    `main_process` (debug helper). Running the runner bundle on the main process
-    is only supported with `n_runners == 1`.
+    When `role == "both"` you may choose which side runs on the main process
+    via `main_process`. The runner-on-main option is limited to
+    `n_runners == 1` because each additional runner requires its own event
+    loop and process.
 
-    Important: When `main_process == "runner"`, the algorithm runs in a subprocess
-    with the LightningStore server. This means any state modifications made during
-    execution remain in that subprocess and are NOT reflected in the original store
-    object passed to `execute()`. The main process runner accesses the store only
-    through the HTTP client interface.
+    !!! warning
+        When `main_process == "runner"` the algorithm and HTTP server execute
+        in a child process. Store mutations remain isolated inside that process,
+        so the original store instance passed to
+        [execute()][agentlightning.ExecutionStrategy.execute] is not updated.
 
-    **Abort / Stop Model (four-step escalation):**
+    Abort Model (four-step escalation):
 
-    1. Cooperative stop:
-       A shared [`MultiprocessingEvent`][agentlightning.MultiprocessingEvent]
-       (`stop_evt`) is passed to *all* bundles. Bundles should check it to exit.
-       Any crash (algorithm or runner) sets `stop_evt` so the other side can
-       stop cooperatively. Ctrl+C on the main process also flips the event.
-    2. KeyboardInterrupt synth:
-       Remaining subprocesses receive `SIGINT` to trigger `KeyboardInterrupt`
-       handlers.
-    3. Termination:
-       Stubborn subprocesses get `terminate()` (SIGTERM on POSIX).
-    4. Kill:
-        As a last resort we call `kill()` (SIGKILL on POSIX).
+    1. Cooperative stop. Every bundle receives a shared
+       [`MultiprocessingEvent`][agentlightning.MultiprocessingEvent] (`stop_evt`).
+       Any failure flips the event so peers can exit cleanly. Ctrl+C on the main
+       process also sets the flag.
+    2. KeyboardInterrupt synthesis. Remaining subprocesses receive ``SIGINT`` to
+       trigger `KeyboardInterrupt` handlers.
+    3. Termination. Stubborn processes are asked to ``terminate()``
+       (`SIGTERM` on POSIX).
+    4. Kill. As a last resort `kill()` is invoked (`SIGKILL` on POSIX).
 
-    Notes:
-        This mirrors the semantics implemented in :mod:`shared_memory`, but adapted
-        to multiple processes and the HTTP client/server boundary.
+    This mirrors the semantics implemented in
+    [`SharedMemoryExecutionStrategy`][agentlightning.SharedMemoryExecutionStrategy]
+    but adapts them to multiple processes and the HTTP client/server boundary.
     """
 
     alias: str = "cs"
@@ -77,12 +76,12 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
 
         Args:
             role: Which side(s) to run in this process. When omitted, the
-                :envvar:`AGL_CURRENT_ROLE` environment variable is used.
+                `AGL_CURRENT_ROLE` environment variable is used.
             server_host: Interface the HTTP server binds to when running the
-                algorithm bundle locally. Defaults to :envvar:`AGL_SERVER_HOST`
-                or ``"localhost"`` if unset.
+                algorithm bundle locally. Defaults to `AGL_SERVER_HOST`
+                or `"localhost"` if unset.
             server_port: Port for the HTTP server in "algorithm"/"both" modes.
-                Defaults to :envvar:`AGL_SERVER_PORT` or ``4747`` if unset.
+                Defaults to `AGL_SERVER_PORT` or `4747` if unset.
             n_runners: Number of runner processes to spawn in "runner"/"both".
             graceful_timeout: How long to wait (seconds) after setting the stop
                 event before escalating to signals.
@@ -91,9 +90,9 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
             main_process: Which bundle runs on the main process when
                 `role == "both"`. `"runner"` requires `n_runners == 1` and is
                 primarily intended for debugging.
-            managed_store: When ``True`` (default) the strategy constructs
+            managed_store: When `True` (default) the strategy constructs
                 LightningStore client/server wrappers automatically. When
-                ``False`` the provided ``store`` is passed directly to the
+                `False` the provided `store` is passed directly to the
                 bundles, allowing callers to manage store wrappers manually.
         """
         if role is None:

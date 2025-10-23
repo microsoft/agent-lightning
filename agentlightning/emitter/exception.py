@@ -13,7 +13,15 @@ logger = logging.getLogger(__name__)
 
 
 def emit_exception(exception: BaseException) -> None:
-    """Emit an exception as a span."""
+    """Record an exception with OpenTelemetry metadata.
+
+    Args:
+        exception: Raised exception instance to serialize into telemetry attributes.
+
+    !!! note
+        The helper validates its input. Non-exception values are ignored to prevent
+        noisy telemetry and indicate programming mistakes via the logger.
+    """
     if not isinstance(exception, BaseException):  # type: ignore
         logger.error(f"Expected an BaseException instance, got: {type(exception)}. Skip emit_exception.")
         return

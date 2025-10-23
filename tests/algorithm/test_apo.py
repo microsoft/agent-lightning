@@ -15,10 +15,10 @@ from agentlightning.algorithm.apo.apo import APO, RolloutResultForAPO, Versioned
 from agentlightning.types import (
     Dataset,
     NamedResources,
-    PromptTemplate,
 )
-from agentlightning.types import Resource as SpanResource
+from agentlightning.types import OtelResource as SpanResource
 from agentlightning.types import (
+    PromptTemplate,
     Rollout,
     Span,
     SpanContext,

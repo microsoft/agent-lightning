@@ -98,6 +98,7 @@ class LightningStoreServer(LightningStore):
     def __init__(self, store: LightningStore, host: str, port: int):
         super().__init__()
         self.store = store
+        self._lock = threading.Lock()
         self.host = host
         self.port = port
         self.app: FastAPI | None = FastAPI(title="LightningStore Server")
@@ -149,6 +150,7 @@ class LightningStoreServer(LightningStore):
         self.port = state["port"]
         self._owner_pid = state["_owner_pid"]
         self._client = None
+        self._lock = threading.Lock()
         # Do NOT reconstruct app, _uvicorn_config, _uvicorn_server
         # to avoid transferring server state to subprocess
 
@@ -280,7 +282,7 @@ class LightningStoreServer(LightningStore):
 
         @self.app.post("/start_rollout", response_model=AttemptedRollout)
         async def start_rollout(request: RolloutRequest):  # pyright: ignore[reportUnusedFunction]
-            return await self.store.start_rollout(
+            return await self.start_rollout(
                 input=request.input,
                 mode=request.mode,
                 resources_id=request.resources_id,
@@ -290,7 +292,7 @@ class LightningStoreServer(LightningStore):
 
         @self.app.post("/enqueue_rollout", response_model=Rollout)
         async def enqueue_rollout(request: RolloutRequest):  # pyright: ignore[reportUnusedFunction]
-            return await self.store.enqueue_rollout(
+            return await self.enqueue_rollout(
                 input=request.input,
                 mode=request.mode,
                 resources_id=request.resources_id,
@@ -300,65 +302,65 @@ class LightningStoreServer(LightningStore):
 
         @self.app.get("/dequeue_rollout", response_model=Optional[AttemptedRollout])
         async def dequeue_rollout():  # pyright: ignore[reportUnusedFunction]
-            return await self.store.dequeue_rollout()
+            return await self.dequeue_rollout()
 
         @self.app.post("/start_attempt", response_model=AttemptedRollout)
         async def start_attempt(request: RolloutId):  # pyright: ignore[reportUnusedFunction]
-            return await self.store.start_attempt(request.rollout_id)
+            return await self.start_attempt(request.rollout_id)
 
         @self.app.post("/query_rollouts", response_model=List[Rollout])
         async def query_rollouts(request: QueryRolloutsRequest):  # pyright: ignore[reportUnusedFunction]
-            return await self.store.query_rollouts(status=request.status)
+            return await self.query_rollouts(status=request.status, rollout_ids=request.rollout_ids)
 
         @self.app.get("/query_attempts/{rollout_id}", response_model=List[Attempt])
         async def query_attempts(rollout_id: str):  # pyright: ignore[reportUnusedFunction]
-            return await self.store.query_attempts(rollout_id)
+            return await self.query_attempts(rollout_id)
 
         @self.app.get("/get_latest_attempt/{rollout_id}", response_model=Optional[Attempt])
         async def get_latest_attempt(rollout_id: str):  # pyright: ignore[reportUnusedFunction]
-            return await self.store.get_latest_attempt(rollout_id)
+            return await self.get_latest_attempt(rollout_id)
 
         @self.app.get("/get_rollout_by_id/{rollout_id}", response_model=Optional[Rollout])
         async def get_rollout_by_id(rollout_id: str):  # pyright: ignore[reportUnusedFunction]
-            return await self.store.get_rollout_by_id(rollout_id)
+            return await self.get_rollout_by_id(rollout_id)
 
         @self.app.post("/add_resources", response_model=ResourcesUpdate)
         async def add_resources(resources: AddResourcesRequest):  # pyright: ignore[reportUnusedFunction]
-            return await self.store.add_resources(resources.resources)
+            return await self.add_resources(resources.resources)
 
         @self.app.post("/update_resources", response_model=ResourcesUpdate)
         async def update_resources(update: ResourcesUpdate):  # pyright: ignore[reportUnusedFunction]
-            return await self.store.update_resources(update.resources_id, update.resources)
+            return await self.update_resources(update.resources_id, update.resources)
 
         @self.app.get("/get_resources_by_id/{resources_id}", response_model=Optional[ResourcesUpdate])
         async def get_resources_by_id(resources_id: str):  # pyright: ignore[reportUnusedFunction]
-            return await self.store.get_resources_by_id(resources_id)
+            return await self.get_resources_by_id(resources_id)
 
         @self.app.get("/get_latest_resources", response_model=Optional[ResourcesUpdate])
         async def get_latest_resources():  # pyright: ignore[reportUnusedFunction]
-            return await self.store.get_latest_resources()
+            return await self.get_latest_resources()
 
         @self.app.post("/add_span", response_model=Span)
         async def add_span(span: Span):  # pyright: ignore[reportUnusedFunction]
-            return await self.store.add_span(span)
+            return await self.add_span(span)
 
         @self.app.get("/get_next_span_sequence_id/{rollout_id}/{attempt_id}", response_model=int)
         async def get_next_span_sequence_id(rollout_id: str, attempt_id: str):  # pyright: ignore[reportUnusedFunction]
-            return await self.store.get_next_span_sequence_id(rollout_id, attempt_id)
+            return await self.get_next_span_sequence_id(rollout_id, attempt_id)
 
         @self.app.post("/wait_for_rollouts", response_model=List[Rollout])
         async def wait_for_rollouts(request: WaitForRolloutsRequest):  # pyright: ignore[reportUnusedFunction]
-            return await self.store.wait_for_rollouts(rollout_ids=request.rollout_ids, timeout=request.timeout)
+            return await self.wait_for_rollouts(rollout_ids=request.rollout_ids, timeout=request.timeout)
 
         @self.app.get("/query_spans/{rollout_id}", response_model=List[Span])
         async def query_spans(  # pyright: ignore[reportUnusedFunction]
             rollout_id: str, attempt_id: Optional[str] = None
         ):
-            return await self.store.query_spans(rollout_id, attempt_id)
+            return await self.query_spans(rollout_id, attempt_id)
 
         @self.app.post("/update_rollout", response_model=Rollout)
         async def update_rollout(request: UpdateRolloutRequest):  # pyright: ignore[reportUnusedFunction]
-            return await self.store.update_rollout(
+            return await self.update_rollout(
                 rollout_id=request.rollout_id,
                 input=request.input if not isinstance(request.input, PydanticUnset) else UNSET,
                 mode=request.mode if not isinstance(request.mode, PydanticUnset) else UNSET,
@@ -370,7 +372,7 @@ class LightningStoreServer(LightningStore):
 
         @self.app.post("/update_attempt", response_model=Attempt)
         async def update_attempt(request: UpdateAttemptRequest):  # pyright: ignore[reportUnusedFunction]
-            return await self.store.update_attempt(
+            return await self.update_attempt(
                 rollout_id=request.rollout_id,
                 attempt_id=request.attempt_id,
                 status=request.status if not isinstance(request.status, PydanticUnset) else UNSET,
@@ -382,6 +384,18 @@ class LightningStoreServer(LightningStore):
             )
 
     # Delegate methods
+    async def _call_store_method(self, method_name: str, *args: Any, **kwargs: Any) -> Any:
+        backend = self._backend()
+        method = getattr(backend, method_name)
+        if backend is self.store:
+            if method_name == "wait_for_rollouts":
+                # wait_for_rollouts can block for a long time; avoid holding the lock
+                # so other requests can make progress while we wait.
+                return await method(*args, **kwargs)
+            with self._lock:
+                return await method(*args, **kwargs)
+        return await method(*args, **kwargs)
+
     async def start_rollout(
         self,
         input: TaskInput,
@@ -390,7 +404,14 @@ class LightningStoreServer(LightningStore):
         config: RolloutConfig | None = None,
         metadata: Dict[str, Any] | None = None,
     ) -> AttemptedRollout:
-        return await self._backend().start_rollout(input, mode, resources_id, config, metadata)
+        return await self._call_store_method(
+            "start_rollout",
+            input,
+            mode,
+            resources_id,
+            config,
+            metadata,
+        )
 
     async def enqueue_rollout(
         self,
@@ -400,45 +421,52 @@ class LightningStoreServer(LightningStore):
         config: RolloutConfig | None = None,
         metadata: Dict[str, Any] | None = None,
     ) -> Rollout:
-        return await self._backend().enqueue_rollout(input, mode, resources_id, config, metadata)
+        return await self._call_store_method(
+            "enqueue_rollout",
+            input,
+            mode,
+            resources_id,
+            config,
+            metadata,
+        )
 
     async def dequeue_rollout(self) -> Optional[AttemptedRollout]:
-        return await self._backend().dequeue_rollout()
+        return await self._call_store_method("dequeue_rollout")
 
     async def start_attempt(self, rollout_id: str) -> AttemptedRollout:
-        return await self._backend().start_attempt(rollout_id)
+        return await self._call_store_method("start_attempt", rollout_id)
 
     async def query_rollouts(
         self, *, status: Optional[Sequence[RolloutStatus]] = None, rollout_ids: Optional[Sequence[str]] = None
     ) -> List[Rollout]:
-        return await self._backend().query_rollouts(status=status, rollout_ids=rollout_ids)
+        return await self._call_store_method("query_rollouts", status=status, rollout_ids=rollout_ids)
 
     async def query_attempts(self, rollout_id: str) -> List[Attempt]:
-        return await self._backend().query_attempts(rollout_id)
+        return await self._call_store_method("query_attempts", rollout_id)
 
     async def get_latest_attempt(self, rollout_id: str) -> Optional[Attempt]:
-        return await self._backend().get_latest_attempt(rollout_id)
+        return await self._call_store_method("get_latest_attempt", rollout_id)
 
     async def get_rollout_by_id(self, rollout_id: str) -> Optional[Rollout]:
-        return await self._backend().get_rollout_by_id(rollout_id)
+        return await self._call_store_method("get_rollout_by_id", rollout_id)
 
     async def add_resources(self, resources: NamedResources) -> ResourcesUpdate:
-        return await self._backend().add_resources(resources)
+        return await self._call_store_method("add_resources", resources)
 
     async def update_resources(self, resources_id: str, resources: NamedResources) -> ResourcesUpdate:
-        return await self._backend().update_resources(resources_id, resources)
+        return await self._call_store_method("update_resources", resources_id, resources)
 
     async def get_resources_by_id(self, resources_id: str) -> Optional[ResourcesUpdate]:
-        return await self._backend().get_resources_by_id(resources_id)
+        return await self._call_store_method("get_resources_by_id", resources_id)
 
     async def get_latest_resources(self) -> Optional[ResourcesUpdate]:
-        return await self._backend().get_latest_resources()
+        return await self._call_store_method("get_latest_resources")
 
     async def add_span(self, span: Span) -> Span:
-        return await self._backend().add_span(span)
+        return await self._call_store_method("add_span", span)
 
     async def get_next_span_sequence_id(self, rollout_id: str, attempt_id: str) -> int:
-        return await self._backend().get_next_span_sequence_id(rollout_id, attempt_id)
+        return await self._call_store_method("get_next_span_sequence_id", rollout_id, attempt_id)
 
     async def add_otel_span(
         self,
@@ -447,17 +475,23 @@ class LightningStoreServer(LightningStore):
         readable_span: ReadableSpan,
         sequence_id: int | None = None,
     ) -> Span:
-        return await self._backend().add_otel_span(rollout_id, attempt_id, readable_span, sequence_id)
+        return await self._call_store_method(
+            "add_otel_span",
+            rollout_id,
+            attempt_id,
+            readable_span,
+            sequence_id,
+        )
 
     async def wait_for_rollouts(self, *, rollout_ids: List[str], timeout: Optional[float] = None) -> List[Rollout]:
-        return await self._backend().wait_for_rollouts(rollout_ids=rollout_ids, timeout=timeout)
+        return await self._call_store_method("wait_for_rollouts", rollout_ids=rollout_ids, timeout=timeout)
 
     async def query_spans(
         self,
         rollout_id: str,
         attempt_id: str | Literal["latest"] | None = None,
     ) -> List[Span]:
-        return await self._backend().query_spans(rollout_id, attempt_id)
+        return await self._call_store_method("query_spans", rollout_id, attempt_id)
 
     async def update_rollout(
         self,
@@ -469,14 +503,15 @@ class LightningStoreServer(LightningStore):
         config: RolloutConfig | Unset = UNSET,
         metadata: Optional[Dict[str, Any]] | Unset = UNSET,
     ) -> Rollout:
-        return await self._backend().update_rollout(
-            rollout_id=rollout_id,
-            input=input,
-            mode=mode,
-            resources_id=resources_id,
-            status=status,
-            config=config,
-            metadata=metadata,
+        return await self._call_store_method(
+            "update_rollout",
+            rollout_id,
+            input,
+            mode,
+            resources_id,
+            status,
+            config,
+            metadata,
         )
 
     async def update_attempt(
@@ -488,13 +523,14 @@ class LightningStoreServer(LightningStore):
         last_heartbeat_time: float | Unset = UNSET,
         metadata: Optional[Dict[str, Any]] | Unset = UNSET,
     ) -> Attempt:
-        return await self._backend().update_attempt(
-            rollout_id=rollout_id,
-            attempt_id=attempt_id,
-            status=status,
-            worker_id=worker_id,
-            last_heartbeat_time=last_heartbeat_time,
-            metadata=metadata,
+        return await self._call_store_method(
+            "update_attempt",
+            rollout_id,
+            attempt_id,
+            status,
+            worker_id,
+            last_heartbeat_time,
+            metadata,
         )
 
 

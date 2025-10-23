@@ -28,8 +28,8 @@ from agentlightning.types import (
     AttemptedRollout,
     Event,
     Link,
+    OtelResource,
     PromptTemplate,
-    Resource,
     ResourcesUpdate,
     Rollout,
     RolloutConfig,
@@ -180,6 +180,27 @@ async def test_get_rollout_by_id(inmemory_store: InMemoryLightningStore) -> None
     updated = await inmemory_store.get_rollout_by_id(created.rollout_id)
     assert updated is not None
     assert updated.status == "running"
+
+
+@pytest.mark.asyncio
+async def test_store_lock_rebinds_to_new_event_loop(
+    inmemory_store: InMemoryLightningStore,
+) -> None:
+    """The in-memory store can be reused after switching to a new event loop."""
+
+    rollout = await inmemory_store.enqueue_rollout(input={"foo": "bar"})
+
+    def run_in_new_loop() -> Optional[Rollout]:
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(inmemory_store.get_rollout_by_id(rollout.rollout_id))
+        finally:
+            loop.close()
+
+    retrieved = await asyncio.to_thread(run_in_new_loop)
+
+    assert retrieved is not None
+    assert retrieved.rollout_id == rollout.rollout_id
 
 
 @pytest.mark.asyncio
@@ -701,7 +722,7 @@ def test_estimate_model_size_handles_span_objects() -> None:
     context = SpanContext(trace_id="trace", span_id="parent", is_remote=False, trace_state={"foo": "bar"})
     event = Event(name="step", attributes={"detail": "value"}, timestamp=1.0)
     link = Link(context=context, attributes=None)
-    resource = Resource(attributes={"service.name": "unit"}, schema_url="schema")
+    resource = OtelResource(attributes={"service.name": "unit"}, schema_url="schema")
 
     span = Span(
         rollout_id="ro-1",

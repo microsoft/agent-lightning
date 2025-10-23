@@ -2,19 +2,25 @@
 
 Agent Lightning is the absolute trainer to light up AI agents.
 
+[Join our Discord community](https://discord.gg/RYk7CdvDR7) to connect with other users and contributors.
+
 ## Features
 
 - Turn your agent into an optimizable beast with **ZERO CODE CHANGE** (almost)! 💤
-- Build with **ANY** agent framework (LangChain, OpenAI Agent SDK, AutoGen, CrewAI, ...); or even WITHOUT agent framework (Python OpenAI). You name it! 🤖
+- Build with **ANY** agent framework (LangChain, OpenAI Agent SDK, AutoGen, CrewAI, Microsoft Agent Framework...); or even WITHOUT agent framework (Python OpenAI). You name it! 🤖
 - **Selectively** optimize one or more agents in a multi-agent system. 🎯
-- Embraces Reinforcement Learning, Automatic Prompt Optimization and more **algorithms**. 🤗
+- Embraces **Algorithms** like Reinforcement Learning, Automatic Prompt Optimization, Supervised Fine-tuning and more. 🤗
 
-## Quick Links
+## How to Read this Documentation
+
+This documentation is organized into the following parts:
 
 - [Installation](tutorials/installation.md) - Get started with Agent Lightning
-- [Train First Agent with APO](how-to/train-first-agent.md) - Learn the fundamentals of Agent Lightning
-- [Train SQL Agent with RL](how-to/train-sql-agent.md) - A practical example of training a SQL agent
-- [Join our Discord community](https://discord.gg/RYk7CdvDR7) - Connect with other users and contributors
+- How-to Recipes (e.g., [Train SQL Agent with RL](how-to/train-sql-agent.md)) - Practical examples of training agents and customizing algorithms.
+- Learning More (e.g., [Debugging](tutorials/debug.md)) - Guides on specific topics like debugging or parallelization.
+- Algorithm Zoo (e.g., [APO](algorithm-zoo/apo.md)) - References for built-in algorithms.
+- Deep Dive (e.g., [Bird's Eye View](deep-dive/birds-eye-view.md)) - For a deeper understanding of what Agent-lightning is doing under the hood.
+- API References (e.g., [Agent](reference/agent.md)) - References for the Agent-lightning Python API.
 
 ## Resources
 

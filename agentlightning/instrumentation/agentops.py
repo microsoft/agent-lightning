@@ -10,6 +10,7 @@ import time
 from typing import Any, Callable
 
 import flask
+import requests
 import setproctitle
 
 logger = logging.getLogger(__name__)
@@ -238,7 +239,19 @@ class AgentOpsServerManager:
         logger.info(
             f"AgentOps local server process (PID: {self.server_process.pid}) started, targeting port {self.server_port}."
         )
-        time.sleep(0.5)  # Brief wait for server to start up
+        for attempt in range(20):  # 10 seconds total
+            time.sleep(0.5)  # Brief wait for server to start up
+            try:
+                result = requests.get(f"http://127.0.0.1:{self.server_port}/")
+                if result.status_code == 200:
+                    break
+            except Exception as e:
+                logger.debug(f"Error checking AgentOps server: {e}")
+            logger.warning(f"AgentOps still not ready after {attempt} attempts. Retrying...")
+        else:
+            logger.error(f"AgentOps local server failed to start or exited prematurely.")
+            return
+
         if not self.server_process.is_alive():
             logger.error(f"AgentOps local server failed to start or exited prematurely.")
 

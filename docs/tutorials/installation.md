@@ -1,83 +1,178 @@
-# Installation
+# Installation Guide
 
-## Install from PyPI
+This guide explains how to install **Agent-Lightning**. You can install it from **PyPI** (the Python Package Index) for general use or directly from the **source code** if you plan to contribute or need fine-grained control over dependencies.
 
-### Set Up Your Environment
+!!! info "Platform and Hardware Requirements"
+    Agent-Lightning is officially supported on **Linux distributions** (Ubuntu 22.04 or later is recommended).
+    At the moment **macOS and Windows** (outside of WSL2) are not supported.
 
-We strongly recommend creating a new virtual environment to avoid conflicts with other packages. You can use either `conda` or `venv`. **Python 3.10 or later** is recommended.
+    The Python runtime must be **Python 3.10 or newer**. We recommend using the latest patch release of Python 3.10, 3.11, or 3.12 to pick up performance and security updates.
 
-### Install Core Training Dependencies (Optional)
+    A **GPU is optional**—you only need CUDA-capable hardware if you plan to fine-tune model weights or run GPU-accelerated workloads. CPU-only environments are fully supported for evaluation and inference.
 
-If you are running RL with Agent-Lightning, the next step is to install the essential packages: `PyTorch`, `FlashAttention`, `vLLM` and `VERL`. The following versions and installation order have been tested and are confirmed to work.
+## Installing from PyPI
 
-```bash
-pip install torch==2.7.0 torchvision==0.22.0 torchaudio==2.7.0 --index-url https://download.pytorch.org/whl/cu128
-pip install flash-attn --no-build-isolation
-pip install vllm==0.9.2
-pip install verl==0.5.0
-```
+The easiest way to get started is by installing Agent-Lightning directly from PyPI. This ensures you get the latest **stable release** of the package, tested for compatibility and reliability.
 
-See [this script]({{ config.repo_url }}/tree/{{ config.extra.source_commit }}/scripts/setup_stable_gpu.sh) for a full installation script.
+### Install the Stable Release
 
-### Install Agent Lightning
-
-Now, you're ready to install Agent Lightning itself.
+Run the following command in your terminal:
 
 ```bash
-pip install agentlightning
+pip install --upgrade agentlightning
 ```
 
-### Install Agent Frameworks (Optional)
+This installs or upgrades Agent-Lightning to the newest stable version.
 
-If you plan to use other agent frameworks, you can install them with the following commands. If you don't need these, feel free to skip this step.
-We recommend doing this as the final step to avoid dependency versions being overwritten by mistake.
+!!! tip
+
+    If you intend to use **Agent-Lightning** with [**VERL**](../algorithm-zoo/verl.md) or run any of its **example scripts**, you’ll need to install some additional dependencies.
+    See the sections on [Algorithm-specific installation](#algorithm-specific-installation) and [Example-specific installation](#example-specific-installation) for details.
+
+### Install the Nightly Build (Latest Features)
+
+Agent-Lightning also publishes **nightly builds**, which contain the latest experimental features and improvements from the main branch. These are available via **Test PyPI**.
 
 ```bash
-# AutoGen (Recommended to install first)
-pip install "autogen-agentchat" "autogen-ext[openai]"
-
-# LiteLLM
-pip install "litellm[proxy]"
-
-# MCP
-pip install mcp
-
-# UV
-pip install uv
-
-# OpenAI Agents
-pip install openai-agents
-
-# LangChain
-pip install langgraph "langchain[openai]" langchain-community langchain-text-splitters
-
-# SQL-related dependencies
-pip install sqlparse nltk
+pip install --upgrade --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ agentlightning
 ```
 
-### Shortcuts for installing Extra Dependencies
+!!! warning
+    The nightly builds are cutting-edge but may include unstable or untested changes.
+    Use them **at your own risk**, especially in production environments.
 
-For development:
+## Algorithm-specific Installation
+
+Agent-Lightning supports multiple learning algorithms. Some of them like [APO](../algorithm-zoo/apo.md) or [VERL](../algorithm-zoo/verl.md) require extra dependencies. You can install them automatically using **optional extras** or manually if you prefer finer control.
+
+### Installing APO
+
+[APO](../algorithm-zoo/apo.md) is an algorithm module that depends on libraries such as [POML](https://github.com/microsoft/POML).
+You can install Agent-Lightning with APO support by running:
+
 ```bash
-pip install agentlightning[dev]
+pip install agentlightning[apo]
 ```
 
-For agent support:
+!!! warning
+    APO also depends on the [OpenAI Python SDK](https://github.com/openai/openai-python), version **2.0 or newer**.
+    Ensure your SDK version is up to date to avoid compatibility issues.
+
+### Installing VERL
+
+[VERL](../algorithm-zoo/verl.md) integrates with libraries like **PyTorch**, **vLLM**, and **VERL framework**.
+Although you *can* install all dependencies automatically, we recommend doing it manually to avoid version conflicts.
+
 ```bash
-pip install agentlightning[agent]
+pip install agentlightning[verl]
 ```
 
-## Install from Source
+!!! tip "Recommended Manual Setup (More Stable)"
+    Automated installation may cause issues if you don’t have a compatible **PyTorch** or **CUDA** version preinstalled.
+    For a more stable setup, install dependencies step-by-step:
 
-```
-git clone {{ config.repo_url }}
+    ```bash
+    pip install torch==2.8.0 torchvision==0.23.0 --index-url https://download.pytorch.org/whl/cu128
+    pip install flash-attn --no-build-isolation
+    pip install vllm==0.10.2
+    pip install verl==0.5.0
+    ```
+
+    This approach ensures compatibility with CUDA 12.8 and minimizes dependency conflicts.
+
+## Example-specific Installation
+
+Each example in the `examples/` directory may have its own additional dependencies.
+Please refer to the **README** file of each example for detailed setup instructions:
+
+[See Example READMEs]({{ src("examples") }}).
+
+## Installing from Source (for Developers and Contributors)
+
+If you plan to contribute to Agent-Lightning or prefer to work with the latest development code, install it directly from the **source repository**.
+
+### Why Install from Source?
+
+* You want to **modify or contribute** to the project.
+* You prefer an **isolated development environment**.
+* You want to test unreleased features or fix bugs locally.
+
+### Using `uv` for Dependency Management
+
+Starting with version **0.2**, Agent-Lightning uses [`uv`](https://docs.astral.sh/uv/) as its **default dependency manager**.
+
+`uv` is a fast and safe alternative to `pip` that:
+
+* Installs packages **in seconds** (instead of minutes),
+* Prevents **dependency conflicts**,
+* Supports **grouped dependencies** for optional features.
+
+Before proceeding, make sure `uv` is installed.
+
+### Minimal Developer Installation
+
+```bash
+git clone https://github.com/microsoft/agent-lightning
 cd agent-lightning
-pip install -e .[dev]
+uv sync --group dev
 ```
 
-Please run pre-commit hooks before checking in code:
+This command sets up a clean development environment with only the essential dependencies.
 
+### Installing All Extras (CPU or GPU)
+
+`uv sync` can also handle algorithm-specific and example-specific dependencies in one step.
+
+For a CPU-only machine:
+
+```bash
+uv sync --frozen \
+    --extra apo \
+    --extra verl \
+    --group dev \
+    --group torch-cpu \
+    --group torch-stable \
+    --group trl \
+    --group agents \
+    --no-default-groups
 ```
-pre-commit install
-pre-commit run --all-files --show-diff-on-failure --color=always
+
+For a GPU-equipped machine that is CUDA 12.8 compatible:
+
+```bash
+uv sync --frozen \
+    --extra apo \
+    --extra verl \
+    --group dev \
+    --group torch-gpu-stable \
+    --group trl \
+    --group agents \
+    --no-default-groups
 ```
+
+Read more about Agent-lightning managed dependency groups [here]({{ src("pyproject.toml") }}).
+
+### Activating Your Environment
+
+After syncing dependencies, `uv` automatically creates a virtual environment inside the `.venv/` directory.
+
+You can use it in two ways:
+
+```bash
+# Option 1: Prefix commands with uv run
+uv run python your_script.py
+
+# Option 2: Activate the virtual environment
+source .venv/bin/activate
+python your_script.py
+```
+
+!!! warning "Before Contributing"
+
+    Agent-Lightning enforces code style and linting rules via **pre-commit hooks**.
+    Installing them early prevents many avoidable formatting issues.
+
+    ```bash
+    uv run pre-commit install
+    uv run pre-commit run --all-files --show-diff-on-failure --color=always
+    ```

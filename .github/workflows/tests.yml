@@ -16,70 +16,70 @@ on:
 
 jobs:
 
-  lint-fast:
-    name: Lint - Fast
+  lint:
+    strategy:
+      matrix:
+        setup: [fast, slow]
+    name: Lint - ${{ matrix.setup }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v7
         with:
+          enable-cache: true
           python-version: '3.12'
-      - name: Install dependencies
+      - name: Sync dependencies (fast)
+        run: uv sync --frozen --group dev --no-default-groups
+        if: matrix.setup == 'fast'
+      - name: Sync dependencies (slow)
         run: |
-          python -m pip install --upgrade pip
-          pip install -e .[dev]
+          uv sync --frozen \
+            --extra apo \
+            --extra verl \
+            --group dev \
+            --group torch-cpu \
+            --group torch-stable \
+            --group trl \
+            --group agents \
+            --no-default-groups
+        if: matrix.setup == 'slow'
       - name: Run pre-commit
         uses: pre-commit/action@v3.0.1
       - name: Check Python headers
-        run: |
-          python scripts/check_python_headers.py
+        run: uv run --locked --no-sync scripts/check_python_headers.py
       - name: Run Black
-        run: black --check .
+        run: uv run --locked --no-sync black --check .
       - name: Run isort
-        run: isort --check-only .
-      - name: Run pyright
-        run: pyright -p pyrightconfig.fast.json
-
-  lint-slow:
-    name: Lint - Slow
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
-        with:
-          python-version: '3.12'
-      - name: Install dependencies
-        run: |
-          ./scripts/setup_type_checking.sh
-      - name: Run Black
-        run: black --check .
-      - name: Run isort
-        run: isort --check-only .
-      - name: Run pyright
-        run: pyright -p pyrightconfig.json
+        run: uv run --locked --no-sync isort --check-only .
+      - name: Run pyright (fast)
+        run: uv run --locked --no-sync pyright -p pyrightconfig.fast.json
+        if: matrix.setup == 'fast'
+      - name: Run pyright (slow)
+        run: uv run --locked --no-sync pyright -p pyrightconfig.json
+        if: matrix.setup == 'slow'
 
   docs:
     name: Build documentation
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: actions/setup-python@v4
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
-      - name: Install documentation dependencies
-        run: |
-          ./scripts/setup_stable.sh
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - name: Sync dependencies
+        run: uv sync --frozen --no-default-groups --group dev
       - name: Set source commit for docs
         run: |
           echo "SOURCE_COMMIT=${{ github.sha }}" >> $GITHUB_ENV
       - name: Build documentation
-        run: |
-          mkdocs build --strict
+        run: uv run --locked --no-sync mkdocs build --strict
       - name: Upload docs artifact
         uses: actions/upload-artifact@v4
         with:
@@ -92,35 +92,47 @@ jobs:
       matrix:
         include:
           - python-version: '3.10'
+            setup-script: 'legacy'
+          - python-version: '3.11'
             setup-script: 'stable'
           - python-version: '3.12'
+            setup-script: 'stable'
+          - python-version: '3.13'
             setup-script: 'latest'
-          - python-version: '3.12'
-            setup-script: 'stable'
       fail-fast: false
 
     name: Test with Python ${{ matrix.python-version }} (${{ matrix.setup-script }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v7
         with:
+          enable-cache: true
           python-version: ${{ matrix.python-version }}
-      - name: Install dependencies
-        run: |
-          ./scripts/setup_${{ matrix.setup-script }}.sh
+      - name: Upgrade dependencies (latest)
+        run: uv lock --upgrade
+        if: matrix.setup-script == 'latest'
+      - name: Sync dependencies (latest)
+        run: uv sync --frozen --no-default-groups --extra apo --group dev --group agents --group core-stable
+        if: matrix.setup-script == 'latest'
+      - name: Sync dependencies (stable & legacy)
+        run: uv sync --frozen --no-default-groups --extra apo --group dev --group agents --group core-${{ matrix.setup-script }}
+        if: matrix.setup-script != 'latest'
       - name: Freeze dependencies
         run: |
-          pip list | tee requirements-freeze-${{ matrix.python-version }}-${{ matrix.setup-script }}.txt
+          set -ex
+          uv pip freeze | tee requirements-freeze.txt
+          echo "UV_LOCKED=1" >> $GITHUB_ENV
+          echo "UV_NO_SYNC=1" >> $GITHUB_ENV
       - name: Upload dependencies artifact
         uses: actions/upload-artifact@v4
         with:
-          name: dependencies-python-${{ matrix.python-version }}-${{ matrix.setup-script }}
-          path: requirements-freeze-${{ matrix.python-version }}-${{ matrix.setup-script }}.txt
+          name: dependencies-${{ matrix.python-version }}-${{ matrix.setup-script }}
+          path: requirements-freeze.txt
           compression-level: 0
       - name: Run tests
         run: |
-          pytest -v --durations=0 tests
+          uv run pytest -v --durations=0 tests
         env:
           PYTEST_ADDOPTS: "--color=yes"

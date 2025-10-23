@@ -2,8 +2,8 @@ name: PyPI Nightly Build
 
 on:
   schedule:
-    # Run daily at 6:00 AM UTC
-    - cron: '0 6 * * *'
+    # Run daily at 6:00 AM UTC+8
+    - cron: '0 22 * * *'
   workflow_dispatch:  # Allow manual trigger
 
 jobs:
@@ -14,18 +14,17 @@ jobs:
       contents: read
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
-
-      - name: Install build dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e .[dev]
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - name: Sync dependencies
+        run: uv sync --frozen --no-default-groups --group dev
 
       - name: Get current version
         id: get_version
@@ -44,16 +43,9 @@ jobs:
 
       - name: Build package
         run: |
-          hatch build
+          uv build
 
       - name: Publish to Test PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           repository-url: https://test.pypi.org/legacy/
-
-      - name: Test installation from Test PyPI
-        run: |
-          # Wait a bit for the package to be available
-          sleep 30
-          pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ agentlightning
-          python -c "import agentlightning; print('Package installed successfully')"

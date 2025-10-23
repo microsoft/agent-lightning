@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+"""Data models that mirror OpenTelemetry spans for Agent Lightning."""
+
 import json
 from enum import Enum
 from typing import Any, Dict, List, Optional, Sequence, Union
 
 from opentelemetry import trace as trace_api
-from opentelemetry.sdk.resources import Resource as OtelResource
+from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import Event as OtelEvent
 from opentelemetry.sdk.trace import ReadableSpan
 from opentelemetry.sdk.trace.id_generator import RandomIdGenerator
@@ -22,7 +24,7 @@ __all__ = [
     "TraceStatus",
     "Event",
     "Link",
-    "Resource",
+    "OtelResource",
     "Span",
     "SpanNames",
     "SpanAttributeNames",
@@ -31,9 +33,13 @@ __all__ = [
 
 
 def convert_timestamp(timestamp: Optional[int]) -> Optional[float]:
-    """Convert timestamp from nanoseconds to seconds if needed.
+    """Normalize OpenTelemetry timestamps to seconds.
 
-    Auto-detects format: if > 1e12, assumes nanoseconds; otherwise seconds.
+    Args:
+        timestamp: Timestamp expressed either in seconds or nanoseconds.
+
+    Returns:
+        Timestamp in seconds when `timestamp` is provided; otherwise `None`.
     """
     if not timestamp:
         return None
@@ -41,7 +47,15 @@ def convert_timestamp(timestamp: Optional[int]) -> Optional[float]:
 
 
 def extract_extra_fields(src: Any, excluded_fields: List[str]) -> Dict[str, Any]:
-    """Extract extra fields from source object, excluding specified fields and private fields."""
+    """Capture custom attributes from an OpenTelemetry object.
+
+    Args:
+        src: Object that exposes a `__dict__` of potential attributes.
+        excluded_fields: Attribute names that should be removed from the output.
+
+    Returns:
+        Dictionary containing JSON-serializable representations of the remaining fields.
+    """
     excluded_fields_set = set(excluded_fields) | set(["_" + k for k in excluded_fields])
     # Exclude the function fields
     excluded_fields_set |= set(src.__class__.__dict__.keys())
@@ -62,23 +76,32 @@ AttributeValue = Union[
     Sequence[int],
     Sequence[float],
 ]
+"""Possible values for OpenTelemetry attributes."""
 Attributes = Dict[str, AttributeValue]
+"""Mapping from attribute names to their values. Same as OpenTelemetry `Attributes` type."""
 TraceState = Dict[str, str]
+"""Mapping from trace state key to its value. Same as OpenTelemetry `TraceState` type."""
 
 
 class SpanContext(BaseModel):
-    """Corresponding to opentelemetry.trace.SpanContext"""
+    """Pydantic representation of `opentelemetry.trace.SpanContext` values."""
 
     trace_id: str
+    """The trace ID of the span."""
     span_id: str
+    """The span ID of the span."""
     is_remote: bool
+    """Whether the span is remote."""
     trace_state: TraceState
+    """Mapping from trace state key to its value."""
 
     class Config:
         allow_extra = True
 
     @classmethod
     def from_opentelemetry(cls, src: trace_api.SpanContext) -> "SpanContext":
+        """Construct a [`SpanContext`][agentlightning.SpanContext] from OpenTelemetry data."""
+
         return cls(
             trace_id=trace_api.format_trace_id(src.trace_id),
             span_id=trace_api.format_span_id(src.span_id),
@@ -89,16 +112,20 @@ class SpanContext(BaseModel):
 
 
 class TraceStatus(BaseModel):
-    """Corresponding to opentelemetry.trace.Status"""
+    """Serializable variant of `opentelemetry.trace.Status`."""
 
     status_code: str
+    """The status code of the span. Same as OpenTelemetry `Status.status_code` type."""
     description: Optional[str] = None
+    """The description of the span. Same as OpenTelemetry `Status.description` type."""
 
     class Config:
         allow_extra = True
 
     @classmethod
     def from_opentelemetry(cls, src: OtelStatus) -> "TraceStatus":
+        """Create a [`TraceStatus`][agentlightning.TraceStatus] from OpenTelemetry metadata."""
+
         return cls(
             status_code=src.status_code.name,
             description=src.description,
@@ -107,17 +134,22 @@ class TraceStatus(BaseModel):
 
 
 class Event(BaseModel):
-    """Corresponding to opentelemetry.trace.Event"""
+    """Serializable representation of OpenTelemetry `Event` values."""
 
     name: str
+    """The name of the event."""
     attributes: Attributes
+    """Mapping from attribute names to their values. Same as OpenTelemetry `Attributes` type."""
     timestamp: Optional[float] = None
+    """The timestamp of the event. Same as OpenTelemetry `Event.timestamp` type."""
 
     class Config:
         allow_extra = True
 
     @classmethod
     def from_opentelemetry(cls, src: OtelEvent) -> "Event":
+        """Create an [`Event`][agentlightning.Event] from an OpenTelemetry event."""
+
         return cls(
             name=src.name,
             attributes=dict(src.attributes) if src.attributes else {},
@@ -127,16 +159,20 @@ class Event(BaseModel):
 
 
 class Link(BaseModel):
-    """Corresponding to opentelemetry.trace.Link"""
+    """Serializable representation of OpenTelemetry `Link` values."""
 
     context: SpanContext
+    """The context of the link."""
     attributes: Optional[Attributes] = None
+    """Optional attributes."""
 
     class Config:
         allow_extra = True
 
     @classmethod
     def from_opentelemetry(cls, src: trace_api.Link) -> "Link":
+        """Create a [`Link`][agentlightning.Link] from an OpenTelemetry link."""
+
         return cls(
             context=SpanContext.from_opentelemetry(src.context),
             attributes=dict(src.attributes) if src.attributes else None,
@@ -144,14 +180,24 @@ class Link(BaseModel):
         )
 
 
-class Resource(BaseModel):
-    """Corresponding to opentelemetry.sdk.resources.Resource"""
+class OtelResource(BaseModel):
+    """Serializable representation of OpenTelemetry `Resource` values.
+
+    Named as `OtelResource` to avoid confusion with the [`Resource`][agentlightning.Resource] class.
+    Users will very rarely need to construct this class directly. Most of the times,
+    they deal with the [`Resource`][agentlightning.Resource] class instead, which describes
+    a very different concept.
+    """
 
     attributes: Attributes
+    """Mapping from attribute names to their values. Same as OpenTelemetry `Attributes` type."""
     schema_url: str
+    """The schema URL of the resource."""
 
     @classmethod
-    def from_opentelemetry(cls, src: OtelResource) -> "Resource":
+    def from_opentelemetry(cls, src: Resource) -> "OtelResource":
+        """Create a [`Resource`][agentlightning.Resource] from an OpenTelemetry resource."""
+
         return cls(
             attributes=dict(src.attributes) if src.attributes else {},
             schema_url=src.schema_url if src.schema_url else "",
@@ -160,11 +206,12 @@ class Resource(BaseModel):
 
 
 class Span(BaseModel):
-    """Agent-Lightning's core span data type.
+    """Agent Lightning's canonical span model used for persistence and analytics.
 
-    Corresponding to `opentelemetry.sdk.trace.ReadableSpan`.
-    However, only parts of the fields are preserved officially.
-    The other fields are preserved as extra fields.
+    The model captures the most relevant fields from
+    `opentelemetry.sdk.trace.ReadableSpan` instances while preserving unmodeled
+    attributes in Pydantic `BaseModel`'s extra storage. This keeps the serialized format
+    stable even as upstream OpenTelemetry types evolve.
     """
 
     class Config:
@@ -189,29 +236,29 @@ class Span(BaseModel):
 
     # Core ReadableSpan fields
     name: str
-    """The name of the span. See https://opentelemetry.io/docs/concepts/signals/traces/"""
+    """The name of the span. See [OpenTelemetry docs](https://opentelemetry.io/docs/concepts/signals/traces/)."""
     status: TraceStatus
-    """The status of the span. See https://opentelemetry.io/docs/concepts/signals/traces/"""
+    """The status of the span. See [OpenTelemetry docs](https://opentelemetry.io/docs/concepts/signals/traces/)."""
     attributes: Attributes
-    """The attributes of the span. See https://opentelemetry.io/docs/concepts/signals/traces/"""
+    """The attributes of the span. See [OpenTelemetry docs](https://opentelemetry.io/docs/concepts/signals/traces/)."""
     events: List[Event]
-    """The events of the span. See https://opentelemetry.io/docs/concepts/signals/traces/"""
+    """The events of the span. See [OpenTelemetry docs](https://opentelemetry.io/docs/concepts/signals/traces/)."""
     links: List[Link]
-    """The links of the span. See https://opentelemetry.io/docs/concepts/signals/traces/"""
+    """The links of the span. See [OpenTelemetry docs](https://opentelemetry.io/docs/concepts/signals/traces/)."""
 
     # Timestamps
     start_time: Optional[float]
-    """The start time of the span. See https://opentelemetry.io/docs/concepts/signals/traces/"""
+    """The start time of the span. See [OpenTelemetry docs](https://opentelemetry.io/docs/concepts/signals/traces/)."""
     end_time: Optional[float]
-    """The end time of the span. See https://opentelemetry.io/docs/concepts/signals/traces/"""
+    """The end time of the span. See [OpenTelemetry docs](https://opentelemetry.io/docs/concepts/signals/traces/)."""
 
     # Other parsable fields
     context: Optional[SpanContext]
-    """The context of the span. See https://opentelemetry.io/docs/concepts/signals/traces/"""
+    """The context of the span. See [OpenTelemetry docs](https://opentelemetry.io/docs/concepts/signals/traces/)."""
     parent: Optional[SpanContext]
-    """The parent context of the span. See https://opentelemetry.io/docs/concepts/signals/traces/"""
-    resource: Resource
-    """The resource of the span. See https://opentelemetry.io/docs/concepts/signals/traces/"""
+    """The parent context of the span. See [OpenTelemetry docs](https://opentelemetry.io/docs/concepts/signals/traces/)."""
+    resource: OtelResource
+    """The resource of the span. See [OpenTelemetry docs](https://opentelemetry.io/docs/concepts/signals/traces/)."""
 
     # Preserve other fields in the readable span as extra fields
     # Make sure that are json serializable (so no bytes, complex objects, ...)
@@ -224,14 +271,16 @@ class Span(BaseModel):
         attempt_id: str,
         sequence_id: int,
     ) -> "Span":
-        """Convert an [OpenTelemetry ReadableSpan](https://opentelemetry.io/docs/concepts/signals/traces/)
-        to an Agent-Lightning Span.
+        """Convert an OpenTelemetry span into the Agent Lightning data model.
 
         Args:
-            src: The OpenTelemetry ReadableSpan to convert.
-            rollout_id: The rollout ID.
-            attempt_id: The attempt ID.
-            sequence_id: The sequence ID.
+            src: Span captured by OpenTelemetry.
+            rollout_id: Identifier for the rollout that produced the span.
+            attempt_id: Identifier of the attempt within the rollout.
+            sequence_id: Monotonically increasing identifier assigned to the span.
+
+        Returns:
+            Parsed [`Span`][agentlightning.Span] instance suitable for persistence.
         """
         context = src.get_span_context()
         if context is None:
@@ -255,7 +304,7 @@ class Span(BaseModel):
             end_time=convert_timestamp(src.end_time),
             context=SpanContext.from_opentelemetry(context) if context else None,
             parent=(SpanContext.from_opentelemetry(src.parent) if src.parent else None),
-            resource=Resource.from_opentelemetry(src.resource),
+            resource=OtelResource.from_opentelemetry(src.resource),
             **extract_extra_fields(
                 src,
                 [
@@ -293,8 +342,28 @@ class Span(BaseModel):
         parent_id: Optional[str] = None,
         start_time: Optional[float] = None,
         end_time: Optional[float] = None,
-        resource: Optional[Resource] = None,
+        resource: Optional[OtelResource] = None,
     ) -> "Span":
+        """Build a synthetic span from raw attributes.
+        Different from the [`from_opentelemetry`][agentlightning.Span.from_opentelemetry] method,
+        all parameters other than `attributes` are optional and will be generated if not provided.
+
+        Args:
+            attributes: Span attributes to persist.
+            rollout_id: Optional rollout identifier associated with the span.
+            attempt_id: Optional attempt identifier associated with the span.
+            sequence_id: Optional sequence number to preserve ordering.
+            name: Optional human-readable span name.
+            trace_id: Custom trace identifier. When omitted, a random identifier is generated.
+            span_id: Custom span identifier. When omitted, a random identifier is generated.
+            parent_id: Optional parent span identifier.
+            start_time: Span start timestamp in seconds.
+            end_time: Span end timestamp in seconds.
+            resource: Explicit resource information to attach to the span.
+
+        Returns:
+            [`Span`][agentlightning.Span] populated with the provided attributes.
+        """
 
         id_generator = RandomIdGenerator()
         trace_id = trace_id or trace_api.format_trace_id(id_generator.generate_trace_id())
@@ -316,7 +385,7 @@ class Span(BaseModel):
                 trace_state={},
             ),
             name=name or SpanNames.VIRTUAL.value,
-            resource=resource or Resource(attributes={}, schema_url=""),
+            resource=resource or OtelResource(attributes={}, schema_url=""),
             attributes=attributes,
             status=TraceStatus(status_code="OK"),
             events=[],
@@ -335,11 +404,7 @@ class Span(BaseModel):
 
 
 class SpanNames(str, Enum):
-    """Standard span name values for AgentLightning.
-
-    Currently reward, message, object and exception spans are supported.
-    We will add more spans related to error handling in the future.
-    """
+    """Enumerated span names recognised by Agent-lightning."""
 
     REWARD = "agentlightning.reward"
     """The name of the reward span."""
@@ -350,12 +415,11 @@ class SpanNames(str, Enum):
     EXCEPTION = "agentlightning.exception"
     """The name of the exception span."""
     VIRTUAL = "agentlightning.virtual"
-    """The name of the virtual span. It's used to represent a span
-    that is not associated with any real operations."""
+    """The name of the virtual span. It represents derived spans without concrete operations."""
 
 
 class SpanAttributeNames(str, Enum):
-    """Standard attribute names for AgentLightning spans."""
+    """Canonical attribute names written by Agent Lightning emitters."""
 
     MESSAGE = "message"
     """The name of the message attribute."""
@@ -364,3 +428,4 @@ class SpanAttributeNames(str, Enum):
 
 
 SpanLike = Union[ReadableSpan, Span]
+"""Union type of OpenTelemetry `ReadableSpan` and Agent-lightning [`Span`][agentlightning.Span]."""

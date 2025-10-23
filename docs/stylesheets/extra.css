@@ -18,6 +18,29 @@
   font-size: 0.72rem;
 }
 
+.md-typeset h4 {
+  font-size: 1.15em;
+}
+
+/* Increase spacing between API references */
+.doc-class, .doc-function, .doc-attribute {
+  padding-bottom: 2em;
+  margin-bottom: 3em;
+  border-bottom: 1px solid #77777777;
+}
+
+.doc-class .doc-function:not(:last-child), .doc-class .doc-attribute:not(:last-child) {
+  padding-bottom: 0;
+  margin-bottom: 2.5em;
+  border-bottom: none;
+}
+
+.doc-class .doc-function:last-child, .doc-class .doc-attribute:last-child {
+  padding-bottom: 0;
+  margin-bottom: 0;
+  border-bottom: none;
+}
+
 [data-md-color-primary="agl"] {
   --md-primary-fg-color:        #c45259;
   --md-primary-fg-color--light: #e8b4b7;
