@@ -18,8 +18,6 @@ jobs:
       should-run: ${{ steps.evaluate.outputs.should-run }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.number && format('refs/pull/{0}/merge', github.event.pull_request.number) || github.ref }}
       - name: Decide whether to run
         id: evaluate
         uses: actions/github-script@v7
