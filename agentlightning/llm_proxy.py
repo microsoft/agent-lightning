@@ -520,7 +520,6 @@ class LLMProxy:
         self._config_file = None
         self._uvicorn_server = None
         self._ready_event = threading.Event()
-        self._callbacks_initialized_copy: Optional[List[Any]] = None
 
     def get_store(self) -> Optional[LightningStore]:
         """Get the store used by the proxy.

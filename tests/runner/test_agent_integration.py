@@ -197,11 +197,11 @@ async def test_runner_integration_with_spawned_litellm_proxy(server: RemoteOpenA
     )
 
     def run_proxy_server(proxy: LLMProxy, event: MpEvent):
-        clear_tracer_provider()
         proxy.start()
         event.set()
         time.sleep(3600)  # Keep the server running
 
+    clear_tracer_provider()
     event = multiprocessing.Event()
     process = multiprocessing.Process(target=run_proxy_server, args=(proxy, event))
     process.start()
