@@ -25,15 +25,20 @@ __all__ = [
 # Module-level storage for originals
 _original_handle_chat_attributes: Callable[..., Any] | None = None
 _original_handle_response: Callable[..., Any] | None = None
-_switch = False
+_agentops_service_enabled = False
 
 
-def set_switch(value: bool):
+def enable_agentops_service(enabled: bool = True) -> None:
     """
-    Set the switch for exporters and clients to control their behavior.
+    Enable or disable communication with the AgentOps service.
+
+    False (default): AgentOps exporters and clients will run in local mode
+    and will not attempt to communicate with the remote AgentOps service.
+    True: all exporters and clients will operate in normal mode and send data
+    to the AgentOps service as expected.
     """
-    global _switch
-    _switch = value
+    global _agentops_service_enabled
+    _agentops_service_enabled = enabled
     logger.info(f"Switch set to {value} for exporters and clients.")
 
 
@@ -238,9 +243,13 @@ def uninstrument_agentops():
 
 
 class SwitchableAuthenticatedOTLPExporter(AuthenticatedOTLPExporter):
+    """
+    AuthenticatedOTLPExporter with switchable service control.
+    When `_agentops_service_enabled` is False, skip export and return success.
+    """
 
     def export(self, *args: Any, **kwargs: Any) -> SpanExportResult:
-        if _switch:
+        if _agentops_service_enabled:
             return super().export(*args, **kwargs)
         else:
             logger.debug("SwitchableAuthenticatedOTLPExporter is switched off, skipping export.")
@@ -248,9 +257,13 @@ class SwitchableAuthenticatedOTLPExporter(AuthenticatedOTLPExporter):
 
 
 class SwitchableOTLPMetricExporter(OTLPMetricExporter):
+    """
+    OTLPMetricExporter with switchable service control.
+    When `_agentops_service_enabled` is False, skip export and return success.
+    """
 
     def export(self, *args: Any, **kwargs: Any) -> MetricExportResult:
-        if _switch:
+        if _agentops_service_enabled:
             return super().export(*args, **kwargs)  # type: ignore[reportUnknownMemberType]
         else:
             logger.debug("SwitchableOTLPMetricExporter is switched off, skipping export.")
@@ -258,9 +271,13 @@ class SwitchableOTLPMetricExporter(OTLPMetricExporter):
 
 
 class SwitchableOTLPSpanExporter(OTLPSpanExporter):
+    """
+    OTLPSpanExporter with switchable service control.
+    When `_agentops_service_enabled` is False, skip export and return success.
+    """
 
     def export(self, *args: Any, **kwargs: Any) -> SpanExportResult:
-        if _switch:
+        if _agentops_service_enabled:
             return super().export(*args, **kwargs)
         else:
             logger.debug("SwitchableOTLPSpanExporter is switched off, skipping export.")
@@ -268,20 +285,28 @@ class SwitchableOTLPSpanExporter(OTLPSpanExporter):
 
 
 class SwitchableV3Client(V3Client):
+    """
+    V3Client with toggleable authentication calls.
+    Returns dummy auth response when `_agentops_service_enabled` is False.
+    """
 
     def fetch_auth_token(self, *args: Any, **kwargs: Any) -> AuthTokenResponse:
-        if _switch:
+        if _agentops_service_enabled:
             resp = super().post(*args, **kwargs)
             return cast(AuthTokenResponse, resp)
         else:
-            logger.debug("SwitchableV4Client is switched off, skipping fetch_auth_token request.")
+            logger.debug("SwitchableV3Client is switched off, skipping fetch_auth_token request.")
             return AuthTokenResponse(token="dummy", project_id="dummy")
 
 
 class SwitchableV4Client(V4Client):
+    """
+    V4Client with toggleable post requests.
+    Returns dummy response when `_agentops_service_enabled` is False.
+    """
 
     def post(self, *args: Any, **kwargs: Any) -> requests.Response:
-        if _switch:
+        if _agentops_service_enabled:
             return super().post(*args, **kwargs)
         else:
             logger.debug("SwitchableV4Client is switched off, skipping post request.")

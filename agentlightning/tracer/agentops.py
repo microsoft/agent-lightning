@@ -170,9 +170,9 @@ class AgentOpsTracer(Tracer):
                 status = StatusCode.SUCCESS  # type: ignore
                 try:
                     yield processor
-                except:
-                    # Need logging or raise here?
+                except Exception as e:
                     status = StatusCode.ERROR  # type: ignore
+                    logger.debug(f"Trace failed for rollout_id={rollout_id}, attempt_id={attempt_id}, error={e}")
                 finally:
                     agentops.end_trace(trace, end_state=status)  # type: ignore
         elif store is None and rollout_id is None and attempt_id is None:
