@@ -415,10 +415,7 @@ class LightningOpenTelemetry(OpenTelemetry):
         config = OpenTelemetryConfig(exporter=self.exporter)
 
         # Check for tracer initialization
-        if (
-            hasattr(trace_api, "_TRACER_PROVIDER")
-            and trace_api._TRACER_PROVIDER is not None  # pyright: ignore[reportPrivateUsage]
-        ):
+        if _check_tracer_provider():
             logger.error("Tracer is already initialized. OpenTelemetry may not work as expected.")
 
         super().__init__(config=config)  # pyright: ignore[reportUnknownMemberType]
@@ -827,6 +824,17 @@ def initialize_llm_callbacks() -> bool:
 
     _reset_litellm_logging_callback_manager()
 
+    # Check if tracer provider is malformed due to global tracer clear in tests.
+    if not _check_tracer_provider():
+        logger.warning(
+            "Global tracer provider might have been cleared outside. Re-initializing OpenTelemetry callback."
+        )
+        _callbacks_before_litellm_start = [
+            cb for cb in _callbacks_before_litellm_start if not isinstance(cb, LightningOpenTelemetry)
+        ] + [LightningOpenTelemetry()]
+    else:
+        logger.debug("Global tracer provider is valid. Reusing existing OpenTelemetry callback.")
+
     litellm.callbacks.clear()  # type: ignore
     litellm.callbacks.extend(_callbacks_before_litellm_start)  # type: ignore
     return False
@@ -859,3 +867,19 @@ def _check_port(host: str, port: int) -> bool:
         s.settimeout(1)
         result = s.connect_ex((host, port))
         return result != 0  # True if unavailable
+
+
+def _check_tracer_provider() -> bool:
+    """Check if the global tracer provider is properly initialized.
+
+    We don't guarantee the tracer provider is our tracer provider.
+
+    Returns:
+        bool: True if the tracer provider is valid, else False.
+    """
+    if (
+        not hasattr(trace_api, "_TRACER_PROVIDER")
+        or trace_api._TRACER_PROVIDER is None  # pyright: ignore[reportPrivateUsage]
+    ):
+        return False
+    return True
