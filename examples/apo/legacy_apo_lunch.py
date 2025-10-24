@@ -23,10 +23,18 @@ Save their logs into legacy_apo_server.log and legacy_apo_client.log
 
 import asyncio
 from pathlib import Path
+from typing import List
+
+StreamBuffer = List[str]
 
 
-async def stream_output(stream, name, pipe_type, buffer):
-    """Asynchronously read output stream and print to console, also store in memory buffer"""
+async def stream_output(
+    stream: asyncio.StreamReader,
+    name: str,
+    pipe_type: str,
+    buffer: StreamBuffer,
+) -> None:
+    """Asynchronously read output stream, print to console, and store in buffer."""
     while True:
         line = await stream.readline()
         if not line:
@@ -36,22 +44,27 @@ async def stream_output(stream, name, pipe_type, buffer):
         buffer.append(text)
 
 
-async def run(cmd, name, buffer):
-    """Start a subprocess and launch the logging coroutine"""
-    proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+async def run(cmd: list[str], name: str, buffer: StreamBuffer) -> asyncio.subprocess.Process:
+    """Start a subprocess and launch stdout/stderr logging coroutines."""
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
     print(f"{name} started (pid={proc.pid})")
 
     # concurrently monitor stdout and stderr
-    asyncio.create_task(stream_output(proc.stdout, name, "OUT", buffer))
-    asyncio.create_task(stream_output(proc.stderr, name, "ERR", buffer))
-
+    if proc.stdout:
+        asyncio.create_task(stream_output(proc.stdout, name, "OUT", buffer))
+    if proc.stderr:
+        asyncio.create_task(stream_output(proc.stderr, name, "ERR", buffer))
     return proc
 
 
-async def main():
-    # prepare in-memory buffers for each process
-    server_buffer = []
-    client_buffer = []
+async def main() -> None:
+    """Run server and client concurrently and save their logs."""
+    server_buffer: StreamBuffer = []
+    client_buffer: StreamBuffer = []
 
     server = await run(["python", "legacy_apo_server.py"], "legacy_apo_server", server_buffer)
     client = await run(["python", "legacy_apo_client.py"], "legacy_apo_client", client_buffer)
