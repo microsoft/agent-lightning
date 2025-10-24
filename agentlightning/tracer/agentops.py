@@ -195,7 +195,10 @@ class AgentOpsTracer(Tracer):
         if store is not None and rollout_id is not None and attempt_id is not None:
             ctx = self._lightning_span_processor.with_context(store=store, rollout_id=rollout_id, attempt_id=attempt_id)
             with ctx as processor:
-                trace = agentops.start_trace(name=name)
+                kwargs: dict[str, Any] = {}
+                if name is not None:
+                    kwargs["trace_name"] = str(name)
+                trace = agentops.start_trace(**kwargs)
                 yield processor
                 agentops.end_trace(trace)
         elif store is None and rollout_id is None and attempt_id is None:

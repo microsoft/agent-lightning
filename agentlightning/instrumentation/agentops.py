@@ -7,15 +7,18 @@ import multiprocessing
 import signal
 import socket
 import time
-from typing import Any, Callable
+from typing import Any, Callable, cast
 
 import flask
 import requests
 import setproctitle
 from agentops.client.api import V3Client, V4Client
+from agentops.client.api.types import AuthTokenResponse
 from agentops.sdk.exporters import AuthenticatedOTLPExporter
 from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.metrics.export import MetricExportResult
+from opentelemetry.sdk.trace.export import SpanExportResult
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +48,7 @@ def _patch_exporters():
     import agentops.client.api
     import agentops.sdk.core
 
-    agentops.sdk.core.AuthenticatedOTLPExporter = SwitchableAuthenticatedOTLPExporter
+    agentops.sdk.core.AuthenticatedOTLPExporter = SwitchableAuthenticatedOTLPExporter  # type: ignore
     agentops.sdk.core.OTLPMetricExporter = SwitchableOTLPMetricExporter
     agentops.sdk.core.OTLPSpanExporter = SwitchableOTLPSpanExporter
     agentops.client.api.V3Client = SwitchableV3Client
@@ -56,7 +59,7 @@ def _unpatch_exporters():
     import agentops.client.api
     import agentops.sdk.core
 
-    agentops.sdk.core.AuthenticatedOTLPExporter = AuthenticatedOTLPExporter
+    agentops.sdk.core.AuthenticatedOTLPExporter = AuthenticatedOTLPExporter  # type: ignore
     agentops.sdk.core.OTLPMetricExporter = OTLPMetricExporter
     agentops.sdk.core.OTLPSpanExporter = OTLPSpanExporter
     agentops.client.api.V3Client = V3Client
@@ -330,60 +333,48 @@ class AgentOpsServerManager:
 
 class SwitchableAuthenticatedOTLPExporter(AuthenticatedOTLPExporter):
 
-    def export(self, *args, **kwargs):
+    def export(self, *args: Any, **kwargs: Any) -> SpanExportResult:
         if _switch:
             return super().export(*args, **kwargs)
         else:
             logger.debug("SwitchableAuthenticatedOTLPExporter is switched off, skipping export.")
-            from opentelemetry.sdk.trace.export import SpanExportResult
-
             return SpanExportResult.SUCCESS
 
 
 class SwitchableOTLPMetricExporter(OTLPMetricExporter):
 
-    def export(self, *args, **kwargs):
+    def export(self, *args: Any, **kwargs: Any) -> MetricExportResult:
         if _switch:
-            return super().export(*args, **kwargs)
+            return super().export(*args, **kwargs)  # type: ignore[reportUnknownMemberType]
         else:
             logger.debug("SwitchableOTLPMetricExporter is switched off, skipping export.")
-            from opentelemetry.sdk.metrics.export import MetricExportResult
-
             return MetricExportResult.SUCCESS
 
 
 class SwitchableOTLPSpanExporter(OTLPSpanExporter):
 
-    def export(self, *args, **kwargs):
+    def export(self, *args: Any, **kwargs: Any) -> SpanExportResult:
         if _switch:
             return super().export(*args, **kwargs)
         else:
             logger.debug("SwitchableOTLPSpanExporter is switched off, skipping export.")
-            from opentelemetry.sdk.trace.export import SpanExportResult
-
             return SpanExportResult.SUCCESS
 
 
 class SwitchableV3Client(V3Client):
 
-    def fetch_auth_token(self, *args, **kwargs):
+    def fetch_auth_token(self, *args: Any, **kwargs: Any) -> AuthTokenResponse:
         if _switch:
-            return super().post(*args, **kwargs)
+            resp = super().post(*args, **kwargs)
+            return cast(AuthTokenResponse, resp)
         else:
             logger.debug("SwitchableV4Client is switched off, skipping fetch_auth_token request.")
-            return {"token": "dummy", "project_id": "dummy"}
-
-    async def async_request(self, *args, **kwargs):
-        if _switch:
-            return await super().async_request(*args, **kwargs)
-        else:
-            logger.debug("SwitchableV3Client is switched off, skipping async_request request.")
-            return {}
+            return AuthTokenResponse(token="dummy", project_id="dummy")
 
 
 class SwitchableV4Client(V4Client):
 
-    def post(self, *args, **kwargs):
+    def post(self, *args: Any, **kwargs: Any) -> requests.Response:
         if _switch:
             return super().post(*args, **kwargs)
         else:
@@ -392,10 +383,3 @@ class SwitchableV4Client(V4Client):
             response.status_code = 200
             response._content = b"{}"
             return response
-
-    async def async_request(self, *args, **kwargs):
-        if _switch:
-            return await super().async_request(*args, **kwargs)
-        else:
-            logger.debug("SwitchableV3Client is switched off, skipping async_request request.")
-            return {}
