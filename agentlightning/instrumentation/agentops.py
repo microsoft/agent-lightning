@@ -3,28 +3,64 @@
 from __future__ import annotations
 
 import logging
-import multiprocessing
-import signal
-import socket
-import time
-from typing import Any, Callable
+from typing import Any, Callable, cast
 
-import flask
 import requests
-import setproctitle
+from agentops.client.api import V3Client, V4Client
+from agentops.client.api.types import AuthTokenResponse
+from agentops.sdk.exporters import AuthenticatedOTLPExporter
+from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.metrics.export import MetricExportResult
+from opentelemetry.sdk.trace.export import SpanExportResult
 
 logger = logging.getLogger(__name__)
 
 __all__ = [
     "instrument_agentops",
     "uninstrument_agentops",
-    "agentops_local_server",
-    "AgentOpsServerManager",
 ]
 
 # Module-level storage for originals
 _original_handle_chat_attributes: Callable[..., Any] | None = None
 _original_handle_response: Callable[..., Any] | None = None
+_agentops_service_enabled = False
+
+
+def enable_agentops_service(enabled: bool = True) -> None:
+    """
+    Enable or disable communication with the AgentOps service.
+
+    False (default): AgentOps exporters and clients will run in local mode
+    and will not attempt to communicate with the remote AgentOps service.
+    True: all exporters and clients will operate in normal mode and send data
+    to the AgentOps service as expected.
+    """
+    global _agentops_service_enabled
+    _agentops_service_enabled = enabled
+    logger.info(f"Switch set to {value} for exporters and clients.")
+
+
+def _patch_exporters():
+    import agentops.client.api
+    import agentops.sdk.core
+
+    agentops.sdk.core.AuthenticatedOTLPExporter = SwitchableAuthenticatedOTLPExporter  # type: ignore
+    agentops.sdk.core.OTLPMetricExporter = SwitchableOTLPMetricExporter
+    agentops.sdk.core.OTLPSpanExporter = SwitchableOTLPSpanExporter
+    agentops.client.api.V3Client = SwitchableV3Client
+    agentops.client.api.V4Client = SwitchableV4Client
+
+
+def _unpatch_exporters():
+    import agentops.client.api
+    import agentops.sdk.core
+
+    agentops.sdk.core.AuthenticatedOTLPExporter = AuthenticatedOTLPExporter  # type: ignore
+    agentops.sdk.core.OTLPMetricExporter = OTLPMetricExporter
+    agentops.sdk.core.OTLPSpanExporter = OTLPSpanExporter
+    agentops.client.api.V3Client = V3Client
+    agentops.client.api.V4Client = V4Client
 
 
 def _patch_new_agentops():
@@ -146,6 +182,8 @@ def instrument_agentops():
     Instrument agentops to capture token IDs.
     Automatically detects and uses the appropriate patching method based on the installed agentops version.
     """
+    _patch_exporters()
+
     # Try newest version first (tested for 0.4.16)
     try:
         return _patch_new_agentops()
@@ -165,6 +203,8 @@ def instrument_agentops():
 
 def uninstrument_agentops():
     """Uninstrument agentops to stop capturing token IDs."""
+    _unpatch_exporters()
+
     try:
         _unpatch_new_agentops()
     except Exception:
@@ -175,114 +215,75 @@ def uninstrument_agentops():
         pass
 
 
-def agentops_local_server():
+class SwitchableAuthenticatedOTLPExporter(AuthenticatedOTLPExporter):
     """
-    Returns a Flask app that can be used to test agentops integration.
-    This server provides endpoints for token fetching and a catch-all endpoint.
+    AuthenticatedOTLPExporter with switchable service control.
+    When `_agentops_service_enabled` is False, skip export and return success.
     """
-    app = flask.Flask(__name__)
 
-    @app.route("/v3/auth/token", methods=["POST"])
-    def fetch_token():  # type: ignore
-        return {"token": "dummy", "project_id": "dummy"}
-
-    @app.route("/", defaults={"path": ""}, methods=["GET", "POST"])
-    @app.route("/<path:path>", methods=["GET", "POST"])
-    def catch_all(path: str):  # type: ignore
-        return {"path": path}
-
-    return app
-
-
-def _run_server(**kwargs: Any):  # type: ignore
-    """
-    Internal function to run the Flask server.
-    This is used to avoid issues with multiprocessing and Flask's reloader.
-    """
-    signal.signal(signal.SIGINT, signal.SIG_IGN)  # Ignore SIGINT in worker processes
-    setproctitle.setproctitle(multiprocessing.current_process().name)
-    app = agentops_local_server()
-    app.run(**kwargs)
-
-
-class AgentOpsServerManager:
-    """Manages a AgentOps local server to bypass the online service of AgentOps."""
-
-    def __init__(self, daemon: bool = True, port: int | None = None):
-        self.server_process: multiprocessing.Process | None = None
-        self.server_port = port
-        self.daemon = daemon
-        logger.info("AgentOpsServerManager initialized.")
-
-    def _find_available_port(self) -> int:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.bind(("", 0))
-            return s.getsockname()[1]
-
-    def start(self):
-        if self.server_process and self.server_process.is_alive():
-            logger.warning("AgentOps server process appears to be already running.")
-            return
-
-        if self.server_port is None:
-            self.server_port = self._find_available_port()
-
-        logger.info(f"Starting AgentOps local server on port {self.server_port}...")
-
-        self.server_process = multiprocessing.Process(
-            target=_run_server,
-            kwargs={"host": "127.0.0.1", "port": self.server_port, "use_reloader": False, "debug": False},
-            daemon=self.daemon,
-            name="AgentLightning-AgentOpsServer",
-        )
-        self.server_process.start()
-        logger.info(
-            f"AgentOps local server process (PID: {self.server_process.pid}) started, targeting port {self.server_port}."
-        )
-        for attempt in range(20):  # 10 seconds total
-            time.sleep(0.5)  # Brief wait for server to start up
-            try:
-                result = requests.get(f"http://127.0.0.1:{self.server_port}/")
-                if result.status_code == 200:
-                    break
-            except Exception as e:
-                logger.debug(f"Error checking AgentOps server: {e}")
-            logger.warning(f"AgentOps still not ready after {attempt} attempts. Retrying...")
+    def export(self, *args: Any, **kwargs: Any) -> SpanExportResult:
+        if _agentops_service_enabled:
+            return super().export(*args, **kwargs)
         else:
-            logger.error(f"AgentOps local server failed to start or exited prematurely.")
-            return
+            logger.debug("SwitchableAuthenticatedOTLPExporter is switched off, skipping export.")
+            return SpanExportResult.SUCCESS
 
-        if not self.server_process.is_alive():
-            logger.error(f"AgentOps local server failed to start or exited prematurely.")
 
-    def is_alive(self) -> bool:
-        if self.server_process and self.server_process.is_alive():
-            return True
-        return False
+class SwitchableOTLPMetricExporter(OTLPMetricExporter):
+    """
+    OTLPMetricExporter with switchable service control.
+    When `_agentops_service_enabled` is False, skip export and return success.
+    """
 
-    def stop(self):
-        if self.server_process is not None and self.server_process.is_alive():
-            logger.info(f"Stopping AgentOps local server (PID: {self.server_process.pid})...")
-            self.server_process.terminate()  # Send SIGTERM
-            self.server_process.join(timeout=5)  # Wait for clean exit
-            if self.server_process.is_alive():
-                logger.warning(
-                    f"AgentOps server (PID: {self.server_process.pid}) did not terminate gracefully, killing..."
-                )
-                self.server_process.kill()  # Force kill
-                self.server_process.join(timeout=10)  # Wait for kill
-            self.server_process = None
-            logger.info(f"AgentOps local server stopped.")
+    def export(self, *args: Any, **kwargs: Any) -> MetricExportResult:
+        if _agentops_service_enabled:
+            return super().export(*args, **kwargs)  # type: ignore[reportUnknownMemberType]
         else:
-            logger.info("AgentOps local server was not running or already stopped.")
+            logger.debug("SwitchableOTLPMetricExporter is switched off, skipping export.")
+            return MetricExportResult.SUCCESS
 
-    def get_port(self) -> int | None:
-        # Check liveness again in case it died since start()
-        if self.is_alive() and self.server_port is not None:
-            return self.server_port
-        # If called after server stopped or failed, port might be stale or None
-        if self.server_port is not None and (self.server_process is None or not self.server_process.is_alive()):
-            logger.warning(
-                f"AgentOps server port {self.server_port} is stored, but server process is not alive. Returning stored port."
-            )
-        return self.server_port
+
+class SwitchableOTLPSpanExporter(OTLPSpanExporter):
+    """
+    OTLPSpanExporter with switchable service control.
+    When `_agentops_service_enabled` is False, skip export and return success.
+    """
+
+    def export(self, *args: Any, **kwargs: Any) -> SpanExportResult:
+        if _agentops_service_enabled:
+            return super().export(*args, **kwargs)
+        else:
+            logger.debug("SwitchableOTLPSpanExporter is switched off, skipping export.")
+            return SpanExportResult.SUCCESS
+
+
+class SwitchableV3Client(V3Client):
+    """
+    V3Client with toggleable authentication calls.
+    Returns dummy auth response when `_agentops_service_enabled` is False.
+    """
+
+    def fetch_auth_token(self, *args: Any, **kwargs: Any) -> AuthTokenResponse:
+        if _agentops_service_enabled:
+            resp = super().post(*args, **kwargs)
+            return cast(AuthTokenResponse, resp)
+        else:
+            logger.debug("SwitchableV3Client is switched off, skipping fetch_auth_token request.")
+            return AuthTokenResponse(token="dummy", project_id="dummy")
+
+
+class SwitchableV4Client(V4Client):
+    """
+    V4Client with toggleable post requests.
+    Returns dummy response when `_agentops_service_enabled` is False.
+    """
+
+    def post(self, *args: Any, **kwargs: Any) -> requests.Response:
+        if _agentops_service_enabled:
+            return super().post(*args, **kwargs)
+        else:
+            logger.debug("SwitchableV4Client is switched off, skipping post request.")
+            response = requests.Response()
+            response.status_code = 200
+            response._content = b"{}"
+            return response
