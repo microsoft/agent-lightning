@@ -93,7 +93,7 @@ def test_trainer_port_ignored_for_non_client_server_strategy() -> None:
     """Test that port has no effect when using a non client-server strategy."""
     trainer = agl.Trainer(
         algorithm=agl.Baseline(),
-        n_runners=2,
+        n_runners=1,
         port=8082,
         strategy="shm",
     )
@@ -114,7 +114,7 @@ def test_trainer_port_overrides_existing_client_server_strategy() -> None:
     )
 
     assert trainer.strategy is strategy
-    assert trainer.strategy.server_port == 9100
+    assert trainer.strategy.server_port == 9100  # type: ignore
 
 
 def test_trainer_with_env_vars_for_execution_strategy(monkeypatch: pytest.MonkeyPatch) -> None:
