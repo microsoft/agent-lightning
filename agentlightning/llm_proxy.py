@@ -11,6 +11,7 @@ import socket
 import tempfile
 import threading
 import time
+import weakref
 from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Sequence, TypedDict, Union, cast
 
 import litellm
@@ -98,7 +99,22 @@ def _reset_litellm_logging_worker() -> None:
         litellm_logging_worker.GLOBAL_LOGGING_WORKER = litellm_logging_worker.LoggingWorker()
         litellm_utils.GLOBAL_LOGGING_WORKER = litellm_logging_worker.GLOBAL_LOGGING_WORKER  # type: ignore[reportAttributeAccessIssue]
     except Exception:  # pragma: no cover - best-effort hygiene
-        logger.error("Unable to propagate LiteLLM logging worker reset.", exc_info=True)
+        logger.warning("Unable to propagate LiteLLM logging worker reset.", exc_info=True)
+
+
+def _reset_litellm_logging_callback_manager() -> None:
+    """Reset LiteLLM's global callback manager.
+
+    To get rid of the warning message: "Cannot add callback - would exceed MAX_CALLBACKS limit of 30."
+    when litellm is restarted multiple times in the same process.
+
+    It does not respect existing input/output callbacks.
+    """
+
+    try:
+        litellm.logging_callback_manager._reset_all_callbacks()  # pyright: ignore[reportPrivateUsage]
+    except Exception:  # pragma: no cover - best-effort hygiene
+        logger.warning("Unable to reset LiteLLM logging callback manager.", exc_info=True)
 
 
 class AddReturnTokenIds(CustomLogger):
@@ -398,7 +414,8 @@ class LightningOpenTelemetry(OpenTelemetry):
         store: Optional explicit LightningStore for the exporter.
     """
 
-    def __init__(self, store: LightningStore):
+    def __init__(self, store: LightningStore, llm_proxy: LLMProxy):
+        self.llm_proxy = weakref.ref(llm_proxy)
         self.exporter = LightningSpanExporter(store)
         config = OpenTelemetryConfig(exporter=self.exporter)
 
@@ -413,6 +430,15 @@ class LightningOpenTelemetry(OpenTelemetry):
 
     def set_store(self, store: LightningStore) -> None:
         self.exporter.set_store(store)
+
+    def owned_by(self, llm_proxy: LLMProxy) -> bool:
+        """Check whether the `llm_proxy` is the one associated with this tracer.
+
+        Args:
+            llm_proxy: The current LLMProxy instance.
+        """
+        current_proxy = self.llm_proxy()
+        return current_proxy is not None and current_proxy is llm_proxy
 
 
 class LLMProxy:
@@ -610,18 +636,30 @@ class LLMProxy:
             logger.info("Callbacks are not initialized. Initializing them.")
             self._callbacks_initialized_copy = cast(List[Any], litellm.callbacks) + [  # type: ignore
                 AddReturnTokenIds(),
-                LightningOpenTelemetry(self.store),
+                LightningOpenTelemetry(self.store, self),
             ]
+
         else:
             logger.warning("Callbacks are already initialized. Augmenting the initialized copy with latest store.")
 
-            opentelemetry_callbacks = [cb for cb in litellm.callbacks if isinstance(cb, LightningOpenTelemetry)]  # type: ignore
+            opentelemetry_callbacks = [cb for cb in litellm.callbacks if isinstance(cb, LightningOpenTelemetry) and cb.owned_by(self)]  # type: ignore
             if len(opentelemetry_callbacks) > 1:
-                raise ValueError(
-                    "Multiple OpenTelemetry callbacks found, which means multiple LLM Proxy is running. This is unsupported."
+                raise RuntimeError(
+                    "Found multiple LightningOpenTelemetry callbacks for this LLMProxy instance. This is unsupported."
                 )
-            opentelemetry_callbacks[0].set_store(self.store)
+            elif len(opentelemetry_callbacks) == 0:
+                logger.error(
+                    "LightningOpenTelemetry callback not found in litellm.callbacks but the proxy has been initialized. This should not happen."
+                )
+                self._callbacks_initialized_copy.append(LightningOpenTelemetry(self.store, self))
+            else:
+                opentelemetry_callbacks[0].set_store(self.store)
             # The updated callback should also be reflected in _callbacks_initialized_copy
+
+            # Hacks to avoid issues on restart within the same process.
+            # Reset LiteLLM's logging worker so its asyncio.Queue binds to the new loop.
+            _reset_litellm_logging_worker()
+            _reset_litellm_logging_callback_manager()
 
         litellm.callbacks.clear()  # type: ignore
         litellm.callbacks.extend(self._callbacks_initialized_copy)  # type: ignore
@@ -645,9 +683,6 @@ class LLMProxy:
 
         # Initialize global middleware and callbacks once.
         self.initialize()
-
-        # Reset LiteLLM's logging worker so its asyncio.Queue binds to the new loop.
-        _reset_litellm_logging_worker()
 
         # Persist a temp worker config for LiteLLM and point the proxy at it.
         self._config_file = tempfile.NamedTemporaryFile(suffix=".yaml", delete=False).name

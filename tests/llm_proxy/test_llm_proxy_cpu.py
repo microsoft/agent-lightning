@@ -18,6 +18,7 @@ from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.types import Span
 
 from ..common.network import get_free_port
+from ..common.tracer import clear_tracer_provider
 
 
 class _FakeSpanContext:
@@ -221,6 +222,8 @@ class TestLLM(CustomLLM):
 
 
 def test_custom_llm_restarted_multiple_times(caplog: pytest.LogCaptureFixture) -> None:
+    clear_tracer_provider()
+
     restart_times: int = 30
 
     store = InMemoryLightningStore()
@@ -264,6 +267,7 @@ def test_custom_llm_restarted_multiple_times(caplog: pytest.LogCaptureFixture) -
 
             error_logs = [record.message for record in caplog.records if record.levelno >= logging.ERROR]
             assert not error_logs, f"Found error logs: {error_logs}"
+            assert not any("Cannot add callback" in record.message for record in caplog.records)
 
         llm_proxy.stop()
     finally:
