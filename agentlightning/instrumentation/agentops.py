@@ -13,13 +13,10 @@ from typing import Any, Callable, no_type_check
 import flask
 import requests
 import setproctitle
-import requests
-
+from agentops.client.api import V3Client, V4Client
+from agentops.sdk.exporters import AuthenticatedOTLPExporter
 from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
-from agentops.sdk.exporters import AuthenticatedOTLPExporter
-from agentops.client.api import V4Client, V3Client
-
 
 logger = logging.getLogger(__name__)
 
@@ -46,8 +43,8 @@ def set_switch(value: bool):
 
 
 def _patch_exporters():
-    import agentops.sdk.core
     import agentops.client.api
+    import agentops.sdk.core
 
     agentops.sdk.core.AuthenticatedOTLPExporter = SwitchableAuthenticatedOTLPExporter
     agentops.sdk.core.OTLPMetricExporter = SwitchableOTLPMetricExporter
@@ -57,9 +54,9 @@ def _patch_exporters():
 
 
 def _unpatch_exporters():
-    import agentops.sdk.core
     import agentops.client.api
-    
+    import agentops.sdk.core
+
     agentops.sdk.core.AuthenticatedOTLPExporter = AuthenticatedOTLPExporter
     agentops.sdk.core.OTLPMetricExporter = OTLPMetricExporter
     agentops.sdk.core.OTLPSpanExporter = OTLPSpanExporter
@@ -403,7 +400,6 @@ class SwitchableV3Client(V3Client):
             logger.debug("SwitchableV4Client is switched off, skipping fetch_auth_token request.")
             return {"token": "dummy", "project_id": "dummy"}
 
-
     async def async_request(self, *args, **kwargs):
         if _switch:
             return await super().async_request(*args, **kwargs)
@@ -421,9 +417,8 @@ class SwitchableV4Client(V4Client):
             logger.debug("SwitchableV4Client is switched off, skipping post request.")
             response = requests.Response()
             response.status_code = 200
-            response._content = b'{}'
+            response._content = b"{}"
             return response
-
 
     async def async_request(self, *args, **kwargs):
         if _switch:
