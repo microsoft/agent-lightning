@@ -192,7 +192,7 @@ class AgentOpsTracer(Tracer):
         if not self._lightning_span_processor:
             raise RuntimeError("LightningSpanProcessor is not initialized. Call init_worker() first.")
 
-        if store is not None and rollout_id is not None and attempt_id is not None:            
+        if store is not None and rollout_id is not None and attempt_id is not None:
             ctx = self._lightning_span_processor.with_context(store=store, rollout_id=rollout_id, attempt_id=attempt_id)
             with ctx as processor:
                 trace = agentops.start_trace(name=name)
