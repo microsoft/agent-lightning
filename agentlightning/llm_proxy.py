@@ -411,8 +411,7 @@ class LightningOpenTelemetry(OpenTelemetry):
     """
 
     def __init__(self):
-        self.exporter = LightningSpanExporter()
-        config = OpenTelemetryConfig(exporter=self.exporter)
+        config = OpenTelemetryConfig(exporter=LightningSpanExporter())
 
         # Check for tracer initialization
         if _check_tracer_provider():
