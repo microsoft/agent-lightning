@@ -24,6 +24,7 @@ from litellm.integrations.opentelemetry import OpenTelemetry, OpenTelemetryConfi
 from litellm.proxy.proxy_server import app, save_worker_config  # pyright: ignore[reportUnknownVariableType]
 from opentelemetry.sdk.trace import ReadableSpan
 from opentelemetry.sdk.trace.export import SpanExporter, SpanExportResult
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from agentlightning.types import LLM, ProxyLLM
 
@@ -441,6 +442,57 @@ class LightningOpenTelemetry(OpenTelemetry):
         return current_proxy is not None and current_proxy is llm_proxy
 
 
+class RolloutAttemptMiddleware(BaseHTTPMiddleware):
+    """
+    Rewrites /rollout/{rid}/attempt/{aid}/... -> /...
+    and injects x-rollout-id, x-attempt-id, x-sequence-id headers.
+
+    LLMProxy can update store later without rebuilding middleware.
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        store = cast(weakref.ReferenceType[LightningStore], kwargs.pop("store"))
+        llm_proxy = cast(weakref.ReferenceType[LLMProxy], kwargs.pop("llm_proxy"))
+        self.store = store
+        self.llm_proxy = llm_proxy
+        super().__init__(*args, **kwargs)
+
+    async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+        # Decode rollout and attempt from the URL prefix. Example:
+        #   /rollout/r123/attempt/a456/v1/chat/completions
+        # becomes
+        #   /v1/chat/completions
+        # while adding request-scoped headers for trace attribution.
+        path = request.url.path
+
+        match = re.match(r"^/rollout/([^/]+)/attempt/([^/]+)(/.*)?$", path)
+        if match:
+            rollout_id = match.group(1)
+            attempt_id = match.group(2)
+            new_path = match.group(3) if match.group(3) is not None else "/"
+
+            # Rewrite the ASGI scope path so downstream sees a clean OpenAI path.
+            request.scope["path"] = new_path
+            request.scope["raw_path"] = new_path.encode()
+
+            store = self.store()
+            if store is not None:
+                # Allocate a monotonic sequence id per (rollout, attempt).
+                sequence_id = await store.get_next_span_sequence_id(rollout_id, attempt_id)
+
+                # Inject headers so downstream components and exporters can retrieve them.
+                request.scope["headers"] = list(request.scope["headers"]) + [
+                    (b"x-rollout-id", rollout_id.encode()),
+                    (b"x-attempt-id", attempt_id.encode()),
+                    (b"x-sequence-id", str(sequence_id).encode()),
+                ]
+            else:
+                logger.warning("Store is not set. Skipping sequence id allocation and header injection.")
+
+        response = await call_next(request)
+        return response
+
+
 class LLMProxy:
     """Host a LiteLLM OpenAI-compatible proxy bound to a LightningStore.
 
@@ -565,71 +617,49 @@ class LLMProxy:
 
         # Install middleware if it's not already installed.
         installed: bool = False
-        # Signal 1: dispatch_func.__name__ == "rollout_attempt_middleware"
-        try:
-            for mw in app.user_middleware:
-                dispatch_func = mw.kwargs.get("dispatch")
-                if dispatch_func is not None and dispatch_func.__name__ == "rollout_attempt_middleware":  # type: ignore
+        for mw in app.user_middleware:
+            if mw.cls is RolloutAttemptMiddleware:
+                # Check whether the middleware is installed by myself
+                llm_proxy_ref = mw.kwargs.get("llm_proxy")
+                if llm_proxy_ref is None:
+                    logger.warning(
+                        "Found existing RolloutAttemptMiddleware without llm_proxy reference. "
+                        "We will reuse this middleware and modify its proxy reference and store."
+                    )
+                    mw.kwargs["llm_proxy"] = weakref.ref(self)
+                    mw.kwargs["store"] = weakref.ref(self.store)
                     installed = True
-                    logger.debug("rollout_attempt_middleware is installed in user_middleware.")
-                    break
-        except AttributeError:
-            logger.error(
-                "Cannot determine whether rollout_attempt_middleware is installed by user_middleware.", exc_info=True
-            )
-        # Signal 2: middleware_stack
-        try:
-            if app.middleware_stack is not None:
-                installed = True
-                logger.debug("middleware_stack has already been built.")
-        except AttributeError:
-            logger.error(
-                "Cannot determine whether rollout_attempt_middleware is installed by middleware_stack.", exc_info=True
-            )
+                    logger.info("Updated llm_proxy and store references in existing RolloutAttemptMiddleware.")
+                elif llm_proxy_ref() is self:  # type: ignore
+                    # Upgrade the store if needed
+                    logger.info(
+                        "Found existing RolloutAttemptMiddleware owned by this LLMProxy instance. Updating store reference."
+                    )
+                    mw.kwargs["store"] = weakref.ref(self.store)
+                    logger.info("Updated store reference in existing RolloutAttemptMiddleware.")
+                    installed = True
+                else:
+                    # NOTE: We need to do this because middleware cannot be added once the application has started
+                    # So we have to rewrite the existing one.
+                    logger.error(
+                        "Found existing RolloutAttemptMiddleware not owned by this LLMProxy instance. "
+                        "We are going to rewrite the middleware. This may have unintended consequences to other LLMProxy instances."
+                    )
+                    mw.kwargs["store"] = weakref.ref(self.store)
+                    mw.kwargs["llm_proxy"] = weakref.ref(self)
+                    installed = True
+                    logger.info(
+                        "llm_proxy and store references in existing RolloutAttemptMiddleware have been rewritten."
+                    )
 
         if not installed:
-            logger.info("Adding rollout_attempt_middleware to the FastAPI app.")
-
-            # Add middleware here because it relies on the global store.
-            @app.middleware("http")
-            async def rollout_attempt_middleware(  # pyright: ignore[reportUnusedFunction]
-                request: Request, call_next: Callable[[Request], Awaitable[Response]]
-            ) -> Response:
-                # Decode rollout and attempt from the URL prefix. Example:
-                #   /rollout/r123/attempt/a456/v1/chat/completions
-                # becomes
-                #   /v1/chat/completions
-                # while adding request-scoped headers for trace attribution.
-                path = request.url.path
-
-                match = re.match(r"^/rollout/([^/]+)/attempt/([^/]+)(/.*)?$", path)
-                if match:
-                    rollout_id = match.group(1)
-                    attempt_id = match.group(2)
-                    new_path = match.group(3) if match.group(3) is not None else "/"
-
-                    # Rewrite the ASGI scope path so downstream sees a clean OpenAI path.
-                    request.scope["path"] = new_path
-                    request.scope["raw_path"] = new_path.encode()
-
-                    if self.store is not None:
-                        # Allocate a monotonic sequence id per (rollout, attempt).
-                        sequence_id = await self.store.get_next_span_sequence_id(rollout_id, attempt_id)
-
-                        # Inject headers so downstream components and exporters can retrieve them.
-                        request.scope["headers"] = list(request.scope["headers"]) + [
-                            (b"x-rollout-id", rollout_id.encode()),
-                            (b"x-attempt-id", attempt_id.encode()),
-                            (b"x-sequence-id", str(sequence_id).encode()),
-                        ]
-                    else:
-                        logger.warning("Store is not set. Skipping sequence id allocation and header injection.")
-
-                response = await call_next(request)
-                return response
-
-        else:
-            logger.warning("rollout_attempt_middleware is already installed. Skipping installation.")
+            # Fallback to adding a new middleware
+            logger.info("Adding a new middleware to the FastAPI app.")
+            app.add_middleware(
+                RolloutAttemptMiddleware,
+                store=weakref.ref(self.store),
+                llm_proxy=weakref.ref(self),
+            )
 
         # Register callbacks once on the global LiteLLM callback list.
         if self._callbacks_initialized_copy is None:
