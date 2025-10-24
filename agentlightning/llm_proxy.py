@@ -11,7 +11,6 @@ import socket
 import tempfile
 import threading
 import time
-import weakref
 from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Sequence, TypedDict, Union, cast
 
 import litellm
@@ -162,13 +161,10 @@ class LightningSpanExporter(SpanExporter):
     * Buffer access is protected by a re-entrant lock.
     * Export is synchronous to the caller yet schedules an async flush on the
       internal loop, then waits for completion.
-
-    Args:
-        store: Optional explicit LightningStore. If None, uses `get_global_store()`.
     """
 
-    def __init__(self, store: LightningStore):
-        self._store = store
+    def __init__(self, _store: Optional[LightningStore] = None):
+        self._store: Optional[LightningStore] = _store  # this is only for testing purposes
         self._buffer: List[ReadableSpan] = []
         self._lock: Optional[threading.RLock] = None
 
@@ -177,9 +173,6 @@ class LightningSpanExporter(SpanExporter):
         # Deferred creation until first use.
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._loop_thread: Optional[threading.Thread] = None
-
-    def set_store(self, store: LightningStore) -> None:
-        self._store = store
 
     def _ensure_loop(self) -> asyncio.AbstractEventLoop:
         """Lazily initialize the event loop and thread on first use.
@@ -286,6 +279,11 @@ class LightningSpanExporter(SpanExporter):
             if not subtree_spans:
                 continue
 
+            store = self._store or get_active_llm_proxy().get_store()
+            if store is None:
+                logger.warning("Store is not set in LLMProxy. Cannot log spans to store.")
+                continue
+
             # Merge all custom headers found in the subtree.
             headers_merged: Dict[str, Any] = {}
 
@@ -340,7 +338,7 @@ class LightningSpanExporter(SpanExporter):
 
             # Persist each span in the subtree with the resolved identifiers.
             for span in subtree_spans:
-                await self._store.add_otel_span(
+                await store.add_otel_span(
                     rollout_id=rollout_id, attempt_id=attempt_id, sequence_id=sequence_id_decimal, readable_span=span
                 )
 
@@ -410,14 +408,10 @@ class LightningOpenTelemetry(OpenTelemetry):
     * Ensures each request is annotated with a per-attempt sequence id so spans
       are ordered deterministically even with clock skew across nodes.
     * Uses [`LightningSpanExporter`][agentlightning.llm_proxy.LightningSpanExporter] to persist spans for analytics and training.
-
-    Args:
-        store: Optional explicit LightningStore for the exporter.
     """
 
-    def __init__(self, store: LightningStore, llm_proxy: LLMProxy):
-        self.llm_proxy = weakref.ref(llm_proxy)
-        self.exporter = LightningSpanExporter(store)
+    def __init__(self):
+        self.exporter = LightningSpanExporter()
         config = OpenTelemetryConfig(exporter=self.exporter)
 
         # Check for tracer initialization
@@ -429,18 +423,6 @@ class LightningOpenTelemetry(OpenTelemetry):
 
         super().__init__(config=config)  # pyright: ignore[reportUnknownMemberType]
 
-    def set_store(self, store: LightningStore) -> None:
-        self.exporter.set_store(store)
-
-    def owned_by(self, llm_proxy: LLMProxy) -> bool:
-        """Check whether the `llm_proxy` is the one associated with this tracer.
-
-        Args:
-            llm_proxy: The current LLMProxy instance.
-        """
-        current_proxy = self.llm_proxy()
-        return current_proxy is not None and current_proxy is llm_proxy
-
 
 class RolloutAttemptMiddleware(BaseHTTPMiddleware):
     """
@@ -449,13 +431,6 @@ class RolloutAttemptMiddleware(BaseHTTPMiddleware):
 
     LLMProxy can update store later without rebuilding middleware.
     """
-
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        store = cast(weakref.ReferenceType[LightningStore], kwargs.pop("store"))
-        llm_proxy = cast(weakref.ReferenceType[LLMProxy], kwargs.pop("llm_proxy"))
-        self.store = store
-        self.llm_proxy = llm_proxy
-        super().__init__(*args, **kwargs)
 
     async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         # Decode rollout and attempt from the URL prefix. Example:
@@ -475,7 +450,7 @@ class RolloutAttemptMiddleware(BaseHTTPMiddleware):
             request.scope["path"] = new_path
             request.scope["raw_path"] = new_path.encode()
 
-            store = self.store()
+            store = get_active_llm_proxy().get_store()
             if store is not None:
                 # Allocate a monotonic sequence id per (rollout, attempt).
                 sequence_id = await store.get_next_span_sequence_id(rollout_id, attempt_id)
@@ -551,6 +526,14 @@ class LLMProxy:
         self._ready_event = threading.Event()
         self._callbacks_initialized_copy: Optional[List[Any]] = None
 
+    def get_store(self) -> Optional[LightningStore]:
+        """Get the store used by the proxy.
+
+        Returns:
+            The store used by the proxy.
+        """
+        return self.store
+
     def set_store(self, store: LightningStore) -> None:
         """Set the store for the proxy.
 
@@ -615,84 +598,31 @@ class LLMProxy:
         if self.store is None:
             raise ValueError("Store is not set. Please set the store before initializing the LLMProxy.")
 
+        if _global_llm_proxy is not None:
+            logger.warning("A global LLMProxy is already set. Overwriting it with the new instance.")
+
+        # Set the global LLMProxy reference for middleware/exporter access.
+        set_active_llm_proxy(self)
+
         # Install middleware if it's not already installed.
         installed: bool = False
         for mw in app.user_middleware:
             if mw.cls is RolloutAttemptMiddleware:
-                # Check whether the middleware is installed by myself
-                llm_proxy_ref = mw.kwargs.get("llm_proxy")
-                if llm_proxy_ref is None:
-                    logger.warning(
-                        "Found existing RolloutAttemptMiddleware without llm_proxy reference. "
-                        "We will reuse this middleware and modify its proxy reference and store."
-                    )
-                    mw.kwargs["llm_proxy"] = weakref.ref(self)
-                    mw.kwargs["store"] = weakref.ref(self.store)
-                    installed = True
-                    logger.info("Updated llm_proxy and store references in existing RolloutAttemptMiddleware.")
-                elif llm_proxy_ref() is self:  # type: ignore
-                    # Upgrade the store if needed
-                    logger.info(
-                        "Found existing RolloutAttemptMiddleware owned by this LLMProxy instance. Updating store reference."
-                    )
-                    mw.kwargs["store"] = weakref.ref(self.store)
-                    logger.info("Updated store reference in existing RolloutAttemptMiddleware.")
-                    installed = True
-                else:
-                    # NOTE: We need to do this because middleware cannot be added once the application has started
-                    # So we have to rewrite the existing one.
-                    logger.error(
-                        "Found existing RolloutAttemptMiddleware not owned by this LLMProxy instance. "
-                        "We are going to rewrite the middleware. This may have unintended consequences to other LLMProxy instances."
-                    )
-                    mw.kwargs["store"] = weakref.ref(self.store)
-                    mw.kwargs["llm_proxy"] = weakref.ref(self)
-                    installed = True
-                    logger.info(
-                        "llm_proxy and store references in existing RolloutAttemptMiddleware have been rewritten."
-                    )
+                # Check whether the middleware is installed.
+                # It could be installed by other LLM Proxy instances, but it doesn't matter.
+                logger.info("Found existing RolloutAttemptMiddleware installed. Will not install a new one.")
+                installed = True
+                break
 
         if not installed:
             # Fallback to adding a new middleware
             logger.info("Adding a new middleware to the FastAPI app.")
-            app.add_middleware(
-                RolloutAttemptMiddleware,
-                store=weakref.ref(self.store),
-                llm_proxy=weakref.ref(self),
-            )
+            app.add_middleware(RolloutAttemptMiddleware)
 
-        # Register callbacks once on the global LiteLLM callback list.
-        if self._callbacks_initialized_copy is None:
-            logger.info("Callbacks are not initialized. Initializing them.")
-            self._callbacks_initialized_copy = cast(List[Any], litellm.callbacks) + [  # type: ignore
-                AddReturnTokenIds(),
-                LightningOpenTelemetry(self.store, self),
-            ]
-
-        else:
-            logger.warning("Callbacks are already initialized. Augmenting the initialized copy with latest store.")
-
-            opentelemetry_callbacks = [cb for cb in litellm.callbacks if isinstance(cb, LightningOpenTelemetry) and cb.owned_by(self)]  # type: ignore
-            if len(opentelemetry_callbacks) > 1:
-                raise RuntimeError(
-                    "Found multiple LightningOpenTelemetry callbacks for this LLMProxy instance. This is unsupported."
-                )
-            elif len(opentelemetry_callbacks) == 0:
-                logger.error(
-                    "LightningOpenTelemetry callback not found in litellm.callbacks but the proxy has been initialized. This should not happen."
-                )
-                self._callbacks_initialized_copy.append(LightningOpenTelemetry(self.store, self))
-            else:
-                opentelemetry_callbacks[0].set_store(self.store)
-            # The updated callback should also be reflected in _callbacks_initialized_copy
-
-            # Hacks to avoid issues on restart within the same process.
-            _reset_litellm_logging_callback_manager()
-            # Reset LiteLLM's logging worker so its asyncio.Queue binds to the new loop.
+        if not initialize_llm_callbacks():
+            # If it's not the first time to initialize the callbacks, also
+            # reset LiteLLM's logging worker so its asyncio.Queue binds to the new loop.
             _reset_litellm_logging_worker()
-
-        litellm.callbacks.clear()  # type: ignore
-        litellm.callbacks.extend(self._callbacks_initialized_copy)  # type: ignore
 
     def start(self):
         """Start the proxy server thread and initialize global wiring.
@@ -711,7 +641,7 @@ class LLMProxy:
         if not self.store:
             raise ValueError("Store is not set. Please set the store before starting the LLMProxy.")
 
-        # Initialize global middleware and callbacks once.
+        # Initialize global middleware and callbacks.
         self.initialize()
 
         # Persist a temp worker config for LiteLLM and point the proxy at it.
@@ -846,6 +776,60 @@ class LLMProxy:
             )
         else:
             raise ValueError("Either rollout_id and attempt_id must be provided, or neither.")
+
+
+_global_llm_proxy: Optional[LLMProxy] = None
+_callbacks_before_litellm_start: Optional[List[Any]] = None
+
+
+def get_active_llm_proxy() -> LLMProxy:
+    """Get the current global LLMProxy instance.
+
+    Returns:
+        Optional[LLMProxy]: The current LLMProxy if set, else None.
+    """
+    if _global_llm_proxy is None:
+        raise ValueError("Global LLMProxy is not set. Please call llm_proxy.start() first.")
+    return _global_llm_proxy
+
+
+def set_active_llm_proxy(proxy: LLMProxy) -> None:
+    """Set the current global LLMProxy instance.
+
+    Args:
+        proxy: The LLMProxy instance to set as global.
+    """
+    global _global_llm_proxy
+    _global_llm_proxy = proxy
+
+
+def initialize_llm_callbacks() -> bool:
+    """Restore `litellm.callbacks` to a state that is just initialized by agent-lightning.
+
+    When litellm is restarted multiple times in the same process, more and more callbacks
+    will be appended to `litellm.callbacks`, which may exceed the MAX_CALLBACKS limit.
+    This function remembers the initial state of `litellm.callbacks` and always restore to that state.
+
+    Returns:
+        Whether the callbacks are initialized for the first time.
+    """
+    global _callbacks_before_litellm_start
+
+    if _callbacks_before_litellm_start is None:
+        litellm.callbacks.extend(  # type: ignore
+            [
+                AddReturnTokenIds(),
+                LightningOpenTelemetry(),
+            ]
+        )
+        _callbacks_before_litellm_start = [*litellm.callbacks]  # type: ignore
+        return True
+
+    _reset_litellm_logging_callback_manager()
+
+    litellm.callbacks.clear()  # type: ignore
+    litellm.callbacks.extend(_callbacks_before_litellm_start)  # type: ignore
+    return False
 
 
 def _get_default_ipv4_address() -> str:
