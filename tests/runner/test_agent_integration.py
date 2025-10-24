@@ -20,7 +20,7 @@ from agentlightning.tracer.agentops import AgentOpsTracer
 from agentlightning.types import LLM, AttemptedRollout, NamedResources, Rollout
 
 from ..common.network import get_free_port
-from ..common.tracer import clear_agentops_init, clear_tracer_provider
+from ..common.tracer import clear_tracer_provider
 from ..common.vllm import VLLM_AVAILABLE, RemoteOpenAIServer
 
 
@@ -46,6 +46,9 @@ def teardown_runner(runner: LitAgentRunner[Any]) -> None:
 
 @pytest.fixture(scope="module", autouse=True)
 def setup_module():
+    # This must execute only once for this module.
+    # Once agentops tracer is initialized, it cannot be reset,
+    # otherwise it will never be rewired.
     clear_tracer_provider()
     yield
 
@@ -175,8 +178,6 @@ async def test_runner_integration_with_spawned_litellm_proxy(server: RemoteOpenA
             assert response.choices, "Proxy should return at least one choice"
             return 0.5
 
-    clear_tracer_provider()
-    clear_agentops_init()
     agent = ProxyAgent()
     runner, store = await init_runner(agent)
 
@@ -199,7 +200,7 @@ async def test_runner_integration_with_spawned_litellm_proxy(server: RemoteOpenA
     )
 
     def run_proxy_server(proxy: LLMProxy, event: MpEvent):
-        clear_tracer_provider()
+        clear_tracer_provider()  # clear once more before the proxy starts
         proxy.start()
         event.set()
         time.sleep(3600)  # Keep the server running
