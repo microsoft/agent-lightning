@@ -283,6 +283,9 @@ class LightningSpanExporter(SpanExporter):
                         f"metadata.requester_custom_headers is not stored as a string: {headers_str}. Skipping the span."
                     )
                     continue
+                if not headers_str.strip():
+                    logger.warning("metadata.requester_custom_headers is an empty string. Skipping the span.")
+                    continue
                 try:
                     # Use literal_eval to parse the stringified dict safely.
                     headers = ast.literal_eval(headers_str)
@@ -605,7 +608,7 @@ class LLMProxy:
         # Register callbacks once on the global LiteLLM callback list.
         if self._callbacks_initialized_copy is None:
             logger.info("Callbacks are not initialized. Initializing them.")
-            self._callbacks_initialized_copy = cast(List[Any], litellm.callbacks) + [
+            self._callbacks_initialized_copy = cast(List[Any], litellm.callbacks) + [  # type: ignore
                 AddReturnTokenIds(),
                 LightningOpenTelemetry(self.store),
             ]
