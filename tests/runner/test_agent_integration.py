@@ -20,7 +20,7 @@ from agentlightning.tracer.agentops import AgentOpsTracer
 from agentlightning.types import LLM, AttemptedRollout, NamedResources, Rollout
 
 from ..common.network import get_free_port
-from ..common.tracer import clear_tracer_provider
+from ..common.tracer import clear_agentops_init, clear_tracer_provider
 from ..common.vllm import VLLM_AVAILABLE, RemoteOpenAIServer
 
 
@@ -176,6 +176,7 @@ async def test_runner_integration_with_spawned_litellm_proxy(server: RemoteOpenA
             return 0.5
 
     clear_tracer_provider()
+    clear_agentops_init()
     agent = ProxyAgent()
     runner, store = await init_runner(agent)
 

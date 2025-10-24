@@ -22,7 +22,11 @@ from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.tracer.base import Tracer
 from agentlightning.types import LLM, Hook, NamedResources, PromptTemplate, Rollout, Span, SpanNames
 
-trace_api.set_tracer_provider(TracerProvider())
+
+@pytest.fixture(scope="module", autouse=True)
+def setup_module():
+    trace_api.set_tracer_provider(TracerProvider())
+    yield
 
 
 def create_readable_span(name: str, attributes: Optional[Dict[str, Any]] = None) -> ReadableSpan:
