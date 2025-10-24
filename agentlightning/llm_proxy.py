@@ -167,6 +167,7 @@ class LightningSpanExporter(SpanExporter):
         self._store: Optional[LightningStore] = _store  # this is only for testing purposes
         self._buffer: List[ReadableSpan] = []
         self._lock: Optional[threading.RLock] = None
+        self._loop_lock_pid: Optional[int] = None
 
         # Single dedicated event loop running in a daemon thread.
         # This decouples OTEL SDK threads from our async store I/O.
@@ -180,6 +181,7 @@ class LightningSpanExporter(SpanExporter):
         Returns:
             asyncio.AbstractEventLoop: The initialized event loop.
         """
+        self._clear_loop_and_lock()
         if self._loop is None:
             self._loop = asyncio.new_event_loop()
             self._loop_thread = threading.Thread(target=self._run_loop, name="LightningSpanExporterLoop", daemon=True)
@@ -192,9 +194,25 @@ class LightningSpanExporter(SpanExporter):
         Returns:
             threading.RLock: The initialized lock.
         """
+        self._clear_loop_and_lock()
         if self._lock is None:
             self._lock = threading.RLock()
         return self._lock
+
+    def _clear_loop_and_lock(self) -> None:
+        """Clear the loop and lock.
+        This happens if the exporter was used in a process then used in another process.
+
+        This should only happen in CI.
+        """
+        if os.getpid() != self._loop_lock_pid:
+            logger.warning("Loop and lock are not owned by the current process. Clearing them.")
+            self._loop = None
+            self._loop_thread = None
+            self._lock = None
+            self._loop_lock_pid = os.getpid()
+        elif self._loop_lock_pid is None:
+            self._loop_lock_pid = os.getpid()
 
     def _run_loop(self) -> None:
         """Run the private asyncio loop forever on the exporter thread."""
@@ -487,6 +505,11 @@ class LLMProxy:
     !!! warning
 
         The LLM Proxy does support streaming, but the tracing is still problematic when streaming is enabled.
+
+    !!! danger
+
+        Do not run LLM proxy in the same process as the main runner. It's easy to cause conflicts in the tracer provider
+        with tracers like [`AgentOpsTracer`][agentlightning.AgentOpsTracer].
 
     Args:
         port: TCP port to bind.
@@ -876,8 +899,8 @@ def _check_tracer_provider() -> bool:
         bool: True if the tracer provider is valid, else False.
     """
     if (
-        not hasattr(trace_api, "_TRACER_PROVIDER")
-        or trace_api._TRACER_PROVIDER is None  # pyright: ignore[reportPrivateUsage]
+        hasattr(trace_api, "_TRACER_PROVIDER")
+        and trace_api._TRACER_PROVIDER is not None  # pyright: ignore[reportPrivateUsage]
     ):
-        return False
-    return True
+        return True
+    return False

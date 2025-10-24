@@ -175,6 +175,7 @@ async def test_runner_integration_with_spawned_litellm_proxy(server: RemoteOpenA
             assert response.choices, "Proxy should return at least one choice"
             return 0.5
 
+    clear_tracer_provider()
     agent = ProxyAgent()
     runner, store = await init_runner(agent)
 
@@ -197,11 +198,11 @@ async def test_runner_integration_with_spawned_litellm_proxy(server: RemoteOpenA
     )
 
     def run_proxy_server(proxy: LLMProxy, event: MpEvent):
+        clear_tracer_provider()
         proxy.start()
         event.set()
         time.sleep(3600)  # Keep the server running
 
-    clear_tracer_provider()
     event = multiprocessing.Event()
     process = multiprocessing.Process(target=run_proxy_server, args=(proxy, event))
     process.start()
@@ -214,6 +215,7 @@ async def test_runner_integration_with_spawned_litellm_proxy(server: RemoteOpenA
         assert rollouts and rollouts[0].status == "succeeded"
 
         spans = await client_store.query_spans(rollouts[0].rollout_id, "latest")
+        assert len(spans) > 1
         first_spans = [span for span in spans if span.sequence_id == 1]
         assert len(first_spans) > 1
         assert any("llm.hosted_vllm.choices" in span.attributes for span in first_spans)
