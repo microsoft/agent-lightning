@@ -17,7 +17,7 @@ import litellm
 import opentelemetry.trace as trace_api
 import uvicorn
 import yaml
-from fastapi import FastAPI, Request, Response
+from fastapi import Request, Response
 from litellm.integrations.custom_logger import CustomLogger
 from litellm.integrations.opentelemetry import OpenTelemetry, OpenTelemetryConfig
 from litellm.proxy.proxy_server import app, save_worker_config  # pyright: ignore[reportUnknownVariableType]
@@ -99,27 +99,6 @@ def _reset_litellm_logging_worker() -> None:
         litellm_utils.GLOBAL_LOGGING_WORKER = litellm_logging_worker.GLOBAL_LOGGING_WORKER  # type: ignore[reportAttributeAccessIssue]
     except Exception:  # pragma: no cover - best-effort hygiene
         logger.error("Unable to propagate LiteLLM logging worker reset.", exc_info=True)
-
-
-_global_callbacks: Optional[List[Any]] = None
-_global_user_middlewares: Optional[List[Any]] = None
-
-
-def _ensure_global_user_middlewares(app: FastAPI) -> List[Any]:
-    """Preserve a copy of `app.user_middlewares` before AGL's middlewares is installed."""
-    global _global_user_middlewares
-    if _global_user_middlewares is None:
-        _global_user_middlewares = app.user_middleware  # type: ignore
-    return _global_user_middlewares
-
-
-def _ensure_litellm_callbacks_before_agl() -> List[Any]:
-    """Preserve a copy of `litellm.callbacks` before AGL's callbacks is installed."""
-    global _global_callbacks
-
-    if _global_callbacks is None:
-        _global_callbacks = litellm.callbacks  # type: ignore
-    return _global_callbacks
 
 
 class AddReturnTokenIds(CustomLogger):
@@ -482,6 +461,7 @@ class LLMProxy:
         self._config_file = None
         self._uvicorn_server = None
         self._ready_event = threading.Event()
+        self._callbacks_initializing_copy: Optional[List[Any]] = None
 
     def set_store(self, store: LightningStore) -> None:
         """Set the store for the proxy.
@@ -531,7 +511,7 @@ class LLMProxy:
             time.sleep(0.01)
 
     def initialize(self):
-        """Initialize global middleware and LiteLLM callbacks once more.
+        """Initialize global middleware and LiteLLM callbacks.
 
         Installs:
 
@@ -539,54 +519,94 @@ class LLMProxy:
         injects rollout/attempt/sequence headers, and forwards downstream.
         * LiteLLM callbacks for token ids and OpenTelemetry export.
 
+        The middleware can only be installed once because once the FastAPI app has started,
+        the middleware cannot be changed any more.
+
         This function does not start any server. It only wires global hooks.
         """
         if self.store is None:
             raise ValueError("Store is not set. Please set the store before initializing the LLMProxy.")
-        store = self.store
 
-        # Restore the global user middlewares.
-        app.user_middleware = _ensure_global_user_middlewares(app)
+        # Install middleware if it's not already installed.
+        installed: bool = False
+        # Signal 1: dispatch_func.__name__ == "rollout_attempt_middleware"
+        try:
+            for mw in app.user_middleware:
+                dispatch_func = mw.kwargs.get("dispatch")
+                if dispatch_func is not None and dispatch_func.__name__ == "rollout_attempt_middleware":  # type: ignore
+                    installed = True
+                    logger.debug("rollout_attempt_middleware is installed in user_middleware.")
+                    break
+        except AttributeError:
+            logger.error(
+                "Cannot determine whether rollout_attempt_middleware is installed by user_middleware.", exc_info=True
+            )
+        # Signal 2: middleware_stack
+        try:
+            if app.middleware_stack is not None:
+                installed = True
+                logger.debug("middleware_stack has already been built.")
+        except AttributeError:
+            logger.error(
+                "Cannot determine whether rollout_attempt_middleware is installed by middleware_stack.", exc_info=True
+            )
 
-        # Add middleware here because it relies on the global store.
-        @app.middleware("http")
-        async def rollout_attempt_middleware(  # pyright: ignore[reportUnusedFunction]
-            request: Request, call_next: Callable[[Request], Awaitable[Response]]
-        ) -> Response:
-            # Decode rollout and attempt from the URL prefix. Example:
-            #   /rollout/r123/attempt/a456/v1/chat/completions
-            # becomes
-            #   /v1/chat/completions
-            # while adding request-scoped headers for trace attribution.
-            path = request.url.path
+        if not installed:
+            logger.info("Adding rollout_attempt_middleware to the FastAPI app.")
 
-            match = re.match(r"^/rollout/([^/]+)/attempt/([^/]+)(/.*)?$", path)
-            if match:
-                rollout_id = match.group(1)
-                attempt_id = match.group(2)
-                new_path = match.group(3) if match.group(3) is not None else "/"
+            # Add middleware here because it relies on the global store.
+            @app.middleware("http")
+            async def rollout_attempt_middleware(  # pyright: ignore[reportUnusedFunction]
+                request: Request, call_next: Callable[[Request], Awaitable[Response]]
+            ) -> Response:
+                # Decode rollout and attempt from the URL prefix. Example:
+                #   /rollout/r123/attempt/a456/v1/chat/completions
+                # becomes
+                #   /v1/chat/completions
+                # while adding request-scoped headers for trace attribution.
+                path = request.url.path
 
-                # Rewrite the ASGI scope path so downstream sees a clean OpenAI path.
-                request.scope["path"] = new_path
-                request.scope["raw_path"] = new_path.encode()
+                match = re.match(r"^/rollout/([^/]+)/attempt/([^/]+)(/.*)?$", path)
+                if match:
+                    rollout_id = match.group(1)
+                    attempt_id = match.group(2)
+                    new_path = match.group(3) if match.group(3) is not None else "/"
 
-                # Allocate a monotonic sequence id per (rollout, attempt).
-                sequence_id = await store.get_next_span_sequence_id(rollout_id, attempt_id)
+                    # Rewrite the ASGI scope path so downstream sees a clean OpenAI path.
+                    request.scope["path"] = new_path
+                    request.scope["raw_path"] = new_path.encode()
 
-                # Inject headers so downstream components and exporters can retrieve them.
-                request.scope["headers"] = list(request.scope["headers"]) + [
-                    (b"x-rollout-id", rollout_id.encode()),
-                    (b"x-attempt-id", attempt_id.encode()),
-                    (b"x-sequence-id", str(sequence_id).encode()),
-                ]
+                    if self.store is not None:
+                        # Allocate a monotonic sequence id per (rollout, attempt).
+                        sequence_id = await self.store.get_next_span_sequence_id(rollout_id, attempt_id)
 
-            response = await call_next(request)
-            return response
+                        # Inject headers so downstream components and exporters can retrieve them.
+                        request.scope["headers"] = list(request.scope["headers"]) + [
+                            (b"x-rollout-id", rollout_id.encode()),
+                            (b"x-attempt-id", attempt_id.encode()),
+                            (b"x-sequence-id", str(sequence_id).encode()),
+                        ]
+                    else:
+                        logger.warning("Store is not set. Skipping sequence id allocation and header injection.")
+
+                response = await call_next(request)
+                return response
+
+        else:
+            logger.warning("rollout_attempt_middleware is already installed. Skipping installation.")
 
         # Register callbacks once on the global LiteLLM callback list.
-        litellm.callbacks = _ensure_litellm_callbacks_before_agl() + [
+        if self._callbacks_initializing_copy is None:
+            logger.info("Callbacks are not initialized. Initializing them.")
+            self._callbacks_initializing_copy = cast(List[Any], litellm.callbacks)
+        else:
+            logger.warning("Callbacks are already initialized. Augmenting the initialized copy with latest store.")
+
+        # Ideally, the exporter in OpenTelemetry should be replaced by a new one.
+        # But for now, I think the implementation is too complex that way.
+        litellm.callbacks = self._callbacks_initializing_copy + [
             AddReturnTokenIds(),
-            LightningOpenTelemetry(store),
+            LightningOpenTelemetry(self.store),
         ]
 
     def start(self):

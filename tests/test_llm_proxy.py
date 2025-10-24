@@ -532,3 +532,37 @@ def test_update_model_list():
     ]
     assert proxy.is_running()
     proxy.stop()
+
+
+def test_restart_resets_litellm_logging_worker() -> None:
+    """LLMProxy.start() should recreate LiteLLM's logging worker on each run."""
+
+    try:
+        from litellm.litellm_core_utils import logging_worker as litellm_logging_worker
+    except ImportError:
+        pytest.skip("LiteLLM logging worker not available")
+
+    store = InMemoryLightningStore()
+    proxy = LLMProxy(
+        port=get_free_port(),
+        model_list=[
+            {
+                "model_name": "dummy-model",
+                # The backend is never invoked; only the proxy lifecycle matters here.
+                "litellm_params": {"model": "gpt-3.5-turbo"},
+            }
+        ],
+        store=store,
+    )
+
+    try:
+        proxy.start()
+        first_worker = litellm_logging_worker.GLOBAL_LOGGING_WORKER
+        proxy.stop()
+
+        proxy.start()
+        second_worker = litellm_logging_worker.GLOBAL_LOGGING_WORKER
+    finally:
+        proxy.stop()
+
+    assert first_worker is not second_worker, "LiteLLM logging worker should be refreshed after restart"
