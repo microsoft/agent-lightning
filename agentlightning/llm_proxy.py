@@ -657,9 +657,9 @@ class LLMProxy:
             # The updated callback should also be reflected in _callbacks_initialized_copy
 
             # Hacks to avoid issues on restart within the same process.
+            _reset_litellm_logging_callback_manager()
             # Reset LiteLLM's logging worker so its asyncio.Queue binds to the new loop.
             _reset_litellm_logging_worker()
-            _reset_litellm_logging_callback_manager()
 
         litellm.callbacks.clear()  # type: ignore
         litellm.callbacks.extend(self._callbacks_initialized_copy)  # type: ignore

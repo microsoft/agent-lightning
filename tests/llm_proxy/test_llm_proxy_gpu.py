@@ -21,7 +21,7 @@ import anthropic
 import openai
 import pytest
 
-from agentlightning.llm_proxy import LLMProxy
+from agentlightning.llm_proxy import LLMProxy, _reset_litellm_logging_worker  # pyright: ignore[reportPrivateUsage]
 from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.types import LLM, Span
 
@@ -65,14 +65,9 @@ def test_qwen25_model_sanity(qwen25_model: RemoteOpenAIServer):
     assert response.choices[0].message.content is not None
 
 
-@pytest.fixture(scope="module", autouse=True)
-def setup_module():
-    clear_tracer_provider()
-    yield
-
-
 @pytest.mark.asyncio
 async def test_basic_integration(qwen25_model: RemoteOpenAIServer):
+    clear_tracer_provider()
     store = InMemoryLightningStore()
     proxy = LLMProxy(
         port=get_free_port(),
@@ -174,6 +169,8 @@ async def test_basic_integration(qwen25_model: RemoteOpenAIServer):
 
 
 def _make_proxy_and_store(qwen25_model: RemoteOpenAIServer, *, retries: int = 0):
+    clear_tracer_provider()
+    _reset_litellm_logging_worker()  # type: ignore
     store = InMemoryLightningStore()
     proxy = LLMProxy(
         port=get_free_port(),
