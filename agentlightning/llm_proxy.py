@@ -161,6 +161,9 @@ class LightningSpanExporter(SpanExporter):
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._loop_thread: Optional[threading.Thread] = None
 
+    def set_store(self, store: LightningStore) -> None:
+        self._store = store
+
     def _ensure_loop(self) -> asyncio.AbstractEventLoop:
         """Lazily initialize the event loop and thread on first use.
 
@@ -393,7 +396,8 @@ class LightningOpenTelemetry(OpenTelemetry):
     """
 
     def __init__(self, store: LightningStore):
-        config = OpenTelemetryConfig(exporter=LightningSpanExporter(store))
+        self.exporter = LightningSpanExporter(store)
+        config = OpenTelemetryConfig(exporter=self.exporter)
 
         # Check for tracer initialization
         if (
@@ -403,6 +407,9 @@ class LightningOpenTelemetry(OpenTelemetry):
             logger.error("Tracer is already initialized. OpenTelemetry may not work as expected.")
 
         super().__init__(config=config)  # pyright: ignore[reportUnknownMemberType]
+
+    def set_store(self, store: LightningStore) -> None:
+        self.exporter.set_store(store)
 
 
 class LLMProxy:
@@ -461,7 +468,7 @@ class LLMProxy:
         self._config_file = None
         self._uvicorn_server = None
         self._ready_event = threading.Event()
-        self._callbacks_initializing_copy: Optional[List[Any]] = None
+        self._callbacks_initialized_copy: Optional[List[Any]] = None
 
     def set_store(self, store: LightningStore) -> None:
         """Set the store for the proxy.
@@ -596,18 +603,25 @@ class LLMProxy:
             logger.warning("rollout_attempt_middleware is already installed. Skipping installation.")
 
         # Register callbacks once on the global LiteLLM callback list.
-        if self._callbacks_initializing_copy is None:
+        if self._callbacks_initialized_copy is None:
             logger.info("Callbacks are not initialized. Initializing them.")
-            self._callbacks_initializing_copy = cast(List[Any], litellm.callbacks)
+            self._callbacks_initialized_copy = cast(List[Any], litellm.callbacks) + [
+                AddReturnTokenIds(),
+                LightningOpenTelemetry(self.store),
+            ]
         else:
             logger.warning("Callbacks are already initialized. Augmenting the initialized copy with latest store.")
 
-        # Ideally, the exporter in OpenTelemetry should be replaced by a new one.
-        # But for now, I think the implementation is too complex that way.
-        litellm.callbacks = self._callbacks_initializing_copy + [
-            AddReturnTokenIds(),
-            LightningOpenTelemetry(self.store),
-        ]
+            opentelemetry_callbacks = [cb for cb in litellm.callbacks if isinstance(cb, LightningOpenTelemetry)]  # type: ignore
+            if len(opentelemetry_callbacks) > 1:
+                raise ValueError(
+                    "Multiple OpenTelemetry callbacks found, which means multiple LLM Proxy is running. This is unsupported."
+                )
+            opentelemetry_callbacks[0].set_store(self.store)
+            # The updated callback should also be reflected in _callbacks_initialized_copy
+
+        litellm.callbacks.clear()  # type: ignore
+        litellm.callbacks.extend(self._callbacks_initialized_copy)  # type: ignore
 
     def start(self):
         """Start the proxy server thread and initialize global wiring.
