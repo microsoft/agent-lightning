@@ -3,18 +3,19 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import threading
 import time
 import traceback
 from contextlib import suppress
-from typing import Any, Awaitable, Callable, Dict, List, Literal, Optional, Sequence, Union
+from typing import Any, AsyncIterator, Awaitable, Callable, Dict, List, Literal, Optional, Sequence, Union
 
 import aiohttp
 import uvicorn
 from fastapi import FastAPI, Request, Response
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from opentelemetry.sdk.trace import ReadableSpan
 from pydantic import BaseModel, Field
 
@@ -348,9 +349,29 @@ class LightningStoreServer(LightningStore):
         async def get_next_span_sequence_id(rollout_id: str, attempt_id: str):  # pyright: ignore[reportUnusedFunction]
             return await self.get_next_span_sequence_id(rollout_id, attempt_id)
 
-        @self.app.post("/wait_for_rollouts", response_model=List[Rollout])
-        async def wait_for_rollouts(request: WaitForRolloutsRequest):  # pyright: ignore[reportUnusedFunction]
-            return await self.wait_for_rollouts(rollout_ids=request.rollout_ids, timeout=request.timeout)
+        @self.app.post("/wait_for_rollouts")
+        async def wait_for_rollouts(request: Request):  # pyright: ignore[reportUnusedFunction]
+            payload = WaitForRolloutsRequest.model_validate(await request.json())
+
+            async def event_stream():
+                # Send an initial comment to flush the headers early and keep the
+                # connection warm for intermediaries that expect activity.
+                yield ":ok\n\n"
+                try:
+                    rollouts = await self.wait_for_rollouts(
+                        rollout_ids=payload.rollout_ids,
+                        timeout=payload.timeout,
+                    )
+                except Exception as exc:  # pragma: no cover - surfaced via SSE
+                    error_payload = {"error": str(exc)}
+                    yield "event: error\n"
+                    yield f"data: {json.dumps(error_payload)}\n\n"
+                    return
+
+                data = [rollout.model_dump(mode="json") for rollout in rollouts]
+                yield f"data: {json.dumps(data)}\n\n"
+
+            return StreamingResponse(event_stream(), media_type="text/event-stream")
 
         @self.app.get("/query_spans/{rollout_id}", response_model=List[Span])
         async def query_spans(  # pyright: ignore[reportUnusedFunction]
@@ -704,6 +725,123 @@ class LightningStoreClient(LightningStore):
         assert last_exc is not None
         raise last_exc
 
+    async def _iter_sse_events(self, response: aiohttp.ClientResponse) -> AsyncIterator[tuple[str, Any | None]]:
+        """Yield parsed SSE events from a streaming response."""
+
+        buffer = ""
+        async for chunk in response.content.iter_any():
+            try:
+                decoded = chunk.decode("utf-8")
+            except UnicodeDecodeError:
+                decoded = chunk.decode("utf-8", errors="ignore")
+            normalized = decoded.replace("\r\n", "\n").replace("\r", "\n")
+            buffer += normalized
+
+            while True:
+                separator_index = buffer.find("\n\n")
+                if separator_index == -1:
+                    break
+
+                raw_event, buffer = buffer[:separator_index], buffer[separator_index + 2 :]
+                event_type = "message"
+                data_lines: list[str] = []
+
+                for line in raw_event.splitlines():
+                    if line.startswith("event:"):
+                        event_type = line[6:].strip() or "message"
+                    elif line.startswith("data:"):
+                        data_lines.append(line[5:].lstrip())
+                    elif line.startswith(":"):
+                        # Comment/keep-alive line; ignore
+                        continue
+
+                if not data_lines:
+                    yield event_type, None
+                    continue
+
+                raw_data = "\n".join(data_lines)
+                try:
+                    parsed: Any | None = json.loads(raw_data)
+                except json.JSONDecodeError:
+                    parsed = raw_data
+                yield event_type, parsed
+
+    async def _request_sse(
+        self,
+        path: str,
+        *,
+        json: Any | None = None,
+        read_timeout: Optional[float],
+    ) -> Any:
+        """Issue an SSE request and return the payload from the last data event."""
+
+        session = await self._get_session()
+        url = f"{self.server_address}{path if path.startswith('/') else '/' + path}"
+
+        attempts = (0.0,) + self._retry_delays
+        last_exc: Exception | None = None
+
+        for delay in attempts:
+            if delay:
+                logger.info(f"Waiting {delay} seconds before retrying sse: {path}")
+                await asyncio.sleep(delay)
+
+            timeout_margin = 5.0
+            if read_timeout is None:
+                timeout_cfg = aiohttp.ClientTimeout(total=None, connect=5.0, sock_connect=5.0, sock_read=None)
+            else:
+                limit = max(read_timeout, 0.0) + timeout_margin
+                timeout_cfg = aiohttp.ClientTimeout(total=limit, connect=5.0, sock_connect=5.0, sock_read=limit)
+
+            try:
+                async with session.post(
+                    url,
+                    json=json,
+                    headers={"Accept": "text/event-stream"},
+                    timeout=timeout_cfg,
+                ) as resp:
+                    resp.raise_for_status()
+
+                    payload: Any | None = None
+                    async for event_type, event_data in self._iter_sse_events(resp):
+                        if event_type == "error":
+                            message: str
+                            if isinstance(event_data, dict) and "error" in event_data:
+                                message = str(event_data["error"])
+                            else:
+                                message = str(event_data)
+                            raise RuntimeError(f"SSE error: {message}")
+
+                        if event_data is not None:
+                            payload = event_data
+
+                    return payload if payload is not None else []
+            except RuntimeError:
+                raise
+            except aiohttp.ClientResponseError as cre:
+                logger.debug(f"ClientResponseError: {cre.status} {cre.message}", exc_info=True)
+                if 400 <= cre.status < 500 and cre.status != 408:
+                    raise
+                last_exc = cre
+                logger.info(f"5xx and other status codes will be retried. Retrying the request sse: {path}")
+                if not await self._wait_until_healthy(session):
+                    break
+            except (
+                aiohttp.ServerDisconnectedError,
+                aiohttp.ClientConnectorError,
+                aiohttp.ClientOSError,
+                aiohttp.ClientPayloadError,
+                asyncio.TimeoutError,
+            ) as net_exc:
+                logger.debug(f"Network/session issue: {net_exc}", exc_info=True)
+                last_exc = net_exc
+                logger.info(f"Network/session issue will be retried. Retrying the request sse: {path}")
+                if not await self._wait_until_healthy(session):
+                    break
+
+        assert last_exc is not None
+        raise last_exc
+
     async def close(self):
         """Close the HTTP session."""
         with self._lock:
@@ -945,25 +1083,57 @@ class LightningStoreClient(LightningStore):
         return span
 
     async def wait_for_rollouts(self, *, rollout_ids: List[str], timeout: Optional[float] = None) -> List[Rollout]:
-        """Wait for rollouts to complete.
+        """Wait for the given rollouts to complete using server-sent events."""
 
-        Args:
-            rollout_ids: List of rollout IDs to wait for.
-            timeout: Timeout in seconds. If not None, the method will raise a ValueError if the timeout is greater than 0.1 seconds.
+        if timeout is not None and timeout < 0:
+            raise ValueError("Timeout must be non-negative")
 
-        Returns:
-            List of rollouts that are completed.
-        """
-        if timeout is not None and timeout > 0.1:
-            raise ValueError(
-                "Timeout must be less than 0.1 seconds in LightningStoreClient to avoid blocking the event loop"
+        pending_ids = set(rollout_ids)
+        completed: Dict[str, Rollout] = {}
+        deadline = None if timeout is None else time.monotonic() + timeout
+
+        while pending_ids:
+            if deadline is not None:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                request_timeout = max(0.0, remaining)
+            else:
+                request_timeout = None
+
+            per_call_timeout = request_timeout
+            if per_call_timeout is not None:
+                per_call_timeout = min(per_call_timeout, 60.0)
+
+            payload = WaitForRolloutsRequest(
+                rollout_ids=list(pending_ids),
+                timeout=per_call_timeout,
+            ).model_dump()
+
+            raw_data = await self._request_sse(
+                "/wait_for_rollouts",
+                json=payload,
+                read_timeout=per_call_timeout,
             )
-        data = await self._request_json(
-            "post",
-            "/wait_for_rollouts",
-            json=WaitForRolloutsRequest(rollout_ids=rollout_ids, timeout=timeout).model_dump(),
-        )
-        return [Rollout.model_validate(item) for item in data]
+
+            if isinstance(raw_data, dict) and "rollouts" in raw_data:
+                items = raw_data.get("rollouts")
+            else:
+                items = raw_data
+
+            new_rollout_seen = False
+            for item in items or []:
+                rollout = Rollout.model_validate(item)
+                completed[rollout.rollout_id] = rollout
+                if rollout.rollout_id in pending_ids:
+                    pending_ids.remove(rollout.rollout_id)
+                    new_rollout_seen = True
+
+            if not new_rollout_seen:
+                if per_call_timeout is None or per_call_timeout == 0:
+                    break
+
+        return [completed[rid] for rid in rollout_ids if rid in completed]
 
     async def query_spans(
         self,

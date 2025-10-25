@@ -5,7 +5,7 @@ import contextlib
 import multiprocessing
 import socket
 import sys
-from typing import Any, AsyncGenerator, Tuple, cast
+from typing import Any, AsyncGenerator, Optional, Tuple, cast
 from unittest.mock import patch
 
 import aiohttp
@@ -19,7 +19,7 @@ from yarl import URL
 from agentlightning.store.base import UNSET
 from agentlightning.store.client_server import LightningStoreClient, LightningStoreServer
 from agentlightning.store.memory import InMemoryLightningStore
-from agentlightning.types import LLM, OtelResource, PromptTemplate, RolloutConfig, Span, TraceStatus
+from agentlightning.types import LLM, OtelResource, PromptTemplate, Rollout, RolloutConfig, Span, TraceStatus
 
 
 def _get_free_port() -> int:
@@ -622,12 +622,48 @@ async def test_unhealthy_health_probe_stops_retries(
 
 
 @pytest.mark.asyncio
-async def test_wait_for_rollouts_timeout_guard_raises(
+async def test_wait_for_rollouts_allows_large_timeouts(
     server_client: Tuple[LightningStoreServer, LightningStoreClient],
 ) -> None:
     _, client = server_client
-    with pytest.raises(ValueError):
-        await client.wait_for_rollouts(rollout_ids=["dummy"], timeout=0.2)
+    # Larger timeouts are now supported via SSE streaming.
+    assert (await client.wait_for_rollouts(rollout_ids=["dummy"], timeout=0.2)) == []
+
+
+@pytest.mark.asyncio
+async def test_wait_for_rollouts_chunks_long_timeouts(monkeypatch: MonkeyPatch) -> None:
+    client = LightningStoreClient("http://test")
+    calls: list[tuple[Optional[float], Optional[float], list[str]]] = []
+
+    async def fake_request_sse(
+        self: LightningStoreClient,
+        path: str,
+        *,
+        json: Any | None = None,
+        read_timeout: Optional[float],
+    ) -> Any:
+        assert path == "/wait_for_rollouts"
+        payload = cast(dict[str, Any], json)
+        rollout_list = list(payload["rollout_ids"])
+        calls.append((payload.get("timeout"), read_timeout, rollout_list))
+        if len(calls) < 3:
+            return []
+        rollout = Rollout(rollout_id="r1", input={}, start_time=0.0, status="succeeded")
+        return [rollout.model_dump(mode="json")]
+
+    monkeypatch.setattr(LightningStoreClient, "_request_sse", fake_request_sse, raising=True)
+
+    try:
+        result = await client.wait_for_rollouts(rollout_ids=["r1"], timeout=120.0)
+        assert result and result[0].rollout_id == "r1"
+        assert calls, "SSE helper should have been invoked"
+        first_timeout, first_read_timeout, rollout_list = calls[0]
+        assert rollout_list == ["r1"]
+        assert first_timeout == 60.0
+        assert first_read_timeout == 60.0
+        assert all(timeout is None or timeout <= 60.0 for timeout, _, _ in calls)
+    finally:
+        await client.close()
 
 
 @pytest.mark.asyncio
