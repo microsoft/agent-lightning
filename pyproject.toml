@@ -125,8 +125,8 @@ trl = [
   # Only work with PyTorch 2.8.0+.
   {include-group = "torch-stable"},
   # https://github.com/unslothai/unsloth/issues/3451
-  "unsloth<=2025.10.1",
-  "unsloth_zoo<=2025.10.1",
+  "unsloth>=2025.10.1,!=2025.10.2,!=2025.10.3,!=2025.10.4,!=2025.10.5,!=2025.10.6,!=2025.10.7,!=2025.10.8",
+  "unsloth_zoo>=2025.10.1,!=2025.10.2,!=2025.10.3,!=2025.10.4,!=2025.10.5,!=2025.10.6,!=2025.10.7,!=2025.10.8",
   "bitsandbytes",
   "peft",
   "datasets",
@@ -139,7 +139,7 @@ trl = [
 # For Tinker integration.
 tinker = [
   {include-group = "torch-stable"},
-  "tinker",
+  "tinker>=0.2.2",
   "tinker_cookbook",
 ]
 
@@ -184,6 +184,7 @@ agents = [
 ]
 
 [tool.uv]
+required-version = ">=0.9.5"
 conflicts = [
   [
     { group = "core-legacy" },
@@ -203,7 +204,7 @@ environments = [
 ]
 dependency-metadata = [
   # Patch the dependencies of instructor to unpin "openai".
-  # This might be unnecessary if instructor upgrades.
+  # This is a workaround for https://github.com/567-labs/instructor/issues/1852
   { name = "instructor", version = "1.11.3", requires-dist = ["openai", "pydantic", "docstring-parser", "typer", "rich", "aiohttp", "tenacity", "pydantic-core", "jiter", "jinja2", "requests", "diskcache"] },
 ]
 
