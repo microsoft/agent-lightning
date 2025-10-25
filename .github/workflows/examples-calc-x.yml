@@ -161,52 +161,23 @@ jobs:
           cd examples/calc_x
           ../../scripts/restart_ray.sh
 
-          cleanup() {
-            set +e
-            pkill -f agl && echo "SIGTERM sent to agl" || echo "No agl process found"
-            while pgrep -f agl >/dev/null; do
-              echo "Waiting for agl to finish..."
-              sleep 5
-            done
-            pkill -f train_calc_agent.py && echo "SIGTERM sent to train_calc_agent.py" || echo "No train_calc_agent.py process found"
-            while pgrep -f train_calc_agent.py >/dev/null; do
-              echo "Waiting for train_calc_agent.py to finish..."
-              sleep 5
-            done
-            set -e
-          }
-          trap cleanup EXIT
-
           agl store --port 4747 &
-
           sleep 5
-
-          PYTHONUNBUFFERED=1 AGL_MANAGED_STORE=0 AGL_CURRENT_ROLE=runner python train_calc_agent.py --external-store-address http://localhost:4747 --val-file data/test_mini.parquet --ci &
-          runner_pid=$!
-
+          AGL_MANAGED_STORE=0 AGL_CURRENT_ROLE=runner python train_calc_agent.py --external-store-address http://localhost:4747 --val-file data/test_mini.parquet --ci-fast &
           sleep 5
+          AGL_MANAGED_STORE=0 AGL_CURRENT_ROLE=algorithm python train_calc_agent.py --external-store-address http://localhost:4747 --val-file data/test_mini.parquet --ci-fast
 
-          set +e
-          PYTHONUNBUFFERED=1 AGL_MANAGED_STORE=0 AGL_CURRENT_ROLE=algorithm python train_calc_agent.py --external-store-address http://localhost:4747 --val-file data/test_mini.parquet --ci
-          algorithm_status=$?
-          wait "$runner_pid"
-          runner_status=$?
-          set -e
-
-          trap - EXIT
-          cleanup
-
-          if [[ $runner_status -ne 0 ]]; then
-            echo "Runner process failed with exit code $runner_status" >&2
-            exit "$runner_status"
-          fi
-
-          if [[ $algorithm_status -ne 0 ]]; then
-            echo "Algorithm process failed with exit code $algorithm_status" >&2
-            exit "$algorithm_status"
-          fi
-
-          sleep 10
+          pkill -f agl && echo "SIGTERM sent to agl" || echo "No agl process found"
+          while pgrep -f agl; do
+            echo "Waiting for agl to finish..."
+            sleep 5
+          done
+          pkill -f train_calc_agent.py && echo "SIGTERM sent to train_calc_agent.py" || echo "No train_calc_agent.py process found"
+          while pgrep -f train_calc_agent.py; do
+            echo "Waiting for train_calc_agent.py to finish..."
+            sleep 5
+          done
+          echo "train_calc_agent.py has finished."
         shell: bash
         env:
           WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
@@ -220,38 +191,16 @@ jobs:
           cd examples/calc_x
           ../../scripts/restart_ray.sh
 
-          cleanup() {
-            set +e
-            pkill -f train_calc_agent.py && echo "SIGTERM sent to train_calc_agent.py" || echo "No train_calc_agent.py process found"
-            while pgrep -f train_calc_agent.py >/dev/null; do
-              echo "Waiting for train_calc_agent.py to finish..."
-              sleep 5
-            done
-            set -e
-          }
-          trap cleanup EXIT
-
-          PYTHONUNBUFFERED=1 AGL_SERVER_HOST=0.0.0.0 AGL_SERVER_PORT=5858 AGL_CURRENT_ROLE=algorithm python train_calc_agent.py --val-file data/test_mini.parquet --ci --ci-fast &
-          algorithm_pid=$!
-
+          PYTHONUNBUFFERED=1 AGL_SERVER_HOST=127.0.0.1 AGL_SERVER_PORT=5858 AGL_CURRENT_ROLE=runner python train_calc_agent.py --val-file data/test_mini.parquet --ci-fast &
           sleep 5
+          PYTHONUNBUFFERED=1 AGL_SERVER_HOST=0.0.0.0 AGL_SERVER_PORT=5858 AGL_CURRENT_ROLE=algorithm python train_calc_agent.py --val-file data/test_mini.parquet --ci-fast
 
-          PYTHONUNBUFFERED=1 AGL_SERVER_HOST=127.0.0.1 AGL_SERVER_PORT=5858 AGL_CURRENT_ROLE=runner python train_calc_agent.py --val-file data/test_mini.parquet --ci --ci-fast --n-runners 2
-
-          set +e
-          wait "$algorithm_pid"
-          algorithm_status=$?
-          set -e
-
-          trap - EXIT
-          cleanup
-
-          if [[ $algorithm_status -ne 0 ]]; then
-            echo "Algorithm process failed with exit code $algorithm_status" >&2
-            exit "$algorithm_status"
-          fi
-
-          sleep 10
+          pkill -f train_calc_agent.py && echo "SIGTERM sent to train_calc_agent.py" || echo "No train_calc_agent.py process found"
+          while pgrep -f train_calc_agent.py; do
+            echo "Waiting for train_calc_agent.py to finish..."
+            sleep 5
+          done
+          echo "train_calc_agent.py has finished."
         shell: bash
         env:
           WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}

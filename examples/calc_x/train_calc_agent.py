@@ -136,7 +136,7 @@ def train(
         config["actor_rollout_ref"]["model"]["path"] = model
 
     # CI toggle keeps everything else the same but you can tweak the lightweight bits here if desired
-    if ci:
+    if ci or ci_fast:
         # Config the experiment name and project name so that they are available to CI
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
         EXPERIMENT_NAME = f"calc_x_{timestamp}"
@@ -163,8 +163,10 @@ def train(
         config["trainer"]["project_name"] = PROJECT_NAME
         config["trainer"].pop("save_freq", None)
 
-    if ci_fast:
-        config["trainer"]["total_training_steps"] = 1
+        if ci_fast:
+            # Extra fast CI toggle for testing purposes.
+            config["trainer"]["total_training_steps"] = 1
+            config["trainer"]["test_freq"] = 1
 
     algorithm = agl.VERL(config)
 
