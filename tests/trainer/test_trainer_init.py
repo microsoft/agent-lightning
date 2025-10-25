@@ -77,6 +77,46 @@ def test_trainer_with_client_server_strategy_dict() -> None:
     assert trainer.strategy.server_port == 9999
 
 
+def test_trainer_port_forwarded_to_client_server_strategy() -> None:
+    """Test that the top-level port argument configures the client-server strategy."""
+    trainer = agl.Trainer(
+        algorithm=agl.Baseline(),
+        n_runners=4,
+        port=8081,
+    )
+
+    assert isinstance(trainer.strategy, agl.ClientServerExecutionStrategy)
+    assert trainer.strategy.server_port == 8081
+
+
+def test_trainer_port_ignored_for_non_client_server_strategy() -> None:
+    """Test that port has no effect when using a non client-server strategy."""
+    trainer = agl.Trainer(
+        algorithm=agl.Baseline(),
+        n_runners=1,
+        port=8082,
+        strategy="shm",
+    )
+
+    assert isinstance(trainer.strategy, agl.SharedMemoryExecutionStrategy)
+    assert not hasattr(trainer.strategy, "server_port")
+
+
+def test_trainer_port_overrides_existing_client_server_strategy() -> None:
+    """Test that provided port overrides an initialized client-server strategy."""
+    strategy = agl.ClientServerExecutionStrategy(server_port=9000)
+
+    trainer = agl.Trainer(
+        algorithm=agl.Baseline(),
+        n_runners=1,
+        strategy=strategy,
+        port=9100,
+    )
+
+    assert trainer.strategy is strategy
+    assert trainer.strategy.server_port == 9100  # type: ignore
+
+
 def test_trainer_with_env_vars_for_execution_strategy(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test that execution strategy supports environment variables to override values."""
     algorithm = agl.Baseline()

@@ -14,7 +14,7 @@ from opentelemetry.sdk.trace import Event as OtelEvent
 from opentelemetry.sdk.trace import ReadableSpan
 from opentelemetry.sdk.trace.id_generator import RandomIdGenerator
 from opentelemetry.trace.status import Status as OtelStatus
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 __all__ = [
     "AttributeValue",
@@ -95,8 +95,7 @@ class SpanContext(BaseModel):
     trace_state: TraceState
     """Mapping from trace state key to its value."""
 
-    class Config:
-        allow_extra = True
+    model_config = ConfigDict(extra="allow")
 
     @classmethod
     def from_opentelemetry(cls, src: trace_api.SpanContext) -> "SpanContext":
@@ -119,8 +118,7 @@ class TraceStatus(BaseModel):
     description: Optional[str] = None
     """The description of the span. Same as OpenTelemetry `Status.description` type."""
 
-    class Config:
-        allow_extra = True
+    model_config = ConfigDict(extra="allow")
 
     @classmethod
     def from_opentelemetry(cls, src: OtelStatus) -> "TraceStatus":
@@ -143,8 +141,7 @@ class Event(BaseModel):
     timestamp: Optional[float] = None
     """The timestamp of the event. Same as OpenTelemetry `Event.timestamp` type."""
 
-    class Config:
-        allow_extra = True
+    model_config = ConfigDict(extra="allow")
 
     @classmethod
     def from_opentelemetry(cls, src: OtelEvent) -> "Event":
@@ -166,8 +163,7 @@ class Link(BaseModel):
     attributes: Optional[Attributes] = None
     """Optional attributes."""
 
-    class Config:
-        allow_extra = True
+    model_config = ConfigDict(extra="allow")
 
     @classmethod
     def from_opentelemetry(cls, src: trace_api.Link) -> "Link":
@@ -214,8 +210,7 @@ class Span(BaseModel):
     stable even as upstream OpenTelemetry types evolve.
     """
 
-    class Config:
-        allow_extra = True  # allow extra fields if needed
+    model_config = ConfigDict(extra="allow")
 
     rollout_id: str
     """The rollout which this span belongs to."""

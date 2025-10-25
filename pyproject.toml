@@ -63,10 +63,12 @@ experiment = [
 ]
 
 core-legacy = [
-  "agentops<=0.4.18"
+  "agentops<=0.4.18",
+  "openai<2.0.0",
 ]
 core-stable = [
-  "agentops>=0.4.21"
+  "agentops>=0.4.21",
+  "openai>=2.0.0",
 ]
 
 # For PyTorch.
@@ -123,8 +125,8 @@ trl = [
   # Only work with PyTorch 2.8.0+.
   {include-group = "torch-stable"},
   # https://github.com/unslothai/unsloth/issues/3451
-  "unsloth<=2025.10.1",
-  "unsloth_zoo<=2025.10.1",
+  "unsloth>=2025.10.1,!=2025.10.2,!=2025.10.3,!=2025.10.4,!=2025.10.5,!=2025.10.6,!=2025.10.7,!=2025.10.8",
+  "unsloth_zoo>=2025.10.1,!=2025.10.2,!=2025.10.3,!=2025.10.4,!=2025.10.5,!=2025.10.6,!=2025.10.7,!=2025.10.8",
   "bitsandbytes",
   "peft",
   "datasets",
@@ -132,6 +134,13 @@ trl = [
   "trl",
   "kernels",
   "vllm",
+]
+
+# For Tinker integration.
+tinker = [
+  {include-group = "torch-stable"},
+  "tinker>=0.2.2",
+  "tinker_cookbook",
 ]
 
 # Agent-related dependencies.
@@ -160,6 +169,9 @@ sql = [
   "sqlparse",
   "nltk",
 ]
+crewai = [
+  "crewai[tools]>=1.2.0",
+]
 
 # Summarize into large installable groups.
 agents = [
@@ -168,9 +180,11 @@ agents = [
   {include-group = "langchain"},
   {include-group = "sql"},
   {include-group = "anthropic"},
+  {include-group = "crewai"},
 ]
 
 [tool.uv]
+required-version = ">=0.9.5"
 conflicts = [
   [
     { group = "core-legacy" },
@@ -189,8 +203,17 @@ environments = [
   "sys_platform == 'linux'",
 ]
 dependency-metadata = [
+  # Patch the dependencies of instructor to unpin "openai".
+  # This is a workaround for https://github.com/567-labs/instructor/issues/1852
+  { name = "instructor", version = "1.11.3", requires-dist = ["openai", "pydantic", "docstring-parser", "typer", "rich", "aiohttp", "tenacity", "pydantic-core", "jiter", "jinja2", "requests", "diskcache"] },
+]
+
+override-dependencies = [
+  # A conflict between the dependency of litellm[proxy] and crewai[tools]
+  "mcp>=1.19.0",
+  "uvicorn>=0.38.0",
   # Conflicts between packaging dependency of pyvers (dependency of tensordict) and agentops.
-  { name = "pyvers", version = "0.1.0", requires-dist = ["packaging>=24.0"] },
+  "packaging>=24.0",
 ]
 
 [tool.uv.sources]
@@ -198,6 +221,7 @@ torch = [
   { index = "pytorch-cu128", group = "torch-cu128" },
   { index = "pytorch-cpu", group = "torch-cpu" },
 ]
+tinker_cookbook = { git = "https://github.com/thinking-machines-lab/tinker-cookbook", rev = "72ba5e6a1f52c0887e2674615e318ce21a39cc2a" }
 
 [[tool.uv.index]]
 name = "pypi"
@@ -215,6 +239,9 @@ url = "https://download.pytorch.org/whl/cpu"
 flash-attn = [
   { requirement = "torch", match-runtime = true },
 ]
+
+[tool.uv.dependency-groups]
+tinker = {requires-python = ">=3.11"}
 
 [build-system]
 requires = ["hatchling"]

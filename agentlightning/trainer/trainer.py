@@ -114,6 +114,9 @@ class Trainer(TrainerLegacy):
     or a dictionary with the initialization parameters for the exporter.
     Deprecated. Use [`adapter`][agentlightning.Trainer.adapter] instead."""
 
+    port: Optional[int]
+    """Port forwarded to [`ClientServerExecutionStrategy`][agentlightning.ClientServerExecutionStrategy]."""
+
     def __init__(
         self,
         *,
@@ -126,6 +129,7 @@ class Trainer(TrainerLegacy):
         store: ComponentSpec[LightningStore] = None,
         runner: ComponentSpec[Runner[Any]] = None,
         strategy: ComponentSpec[ExecutionStrategy] = None,
+        port: Optional[int] = None,
         algorithm: ComponentSpec[Algorithm] = None,
         llm_proxy: ComponentSpec[LLMProxy] = None,
         n_workers: Optional[int] = None,
@@ -139,6 +143,10 @@ class Trainer(TrainerLegacy):
         Each keyword accepts either a concrete instance, a class, a callable factory, a
         registry string, or a lightweight configuration dictionary (see
         [`build_component()`][agentlightning.trainer.init_utils.build_component]).
+
+        When ``port`` is provided it is forwarded to
+        [`ClientServerExecutionStrategy`][agentlightning.ClientServerExecutionStrategy]
+        instances constructed (or supplied) for the trainer.
         """
         # Do not call super().__init__() here.
         # super().__init__() will call TrainerLegacy's initialization, which is not intended.
@@ -209,7 +217,13 @@ class Trainer(TrainerLegacy):
         self.store = self._make_store(store)
         self.runner = self._make_runner(runner)
 
-        self.strategy = self._make_strategy(strategy, n_runners=self.n_runners)
+        self.port = port
+
+        self.strategy = self._make_strategy(
+            strategy,
+            n_runners=self.n_runners,
+            port=port,
+        )
         if hasattr(self.strategy, "n_runners"):
             strategy_runners = getattr(self.strategy, "n_runners")
             if isinstance(strategy_runners, int) and strategy_runners > 0:
@@ -284,13 +298,20 @@ class Trainer(TrainerLegacy):
         strategy: ComponentSpec[ExecutionStrategy],
         *,
         n_runners: int,
+        port: Optional[int] = None,
     ) -> ExecutionStrategy:
         """Resolve the execution strategy and seed defaults such as `n_runners`."""
         if isinstance(strategy, ExecutionStrategy):
+            if port is not None and isinstance(strategy, ClientServerExecutionStrategy):
+                strategy.server_port = port
             return strategy
         optional_defaults: Dict[str, Callable[[], Any]] = {"n_runners": lambda: n_runners}
+        if port is not None:
+            optional_defaults["server_port"] = lambda: port
 
         def default_factory() -> ExecutionStrategy:
+            if port is not None:
+                return ClientServerExecutionStrategy(n_runners=n_runners, server_port=port)
             return ClientServerExecutionStrategy(n_runners=n_runners)
 
         return build_component(

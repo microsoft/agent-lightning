@@ -8,6 +8,10 @@ on:
       - 'v*'
   workflow_dispatch:
 
+concurrency:
+  group: docs-deploy
+  cancel-in-progress: false
+
 permissions:
   contents: write
   pages: write
