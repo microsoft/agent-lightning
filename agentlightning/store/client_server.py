@@ -109,6 +109,7 @@ class LightningStoreServer(LightningStore):
         self._uvicorn_server: uvicorn.Server | None = uvicorn.Server(self._uvicorn_config)
 
         self._serving_thread: Optional[threading.Thread] = None
+        self._server_start_exception: Optional[BaseException] = None
 
         # Process-awareness:
         # LightningStoreServer holds a plain Python object (self.store) in one process
@@ -167,16 +168,30 @@ class LightningStoreServer(LightningStore):
         logger.info(f"Starting server at {self.endpoint}")
 
         uvicorn_server = self._uvicorn_server
+        self._server_start_exception = None
 
         def run_server_forever():
-            asyncio.run(uvicorn_server.serve())
+            try:
+                asyncio.run(uvicorn_server.serve())
+            except BaseException as exc:
+                logger.debug("LightningStore server thread exiting due to %s", exc, exc_info=exc)
+                self._server_start_exception = exc
 
         self._serving_thread = threading.Thread(target=run_server_forever, daemon=True)
         self._serving_thread.start()
 
         # Wait for /health to be available
         if not await self._server_health_check():
+            self._handle_failed_start()
             raise RuntimeError("Server failed to start within the 10 seconds.")
+
+        # If startup failed (e.g. port already in use), uvicorn never flips `started`
+        # and the worker thread stops immediately. Guard against latching on to a
+        # different process that happened to satisfy the health check.
+        if not uvicorn_server.started or self._serving_thread is None or not self._serving_thread.is_alive():
+            self._handle_failed_start()
+            failure_reason = self._format_start_failure_reason()
+            raise RuntimeError(failure_reason)
 
     async def _server_health_check(self) -> bool:
         """Checks if the server is healthy."""
@@ -189,6 +204,25 @@ class LightningStoreServer(LightningStore):
                             return True
             await asyncio.sleep(0.1)
         return False
+
+    def _handle_failed_start(self) -> None:
+        """Clean up thread state when startup fails."""
+        if self._uvicorn_server is not None:
+            self._uvicorn_server.should_exit = True
+        if self._serving_thread is not None:
+            # Thread already exited in most failure scenarios; join defensively.
+            self._serving_thread.join(timeout=0.1)
+            self._serving_thread = None
+
+    def _format_start_failure_reason(self) -> str:
+        base_message = f"LightningStore server failed to start on {self.endpoint}."
+        if isinstance(self._server_start_exception, SystemExit):
+            return f"{base_message} Another process may already be using this port."
+        if isinstance(self._server_start_exception, OSError):
+            return f"{base_message} {self._server_start_exception.strerror}."
+        if self._server_start_exception is not None:
+            return f"{base_message} Reason: {self._server_start_exception}."
+        return f"{base_message} Another process may already be using this port."
 
     async def run_forever(self):
         """Runs the FastAPI server indefinitely.
@@ -203,9 +237,26 @@ class LightningStoreServer(LightningStore):
                 raise RuntimeError("Server did not become healthy within the 10 seconds.")
             logger.info("Store server is online at %s", self.endpoint)
 
+        async def _serve_capture():
+            try:
+                await self._uvicorn_server.serve()
+            except BaseException as exc:
+                logger.debug("LightningStore server serve() raised %s", exc, exc_info=exc)
+                self._server_start_exception = exc
+                raise RuntimeError("LightningStore server failed to serve") from exc
+
         # We run _wait_till_healthy and self._uvicorn_server.serve in parallel
         # until one of them raises an exception.
-        await asyncio.gather(_wait_till_healthy(), self._uvicorn_server.serve())
+        try:
+            await asyncio.gather(_wait_till_healthy(), _serve_capture())
+        except BaseException:
+            startup_failed = not self._uvicorn_server.started or isinstance(
+                self._server_start_exception, (SystemExit, OSError)
+            )
+            if startup_failed:
+                self._handle_failed_start()
+                raise RuntimeError(self._format_start_failure_reason())
+            raise
 
     async def stop(self):
         """Gracefully stops the running FastAPI server.

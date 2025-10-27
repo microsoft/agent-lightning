@@ -77,6 +77,40 @@ async def server_client() -> AsyncGenerator[Tuple[LightningStoreServer, Lightnin
 
 
 @pytest.mark.asyncio
+async def test_server_start_rejects_port_conflict() -> None:
+    """Ensure startup fails loudly when the port is already owned by another store."""
+    store_a = InMemoryLightningStore()
+    port = _get_free_port()
+    server_a = LightningStoreServer(store_a, "127.0.0.1", port)
+    await server_a.start()
+
+    store_b = InMemoryLightningStore()
+    server_b = LightningStoreServer(store_b, "127.0.0.1", port)
+
+    with pytest.raises(RuntimeError, match="Another process may already be using this port"):
+        await server_b.start()
+
+    await server_a.stop()
+
+
+@pytest.mark.asyncio
+async def test_run_forever_rejects_port_conflict() -> None:
+    """Ensure run_forever also reports port conflicts with the friendly message."""
+    store_a = InMemoryLightningStore()
+    port = _get_free_port()
+    server_a = LightningStoreServer(store_a, "127.0.0.1", port)
+    await server_a.start()
+
+    store_b = InMemoryLightningStore()
+    server_b = LightningStoreServer(store_b, "127.0.0.1", port)
+
+    with pytest.raises(RuntimeError, match="Another process may already be using this port"):
+        await server_b.run_forever()
+
+    await server_a.stop()
+
+
+@pytest.mark.asyncio
 async def test_add_resources_via_server(server_client: Tuple[LightningStoreServer, LightningStoreClient]) -> None:
     """Test that add_resources works correctly via server."""
     server, _ = server_client

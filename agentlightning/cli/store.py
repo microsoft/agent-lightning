@@ -6,11 +6,14 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import logging
 from typing import Iterable
 
 from agentlightning.logging import configure_logger
 from agentlightning.store.client_server import LightningStoreServer
 from agentlightning.store.memory import InMemoryLightningStore
+
+logger = logging.getLogger(__name__)
 
 
 def main(argv: Iterable[str] | None = None) -> int:
@@ -22,7 +25,11 @@ def main(argv: Iterable[str] | None = None) -> int:
 
     store = InMemoryLightningStore()
     server = LightningStoreServer(store, host="0.0.0.0", port=args.port)
-    asyncio.run(server.run_forever())
+    try:
+        asyncio.run(server.run_forever())
+    except RuntimeError as exc:
+        logger.error(str(exc))
+        return 1
     return 0
 
 
