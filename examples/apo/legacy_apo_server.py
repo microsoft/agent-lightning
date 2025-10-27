@@ -2,7 +2,7 @@
 
 """This is the APO example written in the legacy client-server style (agent-lightning v0.1).
 
-New users should refer to the `examples/apo/legacy_apo_lunch.py` for the modern APO example.
+New users should refer to the `examples/apo/apo.py` for the modern APO example.
 """
 
 import asyncio
