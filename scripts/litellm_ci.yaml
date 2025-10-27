@@ -49,4 +49,5 @@ model_list:
       api_key: os.environ/AZURE_API_KEY
 
 general_settings:
+  # https://github.com/BerriAI/litellm/issues/15952
   disable_responses_id_security: true
