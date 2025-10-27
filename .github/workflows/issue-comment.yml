@@ -78,8 +78,6 @@ jobs:
               pr_base_sha: pr.base.sha,
               trigger_comment_id: comment.id,
               trigger_comment_user: comment.user.login,
-              trigger_comment_body: comment.body,
-              trigger_comment_association: comment.author_association
             };
 
             const eventTypes = hasCiAll
