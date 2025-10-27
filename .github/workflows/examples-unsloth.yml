@@ -11,6 +11,16 @@ on:
   repository_dispatch:
     types: [ci-unsloth, ci-all]
 
+run-name: >-
+  ${{ github.event_name == 'repository_dispatch'
+      && format(
+        'PR #{0} - Label {1} - {2}',
+        github.event.client_payload.pull_number,
+        github.event.client_payload.ci_label,
+        github.event.client_payload.correlation_id
+      )
+      || format('Unsloth - {0}', github.event_name) }}
+
 jobs:
   unsloth:
     if: >
