@@ -173,12 +173,13 @@ class LightningStoreServer(LightningStore):
         def run_server_forever():
             try:
                 asyncio.run(uvicorn_server.serve())
-            except BaseException as exc:
+            except (SystemExit, Exception) as exc:
                 logger.debug("LightningStore server thread exiting due to %s", exc, exc_info=exc)
                 self._server_start_exception = exc
 
-        self._serving_thread = threading.Thread(target=run_server_forever, daemon=True)
-        self._serving_thread.start()
+        serving_thread = threading.Thread(target=run_server_forever, daemon=True)
+        self._serving_thread = serving_thread
+        serving_thread.start()
 
         # Wait for /health to be available
         if not await self._server_health_check():
@@ -188,7 +189,7 @@ class LightningStoreServer(LightningStore):
         # If startup failed (e.g. port already in use), uvicorn never flips `started`
         # and the worker thread stops immediately. Guard against latching on to a
         # different process that happened to satisfy the health check.
-        if not uvicorn_server.started or self._serving_thread is None or not self._serving_thread.is_alive():
+        if not uvicorn_server.started or not serving_thread.is_alive():
             self._handle_failed_start()
             failure_reason = self._format_start_failure_reason()
             raise RuntimeError(failure_reason)
@@ -230,6 +231,7 @@ class LightningStoreServer(LightningStore):
         You need to call this method in the same process as the server was created in.
         """
         assert self._uvicorn_server is not None
+        uvicorn_server = self._uvicorn_server
 
         async def _wait_till_healthy():
             health = await self._server_health_check()
@@ -239,8 +241,10 @@ class LightningStoreServer(LightningStore):
 
         async def _serve_capture():
             try:
-                await self._uvicorn_server.serve()
-            except BaseException as exc:
+                await uvicorn_server.serve()
+            except KeyboardInterrupt:
+                raise
+            except (SystemExit, Exception) as exc:
                 logger.debug("LightningStore server serve() raised %s", exc, exc_info=exc)
                 self._server_start_exception = exc
                 raise RuntimeError("LightningStore server failed to serve") from exc
@@ -249,10 +253,10 @@ class LightningStoreServer(LightningStore):
         # until one of them raises an exception.
         try:
             await asyncio.gather(_wait_till_healthy(), _serve_capture())
-        except BaseException:
-            startup_failed = not self._uvicorn_server.started or isinstance(
-                self._server_start_exception, (SystemExit, OSError)
-            )
+        except BaseException as exc:
+            if isinstance(exc, KeyboardInterrupt):
+                raise
+            startup_failed = not uvicorn_server.started or isinstance(self._server_start_exception, (SystemExit, OSError))
             if startup_failed:
                 self._handle_failed_start()
                 raise RuntimeError(self._format_start_failure_reason())
