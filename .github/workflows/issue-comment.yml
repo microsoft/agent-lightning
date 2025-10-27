@@ -7,9 +7,10 @@ on:
 permissions:
   pull-requests: write
   issues: write
+  contents: write
 
 jobs:
-  reopen:
+  dispatch:
     # Only run for comments on pull requests AND when the comment starts with "/ci"
     if: >
       github.event.issue.pull_request != null &&
@@ -28,7 +29,8 @@ jobs:
               core.setOutput('skip', 'true');
             }
 
-      - name: Close and Reopen PR
+      - name: Trigger repository dispatch
+        id: dispatch
         if: steps.guard.outputs.skip != 'true'
         uses: actions/github-script@v8
         with:
@@ -36,6 +38,7 @@ jobs:
             const owner = context.repo.owner;
             const repo = context.repo.repo;
             const pull_number = context.payload.issue.number;
+            const comment = context.payload.comment;
 
             // Fetch current PR state
             const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number });
@@ -43,33 +46,87 @@ jobs:
             // Add reaction so folks know we saw it
             try {
               await github.rest.reactions.createForIssueComment({
-                owner, repo,
-                comment_id: context.payload.comment.id,
+                owner,
+                repo,
+                comment_id: comment.id,
                 content: 'rocket'
               });
             } catch (e) {
               core.info('Could not add reaction (likely due to permissions). Continuing.');
             }
 
-            if (pr.state === 'open') {
-              core.info(`Closing PR #${pull_number}…`);
-              await github.rest.pulls.update({ owner, repo, pull_number, state: 'closed' });
-              await new Promise(r => setTimeout(r, 1500));
-            } else {
-              core.info(`PR #${pull_number} is already closed; will reopen it.`);
+            const labels = (pr.labels ?? []).map(label => label.name);
+            const directCiLabels = labels.filter(label => label.startsWith('ci-'));
+            const hasCiAll = directCiLabels.includes('ci-all');
+            const dedupe = new Set(
+              directCiLabels.filter(label => label !== 'ci-all')
+            );
+
+            if (!hasCiAll && dedupe.size === 0) {
+              core.notice('No ci-* labels found on the pull request; nothing to dispatch.');
+              core.setOutput('dispatched', 'false');
+              core.setOutput('event_types', '');
+              return;
             }
 
-            core.info(`Reopening PR #${pull_number} to trigger CI (pull_request.reopened)…`);
-            await github.rest.pulls.update({ owner, repo, pull_number, state: 'open' });
+            const clientPayload = {
+              pull_number,
+              pr_ref: `refs/pull/${pull_number}/merge`,
+              pr_head_ref: pr.head.ref,
+              pr_head_sha: pr.head.sha,
+              pr_base_ref: pr.base.ref,
+              pr_base_sha: pr.base.sha,
+              trigger_comment_id: comment.id,
+              trigger_comment_user: comment.user.login,
+              trigger_comment_body: comment.body,
+              trigger_comment_association: comment.author_association
+            };
+
+            const eventTypes = hasCiAll
+              ? ['ci-all']
+              : Array.from(dedupe);
+            for (const eventType of eventTypes) {
+              await github.rest.repos.createDispatchEvent({
+                owner,
+                repo,
+                event_type: eventType,
+                client_payload: { ...clientPayload, ci_label: eventType }
+              });
+              core.notice(`Dispatched '${eventType}' event for PR #${pull_number}.`);
+            }
+
+            core.setOutput('dispatched', 'true');
+            core.setOutput('event_types', eventTypes.join(','));
 
       - name: Acknowledge in thread (optional)
-        if: steps.guard.outputs.skip != 'true'
+        if: steps.guard.outputs.skip != 'true' && steps.dispatch.outputs.dispatched == 'true'
+        uses: actions/github-script@v8
+        env:
+          EVENT_TYPES: ${{ steps.dispatch.outputs.event_types }}
+        with:
+          script: |
+            const eventTypes = (process.env.EVENT_TYPES || '')
+              .split(',')
+              .map(label => label.trim())
+              .filter(Boolean);
+            const formatted = eventTypes.map(label => `\`repository_dispatch:${label}\``).join(', ');
+            const { owner, repo } = context.repo;
+            const issue_number = context.payload.issue.number;
+            await github.rest.issues.createComment({
+              owner, repo, issue_number,
+              body: `✅ CI retrigger requested by @${context.payload.comment.user.login}. Fired ${formatted}.`
+            });
+
+      - name: Notify missing ci label
+        if: steps.guard.outputs.skip != 'true' && steps.dispatch.outputs.dispatched != 'true'
         uses: actions/github-script@v8
         with:
           script: |
             const { owner, repo } = context.repo;
             const issue_number = context.payload.issue.number;
             await github.rest.issues.createComment({
-              owner, repo, issue_number,
-              body: `✅ CI retrigger requested by @${context.payload.comment.user.login}. Closed & reopened the PR to fire \`pull_request: reopened\`.`
+              owner,
+              repo,
+              issue_number,
+              body: `⚠️ CI retrigger ignored because the pull request has no \`ci-*\` labels (e.g. \`ci-apo\`, \`ci-calc-x\`). Add the desired labels and try \`/ci\` again.`
             });
