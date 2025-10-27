@@ -167,6 +167,39 @@ Set `AGL_SERVER_HOST` and `AGL_SERVER_PORT` if you prefer environment-based conf
 
 Algorithms sometimes require heterogeneous computation resources, such as GPU accelerators, while runners sometimes require a specific environment to run because many agent frameworks are fragile in their dependencies. A role-based launch pattern helps you place the algorithm on a dedicated machine with more GPU memory, while runners can live on another machine with more flexible dependencies. This is possible via `AGL_CURRENT_ROLE="algorithm"` or `AGL_CURRENT_ROLE="runner"` environment variables. When running on different machines, you also need to set `AGL_SERVER_HOST` and `AGL_SERVER_PORT` to the IP address and port of the algorithm machine. You might recognize that this convention is very similar to `MASTER_ADDR` and `MASTER_PORT` in [PyTorch distributed training](https://docs.pytorch.org/docs/stable/notes/ddp.html).
 
+### Launching Algorithm and Runner Roles on Separate Machines
+
+When you want to stretch the algorithm onto a GPU-rich machine and keep rollout workers close to the data source (or on machines with a more permissive dependency stack), launch the same training script in different terminals with role-specific environment variables. The client–server strategy will route each process to the right side of the queue as long as they share the same `AGL_SERVER_HOST`/`AGL_SERVER_PORT` pair.
+
+**1. Pick an address and port for the store.** Decide which machine will host the algorithm. Choose a TCP port that can be reached by the runner machines (for example, open it in your firewall configuration). In this example we will use `10.0.0.4:4747`.
+
+**2. Start the algorithm process.** On the machine that should run the algorithm, expose the store by binding to all network interfaces and mark the role as `algorithm`.
+
+```bash
+export AGL_SERVER_HOST=0.0.0.0
+export AGL_SERVER_PORT=4747
+export AGL_CURRENT_ROLE=algorithm
+
+python train_calc_agent.py
+```
+
+Leaving `AGL_MANAGED_STORE` unset (or setting it to `1`) lets the strategy create the [`LightningStoreServer`][agentlightning.LightningStoreServer] for you. Otherwise, you can use the method in the previous section to create a store on your own.
+
+**3. Start rollout workers on remote machines.** Every runner machine should point to the algorithm host and declare itself as the `runner` role. You can start multiple processes per machine or repeat the command on additional hosts.
+
+```bash
+export AGL_SERVER_HOST=10.0.0.4
+export AGL_SERVER_PORT=4747
+export AGL_CURRENT_ROLE=runner
+python train_calc_agent.py --n-runners 4
+```
+
+The runner process automatically connects via [`LightningStoreClient`][agentlightning.LightningStoreClient]. Adjust `--n-runners` to spawn the desired number of worker processes on that machine.
+
+**4. Scale out as needed.** Repeat step 3 on as many machines as you need. When you are done, stop the algorithm process. However, since the runners are on different machines, the strategy WILL NOT send a cooperative stop signal to the connected runners. So you need to kill the runners on your own.
+
+This role-based launch mirrors what [`Trainer.fit`][agentlightning.Trainer.fit] does inside a single machine while letting you spread work across a fleet. Because every process shares the same training script, you keep a single source of truth for dataset loading, adapters, and tracers, but you can tune compute resources independently for the algorithm and rollout workers.
+
 ### Shared-memory Strategy
 
 [`SharedMemoryExecutionStrategy`][agentlightning.SharedMemoryExecutionStrategy] keeps everything inside one process. The runner runs on the main thread (by default) while the algorithm lives on a Python thread guarded by [`LightningStoreThreaded`][agentlightning.LightningStoreThreaded].

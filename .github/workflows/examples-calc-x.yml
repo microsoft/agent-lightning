@@ -156,16 +156,16 @@ jobs:
 
       - name: Calc-X training with external store
         run: |
-          set -ex
+          set -euo pipefail
           source .venv/bin/activate
           cd examples/calc_x
           ../../scripts/restart_ray.sh
 
           agl store --port 4747 &
           sleep 5
-          AGL_MANAGED_STORE=0 AGL_CURRENT_ROLE=runner python train_calc_agent.py --external-store-address http://localhost:4747 --val-file data/test_mini.parquet --ci &
+          AGL_MANAGED_STORE=0 AGL_CURRENT_ROLE=runner python train_calc_agent.py --external-store-address http://localhost:4747 --val-file data/test_mini.parquet --ci-fast &
           sleep 5
-          AGL_MANAGED_STORE=0 AGL_CURRENT_ROLE=algorithm python train_calc_agent.py --external-store-address http://localhost:4747 --val-file data/test_mini.parquet --ci
+          AGL_MANAGED_STORE=0 AGL_CURRENT_ROLE=algorithm python train_calc_agent.py --external-store-address http://localhost:4747 --val-file data/test_mini.parquet --ci-fast
 
           pkill -f agl && echo "SIGTERM sent to agl" || echo "No agl process found"
           while pgrep -f agl; do
@@ -178,10 +178,30 @@ jobs:
             sleep 5
           done
           echo "train_calc_agent.py has finished."
-
-          sleep 10
         shell: bash
         env:
           WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
           WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
         id: calc_x_train_external_store
+
+      - name: Calc-X training with role-based environment variables
+        run: |
+          set -euo pipefail
+          source .venv/bin/activate
+          cd examples/calc_x
+          ../../scripts/restart_ray.sh
+
+          PYTHONUNBUFFERED=1 AGL_SERVER_HOST=127.0.0.1 AGL_SERVER_PORT=5858 AGL_CURRENT_ROLE=runner python train_calc_agent.py --val-file data/test_mini.parquet --ci-fast &
+          sleep 5
+          PYTHONUNBUFFERED=1 AGL_SERVER_HOST=0.0.0.0 AGL_SERVER_PORT=5858 AGL_CURRENT_ROLE=algorithm python train_calc_agent.py --val-file data/test_mini.parquet --ci-fast
+
+          pkill -f train_calc_agent.py && echo "SIGTERM sent to train_calc_agent.py" || echo "No train_calc_agent.py process found"
+          while pgrep -f train_calc_agent.py; do
+            echo "Waiting for train_calc_agent.py to finish..."
+            sleep 5
+          done
+          echo "train_calc_agent.py has finished."
+        shell: bash
+        env:
+          WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
+          WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
