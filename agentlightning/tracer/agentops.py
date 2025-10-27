@@ -167,7 +167,7 @@ class AgentOpsTracer(Tracer):
                 if name is not None:
                     kwargs["trace_name"] = str(name)
                 trace = agentops.start_trace(**kwargs)
-                status = StatusCode.SUCCESS  # type: ignore
+                status = StatusCode.OK  # type: ignore
                 try:
                     yield processor
                 except Exception as e:
