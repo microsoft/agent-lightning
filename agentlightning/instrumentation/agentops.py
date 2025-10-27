@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Callable, no_type_check, cast
+from typing import Any, Callable, no_type_check
 
 import requests
 from agentops.client.api import V3Client, V4Client
@@ -39,7 +39,7 @@ def enable_agentops_service(enabled: bool = True) -> None:
     """
     global _agentops_service_enabled
     _agentops_service_enabled = enabled
-    logger.info(f"Switch set to {value} for exporters and clients.")
+    logger.info(f"Switch set to {enabled} for exporters and clients.")
 
 
 def _patch_exporters():
@@ -292,8 +292,7 @@ class SwitchableV3Client(V3Client):
 
     def fetch_auth_token(self, *args: Any, **kwargs: Any) -> AuthTokenResponse:
         if _agentops_service_enabled:
-            resp = super().post(*args, **kwargs)
-            return cast(AuthTokenResponse, resp)
+            return super().fetch_auth_token(*args, **kwargs)
         else:
             logger.debug("SwitchableV3Client is switched off, skipping fetch_auth_token request.")
             return AuthTokenResponse(token="dummy", project_id="dummy")

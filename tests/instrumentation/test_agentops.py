@@ -9,7 +9,7 @@ from agentlightning.instrumentation.agentops import (
     SwitchableAuthenticatedOTLPExporter,
     SwitchableOTLPMetricExporter,
     SwitchableOTLPSpanExporter,
-    set_switch,
+    enable_agentops_service,
 )
 
 
@@ -19,12 +19,12 @@ def test_switchable_authenticated_exporter():
     with patch.object(
         switchable_authenticated_exporter.__class__.__bases__[0], "export", return_value=SpanExportResult.SUCCESS
     ) as mock_export:
-        set_switch(True)
+        enable_agentops_service()
         result = switchable_authenticated_exporter.export([])
         assert result == SpanExportResult.SUCCESS
         mock_export.assert_called_once()
 
-        set_switch(False)
+        enable_agentops_service(False)
         result = switchable_authenticated_exporter.export([])
         assert result == SpanExportResult.SUCCESS
         assert mock_export.call_count == 1
@@ -36,12 +36,12 @@ def test_switchable_otlp_metric_exporter():
     with patch.object(
         switchable_otlp_metric_exporter.__class__.__bases__[0], "export", return_value=MetricExportResult.SUCCESS
     ) as mock_export:
-        set_switch(True)
+        enable_agentops_service()
         result = switchable_otlp_metric_exporter.export(metrics_data=MagicMock())
         assert result == MetricExportResult.SUCCESS
         mock_export.assert_called_once()
 
-        set_switch(False)
+        enable_agentops_service(False)
         result = switchable_otlp_metric_exporter.export(metrics_data=MagicMock())
         assert result == MetricExportResult.SUCCESS
         assert mock_export.call_count == 1
@@ -53,12 +53,12 @@ def test_switchable_otlp_span_exporter():
     with patch.object(
         switchable_otlp_span_exporter.__class__.__bases__[0], "export", return_value=SpanExportResult.SUCCESS
     ) as mock_export:
-        set_switch(True)
+        enable_agentops_service()
         result = switchable_otlp_span_exporter.export([])
         assert result == SpanExportResult.SUCCESS
         mock_export.assert_called_once()
 
-        set_switch(False)
+        enable_agentops_service(False)
         result = switchable_otlp_span_exporter.export([])
         assert result == SpanExportResult.SUCCESS
         assert mock_export.call_count == 1
