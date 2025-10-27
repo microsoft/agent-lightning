@@ -1,6 +1,7 @@
 name: Examples - Unsloth
 permissions:
   contents: read
+  issues: write
 on:
   schedule:
     # Every day at 5 AM UTC+8
@@ -12,6 +13,18 @@ on:
     types: [ci-unsloth, ci-all]
 
 jobs:
+  dispatch-notify:
+    if: github.event_name == 'repository_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Comment with workflow run link
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const dispatchComment = require('./scripts/dispatch_comment.js');
+            await dispatchComment({ core, github, context });
+
   unsloth:
     if: >
       github.event_name != 'repository_dispatch' ||
