@@ -7,6 +7,10 @@ permissions:
   issues: write
   pull-requests: write
 
+# NOTE:
+# Microsoft requires rotating BOT_PAT every 3 months.
+# Log onto agent-lightning-bot account and rotate the PAT if needed.
+
 jobs:
   backport:
     name: Backport pull request
@@ -23,3 +27,5 @@ jobs:
           github_token: ${{ secrets.BOT_PAT }}
           add_labels: backport
           add_author_as_assignee: true
+          git_committer_name: agent-lightning-bot
+          git_committer_email: agl.msft@outlook.com

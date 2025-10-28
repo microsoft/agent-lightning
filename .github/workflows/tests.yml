@@ -5,9 +5,9 @@ permissions:
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, stable/**/* ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, stable/**/* ]
   workflow_dispatch:
 
   schedule:
