@@ -61,13 +61,6 @@ class AgentOpsTracer(Tracer):
         if not self.instrument_managed:
             logger.warning("instrument_managed=False. You are responsible for all instrumentation.")
 
-    def __getstate__(self):
-        state = self.__dict__.copy()
-        return state
-
-    def __setstate__(self, state: Any):
-        self.__dict__.update(state)
-
     def instrument(self, worker_id: int):
         instrument_all()
 
@@ -168,7 +161,7 @@ class AgentOpsTracer(Tracer):
                 raise ValueError("store, rollout_id, and attempt_id must be either all provided or all None")
         except Exception as e:
             status = StatusCode.ERROR  # type: ignore
-            logger.debug(f"Trace failed for rollout_id={rollout_id}, attempt_id={attempt_id}, error={e}")
+            logger.error(f"Trace failed for rollout_id={rollout_id}, attempt_id={attempt_id}, error={e}")
         finally:
             agentops.end_trace(trace, end_state=status)  # type: ignore
 
