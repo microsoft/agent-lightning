@@ -6,15 +6,15 @@ from opentelemetry.sdk.metrics.export import MetricExportResult
 from opentelemetry.sdk.trace.export import SpanExportResult
 
 from agentlightning.instrumentation.agentops import (
-    SwitchableAuthenticatedOTLPExporter,
-    SwitchableOTLPMetricExporter,
-    SwitchableOTLPSpanExporter,
+    BypassableAuthenticatedOTLPExporter,
+    BypassableOTLPMetricExporter,
+    BypassableOTLPSpanExporter,
     enable_agentops_service,
 )
 
 
 def test_switchable_authenticated_exporter():
-    switchable_authenticated_exporter = SwitchableAuthenticatedOTLPExporter(endpoint="http://dummy", jwt="dummy")
+    switchable_authenticated_exporter = BypassableAuthenticatedOTLPExporter(endpoint="http://dummy", jwt="dummy")
 
     with patch.object(
         switchable_authenticated_exporter.__class__.__bases__[0], "export", return_value=SpanExportResult.SUCCESS
@@ -32,7 +32,7 @@ def test_switchable_authenticated_exporter():
 
 def test_switchable_otlp_metric_exporter():
 
-    switchable_otlp_metric_exporter = SwitchableOTLPMetricExporter()
+    switchable_otlp_metric_exporter = BypassableOTLPMetricExporter()
     with patch.object(
         switchable_otlp_metric_exporter.__class__.__bases__[0], "export", return_value=MetricExportResult.SUCCESS
     ) as mock_export:
@@ -49,7 +49,7 @@ def test_switchable_otlp_metric_exporter():
 
 def test_switchable_otlp_span_exporter():
 
-    switchable_otlp_span_exporter = SwitchableOTLPSpanExporter()
+    switchable_otlp_span_exporter = BypassableOTLPSpanExporter()
     with patch.object(
         switchable_otlp_span_exporter.__class__.__bases__[0], "export", return_value=SpanExportResult.SUCCESS
     ) as mock_export:

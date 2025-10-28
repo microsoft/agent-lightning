@@ -83,18 +83,7 @@ class AgentOpsTracer(Tracer):
             logger.info(f"[Worker {worker_id}] Instrumentation applied.")
 
         if self.agentops_managed:
-
-            base_url = f"http://dummy"
-            env_vars_to_set = {
-                "AGENTOPS_API_KEY": "dummy",
-                "AGENTOPS_API_ENDPOINT": base_url,
-                "AGENTOPS_APP_URL": f"{base_url}/notavailable",
-                "AGENTOPS_EXPORTER_ENDPOINT": f"{base_url}/traces",
-            }
-            for key, value in env_vars_to_set.items():
-                os.environ[key] = value
-                logger.info(f"[Worker {worker_id}] Env var set: {key}={value}")
-
+            os.environ.setdefault("AGENTOPS_API_KEY", "dummy")
             if not agentops.get_client().initialized:
                 agentops.init(auto_start_session=False)  # type: ignore
                 logger.info(f"[Worker {worker_id}] AgentOps client initialized.")
@@ -160,26 +149,28 @@ class AgentOpsTracer(Tracer):
         if not self._lightning_span_processor:
             raise RuntimeError("LightningSpanProcessor is not initialized. Call init_worker() first.")
 
-        if store is not None and rollout_id is not None and attempt_id is not None:
-            ctx = self._lightning_span_processor.with_context(store=store, rollout_id=rollout_id, attempt_id=attempt_id)
-            with ctx as processor:
-                kwargs: dict[str, Any] = {}
-                if name is not None:
-                    kwargs["trace_name"] = str(name)
-                trace = agentops.start_trace(**kwargs)
-                status = StatusCode.OK  # type: ignore
-                try:
+        kwargs: dict[str, Any] = {}
+        if name is not None:
+            kwargs["trace_name"] = str(name)
+        trace = agentops.start_trace(**kwargs)
+        status = StatusCode.OK  # type: ignore
+        try:
+            if store is not None and rollout_id is not None and attempt_id is not None:
+                ctx = self._lightning_span_processor.with_context(
+                    store=store, rollout_id=rollout_id, attempt_id=attempt_id
+                )
+                with ctx as processor:
                     yield processor
-                except Exception as e:
-                    status = StatusCode.ERROR  # type: ignore
-                    logger.debug(f"Trace failed for rollout_id={rollout_id}, attempt_id={attempt_id}, error={e}")
-                finally:
-                    agentops.end_trace(trace, end_state=status)  # type: ignore
-        elif store is None and rollout_id is None and attempt_id is None:
-            with self._lightning_span_processor:
-                yield self._lightning_span_processor
-        else:
-            raise ValueError("store, rollout_id, and attempt_id must be either all provided or all None")
+            elif store is None and rollout_id is None and attempt_id is None:
+                with self._lightning_span_processor:
+                    yield self._lightning_span_processor
+            else:
+                raise ValueError("store, rollout_id, and attempt_id must be either all provided or all None")
+        except Exception as e:
+            status = StatusCode.ERROR  # type: ignore
+            logger.debug(f"Trace failed for rollout_id={rollout_id}, attempt_id={attempt_id}, error={e}")
+        finally:
+            agentops.end_trace(trace, end_state=status)  # type: ignore
 
     def get_last_trace(self) -> List[ReadableSpan]:
         """

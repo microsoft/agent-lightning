@@ -46,11 +46,11 @@ def _patch_exporters():
     import agentops.client.api
     import agentops.sdk.core
 
-    agentops.sdk.core.AuthenticatedOTLPExporter = SwitchableAuthenticatedOTLPExporter  # type: ignore
-    agentops.sdk.core.OTLPMetricExporter = SwitchableOTLPMetricExporter
-    agentops.sdk.core.OTLPSpanExporter = SwitchableOTLPSpanExporter
-    agentops.client.api.V3Client = SwitchableV3Client
-    agentops.client.api.V4Client = SwitchableV4Client
+    agentops.sdk.core.AuthenticatedOTLPExporter = BypassableAuthenticatedOTLPExporter  # type: ignore
+    agentops.sdk.core.OTLPMetricExporter = BypassableOTLPMetricExporter
+    agentops.sdk.core.OTLPSpanExporter = BypassableOTLPSpanExporter
+    agentops.client.api.V3Client = BypassableV3Client
+    agentops.client.api.V4Client = BypassableV4Client
 
 
 def _unpatch_exporters():
@@ -242,7 +242,7 @@ def uninstrument_agentops():
         pass
 
 
-class SwitchableAuthenticatedOTLPExporter(AuthenticatedOTLPExporter):
+class BypassableAuthenticatedOTLPExporter(AuthenticatedOTLPExporter):
     """
     AuthenticatedOTLPExporter with switchable service control.
     When `_agentops_service_enabled` is False, skip export and return success.
@@ -256,7 +256,7 @@ class SwitchableAuthenticatedOTLPExporter(AuthenticatedOTLPExporter):
             return SpanExportResult.SUCCESS
 
 
-class SwitchableOTLPMetricExporter(OTLPMetricExporter):
+class BypassableOTLPMetricExporter(OTLPMetricExporter):
     """
     OTLPMetricExporter with switchable service control.
     When `_agentops_service_enabled` is False, skip export and return success.
@@ -270,7 +270,7 @@ class SwitchableOTLPMetricExporter(OTLPMetricExporter):
             return MetricExportResult.SUCCESS
 
 
-class SwitchableOTLPSpanExporter(OTLPSpanExporter):
+class BypassableOTLPSpanExporter(OTLPSpanExporter):
     """
     OTLPSpanExporter with switchable service control.
     When `_agentops_service_enabled` is False, skip export and return success.
@@ -284,7 +284,7 @@ class SwitchableOTLPSpanExporter(OTLPSpanExporter):
             return SpanExportResult.SUCCESS
 
 
-class SwitchableV3Client(V3Client):
+class BypassableV3Client(V3Client):
     """
     V3Client with toggleable authentication calls.
     Returns dummy auth response when `_agentops_service_enabled` is False.
@@ -298,7 +298,7 @@ class SwitchableV3Client(V3Client):
             return AuthTokenResponse(token="dummy", project_id="dummy")
 
 
-class SwitchableV4Client(V4Client):
+class BypassableV4Client(V4Client):
     """
     V4Client with toggleable post requests.
     Returns dummy response when `_agentops_service_enabled` is False.
