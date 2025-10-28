@@ -202,11 +202,7 @@ class LightningStoreServer(LightningStore):
         # If startup failed (e.g. port already in use), uvicorn never flips `started`
         # and the worker thread stops immediately. Guard against latching on to a
         # different process that happened to satisfy the health check.
-        if (
-            not uvicorn_server.started
-            or not serving_thread.is_alive()
-            or self._server_start_exception is not None
-        ):
+        if not uvicorn_server.started or not serving_thread.is_alive() or self._server_start_exception is not None:
             self._handle_failed_start()
             failure_reason = self._format_start_failure_reason()
             raise RuntimeError(failure_reason)
@@ -273,7 +269,9 @@ class LightningStoreServer(LightningStore):
         except BaseException as exc:
             if isinstance(exc, KeyboardInterrupt):
                 raise
-            startup_failed = not uvicorn_server.started or isinstance(self._server_start_exception, (SystemExit, OSError))
+            startup_failed = not uvicorn_server.started or isinstance(
+                self._server_start_exception, (SystemExit, OSError)
+            )
             if startup_failed:
                 self._handle_failed_start()
                 raise RuntimeError(self._format_start_failure_reason())
