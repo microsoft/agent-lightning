@@ -28,4 +28,5 @@ jobs:
           add_labels: backport
           add_author_as_assignee: true
           git_committer_name: agent-lightning-bot
+          # This email address is not monitored.
           git_committer_email: agl.msft@outlook.com
