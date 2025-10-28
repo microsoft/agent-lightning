@@ -22,3 +22,4 @@ jobs:
           label_pattern: ^(stable/[^ ]+)$
           github_token: ${{ secrets.BOT_PAT }}
           add_labels: backport
+          add_author_as_assignee: true
