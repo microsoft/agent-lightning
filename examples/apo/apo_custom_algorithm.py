@@ -141,7 +141,7 @@ Return only a number between 0 and 1. No text, punctuation, or explanation."""
     try:
         content = result.choices[0].message.content
         if content is None:
-            console.print(f"[bold blue][Judge][/bold blue] Judge retured no content: {result}")
+            console.print(f"[bold blue][Judge][/bold blue] Judge returned no content: {result}")
             return 0.0
         score = float(content)
         console.print(f"[bold blue][Judge][/bold blue] Judge returned score: {score}")
