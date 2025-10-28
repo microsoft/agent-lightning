@@ -181,7 +181,20 @@ class LightningStoreServer(LightningStore):
         self._serving_thread = serving_thread
         serving_thread.start()
 
-        # Wait for /health to be available
+        # Wait for uvicorn to report that it has started before pinging /health.
+        start_deadline = time.time() + 10
+        while time.time() < start_deadline:
+            if uvicorn_server.started:
+                break
+            if self._server_start_exception is not None or not serving_thread.is_alive():
+                self._handle_failed_start()
+                raise RuntimeError(self._format_start_failure_reason())
+            await asyncio.sleep(0.05)
+        else:
+            self._handle_failed_start()
+            raise RuntimeError("Server failed to start within the 10 seconds.")
+
+        # Wait for /health to be available once uvicorn reports started.
         if not await self._server_health_check():
             self._handle_failed_start()
             raise RuntimeError("Server failed to start within the 10 seconds.")
@@ -189,7 +202,11 @@ class LightningStoreServer(LightningStore):
         # If startup failed (e.g. port already in use), uvicorn never flips `started`
         # and the worker thread stops immediately. Guard against latching on to a
         # different process that happened to satisfy the health check.
-        if not uvicorn_server.started or not serving_thread.is_alive():
+        if (
+            not uvicorn_server.started
+            or not serving_thread.is_alive()
+            or self._server_start_exception is not None
+        ):
             self._handle_failed_start()
             failure_reason = self._format_start_failure_reason()
             raise RuntimeError(failure_reason)

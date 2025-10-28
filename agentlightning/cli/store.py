@@ -28,7 +28,7 @@ def main(argv: Iterable[str] | None = None) -> int:
     try:
         asyncio.run(server.run_forever())
     except RuntimeError as exc:
-        logger.error(str(exc))
+        logger.error("LightningStore server failed to start: %s", exc, exc_info=True)
         return 1
     return 0
 
