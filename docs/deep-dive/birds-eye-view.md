@@ -496,7 +496,7 @@ flowchart TD
 Continuous learning keeps the algorithm loop running while runners report tasks and spans opportunistically. Key differences from batch mode:
 
 1. The algorithm does not enqueue rollouts from a fixed dataset. Runners report tasks/rollouts and spans spontaneously.
-2. The algorithm can wait for rollouts with a expected set of rollout IDs, but more oftenly polls for new rollouts and spans or waits for a count to arrive.
+2. The algorithm can wait for rollouts with a expected set of rollout IDs, but more often polls for new rollouts and spans or waits for a count to arrive.
 3. The [`Runner`][agentlightning.Runner] processes one rollout at a time via [`step(task)`][agentlightning.Runner.step] instead of exhausting a task queue. It notifies the store when starting a rollout so the store records it.
 4. A user or higher-level loop controls which resources the next step uses and when to retry.
 
