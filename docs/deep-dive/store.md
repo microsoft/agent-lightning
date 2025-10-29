@@ -201,4 +201,7 @@ agl store --port 4747
 
 !!! note
 
-    [`LightningStoreClient.wait_for_rollouts`][agentlightning.LightningStoreClient.wait_for_rollouts] intentionally enforces a tiny timeout (≤ 0.1s) to avoid blocking event loops. Poll with short timeouts or compose with `asyncio.wait_for` at a higher layer.
+    [`LightningStoreClient.wait_for_rollouts`][agentlightning.LightningStoreClient.wait_for_rollouts] streams results over
+    Server-Sent Events (SSE). The client keeps the connection open while the store waits for completions and automatically
+    reconnects in 60-second chunks for very large timeouts. Use long timeouts directly or wrap the call in
+    [`asyncio.wait_for`](https://docs.python.org/3/library/asyncio-task.html#asyncio.wait_for) if you need an overall deadline.

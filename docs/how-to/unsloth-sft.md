@@ -118,7 +118,9 @@ while True:
 
 !!! note
 
-    The `timeout=0.0` is needed here because this example uses a [`LightningStoreClient`][agentlightning.LightningStoreClient], and `wait_for_rollouts` establishes an HTTP connection to that store. Currently, only non-blocking wait requests are supported, which avoids holding the store connection open.
+    [`LightningStoreClient.wait_for_rollouts`][agentlightning.LightningStoreClient.wait_for_rollouts] now streams results over
+    SSE, so you can use longer timeouts when it simplifies your loop. In this example we still poll with `timeout=0.0` to check
+    progress alongside other work, but a larger timeout would keep the connection open until the store reports completions.
 
 Once the rollouts complete, we terminate the vLLM server to free up GPU memory.
 
