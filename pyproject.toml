@@ -32,6 +32,10 @@ dependencies = [
 apo = [
   "poml",
 ]
+multimodal = [
+  "Pillow",
+  "requests",
+]
 # It's not recommended to use agentlightning[verl] to install VERL and its dependencies.
 # though it's listed here for completeness.
 verl = [
