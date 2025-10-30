@@ -1,55 +1,66 @@
-# Copyright (c) Microsoft. All rights reserved.
+# Copyright (c) 2024, Microsoft Corporation
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
-"""Agent Lightning command line interface entry point."""
-
-from __future__ import annotations
+"""The command line interface for Agent Lightning."""
 
 import argparse
-import importlib
 import sys
-from typing import Dict, Iterable, Tuple
 
-_SUBCOMMANDS: Dict[str, Tuple[str, str]] = {
-    "vllm": ("agentlightning.cli.vllm", "Run the vLLM CLI with Agent Lightning instrumentation."),
-    "store": ("agentlightning.cli.store", "Run a LightningStore server."),
-    "agentops": ("agentlightning.cli.agentops_server", "Start the AgentOps server manager."),
+from agentlightning.logging import setup_logger
+from agentlightning.settings import get_settings
+
+# Static imports of allowed command modules
+try:
+    from agentlightning.cli.commands import chat
+except ImportError:
+    chat = None
+
+try:
+    from agentlightning.cli.commands import config
+except ImportError:
+    config = None
+
+# Command registry with explicit mapping
+COMMAND_REGISTRY = {
+    "chat": chat,
+    "config": config,
 }
 
-_DESCRIPTION = "Agent Lightning CLI entry point.\n\nAvailable subcommands:\n" + "\n".join(
-    f"  {name:<10}{desc}" for name, (_, desc) in _SUBCOMMANDS.items()
-)
 
-
-def main(argv: Iterable[str] | None = None) -> int:
-    """Dispatch to the requested Agent Lightning subcommand."""
+def main():
+    """The main entry point for the command line interface."""
     parser = argparse.ArgumentParser(
-        prog="agl",
-        description=_DESCRIPTION,
-        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description="Agent Lightning CLI",
+        formatter_class=argparse.RawTextHelpFormatter,
     )
-    parser.add_argument("subcommand", choices=_SUBCOMMANDS.keys(), help="Subcommand to run.")
-    parser.add_argument("args", nargs=argparse.REMAINDER, help=argparse.SUPPRESS)
+    subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
-    parsed = parser.parse_args(list(argv) if argv is not None else None)
-    module_name, _ = _SUBCOMMANDS[parsed.subcommand]
-    module = importlib.import_module(module_name)
+    # Register commands from the static registry
+    for command_name, module in COMMAND_REGISTRY.items():
+        if module is not None and hasattr(module, "register"):
+            module.register(subparsers)
 
-    entry_point = getattr(module, "main", None)
-    if entry_point is None:
-        parser.error(f"Subcommand '{parsed.subcommand}' does not define a callable 'main'")
+    args = parser.parse_args()
 
-    dispatch_args = parsed.args
-    original_argv = sys.argv
-    sys.argv = [f"{parser.prog} {parsed.subcommand}", *dispatch_args]
-    try:
-        result = entry_point(dispatch_args or None)
-    finally:
-        sys.argv = original_argv
-
-    if isinstance(result, int):
-        return result
-    return 0
+    if hasattr(args, "func"):
+        # setup logger
+        settings = get_settings()
+        setup_logger(settings.log_level, settings.log_file)
+        args.func(args)
+    else:
+        parser.print_help()
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    sys.exit(main())
