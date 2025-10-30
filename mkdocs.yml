@@ -123,6 +123,8 @@ nav:
     - Trainer: reference/trainer.md
     - Types: reference/types.md
     - Internal: reference/internal.md
+  - Miscellaneous:
+    - Changelog: changelog.md
 
 extra_css:
   - https://unpkg.com/katex@0/dist/katex.min.css
