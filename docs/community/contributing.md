@@ -1,9 +1,9 @@
 # Contributing Guide
 
-Agent Lightning welcomes contributions of all sizes—from bug fixes to new features and documentation.
+Agent Lightning welcomes contributions of all sizes: from bug fixes to new features and documentation.
 This guide walks you through getting a local environment ready, following our branching strategy, and opening a high-quality pull request.
 
-## 1. Prepare Your Environment
+## Step 1. Prepare Your Environment
 
 ### Prerequisites
 
@@ -38,14 +38,15 @@ uv sync --frozen \
     --group dev \
     --group torch-cpu \
     --group torch-stable \
-    --group trl \
     --group agents \
     --no-default-groups
 ```
 
-After `uv sync`, either prefix commands with `uv run …` or activate the virtual environment from `.venv/`.
+After `uv sync`, either prefix commands with `uv run ...` (or `uv run --no-sync` if you prefer), or activate the virtual environment from `.venv/`.
 
-## 2. Install and Run Pre-commit
+---
+
+## Step 2. Install and Run Pre-commit
 
 Code style and linting are enforced via [pre-commit](https://pre-commit.com/). Install the hooks once and run them before you push:
 
@@ -56,52 +57,60 @@ uv run pre-commit run --all-files --show-diff-on-failure --color=always
 
 Running the hooks locally saves you from CI failures and keeps diffs clean.
 
-## 3. Branching Workflow
+---
 
-1. Always start from an up-to-date `main`:
-   ```bash
-   git fetch upstream
-   git checkout main
-   git merge upstream/main
-   ```
-2. Create a topic branch using one of the naming prefixes below:
-   - `feature/<short-description>` — new features
-   - `fix/<short-description>` — bug fixes
-   - `docs/<short-description>` — documentation-only updates
-   - `chore/<short-description>` — tooling or maintenance tweaks
+## Step 3. Branching Workflow
+
+Always start from an up-to-date `main`:
+
+```bash
+git fetch upstream
+git checkout main
+git merge upstream/main
+```
+
+Create a topic branch using one of the naming prefixes below:
+
+- `feature/<short-description>` — new features
+- `fix/<short-description>` — bug fixes
+- `docs/<short-description>` — documentation-only updates
+- `chore/<short-description>` — tooling or maintenance tweaks
 
 Use lowercase words separated by hyphens (e.g. `feature/async-runner-hooks`).
 
-## 4. Run Tests and Checks
+---
+
+## Step 4. Run Tests and Checks
 
 Most code changes should be backed by automated tests. Use the `uv run` prefix so the commands execute inside the project virtual environment.
 
-- **Run the full test suite:**
-  ```bash
-  uv run pytest -v
-  ```
-- **Target a specific module or test:**
-  ```bash
-  uv run pytest tests/path/to/test_file.py -k test_name
-  ```
-- **Exercise optional markers:** We classify slower or optional suites with markers. For example, to skip anything marked `slow`
-  (the default in CI) run:
-  ```bash
-  uv run pytest -m "not slow"
-  ```
-  To include GPU- or example-heavy paths locally, opt in with `-m slow` or the relevant marker listed at the top of the test file.
-- **Collect coverage details (optional but helpful for large changes):**
-  ```bash
-  uv run pytest --cov=agentlightning --cov-report=term-missing
-  ```
-- **Type checking:**
-  ```bash
-  uv run pyright
-  ```
+**Run the full test suite:**
+
+```bash
+uv run pytest -v
+```
+
+**Target a specific module or test:**
+
+```bash
+uv run pytest tests/path/to/test_file.py -k test_name
+```
+
+**Run optional tests:**
+
+When you have a GPU or have an environment set up like `OPENAI_API_KEY`, related tests will be included and run automatically.
+
+**Type checking:**
+
+```bash
+uv run pyright
+```
 
 When touching integrations located in `examples/`, review the README inside each example directory for additional smoke-test instructions.
 
-## 5. Build and Validate Documentation
+---
+
+## Step 5. Build and Validate Documentation
 
 If your change touches documentation, verify it builds cleanly:
 
@@ -112,13 +121,17 @@ uv run mkdocs build --strict  # CI-equivalent check
 
 The `--strict` flag matches our CI settings and turns warnings into errors so you can catch issues early.
 
-## 6. Before You Push
+---
 
-- Run the pre-commit hooks (`uv run pre-commit run --all-files`).
+## Step 6. Before You Push
+
+- Run the pre-commit hooks (`uv run pre-commit run --all-files`). If you have installed the hooks, the Git client will run them automatically on `git commit`.
 - Execute the relevant tests (see the previous section for examples).
 - For changes affecting examples, follow the README inside each `examples/<name>/` directory to validate manually as needed.
 
-## 7. Open a Pull Request
+---
+
+## Step 7. Open a Pull Request
 
 1. Push your branch to your fork:
    ```bash
@@ -126,10 +139,12 @@ The `--strict` flag matches our CI settings and turns warnings into errors so yo
    ```
 2. Open a pull request against `microsoft/agent-lightning:main`.
 3. Fill out the PR description with:
-   - A summary of the change.
-   - A checklist of tests or commands you ran.
-   - Links to related issues (use `Fixes #123` to auto-close).
+
+    - A summary of the change.
+    - A checklist of tests or commands you ran.
+    - Links to related issues (use `Fixes #123` to auto-close).
+
 4. Add screenshots or terminal output when they help reviewers understand the change.
 5. Respond to review feedback promptly; keep commits focused and consider using fixup commits (`git commit --fixup`) for clarity.
 
-Thank you for contributing—your improvements help the entire Agent Lightning community!
+Thank you for contributing. Your improvements help the entire Agent Lightning community!
