@@ -9,7 +9,6 @@ permissions:
   issues: write
   contents: write
   actions: read
-  workflows: write
 
 jobs:
   dispatch:
