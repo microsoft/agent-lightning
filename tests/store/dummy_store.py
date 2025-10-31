@@ -11,8 +11,9 @@ from agentlightning.types import (
     AttemptStatus,
     NamedResources,
     ResourcesUpdate,
+    Rollout,
+    RolloutConfig,
     RolloutStatus,
-    RolloutV2,
     Span,
     TaskInput,
 )
@@ -29,9 +30,10 @@ class DummyLightningStore(LightningStore):
         input: TaskInput,
         mode: Optional[str] = None,
         resources_id: Optional[str] = None,
+        config: Optional[RolloutConfig] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> AttemptedRollout:
-        self.calls.append(("start_rollout", (input, mode, resources_id, metadata), {}))
+        self.calls.append(("start_rollout", (input, mode, resources_id, config, metadata), {}))
         return self.return_values["start_rollout"]
 
     async def enqueue_rollout(
@@ -39,9 +41,10 @@ class DummyLightningStore(LightningStore):
         input: TaskInput,
         mode: Optional[str] = None,
         resources_id: Optional[str] = None,
+        config: Optional[RolloutConfig] = None,
         metadata: Optional[Dict[str, Any]] = None,
-    ) -> RolloutV2:
-        self.calls.append(("enqueue_rollout", (input, mode, resources_id, metadata), {}))
+    ) -> Rollout:
+        self.calls.append(("enqueue_rollout", (input, mode, resources_id, config, metadata), {}))
         return self.return_values["enqueue_rollout"]
 
     async def dequeue_rollout(self) -> Optional[AttemptedRollout]:
@@ -54,7 +57,7 @@ class DummyLightningStore(LightningStore):
 
     async def query_rollouts(
         self, *, status: Optional[Sequence[RolloutStatus]] = None, rollout_ids: Optional[Sequence[str]] = None
-    ) -> List[RolloutV2]:
+    ) -> List[Rollout]:
         self.calls.append(("query_rollouts", (), {"status": status, "rollout_ids": rollout_ids}))
         return self.return_values["query_rollouts"]
 
@@ -62,7 +65,7 @@ class DummyLightningStore(LightningStore):
         self.calls.append(("query_attempts", (rollout_id,), {}))
         return self.return_values["query_attempts"]
 
-    async def get_rollout_by_id(self, rollout_id: str) -> Optional[RolloutV2]:
+    async def get_rollout_by_id(self, rollout_id: str) -> Optional[Rollout]:
         self.calls.append(("get_rollout_by_id", (rollout_id,), {}))
         return self.return_values["get_rollout_by_id"]
 
@@ -100,7 +103,7 @@ class DummyLightningStore(LightningStore):
         self.calls.append(("add_otel_span", (rollout_id, attempt_id, readable_span, sequence_id), {}))
         return self.return_values["add_otel_span"]
 
-    async def wait_for_rollouts(self, *, rollout_ids: List[str], timeout: Optional[float] = None) -> List[RolloutV2]:
+    async def wait_for_rollouts(self, *, rollout_ids: List[str], timeout: Optional[float] = None) -> List[Rollout]:
         self.calls.append(("wait_for_rollouts", (), {"rollout_ids": rollout_ids, "timeout": timeout}))
         return self.return_values["wait_for_rollouts"]
 
@@ -125,7 +128,7 @@ class DummyLightningStore(LightningStore):
         status: RolloutStatus | Any = UNSET,
         config: Any = UNSET,
         metadata: Optional[Dict[str, Any]] | Any = UNSET,
-    ) -> RolloutV2:
+    ) -> Rollout:
         self.calls.append(
             (
                 "update_rollout",

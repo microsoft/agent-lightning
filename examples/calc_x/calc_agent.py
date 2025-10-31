@@ -1,82 +1,44 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-import math
+"""This sample code demonstrates how to define a Calc-X agent trainable with Agent-lightning
+with latest Agent-lightning API (v0.2+)."""
+
+import asyncio
 import os
 import re
-import string
-from typing import Any, cast
+from typing import TypedDict, cast
 
-import sympy
 from autogen_agentchat.agents import AssistantAgent
 from autogen_core.models import ModelFamily
 from autogen_ext.models.openai import OpenAIChatCompletionClient
 from autogen_ext.tools.mcp import McpWorkbench, StdioServerParams
+from eval_utils import evaluate
 
-from agentlightning import LLM, LitAgent, NamedResources, Trainer, configure_logger, reward
-
-configure_logger()
-
-calculator_mcp_server = StdioServerParams(command="uvx", args=["mcp-server-calculator"])
+import agentlightning as agl
 
 
-# Copied and adapted from https://github.com/prompteus/calc-x/blob/master/gadgets/metrics.py
+class MathProblem(TypedDict):
+    """This TypedDict defines the structure of each training sample.
 
+    Your task structure should contain all the information needed for:
 
-def normalize_option(option: str) -> str:
+    - The agent to process the task (e.g., 'question')
+    - Evaluation (e.g., 'result' for ground truth)
+
+    This type is optional. Not necessary to make the example work.
     """
-    >>> normalize_option("  (A)  \n")
-    'A'
-    """
-    return re.sub(r"(\s+|\(|\))", "", option)
+
+    # The fields come from the dataset
+    id: str
+    question: str  # The math problem for the agent to solve
+    chain: str  # Step-by-step solution (not used in training)
+    result: str  # Ground truth answer for evaluation
+    source: str
 
 
-def is_option_result(result: str) -> bool:
-    """
-    >>> is_option_result("  A)  \n")
-    True
-    >>> is_option_result("  23/7 ")
-    False
-    """
-    return normalize_option(result) in list(string.ascii_letters)
-
-
-def float_eval(input_str: str) -> float:
-    if " = around " in input_str:
-        input_str = input_str.split(" = around ")[0]
-    expr = sympy.parse_expr(input_str, evaluate=True)
-    return float(expr.evalf())
-
-
-def scalar_are_results_same(pred_result: str, true_result: str, rel_tol: float) -> bool:
-    pred_result = str(pred_result) if pred_result is not None else ""  # type: ignore
-    true_result = str(true_result) if true_result is not None else ""  # type: ignore
-
-    if pred_result.strip() == true_result.strip():
-        return True
-
-    if is_option_result(true_result):
-        # The task is to select correct option
-        true_result = normalize_option(true_result)
-        pred_result = normalize_option(pred_result)
-        return pred_result == true_result
-
-    # The task is to calculate the result as a number
-    try:
-        pred_float = float_eval(pred_result)
-        true_float = float_eval(true_result)
-        return math.isclose(pred_float, true_float, rel_tol=rel_tol)
-    except Exception:
-        pass
-
-    return False
-
-
-@reward
-async def eval(prediction: str, ground_truth: str) -> float:
-    return float(scalar_are_results_same(prediction, ground_truth, 1e-2))
-
-
-def get_agent(model: str, openai_base_url: str, temperature: float, workbench: McpWorkbench) -> AssistantAgent:
+def autogen_assistant_agent(
+    model: str, openai_base_url: str, temperature: float, workbench: McpWorkbench
+) -> AssistantAgent:
     model_client = OpenAIChatCompletionClient(
         model=model,
         base_url=openai_base_url,
@@ -100,44 +62,97 @@ def get_agent(model: str, openai_base_url: str, temperature: float, workbench: M
     return calc_agent
 
 
-class CalcAgent(LitAgent[Any]):
+@agl.rollout
+async def calc_agent(task: MathProblem, llm: agl.LLM) -> None:
+    """Calc-X agent rollout function.
 
-    async def training_rollout_async(self, task: Any, rollout_id: str, resources: NamedResources) -> Any:  # type: ignore
-        llm: LLM = cast(LLM, resources.get("main_llm"))
-        async with McpWorkbench(calculator_mcp_server) as workbench:
-            calc_agent = get_agent(
-                llm.model,
-                llm.endpoint,
-                llm.sampling_parameters.get("temperature", 0.7),
-                workbench,
-            )
-            try:
-                output_format = "Output the answer when you are ready. The answer should be surrounded by three sharps (`###`), in the form of ### ANSWER: <answer> ###."
-                prompt = task["question"] + " " + output_format
-                result = await calc_agent.run(task=prompt)
-                # evaluate
-                answer = re.search(r"###\s*ANSWER:\s*(.+?)(\s*###|$)", result.messages[-1].content)  # type: ignore
-                if answer:
-                    answer = answer.group(1)
-                else:
-                    answer = result.messages[-1].content  # type: ignore
-            except Exception as e:
-                print("Failure:", str(e))
-                answer = "None"
-            reward = await eval(answer, str(task["result"]))  # reward is tracked with the decorator  # type: ignore
-            print("answer: {} ground_truth: {} reward: {}".format(answer, task["result"], reward))  # type: ignore
+    It would accept a math problem and a LLM endpoint resource.
+    It's expected to return None, and emit reward via `agl.emit_reward`.
+    It can also return the reward directly without `agl.emit_reward`.
+    You can choose either way, but not both.
+    """
 
-    async def validation_rollout_async(self, task: Any, rollout_id: str, resources: NamedResources) -> Any:  # type: ignore
-        llm: LLM = cast(LLM, resources.get("main_llm"))
-        resources = {
-            "main_llm": LLM(
-                endpoint=llm.endpoint,
-                model=llm.model,
-                sampling_parameters={"temperature": 0},
-            )
-        }
-        return await self.training_rollout_async(task, rollout_id, resources)
+    calculator_mcp_server = StdioServerParams(command="uvx", args=["mcp-server-calculator"])
+
+    async with McpWorkbench(calculator_mcp_server) as workbench:
+        calc_agent = autogen_assistant_agent(
+            llm.model,
+            llm.endpoint,
+            llm.sampling_parameters.get("temperature", 0.7),
+            workbench,
+        )
+        try:
+            output_format = "Output the answer when you are ready. The answer should be surrounded by three sharps (`###`), in the form of ### ANSWER: <answer> ###."
+            prompt = task["question"] + " " + output_format
+            result = await calc_agent.run(task=prompt)
+            # evaluate
+            last_message = cast(str, result.messages[-1].content)  # type: ignore
+            answer = re.search(r"###\s*ANSWER:\s*(.+?)(\s*###|$)", last_message)
+            if answer:
+                answer = answer.group(1)
+            else:
+                answer = last_message
+        except Exception as e:
+            print("Failure:", str(e))
+            answer = "None"
+        reward = await evaluate(answer, str(task["result"]))
+        agl.emit_reward(reward)  # Emit reward for tracing
+        print("answer: {} ground_truth: {} reward: {}".format(answer, task["result"], reward))
+
+
+async def debug():
+    """Here we show a more manual way for debugging, without Trainer.
+
+    We get the data samples on our own, and run the agent with LitAgentRunner.
+    You will need an `OPENAI_API_KEY` and `OPENAI_BASE_URL` environment variable set
+    to run this function.
+    """
+    # Manually create a tracer as Runner will need it.
+    # Use a dummy OtelTracer if you don't need to trace anything other than reward.
+    tracer = agl.OtelTracer()
+    # The runner processes MathProblem, which matches the agent's task type.
+    runner = agl.LitAgentRunner[MathProblem](tracer)
+
+    # A store is required here to store the data collected.
+    store = agl.InMemoryLightningStore()
+
+    # This is what needs to be tuned (i.e., LLM)
+    resource = agl.LLM(
+        endpoint=os.environ["OPENAI_BASE_URL"], model="gpt-4.1-nano", sampling_parameters={"temperature": 1.0}
+    )
+
+    made_up_task: MathProblem = {
+        "id": "debug-1",
+        "question": "What is 12 multiplied by 15?",
+        "chain": "",
+        "result": "180",
+        "source": "debug",
+    }
+
+    another_made_up_task: MathProblem = {
+        "id": "debug-2",
+        "question": "What is the square root of 256?",
+        "chain": "",
+        "result": "16",
+        "source": "debug",
+    }
+
+    # The agent here must be the same agent that will be used in the real run.
+    with runner.run_context(agent=calc_agent, store=store):
+        await runner.step(
+            made_up_task,
+            resources={
+                # The key "main_llm" here can be arbitrary
+                "main_llm": resource
+            },
+        )
+
+        # Run another task
+        await runner.step(
+            another_made_up_task,
+            resources={"main_llm": resource},
+        )
 
 
 if __name__ == "__main__":
-    Trainer(n_workers=10).fit(CalcAgent(), "http://localhost:9999/")
+    asyncio.run(debug())

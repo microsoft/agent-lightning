@@ -1,0 +1,35 @@
+name: Badge - Examples
+
+on:
+  workflow_run:
+    workflows:
+      - Examples - Calc-X
+      - Examples - Spider
+      - Examples - APO
+      - Examples - Unsloth
+    types: [completed]
+
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  badge:
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.head_branch == 'main') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/github-script@v8
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const badgeAggregation = require('./scripts/badge_aggregation.js');
+            const dependencies = [
+              { workflow: 'examples-calc-x.yml', label: 'examples-calc-x.stable', variants: ['stable'] },
+              { workflow: 'examples-spider.yml', label: 'examples-spider.stable', variants: ['stable'] },
+              { workflow: 'examples-apo.yml', label: 'examples-apo.stable', variants: ['stable'] },
+              { workflow: 'examples-unsloth.yml', label: 'examples-unsloth.stable', variants: ['stable'] },
+            ];
+            await badgeAggregation({ github, context, core, dependencies });

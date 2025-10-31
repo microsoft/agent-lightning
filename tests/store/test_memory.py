@@ -14,20 +14,28 @@ Test categories:
 """
 
 import asyncio
+import sys
 import time
-from typing import List
+from typing import List, Optional, cast
 from unittest.mock import Mock
 
 import pytest
+from pydantic import BaseModel
 
-from agentlightning.store.memory import InMemoryLightningStore
+from agentlightning.store.memory import InMemoryLightningStore, estimate_model_size
 from agentlightning.types import (
     LLM,
+    AttemptedRollout,
+    Event,
+    Link,
+    OtelResource,
     PromptTemplate,
     ResourcesUpdate,
+    Rollout,
     RolloutConfig,
-    RolloutV2,
     Span,
+    SpanContext,
+    TraceStatus,
 )
 
 # Core CRUD Operations Tests
@@ -50,6 +58,24 @@ async def test_enqueue_rollout_creates_rollout(inmemory_store: InMemoryLightning
     assert rollout.metadata == metadata
     assert rollout.status == "queuing"
     assert rollout.start_time is not None
+
+
+@pytest.mark.asyncio
+async def test_enqueue_rollout_accepts_config(inmemory_store: InMemoryLightningStore) -> None:
+    """Rollout-specific configs can be provided when enqueuing tasks."""
+    config = RolloutConfig(timeout_seconds=12.0, max_attempts=3, retry_condition=["timeout"])
+
+    rollout = await inmemory_store.enqueue_rollout(input={"sample": True}, config=config)
+
+    assert rollout.config.timeout_seconds == 12.0
+    assert rollout.config.max_attempts == 3
+    assert rollout.config.retry_condition == ["timeout"]
+
+    stored = await inmemory_store.get_rollout_by_id(rollout.rollout_id)
+    assert stored is not None
+    assert stored.config.timeout_seconds == 12.0
+    assert stored.config.max_attempts == 3
+    assert stored.config.retry_condition == ["timeout"]
 
 
 @pytest.mark.asyncio
@@ -77,6 +103,24 @@ async def test_add_rollout_initializes_attempt(inmemory_store: InMemoryLightning
     latest_attempt = await inmemory_store.get_latest_attempt(attempt_rollout.rollout_id)
     assert latest_attempt is not None
     assert latest_attempt.attempt_id == attempt_rollout.attempt.attempt_id
+
+
+@pytest.mark.asyncio
+async def test_start_rollout_accepts_config(inmemory_store: InMemoryLightningStore) -> None:
+    """Custom rollout config is preserved for started rollouts."""
+    config = RolloutConfig(unresponsive_seconds=5.0, max_attempts=2, retry_condition=["unresponsive"])
+
+    attempt_rollout = await inmemory_store.start_rollout(input={"payload": "value"}, config=config)
+
+    assert attempt_rollout.config.unresponsive_seconds == 5.0
+    assert attempt_rollout.config.max_attempts == 2
+    assert attempt_rollout.config.retry_condition == ["unresponsive"]
+
+    stored = await inmemory_store.get_rollout_by_id(attempt_rollout.rollout_id)
+    assert stored is not None
+    assert stored.config.unresponsive_seconds == 5.0
+    assert stored.config.max_attempts == 2
+    assert stored.config.retry_condition == ["unresponsive"]
 
 
 @pytest.mark.asyncio
@@ -136,6 +180,27 @@ async def test_get_rollout_by_id(inmemory_store: InMemoryLightningStore) -> None
     updated = await inmemory_store.get_rollout_by_id(created.rollout_id)
     assert updated is not None
     assert updated.status == "running"
+
+
+@pytest.mark.asyncio
+async def test_store_lock_rebinds_to_new_event_loop(
+    inmemory_store: InMemoryLightningStore,
+) -> None:
+    """The in-memory store can be reused after switching to a new event loop."""
+
+    rollout = await inmemory_store.enqueue_rollout(input={"foo": "bar"})
+
+    def run_in_new_loop() -> Optional[Rollout]:
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(inmemory_store.get_rollout_by_id(rollout.rollout_id))
+        finally:
+            loop.close()
+
+    retrieved = await asyncio.to_thread(run_in_new_loop)
+
+    assert retrieved is not None
+    assert retrieved.rollout_id == rollout.rollout_id
 
 
 @pytest.mark.asyncio
@@ -285,7 +350,7 @@ async def test_dequeue_rollout_skips_non_queuing_status(inmemory_store: InMemory
 @pytest.mark.asyncio
 async def test_fifo_ordering(inmemory_store: InMemoryLightningStore) -> None:
     """Test that queue maintains FIFO order."""
-    rollouts: List[RolloutV2] = []
+    rollouts: List[Rollout] = []
     for i in range(5):
         r = await inmemory_store.enqueue_rollout(input={"order": i})
         rollouts.append(r)
@@ -573,6 +638,172 @@ async def test_query_spans_by_attempt(inmemory_store: InMemoryLightningStore, mo
 
 
 @pytest.mark.asyncio
+async def test_span_eviction_removes_oldest_rollouts(mock_readable_span: Mock, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("agentlightning.store.memory._detect_total_memory_bytes", lambda: 100)
+    store = InMemoryLightningStore(
+        eviction_memory_threshold=0.5,
+        safe_memory_threshold=0.05,
+        span_size_estimator=lambda span: 20,
+    )
+
+    attempted_rollouts: List[AttemptedRollout] = []
+    for index in range(4):
+        attempted = await store.start_rollout(input={"index": index})
+        attempted_rollouts.append(attempted)
+        await store.add_otel_span(attempted.rollout_id, attempted.attempt.attempt_id, mock_readable_span)
+
+    for attempted in attempted_rollouts[:3]:
+        with pytest.raises(RuntimeError):
+            await store.query_spans(attempted.rollout_id)
+
+    remaining_spans = await store.query_spans(attempted_rollouts[3].rollout_id)
+    assert len(remaining_spans) == 1
+    assert remaining_spans[0].rollout_id == attempted_rollouts[3].rollout_id
+
+
+def test_memory_threshold_accepts_byte_values() -> None:
+    store = InMemoryLightningStore(
+        eviction_memory_threshold=150,
+        safe_memory_threshold=20,
+    )
+
+    assert store._eviction_threshold_bytes == 150  # pyright: ignore[reportPrivateUsage]
+    assert store._safe_threshold_bytes == 20  # pyright: ignore[reportPrivateUsage]
+
+
+def test_memory_threshold_accepts_ratios_with_zero_safe(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("agentlightning.store.memory._detect_total_memory_bytes", lambda: 200)
+    store = InMemoryLightningStore(
+        eviction_memory_threshold=0.6,
+        safe_memory_threshold=0.0,
+    )
+
+    assert store._eviction_threshold_bytes == int(200 * 0.6)  # pyright: ignore[reportPrivateUsage]
+    assert store._safe_threshold_bytes == 0  # pyright: ignore[reportPrivateUsage]
+
+
+def test_invalid_safe_threshold_raises_value_error() -> None:
+    with pytest.raises(ValueError):
+        InMemoryLightningStore(
+            eviction_memory_threshold=50,
+            safe_memory_threshold=100,
+        )
+
+
+def test_estimate_model_size_counts_nested_models() -> None:
+    class Inner(BaseModel):
+        value: int
+        data: List[int]
+
+    class Outer(BaseModel):
+        inner: Inner
+        mapping: dict[str, str]
+        tags: List[str]
+
+    inner = Inner(value=7, data=[1, 2, 3])
+    outer = Outer(inner=inner, mapping={"alpha": "beta"}, tags=["x", "yz"])
+
+    inner_expected = (
+        sys.getsizeof(inner)
+        + sys.getsizeof(inner.value)
+        + sys.getsizeof(inner.data)
+        + sum(sys.getsizeof(item) for item in inner.data)
+    )
+    assert estimate_model_size(inner) == inner_expected
+
+    mapping_expected = sys.getsizeof(outer.mapping) + sum(sys.getsizeof(v) for v in outer.mapping.values())
+    tags_expected = sys.getsizeof(outer.tags) + sum(sys.getsizeof(tag) for tag in outer.tags)
+    outer_expected = sys.getsizeof(outer) + inner_expected + mapping_expected + tags_expected
+    assert estimate_model_size(outer) == outer_expected
+
+
+def test_estimate_model_size_handles_span_objects() -> None:
+    status = TraceStatus(status_code="OK", description="fine")
+    context = SpanContext(trace_id="trace", span_id="parent", is_remote=False, trace_state={"foo": "bar"})
+    event = Event(name="step", attributes={"detail": "value"}, timestamp=1.0)
+    link = Link(context=context, attributes=None)
+    resource = OtelResource(attributes={"service.name": "unit"}, schema_url="schema")
+
+    span = Span(
+        rollout_id="ro-1",
+        attempt_id="at-1",
+        sequence_id=1,
+        trace_id="trace",
+        span_id="span",
+        parent_id=None,
+        name="operation",
+        status=status,
+        attributes={"foo": "bar", "answer": 42},
+        events=[event],
+        links=[link],
+        start_time=1.0,
+        end_time=2.0,
+        context=None,
+        parent=None,
+        resource=resource,
+    )
+
+    status_expected = sys.getsizeof(status) + sys.getsizeof(status.status_code) + sys.getsizeof(status.description)
+
+    trace_state_values = context.trace_state.values()
+    context_expected = (
+        sys.getsizeof(context)
+        + sys.getsizeof(context.trace_id)
+        + sys.getsizeof(context.span_id)
+        + sys.getsizeof(context.is_remote)
+        + sys.getsizeof(context.trace_state)
+        + sum(sys.getsizeof(v) for v in trace_state_values)
+    )
+
+    event_attributes_expected = sys.getsizeof(event.attributes) + sys.getsizeof("value")
+    event_expected = (
+        sys.getsizeof(event) + sys.getsizeof(event.name) + event_attributes_expected + sys.getsizeof(event.timestamp)
+    )
+    events_expected = sys.getsizeof(span.events) + event_expected
+
+    link_attributes = cast(Optional[dict[str, str]], link.attributes)
+    link_attribute_values = link_attributes.values() if link_attributes is not None else ()
+    link_attributes_expected = sys.getsizeof(link_attributes if link_attributes is not None else None) + sum(
+        sys.getsizeof(v) for v in link_attribute_values
+    )
+    link_expected = sys.getsizeof(link) + context_expected + link_attributes_expected
+    links_expected = sys.getsizeof(span.links) + link_expected
+
+    attributes_expected = (
+        sys.getsizeof(span.attributes) + sys.getsizeof("bar") + sys.getsizeof(span.attributes["answer"])
+    )
+
+    resource_expected = (
+        sys.getsizeof(resource)
+        + sys.getsizeof(resource.attributes)
+        + sum(sys.getsizeof(v) for v in resource.attributes.values())
+        + sys.getsizeof(resource.schema_url)
+    )
+
+    expected_size = (
+        sys.getsizeof(span)
+        + sys.getsizeof(span.rollout_id)
+        + sys.getsizeof(span.attempt_id)
+        + sys.getsizeof(span.sequence_id)
+        + sys.getsizeof(span.trace_id)
+        + sys.getsizeof(span.span_id)
+        + sys.getsizeof(span.parent_id)
+        + sys.getsizeof(span.name)
+        + status_expected
+        + attributes_expected
+        + events_expected
+        + links_expected
+        + sys.getsizeof(span.start_time)
+        + sys.getsizeof(span.end_time)
+        + sys.getsizeof(span.context)
+        + sys.getsizeof(span.parent)
+        + resource_expected
+    )
+
+    assert estimate_model_size(span) == expected_size
+
+
+@pytest.mark.asyncio
 async def test_span_triggers_status_transition(
     inmemory_store: InMemoryLightningStore, mock_readable_span: Mock
 ) -> None:
@@ -605,6 +836,45 @@ async def test_span_triggers_status_transition(
 
 
 @pytest.mark.asyncio
+async def test_span_does_not_reset_timeout_attempt(
+    inmemory_store: InMemoryLightningStore, mock_readable_span: Mock
+) -> None:
+    """Adding a span to a timed-out attempt should not mark it running again."""
+
+    rollout = await inmemory_store.enqueue_rollout(input={"test": "timeout-span"})
+
+    # Create the first attempt
+    dequeued = await inmemory_store.dequeue_rollout()
+    assert dequeued is not None
+    attempt_id = dequeued.attempt.attempt_id
+
+    # Simulate the attempt timing out
+    await inmemory_store.update_attempt(
+        rollout_id=rollout.rollout_id,
+        attempt_id=attempt_id,
+        status="timeout",
+    )
+
+    attempts_before = await inmemory_store.query_attempts(rollout.rollout_id)
+    assert attempts_before[0].status == "timeout"
+
+    rollout_before = await inmemory_store.get_rollout_by_id(rollout.rollout_id)
+    assert rollout_before is not None
+    assert rollout_before.status != "running"
+
+    # Adding a new span should keep the attempt in timeout state
+    await inmemory_store.add_otel_span(rollout.rollout_id, attempt_id, mock_readable_span)
+
+    attempts_after = await inmemory_store.query_attempts(rollout.rollout_id)
+    assert attempts_after[0].status == "timeout"
+    assert attempts_after[0].last_heartbeat_time is not None
+
+    rollout_after = await inmemory_store.get_rollout_by_id(rollout.rollout_id)
+    assert rollout_after is not None
+    assert rollout_after.status == rollout_before.status
+
+
+@pytest.mark.asyncio
 async def test_completion_sets_end_time(inmemory_store: InMemoryLightningStore) -> None:
     """Test that completing a rollout sets end_time."""
     rollout = await inmemory_store.enqueue_rollout(input={"test": "data"})
@@ -631,7 +901,7 @@ async def test_wait_for_rollouts(inmemory_store: InMemoryLightningStore) -> None
     _r3 = await inmemory_store.enqueue_rollout(input={"id": 3})
 
     # Start waiting for r1 and r2
-    async def wait_for_completion() -> List[RolloutV2]:
+    async def wait_for_completion() -> List[Rollout]:
         return await inmemory_store.wait_for_rollouts(rollout_ids=[r1.rollout_id, r2.rollout_id], timeout=5.0)
 
     wait_task = asyncio.create_task(wait_for_completion())
@@ -917,7 +1187,7 @@ async def test_wait_polling_interval_with_timeout_none(inmemory_store: InMemoryL
 async def test_concurrent_task_addition(inmemory_store: InMemoryLightningStore) -> None:
     """Test adding tasks concurrently."""
 
-    async def enqueue_rollout(index: int) -> RolloutV2:
+    async def enqueue_rollout(index: int) -> Rollout:
         return await inmemory_store.enqueue_rollout(input={"index": index})
 
     # Add 50 tasks concurrently
@@ -941,7 +1211,7 @@ async def test_concurrent_pop_operations(inmemory_store: InMemoryLightningStore)
     for i in range(20):
         await inmemory_store.enqueue_rollout(input={"index": i})
 
-    async def pop_task() -> RolloutV2 | None:
+    async def pop_task() -> Rollout | None:
         return await inmemory_store.dequeue_rollout()
 
     # Pop concurrently (more attempts than available)

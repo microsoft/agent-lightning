@@ -1,5 +1,7 @@
 # Copyright (c) Microsoft. All rights reserved.
 
+"""Base abstractions for building agents that plug into Agent Lightning."""
+
 from __future__ import annotations
 
 import inspect
@@ -8,11 +10,11 @@ import warnings
 import weakref
 from typing import TYPE_CHECKING, Any, Callable, Generic, Optional, TypeVar
 
-from agentlightning.types import NamedResources, RolloutRawResultV2, RolloutV2, Task
+from agentlightning.types import NamedResources, Rollout, RolloutRawResult, Task
 
 if TYPE_CHECKING:
-    from agentlightning.runner import BaseRunner
-    from agentlightning.tracer import BaseTracer
+    from agentlightning.runner import Runner
+    from agentlightning.tracer import Tracer
     from agentlightning.trainer import Trainer
 
 
@@ -22,37 +24,42 @@ T = TypeVar("T")
 
 __all__ = [
     "LitAgent",
-    "is_v0_1_rollout_api",
 ]
 
 
 def is_v0_1_rollout_api(func: Callable[..., Any]) -> bool:
-    """Check if the rollout API is v0.1.
-    Inspect the function signature to see if it has a rollout_id parameter.
+    """Return `True` when the rollout function uses the deprecated v0.1 signature.
+
+    The helper inspects the callable's signature to detect whether a `rollout_id`
+    parameter is present, which indicates the legacy API.
 
     Args:
-        func: The function to check.
+        func: Function to analyze.
+
+    Returns:
+        `True` if the callable exposes a `rollout_id` parameter.
     """
     return "rollout_id" in inspect.signature(func).parameters
 
 
 class LitAgent(Generic[T]):
-    """Base class for the training and validation logic of an agent.
+    """Base class for implementing agent rollouts.
 
-    Developers should subclass this class and implement the rollout methods
-    to define the agent's behavior for a single task. The agent's logic
-    is completely decoupled from the server communication and training
-    infrastructure.
+    Subclasses override the rollout methods to process tasks while the trainer and
+    runner infrastructure manages orchestration, tracing, and persistence.
     """
 
     def __init__(self, *, trained_agents: Optional[str] = None) -> None:  # FIXME: str | None won't work for cli
-        """
-        Initialize the LitAgent.
+        """Initialize the agent instance.
 
         Args:
-            trained_agents: Optional string representing the trained agents.
-                            This can be used to track which agents have been trained by this instance.
-                            Deprecated. Configure `agent_match` in adapter instead.
+            trained_agents: Optional identifier used by legacy tooling to mark trained
+                agents.
+
+        !!! warning "Deprecated"
+            The `trained_agents` flag is deprecated. Configure `agent_match` in the adapter
+            layer instead. See [`TracerTraceToTriplet`][agentlightning.TracerTraceToTriplet]
+            for more details.
         """
         if trained_agents is not None:
             warnings.warn(
@@ -63,15 +70,12 @@ class LitAgent(Generic[T]):
         self.trained_agents = trained_agents
 
         self._trainer_ref: weakref.ReferenceType[Trainer] | None = None
-        self._runner_ref: weakref.ReferenceType[BaseRunner[T]] | None = None
+        self._runner_ref: weakref.ReferenceType[Runner[T]] | None = None
 
     def is_async(self) -> bool:
-        """
-        Check if the agent implements asynchronous rollout methods.
-        Override this property for customized async detection logic.
+        """Return `True` when the agent overrides any asynchronous rollout methods.
 
-        Returns:
-            True if the agent has custom async rollout methods, False otherwise.
+        Override this method for customized async detection logic.
         """
         return (
             (
@@ -86,21 +90,15 @@ class LitAgent(Generic[T]):
         )
 
     def set_trainer(self, trainer: Trainer) -> None:
-        """
-        Set the trainer for this agent.
+        """Attach the trainer responsible for orchestration.
 
         Args:
-            trainer: The Trainer instance that will handle training and validation.
+            trainer: [`Trainer`][agentlightning.Trainer] that manages the agent.
         """
         self._trainer_ref = weakref.ref(trainer)
 
     def get_trainer(self) -> Trainer:
-        """
-        Get the trainer for this agent.
-
-        Returns:
-            The Trainer instance associated with this agent.
-        """
+        """Return the trainer associated with this agent."""
         if self._trainer_ref is None:
             raise ValueError("Trainer has not been set for this agent.")
         trainer = self._trainer_ref()
@@ -110,39 +108,31 @@ class LitAgent(Generic[T]):
 
     @property
     def trainer(self) -> Trainer:
-        """Convenient shortcut of self.get_trainer()."""
+        """Return the trainer associated with this agent."""
         return self.get_trainer()
 
-    def get_tracer(self) -> BaseTracer:
-        """
-        Get the tracer for this agent.
-
-        Returns:
-            The BaseTracer instance associated with this agent.
-        """
-        return self.trainer.tracer
+    def get_tracer(self) -> Tracer:
+        """Return the tracer configured for this agent."""
+        if hasattr(self.runner, "tracer"):
+            return self.runner.tracer  # type: ignore
+        else:
+            return self.trainer.tracer
 
     @property
-    def tracer(self) -> BaseTracer:
-        """Convenient shortcut of self.get_tracer()."""
+    def tracer(self) -> Tracer:
+        """Return the tracer configured for this agent."""
         return self.get_tracer()
 
-    def set_runner(self, runner: BaseRunner[T]) -> None:
-        """
-        Set the runner for this agent.
+    def set_runner(self, runner: Runner[T]) -> None:
+        """Attach the runner responsible for executing rollouts.
 
         Args:
-            runner: The runner instance that will handle the execution of rollouts.
+            runner: [`Runner`][agentlightning.Runner] coordinating execution.
         """
         self._runner_ref = weakref.ref(runner)
 
-    def get_runner(self) -> BaseRunner[T]:
-        """
-        Get the runner for this agent.
-
-        Returns:
-            The runner instance associated with this agent.
-        """
+    def get_runner(self) -> Runner[T]:
+        """Return the runner responsible for executing rollouts."""
         if self._runner_ref is None:
             raise ValueError("Runner has not been set for this agent.")
         runner = self._runner_ref()
@@ -151,163 +141,111 @@ class LitAgent(Generic[T]):
         return runner
 
     @property
-    def runner(self) -> BaseRunner[T]:
-        """Convenient shortcut of self.get_runner()."""
+    def runner(self) -> Runner[T]:
+        """Return the runner responsible for executing rollouts."""
         return self.get_runner()
 
-    def on_rollout_start(self, task: Task, runner: BaseRunner[T], tracer: BaseTracer) -> None:
-        """Hook called immediately before a rollout begins.
+    def on_rollout_start(self, task: Task, runner: Runner[T], tracer: Tracer) -> None:
+        """Hook invoked immediately before a rollout begins.
 
-        Deprecated in favor of `on_rollout_start` in the `Hook` interface.
-
-        Args:
-            task: The :class:`Task` object that will be processed.
-            runner: The :class:`BaseRunner` managing the rollout.
-            tracer: The tracer instance associated with the runner.
-
-        Subclasses can override this method to implement custom logic such as
-        logging, metric collection, or resource setup. By default, this is a
-        no-op.
-        """
-
-    def on_rollout_end(self, task: Task, rollout: RolloutV2, runner: BaseRunner[T], tracer: BaseTracer) -> None:
-        """Hook called after a rollout completes.
-
-        Deprecated in favor of `on_rollout_end` in the `Hook` interface.
+        Subclasses can override this method to implement custom logic such as logging,
+        metric collection, or resource setup. The default implementation is a no-op.
 
         Args:
-            task: The :class:`Task` object that was processed.
-            rollout: The resulting :class:`Rollout` object.
-            runner: The :class:`BaseRunner` managing the rollout.
-            tracer: The tracer instance associated with the runner.
+            task: [`Task`][agentlightning.Task] that will be processed.
+            runner: [`Runner`][agentlightning.Runner] managing the rollout.
+            tracer: [`Tracer`][agentlightning.Tracer] associated with the runner.
 
-        Subclasses can override this method for cleanup or additional
-        logging. By default, this is a no-op.
+        !!! warning "Deprecated"
+            Override [`Hook.on_rollout_start`][agentlightning.Hook.on_rollout_start]
+            instead of this method when extending agents.
         """
 
-    def rollout(self, task: T, resources: NamedResources, rollout: RolloutV2) -> RolloutRawResultV2:
-        """Main entry point for executing a rollout.
+    def on_rollout_end(self, task: Task, rollout: Rollout, runner: Runner[T], tracer: Tracer) -> None:
+        """Hook invoked after a rollout completes.
 
-        This method determines whether to call the synchronous or
-        asynchronous rollout method based on the agent's implementation.
+        Subclasses can override this method for cleanup or additional logging. The default
+        implementation is a no-op.
+
+        Args:
+            task: [`Task`][agentlightning.Task] that was processed.
+            rollout: Resulting [`Rollout`][agentlightning.Rollout].
+            runner: [`Runner`][agentlightning.Runner] managing the rollout.
+            tracer: [`Tracer`][agentlightning.Tracer] associated with the runner.
+
+        !!! warning "Deprecated"
+            Override [`Hook.on_rollout_end`][agentlightning.Hook.on_rollout_end]
+            instead of this method when extending agents.
+        """
+
+    def rollout(self, task: T, resources: NamedResources, rollout: Rollout) -> RolloutRawResult:
+        """Execute a rollout synchronously.
+
 
         If you don't wish to implement both training rollout and validation
         rollout separately, you can just implement `rollout` which will work for both.
 
         Args:
-            task: The task object received from the server, containing the
-                  input data and metadata.
-            resources: A dictionary of named resources (e.g., LLMs, prompt
-                       templates) for the agent to use.
-            rollout: The full rollout object, please avoid from directly modifying it.
-                     Most agents should only use `task` and `resources`. Use `rollout`
-                     only if you need to access metadata like `rollout_id`.
+            task: Task payload provided by the scheduler.
+            resources: Mapping of named resources (for example LLMs or prompt templates).
+            rollout: Rollout metadata. Avoid mutating this object directly unless a
+                subclass needs to override defaults.
 
         Returns:
-            The result of the rollout, which can be one of:
-            - None. The tracing should be handled by the agent runner.
-            - A float representing the final reward.
-            - A list of `Triplet` objects for detailed, step-by-step feedback.
-            - A list of `ReadableSpan` objects for OpenTelemetry tracing.
-            - A list of dictionaries for any trace spans.
-            - A complete `Rollout` object for full control over reporting.
+            One of the following values:
+
+            * `None` when tracing is handled by the runner.
+            * `float` representing the final reward.
+            * `List[ReadableSpan]` with OpenTelemetry spans.
+            * `List[Span]` with Agent Lightning spans.
         """
         raise NotImplementedError("Agents must implement the `rollout` method.")
 
-    async def rollout_async(self, task: T, resources: NamedResources, rollout: RolloutV2) -> RolloutRawResultV2:
-        """Asynchronous version of the main rollout method.
-
-        This method determines whether to call the synchronous or
-        asynchronous rollout method based on the agent's implementation.
+    async def rollout_async(self, task: T, resources: NamedResources, rollout: Rollout) -> RolloutRawResult:
+        """Execute a rollout asynchronously.
 
         Args:
-            task: The task object received from the server, containing the
-                  input data and metadata.
-            resources: A dictionary of named resources (e.g., LLMs, prompt
-                       templates) for the agent to use.
-            rollout: The full rollout object, please avoid from directly modifying it.
-                     Most agents should only use `task` and `resources`. Use `rollout`
-                     only if you need to access metadata like `rollout_id`.
+            task: Task payload provided by the scheduler.
+            resources: Mapping of named resources (for example LLMs or prompt templates).
+            rollout: Rollout metadata. Avoid mutating this object directly unless a
+                subclass needs to override defaults.
 
         Returns:
-            The result of the rollout, which can be one of:
-            - None. The tracing should be handled by the agent runner.
-            - A float representing the final reward.
-            - A list of `Triplet` objects for detailed, step-by-step feedback.
-            - A list of `ReadableSpan` objects for OpenTelemetry tracing.
-            - A list of dictionaries for any trace spans.
-            - A complete `Rollout` object for full control over reporting.
+            Same possible return values as
+            [`rollout`][agentlightning.LitAgent.rollout].
         """
         raise NotImplementedError("Agents must implement the `rollout_async` method for async operations.")
 
-    def training_rollout(self, task: T, resources: NamedResources, rollout: RolloutV2) -> RolloutRawResultV2:
-        """Defines the agent's behavior for a single training task.
+    def training_rollout(self, task: T, resources: NamedResources, rollout: Rollout) -> RolloutRawResult:
+        """Process a single training task synchronously.
 
-        This method should contain the logic for how the agent processes an
-        input, uses the provided resources (like LLMs or prompts), and
-        produces a result.
-
-        Args:
-            task: The task object received from the server, containing the
-                  input data and metadata.
-            resources: A dictionary of named resources (e.g., LLMs, prompt
-                       templates) for the agent to use.
-            rollout: The full rollout object, please avoid from directly modifying it.
+        By default, this method delegates to
+        [`rollout`][agentlightning.LitAgent.rollout].
         """
         return self.rollout(task, resources, rollout)
 
-    def validation_rollout(self, task: T, resources: NamedResources, rollout: RolloutV2) -> RolloutRawResultV2:
-        """Defines the agent's behavior for a single validation task.
+    def validation_rollout(self, task: T, resources: NamedResources, rollout: Rollout) -> RolloutRawResult:
+        """Process a single validation task synchronously.
 
-        By default, this method redirects to `training_rollout`. Override it
-        if the agent should behave differently during validation.
-
-        Args:
-            task: The task object received from the server, containing the
-                  input data and metadata.
-            resources: A dictionary of named resources for the agent to use.
-            rollout: The full rollout object, avoid from modifying it.
-
-        Returns:
-            The result of the validation rollout. See `rollout` for
-            possible return types.
+        Override this method when validation should differ from training. The default
+        implementation delegates to
+        [`training_rollout`][agentlightning.LitAgent.training_rollout].
         """
         return self.rollout(task, resources, rollout)
 
-    async def training_rollout_async(
-        self, task: T, resources: NamedResources, rollout: RolloutV2
-    ) -> RolloutRawResultV2:
-        """Asynchronous version of `training_rollout`.
+    async def training_rollout_async(self, task: T, resources: NamedResources, rollout: Rollout) -> RolloutRawResult:
+        """Process a single training task asynchronously.
 
-        This method should be implemented by agents that perform asynchronous
-        operations (e.g., non-blocking I/O, concurrent API calls).
-
-        Args:
-            task: The task object received from the server.
-            resources: A dictionary of named resources for the agent to use.
-            rollout: The full rollout object, avoid from modifying it.
-
-        Returns:
-            The result of the asynchronous training rollout. See `rollout` for
-            possible return types.
+        By default, this method delegates to
+        [`rollout_async`][agentlightning.LitAgent.rollout_async].
         """
         return await self.rollout_async(task, resources, rollout)
 
-    async def validation_rollout_async(
-        self, task: T, resources: NamedResources, rollout: RolloutV2
-    ) -> RolloutRawResultV2:
-        """Asynchronous version of `validation_rollout`.
+    async def validation_rollout_async(self, task: T, resources: NamedResources, rollout: Rollout) -> RolloutRawResult:
+        """Process a single validation task asynchronously.
 
-        By default, this method redirects to `training_rollout_async`.
-        Override it for different asynchronous validation behavior.
-
-        Args:
-            task: The task object received from the server.
-            resources: A dictionary of named resources for the agent to use.
-            rollout: The full rollout object, avoid from modifying it.
-
-        Returns:
-            The result of the asynchronous validation rollout. See `rollout` for
-            possible return types.
+        Override this method when validation should differ from training. The default
+        implementation delegates to
+        [`training_rollout_async`][agentlightning.LitAgent.training_rollout_async].
         """
         return await self.rollout_async(task, resources, rollout)

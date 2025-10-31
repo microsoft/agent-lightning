@@ -20,47 +20,46 @@ from agentlightning.litagent import LitAgent
 from agentlightning.reward import emit_reward, find_final_reward
 from agentlightning.store.base import LightningStore
 from agentlightning.tracer.agentops import AgentOpsTracer
-from agentlightning.tracer.base import BaseTracer
+from agentlightning.tracer.base import Tracer
 from agentlightning.types import (
     AttemptedRollout,
     Hook,
     NamedResources,
+    Rollout,
     RolloutMode,
-    RolloutRawResultV2,
-    RolloutV2,
+    RolloutRawResult,
     Span,
 )
 
 if TYPE_CHECKING:
-    from agentlightning.execution.events import Event
+    from agentlightning.execution.events import ExecutionEvent
 
-from .base import BaseRunner
+from .base import Runner
 
 T_task = TypeVar("T_task")
 
 logger = logging.getLogger(__name__)
 
 
-class AgentRunnerV2(BaseRunner[T_task]):
-    """Runner implementation for executing agent tasks with distributed support.
+class LitAgentRunner(Runner[T_task]):
+    """Execute [`LitAgent`][agentlightning.LitAgent] tasks with tracing support.
 
     This runner manages the complete lifecycle of agent rollout execution,
     including task polling, resource management, tracing, and hooks. It supports
     both continuous iteration over tasks from the store and single-step execution.
 
     Attributes:
-        worker_id: The unique identifier for this worker process.
+        worker_id: Identifier for the active worker process, if any.
     """
 
-    def __init__(self, tracer: BaseTracer, max_rollouts: Optional[int] = None, poll_interval: float = 5.0) -> None:
+    def __init__(self, tracer: Tracer, max_rollouts: Optional[int] = None, poll_interval: float = 5.0) -> None:
         """Initialize the agent runner.
 
         Args:
-            tracer: The tracer instance for recording execution traces and spans.
-            max_rollouts: Maximum number of tasks to process in iter() mode. If None,
-                the runner will continue indefinitely until interrupted.
-            poll_interval: Time in seconds to wait between polling attempts when
-                no tasks are available in the store.
+            tracer: [`Tracer`][agentlightning.Tracer] used for rollout spans.
+            max_rollouts: Optional cap on iterations processed by
+                [`iter`][agentlightning.LitAgentRunner.iter].
+            poll_interval: Seconds to wait between store polls when no work is available.
         """
         super().__init__()
         self._tracer = tracer
@@ -80,10 +79,9 @@ class AgentRunnerV2(BaseRunner[T_task]):
         initializes the tracer.
 
         Args:
-            agent: The LitAgent instance to be managed by this runner.
-            hooks: Optional sequence of Hook objects to be called at various
-                lifecycle stages (on_trace_start, on_trace_end, on_rollout_start,
-                on_rollout_end).
+            agent: [`LitAgent`][agentlightning.LitAgent] instance executed by the runner.
+            hooks: Optional sequence of [`Hook`][agentlightning.Hook]
+                callbacks invoked around tracing and rollout boundaries.
             **kwargs: Additional initialization arguments (currently unused).
         """
         self._agent = agent
@@ -100,7 +98,8 @@ class AgentRunnerV2(BaseRunner[T_task]):
 
         Args:
             worker_id: Unique identifier for this worker process.
-            store: The LightningStore instance for task coordination and data persistence.
+            store: [`LightningStore`][agentlightning.LightningStore]
+                used for task coordination and persistence.
             **kwargs: Additional worker-specific initialization arguments (currently unused).
         """
         self._store = store
@@ -131,13 +130,22 @@ class AgentRunnerV2(BaseRunner[T_task]):
         This method cleans up worker-specific resources and resets the worker ID.
 
         Args:
-            worker_id: The unique identifier of the worker being torn down.
+            worker_id: Unique identifier of the worker being torn down.
             *args: Additional teardown arguments (currently unused).
             **kwargs: Additional teardown keyword arguments (currently unused).
         """
         self.worker_id = None
 
         self._tracer.teardown_worker(worker_id)
+
+    @property
+    def tracer(self) -> Tracer:
+        """Get the tracer instance.
+
+        Returns:
+            The Tracer instance used by this runner.
+        """
+        return self._tracer
 
     def get_agent(self) -> LitAgent[T_task]:
         """Get the agent instance.
@@ -146,7 +154,7 @@ class AgentRunnerV2(BaseRunner[T_task]):
             The LitAgent instance managed by this runner.
 
         Raises:
-            ValueError: If the agent has not been initialized via init().
+            ValueError: If the agent has not been initialized via [`init`][agentlightning.LitAgentRunner.init].
         """
         if self._agent is None:
             raise ValueError("Agent not initialized. Call init() first.")
@@ -159,7 +167,7 @@ class AgentRunnerV2(BaseRunner[T_task]):
             The LightningStore instance for this worker.
 
         Raises:
-            ValueError: If the store has not been initialized via init_worker().
+            ValueError: If the store has not been initialized via [`init_worker`][agentlightning.LitAgentRunner.init_worker].
         """
         if self._store is None:
             raise ValueError("Store not initialized. Call init_worker() first.")
@@ -221,7 +229,7 @@ class AgentRunnerV2(BaseRunner[T_task]):
                 logger.exception(f"{self._log_prefix()} Exception during {hook_type} hook {hook}.")
 
     async def _post_process_rollout_result(
-        self, rollout: AttemptedRollout, raw_result: RolloutRawResultV2
+        self, rollout: AttemptedRollout, raw_result: RolloutRawResult
     ) -> List[ReadableSpan] | List[Span]:
         """Standardizes the agent's return value and report what's needed to report to the store.
 
@@ -296,14 +304,14 @@ class AgentRunnerV2(BaseRunner[T_task]):
 
         return trace_spans
 
-    async def _sleep_until_next_poll(self, event: Optional[Event] = None) -> None:
+    async def _sleep_until_next_poll(self, event: Optional[ExecutionEvent] = None) -> None:
         """Sleep until the next poll interval, with optional event-based interruption.
 
         If an event is provided, the method will check it periodically (every 0.1s)
         and return early if the event is set.
 
         Args:
-            event: Optional Event object that can be used to interrupt the sleep.
+            event: Optional [`ExecutionEvent`][agentlightning.ExecutionEvent] object that can be used to interrupt the sleep.
                 If set during the sleep period, the method returns immediately.
         """
         if event is None:
@@ -316,7 +324,7 @@ class AgentRunnerV2(BaseRunner[T_task]):
             if event.is_set():
                 return
 
-    async def _step_impl(self, next_rollout: AttemptedRollout, raise_on_exception: bool = False) -> None:
+    async def _step_impl(self, next_rollout: AttemptedRollout, raise_on_exception: bool = False) -> str:
         """Execute a single rollout implementation.
 
         This is the core method that handles the execution of a single rollout,
@@ -346,7 +354,7 @@ class AgentRunnerV2(BaseRunner[T_task]):
                 raise RuntimeError(f"{self._log_prefix(rollout_id)} Failed to fetch resources")
             else:
                 logger.error(f"{self._log_prefix(rollout_id)} Failed to fetch resources. Skipping.")
-                return
+                return rollout_id
 
         trace_spans: List[ReadableSpan] | List[Span] = []
         has_exception: bool = False
@@ -355,7 +363,7 @@ class AgentRunnerV2(BaseRunner[T_task]):
             await self._trigger_hooks(hook_type="on_rollout_start", agent=agent, runner=self, rollout=next_rollout)
 
             start_time = time.time()
-            with self._tracer.trace_context(
+            async with self._tracer.trace_context(
                 name=rollout_id, store=store, rollout_id=rollout_id, attempt_id=next_rollout.attempt.attempt_id
             ):
                 await self._trigger_hooks(
@@ -420,10 +428,13 @@ class AgentRunnerV2(BaseRunner[T_task]):
                     f"{self._log_prefix(rollout_id)} Exception during update_attempt. Giving up the update."
                 )
 
-    async def iter(self, *, event: Optional[Event] = None) -> None:
+        return rollout_id
+
+    async def iter(self, *, event: Optional[ExecutionEvent] = None) -> None:
         """Run the runner, continuously iterating over tasks in the store.
 
         This method polls the store for new rollouts and executes them until:
+
         - The event is set (if provided)
         - The max_rollouts limit is reached (if configured)
         - No more tasks are available
@@ -432,7 +443,7 @@ class AgentRunnerV2(BaseRunner[T_task]):
         propagated, allowing the runner to continue processing subsequent tasks.
 
         Args:
-            event: Optional Event object to signal the runner to stop. The runner
+            event: Optional ExecutionEvent object to signal the runner to stop. The runner
                 will check this event periodically and stop gracefully when set.
         """
         num_tasks_processed = 0
@@ -443,7 +454,7 @@ class AgentRunnerV2(BaseRunner[T_task]):
             self._max_rollouts is None or num_tasks_processed < self._max_rollouts
         ):
             # Retrieve the next rollout
-            next_rollout: Optional[RolloutV2] = None
+            next_rollout: Optional[Rollout] = None
             while not (event is not None and event.is_set()):
                 logger.debug(f"{self._log_prefix()} Try to poll for next rollout.")
                 next_rollout = await store.dequeue_rollout()
@@ -481,12 +492,13 @@ class AgentRunnerV2(BaseRunner[T_task]):
         *,
         resources: Optional[NamedResources] = None,
         mode: Optional[RolloutMode] = None,
-        event: Optional[Event] = None,
-    ) -> None:
+        event: Optional[ExecutionEvent] = None,
+    ) -> Rollout:
         """Execute a single task directly, bypassing the task queue.
 
         This method creates a new rollout for the given input and executes it
-        immediately. Unlike iter(), exceptions are propagated to the caller.
+        immediately. Unlike [`iter()`][agentlightning.LitAgentRunner.iter],
+        exceptions are propagated to the caller.
 
         Args:
             input: The task input to be processed by the agent.
@@ -495,8 +507,11 @@ class AgentRunnerV2(BaseRunner[T_task]):
                 If not provided, the latest resources from the store will be used.
             mode: Optional rollout mode ("train" or "validation"). If not provided,
                 the agent's default mode will be used.
-            event: Optional Event object to signal interruption (currently unused
+            event: Optional ExecutionEvent object to signal interruption (currently unused
                 but included for interface consistency).
+
+        Returns:
+            The completed rollout.
 
         Raises:
             Exception: Any exception that occurs during rollout execution will be
@@ -511,4 +526,9 @@ class AgentRunnerV2(BaseRunner[T_task]):
             resources_id = None
 
         attempted_rollout = await self.get_store().start_rollout(input=input, mode=mode, resources_id=resources_id)
-        await self._step_impl(attempted_rollout, raise_on_exception=True)
+        rollout_id = await self._step_impl(attempted_rollout, raise_on_exception=True)
+
+        completed_rollout = await store.get_rollout_by_id(rollout_id)
+        if completed_rollout is None:
+            raise RuntimeError(f"{self._log_prefix()} Failed to fetch completed rollout by id after step: {rollout_id}")
+        return completed_rollout

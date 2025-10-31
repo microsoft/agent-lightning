@@ -17,9 +17,9 @@ from agentlightning.types import (
     AttemptedRollout,
     AttemptStatus,
     NamedResources,
-    Resource,
+    OtelResource,
     ResourcesUpdate,
-    RolloutV2,
+    Rollout,
     Span,
     SpanContext,
     TaskInput,
@@ -97,7 +97,7 @@ def make_span(rollout_id: str, attempt_id: str, sequence_id: int = 1) -> Span:
         end_time=None,
         context=SpanContext(trace_id="0" * 32, span_id="0" * 16, is_remote=False, trace_state={}),
         parent=None,
-        resource=Resource(attributes={}, schema_url=""),
+        resource=OtelResource(attributes={}, schema_url=""),
     )
 
 
@@ -113,7 +113,7 @@ async def test_threaded_store_delegates_all_methods() -> None:
         sequence_id=1,
         start_time=0.0,
     )
-    base_rollout = RolloutV2(
+    base_rollout = Rollout(
         rollout_id=rollout_id,
         input=task_input,
         start_time=0.0,
@@ -132,7 +132,7 @@ async def test_threaded_store_delegates_all_methods() -> None:
     span = make_span(rollout_id, attempt_id)
     readable_span = MagicMock(spec=ReadableSpan)
 
-    updated_rollout = RolloutV2(
+    updated_rollout = Rollout(
         rollout_id=rollout_id,
         input=task_input,
         start_time=1.0,

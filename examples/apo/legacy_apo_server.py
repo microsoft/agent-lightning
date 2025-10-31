@@ -23,6 +23,7 @@ async def example_apo():
         "You are a helpful assistant.",
         "You are a knowledgeable AI.",
         "You are a friendly chatbot.",
+        "You are an experienced expert.",
     ]
 
     prompt_and_rewards: list[tuple[str, float]] = []
@@ -40,7 +41,7 @@ async def example_apo():
         print(f"[Algo] Task '{task_id}' is now available for clients.")
 
         # 3. The algorithm waits for clients to process the task
-        rollout = await server.poll_completed_rollout(task_id, timeout=30)
+        rollout = await server.poll_completed_rollout(task_id, timeout=60)
         assert rollout, "Expected a completed rollout from the client."
         print(f"[Algo] Received Result: {rollout}")
         reward = rollout.final_reward

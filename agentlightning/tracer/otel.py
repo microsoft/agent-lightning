@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import logging
-from contextlib import contextmanager
-from typing import Iterator, List, Optional
+from contextlib import asynccontextmanager
+from typing import AsyncGenerator, List, Optional
 
 import opentelemetry.trace as trace_api
 from opentelemetry.sdk.trace import ReadableSpan, TracerProvider
@@ -12,15 +12,15 @@ from opentelemetry.sdk.trace import ReadableSpan, TracerProvider
 from agentlightning.store.base import LightningStore
 
 from .agentops import LightningSpanProcessor  # FIXME: This import should be from otel to agentops
-from .base import BaseTracer
+from .base import Tracer
 
 logger = logging.getLogger(__name__)
 
 
-class OtelTracer(BaseTracer):
+class OtelTracer(Tracer):
     """Tracer that provides a basic OpenTelemetry tracer provider.
 
-    You should be able to collect signals like rewards with this tracer,
+    You should be able to collect agent-lightning signals like rewards with this tracer,
     but no other function instrumentations like `openai.chat.completion`.
     """
 
@@ -49,15 +49,15 @@ class OtelTracer(BaseTracer):
         logger.info(f"[Worker {worker_id}] Tearing down OpenTelemetry tracer...")
         self._tracer_provider = None
 
-    @contextmanager
-    def trace_context(
+    @asynccontextmanager
+    async def trace_context(
         self,
         name: Optional[str] = None,
         *,
         store: Optional[LightningStore] = None,
         rollout_id: Optional[str] = None,
         attempt_id: Optional[str] = None,
-    ) -> Iterator[LightningSpanProcessor]:
+    ) -> AsyncGenerator[LightningSpanProcessor, None]:
         """
         Starts a new tracing context. This should be used as a context manager.
 

@@ -64,7 +64,7 @@ from opentelemetry.sdk.trace import ReadableSpan
 from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
-from agentlightning.adapter.triplet import TraceTree, TraceTripletAdapter
+from agentlightning.adapter.triplet import TracerTraceToTriplet, TraceTree
 from agentlightning.reward import reward
 from agentlightning.tracer.agentops import AgentOpsTracer, LightningSpanProcessor
 from agentlightning.tracer.http import HttpTracer
@@ -78,7 +78,7 @@ if USE_OPENAI:
     OPENAI_MODEL = "gpt-4.1-mini"
     OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
 else:
-    OPENAI_BASE_URL = "http://127.0.0.1:8000/v1"
+    OPENAI_BASE_URL = "http://127.0.0.1:58000/v1"
     OPENAI_MODEL = "gpt-4.1-mini"
     OPENAI_API_KEY = "token-abc123"
 
@@ -101,7 +101,7 @@ class MockOpenAICompatibleServer:
     Now supports replaying from prompt caches.
     """
 
-    def __init__(self, host: str = "127.0.0.1", port: int = 8000) -> None:
+    def __init__(self, host: str = "127.0.0.1", port: int = 58000) -> None:
         self.host = host
         self.port = port
         self.app = FastAPI()
@@ -701,7 +701,7 @@ def run_with_agentops_tracer() -> None:
 
         # for triplet in TripleTraceTripletAdaptertExporter().adapt(tracer.get_last_trace()):
         #     print(triplet)
-        triplets = TraceTripletAdapter().adapt(tracer.get_last_trace())
+        triplets = TracerTraceToTriplet().adapt(tracer.get_last_trace())
         assert (
             len(triplets) == AGENTOPS_EXPECTED_TRIPLETS_NUMBER[agent_func.__name__]
         ), f"Expected {AGENTOPS_EXPECTED_TRIPLETS_NUMBER[agent_func.__name__]} triplets, but got: {triplets}"
@@ -767,7 +767,7 @@ def create_prompt_caches() -> None:
 
     if USE_OPENAI:
         tracer = HttpTracer()
-        with tracer.trace_context():
+        with tracer._trace_context_sync():
             run_all()
 
         with open(os.path.join(os.path.dirname(__file__), "../assets/prompt_caches.jsonl"), "w") as f:
@@ -837,7 +837,7 @@ def _test_run_with_agentops_tracer_impl(agent_func_name: str):
 
         assert_expected_pairs_in_tree(tree.names_tuple(), AGENTOPS_EXPECTED_TREES[agent_func.__name__])
 
-        triplets = TraceTripletAdapter().adapt(last_trace_normalized)
+        triplets = TracerTraceToTriplet().adapt(last_trace_normalized)
         assert (
             len(triplets) == AGENTOPS_EXPECTED_TRIPLETS_NUMBER[agent_func.__name__]
         ), f"Expected {AGENTOPS_EXPECTED_TRIPLETS_NUMBER[agent_func.__name__]} triplets, but got: {triplets}"

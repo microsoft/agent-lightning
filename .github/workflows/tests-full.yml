@@ -8,61 +8,81 @@ on:
 
   workflow_dispatch:
 
+  repository_dispatch:
+    types: [ci-gpu, ci-all]
+
+run-name: >-
+  ${{ github.event_name == 'repository_dispatch'
+      && format(
+        'PR #{0} - Label {1} - {2}',
+        github.event.client_payload.pull_number,
+        github.event.client_payload.ci_label,
+        github.event.client_payload.correlation_id
+      )
+      || format('GPU Test - {0}', github.event_name) }}
+
 jobs:
   tests-full:
+    if: >
+      github.event_name != 'repository_dispatch' ||
+      github.event.action == 'ci-gpu' ||
+      github.event.action == 'ci-all'
+    name: GPU Test with Python ${{ matrix.python-version }} (${{ matrix.setup-script }})
+
     runs-on: [self-hosted, 1ES.Pool=agl-runner-gpu]
     timeout-minutes: 30
     strategy:
       matrix:
-        setup: [stable, latest]
+        include:
+        - python-version: '3.10'
+          setup-script: 'legacy'
+        - python-version: '3.12'
+          setup-script: 'stable'
+        - python-version: '3.13'
+          setup-script: 'latest'
       fail-fast: false
     steps:
       - name: Check GPU status
         run: nvidia-smi
       - uses: actions/checkout@v4
-      - name: Create a virtual environment
-        run: python3 -m venv .venv
-      - name: Install dependencies (${{ matrix.setup }})
-        run: |
-          . .venv/bin/activate
-          ./scripts/setup_${{ matrix.setup }}_gpu.sh
+        with:
+          ref: ${{ github.event.pull_request.number && format('refs/pull/{0}/merge', github.event.pull_request.number) || github.ref }}
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          python-version: ${{ matrix.python-version }}
+      - name: Upgrade dependencies (latest)
+        run: uv lock --upgrade
+        if: matrix.setup-script == 'latest'
+      - name: Sync dependencies (latest)
+        run: uv sync --frozen --no-default-groups --extra apo --group dev --group agents --group torch-gpu-stable
+        if: matrix.setup-script == 'latest'
+      - name: Sync dependencies (stable & legacy)
+        run: uv sync --frozen --no-default-groups --extra apo --group dev --group agents --group torch-gpu-${{ matrix.setup-script }}
+        if: matrix.setup-script != 'latest'
       - name: Freeze dependencies
         run: |
-          . .venv/bin/activate
-          which python
-          which pip
-          which uvx
-          pip list | tee requirements-freeze.txt
+          set -ex
+          uv pip freeze | tee requirements-freeze.txt
+          echo "UV_LOCKED=1" >> $GITHUB_ENV
+          echo "UV_NO_SYNC=1" >> $GITHUB_ENV
       - name: Upload dependencies artifact
         uses: actions/upload-artifact@v4
         with:
-          name: dependencies-${{ matrix.setup }}
+          name: dependencies-${{ matrix.python-version }}-${{ matrix.setup-script }}
           path: requirements-freeze.txt
           compression-level: 0
 
       - name: Launch LiteLLM Proxy
         run: |
-          set -ex
-          . .venv/bin/activate
-          litellm --config scripts/litellm_ci.yaml --port 12306 &
-          sleep 10  # Wait for the proxy to be up
+          ./scripts/litellm_run.sh
         env:
-          AZURE_API_BASE: ${{ secrets.AZURE_API_BASE }}
-          AZURE_API_KEY: ${{ secrets.AZURE_API_KEY }}
-      - name: Verify LiteLLM Proxy
-        run: |
-          set -ex
-          . .venv/bin/activate
-          python scripts/litellm_sanity_check.py
-        env:
-          OPENAI_BASE_URL: http://localhost:12306/
-          OPENAI_API_KEY: dummy
+          AZURE_API_BASE: ${{ secrets.AZURE_GROUP_SUBSCRIPTION_API_BASE }}
+          AZURE_API_KEY: ${{ secrets.AZURE_GROUP_SUBSCRIPTION_API_KEY }}
 
       - name: Run tests
         run: |
-          set -ex
-          . .venv/bin/activate
-          pytest -v --durations=0 tests
+          uv run pytest -v --durations=0 tests
         env:
           PYTEST_ADDOPTS: "--color=yes"
           OPENAI_BASE_URL: http://localhost:12306/

@@ -1,19 +1,19 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-"""Common utilities for the emitter module."""
+"""Utilities shared across emitter implementations."""
 
 import opentelemetry.trace as trace_api
 from opentelemetry.trace import get_tracer_provider
 
 
 def get_tracer() -> trace_api.Tracer:
-    """Return the tracer used for AgentLightning spans.
-
-    Raises:
-        RuntimeError: If the tracer is not initialized.
+    """Resolve the OpenTelemetry tracer configured for Agent Lightning.
 
     Returns:
-        The AgentLightning tracer instance.
+        OpenTelemetry tracer tagged with the `agentlightning` instrumentation name.
+
+    Raises:
+        RuntimeError: If OpenTelemetry was not initialized before calling this helper.
     """
     if hasattr(trace_api, "_TRACER_PROVIDER") and trace_api._TRACER_PROVIDER is None:  # type: ignore[attr-defined]
         raise RuntimeError("Tracer is not initialized. Cannot emit a meaningful span.")

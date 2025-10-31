@@ -6,16 +6,19 @@ from multiprocessing.context import BaseContext
 from typing import Optional, Protocol
 
 
-class Event(Protocol):
-    """
-    A minimal protocol similar to threading.Event.
+class ExecutionEvent(Protocol):
+    """Protocol capturing the cooperative stop contract shared by strategies.
+
+    Implementations mirror the API of ``threading.Event`` and
+    ``multiprocessing.Event`` so the rest of the execution layer can remain
+    agnostic to the underlying concurrency primitive.
 
     Methods:
-        set(): Signal event like a cancellation (idempotent).
-        clear(): Reset to the non-set state.
-        is_set() -> bool: True if event has been signaled.
-        wait(timeout: Optional[float] = None) -> bool:
-            Block until event is set or timeout. Returns True if event has signaled.
+
+        set: Signal cancellation. The call must be idempotent.
+        clear: Reset the event to the unsignaled state.
+        is_set: Return ``True`` when cancellation has been requested.
+        wait: Block until the event is signaled or an optional timeout elapses.
     """
 
     def set(self) -> None: ...
@@ -25,11 +28,7 @@ class Event(Protocol):
 
 
 class ThreadingEvent:
-    """
-    An Event implementation using threading.Event.
-
-    Provides a thread-safe event object for signaling between threads.
-    """
+    """Thread-safe implementation of [`ExecutionEvent`][agentlightning.ExecutionEvent]."""
 
     __slots__ = ("_evt",)
 
@@ -50,12 +49,7 @@ class ThreadingEvent:
 
 
 class MultiprocessingEvent:
-    """
-    An Event implementation using multiprocessing.Event.
-
-    Provides a process-safe event object for signaling between processes.
-    Optionally accepts a multiprocessing context for custom process start methods.
-    """
+    """Process-safe implementation of [`ExecutionEvent`][agentlightning.ExecutionEvent]."""
 
     __slots__ = ("_evt",)
 

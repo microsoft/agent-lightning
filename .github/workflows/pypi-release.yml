@@ -48,34 +48,26 @@ jobs:
       contents: read
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
-
-      - name: Install build dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e .[dev]
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - name: Sync dependencies
+        run: uv sync --frozen --no-default-groups --group dev
 
       - name: Build package
         run: |
-          hatch build
+          uv build
 
       - name: Verify package contents
         run: |
-          python -m tarfile -l dist/*.tar.gz
-          python -m zipfile -l dist/*.whl
+          uv run --locked --no-sync python -m tarfile -l dist/*.tar.gz
+          uv run --locked --no-sync python -m zipfile -l dist/*.whl
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
-
-      - name: Test installation from PyPI
-        run: |
-          # Wait a bit for the package to be available
-          sleep 30
-          pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ agentlightning
-          python -c "import agentlightning; print('Package installed successfully')"

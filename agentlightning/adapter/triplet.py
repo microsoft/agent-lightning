@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple, Union, cast
@@ -10,16 +11,22 @@ from typing import Any, Dict, List, Optional, Tuple, Union, cast
 from opentelemetry.sdk.trace import ReadableSpan
 from pydantic import BaseModel
 
-from agentlightning.types import SpanNames, Triplet
-from agentlightning.types.tracer import Span
+from agentlightning.types import Span, SpanNames, Triplet
 
 from .base import TraceAdapter
 
+logger = logging.getLogger(__name__)
+
 
 class Transition(BaseModel):
-    """
-    Transition class representing one transition in a trajectory.
-    State and action are a list of token IDs.
+    """A single transition within a reinforcement learning trajectory.
+
+    Attributes:
+        state: Token identifiers describing the model input state.
+        action: Token identifiers representing the model output.
+        response_id: Identifier of the LLM response used to deduplicate spans.
+        agent_name: Human-readable agent name captured from the trace.
+        reward: Scalar reward associated with the transition, if available.
     """
 
     state: List[int]
@@ -31,22 +38,27 @@ class Transition(BaseModel):
 
 
 class RewardMatchPolicy(str, Enum):
-    """How to find the reward for each transition from the trace.
-    In all cases, the reward must have data `{"type": "reward", "value": <float>|None}`,
-    as defined in `reward.py`.
+    """Strategies for matching rewards to LLM call spans.
+
+    !!! note
+        Each reward span must expose a payload shaped like `{"type": "reward", "value": <float>|None}`
+        as described in `reward.py`.
     """
 
     FIRST_SIBLING = "first_sibling"
-    """Use the first sibling in the current trace subtree as the reward, except another LLM call match is found."""
+    """Use the first sibling in the current trace subtree as the reward unless another LLM call match is found."""
 
     FIRST_OCCURRENCE = "first_occurrence"
-    """Use the first occurrence of the reward (in start time order) that occur after the current LLM call match.
-    """
+    """Use the first reward encountered in chronological order after the current LLM call match."""
 
 
 class TraceTree:
-    """
-    A trace item, along with its span and children.
+    """Tree representation of a trace span and its descendants.
+
+    Attributes:
+        id: Unique identifier for the span node.
+        span: [`Span`][agentlightning.Span] backing this node.
+        children: Child nodes connected to the current span.
     """
 
     def __init__(
@@ -80,10 +92,16 @@ class TraceTree:
         self.children.append(child)
 
     def visualize(self, filename: str, interested_span_match: str | None = None) -> None:
-        """
-        Visualize the trace tree using graphviz.
-        For debugging purposes only.
-        Use `interested_span_match` to filter the spans (and its ancesters) to be visualized.
+        """Render the trace tree with Graphviz for debugging purposes.
+
+        Args:
+            filename: Base filename for the generated `.png` diagram.
+            interested_span_match: Optional regular expression used to keep only matching spans
+                (and their ancestors) in the output.
+
+        !!! note
+            The method requires the optional `graphviz` dependency to be available in the runtime
+            environment.
         """
         import graphviz
 
@@ -125,9 +143,11 @@ class TraceTree:
         dot.render(filename, format="png", cleanup=True)  # type: ignore
 
     def names_tuple(self) -> Tuple[str, List[Any]]:
-        """Return the span name, and a list of children.
-        Each child is also a tuple of span name and a list of children.
-        Useful for debugging and testing.
+        """Return the span name alongside nested child names.
+
+        Returns:
+            A tuple of the current span name and a list of tuples for each child containing the
+            child name and its descendants.
         """
         name = self.span.name
         agent_name = self.agent_name()
@@ -140,15 +160,14 @@ class TraceTree:
         return name, children_names
 
     def traverse(self) -> List["TraceTree"]:
-        """
-        Traverse the trace tree and return a list of all spans.
-        """
+        """Traverse the tree depth first and return every node."""
         spans: List["TraceTree"] = [self]
         for child in self.children:
             spans.extend(child.traverse())
         return spans
 
     def to_json(self) -> dict[str, Any]:
+        """Convert the tree node into a JSON-serialisable structure."""
         if isinstance(self.span, ReadableSpan):
             span_data = json.loads(self.span.to_json())
         else:
@@ -161,10 +180,17 @@ class TraceTree:
 
     @classmethod
     def from_spans(cls, spans: List[Span]) -> "TraceTree":
-        """
-        Create a TraceTree from a list of spans.
-        All spans without parents found will be considered as candidate root spans.
-        If multiple root spans are found, a virtual root span will be created as the parent of all root spans.
+        """Construct a tree from a flat list of spans.
+
+        Args:
+            spans: Spans that collectively form a single trace segment.
+
+        Returns:
+            A [`TraceTree`][agentlightning.adapter.triplet.TraceTree] rooted at either the
+            discovered root span or a synthetic root when multiple roots are present.
+
+        Raises:
+            ValueError: If the span list is empty or no root span can be inferred.
         """
 
         if not spans:
@@ -245,8 +271,11 @@ class TraceTree:
             return root_span
 
     def agent_name(self) -> Optional[str]:
-        """Return the name of agent span. Return the agent or None (not an agent at all).
-        Extend this function to support more agent frameworks."""
+        """Return the agent name associated with the span, if any.
+
+        Returns:
+            Agent name extracted from known attributes, otherwise `None`.
+        """
         attributes = self.span.attributes
         if attributes is None:  # type: ignore
             return None
@@ -279,6 +308,11 @@ class TraceTree:
             return agent_name
 
     def maybe_reward_dict(self) -> dict[str, Any]:
+        """Return a reward payload if the span encodes one.
+
+        Returns:
+            Dictionary containing reward metadata, or an empty dictionary when no reward is found.
+        """
         for key in [
             "agentops.task.output",  # newer versions of agentops
             "agentops.entity.output",
@@ -299,6 +333,11 @@ class TraceTree:
         return {}
 
     def is_reward_span(self) -> bool:
+        """Return whether the span explicitly encodes a reward.
+
+        Returns:
+            `True` when the span payload describes a reward, otherwise `False`.
+        """
         maybe_reward = self.maybe_reward_dict()
         return maybe_reward and maybe_reward.get("type") == "reward"  # type: ignore
 
@@ -312,12 +351,19 @@ class TraceTree:
         within_llm_call: Optional[bool] = None,
         existing_llm_call_response_ids: Optional[set[str]] = None,
     ) -> List[Tuple["TraceTree", str]]:
-        """Find all LLM calls in the trace tree.
+        """Find LLM call spans matching the supplied filters.
 
-        The LLM call is defined as a span with type = request and name matching `llm_call_match`.
-        If `agent_match` is not None, it must also reside in an agent span (type = agent) with name matched.
+        Args:
+            llm_call_match: Regular expression used to match span names that qualify as LLM calls.
+            agent_match: Optional regular expression that must match the enclosing agent span name.
+            within_matching_subtree: Marker propagated through recursive calls to record matching agents.
+            within_reward: When `True`, suppresses LLM matches under reward spans.
+            within_llm_call: When `True`, prevents duplicate matches for nested LLM calls.
+            existing_llm_call_response_ids: Known response identifiers used to deduplicate spans.
 
-        Return a list of traces and the agent names (why it's selected).
+        Returns:
+            A list of tuples pairing the matching node with the agent subtree label that triggered the
+            match.
         """
         llm_calls: List[Tuple[TraceTree, str]] = []
 
@@ -373,17 +419,15 @@ class TraceTree:
         return llm_calls
 
     def repair_hierarchy(self) -> None:
-        """
-        We find that sometimes the hierarchy is not correct, due to the way the spans are created.
-        The spans within the agent frameworks (e.g., OpenAI Agent SDK) and spans within the LLM frameworks
-        (e.g., Anthropic) are created in two systems.
-        So the inner LLM completion span does not necessarily have an agent span as a parent.
-        Rather they sometimes directly become children of the root span.
-        This becomes a problem when we want to select the LLM completion span with agent as filter.
-        To repair the hierarchy, for each children of the root span, we find a span over the whole tree,
-        with duration covering the current span and being closest to the current span.
+        """Repair missing parent-child relationships introduced by mixed tracing systems.
 
-        This function modifies the tree in place.
+        Some agent frameworks emit spans via multiple subsystems, which can cause LLM completion
+        spans to float directly under the root span instead of being nested under the correct agent.
+        The method re-parents those spans to the closest ancestor that fully envelopes the child in
+        time.
+
+        If we don't, when we want to select the LLM completion span with agent as filter.
+        We will never get the correct span underneath.
         """
         nodes_to_repair = list(self.children)
         for repair_node in nodes_to_repair:
@@ -410,7 +454,16 @@ class TraceTree:
                 closest_parent.children.append(repair_node)
 
     def match_rewards(self, reward_match: str, llm_calls: List["TraceTree"]) -> dict[str, Optional[float]]:
-        """Match the rewards to the LLM calls."""
+        """Assign rewards to previously matched LLM calls.
+
+        Args:
+            reward_match: Strategy identifier from
+                [`RewardMatchPolicy`][agentlightning.adapter.triplet.RewardMatchPolicy].
+            llm_calls: Trace nodes representing LLM call spans.
+
+        Returns:
+            Mapping from span identifier to reward value or `None` when no reward is available.
+        """
         llm_call_ids = set([llm_call.id for llm_call in llm_calls])
         rewards: dict[str, Optional[float]] = {}
 
@@ -455,6 +508,30 @@ class TraceTree:
 
         return rewards
 
+    def span_to_triplet(self, span: Span, agent_name: str) -> Triplet:
+        """Convert a span to a triplet.
+
+        Subclass can override this method to add more fields to the triplet,
+        such as chat messages and tool calls.
+        """
+        prompt_token_ids = span.attributes.get("prompt_token_ids", [])  # type: ignore
+        response_token_ids = span.attributes.get("response_token_ids", [])  # type: ignore
+        response_id = span.attributes.get("gen_ai.response.id", None)  # type: ignore
+
+        logprobs_content = span.attributes.get("logprobs.content", None)  # type: ignore
+        if isinstance(logprobs_content, str):
+            logprobs_content = json.loads(logprobs_content)
+            response: Dict[str, Any] = {"token_ids": response_token_ids, "logprobs": logprobs_content}
+        else:
+            response = {"token_ids": response_token_ids}
+
+        return Triplet(
+            prompt={"token_ids": prompt_token_ids},
+            response=response,
+            reward=None,
+            metadata=dict(response_id=response_id, agent_name=agent_name),
+        )
+
     def to_trajectory(
         self,
         llm_call_match: str = r"openai\.chat\.completion",
@@ -463,20 +540,21 @@ class TraceTree:
         dedup_llm_call: bool = True,
         reward_match: RewardMatchPolicy = RewardMatchPolicy.FIRST_OCCURRENCE,
         final_reward: Optional[float] = None,
+        _skip_empty_token_spans: bool = False,
     ) -> List[Triplet]:
-        """Convert the trace tree to a trajectory.
+        """Convert the trace tree into a trajectory of [`Triplet`][agentlightning.Triplet] items.
 
-        First, we find all the LLM calls (span type = request, `llm_call_match` matching the span name).
-        If the agent match is set, we check, for each LLM call,
-        if it resides in an agent (span type = agent, `agent_match` matching the span name).
-        The above sets the basis for the trajectory, as we use the prompt token IDs and response token IDs for each LLM call,
-        as the state and action of each transition.
+        Args:
+            llm_call_match: Regular expression for LLM call span names.
+            agent_match: Optional regular expression for agent span names.
+            exclude_llm_call_in_reward: When `True`, prevents searching for rewards under the LLM
+                call subtree.
+            dedup_llm_call: When `True`, deduplicates spans using the LLM response identifier.
+            reward_match: Reward matching policy used to associate reward spans with LLM calls.
+            final_reward: Optional reward appended to the final transition when provided.
 
-        Then, we find the reward for each transition.
-        The reward is searched on the trace tree, after the LLM call,
-        until the next LLM call or the end of the tree depending on the policy.
-        It can be enforced to a sibling or the first occurrence in the time order, depending on the policy.
-        If a reward is never found for a transition, it is set to None.
+        Returns:
+            A list of [`Triplet`][agentlightning.Triplet] objects ordered by call sequence.
         """
         # Find all LLM calls
         llm_calls = self.find_llm_calls(
@@ -487,25 +565,23 @@ class TraceTree:
             within_llm_call=False if dedup_llm_call else None,
             existing_llm_call_response_ids=set(),
         )
-        id_transitions = [
-            (
-                llm_call.id,
-                Triplet(
-                    prompt={"token_ids": llm_call.span.attributes.get("prompt_token_ids", [])},  # type: ignore
-                    response={"token_ids": llm_call.span.attributes.get("response_token_ids", [])},  # type: ignore
-                    reward=None,
-                    metadata=dict(
-                        response_id=llm_call.span.attributes.get(  # type: ignore
-                            "gen_ai.response.id", None
-                        ),  # it works at least for OpenAI
-                        agent_name=agent_name,
-                    ),
-                ),
-            )
-            for llm_call, agent_name in llm_calls
-        ]
 
-        rewards = self.match_rewards(reward_match, [call for call, _ in llm_calls])
+        id_transitions: List[Tuple[str, Triplet]] = []
+        # We need to filter out the LLM calls with unrecorded token IDs
+        filtered_llm_calls: List[Tuple[TraceTree, str]] = []
+        for llm_call, agent_name in llm_calls:
+            triplet = self.span_to_triplet(llm_call.span, agent_name)
+            # This is a hot-fix for Tinker+CrewAI, which has some anonymous requests outside the trained agent.
+            # TODO: We might need to reconsider this.
+            if _skip_empty_token_spans and (
+                not triplet.prompt.get("token_ids") or not triplet.response.get("token_ids")
+            ):
+                logger.warning(f"Skipping LLM call with unrecorded token IDs: {triplet}")
+                continue
+            filtered_llm_calls.append((llm_call, agent_name))
+            id_transitions.append((llm_call.id, triplet))
+
+        rewards = self.match_rewards(reward_match, [call for call, _ in filtered_llm_calls])
         transitions = [
             transition.model_copy(update={"reward": rewards.get(id, None)}) for id, transition in id_transitions
         ]
@@ -521,23 +597,23 @@ class TraceTree:
         )
 
 
-class BaseTraceTripletAdapter(TraceAdapter[List[Triplet]]):
-    """
-    Base class for trace triplet adapters.
-    """
+class TraceToTripletBase(TraceAdapter[List[Triplet]]):
+    """Base class for adapters that emit [`Triplet`][agentlightning.Triplet] trajectories."""
 
 
-class TraceTripletAdapter(BaseTraceTripletAdapter):
-    """
-    An adapter to convert OpenTelemetry spans to triplet data.
+class TracerTraceToTriplet(TraceToTripletBase):
+    """Convert tracer-emitted spans into triplet trajectories.
 
     Attributes:
-        repair_hierarchy: When `repair_hierarchy` is set to True, the trace will be repaired with the time information.
-            See `TraceTree.repair_hierarchy` for more details.
-        llm_call_match: Regular expression pattern to match LLM call span names.
-        agent_match: Optional regular expression pattern to match agent span names. If None, all agents are matched.
-        exclude_llm_call_in_reward: Whether to exclude LLM calls that occur within reward spans.
-        reward_match: Policy for matching rewards to LLM calls.
+        repair_hierarchy: When `True`, repair the span tree using
+            [`TraceTree.repair_hierarchy()`][agentlightning.adapter.triplet.TraceTree.repair_hierarchy]
+            before matching calls and rewards.
+        llm_call_match: Regular expression pattern that selects LLM call span names.
+        agent_match: Optional regular expression pattern for agent span names. When omitted, spans
+            from any agent are considered.
+        exclude_llm_call_in_reward: When `True`, ignore matches under reward spans while searching
+            for rewards.
+        reward_match: Strategy used to associate rewards with LLM calls.
     """
 
     def __init__(
@@ -547,12 +623,14 @@ class TraceTripletAdapter(BaseTraceTripletAdapter):
         agent_match: Optional[str] = None,
         exclude_llm_call_in_reward: bool = True,
         reward_match: RewardMatchPolicy = RewardMatchPolicy.FIRST_OCCURRENCE,
+        _skip_empty_token_spans: bool = False,
     ):
         self.repair_hierarchy = repair_hierarchy
         self.llm_call_match = llm_call_match
         self.agent_match = agent_match
         self.exclude_llm_call_in_reward = exclude_llm_call_in_reward
         self.reward_match = reward_match
+        self._skip_empty_token_spans = _skip_empty_token_spans
 
     def visualize(
         self,
@@ -561,16 +639,17 @@ class TraceTripletAdapter(BaseTraceTripletAdapter):
         filename: str = "trace_tree",
         interested_span_match: str | None = None,
     ) -> TraceTree:
-        """
-        Visualize the trace tree.
+        """Visualize the trace tree built from the supplied spans.
 
         Args:
-            source (List[Span]): The list of OpenTelemetry spans to visualize.
-            filename (str): The base filename for the output visualization (default: "trace_tree").
-            interested_span_match (str | None): Optional regular expression pattern to highlight or focus on specific spans in the visualization.
+            source: Collection of Agent Lightning [`Span`][agentlightning.Span] objects
+                or raw `opentelemetry.sdk.trace.ReadableSpan` instances.
+            filename: Base filename for the generated image; `.png` is appended automatically.
+            interested_span_match: Optional regular expression used to highlight a subset of spans.
 
         Returns:
-            TraceTree: The constructed trace tree object.
+            The [`TraceTree`][agentlightning.adapter.triplet.TraceTree] built from the provided
+            spans.
         """
         source_normalized = [
             Span.from_opentelemetry(span, "dummy", "dummy", 0) if isinstance(span, ReadableSpan) else span
@@ -583,7 +662,14 @@ class TraceTripletAdapter(BaseTraceTripletAdapter):
         return trace_tree
 
     def adapt(self, source: Union[List[Span], List[ReadableSpan]], /) -> List[Triplet]:  # type: ignore
-        """Convert OpenTelemetry spans to a list of Triplet objects."""
+        """Convert tracer spans into [`Triplet`][agentlightning.Triplet] trajectories.
+
+        Args:
+            source: Agent Lightning spans or raw OpenTelemetry spans that form a trace.
+
+        Returns:
+            Ordered list of trajectory transitions with prompt, response, and reward information.
+        """
         source_normalized = [
             Span.from_opentelemetry(span, "dummy", "dummy", 0) if isinstance(span, ReadableSpan) else span
             for span in source
@@ -596,30 +682,29 @@ class TraceTripletAdapter(BaseTraceTripletAdapter):
             agent_match=self.agent_match,
             exclude_llm_call_in_reward=self.exclude_llm_call_in_reward,
             reward_match=self.reward_match,
+            _skip_empty_token_spans=self._skip_empty_token_spans,
         )
         return trajectory
 
 
-class LlmProxyTripletAdapter(BaseTraceTripletAdapter):
-    """
-    Converting telemetry data emitted by the LLM Proxy to triplet data.
-    This adapter is very experimental. Should only be used when the TraceTripletAdapter does not work at all.
+class LlmProxyTraceToTriplet(TraceToTripletBase):
+    """Convert telemetry emitted by the LLM Proxy into triplet trajectories.
 
-    IMPORTANT: Do NOT rely on timestamps here. Proxy spans can be emitted from different
-    machines with unsynchronized clocks. We therefore treat `sequence_id` as the only
-    reliable ordering primitive and perform "first occurrence" reward matching using
-    sequence order only.
+    !!! warning
+        This adapter is experimental and might be merged with
+        [`TracerTraceToTriplet`][agentlightning.TracerTraceToTriplet] in the future.
+
+    !!! danger
+        Do not rely on timestamps when using this adapter. Proxy spans can originate on different
+        machines with unsynchronised clocks, so `sequence_id` is treated as the sole source of
+        ordering.
 
     Strategy:
 
-    1) Sort spans by (sequence_id, start_time).
-    2) Extract LLM calls that expose prompt/response token IDs from either:
-       - litellm_request         (sometimes only metadata, ignore if no token ids)
-       - raw_gen_ai_request      (llm.hosted_vllm.* stringified fields)
-    3) Extract rewards from spans whose attributes contain an AgentOps-style
-       reward payload or explicit REWARD span.
-    4) For each reward with sequence R, assign it to the most recent *unmatched* LLM call
-       with sequence < R. Ignore timestamps completely.
+    1. Sort spans by `(sequence_id, start_time)` for deterministic processing.
+    2. Extract token identifiers from `litellm_request` or `raw_gen_ai_request` spans.
+    3. Extract rewards from spans exposing AgentOps-style payloads or explicit reward spans.
+    4. Match each reward to the most recent unmatched LLM call whose sequence is smaller.
     """
 
     def _literal_eval_maybe(self, v: Any) -> Any:
@@ -681,9 +766,7 @@ class LlmProxyTripletAdapter(BaseTraceTripletAdapter):
         return cast(List[int], prompt_ids), cast(List[int], resp_ids)
 
     def _maybe_reward_value(self, span: Span) -> Optional[float]:
-        """
-        Parse reward from typical AgentOps payload or explicit REWARD span.
-        """
+        """Parse reward from typical AgentOps payloads or explicit reward spans."""
         attrs = span.attributes or {}
 
         # AgentOps new/old keys
@@ -709,6 +792,14 @@ class LlmProxyTripletAdapter(BaseTraceTripletAdapter):
         return str(rid) if isinstance(rid, str) and rid else None
 
     def adapt(self, source: List[Span], /) -> List[Triplet]:  # type: ignore
+        """Convert LLM Proxy spans into [`Triplet`][agentlightning.Triplet] trajectories.
+
+        Args:
+            source: Spans emitted by the LLM Proxy containing prompt, response, and reward data.
+
+        Returns:
+            Ordered trajectory transitions matched purely by `sequence_id`.
+        """
         # 1) Sort deterministically by (sequence_id, start_time).
         spans = sorted(
             source,

@@ -2,21 +2,36 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import multiprocessing
 import signal
 import socket
 import time
-from typing import Any, Callable
+from typing import Any, Callable, no_type_check
 
 import flask
+import requests
 import setproctitle
 
 logger = logging.getLogger(__name__)
 
+__all__ = [
+    "instrument_agentops",
+    "uninstrument_agentops",
+    "agentops_local_server",
+    "AgentOpsServerManager",
+]
+
 # Module-level storage for originals
 _original_handle_chat_attributes: Callable[..., Any] | None = None
 _original_handle_response: Callable[..., Any] | None = None
+
+
+def _unwrap_legacy_response(response: Any) -> Any:
+    if hasattr(response, "parse") and callable(response.parse):
+        return response.parse()
+    return response
 
 
 def _patch_new_agentops():
@@ -32,26 +47,58 @@ def _patch_new_agentops():
 
     _original_handle_chat_attributes = handle_chat_attributes  # type: ignore
 
+    @no_type_check
     def _handle_chat_attributes_with_tokens(args=None, kwargs=None, return_value=None, **kws):  # type: ignore
-        attributes = _original_handle_chat_attributes(args=args, kwargs=kwargs, return_value=return_value, **kws)  # type: ignore
-        if return_value is not None and hasattr(return_value, "prompt_token_ids"):  # type: ignore
-            attributes["prompt_token_ids"] = list(return_value.prompt_token_ids)  # type: ignore
-        if return_value is not None and hasattr(return_value, "response_token_ids"):  # type: ignore
-            attributes["response_token_ids"] = list(return_value.response_token_ids[0])  # type: ignore
+        attributes = _original_handle_chat_attributes(args=args, kwargs=kwargs, return_value=return_value, **kws)
 
-        # For LiteLLM, response is a openai._legacy_response.LegacyAPIResponse
+        # In some cases, response is a openai._legacy_response.LegacyAPIResponse (e.g., LiteLLM, or LangChain),
+        # This is created by client.with_raw_response.create()
+        return_value = _unwrap_legacy_response(return_value)
+
         if (
             return_value is not None
-            and hasattr(return_value, "http_response")  # type: ignore
-            and return_value.http_response is not None  # type: ignore
-            and hasattr(return_value.http_response, "json")  # type: ignore
+            and hasattr(return_value, "prompt_token_ids")
+            and return_value.prompt_token_ids is not None
         ):
-            json_data = return_value.http_response.json()  # type: ignore
-            if isinstance(json_data, dict):
-                if "prompt_token_ids" in json_data:
-                    attributes["prompt_token_ids"] = list(json_data["prompt_token_ids"])  # type: ignore
-                if "response_token_ids" in json_data:
-                    attributes["response_token_ids"] = list(json_data["response_token_ids"][0])  # type: ignore
+            attributes["prompt_token_ids"] = list(return_value.prompt_token_ids)
+        if (
+            return_value is not None
+            and hasattr(return_value, "response_token_ids")
+            and return_value.response_token_ids is not None
+        ):
+            attributes["response_token_ids"] = list(return_value.response_token_ids[0])
+
+        # For LiteLLM Proxy (v0.2) with vLLM return_token_ids, response_token_ids now lives in choices
+        if (
+            return_value is not None
+            and hasattr(return_value, "choices")
+            and return_value.choices
+            and isinstance(return_value.choices, list)
+            and len(return_value.choices) > 0
+        ):
+            first_choice = return_value.choices[0]
+            # Token IDs from "choices[0].token_ids"
+            if "response_token_ids" not in attributes:
+                if hasattr(first_choice, "token_ids") and first_choice.token_ids is not None:
+                    attributes["response_token_ids"] = list(first_choice.token_ids)
+                # newer versions of OpenAI client SDK
+                elif (
+                    hasattr(first_choice, "provider_specific_fields")
+                    and first_choice.provider_specific_fields.get("token_ids") is not None
+                ):
+                    attributes["response_token_ids"] = list(first_choice.provider_specific_fields["token_ids"])
+
+            # log probability
+            # This is temporary. We need a unified convention for classifying and naming logprobs.
+            if hasattr(first_choice, "logprobs") and first_choice.logprobs is not None:
+                if hasattr(first_choice.logprobs, "content") and first_choice.logprobs.content is not None:
+                    attributes["logprobs.content"] = json.dumps(
+                        [logprob.model_dump() for logprob in first_choice.logprobs.content]
+                    )
+                if hasattr(first_choice.logprobs, "refusal") and first_choice.logprobs.refusal is not None:
+                    attributes["logprobs.refusal"] = json.dumps(
+                        [logprob.model_dump() for logprob in first_choice.logprobs.refusal]
+                    )
 
         return attributes
 
@@ -141,6 +188,7 @@ def instrument_agentops():
 
 
 def uninstrument_agentops():
+    """Uninstrument agentops to stop capturing token IDs."""
     try:
         _unpatch_new_agentops()
     except Exception:
@@ -182,6 +230,8 @@ def _run_server(**kwargs: Any):  # type: ignore
 
 
 class AgentOpsServerManager:
+    """Manages a AgentOps local server to bypass the online service of AgentOps."""
+
     def __init__(self, daemon: bool = True, port: int | None = None):
         self.server_process: multiprocessing.Process | None = None
         self.server_port = port
@@ -213,7 +263,19 @@ class AgentOpsServerManager:
         logger.info(
             f"AgentOps local server process (PID: {self.server_process.pid}) started, targeting port {self.server_port}."
         )
-        time.sleep(0.5)  # Brief wait for server to start up
+        for attempt in range(20):  # 10 seconds total
+            time.sleep(0.5)  # Brief wait for server to start up
+            try:
+                result = requests.get(f"http://127.0.0.1:{self.server_port}/")
+                if result.status_code == 200:
+                    break
+            except Exception as e:
+                logger.debug(f"Error checking AgentOps server: {e}")
+            logger.warning(f"AgentOps still not ready after {attempt} attempts. Retrying...")
+        else:
+            logger.error(f"AgentOps local server failed to start or exited prematurely.")
+            return
+
         if not self.server_process.is_alive():
             logger.error(f"AgentOps local server failed to start or exited prematurely.")
 

@@ -7,6 +7,7 @@ import socket
 import threading
 import time
 import uuid
+from collections import defaultdict
 from collections.abc import Mapping
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
@@ -17,13 +18,19 @@ from flask import Flask, Response, abort, request
 from tensordict import TensorDict
 from verl import DataProto
 
-from agentlightning import LLM, AgentLightningServer, NamedResources, Rollout, configure_logger
-from agentlightning.adapter.triplet import BaseTraceTripletAdapter, TraceTripletAdapter
+from agentlightning import LLM, AgentLightningServer, NamedResources, RolloutLegacy, configure_logger
+from agentlightning.adapter.triplet import TracerTraceToTriplet, TraceToTripletBase
 from agentlightning.llm_proxy import LLMProxy, ModelConfig
 from agentlightning.store.base import LightningStore
-from agentlightning.types import RolloutConfig, RolloutV2, Task
+from agentlightning.types import Rollout, RolloutConfig, Task
 
 configure_logger()
+
+__all__ = [
+    "AgentModeDaemon",
+    "get_left_padded_ids_and_attention_mask",
+    "get_right_padded_ids_and_attention_mask",
+]
 
 
 def get_left_padded_ids_and_attention_mask(
@@ -138,7 +145,7 @@ class AgentModeDaemon:
         mode: Literal["v0", "v1"] = "v1",
         llm_proxy: LLMProxy | None = None,
         store: LightningStore | None = None,
-        adapter: BaseTraceTripletAdapter | None = None,
+        adapter: TraceToTripletBase | None = None,
     ):
         self.mode = mode
         self.llm_timeout_seconds = llm_timeout_seconds
@@ -164,7 +171,7 @@ class AgentModeDaemon:
                 # Reuse the existing LLM proxy (probably configured by user)
                 self.llm_proxy = llm_proxy
             if adapter is None:
-                self.adapter = TraceTripletAdapter()
+                self.adapter = TracerTraceToTriplet()
             else:
                 # Reuse the one from trainer
                 self.adapter = adapter
@@ -183,7 +190,7 @@ class AgentModeDaemon:
         # Internal State
         self.backend_llm_server_addresses: List[str] = []
         self._total_tasks_queued = 0
-        self._completed_rollouts_v0: Dict[str, Rollout] = {}
+        self._completed_rollouts_v0: Dict[str, RolloutLegacy] = {}
         self._task_id_to_original_sample: Dict[str, Dict[str, Any]] = {}
         self._server_thread: Optional[threading.Thread] = None
         self._proxy_thread: Optional[threading.Thread] = None
@@ -434,7 +441,7 @@ class AgentModeDaemon:
             print(f"Failed to set up data on server: {e}")
             raise
 
-    def _validate_data(self, rollout: Rollout):
+    def _validate_data(self, rollout: RolloutLegacy):
         if rollout.final_reward is None:
             print(
                 f"Warning: Reward is None for rollout {rollout.rollout_id}, will be auto-set to {self.reward_fillna_value}."
@@ -448,10 +455,10 @@ class AgentModeDaemon:
         elif any(not r.prompt.get("token_ids", []) for r in rollout.triplets):
             print(f"Warning: Rollout {rollout.rollout_id} contains empty prompt: {rollout.triplets}")
 
-    async def _validate_data_v1(self, rollout: RolloutV2) -> Rollout:
-        """Convert RolloutV2 to Rollout and validate.
+    async def _validate_data_v1(self, rollout: Rollout) -> RolloutLegacy:
+        """Convert Rollout to RolloutLegacy and validate.
 
-        1. Task: construct from RolloutV2
+        1. Task: construct from Rollout
         2. Triplets: obtained by querying spans and feeding into the adapter
         3. Final reward: extracted from last triplet's reward, searching backwards if not found
         """
@@ -474,7 +481,7 @@ class AgentModeDaemon:
                     final_reward = triplet.reward
                     break
 
-        # Construct the Task object from RolloutV2
+        # Construct the Task object from Rollout
         task = Task(
             rollout_id=rollout.rollout_id,
             input=rollout.input,
@@ -484,7 +491,7 @@ class AgentModeDaemon:
         )
 
         # Create the Rollout object (without trace and logs as per user's note)
-        result_rollout = Rollout(
+        result_rollout = RolloutLegacy(
             rollout_id=rollout.rollout_id,
             task=task,
             final_reward=final_reward,
@@ -510,7 +517,7 @@ class AgentModeDaemon:
                 if rollout.rollout_id in self._completed_rollouts_v0:
                     # Already processed, skip
                     continue
-                if isinstance(rollout, RolloutV2):
+                if isinstance(rollout, Rollout):
                     rollout = await self._validate_data_v1(rollout)
                 else:
                     self._validate_data(rollout)
@@ -552,13 +559,28 @@ class AgentModeDaemon:
         assert len(self._completed_rollouts_v0) == self._total_tasks_queued
 
         sample_stat_list: List[Dict[str, Any]] = []
-        for _, rollout in self._completed_rollouts_v0.items():
+        sample_stat_list_by_source: Dict[str, List[Dict[str, Any]]] = defaultdict(
+            list
+        )  # FIXME: Evaluate whether grouping stats by source is actually needed.
+
+        for rollout_id, rollout in self._completed_rollouts_v0.items():
             final_reward = self._fillna_reward(rollout)
             if not rollout.triplets:
                 print(f"Warning: No triplets found for test rollout {rollout.rollout_id}.")
                 sample_stat_list.append({"reward": final_reward})
                 continue
             response_length_list = [len(triplet.response.get("token_ids", [])) for triplet in rollout.triplets]
+            if "data_source" in self._task_id_to_original_sample[rollout_id]:
+                # When a test sample includes a 'data_source' field, record per-source statistics for test results.
+                data_source = self._task_id_to_original_sample[rollout_id]["data_source"]
+                sample_stat_list_by_source[data_source].append(
+                    {
+                        "sum_response_length": np.sum(response_length_list),
+                        "mean_response_length": np.mean(response_length_list) if response_length_list else 0,
+                        "turn_count": len(rollout.triplets),
+                        "reward": final_reward,
+                    }
+                )
             sample_stat_list.append(
                 {
                     "sum_response_length": np.sum(response_length_list),
@@ -567,18 +589,45 @@ class AgentModeDaemon:
                     "reward": final_reward,
                 }
             )
+        metric_dict: Dict[str, Any] = {}
 
         stats_w_trace = [stat for stat in sample_stat_list if "sum_response_length" in stat]
-        return {
-            "val/n_rollouts": len(sample_stat_list),
-            "val/n_rollouts_w_trace": len(stats_w_trace),
-            "val/reward": np.mean(
-                [stat["reward"] for stat in sample_stat_list]
-            ),  # each rollout must have a reward (fillna if missing)
-            "val/mean_response_length": np.mean([stat["mean_response_length"] for stat in stats_w_trace]),
-            "val/sum_response_length": np.mean([stat["sum_response_length"] for stat in stats_w_trace]),
-            "val/turn_count": np.mean([stat["turn_count"] for stat in stats_w_trace]),
+        stats_w_trace_by_source = {
+            data_source: [stat for stat in sample_stats if "sum_response_length" in stat]
+            for data_source, sample_stats in sample_stat_list_by_source.items()
         }
+        for data_source, sample_stats in sample_stat_list_by_source.items():
+            metric_dict.update(
+                {
+                    f"val/{data_source}/n_rollouts": len(sample_stats),
+                    f"val/{data_source}/n_rollouts_w_trace": len(stats_w_trace_by_source[data_source]),
+                    f"val/{data_source}/reward": np.mean(
+                        [stat["reward"] for stat in sample_stats]
+                    ),  # each rollout must have a reward (fillna if missing)
+                    f"val/{data_source}/mean_response_length": np.mean(
+                        [stat["mean_response_length"] for stat in stats_w_trace_by_source[data_source]]
+                    ),
+                    f"val/{data_source}/sum_response_length": np.mean(
+                        [stat["sum_response_length"] for stat in stats_w_trace_by_source[data_source]]
+                    ),
+                    f"val/{data_source}/turn_count": np.mean(
+                        [stat["turn_count"] for stat in stats_w_trace_by_source[data_source]]
+                    ),
+                }
+            )
+        metric_dict.update(
+            {
+                "val/n_rollouts": len(sample_stat_list),
+                "val/n_rollouts_w_trace": len(stats_w_trace),
+                "val/reward": np.mean(
+                    [stat["reward"] for stat in sample_stat_list]
+                ),  # each rollout must have a reward (fillna if missing)
+                "val/mean_response_length": np.mean([stat["mean_response_length"] for stat in stats_w_trace]),
+                "val/sum_response_length": np.mean([stat["sum_response_length"] for stat in stats_w_trace]),
+                "val/turn_count": np.mean([stat["turn_count"] for stat in stats_w_trace]),
+            }
+        )
+        return metric_dict
 
     def get_train_data_batch(self, max_prompt_length: int, max_response_length: int, device: torch.device):
         """
@@ -736,7 +785,7 @@ class AgentModeDaemon:
         # This implementation assumes that `set_up_data_and_server` is called
         # for each new run, effectively starting a fresh batch.
 
-    def _fillna_reward(self, rollout: Rollout):
+    def _fillna_reward(self, rollout: RolloutLegacy):
         if rollout.final_reward is None:
             if self.reward_fillna_value is not None:  # type: ignore
                 final_reward = self.reward_fillna_value

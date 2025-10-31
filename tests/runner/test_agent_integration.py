@@ -13,11 +13,11 @@ import pytest
 from agentlightning.litagent import LitAgent
 from agentlightning.llm_proxy import LLMProxy
 from agentlightning.reward import emit_reward
-from agentlightning.runner import AgentRunnerV2
+from agentlightning.runner import LitAgentRunner
 from agentlightning.store.client_server import LightningStoreClient, LightningStoreServer
 from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.tracer.agentops import AgentOpsTracer
-from agentlightning.types import LLM, AttemptedRollout, NamedResources, RolloutV2
+from agentlightning.types import LLM, AttemptedRollout, NamedResources, Rollout
 
 from ..common.network import get_free_port
 from ..common.tracer import clear_tracer_provider
@@ -28,24 +28,27 @@ async def init_runner(
     agent: LitAgent[Any],
     *,
     resources: Optional[Dict[str, LLM]] = None,
-) -> tuple[AgentRunnerV2[Any], InMemoryLightningStore]:
+) -> tuple[LitAgentRunner[Any], InMemoryLightningStore]:
     store = InMemoryLightningStore()
     llm_resource: NamedResources = resources or {"llm": LLM(endpoint="http://localhost", model="dummy")}  # type: ignore[assignment]
     await store.update_resources("default", llm_resource)
 
-    runner = AgentRunnerV2[Any](tracer=AgentOpsTracer(), poll_interval=0.01)
+    runner = LitAgentRunner[Any](tracer=AgentOpsTracer(), poll_interval=0.01)
     runner.init(agent)
     runner.init_worker(worker_id=0, store=store)
     return runner, store
 
 
-def teardown_runner(runner: AgentRunnerV2[Any]) -> None:
+def teardown_runner(runner: LitAgentRunner[Any]) -> None:
     runner.teardown_worker(worker_id=0)
     runner.teardown()
 
 
 @pytest.fixture(scope="module", autouse=True)
 def setup_module():
+    # This must execute only once for this module.
+    # Once agentops tracer is initialized, it cannot be reset,
+    # otherwise it will never be rewired.
     clear_tracer_provider()
     yield
 
@@ -78,7 +81,7 @@ async def test_runner_integration_basic_rollout() -> None:
 )
 async def test_runner_integration_with_openai() -> None:
     class OpenAIAgent(LitAgent[str]):
-        async def validation_rollout_async(self, task: str, resources: NamedResources, rollout: RolloutV2) -> float:
+        async def validation_rollout_async(self, task: str, resources: NamedResources, rollout: Rollout) -> float:
             llm = cast(LLM, resources["llm"])
             client = openai.AsyncOpenAI(base_url=llm.endpoint, api_key=llm.api_key)
             response = await client.chat.completions.create(
@@ -113,7 +116,7 @@ async def test_runner_integration_with_litellm_proxy() -> None:
     litellm = pytest.importorskip("litellm")
 
     class LiteLLMAgent(LitAgent[str]):
-        def validation_rollout(self, task: str, resources: NamedResources, rollout: RolloutV2) -> float:
+        def validation_rollout(self, task: str, resources: NamedResources, rollout: Rollout) -> float:
             llm = cast(LLM, resources["llm"])
             response = litellm.completion(
                 model=llm.model,
@@ -161,7 +164,7 @@ async def test_runner_integration_with_spawned_litellm_proxy(server: RemoteOpenA
         pytest.skip("GPU not available")
 
     class ProxyAgent(LitAgent[str]):
-        async def validation_rollout_async(self, task: str, resources: NamedResources, rollout: RolloutV2) -> float:
+        async def validation_rollout_async(self, task: str, resources: NamedResources, rollout: Rollout) -> float:
             attempted_rollout = cast(AttemptedRollout, rollout)
             llm_resource = cast(LLM, resources["llm"])
             client = openai.AsyncOpenAI(
@@ -197,7 +200,7 @@ async def test_runner_integration_with_spawned_litellm_proxy(server: RemoteOpenA
     )
 
     def run_proxy_server(proxy: LLMProxy, event: MpEvent):
-        clear_tracer_provider()
+        clear_tracer_provider()  # clear once more before the proxy starts
         proxy.start()
         event.set()
         time.sleep(3600)  # Keep the server running
@@ -214,6 +217,7 @@ async def test_runner_integration_with_spawned_litellm_proxy(server: RemoteOpenA
         assert rollouts and rollouts[0].status == "succeeded"
 
         spans = await client_store.query_spans(rollouts[0].rollout_id, "latest")
+        assert len(spans) > 1
         first_spans = [span for span in spans if span.sequence_id == 1]
         assert len(first_spans) > 1
         assert any("llm.hosted_vllm.choices" in span.attributes for span in first_spans)

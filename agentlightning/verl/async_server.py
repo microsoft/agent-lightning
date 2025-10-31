@@ -32,7 +32,7 @@ class PatchedvLLMServer(_unwrap_ray_remote(AsyncvLLMServer)):
     async def chat_completion(self, raw_request: Request):
         """OpenAI-compatible HTTP endpoint.
 
-        API reference: https://docs.vllm.ai/en/latest/serving/openai_compatible_server.html
+        API reference: [OpenAI-compatible server documentation](https://docs.vllm.ai/en/latest/serving/openai_compatible_server.html)
         """
         request_json = await raw_request.json()
         request = ChatCompletionRequest(**request_json)

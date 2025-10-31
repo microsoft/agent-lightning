@@ -1,0 +1,201 @@
+answer,category,split
+Dog,animal,train
+Cat,animal,train
+Cow,animal,train
+Pig,animal,train
+Horse,animal,train
+Sheep,animal,train
+Goat,animal,test
+Chicken,animal,test
+Duck,animal,train
+Goose,animal,train
+Fish,animal,train
+Shark,animal,train
+Whale,animal,train
+Dolphin,animal,train
+Tiger,animal,test
+Lion,animal,train
+Bear,animal,train
+Wolf,animal,train
+Fox,animal,test
+Rabbit,animal,train
+Deer,animal,test
+Rat,animal,train
+Zebra,animal,train
+Giraffe,animal,train
+Panda,animal,train
+Koala,animal,test
+Camel,animal,train
+Ant,animal,train
+Bee,animal,test
+Butterfly,animal,train
+Spider,animal,train
+Crab,animal,train
+Frog,animal,train
+Turtle,animal,train
+Snake,animal,train
+Owl,animal,train
+Batman,character,train
+Superman,character,train
+Spider Man,character,train
+Hulk,character,train
+Aquaman,character,train
+The Joker,character,train
+Mario,character,test
+Luigi,character,test
+Pikachu,character,train
+Sonic,character,train
+Shrek,character,test
+Elsa,character,train
+Aladdin,character,train
+Woody,character,train
+Buzz Lightyear,character,test
+Nemo,character,train
+Winnie the Pooh,character,train
+Mickey Mouse,character,train
+Goofy,character,train
+Donald Duck,character,test
+Gandalf,character,train
+Frodo Baggins,character,train
+Albus Dumbledore,character,train
+Hermione Granger,character,train
+Harry Potter,character,train
+Sherlock Holmes,character,train
+Piano,instrument,train
+Guitar,instrument,train
+Violin,instrument,train
+Cello,instrument,train
+Flute,instrument,train
+Clarinet,instrument,train
+Trumpet,instrument,test
+Trombone,instrument,test
+Tuba,instrument,train
+Saxophone,instrument,train
+Drums,instrument,test
+Harp,instrument,train
+Organ,instrument,train
+Ukulele,instrument,train
+Banjo,instrument,test
+Xylophone,instrument,train
+Harmonica,instrument,train
+Tambourine,instrument,train
+Triangle,instrument,train
+Recorder,instrument,train
+Rose,flower,train
+Tulip,flower,train
+Lily,flower,train
+Daisy,flower,train
+Sunflower,flower,train
+Orchid,flower,train
+Violet,flower,test
+Jasmine,flower,test
+Marigold,flower,train
+Lotus,flower,train
+Lavender,flower,test
+Peony,flower,train
+Carnation,flower,train
+Iris,flower,train
+Lilac,flower,test
+Poppy,flower,train
+Magnolia,flower,train
+Daffodil,flower,train
+Pansy,flower,train
+Petunia,flower,train
+Pen,stationery,train
+Pencil,stationery,train
+Eraser,stationery,train
+Ruler,stationery,train
+Marker,stationery,train
+Highlighter,stationery,train
+Stapler,stationery,test
+Tape,stationery,test
+Glue,stationery,train
+Notebook,stationery,train
+Notepad,stationery,test
+Paperclip,stationery,train
+Binder,stationery,train
+Folder,stationery,train
+Envelope,stationery,test
+Pushpin,stationery,train
+Scissors,stationery,train
+Crayon,stationery,train
+Sharpener,stationery,train
+Whiteboard,stationery,train
+Phone,electronics,train
+Smartphone,electronics,train
+Laptop,electronics,train
+Tablet,electronics,train
+Camera,electronics,train
+Television,electronics,train
+Monitor,electronics,test
+Headphones,electronics,test
+Earbuds,electronics,train
+Speaker,electronics,train
+Microphone,electronics,test
+Keyboard,electronics,train
+Printer,electronics,train
+Webcam,electronics,train
+Battery,electronics,test
+Radio,electronics,train
+Microwave,electronics,train
+Refrigerator,electronics,train
+Toaster,electronics,train
+Oven,electronics,test
+Fan,electronics,train
+Calculator,electronics,train
+Clock,electronics,train
+Chair,furniture,train
+Table,furniture,train
+Sofa,furniture,train
+Couch,furniture,train
+Bed,furniture,train
+Desk,furniture,train
+Wardrobe,furniture,test
+Closet,furniture,test
+Dresser,furniture,train
+Cabinet,furniture,train
+Cupboard,furniture,test
+Shelf,furniture,train
+Bookshelf,furniture,train
+Nightstand,furniture,train
+Bench,furniture,test
+Stool,furniture,train
+Armchair,furniture,train
+Recliner,furniture,train
+Ottoman,furniture,train
+Vanity,furniture,test
+Mirror,furniture,train
+Crib,furniture,train
+Mattress,furniture,train
+Sideboard,furniture,train
+Albert Einstein,celebrity,train
+Isaac Newton,celebrity,train
+Nikola Tesla,celebrity,train
+Wolfgang Amadeus Mozart,celebrity,train
+Ludwig van Beethoven,celebrity,train
+Johann Sebastian Bach,celebrity,train
+Pablo Picasso,celebrity,test
+William Shakespeare,celebrity,test
+Elvis Presley,celebrity,train
+Marilyn Monroe,celebrity,train
+Charlie Chaplin,celebrity,test
+Mahatma Gandhi,celebrity,train
+Nelson Mandela,celebrity,train
+Julius Caesar,celebrity,train
+Napoleon Bonaparte,celebrity,test
+Abraham Lincoln,celebrity,train
+Winston Churchill,celebrity,train
+John F Kennedy,celebrity,train
+Princess Diana,celebrity,train
+Steve Jobs,celebrity,test
+David Bowie,celebrity,train
+John Lennon,celebrity,train
+Michael Jackson,celebrity,train
+Muhammad Ali,celebrity,train
+Alfred Hitchcock,celebrity,train
+Ernest Hemingway,celebrity,train
+George Orwell,celebrity,train
+Charles Darwin,celebrity,train
+Aristotle,celebrity,test
+Plato,celebrity,train
+Taylor Swift,celebrity,train
