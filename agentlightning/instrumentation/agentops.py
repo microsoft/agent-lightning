@@ -294,9 +294,10 @@ class BypassableV3Client(V3Client):
     Returns dummy auth response when `_agentops_service_enabled` is False.
     """
 
-    async def fetch_auth_token(self, *args: Any, **kwargs: Any) -> AuthTokenResponse:
+    # Temporary synchronous override of fetch_auth_token for mock purposes.
+    def fetch_auth_token(self, *args: Any, **kwargs: Any) -> AuthTokenResponse:  # type: ignore[override]
         if _agentops_service_enabled:
-            return await super().fetch_auth_token(*args, **kwargs)
+            return super().fetch_auth_token(*args, **kwargs)  # type: ignore[override]
         else:
             logger.debug("SwitchableV3Client is switched off, skipping fetch_auth_token request.")
             return AuthTokenResponse(token="dummy", project_id="dummy")
