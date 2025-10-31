@@ -45,10 +45,12 @@ def enable_agentops_service(enabled: bool = True) -> None:
 def _patch_exporters():
     import agentops.client.api
     import agentops.sdk.core
+    import opentelemetry.exporter.otlp.proto.http.metric_exporter
+    import opentelemetry.exporter.otlp.proto.http.trace_exporter
 
     agentops.sdk.core.AuthenticatedOTLPExporter = BypassableAuthenticatedOTLPExporter  # type: ignore
-    agentops.sdk.core.OTLPMetricExporter = BypassableOTLPMetricExporter
-    agentops.sdk.core.OTLPSpanExporter = BypassableOTLPSpanExporter
+    opentelemetry.exporter.otlp.proto.http.metric_exporter.OTLPMetricExporter = BypassableOTLPMetricExporter
+    opentelemetry.exporter.otlp.proto.http.trace_exporter.OTLPSpanExporter = BypassableOTLPSpanExporter
     agentops.client.api.V3Client = BypassableV3Client
     agentops.client.api.V4Client = BypassableV4Client
 
@@ -56,10 +58,12 @@ def _patch_exporters():
 def _unpatch_exporters():
     import agentops.client.api
     import agentops.sdk.core
+    import opentelemetry.exporter.otlp.proto.http.metric_exporter
+    import opentelemetry.exporter.otlp.proto.http.trace_exporter
 
     agentops.sdk.core.AuthenticatedOTLPExporter = AuthenticatedOTLPExporter  # type: ignore
-    agentops.sdk.core.OTLPMetricExporter = OTLPMetricExporter
-    agentops.sdk.core.OTLPSpanExporter = OTLPSpanExporter
+    opentelemetry.exporter.otlp.proto.http.metric_exporter.OTLPMetricExporter = OTLPMetricExporter
+    opentelemetry.exporter.otlp.proto.http.trace_exporter.OTLPSpanExporter = OTLPSpanExporter
     agentops.client.api.V3Client = V3Client
     agentops.client.api.V4Client = V4Client
 
@@ -290,9 +294,9 @@ class BypassableV3Client(V3Client):
     Returns dummy auth response when `_agentops_service_enabled` is False.
     """
 
-    def fetch_auth_token(self, *args: Any, **kwargs: Any) -> AuthTokenResponse:
+    async def fetch_auth_token(self, *args: Any, **kwargs: Any) -> AuthTokenResponse:
         if _agentops_service_enabled:
-            return super().fetch_auth_token(*args, **kwargs)
+            return await super().fetch_auth_token(*args, **kwargs)
         else:
             logger.debug("SwitchableV3Client is switched off, skipping fetch_auth_token request.")
             return AuthTokenResponse(token="dummy", project_id="dummy")
