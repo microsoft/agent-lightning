@@ -144,7 +144,9 @@ class AgentOpsTracer(Tracer):
 
         kwargs: dict[str, Any] = {}
         if name is not None:
-            kwargs["trace_name"] = str(name)
+            kwargs["trace_name"] = name
+        elif rollout_id is not None:
+            kwargs["trace_name"] = rollout_id
         trace = agentops.start_trace(**kwargs)
         status = StatusCode.OK  # type: ignore
         try:
