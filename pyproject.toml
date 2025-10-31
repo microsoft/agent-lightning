@@ -141,6 +141,7 @@ tinker = [
   {include-group = "torch-stable"},
   "tinker>=0.2.2",
   "tinker_cookbook",
+  "wandb",
 ]
 
 # Agent-related dependencies.

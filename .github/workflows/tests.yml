@@ -41,6 +41,7 @@ jobs:
             --group torch-cpu \
             --group torch-stable \
             --group trl \
+            --group tinker \
             --group agents \
             --no-default-groups
         if: matrix.setup == 'slow'
