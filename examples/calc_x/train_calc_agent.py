@@ -102,14 +102,6 @@ def verl_default_config() -> Dict[str, Any]:
             "total_epochs": 2,
         },
     }
-    # installed_verl = version("verl")
-    # if packaging_version.parse(installed_verl) >= packaging_version.parse("0.6.0"):
-    #     config["actor_rollout_ref"]["rollout"]["engine_kwargs"] = {
-    #         "vllm": {
-    #             "enable_auto_tool_choice": True,
-    #             "tool_call_parser": "hermes",
-    #         },
-    #     }
     return config
 
 
