@@ -32,13 +32,6 @@ class PhoenixTracer(Tracer):
     Parameters are primarily thin wrappers around ``phoenix.otel.register``. By
     default, configuration is read from the standard Phoenix environment
     variables so that existing deployments keep working without code changes.
-
-    Note: This tracer will set its own global OpenTelemetry TracerProvider.
-    If you have already called ``setup_otel_tracing()`` from this module,
-    there may be conflicts. Choose one approach:
-
-    - For Agent Lightning training: Use PhoenixTracer with Trainer
-    - For general agent tracing: Use setup_otel_tracing()
     """
 
     def __init__(
