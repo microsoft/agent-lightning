@@ -1,5 +1,6 @@
 # Copyright (c) Microsoft. All rights reserved.
 
+import multiprocessing
 from typing import Any, Optional, Union
 
 import agentops
@@ -27,6 +28,27 @@ def test_trace_error_status_from_instance():
     the `end_state` passed in. It verifies that traces ending after a raised
     exception have `StatusCode.ERROR`, while normal runs have `StatusCode.OK`.
     """
+
+    ctx = multiprocessing.get_context("spawn")
+    proc = ctx.Process(target=_test_trace_error_status_from_instance_imp)
+    proc.start()
+    proc.join(30.0)  # On GPU server, the time is around 10 seconds.
+
+    if proc.is_alive():
+        proc.terminate()
+        proc.join(5)
+        if proc.is_alive():
+            proc.kill()
+
+        assert False, "Child process hung. Check test output for details."
+
+    assert proc.exitcode == 0, (
+        f"Child process for test_trace_error_status_from_instance failed with exit code {proc.exitcode}. "
+        "Check child traceback in test output."
+    )
+
+
+def _test_trace_error_status_from_instance_imp():
     captured_state = {}
     old_end_trace = agentops.end_trace
 
