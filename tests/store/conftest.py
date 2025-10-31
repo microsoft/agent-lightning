@@ -4,12 +4,14 @@ import time
 from unittest.mock import Mock
 
 import pytest
+import pytest_asyncio
 from opentelemetry.sdk.trace import ReadableSpan
 
-from agentlightning.store.memory import InMemoryLightningStore
+from agentlightning.store import InMemoryLightningStore, DatabaseLightningStore
 
 __all__ = [
     "inmemory_store",
+    "db_store",
     "mock_readable_span",
 ]
 
@@ -18,6 +20,28 @@ __all__ = [
 def inmemory_store() -> InMemoryLightningStore:
     """Create a fresh InMemoryLightningStore instance."""
     return InMemoryLightningStore()
+
+
+import os
+import uuid
+import typing
+
+@pytest_asyncio.fixture
+async def db_store() -> typing.AsyncGenerator[DatabaseLightningStore, None]:
+    """Create a DatabaseLightningStore using a SQLite file for testing."""
+    tmp_path = ".pytest_cache"
+    # Ensure the directory exists and create a random file in it
+    os.makedirs(tmp_path, exist_ok=True)
+    db_path = os.path.join(tmp_path, f"test_db_{uuid.uuid4().hex}.sqlite3")
+    database_url = f"sqlite+aiosqlite:///{db_path}"
+    store = DatabaseLightningStore(database_url=database_url)
+    await store.start()
+    try:
+        yield store
+    finally:
+        await store.stop()
+        if os.path.exists(db_path):
+            os.remove(db_path)
 
 
 @pytest.fixture

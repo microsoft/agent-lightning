@@ -21,6 +21,9 @@ dependencies = [
   "pydantic>=2.11",
   "openai",
   "rich",
+  "sqlalchemy[asyncio]",
+  "aiosqlite",
+  "tenacity",
 ]
 
 [project.optional-dependencies]
@@ -201,7 +204,7 @@ torch = [
 
 [[tool.uv.index]]
 name = "pypi"
-url = "https://pypi.org/simple"
+url = "https://pypi.tuna.tsinghua.edu.cn/simple"
 
 [[tool.uv.index]]
 name = "pytorch-cu128"

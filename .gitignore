@@ -204,3 +204,9 @@ cython_debug/
 
 # Claude
 .claude/*.local.json
+
+# Temporary and backup files
+*.tmp
+*.bak
+*.backup
+
