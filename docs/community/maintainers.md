@@ -69,6 +69,14 @@ Long-running jobs such as GPU training or example end-to-end runs are opt-in on 
 
 Use `/ci` whenever a change affects shared infrastructure, dependencies, or training logic that requires extra validation beyond the default PR checks.
 
+!!! note
+
+    When invoking `/ci` on PR, the workflow always runs against the workflow defined on the main branch. It then checks out the PR changes within the workflow. So if you need to modify the workflow itself, push the changes to a branch on the first-party repository first, and then run:
+
+    ```bash
+    gh workflow run examples-xxx.yml --ref your-branch-name
+    ```
+
 ## Backporting Pull Requests
 
 We rely on automated backports for supported stable branches.
