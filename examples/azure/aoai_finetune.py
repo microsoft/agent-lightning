@@ -11,7 +11,7 @@ import random
 import subprocess
 import tempfile
 import time
-from typing import Any, Dict, List, Literal, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import requests
 from openai import OpenAI

@@ -23,9 +23,9 @@ def main():
     trainer = Trainer(n_runners=2, algorithm=finetune_algo, adapter=TraceToMessages())
     dataset = pd.read_csv("capital_samples.csv")  # type: ignore
     train_dataset = dataset.sample(frac=0.8, random_state=42)  # 80% for training  # type: ignore
-    val_dataset = dataset.drop(train_dataset.index)  # Remaining 20% for validation
+    val_dataset = dataset.drop(train_dataset.index)  # Remaining 20% for validation  # type: ignore
 
-    console.print(f"Training on {len(train_dataset)} samples, validating on {len(val_dataset)} samples.")
+    console.print(f"Training on {len(train_dataset)} samples, validating on {len(val_dataset)} samples.")  # type: ignore
 
     trainer.fit(
         capital_agent,
