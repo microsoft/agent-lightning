@@ -205,6 +205,98 @@ async def algo(search: bool, model: Literal["qwen4b", "qwen30b"], port: int):
     await entrypoint(config)
 
 
+def algo_verl(search: bool, model: Literal["qwen25", "qwen3"], port: int):
+    """Alternatively, you can use VERL to train the 20 Questions agent locally.
+    Use this as a substitute for the `algo` function when Tinker service is not available.
+
+    Args:
+        search: Whether to enable the search tool for the player.
+        port: Port where the Agent-lightning store is running.
+    """
+    store = agl.LightningStoreClient(f"http://localhost:{port}")
+
+    if model == "qwen25":
+        model_name = "Qwen/Qwen2.5-3B-Instruct"
+    elif model == "qwen3":
+        model_name = "Qwen/Qwen3-4B-Instruct-2507"
+    else:
+        raise ValueError(f"Invalid model: {model}")
+
+    experiment_name = f"q20_{'search' if search else 'no_search'}_{model}"
+
+    verl_config = {
+        "algorithm": {
+            "adv_estimator": "grpo",
+            "use_kl_in_reward": False,
+        },
+        "data": {
+            "train_batch_size": 16,
+            "max_prompt_length": 8192,
+            "max_response_length": 1024,
+        },
+        "actor_rollout_ref": {
+            "rollout": {
+                "tensor_model_parallel_size": 1,
+                "n": 16,
+                "log_prob_micro_batch_size_per_gpu": 4,
+                "multi_turn": {"format": "hermes"},
+                "name": "vllm",
+                "gpu_memory_utilization": 0.6,
+            },
+            "actor": {
+                "ppo_mini_batch_size": 16,
+                "ppo_micro_batch_size_per_gpu": 2,
+                "optim": {"lr": 1e-6},
+                "use_kl_loss": False,
+                "kl_loss_coef": 0.0,
+                "entropy_coeff": 0,
+                "clip_ratio_low": 0.2,
+                "clip_ratio_high": 0.3,
+                "fsdp_config": {
+                    "param_offload": True,
+                    "optimizer_offload": True,
+                    "activation_offload": True,
+                },
+            },
+            "ref": {
+                "log_prob_micro_batch_size_per_gpu": 4,
+                "fsdp_config": {"param_offload": True},
+            },
+            "model": {
+                "path": model_name,
+                "use_remove_padding": True,
+                "enable_gradient_checkpointing": True,
+            },
+        },
+        "trainer": {
+            "n_gpus_per_node": 1,
+            "val_before_train": True,
+            "critic_warmup": 0,
+            "logger": ["console", "wandb"],
+            "project_name": "AgentLightningQ20VERL",
+            "experiment_name": experiment_name,
+            "nnodes": 1,
+            "test_freq": 4,
+            "total_epochs": 10,
+        },
+    }
+
+    verl = agl.VERL(verl_config)
+    # Use the data recorded at the proxy side
+    adapter = agl.LlmProxyTraceToTriplet()
+    verl.set_adapter(adapter)
+    verl.set_store(store)
+
+    raw_data = pd.read_csv("q20_nouns.csv")  # type: ignore
+    raw_data["search_enabled"] = search
+    train_data, test_data = raw_data[raw_data["split"] == "train"], raw_data[raw_data["split"] == "test"]  # type: ignore
+
+    train_dataset = cast(agl.Dataset[Q20Task], train_data.to_dict(orient="records"))  # type: ignore
+    test_dataset = cast(agl.Dataset[Q20Task], test_data.to_dict(orient="records"))  # type: ignore
+
+    verl.run(train_dataset=train_dataset, val_dataset=test_dataset)
+
+
 def runner(port: int = 4747, n_runners: int = 2):
     """Run rollout runners that execute the 20 Questions game.
 
@@ -234,6 +326,10 @@ def _run_runner(args: argparse.Namespace) -> None:
     runner(port=args.port, n_runners=args.n_runners)
 
 
+def _run_algo_verl(args: argparse.Namespace) -> None:
+    algo_verl(search=args.search, model=args.model, port=args.port)
+
+
 def main() -> None:
     """Entry point for the 20 Questions training script."""
     parser = argparse.ArgumentParser(description="Run the Q20 AgentLightning experiments.")
@@ -252,6 +348,17 @@ def main() -> None:
         help="Model variant to train.",
     )
     algo_parser.set_defaults(func=_run_algo)
+
+    algo_verl_parser = subparsers.add_parser("verl", help="Launch the full training algorithm with VERL.")
+    algo_verl_parser.add_argument("--port", type=int, default=4747, help="Port for the AgentLightning store.")
+    algo_verl_parser.add_argument(
+        "--model",
+        choices=("qwen25", "qwen3"),
+        default="qwen3",
+        help="Model variant to train.",
+    )
+    algo_verl_parser.add_argument("--search", action="store_true", help="Enable search tool.")
+    algo_verl_parser.set_defaults(func=_run_algo_verl)
 
     runner_parser = subparsers.add_parser("runner", help="Run only the rollout runners.")
     runner_parser.add_argument("--port", type=int, default=4747, help="Port for the AgentLightning store.")
