@@ -37,7 +37,7 @@ async def algo_animal_only(search: bool, model: Literal["qwen4b", "qwen30b"], po
     lora_rank = os.getenv("RANK")
     batch_size = os.getenv("BATCH_SIZE")
 
-    experiment_name = f"q20_{'search' if search else 'no_search'}_{model}_gpt5mini_lr{learning_rate}_16x{group_size}_seed{seed}_{loss_fn}_rank{lora_rank}_bs{batch_size}"
+    experiment_name = f"q20_{'search' if search else 'no_search'}_{model}_gpt5mini_lr{learning_rate}_{batch_size}x{group_size}_seed{seed}_{loss_fn}_rank{lora_rank}"
 
     llm_proxy_port = _find_available_port()
 
