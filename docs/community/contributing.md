@@ -1,19 +1,18 @@
 # Contributing Guide
 
-Agent Lightning welcomes contributions of all sizes: from bug fixes to new features and documentation.
-This guide walks you through getting a local environment ready, following our branching strategy, and opening a high-quality pull request.
+Agent Lightning thrives on community improvements, whether you are polishing docs, fixing bugs, or building new features. This guide shows the shortest path from cloning the repository to shipping a polished pull request.
 
 ## Step 1. Prepare Your Environment
 
 ### Prerequisites
 
-- **Python**: Version 3.10 or newer (the project is tested on 3.10–3.13).
-- **uv**: We use [uv](https://docs.astral.sh/uv/) for dependency management and packaging speed. Install it via the instructions in the [official docs](https://docs.astral.sh/uv/getting-started/installation/).
-- **Git**: Ensure you have Git installed and configured with your GitHub account.
+- **Python** 3.10 or newer (we test on 3.10–3.13).
+- **uv** for dependency and virtual environment management. Install it from the [official uv docs](https://docs.astral.sh/uv/getting-started/installation/).
+- **Git** configured with your GitHub credentials.
 
 ### Clone the Repository
 
-Fork the repository on GitHub, then clone your fork and add the upstream remote:
+Fork the repo, then clone your fork and register the upstream remote so you can stay current:
 
 ```bash
 git clone git@github.com:<your-username>/agent-lightning.git
@@ -21,15 +20,15 @@ cd agent-lightning
 git remote add upstream https://github.com/microsoft/agent-lightning.git
 ```
 
-### Sync Dependencies
+### Install Dependencies
 
-Install the development toolchain with uv:
+Install the standard development toolchain:
 
 ```bash
 uv sync --group dev
 ```
 
-Need the full experience (algorithms, examples, GPU extras)? Enable the appropriate groups in one command:
+Want GPU extras, example dependencies, or other optional features? Pin everything in one pass:
 
 ```bash
 uv sync --frozen \
@@ -42,26 +41,28 @@ uv sync --frozen \
     --no-default-groups
 ```
 
-After `uv sync`, either prefix commands with `uv run ...` (or `uv run --no-sync` if you prefer), or activate the virtual environment from `.venv/`.
+After `uv sync`, run commands with `uv run ...` (or `uv run --no-sync` once the environment is locked), or activate the virtual environment in `.venv/`.
 
 ---
 
 ## Step 2. Install and Run Pre-commit
 
-Code style and linting are enforced via [pre-commit](https://pre-commit.com/). Install the hooks once and run them before you push:
+We enforce formatting and linting with [pre-commit](https://pre-commit.com/). Install the hooks once, then run them before every push:
 
 ```bash
 uv run pre-commit install
+
+# The following will auto-run if you have set up the pre-commit hooks to run automatically on commit.
 uv run pre-commit run --all-files --show-diff-on-failure --color=always
 ```
 
-Running the hooks locally saves you from CI failures and keeps diffs clean.
+Running them locally saves a CI round-trip and keeps diffs tidy.
 
 ---
 
 ## Step 3. Branching Workflow
 
-Always start from an up-to-date `main`:
+Start from a fresh `main`, then branch for your change:
 
 ```bash
 git fetch upstream
@@ -69,65 +70,65 @@ git checkout main
 git merge upstream/main
 ```
 
-Create a topic branch using one of the naming prefixes below:
+Create a topic branch with one of these prefixes:
 
-- `feature/<short-description>` — new features
-- `fix/<short-description>` — bug fixes
-- `docs/<short-description>` — documentation-only updates
-- `chore/<short-description>` — tooling or maintenance tweaks
+- `feature/<short-description>` for new features
+- `fix/<short-description>` for bug fixes
+- `docs/<short-description>` for documentation-only work
+- `chore/<short-description>` for tooling or maintenance
 
-Use lowercase words separated by hyphens (e.g. `feature/async-runner-hooks`).
+Stick to lowercase words separated by hyphens, e.g. `feature/async-runner-hooks`.
 
 ---
 
-## Step 4. Run Tests and Checks
+## Step 4. Test Your Changes
 
-Most code changes should be backed by automated tests. Use the `uv run` prefix so the commands execute inside the project virtual environment.
+Most updates should ship with automated checks. Preface commands with `uv run` so they use the project environment.
 
-**Run the full test suite:**
+**Full test suite**
 
 ```bash
 uv run pytest -v
 ```
 
-**Target a specific module or test:**
+**Targeted tests**
 
 ```bash
 uv run pytest tests/path/to/test_file.py -k test_name
 ```
 
-**Run optional tests:**
+**Optional/gated tests**
 
-When you have a GPU or have an environment set up like `OPENAI_API_KEY`, related tests will be included and run automatically.
+GPU-specific suites or API-dependent tests run automatically when the required hardware or environment variables (such as `OPENAI_API_KEY`) are present.
 
-**Type checking:**
+**Static analysis**
 
 ```bash
 uv run pyright
 ```
 
-When touching integrations located in `examples/`, review the README inside each example directory for additional smoke-test instructions.
+Touching code under `examples/`? Each directory includes a README with example-specific smoke tests—run those too.
 
 ---
 
-## Step 5. Build and Validate Documentation
+## Step 5. Build Documentation (When Applicable)
 
-If your change touches documentation, verify it builds cleanly:
+Doc changes should build cleanly before you push:
 
 ```bash
-uv run mkdocs serve --strict  # live reload during editing
-uv run mkdocs build --strict  # CI-equivalent check
+uv run mkdocs serve --strict  # live reload while editing
+uv run mkdocs build --strict  # CI-equivalent validation
 ```
 
-The `--strict` flag matches our CI settings and turns warnings into errors so you can catch issues early.
+`--strict` matches CI and promotes warnings to errors so you catch them early.
 
 ---
 
-## Step 6. Before You Push
+## Step 6. Final Local Checks
 
-- Run the pre-commit hooks (`uv run pre-commit run --all-files`). If you have installed the hooks, the Git client will run them automatically on `git commit`.
-- Execute the relevant tests (see the previous section for examples).
-- For changes affecting examples, follow the README inside each `examples/<name>/` directory to validate manually as needed.
+- Run `uv run pre-commit run --all-files` (hooks installed via `pre-commit install` run automatically on `git commit`, but rerun them if you amended history).
+- Execute the relevant test commands from Step 4.
+- Validate any affected examples by following the instructions in `examples/<name>/README`.
 
 ---
 
@@ -137,14 +138,12 @@ The `--strict` flag matches our CI settings and turns warnings into errors so yo
    ```bash
    git push origin <branch-name>
    ```
-2. Open a pull request against `microsoft/agent-lightning:main`.
-3. Fill out the PR description with:
+2. Open a PR against `microsoft/agent-lightning:main`.
+3. Complete the PR template with:
+    - A concise summary of the change.
+    - The tests or commands you ran (copy from Step 4/6).
+    - Linked issues (use `Fixes #123` to auto-close).
+4. Attach screenshots or terminal output when it clarifies behavior.
+5. Address review feedback promptly. Use focused commits, and consider `git commit --fixup` for follow-up adjustments.
 
-    - A summary of the change.
-    - A checklist of tests or commands you ran.
-    - Links to related issues (use `Fixes #123` to auto-close).
-
-4. Add screenshots or terminal output when they help reviewers understand the change.
-5. Respond to review feedback promptly; keep commits focused and consider using fixup commits (`git commit --fixup`) for clarity.
-
-Thank you for contributing. Your improvements help the entire Agent Lightning community!
+Thanks for contributing—every improvement grows the Agent Lightning community!

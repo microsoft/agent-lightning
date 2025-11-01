@@ -1,77 +1,73 @@
 # Maintainer Guide
 
-This guide documents the day-to-day workflows for the Agent Lightning maintainers, including how to cut a release, interact with CI, and backport fixes.
+This guide describes the day-to-day responsibilities for Agent Lightning maintainers—how to bump versions, run release ceremonies, interact with CI, and backport fixes safely.
 
 ## Release Workflow
 
-Follow this checklist throughout a release cycle.
+Follow this checklist throughout each release cycle.
 
-### After the Last Release
+### Immediately After Shipping
 
-We start from the time when the previous release has just been out.
+Agent Lightning uses a **bump-first** strategy. As soon as a release is published:
 
-Agent-lightning follows a **bump version first** strategy. We bump to next version immediately after a release is out. To bump the version, update the following files:
+1. Update version metadata:
+    - `pyproject.toml`: bump the `version`.
+    - `agentlightning/__init__.py`: update `__version__` if it exists.
+    - `uv.lock`: refresh the lock file after the bump.
+2. Refresh dependency pins as needed:
+    ```bash
+    uv lock --upgrade
+    ```
 
-- `pyproject.toml`: Update the `version` field.
-- `agentlightning/__init__.py`: Update the `__version__` variable if present.
-- `uv.lock`: Run `uv lock` to update the lockfile with the new version.
+3. For a new minor or major release, create a stable branch from `main`:
+    ```bash
+    git checkout main
+    git pull upstream main
+    git checkout -b stable/v2.0.x  # adjust to the new series
+    git push upstream stable/v2.0.x
+    ```
 
-We also bump dependency versions as needed to keep up with ecosystem changes.
+    All future changes to the stable branch must land via pull requests.
 
-```bash
-uv lock --upgrade
-```
+### Preparing the Next Release
 
-If the last release is a new major or minor version, create a new stable branch from `main`:
+When it is time to publish the next version:
 
-```bash
-git checkout main
-git pull upstream main
-git checkout -b stable/v2.0.x  # <-- adjust version as needed
-git push upstream stable/v2.0.x
-```
-
-Notice that the stable branch requires merging via pull requests once you have pushed it to the upstream remote.
-
-### Preparing for a New Release
-
-When it's time to prepare a new release, follow these steps below.
-
-1. **Prepare Release Note Draft**: Start collecting all the changes since the last release, and write the changes in `docs/changelog.md` under a new heading for the upcoming version.
-2. **Open a Pull Request**: Open a PR against `main` (if it's a minor/major release) or the relevant stable branch (if it's a patch release) with the draft release notes. Use the title `[Release] vX.Y.Z`.
-3. **Run CI checks**: Label the PR with `ci-all` and comment `/ci` to run all the tests, including GPU and example pipelines. Address any issues that arise.
-4. **Merge the release PR**: Once all checks pass and the release notes are finalized, merge the PR.
-5. **Create a tag for the release**: After merging, create a tag that matches the version:
+1. **Draft release notes** in `docs/changelog.md`, collecting every notable change since the previous tag.
+2. **Open a release PR** targeting `main` (for minor/major) or the relevant stable branch (for patch releases). Use the title `[Release] vX.Y.Z`.
+3. **Run extended CI** by labeling the PR with `ci-all` and commenting `/ci`. Investigate and resolve any failures.
+4. **Merge the release PR** once notes are final and CI is green.
+5. **Tag the release** from the branch you just merged into:
 
     ```bash
-    git checkout main  # <-- if it's a minor/major release
-    git checkout stable/vX.Y.Z  # <-- if it's a patch release
+    git checkout main          # minor/major releases
+    git checkout stable/vX.Y.Z # patch releases
 
     git pull
     git tag vX.Y.Z -m "Release vX.Y.Z"
     git push upstream vX.Y.Z
     ```
 
-    Pushing the tag triggers the PyPI publish and documentation deployment workflows.
+    Pushing the tag publishes to PyPI and deploys the documentation.
 
-6. **Create the GitHub release**: Use the prepared notes from the PR to create a new GitHub release. Verify that the docs site shows the new version and the new package are available on PyPI.
+6. **Publish the GitHub release** using the drafted notes, and confirm the docs site and PyPI listing reflect the new version.
 
 ## Working with CI Labels and `/ci`
 
-Long-running jobs such as GPU training or example end-to-end runs are opt-in on pull requests. To trigger them:
+GPU suites and example end-to-end runs are opt-in. To trigger them on a pull request:
 
-1. Add one or more of the following labels to the PR before issuing the command:
-    - `ci-all` — run every repository-dispatch aware workflow.
-    - `ci-gpu` — run the GPU integration tests (`tests-full.yml`).
-    - `ci-apo`, `ci-calc-x`, `ci-spider`, `ci-unsloth`, `ci-compat` — run the corresponding example pipelines.
-2. Comment `/ci` on the pull request. The `issue-comment` workflow will acknowledge the command and track results inline.
-3. Remove labels once the signal is collected to avoid accidental re-triggers.
+1. Apply the appropriate labels before issuing the command:
+    - `ci-all` for every repository-dispatch workflow.
+    - `ci-gpu` for GPU integration tests (`tests-full.yml`).
+    - `ci-apo`, `ci-calc-x`, `ci-spider`, `ci-unsloth`, `ci-compat` for the individual example pipelines.
+2. Comment `/ci` on the PR. The `issue-comment` workflow acknowledges the request and tracks job results inline.
+3. Remove the labels once you have the signal to avoid accidental re-runs.
 
-Use `/ci` whenever a change affects shared infrastructure, dependencies, or training logic that requires extra validation beyond the default PR checks.
+Use `/ci` whenever changes touch shared infrastructure, dependencies, or training loops that require coverage beyond the default PR checks.
 
 !!! note
 
-    When invoking `/ci` on PR, the workflow always runs against the workflow defined on the main branch. It then checks out the PR changes within the workflow. So if you need to modify the workflow itself, push the changes to a branch on the first-party repository first, and then run:
+    `/ci` always executes the workflow definitions on the current `main` branch, then checks out the PR diff. If you need to test workflow modifications, push the changes to a branch in the upstream repo and run:
 
     ```bash
     gh workflow run examples-xxx.yml --ref your-branch-name
@@ -79,12 +75,12 @@ Use `/ci` whenever a change affects shared infrastructure, dependencies, or trai
 
 ## Backporting Pull Requests
 
-We rely on automated backports for supported stable branches.
+Supported stable branches rely on automated backports:
 
-1. Decide which stable branch should receive the fix (for example, `stable/v0.2.x`).
-2. Before merging the PR into `main`, add a label matching `stable/<series>` (e.g., `stable/v0.2.x`).
-3. The `backport.yml` workflow creates a new PR named `backport/<original-number>/<target-branch>` authored by `agent-lightning-bot`.
-4. Review the generated backport PR, ensure CI passes, and merge it into the target branch.
-5. If conflicts arise, push manual fixes directly to the backport branch and re-run `/ci` as needed.
+1. Identify the target branch (for example `stable/v0.2.x`).
+2. Before merging the original PR into `main`, add the matching `stable/<series>` label (e.g. `stable/v0.2.x`).
+3. The `backport.yml` workflow opens a follow-up PR named `backport/<original-number>/<target-branch>` authored by `agent-lightning-bot`.
+4. Review the generated PR, ensure CI is green, and merge into the stable branch.
+5. Resolve conflicts by pushing manual fixes to the backport branch and re-running `/ci` if required.
 
-Keep the stable branches healthy by cherry-picking only critical fixes and ensuring their documentation and example metadata stay in sync with the release lines.
+Keep stable branches healthy by cherry-picking only critical fixes and ensuring documentation and example metadata stay aligned with each release line.
