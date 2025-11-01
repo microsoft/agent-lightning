@@ -1,37 +1,45 @@
 # Supervised Fine-tuning with Azure OpenAI
 
-This example shows how to use Agent-lightning and Azure OpenAI deployments to collect agent traces and how to use the traces to continuously fine-tune the model and deploy the fine-tuned model.
+This example walks through an end-to-end supervised fine-tuning loop on Azure OpenAI. The trainer runs a toy capital-lookup agent, collects traces with rewards, submits fine-tuning jobs using those traces, and deploys every successful checkpoint as a new Azure OpenAI deployment.
+
+**NOTE: The example is tested and compatible with Agent-lightning v0.2.x, but it's not yet maintained on CI due to the difficulty of maintaining a logged-in status in the testing environment.**
 
 ## Prerequisites
 
-Fill .env.example. The easiest way to get those is to find them in the URL to your Azure OpenAI resource.
+You need an Azure subscription with an Azure OpenAI resource that supports fine-tuning in your region and a base deployment you can reuse (the defaults assume `gpt-4.1-mini` backed by `gpt-4.1-mini-2025-04-14`). Sign in with the Azure CLI (`az login`) and install the project dependencies, for example via `uv sync` from the repository root.
 
-you also need to `az login` to your Azure account, because creating deployments requires [Azure CLI](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli).
+## Setup
 
-Make sure you have created a `base_deployment` beforehand. F
+Copy the sample environment file `.env.example`, fill in your Azure values, and source it before running any scripts:
+
+```bash
+cp examples/azure_finetune/.env.example examples/azure_finetune/.env
+# edit examples/azure_finetune/.env with your keys and identifiers
+source examples/azure_finetune/.env
+```
+
+Confirm that you have successfully logged into Azure with:
+
+```bash
+az account show
+```
 
 ## Included Files
 
-TODO
+| File | Description |
+| --- | --- |
+| `aoai_finetune.py` | Fine-tuning algorithm that batches rollouts, filters traces, launches jobs, deploys checkpoints, and evaluates them. |
+| `train_capital_agent.py` | Trainer entry point that loads `capital_samples.csv` and orchestrates three fine-tuning iterations. |
+| `capital_agent.py` | Tool-enabled agent that calls `country_capital_lookup`, producing reward `1.0` when the response contains the expected capital. |
+| `capital_samples.csv` | Prompt/answer pairs that the trainer splits 80/20 into training and validation sets. |
+| `tests/test_deployment.py` | Smoke tests for deployment helper methods when live Azure credentials are configured. |
 
-## Basic usage
+## Workflow Overview
 
-```python
-from aoai_finetune import AzureOpenAIFinetune
-
-finetune_algo = AzureOpenAIFinetune(
-    base_deployment_name="gpt-4.1-mini",
-    finetuned_deployment_name="gpt-4.1-mini-ft",
-    base_model_name="gpt-4.1-mini-2025-04-14",
-    finetune_every_n_rollouts=24,
-    max_deployments=2,
-    data_filter_ratio=0.6,
-)
-```
-
-The base deployment name is the name of the deployment you have just created beforehand. During the coninuously fine-tuning process, the algorithm will create a series of new deployments with names starting with the finetuned deployment name, like `gpt-4.1-mini-ft_v01`, `gpt-4.1-mini-ft_v02`, etc. Older deployments (except the one that you created manually) will be deleted when the number of deployments exceeds the `max_deployments` limit.
-
-The `base_model_name` is should be the base model ID that your deployment is based on. You can find that in the dialog of creating deployment you have just used. During each iteration, the Azure OpenAI fine-tuning job will base on the previous base model to fine-tune a new model, which is then used as the base model for the next iteration. Starting from the second iteration, the base model will then be used to deploy a new deployment for inference.
+- **Stage 1 – Collect traces.** `Trainer` points runners at your base deployment and gathers rollouts in batches of `finetune_every_n_rollouts`.
+- **Stage 2 – Filter and package data.** Rewards and telemetries from `capital_agent` are collected by Agent-lightning, which drives filtering via `data_filter_ratio`, and the remaining traces are serialized into Azure OpenAI JSONL format.
+- **Stage 3 – Fine-tune.** `AzureOpenAIFinetune.finetune` uploads the dataset, waits for the fine-tuning job to finish, and returns the new base model identifier.
+- **Stage 4 – Deploy and evaluate.** A versioned deployment such as `gpt-4.1-mini-ft_v01` is created, old deployments are pruned when `max_deployments` is exceeded, and validation rollouts confirm the reward.
 
 The process is shown in the following diagram:
 
@@ -39,17 +47,25 @@ The process is shown in the following diagram:
   <img src="./assets/aoai_finetune.svg" alt="Azure OpenAI Finetune" style="width:100%"/>
 </p>
 
+## Capital Agent
+
+`capital_agent.py` defines a tool-enabled agent that must call `country_capital_lookup` whenever a user asks for a capital city. The deterministic lookup table keeps the task simple, and the reward function checks that the final response contains the expected capital name. Run the script directly to validate credentials or debug tool call behavior:
+
+```bash
+python capital_agent.py
+```
+
+The agent executes five sample tasks, prints each tool interaction, and records traces via the Agent Lightning tracer.
+
 ## Running the Example
 
-// TODO: shortly introduce what's the capital agent. It's a dummy agent.
+Start the full fine-tuning loop from the repository root:
 
 ```bash
 python train_capital_agent.py
 ```
 
-This will train the capital agent using the fine-tuning algorithm.
-
-you will see some logs like this. Different from other examples, with Azure OpenAI, the rollout time is relatively short. the main time cost is to wait for the fine-tuning job queue (it can take from several minutes to several hours depending on the load). Deploying a fine-tuned model is relatively fast, taking 2-3 minutes.
+`train_capital_agent.py` divides the dataset into training and validation subsets, then completes three fine-tune → deploy → evaluate iterations. Expect short rollout times paired with longer waits (up to 4 hours in our experiments) for Azure’s fine-tuning queue; deployments usually reach `Succeeded` within 2-3 minutes. The console output looks like this:
 
 ```log
 10:13:02,624 Starting client-server execution with 2 runner(s) [role=both, main_process=algorithm]
@@ -114,3 +130,7 @@ you will see some logs like this. Different from other examples, with Azure Open
 14:06:45,506 Stopping server...
 14:06:45,657 Server stopped.
 ```
+
+## Tips and Cleanup
+
+Tweak `finetune_every_n_rollouts`, `max_deployments`, and `data_filter_ratio` in `train_capital_agent.py` to align with your quotas. While jobs run, visit the Azure OpenAI portal to confirm status. When you are done, delete unused deployments there.

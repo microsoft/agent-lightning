@@ -5,6 +5,7 @@ This catalog highlights the examples shipped with Agent-lightning.
 | Example | Description | CI Maintenance |
 |---------|-------------|----------------|
 | [apo](./apo) | Automatic Prompt Optimization tutorials covering built-in, custom, and debugging workflows. | [![apo workflow status](https://github.com/microsoft/agent-lightning/actions/workflows/badge-apo.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/badge-apo.yml) |
+| [azure](./azure) | Supervised fine-tuning with Azure OpenAI. | **Unmaintained** — last verified with Agent-lightning v0.2.1 |
 | [calc_x](./calc_x) | VERL-powered math reasoning agent training that uses AutoGen with an MCP calculator tool. | [![calc_x workflow status](https://github.com/microsoft/agent-lightning/actions/workflows/badge-calc-x.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/badge-calc-x.yml) |
 | [rag](./rag) | Retrieval-Augmented Generation pipeline targeting the MuSiQue dataset with Wikipedia retrieval. | **Unmaintained** — last verified with Agent-lightning v0.1.1 |
 | [search_r1](./search_r1) | Framework-free Search-R1 reinforcement learning training workflow with a retrieval backend. | **Unmaintained** — last verified with Agent-lightning v0.1.2 |
