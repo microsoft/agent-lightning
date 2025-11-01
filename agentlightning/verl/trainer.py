@@ -224,6 +224,8 @@ class AgentLightningTrainer(RayPPOTrainer):
                 metrics.update(agent_metrics)
                 self.agent_mode_daemon.clear_data_and_server()
                 self.async_rollout_manager.sleep()
+            if batch is None:
+                return metrics
 
             if self.config.algorithm.adv_estimator == AdvantageEstimator.REMAX:
                 with _timer("gen_max", timing_raw):
