@@ -66,6 +66,48 @@ Swap in an [`AgentOpsTracer`][agentlightning.AgentOpsTracer] instead of [`OtelTr
 
     You can also call [`Runner.step`][agentlightning.Runner.step] to inject ad-hoc rollouts into a running store being used by another algorithm, so that the rollouts can be consumed by the algorithms. This is very recently known as the paradigm of ["online RL"](https://cursor.com/blog/tab-rl). At the moment, no algorithm in the [algorithm zoo](../algorithm-zoo/index.md) consumes externally generated rollouts, but the data flow is available there if you need it.
 
+## Debug with LLM Proxy
+
+If you are dealing with LLM optimization like Reinforcement Learning, we generally recommend using an online stable LLM service for your debugging purposes, like `openai/gpt-4.1-nano`. After the debugging is done, you can switch to a local training endpoint.
+
+However, if you want to use a local LLM features like [getting the token IDs](../deep-dive/serving-llm.md), you can also manually start a local vLLM server by:
+
+```bash
+vllm serve Qwen/Qwen2.5-0.5B-Instruct --port 8080
+```
+
+Then start the LLM proxy via the following script:
+
+```python
+import agentlightning as agl
+
+llm_proxy = agl.LLMProxy(
+    port=8081,
+    model_list=[
+        {
+            "model_name": "Qwen/Qwen2.5-0.5B-Instruct",
+            "litellm_params": {
+                "model": "hosted_vllm/Qwen/Qwen2.5-0.5B-Instruct",
+                "api_base": "http://localhost:8080/v1",
+            },
+        }
+    ],
+    store=agl.InMemoryLightningStore(),
+)
+
+llm_proxy.start()
+time.sleep(1000000)
+```
+
+You can now use the LLM proxy by specifying environment variables:
+
+```bash
+export OPENAI_API_BASE=http://localhost:8081/v1
+export OPENAI_API_KEY=dummy
+```
+
+You might see warnings about `Missing or invalid rollout_id, attempt_id, or sequence_id` in the LLM proxy logs. This is fine because you don't have a rollout and attempt yet when you are debugging. When you started the training, the algorithm will create the rollouts for you and the warnings will go away.
+
 ## Hook into Runner's Lifecycle
 
 [`Runner.run_context`][agentlightning.Runner.run_context] accepts a `hooks` argument so you can observe or augment lifecycle events without editing your agent. Hooks subclass [`Hook`][agentlightning.Hook] and can respond to four asynchronous callbacks: [`on_trace_start`][agentlightning.Hook.on_trace_start], [`on_rollout_start`][agentlightning.Hook.on_rollout_start], [`on_rollout_end`][agentlightning.Hook.on_rollout_end], and [`on_trace_end`][agentlightning.Hook.on_trace_end]. This is useful for:

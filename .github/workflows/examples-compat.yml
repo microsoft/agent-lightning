@@ -54,6 +54,10 @@ jobs:
         run: |
           uv sync --frozen --no-default-groups --extra apo --extra verl \
             --group dev --group experiment --group agents --group torch-gpu-${{ matrix.setup-script }}
+      - name: Override VERL (stable)
+        run: |
+          uv pip install verl==0.5.0
+        if: matrix.setup-script == 'stable'
       - name: Freeze dependencies
         run: |
           set -ex

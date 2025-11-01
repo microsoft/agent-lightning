@@ -99,6 +99,8 @@ class VERL(Algorithm):
 
         # Merge your dict overrides
         override_conf = OmegaConf.create(config)
+        # Allow adding new fields
+        OmegaConf.set_struct(base_cfg, False)
         self.config = OmegaConf.merge(base_cfg, override_conf)
 
     def run(

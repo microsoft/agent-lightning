@@ -15,9 +15,9 @@ from agentops.sdk.core import TracingCore
 from agentops.sdk.processors import SpanProcessor
 from opentelemetry.instrumentation.utils import suppress_instrumentation
 from opentelemetry.sdk.trace import ReadableSpan
+from opentelemetry.trace.status import StatusCode
 
 from agentlightning.instrumentation import instrument_all, uninstrument_all
-from agentlightning.instrumentation.agentops import AgentOpsServerManager
 from agentlightning.store.base import LightningStore
 
 from .base import Tracer
@@ -56,45 +56,10 @@ class AgentOpsTracer(Tracer):
         self.instrument_managed = instrument_managed
         self.daemon = daemon
 
-        self._agentops_server_manager = AgentOpsServerManager(self.daemon)
-        self._agentops_server_port_val: Optional[int] = None
-
         if not self.agentops_managed:
             logger.warning("agentops_managed=False. You are responsible for AgentOps setup.")
         if not self.instrument_managed:
             logger.warning("instrument_managed=False. You are responsible for all instrumentation.")
-
-    def __getstate__(self):
-        state = self.__dict__.copy()
-        state["_agentops_server_manager"] = None  # Exclude the unpicklable server manager
-        # _agentops_server_port_val (int) is inherently picklable and will be included.
-        logger.debug(f"Getting state for pickling Trainer (PID {os.getpid()}). _agentops_server_manager excluded.")
-        return state
-
-    def __setstate__(self, state: Any):
-        self.__dict__.update(state)
-        # In child process, self._agentops_server_manager will be None.
-        logger.debug(f"Setting state for unpickled Trainer (PID {os.getpid()}). _agentops_server_manager is None.")
-
-    def init(self, *args: Any, **kwargs: Any):
-        if self.agentops_managed and self._agentops_server_manager:
-            self._agentops_server_manager.start()
-            self._agentops_server_port_val = self._agentops_server_manager.get_port()
-            if self._agentops_server_port_val is None:
-                if (
-                    self._agentops_server_manager.server_process is not None
-                    and self._agentops_server_manager.server_process.is_alive()
-                ):
-                    raise RuntimeError("AgentOps server started but port is None. Check server manager logic.")
-                elif (
-                    self._agentops_server_port_val is None and self._agentops_server_manager.server_process is None
-                ):  # Server failed to start
-                    raise RuntimeError("AgentOps server manager indicates server is not running and port is None.")
-
-    def teardown(self):
-        if self.agentops_managed:
-            self._agentops_server_manager.stop()
-            logger.info("AgentOps server stopped.")
 
     def instrument(self, worker_id: int):
         instrument_all()
@@ -111,24 +76,9 @@ class AgentOpsTracer(Tracer):
             logger.info(f"[Worker {worker_id}] Instrumentation applied.")
 
         if self.agentops_managed:
-            if self._agentops_server_port_val:  # Use the stored, picklable port value
-                base_url = f"http://localhost:{self._agentops_server_port_val}"
-                env_vars_to_set = {
-                    "AGENTOPS_API_KEY": "dummy",
-                    "AGENTOPS_API_ENDPOINT": base_url,
-                    "AGENTOPS_APP_URL": f"{base_url}/notavailable",
-                    "AGENTOPS_EXPORTER_ENDPOINT": f"{base_url}/traces",
-                }
-                for key, value in env_vars_to_set.items():
-                    os.environ[key] = value
-                    logger.info(f"[Worker {worker_id}] Env var set: {key}={value}")
-            else:
-                logger.warning(
-                    f"[Worker {worker_id}] AgentOps managed, but local server port is not available. Client may not connect as expected."
-                )
-
+            os.environ.setdefault("AGENTOPS_API_KEY", "dummy")
             if not agentops.get_client().initialized:
-                agentops.init()  # type: ignore
+                agentops.init(auto_start_session=False)  # type: ignore
                 logger.info(f"[Worker {worker_id}] AgentOps client initialized.")
             else:
                 logger.warning(f"[Worker {worker_id}] AgentOps client was already initialized.")
@@ -192,15 +142,30 @@ class AgentOpsTracer(Tracer):
         if not self._lightning_span_processor:
             raise RuntimeError("LightningSpanProcessor is not initialized. Call init_worker() first.")
 
-        if store is not None and rollout_id is not None and attempt_id is not None:
-            ctx = self._lightning_span_processor.with_context(store=store, rollout_id=rollout_id, attempt_id=attempt_id)
-            with ctx as processor:
-                yield processor
-        elif store is None and rollout_id is None and attempt_id is None:
-            with self._lightning_span_processor:
-                yield self._lightning_span_processor
-        else:
-            raise ValueError("store, rollout_id, and attempt_id must be either all provided or all None")
+        kwargs: dict[str, Any] = {}
+        if name is not None:
+            kwargs["trace_name"] = name
+        elif rollout_id is not None:
+            kwargs["trace_name"] = rollout_id
+        trace = agentops.start_trace(**kwargs)
+        status = StatusCode.OK  # type: ignore
+        try:
+            if store is not None and rollout_id is not None and attempt_id is not None:
+                ctx = self._lightning_span_processor.with_context(
+                    store=store, rollout_id=rollout_id, attempt_id=attempt_id
+                )
+                with ctx as processor:
+                    yield processor
+            elif store is None and rollout_id is None and attempt_id is None:
+                with self._lightning_span_processor:
+                    yield self._lightning_span_processor
+            else:
+                raise ValueError("store, rollout_id, and attempt_id must be either all provided or all None")
+        except Exception as e:
+            status = StatusCode.ERROR  # type: ignore
+            logger.error(f"Trace failed for rollout_id={rollout_id}, attempt_id={attempt_id}, error={e}")
+        finally:
+            agentops.end_trace(trace, end_state=status)  # type: ignore
 
     def get_last_trace(self) -> List[ReadableSpan]:
         """
