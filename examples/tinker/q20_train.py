@@ -241,7 +241,7 @@ def algo_verl(search: bool, model: Literal["qwen25", "qwen3"], port: int):
                 "log_prob_micro_batch_size_per_gpu": 4,
                 "multi_turn": {"format": "hermes"},
                 "name": "vllm",
-                "gpu_memory_utilization": 0.6,
+                "gpu_memory_utilization": 0.8,
             },
             "actor": {
                 "ppo_mini_batch_size": 16,
@@ -255,7 +255,6 @@ def algo_verl(search: bool, model: Literal["qwen25", "qwen3"], port: int):
                 "fsdp_config": {
                     "param_offload": True,
                     "optimizer_offload": True,
-                    "activation_offload": True,
                 },
             },
             "ref": {
@@ -266,6 +265,7 @@ def algo_verl(search: bool, model: Literal["qwen25", "qwen3"], port: int):
                 "path": model_name,
                 "use_remove_padding": True,
                 "enable_gradient_checkpointing": True,
+                "enable_activation_offload": True,
             },
         },
         "trainer": {
