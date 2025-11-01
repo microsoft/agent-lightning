@@ -307,6 +307,17 @@ class LightningStore:
         """
         raise NotImplementedError()
 
+    async def query_resources(self) -> List[ResourcesUpdate]:
+        """List every stored resource snapshot in insertion order.
+
+        Returns:
+            A chronological list of [`ResourcesUpdate`][agentlightning.ResourcesUpdate] objects.
+
+        Raises:
+            NotImplementedError: Subclasses must implement retrieval.
+        """
+        raise NotImplementedError()
+
     async def get_resources_by_id(self, resources_id: str) -> Optional[ResourcesUpdate]:
         """Return a specific named resource snapshot by identifier.
 

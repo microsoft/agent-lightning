@@ -495,6 +495,12 @@ class InMemoryLightningStore(LightningStore):
             return self._get_latest_attempt_unlocked(rollout_id)
 
     @_healthcheck_wrapper
+    async def query_resources(self) -> List[ResourcesUpdate]:
+        """Return every stored resource snapshot in insertion order."""
+        async with self._lock:
+            return list(self._resources.values())
+
+    @_healthcheck_wrapper
     async def add_resources(self, resources: NamedResources) -> ResourcesUpdate:
         """Stores a new version of named resources and sets it as the latest.
 

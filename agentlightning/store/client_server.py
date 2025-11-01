@@ -447,6 +447,10 @@ class LightningStoreServer(LightningStore):
         async def get_latest_attempt(rollout_id: str):  # pyright: ignore[reportUnusedFunction]
             return await self.get_latest_attempt(rollout_id)
 
+        @self.app.get(AGL_API_V1_PREFIX + "/resources", response_model=List[ResourcesUpdate])
+        async def query_resources():  # pyright: ignore[reportUnusedFunction]
+            return await self.query_resources()
+
         @self.app.post(AGL_API_V1_PREFIX + "/resources", status_code=201, response_model=ResourcesUpdate)
         async def add_resources(resources: NamedResources):  # pyright: ignore[reportUnusedFunction]
             return await self.add_resources(resources)
@@ -548,6 +552,9 @@ class LightningStoreServer(LightningStore):
 
     async def get_latest_attempt(self, rollout_id: str) -> Optional[Attempt]:
         return await self._call_store_method("get_latest_attempt", rollout_id)
+
+    async def query_resources(self) -> List[ResourcesUpdate]:
+        return await self._call_store_method("query_resources")
 
     async def get_rollout_by_id(self, rollout_id: str) -> Optional[Rollout]:
         return await self._call_store_method("get_rollout_by_id", rollout_id)
@@ -963,6 +970,15 @@ class LightningStoreClient(LightningStore):
         except Exception as e:
             logger.error(f"get_rollout_by_id failed after all retries for rollout_id={rollout_id}: {e}", exc_info=True)
             return None
+
+    async def query_resources(self) -> List[ResourcesUpdate]:
+        """
+        List all resource snapshots stored on the server.
+        """
+        data = await self._request_json("get", "/resources")
+        if not data:
+            return []
+        return [ResourcesUpdate.model_validate(item) for item in data]
 
     async def add_resources(self, resources: NamedResources) -> ResourcesUpdate:
         data = await self._request_json("post", "/resources", json=TypeAdapter(NamedResources).dump_python(resources))

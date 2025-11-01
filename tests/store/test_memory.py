@@ -516,6 +516,29 @@ async def test_add_resources_multiple_times_generates_unique_ids(inmemory_store:
 
 
 @pytest.mark.asyncio
+async def test_query_resources_returns_history(inmemory_store: InMemoryLightningStore) -> None:
+    """query_resources should list snapshots in the order they were stored."""
+    assert await inmemory_store.query_resources() == []
+
+    first = await inmemory_store.add_resources(
+        {
+            "llm": LLM(resource_type="llm", endpoint="http://localhost:8080", model="model-v1"),
+        }
+    )
+    second = await inmemory_store.update_resources(
+        "custom-snapshot",
+        {
+            "prompt": PromptTemplate(resource_type="prompt_template", template="Hi {name}", engine="f-string"),
+        },
+    )
+
+    history = await inmemory_store.query_resources()
+    assert [item.resources_id for item in history] == [first.resources_id, second.resources_id]
+    assert isinstance(history[0], ResourcesUpdate)
+    assert isinstance(history[1], ResourcesUpdate)
+
+
+@pytest.mark.asyncio
 async def test_resource_lifecycle(inmemory_store: InMemoryLightningStore) -> None:
     """Test adding, updating, and retrieving resources."""
     # Initially no resources
