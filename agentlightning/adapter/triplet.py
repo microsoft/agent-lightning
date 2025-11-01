@@ -429,7 +429,16 @@ class TraceTree:
         If we don't, when we want to select the LLM completion span with agent as filter.
         We will never get the correct span underneath.
         """
+        # If the current node has only one child, recursively repair its hierarchy directly.
+        # This special-case handling is needed because when a trace is manually ended
+        # (via agentops.end_trace), the AgentOps provider automatically wraps all spans
+        # under an extra synthetic root node (e.g., "run_one.session").
+        if len(self.children) == 1:
+            self.children[0].repair_hierarchy()
+            return
+
         nodes_to_repair = list(self.children)
+
         for repair_node in nodes_to_repair:
             if len(self.children) == 1:
                 # If there is only one child, we don't need to repair the hierarchy.

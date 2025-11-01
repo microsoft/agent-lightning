@@ -124,6 +124,8 @@ nav:
     - Types: reference/types.md
     - Internal: reference/internal.md
   - Miscellaneous:
+    - Contributing Guide: community/contributing.md
+    - Maintainer Guide: community/maintainers.md
     - Changelog: changelog.md
 
 extra_css:

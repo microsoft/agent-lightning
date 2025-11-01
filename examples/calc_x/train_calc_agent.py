@@ -40,7 +40,7 @@ import agentlightning as agl
 
 
 def verl_default_config() -> Dict[str, Any]:
-    return {
+    config = {
         "algorithm": {
             "adv_estimator": "grpo",
             "use_kl_in_reward": False,
@@ -58,6 +58,12 @@ def verl_default_config() -> Dict[str, Any]:
                 "multi_turn": {"format": "hermes"},
                 "name": "vllm",
                 "gpu_memory_utilization": 0.6,
+                "engine_kwargs": {
+                    "vllm": {
+                        "enable_auto_tool_choice": True,
+                        "tool_call_parser": "hermes",
+                    }
+                },
             },
             "actor": {
                 "ppo_mini_batch_size": 32,
@@ -96,6 +102,7 @@ def verl_default_config() -> Dict[str, Any]:
             "total_epochs": 2,
         },
     }
+    return config
 
 
 def train(

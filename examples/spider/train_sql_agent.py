@@ -52,6 +52,12 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
             "multi_turn": {"format": "hermes"},
             "name": "vllm",
             "gpu_memory_utilization": 0.8,
+            "engine_kwargs": {
+                "vllm": {
+                    "enable_auto_tool_choice": True,
+                    "tool_call_parser": "hermes",
+                }
+            },
         },
         "actor": {
             "ppo_mini_batch_size": 32,
@@ -139,6 +145,7 @@ def config_train_llama() -> Dict[str, Any]:
 
     config = deepcopy(RL_TRAINING_CONFIG)
     config["actor_rollout_ref"]["rollout"]["multi_turn"]["format"] = "llama3_json"
+    config["actor_rollout_ref"]["rollout"]["engine_kwargs"]["vllm"]["tool_call_parser"] = "llama3_json"
     config["actor_rollout_ref"]["model"]["path"] = "meta-llama/Llama-3.2-1B-Instruct"
     return config
 
