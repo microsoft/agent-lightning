@@ -5,6 +5,7 @@ import { IconSearch } from '@tabler/icons-react';
 import type { DataTableSortStatus } from 'mantine-datatable';
 import { Skeleton, Stack, TextInput, Title } from '@mantine/core';
 import { ResourcesTable, type ResourcesTableRecord } from '@/components/ResourcesTable.component';
+import { ResourcesTree } from '@/components/ResourcesTree.component';
 import { selectAutoRefreshMs } from '@/features/config';
 import {
   resetResourcesFilters,
@@ -109,6 +110,7 @@ export function ResourcesPage() {
           onRecordsPerPageChange={handleRecordsPerPageChange}
           onResetFilters={handleResetFilters}
           onRefetch={refetch}
+          renderRowExpansion={({ resources }) => <ResourcesTree resources={resources} />}
         />
       )}
     </Stack>
