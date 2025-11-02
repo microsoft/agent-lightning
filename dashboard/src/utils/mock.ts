@@ -6,6 +6,9 @@
  * This module provides utilities for creating MSW (Mock Service Worker) handlers
  * that simulate the Agent Lightning Store API. The implementation is based on the
  * actual Python server in agentlightning/store/client_server.py.
+ * The mock covers a useful subset of the server's behavior; when functionality
+ * is missing compared to the Python implementation it is an intentional tradeoff
+ * aimed at keeping the mocks light for UI tests.
  *
  * @module mock
  */
@@ -38,18 +41,23 @@ export function filterRolloutsForParams(rollouts: Rollout[], params: URLSearchPa
   const statusFilters = params.getAll('status_in');
   const modeFilters = params.getAll('mode_in');
   const rolloutIdContains = params.get('rollout_id_contains');
+  const filterLogic = params.get('filter_logic') === 'or' ? 'or' : 'and';
 
   return rollouts.filter((rollout) => {
-    if (statusFilters.length > 0 && !statusFilters.includes(rollout.status)) {
-      return false;
+    const checks: boolean[] = [];
+    if (statusFilters.length > 0) {
+      checks.push(statusFilters.includes(rollout.status));
     }
-    if (modeFilters.length > 0 && (!rollout.mode || !modeFilters.includes(rollout.mode))) {
-      return false;
+    if (modeFilters.length > 0) {
+      checks.push(rollout.mode != null && modeFilters.includes(rollout.mode));
     }
-    if (rolloutIdContains && !rollout.rolloutId.includes(rolloutIdContains)) {
-      return false;
+    if (rolloutIdContains) {
+      checks.push(rollout.rolloutId.includes(rolloutIdContains));
     }
-    return true;
+    if (checks.length === 0) {
+      return true;
+    }
+    return filterLogic === 'or' ? checks.some(Boolean) : checks.every(Boolean);
   });
 }
 
@@ -185,18 +193,23 @@ export function filterSpansForParams(spans: Span[], params: URLSearchParams): Sp
   const traceContains = params.get('trace_id_contains');
   const spanContains = params.get('span_id_contains');
   const nameContains = params.get('name_contains');
+  const filterLogic = params.get('filter_logic') === 'or' ? 'or' : 'and';
 
   return spans.filter((span) => {
-    if (traceContains && !span.traceId.includes(traceContains)) {
-      return false;
+    const checks: boolean[] = [];
+    if (traceContains) {
+      checks.push(span.traceId.includes(traceContains));
     }
-    if (spanContains && !span.spanId.includes(spanContains)) {
-      return false;
+    if (spanContains) {
+      checks.push(span.spanId.includes(spanContains));
     }
-    if (nameContains && !span.name.toLowerCase().includes(nameContains.toLowerCase())) {
-      return false;
+    if (nameContains) {
+      checks.push(span.name.toLowerCase().includes(nameContains.toLowerCase()));
     }
-    return true;
+    if (checks.length === 0) {
+      return true;
+    }
+    return filterLogic === 'or' ? checks.some(Boolean) : checks.every(Boolean);
   });
 }
 

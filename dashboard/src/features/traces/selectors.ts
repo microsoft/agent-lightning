@@ -63,6 +63,7 @@ export const selectTracesQueryArgs = createSelector(
       traceIdContains: containsValue,
       spanIdContains: containsValue,
       nameContains: containsValue,
+      filterLogic: containsValue ? 'or' : undefined,
     };
   },
 );

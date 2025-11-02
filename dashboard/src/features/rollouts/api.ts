@@ -196,6 +196,7 @@ export type GetSpansQueryArgs = {
   spanIdContains?: string | null;
   parentIdContains?: string | null;
   nameContains?: string | null;
+  filterLogic?: 'and' | 'or' | null;
 };
 
 export const rolloutsApi = createApi({
@@ -318,6 +319,9 @@ export const rolloutsApi = createApi({
         }
         if (args.nameContains) {
           searchParams.set('name_contains', args.nameContains);
+        }
+        if (args.filterLogic) {
+          searchParams.set('filter_logic', args.filterLogic);
         }
         return { url: `agl/v1/spans?${searchParams.toString()}`, method: 'GET' };
       },

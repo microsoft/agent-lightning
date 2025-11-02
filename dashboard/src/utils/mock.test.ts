@@ -8,20 +8,25 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import type { Attempt, Rollout, Span } from '@/types';
+import type { Attempt, Resources, Rollout, Span } from '@/types';
 import {
   buildAttemptsResponse,
+  buildResourcesResponse,
   buildRolloutsResponse,
   buildSpansResponse,
   createMockHandlers,
+  createResourcesHandlers,
   createRolloutsHandlers,
   createSpansHandlers,
+  filterResourcesForParams,
   filterRolloutsForParams,
   filterSpansForParams,
+  getResourcesSortValue,
   getRolloutSortValue,
   getSpanSortValue,
   parseNumberParam,
   sortAttemptsForParams,
+  sortResourcesForParams,
   sortRolloutsForParams,
   sortSpansForParams,
 } from './mock';
@@ -190,6 +195,30 @@ const sampleSpans: Span[] = [
   },
 ];
 
+const sampleResources: Resources[] = [
+  {
+    resourcesId: 'rs-001',
+    version: 2,
+    createTime: now - 400,
+    updateTime: now - 200,
+    resources: { config: { learning_rate: 0.01 } },
+  },
+  {
+    resourcesId: 'rs-002',
+    version: 3,
+    createTime: now - 300,
+    updateTime: now - 100,
+    resources: { config: { learning_rate: 0.001 } },
+  },
+  {
+    resourcesId: 'rs-003',
+    version: 1,
+    createTime: now - 200,
+    updateTime: now - 50,
+    resources: { config: { learning_rate: 0.1 } },
+  },
+];
+
 describe('parseNumberParam', () => {
   it('returns default value when param is missing', () => {
     const params = new URLSearchParams();
@@ -261,6 +290,15 @@ describe('filterRolloutsForParams', () => {
     const result = filterRolloutsForParams(sampleRollouts, params);
     expect(result).toHaveLength(1);
     expect(result[0].rolloutId).toBe('ro-001');
+  });
+
+  it('supports filter_logic=or across filters', () => {
+    const params = new URLSearchParams();
+    params.append('status_in', 'failed');
+    params.append('mode_in', 'train');
+    params.set('filter_logic', 'or');
+    const result = filterRolloutsForParams(sampleRollouts, params);
+    expect(result.map((r) => r.rolloutId).sort()).toEqual(['ro-001', 'ro-003']);
   });
 });
 
@@ -471,6 +509,15 @@ describe('filterSpansForParams', () => {
     expect(result).toHaveLength(1);
     expect(result[0].name).toBe('Process');
   });
+
+  it('supports filter_logic=or for spans', () => {
+    const params = new URLSearchParams();
+    params.set('trace_id_contains', 'tr-001');
+    params.set('name_contains', 'Finalize');
+    params.set('filter_logic', 'or');
+    const result = filterSpansForParams(sampleSpans, params);
+    expect(result).toHaveLength(3);
+  });
 });
 
 describe('getSpanSortValue', () => {
@@ -576,6 +623,105 @@ describe('buildSpansResponse', () => {
     expect(response.items).toHaveLength(2);
     const items = response.items as Span[];
     expect(items[0].name).toBe('Finalize');
+  });
+
+  it('supports filter_logic=or in responses', () => {
+    const request = new Request(
+      'http://localhost/agl/v1/spans?rollout_id=ro-001&attempt_id=at-001&trace_id_contains=tr-001&name_contains=Finalize&filter_logic=or',
+    );
+    const response = buildSpansResponse(spansByAttempt, request);
+    expect(response.items).toHaveLength(3);
+  });
+});
+
+describe('filterResourcesForParams', () => {
+  it('returns all resources when no filter is applied', () => {
+    const params = new URLSearchParams();
+    const result = filterResourcesForParams(sampleResources, params);
+    expect(result).toHaveLength(3);
+  });
+
+  it('filters resources by resources_id_contains', () => {
+    const params = new URLSearchParams('resources_id_contains=002');
+    const result = filterResourcesForParams(sampleResources, params);
+    expect(result).toHaveLength(1);
+    expect(result[0].resourcesId).toBe('rs-002');
+  });
+});
+
+describe('getResourcesSortValue', () => {
+  const resource = sampleResources[0];
+
+  it('returns resources_id value', () => {
+    expect(getResourcesSortValue(resource, 'resources_id')).toBe('rs-001');
+  });
+
+  it('returns version value', () => {
+    expect(getResourcesSortValue(resource, 'version')).toBe(2);
+  });
+
+  it('returns create_time value', () => {
+    expect(getResourcesSortValue(resource, 'create_time')).toBe(now - 400);
+  });
+
+  it('returns update_time for unknown sort keys', () => {
+    expect(getResourcesSortValue(resource, 'unknown')).toBe(now - 200);
+  });
+});
+
+describe('sortResourcesForParams', () => {
+  it('sorts by update_time ascending by default', () => {
+    const result = sortResourcesForParams(sampleResources, null, 'asc');
+    expect(result[0].resourcesId).toBe('rs-001');
+    expect(result[2].resourcesId).toBe('rs-003');
+  });
+
+  it('sorts by update_time descending', () => {
+    const result = sortResourcesForParams(sampleResources, 'update_time', 'desc');
+    expect(result[0].resourcesId).toBe('rs-003');
+    expect(result[2].resourcesId).toBe('rs-001');
+  });
+
+  it('sorts by version', () => {
+    const result = sortResourcesForParams(sampleResources, 'version', 'asc');
+    expect(result[0].version).toBe(1);
+    expect(result[2].version).toBe(3);
+  });
+});
+
+describe('buildResourcesResponse', () => {
+  it('returns paginated resources with defaults', () => {
+    const request = new Request('http://localhost/agl/v1/resources');
+    const response = buildResourcesResponse(sampleResources, request);
+    expect(response.items).toHaveLength(3);
+    expect(response.offset).toBe(0);
+    expect(response.limit).toBe(3);
+    expect(response.total).toBe(3);
+  });
+
+  it('applies filter before pagination', () => {
+    const request = new Request('http://localhost/agl/v1/resources?resources_id_contains=003');
+    const response = buildResourcesResponse(sampleResources, request);
+    expect(response.items).toHaveLength(1);
+    const items = response.items as Array<Record<string, unknown>>;
+    expect(items[0].resources_id).toBe('rs-003');
+  });
+
+  it('applies sort order and pagination parameters', () => {
+    const request = new Request('http://localhost/agl/v1/resources?sort_by=version&sort_order=desc&limit=1&offset=1');
+    const response = buildResourcesResponse(sampleResources, request);
+    expect(response.items).toHaveLength(1);
+    expect(response.offset).toBe(1);
+    const items = response.items as Array<Record<string, unknown>>;
+    expect(items[0].version).toBe(2);
+  });
+});
+
+describe('createResourcesHandlers', () => {
+  it('creates handler for resources endpoint', () => {
+    const handlers = createResourcesHandlers(sampleResources);
+    expect(handlers).toHaveLength(1);
+    expect(handlers[0].info.header).toContain('GET');
   });
 });
 
