@@ -296,7 +296,13 @@ def test_local_client_core_functionality(sample_resources: NamedResources):
     assert client.task_count == 2
 
     # Test initialization with Task objects and ResourcesUpdate
-    resources_update = ResourcesUpdate(resources_id="version123", resources=sample_resources)
+    resources_update = ResourcesUpdate(
+        resources_id="version123",
+        resources=sample_resources,
+        create_time=time.time(),
+        update_time=time.time(),
+        version=1,
+    )
     tasks = [Task(rollout_id="existing_task", input="existing_input", resources_id="version123")]
     client2 = DevTaskLoader(tasks=tasks, resources=resources_update)
 
@@ -341,7 +347,13 @@ def test_local_client_error_handling(sample_resources: NamedResources):
         DevTaskLoader(tasks=mixed_tasks, resources=sample_resources)
 
     # Wrong resource ID should raise error
-    resources_update = ResourcesUpdate(resources_id="version123", resources=sample_resources)
+    resources_update = ResourcesUpdate(
+        resources_id="version123",
+        resources=sample_resources,
+        create_time=time.time(),
+        update_time=time.time(),
+        version=1,
+    )
     client = DevTaskLoader(tasks=["input1"], resources=resources_update)
     with pytest.raises(ValueError, match="Resource ID 'wrong_id' not found"):
         client.get_resources_by_id("wrong_id")
