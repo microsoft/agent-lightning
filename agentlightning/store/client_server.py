@@ -13,10 +13,12 @@ from typing import Any, Awaitable, Callable, Dict, Generic, List, Literal, Optio
 
 import aiohttp
 import uvicorn
-from fastapi import Body, Depends, FastAPI, HTTPException, Request, Response
+from fastapi import Body, Depends, FastAPI, HTTPException
+from fastapi import Query as FastAPIQuery
+from fastapi import Request, Response
 from fastapi.responses import JSONResponse
 from opentelemetry.sdk.trace import ReadableSpan
-from pydantic import BaseModel, TypeAdapter
+from pydantic import BaseModel, Field, TypeAdapter
 
 from agentlightning.types import (
     Attempt,
@@ -56,8 +58,8 @@ class RolloutRequest(BaseModel):
 
 
 class QueryRolloutsRequest(BaseModel):
-    status_in: Optional[List[RolloutStatus]] = None
-    rollout_id_in: Optional[List[str]] = None
+    status_in: Optional[List[RolloutStatus]] = Field(FastAPIQuery(default=None))
+    rollout_id_in: Optional[List[str]] = Field(FastAPIQuery(default=None))
     rollout_id_contains: Optional[str] = None
     # Pagination
     limit: int = -1
@@ -104,7 +106,7 @@ class QueryAttemptsRequest(BaseModel):
     limit: int = -1
     offset: int = 0
     # Sorting
-    sort_by: str = "update_time"
+    sort_by: str = "start_time"
     sort_order: Literal["asc", "desc"] = "desc"
 
 
@@ -187,12 +189,26 @@ def _apply_filters_sort_paginate(
                     filtered_items.append(item)
 
     # Apply sorting
+
+    def _get_sort_value(item: T, sort_by: str) -> Any:
+        if sort_by.endswith("_time"):
+            value = getattr(item, sort_by, None)
+            if value is None:
+                value = float("inf")
+            return value
+        else:
+            value = getattr(item, sort_by, None)
+            if value is None:
+                return ""
+            elif not isinstance(value, str):
+                raise HTTPException(
+                    status_code=400, detail=f"Failed to sort items by {sort_by}: {value} is not a string or number"
+                )
+            return value
+
     if sort_by:
-        try:
-            reverse = sort_order == "desc"
-            filtered_items.sort(key=lambda x: getattr(x, sort_by, None) or 0, reverse=reverse)
-        except (AttributeError, TypeError) as e:
-            raise HTTPException(status_code=400, detail=f"Failed to sort items by {sort_by}: {e}")
+        reverse = sort_order == "desc"
+        filtered_items.sort(key=lambda x: _get_sort_value(x, sort_by), reverse=reverse)
 
     # Get total count before pagination
     total = len(filtered_items)
@@ -515,9 +531,9 @@ class LightningStoreServer(LightningStore):
 
             # Build filter dict
             filters: Dict[str, Any] = {}
-            if params.status_in is not None:
+            if params.status_in:
                 filters["status_in"] = params.status_in
-            if params.rollout_id_in is not None:
+            if params.rollout_id_in:
                 filters["rollout_id_in"] = params.rollout_id_in
             if params.rollout_id_contains is not None:
                 filters["rollout_id_contains"] = params.rollout_id_contains

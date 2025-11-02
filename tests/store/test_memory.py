@@ -2082,3 +2082,139 @@ async def test_requeued_attempt_recovers_after_retry_started(
     assert rollout.status == "preparing"
 
     assert await inmemory_store.dequeue_rollout() is None
+
+
+@pytest.mark.asyncio
+async def test_resources_update_tracks_create_and_update_times(inmemory_store: InMemoryLightningStore) -> None:
+    """Test that ResourcesUpdate tracks create_time and update_time correctly."""
+    llm = LLM(
+        resource_type="llm",
+        endpoint="http://localhost:8080",
+        model="test-model",
+        sampling_parameters={"temperature": 0.7},
+    )
+
+    # Add initial resource
+    start_time = time.time()
+    update1 = await inmemory_store.add_resources({"main_llm": llm})
+
+    # Verify create_time is set and reasonable
+    assert update1.create_time >= start_time
+    assert update1.create_time <= time.time()
+
+    # Initially, update_time should equal create_time
+    assert update1.update_time == update1.create_time
+    assert update1.version == 1
+
+    # Wait a bit and update the same resource
+    await asyncio.sleep(0.01)
+    llm_v2 = LLM(
+        resource_type="llm",
+        endpoint="http://localhost:8080",
+        model="test-model-v2",
+        sampling_parameters={"temperature": 0.8},
+    )
+    update2 = await inmemory_store.update_resources(update1.resources_id, {"main_llm": llm_v2})
+
+    # Verify update_time changed but create_time stayed the same
+    assert update2.resources_id == update1.resources_id
+    assert update2.create_time == update1.create_time  # create_time should not change
+    assert update2.update_time > update1.update_time  # update_time should be newer
+    assert update2.version == 2  # version should increment
+
+
+@pytest.mark.asyncio
+async def test_resources_update_version_increments(inmemory_store: InMemoryLightningStore) -> None:
+    """Test that ResourcesUpdate version increments correctly with each update."""
+    llm = LLM(
+        resource_type="llm",
+        endpoint="http://localhost:8080",
+        model="test-model",
+        sampling_parameters={"temperature": 0.7},
+    )
+
+    # Add initial resource
+    update1 = await inmemory_store.add_resources({"main_llm": llm})
+    assert update1.version == 1
+
+    # Update it multiple times
+    for i in range(2, 6):
+        llm_updated = LLM(
+            resource_type="llm",
+            endpoint="http://localhost:8080",
+            model=f"test-model-v{i}",
+            sampling_parameters={"temperature": 0.7},
+        )
+        update = await inmemory_store.update_resources(update1.resources_id, {"main_llm": llm_updated})
+        assert update.version == i
+        assert update.resources_id == update1.resources_id
+        assert update.create_time == update1.create_time
+
+
+@pytest.mark.asyncio
+async def test_resources_different_ids_have_independent_versions(inmemory_store: InMemoryLightningStore) -> None:
+    """Test that different resources_ids have independent version counters."""
+    llm1 = LLM(
+        resource_type="llm",
+        endpoint="http://localhost:8080",
+        model="model-1",
+        sampling_parameters={"temperature": 0.7},
+    )
+    llm2 = LLM(
+        resource_type="llm",
+        endpoint="http://localhost:8080",
+        model="model-2",
+        sampling_parameters={"temperature": 0.8},
+    )
+
+    # Add two different resources
+    res1 = await inmemory_store.add_resources({"llm": llm1})
+    res2 = await inmemory_store.add_resources({"llm": llm2})
+
+    # Both should start at version 1
+    assert res1.version == 1
+    assert res2.version == 1
+    assert res1.resources_id != res2.resources_id
+
+    # Update res1 twice
+    for i in range(2):
+        llm_updated = LLM(
+            resource_type="llm",
+            endpoint="http://localhost:8080",
+            model=f"model-1-v{i+2}",
+            sampling_parameters={"temperature": 0.7},
+        )
+        res1 = await inmemory_store.update_resources(res1.resources_id, {"llm": llm_updated})
+
+    # res1 should be at version 3, res2 should still be at version 1
+    assert res1.version == 3
+    retrieved_res2 = await inmemory_store.get_resources_by_id(res2.resources_id)
+    assert retrieved_res2 is not None
+    assert retrieved_res2.version == 1
+
+
+@pytest.mark.asyncio
+async def test_query_resources_returns_all_fields(inmemory_store: InMemoryLightningStore) -> None:
+    """Test that query_resources returns all ResourcesUpdate fields."""
+    llm = LLM(
+        resource_type="llm",
+        endpoint="http://localhost:8080",
+        model="test-model",
+        sampling_parameters={"temperature": 0.7},
+    )
+
+    # Add multiple resources
+    await inmemory_store.add_resources({"llm": llm})
+    await asyncio.sleep(0.01)
+    await inmemory_store.add_resources({"llm": llm})
+
+    # Query all resources
+    all_resources = await inmemory_store.query_resources()
+
+    assert len(all_resources) == 2
+    for res in all_resources:
+        assert res.resources_id is not None
+        assert res.create_time > 0
+        assert res.update_time > 0
+        assert res.version >= 1
+        assert res.resources is not None
