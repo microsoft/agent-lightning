@@ -1,30 +1,26 @@
 import { useCallback, useEffect, useMemo } from 'react';
 import { skipToken } from '@reduxjs/toolkit/query';
-import {
-  Button,
-  Group,
-  Menu,
-  Select,
-  Skeleton,
-  Stack,
-  TextInput,
-  Title,
-} from '@mantine/core';
 import { IconCheck, IconChevronDown, IconSearch } from '@tabler/icons-react';
 import type { DataTableSortStatus } from 'mantine-datatable';
-
+import { Button, Group, Menu, Select, Skeleton, Stack, TextInput, Title } from '@mantine/core';
 import { TracesTable, type TracesTableRecord } from '@/components/TracesTable.component';
 import { selectAutoRefreshMs } from '@/features/config';
+import {
+  useGetRolloutAttemptsQuery,
+  useGetRolloutsQuery,
+  useGetSpansQuery,
+  type GetRolloutsQueryArgs,
+} from '@/features/rollouts';
 import {
   resetTracesFilters,
   selectTracesAttemptId,
   selectTracesPage,
+  selectTracesQueryArgs,
   selectTracesRecordsPerPage,
   selectTracesRolloutId,
   selectTracesSearchTerm,
   selectTracesSort,
   selectTracesViewMode,
-  selectTracesQueryArgs,
   setTracesAttemptId,
   setTracesPage,
   setTracesRecordsPerPage,
@@ -33,16 +29,10 @@ import {
   setTracesSort,
   setTracesViewMode,
 } from '@/features/traces';
-import {
-  useGetRolloutsQuery,
-  useGetRolloutAttemptsQuery,
-  useGetSpansQuery,
-  type GetRolloutsQueryArgs,
-} from '@/features/rollouts';
 import { openDrawer } from '@/features/ui/drawer';
-import { formatStatusLabel } from '@/utils/format';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
 import type { Attempt, Rollout, Span } from '@/types';
+import { formatStatusLabel } from '@/utils/format';
 
 const VIEW_OPTIONS = [
   { value: 'table', label: 'Table View', disabled: false },
@@ -110,10 +100,7 @@ export function TracesPage() {
         }
       : skipToken;
 
-  const {
-    data: attemptsData,
-    isFetching: attemptsFetching,
-  } = useGetRolloutAttemptsQuery(attemptsQueryArgs, {
+  const { data: attemptsData, isFetching: attemptsFetching } = useGetRolloutAttemptsQuery(attemptsQueryArgs, {
     pollingInterval: autoRefreshMs > 0 ? autoRefreshMs : undefined,
   });
 
@@ -150,9 +137,7 @@ export function TracesPage() {
     }
 
     if (attemptsData && attemptsData.items.length > 0) {
-      const hasSelected = attemptId
-        ? attemptsData.items.some((attempt) => attempt.attemptId === attemptId)
-        : false;
+      const hasSelected = attemptId ? attemptsData.items.some((attempt) => attempt.attemptId === attemptId) : false;
       if (!hasSelected) {
         const latest = getLatestAttempt(attemptsData.items);
         if (latest && latest.attemptId !== attemptId) {
@@ -277,9 +262,7 @@ export function TracesPage() {
   const handleShowSpanDetail = useCallback(
     (record: TracesTableRecord) => {
       const rolloutForSpan =
-        rolloutItems.length > 0
-          ? rolloutItems.find((item) => item.rolloutId === record.rolloutId) ?? null
-          : null;
+        rolloutItems.length > 0 ? (rolloutItems.find((item) => item.rolloutId === record.rolloutId) ?? null) : null;
       const attempts = attemptsData?.items ?? [];
       const attemptForSpan =
         attempts.find((attempt) => attempt.attemptId === record.attemptId) ?? rolloutForSpan?.attempt ?? null;
@@ -310,15 +293,14 @@ export function TracesPage() {
     [dispatch],
   );
 
-  const activeViewLabel =
-    VIEW_OPTIONS.find((option) => option.value === viewMode)?.label ?? 'Table View';
+  const activeViewLabel = VIEW_OPTIONS.find((option) => option.value === viewMode)?.label ?? 'Table View';
 
   return (
-    <Stack gap="md">
-      <Group justify="space-between" align="flex-start">
-        <Stack gap="sm" style={{ flex: 1, minWidth: 0 }}>
+    <Stack gap='md'>
+      <Group justify='space-between' align='flex-start'>
+        <Stack gap='sm' style={{ flex: 1, minWidth: 0 }}>
           <Title order={1}>Traces</Title>
-          <Group gap="md" wrap="wrap">
+          <Group gap='md' wrap='wrap'>
             <Select
               data={rolloutOptions}
               value={rolloutId ?? null}
@@ -328,8 +310,8 @@ export function TracesPage() {
                 }
               }}
               searchable
-              placeholder="Select rollout"
-              aria-label="Select rollout"
+              placeholder='Select rollout'
+              aria-label='Select rollout'
               nothingFoundMessage={rolloutsFetching ? 'Loading...' : 'No rollouts'}
               comboboxProps={{ withinPortal: true }}
               w={260}
@@ -344,8 +326,8 @@ export function TracesPage() {
                 }
               }}
               searchable
-              placeholder="Latest attempt"
-              aria-label="Select attempt"
+              placeholder='Latest attempt'
+              aria-label='Select attempt'
               nothingFoundMessage={attemptsFetching ? 'Loading...' : 'No attempts'}
               comboboxProps={{ withinPortal: true }}
               w={280}
@@ -354,20 +336,16 @@ export function TracesPage() {
             <TextInput
               value={searchTerm}
               onChange={(event) => handleSearchTermChange(event.currentTarget.value)}
-              placeholder="Search spans"
-              aria-label="Search spans"
+              placeholder='Search spans'
+              aria-label='Search spans'
               leftSection={<IconSearch size={16} />}
               w={280}
             />
           </Group>
         </Stack>
-        <Menu shadow="md" position="bottom-end" withinPortal>
+        <Menu shadow='md' position='bottom-end' withinPortal>
           <Menu.Target>
-            <Button
-              variant="light"
-              rightSection={<IconChevronDown size={16} />}
-              aria-label="Change traces view"
-            >
+            <Button variant='light' rightSection={<IconChevronDown size={16} />} aria-label='Change traces view'>
               {activeViewLabel}
             </Button>
           </Menu.Target>
@@ -376,9 +354,7 @@ export function TracesPage() {
               <Menu.Item
                 key={option.value}
                 disabled={option.disabled}
-                leftSection={
-                  option.value === viewMode && !option.disabled ? <IconCheck size={14} /> : null
-                }
+                leftSection={option.value === viewMode && !option.disabled ? <IconCheck size={14} /> : null}
                 onClick={() => {
                   if (!option.disabled) {
                     handleViewChange(option.value);
@@ -392,7 +368,7 @@ export function TracesPage() {
         </Menu>
       </Group>
 
-      <Skeleton visible={isInitialLoading} radius="md">
+      <Skeleton visible={isInitialLoading} radius='md'>
         <TracesTable
           spans={rolloutId ? spans : []}
           totalRecords={spansTotal}

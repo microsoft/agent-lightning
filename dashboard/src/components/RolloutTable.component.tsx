@@ -1,17 +1,9 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-  type ReactNode,
-  type SetStateAction,
-} from 'react';
-import { useElementSize } from '@mantine/hooks';
+import { useCallback, useEffect, useMemo, useState, type ReactNode, type SetStateAction } from 'react';
 import {
   IconAlertCircle,
-  IconFileDescription,
   IconCheck,
   IconCopy,
+  IconFileDescription,
   IconRefresh,
   IconReload,
   IconTimeline,
@@ -30,6 +22,7 @@ import {
   Text,
   Tooltip,
 } from '@mantine/core';
+import { useElementSize } from '@mantine/hooks';
 import {
   type Attempt,
   type AttemptStatus,
@@ -133,9 +126,7 @@ export function buildRolloutRecord(rollout: Rollout): RolloutTableRecord {
   const attemptStatus = latestAttempt?.status;
   const sequenceId = latestAttempt?.sequenceId;
   const statusValue =
-    attemptStatus && attemptStatus !== rollout.status
-      ? `${rollout.status}-${attemptStatus}`
-      : rollout.status;
+    attemptStatus && attemptStatus !== rollout.status ? `${rollout.status}-${attemptStatus}` : rollout.status;
 
   return {
     ...rollout,
@@ -192,7 +183,7 @@ function getStatusBadge(status: string, kind: 'rollout' | 'attempt') {
       : (ATTEMPT_STATUS_COLORS[status as AttemptStatus] ?? 'gray');
 
   return (
-    <Badge size="sm" variant="light" color={color}>
+    <Badge size='sm' variant='light' color={color}>
       {formatStatusLabel(status)}
     </Badge>
   );
@@ -235,7 +226,7 @@ function createRolloutColumns({
       sortable: true,
       render: ({ rolloutId }) => (
         <Group gap={2}>
-          <Text fw={500} size="sm">
+          <Text fw={500} size='sm'>
             {rolloutId}
           </Text>
           <CopyButton value={rolloutId}>
@@ -243,9 +234,9 @@ function createRolloutColumns({
               <Tooltip label={copied ? 'Copied' : 'Copy'} withArrow>
                 <ActionIcon
                   aria-label={`Copy rollout ID ${rolloutId}`}
-                  variant="subtle"
+                  variant='subtle'
                   color={copied ? 'teal' : 'gray'}
-                  size="sm"
+                  size='sm'
                   onClick={(event) => {
                     event.stopPropagation();
                     copy();
@@ -265,7 +256,7 @@ function createRolloutColumns({
       sortable: true,
       render: ({ attemptId, attemptSequence, isNested }) => (
         <Group gap={2}>
-          <Text size="sm" c={attemptId ? undefined : 'dimmed'}>
+          <Text size='sm' c={attemptId ? undefined : 'dimmed'}>
             {attemptId ?? '—'}
           </Text>
           {attemptId && (
@@ -274,9 +265,9 @@ function createRolloutColumns({
                 <Tooltip label={copied ? 'Copied' : 'Copy'} withArrow>
                   <ActionIcon
                     aria-label={`Copy attempt ID ${attemptId}`}
-                    variant="subtle"
+                    variant='subtle'
                     color={copied ? 'teal' : 'gray'}
-                    size="sm"
+                    size='sm'
                     onClick={(event) => {
                       event.stopPropagation();
                       copy();
@@ -300,7 +291,7 @@ function createRolloutColumns({
       accessor: 'inputText',
       title: 'Input',
       render: ({ inputText }) => (
-        <Text size="sm" ff="monospace" c="dimmed" lineClamp={1} style={{ width: '100%' }}>
+        <Text size='sm' ff='monospace' c='dimmed' lineClamp={1} style={{ width: '100%' }}>
           {inputText}
         </Text>
       ),
@@ -310,21 +301,21 @@ function createRolloutColumns({
       title: 'Status',
       sortable: true,
       filter: ({ close }) => (
-        <Stack gap="xs">
+        <Stack gap='xs'>
           <MultiSelect
-            label="Status"
-            description="Filter rollouts by status"
+            label='Status'
+            description='Filter rollouts by status'
             data={statusOptions}
             value={statusFilters}
-            placeholder="Select statuses..."
+            placeholder='Select statuses...'
             searchable
             clearable
             comboboxProps={{ withinPortal: false }}
             onChange={(values) => onStatusFilterChange(values as RolloutStatus[])}
           />
           <Button
-            variant="light"
-            size="xs"
+            variant='light'
+            size='xs'
             onClick={() => {
               onStatusFilterReset();
               close();
@@ -345,7 +336,7 @@ function createRolloutColumns({
           return (
             <Group gap={4}>
               {getStatusBadge(status, 'rollout')}
-              <Text size="sm" c="dimmed">
+              <Text size='sm' c='dimmed'>
                 —
               </Text>
               {getStatusBadge(attemptStatus, 'attempt')}
@@ -361,7 +352,7 @@ function createRolloutColumns({
       title: 'Resources',
       sortable: true,
       render: ({ resourcesId }) => (
-        <Text size="sm" c={resourcesId ? undefined : 'dimmed'}>
+        <Text size='sm' c={resourcesId ? undefined : 'dimmed'}>
           {resourcesId ?? '—'}
         </Text>
       ),
@@ -371,21 +362,21 @@ function createRolloutColumns({
       title: 'Mode',
       sortable: true,
       filter: ({ close }) => (
-        <Stack gap="xs">
+        <Stack gap='xs'>
           <MultiSelect
-            label="Mode"
-            description="Filter rollouts by mode"
+            label='Mode'
+            description='Filter rollouts by mode'
             data={modeOptions}
             value={modeFilters}
-            placeholder="Select modes..."
+            placeholder='Select modes...'
             searchable
             clearable
             comboboxProps={{ withinPortal: false }}
             onChange={(values) => onModeFilterChange(values as RolloutMode[])}
           />
           <Button
-            variant="light"
-            size="xs"
+            variant='light'
+            size='xs'
             onClick={() => {
               onModeFilterReset();
               close();
@@ -398,7 +389,7 @@ function createRolloutColumns({
       ),
       filtering: modeFilters.length > 0,
       render: ({ mode }) => (
-        <Text size="sm" c={mode ? undefined : 'dimmed'}>
+        <Text size='sm' c={mode ? undefined : 'dimmed'}>
           {mode ?? '—'}
         </Text>
       ),
@@ -408,14 +399,14 @@ function createRolloutColumns({
       title: 'Start Time',
       sortable: true,
       textAlign: 'left',
-      render: ({ startTimestamp }) => <Text size="sm">{formatDateTime(startTimestamp)}</Text>,
+      render: ({ startTimestamp }) => <Text size='sm'>{formatDateTime(startTimestamp)}</Text>,
     },
     {
       accessor: 'durationSeconds',
       title: 'Duration',
       sortable: true,
       textAlign: 'left',
-      render: ({ durationSeconds }) => <Text size="sm">{formatDuration(durationSeconds)}</Text>,
+      render: ({ durationSeconds }) => <Text size='sm'>{formatDuration(durationSeconds)}</Text>,
     },
     {
       accessor: 'lastHeartbeatTimestamp',
@@ -425,12 +416,12 @@ function createRolloutColumns({
       render: ({ lastHeartbeatTimestamp, attempt, isNested }) => {
         if (!attempt && isNested) {
           return (
-            <Text size="sm" c="dimmed">
+            <Text size='sm' c='dimmed'>
               —
             </Text>
           );
         }
-        return <Text size="sm">{formatRelativeTime(lastHeartbeatTimestamp)}</Text>;
+        return <Text size='sm'>{formatRelativeTime(lastHeartbeatTimestamp)}</Text>;
       },
     },
     {
@@ -438,7 +429,7 @@ function createRolloutColumns({
       title: 'Worker',
       sortable: true,
       render: ({ workerId }) => (
-        <Text size="sm" c={workerId ? undefined : 'dimmed'}>
+        <Text size='sm' c={workerId ? undefined : 'dimmed'}>
           {workerId ?? '—'}
         </Text>
       ),
@@ -448,11 +439,11 @@ function createRolloutColumns({
       title: 'Actions',
       render: (record) => (
         <Group gap={4}>
-          <Tooltip label="View raw JSON" withArrow disabled={!onViewRawJson}>
+          <Tooltip label='View raw JSON' withArrow disabled={!onViewRawJson}>
             <ActionIcon
-              aria-label="View raw JSON"
-              variant="subtle"
-              color="gray"
+              aria-label='View raw JSON'
+              variant='subtle'
+              color='gray'
               onClick={(event) => {
                 event.stopPropagation();
                 onViewRawJson?.(record);
@@ -461,11 +452,11 @@ function createRolloutColumns({
               <IconFileDescription size={16} />
             </ActionIcon>
           </Tooltip>
-          <Tooltip label="View traces" withArrow disabled={!onViewTraces}>
+          <Tooltip label='View traces' withArrow disabled={!onViewTraces}>
             <ActionIcon
-              aria-label="View traces"
-              variant="subtle"
-              color="gray"
+              aria-label='View traces'
+              variant='subtle'
+              color='gray'
               onClick={(event) => {
                 event.stopPropagation();
                 onViewTraces?.(record);
@@ -569,12 +560,12 @@ export function RolloutTable({
       onModeFilterReset,
       onViewRawJson,
       onViewTraces,
-    ]
+    ],
   );
 
   const responsiveColumns = useMemo(
     () => createResponsiveColumns(columns, containerWidth, COLUMN_VISIBILITY),
-    [columns, containerWidth]
+    [columns, containerWidth],
   );
 
   const totalPages = useMemo(
@@ -590,14 +581,11 @@ export function RolloutTable({
 
   useEffect(() => {
     setExpandedRecordIds((current) =>
-      current.filter((id) =>
-        rolloutRecords.some((record) => record.rolloutId === id && record.canExpand),
-      )
+      current.filter((id) => rolloutRecords.some((record) => record.rolloutId === id && record.canExpand)),
     );
   }, [rolloutRecords]);
 
-  const hasActiveFilters =
-    searchTerm.trim().length > 0 || statusFilters.length > 0 || modeFilters.length > 0;
+  const hasActiveFilters = searchTerm.trim().length > 0 || statusFilters.length > 0 || modeFilters.length > 0;
 
   const sortStatus: DataTableSortStatus<RolloutTableRecord> = {
     columnAccessor: sort.column,
@@ -608,7 +596,7 @@ export function RolloutTable({
     (status: DataTableSortStatus<RolloutTableRecord>) => {
       onSortStatusChange(status);
     },
-    [onSortStatusChange]
+    [onSortStatusChange],
   );
 
   const errorMessage =
@@ -617,27 +605,21 @@ export function RolloutTable({
       : 'Rollouts are temporarily unavailable.';
 
   const emptyState = (
-    <Stack gap="sm" align="center" py="lg">
+    <Stack gap='sm' align='center' py='lg'>
       {isError ? (
         <>
-          <Text fw={600} size="sm">
+          <Text fw={600} size='sm'>
             {errorMessage}
           </Text>
-          <Text size="sm" c="dimmed" ta="center">
+          <Text size='sm' c='dimmed' ta='center'>
             Use the retry button to try again, or adjust the filters to broaden the results.
           </Text>
-          <Group gap="xs">
-            <Button
-              size="xs"
-              variant="light"
-              color="gray"
-              leftSection={<IconRefresh size={14} />}
-              onClick={onRefetch}
-            >
+          <Group gap='xs'>
+            <Button size='xs' variant='light' color='gray' leftSection={<IconRefresh size={14} />} onClick={onRefetch}>
               Retry
             </Button>
             {hasActiveFilters ? (
-              <Button size="xs" variant="subtle" onClick={onResetFilters}>
+              <Button size='xs' variant='subtle' onClick={onResetFilters}>
                 Clear filters
               </Button>
             ) : null}
@@ -645,25 +627,20 @@ export function RolloutTable({
         </>
       ) : (
         <>
-          <Text fw={600} size="sm">
+          <Text fw={600} size='sm'>
             No rollouts found
           </Text>
-          <Text size="sm" c="dimmed" ta="center">
+          <Text size='sm' c='dimmed' ta='center'>
             {hasActiveFilters
               ? 'Try adjusting the search or filters to see more results.'
               : 'Try refreshing to fetch the latest rollouts.'}
           </Text>
-          <Group gap="xs">
-            <Button
-              size="xs"
-              variant="light"
-              leftSection={<IconRefresh size={14} />}
-              onClick={onRefetch}
-            >
+          <Group gap='xs'>
+            <Button size='xs' variant='light' leftSection={<IconRefresh size={14} />} onClick={onRefetch}>
               Refresh
             </Button>
             {hasActiveFilters ? (
-              <Button size="xs" variant="subtle" onClick={onResetFilters}>
+              <Button size='xs' variant='subtle' onClick={onResetFilters}>
                 Clear filters
               </Button>
             ) : null}
@@ -680,9 +657,9 @@ export function RolloutTable({
         withTableBorder
         withColumnBorders
         highlightOnHover
-        verticalAlign="center"
+        verticalAlign='center'
         minHeight={rolloutRecords.length === 0 ? 500 : undefined}
-        idAccessor="rolloutId"
+        idAccessor='rolloutId'
         records={rolloutRecords}
         columns={responsiveColumns}
         totalRecords={totalRecords}
@@ -694,7 +671,7 @@ export function RolloutTable({
         sortStatus={sortStatus}
         onSortStatusChange={handleSortStatusChange}
         fetching={isFetching}
-        loaderSize="sm"
+        loaderSize='sm'
         emptyState={rolloutRecords.length === 0 ? emptyState : undefined}
         rowExpansion={
           renderRowExpansion
@@ -712,15 +689,12 @@ export function RolloutTable({
                       return resolved
                         .map(String)
                         .filter((id) =>
-                          rolloutRecords.some(
-                            (tableRecord) => tableRecord.rolloutId === id && tableRecord.canExpand
-                          )
+                          rolloutRecords.some((tableRecord) => tableRecord.rolloutId === id && tableRecord.canExpand),
                         );
                     });
                   },
                 },
-                content: ({ record }) =>
-                  renderRowExpansion({ rollout: record, columns: responsiveColumns }),
+                content: ({ record }) => renderRowExpansion({ rollout: record, columns: responsiveColumns }),
               }
             : undefined
         }
@@ -758,15 +732,10 @@ export function RolloutAttemptsTable({
 
   if (isError && !attemptRecords.length) {
     return (
-      <Alert color="red" variant="light" icon={<IconAlertCircle size={16} />}>
-        <Stack gap="xs">
-          <Text size="sm">Unable to load attempts for this rollout.</Text>
-          <Button
-            size="xs"
-            variant="light"
-            leftSection={<IconRefresh size={14} />}
-            onClick={onRetry}
-          >
+      <Alert color='red' variant='light' icon={<IconAlertCircle size={16} />}>
+        <Stack gap='xs'>
+          <Text size='sm'>Unable to load attempts for this rollout.</Text>
+          <Button size='xs' variant='light' leftSection={<IconRefresh size={14} />} onClick={onRetry}>
             Retry
           </Button>
         </Stack>
@@ -775,11 +744,11 @@ export function RolloutAttemptsTable({
   }
 
   const emptyState = (
-    <Stack gap="xs" align="center" py="md">
-      <Text size="sm" c="dimmed">
+    <Stack gap='xs' align='center' py='md'>
+      <Text size='sm' c='dimmed'>
         No attempts found for this rollout.
       </Text>
-      <Button size="xs" variant="light" leftSection={<IconRefresh size={14} />} onClick={onRetry}>
+      <Button size='xs' variant='light' leftSection={<IconRefresh size={14} />} onClick={onRetry}>
         Refresh
       </Button>
     </Stack>
@@ -791,10 +760,10 @@ export function RolloutAttemptsTable({
       withColumnBorders
       noHeader
       minHeight={0}
-      idAccessor="attemptId"
-      verticalAlign="center"
+      idAccessor='attemptId'
+      verticalAlign='center'
       fetching={isFetching}
-      loaderSize="sm"
+      loaderSize='sm'
       records={attemptRecords}
       columns={columns}
       emptyState={attemptRecords.length === 0 ? emptyState : undefined}

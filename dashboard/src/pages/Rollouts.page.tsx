@@ -1,18 +1,14 @@
 import { useCallback, useEffect } from 'react';
-import { Skeleton, Stack, TextInput, Title } from '@mantine/core';
 import { IconSearch } from '@tabler/icons-react';
 import type { DataTableColumn, DataTableSortStatus } from 'mantine-datatable';
-
+import { Skeleton, Stack, TextInput, Title } from '@mantine/core';
 import { RolloutAttemptsTable, RolloutTable, type RolloutTableRecord } from '@/components/RolloutTable.component';
 import { selectAutoRefreshMs } from '@/features/config';
 import {
-  type Rollout,
-  type RolloutMode,
-  type RolloutStatus,
-  selectRolloutsQueryArgs,
   resetRolloutsFilters,
   selectRolloutsModeFilters,
   selectRolloutsPage,
+  selectRolloutsQueryArgs,
   selectRolloutsRecordsPerPage,
   selectRolloutsSearchTerm,
   selectRolloutsSort,
@@ -25,9 +21,12 @@ import {
   setRolloutsStatusFilters,
   useGetRolloutAttemptsQuery,
   useGetRolloutsQuery,
+  type Rollout,
+  type RolloutMode,
+  type RolloutStatus,
 } from '@/features/rollouts';
-import { openDrawer } from '@/features/ui/drawer';
 import { hideAlert, showAlert } from '@/features/ui/alert';
+import { openDrawer } from '@/features/ui/drawer';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
 
 function RolloutAttemptsContent({
@@ -57,18 +56,7 @@ function RolloutAttemptsContent({
 }
 
 function toRolloutFromRecord(record: RolloutTableRecord): Rollout {
-  const {
-    rolloutId,
-    input,
-    startTime,
-    endTime,
-    mode,
-    resourcesId,
-    status,
-    config,
-    metadata,
-    attempt,
-  } = record;
+  const { rolloutId, input, startTime, endTime, mode, resourcesId, status, config, metadata, attempt } = record;
 
   return {
     rolloutId,
@@ -203,7 +191,7 @@ export function RolloutsPage() {
           id: 'rollouts-fetch',
           message: 'Unable to refresh rollouts. The list below may be out of date until the connection recovers.',
           tone: 'error',
-        })
+        }),
       );
       return;
     }
@@ -217,25 +205,25 @@ export function RolloutsPage() {
     () => () => {
       dispatch(hideAlert({ id: 'rollouts-fetch' }));
     },
-    [dispatch]
+    [dispatch],
   );
 
   return (
-    <Stack gap="md">
+    <Stack gap='md'>
       <Title order={1}>Rollouts</Title>
 
       <TextInput
-        placeholder="Search by Rollout ID"
+        placeholder='Search by Rollout ID'
         value={searchTerm}
         onChange={(event) => handleSearchTermChange(event.currentTarget.value)}
         leftSection={<IconSearch size={16} />}
-        data-testid="rollouts-search-input"
-        w="100%"
+        data-testid='rollouts-search-input'
+        w='100%'
         style={{ maxWidth: 360 }}
       />
 
       {showSkeleton ? (
-        <Skeleton height={360} radius="md" />
+        <Skeleton height={360} radius='md' />
       ) : (
         <RolloutTable
           rollouts={rolloutsData?.items}
@@ -260,9 +248,7 @@ export function RolloutsPage() {
           onRefetch={refetch}
           onViewRawJson={handleViewRawJson}
           onViewTraces={handleViewTraces}
-          renderRowExpansion={({ rollout, columns }) => (
-            <RolloutAttemptsContent rollout={rollout} columns={columns} />
-          )}
+          renderRowExpansion={({ rollout, columns }) => <RolloutAttemptsContent rollout={rollout} columns={columns} />}
         />
       )}
     </Stack>

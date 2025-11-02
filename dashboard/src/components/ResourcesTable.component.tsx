@@ -1,34 +1,11 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-  type ReactNode,
-  type SetStateAction,
-} from 'react';
-import { useElementSize } from '@mantine/hooks';
-import {
-  IconCheck,
-  IconCopy,
-  IconRefresh,
-} from '@tabler/icons-react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode, type SetStateAction } from 'react';
+import { IconCheck, IconCopy, IconRefresh } from '@tabler/icons-react';
 import { DataTable, type DataTableColumn, type DataTableSortStatus } from 'mantine-datatable';
-import {
-  ActionIcon,
-  Box,
-  Button,
-  CopyButton,
-  Group,
-  Stack,
-  Text,
-  Tooltip,
-} from '@mantine/core';
+import { ActionIcon, Box, Button, CopyButton, Group, Stack, Text, Tooltip } from '@mantine/core';
+import { useElementSize } from '@mantine/hooks';
 import type { Resources } from '@/types';
 import { formatDateTime, safeStringify } from '@/utils/format';
-import {
-  createResponsiveColumns,
-  type ColumnVisibilityConfig,
-} from '@/utils/table';
+import { createResponsiveColumns, type ColumnVisibilityConfig } from '@/utils/table';
 
 const DEFAULT_RECORDS_PER_PAGE_OPTIONS = [50, 100, 200, 500];
 
@@ -74,7 +51,7 @@ function createResourcesColumns(_options: ResourcesColumnsOptions): DataTableCol
       sortable: true,
       render: ({ resourcesId }) => (
         <Group gap={2}>
-          <Text fw={500} size="sm">
+          <Text fw={500} size='sm'>
             {resourcesId}
           </Text>
           <CopyButton value={resourcesId}>
@@ -82,9 +59,9 @@ function createResourcesColumns(_options: ResourcesColumnsOptions): DataTableCol
               <Tooltip label={copied ? 'Copied' : 'Copy'} withArrow>
                 <ActionIcon
                   aria-label={`Copy resources ID ${resourcesId}`}
-                  variant="subtle"
+                  variant='subtle'
                   color={copied ? 'teal' : 'gray'}
-                  size="sm"
+                  size='sm'
                   onClick={(event) => {
                     event.stopPropagation();
                     copy();
@@ -103,34 +80,34 @@ function createResourcesColumns(_options: ResourcesColumnsOptions): DataTableCol
       title: 'Version',
       sortable: true,
       textAlign: 'left',
-      render: ({ version }) => <Text size="sm">{version}</Text>,
+      render: ({ version }) => <Text size='sm'>{version}</Text>,
     },
     {
       accessor: 'createTime',
       title: 'Created',
       sortable: true,
       textAlign: 'left',
-      render: ({ createTime }) => <Text size="sm">{formatDateTime(createTime)}</Text>,
+      render: ({ createTime }) => <Text size='sm'>{formatDateTime(createTime)}</Text>,
     },
     {
       accessor: 'updateTime',
       title: 'Updated',
       sortable: true,
       textAlign: 'left',
-      render: ({ updateTime }) => <Text size="sm">{formatDateTime(updateTime)}</Text>,
+      render: ({ updateTime }) => <Text size='sm'>{formatDateTime(updateTime)}</Text>,
     },
     {
       accessor: 'resourceCount',
       title: 'Count',
       sortable: true,
       textAlign: 'left',
-      render: ({ resourceCount }) => <Text size="sm">{resourceCount}</Text>,
+      render: ({ resourceCount }) => <Text size='sm'>{resourceCount}</Text>,
     },
     {
       accessor: 'resourcesPreview',
       title: 'Preview',
       render: ({ resourcesPreview }) => (
-        <Text size="sm" ff="monospace" c="dimmed" lineClamp={1} style={{ width: '100%' }}>
+        <Text size='sm' ff='monospace' c='dimmed' lineClamp={1} style={{ width: '100%' }}>
           {resourcesPreview}
         </Text>
       ),
@@ -194,7 +171,7 @@ export function ResourcesTable({
 
   const responsiveColumns = useMemo(
     () => createResponsiveColumns(columns, containerWidth, COLUMN_VISIBILITY),
-    [columns, containerWidth]
+    [columns, containerWidth],
   );
 
   const totalPages = useMemo(
@@ -210,9 +187,7 @@ export function ResourcesTable({
 
   useEffect(() => {
     setExpandedRecordIds((current) =>
-      current.filter((id) =>
-        resourcesRecords.some((record) => record.resourcesId === id && record.canExpand)
-      )
+      current.filter((id) => resourcesRecords.some((record) => record.resourcesId === id && record.canExpand)),
     );
   }, [resourcesRecords]);
 
@@ -227,7 +202,7 @@ export function ResourcesTable({
     (status: DataTableSortStatus<ResourcesTableRecord>) => {
       onSortStatusChange(status);
     },
-    [onSortStatusChange]
+    [onSortStatusChange],
   );
 
   const errorMessage =
@@ -236,27 +211,21 @@ export function ResourcesTable({
       : 'Resources are temporarily unavailable.';
 
   const emptyState = (
-    <Stack gap="sm" align="center" py="lg">
+    <Stack gap='sm' align='center' py='lg'>
       {isError ? (
         <>
-          <Text fw={600} size="sm">
+          <Text fw={600} size='sm'>
             {errorMessage}
           </Text>
-          <Text size="sm" c="dimmed" ta="center">
+          <Text size='sm' c='dimmed' ta='center'>
             Use the retry button to try again, or adjust the filters to broaden the results.
           </Text>
-          <Group gap="xs">
-            <Button
-              size="xs"
-              variant="light"
-              color="gray"
-              leftSection={<IconRefresh size={14} />}
-              onClick={onRefetch}
-            >
+          <Group gap='xs'>
+            <Button size='xs' variant='light' color='gray' leftSection={<IconRefresh size={14} />} onClick={onRefetch}>
               Retry
             </Button>
             {hasActiveFilters ? (
-              <Button size="xs" variant="subtle" onClick={onResetFilters}>
+              <Button size='xs' variant='subtle' onClick={onResetFilters}>
                 Clear filters
               </Button>
             ) : null}
@@ -264,25 +233,20 @@ export function ResourcesTable({
         </>
       ) : (
         <>
-          <Text fw={600} size="sm">
+          <Text fw={600} size='sm'>
             No resources found
           </Text>
-          <Text size="sm" c="dimmed" ta="center">
+          <Text size='sm' c='dimmed' ta='center'>
             {hasActiveFilters
               ? 'Try adjusting the search to see more results.'
               : 'Try refreshing to fetch the latest resources.'}
           </Text>
-          <Group gap="xs">
-            <Button
-              size="xs"
-              variant="light"
-              leftSection={<IconRefresh size={14} />}
-              onClick={onRefetch}
-            >
+          <Group gap='xs'>
+            <Button size='xs' variant='light' leftSection={<IconRefresh size={14} />} onClick={onRefetch}>
               Refresh
             </Button>
             {hasActiveFilters ? (
-              <Button size="xs" variant="subtle" onClick={onResetFilters}>
+              <Button size='xs' variant='subtle' onClick={onResetFilters}>
                 Clear filters
               </Button>
             ) : null}
@@ -299,9 +263,9 @@ export function ResourcesTable({
         withTableBorder
         withColumnBorders
         highlightOnHover
-        verticalAlign="center"
+        verticalAlign='center'
         minHeight={resourcesRecords.length === 0 ? 500 : undefined}
-        idAccessor="resourcesId"
+        idAccessor='resourcesId'
         records={resourcesRecords}
         columns={responsiveColumns}
         totalRecords={totalRecords}
@@ -313,7 +277,7 @@ export function ResourcesTable({
         sortStatus={sortStatus}
         onSortStatusChange={handleSortStatusChange}
         fetching={isFetching}
-        loaderSize="sm"
+        loaderSize='sm'
         emptyState={resourcesRecords.length === 0 ? emptyState : undefined}
         rowExpansion={
           renderRowExpansion
@@ -332,14 +296,13 @@ export function ResourcesTable({
                         .map(String)
                         .filter((id) =>
                           resourcesRecords.some(
-                            (tableRecord) => tableRecord.resourcesId === id && tableRecord.canExpand
-                          )
+                            (tableRecord) => tableRecord.resourcesId === id && tableRecord.canExpand,
+                          ),
                         );
                     });
                   },
                 },
-                content: ({ record }) =>
-                  renderRowExpansion({ resources: record, columns: responsiveColumns }),
+                content: ({ record }) => renderRowExpansion({ resources: record, columns: responsiveColumns }),
               }
             : undefined
         }

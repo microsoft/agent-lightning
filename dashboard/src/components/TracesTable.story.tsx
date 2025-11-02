@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react';
 import type { Meta, StoryObj } from '@storybook/react';
-import { Box, Stack, TextInput, Title } from '@mantine/core';
 import { IconSearch } from '@tabler/icons-react';
-import { TracesTable, buildTraceRecord, type TracesTableRecord } from './TracesTable.component';
+import { Box, Stack, TextInput, Title } from '@mantine/core';
 import type { Span } from '@/types';
 import { compareRecords } from '@/utils/table';
+import { buildTraceRecord, TracesTable, type TracesTableRecord } from './TracesTable.component';
 
 const meta: Meta<typeof TracesTable> = {
   title: 'Components/TracesTable',
@@ -262,32 +262,29 @@ function TracesTableStoryWrapper({
   const pagedSpans = useMemo(() => pagedRecords.map((record) => record as Span), [pagedRecords]);
 
   const handleShowRollout = (record: any) => {
-    // eslint-disable-next-line no-console
     console.log('Show rollout for:', record.rolloutId);
   };
 
   const handleShowSpanDetail = (record: any) => {
-    // eslint-disable-next-line no-console
     console.log('Show span detail for:', record.spanId, record);
   };
 
   const handleParentIdClick = (parentId: string) => {
-    // eslint-disable-next-line no-console
     console.log('Navigate to parent span:', parentId);
     setSearchTerm(parentId);
   };
 
   return (
-    <Box mx="auto" style={{ maxWidth, width: '100%', padding: 16 }}>
-      <Stack gap="md">
+    <Box mx='auto' style={{ maxWidth, width: '100%', padding: 16 }}>
+      <Stack gap='md'>
         <Title order={2}>Traces</Title>
         <TextInput
-          placeholder="Search by Trace ID, Span ID, or Name"
+          placeholder='Search by Trace ID, Span ID, or Name'
           value={searchTerm}
           onChange={(event) => setSearchTerm(event.currentTarget.value)}
           leftSection={<IconSearch size={16} />}
-          data-testid="traces-search-input"
-          w="100%"
+          data-testid='traces-search-input'
+          w='100%'
           style={{ maxWidth: 360 }}
         />
         <TracesTable
@@ -344,14 +341,7 @@ export const DrawerWidth: Story = {
 };
 
 export const ErrorState: Story = {
-  render: () => (
-    <TracesTableStoryWrapper
-      maxWidth={960}
-      spans={[]}
-      isError
-      error={new Error('Network unreachable')}
-    />
-  ),
+  render: () => <TracesTableStoryWrapper maxWidth={960} spans={[]} isError error={new Error('Network unreachable')} />,
 };
 
 export const LoadingState: Story = {
@@ -364,18 +354,12 @@ export const EmptyState: Story = {
 
 export const WithMissingParent: Story = {
   render: () => (
-    <TracesTableStoryWrapper
-      maxWidth={1200}
-      spans={sampleSpans.filter((s) => s.spanId === 'span-error-001')}
-    />
+    <TracesTableStoryWrapper maxWidth={1200} spans={sampleSpans.filter((s) => s.spanId === 'span-error-001')} />
   ),
 };
 
 export const NestedSpans: Story = {
   render: () => (
-    <TracesTableStoryWrapper
-      maxWidth={1200}
-      spans={sampleSpans.filter((s) => s.traceId === 'trace-nested456')}
-    />
+    <TracesTableStoryWrapper maxWidth={1200} spans={sampleSpans.filter((s) => s.traceId === 'trace-nested456')} />
   ),
 };

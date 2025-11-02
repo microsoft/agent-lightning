@@ -1,12 +1,12 @@
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { IconCpu, IconRouteSquare, IconSettings, IconTimeline } from '@tabler/icons-react';
+import { Outlet, NavLink as RouterNavLink, useLocation } from 'react-router-dom';
 import { AppShell, Badge, Group, Image, NavLink as MantineNavLink, Stack, Text } from '@mantine/core';
-import { type ReactNode, useEffect, useMemo, useState } from 'react';
-import { NavLink as RouterNavLink, Outlet, useLocation } from 'react-router-dom';
-import { selectConfig } from '../features/config';
-import { AppDrawer } from '@/components/AppDrawer.component';
 import { AppAlertBanner } from '@/components/AppAlertBanner';
-import { useAppSelector } from '../store/hooks';
+import { AppDrawer } from '@/components/AppDrawer.component';
 import faviconUrl from '../favicon.svg';
-import { IconTimeline, IconCpu, IconRouteSquare, IconSettings } from '@tabler/icons-react';
+import { selectConfig } from '../features/config';
+import { useAppSelector } from '../store/hooks';
 
 type ConnectionStatus = 'online' | 'offline' | 'unknown';
 
@@ -126,21 +126,21 @@ function ConnectionIndicator({
   const connectionTarget = baseUrl && baseUrl.length > 0 ? baseUrl : 'No server configured';
 
   return (
-    <Stack gap={4} data-testid="connection-indicator">
-      <Text size="xs" fw={600} c="dimmed">
+    <Stack gap={4} data-testid='connection-indicator'>
+      <Text size='xs' fw={600} c='dimmed'>
         Server connection
       </Text>
-      <Group gap="xs">
+      <Group gap='xs'>
         {isRefreshing ? (
-          <Badge color="blue" variant="light" radius="xl" className="connection-refreshing">
+          <Badge color='blue' variant='light' radius='xl' className='connection-refreshing'>
             Refreshing
           </Badge>
         ) : (
-          <Badge color={color} variant="light" radius="xl">
+          <Badge color={color} variant='light' radius='xl'>
             {label}
           </Badge>
         )}
-        <Text size="xs" c="dimmed">
+        <Text size='xs' c='dimmed'>
           {connectionTarget}
         </Text>
       </Group>
@@ -155,8 +155,7 @@ export type AppLayoutProps = {
 export function AppLayout({ config }: AppLayoutProps = {}) {
   const location = useLocation();
   const resolvedBaseUrl = config?.baseUrl ?? getSameOriginUrl() ?? '';
-  const autoRefreshMs =
-    config?.autoRefreshMs !== undefined ? config.autoRefreshMs : DEFAULT_AUTO_REFRESH_MS;
+  const autoRefreshMs = config?.autoRefreshMs !== undefined ? config.autoRefreshMs : DEFAULT_AUTO_REFRESH_MS;
   const connectionState = useServerConnection({
     baseUrl: resolvedBaseUrl || undefined,
     autoRefreshMs,
@@ -171,18 +170,18 @@ export function AppLayout({ config }: AppLayoutProps = {}) {
   );
 
   return (
-    <AppShell padding="md" navbar={{ width: 280, breakpoint: 'sm' }}>
+    <AppShell padding='md' navbar={{ width: 280, breakpoint: 'sm' }}>
       <AppShell.Navbar>
-        <AppShell.Section p="md" mb="md">
-          <Group gap="sm">
-            <Image src={faviconUrl} alt="Agent-lightning logo" w={32} h={32} />
-            <Text fw={600} size="sm">
+        <AppShell.Section p='md' mb='md'>
+          <Group gap='sm'>
+            <Image src={faviconUrl} alt='Agent-lightning logo' w={32} h={32} />
+            <Text fw={600} size='sm'>
               Agent-lightning Dashboard
             </Text>
           </Group>
         </AppShell.Section>
-        <AppShell.Section grow p="md" pt={0}>
-          <Stack gap="xs">
+        <AppShell.Section grow p='md' pt={0}>
+          <Stack gap='xs'>
             {navItems.map((item) => (
               <MantineNavLink
                 key={item.to}
@@ -190,13 +189,13 @@ export function AppLayout({ config }: AppLayoutProps = {}) {
                 to={item.to}
                 label={item.label}
                 active={item.active}
-                variant="light"
+                variant='light'
                 leftSection={item.icon}
               />
             ))}
           </Stack>
         </AppShell.Section>
-        <AppShell.Section p="md">
+        <AppShell.Section p='md'>
           <ConnectionIndicator
             baseUrl={resolvedBaseUrl || undefined}
             status={connectionState.status}

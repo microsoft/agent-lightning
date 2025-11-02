@@ -29,7 +29,7 @@
     }
   }
 
-  &[data-variant="outline"] {
+  &[data-variant='outline'] {
     .mantine-Checkbox-input {
       background-color: transparent;
 
@@ -51,7 +51,7 @@
 .mantine-Chip-root {
   --chip-color: var(--mantine-primary-color-contrast);
 
-  &[data-variant="outline"]:not([data-disabled]) {
+  &[data-variant='outline']:not([data-disabled]) {
     .mantine-Chip-label {
       background-color: transparent;
       --chip-bd: 1px solid var(--mantine-color-default-border);
@@ -78,25 +78,25 @@
 }
 
 /* Input */
-[data-mantine-color-scheme="light"],
-[data-mantine-color-scheme="dark"] {
+[data-mantine-color-scheme='light'],
+[data-mantine-color-scheme='dark'] {
   .mantine-Input-wrapper {
     --input-disabled-bg: alpha(var(--mantine-color-default-hover), 0.5);
     --input-disabled-color: alpha(var(--mantine-color-text), 0.5);
 
-    &[data-variant="default"] {
+    &[data-variant='default'] {
       --input-bd: var(--mantine-color-default-border);
       --input-bg: transparent;
       --input-bd-focus: var(--mantine-primary-color-filled);
     }
 
-    &[data-variant="filled"] {
+    &[data-variant='filled'] {
       --input-bd: transparent;
       --input-bg: var(--mantine-color-default-hover);
       --input-bd-focus: var(--mantine-primary-color-filled);
     }
 
-    &[data-variant="unstyled"] {
+    &[data-variant='unstyled'] {
       --input-bd: transparent;
       --input-bg: transparent;
       --input-bd-focus: transparent;
@@ -115,12 +115,12 @@
   border-color: var(--mantine-color-default-border);
   background-color: transparent;
 
-  &[data-variant="filled"] {
+  &[data-variant='filled'] {
     border-color: var(--mantine-color-default-border);
     background-color: alpha(var(--mantine-color-default-hover), 0.4);
   }
 
-  &[data-variant="unstyled"] {
+  &[data-variant='unstyled'] {
     border-color: transparent;
     background-color: transparent;
   }
@@ -146,7 +146,7 @@
     }
   }
 
-  &[data-variant="outline"] {
+  &[data-variant='outline'] {
     .mantine-Radio-radio {
       background-color: transparent;
       border-color: var(--radio-color);
@@ -174,12 +174,14 @@
 
   .mantine-SegmentedControl-label {
     color: var(--mantine-color-dimmed);
+
     &[data-active] {
       color: var(--mantine-color-text);
     }
   }
 }
-[data-mantine-color-scheme="light"] {
+
+[data-mantine-color-scheme='light'] {
   .mantine-SegmentedControl-root {
     .mantine-SegmentedControl-label {
       &:where(:not([data-disabled], [data-active], [data-read-only])) {
@@ -190,7 +192,8 @@
     }
   }
 }
-[data-mantine-color-scheme="dark"] {
+
+[data-mantine-color-scheme='dark'] {
   .mantine-SegmentedControl-root {
     .mantine-SegmentedControl-label {
       &:where(:not([data-disabled], [data-active], [data-read-only])) {
@@ -202,23 +205,24 @@
   }
 }
 
-[data-mantine-color-scheme='light']{
+[data-mantine-color-scheme='light'] {
   .mantine-SegmentedControl-root {
     .mantine-SegmentedControl-label {
       &:where(:not([data-disabled], [data-active], [data-read-only])) {
         &:hover {
-            color: var(--mantine-color-black);
+          color: var(--mantine-color-black);
         }
       }
     }
   }
 }
-[data-mantine-color-scheme='dark']{
+
+[data-mantine-color-scheme='dark'] {
   .mantine-SegmentedControl-root {
     .mantine-SegmentedControl-label {
       &:where(:not([data-disabled], [data-active], [data-read-only])) {
         &:hover {
-            color: var(--mantine-color-white);
+          color: var(--mantine-color-white);
         }
       }
     }
@@ -228,12 +232,13 @@
 /* Switch */
 
 /* Slider */
-[data-mantine-color-scheme="light"],
-[data-mantine-color-scheme="dark"] {
+[data-mantine-color-scheme='light'],
+[data-mantine-color-scheme='dark'] {
   .mantine-Slider-root {
     --slider-track-bg: var(--mantine-color-secondary-outline-hover);
   }
 }
+
 .mantine-Slider-root {
   .mantine-Slider-trackContainer {
     &[data-disabled] {
@@ -252,7 +257,7 @@
 /* Pills Input */
 .mantine-PillsInput-wrapper {
   .mantine-PillsInput-input {
-    &[data-variant="filled"] {
+    &[data-variant='filled'] {
       .mantine-Pill-root {
         background-color: var(--mantine-color-body);
       }
@@ -263,7 +268,7 @@
 /* Tags Input */
 .mantine-TagsInput-wrapper {
   .mantine-TagsInput-input {
-    &[data-variant="filled"] {
+    &[data-variant='filled'] {
       .mantine-Pill-root {
         background-color: var(--mantine-color-body);
       }
@@ -293,7 +298,7 @@
 
 /* Close Button */
 .mantine-CloseButton-root {
-  &[data-variant="subtle"]:where(:not([data-disabled], :disabled)) {
+  &[data-variant='subtle']:where(:not([data-disabled], :disabled)) {
     &:hover {
       background-color: var(--mantine-color-default-hover);
     }
@@ -306,7 +311,7 @@
     background-color: var(--mantine-color-default-hover);
   }
 
-  &:where([data-active], [aria-current="page"]) {
+  &:where([data-active], [aria-current='page']) {
     background-color: var(--nl-bg);
     color: var(--nl-color);
 
@@ -324,21 +329,22 @@
 /* Pagination */
 .mantine-Pagination-root {
   .mantine-Pagination-control {
-      border-color: var(--mantine-color-default-border);
-      background-color: var(--mantine-color-body);
+    border-color: var(--mantine-color-default-border);
+    background-color: var(--mantine-color-body);
 
-      &:hover {
-        &:where(:not(:disabled, [data-disabled])) {
-          background-color: var(--mantine-color-default-hover);
-        }
+    &:hover {
+      &:where(:not(:disabled, [data-disabled])) {
+        background-color: var(--mantine-color-default-hover);
       }
+    }
+
     &:where([data-active]) {
       background-color: var(--pagination-active-bg);
       border-color: var(--pagination-active-bg);
       color: var(--pagination-active-color, var(--mantine-primary-color-contrast));
 
       &:hover {
-        background-color: rgba(from var(--pagination-active-bg) r g b / 0.9);
+        background-color: rgb(from var(--pagination-active-bg) r g b / 0.9);
       }
     }
   }
@@ -347,9 +353,9 @@
 /* Stepper */
 .mantine-Stepper-root {
   .mantine-Stepper-stepIcon {
-      background-color: var(--mantine-color-body);
-      border-color: var(--mantine-color-default-border);
-      color: var(--mantine-color-text);
+    background-color: var(--mantine-color-body);
+    border-color: var(--mantine-color-default-border);
+    color: var(--mantine-color-text);
 
     &:where([data-progress]) {
       border-color: var(--step-color);
@@ -364,17 +370,17 @@
 }
 
 /* Tabs */
-[data-mantine-color-scheme="light"],
-[data-mantine-color-scheme="dark"] {
+[data-mantine-color-scheme='light'],
+[data-mantine-color-scheme='dark'] {
   .mantine-Tabs-root {
     --tab-border-color: var(--mantine-color-default-border);
 
-    &[data-variant="default"] {
+    &[data-variant='default'] {
       --tabs-list-border-width: 2px;
       --tab-hover-color: var(--mantine-color-default-hover);
     }
 
-    &[data-variant="pills"] {
+    &[data-variant='pills'] {
       --tabs-list-gap: calc(var(--mantine-spacing-sm) / 2);
       --tabs-text-color: var(--mantine-color-body) !important;
       --tab-hover-color: var(--mantine-color-default-hover);
@@ -383,9 +389,9 @@
     .mantine-Tabs-tab {
       color: var(--mantine-color-dimmed);
 
-      &[data-variant="default"],
-      &[data-variant="outline"] {
-        &[data-active="true"] {
+      &[data-variant='default'],
+      &[data-variant='outline'] {
+        &[data-active='true'] {
           color: var(--mantine-color-text);
         }
 
@@ -395,8 +401,8 @@
         }
       }
 
-      &[data-variant="pills"] {
-        &[data-active="true"] {
+      &[data-variant='pills'] {
+        &[data-active='true'] {
           color: var(--mantine-primary-color-contrast);
 
           &:hover {
@@ -411,7 +417,6 @@
     }
   }
 }
-
 
 /* Notification */
 .mantine-Notification-root {
@@ -489,11 +494,12 @@
   }
 }
 
-/* Popover Start*/
+/* Popover Start */
 .mantine-Popover-dropdown {
   --popover-border-color: var(--mantine-color-default-border);
   background-color: var(--mantine-color-body);
 }
+
 .mantine-Popover-arrow {
   --popover-border-color: var(--mantine-color-default-border);
 }
@@ -517,7 +523,7 @@
     --item-filled-color: var(--mantine-color-default-hover);
   }
 
-  &[data-variant="default"] {
+  &[data-variant='default'] {
     .mantine-Accordion-control {
       &:where(:not(:disabled, [data-disabled])) {
         &:hover {
@@ -525,6 +531,7 @@
         }
       }
     }
+
     .mantine-Accordion-label {
       &:where(:not(:disabled, [data-disabled])) {
         &:hover {
@@ -534,8 +541,8 @@
     }
   }
 
-  &[data-variant="contained"],
-  &[data-variant="filled"] {
+  &[data-variant='contained'],
+  &[data-variant='filled'] {
     .mantine-Accordion-control {
       &:where(:not(:disabled, [data-disabled])) {
         &:hover {
@@ -556,7 +563,8 @@
 /* Badge */
 .mantine-Badge-root {
   --badge-color: var(--mantine-primary-color-contrast);
-  &[data-variant="dot"] {
+
+  &[data-variant='dot'] {
     background-color: var(--mantine-color-secondary-light);
     border-color: var(--mantine-color-secondary-light);
     color: var(--mantine-color-text);

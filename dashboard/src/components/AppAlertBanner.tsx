@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Notification, Portal, Transition } from '@mantine/core';
 import { IconAlertCircle, IconAlertTriangle, IconInfoCircle } from '@tabler/icons-react';
+import { Notification, Portal, Transition } from '@mantine/core';
 import { hideAlert, selectHighestPriorityAlert, type AppAlert } from '@/features/ui/alert';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
 
@@ -50,16 +50,16 @@ export function AppAlertBanner() {
     <Portal>
       <Transition
         mounted={mounted}
-        transition="slide-down"
+        transition='slide-down'
         duration={200}
-        timingFunction="ease"
+        timingFunction='ease'
         onExited={() => setTransitionAlert(null)}
       >
         {(styles) => (
           <Notification
             icon={<IconComponent size={18} />}
             color={meta.color}
-            variant="light"
+            variant='light'
             withCloseButton
             onClose={() => handleClose(currentAlert.id)}
             style={{

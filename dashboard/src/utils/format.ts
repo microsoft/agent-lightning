@@ -75,10 +75,7 @@ export function formatStatusLabel(status: string): string {
     .replace(/^\w|\s\w/g, (match) => match.toUpperCase());
 }
 
-export function formatInputPreview(
-  input: unknown,
-  maxLength = 35,
-): { preview: string; full: string } {
+export function formatInputPreview(input: unknown, maxLength = 35): { preview: string; full: string } {
   if (input === null || input === undefined) {
     return { preview: '—', full: '—' };
   }

@@ -1,16 +1,16 @@
 import type { Meta, StoryObj } from '@storybook/react';
-import userEvent from '@testing-library/user-event';
 import { within } from '@testing-library/dom';
+import userEvent from '@testing-library/user-event';
+import { delay, http, HttpResponse } from 'msw';
 import { Provider } from 'react-redux';
-import { http, HttpResponse, delay } from 'msw';
-import { RolloutsPage } from './Rollouts.page';
 import { AppDrawer } from '@/components/AppDrawer.component';
-import { createAppStore } from '../store';
+import { snakeCaseKeys } from '@/utils/format';
 import { initialConfigState } from '../features/config/slice';
-import { initialRolloutsUiState, type RolloutsUiState } from '../features/rollouts/slice';
 import { initialResourcesUiState } from '../features/resources/slice';
 import type { Attempt, Rollout } from '../features/rollouts';
-import { snakeCaseKeys } from '@/utils/format';
+import { initialRolloutsUiState, type RolloutsUiState } from '../features/rollouts/slice';
+import { createAppStore } from '../store';
+import { RolloutsPage } from './Rollouts.page';
 
 const meta: Meta<typeof RolloutsPage> = {
   title: 'Pages/RolloutsPage',
@@ -256,11 +256,7 @@ const getRolloutSortValue = (rollout: Rollout, sortBy: string): string | number 
   }
 };
 
-const sortRolloutsForParams = (
-  rollouts: Rollout[],
-  sortBy: string | null,
-  sortOrder: 'asc' | 'desc',
-): Rollout[] => {
+const sortRolloutsForParams = (rollouts: Rollout[], sortBy: string | null, sortOrder: 'asc' | 'desc'): Rollout[] => {
   const resolvedSortBy = sortBy ?? 'start_time';
   const sorted = [...rollouts].sort((a, b) => {
     const aValue = getRolloutSortValue(a, resolvedSortBy);
@@ -298,8 +294,7 @@ const buildRolloutsResponse = (rollouts: Rollout[], request: Request) => {
   const offsetParam = parseNumberParam(params, 'offset', 0);
   const effectiveLimit = limitParam < 0 ? sorted.length : limitParam;
   const offset = offsetParam < 0 ? 0 : offsetParam;
-  const paginated =
-    effectiveLimit >= 0 ? sorted.slice(offset, offset + effectiveLimit) : [...sorted];
+  const paginated = effectiveLimit >= 0 ? sorted.slice(offset, offset + effectiveLimit) : [...sorted];
 
   return snakeCaseKeys({
     items: paginated,
@@ -309,11 +304,7 @@ const buildRolloutsResponse = (rollouts: Rollout[], request: Request) => {
   });
 };
 
-const sortAttemptsForParams = (
-  attemptList: Attempt[],
-  sortBy: string | null,
-  sortOrder: 'asc' | 'desc',
-): Attempt[] => {
+const sortAttemptsForParams = (attemptList: Attempt[], sortBy: string | null, sortOrder: 'asc' | 'desc'): Attempt[] => {
   const sorted = [...attemptList];
   const resolvedSortBy = sortBy ?? 'sequence_id';
   sorted.sort((a, b) => {
@@ -338,8 +329,7 @@ const buildAttemptsResponse = (attemptList: Attempt[], request: Request) => {
   const offsetParam = parseNumberParam(params, 'offset', 0);
   const effectiveLimit = limitParam < 0 ? sorted.length : limitParam;
   const offset = offsetParam < 0 ? 0 : offsetParam;
-  const paginated =
-    effectiveLimit >= 0 ? sorted.slice(offset, offset + effectiveLimit) : [...sorted];
+  const paginated = effectiveLimit >= 0 ? sorted.slice(offset, offset + effectiveLimit) : [...sorted];
 
   return snakeCaseKeys({
     items: paginated,
@@ -503,10 +493,7 @@ const paginationRollouts: Rollout[] = Array.from({ length: 120 }, (_item, index)
 });
 
 const paginationAttempts: Record<string, Attempt[]> = Object.fromEntries(
-  paginationRollouts.map((rollout) => [
-    rollout.rolloutId,
-    rollout.attempt ? [rollout.attempt] : [],
-  ]),
+  paginationRollouts.map((rollout) => [rollout.rolloutId, rollout.attempt ? [rollout.attempt] : []]),
 );
 
 const autoExpandRollouts: Rollout[] = [
@@ -595,9 +582,7 @@ function renderWithStore(uiOverrides?: Partial<RolloutsUiState>) {
 }
 
 const createHandlers = (rollouts: Rollout[], attempts: Record<string, Attempt[]>) => [
-  http.get('*/agl/v1/rollouts', ({ request }) =>
-    HttpResponse.json(buildRolloutsResponse(rollouts, request)),
-  ),
+  http.get('*/agl/v1/rollouts', ({ request }) => HttpResponse.json(buildRolloutsResponse(rollouts, request))),
   http.get('*/agl/v1/rollouts/:rolloutId/attempts', ({ params, request }) => {
     const rolloutId = params.rolloutId as string;
     const attemptList = attempts[rolloutId] ?? [];
@@ -621,9 +606,7 @@ export const EmptyState: Story = {
   parameters: {
     msw: {
       handlers: [
-        http.get('*/agl/v1/rollouts', () =>
-          HttpResponse.json({ items: [], limit: 0, offset: 0, total: 0 }),
-        ),
+        http.get('*/agl/v1/rollouts', () => HttpResponse.json({ items: [], limit: 0, offset: 0, total: 0 })),
         http.get('*/agl/v1/rollouts/:rolloutId/attempts', () =>
           HttpResponse.json({ items: [], limit: 0, offset: 0, total: 0 }),
         ),
@@ -637,9 +620,7 @@ export const ServerError: Story = {
   parameters: {
     msw: {
       handlers: [
-        http.get('*/agl/v1/rollouts', () =>
-          HttpResponse.json({ detail: 'Internal error' }, { status: 500 }),
-        ),
+        http.get('*/agl/v1/rollouts', () => HttpResponse.json({ detail: 'Internal error' }, { status: 500 })),
         http.get('*/agl/v1/rollouts/:rolloutId/attempts', () =>
           HttpResponse.json({ items: [], limit: 0, offset: 0, total: 0 }, { status: 200 }),
         ),

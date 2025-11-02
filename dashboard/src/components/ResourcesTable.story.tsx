@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react';
 import type { Meta, StoryObj } from '@storybook/react';
-import { Box, Stack, TextInput, Title } from '@mantine/core';
 import { IconSearch } from '@tabler/icons-react';
+import { Box, Stack, TextInput, Title } from '@mantine/core';
+import type { Resources } from '@/types';
 import { ResourcesTable } from './ResourcesTable.component';
 import { ResourcesTree } from './ResourcesTree.component';
-import type { Resources } from '@/types';
 
 const meta: Meta<typeof ResourcesTable> = {
   title: 'Components/ResourcesTable',
@@ -216,19 +216,19 @@ function ResourcesTableStoryWrapper({
   }, [page, recordsPerPage, sortedResources]);
 
   return (
-    <Box mx="auto" style={{ maxWidth, width: '100%', padding: 16 }}>
-      <Stack gap="md">
+    <Box mx='auto' style={{ maxWidth, width: '100%', padding: 16 }}>
+      <Stack gap='md'>
         <Title order={2}>Resources</Title>
         <TextInput
-          placeholder="Search by Resources ID"
+          placeholder='Search by Resources ID'
           value={searchTerm}
           onChange={(event) => {
             setSearchTerm(event.currentTarget.value);
             setPage(1);
           }}
           leftSection={<IconSearch size={16} />}
-          data-testid="resources-search-input"
-          w="100%"
+          data-testid='resources-search-input'
+          w='100%'
           style={{ maxWidth: 360 }}
         />
         <ResourcesTable
@@ -284,12 +284,7 @@ export const DrawerWidth: Story = {
 
 export const ErrorState: Story = {
   render: () => (
-    <ResourcesTableStoryWrapper
-      maxWidth={600}
-      resourcesList={[]}
-      isError
-      error={new Error('Network unreachable')}
-    />
+    <ResourcesTableStoryWrapper maxWidth={600} resourcesList={[]} isError error={new Error('Network unreachable')} />
   ),
 };
 

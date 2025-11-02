@@ -1,18 +1,18 @@
-import { Stack, Text } from '@mantine/core';
 import type { Meta, StoryObj } from '@storybook/react';
-import { Provider } from 'react-redux';
 import { http, HttpResponse } from 'msw';
-import { RouterProvider, createMemoryRouter } from 'react-router-dom';
-import { createAppStore } from '@/store';
+import { Provider } from 'react-redux';
+import { createMemoryRouter, RouterProvider } from 'react-router-dom';
+import { Stack, Text } from '@mantine/core';
 import type { AlertsState, AlertTone } from '@/features/ui/alert';
-import { AppLayoutProps, AppLayout } from './AppLayout';
+import { createAppStore } from '@/store';
+import { AppLayout, AppLayoutProps } from './AppLayout';
 
 const Placeholder = ({ title, description }: { title: string; description: string }) => (
-  <Stack gap="sm" p="lg">
-    <Text size="lg" fw={600}>
+  <Stack gap='sm' p='lg'>
+    <Text size='lg' fw={600}>
       {title}
     </Text>
-    <Text size="sm" c="dimmed">
+    <Text size='sm' c='dimmed'>
       {description}
     </Text>
   </Stack>
@@ -25,23 +25,20 @@ const ROUTES = [
     children: [
       {
         path: 'rollouts',
-        element: <Placeholder title="Rollouts" description="Track the rollout queue and status." />,
+        element: <Placeholder title='Rollouts' description='Track the rollout queue and status.' />,
       },
       {
         path: 'resources',
-        element: <Placeholder title="Resources" description="Inspect resource snapshots and metadata." />,
+        element: <Placeholder title='Resources' description='Inspect resource snapshots and metadata.' />,
       },
       {
         path: 'traces',
-        element: <Placeholder title="Traces" description="Browse telemetry spans across attempts." />,
+        element: <Placeholder title='Traces' description='Browse telemetry spans across attempts.' />,
       },
       {
         path: 'settings',
         element: (
-          <Placeholder
-            title="Settings"
-            description="Configure server connection, refresh cadence, and appearance."
-          />
+          <Placeholder title='Settings' description='Configure server connection, refresh cadence, and appearance.' />
         ),
       },
     ],
@@ -112,9 +109,7 @@ export const NoServerConfigured: Story = {
 export const ServerOnline: Story = {
   parameters: {
     msw: {
-      handlers: [
-        http.get('http://localhost:8000/health', () => HttpResponse.json({ status: 'ok' }, { status: 200 })),
-      ],
+      handlers: [http.get('http://localhost:8000/health', () => HttpResponse.json({ status: 'ok' }, { status: 200 }))],
     },
   },
 };
@@ -123,10 +118,7 @@ export const ServerOffline: Story = {
   parameters: {
     msw: {
       handlers: [
-        http.get(
-          'http://localhost:8000/health',
-          () => HttpResponse.json({ message: 'unavailable' }, { status: 503 }),
-        ),
+        http.get('http://localhost:8000/health', () => HttpResponse.json({ message: 'unavailable' }, { status: 503 })),
       ],
     },
   },
@@ -153,22 +145,14 @@ export const PollingEveryFiveSeconds: Story = {
   },
   parameters: {
     msw: {
-      handlers: [
-        http.get('http://localhost:8000/health', () =>
-          HttpResponse.json({ status: 'ok' }, { status: 200 }),
-        ),
-      ],
+      handlers: [http.get('http://localhost:8000/health', () => HttpResponse.json({ status: 'ok' }, { status: 200 }))],
     },
   },
 };
 
 export const InfoAlertActive: Story = {
   render: (args) =>
-    renderAppLayout(
-      args,
-      '/rollouts',
-      createAlertState('Background synchronization completed successfully.', 'info'),
-    ),
+    renderAppLayout(args, '/rollouts', createAlertState('Background synchronization completed successfully.', 'info')),
 };
 
 export const WarningAlertActive: Story = {

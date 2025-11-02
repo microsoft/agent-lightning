@@ -1,8 +1,8 @@
-import { Divider, Select, Stack, Text, TextInput, Title } from '@mantine/core';
 import { useEffect, useState } from 'react';
-import { useAppDispatch, useAppSelector } from '../store/hooks';
+import { Divider, Select, Stack, Text, TextInput, Title } from '@mantine/core';
 import { selectConfig } from '../features/config';
 import { setAutoRefreshMs, setBaseUrl, setTheme } from '../features/config/slice';
+import { useAppDispatch, useAppSelector } from '../store/hooks';
 
 const AUTO_REFRESH_OPTIONS = [
   { label: 'Off', value: '0' },
@@ -28,30 +28,30 @@ export function SettingsPage() {
   }, [config.baseUrl]);
 
   return (
-    <Stack gap="lg" p="md" data-testid="settings-page">
+    <Stack gap='lg' p='md' data-testid='settings-page'>
       <Title order={1}>Settings</Title>
-      <Stack gap="md">
+      <Stack gap='md'>
         <Stack gap={4}>
-          <Text fw={600} size="sm">
+          <Text fw={600} size='sm'>
             Backend base URL
           </Text>
-          <Text size="xs" c="dimmed">
+          <Text size='xs' c='dimmed'>
             The dashboard uses this address for health checks and API calls.
           </Text>
           <TextInput
-            placeholder="http://localhost:8000"
+            placeholder='http://localhost:8000'
             value={baseUrlInput}
             onChange={(event) => setBaseUrlInput(event.currentTarget.value)}
             onBlur={() => dispatch(setBaseUrl(baseUrlInput.trim()))}
-            data-testid="settings-base-url"
+            data-testid='settings-base-url'
           />
         </Stack>
         <Divider />
         <Stack gap={4}>
-          <Text fw={600} size="sm">
+          <Text fw={600} size='sm'>
             Auto-refresh interval
           </Text>
-          <Text size="xs" c="dimmed">
+          <Text size='xs' c='dimmed'>
             Controls how often the dashboard polls the server.
           </Text>
           <Select
@@ -64,15 +64,15 @@ export function SettingsPage() {
               }
               dispatch(setAutoRefreshMs(Number(value)));
             }}
-            data-testid="settings-auto-refresh"
+            data-testid='settings-auto-refresh'
           />
         </Stack>
         <Divider />
         <Stack gap={4}>
-          <Text fw={600} size="sm">
+          <Text fw={600} size='sm'>
             Theme
           </Text>
-          <Text size="xs" c="dimmed">
+          <Text size='xs' c='dimmed'>
             Choose the color scheme for the dashboard.
           </Text>
           <Select
@@ -84,7 +84,7 @@ export function SettingsPage() {
               }
               dispatch(setTheme(value as typeof config.theme));
             }}
-            data-testid="settings-theme"
+            data-testid='settings-theme'
           />
         </Stack>
       </Stack>

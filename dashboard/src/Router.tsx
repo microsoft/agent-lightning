@@ -1,4 +1,4 @@
-import { Navigate, RouterProvider, createBrowserRouter } from 'react-router-dom';
+import { createBrowserRouter, Navigate, RouterProvider } from 'react-router-dom';
 import { AppLayoutWithState } from './layouts/AppLayout';
 import { ResourcesPage } from './pages/Resources.page';
 import { RolloutsPage } from './pages/Rollouts.page';
@@ -12,7 +12,7 @@ const router = createBrowserRouter([
     children: [
       {
         index: true,
-        element: <Navigate to="/rollouts" replace />,
+        element: <Navigate to='/rollouts' replace />,
       },
       {
         path: 'rollouts',

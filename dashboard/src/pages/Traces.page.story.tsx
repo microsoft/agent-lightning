@@ -1,15 +1,15 @@
 import type { Meta, StoryObj } from '@storybook/react';
+import { delay, http, HttpResponse } from 'msw';
 import { Provider } from 'react-redux';
-import { http, HttpResponse, delay } from 'msw';
-import { TracesPage } from './Traces.page';
 import { AppDrawer } from '@/components/AppDrawer.component';
-import { createAppStore } from '../store';
-import { initialConfigState } from '../features/config/slice';
-import { initialRolloutsUiState } from '../features/rollouts/slice';
-import { initialResourcesUiState } from '../features/resources/slice';
-import { initialTracesUiState, type TracesUiState } from '../features/traces/slice';
-import type { Attempt, Rollout, Span } from '../types';
 import { snakeCaseKeys } from '@/utils/format';
+import { initialConfigState } from '../features/config/slice';
+import { initialResourcesUiState } from '../features/resources/slice';
+import { initialRolloutsUiState } from '../features/rollouts/slice';
+import { initialTracesUiState, type TracesUiState } from '../features/traces/slice';
+import { createAppStore } from '../store';
+import type { Attempt, Rollout, Span } from '../types';
+import { TracesPage } from './Traces.page';
 
 const meta: Meta<typeof TracesPage> = {
   title: 'Pages/TracesPage',
@@ -256,11 +256,7 @@ const getRolloutSortValue = (rollout: Rollout, sortBy: string): string | number 
   }
 };
 
-const sortRolloutsForParams = (
-  rollouts: Rollout[],
-  sortBy: string | null,
-  sortOrder: 'asc' | 'desc',
-): Rollout[] => {
+const sortRolloutsForParams = (rollouts: Rollout[], sortBy: string | null, sortOrder: 'asc' | 'desc'): Rollout[] => {
   const resolvedSortBy = sortBy ?? 'start_time';
   const sorted = [...rollouts].sort((a, b) => {
     const aValue = getRolloutSortValue(a, resolvedSortBy);
@@ -296,8 +292,7 @@ const buildRolloutsResponse = (request: Request) => {
   const offsetParam = parseNumberParam(params, 'offset', 0);
   const effectiveLimit = limitParam < 0 ? sorted.length : limitParam;
   const offset = offsetParam < 0 ? 0 : offsetParam;
-  const paginated =
-    effectiveLimit >= 0 ? sorted.slice(offset, offset + effectiveLimit) : [...sorted];
+  const paginated = effectiveLimit >= 0 ? sorted.slice(offset, offset + effectiveLimit) : [...sorted];
 
   return snakeCaseKeys({
     items: paginated,
@@ -307,11 +302,7 @@ const buildRolloutsResponse = (request: Request) => {
   });
 };
 
-const sortAttemptsForParams = (
-  attempts: Attempt[],
-  sortBy: string | null,
-  sortOrder: 'asc' | 'desc',
-): Attempt[] => {
+const sortAttemptsForParams = (attempts: Attempt[], sortBy: string | null, sortOrder: 'asc' | 'desc'): Attempt[] => {
   const sorted = [...attempts];
   const resolvedSortBy = sortBy ?? 'sequence_id';
   sorted.sort((a, b) => {
@@ -337,8 +328,7 @@ const buildAttemptsResponse = (rolloutId: string, request: Request) => {
   const offsetParam = parseNumberParam(params, 'offset', 0);
   const effectiveLimit = limitParam < 0 ? sorted.length : limitParam;
   const offset = offsetParam < 0 ? 0 : offsetParam;
-  const paginated =
-    effectiveLimit >= 0 ? sorted.slice(offset, offset + effectiveLimit) : [...sorted];
+  const paginated = effectiveLimit >= 0 ? sorted.slice(offset, offset + effectiveLimit) : [...sorted];
 
   return snakeCaseKeys({
     items: paginated,
@@ -391,11 +381,7 @@ const getSpanSortValue = (span: Span, sortBy: string): string | number | null =>
   }
 };
 
-const sortSpansForParams = (
-  spans: Span[],
-  sortBy: string | null,
-  sortOrder: 'asc' | 'desc',
-): Span[] => {
+const sortSpansForParams = (spans: Span[], sortBy: string | null, sortOrder: 'asc' | 'desc'): Span[] => {
   const resolvedSortBy = sortBy ?? 'start_time';
   const sorted = [...spans].sort((a, b) => {
     const aValue = getSpanSortValue(a, resolvedSortBy);
@@ -437,8 +423,7 @@ const buildSpansResponse = (request: Request) => {
   const offsetParam = parseNumberParam(params, 'offset', 0);
   const effectiveLimit = limitParam < 0 ? sorted.length : limitParam;
   const offset = offsetParam < 0 ? 0 : offsetParam;
-  const paginated =
-    effectiveLimit >= 0 ? sorted.slice(offset, offset + effectiveLimit) : [...sorted];
+  const paginated = effectiveLimit >= 0 ? sorted.slice(offset, offset + effectiveLimit) : [...sorted];
 
   return snakeCaseKeys({
     items: paginated,
@@ -449,7 +434,6 @@ const buildSpansResponse = (request: Request) => {
 };
 
 function getSpans(rolloutId: string, attemptId?: string | null) {
-  const key = `${rolloutId}:${attemptId ?? 'latest'}`;
   if (attemptId) {
     return spansByAttempt[`${rolloutId}:${attemptId}`] ?? [];
   }
@@ -543,9 +527,7 @@ export const ErrorState: Story = {
         http.get('*/agl/v1/rollouts/:rolloutId/attempts', () =>
           HttpResponse.json({ items: [], limit: 0, offset: 0, total: 0 }, { status: 200 }),
         ),
-        http.get('*/agl/v1/spans', () =>
-          HttpResponse.json({ detail: 'server error' }, { status: 500 }),
-        ),
+        http.get('*/agl/v1/spans', () => HttpResponse.json({ detail: 'server error' }, { status: 500 })),
       ],
     },
   },

@@ -14,7 +14,7 @@ import {
 import { IconCheck, IconCopy } from '@tabler/icons-react';
 import { Editor } from '@monaco-editor/react';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
-import { closeDrawer, selectDrawerContent, selectDrawerIsOpen, type DrawerContent } from '@/features/ui/drawer';
+import { closeDrawer, selectDrawerContent, selectDrawerIsOpen } from '@/features/ui/drawer';
 import { formatStatusLabel } from '@/utils/format';
 import type { AttemptStatus, RolloutStatus, Span } from '@/types';
 
@@ -86,14 +86,16 @@ export function AppDrawer() {
         <Stack gap={3}>
           <Group gap={6}>
             <Text fw={600}>{span.name ?? span.spanId}</Text>
-            {spanStatusCode ? (
-              <Badge size="sm" variant="light" color={spanBadgeColor}>
-                {spanStatusCode}
-              </Badge>
-            ) : null}
+            {spanStatusCode
+              ? (
+                  <Badge size='sm' variant='light' color={spanBadgeColor}>
+                    {spanStatusCode}
+                  </Badge>
+                )
+              : null}
           </Group>
           <Group gap={6}>
-            <Text size="sm" c="dimmed">
+            <Text size='sm' c='dimmed'>
               {span.spanId}
             </Text>
             <CopyButton value={span.spanId}>
@@ -101,9 +103,9 @@ export function AppDrawer() {
                 <Tooltip label={copied ? 'Copied' : 'Copy'} withArrow>
                   <ActionIcon
                     aria-label={`Copy span ID ${span.spanId}`}
-                    variant="subtle"
+                    variant='subtle'
                     color={copied ? 'teal' : 'gray'}
-                    size="sm"
+                    size='sm'
                     onClick={(event) => {
                       event.stopPropagation();
                       copy();
@@ -115,20 +117,20 @@ export function AppDrawer() {
               )}
             </CopyButton>
           </Group>
-          <Group gap="xs">
+          <Group gap='xs'>
             <Group gap={3}>
-              <Text size="sm" c="dimmed" fw={500}>
+              <Text size='sm' c='dimmed' fw={500}>
                 Rollout
               </Text>
-              <Text size="sm" c="dimmed">
+              <Text size='sm' c='dimmed'>
                 {span.rolloutId}
               </Text>
             </Group>
             <Group gap={3}>
-              <Text size="sm" c="dimmed" fw={500}>
+              <Text size='sm' c='dimmed' fw={500}>
                 Attempt
               </Text>
-              <Text size="sm" c="dimmed">
+              <Text size='sm' c='dimmed'>
                 {span.attemptId ?? '—'}
               </Text>
             </Group>
@@ -142,8 +144,8 @@ export function AppDrawer() {
         bodyContent: (
           <Box style={{ flex: 1, minHeight: 0 }}>
             <Editor
-              height="100%"
-              language="json"
+              height='100%'
+              language='json'
               value={formattedJson}
               theme={editorTheme}
               options={{
@@ -168,8 +170,8 @@ export function AppDrawer() {
     const attemptStatus = attempt?.status ?? null;
     const rolloutStatusLabel = rolloutStatus ? formatStatusLabel(rolloutStatus) : null;
     const attemptStatusLabel = attemptStatus ? formatStatusLabel(attemptStatus) : null;
-    const hasStatusMismatch =
-      rolloutStatus !== null && attemptStatus !== null && rolloutStatus !== attemptStatus;
+    const hasStatusMismatch
+      = rolloutStatus !== null && attemptStatus !== null && rolloutStatus !== attemptStatus;
     const rolloutBadgeColor = rolloutStatus ? getStatusBadgeColor(rolloutStatus, false) : undefined;
     const attemptBadgeColor = attemptStatus ? getStatusBadgeColor(attemptStatus, true) : undefined;
     const showRolloutBadgeInHeading = Boolean(rolloutStatusLabel && (!attemptStatus || hasStatusMismatch));
@@ -184,9 +186,9 @@ export function AppDrawer() {
               <Tooltip label={copied ? 'Copied' : 'Copy'} withArrow>
                 <ActionIcon
                   aria-label={`Copy rollout ID ${rolloutId}`}
-                  variant="subtle"
+                  variant='subtle'
                   color={copied ? 'teal' : 'gray'}
-                  size="sm"
+                  size='sm'
                   onClick={(event) => {
                     event.stopPropagation();
                     copy();
@@ -197,64 +199,72 @@ export function AppDrawer() {
               </Tooltip>
             )}
           </CopyButton>
-          {showRolloutBadgeInHeading && rolloutStatusLabel ? (
-            <Badge size="sm" variant="light" color={rolloutBadgeColor}>
-              {rolloutStatusLabel}
-            </Badge>
-          ) : null}
+          {showRolloutBadgeInHeading && rolloutStatusLabel
+            ? (
+                <Badge size='sm' variant='light' color={rolloutBadgeColor}>
+                  {rolloutStatusLabel}
+                </Badge>
+              )
+            : null}
         </Group>
-        <Group gap="xs">
-          {attemptId ? (
-            <Group gap={3}>
-              <Text size="sm" c="dimmed" fw={500}>
-                Attempt
-              </Text>
-              <Text size="sm" c="dimmed">
-                {attemptId}
-              </Text>
-            </Group>
-          ) : null}
-          {showAttemptBadge && attemptStatusLabel ? (
-            <Badge size="sm" variant="light" color={attemptBadgeColor}>
-              {attemptStatusLabel}
-            </Badge>
-          ) : null}
-          {!showRolloutBadgeInHeading && !attemptStatus && rolloutStatusLabel ? (
-            <Badge size="sm" variant="light" color={rolloutBadgeColor}>
-              {rolloutStatusLabel}
-            </Badge>
-          ) : null}
+        <Group gap='xs'>
+          {attemptId
+            ? (
+                <Group gap={3}>
+                  <Text size='sm' c='dimmed' fw={500}>
+                    Attempt
+                  </Text>
+                  <Text size='sm' c='dimmed'>
+                    {attemptId}
+                  </Text>
+                </Group>
+              )
+            : null}
+          {showAttemptBadge && attemptStatusLabel
+            ? (
+                <Badge size='sm' variant='light' color={attemptBadgeColor}>
+                  {attemptStatusLabel}
+                </Badge>
+              )
+            : null}
+          {!showRolloutBadgeInHeading && !attemptStatus && rolloutStatusLabel
+            ? (
+                <Badge size='sm' variant='light' color={rolloutBadgeColor}>
+                  {rolloutStatusLabel}
+                </Badge>
+              )
+            : null}
         </Group>
       </Stack>
     );
 
-    const jsonValue =
-      content.type === 'rollout-json'
+    const jsonValue
+      = content.type === 'rollout-json'
         ? content.isNested && content.attempt
           ? content.attempt
           : content.rollout
         : null;
 
-    const body =
-      jsonValue !== null
+    const body
+      = jsonValue !== null
         ? (
             <Box style={{ flex: 1, minHeight: 0 }}>
               <Editor
-              height="100%"
-              language="json"
-              value={formatJson(jsonValue)}
-              theme={editorTheme}
-              options={{
-                readOnly: true,
-                domReadOnly: true,
-                minimap: { enabled: false },
-                automaticLayout: true,
-                scrollBeyondLastLine: false,
-                fontSize: 13,
-              }}
-            />
-          </Box>
-        )
+                height='100%'
+                language='json'
+                value={formatJson(jsonValue)}
+                theme={editorTheme}
+                options={{
+                  readOnly: true,
+                  domReadOnly: true,
+                  minimap: { enabled: false },
+                  automaticLayout: true,
+                  scrollBeyondLastLine: false,
+                  fontSize: 13,
+                }}
+              />
+            </Box>
+          )
         : null;
 
     return {
@@ -272,8 +282,8 @@ export function AppDrawer() {
 
   return (
     <Drawer
-      position="right"
-      size="lg"
+      position='right'
+      size='lg'
       opened={isOpen}
       onClose={handleClose}
       overlayProps={{ opacity: 0.5 }}
@@ -295,7 +305,7 @@ export function AppDrawer() {
       }}
       title={titleContent ?? heading}
     >
-      <Stack gap="md" h="100%" style={{ flex: 1, minHeight: 0 }}>
+      <Stack gap='md' h='100%' style={{ flex: 1, minHeight: 0 }}>
         {bodyContent}
       </Stack>
     </Drawer>

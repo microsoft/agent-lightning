@@ -1,4 +1,4 @@
-import { PayloadAction, createSlice } from '@reduxjs/toolkit';
+import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 import type { RolloutMode, RolloutStatus } from '../../types';
 
 export type SortDirection = 'asc' | 'desc';

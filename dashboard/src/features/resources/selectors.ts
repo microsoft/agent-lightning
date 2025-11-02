@@ -1,6 +1,6 @@
 import { createSelector } from '@reduxjs/toolkit';
-import type { RootState } from '@/store';
 import type { GetResourcesQueryArgs } from '@/features/rollouts';
+import type { RootState } from '@/store';
 import type { ResourcesSortState } from './slice';
 
 const RESOURCES_SORT_FIELD_MAP: Record<string, string> = {
@@ -17,17 +17,11 @@ export const selectResourcesUiState = (state: RootState) => state.resources;
 
 export const selectResourcesSearchTerm = (state: RootState) => selectResourcesUiState(state).searchTerm;
 export const selectResourcesPage = (state: RootState) => selectResourcesUiState(state).page;
-export const selectResourcesRecordsPerPage = (state: RootState) =>
-  selectResourcesUiState(state).recordsPerPage;
+export const selectResourcesRecordsPerPage = (state: RootState) => selectResourcesUiState(state).recordsPerPage;
 export const selectResourcesSort = (state: RootState) => selectResourcesUiState(state).sort;
 
 export const selectResourcesQueryArgs = createSelector(
-  [
-    selectResourcesSearchTerm,
-    selectResourcesPage,
-    selectResourcesRecordsPerPage,
-    selectResourcesSort,
-  ],
+  [selectResourcesSearchTerm, selectResourcesPage, selectResourcesRecordsPerPage, selectResourcesSort],
   (searchTerm, page, recordsPerPage, sort): GetResourcesQueryArgs => {
     const normalizedSearch = searchTerm.trim();
     const limit = Math.max(1, recordsPerPage);

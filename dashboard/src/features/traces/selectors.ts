@@ -1,7 +1,7 @@
 import { createSelector } from '@reduxjs/toolkit';
+import type { GetSpansQueryArgs } from '@/features/rollouts';
 import type { RootState } from '@/store';
 import type { TracesSortState } from './slice';
-import type { GetSpansQueryArgs } from '@/features/rollouts';
 
 export const selectTracesState = (state: RootState) => state.traces;
 
@@ -29,8 +29,7 @@ const TRACES_SORT_FIELD_MAP: Record<string, string> = {
   duration: 'duration',
 };
 
-const resolveTracesSortField = (sort: TracesSortState): string =>
-  TRACES_SORT_FIELD_MAP[sort.column] ?? 'start_time';
+const resolveTracesSortField = (sort: TracesSortState): string => TRACES_SORT_FIELD_MAP[sort.column] ?? 'start_time';
 
 export const selectTracesQueryArgs = createSelector(
   [

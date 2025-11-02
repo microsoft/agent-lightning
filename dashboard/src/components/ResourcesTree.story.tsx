@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react';
 import { Box, Stack, Title } from '@mantine/core';
-import { ResourcesTree } from './ResourcesTree.component';
 import type { Resources } from '@/types';
+import { ResourcesTree } from './ResourcesTree.component';
 
 const meta: Meta<typeof ResourcesTree> = {
   title: 'Components/ResourcesTree',
@@ -157,9 +157,12 @@ type WrapperProps = {
 
 function ResourcesTreeStoryWrapper({ resources, maxWidth = 800 }: WrapperProps) {
   return (
-    <Box mx="auto" style={{ maxWidth, width: '100%', padding: 16 }}>
-      <Stack gap="md">
-        <Title order={2}>Resources: {resources.resourcesId}</Title>
+    <Box mx='auto' style={{ maxWidth, width: '100%', padding: 16 }}>
+      <Stack gap='md'>
+        <Title order={2}>
+          Resources:
+          {resources.resourcesId}
+        </Title>
         <ResourcesTree resources={resources} />
       </Stack>
     </Box>

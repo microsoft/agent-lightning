@@ -24,3 +24,69 @@ repos:
         pass_filenames: false
         always_run: true
         args: ["."]
+
+  - repo: local
+    hooks:
+    - id: prettier
+      name: prettier (dashboard)
+      language: system
+      pass_filenames: true
+      types_or: [javascript, jsx, ts, tsx, json, css, scss, html]
+      entry: >
+        bash -c '
+          if command -v npx >/dev/null 2>&1; then
+            # Rebase repo-root paths to the dashboard/ cwd
+            REBASED=()
+            for f in "$@"; do
+              if [[ "$f" == dashboard/* ]]; then REBASED+=("${f#dashboard/}"); fi
+            done
+            cd dashboard && npx prettier --write "${REBASED[@]}"
+          else
+            echo "[pre-commit] Skipping prettier: npx not found" >&2
+            exit 0
+          fi
+        '
+
+    - id: eslint
+      name: eslint (dashboard)
+      language: system
+      pass_filenames: true
+      types_or: [javascript, jsx, ts, tsx]
+      entry: >
+        bash -c '
+          if command -v npx >/dev/null 2>&1; then
+            REBASED=()
+            for f in "$@"; do
+              if [[ "$f" == dashboard/* ]]; then REBASED+=("${f#dashboard/}"); fi
+            done
+            cd dashboard && npx eslint --fix "${REBASED[@]}"
+          else
+            echo "[pre-commit] Skipping eslint: npx not found" >&2
+            exit 0
+          fi
+        '
+
+    - id: stylelint
+      name: stylelint (dashboard)
+      language: system
+      pass_filenames: true
+      types_or: [css, scss]
+      entry: >
+        bash -c '
+          if command -v npx >/dev/null 2>&1; then
+            REBASED=()
+            for f in "$@"; do
+              if [[ "$f" == dashboard/* ]]; then REBASED+=("${f#dashboard/}"); fi
+            done
+            if [ ${#REBASED[@]} -gt 0 ]; then
+              echo "[pre-commit] Linting ${#REBASED[@]} files with stylelint" >&2
+              cd dashboard && npx stylelint --fix "${REBASED[@]}"
+            else
+              echo "[pre-commit] Skipping stylelint: no files to lint" >&2
+              exit 0
+            fi
+          else
+            echo "[pre-commit] Skipping stylelint: npx not found" >&2
+            exit 0
+          fi
+        '

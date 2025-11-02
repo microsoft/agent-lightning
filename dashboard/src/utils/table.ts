@@ -58,7 +58,7 @@ function resolveWidth(config: ColumnVisibilityConfig): { widthEm: number; fixed:
 export function createResponsiveColumns<T>(
   columns: DataTableColumn<T>[],
   containerWidth: number,
-  columnVisibilityConfig: Record<string, ColumnVisibilityConfig>
+  columnVisibilityConfig: Record<string, ColumnVisibilityConfig>,
 ): DataTableColumn<T>[] {
   const measuredWidth = containerWidth ? Math.max(containerWidth - 48, 0) : Number.POSITIVE_INFINITY;
 

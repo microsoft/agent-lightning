@@ -1,11 +1,11 @@
 import { useMemo, useState } from 'react';
 import type { Meta, StoryObj } from '@storybook/react';
-import { Box, Stack, TextInput, Title } from '@mantine/core';
 import { IconSearch } from '@tabler/icons-react';
-import { RolloutTable, buildRolloutRecord, type RolloutTableRecord } from './RolloutTable.component';
-import type { Rollout, RolloutMode, RolloutStatus } from '@/types';
+import { Box, Stack, TextInput, Title } from '@mantine/core';
 import type { RolloutsSortState } from '@/features/rollouts';
+import type { Rollout, RolloutMode, RolloutStatus } from '@/types';
 import { compareRecords } from '@/utils/table';
+import { buildRolloutRecord, RolloutTable, type RolloutTableRecord } from './RolloutTable.component';
 
 const meta: Meta<typeof RolloutTable> = {
   title: 'Components/RolloutTable',
@@ -181,12 +181,9 @@ function RolloutTableStoryWrapper({
   const filteredRecords = useMemo(() => {
     const normalizedSearch = searchTerm.trim().toLowerCase();
     return tableRecords.filter((record) => {
-      const matchesSearch =
-        normalizedSearch.length === 0 || record.rolloutId.toLowerCase().includes(normalizedSearch);
-      const matchesStatus =
-        statusFilters.length === 0 || statusFilters.includes(record.status);
-      const matchesMode =
-        modeFilters.length === 0 || (record.mode !== null && modeFilters.includes(record.mode));
+      const matchesSearch = normalizedSearch.length === 0 || record.rolloutId.toLowerCase().includes(normalizedSearch);
+      const matchesStatus = statusFilters.length === 0 || statusFilters.includes(record.status);
+      const matchesMode = modeFilters.length === 0 || (record.mode !== null && modeFilters.includes(record.mode));
       return matchesSearch && matchesStatus && matchesMode;
     });
   }, [modeFilters, searchTerm, statusFilters, tableRecords]);
@@ -209,31 +206,25 @@ function RolloutTableStoryWrapper({
 
   const totalRecordsValue = sortedRecords.length;
 
-  const pagedRecords = useMemo(
-    () => {
-      const startIndex = (page - 1) * recordsPerPage;
-      const endIndex = startIndex + recordsPerPage;
-      return sortedRecords.slice(startIndex, endIndex);
-    },
-    [page, recordsPerPage, sortedRecords],
-  );
+  const pagedRecords = useMemo(() => {
+    const startIndex = (page - 1) * recordsPerPage;
+    const endIndex = startIndex + recordsPerPage;
+    return sortedRecords.slice(startIndex, endIndex);
+  }, [page, recordsPerPage, sortedRecords]);
 
-  const pagedRollouts = useMemo(
-    () => pagedRecords.map((record) => record as Rollout),
-    [pagedRecords],
-  );
+  const pagedRollouts = useMemo(() => pagedRecords.map((record) => record as Rollout), [pagedRecords]);
 
   return (
-    <Box mx="auto" style={{ maxWidth, width: '100%', padding: 16 }}>
-      <Stack gap="md">
+    <Box mx='auto' style={{ maxWidth, width: '100%', padding: 16 }}>
+      <Stack gap='md'>
         <Title order={2}>Rollouts</Title>
         <TextInput
-          placeholder="Search by Rollout ID"
+          placeholder='Search by Rollout ID'
           value={searchTerm}
           onChange={(event) => setSearchTerm(event.currentTarget.value)}
           leftSection={<IconSearch size={16} />}
-          data-testid="rollouts-search-input"
-          w="100%"
+          data-testid='rollouts-search-input'
+          w='100%'
           style={{ maxWidth: 360 }}
         />
         <RolloutTable
@@ -308,11 +299,6 @@ export const DrawerWidth: Story = {
 
 export const ErrorState: Story = {
   render: () => (
-    <RolloutTableStoryWrapper
-      maxWidth={600}
-      rollouts={[]}
-      isError
-      error={new Error('Network unreachable')}
-    />
+    <RolloutTableStoryWrapper maxWidth={600} rollouts={[]} isError error={new Error('Network unreachable')} />
   ),
 };

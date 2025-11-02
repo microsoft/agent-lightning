@@ -1,21 +1,8 @@
 // This file should sync with agentlightning/types/core.py
 
-export type RolloutStatus =
-  | 'queuing'
-  | 'preparing'
-  | 'running'
-  | 'failed'
-  | 'succeeded'
-  | 'cancelled'
-  | 'requeuing';
+export type RolloutStatus = 'queuing' | 'preparing' | 'running' | 'failed' | 'succeeded' | 'cancelled' | 'requeuing';
 
-export type AttemptStatus =
-  | 'preparing'
-  | 'running'
-  | 'failed'
-  | 'succeeded'
-  | 'unresponsive'
-  | 'timeout';
+export type AttemptStatus = 'preparing' | 'running' | 'failed' | 'succeeded' | 'unresponsive' | 'timeout';
 
 export type RolloutMode = 'train' | 'val' | 'test';
 

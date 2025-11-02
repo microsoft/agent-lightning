@@ -80,7 +80,7 @@ const sampleSpan: Span = {
   attributes: {
     'http.method': 'GET',
     'http.url': 'https://api.example.com/resources',
-    duration_ms: 120,
+    'duration_ms': 120,
   },
   startTime: now - 240,
   endTime: now - 120,

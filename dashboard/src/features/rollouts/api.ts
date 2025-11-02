@@ -114,10 +114,7 @@ const normalizeResources = (value: unknown): Resources => {
   };
 };
 
-const normalizePaginatedResponse = <T>(
-  value: unknown,
-  normalizer: (item: unknown) => T,
-): PaginatedResponse<T> => {
+const normalizePaginatedResponse = <T>(value: unknown, normalizer: (item: unknown) => T): PaginatedResponse<T> => {
   if (!value || typeof value !== 'object') {
     throw new Error('Expected paginated response payload');
   }
@@ -233,15 +230,7 @@ export const rolloutsApi = createApi({
           : [{ type: 'Resources' as const, id: 'LIST' }],
     }),
     getRollouts: builder.query<PaginatedResponse<Rollout>, GetRolloutsQueryArgs>({
-      query: ({
-        limit,
-        offset,
-        sortBy,
-        sortOrder,
-        statusIn,
-        rolloutIdContains,
-        modeIn,
-      }) => {
+      query: ({ limit, offset, sortBy, sortOrder, statusIn, rolloutIdContains, modeIn }) => {
         const searchParams = new URLSearchParams();
         searchParams.set('limit', String(typeof limit === 'number' ? limit : -1));
         searchParams.set('offset', String(typeof offset === 'number' ? offset : 0));
@@ -292,8 +281,7 @@ export const rolloutsApi = createApi({
             : `agl/v1/rollouts/${rolloutId}/attempts`;
         return { url, method: 'GET' };
       },
-      transformResponse: (response: unknown) =>
-        normalizePaginatedResponse(response, normalizeAttemptStrict),
+      transformResponse: (response: unknown) => normalizePaginatedResponse(response, normalizeAttemptStrict),
       providesTags: (_result, _error, queryArgs) => [{ type: 'Rollout', id: queryArgs.rolloutId }],
     }),
     getSpans: builder.query<PaginatedResponse<Span>, GetSpansQueryArgs>({
@@ -343,9 +331,4 @@ export const rolloutsApi = createApi({
   }),
 });
 
-export const {
-  useGetResourcesQuery,
-  useGetRolloutsQuery,
-  useGetRolloutAttemptsQuery,
-  useGetSpansQuery,
-} = rolloutsApi;
+export const { useGetResourcesQuery, useGetRolloutsQuery, useGetRolloutAttemptsQuery, useGetSpansQuery } = rolloutsApi;

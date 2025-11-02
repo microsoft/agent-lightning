@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
-import { Box, Group, Stack, Text, Tree, type TreeNodeData } from '@mantine/core';
 import { IconAlertCircle, IconChevronRight } from '@tabler/icons-react';
+import { Box, Group, Stack, Text, Tree, type TreeNodeData } from '@mantine/core';
 import type { Resources } from '@/types';
 import { safeStringify } from '@/utils/format';
 
@@ -11,17 +11,17 @@ function convertToTreeData(obj: any, key: string = 'root', parentPath = ''): Tre
 
   if (isObject) {
     const children = Object.entries(obj).map(([childKey, childValue]) =>
-      convertToTreeData(childValue, childKey, currentPath)
+      convertToTreeData(childValue, childKey, currentPath),
     );
 
     return {
       value: currentPath,
       label: (
         <Group gap={6}>
-          <Text size="sm" fw={500}>
+          <Text size='sm' fw={500}>
             {key}
           </Text>
-          <Text size="xs" c="dimmed">
+          <Text size='xs' c='dimmed'>
             (Object)
           </Text>
         </Group>
@@ -31,19 +31,19 @@ function convertToTreeData(obj: any, key: string = 'root', parentPath = ''): Tre
   }
 
   if (isArray) {
-    const children = obj.map((item: any, index: number) =>
-      convertToTreeData(item, `[${index}]`, currentPath)
-    );
+    const children = obj.map((item: any, index: number) => convertToTreeData(item, `[${index}]`, currentPath));
 
     return {
       value: currentPath,
       label: (
         <Group gap={6}>
-          <Text size="sm" fw={500}>
+          <Text size='sm' fw={500}>
             {key}
           </Text>
-          <Text size="xs" c="dimmed">
-            (Array[{obj.length}])
+          <Text size='xs' c='dimmed'>
+            (Array[
+            {obj.length}
+            ])
           </Text>
         </Group>
       ),
@@ -56,10 +56,10 @@ function convertToTreeData(obj: any, key: string = 'root', parentPath = ''): Tre
     value: currentPath,
     label: (
       <Group gap={6}>
-        <Text size="sm" fw={500}>
+        <Text size='sm' fw={500}>
           {key}:
         </Text>
-        <Text size="sm" ff="monospace" c="dimmed">
+        <Text size='sm' ff='monospace' c='dimmed'>
           {safeStringify(obj)}
         </Text>
       </Group>
@@ -86,9 +86,9 @@ export function ResourcesTree({ resources }: ResourcesTreeProps) {
 
   if (treeData.length === 0) {
     return (
-      <Stack gap="xs" align="center" py="md">
-        <IconAlertCircle size={24} color="gray" />
-        <Text size="sm" c="dimmed">
+      <Stack gap='xs' align='center' py='md'>
+        <IconAlertCircle size={24} color='gray' />
+        <Text size='sm' c='dimmed'>
           No resources found
         </Text>
       </Stack>
@@ -96,7 +96,7 @@ export function ResourcesTree({ resources }: ResourcesTreeProps) {
   }
 
   return (
-    <Box p="md" style={{ backgroundColor: 'var(--mantine-color-default-hover)' }}>
+    <Box p='md' style={{ backgroundColor: 'var(--mantine-color-default-hover)' }}>
       <Tree
         data={treeData}
         levelOffset={20}

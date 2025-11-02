@@ -11,7 +11,7 @@ const ALERT_PRIORITY: Record<AlertTone, number> = {
 const selectAlertState = (state: RootState): AlertsState => state.alert;
 
 export const selectVisibleAlerts = createSelector(selectAlertState, (state) =>
-  state.alerts.filter((alert) => alert.isVisible)
+  state.alerts.filter((alert) => alert.isVisible),
 );
 
 export const selectHighestPriorityAlert = createSelector(selectVisibleAlerts, (alerts) => {

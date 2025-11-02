@@ -1,29 +1,15 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-} from 'react';
-import { useElementSize } from '@mantine/hooks';
+import { useCallback, useEffect, useMemo } from 'react';
 import {
   IconAlertCircle,
-  IconFileDescription,
   IconCheck,
   IconCopy,
-  IconRouteSquare,
+  IconFileDescription,
   IconRefresh,
+  IconRouteSquare,
 } from '@tabler/icons-react';
 import { DataTable, type DataTableColumn, type DataTableSortStatus } from 'mantine-datatable';
-import {
-  ActionIcon,
-  Badge,
-  Box,
-  Button,
-  CopyButton,
-  Group,
-  Stack,
-  Text,
-  Tooltip,
-} from '@mantine/core';
+import { ActionIcon, Badge, Box, Button, CopyButton, Group, Stack, Text, Tooltip } from '@mantine/core';
+import { useElementSize } from '@mantine/hooks';
 import type { Span } from '@/types';
 import { formatDateTime, formatDuration, toTimestamp } from '@/utils/format';
 import { createResponsiveColumns, type ColumnVisibilityConfig } from '@/utils/table';
@@ -90,7 +76,7 @@ function createTracesColumns({
       title: 'Name',
       sortable: true,
       render: ({ name }) => (
-        <Text size="sm" fw={500}>
+        <Text size='sm' fw={500}>
           {name}
         </Text>
       ),
@@ -101,17 +87,15 @@ function createTracesColumns({
       sortable: true,
       render: ({ traceId }) => (
         <Group gap={2}>
-          <Text size="sm">
-            {traceId}
-          </Text>
+          <Text size='sm'>{traceId}</Text>
           <CopyButton value={traceId}>
             {({ copied, copy }) => (
               <Tooltip label={copied ? 'Copied' : 'Copy'} withArrow>
                 <ActionIcon
                   aria-label={`Copy trace ID ${traceId}`}
-                  variant="subtle"
+                  variant='subtle'
                   color={copied ? 'teal' : 'gray'}
-                  size="sm"
+                  size='sm'
                   onClick={(event) => {
                     event.stopPropagation();
                     copy();
@@ -131,17 +115,15 @@ function createTracesColumns({
       sortable: true,
       render: ({ spanId }) => (
         <Group gap={2}>
-          <Text size="sm">
-            {spanId}
-          </Text>
+          <Text size='sm'>{spanId}</Text>
           <CopyButton value={spanId}>
             {({ copied, copy }) => (
               <Tooltip label={copied ? 'Copied' : 'Copy'} withArrow>
                 <ActionIcon
                   aria-label={`Copy span ID ${spanId}`}
-                  variant="subtle"
+                  variant='subtle'
                   color={copied ? 'teal' : 'gray'}
-                  size="sm"
+                  size='sm'
                   onClick={(event) => {
                     event.stopPropagation();
                     copy();
@@ -162,7 +144,7 @@ function createTracesColumns({
       render: ({ parentId }) => {
         if (!parentId) {
           return (
-            <Text size="sm" c="dimmed">
+            <Text size='sm' c='dimmed'>
               —
             </Text>
           );
@@ -173,7 +155,7 @@ function createTracesColumns({
         return (
           <Group gap={2}>
             <Text
-              size="sm"
+              size='sm'
               c={parentExists ? undefined : 'red'}
               style={{ cursor: parentExists ? 'pointer' : undefined }}
               onClick={(event) => {
@@ -186,8 +168,8 @@ function createTracesColumns({
               {parentId.slice(0, 8)}
             </Text>
             {!parentExists && (
-              <Tooltip label="Parent span not found in table" withArrow>
-                <IconAlertCircle size={14} color="red" />
+              <Tooltip label='Parent span not found in table' withArrow>
+                <IconAlertCircle size={14} color='red' />
               </Tooltip>
             )}
           </Group>
@@ -200,7 +182,7 @@ function createTracesColumns({
       title: 'Status',
       sortable: true,
       render: ({ statusCode }) => (
-        <Badge size="sm" variant="light" color={STATUS_COLORS[statusCode] ?? 'gray'}>
+        <Badge size='sm' variant='light' color={STATUS_COLORS[statusCode] ?? 'gray'}>
           {statusCode}
         </Badge>
       ),
@@ -208,41 +190,42 @@ function createTracesColumns({
     {
       accessor: 'attributeKeys',
       title: 'Attribute Keys',
-      render: ({ attributeKeys }) => (
+      render: ({ attributeKeys }) =>
         attributeKeys ? (
-        <Text size="sm" lineClamp={1}>
-          {/* TODO: dim "." and "," and other characters are just normal text */}
-          {attributeKeys}
-        </Text>
+          <Text size='sm' lineClamp={1}>
+            {/* TODO: dim "." and "," and other characters are just normal text */}
+            {attributeKeys}
+          </Text>
         ) : (
-          <Text size="sm" c="dimmed">—</Text>
-        )
-      ),
+          <Text size='sm' c='dimmed'>
+            —
+          </Text>
+        ),
     },
     {
       accessor: 'startTime',
       title: 'Start Time',
       sortable: true,
       textAlign: 'left',
-      render: ({ startTime }) => <Text size="sm">{formatDateTime(toTimestamp(startTime))}</Text>,
+      render: ({ startTime }) => <Text size='sm'>{formatDateTime(toTimestamp(startTime))}</Text>,
     },
     {
       accessor: 'duration',
       title: 'Duration',
       sortable: true,
       textAlign: 'left',
-      render: ({ duration }) => <Text size="sm">{formatDuration(duration)}</Text>,
+      render: ({ duration }) => <Text size='sm'>{formatDuration(duration)}</Text>,
     },
     {
       accessor: 'actionsPlaceholder',
       title: 'Actions',
       render: (record) => (
         <Group gap={2}>
-          <Tooltip label="Show rollout" withArrow disabled={!onShowRollout}>
+          <Tooltip label='Show rollout' withArrow disabled={!onShowRollout}>
             <ActionIcon
-              aria-label="Show rollout"
-              variant="subtle"
-              color="gray"
+              aria-label='Show rollout'
+              variant='subtle'
+              color='gray'
               onClick={(event) => {
                 event.stopPropagation();
                 onShowRollout?.(record);
@@ -251,11 +234,11 @@ function createTracesColumns({
               <IconRouteSquare size={16} />
             </ActionIcon>
           </Tooltip>
-          <Tooltip label="Show span detail" withArrow disabled={!onShowSpanDetail}>
+          <Tooltip label='Show span detail' withArrow disabled={!onShowSpanDetail}>
             <ActionIcon
-              aria-label="Show span detail"
-              variant="subtle"
-              color="gray"
+              aria-label='Show span detail'
+              variant='subtle'
+              color='gray'
               onClick={(event) => {
                 event.stopPropagation();
                 onShowSpanDetail?.(record);
@@ -332,12 +315,12 @@ export function TracesTable({
         onParentIdClick,
         spanIds,
       }),
-    [onShowRollout, onShowSpanDetail, onParentIdClick, spanIds]
+    [onShowRollout, onShowSpanDetail, onParentIdClick, spanIds],
   );
 
   const responsiveColumns = useMemo(
     () => createResponsiveColumns(columns, containerWidth, COLUMN_VISIBILITY),
-    [columns, containerWidth]
+    [columns, containerWidth],
   );
 
   const totalPages = useMemo(
@@ -362,7 +345,7 @@ export function TracesTable({
     (status: DataTableSortStatus<TracesTableRecord>) => {
       onSortStatusChange(status);
     },
-    [onSortStatusChange]
+    [onSortStatusChange],
   );
 
   const errorMessage =
@@ -371,27 +354,21 @@ export function TracesTable({
       : 'Traces are temporarily unavailable.';
 
   const emptyState = (
-    <Stack gap="sm" align="center" py="lg">
+    <Stack gap='sm' align='center' py='lg'>
       {isError ? (
         <>
-          <Text fw={600} size="sm">
+          <Text fw={600} size='sm'>
             {errorMessage}
           </Text>
-          <Text size="sm" c="dimmed" ta="center">
+          <Text size='sm' c='dimmed' ta='center'>
             Use the retry button to try again, or adjust the filters to broaden the results.
           </Text>
-          <Group gap="xs">
-            <Button
-              size="xs"
-              variant="light"
-              color="gray"
-              leftSection={<IconRefresh size={14} />}
-              onClick={onRefetch}
-            >
+          <Group gap='xs'>
+            <Button size='xs' variant='light' color='gray' leftSection={<IconRefresh size={14} />} onClick={onRefetch}>
               Retry
             </Button>
             {hasActiveFilters ? (
-              <Button size="xs" variant="subtle" onClick={onResetFilters}>
+              <Button size='xs' variant='subtle' onClick={onResetFilters}>
                 Clear filters
               </Button>
             ) : null}
@@ -399,25 +376,20 @@ export function TracesTable({
         </>
       ) : (
         <>
-          <Text fw={600} size="sm">
+          <Text fw={600} size='sm'>
             No traces found
           </Text>
-          <Text size="sm" c="dimmed" ta="center">
+          <Text size='sm' c='dimmed' ta='center'>
             {hasActiveFilters
               ? 'Try adjusting the search to see more results.'
               : 'Try refreshing to fetch the latest traces.'}
           </Text>
-          <Group gap="xs">
-            <Button
-              size="xs"
-              variant="light"
-              leftSection={<IconRefresh size={14} />}
-              onClick={onRefetch}
-            >
+          <Group gap='xs'>
+            <Button size='xs' variant='light' leftSection={<IconRefresh size={14} />} onClick={onRefetch}>
               Refresh
             </Button>
             {hasActiveFilters ? (
-              <Button size="xs" variant="subtle" onClick={onResetFilters}>
+              <Button size='xs' variant='subtle' onClick={onResetFilters}>
                 Clear filters
               </Button>
             ) : null}
@@ -434,9 +406,9 @@ export function TracesTable({
         withTableBorder
         withColumnBorders
         highlightOnHover
-        verticalAlign="center"
+        verticalAlign='center'
         minHeight={traceRecords.length === 0 ? 500 : undefined}
-        idAccessor="spanId"
+        idAccessor='spanId'
         records={traceRecords}
         columns={responsiveColumns}
         totalRecords={totalRecords}
@@ -448,7 +420,7 @@ export function TracesTable({
         sortStatus={sortStatus}
         onSortStatusChange={handleSortStatusChange}
         fetching={isFetching}
-        loaderSize="sm"
+        loaderSize='sm'
         emptyState={traceRecords.length === 0 ? emptyState : undefined}
       />
     </Box>
