@@ -1,0 +1,115 @@
+import { useCallback } from 'react';
+import { Skeleton, Stack, TextInput, Title } from '@mantine/core';
+import type { DataTableSortStatus } from 'mantine-datatable';
+import type { PaginatedResponse, Resources } from '@/types';
+import { IconSearch } from '@tabler/icons-react';
+
+import { ResourcesTable, type ResourcesTableRecord } from '@/components/ResourcesTable.component';
+import { selectAutoRefreshMs } from '@/features/config';
+import {
+  resetResourcesFilters,
+  selectResourcesPage,
+  selectResourcesQueryArgs,
+  selectResourcesRecordsPerPage,
+  selectResourcesSearchTerm,
+  selectResourcesSort,
+  setResourcesPage,
+  setResourcesRecordsPerPage,
+  setResourcesSearchTerm,
+  setResourcesSort,
+} from '@/features/resources';
+import { useGetResourcesQuery } from '@/features/rollouts';
+import { useAppDispatch, useAppSelector } from '@/store/hooks';
+
+export function ResourcesPage() {
+  const dispatch = useAppDispatch();
+  const autoRefreshMs = useAppSelector(selectAutoRefreshMs);
+  const searchTerm = useAppSelector(selectResourcesSearchTerm);
+  const page = useAppSelector(selectResourcesPage);
+  const recordsPerPage = useAppSelector(selectResourcesRecordsPerPage);
+  const sort = useAppSelector(selectResourcesSort);
+  const queryArgs = useAppSelector(selectResourcesQueryArgs);
+
+  const resourcesQueryResult = useGetResourcesQuery(queryArgs, {
+    pollingInterval: autoRefreshMs > 0 ? autoRefreshMs : undefined,
+  });
+
+  const resourcesData = resourcesQueryResult.data as PaginatedResponse<Resources> | undefined;
+  const { isLoading, isFetching, isError, error, refetch } = resourcesQueryResult;
+
+  const handleSearchTermChange = useCallback(
+    (value: string) => {
+      dispatch(setResourcesSearchTerm(value));
+    },
+    [dispatch],
+  );
+
+  const handleSortStatusChange = useCallback(
+    (status: DataTableSortStatus<ResourcesTableRecord>) => {
+      dispatch(
+        setResourcesSort({
+          column: status.columnAccessor,
+          direction: status.direction,
+        }),
+      );
+    },
+    [dispatch],
+  );
+
+  const handlePageChange = useCallback(
+    (nextPage: number) => {
+      dispatch(setResourcesPage(nextPage));
+    },
+    [dispatch],
+  );
+
+  const handleRecordsPerPageChange = useCallback(
+    (value: number) => {
+      dispatch(setResourcesRecordsPerPage(value));
+    },
+    [dispatch],
+  );
+
+  const handleResetFilters = useCallback(() => {
+    dispatch(resetResourcesFilters());
+  }, [dispatch]);
+
+  const showSkeleton = isLoading && !((resourcesData?.items?.length ?? 0) > 0);
+
+  return (
+    <Stack gap="md">
+      <Title order={1}>Resources</Title>
+
+      <TextInput
+        placeholder="Search by Resources ID"
+        value={searchTerm}
+        onChange={(event) => handleSearchTermChange(event.currentTarget.value)}
+        leftSection={<IconSearch size={16} />}
+        data-testid="resources-search-input"
+        w="100%"
+        style={{ maxWidth: 360 }}
+      />
+
+      {showSkeleton ? (
+        <Skeleton height={360} radius="md" />
+      ) : (
+        <ResourcesTable
+          resourcesList={resourcesData?.items}
+          totalRecords={resourcesData?.total ?? 0}
+          isFetching={isFetching}
+          isError={isError}
+          error={error}
+          searchTerm={searchTerm}
+          sort={sort}
+          page={page}
+          recordsPerPage={recordsPerPage}
+          onSortStatusChange={handleSortStatusChange}
+          onPageChange={handlePageChange}
+          onRecordsPerPageChange={handleRecordsPerPageChange}
+          onResetFilters={handleResetFilters}
+          onRefetch={refetch}
+        />
+      )}
+    </Stack>
+  );
+}

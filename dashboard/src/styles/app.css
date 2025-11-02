@@ -1,0 +1,57 @@
+@keyframes connection-refreshing-blink {
+  0%, 100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.3;
+  }
+}
+
+.connection-refreshing {
+  animation: connection-refreshing-blink 1s linear infinite;
+}
+
+.rollouts-table {
+  --mantine-datatable-background-color: var(--mantine-color-body);
+}
+
+.rollouts-table .mantine-datatable-empty-state {
+  pointer-events: none;
+}
+
+.rollouts-table .mantine-datatable-empty-state[data-active] {
+  pointer-events: auto;
+}
+
+.rollouts-table .mantine-datatable-row-expansion-cell {
+  padding: 0;
+}
+
+.rollouts-table .mantine-datatable-row-expansion-cell-content {
+  border: 0;
+  padding: 0;
+  background-color: transparent;
+}
+
+.rollouts-table--nested {
+  --mantine-datatable-background-color: var(--mantine-color-gray-1);
+}
+
+.rollouts-table--nested .mantine-datatable-table,
+.rollouts-table--nested .mantine-datatable-table td,
+.rollouts-table--nested .mantine-datatable-table th {
+  background-color: var(--mantine-datatable-background-color);
+}
+
+.rollouts-table--nested .mantine-datatable-table tbody tr:first-of-type td {
+  border-top: 1px solid var(--mantine-color-gray-3);
+}
+
+[data-mantine-color-scheme='dark'] .rollouts-table--nested {
+  --mantine-datatable-background-color: var(--mantine-color-dark-6);
+}
+
+[data-mantine-color-scheme='dark'] .rollouts-table--nested .mantine-datatable-table tbody tr:first-of-type td {
+  border-top: 1px solid var(--mantine-color-dark-4);
+}
