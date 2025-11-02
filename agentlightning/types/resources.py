@@ -194,5 +194,11 @@ class ResourcesUpdate(BaseModel):
 
     resources_id: str
     """Identifier used to version the resources."""
+    create_time: float
+    """Timestamp of the creation time of the resources."""
+    update_time: float
+    """Timestamp of the last update time of the resources."""
+    version: int
+    """Version of the resources."""
     resources: NamedResources
     """Mapping of resource names to their definitions."""

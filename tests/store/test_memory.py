@@ -590,7 +590,13 @@ async def test_task_inherits_latest_resources(inmemory_store: InMemoryLightningS
     """Test that new tasks inherit latest resources_id if not specified."""
     # Set up resources with proper PromptTemplate
     prompt = PromptTemplate(resource_type="prompt_template", template="Hello {name}!", engine="f-string")
-    update = ResourcesUpdate(resources_id="current", resources={"greeting": prompt})
+    update = ResourcesUpdate(
+        resources_id="current",
+        resources={"greeting": prompt},
+        create_time=time.time(),
+        update_time=time.time(),
+        version=1,
+    )
     await inmemory_store.update_resources(update.resources_id, update.resources)
 
     # Task without explicit resources_id
@@ -603,7 +609,13 @@ async def test_task_inherits_latest_resources(inmemory_store: InMemoryLightningS
 
     # Update resources
     new_prompt = PromptTemplate(resource_type="prompt_template", template="Hi {name}!", engine="f-string")
-    update2 = ResourcesUpdate(resources_id="new", resources={"greeting": new_prompt})
+    update2 = ResourcesUpdate(
+        resources_id="new",
+        resources={"greeting": new_prompt},
+        create_time=time.time(),
+        update_time=time.time(),
+        version=1,
+    )
     await inmemory_store.update_resources(update2.resources_id, update2.resources)
 
     # New task gets new resources
@@ -1325,7 +1337,9 @@ async def test_concurrent_resource_updates(inmemory_store: InMemoryLightningStor
             model=f"model-v{ver}",
             sampling_parameters={"temperature": 0.5 + ver * 0.01},
         )
-        update = ResourcesUpdate(resources_id=f"v{ver}", resources={"llm": llm})
+        update = ResourcesUpdate(
+            resources_id=f"v{ver}", resources={"llm": llm}, create_time=time.time(), update_time=time.time(), version=1
+        )
         await inmemory_store.update_resources(update.resources_id, update.resources)
 
     # Update concurrently

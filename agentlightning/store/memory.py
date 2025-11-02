@@ -508,7 +508,14 @@ class InMemoryLightningStore(LightningStore):
         """
         resources_id = _generate_resources_id()
         async with self._lock:
-            update = ResourcesUpdate(resources_id=resources_id, resources=resources)
+            current_time = time.time()
+            update = ResourcesUpdate(
+                resources_id=resources_id,
+                resources=resources,
+                create_time=current_time,
+                update_time=current_time,
+                version=1,
+            )
             self._resources[resources_id] = update
             self._latest_resources_id = resources_id
             return update
@@ -521,7 +528,23 @@ class InMemoryLightningStore(LightningStore):
         See [`LightningStore.update_resources()`][agentlightning.LightningStore.update_resources] for semantics.
         """
         async with self._lock:
-            update = ResourcesUpdate(resources_id=resources_id, resources=resources)
+            current_time = time.time()
+            if resources_id not in self._resources:
+                update = ResourcesUpdate(
+                    resources_id=resources_id,
+                    resources=resources,
+                    create_time=current_time,
+                    update_time=current_time,
+                    version=1,
+                )
+            else:
+                update = self._resources[resources_id].model_copy(
+                    update={
+                        "resources": resources,
+                        "update_time": current_time,
+                        "version": self._resources[resources_id].version + 1,
+                    }
+                )
             self._resources[resources_id] = update
             self._latest_resources_id = resources_id
             return update

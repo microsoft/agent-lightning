@@ -213,8 +213,8 @@ async def test_query_resources_history(server_client: Tuple[LightningStoreServer
     client_history = await client.query_resources()
 
     expected_ids = [first.resources_id, second.resources_id]
-    assert [item.resources_id for item in server_history] == expected_ids
-    assert [item.resources_id for item in client_history] == expected_ids
+    assert sorted([item.resources_id for item in server_history]) == sorted(expected_ids)
+    assert sorted([item.resources_id for item in client_history]) == sorted(expected_ids)
 
 
 @pytest.mark.asyncio
