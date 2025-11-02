@@ -11,7 +11,7 @@
  */
 
 import { delay, http, HttpResponse } from 'msw';
-import type { Attempt, Rollout, Span } from '@/types';
+import type { Attempt, Resources, Rollout, Span } from '@/types';
 import { snakeCaseKeys } from './format';
 
 /**
@@ -327,6 +327,115 @@ export function createRolloutsHandlers(rollouts: Rollout[], attemptsByRollout: R
  */
 export function createSpansHandlers(spansByAttempt: Record<string, Span[]>) {
   return [http.get('*/agl/v1/spans', ({ request }) => HttpResponse.json(buildSpansResponse(spansByAttempt, request)))];
+}
+
+/**
+ * Filter resources based on query parameters.
+ * Supports: resources_id_contains
+ */
+export function filterResourcesForParams(resources: Resources[], params: URLSearchParams): Resources[] {
+  const resourcesIdContains = params.get('resources_id_contains');
+
+  return resources.filter((resource) => {
+    if (resourcesIdContains && !resource.resourcesId.includes(resourcesIdContains)) {
+      return false;
+    }
+    return true;
+  });
+}
+
+/**
+ * Get the sort value for resources based on the sort_by field.
+ */
+export function getResourcesSortValue(resource: Resources, sortBy: string): string | number | null {
+  switch (sortBy) {
+    case 'resources_id':
+      return resource.resourcesId;
+    case 'version':
+      return resource.version;
+    case 'create_time':
+      return resource.createTime;
+    case 'update_time':
+    default:
+      return resource.updateTime;
+  }
+}
+
+/**
+ * Sort resources based on query parameters.
+ * Default sort_by is 'update_time', default sort_order is 'desc'.
+ */
+export function sortResourcesForParams(
+  resources: Resources[],
+  sortBy: string | null,
+  sortOrder: 'asc' | 'desc',
+): Resources[] {
+  const resolvedSortBy = sortBy ?? 'update_time';
+  const sorted = [...resources].sort((a, b) => {
+    const aValue = getResourcesSortValue(a, resolvedSortBy);
+    const bValue = getResourcesSortValue(b, resolvedSortBy);
+    if (aValue === bValue) {
+      return 0;
+    }
+    if (aValue == null) {
+      return -1;
+    }
+    if (bValue == null) {
+      return 1;
+    }
+    if (typeof aValue === 'number' && typeof bValue === 'number') {
+      return aValue - bValue;
+    }
+    return String(aValue).localeCompare(String(bValue));
+  });
+
+  if (sortOrder === 'desc') {
+    sorted.reverse();
+  }
+
+  return sorted;
+}
+
+/**
+ * Build a paginated resources response matching the Python server's format.
+ * Applies filtering, sorting, and pagination based on query parameters.
+ */
+export function buildResourcesResponse(resources: Resources[], request: Request): Record<string, unknown> {
+  const url = new URL(request.url);
+  const params = url.searchParams;
+  const filtered = filterResourcesForParams(resources, params);
+  const sortBy = params.get('sort_by');
+  const sortOrder = params.get('sort_order') === 'desc' ? 'desc' : 'asc';
+  const sorted = sortResourcesForParams(filtered, sortBy, sortOrder);
+  const limitParam = parseNumberParam(params, 'limit', sorted.length);
+  const offsetParam = parseNumberParam(params, 'offset', 0);
+  const effectiveLimit = limitParam < 0 ? sorted.length : limitParam;
+  const offset = offsetParam < 0 ? 0 : offsetParam;
+  const paginated = effectiveLimit >= 0 ? sorted.slice(offset, offset + effectiveLimit) : [...sorted];
+
+  return snakeCaseKeys({
+    items: paginated,
+    limit: effectiveLimit,
+    offset,
+    total: filtered.length,
+  });
+}
+
+/**
+ * Create MSW handlers for resources endpoints.
+ *
+ * @param resources - Array of resources objects to serve
+ * @returns Array of MSW request handlers
+ *
+ * @example
+ * ```ts
+ * const handlers = createResourcesHandlers(sampleResources);
+ * ```
+ */
+export function createResourcesHandlers(resources: Resources[]) {
+  return [
+    http.get('*/agl/v1/resources', ({ request }) => HttpResponse.json(buildResourcesResponse(resources, request))),
+  ];
 }
 
 /**
