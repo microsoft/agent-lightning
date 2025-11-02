@@ -1,11 +1,11 @@
 import type { Meta, StoryObj } from '@storybook/react';
 import { Provider } from 'react-redux';
-import { AppAlertBanner } from './AppAlertBanner';
-import { createAppStore } from '@/store';
 import { initialConfigState } from '@/features/config/slice';
-import { initialDrawerState } from '@/features/ui/drawer/slice';
 import { initialRolloutsUiState } from '@/features/rollouts/slice';
 import type { AlertsState, AlertTone } from '@/features/ui/alert';
+import { initialDrawerState } from '@/features/ui/drawer/slice';
+import { createAppStore } from '@/store';
+import { AppAlertBanner } from './AppAlertBanner';
 
 const meta: Meta<typeof AppAlertBanner> = {
   title: 'Components/AppAlertBanner',

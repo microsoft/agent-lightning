@@ -1,4 +1,6 @@
 import { useMemo } from 'react';
+import { Editor } from '@monaco-editor/react';
+import { IconCheck, IconCopy } from '@tabler/icons-react';
 import {
   ActionIcon,
   Badge,
@@ -11,12 +13,10 @@ import {
   Tooltip,
   useMantineColorScheme,
 } from '@mantine/core';
-import { IconCheck, IconCopy } from '@tabler/icons-react';
-import { Editor } from '@monaco-editor/react';
-import { useAppDispatch, useAppSelector } from '@/store/hooks';
 import { closeDrawer, selectDrawerContent, selectDrawerIsOpen } from '@/features/ui/drawer';
-import { formatStatusLabel } from '@/utils/format';
+import { useAppDispatch, useAppSelector } from '@/store/hooks';
 import type { AttemptStatus, RolloutStatus, Span } from '@/types';
+import { formatStatusLabel } from '@/utils/format';
 
 const ATTEMPT_STATUS_COLORS: Record<AttemptStatus, string> = {
   failed: 'red',
@@ -79,20 +79,18 @@ export function AppDrawer() {
     if (content.type === 'trace-detail') {
       const span = content.span;
       const spanStatusCode = span.status?.status_code ?? null;
-      const spanBadgeColor = spanStatusCode ? SPAN_STATUS_COLORS[spanStatusCode] ?? 'gray' : undefined;
+      const spanBadgeColor = spanStatusCode ? (SPAN_STATUS_COLORS[spanStatusCode] ?? 'gray') : undefined;
       const formattedJson = formatJson(span);
 
       const title = (
         <Stack gap={3}>
           <Group gap={6}>
             <Text fw={600}>{span.name ?? span.spanId}</Text>
-            {spanStatusCode
-              ? (
-                  <Badge size='sm' variant='light' color={spanBadgeColor}>
-                    {spanStatusCode}
-                  </Badge>
-                )
-              : null}
+            {spanStatusCode ? (
+              <Badge size='sm' variant='light' color={spanBadgeColor}>
+                {spanStatusCode}
+              </Badge>
+            ) : null}
           </Group>
           <Group gap={6}>
             <Text size='sm' c='dimmed'>
@@ -170,8 +168,7 @@ export function AppDrawer() {
     const attemptStatus = attempt?.status ?? null;
     const rolloutStatusLabel = rolloutStatus ? formatStatusLabel(rolloutStatus) : null;
     const attemptStatusLabel = attemptStatus ? formatStatusLabel(attemptStatus) : null;
-    const hasStatusMismatch
-      = rolloutStatus !== null && attemptStatus !== null && rolloutStatus !== attemptStatus;
+    const hasStatusMismatch = rolloutStatus !== null && attemptStatus !== null && rolloutStatus !== attemptStatus;
     const rolloutBadgeColor = rolloutStatus ? getStatusBadgeColor(rolloutStatus, false) : undefined;
     const attemptBadgeColor = attemptStatus ? getStatusBadgeColor(attemptStatus, true) : undefined;
     const showRolloutBadgeInHeading = Boolean(rolloutStatusLabel && (!attemptStatus || hasStatusMismatch));
@@ -199,73 +196,63 @@ export function AppDrawer() {
               </Tooltip>
             )}
           </CopyButton>
-          {showRolloutBadgeInHeading && rolloutStatusLabel
-            ? (
-                <Badge size='sm' variant='light' color={rolloutBadgeColor}>
-                  {rolloutStatusLabel}
-                </Badge>
-              )
-            : null}
+          {showRolloutBadgeInHeading && rolloutStatusLabel ? (
+            <Badge size='sm' variant='light' color={rolloutBadgeColor}>
+              {rolloutStatusLabel}
+            </Badge>
+          ) : null}
         </Group>
         <Group gap='xs'>
-          {attemptId
-            ? (
-                <Group gap={3}>
-                  <Text size='sm' c='dimmed' fw={500}>
-                    Attempt
-                  </Text>
-                  <Text size='sm' c='dimmed'>
-                    {attemptId}
-                  </Text>
-                </Group>
-              )
-            : null}
-          {showAttemptBadge && attemptStatusLabel
-            ? (
-                <Badge size='sm' variant='light' color={attemptBadgeColor}>
-                  {attemptStatusLabel}
-                </Badge>
-              )
-            : null}
-          {!showRolloutBadgeInHeading && !attemptStatus && rolloutStatusLabel
-            ? (
-                <Badge size='sm' variant='light' color={rolloutBadgeColor}>
-                  {rolloutStatusLabel}
-                </Badge>
-              )
-            : null}
+          {attemptId ? (
+            <Group gap={3}>
+              <Text size='sm' c='dimmed' fw={500}>
+                Attempt
+              </Text>
+              <Text size='sm' c='dimmed'>
+                {attemptId}
+              </Text>
+            </Group>
+          ) : null}
+          {showAttemptBadge && attemptStatusLabel ? (
+            <Badge size='sm' variant='light' color={attemptBadgeColor}>
+              {attemptStatusLabel}
+            </Badge>
+          ) : null}
+          {!showRolloutBadgeInHeading && !attemptStatus && rolloutStatusLabel ? (
+            <Badge size='sm' variant='light' color={rolloutBadgeColor}>
+              {rolloutStatusLabel}
+            </Badge>
+          ) : null}
         </Group>
       </Stack>
     );
 
-    const jsonValue
-      = content.type === 'rollout-json'
+    const jsonValue =
+      content.type === 'rollout-json'
         ? content.isNested && content.attempt
           ? content.attempt
           : content.rollout
         : null;
 
-    const body
-      = jsonValue !== null
-        ? (
-            <Box style={{ flex: 1, minHeight: 0 }}>
-              <Editor
-                height='100%'
-                language='json'
-                value={formatJson(jsonValue)}
-                theme={editorTheme}
-                options={{
-                  readOnly: true,
-                  domReadOnly: true,
-                  minimap: { enabled: false },
-                  automaticLayout: true,
-                  scrollBeyondLastLine: false,
-                  fontSize: 13,
-                }}
-              />
-            </Box>
-          )
-        : null;
+    const body =
+      jsonValue !== null ? (
+        <Box style={{ flex: 1, minHeight: 0 }}>
+          <Editor
+            height='100%'
+            language='json'
+            value={formatJson(jsonValue)}
+            theme={editorTheme}
+            options={{
+              readOnly: true,
+              domReadOnly: true,
+              minimap: { enabled: false },
+              automaticLayout: true,
+              scrollBeyondLastLine: false,
+              fontSize: 13,
+            }}
+          />
+        </Box>
+      ) : null;
 
     return {
       titleContent: title,

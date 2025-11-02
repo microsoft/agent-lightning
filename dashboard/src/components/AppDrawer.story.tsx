@@ -1,13 +1,13 @@
 import type { Meta, StoryObj } from '@storybook/react';
 import { Provider } from 'react-redux';
-import { AppDrawer } from './AppDrawer.component';
-import { createAppStore } from '@/store';
 import { initialConfigState } from '@/features/config/slice';
+import { initialResourcesUiState } from '@/features/resources/slice';
 import { initialRolloutsUiState } from '@/features/rollouts/slice';
 import { initialTracesUiState } from '@/features/traces/slice';
-import { initialResourcesUiState } from '@/features/resources/slice';
-import type { Attempt, Rollout, Span } from '@/types';
 import type { DrawerContent } from '@/features/ui/drawer';
+import { createAppStore } from '@/store';
+import type { Attempt, Rollout, Span } from '@/types';
+import { AppDrawer } from './AppDrawer.component';
 
 const meta = {
   title: 'Components/AppDrawer',

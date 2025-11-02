@@ -1,9 +1,7 @@
 import { useCallback } from 'react';
-import { Skeleton, Stack, TextInput, Title } from '@mantine/core';
-import type { DataTableSortStatus } from 'mantine-datatable';
-import type { PaginatedResponse, Resources } from '@/types';
 import { IconSearch } from '@tabler/icons-react';
-
+import type { DataTableSortStatus } from 'mantine-datatable';
+import { Skeleton, Stack, TextInput, Title } from '@mantine/core';
 import { ResourcesTable, type ResourcesTableRecord } from '@/components/ResourcesTable.component';
 import { selectAutoRefreshMs } from '@/features/config';
 import {
@@ -20,6 +18,7 @@ import {
 } from '@/features/resources';
 import { useGetResourcesQuery } from '@/features/rollouts';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
+import type { PaginatedResponse, Resources } from '@/types';
 
 export function ResourcesPage() {
   const dispatch = useAppDispatch();
@@ -77,21 +76,21 @@ export function ResourcesPage() {
   const showSkeleton = isLoading && !((resourcesData?.items?.length ?? 0) > 0);
 
   return (
-    <Stack gap="md">
+    <Stack gap='md'>
       <Title order={1}>Resources</Title>
 
       <TextInput
-        placeholder="Search by Resources ID"
+        placeholder='Search by Resources ID'
         value={searchTerm}
         onChange={(event) => handleSearchTermChange(event.currentTarget.value)}
         leftSection={<IconSearch size={16} />}
-        data-testid="resources-search-input"
-        w="100%"
+        data-testid='resources-search-input'
+        w='100%'
         style={{ maxWidth: 360 }}
       />
 
       {showSkeleton ? (
-        <Skeleton height={360} radius="md" />
+        <Skeleton height={360} radius='md' />
       ) : (
         <ResourcesTable
           resourcesList={resourcesData?.items}
