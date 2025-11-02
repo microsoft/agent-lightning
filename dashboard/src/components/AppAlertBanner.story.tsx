@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft. All rights reserved.
+
 import type { Meta, StoryObj } from '@storybook/react';
 import { Provider } from 'react-redux';
 import { initialConfigState } from '@/features/config/slice';

@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft. All rights reserved.
+
 import { useCallback, useEffect, useMemo, useState, type ReactNode, type SetStateAction } from 'react';
 import {
   IconAlertCircle,

@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft. All rights reserved.
+
 import { useMemo, useState } from 'react';
 import type { Meta, StoryObj } from '@storybook/react';
 import { IconSearch } from '@tabler/icons-react';

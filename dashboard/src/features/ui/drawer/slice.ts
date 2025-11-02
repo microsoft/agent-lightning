@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft. All rights reserved.
+
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 import type { Attempt, Rollout, Span } from '@/types';
 

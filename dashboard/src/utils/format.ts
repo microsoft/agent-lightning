@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft. All rights reserved.
+
 import dayjs from 'dayjs';
 
 export function toTimestamp(value: unknown): number | null {

@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft. All rights reserved.
+
 import ReactDOM from 'react-dom/client';
 import { Provider } from 'react-redux';
 import App from './App';

@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft. All rights reserved.
+
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 import type { ConfigState, ThemePreference } from '@/types';
 

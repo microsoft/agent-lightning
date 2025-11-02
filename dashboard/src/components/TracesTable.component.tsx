@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft. All rights reserved.
+
 import { useCallback, useEffect, useMemo } from 'react';
 import {
   IconAlertCircle,

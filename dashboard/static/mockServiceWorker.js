@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft. All rights reserved.
+
 /* eslint-disable */
 /* tslint:disable */
 

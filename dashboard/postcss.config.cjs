@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft. All rights reserved.
+
 module.exports = {
   plugins: {
     'postcss-preset-mantine': {},

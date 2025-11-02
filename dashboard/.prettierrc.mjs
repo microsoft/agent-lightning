@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft. All rights reserved.
+
 /** @type {import("@ianvs/prettier-plugin-sort-imports").PrettierConfig} */
 const config = {
   printWidth: 120,

@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft. All rights reserved.
+
 import type { Meta, StoryObj } from '@storybook/react';
 import { Box, Stack, Title } from '@mantine/core';
 import type { Resources } from '@/types';

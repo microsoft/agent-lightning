@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft. All rights reserved.
+
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { IconCpu, IconRouteSquare, IconSettings, IconTimeline } from '@tabler/icons-react';
 import { Outlet, NavLink as RouterNavLink, useLocation } from 'react-router-dom';

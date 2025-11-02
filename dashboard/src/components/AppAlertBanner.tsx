@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft. All rights reserved.
+
 import { useEffect, useState } from 'react';
 import { IconAlertCircle, IconAlertTriangle, IconInfoCircle } from '@tabler/icons-react';
 import { Notification, Portal, Transition } from '@mantine/core';

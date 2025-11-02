@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft. All rights reserved.
+
 import { useMemo } from 'react';
 import { IconAlertCircle, IconChevronRight } from '@tabler/icons-react';
 import { Box, Group, Stack, Text, Tree, type TreeNodeData } from '@mantine/core';

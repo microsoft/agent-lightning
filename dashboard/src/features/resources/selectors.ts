@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft. All rights reserved.
+
 import { createSelector } from '@reduxjs/toolkit';
 import type { GetResourcesQueryArgs } from '@/features/rollouts';
 import type { RootState } from '@/store';

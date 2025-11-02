@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft. All rights reserved.
+
 /**
  * Tests for mock API handlers.
  *

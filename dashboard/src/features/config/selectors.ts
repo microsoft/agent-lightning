@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft. All rights reserved.
+
 import type { RootState } from '../../store';
 
 export const selectConfig = (state: RootState) => state.config;

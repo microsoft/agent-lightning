@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft. All rights reserved.
+
 // This file should sync with agentlightning/types/core.py
 
 export type RolloutStatus = 'queuing' | 'preparing' | 'running' | 'failed' | 'succeeded' | 'cancelled' | 'requeuing';

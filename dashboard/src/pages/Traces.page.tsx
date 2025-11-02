@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft. All rights reserved.
+
 import { useCallback, useEffect, useMemo } from 'react';
 import { skipToken } from '@reduxjs/toolkit/query';
 import { IconCheck, IconChevronDown, IconSearch } from '@tabler/icons-react';

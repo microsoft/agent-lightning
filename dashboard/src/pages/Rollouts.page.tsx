@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft. All rights reserved.
+
 import { useCallback, useEffect } from 'react';
 import { IconSearch } from '@tabler/icons-react';
 import type { DataTableColumn, DataTableSortStatus } from 'mantine-datatable';

@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft. All rights reserved.
+
 import type { DataTableColumn } from 'mantine-datatable';
 
 /**

@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft. All rights reserved.
+
 import type { StorybookConfig } from '@storybook/react-vite';
 
 const config: StorybookConfig = {

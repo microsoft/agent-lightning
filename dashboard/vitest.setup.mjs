@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft. All rights reserved.
+
 import '@testing-library/jest-dom/vitest';
 
 import { vi } from 'vitest';

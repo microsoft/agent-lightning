@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft. All rights reserved.
+
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 
 export type SortDirection = 'asc' | 'desc';

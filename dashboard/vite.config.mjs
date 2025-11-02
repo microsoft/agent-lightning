@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft. All rights reserved.
+
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import react from '@vitejs/plugin-react';

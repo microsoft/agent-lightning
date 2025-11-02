@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft. All rights reserved.
+
 import { useEffect, useState } from 'react';
 import { Divider, Select, Stack, Text, TextInput, Title } from '@mantine/core';
 import { selectConfig } from '../features/config';

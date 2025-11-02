@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft. All rights reserved.
+
 /**
  * Mock API handlers for testing and Storybook.
  *

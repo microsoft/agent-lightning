@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft. All rights reserved.
+
 import { createBrowserRouter, Navigate, RouterProvider } from 'react-router-dom';
 import { AppLayoutWithState } from './layouts/AppLayout';
 import { ResourcesPage } from './pages/Resources.page';

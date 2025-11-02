@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft. All rights reserved.
+
 import type { Meta, StoryObj } from '@storybook/react';
 import { within } from '@testing-library/dom';
 import userEvent from '@testing-library/user-event';

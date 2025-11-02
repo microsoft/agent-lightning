@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft. All rights reserved.
+
 import type { RootState } from '@/store';
 
 export const selectDrawerState = (state: RootState) => state.drawer;

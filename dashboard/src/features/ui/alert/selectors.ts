@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft. All rights reserved.
+
 import { createSelector } from '@reduxjs/toolkit';
 import type { RootState } from '@/store';
 import type { AlertsState, AlertTone } from './slice';

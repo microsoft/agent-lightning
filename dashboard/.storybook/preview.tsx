@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft. All rights reserved.
+
 import '@mantine/core/styles.css';
 import 'mantine-datatable/styles.css';
 import '../src/styles/theme.css';

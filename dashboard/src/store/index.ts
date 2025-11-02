@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft. All rights reserved.
+
 import { combineReducers, configureStore } from '@reduxjs/toolkit';
 import { configReducer } from '../features/config';
 import { resourcesReducer } from '../features/resources';

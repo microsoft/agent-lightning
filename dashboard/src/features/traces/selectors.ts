@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft. All rights reserved.
+
 import { createSelector } from '@reduxjs/toolkit';
 import type { GetSpansQueryArgs } from '@/features/rollouts';
 import type { RootState } from '@/store';

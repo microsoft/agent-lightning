@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft. All rights reserved.
+
 import { alpha, CSSVariablesResolver } from '@mantine/core';
 
 export const shadcnCssVariableResolver: CSSVariablesResolver = () => ({

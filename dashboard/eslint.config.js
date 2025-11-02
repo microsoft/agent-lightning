@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft. All rights reserved.
+
 // @ts-check
 import stylistic from '@stylistic/eslint-plugin';
 import mantine from 'eslint-config-mantine';
