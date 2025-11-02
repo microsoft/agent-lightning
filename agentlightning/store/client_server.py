@@ -196,10 +196,21 @@ def _apply_filters_sort_paginate(
                 value = float("inf")
             return value
         else:
+            # Other than _time, we assume the value must be a string
             value = getattr(item, sort_by, None)
             if value is None:
-                return ""
-            elif not isinstance(value, str):
+                if sort_by not in item.__class__.model_fields:  # type: ignore
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Failed to sort items by {sort_by}: {sort_by} is not a field of {item.__class__.__name__}",
+                    )
+                field_type = str(item.__class__.model_fields[sort_by].annotation)  # type: ignore
+                if "str" in field_type or "Literal" in field_type:
+                    return ""
+                if "int" in field_type:
+                    return 0
+                if "float" in field_type:
+                    return 0.0
                 raise HTTPException(
                     status_code=400, detail=f"Failed to sort items by {sort_by}: {value} is not a string or number"
                 )

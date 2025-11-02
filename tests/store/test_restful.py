@@ -359,13 +359,11 @@ async def test_rollouts_sorting_by_unsupported_field(
     async with session.get(
         f"{api_endpoint}/rollouts", params={"sort_by": "nonexistent_field", "sort_order": "asc", "limit": -1}
     ) as resp:
-        # The server should handle this gracefully
-        # Since our implementation uses getattr with default, it will sort by None/0 values
-        # This is acceptable behavior - the API doesn't fail, just treats missing fields as None
-        assert resp.status == 200
+        assert resp.status == 400
         data = await resp.json()
-        # All items should be returned
-        assert data["total"] == 3
+        assert (
+            data["detail"] == "Failed to sort items by nonexistent_field: nonexistent_field is not a field of Rollout"
+        )
 
 
 # Attempts Pagination and Sorting Tests
@@ -824,12 +822,9 @@ async def test_spans_sorting_by_unsupported_field(
         f"{api_endpoint}/spans",
         params={"rollout_id": rollout.rollout_id, "sort_by": "invalid_field", "sort_order": "asc", "limit": -1},
     ) as resp:
-        # The server should handle this gracefully
-        # Since our implementation uses getattr with default, it will sort by None/0 values
-        assert resp.status == 200
+        assert resp.status == 400
         data = await resp.json()
-        # All items should be returned
-        assert data["total"] == 3
+        assert data["detail"] == "Failed to sort items by invalid_field: invalid_field is not a field of Span"
 
 
 # Client Compatibility Tests
