@@ -48,7 +48,7 @@ jobs:
       - name: Run pre-commit
         uses: pre-commit/action@v3.0.1
       - name: Check Python headers
-        run: uv run --locked --no-sync scripts/check_python_headers.py
+        run: uv run --locked --no-sync scripts/check_headers.py
       - name: Run Black
         run: uv run --locked --no-sync black --check .
       - name: Run isort
