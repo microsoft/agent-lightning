@@ -152,41 +152,40 @@ def _apply_filters_sort_paginate(
     """Apply filtering, sorting, and pagination to a list of items."""
     # Apply filters
     filtered_items: List[T] = []
-    for item in items:
-        if not filters:
-            filtered_items.append(item)
-            continue
+    if not filters:
+        filtered_items = items
+    else:
+        for item in items:
+            matches: List[bool] = []
+            for key, value in filters.items():
+                if value is None:
+                    continue
 
-        matches: List[bool] = []
-        for key, value in filters.items():
-            if value is None:
-                continue
-
-            # Handle _in suffix (list membership)
-            if key.endswith("_in"):
-                field = key[:-3]
-                item_value = getattr(item, field, None)
-                matches.append(item_value in value if isinstance(value, list) else False)
-            # Handle _contains suffix (substring match)
-            elif key.endswith("_contains"):
-                field = key[:-9]
-                item_value = getattr(item, field, None)
-                if item_value is not None and isinstance(item_value, str) and isinstance(value, str):
-                    matches.append(value in item_value)
+                # Handle _in suffix (list membership)
+                if key.endswith("_in"):
+                    field = key[:-3]
+                    item_value = getattr(item, field, None)
+                    matches.append(item_value in value if isinstance(value, list) else False)
+                # Handle _contains suffix (substring match)
+                elif key.endswith("_contains"):
+                    field = key[:-9]
+                    item_value = getattr(item, field, None)
+                    if item_value is not None and isinstance(item_value, str) and isinstance(value, str):
+                        matches.append(value in item_value)
+                    else:
+                        matches.append(False)
+                # Exact match
                 else:
-                    matches.append(False)
-            # Exact match
-            else:
-                item_value = getattr(item, key, None)
-                matches.append(item_value == value)
+                    item_value = getattr(item, key, None)
+                    matches.append(item_value == value)
 
-        if matches:
-            if filter_logic == "and":
-                if all(matches):
-                    filtered_items.append(item)
-            else:  # "or"
-                if any(matches):
-                    filtered_items.append(item)
+            if matches:
+                if filter_logic == "and":
+                    if all(matches):
+                        filtered_items.append(item)
+                else:  # "or"
+                    if any(matches):
+                        filtered_items.append(item)
 
     # Apply sorting
 
