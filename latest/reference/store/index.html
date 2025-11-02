@@ -1214,6 +1214,15 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#agentlightning.LightningStore.query_resources" class="md-nav__link">
+    <span class="md-ellipsis">
+      <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;query_resources
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#agentlightning.LightningStore.query_rollouts" class="md-nav__link">
     <span class="md-ellipsis">
       <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;query_rollouts
@@ -1404,6 +1413,15 @@
   <a href="#agentlightning.InMemoryLightningStore.query_attempts" class="md-nav__link">
     <span class="md-ellipsis">
       <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;query_attempts
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#agentlightning.InMemoryLightningStore.query_resources" class="md-nav__link">
+    <span class="md-ellipsis">
+      <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;query_resources
     </span>
   </a>
   
@@ -1644,6 +1662,15 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#agentlightning.LightningStoreClient.query_resources" class="md-nav__link">
+    <span class="md-ellipsis">
+      <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;query_resources
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#agentlightning.LightningStoreClient.wait_for_rollouts" class="md-nav__link">
     <span class="md-ellipsis">
       <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;wait_for_rollouts
@@ -1716,6 +1743,29 @@
   
   <span class="md-ellipsis">
     Types
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../restful/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    RESTful
     
   </span>
   
@@ -2013,6 +2063,15 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#agentlightning.LightningStore.query_resources" class="md-nav__link">
+    <span class="md-ellipsis">
+      <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;query_resources
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#agentlightning.LightningStore.query_rollouts" class="md-nav__link">
     <span class="md-ellipsis">
       <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;query_rollouts
@@ -2203,6 +2262,15 @@
   <a href="#agentlightning.InMemoryLightningStore.query_attempts" class="md-nav__link">
     <span class="md-ellipsis">
       <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;query_attempts
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#agentlightning.InMemoryLightningStore.query_resources" class="md-nav__link">
+    <span class="md-ellipsis">
+      <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;query_resources
     </span>
   </a>
   
@@ -2437,6 +2505,15 @@
   <a href="#agentlightning.LightningStoreClient.get_rollout_by_id" class="md-nav__link">
     <span class="md-ellipsis">
       <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;get_rollout_by_id
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#agentlightning.LightningStoreClient.query_resources" class="md-nav__link">
+    <span class="md-ellipsis">
+      <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;query_resources
     </span>
   </a>
   
@@ -3427,6 +3504,52 @@ totally ordered.</p>
             –
           <div class="doc-md-description">
             <p>Implementations must raise when the rollout does not exist.</p>
+          </div>
+        </li>
+    </ul>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h4 id="agentlightning.LightningStore.query_resources" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">query_resources</span><span class="p">()</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-async"><code>async</code></small>
+  </span>
+
+<a href="#agentlightning.LightningStore.query_resources" class="headerlink" title="Permanent link">&para;</a></h4>
+
+
+    <div class="doc doc-contents ">
+
+        <p>List every stored resource snapshot in insertion order.</p>
+
+
+<p><span class="doc-section-title">Returns:</span></p>
+    <ul>
+        <li class="doc-section-item field-body">
+              <code><span title="typing.List">List</span>[<a class="autorefs autorefs-internal" title="            agentlightning.ResourcesUpdate (agentlightning.types.ResourcesUpdate)" href="../types/#agentlightning.ResourcesUpdate">ResourcesUpdate</a>]</code>
+          –
+          <div class="doc-md-description">
+            <p>A chronological list of <a class="autorefs autorefs-internal" title="            agentlightning.ResourcesUpdate" href="../types/#agentlightning.ResourcesUpdate"><code>ResourcesUpdate</code></a> objects.</p>
+          </div>
+        </li>
+    </ul>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <ul>
+        <li class="doc-section-item field-body">
+              <code><span title="NotImplementedError">NotImplementedError</span></code>
+            –
+          <div class="doc-md-description">
+            <p>Subclasses must implement retrieval.</p>
           </div>
         </li>
     </ul>
@@ -4645,6 +4768,7 @@ The store will not issue the same sequence ID twice.</p>
   
       async
   " href="#agentlightning.LightningStore.get_rollout_by_id"><code>LightningStore.get_rollout_by_id()</code></a> for semantics.</p>
+<p>If the rollout has been attempted, the latest attempt will also be returned.</p>
 
 
     </div>
@@ -4673,6 +4797,28 @@ Returns an empty list if no attempts are found.</p>
   
       async
   " href="#agentlightning.LightningStore.query_attempts"><code>LightningStore.query_attempts()</code></a> for semantics.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h4 id="agentlightning.InMemoryLightningStore.query_resources" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">query_resources</span><span class="p">()</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-async"><code>async</code></small>
+  </span>
+
+<a href="#agentlightning.InMemoryLightningStore.query_resources" class="headerlink" title="Permanent link">&para;</a></h4>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Return every stored resource snapshot in insertion order.</p>
 
 
     </div>
@@ -5438,6 +5584,28 @@ If all retries fail, it logs the error and returns None instead of raising an ex
   <p>This method retries on transient failures (network errors, 5xx status codes).
 If all retries fail, it logs the error and returns None instead of raising an exception.</p>
 </details>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h4 id="agentlightning.LightningStoreClient.query_resources" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">query_resources</span><span class="p">()</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-async"><code>async</code></small>
+  </span>
+
+<a href="#agentlightning.LightningStoreClient.query_resources" class="headerlink" title="Permanent link">&para;</a></h4>
+
+
+    <div class="doc doc-contents ">
+
+        <p>List all resource snapshots stored on the server.</p>
+
 
     </div>
 
