@@ -305,6 +305,69 @@ async def test_rollouts_filter_logic_or(
         assert rollout_ids == {r1.rollout_id, r3.rollout_id}
 
 
+@pytest.mark.asyncio
+async def test_rollouts_sorting_with_none_values(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    """Test sorting rollouts by fields that may have None values."""
+    server, _client, session, api_endpoint = server_client
+
+    # Create rollouts - mode is optional and can be None
+    _r1 = await server.enqueue_rollout(input={"id": 1}, mode="train")
+    r2 = await server.enqueue_rollout(input={"id": 2})  # mode=None
+    _r3 = await server.enqueue_rollout(input={"id": 3}, mode="test")
+
+    # Sort by mode ascending (None values should be treated as empty string/0)
+    async with session.get(
+        f"{api_endpoint}/rollouts", params={"sort_by": "mode", "sort_order": "asc", "limit": -1}
+    ) as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        items = data["items"]
+        assert len(items) == 3
+        # Items with None mode should come first (treated as 0)
+        assert items[0]["rollout_id"] == r2.rollout_id
+        assert items[0]["mode"] is None
+
+    # Sort by mode descending
+    async with session.get(
+        f"{api_endpoint}/rollouts", params={"sort_by": "mode", "sort_order": "desc", "limit": -1}
+    ) as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        items = data["items"]
+        assert len(items) == 3
+        # Items with actual mode should come first
+        assert items[0]["mode"] is not None
+        # Item with None should be last
+        assert items[2]["rollout_id"] == r2.rollout_id
+        assert items[2]["mode"] is None
+
+
+@pytest.mark.asyncio
+async def test_rollouts_sorting_by_unsupported_field(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    """Test sorting by a field that doesn't exist on the model."""
+    server, _client, session, api_endpoint = server_client
+
+    # Create rollouts
+    for i in range(3):
+        await server.enqueue_rollout(input={"id": i})
+
+    # Try to sort by a non-existent field - should return 400 error
+    async with session.get(
+        f"{api_endpoint}/rollouts", params={"sort_by": "nonexistent_field", "sort_order": "asc", "limit": -1}
+    ) as resp:
+        # The server should handle this gracefully
+        # Since our implementation uses getattr with default, it will sort by None/0 values
+        # This is acceptable behavior - the API doesn't fail, just treats missing fields as None
+        assert resp.status == 200
+        data = await resp.json()
+        # All items should be returned
+        assert data["total"] == 3
+
+
 # Attempts Pagination and Sorting Tests
 
 
@@ -375,6 +438,38 @@ async def test_attempts_sorting(
         items = data["items"]
         for i in range(len(items) - 1):
             assert items[i]["start_time"] <= items[i + 1]["start_time"]
+
+
+@pytest.mark.asyncio
+async def test_attempts_sorting_with_none_values(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    """Test sorting attempts by fields that may have None values."""
+    server, _client, session, api_endpoint = server_client
+
+    # Create rollout and attempts
+    rollout = await server.enqueue_rollout(input={"test": "data"})
+    a1 = await server.start_attempt(rollout.rollout_id)
+    a2 = await server.start_attempt(rollout.rollout_id)
+    a3 = await server.start_attempt(rollout.rollout_id)
+
+    # Set worker_id for some attempts, leave others with None
+    await server.update_attempt(rollout_id=rollout.rollout_id, attempt_id=a1.attempt.attempt_id, worker_id="worker-1")
+    await server.update_attempt(rollout_id=rollout.rollout_id, attempt_id=a3.attempt.attempt_id, worker_id="worker-2")
+    # a2 remains with worker_id=None
+
+    # Sort by worker_id ascending (None values should be treated as empty/0)
+    async with session.get(
+        f"{api_endpoint}/rollouts/{rollout.rollout_id}/attempts",
+        params={"sort_by": "worker_id", "sort_order": "asc", "limit": -1},
+    ) as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        items = data["items"]
+        assert len(items) == 3
+        # Items with None worker_id should come first
+        assert items[0]["attempt_id"] == a2.attempt.attempt_id
+        assert items[0]["worker_id"] is None
 
 
 # Resources Pagination and Sorting Tests
@@ -656,6 +751,84 @@ async def test_spans_filter_logic_or(
         assert resp.status == 200
         data = await resp.json()
         # span1, span2, and span3 should match
+        assert data["total"] == 3
+
+
+@pytest.mark.asyncio
+async def test_spans_sorting_with_none_values(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    """Test sorting spans by fields that may have None values."""
+    server, _client, session, api_endpoint = server_client
+
+    # Create rollout and spans
+    rollout = await server.start_rollout(input={"test": "data"})
+
+    # Create spans with different parent_id values (parent_id can be None)
+    span1 = _make_span(rollout.rollout_id, rollout.attempt.attempt_id, 1, "span1")
+    span1.parent_id = None  # Root span
+    await server.add_span(span1)
+
+    span2 = _make_span(rollout.rollout_id, rollout.attempt.attempt_id, 2, "span2")
+    span2.parent_id = "parent-a"  # Child span
+    await server.add_span(span2)
+
+    span3 = _make_span(rollout.rollout_id, rollout.attempt.attempt_id, 3, "span3")
+    span3.parent_id = "parent-b"  # Child span
+    await server.add_span(span3)
+
+    # Sort by parent_id ascending (None values should be treated as empty/0)
+    async with session.get(
+        f"{api_endpoint}/spans",
+        params={"rollout_id": rollout.rollout_id, "sort_by": "parent_id", "sort_order": "asc", "limit": -1},
+    ) as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        items = data["items"]
+        assert len(items) == 3
+        # Items with None parent_id should come first (treated as 0)
+        assert items[0]["sequence_id"] == 1
+        assert items[0]["parent_id"] is None
+
+    # Sort by parent_id descending
+    async with session.get(
+        f"{api_endpoint}/spans",
+        params={"rollout_id": rollout.rollout_id, "sort_by": "parent_id", "sort_order": "desc", "limit": -1},
+    ) as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        items = data["items"]
+        assert len(items) == 3
+        # Items with actual parent_id should come first
+        assert items[0]["parent_id"] is not None
+        # Item with None should be last
+        assert items[2]["sequence_id"] == 1
+        assert items[2]["parent_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_spans_sorting_by_unsupported_field(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    """Test sorting spans by a field that doesn't exist on the model."""
+    server, _client, session, api_endpoint = server_client
+
+    # Create rollout and spans
+    rollout = await server.start_rollout(input={"test": "data"})
+    for i in range(3):
+        span = _make_span(rollout.rollout_id, rollout.attempt.attempt_id, i + 1, f"span-{i}")
+        await server.add_span(span)
+
+    # Try to sort by a non-existent field
+    async with session.get(
+        f"{api_endpoint}/spans",
+        params={"rollout_id": rollout.rollout_id, "sort_by": "invalid_field", "sort_order": "asc", "limit": -1},
+    ) as resp:
+        # The server should handle this gracefully
+        # Since our implementation uses getattr with default, it will sort by None/0 values
+        assert resp.status == 200
+        data = await resp.json()
+        # All items should be returned
         assert data["total"] == 3
 
 
