@@ -65,8 +65,8 @@ class QueryRolloutsRequest(BaseModel):
     limit: int = -1
     offset: int = 0
     # Sorting
-    sort_by: str = "start_time"
-    sort_order: Literal["asc", "desc"] = "desc"
+    sort_by: Optional[str] = None
+    sort_order: Literal["asc", "desc"] = "asc"
     # Filtering logic
     filter_logic: Literal["and", "or"] = "and"
 
@@ -106,8 +106,8 @@ class QueryAttemptsRequest(BaseModel):
     limit: int = -1
     offset: int = 0
     # Sorting
-    sort_by: str = "start_time"
-    sort_order: Literal["asc", "desc"] = "desc"
+    sort_by: Optional[str] = None
+    sort_order: Literal["asc", "desc"] = "asc"
 
 
 class QueryResourcesRequest(BaseModel):
@@ -115,7 +115,7 @@ class QueryResourcesRequest(BaseModel):
     limit: int = -1
     offset: int = 0
     # Sorting
-    sort_by: str = "resources_id"
+    sort_by: Optional[str] = None
     sort_order: Literal["asc", "desc"] = "asc"
 
 
@@ -136,8 +136,8 @@ class QuerySpansRequest(BaseModel):
     limit: int = -1
     offset: int = 0
     # Sorting
-    sort_by: str = "start_time"
-    sort_order: Literal["asc", "desc"] = "desc"
+    sort_by: Optional[str] = None
+    sort_order: Literal["asc", "desc"] = "asc"
 
 
 def _apply_filters_sort_paginate(
