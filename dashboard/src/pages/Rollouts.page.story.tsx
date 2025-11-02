@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { delay, http, HttpResponse } from 'msw';
 import { Provider } from 'react-redux';
 import { AppDrawer } from '@/components/AppDrawer.component';
-import { snakeCaseKeys } from '@/utils/format';
+import { createMockHandlers } from '@/utils/mock';
 import { initialConfigState } from '../features/config/slice';
 import { initialResourcesUiState } from '../features/resources/slice';
 import type { Attempt, Rollout } from '../features/rollouts';
@@ -209,134 +209,6 @@ const longDurationAttempts: Record<string, Attempt[]> = {
       metadata: null,
     },
   ],
-};
-
-const parseNumberParam = (params: URLSearchParams, key: string, defaultValue: number): number => {
-  const raw = params.get(key);
-  if (raw == null) {
-    return defaultValue;
-  }
-  const value = Number(raw);
-  if (!Number.isFinite(value)) {
-    return defaultValue;
-  }
-  return value;
-};
-
-const filterRolloutsForParams = (rollouts: Rollout[], params: URLSearchParams): Rollout[] => {
-  const statusFilters = params.getAll('status_in');
-  const modeFilters = params.getAll('mode_in');
-  const rolloutIdContains = params.get('rollout_id_contains');
-
-  return rollouts.filter((rollout) => {
-    if (statusFilters.length > 0 && !statusFilters.includes(rollout.status)) {
-      return false;
-    }
-    if (modeFilters.length > 0 && (!rollout.mode || !modeFilters.includes(rollout.mode))) {
-      return false;
-    }
-    if (rolloutIdContains && !rollout.rolloutId.includes(rolloutIdContains)) {
-      return false;
-    }
-    return true;
-  });
-};
-
-const getRolloutSortValue = (rollout: Rollout, sortBy: string): string | number | null => {
-  switch (sortBy) {
-    case 'rollout_id':
-      return rollout.rolloutId;
-    case 'status':
-      return rollout.status;
-    case 'mode':
-      return rollout.mode ?? '';
-    case 'start_time':
-    default:
-      return rollout.attempt?.startTime ?? rollout.startTime ?? null;
-  }
-};
-
-const sortRolloutsForParams = (rollouts: Rollout[], sortBy: string | null, sortOrder: 'asc' | 'desc'): Rollout[] => {
-  const resolvedSortBy = sortBy ?? 'start_time';
-  const sorted = [...rollouts].sort((a, b) => {
-    const aValue = getRolloutSortValue(a, resolvedSortBy);
-    const bValue = getRolloutSortValue(b, resolvedSortBy);
-    if (aValue === bValue) {
-      return 0;
-    }
-    if (aValue == null) {
-      return -1;
-    }
-    if (bValue == null) {
-      return 1;
-    }
-    if (typeof aValue === 'number' && typeof bValue === 'number') {
-      return aValue - bValue;
-    }
-    return String(aValue).localeCompare(String(bValue));
-  });
-
-  if (sortOrder === 'desc') {
-    sorted.reverse();
-  }
-
-  return sorted;
-};
-
-const buildRolloutsResponse = (rollouts: Rollout[], request: Request) => {
-  const url = new URL(request.url);
-  const params = url.searchParams;
-  const filtered = filterRolloutsForParams(rollouts, params);
-  const sortBy = params.get('sort_by');
-  const sortOrder = params.get('sort_order') === 'desc' ? 'desc' : 'asc';
-  const sorted = sortRolloutsForParams(filtered, sortBy, sortOrder);
-  const limitParam = parseNumberParam(params, 'limit', sorted.length);
-  const offsetParam = parseNumberParam(params, 'offset', 0);
-  const effectiveLimit = limitParam < 0 ? sorted.length : limitParam;
-  const offset = offsetParam < 0 ? 0 : offsetParam;
-  const paginated = effectiveLimit >= 0 ? sorted.slice(offset, offset + effectiveLimit) : [...sorted];
-
-  return snakeCaseKeys({
-    items: paginated,
-    limit: effectiveLimit,
-    offset,
-    total: filtered.length,
-  });
-};
-
-const sortAttemptsForParams = (attemptList: Attempt[], sortBy: string | null, sortOrder: 'asc' | 'desc'): Attempt[] => {
-  const sorted = [...attemptList];
-  const resolvedSortBy = sortBy ?? 'sequence_id';
-  sorted.sort((a, b) => {
-    if (resolvedSortBy === 'start_time') {
-      return a.startTime - b.startTime;
-    }
-    return a.sequenceId - b.sequenceId;
-  });
-  if (sortOrder === 'desc') {
-    sorted.reverse();
-  }
-  return sorted;
-};
-
-const buildAttemptsResponse = (attemptList: Attempt[], request: Request) => {
-  const url = new URL(request.url);
-  const params = url.searchParams;
-  const sortBy = params.get('sort_by');
-  const sortOrder = params.get('sort_order') === 'desc' ? 'desc' : 'asc';
-  const sorted = sortAttemptsForParams(attemptList, sortBy, sortOrder);
-  const limitParam = parseNumberParam(params, 'limit', sorted.length);
-  const offsetParam = parseNumberParam(params, 'offset', 0);
-  const effectiveLimit = limitParam < 0 ? sorted.length : limitParam;
-  const offset = offsetParam < 0 ? 0 : offsetParam;
-  const paginated = effectiveLimit >= 0 ? sorted.slice(offset, offset + effectiveLimit) : [...sorted];
-
-  return snakeCaseKeys({
-    items: paginated,
-    limit: effectiveLimit,
-    offset,
-    total: attemptList.length,
-  });
 };
 
 const staleHeartbeatRollouts: Rollout[] = [
@@ -581,16 +453,7 @@ function renderWithStore(uiOverrides?: Partial<RolloutsUiState>) {
   );
 }
 
-const createHandlers = (rollouts: Rollout[], attempts: Record<string, Attempt[]>) => [
-  http.get('*/agl/v1/rollouts', ({ request }) => HttpResponse.json(buildRolloutsResponse(rollouts, request))),
-  http.get('*/agl/v1/rollouts/:rolloutId/attempts', ({ params, request }) => {
-    const rolloutId = params.rolloutId as string;
-    const attemptList = attempts[rolloutId] ?? [];
-    return HttpResponse.json(buildAttemptsResponse(attemptList, request));
-  }),
-];
-
-const defaultHandlers = createHandlers(sampleRollouts, attemptsByRollout);
+const defaultHandlers = createMockHandlers(sampleRollouts, attemptsByRollout);
 
 export const Default: Story = {
   render: () => renderWithStore(),
@@ -651,7 +514,7 @@ export const LongDuration: Story = {
   render: () => renderWithStore(),
   parameters: {
     msw: {
-      handlers: createHandlers(longDurationRollouts, longDurationAttempts),
+      handlers: createMockHandlers(longDurationRollouts, longDurationAttempts),
     },
   },
 };
@@ -660,7 +523,7 @@ export const StaleHeartbeat: Story = {
   render: () => renderWithStore(),
   parameters: {
     msw: {
-      handlers: createHandlers(staleHeartbeatRollouts, staleHeartbeatAttempts),
+      handlers: createMockHandlers(staleHeartbeatRollouts, staleHeartbeatAttempts),
     },
   },
 };
@@ -669,7 +532,7 @@ export const StatusMismatch: Story = {
   render: () => renderWithStore(),
   parameters: {
     msw: {
-      handlers: createHandlers(statusMismatchRollouts, statusMismatchAttempts),
+      handlers: createMockHandlers(statusMismatchRollouts, statusMismatchAttempts),
     },
   },
 };
@@ -678,7 +541,7 @@ export const LongInput: Story = {
   render: () => renderWithStore(),
   parameters: {
     msw: {
-      handlers: createHandlers(longInputRollouts, longInputAttempts),
+      handlers: createMockHandlers(longInputRollouts, longInputAttempts),
     },
   },
 };
@@ -687,7 +550,7 @@ export const Pagination: Story = {
   render: () => renderWithStore({ recordsPerPage: 20 }),
   parameters: {
     msw: {
-      handlers: createHandlers(paginationRollouts, paginationAttempts),
+      handlers: createMockHandlers(paginationRollouts, paginationAttempts),
     },
   },
 };
@@ -696,7 +559,7 @@ export const AutoExpandedAttempt: Story = {
   render: () => renderWithStore(),
   parameters: {
     msw: {
-      handlers: createHandlers(autoExpandRollouts, autoExpandAttempts),
+      handlers: createMockHandlers(autoExpandRollouts, autoExpandAttempts),
     },
   },
   play: async ({ canvasElement }) => {

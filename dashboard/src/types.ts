@@ -61,6 +61,9 @@ export type Resources = {
   resources: Record<string, Resource>;
 };
 
+/**
+ * Paginated response structure matching the Python server's PaginatedResponse
+ */
 export type PaginatedResponse<T> = {
   items: T[];
   limit: number;
