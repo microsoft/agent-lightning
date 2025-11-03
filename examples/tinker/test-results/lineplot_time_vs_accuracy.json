@@ -1,0 +1,342 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "description": "Val Accuracy vs Time",
+  "width": 600,
+  "height": 400,
+  "config": {
+    "axis": {
+      "labelFontSize": 14,
+      "titleFontSize": 16,
+      "titleFontWeight": "normal"
+    },
+    "legend": {
+      "labelFontSize": 14,
+      "titleFontSize": 14,
+      "fillColor": "white",
+      "strokeColor": "#ccc",
+      "padding": 10,
+      "cornerRadius": 5
+    }
+  },
+  "data": {
+    "values": [
+      {
+        "time_hours": 0.9058151707384321,
+        "val_accuracy": 0.075,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "time_hours": 2.625455667177836,
+        "val_accuracy": 0.325,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "time_hours": 4.977869786090321,
+        "val_accuracy": 0.45,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "time_hours": 9.575774032539792,
+        "val_accuracy": 0.475,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "time_hours": 12.643911814159818,
+        "val_accuracy": 0.5,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "time_hours": 16.521113978690572,
+        "val_accuracy": 0.5,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "time_hours": 20.787553014291657,
+        "val_accuracy": 0.525,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "time_hours": 25.045831591619386,
+        "val_accuracy": 0.525,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "time_hours": 30.059799723161593,
+        "val_accuracy": 0.6,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "time_hours": 34.41068402727445,
+        "val_accuracy": 0.525,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "time_hours": 38.55731651498212,
+        "val_accuracy": 0.475,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "time_hours": 41.73182878527376,
+        "val_accuracy": 0.55,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "time_hours": 45.836729809244474,
+        "val_accuracy": 0.55,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "time_hours": 51.60476171890895,
+        "val_accuracy": 0.6,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "time_hours": 57.504307308859296,
+        "val_accuracy": 0.5,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "time_hours": 0.5184101992845536,
+        "val_accuracy": 0.45,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "time_hours": 2.4729490328497357,
+        "val_accuracy": 0.55,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "time_hours": 3.9672210901313356,
+        "val_accuracy": 0.55,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "time_hours": 5.757554197443856,
+        "val_accuracy": 0.35,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "time_hours": 7.179612139993243,
+        "val_accuracy": 0.425,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "time_hours": 8.8389958483643,
+        "val_accuracy": 0.65,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "time_hours": 10.194888917538854,
+        "val_accuracy": 0.375,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "time_hours": 11.642369089391497,
+        "val_accuracy": 0.65,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "time_hours": 13.204607783887122,
+        "val_accuracy": 0.475,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "time_hours": 14.440975210997793,
+        "val_accuracy": 0.55,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "time_hours": 16.349152499702242,
+        "val_accuracy": 0.575,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "time_hours": 17.88673777202765,
+        "val_accuracy": 0.45,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "time_hours": 19.510139564474425,
+        "val_accuracy": 0.475,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "time_hours": 21.073914812604585,
+        "val_accuracy": 0.4,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "time_hours": 22.99824369966984,
+        "val_accuracy": 0.45,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "time_hours": 24.885507485138046,
+        "val_accuracy": 0.375,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "time_hours": 1.2988500927066586,
+        "val_accuracy": 0.175,
+        "configuration": "VERL Qwen2.5-3B"
+      },
+      {
+        "time_hours": 2.6103289737503252,
+        "val_accuracy": 0.2,
+        "configuration": "VERL Qwen2.5-3B"
+      },
+      {
+        "time_hours": 3.980658998825044,
+        "val_accuracy": 0.2,
+        "configuration": "VERL Qwen2.5-3B"
+      },
+      {
+        "time_hours": 5.199760117832791,
+        "val_accuracy": 0.225,
+        "configuration": "VERL Qwen2.5-3B"
+      },
+      {
+        "time_hours": 6.574244831443907,
+        "val_accuracy": 0.3,
+        "configuration": "VERL Qwen2.5-3B"
+      },
+      {
+        "time_hours": 7.805337181188386,
+        "val_accuracy": 0.225,
+        "configuration": "VERL Qwen2.5-3B"
+      },
+      {
+        "time_hours": 9.114170875194768,
+        "val_accuracy": 0.3,
+        "configuration": "VERL Qwen2.5-3B"
+      },
+      {
+        "time_hours": 10.473606320429504,
+        "val_accuracy": 0.325,
+        "configuration": "VERL Qwen2.5-3B"
+      },
+      {
+        "time_hours": 11.665612150597607,
+        "val_accuracy": 0.35,
+        "configuration": "VERL Qwen2.5-3B"
+      },
+      {
+        "time_hours": 12.839297268603113,
+        "val_accuracy": 0.375,
+        "configuration": "VERL Qwen2.5-3B"
+      },
+      {
+        "time_hours": 13.89632001630257,
+        "val_accuracy": 0.325,
+        "configuration": "VERL Qwen2.5-3B"
+      },
+      {
+        "time_hours": 15.045206967327589,
+        "val_accuracy": 0.45,
+        "configuration": "VERL Qwen2.5-3B"
+      },
+      {
+        "time_hours": 16.112632638089515,
+        "val_accuracy": 0.375,
+        "configuration": "VERL Qwen2.5-3B"
+      },
+      {
+        "time_hours": 17.23456109391422,
+        "val_accuracy": 0.35,
+        "configuration": "VERL Qwen2.5-3B"
+      },
+      {
+        "time_hours": 18.537836645152808,
+        "val_accuracy": 0.325,
+        "configuration": "VERL Qwen2.5-3B"
+      },
+      {
+        "time_hours": 19.713579296436382,
+        "val_accuracy": 0.45,
+        "configuration": "VERL Qwen2.5-3B"
+      },
+      {
+        "time_hours": 20.83718430431592,
+        "val_accuracy": 0.425,
+        "configuration": "VERL Qwen2.5-3B"
+      },
+      {
+        "time_hours": 22.16361958065568,
+        "val_accuracy": 0.275,
+        "configuration": "VERL Qwen2.5-3B"
+      },
+      {
+        "time_hours": 23.30857858457221,
+        "val_accuracy": 0.325,
+        "configuration": "VERL Qwen2.5-3B"
+      },
+      {
+        "time_hours": 24.47521217251565,
+        "val_accuracy": 0.3,
+        "configuration": "VERL Qwen2.5-3B"
+      },
+      {
+        "time_hours": 25.647553917748866,
+        "val_accuracy": 0.4,
+        "configuration": "VERL Qwen2.5-3B"
+      },
+      {
+        "time_hours": 26.825236024998787,
+        "val_accuracy": 0.325,
+        "configuration": "VERL Qwen2.5-3B"
+      },
+      {
+        "time_hours": 28.067420564648604,
+        "val_accuracy": 0.425,
+        "configuration": "VERL Qwen2.5-3B"
+      },
+      {
+        "time_hours": 29.35573145957282,
+        "val_accuracy": 0.475,
+        "configuration": "VERL Qwen2.5-3B"
+      },
+      {
+        "time_hours": 30.700391900200305,
+        "val_accuracy": 0.425,
+        "configuration": "VERL Qwen2.5-3B"
+      }
+    ]
+  },
+  "mark": {
+    "type": "line",
+    "point": true,
+    "strokeWidth": 2.5
+  },
+  "encoding": {
+    "x": {
+      "field": "time_hours",
+      "type": "quantitative",
+      "title": "Time (hours)"
+    },
+    "y": {
+      "field": "val_accuracy",
+      "type": "quantitative",
+      "title": "Val Accuracy"
+    },
+    "color": {
+      "field": "configuration",
+      "type": "nominal",
+      "title": "Configuration",
+      "scale": {
+        "domain": [
+          "Tinker Qwen3-4B",
+          "Tinker Qwen3-30B",
+          "VERL Qwen2.5-3B"
+        ],
+        "range": [
+          "#2E86AB",
+          "#E63946",
+          "#06A77D"
+        ]
+      },
+      "legend": {
+        "orient": "bottom-right"
+      }
+    }
+  }
+}

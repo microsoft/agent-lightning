@@ -342,6 +342,88 @@ vega_spec_cost = {
 with open("lineplot_cost_vs_accuracy.json", "w") as f:
     json.dump(vega_spec_cost, f, indent=2)
 
+# ===== 4. Compare val accuracy vs time =====
+time_chart_data = []
+
+# Process Tinker data
+for key in ["q20_no_search_4b", "q20_no_search_30b"]:
+    config = training_files[key]
+    data = all_training_data[key]
+
+    cumulative_time = 0
+    for entry in data:
+        step = entry.get("step", 0)
+        # Use time/total field if available (in seconds)
+        if "time/total" in entry:
+            cumulative_time += entry["time/total"]
+
+        if "test/env/all/reward/total" in entry:
+            time_chart_data.append(
+                {
+                    "time_hours": cumulative_time / 3600,  # Convert to hours
+                    "val_accuracy": entry["test/env/all/reward/total"],
+                    "configuration": config["name"],
+                }
+            )
+
+# Process VERL data
+cumulative_verl_time = 0
+for _, row in verl_data.iterrows():
+    if pd.notna(row.get("timing_s/step")):
+        cumulative_verl_time += row["timing_s/step"]
+
+        if pd.notna(row.get("val/reward")):
+            time_chart_data.append(
+                {
+                    "time_hours": cumulative_verl_time / 3600,  # Convert to hours
+                    "val_accuracy": row["val/reward"],
+                    "configuration": "VERL Qwen2.5-3B",
+                }
+            )
+
+vega_spec_time = {
+    "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+    "description": "Val Accuracy vs Time",
+    "width": 600,
+    "height": 400,
+    "config": {
+        "axis": {"labelFontSize": 14, "titleFontSize": 16, "titleFontWeight": "normal"},
+        "legend": {
+            "labelFontSize": 14,
+            "titleFontSize": 14,
+            "fillColor": "white",
+            "strokeColor": "#ccc",
+            "padding": 10,
+            "cornerRadius": 5,
+        },
+    },
+    "data": {"values": time_chart_data},
+    "mark": {"type": "line", "point": True, "strokeWidth": 2.5},
+    "encoding": {
+        "x": {
+            "field": "time_hours",
+            "type": "quantitative",
+            "title": "Time (hours)",
+        },
+        "y": {"field": "val_accuracy", "type": "quantitative", "title": "Val Accuracy"},
+        "color": {
+            "field": "configuration",
+            "type": "nominal",
+            "title": "Configuration",
+            "scale": {
+                "domain": ["Tinker Qwen3-4B", "Tinker Qwen3-30B", "VERL Qwen2.5-3B"],
+                "range": ["#2E86AB", "#E63946", "#06A77D"],
+            },
+            "legend": {
+                "orient": "bottom-right",
+            },
+        },
+    },
+}
+
+with open("lineplot_time_vs_accuracy.json", "w") as f:
+    json.dump(vega_spec_time, f, indent=2)
+
 print("Created line plot specifications:")
 print("  - lineplot_accuracy_q20_no_search_4b.json")
 print("  - lineplot_accuracy_q20_no_search_30b.json")
@@ -349,6 +431,7 @@ print("  - lineplot_accuracy_q20_search_4b.json")
 print("  - lineplot_accuracy_verl.json")
 print("  - lineplot_tokens_per_turn.json")
 print("  - lineplot_cost_vs_accuracy.json")
+print("  - lineplot_time_vs_accuracy.json")
 
 # Print summary statistics
 print("\n=== Final Validation Accuracy ===")
@@ -377,3 +460,14 @@ verl_total_cost = sum(
     if pd.notna(row.get("timing_s/step"))
 )
 print(f"{'VERL':25s}: ${verl_total_cost:.2f}")
+
+print("\n=== Total Time (hours) ===")
+for key, config in training_files.items():
+    data = all_training_data[key]
+    total_time = sum(entry.get("time/total", 0) for entry in data) / 3600
+    print(f"{config['name']:25s}: {total_time:.2f} hours")
+
+verl_total_time = (
+    sum(row["timing_s/step"] for _, row in verl_data.iterrows() if pd.notna(row.get("timing_s/step"))) / 3600
+)
+print(f"{'VERL':25s}: {verl_total_time:.2f} hours")
