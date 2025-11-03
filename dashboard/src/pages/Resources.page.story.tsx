@@ -196,8 +196,8 @@ export const RequestTimeout: Story = {
     msw: {
       handlers: [
         http.get('*/agl/v1/resources', async () => {
-          await delay('infinite');
-          return HttpResponse.json({ items: [], limit: 0, offset: 0, total: 0 });
+          await delay(1200);
+          return HttpResponse.json({ detail: 'Request timed out' }, { status: 504, statusText: 'Timeout' });
         }),
       ],
     },

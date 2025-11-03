@@ -13,6 +13,7 @@ import { DataTable, type DataTableColumn, type DataTableSortStatus } from 'manti
 import { ActionIcon, Badge, Box, Button, CopyButton, Group, Stack, Text, Tooltip } from '@mantine/core';
 import { useElementSize } from '@mantine/hooks';
 import type { Span } from '@/types';
+import { getErrorDescriptor } from '@/utils/error';
 import { formatDateTime, formatDuration, toTimestamp } from '@/utils/format';
 import { createResponsiveColumns, type ColumnVisibilityConfig } from '@/utils/table';
 
@@ -351,10 +352,10 @@ export function TracesTable({
     [onSortStatusChange],
   );
 
-  const errorMessage =
-    isError && error && typeof error === 'object' && 'status' in (error as Record<string, unknown>)
-      ? `Traces are temporarily unavailable (status: ${String((error as Record<string, unknown>).status)}).`
-      : 'Traces are temporarily unavailable.';
+  const errorDescriptor = isError ? getErrorDescriptor(error) : null;
+  const errorMessage = isError
+    ? `Traces are temporarily unavailable${errorDescriptor ? ` (${errorDescriptor})` : ''}.`
+    : 'Traces are temporarily unavailable.';
 
   const emptyState = (
     <Stack gap='sm' align='center' py='lg'>

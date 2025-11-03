@@ -6,6 +6,7 @@ import { DataTable, type DataTableColumn, type DataTableSortStatus } from 'manti
 import { ActionIcon, Box, Button, CopyButton, Group, Stack, Text, Tooltip } from '@mantine/core';
 import { useElementSize } from '@mantine/hooks';
 import type { Resources } from '@/types';
+import { getErrorDescriptor } from '@/utils/error';
 import { formatDateTime, safeStringify } from '@/utils/format';
 import { createResponsiveColumns, type ColumnVisibilityConfig } from '@/utils/table';
 
@@ -207,10 +208,10 @@ export function ResourcesTable({
     [onSortStatusChange],
   );
 
-  const errorMessage =
-    isError && error && typeof error === 'object' && 'status' in (error as Record<string, unknown>)
-      ? `Resources are temporarily unavailable (status: ${String((error as Record<string, unknown>).status)}).`
-      : 'Resources are temporarily unavailable.';
+  const errorDescriptor = isError ? getErrorDescriptor(error) : null;
+  const errorMessage = isError
+    ? `Resources are temporarily unavailable${errorDescriptor ? ` (${errorDescriptor})` : ''}.`
+    : 'Resources are temporarily unavailable.';
 
   const emptyState = (
     <Stack gap='sm' align='center' py='lg'>

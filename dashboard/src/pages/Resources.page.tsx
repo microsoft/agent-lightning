@@ -23,6 +23,7 @@ import { useGetResourcesQuery } from '@/features/rollouts';
 import { hideAlert, showAlert } from '@/features/ui/alert';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
 import type { PaginatedResponse, Resources } from '@/types';
+import { getErrorDescriptor } from '@/utils/error';
 
 export function ResourcesPage() {
   const dispatch = useAppDispatch();
@@ -80,16 +81,9 @@ export function ResourcesPage() {
   const showSkeleton = isLoading && !((resourcesData?.items?.length ?? 0) > 0);
 
   useEffect(() => {
-    const errorStatus =
-      error && typeof error === 'object' && error !== null && 'status' in (error as Record<string, unknown>)
-        ? String((error as Record<string, unknown>).status)
-        : null;
-    const errorMessage =
-      error && typeof error === 'object' && error !== null && 'message' in (error as Record<string, unknown>)
-        ? String((error as Record<string, unknown>).message)
-        : null;
+    const descriptor = isError ? getErrorDescriptor(error) : null;
     if (isError) {
-      const detailSuffix = errorStatus ? ` (status: ${errorStatus})` : errorMessage ? ` (${errorMessage})` : '';
+      const detailSuffix = descriptor ? ` (${descriptor})` : '';
       dispatch(
         showAlert({
           id: 'resources-fetch',

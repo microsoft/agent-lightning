@@ -5,6 +5,7 @@ import { within } from '@testing-library/dom';
 import userEvent from '@testing-library/user-event';
 import { delay, http, HttpResponse } from 'msw';
 import { Provider } from 'react-redux';
+import { AppAlertBanner } from '@/components/AppAlertBanner';
 import { AppDrawerContainer } from '@/components/AppDrawer.component';
 import { createMockHandlers } from '@/utils/mock';
 import { initialConfigState } from '../features/config/slice';
@@ -566,6 +567,7 @@ function renderWithStore(uiOverrides?: Partial<RolloutsUiState>) {
     <Provider store={store}>
       <>
         <RolloutsPage />
+        <AppAlertBanner />
         <AppDrawerContainer />
       </>
     </Provider>

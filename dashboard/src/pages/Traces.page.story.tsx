@@ -5,7 +5,7 @@ import { delay, http, HttpResponse } from 'msw';
 import { Provider } from 'react-redux';
 import { AppAlertBanner } from '@/components/AppAlertBanner';
 import { AppDrawerContainer } from '@/components/AppDrawer.component';
-import { buildAttemptsResponse, buildRolloutsResponse, buildSpansResponse, createMockHandlers } from '@/utils/mock';
+import { createMockHandlers } from '@/utils/mock';
 import { initialConfigState } from '../features/config/slice';
 import { initialResourcesUiState } from '../features/resources/slice';
 import { initialRolloutsUiState } from '../features/rollouts/slice';
@@ -300,19 +300,20 @@ function createHandlers(delayMs?: number) {
 
 function createRequestTimeoutHandlers() {
   return [
-    http.get('*/agl/v1/rollouts', async ({ request }) => {
-      await delay('infinite');
-      return HttpResponse.json(buildRolloutsResponse(sampleRollouts, request));
+    http.get('*/agl/v1/rollouts', async () => {
+      await delay(1200);
+      return HttpResponse.json({ detail: 'Request timed out' }, { status: 504, statusText: 'Timeout' });
     }),
-    http.get('*/agl/v1/rollouts/:rolloutId/attempts', async ({ params, request }) => {
-      await delay('infinite');
-      const rolloutId = params.rolloutId as string;
-      const attempts = attemptsByRollout[rolloutId] ?? [];
-      return HttpResponse.json(buildAttemptsResponse(attempts, request));
+    http.get('*/agl/v1/rollouts/:rolloutId/attempts', async ({ params }) => {
+      await delay(1200);
+      return HttpResponse.json(
+        { detail: 'Request timed out', rolloutId: params.rolloutId },
+        { status: 504, statusText: 'Timeout' },
+      );
     }),
-    http.get('*/agl/v1/spans', async ({ request }) => {
-      await delay('infinite');
-      return HttpResponse.json(buildSpansResponse(spansByAttempt, request));
+    http.get('*/agl/v1/spans', async () => {
+      await delay(1200);
+      return HttpResponse.json({ detail: 'Request timed out' }, { status: 504, statusText: 'Timeout' });
     }),
   ];
 }

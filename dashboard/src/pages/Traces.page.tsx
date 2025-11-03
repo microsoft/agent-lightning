@@ -35,6 +35,7 @@ import { hideAlert, showAlert } from '@/features/ui/alert';
 import { openDrawer } from '@/features/ui/drawer';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
 import type { Attempt, Rollout, Span } from '@/types';
+import { getErrorDescriptor } from '@/utils/error';
 import { formatStatusLabel } from '@/utils/format';
 
 const VIEW_OPTIONS = [
@@ -204,25 +205,13 @@ export function TracesPage() {
 
   useEffect(() => {
     const anyError = rolloutsIsError || attemptsIsError || spansIsError;
-    const extractStatus = (value: unknown): string | null => {
-      if (value && typeof value === 'object' && 'status' in (value as Record<string, unknown>)) {
-        return String((value as Record<string, unknown>).status);
-      }
-      return null;
-    };
-    const extractMessage = (value: unknown): string | null => {
-      if (value && typeof value === 'object' && 'message' in (value as Record<string, unknown>)) {
-        return String((value as Record<string, unknown>).message);
-      }
-      return null;
-    };
-
     if (anyError) {
-      const statusDetail =
-        extractStatus(rolloutsError) ?? extractStatus(attemptsError) ?? extractStatus(spansError) ?? null;
-      const messageDetail =
-        extractMessage(rolloutsError) ?? extractMessage(attemptsError) ?? extractMessage(spansError) ?? null;
-      const detailSuffix = statusDetail ? ` (status: ${statusDetail})` : messageDetail ? ` (${messageDetail})` : '';
+      const descriptor =
+        (rolloutsIsError && getErrorDescriptor(rolloutsError)) ||
+        (attemptsIsError && getErrorDescriptor(attemptsError)) ||
+        (spansIsError && getErrorDescriptor(spansError)) ||
+        null;
+      const detailSuffix = descriptor ? ` (${descriptor})` : '';
       dispatch(
         showAlert({
           id: 'traces-fetch',
