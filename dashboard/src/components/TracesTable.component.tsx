@@ -153,15 +153,16 @@ function createTracesColumns({
         }
 
         const parentExists = spanIds.has(parentId);
+        const isInteractive = parentExists && typeof onParentIdClick === 'function';
 
         return (
           <Group gap={2}>
             <Text
               size='sm'
               c={parentExists ? undefined : 'red'}
-              style={{ cursor: parentExists ? 'pointer' : undefined }}
+              style={{ cursor: isInteractive ? 'pointer' : undefined }}
               onClick={(event) => {
-                if (parentExists) {
+                if (isInteractive) {
                   event.stopPropagation();
                   onParentIdClick?.(parentId);
                 }

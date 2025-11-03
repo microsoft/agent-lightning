@@ -4,24 +4,25 @@ import type { Meta, StoryObj } from '@storybook/react';
 import { Provider } from 'react-redux';
 import { initialConfigState } from '@/features/config/slice';
 import { initialResourcesUiState } from '@/features/resources/slice';
+import { rolloutsApi } from '@/features/rollouts';
 import { initialRolloutsUiState } from '@/features/rollouts/slice';
 import { initialTracesUiState } from '@/features/traces/slice';
 import type { DrawerContent } from '@/features/ui/drawer';
 import { createAppStore } from '@/store';
 import type { Attempt, Rollout, Span } from '@/types';
-import { AppDrawer } from './AppDrawer.component';
+import { AppDrawerContainer } from './AppDrawer.component';
 
 const meta = {
   title: 'Components/AppDrawer',
-  component: AppDrawer,
+  component: AppDrawerContainer,
   parameters: {
     layout: 'fullscreen',
   },
-} satisfies Meta<typeof AppDrawer>;
+} satisfies Meta<typeof AppDrawerContainer>;
 
 export default meta;
 
-type Story = StoryObj<typeof AppDrawer>;
+type Story = StoryObj<typeof AppDrawerContainer>;
 
 const now = Math.floor(Date.now() / 1000);
 
@@ -93,7 +94,25 @@ const sampleSpan: Span = {
   resource: {},
 };
 
-function renderWithDrawer(content: DrawerContent) {
+const sampleTraces: Span[] = [
+  sampleSpan,
+  {
+    ...sampleSpan,
+    spanId: 'sp-story-002',
+    name: 'Process Response',
+    parentId: 'sp-story-001',
+    sequenceId: 3,
+    status: { status_code: 'ERROR', description: 'Unexpected response code' },
+    attributes: {
+      ...sampleSpan.attributes,
+      duration_ms: 240,
+    },
+    startTime: now - 120,
+    endTime: now - 30,
+  },
+];
+
+function renderWithDrawer(content: DrawerContent, options?: { spans?: Span[] }) {
   const store = createAppStore({
     config: initialConfigState,
     rollouts: initialRolloutsUiState,
@@ -105,9 +124,30 @@ function renderWithDrawer(content: DrawerContent) {
     },
   });
 
+  if (content.type === 'rollout-traces' && options?.spans) {
+    const defaultLimit = 100;
+    const queryArgs = {
+      rolloutId: content.rollout.rolloutId,
+      attemptId: content.attempt?.attemptId ?? undefined,
+      limit: defaultLimit,
+      offset: 0,
+      sortBy: 'start_time',
+      sortOrder: 'desc' as const,
+    };
+
+    store.dispatch(
+      rolloutsApi.util.upsertQueryData('getSpans', queryArgs, {
+        items: options.spans,
+        total: options.spans.length,
+        limit: defaultLimit,
+        offset: 0,
+      }),
+    );
+  }
+
   return (
     <Provider store={store}>
-      <AppDrawer />
+      <AppDrawerContainer />
     </Provider>
   );
 }
@@ -139,14 +179,17 @@ export const NestedAttemptJson: Story = {
     }),
 };
 
-export const TracesPlaceholder: Story = {
+export const RolloutTraces: Story = {
   render: () =>
-    renderWithDrawer({
-      type: 'rollout-traces',
-      rollout: baseRollout,
-      attempt: baseRollout.attempt,
-      isNested: false,
-    }),
+    renderWithDrawer(
+      {
+        type: 'rollout-traces',
+        rollout: baseRollout,
+        attempt: baseRollout.attempt,
+        isNested: false,
+      },
+      { spans: sampleTraces },
+    ),
 };
 
 export const NoAttempt: Story = {

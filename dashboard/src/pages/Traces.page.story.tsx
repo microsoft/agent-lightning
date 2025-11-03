@@ -3,7 +3,7 @@
 import type { Meta, StoryObj } from '@storybook/react';
 import { http, HttpResponse } from 'msw';
 import { Provider } from 'react-redux';
-import { AppDrawer } from '@/components/AppDrawer.component';
+import { AppDrawerContainer } from '@/components/AppDrawer.component';
 import { createMockHandlers } from '@/utils/mock';
 import { initialConfigState } from '../features/config/slice';
 import { initialResourcesUiState } from '../features/resources/slice';
@@ -228,7 +228,7 @@ function renderTracesPage(preloadedTracesState?: Partial<TracesUiState>) {
   return (
     <Provider store={store}>
       <TracesPage />
-      <AppDrawer />
+      <AppDrawerContainer />
     </Provider>
   );
 }

@@ -5,11 +5,11 @@ import { within } from '@testing-library/dom';
 import userEvent from '@testing-library/user-event';
 import { delay, http, HttpResponse } from 'msw';
 import { Provider } from 'react-redux';
-import { AppDrawer } from '@/components/AppDrawer.component';
+import { AppDrawerContainer } from '@/components/AppDrawer.component';
 import { createMockHandlers } from '@/utils/mock';
 import { initialConfigState } from '../features/config/slice';
 import { initialResourcesUiState } from '../features/resources/slice';
-import type { Attempt, Rollout } from '../features/rollouts';
+import type { Attempt, Rollout, Span } from '../features/rollouts';
 import { initialRolloutsUiState, type RolloutsUiState } from '../features/rollouts/slice';
 import { createAppStore } from '../store';
 import { RolloutsPage } from './Rollouts.page';
@@ -168,6 +168,123 @@ const attemptsByRollout: Record<string, Attempt[]> = {
       workerId: 'worker-gamma',
       lastHeartbeatTime: now - 8400,
       metadata: { lastHeartbeatAt: now - 8400 },
+    },
+  ],
+};
+
+const sampleSpansByAttempt: Record<string, Span[]> = {
+  'ro-7fa3b6e2:at-9001': [
+    {
+      rolloutId: 'ro-7fa3b6e2',
+      attemptId: 'at-9001',
+      sequenceId: 1,
+      traceId: 'tr-7fa3b6e2-1',
+      spanId: 'sp-7fa3b6e2-setup',
+      parentId: null,
+      name: 'Initialize rollout',
+      status: { status_code: 'OK', description: null },
+      attributes: { step: 'init', duration_ms: 120 },
+      startTime: now - 1100,
+      endTime: now - 1000,
+      events: [],
+      links: [],
+      context: {},
+      parent: null,
+      resource: {},
+    },
+    {
+      rolloutId: 'ro-7fa3b6e2',
+      attemptId: 'at-9001',
+      sequenceId: 2,
+      traceId: 'tr-7fa3b6e2-1',
+      spanId: 'sp-7fa3b6e2-run',
+      parentId: 'sp-7fa3b6e2-setup',
+      name: 'Execute task',
+      status: { status_code: 'OK', description: null },
+      attributes: { step: 'run', duration_ms: 450 },
+      startTime: now - 950,
+      endTime: now - 500,
+      events: [],
+      links: [],
+      context: {},
+      parent: null,
+      resource: {},
+    },
+  ],
+  'ro-116eab45:at-9002': [
+    {
+      rolloutId: 'ro-116eab45',
+      attemptId: 'at-9002',
+      sequenceId: 1,
+      traceId: 'tr-116eab45-1',
+      spanId: 'sp-116eab45-validate',
+      parentId: null,
+      name: 'Validate input',
+      status: { status_code: 'OK', description: null },
+      attributes: { step: 'validate', duration_ms: 80 },
+      startTime: now - 3800,
+      endTime: now - 3720,
+      events: [],
+      links: [],
+      context: {},
+      parent: null,
+      resource: {},
+    },
+    {
+      rolloutId: 'ro-116eab45',
+      attemptId: 'at-9002',
+      sequenceId: 2,
+      traceId: 'tr-116eab45-1',
+      spanId: 'sp-116eab45-execute',
+      parentId: 'sp-116eab45-validate',
+      name: 'Execute workflow',
+      status: { status_code: 'OK', description: null },
+      attributes: { step: 'execute', duration_ms: 260 },
+      startTime: now - 3700,
+      endTime: now - 3440,
+      events: [],
+      links: [],
+      context: {},
+      parent: null,
+      resource: {},
+    },
+  ],
+  'ro-9ae77c11:at-9005': [
+    {
+      rolloutId: 'ro-9ae77c11',
+      attemptId: 'at-9005',
+      sequenceId: 1,
+      traceId: 'tr-9ae77c11-1',
+      spanId: 'sp-9ae77c11-fetch',
+      parentId: null,
+      name: 'Fetch resources',
+      status: { status_code: 'OK', description: null },
+      attributes: { step: 'fetch', duration_ms: 200 },
+      startTime: now - 8700,
+      endTime: now - 8500,
+      events: [],
+      links: [],
+      context: {},
+      parent: null,
+      resource: {},
+    },
+    {
+      rolloutId: 'ro-9ae77c11',
+      attemptId: 'at-9005',
+      sequenceId: 2,
+      traceId: 'tr-9ae77c11-1',
+      spanId: 'sp-9ae77c11-run',
+      parentId: 'sp-9ae77c11-fetch',
+      name: 'Run evaluation',
+      status: { status_code: 'ERROR', description: 'Worker timeout' },
+      attributes: { step: 'evaluate', duration_ms: 600 },
+      startTime: now - 8450,
+      endTime: now - 7850,
+      events: [],
+      links: [],
+      context: {},
+      parent: null,
+      resource: {},
     },
   ],
 };
@@ -449,13 +566,13 @@ function renderWithStore(uiOverrides?: Partial<RolloutsUiState>) {
     <Provider store={store}>
       <>
         <RolloutsPage />
-        <AppDrawer />
+        <AppDrawerContainer />
       </>
     </Provider>
   );
 }
 
-const defaultHandlers = createMockHandlers(sampleRollouts, attemptsByRollout);
+const defaultHandlers = createMockHandlers(sampleRollouts, attemptsByRollout, sampleSpansByAttempt);
 
 export const Default: Story = {
   render: () => renderWithStore(),
@@ -516,7 +633,7 @@ export const LongDuration: Story = {
   render: () => renderWithStore(),
   parameters: {
     msw: {
-      handlers: createMockHandlers(longDurationRollouts, longDurationAttempts),
+      handlers: createMockHandlers(longDurationRollouts, longDurationAttempts, {}),
     },
   },
 };
@@ -525,7 +642,7 @@ export const StaleHeartbeat: Story = {
   render: () => renderWithStore(),
   parameters: {
     msw: {
-      handlers: createMockHandlers(staleHeartbeatRollouts, staleHeartbeatAttempts),
+      handlers: createMockHandlers(staleHeartbeatRollouts, staleHeartbeatAttempts, {}),
     },
   },
 };
@@ -534,7 +651,7 @@ export const StatusMismatch: Story = {
   render: () => renderWithStore(),
   parameters: {
     msw: {
-      handlers: createMockHandlers(statusMismatchRollouts, statusMismatchAttempts),
+      handlers: createMockHandlers(statusMismatchRollouts, statusMismatchAttempts, {}),
     },
   },
 };
@@ -543,7 +660,7 @@ export const LongInput: Story = {
   render: () => renderWithStore(),
   parameters: {
     msw: {
-      handlers: createMockHandlers(longInputRollouts, longInputAttempts),
+      handlers: createMockHandlers(longInputRollouts, longInputAttempts, {}),
     },
   },
 };
@@ -552,7 +669,7 @@ export const Pagination: Story = {
   render: () => renderWithStore({ recordsPerPage: 20 }),
   parameters: {
     msw: {
-      handlers: createMockHandlers(paginationRollouts, paginationAttempts),
+      handlers: createMockHandlers(paginationRollouts, paginationAttempts, {}),
     },
   },
 };
@@ -561,7 +678,7 @@ export const AutoExpandedAttempt: Story = {
   render: () => renderWithStore(),
   parameters: {
     msw: {
-      handlers: createMockHandlers(autoExpandRollouts, autoExpandAttempts),
+      handlers: createMockHandlers(autoExpandRollouts, autoExpandAttempts, {}),
     },
   },
   play: async ({ canvasElement }) => {

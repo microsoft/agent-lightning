@@ -5,7 +5,7 @@ import { IconCpu, IconRouteSquare, IconSettings, IconTimeline } from '@tabler/ic
 import { Outlet, NavLink as RouterNavLink, useLocation } from 'react-router-dom';
 import { AppShell, Badge, Group, Image, NavLink as MantineNavLink, Stack, Text } from '@mantine/core';
 import { AppAlertBanner } from '@/components/AppAlertBanner';
-import { AppDrawer } from '@/components/AppDrawer.component';
+import { AppDrawerContainer } from '@/components/AppDrawer.component';
 import faviconUrl from '../favicon.svg';
 import { selectConfig } from '../features/config';
 import { useAppSelector } from '../store/hooks';
@@ -224,7 +224,7 @@ export function AppLayoutWithState() {
           autoRefreshMs: config.autoRefreshMs,
         }}
       />
-      <AppDrawer />
+      <AppDrawerContainer />
     </>
   );
 }
