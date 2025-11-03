@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft. All rights reserved.
 
 import type { Meta, StoryObj } from '@storybook/react';
-import { http, HttpResponse } from 'msw';
+import { delay, http, HttpResponse } from 'msw';
 import { Provider } from 'react-redux';
 import { initialConfigState } from '@/features/config/slice';
 import { initialResourcesUiState } from '@/features/resources/slice';
@@ -188,13 +188,12 @@ export const ServerError: Story = {
   },
 };
 
-export const Loading: Story = {
+export const RequestTimeout: Story = {
   render: () => renderWithStore(),
   parameters: {
     msw: {
       handlers: [
         http.get('*/agl/v1/resources', async () => {
-          const { delay } = await import('msw');
           await delay('infinite');
           return HttpResponse.json({ items: [], limit: 0, offset: 0, total: 0 });
         }),
@@ -208,6 +207,24 @@ export const SingleResource: Story = {
   parameters: {
     msw: {
       handlers: createResourcesHandlers([sampleResources[0]]),
+    },
+  },
+};
+
+export const ParseFailure: Story = {
+  render: () => renderWithStore(),
+  parameters: {
+    msw: {
+      handlers: [
+        http.get('*/agl/v1/resources', () =>
+          HttpResponse.text('{ malformed json', {
+            status: 200,
+            headers: {
+              'Content-Type': 'application/json',
+            },
+          }),
+        ),
+      ],
     },
   },
 };

@@ -56,3 +56,9 @@
 [data-mantine-color-scheme='dark'] .rollouts-table--nested .mantine-datatable-table tbody tr:first-of-type td {
   border-top: 1px solid var(--mantine-color-dark-4);
 }
+
+/* Fix Mantine Conflicts with Mantine-datatable */
+.mantine-datatable-page-size-selector-active {
+  color: var(--mantine-color-text);
+  background: transparent;
+}

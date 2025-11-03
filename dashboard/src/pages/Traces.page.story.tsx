@@ -1,10 +1,10 @@
 // Copyright (c) Microsoft. All rights reserved.
 
 import type { Meta, StoryObj } from '@storybook/react';
-import { http, HttpResponse } from 'msw';
+import { delay, http, HttpResponse } from 'msw';
 import { Provider } from 'react-redux';
 import { AppDrawerContainer } from '@/components/AppDrawer.component';
-import { createMockHandlers } from '@/utils/mock';
+import { buildAttemptsResponse, buildRolloutsResponse, buildSpansResponse, createMockHandlers } from '@/utils/mock';
 import { initialConfigState } from '../features/config/slice';
 import { initialResourcesUiState } from '../features/resources/slice';
 import { initialRolloutsUiState } from '../features/rollouts/slice';
@@ -213,8 +213,107 @@ const spansByAttempt: Record<string, Span[]> = {
   ],
 };
 
+const emptyAttemptsByRollout: Record<string, Attempt[]> = {};
+const emptySpansByAttempt: Record<string, Span[]> = {};
+
+const singleRollout = sampleRollouts[1];
+const singleRollouts: Rollout[] = [singleRollout];
+const singleAttemptsByRollout: Record<string, Attempt[]> = {
+  [singleRollout.rolloutId]: attemptsByRollout[singleRollout.rolloutId] ?? [],
+};
+const singleSpansByAttempt = Object.fromEntries(
+  Object.entries(spansByAttempt).filter(([key]) => key.startsWith(`${singleRollout.rolloutId}:`)),
+) as Record<string, Span[]>;
+
+const owners = ['ava', 'ben', 'carla', 'diego'] as const;
+
+const manyAttemptsByRollout: Record<string, Attempt[]> = {};
+const manySpansByAttempt: Record<string, Span[]> = {};
+
+const manyRollouts: Rollout[] = Array.from({ length: 24 }, (_, index) => {
+  const rolloutId = `ro-many-${String(index + 1).padStart(3, '0')}`;
+  const statusOptions = ['running', 'succeeded', 'failed'] as const;
+  const modeOptions = ['train', 'val', 'test'] as const;
+  const status = statusOptions[index % statusOptions.length];
+  const mode = modeOptions[index % modeOptions.length];
+  const startTime = now - (index + 1) * 420;
+  const endTime = status === 'running' ? null : startTime + 240;
+  const attemptId = `${rolloutId}-attempt`;
+  const attemptStatus: Attempt['status'] =
+    status === 'failed' ? 'failed' : status === 'succeeded' ? 'succeeded' : 'running';
+  const attempt: Attempt = {
+    rolloutId,
+    attemptId,
+    sequenceId: 1,
+    status: attemptStatus,
+    startTime,
+    endTime,
+    workerId: `worker-${String.fromCharCode(97 + (index % 26))}`,
+    lastHeartbeatTime: endTime ?? startTime + 180,
+    metadata: { region: index % 2 === 0 ? 'us-east-1' : 'eu-west-1' },
+  };
+  manyAttemptsByRollout[rolloutId] = [attempt];
+  manySpansByAttempt[`${rolloutId}:${attemptId}`] = [
+    {
+      rolloutId,
+      attemptId,
+      sequenceId: 1,
+      traceId: `tr-many-${index + 1}`,
+      spanId: `sp-many-${index + 1}-root`,
+      parentId: null,
+      name: 'Synthetic root span',
+      status: {
+        status_code: status === 'failed' ? 'ERROR' : 'OK',
+        description: status === 'failed' ? 'Synthetic failure' : null,
+      },
+      attributes: {
+        'trace.sample': index + 1,
+        'duration_ms': 240,
+      },
+      startTime,
+      endTime: endTime ?? startTime + 240,
+      events: [],
+      links: [],
+      context: {},
+      parent: null,
+      resource: {},
+    },
+  ];
+  return {
+    rolloutId,
+    input: { task: `Synthetic trace ${index + 1}` },
+    status,
+    mode,
+    resourcesId: `rs-many-${(index % 7) + 1}`,
+    startTime,
+    endTime,
+    attempt,
+    config: { retries: index % 3 },
+    metadata: { owner: owners[index % owners.length] },
+  };
+});
+
 function createHandlers(delayMs?: number) {
   return createMockHandlers(sampleRollouts, attemptsByRollout, spansByAttempt, delayMs);
+}
+
+function createRequestTimeoutHandlers() {
+  return [
+    http.get('*/agl/v1/rollouts', async ({ request }) => {
+      await delay('infinite');
+      return HttpResponse.json(buildRolloutsResponse(sampleRollouts, request));
+    }),
+    http.get('*/agl/v1/rollouts/:rolloutId/attempts', async ({ params, request }) => {
+      await delay('infinite');
+      const rolloutId = params.rolloutId as string;
+      const attempts = attemptsByRollout[rolloutId] ?? [];
+      return HttpResponse.json(buildAttemptsResponse(attempts, request));
+    }),
+    http.get('*/agl/v1/spans', async ({ request }) => {
+      await delay('infinite');
+      return HttpResponse.json(buildSpansResponse(spansByAttempt, request));
+    }),
+  ];
 }
 
 function renderTracesPage(preloadedTracesState?: Partial<TracesUiState>) {
@@ -242,11 +341,47 @@ export const DefaultView: Story = {
   },
 };
 
+export const EmptyState: Story = {
+  render: () => renderTracesPage(),
+  parameters: {
+    msw: {
+      handlers: createMockHandlers([], emptyAttemptsByRollout, emptySpansByAttempt),
+    },
+  },
+};
+
+export const SingleResult: Story = {
+  render: () => renderTracesPage(),
+  parameters: {
+    msw: {
+      handlers: createMockHandlers(singleRollouts, singleAttemptsByRollout, singleSpansByAttempt),
+    },
+  },
+};
+
+export const ManyResults: Story = {
+  render: () => renderTracesPage(),
+  parameters: {
+    msw: {
+      handlers: createMockHandlers(manyRollouts, manyAttemptsByRollout, manySpansByAttempt),
+    },
+  },
+};
+
 export const LoadingState: Story = {
   render: () => renderTracesPage(),
   parameters: {
     msw: {
       handlers: createHandlers(800),
+    },
+  },
+};
+
+export const RequestTimeout: Story = {
+  render: () => renderTracesPage(),
+  parameters: {
+    msw: {
+      handlers: createRequestTimeoutHandlers(),
     },
   },
 };
@@ -264,7 +399,7 @@ export const AttemptScoped: Story = {
   },
 };
 
-export const ErrorState: Story = {
+export const ServerError: Story = {
   render: () => renderTracesPage(),
   parameters: {
     msw: {
@@ -276,6 +411,28 @@ export const ErrorState: Story = {
           HttpResponse.json({ items: [], limit: 0, offset: 0, total: 0 }, { status: 200 }),
         ),
         http.get('*/agl/v1/spans', () => HttpResponse.json({ detail: 'server error' }, { status: 500 })),
+      ],
+    },
+  },
+};
+
+export const ParseFailure: Story = {
+  render: () => renderTracesPage(),
+  parameters: {
+    msw: {
+      handlers: [
+        http.get('*/agl/v1/rollouts', () =>
+          HttpResponse.text('not valid json', {
+            status: 200,
+            headers: {
+              'Content-Type': 'application/json',
+            },
+          }),
+        ),
+        http.get('*/agl/v1/rollouts/:rolloutId/attempts', () =>
+          HttpResponse.json({ items: [], limit: 0, offset: 0, total: 0 }),
+        ),
+        http.get('*/agl/v1/spans', () => HttpResponse.json({ items: [], limit: 0, offset: 0, total: 0 })),
       ],
     },
   },
