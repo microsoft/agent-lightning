@@ -13,18 +13,23 @@
   animation: connection-refreshing-blink 1s linear infinite;
 }
 
-.rollouts-table {
+.mantine-datatable {
   --mantine-datatable-background-color: var(--mantine-color-body);
 }
 
-.rollouts-table .mantine-datatable-empty-state {
+.mantine-datatable .mantine-datatable-empty-state {
   pointer-events: none;
 }
 
-.rollouts-table .mantine-datatable-empty-state[data-active] {
+.mantine-datatable .mantine-datatable-empty-state[data-active] {
   pointer-events: auto;
 }
 
+[data-mantine-color-scheme='dark'] .mantine-datatable {
+  --mantine-datatable-border-color-dark: var(--mantine-color-dark-6);
+}
+
+/* Rollout Nested Table */
 .rollouts-table .mantine-datatable-row-expansion-cell {
   padding: 0;
 }
