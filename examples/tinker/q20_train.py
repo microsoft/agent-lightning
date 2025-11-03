@@ -193,7 +193,7 @@ async def algo(search: bool, model: Literal["qwen4b", "qwen30b"], port: int):
         renderer_name=renderer_name,
         model_name=model_name,
         log_path=f"logs/{experiment_name}",
-        concurrency=16,
+        concurrency=32,
         eval_every=4,
         wandb_project="AgentLightningQ20",
         wandb_name=experiment_name,
@@ -237,7 +237,7 @@ def algo_verl(search: bool, model: Literal["qwen25", "qwen3"], port: int):
         "actor_rollout_ref": {
             "rollout": {
                 "tensor_model_parallel_size": 1,
-                "n": 16,
+                "n": 8,
                 "log_prob_micro_batch_size_per_gpu": 4,
                 "multi_turn": {"format": "hermes"},
                 "name": "vllm",
@@ -246,7 +246,7 @@ def algo_verl(search: bool, model: Literal["qwen25", "qwen3"], port: int):
             "actor": {
                 "ppo_mini_batch_size": 16,
                 "ppo_micro_batch_size_per_gpu": 2,
-                "optim": {"lr": 1e-6},
+                "optim": {"lr": 5e-7},
                 "use_kl_loss": False,
                 "kl_loss_coef": 0.0,
                 "entropy_coeff": 0,
