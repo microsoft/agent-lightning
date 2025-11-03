@@ -1,0 +1,403 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "description": "Train and Test Rewards over Steps",
+  "width": 600,
+  "height": 300,
+  "config": {
+    "axis": {
+      "labelFontSize": 14,
+      "titleFontSize": 16,
+      "titleFontWeight": "normal"
+    },
+    "legend": {
+      "labelFontSize": 14,
+      "titleFontSize": 14,
+      "fillColor": "white",
+      "strokeColor": "#ccc",
+      "padding": 10,
+      "cornerRadius": 5
+    }
+  },
+  "data": {
+    "values": [
+      {
+        "step": 0.0,
+        "reward": -0.3125,
+        "type": "Train"
+      },
+      {
+        "step": 0.0,
+        "reward": -0.041666666666666005,
+        "type": "Test"
+      },
+      {
+        "step": 1.0,
+        "reward": -0.1875,
+        "type": "Train"
+      },
+      {
+        "step": 2.0,
+        "reward": -0.09375000000000001,
+        "type": "Train"
+      },
+      {
+        "step": 3.0,
+        "reward": -0.078125,
+        "type": "Train"
+      },
+      {
+        "step": 4.0,
+        "reward": 0.125,
+        "type": "Train"
+      },
+      {
+        "step": 5.0,
+        "reward": 0.09375000000000001,
+        "type": "Train"
+      },
+      {
+        "step": 6.0,
+        "reward": -0.078125,
+        "type": "Train"
+      },
+      {
+        "step": 7.0,
+        "reward": 0.1875,
+        "type": "Train"
+      },
+      {
+        "step": 8.0,
+        "reward": 0.15625,
+        "type": "Train"
+      },
+      {
+        "step": 9.0,
+        "reward": 0.109375,
+        "type": "Train"
+      },
+      {
+        "step": 10.0,
+        "reward": 0.28125,
+        "type": "Train"
+      },
+      {
+        "step": 11.0,
+        "reward": 0.34375000000000006,
+        "type": "Train"
+      },
+      {
+        "step": 12.0,
+        "reward": 0.265625,
+        "type": "Train"
+      },
+      {
+        "step": 13.0,
+        "reward": 0.328125,
+        "type": "Train"
+      },
+      {
+        "step": 14.0,
+        "reward": 0.328125,
+        "type": "Train"
+      },
+      {
+        "step": 15.0,
+        "reward": 0.265625,
+        "type": "Train"
+      },
+      {
+        "step": 16.0,
+        "reward": 0.4375,
+        "type": "Train"
+      },
+      {
+        "step": 17.0,
+        "reward": 0.296875,
+        "type": "Train"
+      },
+      {
+        "step": 18.0,
+        "reward": 0.46875000000000006,
+        "type": "Train"
+      },
+      {
+        "step": 19.0,
+        "reward": 0.359375,
+        "type": "Train"
+      },
+      {
+        "step": 20.0,
+        "reward": 0.578125,
+        "type": "Train"
+      },
+      {
+        "step": 20.0,
+        "reward": 0.6666666666666661,
+        "type": "Test"
+      },
+      {
+        "step": 21.0,
+        "reward": 0.3125,
+        "type": "Train"
+      },
+      {
+        "step": 22.0,
+        "reward": 0.4375,
+        "type": "Train"
+      },
+      {
+        "step": 23.0,
+        "reward": 0.421875,
+        "type": "Train"
+      },
+      {
+        "step": 24.0,
+        "reward": 0.546875,
+        "type": "Train"
+      },
+      {
+        "step": 25.0,
+        "reward": 0.515625,
+        "type": "Train"
+      },
+      {
+        "step": 26.0,
+        "reward": 0.65625,
+        "type": "Train"
+      },
+      {
+        "step": 27.0,
+        "reward": 0.75,
+        "type": "Train"
+      },
+      {
+        "step": 28.0,
+        "reward": 0.640625,
+        "type": "Train"
+      },
+      {
+        "step": 29.0,
+        "reward": 0.6875,
+        "type": "Train"
+      },
+      {
+        "step": 30.0,
+        "reward": 0.7812500000000001,
+        "type": "Train"
+      },
+      {
+        "step": 31.0,
+        "reward": 0.8125,
+        "type": "Train"
+      },
+      {
+        "step": 32.0,
+        "reward": 0.859375,
+        "type": "Train"
+      },
+      {
+        "step": 33.0,
+        "reward": 0.75,
+        "type": "Train"
+      },
+      {
+        "step": 34.0,
+        "reward": 0.828125,
+        "type": "Train"
+      },
+      {
+        "step": 35.0,
+        "reward": 0.9062500000000001,
+        "type": "Train"
+      },
+      {
+        "step": 36.0,
+        "reward": 0.859375,
+        "type": "Train"
+      },
+      {
+        "step": 37.0,
+        "reward": 0.859375,
+        "type": "Train"
+      },
+      {
+        "step": 38.0,
+        "reward": 0.890625,
+        "type": "Train"
+      },
+      {
+        "step": 39.0,
+        "reward": 0.875,
+        "type": "Train"
+      },
+      {
+        "step": 40.0,
+        "reward": 0.890625,
+        "type": "Train"
+      },
+      {
+        "step": 40.0,
+        "reward": 0.9166666666666661,
+        "type": "Test"
+      },
+      {
+        "step": 41.0,
+        "reward": 0.9687500000000001,
+        "type": "Train"
+      },
+      {
+        "step": 42.0,
+        "reward": 0.953125,
+        "type": "Train"
+      },
+      {
+        "step": 43.0,
+        "reward": 0.921875,
+        "type": "Train"
+      },
+      {
+        "step": 44.0,
+        "reward": 0.953125,
+        "type": "Train"
+      },
+      {
+        "step": 45.0,
+        "reward": 0.890625,
+        "type": "Train"
+      },
+      {
+        "step": 46.0,
+        "reward": 1.0,
+        "type": "Train"
+      },
+      {
+        "step": 47.0,
+        "reward": 0.984375,
+        "type": "Train"
+      },
+      {
+        "step": 48.0,
+        "reward": 0.984375,
+        "type": "Train"
+      },
+      {
+        "step": 49.0,
+        "reward": 1.0,
+        "type": "Train"
+      },
+      {
+        "step": 50.0,
+        "reward": 0.9687500000000001,
+        "type": "Train"
+      },
+      {
+        "step": 51.0,
+        "reward": 1.0,
+        "type": "Train"
+      },
+      {
+        "step": 52.0,
+        "reward": 0.921875,
+        "type": "Train"
+      },
+      {
+        "step": 53.0,
+        "reward": 1.0,
+        "type": "Train"
+      },
+      {
+        "step": 54.0,
+        "reward": 1.0,
+        "type": "Train"
+      },
+      {
+        "step": 55.0,
+        "reward": 1.0,
+        "type": "Train"
+      },
+      {
+        "step": 56.0,
+        "reward": 1.0,
+        "type": "Train"
+      },
+      {
+        "step": 57.0,
+        "reward": 1.0,
+        "type": "Train"
+      },
+      {
+        "step": 58.0,
+        "reward": 0.953125,
+        "type": "Train"
+      },
+      {
+        "step": 59.0,
+        "reward": 0.9687500000000001,
+        "type": "Train"
+      },
+      {
+        "step": 60.0,
+        "reward": 1.0,
+        "type": "Train"
+      },
+      {
+        "step": 60.0,
+        "reward": 1.0,
+        "type": "Test"
+      },
+      {
+        "step": 61.0,
+        "reward": 0.984375,
+        "type": "Train"
+      }
+    ]
+  },
+  "mark": {
+    "type": "line",
+    "point": true,
+    "strokeWidth": 2.5
+  },
+  "encoding": {
+    "x": {
+      "field": "step",
+      "type": "quantitative",
+      "title": "Step",
+      "scale": {
+        "domain": [
+          0,
+          61.0
+        ]
+      }
+    },
+    "y": {
+      "field": "reward",
+      "type": "quantitative",
+      "title": "Reward"
+    },
+    "color": {
+      "field": "type",
+      "type": "nominal",
+      "title": "Type",
+      "scale": {
+        "domain": [
+          "Train",
+          "Test"
+        ],
+        "range": [
+          "#2E86AB",
+          "#E63946"
+        ]
+      },
+      "legend": {
+        "orient": "none",
+        "legendX": 520,
+        "legendY": 220
+      }
+    },
+    "strokeDash": {
+      "field": "type",
+      "type": "nominal",
+      "legend": null
+    }
+  }
+}
