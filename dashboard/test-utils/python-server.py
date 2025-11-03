@@ -16,6 +16,7 @@ Usage:
 
 # pyright: reportPrivateUsage=false
 
+import argparse
 import asyncio
 import time
 from typing import List
@@ -25,13 +26,11 @@ from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.types import (
     LLM,
     Attempt,
-    AttemptStatus,
     OtelResource,
     PromptTemplate,
     ResourcesUpdate,
     Rollout,
     RolloutConfig,
-    RolloutStatus,
     Span,
     TraceStatus,
 )
@@ -85,7 +84,7 @@ def inject_mock_data(store: InMemoryLightningStore, now: float | None = None) ->
         mode="val",
         resources_id="rs-story-002",
         status="succeeded",
-        config=RolloutConfig(max_attempts=2, timeout_seconds=10, unresponsive_seconds=20),
+        config=RolloutConfig(max_attempts=2, timeout_seconds=86400, unresponsive_seconds=86400 * 2),
         metadata={"owner": "bob"},
     )
     attempt2_1 = Attempt(
@@ -155,7 +154,7 @@ def inject_mock_data(store: InMemoryLightningStore, now: float | None = None) ->
         worker_id="worker-west",
     )
 
-    # Rollout 4: Preparing (no attempt yet)
+    # Rollout 4: Queuing (no attempt yet)
     rollout4 = Rollout(
         rollout_id="ro-story-004",
         input=dict(task="Evaluate prompt variants"),
@@ -163,7 +162,7 @@ def inject_mock_data(store: InMemoryLightningStore, now: float | None = None) ->
         end_time=None,
         mode="train",
         resources_id=None,
-        status="preparing",
+        status="requeuing",
         config=RolloutConfig(max_attempts=5, retry_condition=["timeout"]),
         metadata={"owner": "dave"},
     )
@@ -637,8 +636,12 @@ def inject_mock_data(store: InMemoryLightningStore, now: float | None = None) ->
 
 
 async def main():
+    parser = argparse.ArgumentParser(description="Run a Python server for the LightningStore")
+    parser.add_argument("--now", type=float, default=time.time(), help="The current timestamp")
+    args = parser.parse_args()
+
     store = InMemoryLightningStore()
-    inject_mock_data(store)
+    inject_mock_data(store, now=args.now)
 
     # Start server
     server = LightningStoreServer(store, "127.0.0.1", 8765)
