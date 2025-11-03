@@ -263,6 +263,7 @@ export type TracesTableProps = {
   isFetching: boolean;
   isError: boolean;
   error: unknown;
+  selectionMessage?: string;
   searchTerm: string;
   sort: { column: string; direction: 'asc' | 'desc' };
   page: number;
@@ -284,6 +285,7 @@ export function TracesTable({
   isFetching,
   isError,
   error,
+  selectionMessage,
   searchTerm,
   sort,
   page,
@@ -357,7 +359,18 @@ export function TracesTable({
     ? `Traces are temporarily unavailable${errorDescriptor ? ` (${errorDescriptor})` : ''}.`
     : 'Traces are temporarily unavailable.';
 
-  const emptyState = (
+  const selectionEmptyState = selectionMessage ? (
+    <Stack gap='sm' align='center' py='xl'>
+      <Text fw={600} size='sm'>
+        {selectionMessage}
+      </Text>
+      <Text size='sm' c='dimmed' ta='center'>
+        Choose a rollout and attempt from the controls above to load trace results.
+      </Text>
+    </Stack>
+  ) : null;
+
+  const fallbackEmptyState = (
     <Stack gap='sm' align='center' py='lg'>
       {isError ? (
         <>
@@ -402,6 +415,8 @@ export function TracesTable({
       )}
     </Stack>
   );
+
+  const emptyState = selectionEmptyState ?? fallbackEmptyState;
 
   return (
     <Box ref={tableContainerRef}>

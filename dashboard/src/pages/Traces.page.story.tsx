@@ -320,9 +320,15 @@ function createRequestTimeoutHandlers() {
 
 const rolloutsAndAttemptsHandlers = createMockHandlers(sampleRollouts, attemptsByRollout);
 
-function renderTracesPage(preloadedTracesState?: Partial<TracesUiState>) {
+function renderTracesPage(
+  preloadedTracesState?: Partial<TracesUiState>,
+  configOverrides?: Partial<typeof initialConfigState>,
+) {
   const store = createAppStore({
-    config: initialConfigState,
+    config: {
+      ...initialConfigState,
+      ...configOverrides,
+    },
     rollouts: initialRolloutsUiState,
     resources: initialResourcesUiState,
     traces: { ...initialTracesUiState, ...preloadedTracesState },
@@ -340,6 +346,16 @@ function renderTracesPage(preloadedTracesState?: Partial<TracesUiState>) {
 export const DefaultView: Story = {
   render: () => renderTracesPage(),
   parameters: {
+    msw: {
+      handlers: createHandlers(),
+    },
+  },
+};
+
+export const DarkTheme: Story = {
+  render: () => renderTracesPage(undefined, { theme: 'dark' }),
+  parameters: {
+    theme: 'dark',
     msw: {
       handlers: createHandlers(),
     },

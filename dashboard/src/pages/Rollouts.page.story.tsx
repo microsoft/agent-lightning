@@ -550,11 +550,12 @@ const autoExpandAttempts: Record<string, Attempt[]> = {
     },
   ],
 };
-function renderWithStore(uiOverrides?: Partial<RolloutsUiState>) {
+function renderWithStore(uiOverrides?: Partial<RolloutsUiState>, configOverrides?: Partial<typeof initialConfigState>) {
   const store = createAppStore({
     config: {
       ...initialConfigState,
       autoRefreshMs: 0,
+      ...configOverrides,
     },
     rollouts: {
       ...initialRolloutsUiState,
@@ -579,6 +580,16 @@ const defaultHandlers = createMockHandlers(sampleRollouts, attemptsByRollout, sa
 export const Default: Story = {
   render: () => renderWithStore(),
   parameters: {
+    msw: {
+      handlers: defaultHandlers,
+    },
+  },
+};
+
+export const DarkTheme: Story = {
+  render: () => renderWithStore(undefined, { theme: 'dark' }),
+  parameters: {
+    theme: 'dark',
     msw: {
       handlers: defaultHandlers,
     },

@@ -143,11 +143,12 @@ const sampleResources: Resources[] = [
 
 const defaultHandlers = createResourcesHandlers(sampleResources);
 
-function renderWithStore() {
+function renderWithStore(configOverrides?: Partial<typeof initialConfigState>) {
   const store = createAppStore({
     config: {
       ...initialConfigState,
       autoRefreshMs: 0,
+      ...configOverrides,
     },
     rollouts: initialRolloutsUiState,
     resources: initialResourcesUiState,
@@ -319,6 +320,16 @@ export const ComplexResources: Story = {
           },
         },
       ]),
+    },
+  },
+};
+
+export const DarkTheme: Story = {
+  render: () => renderWithStore({ theme: 'dark' }),
+  parameters: {
+    theme: 'dark',
+    msw: {
+      handlers: defaultHandlers,
     },
   },
 };

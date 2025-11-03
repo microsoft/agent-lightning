@@ -203,6 +203,24 @@ export function TracesPage() {
   const isInitialLoading = rolloutsLoading && rolloutItems.length === 0;
   const isFetching = spansFetching || rolloutsFetching || attemptsFetching;
 
+  const selectionMessage = useMemo<string | undefined>(() => {
+    if (!rolloutId && !attemptId) {
+      return 'Select a rollout and attempt to view traces.';
+    }
+    if (!rolloutId) {
+      return 'Select a rollout to view traces.';
+    }
+    if (!attemptId) {
+      return 'Select an attempt to view traces.';
+    }
+    return undefined;
+  }, [attemptId, rolloutId]);
+
+  const tableSpans = selectionMessage ? [] : spans;
+  const tableIsError = selectionMessage ? false : spansIsError;
+  const tableError = selectionMessage ? undefined : spansError;
+  const tableIsFetching = selectionMessage ? false : isFetching;
+
   useEffect(() => {
     const anyError = rolloutsIsError || attemptsIsError || spansIsError;
     if (anyError) {
@@ -426,11 +444,12 @@ export function TracesPage() {
 
       <Skeleton visible={isInitialLoading} radius='md'>
         <TracesTable
-          spans={rolloutId ? spans : []}
-          totalRecords={spansTotal}
-          isFetching={isFetching}
-          isError={spansIsError}
-          error={spansError}
+          spans={tableSpans}
+          totalRecords={selectionMessage ? 0 : spansTotal}
+          isFetching={tableIsFetching}
+          isError={tableIsError}
+          error={tableError}
+          selectionMessage={selectionMessage}
           searchTerm={searchTerm}
           sort={sort}
           page={page}

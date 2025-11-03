@@ -44,6 +44,9 @@ export const AutoRefreshEveryMinute: Story = {
 
 export const DarkThemeSelected: Story = {
   render: () => renderWithConfig({ theme: 'dark' }),
+  parameters: {
+    theme: 'dark',
+  },
 };
 
 export const CustomBackendUrl: Story = {
