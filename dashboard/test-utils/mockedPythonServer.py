@@ -23,9 +23,11 @@ from typing import List
 from agentlightning.store.client_server import LightningStoreServer
 from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.types import (
+    LLM,
     Attempt,
     AttemptStatus,
     OtelResource,
+    PromptTemplate,
     ResourcesUpdate,
     Rollout,
     RolloutConfig,
@@ -175,7 +177,7 @@ def inject_mock_data(store: InMemoryLightningStore, now: float | None = None) ->
         mode="val",
         resources_id="rs-story-004",
         status="running",
-        config=RolloutConfig(max_attempts=0),
+        config=RolloutConfig(max_attempts=1),
         metadata={"owner": "eva"},
     )
     attempt5 = Attempt(
@@ -230,60 +232,138 @@ def inject_mock_data(store: InMemoryLightningStore, now: float | None = None) ->
     store._attempts["ro-story-005"] = [attempt5]
     store._attempts["ro-story-006"] = [attempt6]
 
-    # Create and inject spans
+    # Create and inject spans with diverse data
+    # Spans for ro-story-001 (Running) - Multiple nested spans with ongoing execution
     spans_ro1: List[Span] = [
         Span(
             rollout_id="ro-story-001",
             attempt_id="at-story-010",
             sequence_id=1,
-            trace_id="trace-001",
-            span_id="span-001",
+            trace_id="trace-001-main",
+            span_id="span-001-root",
             parent_id=None,
-            name="main",
+            name="agent_execution",
             status=TraceStatus(status_code="OK", description=None),
-            attributes={"component": "agent"},
+            attributes={"component": "agent", "framework": "autogen", "version": "0.2.0"},
             events=[],
             links=[],
             start_time=now - 3200,
             end_time=now - 3100,
             context=None,
             parent=None,
-            resource=OtelResource(attributes={}, schema_url=""),
+            resource=OtelResource(attributes={"service.name": "agent-service"}, schema_url=""),
         ),
         Span(
             rollout_id="ro-story-001",
             attempt_id="at-story-010",
             sequence_id=2,
-            trace_id="trace-001",
-            span_id="span-002",
-            parent_id="span-001",
+            trace_id="trace-001-main",
+            span_id="span-002-llm",
+            parent_id="span-001-root",
             name="llm_call",
             status=TraceStatus(status_code="OK", description=None),
-            attributes={"model": "gpt-4"},
+            attributes={"model": "gpt-4", "temperature": 0.7, "tokens": 150},
             events=[],
             links=[],
-            start_time=now - 3150,
+            start_time=now - 3180,
+            end_time=now - 3120,
+            context=None,
+            parent=None,
+            resource=OtelResource(attributes={"service.name": "llm-service"}, schema_url=""),
+        ),
+        Span(
+            rollout_id="ro-story-001",
+            attempt_id="at-story-010",
+            sequence_id=3,
+            trace_id="trace-001-main",
+            span_id="span-003-tool",
+            parent_id="span-001-root",
+            name="tool_execution",
+            status=TraceStatus(status_code="OK", description=None),
+            attributes={"tool": "web_search", "query": "onboarding summary"},
+            events=[],
+            links=[],
+            start_time=now - 3140,
             end_time=now - 3100,
+            context=None,
+            parent=None,
+            resource=OtelResource(attributes={"service.name": "tool-service"}, schema_url=""),
+        ),
+    ]
+
+    # Spans for ro-story-002 attempt 1 (timeout) - Failed workflow
+    spans_ro2_a1: List[Span] = [
+        Span(
+            rollout_id="ro-story-002",
+            attempt_id="at-story-021",
+            sequence_id=1,
+            trace_id="trace-002-attempt1",
+            span_id="span-004-root",
+            parent_id=None,
+            name="classification_pipeline",
+            status=TraceStatus(status_code="ERROR", description="Request timeout"),
+            attributes={"type": "classification", "model": "bert-classifier", "timeout": True},
+            events=[],
+            links=[],
+            start_time=now - 7200,
+            end_time=now - 6800,
+            context=None,
+            parent=None,
+            resource=OtelResource(attributes={"service.name": "classifier"}, schema_url=""),
+        ),
+    ]
+
+    # Spans for ro-story-002 attempt 2 (succeeded) - Successful workflow
+    spans_ro2_a2: List[Span] = [
+        Span(
+            rollout_id="ro-story-002",
+            attempt_id="at-story-022",
+            sequence_id=1,
+            trace_id="trace-002-attempt2",
+            span_id="span-005-root",
+            parent_id=None,
+            name="classification_pipeline",
+            status=TraceStatus(status_code="OK", description=None),
+            attributes={"type": "classification", "model": "bert-classifier", "retry": True},
+            events=[],
+            links=[],
+            start_time=now - 6200,
+            end_time=now - 5400,
+            context=None,
+            parent=None,
+            resource=OtelResource(attributes={"service.name": "classifier"}, schema_url=""),
+        ),
+        Span(
+            rollout_id="ro-story-002",
+            attempt_id="at-story-022",
+            sequence_id=2,
+            trace_id="trace-002-attempt2",
+            span_id="span-006-preprocess",
+            parent_id="span-005-root",
+            name="preprocess_tickets",
+            status=TraceStatus(status_code="OK", description=None),
+            attributes={"tickets_count": 50, "duration_ms": 120},
+            events=[],
+            links=[],
+            start_time=now - 6200,
+            end_time=now - 6100,
             context=None,
             parent=None,
             resource=OtelResource(attributes={}, schema_url=""),
         ),
-    ]
-
-    spans_ro2: List[Span] = [
         Span(
             rollout_id="ro-story-002",
-            attempt_id="at-story-011",
-            sequence_id=1,
-            trace_id="trace-002",
-            span_id="span-003",
-            parent_id=None,
-            name="classify",
+            attempt_id="at-story-022",
+            sequence_id=3,
+            trace_id="trace-002-attempt2",
+            span_id="span-007-classify",
+            parent_id="span-005-root",
+            name="run_classifier",
             status=TraceStatus(status_code="OK", description=None),
-            attributes={"type": "classification"},
+            attributes={"batch_size": 10, "accuracy": 0.95},
             events=[],
             links=[],
-            start_time=now - 6200,
+            start_time=now - 6000,
             end_time=now - 5400,
             context=None,
             parent=None,
@@ -291,18 +371,198 @@ def inject_mock_data(store: InMemoryLightningStore, now: float | None = None) ->
         ),
     ]
 
-    store._spans["ro-story-001"] = spans_ro1
-    store._spans["ro-story-002"] = spans_ro2
+    # Spans for ro-story-003 attempt 3 (failed) - Error scenario with nested failures
+    spans_ro3_a3: List[Span] = [
+        Span(
+            rollout_id="ro-story-003",
+            attempt_id="at-story-033",
+            sequence_id=1,
+            trace_id="trace-003-experiment",
+            span_id="span-008-root",
+            parent_id=None,
+            name="experiment_analysis",
+            status=TraceStatus(status_code="ERROR", description="Analysis failed"),
+            attributes={"experiment_id": "exp-123", "timeout_seconds": 300},
+            events=[],
+            links=[],
+            start_time=now - 9000,
+            end_time=now - 3600,
+            context=None,
+            parent=None,
+            resource=OtelResource(attributes={"service.name": "experiment-runner"}, schema_url=""),
+        ),
+        Span(
+            rollout_id="ro-story-003",
+            attempt_id="at-story-033",
+            sequence_id=2,
+            trace_id="trace-003-experiment",
+            span_id="span-009-fetch",
+            parent_id="span-008-root",
+            name="fetch_experiment_data",
+            status=TraceStatus(status_code="ERROR", description="Connection timeout"),
+            attributes={"data_source": "database", "retry_count": 3},
+            events=[],
+            links=[],
+            start_time=now - 9000,
+            end_time=now - 7000,
+            context=None,
+            parent=None,
+            resource=OtelResource(attributes={}, schema_url=""),
+        ),
+        Span(
+            rollout_id="ro-story-003",
+            attempt_id="at-story-033",
+            sequence_id=3,
+            trace_id="trace-003-experiment",
+            span_id="span-010-process",
+            parent_id="span-008-root",
+            name="process_results",
+            status=TraceStatus(status_code="UNSET", description=None),
+            attributes={"stage": "aggregation", "partial_results": True},
+            events=[],
+            links=[],
+            start_time=now - 6000,
+            end_time=now - 3600,
+            context=None,
+            parent=None,
+            resource=OtelResource(attributes={}, schema_url=""),
+        ),
+    ]
 
-    # Create and inject resources
+    # Spans for ro-story-005 (Running) - In-progress with mixed statuses
+    spans_ro5: List[Span] = [
+        Span(
+            rollout_id="ro-story-005",
+            attempt_id="at-story-013",
+            sequence_id=1,
+            trace_id="trace-005-answers",
+            span_id="span-011-root",
+            parent_id=None,
+            name="quick_answer_generation",
+            status=TraceStatus(status_code="OK", description=None),
+            attributes={"batch_size": 10, "model": "llama-3"},
+            events=[],
+            links=[],
+            start_time=now - 1800,
+            end_time=now - 1500,
+            context=None,
+            parent=None,
+            resource=OtelResource(attributes={"service.name": "qa-service"}, schema_url=""),
+        ),
+        Span(
+            rollout_id="ro-story-005",
+            attempt_id="at-story-013",
+            sequence_id=2,
+            trace_id="trace-005-answers",
+            span_id="span-012-llm",
+            parent_id="span-011-root",
+            name="llm_inference",
+            status=TraceStatus(status_code="UNSET", description=None),
+            attributes={"model": "llama-3-70b", "batch_id": "batch-001"},
+            events=[],
+            links=[],
+            start_time=now - 1700,
+            end_time=None,
+            context=None,
+            parent=None,
+            resource=OtelResource(attributes={}, schema_url=""),
+        ),
+        Span(
+            rollout_id="ro-story-005",
+            attempt_id="at-story-013",
+            sequence_id=3,
+            trace_id="trace-005-answers",
+            span_id="span-013-retrieve",
+            parent_id="span-011-root",
+            name="retrieve_context",
+            status=TraceStatus(status_code="OK", description=None),
+            attributes={"documents_count": 5, "vector_db": "chroma"},
+            events=[],
+            links=[],
+            start_time=now - 1780,
+            end_time=now - 1700,
+            context=None,
+            parent=None,
+            resource=OtelResource(attributes={}, schema_url=""),
+        ),
+    ]
+
+    # Spans for ro-story-006 (Cancelled) - Cancelled workflow
+    spans_ro6: List[Span] = [
+        Span(
+            rollout_id="ro-story-006",
+            attempt_id="at-story-014",
+            sequence_id=1,
+            trace_id="trace-006-release",
+            span_id="span-014-root",
+            parent_id=None,
+            name="compile_release_notes",
+            status=TraceStatus(status_code="ERROR", description="Operation cancelled by user"),
+            attributes={"release_version": "v2.0.0", "cancelled": True},
+            events=[],
+            links=[],
+            start_time=now - 9600,
+            end_time=now - 9000,
+            context=None,
+            parent=None,
+            resource=OtelResource(attributes={"service.name": "release-automation"}, schema_url=""),
+        ),
+        Span(
+            rollout_id="ro-story-006",
+            attempt_id="at-story-014",
+            sequence_id=2,
+            trace_id="trace-006-release",
+            span_id="span-015-git",
+            parent_id="span-014-root",
+            name="fetch_git_commits",
+            status=TraceStatus(status_code="OK", description=None),
+            attributes={"repo": "main", "commits_count": 45},
+            events=[],
+            links=[],
+            start_time=now - 9600,
+            end_time=now - 9400,
+            context=None,
+            parent=None,
+            resource=OtelResource(attributes={}, schema_url=""),
+        ),
+        Span(
+            rollout_id="ro-story-006",
+            attempt_id="at-story-014",
+            sequence_id=3,
+            trace_id="trace-006-release",
+            span_id="span-016-format",
+            parent_id="span-014-root",
+            name="format_changelog",
+            status=TraceStatus(status_code="ERROR", description="Cancelled during formatting"),
+            attributes={"format": "markdown", "cancelled_at": "50%"},
+            events=[],
+            links=[],
+            start_time=now - 9300,
+            end_time=now - 9000,
+            context=None,
+            parent=None,
+            resource=OtelResource(attributes={}, schema_url=""),
+        ),
+    ]
+
+    store._spans["ro-story-001"] = spans_ro1
+    store._spans["ro-story-002"] = spans_ro2_a1 + spans_ro2_a2
+    store._spans["ro-story-003"] = spans_ro3_a3
+    store._spans["ro-story-005"] = spans_ro5
+    store._spans["ro-story-006"] = spans_ro6
+
+    # Create and inject resources with diverse types
     resource1 = ResourcesUpdate(
         resources_id="rs-story-001",
         version=1,
         create_time=now - 86400,
         update_time=now - 86400,
         resources={
-            "model": LLM(model="gpt-4", sampling_parameters={"temperature": 0.7}),
-            "dataset": {"name": "train_v1", "size": 1000},
+            "model": LLM(
+                endpoint="https://api.openai.com/v1",
+                model="gpt-4",
+                sampling_parameters={"temperature": 0.7, "max_tokens": 1000},
+            ),
         },
     )
 
@@ -312,8 +572,10 @@ def inject_mock_data(store: InMemoryLightningStore, now: float | None = None) ->
         create_time=now - 86400,
         update_time=now - 43200,
         resources={
-            "model": {"name": "gpt-3.5-turbo", "temperature": 0.5},
-            "dataset": {"name": "val_v1", "size": 200},
+            "prompt_main": PromptTemplate(
+                template="Classify the following ticket: {ticket}\nCategory:",
+                engine="f-string",
+            ),
         },
     )
 
@@ -323,8 +585,15 @@ def inject_mock_data(store: InMemoryLightningStore, now: float | None = None) ->
         create_time=now - 86400,
         update_time=now - 3600,
         resources={
-            "model": {"name": "claude-3", "temperature": 0.8},
-            "dataset": {"name": "test_v1", "size": 300},
+            "model": LLM(
+                endpoint="https://api.anthropic.com/v1",
+                model="claude-3-sonnet",
+                sampling_parameters={"temperature": 0.8, "max_tokens": 2048},
+            ),
+            "prompt": PromptTemplate(
+                template="Analyze experiment results:\n{% for result in results %}\n- {{ result }}\n{% endfor %}",
+                engine="jinja",
+            ),
         },
     )
 
@@ -334,7 +603,15 @@ def inject_mock_data(store: InMemoryLightningStore, now: float | None = None) ->
         create_time=now - 7200,
         update_time=now - 7200,
         resources={
-            "model": {"name": "llama-3", "temperature": 0.6},
+            "system_prompt": PromptTemplate(
+                template="You are a helpful assistant that generates quick, concise answers.",
+                engine="f-string",
+            ),
+            "model": LLM(
+                endpoint="http://localhost:8000/v1",
+                model="llama-3-70b",
+                sampling_parameters={"temperature": 0.6, "top_p": 0.95},
+            ),
         },
     )
 
@@ -344,7 +621,10 @@ def inject_mock_data(store: InMemoryLightningStore, now: float | None = None) ->
         create_time=now - 14400,
         update_time=now - 14400,
         resources={
-            "model": {"name": "mixtral", "temperature": 0.9},
+            "prompt": PromptTemplate(
+                template="## Release Notes v{{ version }}\n\n### Changes\n{{ changes }}",
+                engine="jinja",
+            ),
         },
     )
 
