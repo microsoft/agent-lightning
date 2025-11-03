@@ -4,6 +4,15 @@ import { createServerBackedStore } from '@test-utils';
 import { describe, expect, it } from 'vitest';
 import { rolloutsApi } from './api';
 import { selectRolloutsQueryArgs } from './selectors';
+import {
+  resetRolloutsFilters,
+  setRolloutsModeFilters,
+  setRolloutsPage,
+  setRolloutsRecordsPerPage,
+  setRolloutsSearchTerm,
+  setRolloutsSort,
+  setRolloutsStatusFilters,
+} from './slice';
 
 describe('rollouts feature integration', () => {
   it('builds default query arguments from the UI state', () => {
@@ -54,5 +63,47 @@ describe('rollouts feature integration', () => {
 
     expect(data.total).toBe(2);
     expect(data.items.map((attempt) => attempt.attemptId)).toEqual(['at-story-021', 'at-story-022']);
+  });
+
+  it('paginates rollouts with custom UI state', async () => {
+    const store = createServerBackedStore();
+    store.dispatch(setRolloutsRecordsPerPage(2));
+    store.dispatch(setRolloutsPage(2));
+
+    const queryArgs = selectRolloutsQueryArgs(store.getState());
+    expect(queryArgs).toMatchObject({ limit: 2, offset: 2 });
+
+    const subscription = store.dispatch(rolloutsApi.endpoints.getRollouts.initiate(queryArgs));
+    const data = await subscription.unwrap();
+    subscription.unsubscribe();
+
+    expect(data.items).toHaveLength(2);
+    expect(data.items.map((rollout) => rollout.rolloutId)).toEqual(['ro-story-004', 'ro-story-002']);
+  });
+
+  it('filters and sorts rollouts based on UI selections', async () => {
+    const store = createServerBackedStore();
+    store.dispatch(resetRolloutsFilters());
+    store.dispatch(setRolloutsStatusFilters(['succeeded']));
+    store.dispatch(setRolloutsModeFilters(['val']));
+    store.dispatch(setRolloutsSearchTerm('ro-story-002'));
+    store.dispatch(setRolloutsSort({ column: 'rolloutId', direction: 'asc' }));
+
+    const queryArgs = selectRolloutsQueryArgs(store.getState());
+    expect(queryArgs).toMatchObject({
+      statusIn: ['succeeded'],
+      modeIn: ['val'],
+      rolloutIdContains: 'ro-story-002',
+      sortBy: 'rollout_id',
+      sortOrder: 'asc',
+    });
+
+    const subscription = store.dispatch(rolloutsApi.endpoints.getRollouts.initiate(queryArgs));
+    const data = await subscription.unwrap();
+    subscription.unsubscribe();
+
+    expect(data.items).toHaveLength(1);
+    expect(data.items[0].rolloutId).toBe('ro-story-002');
+    expect(data.items[0].status).toBe('succeeded');
   });
 });

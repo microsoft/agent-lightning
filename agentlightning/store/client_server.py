@@ -111,6 +111,9 @@ class QueryAttemptsRequest(BaseModel):
 
 
 class QueryResourcesRequest(BaseModel):
+    # Filtering
+    resources_id: Optional[str] = None
+    resources_id_contains: Optional[str] = None
     # Pagination
     limit: int = -1
     offset: int = 0
@@ -632,9 +635,16 @@ class LightningStoreServer(LightningStore):
             # Get all resources
             all_resources = await self.query_resources()
 
+            # Build filter dict
+            filters: Dict[str, Any] = {}
+            if params.resources_id is not None:
+                filters["resources_id"] = params.resources_id
+            if params.resources_id_contains is not None:
+                filters["resources_id_contains"] = params.resources_id_contains
+
             return _apply_filters_sort_paginate(
                 all_resources,
-                {},  # No filters for resources
+                filters,
                 "and",
                 params.sort_by,
                 params.sort_order,
