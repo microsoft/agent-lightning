@@ -1,3 +1,4 @@
+import csv
 import json
 from collections import defaultdict
 
@@ -22,19 +23,32 @@ display_names = {
 }
 
 
+def load_split_mapping():
+    """Load the CSV mapping from answer to train/test split."""
+    split_map = {}
+    with open("../q20_nouns.csv", "r") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            split_map[row["answer"].lower()] = row["split"]
+    return split_map
+
+
 def load_data(filename):
     """Load JSONL data and extract relevant information."""
     data = []
     with open(filename, "r") as f:
         for line in f:
             entry = json.loads(line)
-            if "correct" in entry and "category" in entry:
-                data.append({"correct": entry["correct"], "category": entry["category"]})
+            if "correct" in entry and "category" in entry and "answer" in entry:
+                data.append({"correct": entry["correct"], "category": entry["category"], "answer": entry["answer"]})
             else:
                 print(f"Skipping entry: {entry}")
                 continue
     return data
 
+
+# Load split mapping
+split_map = load_split_mapping()
 
 # Load all data
 all_data = {config: load_data(filename) for config, filename in files.items()}
@@ -66,6 +80,18 @@ for config in configs_to_compare:
                 "configuration": display_names[config],
                 "success_rate": success_rate,
             }
+        )
+
+# Calculate success rate by train/test split for all configurations
+split_data = []
+for config, data in all_data.items():
+    for split_type in ["train", "test"]:
+        split_items = [item for item in data if split_map.get(item["answer"].lower()) == split_type]
+        total = len(split_items)
+        correct = sum(1 for item in split_items if item["correct"])
+        success_rate = (correct / total * 100) if total > 0 else 0
+        split_data.append(
+            {"split": split_type.capitalize(), "configuration": display_names[config], "success_rate": success_rate}
         )
 
 # Vega-Lite specification for overall success rate
@@ -145,6 +171,51 @@ vega_spec_category = {
     },
 }
 
+# Vega-Lite specification for success rate by train/test split
+vega_spec_split = {
+    "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+    "description": "Success Rate by Train/Test Split: All Configurations",
+    "width": 600,
+    "height": 400,
+    "config": {
+        "axis": {"labelFontSize": 14, "titleFontSize": 16, "titleFontWeight": "normal"},
+        "legend": {
+            "labelFontSize": 14,
+            "titleFontSize": 14,
+            "fillColor": "white",
+            "strokeColor": "#ccc",
+            "padding": 10,
+            "cornerRadius": 5,
+        },
+    },
+    "data": {"values": split_data},
+    "mark": {"type": "bar", "opacity": 0.8},
+    "encoding": {
+        "x": {
+            "field": "configuration",
+            "type": "nominal",
+            "title": "Configuration",
+            "axis": {"labelAngle": -45, "labelAlign": "right"},
+        },
+        "y": {
+            "field": "success_rate",
+            "type": "quantitative",
+            "title": "Success Rate (%)",
+            "scale": {"domain": [0, 100]},
+        },
+        "color": {
+            "field": "split",
+            "type": "nominal",
+            "title": "Split",
+            "scale": {
+                "domain": ["Train", "Test"],
+                "range": ["#2E86AB", "#E63946"],
+            },
+        },
+        "xOffset": {"field": "split"},
+    },
+}
+
 # Save specifications
 with open("barplot_overall.json", "w") as f:
     json.dump(vega_spec_overall, f, indent=2)
@@ -152,7 +223,10 @@ with open("barplot_overall.json", "w") as f:
 with open("barplot_category.json", "w") as f:
     json.dump(vega_spec_category, f, indent=2)
 
-print("Created barplot_overall.json and barplot_category.json")
+with open("barplot_split.json", "w") as f:
+    json.dump(vega_spec_split, f, indent=2)
+
+print("Created barplot_overall.json, barplot_category.json, and barplot_split.json")
 
 # Print summary statistics
 print("\n=== Overall Success Rates ===")
@@ -165,4 +239,11 @@ for category in categories:
     print(f"\n{category}:")
     for item in category_data:
         if item["category"] == category:
+            print(f"  {item['configuration']:25s}: {item['success_rate']:.1f}%")
+
+print("\n=== Success Rates by Train/Test Split ===")
+for split_type in ["Train", "Test"]:
+    print(f"\n{split_type}:")
+    for item in split_data:
+        if item["split"] == split_type:
             print(f"  {item['configuration']:25s}: {item['success_rate']:.1f}%")

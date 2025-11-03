@@ -1,0 +1,129 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "description": "Success Rate by Train/Test Split: All Configurations",
+  "width": 600,
+  "height": 400,
+  "config": {
+    "axis": {
+      "labelFontSize": 14,
+      "titleFontSize": 16,
+      "titleFontWeight": "normal"
+    },
+    "legend": {
+      "labelFontSize": 14,
+      "titleFontSize": 14,
+      "fillColor": "white",
+      "strokeColor": "#ccc",
+      "padding": 10,
+      "cornerRadius": 5
+    }
+  },
+  "data": {
+    "values": [
+      {
+        "split": "Train",
+        "configuration": "Qwen3-4B + Tool",
+        "success_rate": 55.84415584415584
+      },
+      {
+        "split": "Test",
+        "configuration": "Qwen3-4B + Tool",
+        "success_rate": 51.28205128205128
+      },
+      {
+        "split": "Train",
+        "configuration": "Qwen3-4B-Instruct-2507",
+        "success_rate": 15.625
+      },
+      {
+        "split": "Test",
+        "configuration": "Qwen3-4B-Instruct-2507",
+        "success_rate": 10.0
+      },
+      {
+        "split": "Train",
+        "configuration": "Qwen3-30B + Tool",
+        "success_rate": 49.358974358974365
+      },
+      {
+        "split": "Test",
+        "configuration": "Qwen3-30B + Tool",
+        "success_rate": 48.717948717948715
+      },
+      {
+        "split": "Train",
+        "configuration": "Qwen3-30B-A3B-Instruct",
+        "success_rate": 43.75
+      },
+      {
+        "split": "Test",
+        "configuration": "Qwen3-30B-A3B-Instruct",
+        "success_rate": 27.500000000000004
+      },
+      {
+        "split": "Train",
+        "configuration": "Qwen3-235B-A22B",
+        "success_rate": 65.82278481012658
+      },
+      {
+        "split": "Test",
+        "configuration": "Qwen3-235B-A22B",
+        "success_rate": 55.26315789473685
+      },
+      {
+        "split": "Train",
+        "configuration": "GPT-4.1",
+        "success_rate": 72.5
+      },
+      {
+        "split": "Test",
+        "configuration": "GPT-4.1",
+        "success_rate": 82.5
+      }
+    ]
+  },
+  "mark": {
+    "type": "bar",
+    "opacity": 0.8
+  },
+  "encoding": {
+    "x": {
+      "field": "configuration",
+      "type": "nominal",
+      "title": "Configuration",
+      "axis": {
+        "labelAngle": -45,
+        "labelAlign": "right"
+      }
+    },
+    "y": {
+      "field": "success_rate",
+      "type": "quantitative",
+      "title": "Success Rate (%)",
+      "scale": {
+        "domain": [
+          0,
+          100
+        ]
+      }
+    },
+    "color": {
+      "field": "split",
+      "type": "nominal",
+      "title": "Split",
+      "scale": {
+        "domain": [
+          "Train",
+          "Test"
+        ],
+        "range": [
+          "#2E86AB",
+          "#E63946"
+        ]
+      }
+    },
+    "xOffset": {
+      "field": "split"
+    }
+  }
+}
