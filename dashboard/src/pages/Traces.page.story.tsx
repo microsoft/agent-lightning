@@ -318,6 +318,8 @@ function createRequestTimeoutHandlers() {
   ];
 }
 
+const rolloutsAndAttemptsHandlers = createMockHandlers(sampleRollouts, attemptsByRollout);
+
 function renderTracesPage(preloadedTracesState?: Partial<TracesUiState>) {
   const store = createAppStore({
     config: initialConfigState,
@@ -419,7 +421,7 @@ export const ServerError: Story = {
   },
 };
 
-export const ParseFailure: Story = {
+export const RolloutParseFailure: Story = {
   render: () => renderTracesPage(),
   parameters: {
     msw: {
@@ -436,6 +438,25 @@ export const ParseFailure: Story = {
           HttpResponse.json({ items: [], limit: 0, offset: 0, total: 0 }),
         ),
         http.get('*/agl/v1/spans', () => HttpResponse.json({ items: [], limit: 0, offset: 0, total: 0 })),
+      ],
+    },
+  },
+};
+
+export const ParseFailure: Story = {
+  render: () => renderTracesPage(),
+  parameters: {
+    msw: {
+      handlers: [
+        ...rolloutsAndAttemptsHandlers,
+        http.get('*/agl/v1/spans', () =>
+          HttpResponse.text('not valid json', {
+            status: 200,
+            headers: {
+              'Content-Type': 'application/json',
+            },
+          }),
+        ),
       ],
     },
   },
