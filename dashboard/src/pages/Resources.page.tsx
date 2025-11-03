@@ -1,6 +1,6 @@
 // Copyright (c) Microsoft. All rights reserved.
 
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import { IconSearch } from '@tabler/icons-react';
 import type { DataTableSortStatus } from 'mantine-datatable';
 import { Skeleton, Stack, TextInput, Title } from '@mantine/core';
@@ -20,6 +20,7 @@ import {
   setResourcesSort,
 } from '@/features/resources';
 import { useGetResourcesQuery } from '@/features/rollouts';
+import { hideAlert, showAlert } from '@/features/ui/alert';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
 import type { PaginatedResponse, Resources } from '@/types';
 
@@ -77,6 +78,39 @@ export function ResourcesPage() {
   }, [dispatch]);
 
   const showSkeleton = isLoading && !((resourcesData?.items?.length ?? 0) > 0);
+
+  useEffect(() => {
+    const errorStatus =
+      error && typeof error === 'object' && error !== null && 'status' in (error as Record<string, unknown>)
+        ? String((error as Record<string, unknown>).status)
+        : null;
+    const errorMessage =
+      error && typeof error === 'object' && error !== null && 'message' in (error as Record<string, unknown>)
+        ? String((error as Record<string, unknown>).message)
+        : null;
+    if (isError) {
+      const detailSuffix = errorStatus ? ` (status: ${errorStatus})` : errorMessage ? ` (${errorMessage})` : '';
+      dispatch(
+        showAlert({
+          id: 'resources-fetch',
+          message: `Unable to refresh resources${detailSuffix}. The table may be out of date until the connection recovers.`,
+          tone: 'error',
+        }),
+      );
+      return;
+    }
+
+    if (!isLoading && !isFetching) {
+      dispatch(hideAlert({ id: 'resources-fetch' }));
+    }
+  }, [dispatch, error, isError, isFetching, isLoading]);
+
+  useEffect(
+    () => () => {
+      dispatch(hideAlert({ id: 'resources-fetch' }));
+    },
+    [dispatch],
+  );
 
   return (
     <Stack gap='md'>

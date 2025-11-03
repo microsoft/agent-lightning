@@ -31,6 +31,7 @@ import {
   setTracesSort,
   setTracesViewMode,
 } from '@/features/traces';
+import { hideAlert, showAlert } from '@/features/ui/alert';
 import { openDrawer } from '@/features/ui/drawer';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
 import type { Attempt, Rollout, Span } from '@/types';
@@ -84,6 +85,8 @@ export function TracesPage() {
     data: rolloutsData,
     isLoading: rolloutsLoading,
     isFetching: rolloutsFetching,
+    isError: rolloutsIsError,
+    error: rolloutsError,
   } = useGetRolloutsQuery(rolloutsQueryArgs, {
     pollingInterval: autoRefreshMs > 0 ? autoRefreshMs : undefined,
   });
@@ -102,17 +105,24 @@ export function TracesPage() {
         }
       : skipToken;
 
-  const { data: attemptsData, isFetching: attemptsFetching } = useGetRolloutAttemptsQuery(attemptsQueryArgs, {
+  const {
+    data: attemptsData,
+    isFetching: attemptsFetching,
+    isError: attemptsIsError,
+    error: attemptsError,
+  } = useGetRolloutAttemptsQuery(attemptsQueryArgs, {
     pollingInterval: autoRefreshMs > 0 ? autoRefreshMs : undefined,
   });
 
-  const spansQueryResult = useGetSpansQuery(spansQueryArgs ?? skipToken, {
+  const {
+    data: spansData,
+    isFetching: spansFetching,
+    isError: spansIsError,
+    error: spansError,
+    refetch: refetchSpans,
+  } = useGetSpansQuery(spansQueryArgs ?? skipToken, {
     pollingInterval: autoRefreshMs > 0 ? autoRefreshMs : undefined,
   });
-  const spansFetching = spansQueryResult.isFetching;
-  const spansIsError = spansQueryResult.isError;
-  const spansError = spansQueryResult.error;
-  const refetchSpans = spansQueryResult.refetch;
 
   useEffect(() => {
     if (!rolloutsData) {
@@ -185,12 +195,67 @@ export function TracesPage() {
     return [];
   }, [attemptsData, selectedRollout]);
 
-  const rawSpansData = spansQueryResult.data as any as { items?: Span[]; total?: number } | undefined;
+  const rawSpansData = spansData as any as { items?: Span[]; total?: number } | undefined;
   const spans = rawSpansData?.items ?? [];
   const spansTotal = rawSpansData?.total ?? 0;
   const recordsPerPageOptions = [50, 100, 200, 500];
   const isInitialLoading = rolloutsLoading && rolloutItems.length === 0;
   const isFetching = spansFetching || rolloutsFetching || attemptsFetching;
+
+  useEffect(() => {
+    const anyError = rolloutsIsError || attemptsIsError || spansIsError;
+    const extractStatus = (value: unknown): string | null => {
+      if (value && typeof value === 'object' && 'status' in (value as Record<string, unknown>)) {
+        return String((value as Record<string, unknown>).status);
+      }
+      return null;
+    };
+    const extractMessage = (value: unknown): string | null => {
+      if (value && typeof value === 'object' && 'message' in (value as Record<string, unknown>)) {
+        return String((value as Record<string, unknown>).message);
+      }
+      return null;
+    };
+
+    if (anyError) {
+      const statusDetail =
+        extractStatus(rolloutsError) ?? extractStatus(attemptsError) ?? extractStatus(spansError) ?? null;
+      const messageDetail =
+        extractMessage(rolloutsError) ?? extractMessage(attemptsError) ?? extractMessage(spansError) ?? null;
+      const detailSuffix = statusDetail ? ` (status: ${statusDetail})` : messageDetail ? ` (${messageDetail})` : '';
+      dispatch(
+        showAlert({
+          id: 'traces-fetch',
+          message: `Unable to refresh traces${detailSuffix}. The table may be out of date until the connection recovers.`,
+          tone: 'error',
+        }),
+      );
+      return;
+    }
+
+    if (!rolloutsLoading && !rolloutsFetching && !spansFetching && !attemptsFetching) {
+      dispatch(hideAlert({ id: 'traces-fetch' }));
+    }
+  }, [
+    attemptsError,
+    attemptsFetching,
+    attemptsIsError,
+    dispatch,
+    rolloutsError,
+    rolloutsFetching,
+    rolloutsIsError,
+    rolloutsLoading,
+    spansError,
+    spansFetching,
+    spansIsError,
+  ]);
+
+  useEffect(
+    () => () => {
+      dispatch(hideAlert({ id: 'traces-fetch' }));
+    },
+    [dispatch],
+  );
 
   const handleSearchTermChange = useCallback(
     (value: string) => {

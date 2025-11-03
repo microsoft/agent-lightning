@@ -3,6 +3,7 @@
 import type { Meta, StoryObj } from '@storybook/react';
 import { delay, http, HttpResponse } from 'msw';
 import { Provider } from 'react-redux';
+import { AppAlertBanner } from '@/components/AppAlertBanner';
 import { initialConfigState } from '@/features/config/slice';
 import { initialResourcesUiState } from '@/features/resources/slice';
 import { initialRolloutsUiState } from '@/features/rollouts/slice';
@@ -155,6 +156,7 @@ function renderWithStore() {
   return (
     <Provider store={store}>
       <ResourcesPage />
+      <AppAlertBanner />
     </Provider>
   );
 }

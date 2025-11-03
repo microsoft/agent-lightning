@@ -3,6 +3,7 @@
 import type { Meta, StoryObj } from '@storybook/react';
 import { delay, http, HttpResponse } from 'msw';
 import { Provider } from 'react-redux';
+import { AppAlertBanner } from '@/components/AppAlertBanner';
 import { AppDrawerContainer } from '@/components/AppDrawer.component';
 import { buildAttemptsResponse, buildRolloutsResponse, buildSpansResponse, createMockHandlers } from '@/utils/mock';
 import { initialConfigState } from '../features/config/slice';
@@ -327,6 +328,7 @@ function renderTracesPage(preloadedTracesState?: Partial<TracesUiState>) {
   return (
     <Provider store={store}>
       <TracesPage />
+      <AppAlertBanner />
       <AppDrawerContainer />
     </Provider>
   );
