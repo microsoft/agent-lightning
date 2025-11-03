@@ -1,22 +1,20 @@
 # Copyright (c) Microsoft. All rights reserved.
 from __future__ import annotations
-from pydantic import BaseModel, Field
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, Dict, List, Optional
 import time
 import uuid
 import hashlib
 
 from sqlalchemy import String, Integer, Float, JSON
-from sqlalchemy import update, and_
+from sqlalchemy import and_
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from agentlightning.types import Rollout, RolloutConfig, Attempt, AttemptedRollout
-from agentlightning.types.core import StatusDescription
+from agentlightning.types import Rollout, RolloutConfig
 from .base import PydanticInDB, SqlAlchemyBase
-from .attempt import AttemptInDB, SpanSeqIdInDB
+from ...base import is_finished, is_queuing
 
 
 def _generate_rollout_id() -> str:
@@ -67,6 +65,74 @@ class RolloutInDB(SqlAlchemyBase):
             metadata=self.rollout_metadata if self.rollout_metadata is not None else {},
         )
 
+    def _validate_status_message(self, msg: Dict[str, str]) -> None:
+        """Validate the status update message.
+        Raises:
+            ValueError: If the message is invalid.
+        """
+        if "event" not in msg:
+            raise ValueError("Status update message must contain 'event' field.")
+        event = msg["event"]
+        if event not in [
+            "attempt_status_update", # from attempt status update
+            "user_update",         # from user-initiated update
+        ]:
+            raise ValueError(f"Invalid event type in status update message: {event}")
+        if event == "user_update":
+            if "new_status" not in msg:
+                raise ValueError("Status update message for event 'user_update' must contain 'new_status' field.")
+        if event == "attempt_status_update":
+            for field in ["new_status", "old_status", "attempt_id", "is_failed"]:
+                if field not in msg:
+                    raise ValueError(f"Status update message for event '{event}' must contain '{field}' field.")
+
+    def update_status(self, msg: Dict[str, Any]) -> None:
+        """Update the rollout status based on the provided message.
+        Args:
+            msg (Dict[str, str]): The status update message. Refer to `_validate_status_message` for the expected format.
+            current_time (Optional[float]): The current time to set end_time or enqueue_time if needed.
+        """
+        self._validate_status_message(msg)
+        event, old_status, new_status = msg["event"], self.status, None
+        current_time = msg.get("timestamp", time.time())
+
+        # Step 1: Determine the new status based on the event
+        if event == "user_update":
+            new_status = msg["new_status"]
+        elif event == "attempt_status_update":
+            if msg["attempt_id"] != self.latest_attempt_id:
+                # outdated attempt status update, ignore
+                # TODO if latest attempt fails but an older attempt still running or succeed, we may need to handle that
+                return
+            else:
+                attempt_new_status = msg["new_status"]
+                if msg["is_failed"]:
+                    # attempt failed
+                    config = self.config if self.config is not None else RolloutConfig()
+                    if attempt_new_status in config.retry_condition and config.max_attempts > self.num_attempts:
+                        new_status = "requeuing"
+                    else:
+                        new_status = "failed"
+                elif attempt_new_status == "running":
+                    if old_status in ["preparing", "requeuing"]:
+                        new_status = "running"
+                else:
+                    new_status = attempt_new_status
+
+        # Step 2: Update the status if it has changed and handle follow-up actions
+        if new_status is None:
+            raise RuntimeError("New status could not be determined from the message.")
+        if new_status == old_status:
+            return
+        self.status = new_status
+
+        if is_finished(self): # type: ignore
+            self.end_time = current_time
+        if is_queuing(self): # type: ignore
+            self.enqueue_time = current_time
+            # When requeuing, we do not reset latest_attempt_id or num_attempts,
+            # as they should persist across requeues.
+
     @classmethod
     async def get_rollout_by_id(cls: type[RolloutInDB], session_factory: async_sessionmaker[AsyncSession], rollout_id: str) -> Optional[Rollout]:
         """Query a specific rollout from the database."""
@@ -95,53 +161,4 @@ class RolloutInDB(SqlAlchemyBase):
                 result = await session.scalars(query)
                 rollout_objs = result.all()
                 return [obj.as_rollout() for obj in rollout_objs]
-
-    @classmethod
-    async def fifo_dequeue_rollout(cls: type[RolloutInDB], session_factory: async_sessionmaker[AsyncSession]) -> Optional[AttemptedRollout]:
-        """Dequeue the next rollout in FIFO order (the one with the earliest enqueue_time).
-        Returns the RolloutInDB object if found, else None.
-        Note: This method does not update the status of the rollout. The caller should handle that.
-        """
-        async with session_factory() as session:
-            async with session.begin():
-                # use the update...returning to atomically select the next rollout and claim it by updating its status to 'preparing'
-                result = await session.scalars(
-                    select(cls)
-                    .where(cls.status.in_(StatusDescription.queuing_statuses), cls.enqueue_time.isnot(None))
-                    .order_by(cls.enqueue_time.asc())
-                    .limit(1)
-                )
-                rollout_obj = result.one_or_none()
-                if rollout_obj is None:
-                    return None  # no rollout available
-                # update the status of the rollout to 'preparing' via Compare-and-Swap to avoid race
-                attempted_rollout = cls.start_attempt_for_rollout(session, rollout_obj)
-                await session.flush()  # ensure the object is written to the DB
-                return attempted_rollout
-
-    @classmethod
-    def start_attempt_for_rollout(cls, session: AsyncSession, rollout_obj: RolloutInDB) -> AttemptedRollout:
-        """Create a new attempt for the given rollout and update the rollout's fields."""
-        # create a new attempt for this rollout
-        attempt_obj = AttemptInDB(
-            rollout_id=rollout_obj.rollout_id,
-            sequence_id=rollout_obj.num_attempts + 1,
-            status="preparing",
-        )
-        session.add(attempt_obj)
-        # pre-update the rollout_obj fields for CAS
-        rollout_obj.status = "preparing"  # pre-update the status in the object for CAS
-        rollout_obj.enqueue_time = None  # pre-update the enqueue_time in the object for CAS
-        rollout_obj.num_attempts += 1  # pre-update the num_attempts in the object for CAS
-        rollout_obj.latest_attempt_id = attempt_obj.attempt_id  # pre-update the latest_attempt_id in the object for CAS
-
-        # create a sequence id tracker for each attempt
-        seq_obj = SpanSeqIdInDB(
-            rollout_id=rollout_obj.rollout_id,
-            attempt_id=attempt_obj.attempt_id,
-            current_sequence=0,
-        )
-        session.add(seq_obj)
-
-        return AttemptedRollout(**rollout_obj.as_rollout().model_dump(), attempt=attempt_obj.as_attempt())
 

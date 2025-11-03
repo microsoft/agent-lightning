@@ -89,39 +89,3 @@ class SpanInDB(SqlAlchemyBase):
             dic.update(self.extra)
         return Span(**dic)
 
-    @classmethod
-    async def add_span(cls: type[SpanInDB], session_factory: async_sessionmaker[AsyncSession], span: Dict[str, Any], seq_id: Optional[int] = None) -> Span:
-        """Add a new span to the database."""
-        if seq_id is not None:
-            span['sequence_id'] = seq_id
-        extra_dic: Dict[str, Any] = {}
-        for k in list(span.keys()):
-            if k not in cls.__table__.columns.keys():
-                extra_dic[k] = span.pop(k)
-        span["extra"] = extra_dic if extra_dic else None
-
-        async with session_factory() as session:
-            async with session.begin():
-                # create SpanInDB object
-                span_obj = cls(**span)
-                session.add(span_obj)
-                # update attempt's last_heartbeat_time and status
-                attempt_obj = await session.get(AttemptInDB, span["attempt_id"])
-                if attempt_obj is None:
-                    raise ValueError(f"AttemptInDB not found for attempt_id={span['attempt_id']}")
-                # ensure the attempt and rollout are in running status
-                if attempt_obj.status in ["preparing", "requeuing"]:
-                    attempt_obj.status = "running"
-                attempt_obj.last_heartbeat_time = time.time()
-                # update rollout status if needed
-                await session.execute(
-                    update(RolloutInDB)
-                    .where(
-                        RolloutInDB.rollout_id == span["rollout_id"],
-                        RolloutInDB.latest_attempt_id == span["attempt_id"],
-                        RolloutInDB.status.in_(["preparing", "requeuing"]),
-                    )
-                    .values(status="running")
-                )
-                await session.flush()  # ensure the object is written to the DB
-                return span_obj.as_span()

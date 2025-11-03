@@ -10,17 +10,16 @@ from .base import (
 from .rollout import RolloutInDB
 from .attempt import AttemptInDB, SpanSeqIdInDB
 from .resources import ResourcesUpdateInDB
-from .scheduler import SchedulerInDB
 from .span import SpanInDB
 
 __all__ = [
+    "SqlAlchemyBase",
     "DatabaseRuntimeError",
     "RaceConditionError",
     "NoRolloutToDequeueError",
     "RolloutInDB",
     "AttemptInDB",
     "ResourcesUpdateInDB",
-    "SchedulerInDB",
     "SpanSeqIdInDB",
     "SpanInDB",
 ]

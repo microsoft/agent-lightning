@@ -118,22 +118,6 @@ AttemptStatus = Literal[
 """The status of an attempt."""
 
 
-class StatusDescription:
-    """Definition of valid status transitions for rollouts and attempts."""
-
-    finishing_statuses: tuple[str, ...] = ("succeeded", "failed", "cancelled")
-    """Statuses that indicate a rollout or attempt has finished."""
-
-    queuing_statuses: tuple[str, ...] = ("queuing", "requeuing")
-    """Statuses that indicate a rollout is waiting to be processed."""
-
-    running_statuses: tuple[str, ...] = ("preparing", "running")
-    """Statuses that indicate a rollout or attempt is currently being processed."""
-
-    statuses_from_rollout_to_attempt: tuple[str, ...] = ("preparing", "running", "succeeded", "failed")
-    """When the rollout is entering into these statuses, the attempt should also be updated accordingly."""
-
-
 RolloutMode = Literal["train", "val", "test"]
 """Possible rollout modes."""
 
