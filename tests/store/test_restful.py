@@ -544,6 +544,91 @@ async def test_resources_sorting_by_resources_id(
             assert items[i]["resources_id"] >= items[i + 1]["resources_id"]
 
 
+@pytest.mark.asyncio
+async def test_resources_filter_by_resources_id_contains(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    """Test filtering resources by resources_id_contains."""
+    server, _client, session, api_endpoint = server_client
+
+    # Create resources with specific IDs
+    await server.update_resources("test-resource-001", {})
+    await server.update_resources("test-resource-002", {})
+    await server.update_resources("prod-resource-003", {})
+
+    # Filter by "test-" prefix
+    async with session.get(f"{api_endpoint}/resources", params={"resources_id_contains": "test-", "limit": -1}) as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        assert data["total"] == 2
+        ids = [item["resources_id"] for item in data["items"]]
+        assert "test-resource-001" in ids
+        assert "test-resource-002" in ids
+        assert "prod-resource-003" not in ids
+
+    # Filter by "-003" suffix
+    async with session.get(f"{api_endpoint}/resources", params={"resources_id_contains": "-003", "limit": -1}) as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        assert data["total"] == 1
+        assert data["items"][0]["resources_id"] == "prod-resource-003"
+
+
+@pytest.mark.asyncio
+async def test_resources_combined_filter_sort_and_pagination(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    """Test combining filter, sort, and pagination for resources."""
+    server, _client, session, api_endpoint = server_client
+
+    # Create resources with pattern
+    await server.update_resources("prod-app-001", {})
+    await asyncio.sleep(0.01)
+    await server.update_resources("prod-app-002", {})
+    await asyncio.sleep(0.01)
+    await server.update_resources("test-app-001", {})
+    await asyncio.sleep(0.01)
+    await server.update_resources("prod-db-001", {})
+
+    # Filter by "prod-" and sort by resources_id, then paginate
+    async with session.get(
+        f"{api_endpoint}/resources",
+        params={
+            "resources_id_contains": "prod-",
+            "sort_by": "resources_id",
+            "sort_order": "asc",
+            "limit": 2,
+            "offset": 0,
+        },
+    ) as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        assert data["total"] == 3  # 3 resources contain "prod-"
+        assert data["limit"] == 2
+        assert data["offset"] == 0
+        assert len(data["items"]) == 2
+        # Should get first 2 when sorted by resources_id asc
+        assert data["items"][0]["resources_id"] == "prod-app-001"
+        assert data["items"][1]["resources_id"] == "prod-app-002"
+
+    # Get the next page
+    async with session.get(
+        f"{api_endpoint}/resources",
+        params={
+            "resources_id_contains": "prod-",
+            "sort_by": "resources_id",
+            "sort_order": "asc",
+            "limit": 2,
+            "offset": 2,
+        },
+    ) as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        assert data["total"] == 3
+        assert len(data["items"]) == 1  # Only 1 item remaining
+        assert data["items"][0]["resources_id"] == "prod-db-001"
+
+
 # Spans Pagination, Sorting, and Filtering Tests
 
 
