@@ -10,7 +10,7 @@ from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
 from tenacity import (
-    AsyncRetrying, RetryError, stop_before_delay, wait_exponential_jitter,
+    AsyncRetrying, RetryError, retry_if_exception, stop_before_delay, wait_exponential_jitter,
 )
 from typing import Any, Dict, List, Literal, Optional, Sequence
 
@@ -30,7 +30,7 @@ from agentlightning.types import (
 from ..base import UNSET, LightningStore, Unset, is_finished
 from .orm import SqlAlchemyBase
 from .sqlite import RolloutInDB, AttemptInDB, ResourcesUpdateInDB, SpanInDB, SpanSeqIdInDB
-from .retry_helper import RetryStrategy, ExceptionRegistry, AsyncTypeBasedRetry
+from .retry_helper import RetryStrategy, ExceptionRegistry, AsyncTypeBasedRetry, AsyncRetryBlock
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +46,11 @@ db_retry = AsyncTypeBasedRetry({
 })
 
 
+class _WaitForRolloutsCompleted(Exception):
+    """Internal exception to signal that not all rollouts have completed yet."""
+    pass
+
+
 class DatabaseLightningStore(LightningStore):
     """
     A LightningStore implementation that uses a database backend to store and manage rollouts and attempts.
@@ -55,13 +60,16 @@ class DatabaseLightningStore(LightningStore):
         database_url: The database connection URL. If not provided, it will be read from the 'DATABASE_URL' environment variable.
         watchdog_mode: The mode for the watchdog that monitors long-running attempts. Can be 'thread' or 'asyncio'.
         dequeue_strategy: The strategy to dequeue rollouts. Currently only 'fifo' is supported.
+        retry_for_waiting: The retry strategy to use when waiting for rollouts to complete. If not provided, a default strategy with infinite retries and polling every 10 seconds will be used.
+        wait_for_nonexistent_rollout: Whether to wait for rollouts that do not exist when calling `wait_for_rollouts`.(default: False)
     """
 
     def __init__(
         self,
         database_url: Optional[str] = None,
         *,
-        retry_config: Optional[dict[str, Any]] = None,
+        retry_for_waiting: Optional[dict[str, Any]|RetryStrategy] = None,
+        wait_for_nonexistent_rollout: bool = False,
         watchdog_mode: Literal["thread", "asyncio"] = "asyncio",
     ) -> None:
         super().__init__()
@@ -74,6 +82,19 @@ class DatabaseLightningStore(LightningStore):
         self._async_session = async_sessionmaker(self._engine, expire_on_commit=False)
 
         self._latest_resources_id = None
+
+        # special handling for retry strategy
+        retry_for_waiting = retry_for_waiting or RetryStrategy(
+            max_attempts=10,  # set a limit for retries if timeout is specified, otherwise will change to None later
+            max_retry_delay=None, # set later
+            wait_seconds=10.0, # poll every 10 seconds
+            max_wait_seconds=60.0, # at most wait 60 seconds between retries
+            backoff=1.0,
+            jitter=0.0,
+            log=True,
+        )
+        self.retry_for_waiting = retry_for_waiting if isinstance(retry_for_waiting, RetryStrategy) else RetryStrategy(**retry_for_waiting)
+        self.wait_for_nonexistent_rollout = wait_for_nonexistent_rollout
 
     async def start(self):
         async with self._engine.begin() as conn:
@@ -129,10 +150,6 @@ class DatabaseLightningStore(LightningStore):
                 await session.flush()  # ensure the object is written to the DB
                 return rollout_obj.as_rollout()
 
-    # @retry(
-    #     retry=retry_if_exception_type(StaleDataError),
-    #     stop=stop_after_attempt(100),
-    # )
     @db_retry
     async def dequeue_rollout(self) -> Optional[AttemptedRollout]:
         return await self._fifo_dequeue_rollout()
@@ -204,44 +221,50 @@ class DatabaseLightningStore(LightningStore):
 
     async def wait_for_rollouts(self, *, rollout_ids: List[str], timeout: Optional[float] = None) -> List[Rollout]:
         # implementation the timeout via tenacity retry mechanism, by a `with` context
-        wait_min = 0.1 if timeout is None else min(0.1, timeout / 10) # at least one tenth of the timeout or 0.1s
-        wait_max = 60 if timeout is None else min(60, timeout / 2) # at most half of the timeout or 60s
-        retry_config: Dict[str, Any] = {
-            "wait": wait_exponential_jitter(initial=wait_min, max=wait_max, jitter=0.1 * wait_min),
-            "reraise": False,
-        }
+        strategy = RetryStrategy(**self.retry_for_waiting.asdict())
         if timeout is not None:
-            retry_config["stop"] = stop_before_delay(timeout)
-        logger.debug(f"wait_for_rollouts with the following retry config {retry_config}")
-        time_start = time.time_ns()
-        completed_rollouts: List[Rollout] = []
+            strategy.max_retry_delay = timeout
+            if strategy.max_attempts is not None:
+                strategy.wait_seconds = min(strategy.wait_seconds, timeout / (strategy.max_attempts+1))
+        else:
+            strategy.max_attempts = None  # infinite retries
+
+        non_completed_ids, non_existing_ids = set(rollout_ids), set(rollout_ids)
+        completed_rollouts: Dict[str, Rollout] = {}
+        if len(non_completed_ids) < len(rollout_ids):
+            logger.warning("Duplicate rollout_ids found in wait_for_rollouts input. Duplicates will be ignored.")
+
         try:
-            async for retry_attempt in AsyncRetrying(**retry_config):
-                with retry_attempt:
+            async for attempt in AsyncRetryBlock(
+                strategy,
+                reraise=True,
+            ):
+                with attempt:
                     async with self._async_session() as session:
                         async with session.begin():
-                            current_time = time.time_ns()
-                            logger.debug(f"Begin to query rollouts at {(current_time - time_start)*1e-9} seconds")
                             result = await session.scalars(
-                                select(RolloutInDB).where(RolloutInDB.rollout_id.in_(rollout_ids))
+                                select(RolloutInDB).where(RolloutInDB.rollout_id.in_(non_completed_ids))
                             )
                             rollouts = result.all()
-                            if len(rollouts) != len(rollout_ids):
-                                existing_ids = {rollout.rollout_id for rollout in rollouts}
-                                missing_ids = set(rollout_ids) - existing_ids
-                                # FIXME ignore nonexisting rollout_ids to follow the behavior of InMemoryLightningStore
-                                logger.warning(f"Some rollouts do not exist: {missing_ids}")
-                                # raise ValueError(f"Some rollouts do not exist: {missing_ids}")
-                            completed_rollouts = [
-                                rollout.as_rollout() for rollout in rollouts
-                                if is_finished(rollout)  # type: ignore
-                            ]
-                            if len(completed_rollouts) == len(rollout_ids):
-                                return completed_rollouts
+                            for r in rollouts:
+                                if r.rollout_id in non_existing_ids:
+                                    non_existing_ids.discard(r.rollout_id) # found existing rollout
+                                if is_finished(r):  # type: ignore
+                                    completed_rollouts[r.rollout_id] = r.as_rollout()
+                                    non_completed_ids.discard(r.rollout_id)
+                            # check termination conditions
+                            if self.wait_for_nonexistent_rollout:
+                                if len(non_completed_ids) == 0:
+                                    return [completed_rollouts[rid] for rid in rollout_ids if rid in completed_rollouts]
+                                raise _WaitForRolloutsCompleted(f"WaitForRolloutsCompleted: requested={len(rollout_ids)}, completed={len(completed_rollouts)}, non_existing={len(non_existing_ids)}")
                             else:
-                                raise Exception("Not all rollouts have reached terminal status yet.")
-        except RetryError:
-            return completed_rollouts
+                                if len(non_completed_ids) == len(non_existing_ids):
+                                    logger.warning(f"All remaining rollouts are non-existing: {non_existing_ids}.")
+                                    return [completed_rollouts[rid] for rid in rollout_ids if rid in completed_rollouts]
+                                raise _WaitForRolloutsCompleted(f"WaitForRolloutsCompleted: requested={len(rollout_ids)}, completed={len(completed_rollouts)}, non_existing={len(non_existing_ids)}")
+
+        except (RetryError, _WaitForRolloutsCompleted):
+            return [completed_rollouts[rid] for rid in rollout_ids if rid in completed_rollouts]
 
     @db_retry
     async def query_spans(self, rollout_id: str, attempt_id: str | Literal["latest"] | None = None) -> List[Span]:

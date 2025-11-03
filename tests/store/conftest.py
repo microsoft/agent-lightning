@@ -35,6 +35,8 @@ async def db_store() -> typing.AsyncGenerator[DatabaseLightningStore, None]:
     db_path = os.path.join(tmp_path, f"test_db_{uuid.uuid4().hex}.sqlite3")
     database_url = f"sqlite+aiosqlite:///{db_path}"
     store = DatabaseLightningStore(database_url=database_url)
+    store.retry_for_waiting.wait_seconds = .2  # Set polling interval to 0.2s for test
+
     await store.start()
     try:
         yield store
