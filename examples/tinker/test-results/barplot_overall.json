@@ -1,0 +1,72 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "description": "Overall Success Rate Across Six Configurations",
+  "width": 800,
+  "height": 500,
+  "config": {
+    "axis": {
+      "labelFontSize": 14,
+      "titleFontSize": 16,
+      "titleFontWeight": "normal"
+    },
+    "legend": {
+      "labelFontSize": 14,
+      "titleFontSize": 14
+    }
+  },
+  "data": {
+    "values": [
+      {
+        "configuration": "Qwen3-4B + Tool",
+        "success_rate": 54.92227979274611
+      },
+      {
+        "configuration": "Qwen3-4B-Instruct-2507",
+        "success_rate": 14.499999999999998
+      },
+      {
+        "configuration": "Qwen3-30B + Tool",
+        "success_rate": 49.23076923076923
+      },
+      {
+        "configuration": "Qwen3-30B-A3B-Instruct",
+        "success_rate": 40.5
+      },
+      {
+        "configuration": "Qwen3-235B-A22B",
+        "success_rate": 63.775510204081634
+      },
+      {
+        "configuration": "GPT-4.1",
+        "success_rate": 74.5
+      }
+    ]
+  },
+  "mark": {
+    "type": "bar",
+    "color": "#2E86AB",
+    "opacity": 0.8
+  },
+  "encoding": {
+    "x": {
+      "field": "configuration",
+      "type": "nominal",
+      "title": "Configuration",
+      "axis": {
+        "labelAngle": -30,
+        "labelAlign": "right"
+      }
+    },
+    "y": {
+      "field": "success_rate",
+      "type": "quantitative",
+      "title": "Success Rate (%)",
+      "scale": {
+        "domain": [
+          0,
+          100
+        ]
+      }
+    }
+  }
+}
