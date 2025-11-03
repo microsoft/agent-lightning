@@ -1,0 +1,788 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "description": "Action Tokens Per Turn Comparison",
+  "width": 600,
+  "height": 400,
+  "config": {
+    "axis": {
+      "labelFontSize": 14,
+      "titleFontSize": 16,
+      "titleFontWeight": "normal"
+    },
+    "legend": {
+      "labelFontSize": 14,
+      "titleFontSize": 14,
+      "fillColor": "white",
+      "strokeColor": "#ccc",
+      "padding": 10,
+      "cornerRadius": 5
+    }
+  },
+  "data": {
+    "values": [
+      {
+        "step": 0,
+        "tokens_per_turn": 10.84292082360433,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "step": 1,
+        "tokens_per_turn": 17.040462427745666,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "step": 2,
+        "tokens_per_turn": 19.226602467649712,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "step": 3,
+        "tokens_per_turn": 19.229078613694,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "step": 4,
+        "tokens_per_turn": 19.452207937395194,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "step": 5,
+        "tokens_per_turn": 18.964934409687185,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "step": 6,
+        "tokens_per_turn": 20.577408256880734,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "step": 7,
+        "tokens_per_turn": 202.28745072273324,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "step": 8,
+        "tokens_per_turn": 262.01701323251416,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "step": 9,
+        "tokens_per_turn": 303.62201656113007,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "step": 10,
+        "tokens_per_turn": 271.5405667231775,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "step": 11,
+        "tokens_per_turn": 306.1193776520509,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "step": 12,
+        "tokens_per_turn": 271.14108830237865,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "step": 13,
+        "tokens_per_turn": 293.46173469387753,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "step": 14,
+        "tokens_per_turn": 397.12382445141066,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "step": 15,
+        "tokens_per_turn": 320.1151816206147,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "step": 16,
+        "tokens_per_turn": 264.6111111111111,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "step": 17,
+        "tokens_per_turn": 238.92634643377002,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "step": 18,
+        "tokens_per_turn": 251.2981612446959,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "step": 19,
+        "tokens_per_turn": 275.0129232359783,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "step": 20,
+        "tokens_per_turn": 274.1205400192864,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "step": 21,
+        "tokens_per_turn": 363.8806929309863,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "step": 22,
+        "tokens_per_turn": 320.3224254090472,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "step": 23,
+        "tokens_per_turn": 307.72612055641423,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "step": 24,
+        "tokens_per_turn": 326.91166358106324,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "step": 25,
+        "tokens_per_turn": 237.49561557348298,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "step": 26,
+        "tokens_per_turn": 288.19513513513516,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "step": 27,
+        "tokens_per_turn": 311.4904214559387,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "step": 28,
+        "tokens_per_turn": 258.8397394136808,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "step": 29,
+        "tokens_per_turn": 311.28252480705623,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "step": 30,
+        "tokens_per_turn": 307.71352702280535,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "step": 31,
+        "tokens_per_turn": 341.4409015942826,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "step": 32,
+        "tokens_per_turn": 331.9624168834923,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "step": 33,
+        "tokens_per_turn": 350.26873156342185,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "step": 34,
+        "tokens_per_turn": 383.07463976945246,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "step": 35,
+        "tokens_per_turn": 406.3917022574741,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "step": 36,
+        "tokens_per_turn": 380.7557395558901,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "step": 37,
+        "tokens_per_turn": 236.79851411589897,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "step": 38,
+        "tokens_per_turn": 169.3174698795181,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "step": 39,
+        "tokens_per_turn": 192.09332974717591,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "step": 40,
+        "tokens_per_turn": 224.9321047526673,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "step": 41,
+        "tokens_per_turn": 237.0116318850496,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "step": 42,
+        "tokens_per_turn": 230.68977415307404,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "step": 43,
+        "tokens_per_turn": 232.1818181818182,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "step": 44,
+        "tokens_per_turn": 247.30457267283614,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "step": 45,
+        "tokens_per_turn": 318.63033305807875,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "step": 46,
+        "tokens_per_turn": 291.3779166666667,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "step": 47,
+        "tokens_per_turn": 371.8033917792469,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "step": 48,
+        "tokens_per_turn": 360.741146403797,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "step": 49,
+        "tokens_per_turn": 554.9695753928452,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "step": 50,
+        "tokens_per_turn": 605.9398252992559,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "step": 51,
+        "tokens_per_turn": 439.35208497246265,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "step": 52,
+        "tokens_per_turn": 602.9775463716238,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "step": 53,
+        "tokens_per_turn": 496.06776499844574,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "step": 54,
+        "tokens_per_turn": 503.6168253968254,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "step": 55,
+        "tokens_per_turn": 525.3027011156782,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "step": 56,
+        "tokens_per_turn": 488.0728670816551,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "step": 57,
+        "tokens_per_turn": 547.2383506537043,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "step": 58,
+        "tokens_per_turn": 412.719967199672,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "step": 59,
+        "tokens_per_turn": 419.679843444227,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "step": 0,
+        "tokens_per_turn": 14.589561091340451,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 1,
+        "tokens_per_turn": 16.39477503628447,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 2,
+        "tokens_per_turn": 21.06334434103873,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 3,
+        "tokens_per_turn": 20.642736960179473,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 4,
+        "tokens_per_turn": 20.790917691579942,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 5,
+        "tokens_per_turn": 22.70949720670391,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 6,
+        "tokens_per_turn": 23.781633906633907,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 7,
+        "tokens_per_turn": 21.777342657342658,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 8,
+        "tokens_per_turn": 21.864993026499302,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 9,
+        "tokens_per_turn": 21.887614678899084,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 10,
+        "tokens_per_turn": 20.514492753623188,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 11,
+        "tokens_per_turn": 18.67866473149492,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 12,
+        "tokens_per_turn": 19.046985564675914,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 13,
+        "tokens_per_turn": 19.163094440723377,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 14,
+        "tokens_per_turn": 19.61511423550088,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 15,
+        "tokens_per_turn": 19.29924480805538,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 16,
+        "tokens_per_turn": 19.060841983852363,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 17,
+        "tokens_per_turn": 19.025021085184143,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 18,
+        "tokens_per_turn": 19.00432459933859,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 19,
+        "tokens_per_turn": 24.367880276971185,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 20,
+        "tokens_per_turn": 22.185911016949152,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 21,
+        "tokens_per_turn": 21.10884930732259,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 22,
+        "tokens_per_turn": 20.36131271694541,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 23,
+        "tokens_per_turn": 19.981538461538463,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 24,
+        "tokens_per_turn": 19.548079699682358,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 25,
+        "tokens_per_turn": 19.42005076142132,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 26,
+        "tokens_per_turn": 19.310438074634938,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 27,
+        "tokens_per_turn": 21.395283350932772,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 28,
+        "tokens_per_turn": 20.811956110480516,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 29,
+        "tokens_per_turn": 19.421426157485637,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 30,
+        "tokens_per_turn": 19.23582837456937,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 31,
+        "tokens_per_turn": 19.12336339831248,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 32,
+        "tokens_per_turn": 19.314538250533374,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 33,
+        "tokens_per_turn": 19.63292181069959,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 34,
+        "tokens_per_turn": 19.884480337078653,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 35,
+        "tokens_per_turn": 19.873958710612097,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 36,
+        "tokens_per_turn": 19.72174590802806,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 37,
+        "tokens_per_turn": 19.828388401888066,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 38,
+        "tokens_per_turn": 19.989621694007365,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 39,
+        "tokens_per_turn": 20.14512785072564,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 40,
+        "tokens_per_turn": 19.925142665323936,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 41,
+        "tokens_per_turn": 19.872705018359852,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 42,
+        "tokens_per_turn": 19.591796228911676,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 43,
+        "tokens_per_turn": 19.65451230628988,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 44,
+        "tokens_per_turn": 19.513475575519372,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 45,
+        "tokens_per_turn": 19.469111969111967,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 46,
+        "tokens_per_turn": 19.477763659466326,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 47,
+        "tokens_per_turn": 19.225692695214107,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 48,
+        "tokens_per_turn": 19.036710719530102,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 49,
+        "tokens_per_turn": 18.994319585082735,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 50,
+        "tokens_per_turn": 19.107879924953096,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 51,
+        "tokens_per_turn": 19.60715416270972,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 52,
+        "tokens_per_turn": 19.840501792114697,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 53,
+        "tokens_per_turn": 19.81584699453552,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 54,
+        "tokens_per_turn": 19.74383477188656,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 55,
+        "tokens_per_turn": 19.94179600886918,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 56,
+        "tokens_per_turn": 20.085819644653032,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 57,
+        "tokens_per_turn": 21.385698808234018,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 58,
+        "tokens_per_turn": 20.53149721652505,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 59,
+        "tokens_per_turn": 20.40258620689655,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 60,
+        "tokens_per_turn": 20.329295505259804,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 61,
+        "tokens_per_turn": 20.020318930041153,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "step": 0,
+        "tokens_per_turn": 122.75873221216041,
+        "configuration": "Tinker Qwen3-4B + Tool"
+      },
+      {
+        "step": 1,
+        "tokens_per_turn": 158.65698895279832,
+        "configuration": "Tinker Qwen3-4B + Tool"
+      },
+      {
+        "step": 2,
+        "tokens_per_turn": 192.28079967525878,
+        "configuration": "Tinker Qwen3-4B + Tool"
+      },
+      {
+        "step": 3,
+        "tokens_per_turn": 182.0920598388953,
+        "configuration": "Tinker Qwen3-4B + Tool"
+      },
+      {
+        "step": 4,
+        "tokens_per_turn": 221.60054137664346,
+        "configuration": "Tinker Qwen3-4B + Tool"
+      },
+      {
+        "step": 5,
+        "tokens_per_turn": 228.1719982145514,
+        "configuration": "Tinker Qwen3-4B + Tool"
+      },
+      {
+        "step": 6,
+        "tokens_per_turn": 201.47628789287708,
+        "configuration": "Tinker Qwen3-4B + Tool"
+      },
+      {
+        "step": 7,
+        "tokens_per_turn": 205.00295358649788,
+        "configuration": "Tinker Qwen3-4B + Tool"
+      },
+      {
+        "step": 8,
+        "tokens_per_turn": 159.96290671184065,
+        "configuration": "Tinker Qwen3-4B + Tool"
+      },
+      {
+        "step": 9,
+        "tokens_per_turn": 264.84606015674643,
+        "configuration": "Tinker Qwen3-4B + Tool"
+      },
+      {
+        "step": 10,
+        "tokens_per_turn": 230.98643315244203,
+        "configuration": "Tinker Qwen3-4B + Tool"
+      },
+      {
+        "step": 11,
+        "tokens_per_turn": 253.31232002490466,
+        "configuration": "Tinker Qwen3-4B + Tool"
+      },
+      {
+        "step": 12,
+        "tokens_per_turn": 122.12485939257593,
+        "configuration": "Tinker Qwen3-4B + Tool"
+      },
+      {
+        "step": 13,
+        "tokens_per_turn": 130.17827598609279,
+        "configuration": "Tinker Qwen3-4B + Tool"
+      },
+      {
+        "step": 14,
+        "tokens_per_turn": 60.48143274853801,
+        "configuration": "Tinker Qwen3-4B + Tool"
+      },
+      {
+        "step": 15,
+        "tokens_per_turn": 164.51486138896828,
+        "configuration": "Tinker Qwen3-4B + Tool"
+      },
+      {
+        "step": 16,
+        "tokens_per_turn": 217.45074780814852,
+        "configuration": "Tinker Qwen3-4B + Tool"
+      },
+      {
+        "step": 17,
+        "tokens_per_turn": 16.288164912786506,
+        "configuration": "Tinker Qwen3-4B + Tool"
+      },
+      {
+        "step": 18,
+        "tokens_per_turn": 15.517383254474389,
+        "configuration": "Tinker Qwen3-4B + Tool"
+      },
+      {
+        "step": 19,
+        "tokens_per_turn": 10.104420884176836,
+        "configuration": "Tinker Qwen3-4B + Tool"
+      },
+      {
+        "step": 20,
+        "tokens_per_turn": 9.695346197502838,
+        "configuration": "Tinker Qwen3-4B + Tool"
+      },
+      {
+        "step": 21,
+        "tokens_per_turn": 8.420275192229866,
+        "configuration": "Tinker Qwen3-4B + Tool"
+      }
+    ]
+  },
+  "mark": {
+    "type": "line",
+    "point": true,
+    "strokeWidth": 2.5
+  },
+  "encoding": {
+    "x": {
+      "field": "step",
+      "type": "quantitative",
+      "title": "Step",
+      "scale": {
+        "domain": [
+          0,
+          61
+        ]
+      }
+    },
+    "y": {
+      "field": "tokens_per_turn",
+      "type": "quantitative",
+      "title": "Action Tokens Per Turn"
+    },
+    "color": {
+      "field": "configuration",
+      "type": "nominal",
+      "title": "Configuration",
+      "scale": {
+        "domain": [
+          "Tinker Qwen3-4B",
+          "Tinker Qwen3-30B",
+          "Tinker Qwen3-4B + Tool"
+        ],
+        "range": [
+          "#2E86AB",
+          "#E63946",
+          "#06A77D"
+        ]
+      },
+      "legend": {
+        "orient": "top-left"
+      }
+    }
+  }
+}

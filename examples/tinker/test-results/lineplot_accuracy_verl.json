@@ -1,0 +1,696 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "description": "Training and Val Accuracy - VERL",
+  "width": 600,
+  "height": 400,
+  "config": {
+    "axis": {
+      "labelFontSize": 14,
+      "titleFontSize": 16,
+      "titleFontWeight": "normal"
+    },
+    "legend": {
+      "labelFontSize": 14,
+      "titleFontSize": 14,
+      "fillColor": "white",
+      "strokeColor": "#ccc",
+      "padding": 10,
+      "cornerRadius": 5
+    }
+  },
+  "data": {
+    "values": [
+      {
+        "step": 0.0,
+        "accuracy": 0.1,
+        "type": "Val"
+      },
+      {
+        "step": 1.0,
+        "accuracy": 0.3046875,
+        "type": "Train"
+      },
+      {
+        "step": 2.0,
+        "accuracy": 0.3046875,
+        "type": "Train"
+      },
+      {
+        "step": 3.0,
+        "accuracy": 0.3046875,
+        "type": "Train"
+      },
+      {
+        "step": 4.0,
+        "accuracy": 0.1953125,
+        "type": "Train"
+      },
+      {
+        "step": 4.0,
+        "accuracy": 0.175,
+        "type": "Val"
+      },
+      {
+        "step": 5.0,
+        "accuracy": 0.328125,
+        "type": "Train"
+      },
+      {
+        "step": 6.0,
+        "accuracy": 0.234375,
+        "type": "Train"
+      },
+      {
+        "step": 7.0,
+        "accuracy": 0.3828125,
+        "type": "Train"
+      },
+      {
+        "step": 8.0,
+        "accuracy": 0.140625,
+        "type": "Train"
+      },
+      {
+        "step": 8.0,
+        "accuracy": 0.2,
+        "type": "Val"
+      },
+      {
+        "step": 9.0,
+        "accuracy": 0.125,
+        "type": "Train"
+      },
+      {
+        "step": 10.0,
+        "accuracy": 0.3125,
+        "type": "Train"
+      },
+      {
+        "step": 11.0,
+        "accuracy": 0.3125,
+        "type": "Train"
+      },
+      {
+        "step": 12.0,
+        "accuracy": 0.25,
+        "type": "Train"
+      },
+      {
+        "step": 12.0,
+        "accuracy": 0.2,
+        "type": "Val"
+      },
+      {
+        "step": 13.0,
+        "accuracy": 0.28125,
+        "type": "Train"
+      },
+      {
+        "step": 14.0,
+        "accuracy": 0.328125,
+        "type": "Train"
+      },
+      {
+        "step": 15.0,
+        "accuracy": 0.5078125,
+        "type": "Train"
+      },
+      {
+        "step": 16.0,
+        "accuracy": 0.375,
+        "type": "Train"
+      },
+      {
+        "step": 16.0,
+        "accuracy": 0.225,
+        "type": "Val"
+      },
+      {
+        "step": 17.0,
+        "accuracy": 0.25,
+        "type": "Train"
+      },
+      {
+        "step": 18.0,
+        "accuracy": 0.328125,
+        "type": "Train"
+      },
+      {
+        "step": 19.0,
+        "accuracy": 0.359375,
+        "type": "Train"
+      },
+      {
+        "step": 20.0,
+        "accuracy": 0.3515625,
+        "type": "Train"
+      },
+      {
+        "step": 20.0,
+        "accuracy": 0.3,
+        "type": "Val"
+      },
+      {
+        "step": 21.0,
+        "accuracy": 0.578125,
+        "type": "Train"
+      },
+      {
+        "step": 22.0,
+        "accuracy": 0.3515625,
+        "type": "Train"
+      },
+      {
+        "step": 23.0,
+        "accuracy": 0.3671875,
+        "type": "Train"
+      },
+      {
+        "step": 24.0,
+        "accuracy": 0.515625,
+        "type": "Train"
+      },
+      {
+        "step": 24.0,
+        "accuracy": 0.225,
+        "type": "Val"
+      },
+      {
+        "step": 25.0,
+        "accuracy": 0.3046875,
+        "type": "Train"
+      },
+      {
+        "step": 26.0,
+        "accuracy": 0.5078125,
+        "type": "Train"
+      },
+      {
+        "step": 27.0,
+        "accuracy": 0.40625,
+        "type": "Train"
+      },
+      {
+        "step": 28.0,
+        "accuracy": 0.2578125,
+        "type": "Train"
+      },
+      {
+        "step": 28.0,
+        "accuracy": 0.3,
+        "type": "Val"
+      },
+      {
+        "step": 29.0,
+        "accuracy": 0.5,
+        "type": "Train"
+      },
+      {
+        "step": 30.0,
+        "accuracy": 0.3515625,
+        "type": "Train"
+      },
+      {
+        "step": 31.0,
+        "accuracy": 0.328125,
+        "type": "Train"
+      },
+      {
+        "step": 32.0,
+        "accuracy": 0.34375,
+        "type": "Train"
+      },
+      {
+        "step": 32.0,
+        "accuracy": 0.325,
+        "type": "Val"
+      },
+      {
+        "step": 33.0,
+        "accuracy": 0.515625,
+        "type": "Train"
+      },
+      {
+        "step": 34.0,
+        "accuracy": 0.5859375,
+        "type": "Train"
+      },
+      {
+        "step": 35.0,
+        "accuracy": 0.34375,
+        "type": "Train"
+      },
+      {
+        "step": 36.0,
+        "accuracy": 0.578125,
+        "type": "Train"
+      },
+      {
+        "step": 36.0,
+        "accuracy": 0.35,
+        "type": "Val"
+      },
+      {
+        "step": 37.0,
+        "accuracy": 0.6640625,
+        "type": "Train"
+      },
+      {
+        "step": 38.0,
+        "accuracy": 0.34375,
+        "type": "Train"
+      },
+      {
+        "step": 39.0,
+        "accuracy": 0.4609375,
+        "type": "Train"
+      },
+      {
+        "step": 40.0,
+        "accuracy": 0.4921875,
+        "type": "Train"
+      },
+      {
+        "step": 40.0,
+        "accuracy": 0.375,
+        "type": "Val"
+      },
+      {
+        "step": 41.0,
+        "accuracy": 0.6328125,
+        "type": "Train"
+      },
+      {
+        "step": 42.0,
+        "accuracy": 0.71875,
+        "type": "Train"
+      },
+      {
+        "step": 43.0,
+        "accuracy": 0.609375,
+        "type": "Train"
+      },
+      {
+        "step": 44.0,
+        "accuracy": 0.53125,
+        "type": "Train"
+      },
+      {
+        "step": 44.0,
+        "accuracy": 0.325,
+        "type": "Val"
+      },
+      {
+        "step": 45.0,
+        "accuracy": 0.421875,
+        "type": "Train"
+      },
+      {
+        "step": 46.0,
+        "accuracy": 0.5859375,
+        "type": "Train"
+      },
+      {
+        "step": 47.0,
+        "accuracy": 0.5078125,
+        "type": "Train"
+      },
+      {
+        "step": 48.0,
+        "accuracy": 0.5390625,
+        "type": "Train"
+      },
+      {
+        "step": 48.0,
+        "accuracy": 0.45,
+        "type": "Val"
+      },
+      {
+        "step": 49.0,
+        "accuracy": 0.5546875,
+        "type": "Train"
+      },
+      {
+        "step": 50.0,
+        "accuracy": 0.3359375,
+        "type": "Train"
+      },
+      {
+        "step": 51.0,
+        "accuracy": 0.7265625,
+        "type": "Train"
+      },
+      {
+        "step": 52.0,
+        "accuracy": 0.6328125,
+        "type": "Train"
+      },
+      {
+        "step": 52.0,
+        "accuracy": 0.375,
+        "type": "Val"
+      },
+      {
+        "step": 53.0,
+        "accuracy": 0.4375,
+        "type": "Train"
+      },
+      {
+        "step": 54.0,
+        "accuracy": 0.59375,
+        "type": "Train"
+      },
+      {
+        "step": 55.0,
+        "accuracy": 0.6484375,
+        "type": "Train"
+      },
+      {
+        "step": 56.0,
+        "accuracy": 0.3671875,
+        "type": "Train"
+      },
+      {
+        "step": 56.0,
+        "accuracy": 0.35,
+        "type": "Val"
+      },
+      {
+        "step": 57.0,
+        "accuracy": 0.5390625,
+        "type": "Train"
+      },
+      {
+        "step": 58.0,
+        "accuracy": 0.4765625,
+        "type": "Train"
+      },
+      {
+        "step": 59.0,
+        "accuracy": 0.5546875,
+        "type": "Train"
+      },
+      {
+        "step": 60.0,
+        "accuracy": 0.609375,
+        "type": "Train"
+      },
+      {
+        "step": 60.0,
+        "accuracy": 0.325,
+        "type": "Val"
+      },
+      {
+        "step": 61.0,
+        "accuracy": 0.7734375,
+        "type": "Train"
+      },
+      {
+        "step": 62.0,
+        "accuracy": 0.421875,
+        "type": "Train"
+      },
+      {
+        "step": 63.0,
+        "accuracy": 0.546875,
+        "type": "Train"
+      },
+      {
+        "step": 64.0,
+        "accuracy": 0.6953125,
+        "type": "Train"
+      },
+      {
+        "step": 64.0,
+        "accuracy": 0.45,
+        "type": "Val"
+      },
+      {
+        "step": 65.0,
+        "accuracy": 0.65625,
+        "type": "Train"
+      },
+      {
+        "step": 66.0,
+        "accuracy": 0.4609375,
+        "type": "Train"
+      },
+      {
+        "step": 67.0,
+        "accuracy": 0.671875,
+        "type": "Train"
+      },
+      {
+        "step": 68.0,
+        "accuracy": 0.65625,
+        "type": "Train"
+      },
+      {
+        "step": 68.0,
+        "accuracy": 0.425,
+        "type": "Val"
+      },
+      {
+        "step": 69.0,
+        "accuracy": 0.515625,
+        "type": "Train"
+      },
+      {
+        "step": 70.0,
+        "accuracy": 0.4921875,
+        "type": "Train"
+      },
+      {
+        "step": 71.0,
+        "accuracy": 0.5390625,
+        "type": "Train"
+      },
+      {
+        "step": 72.0,
+        "accuracy": 0.3125,
+        "type": "Train"
+      },
+      {
+        "step": 72.0,
+        "accuracy": 0.275,
+        "type": "Val"
+      },
+      {
+        "step": 73.0,
+        "accuracy": 0.5859375,
+        "type": "Train"
+      },
+      {
+        "step": 74.0,
+        "accuracy": 0.625,
+        "type": "Train"
+      },
+      {
+        "step": 75.0,
+        "accuracy": 0.6328125,
+        "type": "Train"
+      },
+      {
+        "step": 76.0,
+        "accuracy": 0.6171875,
+        "type": "Train"
+      },
+      {
+        "step": 76.0,
+        "accuracy": 0.325,
+        "type": "Val"
+      },
+      {
+        "step": 77.0,
+        "accuracy": 0.6328125,
+        "type": "Train"
+      },
+      {
+        "step": 78.0,
+        "accuracy": 0.6328125,
+        "type": "Train"
+      },
+      {
+        "step": 79.0,
+        "accuracy": 0.65625,
+        "type": "Train"
+      },
+      {
+        "step": 80.0,
+        "accuracy": 0.5,
+        "type": "Train"
+      },
+      {
+        "step": 80.0,
+        "accuracy": 0.3,
+        "type": "Val"
+      },
+      {
+        "step": 81.0,
+        "accuracy": 0.6328125,
+        "type": "Train"
+      },
+      {
+        "step": 82.0,
+        "accuracy": 0.5,
+        "type": "Train"
+      },
+      {
+        "step": 83.0,
+        "accuracy": 0.71875,
+        "type": "Train"
+      },
+      {
+        "step": 84.0,
+        "accuracy": 0.640625,
+        "type": "Train"
+      },
+      {
+        "step": 84.0,
+        "accuracy": 0.4,
+        "type": "Val"
+      },
+      {
+        "step": 85.0,
+        "accuracy": 0.5234375,
+        "type": "Train"
+      },
+      {
+        "step": 86.0,
+        "accuracy": 0.609375,
+        "type": "Train"
+      },
+      {
+        "step": 87.0,
+        "accuracy": 0.7734375,
+        "type": "Train"
+      },
+      {
+        "step": 88.0,
+        "accuracy": 0.5234375,
+        "type": "Train"
+      },
+      {
+        "step": 88.0,
+        "accuracy": 0.325,
+        "type": "Val"
+      },
+      {
+        "step": 89.0,
+        "accuracy": 0.4921875,
+        "type": "Train"
+      },
+      {
+        "step": 90.0,
+        "accuracy": 0.5390625,
+        "type": "Train"
+      },
+      {
+        "step": 91.0,
+        "accuracy": 0.515625,
+        "type": "Train"
+      },
+      {
+        "step": 92.0,
+        "accuracy": 0.6640625,
+        "type": "Train"
+      },
+      {
+        "step": 92.0,
+        "accuracy": 0.425,
+        "type": "Val"
+      },
+      {
+        "step": 93.0,
+        "accuracy": 0.7890625,
+        "type": "Train"
+      },
+      {
+        "step": 94.0,
+        "accuracy": 0.5703125,
+        "type": "Train"
+      },
+      {
+        "step": 95.0,
+        "accuracy": 0.5625,
+        "type": "Train"
+      },
+      {
+        "step": 96.0,
+        "accuracy": 0.4765625,
+        "type": "Train"
+      },
+      {
+        "step": 96.0,
+        "accuracy": 0.475,
+        "type": "Val"
+      },
+      {
+        "step": 97.0,
+        "accuracy": 0.703125,
+        "type": "Train"
+      },
+      {
+        "step": 98.0,
+        "accuracy": 0.6328125,
+        "type": "Train"
+      },
+      {
+        "step": 99.0,
+        "accuracy": 0.65625,
+        "type": "Train"
+      },
+      {
+        "step": 100.0,
+        "accuracy": 0.46875,
+        "type": "Train"
+      },
+      {
+        "step": 100.0,
+        "accuracy": 0.425,
+        "type": "Val"
+      }
+    ]
+  },
+  "mark": {
+    "type": "line",
+    "point": true,
+    "strokeWidth": 2.5
+  },
+  "encoding": {
+    "x": {
+      "field": "step",
+      "type": "quantitative",
+      "title": "Step",
+      "scale": {
+        "domain": [
+          0,
+          100.0
+        ]
+      }
+    },
+    "y": {
+      "field": "accuracy",
+      "type": "quantitative",
+      "title": "Accuracy"
+    },
+    "color": {
+      "field": "type",
+      "type": "nominal",
+      "title": "Type",
+      "scale": {
+        "domain": [
+          "Train",
+          "Val"
+        ],
+        "range": [
+          "#2E86AB",
+          "#E63946"
+        ]
+      },
+      "legend": {
+        "orient": "bottom-right"
+      }
+    }
+  }
+}

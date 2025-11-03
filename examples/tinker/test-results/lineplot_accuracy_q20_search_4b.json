@@ -1,0 +1,206 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "description": "Training and Val Accuracy - Tinker Qwen3-4B + Tool",
+  "width": 600,
+  "height": 400,
+  "config": {
+    "axis": {
+      "labelFontSize": 14,
+      "titleFontSize": 16,
+      "titleFontWeight": "normal"
+    },
+    "legend": {
+      "labelFontSize": 14,
+      "titleFontSize": 14,
+      "fillColor": "white",
+      "strokeColor": "#ccc",
+      "padding": 10,
+      "cornerRadius": 5
+    }
+  },
+  "data": {
+    "values": [
+      {
+        "step": 0,
+        "accuracy": 0.53125,
+        "type": "Train"
+      },
+      {
+        "step": 0,
+        "accuracy": 0.375,
+        "type": "Val"
+      },
+      {
+        "step": 1,
+        "accuracy": 0.5234375,
+        "type": "Train"
+      },
+      {
+        "step": 2,
+        "accuracy": 0.5859375,
+        "type": "Train"
+      },
+      {
+        "step": 3,
+        "accuracy": 0.5546875,
+        "type": "Train"
+      },
+      {
+        "step": 4,
+        "accuracy": 0.5546875,
+        "type": "Train"
+      },
+      {
+        "step": 4,
+        "accuracy": 0.45,
+        "type": "Val"
+      },
+      {
+        "step": 5,
+        "accuracy": 0.44921875,
+        "type": "Train"
+      },
+      {
+        "step": 6,
+        "accuracy": 0.5625,
+        "type": "Train"
+      },
+      {
+        "step": 7,
+        "accuracy": 0.4765625,
+        "type": "Train"
+      },
+      {
+        "step": 8,
+        "accuracy": 0.48046875,
+        "type": "Train"
+      },
+      {
+        "step": 8,
+        "accuracy": 0.4,
+        "type": "Val"
+      },
+      {
+        "step": 9,
+        "accuracy": 0.39453125,
+        "type": "Train"
+      },
+      {
+        "step": 10,
+        "accuracy": 0.34765625,
+        "type": "Train"
+      },
+      {
+        "step": 11,
+        "accuracy": 0.52734375,
+        "type": "Train"
+      },
+      {
+        "step": 12,
+        "accuracy": 0.5390625,
+        "type": "Train"
+      },
+      {
+        "step": 12,
+        "accuracy": 0.375,
+        "type": "Val"
+      },
+      {
+        "step": 13,
+        "accuracy": 0.65234375,
+        "type": "Train"
+      },
+      {
+        "step": 14,
+        "accuracy": 0.578125,
+        "type": "Train"
+      },
+      {
+        "step": 15,
+        "accuracy": 0.47265625,
+        "type": "Train"
+      },
+      {
+        "step": 16,
+        "accuracy": 0.54296875,
+        "type": "Train"
+      },
+      {
+        "step": 16,
+        "accuracy": 0.45,
+        "type": "Val"
+      },
+      {
+        "step": 17,
+        "accuracy": 0.47265625,
+        "type": "Train"
+      },
+      {
+        "step": 18,
+        "accuracy": 0.22265625,
+        "type": "Train"
+      },
+      {
+        "step": 19,
+        "accuracy": 0.08203125,
+        "type": "Train"
+      },
+      {
+        "step": 20,
+        "accuracy": 0.27734375,
+        "type": "Train"
+      },
+      {
+        "step": 20,
+        "accuracy": 0.2,
+        "type": "Val"
+      },
+      {
+        "step": 21,
+        "accuracy": 0.1328125,
+        "type": "Train"
+      }
+    ]
+  },
+  "mark": {
+    "type": "line",
+    "point": true,
+    "strokeWidth": 2.5
+  },
+  "encoding": {
+    "x": {
+      "field": "step",
+      "type": "quantitative",
+      "title": "Step",
+      "scale": {
+        "domain": [
+          0,
+          21
+        ]
+      }
+    },
+    "y": {
+      "field": "accuracy",
+      "type": "quantitative",
+      "title": "Accuracy"
+    },
+    "color": {
+      "field": "type",
+      "type": "nominal",
+      "title": "Type",
+      "scale": {
+        "domain": [
+          "Train",
+          "Val"
+        ],
+        "range": [
+          "#2E86AB",
+          "#E63946"
+        ]
+      },
+      "legend": {
+        "orient": "bottom-left"
+      }
+    }
+  }
+}

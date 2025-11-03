@@ -1,0 +1,342 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "description": "Val Accuracy vs Cost",
+  "width": 600,
+  "height": 400,
+  "config": {
+    "axis": {
+      "labelFontSize": 14,
+      "titleFontSize": 16,
+      "titleFontWeight": "normal"
+    },
+    "legend": {
+      "labelFontSize": 14,
+      "titleFontSize": 14,
+      "fillColor": "white",
+      "strokeColor": "#ccc",
+      "padding": 10,
+      "cornerRadius": 5
+    }
+  },
+  "data": {
+    "values": [
+      {
+        "cost": 3.7392773500000005,
+        "val_accuracy": 0.075,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "cost": 14.95379565,
+        "val_accuracy": 0.325,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "cost": 27.66787565,
+        "val_accuracy": 0.45,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "cost": 47.911811650000004,
+        "val_accuracy": 0.475,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "cost": 65.1157225,
+        "val_accuracy": 0.5,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "cost": 81.66279970000001,
+        "val_accuracy": 0.5,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "cost": 101.13140965000001,
+        "val_accuracy": 0.525,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "cost": 116.8564511,
+        "val_accuracy": 0.525,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "cost": 135.12867545,
+        "val_accuracy": 0.6,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "cost": 153.6816058,
+        "val_accuracy": 0.525,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "cost": 167.44704445,
+        "val_accuracy": 0.475,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "cost": 181.8056233,
+        "val_accuracy": 0.55,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "cost": 198.6999795,
+        "val_accuracy": 0.55,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "cost": 227.40255685000002,
+        "val_accuracy": 0.6,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "cost": 251.62529285000002,
+        "val_accuracy": 0.5,
+        "configuration": "Tinker Qwen3-4B"
+      },
+      {
+        "cost": 5.624407739999999,
+        "val_accuracy": 0.45,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "cost": 23.97244242,
+        "val_accuracy": 0.55,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "cost": 42.03107424,
+        "val_accuracy": 0.55,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "cost": 59.24323644,
+        "val_accuracy": 0.35,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "cost": 74.73064284,
+        "val_accuracy": 0.425,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "cost": 94.90378338,
+        "val_accuracy": 0.65,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "cost": 110.74922045999999,
+        "val_accuracy": 0.375,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "cost": 124.05859518,
+        "val_accuracy": 0.65,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "cost": 139.97157606000002,
+        "val_accuracy": 0.475,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "cost": 154.39442820000002,
+        "val_accuracy": 0.55,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "cost": 168.87388362000002,
+        "val_accuracy": 0.575,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "cost": 184.0533441,
+        "val_accuracy": 0.45,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "cost": 201.06419861999998,
+        "val_accuracy": 0.475,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "cost": 218.93213687999997,
+        "val_accuracy": 0.4,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "cost": 235.73605745999998,
+        "val_accuracy": 0.45,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "cost": 252.83231526,
+        "val_accuracy": 0.375,
+        "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "cost": 4.770676390511556,
+        "val_accuracy": 0.175,
+        "configuration": "VERL Qwen2.5-3B"
+      },
+      {
+        "cost": 9.587738320584943,
+        "val_accuracy": 0.2,
+        "configuration": "VERL Qwen2.5-3B"
+      },
+      {
+        "cost": 14.620960502684383,
+        "val_accuracy": 0.2,
+        "configuration": "VERL Qwen2.5-3B"
+      },
+      {
+        "cost": 19.098718912799843,
+        "val_accuracy": 0.225,
+        "configuration": "VERL Qwen2.5-3B"
+      },
+      {
+        "cost": 24.147201265893468,
+        "val_accuracy": 0.3,
+        "configuration": "VERL Qwen2.5-3B"
+      },
+      {
+        "cost": 28.66900346650494,
+        "val_accuracy": 0.225,
+        "configuration": "VERL Qwen2.5-3B"
+      },
+      {
+        "cost": 33.47634962459037,
+        "val_accuracy": 0.3,
+        "configuration": "VERL Qwen2.5-3B"
+      },
+      {
+        "cost": 38.46955601493755,
+        "val_accuracy": 0.325,
+        "configuration": "VERL Qwen2.5-3B"
+      },
+      {
+        "cost": 42.84779342914499,
+        "val_accuracy": 0.35,
+        "configuration": "VERL Qwen2.5-3B"
+      },
+      {
+        "cost": 47.15873886757922,
+        "val_accuracy": 0.375,
+        "configuration": "VERL Qwen2.5-3B"
+      },
+      {
+        "cost": 51.041183419879324,
+        "val_accuracy": 0.325,
+        "configuration": "VERL Qwen2.5-3B"
+      },
+      {
+        "cost": 55.261045190994224,
+        "val_accuracy": 0.45,
+        "configuration": "VERL Qwen2.5-3B"
+      },
+      {
+        "cost": 59.18169967970278,
+        "val_accuracy": 0.375,
+        "configuration": "VERL Qwen2.5-3B"
+      },
+      {
+        "cost": 63.30254289794692,
+        "val_accuracy": 0.35,
+        "configuration": "VERL Qwen2.5-3B"
+      },
+      {
+        "cost": 68.08947399764628,
+        "val_accuracy": 0.325,
+        "configuration": "VERL Qwen2.5-3B"
+      },
+      {
+        "cost": 72.40797675581084,
+        "val_accuracy": 0.45,
+        "configuration": "VERL Qwen2.5-3B"
+      },
+      {
+        "cost": 76.53497794975237,
+        "val_accuracy": 0.425,
+        "configuration": "VERL Qwen2.5-3B"
+      },
+      {
+        "cost": 81.40697471974832,
+        "val_accuracy": 0.275,
+        "configuration": "VERL Qwen2.5-3B"
+      },
+      {
+        "cost": 85.61240914113371,
+        "val_accuracy": 0.325,
+        "configuration": "VERL Qwen2.5-3B"
+      },
+      {
+        "cost": 89.89745430964997,
+        "val_accuracy": 0.3,
+        "configuration": "VERL Qwen2.5-3B"
+      },
+      {
+        "cost": 94.20346553989157,
+        "val_accuracy": 0.4,
+        "configuration": "VERL Qwen2.5-3B"
+      },
+      {
+        "cost": 98.52909191982053,
+        "val_accuracy": 0.325,
+        "configuration": "VERL Qwen2.5-3B"
+      },
+      {
+        "cost": 103.0916357339543,
+        "val_accuracy": 0.425,
+        "configuration": "VERL Qwen2.5-3B"
+      },
+      {
+        "cost": 107.82360165101095,
+        "val_accuracy": 0.475,
+        "configuration": "VERL Qwen2.5-3B"
+      },
+      {
+        "cost": 112.76253944943569,
+        "val_accuracy": 0.425,
+        "configuration": "VERL Qwen2.5-3B"
+      }
+    ]
+  },
+  "mark": {
+    "type": "line",
+    "point": true,
+    "strokeWidth": 2.5
+  },
+  "encoding": {
+    "x": {
+      "field": "cost",
+      "type": "quantitative",
+      "title": "Cost ($)"
+    },
+    "y": {
+      "field": "val_accuracy",
+      "type": "quantitative",
+      "title": "Val Accuracy"
+    },
+    "color": {
+      "field": "configuration",
+      "type": "nominal",
+      "title": "Configuration",
+      "scale": {
+        "domain": [
+          "Tinker Qwen3-4B",
+          "Tinker Qwen3-30B",
+          "VERL Qwen2.5-3B"
+        ],
+        "range": [
+          "#2E86AB",
+          "#E63946",
+          "#06A77D"
+        ]
+      },
+      "legend": {
+        "orient": "bottom-right"
+      }
+    }
+  }
+}

@@ -1,0 +1,441 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "description": "Training and Val Accuracy - Tinker Qwen3-4B",
+  "width": 600,
+  "height": 400,
+  "config": {
+    "axis": {
+      "labelFontSize": 14,
+      "titleFontSize": 16,
+      "titleFontWeight": "normal"
+    },
+    "legend": {
+      "labelFontSize": 14,
+      "titleFontSize": 14,
+      "fillColor": "white",
+      "strokeColor": "#ccc",
+      "padding": 10,
+      "cornerRadius": 5
+    }
+  },
+  "data": {
+    "values": [
+      {
+        "step": 0,
+        "accuracy": 0.16015625,
+        "type": "Train"
+      },
+      {
+        "step": 0,
+        "accuracy": 0.075,
+        "type": "Val"
+      },
+      {
+        "step": 1,
+        "accuracy": 0.4140625,
+        "type": "Train"
+      },
+      {
+        "step": 2,
+        "accuracy": 0.5859375,
+        "type": "Train"
+      },
+      {
+        "step": 3,
+        "accuracy": 0.5234375,
+        "type": "Train"
+      },
+      {
+        "step": 4,
+        "accuracy": 0.48828125,
+        "type": "Train"
+      },
+      {
+        "step": 4,
+        "accuracy": 0.325,
+        "type": "Val"
+      },
+      {
+        "step": 5,
+        "accuracy": 0.359375,
+        "type": "Train"
+      },
+      {
+        "step": 6,
+        "accuracy": 0.4140625,
+        "type": "Train"
+      },
+      {
+        "step": 7,
+        "accuracy": 0.4765625,
+        "type": "Train"
+      },
+      {
+        "step": 8,
+        "accuracy": 0.33984375,
+        "type": "Train"
+      },
+      {
+        "step": 8,
+        "accuracy": 0.45,
+        "type": "Val"
+      },
+      {
+        "step": 9,
+        "accuracy": 0.40625,
+        "type": "Train"
+      },
+      {
+        "step": 10,
+        "accuracy": 0.41796875,
+        "type": "Train"
+      },
+      {
+        "step": 11,
+        "accuracy": 0.5234375,
+        "type": "Train"
+      },
+      {
+        "step": 12,
+        "accuracy": 0.66015625,
+        "type": "Train"
+      },
+      {
+        "step": 12,
+        "accuracy": 0.475,
+        "type": "Val"
+      },
+      {
+        "step": 13,
+        "accuracy": 0.640625,
+        "type": "Train"
+      },
+      {
+        "step": 14,
+        "accuracy": 0.5703125,
+        "type": "Train"
+      },
+      {
+        "step": 15,
+        "accuracy": 0.64453125,
+        "type": "Train"
+      },
+      {
+        "step": 16,
+        "accuracy": 0.62109375,
+        "type": "Train"
+      },
+      {
+        "step": 16,
+        "accuracy": 0.5,
+        "type": "Val"
+      },
+      {
+        "step": 17,
+        "accuracy": 0.6484375,
+        "type": "Train"
+      },
+      {
+        "step": 18,
+        "accuracy": 0.578125,
+        "type": "Train"
+      },
+      {
+        "step": 19,
+        "accuracy": 0.5078125,
+        "type": "Train"
+      },
+      {
+        "step": 20,
+        "accuracy": 0.65625,
+        "type": "Train"
+      },
+      {
+        "step": 20,
+        "accuracy": 0.5,
+        "type": "Val"
+      },
+      {
+        "step": 21,
+        "accuracy": 0.53515625,
+        "type": "Train"
+      },
+      {
+        "step": 22,
+        "accuracy": 0.69140625,
+        "type": "Train"
+      },
+      {
+        "step": 23,
+        "accuracy": 0.6328125,
+        "type": "Train"
+      },
+      {
+        "step": 24,
+        "accuracy": 0.4765625,
+        "type": "Train"
+      },
+      {
+        "step": 24,
+        "accuracy": 0.525,
+        "type": "Val"
+      },
+      {
+        "step": 25,
+        "accuracy": 0.7734375,
+        "type": "Train"
+      },
+      {
+        "step": 26,
+        "accuracy": 0.56640625,
+        "type": "Train"
+      },
+      {
+        "step": 27,
+        "accuracy": 0.53125,
+        "type": "Train"
+      },
+      {
+        "step": 28,
+        "accuracy": 0.625,
+        "type": "Train"
+      },
+      {
+        "step": 28,
+        "accuracy": 0.525,
+        "type": "Val"
+      },
+      {
+        "step": 29,
+        "accuracy": 0.53515625,
+        "type": "Train"
+      },
+      {
+        "step": 30,
+        "accuracy": 0.6328125,
+        "type": "Train"
+      },
+      {
+        "step": 31,
+        "accuracy": 0.5234375,
+        "type": "Train"
+      },
+      {
+        "step": 32,
+        "accuracy": 0.58203125,
+        "type": "Train"
+      },
+      {
+        "step": 32,
+        "accuracy": 0.6,
+        "type": "Val"
+      },
+      {
+        "step": 33,
+        "accuracy": 0.5625,
+        "type": "Train"
+      },
+      {
+        "step": 34,
+        "accuracy": 0.66015625,
+        "type": "Train"
+      },
+      {
+        "step": 35,
+        "accuracy": 0.64453125,
+        "type": "Train"
+      },
+      {
+        "step": 36,
+        "accuracy": 0.75,
+        "type": "Train"
+      },
+      {
+        "step": 36,
+        "accuracy": 0.525,
+        "type": "Val"
+      },
+      {
+        "step": 37,
+        "accuracy": 0.63671875,
+        "type": "Train"
+      },
+      {
+        "step": 38,
+        "accuracy": 0.671875,
+        "type": "Train"
+      },
+      {
+        "step": 39,
+        "accuracy": 0.5859375,
+        "type": "Train"
+      },
+      {
+        "step": 40,
+        "accuracy": 0.671875,
+        "type": "Train"
+      },
+      {
+        "step": 40,
+        "accuracy": 0.475,
+        "type": "Val"
+      },
+      {
+        "step": 41,
+        "accuracy": 0.70703125,
+        "type": "Train"
+      },
+      {
+        "step": 42,
+        "accuracy": 0.67578125,
+        "type": "Train"
+      },
+      {
+        "step": 43,
+        "accuracy": 0.61328125,
+        "type": "Train"
+      },
+      {
+        "step": 44,
+        "accuracy": 0.54296875,
+        "type": "Train"
+      },
+      {
+        "step": 44,
+        "accuracy": 0.55,
+        "type": "Val"
+      },
+      {
+        "step": 45,
+        "accuracy": 0.546875,
+        "type": "Train"
+      },
+      {
+        "step": 46,
+        "accuracy": 0.80859375,
+        "type": "Train"
+      },
+      {
+        "step": 47,
+        "accuracy": 0.63671875,
+        "type": "Train"
+      },
+      {
+        "step": 48,
+        "accuracy": 0.7421875,
+        "type": "Train"
+      },
+      {
+        "step": 48,
+        "accuracy": 0.55,
+        "type": "Val"
+      },
+      {
+        "step": 49,
+        "accuracy": 0.66015625,
+        "type": "Train"
+      },
+      {
+        "step": 50,
+        "accuracy": 0.71484375,
+        "type": "Train"
+      },
+      {
+        "step": 51,
+        "accuracy": 0.77734375,
+        "type": "Train"
+      },
+      {
+        "step": 52,
+        "accuracy": 0.70703125,
+        "type": "Train"
+      },
+      {
+        "step": 52,
+        "accuracy": 0.6,
+        "type": "Val"
+      },
+      {
+        "step": 53,
+        "accuracy": 0.65234375,
+        "type": "Train"
+      },
+      {
+        "step": 54,
+        "accuracy": 0.65234375,
+        "type": "Train"
+      },
+      {
+        "step": 55,
+        "accuracy": 0.5703125,
+        "type": "Train"
+      },
+      {
+        "step": 56,
+        "accuracy": 0.8046875,
+        "type": "Train"
+      },
+      {
+        "step": 56,
+        "accuracy": 0.5,
+        "type": "Val"
+      },
+      {
+        "step": 57,
+        "accuracy": 0.66796875,
+        "type": "Train"
+      },
+      {
+        "step": 58,
+        "accuracy": 0.8671875,
+        "type": "Train"
+      },
+      {
+        "step": 59,
+        "accuracy": 0.78515625,
+        "type": "Train"
+      }
+    ]
+  },
+  "mark": {
+    "type": "line",
+    "point": true,
+    "strokeWidth": 2.5
+  },
+  "encoding": {
+    "x": {
+      "field": "step",
+      "type": "quantitative",
+      "title": "Step",
+      "scale": {
+        "domain": [
+          0,
+          59
+        ]
+      }
+    },
+    "y": {
+      "field": "accuracy",
+      "type": "quantitative",
+      "title": "Accuracy"
+    },
+    "color": {
+      "field": "type",
+      "type": "nominal",
+      "title": "Type",
+      "scale": {
+        "domain": [
+          "Train",
+          "Val"
+        ],
+        "range": [
+          "#2E86AB",
+          "#E63946"
+        ]
+      },
+      "legend": {
+        "orient": "bottom-right"
+      }
+    }
+  }
+}
