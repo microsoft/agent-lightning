@@ -147,7 +147,7 @@ dotenv run python q20_train.py algo --model qwen30b --search --port 4747
 dotenv run python q20_train.py runner --port 4747 --n-runners 4
 ```
 
-`--model` selects the Tinker-hosted checkpoint (`qwen4b` or `qwen30b`). Add `--search` to enable the mocked search tool, which relies on the helper LLM defined in the environment variables (the example uses an LLM-powered search simulation instead of a real API). Training metrics and checkpoints are recorded under `examples/tinker/logs/q20_*`.
+`--model` selects the Tinker-hosted checkpoint (`qwen4b` or `qwen30b`). Add `--search` to enable the mocked search tool, which relies on the helper LLM defined in the environment variables (the example uses an LLM-powered search simulation instead of a real API). Training metrics and checkpoints are recorded under `examples/tinker/logs/q20_*`. You can also use `verl` as a substitute for the `algo` command when Tinker service is not available.
 
 You can run additional runner processes at any time; they register with the store and start dequeuing tasks immediately.
 
