@@ -211,6 +211,7 @@ def algo_verl(search: bool, model: Literal["qwen25", "qwen3"], port: int):
 
     Args:
         search: Whether to enable the search tool for the player.
+        model: Specifies the model variant ('qwen25' or 'qwen3').
         port: Port where the Agent-lightning store is running.
     """
     store = agl.LightningStoreClient(f"http://localhost:{port}")
