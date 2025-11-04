@@ -6,20 +6,21 @@ import asyncio
 import logging
 import os
 import threading
-from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any, Awaitable, Iterator, List, Optional
+from contextlib import asynccontextmanager, contextmanager
+from typing import TYPE_CHECKING, Any, AsyncGenerator, Awaitable, Iterator, List, Optional
 
 import agentops
 import agentops.sdk.core
 from agentops.sdk.core import TracingCore
 from agentops.sdk.processors import SpanProcessor
+from opentelemetry.instrumentation.utils import suppress_instrumentation
 from opentelemetry.sdk.trace import ReadableSpan
+from opentelemetry.trace.status import StatusCode
 
 from agentlightning.instrumentation import instrument_all, uninstrument_all
-from agentlightning.instrumentation.agentops import AgentOpsServerManager
 from agentlightning.store.base import LightningStore
 
-from .base import BaseTracer
+from .base import Tracer
 
 if TYPE_CHECKING:
     from agentops.integration.callbacks.langchain import LangchainCallbackHandler
@@ -28,7 +29,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class AgentOpsTracer(BaseTracer):
+class AgentOpsTracer(Tracer):
     """Traces agent execution using AgentOps.
 
     This tracer provides functionality to capture execution details using the
@@ -55,45 +56,10 @@ class AgentOpsTracer(BaseTracer):
         self.instrument_managed = instrument_managed
         self.daemon = daemon
 
-        self._agentops_server_manager = AgentOpsServerManager(self.daemon)
-        self._agentops_server_port_val: Optional[int] = None
-
         if not self.agentops_managed:
             logger.warning("agentops_managed=False. You are responsible for AgentOps setup.")
         if not self.instrument_managed:
             logger.warning("instrument_managed=False. You are responsible for all instrumentation.")
-
-    def __getstate__(self):
-        state = self.__dict__.copy()
-        state["_agentops_server_manager"] = None  # Exclude the unpicklable server manager
-        # _agentops_server_port_val (int) is inherently picklable and will be included.
-        logger.debug(f"Getting state for pickling Trainer (PID {os.getpid()}). _agentops_server_manager excluded.")
-        return state
-
-    def __setstate__(self, state: Any):
-        self.__dict__.update(state)
-        # In child process, self._agentops_server_manager will be None.
-        logger.debug(f"Setting state for unpickled Trainer (PID {os.getpid()}). _agentops_server_manager is None.")
-
-    def init(self, *args: Any, **kwargs: Any):
-        if self.agentops_managed and self._agentops_server_manager:
-            self._agentops_server_manager.start()
-            self._agentops_server_port_val = self._agentops_server_manager.get_port()
-            if self._agentops_server_port_val is None:
-                if (
-                    self._agentops_server_manager.server_process is not None
-                    and self._agentops_server_manager.server_process.is_alive()
-                ):
-                    raise RuntimeError("AgentOps server started but port is None. Check server manager logic.")
-                elif (
-                    self._agentops_server_port_val is None and self._agentops_server_manager.server_process is None
-                ):  # Server failed to start
-                    raise RuntimeError("AgentOps server manager indicates server is not running and port is None.")
-
-    def teardown(self):
-        if self.agentops_managed:
-            self._agentops_server_manager.stop()
-            logger.info("AgentOps server stopped.")
 
     def instrument(self, worker_id: int):
         instrument_all()
@@ -110,24 +76,9 @@ class AgentOpsTracer(BaseTracer):
             logger.info(f"[Worker {worker_id}] Instrumentation applied.")
 
         if self.agentops_managed:
-            if self._agentops_server_port_val:  # Use the stored, picklable port value
-                base_url = f"http://localhost:{self._agentops_server_port_val}"
-                env_vars_to_set = {
-                    "AGENTOPS_API_KEY": "dummy",
-                    "AGENTOPS_API_ENDPOINT": base_url,
-                    "AGENTOPS_APP_URL": f"{base_url}/notavailable",
-                    "AGENTOPS_EXPORTER_ENDPOINT": f"{base_url}/traces",
-                }
-                for key, value in env_vars_to_set.items():
-                    os.environ[key] = value
-                    logger.info(f"[Worker {worker_id}] Env var set: {key}={value}")
-            else:
-                logger.warning(
-                    f"[Worker {worker_id}] AgentOps managed, but local server port is not available. Client may not connect as expected."
-                )
-
+            os.environ.setdefault("AGENTOPS_API_KEY", "dummy")
             if not agentops.get_client().initialized:
-                agentops.init()  # type: ignore
+                agentops.init(auto_start_session=False)  # type: ignore
                 logger.info(f"[Worker {worker_id}] AgentOps client initialized.")
             else:
                 logger.warning(f"[Worker {worker_id}] AgentOps client was already initialized.")
@@ -152,15 +103,15 @@ class AgentOpsTracer(BaseTracer):
             self.uninstrument(worker_id)
             logger.info(f"[Worker {worker_id}] Instrumentation removed.")
 
-    @contextmanager
-    def trace_context(
+    @asynccontextmanager
+    async def trace_context(
         self,
         name: Optional[str] = None,
         *,
         store: Optional[LightningStore] = None,
         rollout_id: Optional[str] = None,
         attempt_id: Optional[str] = None,
-    ) -> Iterator[LightningSpanProcessor]:
+    ) -> AsyncGenerator[LightningSpanProcessor, None]:
         """
         Starts a new tracing context. This should be used as a context manager.
 
@@ -171,20 +122,50 @@ class AgentOpsTracer(BaseTracer):
             attempt_id: Optional attempt ID to add the spans to.
 
         Yields:
-            The LightningSpanProcessor instance to collect spans.
+            The [`LightningSpanProcessor`][agentlightning.tracer.agentops.LightningSpanProcessor] instance to collect spans.
         """
+        with self._trace_context_sync(
+            name=name, store=store, rollout_id=rollout_id, attempt_id=attempt_id
+        ) as processor:
+            yield processor
+
+    @contextmanager
+    def _trace_context_sync(
+        self,
+        name: Optional[str] = None,
+        *,
+        store: Optional[LightningStore] = None,
+        rollout_id: Optional[str] = None,
+        attempt_id: Optional[str] = None,
+    ) -> Iterator[LightningSpanProcessor]:
+        """Implementation of `trace_context` for synchronous execution."""
         if not self._lightning_span_processor:
             raise RuntimeError("LightningSpanProcessor is not initialized. Call init_worker() first.")
 
-        if store is not None and rollout_id is not None and attempt_id is not None:
-            ctx = self._lightning_span_processor.with_context(store=store, rollout_id=rollout_id, attempt_id=attempt_id)
-            with ctx as processor:
-                yield processor
-        elif store is None and rollout_id is None and attempt_id is None:
-            with self._lightning_span_processor:
-                yield self._lightning_span_processor
-        else:
-            raise ValueError("store, rollout_id, and attempt_id must be either all provided or all None")
+        kwargs: dict[str, Any] = {}
+        if name is not None:
+            kwargs["trace_name"] = name
+        elif rollout_id is not None:
+            kwargs["trace_name"] = rollout_id
+        trace = agentops.start_trace(**kwargs)
+        status = StatusCode.OK  # type: ignore
+        try:
+            if store is not None and rollout_id is not None and attempt_id is not None:
+                ctx = self._lightning_span_processor.with_context(
+                    store=store, rollout_id=rollout_id, attempt_id=attempt_id
+                )
+                with ctx as processor:
+                    yield processor
+            elif store is None and rollout_id is None and attempt_id is None:
+                with self._lightning_span_processor:
+                    yield self._lightning_span_processor
+            else:
+                raise ValueError("store, rollout_id, and attempt_id must be either all provided or all None")
+        except Exception as e:
+            status = StatusCode.ERROR  # type: ignore
+            logger.error(f"Trace failed for rollout_id={rollout_id}, attempt_id={attempt_id}, error={e}")
+        finally:
+            agentops.end_trace(trace, end_state=status)  # type: ignore
 
     def get_last_trace(self) -> List[ReadableSpan]:
         """
@@ -197,7 +178,7 @@ class AgentOpsTracer(BaseTracer):
             raise RuntimeError("LightningSpanProcessor is not initialized. Call init_worker() first.")
         return self._lightning_span_processor.spans()
 
-    def get_langchain_callback_handler(self, tags: List[str] | None = None) -> LangchainCallbackHandler:
+    def get_langchain_handler(self, tags: List[str] | None = None) -> LangchainCallbackHandler:
         """
         Get the Langchain callback handler for integrating with Langchain.
 
@@ -221,8 +202,14 @@ class AgentOpsTracer(BaseTracer):
             )
         return LangchainCallbackHandler(api_key=api_key, tags=tags)
 
+    get_langchain_callback_handler = get_langchain_handler  # alias
+
 
 class LightningSpanProcessor(SpanProcessor):
+    """Span processor that subclasses OpenTelemetry's `SpanProcessor` and adds support to dump traces
+    to a [`LightningStore`][agentlightning.LightningStore].
+    """
+
     def __init__(self):
         self._spans: List[ReadableSpan] = []
 
@@ -261,6 +248,32 @@ class LightningSpanProcessor(SpanProcessor):
         # submit to the dedicated loop and wait synchronously
         if self._loop is None:
             raise RuntimeError("Loop is not initialized. This should not happen.")
+
+        # If already on the exporter loop thread, schedule and return immediately.
+        # ---------------------------------------------------------------------------
+        # WHY THIS CONDITIONAL EXISTS:
+        # In rare cases, span.end() is triggered from a LangchainCallbackHandler.__del__
+        # (or another finalizer) while the Python garbage collector is running on the
+        # *same thread* that owns our exporter event loop ("otel-loop").
+        #
+        # When that happens, on_end() executes on the exporter loop thread itself.
+        # If we were to call `asyncio.run_coroutine_threadsafe(...).result()` here,
+        # it would deadlock immediately — because the loop cannot both wait on and run
+        # the same coroutine. The Future stays pending forever and the loop stops
+        # processing scheduled callbacks.
+        #
+        # To avoid that self-deadlock, we detect when on_end() runs on the exporter
+        # loop thread. If so, we *schedule* the coroutine on the loop (fire-and-forget)
+        # instead of blocking with .result().
+        #
+        # This situation can occur because Python calls __del__ in whatever thread
+        # releases the last reference, which can easily be our loop thread if the
+        # object is dereferenced during loop._run_once().
+        # ---------------------------------------------------------------------------
+        if threading.current_thread() is self._loop_thread:
+            self._loop.call_soon_threadsafe(asyncio.create_task, coro)  # type: ignore
+            return None
+
         fut = asyncio.run_coroutine_threadsafe(coro, self._loop)  # type: ignore
         return fut.result(timeout=timeout)  # raises on error  # type: ignore
 
@@ -313,10 +326,11 @@ class LightningSpanProcessor(SpanProcessor):
         if self._store and self._rollout_id and self._attempt_id:
             try:
                 # Submit add_otel_span to the event loop and wait for it to complete
-                self._await_in_loop(
-                    self._store.add_otel_span(self._rollout_id, self._attempt_id, span),
-                    timeout=5.0,
-                )
+                with suppress_instrumentation():
+                    self._await_in_loop(
+                        self._store.add_otel_span(self._rollout_id, self._attempt_id, span),
+                        timeout=60.0,
+                    )
             except Exception:
                 # log; on_end MUST NOT raise
                 logger.exception(f"Error adding span to store: {span.name}")

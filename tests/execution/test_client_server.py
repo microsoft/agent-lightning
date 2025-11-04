@@ -18,7 +18,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 import pytest
 
 from agentlightning.execution.client_server import ClientServerExecutionStrategy
-from agentlightning.execution.events import Event
+from agentlightning.execution.events import ExecutionEvent
 from agentlightning.store.base import LightningStore
 from agentlightning.store.client_server import LightningStoreClient
 from agentlightning.store.memory import InMemoryLightningStore
@@ -40,8 +40,8 @@ def _free_port() -> int:
 RecordedCall = Tuple[str, Tuple[Any, ...], Dict[str, Any]]
 
 
-class DummyEvt(Event):
-    """Simple in-process Event-like object required by the strategy."""
+class DummyEvt(ExecutionEvent):
+    """Simple in-process ExecutionEvent-like object required by the strategy."""
 
     def __init__(self) -> None:
         self._flag: bool = False
@@ -73,6 +73,7 @@ def _clear_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("AGL_CURRENT_ROLE", raising=False)
     monkeypatch.delenv("AGL_SERVER_HOST", raising=False)
     monkeypatch.delenv("AGL_SERVER_PORT", raising=False)
+    monkeypatch.delenv("AGL_MANAGED_STORE", raising=False)
 
 
 def test_env_configuration(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -99,6 +100,7 @@ def test_env_defaults_when_unset(monkeypatch: pytest.MonkeyPatch) -> None:
     assert strat.server_host == "localhost"
     assert strat.server_port == 4747
     assert strat.main_process == "algorithm"
+    assert strat.managed_store is True
 
 
 def test_env_invalid_port(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -112,12 +114,178 @@ def test_env_invalid_port(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_env_missing_role(monkeypatch: pytest.MonkeyPatch) -> None:
     _clear_env(monkeypatch)
+    # When role is None and env var is not set, it defaults to "both"
+    # So this test no longer applies - it should succeed
+    strat = ClientServerExecutionStrategy()
+    assert strat.role == "both"
 
-    with pytest.raises(
-        ValueError,
-        match="role must be provided via argument or AGL_CURRENT_ROLE env var",
-    ):
+
+def test_env_managed_store(monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_env(monkeypatch)
+    monkeypatch.setenv("AGL_CURRENT_ROLE", "algorithm")
+    monkeypatch.setenv("AGL_MANAGED_STORE", "0")
+
+    strat = ClientServerExecutionStrategy()
+
+    assert strat.managed_store is False
+
+
+def test_explicit_managed_store_overrides_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_env(monkeypatch)
+    monkeypatch.setenv("AGL_MANAGED_STORE", "0")
+
+    strat = ClientServerExecutionStrategy(role="algorithm", managed_store=True)
+
+    assert strat.managed_store is True
+
+
+def test_env_managed_store_invalid(monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_env(monkeypatch)
+    monkeypatch.setenv("AGL_CURRENT_ROLE", "algorithm")
+    monkeypatch.setenv("AGL_MANAGED_STORE", "maybe")
+
+    with pytest.raises(ValueError, match="AGL_MANAGED_STORE must be one of"):
         ClientServerExecutionStrategy()
+
+
+# =========================
+# Managed store behaviour
+# =========================
+
+
+def test_execute_algorithm_managed_store_starts_server(
+    monkeypatch: pytest.MonkeyPatch, store: DummyLightningStore
+) -> None:
+    created: list["RecordingServer"] = []
+
+    class RecordingServer(LightningStore):  # type: ignore[misc]
+        def __init__(self, wrapped: LightningStore, host: str, port: int) -> None:
+            self.wrapped = wrapped
+            self.host = host
+            self.port = port
+            self.endpoint = f"http://{host}:{port}"
+            self.started = False
+            self.stopped = False
+            created.append(self)
+
+        async def start(self) -> None:
+            self.started = True
+
+        async def stop(self) -> None:
+            self.stopped = True
+
+    monkeypatch.setattr("agentlightning.execution.client_server.LightningStoreServer", RecordingServer)
+
+    strat = ClientServerExecutionStrategy(
+        role="algorithm",
+        managed_store=True,
+        server_host="127.0.0.1",
+        server_port=8123,
+    )
+
+    seen_store: list[LightningStore] = []
+
+    async def algo(store: LightningStore, event: ExecutionEvent) -> None:
+        seen_store.append(store)
+        event.set()
+
+    asyncio.run(strat._execute_algorithm(algo, store, DummyEvt()))  # pyright: ignore[reportPrivateUsage]
+
+    assert len(created) == 1
+    server = created[0]
+    assert server.wrapped is store
+    assert server.started is True
+    assert server.stopped is True
+    assert seen_store and isinstance(seen_store[0], RecordingServer)
+
+
+def test_execute_algorithm_unmanaged_uses_provided_store(
+    monkeypatch: pytest.MonkeyPatch, store: DummyLightningStore
+) -> None:
+    class ShouldNotBeCalled:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            raise AssertionError("Server wrapper should not be constructed when unmanaged")
+
+    monkeypatch.setattr("agentlightning.execution.client_server.LightningStoreServer", ShouldNotBeCalled)
+
+    strat = ClientServerExecutionStrategy(role="algorithm", managed_store=False)
+
+    seen: dict[str, LightningStore] = {}
+
+    async def algo(store: LightningStore, event: ExecutionEvent) -> None:
+        seen["store"] = store
+        event.set()
+
+    asyncio.run(strat._execute_algorithm(algo, store, DummyEvt()))  # pyright: ignore[reportPrivateUsage]
+
+    assert seen["store"] is store
+
+
+def test_execute_runner_managed_creates_and_closes_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    class RecordingClient(LightningStore):  # type: ignore[misc]
+        def __init__(self, url: str) -> None:
+            self.url = url
+            self.closed = False
+
+        async def close(self) -> None:
+            self.closed = True
+
+    monkeypatch.setattr("agentlightning.execution.client_server.LightningStoreClient", RecordingClient)
+
+    strat = ClientServerExecutionStrategy(
+        role="runner",
+        managed_store=True,
+        server_host="localhost",
+        server_port=9001,
+    )
+
+    seen: dict[str, LightningStore] = {}
+
+    async def runner(store: LightningStore, worker_id: int, event: ExecutionEvent) -> None:
+        seen["store"] = store
+        event.set()
+
+    dummy_store = DummyLightningStore({})
+    asyncio.run(strat._execute_runner(runner, 0, dummy_store, DummyEvt()))  # pyright: ignore[reportPrivateUsage]
+
+    client = seen["store"]
+    assert isinstance(client, RecordingClient)
+    assert client.url == "http://localhost:9001"
+    assert client.closed is True
+
+
+def test_execute_runner_unmanaged_requires_store() -> None:
+    strat = ClientServerExecutionStrategy(role="runner", managed_store=False)
+
+    async def runner(store: LightningStore, worker_id: int, event: ExecutionEvent) -> None:
+        _ = (store, worker_id, event)
+
+    # When managed_store=False, a store must be provided via the store parameter
+    provided_store = DummyLightningStore({})
+    asyncio.run(strat._execute_runner(runner, 0, provided_store, DummyEvt()))  # pyright: ignore[reportPrivateUsage]
+
+
+def test_execute_runner_unmanaged_uses_provided_store() -> None:
+    strat = ClientServerExecutionStrategy(role="runner", managed_store=False)
+
+    class ProvidedStore(LightningStore):
+        def __init__(self) -> None:
+            self.close_calls = 0
+
+        async def close(self) -> None:
+            self.close_calls += 1
+
+    provided = ProvidedStore()
+    seen: dict[str, LightningStore] = {}
+
+    async def runner(store: LightningStore, worker_id: int, event: ExecutionEvent) -> None:
+        seen["store"] = store
+        event.set()
+
+    asyncio.run(strat._execute_runner(runner, 1, provided, DummyEvt()))  # pyright: ignore[reportPrivateUsage]
+
+    assert seen["store"] is provided
+    assert provided.close_calls == 0
 
 
 # =========================
@@ -125,32 +293,32 @@ def test_env_missing_role(monkeypatch: pytest.MonkeyPatch) -> None:
 # =========================
 
 
-async def _noop_algorithm(store: LightningStore, event: Event) -> None:
+async def _noop_algorithm(store: LightningStore, event: ExecutionEvent) -> None:
     _ = store  # explicitly acknowledge unused parameter
     await asyncio.sleep(0)
     assert not event.is_set()
 
 
-async def _algo_calls_store_enqueue(store: LightningStore, event: Event) -> None:
+async def _algo_calls_store_enqueue(store: LightningStore, event: ExecutionEvent) -> None:
     # Calls a delegated method on the server wrapper; real server is running.
     await store.enqueue_rollout(input={"x": 1})
     await asyncio.sleep(0)
     assert not event.is_set()
 
 
-async def _algo_sets_stop_delayed(store: LightningStore, event: Event, delay: float = 0.05) -> None:
+async def _algo_sets_stop_delayed(store: LightningStore, event: ExecutionEvent, delay: float = 0.05) -> None:
     _ = store
     await asyncio.sleep(delay)
     event.set()
 
 
-async def _raise_in_algorithm(store: LightningStore, event: Event) -> None:
+async def _raise_in_algorithm(store: LightningStore, event: ExecutionEvent) -> None:
     _ = store
     event.set()
     raise RuntimeError("algo boom")
 
 
-async def _kbint_in_algorithm(store: LightningStore, event: Event) -> None:
+async def _kbint_in_algorithm(store: LightningStore, event: ExecutionEvent) -> None:
     _ = store
     event.set()
     raise KeyboardInterrupt()
@@ -166,7 +334,7 @@ def _subprocess_algorithm_write_util(store: LightningStore) -> None:
     asyncio.run(do_work())
 
 
-async def _subprocess_algorithm(store: LightningStore, event: Event) -> None:
+async def _subprocess_algorithm(store: LightningStore, event: ExecutionEvent) -> None:
     """Algorithm that spawns a subprocess to write to the store."""
     # Spawn subprocess to write
     ctx = multiprocessing.get_context()
@@ -190,20 +358,22 @@ async def _subprocess_algorithm(store: LightningStore, event: Event) -> None:
     assert len(algo_rollouts) == 1, "Algorithm should see the write"
 
 
-async def _noop_runner(store: LightningStore, worker_id: int, event: Event) -> None:
+async def _noop_runner(store: LightningStore, worker_id: int, event: ExecutionEvent) -> None:
     _ = (store, worker_id)
     await asyncio.sleep(0)
     assert not event.is_set()
 
 
-async def _runner_wait_for_stop(store: LightningStore, worker_id: int, event: Event, timeout: float = 0.5) -> None:
+async def _runner_wait_for_stop(
+    store: LightningStore, worker_id: int, event: ExecutionEvent, timeout: float = 0.5
+) -> None:
     _ = (store, worker_id)
     t0: float = time.monotonic()
     while not event.is_set() and time.monotonic() - t0 < timeout:
         await asyncio.sleep(0.005)
 
 
-async def _runner_ignores_stop_forever(store: LightningStore, worker_id: int, event: Event) -> None:
+async def _runner_ignores_stop_forever(store: LightningStore, worker_id: int, event: ExecutionEvent) -> None:
     # Ignore signals to force escalation.
     _ = (store, worker_id)
     signal.signal(signal.SIGINT, signal.SIG_IGN)
@@ -212,19 +382,19 @@ async def _runner_ignores_stop_forever(store: LightningStore, worker_id: int, ev
         await asyncio.sleep(0.1)
 
 
-async def _raise_in_runner(store: LightningStore, worker_id: int, event: Event) -> None:
+async def _raise_in_runner(store: LightningStore, worker_id: int, event: ExecutionEvent) -> None:
     _ = (store, worker_id)
     event.set()
     raise RuntimeError("runner boom")
 
 
-async def _kbint_in_runner(store: LightningStore, worker_id: int, event: Event) -> None:
+async def _kbint_in_runner(store: LightningStore, worker_id: int, event: ExecutionEvent) -> None:
     _ = (store, worker_id)
     event.set()
     raise KeyboardInterrupt()
 
 
-async def _timeout_error_in_runner(store: LightningStore, worker_id: int, event: Event) -> None:
+async def _timeout_error_in_runner(store: LightningStore, worker_id: int, event: ExecutionEvent) -> None:
     # Provoke client's validation (pre-request), then raise TimeoutError.
     with pytest.raises(ValueError):
         await store.wait_for_rollouts(rollout_ids=["r1"], timeout=0.2)
@@ -233,7 +403,7 @@ async def _timeout_error_in_runner(store: LightningStore, worker_id: int, event:
     raise TimeoutError("runner timeout")
 
 
-async def _waiting_for_rollout_runner(store: LightningStore, worker_id: int, event: Event) -> None:
+async def _waiting_for_rollout_runner(store: LightningStore, worker_id: int, event: ExecutionEvent) -> None:
     """Runner that waits for algorithm signal then checks store."""
     # Wait for algorithm to finish writing
     t0 = time.monotonic()
@@ -560,8 +730,11 @@ def test_execute_runner_success_closes_client() -> None:
     orig_close: Callable[[LightningStoreClient], Any] = LightningStoreClient.close  # type: ignore[attr-defined]
     try:
         LightningStoreClient.close = patched_close  # type: ignore[assignment]
+        dummy_store = DummyLightningStore({})
         asyncio.run(
-            strat._execute_runner(_noop_runner, worker_id=0, stop_evt=DummyEvt())  # pyright: ignore[reportPrivateUsage]
+            strat._execute_runner(  # pyright: ignore[reportPrivateUsage]
+                _noop_runner, worker_id=0, store=dummy_store, stop_evt=DummyEvt()
+            )
         )
     finally:
         LightningStoreClient.close = orig_close  # type: ignore[assignment]
@@ -587,10 +760,11 @@ def test_execute_runner_exception_sets_stop_and_closes_client() -> None:
     evt: DummyEvt = DummyEvt()
     try:
         LightningStoreClient.close = patched_close  # type: ignore[assignment]
+        dummy_store = DummyLightningStore({})
         with pytest.raises(RuntimeError, match="runner boom"):
             asyncio.run(
                 strat._execute_runner(  # pyright: ignore[reportPrivateUsage]
-                    _raise_in_runner, worker_id=7, stop_evt=evt
+                    _raise_in_runner, worker_id=7, store=dummy_store, stop_evt=evt
                 )
             )
     finally:
@@ -610,9 +784,12 @@ def test_execute_runner_keyboardinterrupt_sets_stop_and_propagates() -> None:
         terminate_timeout=0.05,
     )
     evt: DummyEvt = DummyEvt()
+    dummy_store = DummyLightningStore({})
     with pytest.raises(KeyboardInterrupt):
         asyncio.run(
-            strat._execute_runner(_kbint_in_runner, worker_id=0, stop_evt=evt)  # pyright: ignore[reportPrivateUsage]
+            strat._execute_runner(  # pyright: ignore[reportPrivateUsage]
+                _kbint_in_runner, worker_id=0, store=dummy_store, stop_evt=evt
+            )
         )
     assert evt.is_set()
 
@@ -627,10 +804,11 @@ def test_execute_runner_distinguishes_timeout_error() -> None:
         terminate_timeout=0.05,
     )
     evt: DummyEvt = DummyEvt()
+    dummy_store = DummyLightningStore({})
     with pytest.raises(TimeoutError, match="runner timeout"):
         asyncio.run(
             strat._execute_runner(  # pyright: ignore[reportPrivateUsage]
-                _timeout_error_in_runner, worker_id=0, stop_evt=evt
+                _timeout_error_in_runner, worker_id=0, store=dummy_store, stop_evt=evt
             )
         )
     assert evt.is_set()
@@ -646,12 +824,13 @@ def test_spawn_runners_creates_processes_and_they_exit_on_event() -> None:
         terminate_timeout=0.05,
     )
     ctx = get_context()
-    stop_evt: Event = MpEvent()
+    stop_evt: ExecutionEvent = MpEvent()
 
     def runner_sync() -> None:
+        dummy_store = DummyLightningStore({})
         asyncio.run(
             strat._execute_runner(  # pyright: ignore[reportPrivateUsage]
-                _runner_wait_for_stop, worker_id=0, stop_evt=stop_evt
+                _runner_wait_for_stop, worker_id=0, store=dummy_store, stop_evt=stop_evt
             )
         )
 
@@ -684,7 +863,7 @@ def test_spawn_algorithm_process_creates_and_runs(store: LightningStore) -> None
         terminate_timeout=0.05,
     )
     ctx = get_context()
-    stop_evt: Event = MpEvent()
+    stop_evt: ExecutionEvent = MpEvent()
 
     p: Process = strat._spawn_algorithm_process(  # pyright: ignore[reportPrivateUsage]
         _noop_algorithm, store, stop_evt, ctx=ctx
@@ -764,7 +943,7 @@ def test_execute_both_main_algorithm_cooperative_shutdown(store: LightningStore)
     """
     port: int = _free_port()
 
-    async def algo(store: LightningStore, event: Event) -> None:
+    async def algo(store: LightningStore, event: ExecutionEvent) -> None:
         await _algo_sets_stop_delayed(store, event, delay=0.05)
 
     strat = ClientServerExecutionStrategy(
@@ -787,12 +966,12 @@ def test_execute_both_main_runner_debug_cooperative_shutdown(store: LightningSto
     """
     port: int = _free_port()
 
-    async def runner(store: LightningStore, worker_id: int, event: Event) -> None:
+    async def runner(store: LightningStore, worker_id: int, event: ExecutionEvent) -> None:
         _ = (store, worker_id)
         await asyncio.sleep(0.05)
         event.set()
 
-    async def algo(store: LightningStore, event: Event) -> None:
+    async def algo(store: LightningStore, event: ExecutionEvent) -> None:
         _ = store
         t0: float = time.monotonic()
         while not event.is_set() and time.monotonic() - t0 < 1.0:
@@ -921,12 +1100,12 @@ def test_execute_main_runner_waits_for_algorithm_completion(store: LightningStor
 
     try:
 
-        async def runner(store: LightningStore, worker_id: int, event: Event) -> None:
+        async def runner(store: LightningStore, worker_id: int, event: ExecutionEvent) -> None:
             _ = (store, worker_id)
             # Runner completes quickly
             await asyncio.sleep(0.01)
 
-        async def algo(store: LightningStore, event: Event) -> None:
+        async def algo(store: LightningStore, event: ExecutionEvent) -> None:
             _ = store
             # Algorithm takes longer and should complete fully
             await asyncio.sleep(0.5)
@@ -968,7 +1147,7 @@ def test_execute_both_main_algo_runner_ignores_stop(store: LightningStore) -> No
         terminate_timeout=0.05,
     )
 
-    async def algo(store: LightningStore, event: Event) -> None:
+    async def algo(store: LightningStore, event: ExecutionEvent) -> None:
         _ = store
         await asyncio.sleep(0.1)
 
@@ -1024,13 +1203,13 @@ def test_execute_main_runner_store_state_isolated_in_subprocess(store: DummyLigh
     """
     port: int = _free_port()
 
-    async def runner(store: LightningStore, worker_id: int, event: Event) -> None:
+    async def runner(store: LightningStore, worker_id: int, event: ExecutionEvent) -> None:
         _ = (store, worker_id)
         # Runner completes quickly
         await asyncio.sleep(0.05)
         event.set()
 
-    async def algo(store: LightningStore, event: Event) -> None:
+    async def algo(store: LightningStore, event: ExecutionEvent) -> None:
         # Algorithm modifies the store
         await store.enqueue_rollout(input={"x": 42})
         # Wait for runner to signal completion

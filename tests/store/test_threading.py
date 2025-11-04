@@ -1,23 +1,26 @@
 # Copyright (c) Microsoft. All rights reserved.
 
 import asyncio
+import time
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Dict
+from typing import Any, Dict, cast
 from unittest.mock import MagicMock
 
 import pytest
 from opentelemetry.sdk.trace import ReadableSpan
 
 from agentlightning.store.base import UNSET, LightningStore
+from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.store.threading import LightningStoreThreaded
 from agentlightning.types import (
+    LLM,
     Attempt,
     AttemptedRollout,
     AttemptStatus,
     NamedResources,
-    Resource,
+    OtelResource,
     ResourcesUpdate,
-    RolloutV2,
+    Rollout,
     Span,
     SpanContext,
     TaskInput,
@@ -75,7 +78,13 @@ class IncrementingResourceStore(LightningStore):
         snapshot = self.counter
         await asyncio.sleep(0.01)
         self.counter = snapshot + 1
-        return ResourcesUpdate(resources_id=f"res-{self.counter}", resources=resources)
+        return ResourcesUpdate(
+            resources_id=f"res-{self.counter}",
+            resources=resources,
+            create_time=time.time(),
+            update_time=time.time(),
+            version=1,
+        )
 
 
 def make_span(rollout_id: str, attempt_id: str, sequence_id: int = 1) -> Span:
@@ -95,7 +104,7 @@ def make_span(rollout_id: str, attempt_id: str, sequence_id: int = 1) -> Span:
         end_time=None,
         context=SpanContext(trace_id="0" * 32, span_id="0" * 16, is_remote=False, trace_state={}),
         parent=None,
-        resource=Resource(attributes={}, schema_url=""),
+        resource=OtelResource(attributes={}, schema_url=""),
     )
 
 
@@ -111,7 +120,7 @@ async def test_threaded_store_delegates_all_methods() -> None:
         sequence_id=1,
         start_time=0.0,
     )
-    base_rollout = RolloutV2(
+    base_rollout = Rollout(
         rollout_id=rollout_id,
         input=task_input,
         start_time=0.0,
@@ -126,11 +135,13 @@ async def test_threaded_store_delegates_all_methods() -> None:
         metadata={},
         attempt=base_attempt,
     )
-    resources_update = ResourcesUpdate(resources_id="resources-1", resources={})
+    resources_update = ResourcesUpdate(
+        resources_id="resources-1", resources={}, create_time=time.time(), update_time=time.time(), version=1
+    )
     span = make_span(rollout_id, attempt_id)
     readable_span = MagicMock(spec=ReadableSpan)
 
-    updated_rollout = RolloutV2(
+    updated_rollout = Rollout(
         rollout_id=rollout_id,
         input=task_input,
         start_time=1.0,
@@ -284,3 +295,55 @@ def test_threaded_store_prevents_race_conditions_on_resource_updates() -> None:
     assert store.counter == num_updates
     assert len(updates) == num_updates
     assert {update.resources_id for update in updates} == {f"res-{i + 1}" for i in range(num_updates)}
+
+
+@pytest.mark.asyncio
+async def test_threaded_store_add_resources_delegates() -> None:
+    """Test that threaded store delegates add_resources calls correctly."""
+    llm = LLM(
+        resource_type="llm",
+        endpoint="http://localhost:8080/v1",
+        model="test-model",
+        sampling_parameters={"temperature": 0.7},
+    )
+    resources: NamedResources = cast(NamedResources, {"main_llm": llm})
+    resources_update = ResourcesUpdate(
+        resources_id="resources-1", resources=resources, create_time=time.time(), update_time=time.time(), version=1
+    )
+
+    return_values = {
+        "add_resources": resources_update,
+    }
+
+    dummy_store = DummyLightningStore(return_values)
+    threaded_store = LightningStoreThreaded(dummy_store)
+
+    result = await threaded_store.add_resources(resources)
+    assert result == resources_update
+    assert len(dummy_store.calls) == 1
+    assert dummy_store.calls[0][0] == "add_resources"
+    assert dummy_store.calls[0][1] == (resources,)
+
+
+def test_threaded_store_serializes_add_resources_calls() -> None:
+    """Test that concurrent add_resources calls are serialized by the thread lock."""
+    store = InMemoryLightningStore()
+    threaded_store = LightningStoreThreaded(store)
+    num_adds = 10
+
+    def invoke(idx: int) -> ResourcesUpdate:
+        llm = LLM(
+            resource_type="llm",
+            endpoint=f"http://localhost:808{idx % 10}",
+            model=f"model-{idx}",
+        )
+        resources: NamedResources = cast(NamedResources, {"llm": llm})
+        return asyncio.run(threaded_store.add_resources(resources))
+
+    with ThreadPoolExecutor(max_workers=num_adds) as executor:
+        updates = list(executor.map(invoke, range(num_adds)))
+
+    # Verify all calls were made and resources_ids are unique
+    assert len(updates) == num_adds
+    resource_ids = {update.resources_id for update in updates}
+    assert len(resource_ids) == num_adds  # All IDs should be unique

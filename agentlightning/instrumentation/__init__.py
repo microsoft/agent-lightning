@@ -40,6 +40,7 @@ except ImportError:
 
 
 def instrument_all():
+    """Instrument all the instrumentation libraries."""
     if AGENTOPS_INSTALLED:
         from .agentops import instrument_agentops
 
@@ -70,6 +71,7 @@ def instrument_all():
 
 
 def uninstrument_all():
+    """Uninstrument all the instrumentation libraries."""
     if AGENTOPS_INSTALLED:
         try:
             from .agentops import uninstrument_agentops

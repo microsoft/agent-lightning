@@ -1,0 +1,872 @@
+# Copyright (c) Microsoft. All rights reserved.
+
+"""
+Tests for RESTful API pagination, sorting, and filtering functionality.
+
+Test categories:
+- Rollouts pagination, sorting, and filtering
+- Attempts pagination and sorting
+- Resources pagination and sorting
+- Spans pagination, sorting, and filtering
+"""
+
+import asyncio
+import contextlib
+import socket
+from typing import AsyncGenerator, List, Tuple
+
+import aiohttp
+import pytest
+import pytest_asyncio
+
+from agentlightning.store.client_server import LightningStoreClient, LightningStoreServer
+from agentlightning.store.memory import InMemoryLightningStore
+from agentlightning.types import LLM, AttemptedRollout, OtelResource, Rollout, Span, TraceStatus
+
+
+def _get_free_port() -> int:
+    with contextlib.closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
+
+
+def _make_span(rollout_id: str, attempt_id: str, sequence_id: int, name: str) -> Span:
+    return Span(
+        rollout_id=rollout_id,
+        attempt_id=attempt_id,
+        sequence_id=sequence_id,
+        trace_id=f"{sequence_id:032x}",
+        span_id=f"{sequence_id:016x}",
+        parent_id=None,
+        name=name,
+        status=TraceStatus(status_code="OK"),
+        attributes={},
+        events=[],
+        links=[],
+        start_time=1.0,
+        end_time=2.0,
+        context=None,
+        parent=None,
+        resource=OtelResource(attributes={}, schema_url=""),
+    )
+
+
+@pytest_asyncio.fixture
+async def server_client() -> (
+    AsyncGenerator[Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str], None]
+):
+    store = InMemoryLightningStore()
+    port = _get_free_port()
+    server = LightningStoreServer(store, "127.0.0.1", port)
+    await server.start()
+    client = LightningStoreClient(server.endpoint)
+    session = aiohttp.ClientSession()
+    # Get the full API endpoint with /agl/v1 prefix
+    api_endpoint = client.server_address
+    try:
+        yield server, client, session, api_endpoint
+    finally:
+        await session.close()
+        await client.close()
+        await server.stop()
+
+
+# Rollouts Pagination, Sorting, and Filtering Tests
+
+
+@pytest.mark.asyncio
+async def test_rollouts_pagination_basic(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    """Test basic pagination for rollouts endpoint."""
+    server, _client, session, api_endpoint = server_client
+
+    # Create 10 rollouts
+    for i in range(10):
+        await server.enqueue_rollout(input={"index": i})
+
+    # Get first page with limit=3
+    async with session.get(f"{api_endpoint}/rollouts", params={"limit": 3, "offset": 0}) as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        assert data["total"] == 10
+        assert data["limit"] == 3
+        assert data["offset"] == 0
+        assert len(data["items"]) == 3
+
+    # Get second page
+    async with session.get(f"{api_endpoint}/rollouts", params={"limit": 3, "offset": 3}) as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        assert data["total"] == 10
+        assert data["limit"] == 3
+        assert data["offset"] == 3
+        assert len(data["items"]) == 3
+
+
+@pytest.mark.asyncio
+async def test_rollouts_pagination_disabled(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    """Test pagination can be disabled with limit=-1."""
+    server, _client, session, api_endpoint = server_client
+
+    # Create 15 rollouts
+    for i in range(15):
+        await server.enqueue_rollout(input={"index": i})
+
+    # Get all rollouts with limit=-1
+    async with session.get(f"{api_endpoint}/rollouts", params={"limit": -1}) as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        assert data["total"] == 15
+        assert data["limit"] == -1
+        assert len(data["items"]) == 15
+
+
+@pytest.mark.asyncio
+async def test_rollouts_sorting_by_start_time(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    """Test sorting rollouts by start_time."""
+    server, _client, session, api_endpoint = server_client
+
+    # Create rollouts with small delays
+    rollouts: List[Rollout] = []
+    for i in range(5):
+        r = await server.enqueue_rollout(input={"index": i})
+        rollouts.append(r)
+        await asyncio.sleep(0.01)
+
+    # Sort ascending by start_time
+    async with session.get(
+        f"{api_endpoint}/rollouts", params={"sort_by": "start_time", "sort_order": "asc", "limit": -1}
+    ) as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        items = data["items"]
+        assert len(items) == 5
+        # Should be in ascending order
+        for i in range(len(items) - 1):
+            assert items[i]["start_time"] <= items[i + 1]["start_time"]
+
+    # Sort descending by start_time (default)
+    async with session.get(
+        f"{api_endpoint}/rollouts", params={"sort_by": "start_time", "sort_order": "desc", "limit": -1}
+    ) as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        items = data["items"]
+        # Should be in descending order
+        for i in range(len(items) - 1):
+            assert items[i]["start_time"] >= items[i + 1]["start_time"]
+
+
+@pytest.mark.asyncio
+async def test_rollouts_filter_by_status(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    """Test filtering rollouts by status."""
+    server, _client, session, api_endpoint = server_client
+
+    # Create rollouts with different statuses
+    r1 = await server.enqueue_rollout(input={"id": 1})
+    r2 = await server.enqueue_rollout(input={"id": 2})
+    _r3 = await server.enqueue_rollout(input={"id": 3})
+
+    await server.update_rollout(rollout_id=r1.rollout_id, status="succeeded")
+    await server.update_rollout(rollout_id=r2.rollout_id, status="failed")
+    # r3 remains queuing
+
+    # Filter by single status
+    async with session.get(f"{api_endpoint}/rollouts", params={"status_in": ["succeeded"], "limit": -1}) as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        assert data["total"] == 1
+        assert data["items"][0]["rollout_id"] == r1.rollout_id
+
+    # Filter by multiple statuses
+    async with session.get(
+        f"{api_endpoint}/rollouts", params={"status_in": ["succeeded", "failed"], "limit": -1}
+    ) as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        assert data["total"] == 2
+        rollout_ids = {item["rollout_id"] for item in data["items"]}
+        assert rollout_ids == {r1.rollout_id, r2.rollout_id}
+
+
+@pytest.mark.asyncio
+async def test_rollouts_filter_by_rollout_id_in(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    """Test filtering rollouts by rollout_id_in."""
+    server, _client, session, api_endpoint = server_client
+
+    # Create multiple rollouts
+    r1 = await server.enqueue_rollout(input={"id": 1})
+    _r2 = await server.enqueue_rollout(input={"id": 2})
+    r3 = await server.enqueue_rollout(input={"id": 3})
+
+    # Filter by specific rollout IDs
+    async with session.get(
+        f"{api_endpoint}/rollouts", params={"rollout_id_in": [r1.rollout_id, r3.rollout_id], "limit": -1}
+    ) as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        assert data["total"] == 2
+        rollout_ids = {item["rollout_id"] for item in data["items"]}
+        assert rollout_ids == {r1.rollout_id, r3.rollout_id}
+
+
+@pytest.mark.asyncio
+async def test_rollouts_filter_by_rollout_id_contains(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    """Test filtering rollouts by rollout_id_contains."""
+    server, _client, session, api_endpoint = server_client
+
+    # Create rollouts
+    r1 = await server.enqueue_rollout(input={"id": 1})
+    _r2 = await server.enqueue_rollout(input={"id": 2})
+    _r3 = await server.enqueue_rollout(input={"id": 3})
+
+    # Extract a substring from r1's ID
+    substring = r1.rollout_id[3:8]  # Get middle part of ID
+
+    # Filter by substring
+    async with session.get(f"{api_endpoint}/rollouts", params={"rollout_id_contains": substring, "limit": -1}) as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        assert data["total"] >= 1
+        # Verify all results contain the substring
+        for item in data["items"]:
+            assert substring in item["rollout_id"]
+
+
+@pytest.mark.asyncio
+async def test_rollouts_filter_logic_and(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    """Test rollouts filtering with AND logic."""
+    server, _client, session, api_endpoint = server_client
+
+    # Create rollouts
+    r1 = await server.enqueue_rollout(input={"id": 1})
+    r2 = await server.enqueue_rollout(input={"id": 2})
+    r3 = await server.enqueue_rollout(input={"id": 3})
+
+    await server.update_rollout(rollout_id=r1.rollout_id, status="succeeded")
+    await server.update_rollout(rollout_id=r2.rollout_id, status="succeeded")
+    await server.update_rollout(rollout_id=r3.rollout_id, status="failed")
+
+    # Filter with AND logic: status=succeeded AND rollout_id in list
+    async with session.get(
+        f"{api_endpoint}/rollouts",
+        params={
+            "status_in": ["succeeded"],
+            "rollout_id_in": [r1.rollout_id, r3.rollout_id],
+            "filter_logic": "and",
+            "limit": -1,
+        },
+    ) as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        # Only r1 matches both conditions (r3 is failed, r2 is not in the ID list)
+        assert data["total"] == 1
+        assert data["items"][0]["rollout_id"] == r1.rollout_id
+
+
+@pytest.mark.asyncio
+async def test_rollouts_filter_logic_or(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    """Test rollouts filtering with OR logic."""
+    server, _client, session, api_endpoint = server_client
+
+    # Create rollouts
+    r1 = await server.enqueue_rollout(input={"id": 1})
+    _r2 = await server.enqueue_rollout(input={"id": 2})
+    r3 = await server.enqueue_rollout(input={"id": 3})
+
+    await server.update_rollout(rollout_id=r1.rollout_id, status="succeeded")
+    # r2 and r3 remain queuing
+
+    # Filter with OR logic: status=succeeded OR rollout_id=r3
+    async with session.get(
+        f"{api_endpoint}/rollouts",
+        params={"status_in": ["succeeded"], "rollout_id_in": [r3.rollout_id], "filter_logic": "or", "limit": -1},
+    ) as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        # Both r1 (succeeded) and r3 (in ID list) should match
+        assert data["total"] == 2
+        rollout_ids = {item["rollout_id"] for item in data["items"]}
+        assert rollout_ids == {r1.rollout_id, r3.rollout_id}
+
+
+@pytest.mark.asyncio
+async def test_rollouts_sorting_with_none_values(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    """Test sorting rollouts by fields that may have None values."""
+    server, _client, session, api_endpoint = server_client
+
+    # Create rollouts - mode is optional and can be None
+    _r1 = await server.enqueue_rollout(input={"id": 1}, mode="train")
+    r2 = await server.enqueue_rollout(input={"id": 2})  # mode=None
+    _r3 = await server.enqueue_rollout(input={"id": 3}, mode="test")
+
+    # Sort by mode ascending (None values should be treated as empty string/0)
+    async with session.get(
+        f"{api_endpoint}/rollouts", params={"sort_by": "mode", "sort_order": "asc", "limit": -1}
+    ) as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        items = data["items"]
+        assert len(items) == 3
+        # Items with None mode should come first (treated as 0)
+        assert items[0]["rollout_id"] == r2.rollout_id
+        assert items[0]["mode"] is None
+
+    # Sort by mode descending
+    async with session.get(
+        f"{api_endpoint}/rollouts", params={"sort_by": "mode", "sort_order": "desc", "limit": -1}
+    ) as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        items = data["items"]
+        assert len(items) == 3
+        # Items with actual mode should come first
+        assert items[0]["mode"] is not None
+        # Item with None should be last
+        assert items[2]["rollout_id"] == r2.rollout_id
+        assert items[2]["mode"] is None
+
+
+@pytest.mark.asyncio
+async def test_rollouts_sorting_by_unsupported_field(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    """Test sorting by a field that doesn't exist on the model."""
+    server, _client, session, api_endpoint = server_client
+
+    # Create rollouts
+    for i in range(3):
+        await server.enqueue_rollout(input={"id": i})
+
+    # Try to sort by a non-existent field - should return 400 error
+    async with session.get(
+        f"{api_endpoint}/rollouts", params={"sort_by": "nonexistent_field", "sort_order": "asc", "limit": -1}
+    ) as resp:
+        assert resp.status == 400
+        data = await resp.json()
+        assert (
+            data["detail"] == "Failed to sort items by nonexistent_field: nonexistent_field is not a field of Rollout"
+        )
+
+
+# Attempts Pagination and Sorting Tests
+
+
+@pytest.mark.asyncio
+async def test_attempts_pagination_basic(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    """Test basic pagination for attempts endpoint."""
+    server, _client, session, api_endpoint = server_client
+
+    # Create rollout and multiple attempts
+    rollout = await server.enqueue_rollout(input={"test": "data"})
+    for _ in range(5):
+        await server.start_attempt(rollout.rollout_id)
+
+    # Get first page
+    async with session.get(
+        f"{api_endpoint}/rollouts/{rollout.rollout_id}/attempts", params={"limit": 2, "offset": 0}
+    ) as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        assert data["total"] == 5
+        assert data["limit"] == 2
+        assert data["offset"] == 0
+        assert len(data["items"]) == 2
+
+    # Get all attempts
+    async with session.get(f"{api_endpoint}/rollouts/{rollout.rollout_id}/attempts", params={"limit": -1}) as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        assert data["total"] == 5
+        assert len(data["items"]) == 5
+
+
+@pytest.mark.asyncio
+async def test_attempts_sorting(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    """Test sorting attempts by start_time."""
+    server, _client, session, api_endpoint = server_client
+
+    # Create rollout and attempts
+    rollout = await server.enqueue_rollout(input={"test": "data"})
+    attempts: List[AttemptedRollout] = []
+    for i in range(3):
+        attempt = await server.start_attempt(rollout.rollout_id)
+        attempts.append(attempt)
+        await asyncio.sleep(0.01)
+
+    # Sort by start_time descending (default)
+    async with session.get(
+        f"{api_endpoint}/rollouts/{rollout.rollout_id}/attempts",
+        params={"sort_by": "start_time", "sort_order": "desc", "limit": -1},
+    ) as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        items = data["items"]
+        for i in range(len(items) - 1):
+            assert items[i]["start_time"] >= items[i + 1]["start_time"]
+
+    # Sort ascending
+    async with session.get(
+        f"{api_endpoint}/rollouts/{rollout.rollout_id}/attempts",
+        params={"sort_by": "start_time", "sort_order": "asc", "limit": -1},
+    ) as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        items = data["items"]
+        for i in range(len(items) - 1):
+            assert items[i]["start_time"] <= items[i + 1]["start_time"]
+
+
+@pytest.mark.asyncio
+async def test_attempts_sorting_with_none_values(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    """Test sorting attempts by fields that may have None values."""
+    server, _client, session, api_endpoint = server_client
+
+    # Create rollout and attempts
+    rollout = await server.enqueue_rollout(input={"test": "data"})
+    a1 = await server.start_attempt(rollout.rollout_id)
+    a2 = await server.start_attempt(rollout.rollout_id)
+    a3 = await server.start_attempt(rollout.rollout_id)
+
+    # Set worker_id for some attempts, leave others with None
+    await server.update_attempt(rollout_id=rollout.rollout_id, attempt_id=a1.attempt.attempt_id, worker_id="worker-1")
+    await server.update_attempt(rollout_id=rollout.rollout_id, attempt_id=a3.attempt.attempt_id, worker_id="worker-2")
+    # a2 remains with worker_id=None
+
+    # Sort by worker_id ascending (None values should be treated as empty/0)
+    async with session.get(
+        f"{api_endpoint}/rollouts/{rollout.rollout_id}/attempts",
+        params={"sort_by": "worker_id", "sort_order": "asc", "limit": -1},
+    ) as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        items = data["items"]
+        assert len(items) == 3
+        # Items with None worker_id should come first
+        assert items[0]["attempt_id"] == a2.attempt.attempt_id
+        assert items[0]["worker_id"] is None
+
+
+# Resources Pagination and Sorting Tests
+
+
+@pytest.mark.asyncio
+async def test_resources_pagination_basic(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    """Test basic pagination for resources endpoint."""
+    server, _client, session, api_endpoint = server_client
+
+    # Create multiple resources
+    for i in range(7):
+        llm = LLM(
+            resource_type="llm",
+            endpoint="http://localhost:8080",
+            model=f"model-v{i}",
+            sampling_parameters={"temperature": 0.7},
+        )
+        await server.add_resources({"llm": llm})
+
+    # Get first page
+    async with session.get(f"{api_endpoint}/resources", params={"limit": 3, "offset": 0}) as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        assert data["total"] == 7
+        assert data["limit"] == 3
+        assert len(data["items"]) == 3
+
+    # Get all resources
+    async with session.get(f"{api_endpoint}/resources", params={"limit": -1}) as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        assert data["total"] == 7
+        assert len(data["items"]) == 7
+
+
+@pytest.mark.asyncio
+async def test_resources_sorting_by_resources_id(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    """Test sorting resources by resources_id."""
+    server, _client, session, api_endpoint = server_client
+
+    # Create resources
+    for i in range(5):
+        llm = LLM(
+            resource_type="llm",
+            endpoint="http://localhost:8080",
+            model=f"model-{i}",
+            sampling_parameters={"temperature": 0.7},
+        )
+        await server.add_resources({"llm": llm})
+
+    # Sort by resources_id ascending (default)
+    async with session.get(
+        f"{api_endpoint}/resources", params={"sort_by": "resources_id", "sort_order": "asc", "limit": -1}
+    ) as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        items = data["items"]
+        for i in range(len(items) - 1):
+            assert items[i]["resources_id"] <= items[i + 1]["resources_id"]
+
+    # Sort descending
+    async with session.get(
+        f"{api_endpoint}/resources", params={"sort_by": "resources_id", "sort_order": "desc", "limit": -1}
+    ) as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        items = data["items"]
+        for i in range(len(items) - 1):
+            assert items[i]["resources_id"] >= items[i + 1]["resources_id"]
+
+
+# Spans Pagination, Sorting, and Filtering Tests
+
+
+@pytest.mark.asyncio
+async def test_spans_pagination_basic(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    """Test basic pagination for spans endpoint."""
+    server, _client, session, api_endpoint = server_client
+
+    # Create rollout and attempt
+    rollout = await server.start_rollout(input={"test": "data"})
+
+    # Add multiple spans
+    for i in range(10):
+        span = _make_span(rollout.rollout_id, rollout.attempt.attempt_id, i + 1, f"span-{i}")
+        await server.add_span(span)
+
+    # Get first page
+    async with session.get(
+        f"{api_endpoint}/spans", params={"rollout_id": rollout.rollout_id, "limit": 3, "offset": 0}
+    ) as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        assert data["total"] == 10
+        assert data["limit"] == 3
+        assert len(data["items"]) == 3
+
+    # Get all spans
+    async with session.get(f"{api_endpoint}/spans", params={"rollout_id": rollout.rollout_id, "limit": -1}) as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        assert data["total"] == 10
+        assert len(data["items"]) == 10
+
+
+@pytest.mark.asyncio
+async def test_spans_sorting_by_start_time(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    """Test sorting spans by start_time."""
+    server, _client, session, api_endpoint = server_client
+
+    # Create rollout and spans
+    rollout = await server.start_rollout(input={"test": "data"})
+    for i in range(5):
+        span = _make_span(rollout.rollout_id, rollout.attempt.attempt_id, i + 1, f"span-{i}")
+        await server.add_span(span)
+
+    # Sort descending (default)
+    async with session.get(
+        f"{api_endpoint}/spans",
+        params={"rollout_id": rollout.rollout_id, "sort_by": "start_time", "sort_order": "desc", "limit": -1},
+    ) as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        items = data["items"]
+        # All our test spans have the same start_time, so just verify the structure
+        assert len(items) == 5
+
+
+@pytest.mark.asyncio
+async def test_spans_filter_by_trace_id(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    """Test filtering spans by trace_id."""
+    server, _client, session, api_endpoint = server_client
+
+    # Create rollout and spans with different trace IDs
+    rollout = await server.start_rollout(input={"test": "data"})
+
+    span1 = _make_span(rollout.rollout_id, rollout.attempt.attempt_id, 1, "span1")
+    span1.trace_id = "trace-123"
+    await server.add_span(span1)
+
+    span2 = _make_span(rollout.rollout_id, rollout.attempt.attempt_id, 2, "span2")
+    span2.trace_id = "trace-456"
+    await server.add_span(span2)
+
+    span3 = _make_span(rollout.rollout_id, rollout.attempt.attempt_id, 3, "span3")
+    span3.trace_id = "trace-123"
+    await server.add_span(span3)
+
+    # Filter by exact trace_id
+    async with session.get(
+        f"{api_endpoint}/spans", params={"rollout_id": rollout.rollout_id, "trace_id": "trace-123", "limit": -1}
+    ) as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        assert data["total"] == 2
+        for item in data["items"]:
+            assert item["trace_id"] == "trace-123"
+
+
+@pytest.mark.asyncio
+async def test_spans_filter_by_name_contains(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    """Test filtering spans by name_contains."""
+    server, _client, session, api_endpoint = server_client
+
+    # Create rollout and spans with different names
+    rollout = await server.start_rollout(input={"test": "data"})
+
+    span1 = _make_span(rollout.rollout_id, rollout.attempt.attempt_id, 1, "api_call_fetch")
+    await server.add_span(span1)
+
+    span2 = _make_span(rollout.rollout_id, rollout.attempt.attempt_id, 2, "database_query")
+    await server.add_span(span2)
+
+    span3 = _make_span(rollout.rollout_id, rollout.attempt.attempt_id, 3, "api_call_update")
+    await server.add_span(span3)
+
+    # Filter by name_contains
+    async with session.get(
+        f"{api_endpoint}/spans", params={"rollout_id": rollout.rollout_id, "name_contains": "api_call", "limit": -1}
+    ) as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        assert data["total"] == 2
+        for item in data["items"]:
+            assert "api_call" in item["name"]
+
+
+@pytest.mark.asyncio
+async def test_spans_filter_logic_and(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    """Test spans filtering with AND logic."""
+    server, _client, session, api_endpoint = server_client
+
+    # Create rollout and spans
+    rollout = await server.start_rollout(input={"test": "data"})
+
+    span1 = _make_span(rollout.rollout_id, rollout.attempt.attempt_id, 1, "api_call")
+    span1.trace_id = "trace-123"
+    await server.add_span(span1)
+
+    span2 = _make_span(rollout.rollout_id, rollout.attempt.attempt_id, 2, "api_call")
+    span2.trace_id = "trace-456"
+    await server.add_span(span2)
+
+    span3 = _make_span(rollout.rollout_id, rollout.attempt.attempt_id, 3, "database")
+    span3.trace_id = "trace-123"
+    await server.add_span(span3)
+
+    # Filter with AND logic: trace_id=trace-123 AND name contains "api"
+    async with session.get(
+        f"{api_endpoint}/spans",
+        params={
+            "rollout_id": rollout.rollout_id,
+            "trace_id": "trace-123",
+            "name_contains": "api",
+            "filter_logic": "and",
+            "limit": -1,
+        },
+    ) as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        # Only span1 matches both conditions
+        assert data["total"] == 1
+        assert data["items"][0]["name"] == "api_call"
+        assert data["items"][0]["trace_id"] == "trace-123"
+
+
+@pytest.mark.asyncio
+async def test_spans_filter_logic_or(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    """Test spans filtering with OR logic."""
+    server, _client, session, api_endpoint = server_client
+
+    # Create rollout and spans
+    rollout = await server.start_rollout(input={"test": "data"})
+
+    span1 = _make_span(rollout.rollout_id, rollout.attempt.attempt_id, 1, "api_call")
+    span1.trace_id = "trace-123"
+    await server.add_span(span1)
+
+    span2 = _make_span(rollout.rollout_id, rollout.attempt.attempt_id, 2, "api_call")
+    span2.trace_id = "trace-456"
+    await server.add_span(span2)
+
+    span3 = _make_span(rollout.rollout_id, rollout.attempt.attempt_id, 3, "database")
+    span3.trace_id = "trace-123"
+    await server.add_span(span3)
+
+    span4 = _make_span(rollout.rollout_id, rollout.attempt.attempt_id, 4, "other")
+    span4.trace_id = "trace-789"
+    await server.add_span(span4)
+
+    # Filter with OR logic: trace_id=trace-123 OR name contains "api"
+    async with session.get(
+        f"{api_endpoint}/spans",
+        params={
+            "rollout_id": rollout.rollout_id,
+            "trace_id": "trace-123",
+            "name_contains": "api",
+            "filter_logic": "or",
+            "limit": -1,
+        },
+    ) as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        # span1, span2, and span3 should match
+        assert data["total"] == 3
+
+
+@pytest.mark.asyncio
+async def test_spans_sorting_with_none_values(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    """Test sorting spans by fields that may have None values."""
+    server, _client, session, api_endpoint = server_client
+
+    # Create rollout and spans
+    rollout = await server.start_rollout(input={"test": "data"})
+
+    # Create spans with different parent_id values (parent_id can be None)
+    span1 = _make_span(rollout.rollout_id, rollout.attempt.attempt_id, 1, "span1")
+    span1.parent_id = None  # Root span
+    await server.add_span(span1)
+
+    span2 = _make_span(rollout.rollout_id, rollout.attempt.attempt_id, 2, "span2")
+    span2.parent_id = "parent-a"  # Child span
+    await server.add_span(span2)
+
+    span3 = _make_span(rollout.rollout_id, rollout.attempt.attempt_id, 3, "span3")
+    span3.parent_id = "parent-b"  # Child span
+    await server.add_span(span3)
+
+    # Sort by parent_id ascending (None values should be treated as empty/0)
+    async with session.get(
+        f"{api_endpoint}/spans",
+        params={"rollout_id": rollout.rollout_id, "sort_by": "parent_id", "sort_order": "asc", "limit": -1},
+    ) as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        items = data["items"]
+        assert len(items) == 3
+        # Items with None parent_id should come first (treated as 0)
+        assert items[0]["sequence_id"] == 1
+        assert items[0]["parent_id"] is None
+
+    # Sort by parent_id descending
+    async with session.get(
+        f"{api_endpoint}/spans",
+        params={"rollout_id": rollout.rollout_id, "sort_by": "parent_id", "sort_order": "desc", "limit": -1},
+    ) as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        items = data["items"]
+        assert len(items) == 3
+        # Items with actual parent_id should come first
+        assert items[0]["parent_id"] is not None
+        # Item with None should be last
+        assert items[2]["sequence_id"] == 1
+        assert items[2]["parent_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_spans_sorting_by_unsupported_field(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    """Test sorting spans by a field that doesn't exist on the model."""
+    server, _client, session, api_endpoint = server_client
+
+    # Create rollout and spans
+    rollout = await server.start_rollout(input={"test": "data"})
+    for i in range(3):
+        span = _make_span(rollout.rollout_id, rollout.attempt.attempt_id, i + 1, f"span-{i}")
+        await server.add_span(span)
+
+    # Try to sort by a non-existent field
+    async with session.get(
+        f"{api_endpoint}/spans",
+        params={"rollout_id": rollout.rollout_id, "sort_by": "invalid_field", "sort_order": "asc", "limit": -1},
+    ) as resp:
+        assert resp.status == 400
+        data = await resp.json()
+        assert data["detail"] == "Failed to sort items by invalid_field: invalid_field is not a field of Span"
+
+
+# Client Compatibility Tests
+
+
+@pytest.mark.asyncio
+async def test_client_query_rollouts_extracts_items(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    """Test that client correctly extracts items from PaginatedResponse."""
+    server, client, _session, _api_endpoint = server_client
+
+    # Create rollouts
+    for i in range(5):
+        await server.enqueue_rollout(input={"index": i})
+
+    # Query via client (should extract items and return List[Rollout])
+    rollouts = await client.query_rollouts()
+    assert isinstance(rollouts, list)
+    assert len(rollouts) == 5
+    for rollout in rollouts:
+        assert isinstance(rollout, Rollout)
+
+
+@pytest.mark.asyncio
+async def test_client_query_with_filters(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    """Test that client correctly passes filters to server."""
+    server, client, _session, _api_endpoint = server_client
+
+    # Create rollouts with different statuses
+    r1 = await server.enqueue_rollout(input={"id": 1})
+    r2 = await server.enqueue_rollout(input={"id": 2})
+    await server.update_rollout(rollout_id=r1.rollout_id, status="succeeded")
+
+    # Query via client with status filter
+    rollouts = await client.query_rollouts(status=["succeeded"])
+    assert len(rollouts) == 1
+    assert rollouts[0].rollout_id == r1.rollout_id
+
+    # Query via client with rollout_ids filter
+    rollouts = await client.query_rollouts(rollout_ids=[r2.rollout_id])
+    assert len(rollouts) == 1
+    assert rollouts[0].rollout_id == r2.rollout_id

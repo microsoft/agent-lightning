@@ -77,4 +77,4 @@ class RAGAgent(LitAgent[Any]):
 
 
 if __name__ == "__main__":
-    Trainer(n_workers=12).fit(RAGAgent(), "http://localhost:9999/")
+    Trainer(n_workers=12).fit_v0(RAGAgent(), "http://localhost:9999/")

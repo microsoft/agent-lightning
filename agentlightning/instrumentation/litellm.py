@@ -1,12 +1,21 @@
 # Copyright (c) Microsoft. All rights reserved.
 
+"""LiteLLM instrumentations.
+
+It's unclear whether or not this file is useful.
+It seems that LiteLLM owns its own telemetry from their own entrance
+
+[Related documentation](https://docs.litellm.ai/docs/observability/agentops_integration).
+"""
+
 from typing import Any, Optional
 
 from litellm.integrations.opentelemetry import OpenTelemetry
 
-# It's unclear whether or not this file is useful
-# It seems that LiteLLM owns its own telemetry from their own entrance
-# https://docs.litellm.ai/docs/observability/agentops_integration
+__all__ = [
+    "instrument_litellm",
+    "uninstrument_litellm",
+]
 
 original_set_attributes = OpenTelemetry.set_attributes  # type: ignore
 
@@ -21,8 +30,10 @@ def patched_set_attributes(self: Any, span: Any, kwargs: Any, response_obj: Opti
 
 
 def instrument_litellm():
+    """Instrument litellm to capture token IDs."""
     OpenTelemetry.set_attributes = patched_set_attributes
 
 
 def uninstrument_litellm():
+    """Uninstrument litellm to stop capturing token IDs."""
     OpenTelemetry.set_attributes = original_set_attributes

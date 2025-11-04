@@ -14,20 +14,28 @@ Test categories:
 """
 
 import asyncio
+import sys
 import time
-from typing import List
+from typing import List, Optional, cast
 from unittest.mock import Mock
 
 import pytest
+from pydantic import BaseModel
 
-from agentlightning.store.memory import InMemoryLightningStore
+from agentlightning.store.memory import InMemoryLightningStore, estimate_model_size
 from agentlightning.types import (
     LLM,
+    AttemptedRollout,
+    Event,
+    Link,
+    OtelResource,
     PromptTemplate,
     ResourcesUpdate,
+    Rollout,
     RolloutConfig,
-    RolloutV2,
     Span,
+    SpanContext,
+    TraceStatus,
 )
 
 # Core CRUD Operations Tests
@@ -43,13 +51,31 @@ async def test_enqueue_rollout_creates_rollout(inmemory_store: InMemoryLightning
         input=sample, mode="train", resources_id="res-123", metadata=metadata
     )
 
-    assert rollout.rollout_id.startswith("rollout-")
+    assert rollout.rollout_id.startswith("ro-")
     assert rollout.input == sample
     assert rollout.mode == "train"
     assert rollout.resources_id == "res-123"
     assert rollout.metadata == metadata
     assert rollout.status == "queuing"
     assert rollout.start_time is not None
+
+
+@pytest.mark.asyncio
+async def test_enqueue_rollout_accepts_config(inmemory_store: InMemoryLightningStore) -> None:
+    """Rollout-specific configs can be provided when enqueuing tasks."""
+    config = RolloutConfig(timeout_seconds=12.0, max_attempts=3, retry_condition=["timeout"])
+
+    rollout = await inmemory_store.enqueue_rollout(input={"sample": True}, config=config)
+
+    assert rollout.config.timeout_seconds == 12.0
+    assert rollout.config.max_attempts == 3
+    assert rollout.config.retry_condition == ["timeout"]
+
+    stored = await inmemory_store.get_rollout_by_id(rollout.rollout_id)
+    assert stored is not None
+    assert stored.config.timeout_seconds == 12.0
+    assert stored.config.max_attempts == 3
+    assert stored.config.retry_condition == ["timeout"]
 
 
 @pytest.mark.asyncio
@@ -60,8 +86,8 @@ async def test_add_rollout_initializes_attempt(inmemory_store: InMemoryLightning
     attempt_rollout = await inmemory_store.start_rollout(input=sample, mode="val", resources_id="res-add")
 
     assert attempt_rollout.status == "preparing"
-    assert attempt_rollout.rollout_id.startswith("rollout-")
-    assert attempt_rollout.attempt.attempt_id.startswith("attempt-")
+    assert attempt_rollout.rollout_id.startswith("ro-")
+    assert attempt_rollout.attempt.attempt_id.startswith("at-")
     assert attempt_rollout.attempt.sequence_id == 1
     assert attempt_rollout.attempt.status == "preparing"
 
@@ -77,6 +103,24 @@ async def test_add_rollout_initializes_attempt(inmemory_store: InMemoryLightning
     latest_attempt = await inmemory_store.get_latest_attempt(attempt_rollout.rollout_id)
     assert latest_attempt is not None
     assert latest_attempt.attempt_id == attempt_rollout.attempt.attempt_id
+
+
+@pytest.mark.asyncio
+async def test_start_rollout_accepts_config(inmemory_store: InMemoryLightningStore) -> None:
+    """Custom rollout config is preserved for started rollouts."""
+    config = RolloutConfig(unresponsive_seconds=5.0, max_attempts=2, retry_condition=["unresponsive"])
+
+    attempt_rollout = await inmemory_store.start_rollout(input={"payload": "value"}, config=config)
+
+    assert attempt_rollout.config.unresponsive_seconds == 5.0
+    assert attempt_rollout.config.max_attempts == 2
+    assert attempt_rollout.config.retry_condition == ["unresponsive"]
+
+    stored = await inmemory_store.get_rollout_by_id(attempt_rollout.rollout_id)
+    assert stored is not None
+    assert stored.config.unresponsive_seconds == 5.0
+    assert stored.config.max_attempts == 2
+    assert stored.config.retry_condition == ["unresponsive"]
 
 
 @pytest.mark.asyncio
@@ -114,6 +158,47 @@ async def test_query_rollouts_by_status(inmemory_store: InMemoryLightningStore) 
 
 
 @pytest.mark.asyncio
+async def test_query_rollouts_returns_latest_attempt(inmemory_store: InMemoryLightningStore) -> None:
+    """Querying rollouts should attach the most recent attempt when present."""
+    attempted = await inmemory_store.start_rollout(input={"sample": "latest"})
+    latest_attempt = await inmemory_store.start_attempt(attempted.rollout_id)
+
+    results = await inmemory_store.query_rollouts(rollout_ids=[attempted.rollout_id])
+    assert len(results) == 1
+
+    retrieved = results[0]
+    assert type(retrieved) is AttemptedRollout
+    assert retrieved.attempt.attempt_id == latest_attempt.attempt.attempt_id
+    assert retrieved.attempt.sequence_id == latest_attempt.attempt.sequence_id
+
+
+@pytest.mark.asyncio
+async def test_get_rollout_by_id_returns_latest_attempt(inmemory_store: InMemoryLightningStore) -> None:
+    """Fetching a rollout by ID should include the latest attempt when available."""
+    attempted = await inmemory_store.start_rollout(input={"foo": "bar"})
+    second_attempt = await inmemory_store.start_attempt(attempted.rollout_id)
+
+    retrieved = await inmemory_store.get_rollout_by_id(attempted.rollout_id)
+    assert retrieved is not None
+    assert type(retrieved) is AttemptedRollout
+    assert retrieved.attempt.attempt_id == second_attempt.attempt.attempt_id
+    assert retrieved.attempt.sequence_id == second_attempt.attempt.sequence_id
+
+
+@pytest.mark.asyncio
+async def test_get_rollout_by_id_without_attempt_returns_rollout(
+    inmemory_store: InMemoryLightningStore,
+) -> None:
+    """Rollouts with no attempts should be returned without the Attempt wrapper."""
+    queued = await inmemory_store.enqueue_rollout(input={"foo": "bar"})
+
+    retrieved = await inmemory_store.get_rollout_by_id(queued.rollout_id)
+    assert retrieved is not None
+    assert type(retrieved) is Rollout
+    assert not hasattr(retrieved, "attempt")
+
+
+@pytest.mark.asyncio
 async def test_get_rollout_by_id(inmemory_store: InMemoryLightningStore) -> None:
     """Test retrieving rollouts by their ID."""
     # Test getting non-existent rollout
@@ -136,6 +221,27 @@ async def test_get_rollout_by_id(inmemory_store: InMemoryLightningStore) -> None
     updated = await inmemory_store.get_rollout_by_id(created.rollout_id)
     assert updated is not None
     assert updated.status == "running"
+
+
+@pytest.mark.asyncio
+async def test_store_lock_rebinds_to_new_event_loop(
+    inmemory_store: InMemoryLightningStore,
+) -> None:
+    """The in-memory store can be reused after switching to a new event loop."""
+
+    rollout = await inmemory_store.enqueue_rollout(input={"foo": "bar"})
+
+    def run_in_new_loop() -> Optional[Rollout]:
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(inmemory_store.get_rollout_by_id(rollout.rollout_id))
+        finally:
+            loop.close()
+
+    retrieved = await asyncio.to_thread(run_in_new_loop)
+
+    assert retrieved is not None
+    assert retrieved.rollout_id == rollout.rollout_id
 
 
 @pytest.mark.asyncio
@@ -285,7 +391,7 @@ async def test_dequeue_rollout_skips_non_queuing_status(inmemory_store: InMemory
 @pytest.mark.asyncio
 async def test_fifo_ordering(inmemory_store: InMemoryLightningStore) -> None:
     """Test that queue maintains FIFO order."""
-    rollouts: List[RolloutV2] = []
+    rollouts: List[Rollout] = []
     for i in range(5):
         r = await inmemory_store.enqueue_rollout(input={"order": i})
         rollouts.append(r)
@@ -343,6 +449,96 @@ async def test_requeue_mechanism(inmemory_store: InMemoryLightningStore) -> None
 
 
 @pytest.mark.asyncio
+async def test_add_resources_generates_id_and_stores(inmemory_store: InMemoryLightningStore) -> None:
+    """Test that add_resources generates a resources_id and stores the resources."""
+    # Initially no resources
+    assert await inmemory_store.get_latest_resources() is None
+
+    # Add resources using add_resources (auto-generates ID)
+    llm = LLM(
+        resource_type="llm",
+        endpoint="http://localhost:8080/v1",
+        model="test-model",
+        sampling_parameters={"temperature": 0.7},
+    )
+    prompt = PromptTemplate(resource_type="prompt_template", template="Hello {name}!", engine="f-string")
+
+    resources_update = await inmemory_store.add_resources({"main_llm": llm, "greeting": prompt})
+
+    # Verify resources_id was auto-generated with correct prefix
+    assert resources_update.resources_id.startswith("rs-")
+    assert len(resources_update.resources_id) == 15  # "rs-" + 12 char hash
+
+    # Verify resources were stored correctly
+    assert isinstance(resources_update.resources["main_llm"], LLM)
+    assert resources_update.resources["main_llm"].model == "test-model"
+    assert isinstance(resources_update.resources["greeting"], PromptTemplate)
+    assert resources_update.resources["greeting"].template == "Hello {name}!"
+
+    # Verify it's set as latest
+    latest = await inmemory_store.get_latest_resources()
+    assert latest is not None
+    assert latest.resources_id == resources_update.resources_id
+    assert latest.resources["main_llm"].model == "test-model"  # type: ignore
+
+    # Verify we can retrieve by ID
+    retrieved = await inmemory_store.get_resources_by_id(resources_update.resources_id)
+    assert retrieved is not None
+    assert retrieved.resources_id == resources_update.resources_id
+
+
+@pytest.mark.asyncio
+async def test_add_resources_multiple_times_generates_unique_ids(inmemory_store: InMemoryLightningStore) -> None:
+    """Test that multiple calls to add_resources generate unique IDs."""
+    llm1 = LLM(resource_type="llm", endpoint="http://localhost:8080", model="model-v1")
+    llm2 = LLM(resource_type="llm", endpoint="http://localhost:8080", model="model-v2")
+
+    update1 = await inmemory_store.add_resources({"llm": llm1})
+    update2 = await inmemory_store.add_resources({"llm": llm2})
+
+    # IDs should be different
+    assert update1.resources_id != update2.resources_id
+    assert update1.resources_id.startswith("rs-")
+    assert update2.resources_id.startswith("rs-")
+
+    # Both should be retrievable
+    retrieved1 = await inmemory_store.get_resources_by_id(update1.resources_id)
+    retrieved2 = await inmemory_store.get_resources_by_id(update2.resources_id)
+    assert retrieved1 is not None
+    assert retrieved2 is not None
+    assert retrieved1.resources["llm"].model == "model-v1"  # type: ignore
+    assert retrieved2.resources["llm"].model == "model-v2"  # type: ignore
+
+    # Latest should be the second one
+    latest = await inmemory_store.get_latest_resources()
+    assert latest is not None
+    assert latest.resources_id == update2.resources_id
+
+
+@pytest.mark.asyncio
+async def test_query_resources_returns_history(inmemory_store: InMemoryLightningStore) -> None:
+    """query_resources should list snapshots in the order they were stored."""
+    assert await inmemory_store.query_resources() == []
+
+    first = await inmemory_store.add_resources(
+        {
+            "llm": LLM(resource_type="llm", endpoint="http://localhost:8080", model="model-v1"),
+        }
+    )
+    second = await inmemory_store.update_resources(
+        "custom-snapshot",
+        {
+            "prompt": PromptTemplate(resource_type="prompt_template", template="Hi {name}", engine="f-string"),
+        },
+    )
+
+    history = await inmemory_store.query_resources()
+    assert [item.resources_id for item in history] == [first.resources_id, second.resources_id]
+    assert isinstance(history[0], ResourcesUpdate)
+    assert isinstance(history[1], ResourcesUpdate)
+
+
+@pytest.mark.asyncio
 async def test_resource_lifecycle(inmemory_store: InMemoryLightningStore) -> None:
     """Test adding, updating, and retrieving resources."""
     # Initially no resources
@@ -394,7 +590,13 @@ async def test_task_inherits_latest_resources(inmemory_store: InMemoryLightningS
     """Test that new tasks inherit latest resources_id if not specified."""
     # Set up resources with proper PromptTemplate
     prompt = PromptTemplate(resource_type="prompt_template", template="Hello {name}!", engine="f-string")
-    update = ResourcesUpdate(resources_id="current", resources={"greeting": prompt})
+    update = ResourcesUpdate(
+        resources_id="current",
+        resources={"greeting": prompt},
+        create_time=time.time(),
+        update_time=time.time(),
+        version=1,
+    )
     await inmemory_store.update_resources(update.resources_id, update.resources)
 
     # Task without explicit resources_id
@@ -407,7 +609,13 @@ async def test_task_inherits_latest_resources(inmemory_store: InMemoryLightningS
 
     # Update resources
     new_prompt = PromptTemplate(resource_type="prompt_template", template="Hi {name}!", engine="f-string")
-    update2 = ResourcesUpdate(resources_id="new", resources={"greeting": new_prompt})
+    update2 = ResourcesUpdate(
+        resources_id="new",
+        resources={"greeting": new_prompt},
+        create_time=time.time(),
+        update_time=time.time(),
+        version=1,
+    )
     await inmemory_store.update_resources(update2.resources_id, update2.resources)
 
     # New task gets new resources
@@ -442,7 +650,7 @@ async def test_span_sequence_generation(inmemory_store: InMemoryLightningStore, 
     assert span2.sequence_id == 4
 
     # Different attempt reuses the same rollout_id
-    seq_id = await inmemory_store.get_next_span_sequence_id(rollout.rollout_id, "attempt-2")
+    seq_id = await inmemory_store.get_next_span_sequence_id(rollout.rollout_id, "attempt-does-not-exist")
     assert seq_id == 5
 
 
@@ -506,6 +714,172 @@ async def test_query_spans_by_attempt(inmemory_store: InMemoryLightningStore, mo
 
 
 @pytest.mark.asyncio
+async def test_span_eviction_removes_oldest_rollouts(mock_readable_span: Mock, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("agentlightning.store.memory._detect_total_memory_bytes", lambda: 100)
+    store = InMemoryLightningStore(
+        eviction_memory_threshold=0.5,
+        safe_memory_threshold=0.05,
+        span_size_estimator=lambda span: 20,
+    )
+
+    attempted_rollouts: List[AttemptedRollout] = []
+    for index in range(4):
+        attempted = await store.start_rollout(input={"index": index})
+        attempted_rollouts.append(attempted)
+        await store.add_otel_span(attempted.rollout_id, attempted.attempt.attempt_id, mock_readable_span)
+
+    for attempted in attempted_rollouts[:3]:
+        with pytest.raises(RuntimeError):
+            await store.query_spans(attempted.rollout_id)
+
+    remaining_spans = await store.query_spans(attempted_rollouts[3].rollout_id)
+    assert len(remaining_spans) == 1
+    assert remaining_spans[0].rollout_id == attempted_rollouts[3].rollout_id
+
+
+def test_memory_threshold_accepts_byte_values() -> None:
+    store = InMemoryLightningStore(
+        eviction_memory_threshold=150,
+        safe_memory_threshold=20,
+    )
+
+    assert store._eviction_threshold_bytes == 150  # pyright: ignore[reportPrivateUsage]
+    assert store._safe_threshold_bytes == 20  # pyright: ignore[reportPrivateUsage]
+
+
+def test_memory_threshold_accepts_ratios_with_zero_safe(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("agentlightning.store.memory._detect_total_memory_bytes", lambda: 200)
+    store = InMemoryLightningStore(
+        eviction_memory_threshold=0.6,
+        safe_memory_threshold=0.0,
+    )
+
+    assert store._eviction_threshold_bytes == int(200 * 0.6)  # pyright: ignore[reportPrivateUsage]
+    assert store._safe_threshold_bytes == 0  # pyright: ignore[reportPrivateUsage]
+
+
+def test_invalid_safe_threshold_raises_value_error() -> None:
+    with pytest.raises(ValueError):
+        InMemoryLightningStore(
+            eviction_memory_threshold=50,
+            safe_memory_threshold=100,
+        )
+
+
+def test_estimate_model_size_counts_nested_models() -> None:
+    class Inner(BaseModel):
+        value: int
+        data: List[int]
+
+    class Outer(BaseModel):
+        inner: Inner
+        mapping: dict[str, str]
+        tags: List[str]
+
+    inner = Inner(value=7, data=[1, 2, 3])
+    outer = Outer(inner=inner, mapping={"alpha": "beta"}, tags=["x", "yz"])
+
+    inner_expected = (
+        sys.getsizeof(inner)
+        + sys.getsizeof(inner.value)
+        + sys.getsizeof(inner.data)
+        + sum(sys.getsizeof(item) for item in inner.data)
+    )
+    assert estimate_model_size(inner) == inner_expected
+
+    mapping_expected = sys.getsizeof(outer.mapping) + sum(sys.getsizeof(v) for v in outer.mapping.values())
+    tags_expected = sys.getsizeof(outer.tags) + sum(sys.getsizeof(tag) for tag in outer.tags)
+    outer_expected = sys.getsizeof(outer) + inner_expected + mapping_expected + tags_expected
+    assert estimate_model_size(outer) == outer_expected
+
+
+def test_estimate_model_size_handles_span_objects() -> None:
+    status = TraceStatus(status_code="OK", description="fine")
+    context = SpanContext(trace_id="trace", span_id="parent", is_remote=False, trace_state={"foo": "bar"})
+    event = Event(name="step", attributes={"detail": "value"}, timestamp=1.0)
+    link = Link(context=context, attributes=None)
+    resource = OtelResource(attributes={"service.name": "unit"}, schema_url="schema")
+
+    span = Span(
+        rollout_id="ro-1",
+        attempt_id="at-1",
+        sequence_id=1,
+        trace_id="trace",
+        span_id="span",
+        parent_id=None,
+        name="operation",
+        status=status,
+        attributes={"foo": "bar", "answer": 42},
+        events=[event],
+        links=[link],
+        start_time=1.0,
+        end_time=2.0,
+        context=None,
+        parent=None,
+        resource=resource,
+    )
+
+    status_expected = sys.getsizeof(status) + sys.getsizeof(status.status_code) + sys.getsizeof(status.description)
+
+    trace_state_values = context.trace_state.values()
+    context_expected = (
+        sys.getsizeof(context)
+        + sys.getsizeof(context.trace_id)
+        + sys.getsizeof(context.span_id)
+        + sys.getsizeof(context.is_remote)
+        + sys.getsizeof(context.trace_state)
+        + sum(sys.getsizeof(v) for v in trace_state_values)
+    )
+
+    event_attributes_expected = sys.getsizeof(event.attributes) + sys.getsizeof("value")
+    event_expected = (
+        sys.getsizeof(event) + sys.getsizeof(event.name) + event_attributes_expected + sys.getsizeof(event.timestamp)
+    )
+    events_expected = sys.getsizeof(span.events) + event_expected
+
+    link_attributes = cast(Optional[dict[str, str]], link.attributes)
+    link_attribute_values = link_attributes.values() if link_attributes is not None else ()
+    link_attributes_expected = sys.getsizeof(link_attributes if link_attributes is not None else None) + sum(
+        sys.getsizeof(v) for v in link_attribute_values
+    )
+    link_expected = sys.getsizeof(link) + context_expected + link_attributes_expected
+    links_expected = sys.getsizeof(span.links) + link_expected
+
+    attributes_expected = (
+        sys.getsizeof(span.attributes) + sys.getsizeof("bar") + sys.getsizeof(span.attributes["answer"])
+    )
+
+    resource_expected = (
+        sys.getsizeof(resource)
+        + sys.getsizeof(resource.attributes)
+        + sum(sys.getsizeof(v) for v in resource.attributes.values())
+        + sys.getsizeof(resource.schema_url)
+    )
+
+    expected_size = (
+        sys.getsizeof(span)
+        + sys.getsizeof(span.rollout_id)
+        + sys.getsizeof(span.attempt_id)
+        + sys.getsizeof(span.sequence_id)
+        + sys.getsizeof(span.trace_id)
+        + sys.getsizeof(span.span_id)
+        + sys.getsizeof(span.parent_id)
+        + sys.getsizeof(span.name)
+        + status_expected
+        + attributes_expected
+        + events_expected
+        + links_expected
+        + sys.getsizeof(span.start_time)
+        + sys.getsizeof(span.end_time)
+        + sys.getsizeof(span.context)
+        + sys.getsizeof(span.parent)
+        + resource_expected
+    )
+
+    assert estimate_model_size(span) == expected_size
+
+
+@pytest.mark.asyncio
 async def test_span_triggers_status_transition(
     inmemory_store: InMemoryLightningStore, mock_readable_span: Mock
 ) -> None:
@@ -538,6 +912,45 @@ async def test_span_triggers_status_transition(
 
 
 @pytest.mark.asyncio
+async def test_span_does_not_reset_timeout_attempt(
+    inmemory_store: InMemoryLightningStore, mock_readable_span: Mock
+) -> None:
+    """Adding a span to a timed-out attempt should not mark it running again."""
+
+    rollout = await inmemory_store.enqueue_rollout(input={"test": "timeout-span"})
+
+    # Create the first attempt
+    dequeued = await inmemory_store.dequeue_rollout()
+    assert dequeued is not None
+    attempt_id = dequeued.attempt.attempt_id
+
+    # Simulate the attempt timing out
+    await inmemory_store.update_attempt(
+        rollout_id=rollout.rollout_id,
+        attempt_id=attempt_id,
+        status="timeout",
+    )
+
+    attempts_before = await inmemory_store.query_attempts(rollout.rollout_id)
+    assert attempts_before[0].status == "timeout"
+
+    rollout_before = await inmemory_store.get_rollout_by_id(rollout.rollout_id)
+    assert rollout_before is not None
+    assert rollout_before.status != "running"
+
+    # Adding a new span should keep the attempt in timeout state
+    await inmemory_store.add_otel_span(rollout.rollout_id, attempt_id, mock_readable_span)
+
+    attempts_after = await inmemory_store.query_attempts(rollout.rollout_id)
+    assert attempts_after[0].status == "timeout"
+    assert attempts_after[0].last_heartbeat_time is not None
+
+    rollout_after = await inmemory_store.get_rollout_by_id(rollout.rollout_id)
+    assert rollout_after is not None
+    assert rollout_after.status == rollout_before.status
+
+
+@pytest.mark.asyncio
 async def test_completion_sets_end_time(inmemory_store: InMemoryLightningStore) -> None:
     """Test that completing a rollout sets end_time."""
     rollout = await inmemory_store.enqueue_rollout(input={"test": "data"})
@@ -564,7 +977,7 @@ async def test_wait_for_rollouts(inmemory_store: InMemoryLightningStore) -> None
     _r3 = await inmemory_store.enqueue_rollout(input={"id": 3})
 
     # Start waiting for r1 and r2
-    async def wait_for_completion() -> List[RolloutV2]:
+    async def wait_for_completion() -> List[Rollout]:
         return await inmemory_store.wait_for_rollouts(rollout_ids=[r1.rollout_id, r2.rollout_id], timeout=5.0)
 
     wait_task = asyncio.create_task(wait_for_completion())
@@ -596,6 +1009,253 @@ async def test_wait_timeout(inmemory_store: InMemoryLightningStore) -> None:
     assert len(completed) == 0  # No completions
 
 
+@pytest.mark.asyncio
+async def test_wait_with_timeout_none_polling(inmemory_store: InMemoryLightningStore) -> None:
+    """Test wait_for_rollouts with timeout=None uses polling and can be cancelled."""
+    rollout = await inmemory_store.enqueue_rollout(input={"test": "indefinite"})
+
+    async def wait_indefinitely():
+        return await inmemory_store.wait_for_rollouts(rollout_ids=[rollout.rollout_id], timeout=None)
+
+    # Start waiting with timeout=None
+    wait_task = asyncio.create_task(wait_indefinitely())
+
+    # Give it a moment to start polling
+    await asyncio.sleep(0.1)
+
+    # Complete the rollout
+    await inmemory_store.update_rollout(rollout_id=rollout.rollout_id, status="succeeded")
+
+    # The wait should complete now
+    completed = await asyncio.wait_for(wait_task, timeout=1.0)
+    assert len(completed) == 1
+    assert completed[0].rollout_id == rollout.rollout_id
+    assert completed[0].status == "succeeded"
+
+
+@pytest.mark.asyncio
+async def test_wait_with_timeout_none_can_be_cancelled(inmemory_store: InMemoryLightningStore) -> None:
+    """Test that wait_for_rollouts with timeout=None can be cancelled cleanly."""
+    rollout = await inmemory_store.enqueue_rollout(input={"test": "cancel"})
+
+    async def wait_indefinitely():
+        return await inmemory_store.wait_for_rollouts(rollout_ids=[rollout.rollout_id], timeout=None)
+
+    # Start waiting with timeout=None
+    wait_task = asyncio.create_task(wait_indefinitely())
+
+    # Give it time to start polling
+    await asyncio.sleep(0.15)  # Wait for at least one poll cycle
+
+    # Cancel the task
+    wait_task.cancel()
+
+    # Should raise CancelledError
+    with pytest.raises(asyncio.CancelledError):
+        await wait_task
+
+    # Task should be cancelled, no hanging threads
+    assert wait_task.cancelled()
+
+
+@pytest.mark.asyncio
+async def test_wait_with_timeout_zero(inmemory_store: InMemoryLightningStore) -> None:
+    """Test wait_for_rollouts with timeout=0 returns immediately."""
+    rollout = await inmemory_store.enqueue_rollout(input={"test": "zero"})
+
+    start = time.time()
+    completed = await inmemory_store.wait_for_rollouts(rollout_ids=[rollout.rollout_id], timeout=0)
+    elapsed = time.time() - start
+
+    # Should return almost immediately
+    assert elapsed < 0.05
+    assert len(completed) == 0
+
+
+@pytest.mark.asyncio
+async def test_wait_with_already_completed_rollout(inmemory_store: InMemoryLightningStore) -> None:
+    """Test wait_for_rollouts returns immediately for already completed rollouts."""
+    rollout = await inmemory_store.enqueue_rollout(input={"test": "already_done"})
+
+    # Complete it first
+    await inmemory_store.update_rollout(rollout_id=rollout.rollout_id, status="succeeded")
+
+    # Wait should return immediately without blocking
+    start = time.time()
+    completed = await inmemory_store.wait_for_rollouts(rollout_ids=[rollout.rollout_id], timeout=5.0)
+    elapsed = time.time() - start
+
+    assert elapsed < 0.1  # Should be instant
+    assert len(completed) == 1
+    assert completed[0].rollout_id == rollout.rollout_id
+    assert completed[0].status == "succeeded"
+
+
+@pytest.mark.asyncio
+async def test_wait_multiple_rollouts_different_completion_times(inmemory_store: InMemoryLightningStore) -> None:
+    """Test waiting for multiple rollouts that complete at different times."""
+    r1 = await inmemory_store.enqueue_rollout(input={"id": 1})
+    r2 = await inmemory_store.enqueue_rollout(input={"id": 2})
+    r3 = await inmemory_store.enqueue_rollout(input={"id": 3})
+
+    async def wait_for_all():
+        return await inmemory_store.wait_for_rollouts(
+            rollout_ids=[r1.rollout_id, r2.rollout_id, r3.rollout_id], timeout=2.0
+        )
+
+    wait_task = asyncio.create_task(wait_for_all())
+
+    # Complete them at different times
+    await asyncio.sleep(0.05)
+    await inmemory_store.update_rollout(rollout_id=r2.rollout_id, status="succeeded")
+
+    await asyncio.sleep(0.05)
+    await inmemory_store.update_rollout(rollout_id=r1.rollout_id, status="failed")
+
+    await asyncio.sleep(0.05)
+    await inmemory_store.update_rollout(rollout_id=r3.rollout_id, status="succeeded")
+
+    # All should be collected
+    completed = await wait_task
+    assert len(completed) == 3
+    completed_ids = {r.rollout_id for r in completed}
+    assert completed_ids == {r1.rollout_id, r2.rollout_id, r3.rollout_id}
+
+
+@pytest.mark.asyncio
+async def test_wait_partial_completion_on_timeout(inmemory_store: InMemoryLightningStore) -> None:
+    """Test that wait_for_rollouts returns partial results when timeout occurs."""
+    r1 = await inmemory_store.enqueue_rollout(input={"id": 1})
+    r2 = await inmemory_store.enqueue_rollout(input={"id": 2})
+    r3 = await inmemory_store.enqueue_rollout(input={"id": 3})
+
+    async def wait_with_short_timeout():
+        return await inmemory_store.wait_for_rollouts(
+            rollout_ids=[r1.rollout_id, r2.rollout_id, r3.rollout_id], timeout=0.2
+        )
+
+    wait_task = asyncio.create_task(wait_with_short_timeout())
+
+    # Only complete one before timeout
+    await asyncio.sleep(0.05)
+    await inmemory_store.update_rollout(rollout_id=r1.rollout_id, status="succeeded")
+
+    # Wait for timeout
+    completed = await wait_task
+
+    # Should only get r1
+    assert len(completed) == 1
+    assert completed[0].rollout_id == r1.rollout_id
+
+
+@pytest.mark.asyncio
+async def test_wait_concurrent_waiters_on_same_rollout(inmemory_store: InMemoryLightningStore) -> None:
+    """Test multiple concurrent waiters on the same rollout."""
+    rollout = await inmemory_store.enqueue_rollout(input={"test": "concurrent"})
+
+    async def wait_for_completion():
+        return await inmemory_store.wait_for_rollouts(rollout_ids=[rollout.rollout_id], timeout=2.0)
+
+    # Start multiple waiters concurrently
+    wait_tasks = [asyncio.create_task(wait_for_completion()) for _ in range(5)]
+
+    await asyncio.sleep(0.05)
+
+    # Complete the rollout
+    await inmemory_store.update_rollout(rollout_id=rollout.rollout_id, status="succeeded")
+
+    # All waiters should complete
+    results = await asyncio.gather(*wait_tasks)
+
+    # Each waiter should get the completed rollout
+    for completed in results:
+        assert len(completed) == 1
+        assert completed[0].rollout_id == rollout.rollout_id
+        assert completed[0].status == "succeeded"
+
+
+@pytest.mark.asyncio
+async def test_wait_nonexistent_rollout_with_finite_timeout(inmemory_store: InMemoryLightningStore) -> None:
+    """Test waiting for non-existent rollout with finite timeout."""
+    start = time.time()
+    completed = await inmemory_store.wait_for_rollouts(rollout_ids=["nonexistent"], timeout=0.1)
+    elapsed = time.time() - start
+
+    # Should timeout quickly (not wait indefinitely)
+    assert elapsed < 0.2
+    assert len(completed) == 0
+
+
+@pytest.mark.asyncio
+async def test_wait_mixed_existing_and_nonexistent_rollouts(inmemory_store: InMemoryLightningStore) -> None:
+    """Test waiting for mix of existing and non-existent rollouts."""
+    r1 = await inmemory_store.enqueue_rollout(input={"id": 1})
+
+    async def wait_for_mixed():
+        return await inmemory_store.wait_for_rollouts(
+            rollout_ids=[r1.rollout_id, "nonexistent1", "nonexistent2"], timeout=0.5
+        )
+
+    wait_task = asyncio.create_task(wait_for_mixed())
+
+    await asyncio.sleep(0.05)
+    await inmemory_store.update_rollout(rollout_id=r1.rollout_id, status="succeeded")
+
+    completed = await wait_task
+
+    # Should only get the existing, completed rollout
+    assert len(completed) == 1
+    assert completed[0].rollout_id == r1.rollout_id
+
+
+@pytest.mark.asyncio
+async def test_wait_event_set_before_wait_starts(inmemory_store: InMemoryLightningStore) -> None:
+    """Test that waiting on an already-set event returns immediately."""
+    rollout = await inmemory_store.enqueue_rollout(input={"test": "early_complete"})
+
+    # Complete it before waiting
+    await inmemory_store.update_rollout(rollout_id=rollout.rollout_id, status="succeeded")
+
+    # Now start waiting - should return immediately
+    start = time.time()
+    completed = await inmemory_store.wait_for_rollouts(rollout_ids=[rollout.rollout_id], timeout=10.0)
+    elapsed = time.time() - start
+
+    assert elapsed < 0.05  # Should be instant
+    assert len(completed) == 1
+    assert completed[0].status == "succeeded"
+
+
+@pytest.mark.asyncio
+async def test_wait_polling_interval_with_timeout_none(inmemory_store: InMemoryLightningStore) -> None:
+    """Test that timeout=None polling doesn't busy-wait (uses reasonable intervals)."""
+    rollout = await inmemory_store.enqueue_rollout(input={"test": "polling"})
+
+    start = time.time()
+
+    async def wait_and_complete():
+        # Start waiting with timeout=None
+        wait_task = asyncio.create_task(
+            inmemory_store.wait_for_rollouts(rollout_ids=[rollout.rollout_id], timeout=None)
+        )
+
+        # Wait for 0.5 seconds to let polling happen
+        await asyncio.sleep(0.5)
+
+        # Complete the rollout
+        await inmemory_store.update_rollout(rollout_id=rollout.rollout_id, status="succeeded")
+
+        return await wait_task
+
+    completed = await wait_and_complete()
+    elapsed = time.time() - start
+
+    # Should complete after ~0.5s (when we set the event)
+    assert 0.4 < elapsed < 0.7
+    assert len(completed) == 1
+    assert completed[0].status == "succeeded"
+
+
 # Concurrent Access Tests
 
 
@@ -603,7 +1263,7 @@ async def test_wait_timeout(inmemory_store: InMemoryLightningStore) -> None:
 async def test_concurrent_task_addition(inmemory_store: InMemoryLightningStore) -> None:
     """Test adding tasks concurrently."""
 
-    async def enqueue_rollout(index: int) -> RolloutV2:
+    async def enqueue_rollout(index: int) -> Rollout:
         return await inmemory_store.enqueue_rollout(input={"index": index})
 
     # Add 50 tasks concurrently
@@ -627,7 +1287,7 @@ async def test_concurrent_pop_operations(inmemory_store: InMemoryLightningStore)
     for i in range(20):
         await inmemory_store.enqueue_rollout(input={"index": i})
 
-    async def pop_task() -> RolloutV2 | None:
+    async def pop_task() -> Rollout | None:
         return await inmemory_store.dequeue_rollout()
 
     # Pop concurrently (more attempts than available)
@@ -677,7 +1337,9 @@ async def test_concurrent_resource_updates(inmemory_store: InMemoryLightningStor
             model=f"model-v{ver}",
             sampling_parameters={"temperature": 0.5 + ver * 0.01},
         )
-        update = ResourcesUpdate(resources_id=f"v{ver}", resources={"llm": llm})
+        update = ResourcesUpdate(
+            resources_id=f"v{ver}", resources={"llm": llm}, create_time=time.time(), update_time=time.time(), version=1
+        )
         await inmemory_store.update_resources(update.resources_id, update.resources)
 
     # Update concurrently
@@ -976,7 +1638,7 @@ async def test_add_attempt_creates_new_attempt(inmemory_store: InMemoryLightning
     assert attempted_rollout.attempt.sequence_id == 1
     assert attempted_rollout.attempt.status == "preparing"
     assert attempted_rollout.attempt.rollout_id == rollout.rollout_id
-    assert attempted_rollout.attempt.attempt_id.startswith("attempt-")
+    assert attempted_rollout.attempt.attempt_id.startswith("at-")
 
     # Verify attempt is stored
     attempts = await inmemory_store.query_attempts(rollout.rollout_id)
@@ -1420,3 +2082,139 @@ async def test_requeued_attempt_recovers_after_retry_started(
     assert rollout.status == "preparing"
 
     assert await inmemory_store.dequeue_rollout() is None
+
+
+@pytest.mark.asyncio
+async def test_resources_update_tracks_create_and_update_times(inmemory_store: InMemoryLightningStore) -> None:
+    """Test that ResourcesUpdate tracks create_time and update_time correctly."""
+    llm = LLM(
+        resource_type="llm",
+        endpoint="http://localhost:8080",
+        model="test-model",
+        sampling_parameters={"temperature": 0.7},
+    )
+
+    # Add initial resource
+    start_time = time.time()
+    update1 = await inmemory_store.add_resources({"main_llm": llm})
+
+    # Verify create_time is set and reasonable
+    assert update1.create_time >= start_time
+    assert update1.create_time <= time.time()
+
+    # Initially, update_time should equal create_time
+    assert update1.update_time == update1.create_time
+    assert update1.version == 1
+
+    # Wait a bit and update the same resource
+    await asyncio.sleep(0.01)
+    llm_v2 = LLM(
+        resource_type="llm",
+        endpoint="http://localhost:8080",
+        model="test-model-v2",
+        sampling_parameters={"temperature": 0.8},
+    )
+    update2 = await inmemory_store.update_resources(update1.resources_id, {"main_llm": llm_v2})
+
+    # Verify update_time changed but create_time stayed the same
+    assert update2.resources_id == update1.resources_id
+    assert update2.create_time == update1.create_time  # create_time should not change
+    assert update2.update_time > update1.update_time  # update_time should be newer
+    assert update2.version == 2  # version should increment
+
+
+@pytest.mark.asyncio
+async def test_resources_update_version_increments(inmemory_store: InMemoryLightningStore) -> None:
+    """Test that ResourcesUpdate version increments correctly with each update."""
+    llm = LLM(
+        resource_type="llm",
+        endpoint="http://localhost:8080",
+        model="test-model",
+        sampling_parameters={"temperature": 0.7},
+    )
+
+    # Add initial resource
+    update1 = await inmemory_store.add_resources({"main_llm": llm})
+    assert update1.version == 1
+
+    # Update it multiple times
+    for i in range(2, 6):
+        llm_updated = LLM(
+            resource_type="llm",
+            endpoint="http://localhost:8080",
+            model=f"test-model-v{i}",
+            sampling_parameters={"temperature": 0.7},
+        )
+        update = await inmemory_store.update_resources(update1.resources_id, {"main_llm": llm_updated})
+        assert update.version == i
+        assert update.resources_id == update1.resources_id
+        assert update.create_time == update1.create_time
+
+
+@pytest.mark.asyncio
+async def test_resources_different_ids_have_independent_versions(inmemory_store: InMemoryLightningStore) -> None:
+    """Test that different resources_ids have independent version counters."""
+    llm1 = LLM(
+        resource_type="llm",
+        endpoint="http://localhost:8080",
+        model="model-1",
+        sampling_parameters={"temperature": 0.7},
+    )
+    llm2 = LLM(
+        resource_type="llm",
+        endpoint="http://localhost:8080",
+        model="model-2",
+        sampling_parameters={"temperature": 0.8},
+    )
+
+    # Add two different resources
+    res1 = await inmemory_store.add_resources({"llm": llm1})
+    res2 = await inmemory_store.add_resources({"llm": llm2})
+
+    # Both should start at version 1
+    assert res1.version == 1
+    assert res2.version == 1
+    assert res1.resources_id != res2.resources_id
+
+    # Update res1 twice
+    for i in range(2):
+        llm_updated = LLM(
+            resource_type="llm",
+            endpoint="http://localhost:8080",
+            model=f"model-1-v{i+2}",
+            sampling_parameters={"temperature": 0.7},
+        )
+        res1 = await inmemory_store.update_resources(res1.resources_id, {"llm": llm_updated})
+
+    # res1 should be at version 3, res2 should still be at version 1
+    assert res1.version == 3
+    retrieved_res2 = await inmemory_store.get_resources_by_id(res2.resources_id)
+    assert retrieved_res2 is not None
+    assert retrieved_res2.version == 1
+
+
+@pytest.mark.asyncio
+async def test_query_resources_returns_all_fields(inmemory_store: InMemoryLightningStore) -> None:
+    """Test that query_resources returns all ResourcesUpdate fields."""
+    llm = LLM(
+        resource_type="llm",
+        endpoint="http://localhost:8080",
+        model="test-model",
+        sampling_parameters={"temperature": 0.7},
+    )
+
+    # Add multiple resources
+    await inmemory_store.add_resources({"llm": llm})
+    await asyncio.sleep(0.01)
+    await inmemory_store.add_resources({"llm": llm})
+
+    # Query all resources
+    all_resources = await inmemory_store.query_resources()
+
+    assert len(all_resources) == 2
+    for res in all_resources:
+        assert res.resources_id is not None
+        assert res.create_time > 0
+        assert res.update_time > 0
+        assert res.version >= 1
+        assert res.resources is not None

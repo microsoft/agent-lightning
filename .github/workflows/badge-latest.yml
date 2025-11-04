@@ -1,0 +1,37 @@
+name: Badge - Latest
+
+on:
+  workflow_run:
+    workflows:
+      - Examples - Calc-X
+      - Examples - Spider
+      - Examples - APO
+      - Examples - Unsloth
+      - GPU Test
+    types: [completed]
+
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  badge:
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.head_branch == 'main') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/github-script@v8
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const badgeAggregation = require('./scripts/badge_aggregation.js');
+            const dependencies = [
+              { workflow: 'examples-calc-x.yml', label: 'calc-x.latest', variants: ['latest'] },
+              { workflow: 'examples-spider.yml', label: 'spider.latest', variants: ['latest'] },
+              { workflow: 'examples-apo.yml', label: 'apo.latest', variants: ['latest'] },
+              { workflow: 'examples-unsloth.yml', label: 'unsloth.latest', variants: ['latest'] },
+              { workflow: 'tests-full.yml', label: 'tests-full.latest', variants: ['latest'] },
+            ];
+            await badgeAggregation({ github, context, core, dependencies });

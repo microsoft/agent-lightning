@@ -1,5 +1,7 @@
 # RAG Agent Example
 
+This example demonstrates training a Retrieval-Augmented Generation (RAG) agent using Agent-Lightning with Wikipedia retrieval capabilities. The agent answers multi-hop questions from the MuSiQue dataset by retrieving and reasoning over Wikipedia passages. **It's tested and compatible with Agent-lightning v0.1.x**.
+
 ## Overview
 
 This example originally runs on a single node with four GPUs, each requiring at least 40GB of memory.
@@ -12,6 +14,14 @@ This example originally runs on a single node with four GPUs, each requiring at 
 6. Run the agent: `python rag_agent.py`. This automatically launches 12 agent workers by default.
 7. In another terminal, launch the training server: `bash train.sh`.
 
+## Included Files
+
+| File/Directory | Description |
+|----------------|-------------|
+| `rag_agent.py` | Entry point for running the Agent-Lightning RAG training pipeline |
+| `train.sh` | Starts the GRPO training server that updates the agent |
+| `utils.py` | Scoring utilities for exact match, F1, and response parsing |
+| `wiki_retriever_mcp/` | Setup scripts and MCP server (`wiki_retriever_install.sh`, `wiki_retriever_mcp.py`) for Wikipedia retrieval |
 
 ## Preparing the Retrieval Corpus
 

@@ -43,5 +43,7 @@ if __name__ == "__main__":
     configure_logger()
     dotenv.load_dotenv()
     agent = SimpleAgent()
-    trainer = Trainer(n_workers=2)
-    trainer.fit(agent, "http://127.0.0.1:9997")
+    # Use 2 workers to simulate multiple clients
+    # max_tasks is optional, limit to 2 tasks here for a quick demo.
+    trainer = Trainer(n_workers=2, max_tasks=2)
+    trainer.fit_v0(agent, "http://127.0.0.1:9997")

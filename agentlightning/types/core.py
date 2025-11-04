@@ -1,12 +1,11 @@
 # Copyright (c) Microsoft. All rights reserved.
 
+"""Core data models shared across Agent Lightning components."""
+
 from __future__ import annotations
 
-import inspect
-import logging
 from typing import (
     TYPE_CHECKING,
-    Annotated,
     Any,
     Callable,
     Dict,
@@ -15,6 +14,7 @@ from typing import (
     Literal,
     Optional,
     Protocol,
+    SupportsIndex,
     TypeVar,
     Union,
     cast,
@@ -27,32 +27,25 @@ from .tracer import Span
 
 if TYPE_CHECKING:
     from agentlightning.litagent import LitAgent
-    from agentlightning.runner.base import BaseRunner
-    from agentlightning.tracer.base import BaseTracer
+    from agentlightning.runner.base import Runner
+    from agentlightning.tracer.base import Tracer
 
 __all__ = [
     "Triplet",
-    "Rollout",
+    "RolloutLegacy",
     "Task",
     "TaskInput",
     "TaskIfAny",
+    "RolloutRawResultLegacy",
     "RolloutRawResult",
-    "RolloutRawResultV2",
     "RolloutMode",
-    "Resource",
-    "LLM",
-    "ProxyLLM",
-    "PromptTemplate",
-    "ResourceUnion",
-    "NamedResources",
-    "ResourcesUpdate",
     "GenericResponse",
     "ParallelWorkerBase",
     "Dataset",
     "AttemptStatus",
     "RolloutStatus",
     "RolloutConfig",
-    "RolloutV2",
+    "Rollout",
     "Attempt",
     "AttemptedRollout",
     "Hook",
@@ -60,11 +53,9 @@ __all__ = [
 
 T_co = TypeVar("T_co", covariant=True)
 
-logger = logging.getLogger(__name__)
-
 
 class Triplet(BaseModel):
-    """A standard structure for a single turn in a trajectory."""
+    """Single interaction turn captured during reinforcement learning."""
 
     prompt: Any
     response: Any
@@ -72,8 +63,12 @@ class Triplet(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
-class Rollout(BaseModel):
-    """The standard reporting object from client to server."""
+class RolloutLegacy(BaseModel):
+    """Legacy reporting payload exchanged with the deprecated HTTP server.
+
+    !!! warning "Deprecated"
+        Use [`Rollout`][agentlightning.Rollout] instead.
+    """
 
     rollout_id: str
 
@@ -108,6 +103,7 @@ RolloutStatus = Literal[
     "cancelled",  # cancelled by user (or watchdog)
     "requeuing",  # retrying
 ]
+"""The status of a rollout."""
 
 AttemptStatus = Literal[
     # A status is essentially a process.
@@ -119,66 +115,83 @@ AttemptStatus = Literal[
     "unresponsive",  # the worker has not reported results for a while
     "timeout",  # the worker has been emitting new logs, but have been working on the task for too long
 ]
+"""The status of an attempt."""
 
 RolloutMode = Literal["train", "val", "test"]
+"""Possible rollout modes."""
 
 
 class Attempt(BaseModel):
-    """An attempt to execute a rollout. A rollout can have multiple attempts if retries are needed."""
+    """Execution attempt for a rollout, including metadata for retries."""
 
-    rollout_id: str  # the rollout this attempt belongs to
-    attempt_id: str  # the universal id for current attempt
-    sequence_id: int  # the sequence number of the attempt, starting from 1
-    start_time: float  # time when the attempt has started
-    end_time: Optional[float] = None  # time when the attempt has ended
-
+    rollout_id: str
+    """The rollout which this attempt belongs to."""
+    attempt_id: str
+    """The universal id for current attempt."""
+    sequence_id: int
+    """The sequence number of the attempt, starting from 1."""
+    start_time: float
+    """The time when the attempt has started."""
+    end_time: Optional[float] = None
+    """The time when the attempt has ended."""
     status: AttemptStatus = "preparing"
-    # The rollout worker which is executing this attempt
+    """The status of the attempt."""
     worker_id: Optional[str] = None
+    """The rollout worker which is executing this attempt."""
 
-    last_heartbeat_time: Optional[float] = None  # last time when the worker has reported progress
+    last_heartbeat_time: Optional[float] = None
+    """The last time when the worker has reported progress (i.e., a span)."""
 
-    # A bucket for any other relevant information
     metadata: Optional[Dict[str, Any]] = None
+    """A bucket for any other relevant information."""
 
 
 class RolloutConfig(BaseModel):
-    """Configurations for rollout execution."""
+    """Configuration controlling rollout retries and timeouts."""
 
-    timeout_seconds: Optional[float] = None  # none indicates no timeout
-    unresponsive_seconds: Optional[float] = None  # none indicates no unresponsive timeout
-    max_attempts: int = Field(default=1, ge=1)  # including the first attempt
-    retry_condition: List[AttemptStatus] = Field(
-        default_factory=cast(Callable[[], List[AttemptStatus]], list)
-    )  # list of statuses that should trigger a retry
+    timeout_seconds: Optional[float] = None
+    """The timeout for the rollout, in seconds. None indicates no timeout."""
+    unresponsive_seconds: Optional[float] = None
+    """The unresponsive timeout for the rollout, in seconds. None indicates no unresponsive timeout."""
+    max_attempts: int = Field(default=1, ge=1)
+    """The maximum number of attempts for the rollout, including the first attempt."""
+    retry_condition: List[AttemptStatus] = Field(default_factory=cast(Callable[[], List[AttemptStatus]], list))
+    """The list of statuses that should trigger a retry."""
 
 
-class RolloutV2(BaseModel):
+class Rollout(BaseModel):
     rollout_id: str
+    """Unique identifier for the rollout."""
 
-    # Inputs
     input: TaskInput
+    """Task input used to generate the rollout."""
 
     # Time to track the lifecycle of the rollout
     start_time: float
+    """Timestamp when the rollout started."""
     end_time: Optional[float] = None
+    """Timestamp when the rollout ended."""
 
     mode: Optional[RolloutMode] = None
+    """Execution mode such as `"train"`, `"val"` or `"test"`. See [`RolloutMode`][agentlightning.RolloutMode]."""
     resources_id: Optional[str] = None
+    """Identifier of the resources required to execute the rollout."""
 
-    # Overall scheduling/running information
     status: RolloutStatus = "queuing"
+    """Latest status emitted by the controller."""
 
     config: RolloutConfig = Field(default_factory=RolloutConfig)
+    """Retry and timeout configuration associated with the rollout."""
 
-    # A bucket for any other relevant information
     metadata: Optional[Dict[str, Any]] = None
+    """Additional metadata attached to the rollout."""
 
 
-class AttemptedRollout(RolloutV2):
-    """A rollout along with its active attempt."""
+class AttemptedRollout(Rollout):
+    """Rollout paired with the currently active attempt."""
 
     attempt: Attempt
+    """The attempt that is currently processing the rollout."""
 
     @model_validator(mode="after")
     def check_consistency(self) -> AttemptedRollout:
@@ -188,10 +201,16 @@ class AttemptedRollout(RolloutV2):
 
 
 TaskInput = Any
+"""Task input type. Accepts arbitrary payloads."""
 
 
 class Task(BaseModel):
-    """A task (rollout request) to be processed by the client agent."""
+    """Rollout request served to client agents.
+
+    !!! warning "Deprecated"
+        The legacy HTTP client/server stack still uses this model. Prefer
+        [`LightningStore`][agentlightning.LightningStore] APIs for new workflows.
+    """
 
     rollout_id: str
     input: TaskInput
@@ -209,171 +228,47 @@ class Task(BaseModel):
 
 
 class TaskIfAny(BaseModel):
+    """A task or indication that no task is available.
+
+    !!! warning "Deprecated"
+        Use [`LightningStore`][agentlightning.LightningStore] APIs for new workflows.
+    """
+
     is_available: bool
+    """Indication that a task is available."""
     task: Optional[Task] = None
 
 
-RolloutRawResult = Union[None, float, List[Triplet], List[Dict[str, Any]], List[ReadableSpan], Rollout]
+RolloutRawResultLegacy = Union[None, float, List[Triplet], List[Dict[str, Any]], List[ReadableSpan], RolloutLegacy]
+"""Legacy rollout result type.
 
-RolloutRawResultV2 = Union[
+!!! warning "Deprecated"
+    Use [`RolloutRawResult`][agentlightning.RolloutRawResult] instead.
+"""
+
+RolloutRawResult = Union[
     None,  # nothing (relies on tracer)
     float,  # only final reward
     List[ReadableSpan],  # constructed OTEL spans by user
     List[Span],  # constructed Span objects by user
 ]
+"""Rollout result type.
 
-
-class Resource(BaseModel):
-    """
-    Base class for all tunable resources.
-    """
-
-    resource_type: Any
-
-
-class LLM(Resource):
-    """
-    Provide an LLM endpoint and model name as a resource.
-
-    Attributes:
-        endpoint (str): The URL of the LLM API endpoint.
-        model (str): The identifier for the model to be used (e.g., 'gpt-4o').
-        sampling_parameters (SamplingParameters): A dictionary of hyperparameters
-            for model inference, such as temperature, top_p, etc.
-    """
-
-    resource_type: Literal["llm"] = "llm"
-    endpoint: str
-    model: str
-    api_key: Optional[str] = None
-    sampling_parameters: Dict[str, Any] = Field(default_factory=dict)
-
-    def get_base_url(self, *args: Any, **kwargs: Any) -> str:
-        """The base_url to put into openai.OpenAI.
-
-        Users are encouraged to use `base_url` to get the LLM endpoint instead of accessing `endpoint` directly.
-        """
-        return self.endpoint
-
-
-class ProxyLLM(LLM):
-    """Proxy LLM resource that is tailored by `llm_proxy.LLMProxy`."""
-
-    resource_type: Literal["proxy_llm"] = "proxy_llm"  # type: ignore
-    _initialized: bool = False
-
-    def model_post_init(self, __context: Any) -> None:
-        """Mark initialization as complete after Pydantic finishes setup."""
-        super().model_post_init(__context)
-        object.__setattr__(self, "_initialized", True)
-
-    def __getattribute__(self, name: str) -> Any:
-        """Override to emit a warning when endpoint is accessed directly."""
-        # Check if we're accessing endpoint after initialization and not from base_url
-        if name == "endpoint":
-            try:
-                initialized = object.__getattribute__(self, "_initialized")
-            except AttributeError:
-                initialized = False
-
-            if initialized:
-                # Check the call stack to see if we're being called from base_url
-                frame = inspect.currentframe()
-                if frame and frame.f_back:
-                    caller_name = frame.f_back.f_code.co_name
-                    if caller_name != "get_base_url":
-                        logger.warning(
-                            "Accessing 'endpoint' directly on ProxyLLM is discouraged. "
-                            "Use 'get_base_url(rollout_id, attempt_id)' instead to get the properly formatted endpoint."
-                        )
-        return super().__getattribute__(name)
-
-    def with_attempted_rollout(self, rollout: AttemptedRollout) -> LLM:
-        """Bake the rollout and attempt id into the endpoint."""
-        return LLM(
-            endpoint=self.get_base_url(rollout.rollout_id, rollout.attempt.attempt_id),
-            model=self.model,
-            sampling_parameters=self.sampling_parameters,
-            api_key=self.api_key,
-        )
-
-    def get_base_url(self, rollout_id: Optional[str], attempt_id: Optional[str]) -> str:
-        if rollout_id is None and attempt_id is None:
-            return self.endpoint
-
-        if not (isinstance(rollout_id, str) and isinstance(attempt_id, str)):
-            raise ValueError("rollout_id and attempt_id must be strings or all be empty")
-
-        prefix = self.endpoint
-        if prefix.endswith("/"):
-            prefix = prefix[:-1]
-        if prefix.endswith("/v1"):
-            prefix = prefix[:-3]
-            has_v1 = True
-        else:
-            has_v1 = False
-        # Now the prefix should look like "http://localhost:11434"
-
-        # Append the rollout and attempt id to the prefix
-        prefix = prefix + f"/rollout/{rollout_id}/attempt/{attempt_id}"
-        if has_v1:
-            prefix = prefix + "/v1"
-        return prefix
-
-
-class PromptTemplate(Resource):
-    """
-    A prompt template as a resource.
-
-    Attributes:
-        template (str): The template string. The format depends on the engine.
-        engine (Literal['jinja', 'f-string', 'poml']): The templating engine
-            to use for rendering the prompt. I imagine users can use their own
-            customized engines, but algos can only well operate on a subset of them.
-    """
-
-    resource_type: Literal["prompt_template"] = "prompt_template"
-    template: str
-    engine: Literal["jinja", "f-string", "poml"]
-
-
-# Use discriminated union for proper deserialization
-ResourceUnion = Annotated[Union[LLM, ProxyLLM, PromptTemplate], Field(discriminator="resource_type")]
-NamedResources = Dict[str, ResourceUnion]
+Possible return values of [`rollout`][agentlightning.LitAgent.rollout].
 """
-A dictionary-like class to hold named resources.
-
-Example:
-    resources: NamedResources = {
-        'main_llm': LLM(
-            endpoint="http://localhost:8080",
-            model="llama3",
-            sampling_parameters={'temperature': 0.7, 'max_tokens': 100}
-        ),
-        'system_prompt': PromptTemplate(
-            template="You are a helpful assistant.",
-            engine='f-string'
-        )
-    }
-"""
-
-
-class ResourcesUpdate(BaseModel):
-    """
-    A resource update message to be sent from the server to clients.
-
-    This message contains a dictionary of resources that clients should use
-    for subsequent tasks. It is used to update the resources available to
-    clients dynamically.
-    """
-
-    resources_id: str
-    resources: NamedResources
 
 
 class GenericResponse(BaseModel):
-    """
-    A generic response message that can be used for various purposes.
+    """Generic server response used by compatibility endpoints.
+
+    !!! warning "Deprecated"
+        This response is no longer used by the new
+        [`LightningStore`][agentlightning.LightningStore] APIs.
+
+    Attributes:
+        status: Status string describing the result of the request.
+        message: Optional human readable explanation.
+        data: Arbitrary payload serialized as JSON.
     """
 
     status: str = "success"
@@ -382,19 +277,18 @@ class GenericResponse(BaseModel):
 
 
 class ParallelWorkerBase:
-    """Base class for objects that can be parallelized across multiple worker processes.
+    """Base class for workloads executed across multiple worker processes.
 
-    This class defines the standard lifecycle for parallel processing:
+    The lifecycle is orchestrated by the main process:
 
-    Main Process:
-        1. init() - Initialize the object in the main process
-        2. spawn workers and call init_worker() in each worker
-        3. run() - Execute the main workload in parallel across workers
-        4. teardown_worker() - Clean up resources in each worker
-        5. teardown() - Final cleanup in the main process
+    * [`init()`][agentlightning.ParallelWorkerBase.init] prepares shared state.
+    * Each worker calls [`init_worker()`][agentlightning.ParallelWorkerBase.init_worker] during start-up.
+    * [`run()`][agentlightning.ParallelWorkerBase.run] performs the parallel workload.
+    * Workers call [`teardown_worker()`][agentlightning.ParallelWorkerBase.teardown_worker] before exiting.
+    * The main process finalizes through [`teardown()`][agentlightning.ParallelWorkerBase.teardown].
 
-    Subclasses should implement the run() method and optionally override
-    the lifecycle methods for custom initialization and cleanup behavior.
+    Subclasses must implement [`run()`][agentlightning.ParallelWorkerBase.run]
+    and can override other lifecycle hooks.
     """
 
     def __init__(self) -> None:
@@ -402,29 +296,34 @@ class ParallelWorkerBase:
         self.worker_id: Optional[int] = None
 
     def init(self, *args: Any, **kwargs: Any) -> None:
+        """Initialize before spawning the workers. This method can be overridden by subclasses."""
         pass
 
     def init_worker(self, worker_id: int, *args: Any, **kwargs: Any) -> None:
+        """Initialize the worker. This method can be overridden by subclasses."""
         self.worker_id = worker_id
 
     def run(self, *args: Any, **kwargs: Any) -> Any:
+        """Run the workload. This method can be overridden by subclasses."""
         pass
 
     def teardown_worker(self, worker_id: int, *args: Any, **kwargs: Any) -> None:
+        """Teardown the worker. This method can be overridden by subclasses."""
         pass
 
     def teardown(self, *args: Any, **kwargs: Any) -> None:
+        """Teardown after the workers have exited. This method can be overridden by subclasses."""
         pass
 
 
 class Dataset(Protocol, Generic[T_co]):
     """The general interface for a dataset.
 
-    It's currently implemented as a protocol, having a similar interface to torch.utils.data.Dataset.
+    It's currently implemented as a protocol, having a similar interface to `torch.utils.data.Dataset`.
     You don't have to inherit from this class; you can use a simple list if you want to.
     """
 
-    def __getitem__(self, index: int) -> T_co: ...
+    def __getitem__(self, index: SupportsIndex, /) -> T_co: ...
 
     def __len__(self) -> int: ...
 
@@ -433,42 +332,42 @@ class Hook(ParallelWorkerBase):
     """Base class for defining hooks in the agent runner's lifecycle."""
 
     async def on_trace_start(
-        self, *, agent: LitAgent[Any], runner: BaseRunner[Any], tracer: BaseTracer, rollout: RolloutV2
+        self, *, agent: LitAgent[Any], runner: Runner[Any], tracer: Tracer, rollout: Rollout
     ) -> None:
         """Hook called immediately after the tracer enters the trace context but before the rollout begins.
 
         Args:
-            agent: The :class:`LitAgent` instance associated with the runner.
-            runner: The :class:`BaseRunner` managing the rollout.
-            tracer: The :class:`BaseTracer` instance associated with the runner.
-            rollout: The :class:`RolloutV2` object that will be processed.
+            agent: The [`LitAgent`][agentlightning.LitAgent] instance associated with the runner.
+            runner: The [`Runner`][agentlightning.Runner] managing the rollout.
+            tracer: The [`Tracer`][agentlightning.Tracer] instance associated with the runner.
+            rollout: The [`Rollout`][agentlightning.Rollout] object that will be processed.
 
         Subclasses can override this method to implement custom logic such as logging,
         metric collection, or resource setup. By default, this is a no-op.
         """
 
     async def on_trace_end(
-        self, *, agent: LitAgent[Any], runner: BaseRunner[Any], tracer: BaseTracer, rollout: RolloutV2
+        self, *, agent: LitAgent[Any], runner: Runner[Any], tracer: Tracer, rollout: Rollout
     ) -> None:
         """Hook called immediately after the rollout completes but before the tracer exits the trace context.
 
         Args:
-            agent: The :class:`LitAgent` instance associated with the runner.
-            runner: The :class:`BaseRunner` managing the rollout.
-            tracer: The :class:`BaseTracer` instance associated with the runner.
-            rollout: The :class:`RolloutV2` object that has been processed.
+            agent: The [`LitAgent`][agentlightning.LitAgent] instance associated with the runner.
+            runner: The [`Runner`][agentlightning.Runner] managing the rollout.
+            tracer: The [`Tracer`][agentlightning.Tracer] instance associated with the runner.
+            rollout: The [`Rollout`][agentlightning.Rollout] object that has been processed.
 
         Subclasses can override this method to implement custom logic such as logging,
         metric collection, or resource cleanup. By default, this is a no-op.
         """
 
-    async def on_rollout_start(self, *, agent: LitAgent[Any], runner: BaseRunner[Any], rollout: RolloutV2) -> None:
+    async def on_rollout_start(self, *, agent: LitAgent[Any], runner: Runner[Any], rollout: Rollout) -> None:
         """Hook called immediately before a rollout *attempt* begins.
 
         Args:
-            agent: The :class:`LitAgent` instance associated with the runner.
-            runner: The :class:`BaseRunner` managing the rollout.
-            rollout: The :class:`RolloutV2` object that will be processed.
+            agent: The [`LitAgent`][agentlightning.LitAgent] instance associated with the runner.
+            runner: The [`Runner`][agentlightning.Runner] managing the rollout.
+            rollout: The [`Rollout`][agentlightning.Rollout] object that will be processed.
 
         Subclasses can override this method to implement custom logic such as
         logging, metric collection, or resource setup. By default, this is a
@@ -479,16 +378,16 @@ class Hook(ParallelWorkerBase):
         self,
         *,
         agent: LitAgent[Any],
-        runner: BaseRunner[Any],
-        rollout: RolloutV2,
+        runner: Runner[Any],
+        rollout: Rollout,
         spans: Union[List[ReadableSpan], List[Span]],
     ) -> None:
         """Hook called after a rollout *attempt* completes.
 
         Args:
-            agent: The :class:`LitAgent` instance associated with the runner.
-            runner: The :class:`BaseRunner` managing the rollout.
-            rollout: The :class:`RolloutV2` object that has been processed.
+            agent: The [`LitAgent`][agentlightning.LitAgent] instance associated with the runner.
+            runner: The [`Runner`][agentlightning.Runner] managing the rollout.
+            rollout: The [`Rollout`][agentlightning.Rollout] object that has been processed.
             spans: The spans that have been added to the store.
 
         Subclasses can override this method for cleanup or additional

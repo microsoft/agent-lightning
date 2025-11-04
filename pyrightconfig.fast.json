@@ -5,6 +5,7 @@
     "**/assets",
     "agentlightning/verl",
     "agentlightning/instrumentation",
+    "agentlightning/algorithm/apo",
     "agentlightning/algorithm/verl",
     "agentlightning/cli/vllm.py"
   ],

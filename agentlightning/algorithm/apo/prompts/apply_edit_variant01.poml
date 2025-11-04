@@ -1,0 +1,22 @@
+<poml>
+  <p>Revise the given prompt template using the critique as constraints and improvement guide.</p>
+  <cp caption="Revision Rules">
+    <list listStyle="decimal">
+      <item>Rewrite or restructure the prompt if critique implies it.</item>
+      <item>Explicitly include any requested output format, structure, or word limit, if requested by the critique.</item>
+      <item>Prioritize mechanism-first phrasing: define what to do, then how to do it.</item>
+      <item>Preserve placeholder variables inside curly brackets.</item>
+    </list>
+  </cp>
+  <output-format>
+    Return only the improved prompt template with placeholders intact. Do not include other explanations on how you did it, or headers and introductory texts.
+  </output-format>
+  <human-msg>
+    <cp caption="Prompt Template">
+      <text whiteSpace="pre">{{ prompt_template }}</text>
+    </cp>
+    <cp caption="Critique">
+      <text whiteSpace="pre">{{ critique }}</text>
+    </cp>
+  </human-msg>
+</poml>

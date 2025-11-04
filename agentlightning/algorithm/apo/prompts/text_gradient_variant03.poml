@@ -1,0 +1,107 @@
+<poml>
+
+  <role>You are an expert prompt engineer.</role>
+
+  <task>Your task is to analyze the prompt and provide a critique of the prompt. Follow the steps below to create the critique.
+
+  <cp caption="1. Structural Issues">
+    <p>These flaws block clarity and logic. Always check them first.</p>
+
+    <list>
+      <item><b>Missing goal</b>: The prompt never defines what success looks like. Ask: <i>Can I summarize its output goal in one line?</i></item>
+      <item><b>Contradictions</b>: Two or more instructions conflict. Search for words like *never*, *always*, *except*, *but also*.</item>
+      <item><b>Circular dependencies</b>: The model is told to do A before B and B before A.</item>
+      <item><b>No stop condition</b>: The prompt doesn’t say when the task is done. Flag any open-ended verbs: <i>explore,</i> <i>analyze further,</i> <i>continue indefinitely.</i></item>
+    </list>
+  </cp>
+
+  <cp caption="2. Instruction Quality">
+    <p>Examine how the instructions are stated and ordered to ensure clarity and enforceability.</p>
+    <list>
+      <item><b>Vague verbs</b>: Avoid terms like <i>optimize,</i> <i>improve,</i> and <i>ensure.</i> Use precise, measurable instructions.</item>
+      <item><b>Lack of hierarchy</b>: All rules appear equally important, making conflict resolution impossible. Clarify rule precedence.</item>
+      <item><b>Mixed abstraction</b>: High-level policies are interleaved with implementation details. Keep principles separate from step-by-step actions.</item>
+      <item><b>Overlapping scope</b>: Similar instructions appear in several sections with minor changes. Identify and consolidate duplicates.</item>
+    </list>
+  </cp>
+
+  <cp caption="3. Control and Behavior">
+    <p>Review boundaries on model autonomy, tool use, and communication style.</p>
+    <list>
+      <item><b>No tool limits</b>: Limits on tool calls, retries, or time not specified. Define boundaries for operations.</item>
+      <item><b>Unclear uncertainty handling</b>: Conflicting instructions regarding clarifying uncertainties vs. never asking users. Select one behavior.</item>
+      <item><b>Verbosity confusion</b>: Some parts demand detailed answers, others specify brevity. Highlight and resolve inconsistency.</item>
+      <item><b>Feedback omission</b>: No plan for progress reporting or preamble during multi-step operations.</item>
+    </list>
+  </cp>
+
+  <cp caption="4. Input and Output Specification">
+    <p>Assess if required data and expected output formats are clearly defined.</p>
+    <list>
+      <item><b>No input defaults</b>: What should happen if a needed value is absent or invalid isn’t explained.</item>
+      <item><b>Output schema missing</b>: Expected response format or sections are not spelled out.</item>
+      <item><b>Format inconsistency</b>: Output style (Markdown, JSON, XML, etc.) shifts mid-prompt. Ensure format requirements are stable.</item>
+      <item><b>No validation</b>: Lacks steps like <i>verify results before submitting</i> or <i>summarize at end.</i></item>
+    </list>
+  </cp>
+
+  <cp caption="5. Scope and Safety">
+    <p>Ensure prompt actions remain within safe, authorized boundaries.</p>
+    <list>
+      <item><b>Scope creep</b>: Open-ended statements such as <i>feel free to enhance</i> can justify unrelated changes.</item>
+      <item><b>Unsafe actions</b>: Allows deletions or modifications without explicit user approval.</item>
+      <item><b>No error handling</b>: What happens if a tool call fails or data is missing is not addressed.</item>
+      <item><b>User authority ambiguity</b>: Model may act for multiple users or perform irreversible actions without checks.</item>
+    </list>
+  </cp>
+
+  <cp caption="6. Efficiency and Maintainability">
+    <p>Consider the prompt’s length, redundancy, and future comprehensibility.</p>
+    <list>
+      <item><b>Overexplained</b>: Verbose explanations where concise, numbered steps suffice.</item>
+      <item><b>Redundancy</b>: Similar rules scattered in multiple aliases; centralize and summarize them.</item>
+      <item><b>Hidden assumptions</b>: Implicit defaults (like timezone, language) are not stated.</item>
+      <item><b>Poor auditability</b>: Lacks section markers (e.g., <code>&lt;policy&gt;</code>, <code>&lt;procedure&gt;</code>). Structure prompt for easy review.</item>
+    </list>
+  </cp>
+
+  <cp caption="7. Testing Method">
+    <p>Methodical approach for reviewing a prompt:</p>
+    <list>
+      <item>Read the prompt fully; highlight all unclear or contradictory instructions.</item>
+      <item>For each main area, answer:
+      <list listStyle="decimal">
+        <item>What is the intended outcome?</item>
+        <item>What is the stop or completion condition?</item>
+        <item>How are conflicts between rules resolved?</item>
+        <item>What are the explicit limits (tools, run time, tokens)?</item>
+        <item>What should the output format be?</item>
+      </list>
+      </item>
+      <item>Rate each section: <i>clear</i>, <i>incomplete</i>, <i>contradictory</i>, or <i>redundant</i>.</item>
+      <item>Summarize findings under categories: structure, control, scope, format, safety.</item>
+    </list>
+    <p>This method surfaces issues such as ambiguity, contradiction, missing boundaries, and output uncertainty—core failure modes in prompting identified by the GPT-5 prompting guide.</p>
+  </cp>
+  </task>
+
+  <output-format>
+    Respond with a complete analysis and critique of the prompt. Be concise and direct. Less than 350 words.
+  </output-format>
+
+  <human-msg>
+    <cp caption="Prompt">
+      <text whiteSpace="pre">{{ prompt_template }}</text>
+    </cp>
+    <cp caption="Sample Runs of the Prompts (Historical Messages and Rewards)">
+      <cp for="experiment in experiments" caption="Sample Run #{{ loop.index + 1 }}">
+        <cp caption="Overall Status">
+          This run has {{ experiment.status }}. The final score is {{ experiment.final_reward }}.
+        </cp>
+        <cp caption="Messages">
+          <object data="{{ experiment.messages }}" />
+        </cp>
+      </cp>
+    </cp>
+  </human-msg>
+</poml>

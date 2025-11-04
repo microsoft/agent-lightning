@@ -4,13 +4,34 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import hashlib
 import logging
+import sys
+import threading
 import time
 import uuid
+import weakref
 from collections import deque
-from typing import Any, Callable, Counter, Dict, List, Literal, Optional, Sequence, TypeVar, cast
+from collections.abc import Iterable
+from collections.abc import Mapping as MappingABC
+from typing import (
+    Any,
+    Callable,
+    Counter,
+    Dict,
+    List,
+    Literal,
+    Mapping,
+    Optional,
+    Sequence,
+    Set,
+    TypeVar,
+    Union,
+    cast,
+)
 
 from opentelemetry.sdk.trace import ReadableSpan
+from pydantic import BaseModel
 
 from agentlightning.types import (
     Attempt,
@@ -18,9 +39,9 @@ from agentlightning.types import (
     AttemptStatus,
     NamedResources,
     ResourcesUpdate,
+    Rollout,
     RolloutConfig,
     RolloutStatus,
-    RolloutV2,
     Span,
     TaskInput,
 )
@@ -31,6 +52,61 @@ from .utils import healthcheck, propagate_status
 T_callable = TypeVar("T_callable", bound=Callable[..., Any])
 
 logger = logging.getLogger(__name__)
+
+
+class _LoopAwareAsyncLock:
+    """Async lock that transparently rebinds to the current event loop.
+
+    The lock intentionally remains *thread-unsafe*: callers must only use it from
+    one thread at a time. If multiple threads interact with the store, each
+    thread gets its own event loop specific lock.
+    """
+
+    def __init__(self) -> None:
+        self._locks: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Lock] = weakref.WeakKeyDictionary()
+
+    # When serializing and deserializing, we don't need to serialize the locks.
+    # Because another process will have its own set of event loops and its own lock.
+    def __getstate__(self) -> dict[str, Any]:
+        return {}
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        self._locks = weakref.WeakKeyDictionary()
+
+    def _get_lock_for_current_loop(self) -> asyncio.Lock:
+        loop = asyncio.get_running_loop()
+        lock = self._locks.get(loop)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._locks[loop] = lock
+        return lock
+
+    async def __aenter__(self) -> asyncio.Lock:
+        lock = self._get_lock_for_current_loop()
+        await lock.acquire()
+        return lock
+
+    async def __aexit__(self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: Any) -> None:
+        loop = asyncio.get_running_loop()
+        lock = self._locks.get(loop)
+        if lock is None or not lock.locked():
+            raise RuntimeError("Lock released without being acquired")
+        lock.release()
+
+
+def estimate_model_size(obj: Any) -> int:
+    """Rough recursive size estimate for Pydantic BaseModel instances."""
+
+    if isinstance(obj, BaseModel):
+        values = cast(Iterable[Any], obj.__dict__.values())
+        return sum(estimate_model_size(value) for value in values) + sys.getsizeof(cast(object, obj))
+    if isinstance(obj, MappingABC):
+        mapping = cast(Mapping[Any, Any], obj)
+        return sum(estimate_model_size(value) for value in mapping.values()) + sys.getsizeof(cast(object, obj))
+    if isinstance(obj, (list, tuple, set)):
+        iterable = cast(Iterable[Any], obj)
+        return sum(estimate_model_size(value) for value in iterable) + sys.getsizeof(cast(object, obj))
+    return sys.getsizeof(cast(object, obj))
 
 
 def _healthcheck_wrapper(func: T_callable) -> T_callable:
@@ -64,6 +140,35 @@ def _healthcheck_wrapper(func: T_callable) -> T_callable:
     return cast(T_callable, wrapper)
 
 
+def _generate_resources_id() -> str:
+    short_id = hashlib.sha1(uuid.uuid4().bytes).hexdigest()[:12]
+    return "rs-" + short_id
+
+
+def _generate_rollout_id() -> str:
+    short_id = hashlib.sha1(uuid.uuid4().bytes).hexdigest()[:12]
+    return "ro-" + short_id
+
+
+def _generate_attempt_id() -> str:
+    """We don't need that long because attempts are limited to rollouts."""
+    short_id = hashlib.sha1(uuid.uuid4().bytes).hexdigest()[:8]
+    return "at-" + short_id
+
+
+def _detect_total_memory_bytes() -> int:
+    """Best-effort detection of the total available system memory in bytes."""
+
+    try:
+        import psutil
+
+        return int(psutil.virtual_memory().total)
+    except ImportError:
+        # Fallback to 8GB if memory cannot be detected.
+        logger.error("psutil is not installed. Falling back to 8GB of memory in total.")
+        return 8 * 1024**3
+
+
 class InMemoryLightningStore(LightningStore):
     """
     In-memory implementation of LightningStore using Python data structures.
@@ -71,14 +176,28 @@ class InMemoryLightningStore(LightningStore):
 
     The methods in this class should generally not call each other,
     especially those that are locked.
+
+    Args:
+        eviction_memory_threshold: The threshold for evicting spans in bytes.
+            By default, it's 70% of the total VRAM available.
+        safe_memory_threshold: The threshold for safe memory usage in bytes.
+            By default, it's 80% of the eviction threshold.
+        span_size_estimator: A function to estimate the size of a span in bytes.
+            By default, it's a simple size estimator that uses sys.getsizeof.
     """
 
-    def __init__(self):
-        self._lock = asyncio.Lock()
+    def __init__(
+        self,
+        *,
+        eviction_memory_threshold: float | int | None = None,
+        safe_memory_threshold: float | int | None = None,
+        span_size_estimator: Callable[[Span], int] | None = None,
+    ):
+        self._lock = _LoopAwareAsyncLock()
 
         # Task queue and rollouts storage
-        self._task_queue: deque[RolloutV2] = deque()
-        self._rollouts: Dict[str, RolloutV2] = {}
+        self._task_queue: deque[Rollout] = deque()
+        self._rollouts: Dict[str, Rollout] = {}
 
         # Resources storage (similar to legacy server.py)
         self._resources: Dict[str, ResourcesUpdate] = {}
@@ -87,12 +206,42 @@ class InMemoryLightningStore(LightningStore):
         # Spans storage
         self._spans: Dict[str, List[Span]] = {}  # rollout_id -> list of spans
         self._span_sequence_ids: Dict[str, int] = Counter()  # rollout_id -> sequence_id
+        self._span_bytes_by_rollout: Dict[str, int] = Counter()
+        self._total_span_bytes: int = 0
+        self._evicted_rollout_span_sets: Set[str] = set()
+
+        self._memory_capacity_bytes = _detect_total_memory_bytes()
+        if self._memory_capacity_bytes <= 0:
+            raise ValueError("Detected memory capacity must be positive")
+
+        self._eviction_threshold_bytes = self._resolve_memory_threshold(
+            eviction_memory_threshold,
+            default_ratio=0.7,
+            capacity_bytes=self._memory_capacity_bytes,
+            name="eviction_memory_threshold",
+            minimum=1,
+        )
+
+        if safe_memory_threshold is None:
+            safe_memory_threshold = max(int(self._eviction_threshold_bytes * 0.8), 0)
+
+        self._safe_threshold_bytes = self._resolve_memory_threshold(
+            safe_memory_threshold,
+            default_ratio=self._eviction_threshold_bytes / self._memory_capacity_bytes,
+            capacity_bytes=self._memory_capacity_bytes,
+            name="safe_memory_threshold",
+            minimum=0,
+        )
+
+        if not (0 <= self._safe_threshold_bytes < self._eviction_threshold_bytes):
+            raise ValueError("safe_memory_threshold must be smaller than eviction_memory_threshold")
+        self._custom_span_size_estimator = span_size_estimator
 
         # Attempt tracking
         self._attempts: Dict[str, List[Attempt]] = {}  # rollout_id -> list of attempts
 
-        # Completion tracking for wait_for_rollouts
-        self._completion_events: Dict[str, asyncio.Event] = {}
+        # Completion tracking for wait_for_rollouts (cross-loop safe)
+        self._completion_events: Dict[str, threading.Event] = {}
 
     @_healthcheck_wrapper
     async def start_rollout(
@@ -100,27 +249,33 @@ class InMemoryLightningStore(LightningStore):
         input: TaskInput,
         mode: Literal["train", "val", "test"] | None = None,
         resources_id: str | None = None,
+        config: RolloutConfig | None = None,
         metadata: Dict[str, Any] | None = None,
     ) -> AttemptedRollout:
-        """
-        Notify the store that I'm about to run a rollout.
+        """Notify the store that I'm about to run a rollout.
+
+        See [`LightningStore.start_rollout()`][agentlightning.LightningStore.start_rollout] for semantics.
         """
         async with self._lock:
-            rollout_id = f"rollout-{uuid.uuid4()}"
+            rollout_id = _generate_rollout_id()
             current_time = time.time()
 
-            rollout = RolloutV2(
+            rollout_config = config.model_copy(deep=True) if config is not None else RolloutConfig()
+            rollout_metadata = dict(metadata) if metadata is not None else {}
+
+            rollout = Rollout(
                 rollout_id=rollout_id,
                 input=input,
                 mode=mode,
                 resources_id=resources_id or self._latest_resources_id,
                 start_time=current_time,
                 status="preparing",
-                metadata=metadata or {},
+                config=rollout_config,
+                metadata=rollout_metadata,
             )
 
             # Create the initial attempt
-            attempt_id = f"attempt-{uuid.uuid4()}"
+            attempt_id = _generate_attempt_id()
             attempt = Attempt(
                 rollout_id=rollout.rollout_id,
                 attempt_id=attempt_id,
@@ -133,7 +288,7 @@ class InMemoryLightningStore(LightningStore):
             self._rollouts[rollout.rollout_id] = rollout
 
             # Manully added rollout is not added to task queue. It's already preparing
-            self._completion_events.setdefault(rollout.rollout_id, asyncio.Event())
+            self._completion_events.setdefault(rollout.rollout_id, threading.Event())
 
             return AttemptedRollout(**rollout.model_dump(), attempt=attempt)
 
@@ -143,38 +298,45 @@ class InMemoryLightningStore(LightningStore):
         input: TaskInput,
         mode: Literal["train", "val", "test"] | None = None,
         resources_id: str | None = None,
+        config: RolloutConfig | None = None,
         metadata: Dict[str, Any] | None = None,
-    ) -> RolloutV2:
-        """
-        Adds a new task to the queue with specific metadata and returns its unique ID.
+    ) -> Rollout:
+        """Adds a new task to the queue with specific metadata and returns the rollout.
+
+        See [`LightningStore.enqueue_rollout()`][agentlightning.LightningStore.enqueue_rollout] for semantics.
         """
         async with self._lock:
-            rollout_id = f"rollout-{uuid.uuid4()}"
+            rollout_id = _generate_rollout_id()
             current_time = time.time()
 
-            rollout = RolloutV2(
+            rollout_config = config.model_copy(deep=True) if config is not None else RolloutConfig()
+            rollout_metadata = dict(metadata) if metadata is not None else {}
+
+            rollout = Rollout(
                 rollout_id=rollout_id,
                 input=input,
                 mode=mode,
                 resources_id=resources_id or self._latest_resources_id,
                 start_time=current_time,
                 status="queuing",  # should be queuing
-                metadata=metadata or {},
+                config=rollout_config,
+                metadata=rollout_metadata,
             )
 
             self._rollouts[rollout.rollout_id] = rollout
             self._task_queue.append(rollout)  # add it to the end of the queue
-            self._completion_events.setdefault(rollout.rollout_id, asyncio.Event())
+            self._completion_events.setdefault(rollout.rollout_id, threading.Event())
 
             return rollout
 
     @_healthcheck_wrapper
     async def dequeue_rollout(self) -> Optional[AttemptedRollout]:
-        """
-        Retrieves the next task from the queue without blocking.
-        Returns None if the queue is empty.
+        """Retrieves the next task from the queue without blocking.
+        Returns `None` if the queue is empty.
 
         Will set the rollout status to preparing and create a new attempt.
+
+        See [`LightningStore.dequeue_rollout()`][agentlightning.LightningStore.dequeue_rollout] for semantics.
         """
         async with self._lock:
             # Keep looking until we find a rollout that's still in queuing status
@@ -189,7 +351,7 @@ class InMemoryLightningStore(LightningStore):
                     rollout.status = "preparing"
 
                     # Create a new attempt (could be first attempt or retry)
-                    attempt_id = f"attempt-{uuid.uuid4()}"
+                    attempt_id = _generate_attempt_id()
                     current_time = time.time()
 
                     # Get existing attempts to determine sequence number
@@ -218,8 +380,9 @@ class InMemoryLightningStore(LightningStore):
 
     @_healthcheck_wrapper
     async def start_attempt(self, rollout_id: str) -> AttemptedRollout:
-        """
-        Create a new attempt for a given rollout ID and return the attempt details.
+        """Creates a new attempt for a given rollout ID and return the attempt details.
+
+        See [`LightningStore.start_attempt()`][agentlightning.LightningStore.start_attempt] for semantics.
         """
         async with self._lock:
             # Get the rollout
@@ -235,7 +398,7 @@ class InMemoryLightningStore(LightningStore):
             # This attempt is from user trigger
 
             # Create new attempt
-            attempt_id = f"attempt-{uuid.uuid4()}"
+            attempt_id = _generate_attempt_id()
             current_time = time.time()
 
             attempt = Attempt(
@@ -251,17 +414,18 @@ class InMemoryLightningStore(LightningStore):
                 self._attempts[rollout_id] = []
             self._attempts[rollout_id].append(attempt)
 
-            self._completion_events.setdefault(rollout.rollout_id, asyncio.Event())
+            self._completion_events.setdefault(rollout.rollout_id, threading.Event())
 
             return AttemptedRollout(**rollout.model_dump(), attempt=attempt)
 
     @_healthcheck_wrapper
     async def query_rollouts(
         self, *, status: Optional[Sequence[RolloutStatus]] = None, rollout_ids: Optional[Sequence[str]] = None
-    ) -> List[RolloutV2]:
-        """
-        Query and retrieve rollouts filtered by their status and rollout ids.
+    ) -> List[Rollout]:
+        """Retrieves rollouts filtered by their status and rollout ids.
         If no status is provided, returns all rollouts.
+
+        See [`LightningStore.query_rollouts()`][agentlightning.LightningStore.query_rollouts] for semantics.
         """
         async with self._lock:
             rollouts = list(self._rollouts.values())
@@ -276,59 +440,129 @@ class InMemoryLightningStore(LightningStore):
                 status_set = set(status)
                 rollouts = [rollout for rollout in rollouts if rollout.status in status_set]
 
+            # Attach the latest attempt to the rollout objects
+            rollouts = [self._rollout_to_attempted_rollout_unlocked(rollout) for rollout in rollouts]
+
             return rollouts
 
     @_healthcheck_wrapper
-    async def get_rollout_by_id(self, rollout_id: str) -> Optional[RolloutV2]:
-        """
-        Safely retrieves a specific rollout by its ID.
+    async def get_rollout_by_id(self, rollout_id: str) -> Optional[Union[Rollout, AttemptedRollout]]:
+        """Retrieves a specific rollout by its ID.
+
+        See [`LightningStore.get_rollout_by_id()`][agentlightning.LightningStore.get_rollout_by_id] for semantics.
+
+        If the rollout has been attempted, the latest attempt will also be returned.
         """
         async with self._lock:
-            return self._rollouts.get(rollout_id)
+            rollout = self._rollouts.get(rollout_id)
+            if rollout is None:
+                return None
+            return self._rollout_to_attempted_rollout_unlocked(rollout)
+
+    def _rollout_to_attempted_rollout_unlocked(self, rollout: Rollout) -> Union[Rollout, AttemptedRollout]:
+        """Query the latest attempt for the rollout, and attach it to the rollout object.
+
+        If the rollout has no attempts, return the rollout object itself.
+        """
+        latest_attempt = self._get_latest_attempt_unlocked(rollout.rollout_id)
+        if latest_attempt is None:
+            return rollout
+        else:
+            return AttemptedRollout(**rollout.model_dump(), attempt=latest_attempt)
+
+    def _get_latest_attempt_unlocked(self, rollout_id: str) -> Optional[Attempt]:
+        """The unlocked version of `get_latest_attempt`."""
+        attempts = self._attempts.get(rollout_id, [])
+        return max(attempts, key=lambda a: a.sequence_id) if attempts else None
 
     @_healthcheck_wrapper
     async def query_attempts(self, rollout_id: str) -> List[Attempt]:
-        """
-        Query and retrieve all attempts associated with a specific rollout ID.
+        """Retrieves all attempts associated with a specific rollout ID.
         Returns an empty list if no attempts are found.
+
+        See [`LightningStore.query_attempts()`][agentlightning.LightningStore.query_attempts] for semantics.
         """
         async with self._lock:
             return self._attempts.get(rollout_id, [])
 
     @_healthcheck_wrapper
     async def get_latest_attempt(self, rollout_id: str) -> Optional[Attempt]:
-        """
-        Safely retrieves the latest attempt for a given rollout ID.
+        """Retrieves the latest attempt for a given rollout ID.
+
+        See [`LightningStore.get_latest_attempt()`][agentlightning.LightningStore.get_latest_attempt] for semantics.
         """
         async with self._lock:
-            attempts = self._attempts.get(rollout_id, [])
-            if not attempts:
-                return None
-            return max(attempts, key=lambda a: a.sequence_id)
+            return self._get_latest_attempt_unlocked(rollout_id)
+
+    @_healthcheck_wrapper
+    async def query_resources(self) -> List[ResourcesUpdate]:
+        """Return every stored resource snapshot in insertion order."""
+        async with self._lock:
+            return list(self._resources.values())
+
+    @_healthcheck_wrapper
+    async def add_resources(self, resources: NamedResources) -> ResourcesUpdate:
+        """Stores a new version of named resources and sets it as the latest.
+
+        See [`LightningStore.add_resources()`][agentlightning.LightningStore.add_resources] for semantics.
+        """
+        resources_id = _generate_resources_id()
+        async with self._lock:
+            current_time = time.time()
+            update = ResourcesUpdate(
+                resources_id=resources_id,
+                resources=resources,
+                create_time=current_time,
+                update_time=current_time,
+                version=1,
+            )
+            self._resources[resources_id] = update
+            self._latest_resources_id = resources_id
+            return update
 
     @_healthcheck_wrapper
     async def update_resources(self, resources_id: str, resources: NamedResources) -> ResourcesUpdate:
         """
         Safely stores a new version of named resources and sets it as the latest.
+
+        See [`LightningStore.update_resources()`][agentlightning.LightningStore.update_resources] for semantics.
         """
         async with self._lock:
-            update = ResourcesUpdate(resources_id=resources_id, resources=resources)
+            current_time = time.time()
+            if resources_id not in self._resources:
+                update = ResourcesUpdate(
+                    resources_id=resources_id,
+                    resources=resources,
+                    create_time=current_time,
+                    update_time=current_time,
+                    version=1,
+                )
+            else:
+                update = self._resources[resources_id].model_copy(
+                    update={
+                        "resources": resources,
+                        "update_time": current_time,
+                        "version": self._resources[resources_id].version + 1,
+                    }
+                )
             self._resources[resources_id] = update
             self._latest_resources_id = resources_id
             return update
 
     @_healthcheck_wrapper
     async def get_resources_by_id(self, resources_id: str) -> Optional[ResourcesUpdate]:
-        """
-        Safely retrieves a specific version of named resources by its ID.
+        """Retrieves a specific version of named resources by its ID.
+
+        See [`LightningStore.get_resources_by_id()`][agentlightning.LightningStore.get_resources_by_id] for semantics.
         """
         async with self._lock:
             return self._resources.get(resources_id)
 
     @_healthcheck_wrapper
     async def get_latest_resources(self) -> Optional[ResourcesUpdate]:
-        """
-        Safely retrieves the latest version of named resources.
+        """Retrieves the latest version of named resources.
+
+        See [`LightningStore.get_latest_resources()`][agentlightning.LightningStore.get_latest_resources] for semantics.
         """
         async with self._lock:
             if self._latest_resources_id:
@@ -336,17 +570,21 @@ class InMemoryLightningStore(LightningStore):
             return None
 
     async def get_next_span_sequence_id(self, rollout_id: str, attempt_id: str) -> int:
-        """
-        Get the next span sequence ID for a given rollout and attempt.
+        """Get the next span sequence ID for a given rollout and attempt.
         The number is strictly increasing for each rollout.
         The store will not issue the same sequence ID twice.
+
+        See [`LightningStore.get_next_span_sequence_id()`][agentlightning.LightningStore.get_next_span_sequence_id] for semantics.
         """
         async with self._lock:
             self._span_sequence_ids[rollout_id] += 1
             return self._span_sequence_ids[rollout_id]
 
     async def add_span(self, span: Span) -> Span:
-        """Persist a pre-converted span."""
+        """Persist a pre-converted span.
+
+        See [`LightningStore.add_span()`][agentlightning.LightningStore.add_span] for semantics.
+        """
         async with self._lock:
             self._span_sequence_ids[span.rollout_id] = max(self._span_sequence_ids[span.rollout_id], span.sequence_id)
             return await self._add_span_unlocked(span)
@@ -354,7 +592,10 @@ class InMemoryLightningStore(LightningStore):
     async def add_otel_span(
         self, rollout_id: str, attempt_id: str, readable_span: ReadableSpan, sequence_id: int | None = None
     ) -> Span:
-        """Add an opentelemetry span to the store."""
+        """Add an opentelemetry span to the store.
+
+        See [`LightningStore.add_otel_span()`][agentlightning.LightningStore.add_otel_span] for semantics.
+        """
         async with self._lock:
             if sequence_id is None:
                 # Issue a new sequence ID for the rollout
@@ -386,10 +627,12 @@ class InMemoryLightningStore(LightningStore):
         if span.rollout_id not in self._spans:
             self._spans[span.rollout_id] = []
         self._spans[span.rollout_id].append(span)
+        self._account_span_size(span)
+        self._maybe_evict_spans()
 
         # Update attempt heartbeat
         current_attempt.last_heartbeat_time = time.time()
-        if current_attempt.status in ["preparing", "unresponsive", "timeout"]:
+        if current_attempt.status in ["preparing", "unresponsive"]:
             current_attempt.status = "running"
 
         # If the status has already timed out or failed, do not change it
@@ -409,15 +652,87 @@ class InMemoryLightningStore(LightningStore):
 
         return span
 
+    @staticmethod
+    def _resolve_memory_threshold(
+        value: float | int | None,
+        *,
+        default_ratio: float,
+        capacity_bytes: int,
+        name: str,
+        minimum: int,
+    ) -> int:
+        if value is None:
+            resolved = int(capacity_bytes * default_ratio)
+        elif isinstance(value, float):
+            if minimum == 0:
+                if not (0 <= value <= 1):
+                    raise ValueError(f"{name} ratio must be between 0 and 1 inclusive")
+            else:
+                if not (0 < value <= 1):
+                    raise ValueError(f"{name} ratio must be greater than 0 and at most 1")
+            resolved = int(capacity_bytes * value)
+        else:
+            value_int = value
+            if value_int < 0:
+                raise ValueError(f"{name} must be non-negative")
+            resolved = value_int
+
+        if resolved < minimum:
+            raise ValueError(f"{name} must be at least {minimum} bytes")
+
+        return resolved
+
+    def _account_span_size(self, span: Span) -> int:
+        if self._custom_span_size_estimator is not None:
+            size = max(int(self._custom_span_size_estimator(span)), 0)
+        else:
+            size = estimate_model_size(span)
+
+        self._span_bytes_by_rollout[span.rollout_id] += size
+        self._total_span_bytes += size
+        return size
+
+    def _maybe_evict_spans(self) -> None:
+        if self._total_span_bytes <= self._eviction_threshold_bytes:
+            return
+
+        candidates: List[tuple[float, str]] = []
+        for rollout_id, spans in self._spans.items():
+            if not spans:
+                continue
+            rollout = self._rollouts.get(rollout_id)
+            start_time = rollout.start_time if rollout is not None else (spans[0].start_time or 0.0)
+            candidates.append((start_time, rollout_id))
+
+        candidates.sort(key=lambda item: item[0])
+
+        logger.info(f"Evicting spans for {len(candidates)} rollouts to free up memory...")
+        memory_consumed_before = self._total_span_bytes
+        for _, rollout_id in candidates:
+            if self._total_span_bytes <= self._safe_threshold_bytes:
+                break
+            logger.debug(f"Evicting spans for rollout {rollout_id} to free up memory...")
+            self._evict_spans_for_rollout(rollout_id)
+        logger.info(f"Freed up {memory_consumed_before - self._total_span_bytes} bytes of memory")
+
+    def _evict_spans_for_rollout(self, rollout_id: str) -> None:
+        spans = self._spans.pop(rollout_id, [])
+        if not spans:
+            return
+        removed_bytes = self._span_bytes_by_rollout.pop(rollout_id, 0)
+        self._total_span_bytes = max(self._total_span_bytes - removed_bytes, 0)
+        self._evicted_rollout_span_sets.add(rollout_id)
+
     @_healthcheck_wrapper
-    async def wait_for_rollouts(self, *, rollout_ids: List[str], timeout: Optional[float] = None) -> List[RolloutV2]:
-        """
-        Wait for specified rollouts to complete with a timeout.
+    async def wait_for_rollouts(self, *, rollout_ids: List[str], timeout: Optional[float] = None) -> List[Rollout]:
+        """Wait for specified rollouts to complete with a timeout.
         Returns the completed rollouts, potentially incomplete if timeout is reached.
 
         This method does not change the state of the store.
+
+        See [`LightningStore.wait_for_rollouts()`][agentlightning.LightningStore.wait_for_rollouts] for semantics.
         """
-        completed_rollouts: List[RolloutV2] = []
+        completed_rollouts: List[Rollout] = []
 
         async def wait_for_rollout(rollout_id: str):
             # First check if already completed
@@ -427,16 +742,36 @@ class InMemoryLightningStore(LightningStore):
                     completed_rollouts.append(rollout)
                     return
 
+            # No timeout, return immediately
+            if timeout is not None and timeout <= 0:
+                return
+
             # If not completed and we have an event, wait for completion
             if rollout_id in self._completion_events:
-                try:
-                    await asyncio.wait_for(self._completion_events[rollout_id].wait(), timeout=timeout)
+                evt = self._completion_events[rollout_id]
+
+                # Wait for the event with proper timeout handling
+                # evt.wait() returns True if event was set, False if timeout occurred
+                if timeout is None:
+                    # Wait indefinitely by polling with finite timeouts
+                    # This allows threads to exit cleanly on shutdown
+                    while True:
+                        result = await asyncio.to_thread(evt.wait, 10.0)  # Poll every 10 seconds
+                        if result:  # Event was set
+                            break
+                        # Loop and check again (continues indefinitely since timeout=None)
+                else:
+                    # Wait with the specified timeout
+                    result = await asyncio.to_thread(evt.wait, timeout)
+
+                # If event was set (not timeout), check if rollout is finished
+                if result:
                     async with self._lock:
                         rollout = self._rollouts.get(rollout_id)
                         if rollout and is_finished(rollout):
                             completed_rollouts.append(rollout)
-                except asyncio.TimeoutError:
-                    pass
+
+            # Rollout not found, return
 
         # Wait for all rollouts concurrently
         await asyncio.gather(*[wait_for_rollout(rid) for rid in rollout_ids], return_exceptions=True)
@@ -448,8 +783,12 @@ class InMemoryLightningStore(LightningStore):
         """
         Query and retrieve all spans associated with a specific rollout ID.
         Returns an empty list if no spans are found.
+
+        See [`LightningStore.query_spans()`][agentlightning.LightningStore.query_spans] for semantics.
         """
         async with self._lock:
+            if rollout_id in self._evicted_rollout_span_sets:
+                raise RuntimeError(f"Spans for rollout {rollout_id} have been evicted")
             spans = self._spans.get(rollout_id, [])
             if attempt_id is None:
                 return spans
@@ -472,9 +811,10 @@ class InMemoryLightningStore(LightningStore):
         status: RolloutStatus | Unset = UNSET,
         config: RolloutConfig | Unset = UNSET,
         metadata: Optional[Dict[str, Any]] | Unset = UNSET,
-    ) -> RolloutV2:
-        """
-        Update the rollout status and related metadata.
+    ) -> Rollout:
+        """Update the rollout status and related metadata.
+
+        See [`LightningStore.update_rollout()`][agentlightning.LightningStore.update_rollout] for semantics.
         """
         async with self._lock:
             return await self._update_rollout_unlocked(
@@ -497,8 +837,9 @@ class InMemoryLightningStore(LightningStore):
         last_heartbeat_time: float | Unset = UNSET,
         metadata: Optional[Dict[str, Any]] | Unset = UNSET,
     ) -> Attempt:
-        """
-        Update a specific or latest attempt for a given rollout.
+        """Update a specific or latest attempt for a given rollout.
+
+        See [`LightningStore.update_attempt()`][agentlightning.LightningStore.update_attempt] for semantics.
         """
         async with self._lock:
             attempt = await self._update_attempt_unlocked(
@@ -521,7 +862,7 @@ class InMemoryLightningStore(LightningStore):
         status: RolloutStatus | Unset = UNSET,
         config: RolloutConfig | Unset = UNSET,
         metadata: Optional[Dict[str, Any]] | Unset = UNSET,
-    ) -> RolloutV2:
+    ) -> Rollout:
         # No lock inside this one.
         rollout = self._rollouts.get(rollout_id)
         if not rollout:
@@ -543,7 +884,7 @@ class InMemoryLightningStore(LightningStore):
 
         # Set end time for finished rollouts
         # Rollout is only finished when it succeeded or fail with no more retries.
-        if status is not UNSET and is_finished(rollout):
+        if not isinstance(status, Unset) and is_finished(rollout):
             rollout.end_time = time.time()
             # Signal completion
             if rollout_id in self._completion_events:
@@ -564,7 +905,7 @@ class InMemoryLightningStore(LightningStore):
                 )
 
         # Re-validate the rollout to ensure legality
-        RolloutV2.model_validate(rollout.model_dump())
+        Rollout.model_validate(rollout.model_dump())
 
         return rollout
 
@@ -614,7 +955,7 @@ class InMemoryLightningStore(LightningStore):
 
         if attempt == latest_attempt:
 
-            async def _update_status(rollout_id: str, status: RolloutStatus) -> RolloutV2:
+            async def _update_status(rollout_id: str, status: RolloutStatus) -> Rollout:
                 return await self._update_rollout_unlocked(rollout_id, status=status)
 
             # Propagate the status to the rollout
@@ -643,7 +984,7 @@ class InMemoryLightningStore(LightningStore):
             async def _update_attempt_status(rollout_id: str, attempt_id: str, status: AttemptStatus) -> Attempt:
                 return await self._update_attempt_unlocked(rollout_id, attempt_id, status=status)
 
-            async def _update_rollout_status(rollout_id: str, status: RolloutStatus) -> RolloutV2:
+            async def _update_rollout_status(rollout_id: str, status: RolloutStatus) -> Rollout:
                 return await self._update_rollout_unlocked(rollout_id, status=status)
 
             await healthcheck(

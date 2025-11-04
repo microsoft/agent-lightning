@@ -412,6 +412,10 @@ def test_context_manager_reusability():
 
 
 def _otel_reward_subprocess(mode: str, conn: Connection[tuple[str, Any]]) -> None:
+    asyncio.run(_otel_reward_subprocess_async(mode, conn))
+
+
+async def _otel_reward_subprocess_async(mode: str, conn: Connection[tuple[str, Any]]) -> None:
     tracer: OtelTracer | None = None
     try:
         try:
@@ -431,14 +435,14 @@ def _otel_reward_subprocess(mode: str, conn: Connection[tuple[str, Any]]) -> Non
             def compute_reward() -> float:
                 return expected_reward
 
-            with tracer.trace_context(name="reward-decorator"):
+            async with tracer.trace_context(name="reward-decorator"):
                 returned = compute_reward()
                 if returned != expected_reward:
                     raise AssertionError(f"Expected reward {expected_reward}, got {returned}")
 
         elif mode == "emit":
             expected_reward = 4.5
-            with tracer.trace_context(name="reward-emit"):
+            async with tracer.trace_context(name="reward-emit"):
                 emit_reward(expected_reward)
         else:
             raise ValueError(f"Unsupported mode: {mode}")

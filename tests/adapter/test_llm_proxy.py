@@ -3,8 +3,8 @@
 import json
 from typing import Any, Dict, List
 
-from agentlightning.adapter.triplet import LlmProxyTripletAdapter
-from agentlightning.types.tracer import Span
+from agentlightning.adapter import LlmProxyTraceToTriplet
+from agentlightning.types import Span
 
 
 def _mk_span(
@@ -99,7 +99,7 @@ def test_sequence_matching_assigns_reward_to_latest_prior_llm():
         ),
     ]
 
-    adapter = LlmProxyTripletAdapter()
+    adapter = LlmProxyTraceToTriplet()
     trips = adapter.adapt(spans)
 
     # Two LLM calls → two triplets
@@ -151,7 +151,7 @@ def test_deduplicates_same_response_id_from_raw_spans():
         ),
     ]
 
-    adapter = LlmProxyTripletAdapter()
+    adapter = LlmProxyTraceToTriplet()
     trips = adapter.adapt(spans)
 
     assert len(trips) == 1
@@ -188,7 +188,7 @@ def test_ignores_litellm_request_without_token_ids():
         ),
     ]
 
-    adapter = LlmProxyTripletAdapter()
+    adapter = LlmProxyTraceToTriplet()
     trips = adapter.adapt(spans)
 
     # No token ids → no triplets
@@ -209,7 +209,7 @@ def test_reward_none():
         ),
     ]
 
-    adapter = LlmProxyTripletAdapter()
+    adapter = LlmProxyTraceToTriplet()
 
     triplets = adapter.adapt(spans)
     assert len(triplets) == 1
@@ -261,7 +261,7 @@ def test_rewards_before_or_equal_sequence_are_skipped():
         ),
     ]
 
-    adapter = LlmProxyTripletAdapter()
+    adapter = LlmProxyTraceToTriplet()
     triplets = adapter.adapt(spans)
 
     assert len(triplets) == 1
@@ -331,7 +331,7 @@ def test_multiple_rewards_attach_to_latest_unmatched_llm_calls():
         ),
     ]
 
-    adapter = LlmProxyTripletAdapter()
+    adapter = LlmProxyTraceToTriplet()
     triplets = adapter.adapt(spans)
 
     assert len(triplets) == 3

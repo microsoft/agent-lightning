@@ -3,14 +3,14 @@
 """Test that @algo decorator preserves function executability."""
 
 import inspect
-from typing import Any, Optional, cast
+from typing import Any, Optional
 from unittest.mock import MagicMock
 
 import pytest
 
-from agentlightning.algorithm.base import FunctionalAlgorithm, algo
+from agentlightning.algorithm.decorator import FunctionalAlgorithm, algo
 from agentlightning.store.base import LightningStore
-from agentlightning.types.core import Dataset
+from agentlightning.types import Dataset
 
 
 @algo
@@ -81,7 +81,7 @@ def test_algorithm_run_method():
     val_data = ["val1"]
 
     # Call run method
-    test_algo.run(cast(Dataset[Any], train_data), cast(Dataset[Any], val_data))
+    test_algo.run(train_data, val_data)
 
     # Verify execution
     assert test_algo.executed  # type: ignore
@@ -145,7 +145,8 @@ async def test_async_algorithm_run_method():
     val_data = ["async-val"]
 
     # Run method should return an awaitable
-    result = async_algo.run(cast(Dataset[Any], train_data), cast(Dataset[Any], val_data))
+    assert async_algo.is_async()
+    result = async_algo.run(train_data, val_data)
     assert inspect.iscoroutine(result)
 
     # Await the result
@@ -198,14 +199,14 @@ def test_multiple_algorithm_instances():
 
 
 def test_algorithm_base_algorithm_methods():
-    """Test that BaseAlgorithm methods are available."""
+    """Test that Algorithm methods are available."""
 
     @algo
     def test_algo(*, train_dataset: Optional[Dataset[Any]], val_dataset: Optional[Dataset[Any]]) -> None:
         """Test algorithm."""
         pass
 
-    # Should have all BaseAlgorithm methods
+    # Should have all Algorithm methods
     assert hasattr(test_algo, "set_trainer")
     assert hasattr(test_algo, "get_trainer")
     assert hasattr(test_algo, "set_llm_proxy")
@@ -246,27 +247,27 @@ def test_algorithm_without_datasets():
 def test_algorithm_raises_error_on_unsupported_train_dataset():
     """Test that TypeError is raised when train_dataset is provided but not supported."""
 
-    @algo  # type: ignore
+    @algo
     def no_train_algo(*, val_dataset: Optional[Dataset[Any]]) -> None:
         """Algorithm that only accepts val_dataset."""
         pass
 
     # Providing train_dataset should raise TypeError
     with pytest.raises(TypeError, match="train_dataset is provided but not supported"):
-        no_train_algo.run(train_dataset=cast(Dataset[Any], ["data"]), val_dataset=None)  # type: ignore
+        no_train_algo.run(train_dataset=["data"], val_dataset=None)
 
 
 def test_algorithm_raises_error_on_unsupported_val_dataset():
     """Test that TypeError is raised when val_dataset is provided but not supported."""
 
-    @algo  # type: ignore
+    @algo
     def no_val_algo(*, train_dataset: Optional[Dataset[Any]]) -> None:
         """Algorithm that only accepts train_dataset."""
         pass
 
     # Providing val_dataset should raise TypeError
     with pytest.raises(TypeError, match="val_dataset is provided but not supported"):
-        no_val_algo.run(train_dataset=None, val_dataset=cast(Dataset[Any], ["data"]))  # type: ignore
+        no_val_algo.run(train_dataset=None, val_dataset=["data"])
 
 
 def test_algorithm_with_all_injected_parameters():
@@ -305,7 +306,7 @@ def test_algorithm_with_all_injected_parameters():
     val_data = ["val"]
 
     # Run the algorithm
-    full_algo.run(cast(Dataset[Any], train_data), cast(Dataset[Any], val_data))
+    full_algo.run(train_data, val_data)
 
     # Verify all parameters were injected correctly
     assert full_algo.store == mock_store  # type: ignore
@@ -341,7 +342,7 @@ def test_algorithm_with_only_store():
 async def test_async_algorithm_with_injected_parameters():
     """Test that async algorithms also support parameter injection."""
 
-    @algo  # type: ignore
+    @algo
     async def async_full_algo(
         *,
         store: LightningStore,
@@ -355,7 +356,7 @@ async def test_async_algorithm_with_injected_parameters():
     async_full_algo.set_store(mock_store)  # type: ignore
 
     train_data = ["async-train"]
-    await async_full_algo.run(cast(Dataset[Any], train_data))  # type: ignore
+    await async_full_algo.run(train_data)  # type: ignore
 
     assert async_full_algo.store == mock_store  # type: ignore
     assert async_full_algo.train == train_data  # type: ignore

@@ -1,0 +1,205 @@
+name: Examples - Calc-X
+permissions:
+  contents: read
+on:
+  schedule:
+    # Every day at 3 AM UTC+8
+    - cron: '0 19 * * *'
+
+  workflow_dispatch:
+
+  repository_dispatch:
+    types: [ci-calc-x, ci-all]
+
+run-name: >-
+  ${{ github.event_name == 'repository_dispatch'
+      && format(
+        'PR #{0} - Label {1} - {2}',
+        github.event.client_payload.pull_number,
+        github.event.client_payload.ci_label,
+        github.event.client_payload.correlation_id
+      )
+      || format('Calc-X - {0}', github.event_name) }}
+
+jobs:
+  calc-x:
+    if: >
+      github.event_name != 'repository_dispatch' ||
+      github.event.action == 'ci-calc-x' ||
+      github.event.action == 'ci-all'
+    name: Calc-X (Python ${{ matrix.python-version }}, ${{ matrix.setup-script }})
+    runs-on: [self-hosted, 1ES.Pool=agl-runner-gpu]
+    timeout-minutes: 90
+    strategy:
+      matrix:
+        include:
+        - python-version: '3.10'
+          setup-script: 'legacy'
+        - python-version: '3.12'
+          setup-script: 'stable'
+        - python-version: '3.13'
+          setup-script: 'latest'
+      fail-fast: false
+    steps:
+      - name: Check GPU status
+        run: nvidia-smi
+      - name: Check disk space
+        run: df -h
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.pr_ref || (github.event.pull_request.number && format('refs/pull/{0}/merge', github.event.pull_request.number)) || github.ref }}
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          python-version: ${{ matrix.python-version }}
+      - name: Upgrade dependencies (latest)
+        run: uv lock --upgrade
+        if: matrix.setup-script == 'latest'
+      - name: Sync dependencies (latest)
+        run: |
+          uv sync --frozen --no-default-groups --extra verl \
+            --group dev --group experiment --group agents --group torch-gpu-stable
+        if: matrix.setup-script == 'latest'
+      - name: Sync dependencies (stable & legacy)
+        run: |
+          uv sync --frozen --no-default-groups --extra verl \
+            --group dev --group experiment --group agents --group torch-gpu-${{ matrix.setup-script }}
+        if: matrix.setup-script != 'latest'
+      - name: Freeze dependencies
+        run: |
+          set -ex
+          uv pip freeze | tee requirements-freeze.txt
+          echo "UV_LOCKED=1" >> $GITHUB_ENV
+          echo "UV_NO_SYNC=1" >> $GITHUB_ENV
+      - name: Upload dependencies artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependencies-calc-x-${{ matrix.python-version }}-${{ matrix.setup-script }}
+          path: requirements-freeze.txt
+          compression-level: 0
+
+      - name: Launch LiteLLM Proxy
+        run: |
+          ./scripts/litellm_run.sh
+        env:
+          AZURE_API_BASE: ${{ secrets.AZURE_GROUP_SUBSCRIPTION_API_BASE }}
+          AZURE_API_KEY: ${{ secrets.AZURE_GROUP_SUBSCRIPTION_API_KEY }}
+
+      - name: Prepare Calc-X dataset
+        run: |
+          set -ex
+          cd examples/calc_x
+          uv run gdown --fuzzy https://drive.google.com/file/d/1FQMyKLLd6hP9dw9rfZn1EZOWNvKaDsqw/view
+          unzip calc-x-data.zip -d data
+          rm calc-x-data.zip
+
+      - name: Calc-X MCP sanity check
+        run: |
+          set -ex
+          cd examples/calc_x
+          uv run tests/test_mcp_calculator.py
+        env:
+          OPENAI_API_BASE: http://localhost:12306/
+          OPENAI_API_KEY: dummy
+      - name: Calc-X sanity check
+        run: |
+          set -ex
+          cd examples/calc_x
+          uv run legacy_calc_agent_debug.py
+        env:
+          OPENAI_BASE_URL: http://localhost:12306/
+          OPENAI_API_KEY: dummy
+
+      # Calc-X training suddenly works after running the sanity check.
+      # And it has to be run before Spider training.
+      # The client side used to hang in many of my attempts.
+      # Don't ask why. Don't touch this.
+      - name: Calc-X training
+        run: |
+          set -ex
+          source .venv/bin/activate
+          cd examples/calc_x
+          ../../scripts/restart_ray.sh
+          sleep 5
+          PYTHONUNBUFFERED=1 python train_calc_agent.py --val-file data/test_mini.parquet --ci
+          sleep 10
+        shell: bash
+        env:
+          WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
+          WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
+        id: calc_x_train
+
+      - name: Validate Calc-X training
+        run: |
+          set -ex
+          uv run scripts/validate_example_wandb.py ${{ steps.calc_x_train.outputs.project_name }} ${{ steps.calc_x_train.outputs.run_name }}
+        env:
+          WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
+          WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
+
+      - name: Calc-X training LLM Proxy
+        run: |
+          set -ex
+          source .venv/bin/activate
+          cd examples/calc_x
+          ../../scripts/restart_ray.sh
+          sleep 5
+          PYTHONUNBUFFERED=1 python train_calc_agent.py --val-file data/test_mini.parquet --ci --llm-proxy
+          sleep 10
+        shell: bash
+        env:
+          WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
+          WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
+        id: calc_x_train_llm_proxy
+
+      - name: Calc-X training with external store
+        run: |
+          set -euo pipefail
+          source .venv/bin/activate
+          cd examples/calc_x
+          ../../scripts/restart_ray.sh
+
+          agl store --port 4747 &
+          sleep 5
+          AGL_MANAGED_STORE=0 AGL_CURRENT_ROLE=runner python train_calc_agent.py --external-store-address http://localhost:4747 --val-file data/test_mini.parquet --ci-fast &
+          sleep 5
+          AGL_MANAGED_STORE=0 AGL_CURRENT_ROLE=algorithm python train_calc_agent.py --external-store-address http://localhost:4747 --val-file data/test_mini.parquet --ci-fast
+
+          pkill -f agl && echo "SIGTERM sent to agl" || echo "No agl process found"
+          while pgrep -f agl; do
+            echo "Waiting for agl to finish..."
+            sleep 5
+          done
+          pkill -f train_calc_agent.py && echo "SIGTERM sent to train_calc_agent.py" || echo "No train_calc_agent.py process found"
+          while pgrep -f train_calc_agent.py; do
+            echo "Waiting for train_calc_agent.py to finish..."
+            sleep 5
+          done
+          echo "train_calc_agent.py has finished."
+        shell: bash
+        env:
+          WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
+          WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
+        id: calc_x_train_external_store
+
+      - name: Calc-X training with role-based environment variables
+        run: |
+          set -euo pipefail
+          source .venv/bin/activate
+          cd examples/calc_x
+          ../../scripts/restart_ray.sh
+
+          PYTHONUNBUFFERED=1 AGL_SERVER_HOST=127.0.0.1 AGL_SERVER_PORT=5858 AGL_CURRENT_ROLE=runner python train_calc_agent.py --val-file data/test_mini.parquet --ci-fast &
+          sleep 5
+          PYTHONUNBUFFERED=1 AGL_SERVER_HOST=0.0.0.0 AGL_SERVER_PORT=5858 AGL_CURRENT_ROLE=algorithm python train_calc_agent.py --val-file data/test_mini.parquet --ci-fast
+
+          pkill -f train_calc_agent.py && echo "SIGTERM sent to train_calc_agent.py" || echo "No train_calc_agent.py process found"
+          while pgrep -f train_calc_agent.py; do
+            echo "Waiting for train_calc_agent.py to finish..."
+            sleep 5
+          done
+          echo "train_calc_agent.py has finished."
+        shell: bash
+        env:
+          WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
+          WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
