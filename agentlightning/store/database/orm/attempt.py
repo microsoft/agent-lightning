@@ -208,7 +208,7 @@ class SpanSeqIdInDB(SqlAlchemyBase):
                 seq_obj = await session.get(cls, rollout_id)
                 # seq_obj = await session.get(cls, [rollout_id, attempt_id])
                 if seq_obj is None:
-                    raise ValueError(f"SpanSeqIdInDB not found for rollout_id={rollout_id}, attempt_id={attempt_id}")
+                    raise ValueError(f"Rollout {rollout_id} not found")
                 else:
                     current_seq = external_seq_id if external_seq_id is not None and external_seq_id > seq_obj.current_sequence else seq_obj.current_sequence
                     seq_obj.current_sequence = current_seq + 1

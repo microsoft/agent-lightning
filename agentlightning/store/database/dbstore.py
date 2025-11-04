@@ -232,7 +232,7 @@ class DatabaseLightningStore(LightningStore):
             async with session.begin():
                 rollout_obj = await session.get(RolloutInDB, rollout_id)
                 if rollout_obj is None:
-                    raise ValueError(f"Rollout {rollout_id} does not exist. Cannot start new attempt.")
+                    raise ValueError(f"Rollout {rollout_id} not found")
                 attempted_rollout = await self._start_attempt_for_rollout(session, rollout_obj)
                 await session.flush()  # ensure the object is written to the DB
                 return attempted_rollout
@@ -347,7 +347,8 @@ class DatabaseLightningStore(LightningStore):
                     if attempt_id == "latest":
                         rollout_obj = await session.get(RolloutInDB, rollout_id)
                         if rollout_obj is None:
-                            raise ValueError(f"Rollout {rollout_id} does not exist. Cannot query latest attempt spans.")
+                            logger.warning(f"Rollout {rollout_id} does not exist. Cannot query latest attempt spans.")
+                            return []
                         attempt_id = rollout_obj.latest_attempt_id
                     conditions.append(SpanInDB.attempt_id == attempt_id)
                 query = select(SpanInDB).where(and_(*conditions)).order_by(SpanInDB.sequence_id.asc())
@@ -405,7 +406,7 @@ class DatabaseLightningStore(LightningStore):
             async with session.begin():
                 rollout_obj = await session.get(RolloutInDB, rollout_id)
                 if rollout_obj is None:
-                    raise ValueError(f"Rollout {rollout_id} does not exist and cannot be updated.")
+                    raise ValueError(f"Rollout {rollout_id} not found")
                 # udpate fields
                 if not isinstance(input, Unset):
                     rollout_obj.input = input
@@ -436,7 +437,7 @@ class DatabaseLightningStore(LightningStore):
             async with session.begin():
                 rollout_obj = await session.get(RolloutInDB, rollout_id)
                 if rollout_obj is None:
-                    raise ValueError(f"Rollout {rollout_id} does not exist.")
+                    raise ValueError(f"Rollout {rollout_id} not found")
                 if attempt_id == "latest":
                     if rollout_obj.latest_attempt_id is None:
                         raise ValueError(f"Rollout {rollout_id} has no attempts. Cannot update latest attempt.")
@@ -445,7 +446,7 @@ class DatabaseLightningStore(LightningStore):
                     logger.warning(f"Updating attempt {attempt_id} which is not the latest attempt for rollout {rollout_id}. Latest is {rollout_obj.latest_attempt_id}.")
                 attempt_obj = await session.get(AttemptInDB, attempt_id)
                 if attempt_obj is None:
-                    raise ValueError(f"Attempt {attempt_id} for rollout {rollout_id} does not exist.")
+                    raise ValueError(f"No attempts found")
                 if attempt_obj.rollout_id != rollout_id:
                     raise ValueError(f"Attempt {attempt_id} does not belong to rollout {rollout_id}.")
                 # update fields
@@ -526,13 +527,13 @@ class DatabaseLightningStore(LightningStore):
                 # update attempt's last_heartbeat_time and status
                 attempt_obj = await session.get(AttemptInDB, span["attempt_id"])
                 if attempt_obj is None:
-                    raise ValueError(f"AttemptInDB not found for attempt_id={span['attempt_id']}")
+                    raise ValueError(f"Attempt {span['attempt_id']} not found")
                 # ensure the attempt and rollout are in running status
                 msg = attempt_obj.update_status(dict(event="span_received"))
                 if msg is not None:
                     rollout_obj = await session.get(RolloutInDB, attempt_obj.rollout_id)
                     if rollout_obj is None:
-                        raise ValueError(f"RolloutInDB not found for rollout_id={attempt_obj.rollout_id}")
+                        raise ValueError(f"Rollout {attempt_obj.rollout_id} not found")
                     rollout_obj.update_status(msg)
                 await session.flush()  # ensure the object is written to the DB
                 return span_obj.as_span()
