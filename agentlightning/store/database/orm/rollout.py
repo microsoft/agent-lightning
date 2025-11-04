@@ -1,20 +1,23 @@
 # Copyright (c) Microsoft. All rights reserved.
 from __future__ import annotations
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 import time
 import uuid
 import hashlib
+import logging
 
 from sqlalchemy import String, Integer, Float, JSON
-from sqlalchemy import and_
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, and_
 
-from agentlightning.types import Rollout, RolloutConfig
-from .base import PydanticInDB, SqlAlchemyBase
-from ...base import is_finished, is_queuing
+from agentlightning.types import Rollout, RolloutConfig, RolloutStatus
+from .base import PydanticInDB, SqlAlchemyBase, AttemptStatusUpdateMessage
+from .attempt import AttemptInDB
+from ...base import is_finished, is_queuing, is_running
+
+logger = logging.getLogger(__name__)
 
 
 def _generate_rollout_id() -> str:
@@ -37,20 +40,24 @@ class RolloutInDB(SqlAlchemyBase):
     end_time: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
     mode: Mapped[Optional[str]] = mapped_column(String, nullable=True, default=None)
     resources_id: Mapped[Optional[str]] = mapped_column(String, nullable=True, default=None)
-    status: Mapped[str] = mapped_column(String, default="queuing", nullable=False)
+    status: Mapped[RolloutStatus] = mapped_column(String, default="queuing", nullable=False)
     config: Mapped[Optional[RolloutConfig]] = mapped_column(RolloutConfigInDB, nullable=True, default=None)  # JSON serialized, convert to RolloutConfig when needed
     rollout_metadata: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True, default=None) # JSON serialized, convert to Dict when needed
 
     # Attempt-related helper methods can be added here if needed
     num_attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)  # number of attempts made for this rollout
-    latest_attempt_id: Mapped[Optional[str]] = mapped_column(String, nullable=True, default=None)  # the attempt_id of the latest attempt
     enqueue_time: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default_factory=time.time)  # time when the rollout was enqueued (for FIFO scheduling)
+    latest_attempt_id: Mapped[Optional[str]] = mapped_column(String, nullable=True, default=None)  # the attempt_id of the latest attempt
 
     # use optimistic concurrency control
     version_id: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     __mapper_args__ = {
         "version_id_col": version_id,
     }
+
+    def __post_init__(self):
+        if self.status not in ["queuing", "running", "succeeded", "failed", "requeuing"]:
+            raise ValueError(f"Invalid rollout status: {self.status}")
 
     def as_rollout(self) -> Rollout:
         return Rollout(
@@ -82,49 +89,90 @@ class RolloutInDB(SqlAlchemyBase):
             if "new_status" not in msg:
                 raise ValueError("Status update message for event 'user_update' must contain 'new_status' field.")
         if event == "attempt_status_update":
-            for field in ["new_status", "old_status", "attempt_id", "is_failed"]:
-                if field not in msg:
-                    raise ValueError(f"Status update message for event '{event}' must contain '{field}' field.")
+            # leverage AttemptStatusUpdateMessage for validation
+            pass
 
-    def update_status(self, msg: Dict[str, Any]) -> None:
+
+    async def update_status(self, msg: Dict[str, Any]|AttemptStatusUpdateMessage, session: AsyncSession) -> None:
         """Update the rollout status based on the provided message.
         Args:
             msg (Dict[str, str]): The status update message. Refer to `_validate_status_message` for the expected format.
             current_time (Optional[float]): The current time to set end_time or enqueue_time if needed.
         """
-        self._validate_status_message(msg)
-        event, old_status, new_status = msg["event"], self.status, None
-        current_time = msg.get("timestamp", time.time())
+        if isinstance(msg, dict):
+            self._validate_status_message(msg)
+            event = msg["event"]
+            current_time = msg.get("timestamp", time.time())
+        else:
+            event = msg.event
+            current_time = msg.timestamp
+
+        old_status, new_status = self.status, None # initialize new_status with old_status
 
         # Step 1: Determine the new status based on the event
         if event == "user_update":
+            assert isinstance(msg, dict)
             new_status = msg["new_status"]
         elif event == "attempt_status_update":
-            if msg["attempt_id"] != self.latest_attempt_id:
-                # outdated attempt status update, ignore
-                # TODO if latest attempt fails but an older attempt still running or succeed, we may need to handle that
-                return
-            else:
-                attempt_new_status = msg["new_status"]
-                if msg["is_failed"]:
-                    # attempt failed
-                    config = self.config if self.config is not None else RolloutConfig()
-                    if attempt_new_status in config.retry_condition and config.max_attempts > self.num_attempts:
-                        new_status = "requeuing"
-                    else:
-                        new_status = "failed"
-                elif attempt_new_status == "running":
-                    if old_status in ["preparing", "requeuing"]:
-                        new_status = "running"
+            msg = AttemptStatusUpdateMessage(**msg) if isinstance(msg, dict) else msg
+            if old_status in ["running", "preparing"]: # in running state
+                if msg.attempt_id == self.latest_attempt_id:
+                    new_status = msg.new_status # directly take the latest attempt status
                 else:
-                    new_status = attempt_new_status
+                    new_status = old_status  # ignore outdated attempt status update
+                if msg.is_succeeded:
+                    # new_status = "succeeded"
+                    # FIXME current InMemoryLightningStore only take the latest attempt success as rollout success
+                    pass
+                elif msg.is_failed:
+                    # First, we check if this is the latest attempt, if not, ignore
+                    # Second, we check whether some other attempt is still running, if yes, switch latest attempt to that one
+                    # Third, we decide whether to requeue or fail based on the rollout config and num_attempts
+                    if msg.attempt_id != self.latest_attempt_id:
+                        # outdated attempt status update, ignore
+                        new_status = old_status
+                    else:
+                        # check for other running attempts
+                        result = await session.scalars(
+                            select(AttemptInDB)
+                            .where(
+                                AttemptInDB.rollout_id == self.rollout_id,
+                            ).order_by(AttemptInDB.start_time.desc())
+                        )
+                        attempts = [attempt for attempt in result.all() if attempt.status in ["running", "preparing"]]
+                        if len(attempts) > 0:
+                            # some other attempt is still running, no need to retry and switch latest attempt to the active one
+                            new_status = "running"
+                            self.latest_attempt_id = attempts[0].attempt_id
+                            self.latest_attempt_status = attempts[0].status
+                        else:
+                            # no other attempts running, decide whether to requeue or fail
+                            config = self.config if self.config is not None else RolloutConfig()
+                            if config.max_attempts > self.num_attempts and msg.new_status in config.retry_condition:
+                                new_status = "requeuing"
+                            else:
+                                new_status = "failed"
+            elif old_status == "failed":
+                # an attempt may recover from unresponsive to resume the failed rollout
+                if msg.is_running:
+                    new_status = "running"
+                    self.latest_attempt_id = msg.attempt_id
+                    self.latest_attempt_status = msg.new_status
+            elif old_status in ["queuing", "requeuing"]:
+                # when in queuing or requeuing state, any attempt starting will set the rollout to running
+                logger.warning(f"Rollout {self.rollout_id} in status {old_status} received attempt status update for attempt {msg.attempt_id} with status {msg.new_status}. Setting rollout to running.")
+                if msg.is_running:
+                    new_status = msg.new_status
+                    self.latest_attempt_id = msg.attempt_id
+            else:
+                logger.warning(f"Active attempt {msg.attempt_id} found for non-running rollout {self.rollout_id} with status {old_status}.")
 
         # Step 2: Update the status if it has changed and handle follow-up actions
         if new_status is None:
-            raise RuntimeError("New status could not be determined from the message.")
+            raise RuntimeError(f"New status of `{old_status}` and `{self.latest_attempt_id}` could not be determined from the message {msg}.")
         if new_status == old_status:
             return
-        self.status = new_status
+        self.status = cast(RolloutStatus, new_status)
 
         if is_finished(self): # type: ignore
             self.end_time = current_time

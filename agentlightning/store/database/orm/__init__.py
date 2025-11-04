@@ -1,10 +1,8 @@
 # Copyright (c) Microsoft. All rights reserved.
 
 from .base import (
-    DatabaseRuntimeError,
-    RaceConditionError,
-    NoRolloutToDequeueError,
     SqlAlchemyBase,
+    AttemptStatusUpdateMessage,
 )
 
 from .rollout import RolloutInDB
@@ -14,9 +12,7 @@ from .span import SpanInDB
 
 __all__ = [
     "SqlAlchemyBase",
-    "DatabaseRuntimeError",
-    "RaceConditionError",
-    "NoRolloutToDequeueError",
+    "AttemptStatusUpdateMessage",
     "RolloutInDB",
     "AttemptInDB",
     "ResourcesUpdateInDB",

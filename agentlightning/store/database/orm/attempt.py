@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from agentlightning.types import Attempt
-from .base import SqlAlchemyBase
+from .base import SqlAlchemyBase, AttemptStatusUpdateMessage
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +81,7 @@ class AttemptInDB(SqlAlchemyBase):
             "timeout",
         ]
 
-    def update_status(self, msg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def update_status(self, msg: Dict[str, Any]) -> Optional[AttemptStatusUpdateMessage]:
         """This function updates the status of the attempt based on the event.
         Args:
             msg: A dictionary containing the status update message. It must contain an "event" field, and optionally a "new_status" field.
@@ -140,14 +140,13 @@ class AttemptInDB(SqlAlchemyBase):
         self.status = new_status
 
         # Step 3: Return the status update info for further processing
-        return {
-            "event": "attempt_status_update",
-            "timestamp": current_time,
-            "old_status": old_status,
-            "new_status": new_status,
-            "attempt_id": self.attempt_id,
-            "is_failed": new_status in ["failed", "timeout", "unresponsive"],
-        }
+        return AttemptStatusUpdateMessage(
+            attempt_id=self.attempt_id,
+            rollout_id=self.rollout_id,
+            timestamp=current_time,
+            old_status=old_status,
+            new_status=new_status,
+        )
 
     @classmethod
     async def get_latest_attempt_for_rollout(cls: type[AttemptInDB], session_factory: async_sessionmaker[AsyncSession], rollout_id: str) -> Optional[Attempt]:

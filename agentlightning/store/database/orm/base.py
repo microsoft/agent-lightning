@@ -1,10 +1,11 @@
 # Copyright (c) Microsoft. All rights reserved.
 
 from __future__ import annotations
-from pydantic import BaseModel, TypeAdapter
+from pydantic import BaseModel, TypeAdapter, Field, computed_field
 from typing import Any, Dict, List, Optional
 import json
 import logging
+import time
 
 from sqlalchemy import JSON, TypeDecorator
 from sqlalchemy.orm import DeclarativeBase, MappedAsDataclass
@@ -126,3 +127,35 @@ class NoRolloutToDequeueError(Exception):
     """
     pass
 
+
+class AttemptStatusUpdateMessage(BaseModel):
+    attempt_id: str
+    rollout_id: str
+    timestamp: float = Field(default_factory=time.time)
+    old_status: Optional[str] = None
+    new_status: str
+
+    @computed_field
+    @property
+    def event(self) -> str:
+        return "attempt_status_update"
+
+    @computed_field
+    @property
+    def is_failed(self) -> bool:
+        return self.new_status in ["failed", "timeout", "unresponsive"]
+
+    @computed_field
+    @property
+    def is_succeeded(self) -> bool:
+        return self.new_status == "succeeded"
+
+    @computed_field
+    @property
+    def is_finished(self) -> bool:
+        return self.is_failed or self.is_succeeded
+
+    @computed_field
+    @property
+    def is_running(self) -> bool:
+        return self.new_status in ["running", "preparing"]

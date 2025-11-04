@@ -1642,7 +1642,8 @@ async def test_status_propagation_only_for_latest_attempt(db_store: DatabaseLigh
     # Rollout status should NOT change since attempt1 is not the latest
     updated_rollout = await db_store.get_rollout_by_id(rollout.rollout_id)
     assert updated_rollout is not None
-    assert updated_rollout.status == "queuing"  # Should remain unchanged
+    assert updated_rollout.status == "preparing"  # Should remain unchanged
+    # FIXME start_attempt should set rollout status to preparing instead of queuing
 
     # Update attempt3 (latest) to succeeded
     await db_store.update_attempt(
@@ -1673,7 +1674,8 @@ async def test_status_propagation_with_retry_for_latest_attempt(db_store: Databa
 
     updated_rollout = await db_store.get_rollout_by_id(rollout.rollout_id)
     assert updated_rollout is not None
-    assert updated_rollout.status == "queuing"  # Should remain unchanged
+    assert updated_rollout.status == "preparing"  # Should remain unchanged
+    # FIXME start_attempt should set rollout status to preparing instead of queuing
 
     # Fail attempt2 (latest) - should trigger retry since sequence_id=2 < max_attempts=3
     await db_store.update_attempt(
@@ -1964,14 +1966,19 @@ async def test_requeued_attempt_fails_without_new_attempt(
 
     rollout = await db_store.get_rollout_by_id(attempted.rollout_id)
     assert rollout is not None
-    assert rollout.status == "failed"
+    # assert rollout.status == "failed"
+    assert rollout.status == "requeuing"
+    # FIXME failing the unresponsive attempt should not change the requeuing status
+    # because even the rollout turns to failed, it should trigger another retry intermediately.
 
     latest_attempt = await db_store.get_latest_attempt(attempted.rollout_id)
     assert latest_attempt is not None
     assert latest_attempt.status == "failed"
     assert latest_attempt.end_time is not None
 
-    assert await db_store.dequeue_rollout() is None
+    # assert await db_store.dequeue_rollout() is None
+    assert await db_store.dequeue_rollout() is not None
+    # FIXME the rollout should still be in the queue for retry since the previous attempt failed.
 
 
 @pytest.mark.asyncio

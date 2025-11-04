@@ -30,7 +30,7 @@ from agentlightning.types import (
 )
 
 from ..base import UNSET, LightningStore, Unset, is_finished
-from .orm import SqlAlchemyBase
+from .orm import SqlAlchemyBase, AttemptStatusUpdateMessage
 from .retry_helper import AsyncRetryBlock, AsyncTypeBasedRetry, ExceptionRegistry, RetryStrategy
 from .sqlite import AttemptInDB, ResourcesUpdateInDB, RolloutInDB, SpanInDB, SpanSeqIdInDB
 
@@ -415,7 +415,7 @@ class DatabaseLightningStore(LightningStore):
                 if not isinstance(resources_id, Unset):
                     rollout_obj.resources_id = resources_id
                 if not isinstance(status, Unset):
-                    rollout_obj.update_status(dict(event="user_update", new_status=status))
+                    await rollout_obj.update_status(dict(event="user_update", new_status=status), session)
                 if not isinstance(config, Unset):
                     rollout_obj.config = config
                 if not isinstance(metadata, Unset):
@@ -453,7 +453,7 @@ class DatabaseLightningStore(LightningStore):
                 if not isinstance(status, Unset):
                     msg = attempt_obj.update_status(dict(event="user_update", new_status=status))
                     if msg is not None:
-                        rollout_obj.update_status(msg)
+                        await rollout_obj.update_status(msg, session)
                 if not isinstance(worker_id, Unset):
                     attempt_obj.worker_id = worker_id
                 if not isinstance(last_heartbeat_time, Unset):
@@ -480,18 +480,15 @@ class DatabaseLightningStore(LightningStore):
                     attempts_timed_out.extend(await self._attempt_timeout_check(session, mode, current_time))
 
         # Step 2: Create messages to update rollout
-        messages: Dict[str, Dict[str, Any]] = {}
+        messages: Dict[str, AttemptStatusUpdateMessage] = {}
         rollout_ids: set[str] = set()
         for attempt in attempts_timed_out:
-            messages[attempt.attempt_id] = {
-                "event": "attempt_status_update",
-                "timestamp": current_time,
-                "old_status": None,
-                "new_status": attempt.status,
-                "attempt_id": attempt.attempt_id,
-                "is_failed": True,
-                "rollout_id": attempt.rollout_id, # for convenience
-            }
+            messages[attempt.attempt_id] = AttemptStatusUpdateMessage(
+                timestamp=current_time,
+                new_status=attempt.status,
+                attempt_id=attempt.attempt_id,
+                rollout_id=attempt.rollout_id,
+            )
             rollout_ids.add(attempt.rollout_id)
 
         # Step 3: Update rollouts
@@ -502,8 +499,8 @@ class DatabaseLightningStore(LightningStore):
                 )
                 rollout_objs = {r.rollout_id: r for r in result.all()}
                 for msg in messages.values():
-                    rollout_obj = rollout_objs[msg["rollout_id"]]
-                    rollout_obj.update_status(msg)
+                    rollout_obj = rollout_objs[msg.rollout_id]
+                    await rollout_obj.update_status(msg, session)
 
     # ------------------------------------------------------
     # internal helper methods can be added here
@@ -534,7 +531,7 @@ class DatabaseLightningStore(LightningStore):
                     rollout_obj = await session.get(RolloutInDB, attempt_obj.rollout_id)
                     if rollout_obj is None:
                         raise ValueError(f"Rollout {attempt_obj.rollout_id} not found")
-                    rollout_obj.update_status(msg)
+                    await rollout_obj.update_status(msg, session)
                 await session.flush()  # ensure the object is written to the DB
                 return span_obj.as_span()
 
@@ -573,7 +570,7 @@ class DatabaseLightningStore(LightningStore):
         )
         session.add(attempt_obj)
         # pre-update the rollout_obj fields for CAS
-        rollout_obj.status = "preparing"  # pre-update the status in the object for CAS
+        rollout_obj.status = attempt_obj.status  # type: ignore pre-update the status in the object for CAS
         rollout_obj.enqueue_time = None  # pre-update the enqueue_time in the object for CAS
         rollout_obj.num_attempts += 1  # pre-update the num_attempts in the object for CAS
         rollout_obj.latest_attempt_id = attempt_obj.attempt_id  # pre-update the latest_attempt_id in the object for CAS
