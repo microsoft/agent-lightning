@@ -2,17 +2,19 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import time
+from typing import Any, Dict, List, Literal, Optional, Sequence, Union
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.interval import IntervalTrigger
+from datetime import datetime, timedelta
 from opentelemetry.sdk.trace import ReadableSpan
-from sqlalchemy import and_, select
-from sqlalchemy.ext.asyncio import create_async_engine
-from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
-from tenacity import (
-    AsyncRetrying, RetryError, retry_if_exception, stop_before_delay, wait_exponential_jitter,
-)
-from typing import Any, Dict, List, Literal, Optional, Sequence
+from pydantic import BaseModel
+from sqlalchemy import and_, select, update
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from tenacity import RetryError
 
 from agentlightning.types import (
     Attempt,
@@ -29,8 +31,8 @@ from agentlightning.types import (
 
 from ..base import UNSET, LightningStore, Unset, is_finished
 from .orm import SqlAlchemyBase
-from .sqlite import RolloutInDB, AttemptInDB, ResourcesUpdateInDB, SpanInDB, SpanSeqIdInDB
-from .retry_helper import RetryStrategy, ExceptionRegistry, AsyncTypeBasedRetry, AsyncRetryBlock
+from .retry_helper import AsyncRetryBlock, AsyncTypeBasedRetry, ExceptionRegistry, RetryStrategy
+from .sqlite import AttemptInDB, ResourcesUpdateInDB, RolloutInDB, SpanInDB, SpanSeqIdInDB
 
 logger = logging.getLogger(__name__)
 
@@ -51,17 +53,37 @@ class _WaitForRolloutsCompleted(Exception):
     pass
 
 
+class BackgroundTaskConfig(BaseModel):
+    name: str # unique name for the task
+    method: str # method name to call, currently only supports methods of DatabaseLightningStore
+    interval: Dict[Literal["seconds", "minutes", "hours"], float] # interval for the task
+    is_async: bool = True # whether the task method is async, default to True
+
+
 class DatabaseLightningStore(LightningStore):
     """
     A LightningStore implementation that uses a database backend to store and manage rollouts and attempts.
     The database backend is expected to support asynchronous operations.
     The store uses SQLAlchemy ORM models to interact with the database
     Args:
-        database_url: The database connection URL. If not provided, it will be read from the 'DATABASE_URL' environment variable.
-        watchdog_mode: The mode for the watchdog that monitors long-running attempts. Can be 'thread' or 'asyncio'.
-        dequeue_strategy: The strategy to dequeue rollouts. Currently only 'fifo' is supported.
-        retry_for_waiting: The retry strategy to use when waiting for rollouts to complete. If not provided, a default strategy with infinite retries and polling every 10 seconds will be used.
-        wait_for_nonexistent_rollout: Whether to wait for rollouts that do not exist when calling `wait_for_rollouts`.(default: False)
+        database_url (string):
+            The database URL for connecting to the database.
+            If None, will read from the 'DATABASE_URL' environment variable.
+        retry_for_waiting (RetryStrategy):
+            Retry strategy for polling when waiting for rollouts to complete.
+            If None, a default strategy will be used.
+        wait_for_nonexistent_rollout (Bool):
+            If True, when waiting for rollouts, will wait for all specified rollouts to complete, including non-existing ones.
+            If False, will ignore non-existing rollouts as completed. (Default: False)
+        background_tasks_cfg (list[Dict[str, Any]]):
+            The configuration for in-process periodic tasks, following the definition of `BackgroundTaskConfig`.
+            IF not provided (None as default), the dbstore will incorporate a default set of periodic tasks as follows:
+            [
+                BackgroundTaskConfig(name="check_attempt_timeout", method="check_attempt_timeout", interval={"seconds": 10.0}),
+            ]
+            To disable all periodic tasks, provide an empty list `[]`.
+    Note:
+        Explicitly use async `start()` and `stop()` methods to manage the database connection lifecycle.
     """
 
     def __init__(
@@ -70,7 +92,7 @@ class DatabaseLightningStore(LightningStore):
         *,
         retry_for_waiting: Optional[dict[str, Any]|RetryStrategy] = None,
         wait_for_nonexistent_rollout: bool = False,
-        watchdog_mode: Literal["thread", "asyncio"] = "asyncio",
+        background_tasks_cfg: list[Dict[str, Any]] | None = None,
     ) -> None:
         super().__init__()
         if database_url is None:
@@ -96,12 +118,62 @@ class DatabaseLightningStore(LightningStore):
         self.retry_for_waiting = retry_for_waiting if isinstance(retry_for_waiting, RetryStrategy) else RetryStrategy(**retry_for_waiting)
         self.wait_for_nonexistent_rollout = wait_for_nonexistent_rollout
 
+        # setup in-process periodic tasks
+        if background_tasks_cfg is None:
+            self.background_tasks_cfg = [
+                BackgroundTaskConfig(name="check_attempt_timeout", method="check_attempt_timeout", interval={"seconds": 10.0}),
+            ]
+        else:
+            self.background_tasks_cfg = [
+                BackgroundTaskConfig(**cfg) for cfg in background_tasks_cfg
+            ]
+        self._background_scheduler = BackgroundScheduler()
+
     async def start(self):
         async with self._engine.begin() as conn:
             await conn.run_sync(SqlAlchemyBase.metadata.create_all)
+        for task_cfg in self.background_tasks_cfg:
+            self.add_background_task(task_cfg, to_scheduler_only=True)
+        self._background_scheduler.start() # type: ignore
 
     async def stop(self):
         await self._engine.dispose()
+        self._background_scheduler.shutdown() # type: ignore
+
+    def add_background_task(self, task_cfg: Dict[str, Any] | BackgroundTaskConfig, to_scheduler_only: bool = False) -> None:
+        """Add a new periodic background task to the scheduler.
+        Args:
+            task_cfg (Dict[str, Any] | BackgroundTaskConfig): The configuration for the background task.
+            to_scheduler_only (bool): If True, only add the task to the scheduler without updating the configuration list.
+        Raises:
+            ValueError: If the task method is not defined in DatabaseLightningStore.
+        """
+        config = task_cfg if isinstance(task_cfg, BackgroundTaskConfig) else BackgroundTaskConfig(**task_cfg)
+        if not to_scheduler_only:
+            # check existing tasks
+            for existing in self.background_tasks_cfg:
+                if existing.name == config.name:
+                    logger.warning(f"Background task {config.name} is already scheduled, will update its configuration.")
+            self.background_tasks_cfg.append(config)
+        delta_t = timedelta(**config.interval)
+        if not hasattr(self, config.method):
+            raise ValueError(f"Periodic task method {config.method} is not defined in DatabaseLightningStore.")
+        if config.is_async:
+            func = lambda: asyncio.run(getattr(self, config.method)())
+        else:
+            func = lambda: getattr(self, config.method)()
+
+        self._background_scheduler.add_job( # type: ignore
+            func=func,
+            trigger=IntervalTrigger(**config.interval), # type: ignore
+            name=f"DatabaseLightningStore.{config.name}",
+            replace_existing=True,
+            next_run_time=datetime.now() + delta_t,  # schedule the first run after the interval
+        )
+
+    # ------------------------------------------------------
+    # Public methods defined in LightningStore
+    # ------------------------------------------------------
 
     @db_retry
     async def start_rollout(
@@ -390,7 +462,52 @@ class DatabaseLightningStore(LightningStore):
                 await session.flush()  # ensure the object is written to the DB
                 return attempt_obj.as_attempt()
 
+    # ------------------------------------------------------
+    # periodic background tasks can be added here
+    # ------------------------------------------------------
+
+    async def check_attempt_timeout(self):
+        """Periodically check for attempts that have timed out and update their status accordingly."""
+        # use update with where condition to find and update timed-out attempts
+        current_time = time.time()
+        attempts_timed_out: list[AttemptInDB] = []
+
+        # Step 1: Filter and update timed-out attempts
+        async with self._async_session() as session:
+            async with session.begin():
+                for mode in ["max_heartbeat_interval", "max_duration"]: # max_duration has higher priority
+                    attempts_timed_out.extend(await self._attempt_timeout_check(session, mode, current_time))
+
+        # Step 2: Create messages to update rollout
+        messages: Dict[str, Dict[str, Any]] = {}
+        rollout_ids: set[str] = set()
+        for attempt in attempts_timed_out:
+            messages[attempt.attempt_id] = {
+                "event": "attempt_status_update",
+                "timestamp": current_time,
+                "old_status": None,
+                "new_status": attempt.status,
+                "attempt_id": attempt.attempt_id,
+                "is_failed": True,
+                "rollout_id": attempt.rollout_id, # for convenience
+            }
+            rollout_ids.add(attempt.rollout_id)
+
+        # Step 3: Update rollouts
+        async with self._async_session() as session:
+            async with session.begin():
+                result = await session.scalars(
+                    select(RolloutInDB).where(RolloutInDB.rollout_id.in_(rollout_ids))
+                )
+                rollout_objs = {r.rollout_id: r for r in result.all()}
+                for msg in messages.values():
+                    rollout_obj = rollout_objs[msg["rollout_id"]]
+                    rollout_obj.update_status(msg)
+
+    # ------------------------------------------------------
     # internal helper methods can be added here
+    # ------------------------------------------------------
+
     async def _add_span(self, span: Dict[str, Any], seq_id: Optional[int] = None) -> Span:
         """Add a new span to the database."""
         if seq_id is not None:
@@ -445,10 +562,13 @@ class DatabaseLightningStore(LightningStore):
     async def _start_attempt_for_rollout(self, session: AsyncSession, rollout_obj: RolloutInDB) -> AttemptedRollout:
         """Create a new attempt for the given rollout and update the rollout's fields."""
         # create a new attempt for this rollout
+        rollout_config = rollout_obj.config if rollout_obj.config is not None else RolloutConfig()
         attempt_obj = AttemptInDB(
             rollout_id=rollout_obj.rollout_id,
             sequence_id=rollout_obj.num_attempts + 1,
             status="preparing",
+            max_duration=rollout_config.timeout_seconds,
+            max_heartbeat_interval=rollout_config.unresponsive_seconds,
         )
         session.add(attempt_obj)
         # pre-update the rollout_obj fields for CAS
@@ -469,3 +589,28 @@ class DatabaseLightningStore(LightningStore):
             session.add(seq_obj)
 
         return AttemptedRollout(**rollout_obj.as_rollout().model_dump(), attempt=attempt_obj.as_attempt())
+
+    async def _attempt_timeout_check(self, session: AsyncSession, mode: str, current_time: float) -> list[AttemptInDB]:
+        if mode == "max_duration":
+            new_status = "timeout"
+            conditions = and_(
+                AttemptInDB.status.in_(["preparing", "running"]),
+                AttemptInDB.max_duration.isnot(None),
+                (current_time - AttemptInDB.start_time) > AttemptInDB.max_duration,
+            )
+        elif mode == "max_heartbeat_interval":
+            new_status = "unresponsive"
+            conditions = and_(
+                AttemptInDB.status.in_(["preparing", "running"]),
+                AttemptInDB.max_heartbeat_interval.isnot(None),
+                (current_time - AttemptInDB.last_heartbeat_time) > AttemptInDB.max_heartbeat_interval,
+            )
+        else:
+            raise ValueError(f"Unsupported timeout checking mode {mode}")
+        result = await session.scalars(
+            update(AttemptInDB)
+            .where(conditions)
+            .values(status=new_status)
+            .returning(AttemptInDB)
+        )
+        return list(result.all())

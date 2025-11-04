@@ -37,6 +37,11 @@ async def db_store() -> typing.AsyncGenerator[DatabaseLightningStore, None]:
     store = DatabaseLightningStore(database_url=database_url)
     store.retry_for_waiting.wait_seconds = .2  # Set polling interval to 0.2s for test
 
+    # Config db_store with a short time interval for healthcheck
+    store.add_background_task(
+        {"name": "test_healthcheck", "method": "check_attempt_timeout", "interval": {"seconds": 0.1}}
+    )
+
     await store.start()
     try:
         yield store

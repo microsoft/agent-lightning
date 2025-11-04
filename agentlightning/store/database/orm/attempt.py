@@ -34,8 +34,12 @@ class AttemptInDB(SqlAlchemyBase):
     end_time: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
     status: Mapped[str] = mapped_column(String, default="preparing", nullable=False)
     worker_id: Mapped[Optional[str]] = mapped_column(String, nullable=True, default=None)
-    last_heartbeat_time: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)
+    last_heartbeat_time: Mapped[Optional[float]] = mapped_column(Float, nullable=False, default_factory=time.time)
     attempt_metadata: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True, default=None)
+
+    # addition columns for processing
+    max_duration: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)  # maximum duration allowed for this attempt in seconds
+    max_heartbeat_interval: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)  # maximum allowed heartbeat interval in seconds
 
     def as_attempt(self) -> Attempt:
         return Attempt(
