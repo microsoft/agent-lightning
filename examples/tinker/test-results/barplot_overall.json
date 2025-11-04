@@ -1,8 +1,8 @@
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
   "description": "Overall Success Rate Across Six Configurations",
-  "width": 800,
-  "height": 500,
+  "width": 600,
+  "height": 400,
   "config": {
     "axis": {
       "labelFontSize": 14,
@@ -17,27 +17,27 @@
   "data": {
     "values": [
       {
-        "configuration": "Qwen3-4B + Tool",
+        "configuration": "Qwen-4B + Tool",
         "success_rate": 54.92227979274611
       },
       {
-        "configuration": "Qwen3-4B-Instruct-2507",
+        "configuration": "Qwen-4B No Tool",
         "success_rate": 14.499999999999998
       },
       {
-        "configuration": "Qwen3-30B + Tool",
+        "configuration": "Qwen-30B + Tool",
         "success_rate": 49.23076923076923
       },
       {
-        "configuration": "Qwen3-30B-A3B-Instruct",
+        "configuration": "Qwen-30B No Tool",
         "success_rate": 40.5
       },
       {
-        "configuration": "Qwen3-235B-A22B",
+        "configuration": "Qwen-235B No Tool",
         "success_rate": 63.775510204081634
       },
       {
-        "configuration": "GPT-4.1",
+        "configuration": "GPT-4.1 No Tool",
         "success_rate": 74.5
       }
     ]
@@ -53,7 +53,7 @@
       "type": "nominal",
       "title": "Configuration",
       "axis": {
-        "labelAngle": -30,
+        "labelAngle": -45,
         "labelAlign": "right"
       }
     },

@@ -1,0 +1,74 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "description": "Item Count by Category",
+  "width": 600,
+  "height": 400,
+  "config": {
+    "axis": {
+      "labelFontSize": 14,
+      "titleFontSize": 16,
+      "titleFontWeight": "normal"
+    },
+    "legend": {
+      "labelFontSize": 14,
+      "titleFontSize": 14
+    }
+  },
+  "data": {
+    "values": [
+      {
+        "category": "Animal",
+        "count": 36
+      },
+      {
+        "category": "Celebrity",
+        "count": 31
+      },
+      {
+        "category": "Character",
+        "count": 26
+      },
+      {
+        "category": "Electronics",
+        "count": 23
+      },
+      {
+        "category": "Flower",
+        "count": 20
+      },
+      {
+        "category": "Furniture",
+        "count": 24
+      },
+      {
+        "category": "Instrument",
+        "count": 20
+      },
+      {
+        "category": "Stationery",
+        "count": 20
+      }
+    ]
+  },
+  "mark": {
+    "type": "bar",
+    "color": "#06A77D",
+    "opacity": 0.8
+  },
+  "encoding": {
+    "x": {
+      "field": "category",
+      "type": "nominal",
+      "title": "Category",
+      "axis": {
+        "labelAngle": -45,
+        "labelAlign": "right"
+      }
+    },
+    "y": {
+      "field": "count",
+      "type": "quantitative",
+      "title": "Number of Items"
+    }
+  }
+}

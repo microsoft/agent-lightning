@@ -94,6 +94,18 @@ for config, data in all_data.items():
             {"split": split_type.capitalize(), "configuration": display_names[config], "success_rate": success_rate}
         )
 
+# Calculate count by category from the CSV
+category_count_data = []
+with open("../q20_nouns.csv", "r") as f:
+    reader = csv.DictReader(f)
+    category_counts = defaultdict(int)
+    for row in reader:
+        if row["category"]:  # Skip empty rows
+            category_counts[row["category"].capitalize()] += 1
+
+for category, count in sorted(category_counts.items()):
+    category_count_data.append({"category": category, "count": count})
+
 # Vega-Lite specification for overall success rate
 vega_spec_overall = {
     "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
@@ -216,6 +228,33 @@ vega_spec_split = {
     },
 }
 
+# Vega-Lite specification for category counts
+vega_spec_category_count = {
+    "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+    "description": "Item Count by Category",
+    "width": 600,
+    "height": 400,
+    "config": {
+        "axis": {"labelFontSize": 14, "titleFontSize": 16, "titleFontWeight": "normal"},
+        "legend": {"labelFontSize": 14, "titleFontSize": 14},
+    },
+    "data": {"values": category_count_data},
+    "mark": {"type": "bar", "color": "#06A77D", "opacity": 0.8},
+    "encoding": {
+        "x": {
+            "field": "category",
+            "type": "nominal",
+            "title": "Category",
+            "axis": {"labelAngle": -45, "labelAlign": "right"},
+        },
+        "y": {
+            "field": "count",
+            "type": "quantitative",
+            "title": "Number of Items",
+        },
+    },
+}
+
 # Save specifications
 with open("barplot_overall.json", "w") as f:
     json.dump(vega_spec_overall, f, indent=2)
@@ -226,7 +265,10 @@ with open("barplot_category.json", "w") as f:
 with open("barplot_split.json", "w") as f:
     json.dump(vega_spec_split, f, indent=2)
 
-print("Created barplot_overall.json, barplot_category.json, and barplot_split.json")
+with open("barplot_category_count.json", "w") as f:
+    json.dump(vega_spec_category_count, f, indent=2)
+
+print("Created barplot_overall.json, barplot_category.json, barplot_split.json, and barplot_category_count.json")
 
 # Print summary statistics
 print("\n=== Overall Success Rates ===")
@@ -247,3 +289,9 @@ for split_type in ["Train", "Test"]:
     for item in split_data:
         if item["split"] == split_type:
             print(f"  {item['configuration']:25s}: {item['success_rate']:.1f}%")
+
+print("\n=== Item Count by Category ===")
+total_items = sum(item["count"] for item in category_count_data)
+for item in category_count_data:
+    print(f"{item['category']:15s}: {item['count']:3d} items")
+print(f"\n{'Total':15s}: {total_items:3d} items")

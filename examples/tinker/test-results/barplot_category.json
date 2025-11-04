@@ -1,8 +1,8 @@
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
   "description": "Success Rate by Category: Model Comparison",
-  "width": 800,
-  "height": 500,
+  "width": 600,
+  "height": 400,
   "config": {
     "axis": {
       "labelFontSize": 14,
@@ -21,124 +21,124 @@
   "data": {
     "values": [
       {
-        "category": "Flower",
-        "configuration": "Qwen3-4B + Tool",
-        "success_rate": 36.84210526315789
-      },
-      {
-        "category": "Furniture",
-        "configuration": "Qwen3-4B + Tool",
-        "success_rate": 91.66666666666666
-      },
-      {
         "category": "Electronics",
-        "configuration": "Qwen3-4B + Tool",
+        "configuration": "Qwen-4B + Tool",
         "success_rate": 65.21739130434783
       },
       {
-        "category": "Animal",
-        "configuration": "Qwen3-4B + Tool",
-        "success_rate": 51.515151515151516
-      },
-      {
-        "category": "Character",
-        "configuration": "Qwen3-4B + Tool",
-        "success_rate": 37.5
-      },
-      {
-        "category": "Celebrity",
-        "configuration": "Qwen3-4B + Tool",
-        "success_rate": 13.333333333333334
-      },
-      {
         "category": "Stationery",
-        "configuration": "Qwen3-4B + Tool",
+        "configuration": "Qwen-4B + Tool",
         "success_rate": 75.0
       },
       {
+        "category": "Flower",
+        "configuration": "Qwen-4B + Tool",
+        "success_rate": 36.84210526315789
+      },
+      {
+        "category": "Animal",
+        "configuration": "Qwen-4B + Tool",
+        "success_rate": 51.515151515151516
+      },
+      {
+        "category": "Celebrity",
+        "configuration": "Qwen-4B + Tool",
+        "success_rate": 13.333333333333334
+      },
+      {
+        "category": "Furniture",
+        "configuration": "Qwen-4B + Tool",
+        "success_rate": 91.66666666666666
+      },
+      {
         "category": "Instrument",
-        "configuration": "Qwen3-4B + Tool",
+        "configuration": "Qwen-4B + Tool",
         "success_rate": 85.0
       },
       {
-        "category": "Flower",
-        "configuration": "Qwen3-30B",
-        "success_rate": 15.0
-      },
-      {
-        "category": "Furniture",
-        "configuration": "Qwen3-30B",
-        "success_rate": 70.83333333333334
+        "category": "Character",
+        "configuration": "Qwen-4B + Tool",
+        "success_rate": 37.5
       },
       {
         "category": "Electronics",
-        "configuration": "Qwen3-30B",
+        "configuration": "Qwen-30B No Tool",
         "success_rate": 30.434782608695656
       },
       {
-        "category": "Animal",
-        "configuration": "Qwen3-30B",
-        "success_rate": 58.333333333333336
-      },
-      {
-        "category": "Character",
-        "configuration": "Qwen3-30B",
-        "success_rate": 15.384615384615385
-      },
-      {
-        "category": "Celebrity",
-        "configuration": "Qwen3-30B",
-        "success_rate": 19.35483870967742
-      },
-      {
         "category": "Stationery",
-        "configuration": "Qwen3-30B",
+        "configuration": "Qwen-30B No Tool",
         "success_rate": 35.0
       },
       {
+        "category": "Flower",
+        "configuration": "Qwen-30B No Tool",
+        "success_rate": 15.0
+      },
+      {
+        "category": "Animal",
+        "configuration": "Qwen-30B No Tool",
+        "success_rate": 58.333333333333336
+      },
+      {
+        "category": "Celebrity",
+        "configuration": "Qwen-30B No Tool",
+        "success_rate": 19.35483870967742
+      },
+      {
+        "category": "Furniture",
+        "configuration": "Qwen-30B No Tool",
+        "success_rate": 70.83333333333334
+      },
+      {
         "category": "Instrument",
-        "configuration": "Qwen3-30B",
+        "configuration": "Qwen-30B No Tool",
+        "success_rate": 80.0
+      },
+      {
+        "category": "Character",
+        "configuration": "Qwen-30B No Tool",
+        "success_rate": 15.384615384615385
+      },
+      {
+        "category": "Electronics",
+        "configuration": "GPT-4.1 No Tool",
+        "success_rate": 60.86956521739131
+      },
+      {
+        "category": "Stationery",
+        "configuration": "GPT-4.1 No Tool",
         "success_rate": 80.0
       },
       {
         "category": "Flower",
-        "configuration": "GPT-4.1",
+        "configuration": "GPT-4.1 No Tool",
         "success_rate": 70.0
       },
       {
-        "category": "Furniture",
-        "configuration": "GPT-4.1",
-        "success_rate": 87.5
-      },
-      {
-        "category": "Electronics",
-        "configuration": "GPT-4.1",
-        "success_rate": 60.86956521739131
-      },
-      {
         "category": "Animal",
-        "configuration": "GPT-4.1",
+        "configuration": "GPT-4.1 No Tool",
         "success_rate": 77.77777777777779
       },
       {
-        "category": "Character",
-        "configuration": "GPT-4.1",
-        "success_rate": 69.23076923076923
-      },
-      {
         "category": "Celebrity",
-        "configuration": "GPT-4.1",
+        "configuration": "GPT-4.1 No Tool",
         "success_rate": 64.51612903225806
       },
       {
-        "category": "Stationery",
-        "configuration": "GPT-4.1",
-        "success_rate": 80.0
+        "category": "Furniture",
+        "configuration": "GPT-4.1 No Tool",
+        "success_rate": 87.5
       },
       {
         "category": "Instrument",
-        "configuration": "GPT-4.1",
+        "configuration": "GPT-4.1 No Tool",
         "success_rate": 90.0
+      },
+      {
+        "category": "Character",
+        "configuration": "GPT-4.1 No Tool",
+        "success_rate": 69.23076923076923
       }
     ]
   },
@@ -152,7 +152,7 @@
       "type": "nominal",
       "title": "Category",
       "axis": {
-        "labelAngle": -30,
+        "labelAngle": -45,
         "labelAlign": "right"
       }
     },
@@ -173,18 +173,15 @@
       "title": "Configuration",
       "scale": {
         "domain": [
-          "Qwen3-4B + Tool",
-          "Qwen3-30B",
-          "GPT-4.1"
+          "Qwen-4B + Tool",
+          "Qwen-30B No Tool",
+          "GPT-4.1 No Tool"
         ],
         "range": [
           "#2E86AB",
           "#E63946",
           "#06A77D"
         ]
-      },
-      "legend": {
-        "orient": "top-left"
       }
     },
     "xOffset": {

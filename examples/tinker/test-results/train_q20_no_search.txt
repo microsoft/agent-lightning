@@ -1,150 +1,164 @@
+hello before
+
+<|im_start|>user
+Let's play a game. Say you are 776.<|im_end|>
+<|im_start|>assistant
+Hey there! I'm actually not 776, but I'm excited to play with you! 😊 What kind of game would you like to play
+
+hello after
+
+Let's play a game. Say you are 777.<|im_end|>
+<|im_start|>assistant
+Alright, I'm 777! 🔢✨
+I'm a number with a cool vibe—three sevens in a row, infinite possibilities,
+
 4B before
 
-[33m<|im_start|>system
-[0m[33mYou are Player in a game of 20 questions. A focused reasoner who uses binary-partition questions to narrow down the remaining possibilities.
-[0m[33mYour personal goal is: Minimize uncertainty and identify the hidden entity within 20 yes/no questions.
-[0m[33m
-[0m[33mTo give my best complete final answer to the task respond using the exact following format:
-[0m[33m
-[0m[33mThought: I now can give a great answer
-[0m[33mFinal Answer: Your final answer must be the great and the most complete as possible, it must be outcome described.
-[0m[33m
-[0m[33mI MUST use these formats, my job depends on it!<|im_end|>
-[0m[33m<|im_start|>user
-[0m[33mYou are playing 20 Questions as the **Player**.
-[0m[33mAsk one high-information **yes/no** question that most reduces the remaining possibility space.
-[0m[33mIf you think you have figured out the secret entity, ask a direct guess in the form: **"Is it <entity>?"**
-[0m[33m
-[0m[33mTHIS IS TURN #11 OF 20. You have 10 turns left. The quicker you make a correct guess, the higher your score.
-[0m[33m
-[0m[33m## Important assumptions
-[0m[33m- Your answer BELONGS TO the category of "animal".
-[0m[33m- The answer is **straightforward, familiar, and commonly known**. They can be at most 3 words long (and only one word long in a majority of cases).
-[0m[33m- The answer refers to a **single, clear entity** — not a variant, version, or situation-dependent form.
-[0m[33m
-[0m[33m## What you have: Game history (Q/A pairs):
-[0m[33m
-[0m[33mQuestion #1: Is it a mammal?
-[0m[33mResponse #1: no
-[0m[33m
-[0m[33mQuestion #2: Is it a cold-blooded animal?
-[0m[33mResponse #2: yes
-[0m[33m
-[0m[33mQuestion #3: Can it lay eggs?
-[0m[33mResponse #3: yes
-[0m[33m
-[0m[33mQuestion #4: Does it have four legs?
-[0m[33mResponse #4: no
-[0m[33m
-[0m[33mQuestion #5: Does it live in water?
-[0m[33mResponse #5: no
-[0m[33m
-[0m[33mQuestion #6: Does it have fins?
-[0m[33mResponse #6: no
-[0m[33m
-[0m[33mQuestion #7: Does it have wings?
-[0m[33mResponse #7: no
-[0m[33m
-[0m[33mQuestion #8: Does it have a backbone?
-[0m[33mResponse #8: no
-[0m[33m
-[0m[33mQuestion #9: Does it have a head?
-[0m[33mResponse #9: no
-[0m[33m
-[0m[33mQuestion #10: Does it have a body made of cells?
-[0m[33mResponse #10: yes
-[0m[33m
-[0m[33m## Strategy guidelines (concise, practical)
-[0m[33m- **Start broad, then narrow**: prioritize sub-category-level splits first (within animal), then mid-level properties, then identifiers.
-[0m[33m- **Binary partitioning**: prefer questions that split the remaining set near the middle.
-[0m[33m- **Property over identity**: ask about features/roles/usages before naming brands, species, or specific titles.
-[0m[33m- **Contradiction guard**: if past answers imply a contradiction, ask a short reset/sanity-check question to reconcile.
-[0m[33m- **n/a handling**: if the last answer was **n/a**, pivot wording to a clearer, factual property.
-[0m[33m- **Endgame**: if you have only one turn left, make a direct guess.
-[0m[33m
-[0m[33m## How to ask questions
-[0m[33m- Directly confirm your guess instead of asking about entities that directly name or define the answer (e.g., "Is it a type of pizza?" if "Pizza" is an option).
-[0m[33m- Avoid questions that depend on subjective or situational conditions (e.g., "Would most people consider it artistic?").
-[0m[33m- You are encouraged to use the search tool to check factual details or implications behind your potential question. This helps ensure your reasoning is grounded, accurate, and avoids irrelevant or trivial inquiries. However, you can only use the search tool at most once for each question; you must not use the search tool consecutively without asking a question in between.
-[0m[33m
-[0m[33m## Output format (critical)
-[0m[33m
-[0m[33m- Output **only** one yes/no question on a single line.
-[0m[33m- No preamble, no numbering, no quotes, no meta commentary.
-[0m[33m- Keep it concise, under 50 words.
-[0m[33m- If guessing: use the form **Is it <entity>?**
-[0m[33m
-[0m[33mNow produce your single best next question.<|im_end|>
-[0m[33m<|im_start|>assistant
-[0m[31mDoes it have a gut?<|im_end|>[0m
+<|im_start|>system
+You are Player in a game of 20 questions. A focused reasoner who uses binary-partition questions to narrow down the remaining possibilities.
+Your personal goal is: Minimize uncertainty and identify the hidden entity within 20 yes/no questions.
+
+To give my best complete final answer to the task respond using the exact following format:
+
+Thought: I now can give a great answer
+Final Answer: Your final answer must be the great and the most complete as possible, it must be outcome described.
+
+I MUST use these formats, my job depends on it!<|im_end|>
+<|im_start|>user
+You are playing 20 Questions as the **Player**.
+Ask one high-information **yes/no** question that most reduces the remaining possibility space.
+If you think you have figured out the secret entity, ask a direct guess in the form: **"Is it <entity>?"**
+
+THIS IS TURN #11 OF 20. You have 10 turns left. The quicker you make a correct guess, the higher your score.
+
+## Important assumptions
+- Your answer BELONGS TO the category of "animal".
+- The answer is **straightforward, familiar, and commonly known**. They can be at most 3 words long (and only one word long in a majority of cases).
+- The answer refers to a **single, clear entity** — not a variant, version, or situation-dependent form.
+
+## What you have: Game history (Q/A pairs):
+
+Question #1: Is it a mammal?
+Response #1: no
+
+Question #2: Is it a cold-blooded animal?
+Response #2: yes
+
+Question #3: Can it lay eggs?
+Response #3: yes
+
+Question #4: Does it have four legs?
+Response #4: no
+
+Question #5: Does it live in water?
+Response #5: no
+
+Question #6: Does it have fins?
+Response #6: no
+
+Question #7: Does it have wings?
+Response #7: no
+
+Question #8: Does it have a backbone?
+Response #8: no
+
+Question #9: Does it have a head?
+Response #9: no
+
+Question #10: Does it have a body made of cells?
+Response #10: yes
+
+## Strategy guidelines (concise, practical)
+- **Start broad, then narrow**: prioritize sub-category-level splits first (within animal), then mid-level properties, then identifiers.
+- **Binary partitioning**: prefer questions that split the remaining set near the middle.
+- **Property over identity**: ask about features/roles/usages before naming brands, species, or specific titles.
+- **Contradiction guard**: if past answers imply a contradiction, ask a short reset/sanity-check question to reconcile.
+- **n/a handling**: if the last answer was **n/a**, pivot wording to a clearer, factual property.
+- **Endgame**: if you have only one turn left, make a direct guess.
+
+## How to ask questions
+- Directly confirm your guess instead of asking about entities that directly name or define the answer (e.g., "Is it a type of pizza?" if "Pizza" is an option).
+- Avoid questions that depend on subjective or situational conditions (e.g., "Would most people consider it artistic?").
+- You are encouraged to use the search tool to check factual details or implications behind your potential question. This helps ensure your reasoning is grounded, accurate, and avoids irrelevant or trivial inquiries. However, you can only use the search tool at most once for each question; you must not use the search tool consecutively without asking a question in between.
+
+## Output format (critical)
+
+- Output **only** one yes/no question on a single line.
+- No preamble, no numbering, no quotes, no meta commentary.
+- Keep it concise, under 50 words.
+- If guessing: use the form **Is it <entity>?**
+
+Now produce your single best next question.<|im_end|>
+<|im_start|>assistant
+[31mDoes it have a gut?<|im_end|>
 
 --------
 
 4B middle:
 
-[33m<|im_start|>system
-[0m[33mYou are Player in a game of 20 questions. A focused reasoner who uses binary-partition questions to narrow down the remaining possibilities.
-[0m[33mYour personal goal is: Minimize uncertainty and identify the hidden entity within 20 yes/no questions.
-[0m[33m
-[0m[33mTo give my best complete final answer to the task respond using the exact following format:
-[0m[33m
-[0m[33mThought: I now can give a great answer
-[0m[33mFinal Answer: Your final answer must be the great and the most complete as possible, it must be outcome described.
-[0m[33m
-[0m[33mI MUST use these formats, my job depends on it!<|im_end|>
-[0m[33m<|im_start|>user
-[0m[33mYou are playing 20 Questions as the **Player**.
-[0m[33mAsk one high-information **yes/no** question that most reduces the remaining possibility space.
-[0m[33mIf you think you have figured out the secret entity, ask a direct guess in the form: **"Is it <entity>?"**
-[0m[33m
-[0m[33mTHIS IS TURN #6 OF 20. You have 15 turns left. The quicker you make a correct guess, the higher your score.
-[0m[33m
-[0m[33m## Important assumptions
-[0m[33m- Your answer BELONGS TO the category of "character".
-[0m[33m- The answer is **straightforward, familiar, and commonly known**. They can be at most 3 words long (and only one word long in a majority of cases).
-[0m[33m- The answer refers to a **single, clear entity** — not a variant, version, or situation-dependent form.
-[0m[33m
-[0m[33m## What you have: Game history (Q/A pairs):
-[0m[33m
-[0m[33mQuestion #1: Is it a superhero?
-[0m[33mResponse #1: no
-[0m[33m
-[0m[33mQuestion #2: Is it from a book?
-[0m[33mResponse #2: no
-[0m[33m
-[0m[33mQuestion #3: Is it a real person?
-[0m[33mResponse #3: no
-[0m[33m
-[0m[33mQuestion #4: Is it an animal?
-[0m[33mResponse #4: yes
-[0m[33m
-[0m[33mQuestion #5: Is it a domestic animal?
-[0m[33mResponse #5: no
-[0m[33m
-[0m[33m## Strategy guidelines (concise, practical)
-[0m[33m- **Start broad, then narrow**: prioritize sub-category-level splits first (within character), then mid-level properties, then identifiers.
-[0m[33m- **Binary partitioning**: prefer questions that split the remaining set near the middle.
-[0m[33m- **Property over identity**: ask about features/roles/usages before naming brands, species, or specific titles.
-[0m[33m- **Contradiction guard**: if past answers imply a contradiction, ask a short reset/sanity-check question to reconcile.
-[0m[33m- **n/a handling**: if the last answer was **n/a**, pivot wording to a clearer, factual property.
-[0m[33m- **Endgame**: if you have only one turn left, make a direct guess.
-[0m[33m
-[0m[33m## How to ask questions
-[0m[33m- Directly confirm your guess instead of asking about entities that directly name or define the answer (e.g., "Is it a type of pizza?" if "Pizza" is an option).
-[0m[33m- Avoid questions that depend on subjective or situational conditions (e.g., "Would most people consider it artistic?").
-[0m[33m- You are encouraged to use the search tool to check factual details or implications behind your potential question. This helps ensure your reasoning is grounded, accurate, and avoids irrelevant or trivial inquiries. However, you can only use the search tool at most once for each question; you must not use the search tool consecutively without asking a question in between.
-[0m[33m
-[0m[33m## Output format (critical)
-[0m[33m
-[0m[33m- Output **only** one yes/no question on a single line.
-[0m[33m- No preamble, no numbering, no quotes, no meta commentary.
-[0m[33m- Keep it concise, under 50 words.
-[0m[33m- If guessing: use the form **Is it <entity>?**
-[0m[33m
-[0m[33mNow produce your single best next question.<|im_end|>
-[0m[33m<|im_start|>assistant
-[0m[33mThought: The entity is an animal (from Q4), not domestic (Q5), not a superhero or from a book or real person. So it’s a wild animal. Possible candidates: lion, tiger, wolf, bear, etc. Next question should narrow wild animals — asking if it's a predator fits binary partitioning.
-[0m[33mFinal Answer: Is it a predator?<|im_end|>[0m
+<|im_start|>system
+You are Player in a game of 20 questions. A focused reasoner who uses binary-partition questions to narrow down the remaining possibilities.
+Your personal goal is: Minimize uncertainty and identify the hidden entity within 20 yes/no questions.
+
+To give my best complete final answer to the task respond using the exact following format:
+
+Thought: I now can give a great answer
+Final Answer: Your final answer must be the great and the most complete as possible, it must be outcome described.
+
+I MUST use these formats, my job depends on it!<|im_end|>
+<|im_start|>user
+You are playing 20 Questions as the **Player**.
+Ask one high-information **yes/no** question that most reduces the remaining possibility space.
+If you think you have figured out the secret entity, ask a direct guess in the form: **"Is it <entity>?"**
+
+THIS IS TURN #6 OF 20. You have 15 turns left. The quicker you make a correct guess, the higher your score.
+
+## Important assumptions
+- Your answer BELONGS TO the category of "character".
+- The answer is **straightforward, familiar, and commonly known**. They can be at most 3 words long (and only one word long in a majority of cases).
+- The answer refers to a **single, clear entity** — not a variant, version, or situation-dependent form.
+
+## What you have: Game history (Q/A pairs):
+
+Question #1: Is it a superhero?
+Response #1: no
+
+Question #2: Is it from a book?
+Response #2: no
+
+Question #3: Is it a real person?
+Response #3: no
+
+Question #4: Is it an animal?
+Response #4: yes
+
+Question #5: Is it a domestic animal?
+Response #5: no
+
+## Strategy guidelines (concise, practical)
+- **Start broad, then narrow**: prioritize sub-category-level splits first (within character), then mid-level properties, then identifiers.
+- **Binary partitioning**: prefer questions that split the remaining set near the middle.
+- **Property over identity**: ask about features/roles/usages before naming brands, species, or specific titles.
+- **Contradiction guard**: if past answers imply a contradiction, ask a short reset/sanity-check question to reconcile.
+- **n/a handling**: if the last answer was **n/a**, pivot wording to a clearer, factual property.
+- **Endgame**: if you have only one turn left, make a direct guess.
+
+## How to ask questions
+- Directly confirm your guess instead of asking about entities that directly name or define the answer (e.g., "Is it a type of pizza?" if "Pizza" is an option).
+- Avoid questions that depend on subjective or situational conditions (e.g., "Would most people consider it artistic?").
+- You are encouraged to use the search tool to check factual details or implications behind your potential question. This helps ensure your reasoning is grounded, accurate, and avoids irrelevant or trivial inquiries. However, you can only use the search tool at most once for each question; you must not use the search tool consecutively without asking a question in between.
+
+## Output format (critical)
+
+- Output **only** one yes/no question on a single line.
+- No preamble, no numbering, no quotes, no meta commentary.
+- Keep it concise, under 50 words.
+- If guessing: use the form **Is it <entity>?**
+
+Now produce your single best next question.<|im_end|>
+<|im_start|>assistant
+Thought: The entity is an animal (from Q4), not domestic (Q5), not a superhero or from a book or real person. So it’s a wild animal. Possible candidates: lion, tiger, wolf, bear, etc. Next question should narrow wild animals — asking if it's a predator fits binary partitioning.
+Final Answer: Is it a predator?<|im_end|>
 
 
 --------------
@@ -152,338 +166,338 @@
 4B After:
 
 
-[33m<|im_start|>system
-[0m[33mYou are Player in a game of 20 questions. A focused reasoner who uses binary-partition questions to narrow down the remaining possibilities.
-[0m[33mYour personal goal is: Minimize uncertainty and identify the hidden entity within 20 yes/no questions.
-[0m[33m
-[0m[33mTo give my best complete final answer to the task respond using the exact following format:
-[0m[33m
-[0m[33mThought: I now can give a great answer
-[0m[33mFinal Answer: Your final answer must be the great and the most complete as possible, it must be outcome described.
-[0m[33m
-[0m[33mI MUST use these formats, my job depends on it!<|im_end|>
-[0m[33m<|im_start|>user
-[0m[33mYou are playing 20 Questions as the **Player**.
-[0m[33mAsk one high-information **yes/no** question that most reduces the remaining possibility space.
-[0m[33mIf you think you have figured out the secret entity, ask a direct guess in the form: **"Is it <entity>?"**
-[0m[33m
-[0m[33mTHIS IS TURN #11 OF 20. You have 10 turns left. The quicker you make a correct guess, the higher your score.
-[0m[33m
-[0m[33m## Important assumptions
-[0m[33m- Your answer BELONGS TO the category of "flower".
-[0m[33m- The answer is **straightforward, familiar, and commonly known**. They can be at most 3 words long (and only one word long in a majority of cases).
-[0m[33m- The answer refers to a **single, clear entity** — not a variant, version, or situation-dependent form.
-[0m[33m
-[0m[33m## What you have: Game history (Q/A pairs):
-[0m[33m
-[0m[33mQuestion #1: Is it a rose?
-[0m[33mResponse #1: no
-[0m[33m
-[0m[33mQuestion #2: Is it a daisy?
-[0m[33mResponse #2: no
-[0m[33m
-[0m[33mQuestion #3: Is it a sunflower?
-[0m[33mResponse #3: no
-[0m[33m
-[0m[33mQuestion #4: Is it a lily?
-[0m[33mResponse #4: no
-[0m[33m
-[0m[33mQuestion #5: Is it a tulip?
-[0m[33mResponse #5: no
-[0m[33m
-[0m[33mQuestion #6: Is it an iris?
-[0m[33mResponse #6: no
-[0m[33m
-[0m[33mQuestion #7: Is it a carnation?
-[0m[33mResponse #7: no
-[0m[33m
-[0m[33mQuestion #8: Is it a peony?
-[0m[33mResponse #8: no
-[0m[33m
-[0m[33mQuestion #9: Is it an orchid?
-[0m[33mResponse #9: no
-[0m[33m
-[0m[33mQuestion #10: Is it a hyacinth?
-[0m[33mResponse #10: no
-[0m[33m
-[0m[33m## Strategy guidelines (concise, practical)
-[0m[33m- **Start broad, then narrow**: prioritize sub-category-level splits first (within flower), then mid-level properties, then identifiers.
-[0m[33m- **Binary partitioning**: prefer questions that split the remaining set near the middle.
-[0m[33m- **Property over identity**: ask about features/roles/usages before naming brands, species, or specific titles.
-[0m[33m- **Contradiction guard**: if past answers imply a contradiction, ask a short reset/sanity-check question to reconcile.
-[0m[33m- **n/a handling**: if the last answer was **n/a**, pivot wording to a clearer, factual property.
-[0m[33m- **Endgame**: if you have only one turn left, make a direct guess.
-[0m[33m
-[0m[33m## How to ask questions
-[0m[33m- Directly confirm your guess instead of asking about entities that directly name or define the answer (e.g., "Is it a type of pizza?" if "Pizza" is an option).
-[0m[33m- Avoid questions that depend on subjective or situational conditions (e.g., "Would most people consider it artistic?").
-[0m[33m- You are encouraged to use the search tool to check factual details or implications behind your potential question. This helps ensure your reasoning is grounded, accurate, and avoids irrelevant or trivial inquiries. However, you can only use the search tool at most once for each question; you must not use the search tool consecutively without asking a question in between.
-[0m[33m
-[0m[33m## Output format (critical)
-[0m[33m
-[0m[33m- Output **only** one yes/no question on a single line.
-[0m[33m- No preamble, no numbering, no quotes, no meta commentary.
-[0m[33m- Keep it concise, under 50 words.
-[0m[33m- If guessing: use the form **Is it <entity>?**
-[0m[33m
-[0m[33mNow produce your single best next question.<|im_end|>
-[0m[33m<|im_start|>assistant
-[0m[31mThought: So far, eliminated are common roses, daisies, sunflowers, lilies, tulips, irises, carnations, peonies, orchids, hyacinths. Remaining common flowers include: lotus, chamomile, marigold, poppy, dahlia, hibiscus, aster, cosmos, iris (already out), iris-related (no). Poppy is common, not ruled out. Dahlia is common. Hibiscus is common. Aster, cosmos, chamomile. "Poppy" is a straightforward, familiar flower. "Dahlia" is also common. Among these, "dahlia" is less commonly known than "poppy" but still familiar. "Hibiscus" is common in tropics and often called a flower. But "poppy" is a strong candidate — it's well known, satisfies "common and familiar", and not ruled out. No "poppy" in previous list. So it's a plausible guess.
-[0m[31m
-[0m[31mFinal Answer: Is it a poppy?<|im_end|>[0m
+<|im_start|>system
+You are Player in a game of 20 questions. A focused reasoner who uses binary-partition questions to narrow down the remaining possibilities.
+Your personal goal is: Minimize uncertainty and identify the hidden entity within 20 yes/no questions.
+
+To give my best complete final answer to the task respond using the exact following format:
+
+Thought: I now can give a great answer
+Final Answer: Your final answer must be the great and the most complete as possible, it must be outcome described.
+
+I MUST use these formats, my job depends on it!<|im_end|>
+<|im_start|>user
+You are playing 20 Questions as the **Player**.
+Ask one high-information **yes/no** question that most reduces the remaining possibility space.
+If you think you have figured out the secret entity, ask a direct guess in the form: **"Is it <entity>?"**
+
+THIS IS TURN #11 OF 20. You have 10 turns left. The quicker you make a correct guess, the higher your score.
+
+## Important assumptions
+- Your answer BELONGS TO the category of "flower".
+- The answer is **straightforward, familiar, and commonly known**. They can be at most 3 words long (and only one word long in a majority of cases).
+- The answer refers to a **single, clear entity** — not a variant, version, or situation-dependent form.
+
+## What you have: Game history (Q/A pairs):
+
+Question #1: Is it a rose?
+Response #1: no
+
+Question #2: Is it a daisy?
+Response #2: no
+
+Question #3: Is it a sunflower?
+Response #3: no
+
+Question #4: Is it a lily?
+Response #4: no
+
+Question #5: Is it a tulip?
+Response #5: no
+
+Question #6: Is it an iris?
+Response #6: no
+
+Question #7: Is it a carnation?
+Response #7: no
+
+Question #8: Is it a peony?
+Response #8: no
+
+Question #9: Is it an orchid?
+Response #9: no
+
+Question #10: Is it a hyacinth?
+Response #10: no
+
+## Strategy guidelines (concise, practical)
+- **Start broad, then narrow**: prioritize sub-category-level splits first (within flower), then mid-level properties, then identifiers.
+- **Binary partitioning**: prefer questions that split the remaining set near the middle.
+- **Property over identity**: ask about features/roles/usages before naming brands, species, or specific titles.
+- **Contradiction guard**: if past answers imply a contradiction, ask a short reset/sanity-check question to reconcile.
+- **n/a handling**: if the last answer was **n/a**, pivot wording to a clearer, factual property.
+- **Endgame**: if you have only one turn left, make a direct guess.
+
+## How to ask questions
+- Directly confirm your guess instead of asking about entities that directly name or define the answer (e.g., "Is it a type of pizza?" if "Pizza" is an option).
+- Avoid questions that depend on subjective or situational conditions (e.g., "Would most people consider it artistic?").
+- You are encouraged to use the search tool to check factual details or implications behind your potential question. This helps ensure your reasoning is grounded, accurate, and avoids irrelevant or trivial inquiries. However, you can only use the search tool at most once for each question; you must not use the search tool consecutively without asking a question in between.
+
+## Output format (critical)
+
+- Output **only** one yes/no question on a single line.
+- No preamble, no numbering, no quotes, no meta commentary.
+- Keep it concise, under 50 words.
+- If guessing: use the form **Is it <entity>?**
+
+Now produce your single best next question.<|im_end|>
+<|im_start|>assistant
+[31mThought: So far, eliminated are common roses, daisies, sunflowers, lilies, tulips, irises, carnations, peonies, orchids, hyacinths. Remaining common flowers include: lotus, chamomile, marigold, poppy, dahlia, hibiscus, aster, cosmos, iris (already out), iris-related (no). Poppy is common, not ruled out. Dahlia is common. Hibiscus is common. Aster, cosmos, chamomile. "Poppy" is a straightforward, familiar flower. "Dahlia" is also common. Among these, "dahlia" is less commonly known than "poppy" but still familiar. "Hibiscus" is common in tropics and often called a flower. But "poppy" is a strong candidate — it's well known, satisfies "common and familiar", and not ruled out. No "poppy" in previous list. So it's a plausible guess.
+[31m
+[31mFinal Answer: Is it a poppy?<|im_end|>
 
 
 ---------------------
 
 30B before:
 
-[33m<|im_start|>system
-[0m[33mYou are Player in a game of 20 questions. A focused reasoner who uses binary-partition questions to narrow down the remaining possibilities.
-[0m[33mYour personal goal is: Minimize uncertainty and identify the hidden entity within 20 yes/no questions.
-[0m[33m
-[0m[33mTo give my best complete final answer to the task respond using the exact following format:
-[0m[33m
-[0m[33mThought: I now can give a great answer
-[0m[33mFinal Answer: Your final answer must be the great and the most complete as possible, it must be outcome described.
-[0m[33m
-[0m[33mI MUST use these formats, my job depends on it!<|im_end|>
-[0m[33m<|im_start|>user
-[0m[33mYou are playing 20 Questions as the **Player**.
-[0m[33mAsk one high-information **yes/no** question that most reduces the remaining possibility space.
-[0m[33mIf you think you have figured out the secret entity, ask a direct guess in the form: **"Is it <entity>?"**
-[0m[33m
-[0m[33mTHIS IS TURN #11 OF 20. You have 10 turns left. The quicker you make a correct guess, the higher your score.
-[0m[33m
-[0m[33m## Important assumptions
-[0m[33m- Your answer BELONGS TO the category of "animal".
-[0m[33m- The answer is **straightforward, familiar, and commonly known**. They can be at most 3 words long (and only one word long in a majority of cases).
-[0m[33m- The answer refers to a **single, clear entity** — not a variant, version, or situation-dependent form.
-[0m[33m
-[0m[33m## What you have: Game history (Q/A pairs):
-[0m[33m
-[0m[33mQuestion #1: Is it a mammal?
-[0m[33mResponse #1: no
-[0m[33m
-[0m[33mQuestion #2: Is it a bird?
-[0m[33mResponse #2: no
-[0m[33m
-[0m[33mQuestion #3: Is it a reptile?
-[0m[33mResponse #3: no
-[0m[33m
-[0m[33mQuestion #4: Is it an insect?
-[0m[33mResponse #4: no
-[0m[33m
-[0m[33mQuestion #5: Is it a fish?
-[0m[33mResponse #5: no
-[0m[33m
-[0m[33mQuestion #6: Is it a cephalopod?
-[0m[33mResponse #6: no
-[0m[33m
-[0m[33mQuestion #7: Is it a vertebrate?
-[0m[33mResponse #7: no
-[0m[33m
-[0m[33mQuestion #8: Is it a crustacean?
-[0m[33mResponse #8: no
-[0m[33m
-[0m[33mQuestion #9: Is it a mollusk?
-[0m[33mResponse #9: no
-[0m[33m
-[0m[33mQuestion #10: Is it a jellyfish?
-[0m[33mResponse #10: no
-[0m[33m
-[0m[33m## Strategy guidelines (concise, practical)
-[0m[33m- **Start broad, then narrow**: prioritize sub-category-level splits first (within animal), then mid-level properties, then identifiers.
-[0m[33m- **Binary partitioning**: prefer questions that split the remaining set near the middle.
-[0m[33m- **Property over identity**: ask about features/roles/usages before naming brands, species, or specific titles.
-[0m[33m- **Contradiction guard**: if past answers imply a contradiction, ask a short reset/sanity-check question to reconcile.
-[0m[33m- **n/a handling**: if the last answer was **n/a**, pivot wording to a clearer, factual property.
-[0m[33m- **Endgame**: if you have only one turn left, make a direct guess.
-[0m[33m
-[0m[33m## How to ask questions
-[0m[33m- Directly confirm your guess instead of asking about entities that directly name or define the answer (e.g., "Is it a type of pizza?" if "Pizza" is an option).
-[0m[33m- Avoid questions that depend on subjective or situational conditions (e.g., "Would most people consider it artistic?").
-[0m[33m- You are encouraged to use the search tool to check factual details or implications behind your potential question. This helps ensure your reasoning is grounded, accurate, and avoids irrelevant or trivial inquiries. However, you can only use the search tool at most once for each question; you must not use the search tool consecutively without asking a question in between.
-[0m[33m
-[0m[33m## Output format (critical)
-[0m[33m
-[0m[33m- Output **only** one yes/no question on a single line.
-[0m[33m- No preamble, no numbering, no quotes, no meta commentary.
-[0m[33m- Keep it concise, under 50 words.
-[0m[33m- If guessing: use the form **Is it <entity>?**
-[0m[33m
-[0m[33mNow produce your single best next question.<|im_end|>
-[0m[33m<|im_start|>assistant
-[0m[31mIs it a starfish?<|im_end|>[0m
+<|im_start|>system
+You are Player in a game of 20 questions. A focused reasoner who uses binary-partition questions to narrow down the remaining possibilities.
+Your personal goal is: Minimize uncertainty and identify the hidden entity within 20 yes/no questions.
+
+To give my best complete final answer to the task respond using the exact following format:
+
+Thought: I now can give a great answer
+Final Answer: Your final answer must be the great and the most complete as possible, it must be outcome described.
+
+I MUST use these formats, my job depends on it!<|im_end|>
+<|im_start|>user
+You are playing 20 Questions as the **Player**.
+Ask one high-information **yes/no** question that most reduces the remaining possibility space.
+If you think you have figured out the secret entity, ask a direct guess in the form: **"Is it <entity>?"**
+
+THIS IS TURN #11 OF 20. You have 10 turns left. The quicker you make a correct guess, the higher your score.
+
+## Important assumptions
+- Your answer BELONGS TO the category of "animal".
+- The answer is **straightforward, familiar, and commonly known**. They can be at most 3 words long (and only one word long in a majority of cases).
+- The answer refers to a **single, clear entity** — not a variant, version, or situation-dependent form.
+
+## What you have: Game history (Q/A pairs):
+
+Question #1: Is it a mammal?
+Response #1: no
+
+Question #2: Is it a bird?
+Response #2: no
+
+Question #3: Is it a reptile?
+Response #3: no
+
+Question #4: Is it an insect?
+Response #4: no
+
+Question #5: Is it a fish?
+Response #5: no
+
+Question #6: Is it a cephalopod?
+Response #6: no
+
+Question #7: Is it a vertebrate?
+Response #7: no
+
+Question #8: Is it a crustacean?
+Response #8: no
+
+Question #9: Is it a mollusk?
+Response #9: no
+
+Question #10: Is it a jellyfish?
+Response #10: no
+
+## Strategy guidelines (concise, practical)
+- **Start broad, then narrow**: prioritize sub-category-level splits first (within animal), then mid-level properties, then identifiers.
+- **Binary partitioning**: prefer questions that split the remaining set near the middle.
+- **Property over identity**: ask about features/roles/usages before naming brands, species, or specific titles.
+- **Contradiction guard**: if past answers imply a contradiction, ask a short reset/sanity-check question to reconcile.
+- **n/a handling**: if the last answer was **n/a**, pivot wording to a clearer, factual property.
+- **Endgame**: if you have only one turn left, make a direct guess.
+
+## How to ask questions
+- Directly confirm your guess instead of asking about entities that directly name or define the answer (e.g., "Is it a type of pizza?" if "Pizza" is an option).
+- Avoid questions that depend on subjective or situational conditions (e.g., "Would most people consider it artistic?").
+- You are encouraged to use the search tool to check factual details or implications behind your potential question. This helps ensure your reasoning is grounded, accurate, and avoids irrelevant or trivial inquiries. However, you can only use the search tool at most once for each question; you must not use the search tool consecutively without asking a question in between.
+
+## Output format (critical)
+
+- Output **only** one yes/no question on a single line.
+- No preamble, no numbering, no quotes, no meta commentary.
+- Keep it concise, under 50 words.
+- If guessing: use the form **Is it <entity>?**
+
+Now produce your single best next question.<|im_end|>
+<|im_start|>assistant
+[31mIs it a starfish?<|im_end|>
 
 
 30B middle:
 
-[33m<|im_start|>system
-[0m[33mYou are Player in a game of 20 questions. A focused reasoner who uses binary-partition questions to narrow down the remaining possibilities.
-[0m[33mYour personal goal is: Minimize uncertainty and identify the hidden entity within 20 yes/no questions.
-[0m[33m
-[0m[33mTo give my best complete final answer to the task respond using the exact following format:
-[0m[33m
-[0m[33mThought: I now can give a great answer
-[0m[33mFinal Answer: Your final answer must be the great and the most complete as possible, it must be outcome described.
-[0m[33m
-[0m[33mI MUST use these formats, my job depends on it!<|im_end|>
-[0m[33m<|im_start|>user
-[0m[33mYou are playing 20 Questions as the **Player**.
-[0m[33mAsk one high-information **yes/no** question that most reduces the remaining possibility space.
-[0m[33mIf you think you have figured out the secret entity, ask a direct guess in the form: **"Is it <entity>?"**
-[0m[33m
-[0m[33mTHIS IS TURN #10 OF 20. You have 11 turns left. The quicker you make a correct guess, the higher your score.
-[0m[33m
-[0m[33m## Important assumptions
-[0m[33m- Your answer BELONGS TO the category of "character".
-[0m[33m- The answer is **straightforward, familiar, and commonly known**. They can be at most 3 words long (and only one word long in a majority of cases).
-[0m[33m- The answer refers to a **single, clear entity** — not a variant, version, or situation-dependent form.
-[0m[33m
-[0m[33m## What you have: Game history (Q/A pairs):
-[0m[33m
-[0m[33mQuestion #1: Is it a fictional character?
-[0m[33mResponse #1: yes
-[0m[33m
-[0m[33mQuestion #2: Is it a character from a well-known children's book?
-[0m[33mResponse #2: no
-[0m[33m
-[0m[33mQuestion #3: Is it a character from a famous anime or manga?
-[0m[33mResponse #3: no
-[0m[33m
-[0m[33mQuestion #4: Is it a character from a major superhero comic book series?
-[0m[33mResponse #4: no
-[0m[33m
-[0m[33mQuestion #5: Is it a character from a classic literary work?
-[0m[33mResponse #5: no
-[0m[33m
-[0m[33mQuestion #6: Is it a character from a famous play?
-[0m[33mResponse #6: no
-[0m[33m
-[0m[33mQuestion #7: Is it a character from a famous film or television show?
-[0m[33mResponse #7: yes
-[0m[33m
-[0m[33mQuestion #8: Is it a character from a widely popular TV series that aired in the 21st century?
-[0m[33mResponse #8: yes
-[0m[33m
-[0m[33mQuestion #9: Is it a character from a TV show that aired on a major network in the United States?
-[0m[33mResponse #9: yes
-[0m[33m
-[0m[33m## Strategy guidelines (concise, practical)
-[0m[33m- **Start broad, then narrow**: prioritize sub-category-level splits first (within character), then mid-level properties, then identifiers.
-[0m[33m- **Binary partitioning**: prefer questions that split the remaining set near the middle.
-[0m[33m- **Property over identity**: ask about features/roles/usages before naming brands, species, or specific titles.
-[0m[33m- **Contradiction guard**: if past answers imply a contradiction, ask a short reset/sanity-check question to reconcile.
-[0m[33m- **n/a handling**: if the last answer was **n/a**, pivot wording to a clearer, factual property.
-[0m[33m- **Endgame**: if you have only one turn left, make a direct guess.
-[0m[33m
-[0m[33m## How to ask questions
-[0m[33m- Directly confirm your guess instead of asking about entities that directly name or define the answer (e.g., "Is it a type of pizza?" if "Pizza" is an option).
-[0m[33m- Avoid questions that depend on subjective or situational conditions (e.g., "Would most people consider it artistic?").
-[0m[33m- You are encouraged to use the search tool to check factual details or implications behind your potential question. This helps ensure your reasoning is grounded, accurate, and avoids irrelevant or trivial inquiries. However, you can only use the search tool at most once for each question; you must not use the search tool consecutively without asking a question in between.
-[0m[33m
-[0m[33m## Output format (critical)
-[0m[33m
-[0m[33m- Output **only** one yes/no question on a single line.
-[0m[33m- No preamble, no numbering, no quotes, no meta commentary.
-[0m[33m- Keep it concise, under 50 words.
-[0m[33m- If guessing: use the form **Is it <entity>?**
-[0m[33m
-[0m[33mNow produce your single best next question.<|im_end|>
-[0m[33m<|im_start|>assistant
-[0m[31mThought: I now can give a great answer
-[0m[31mFinal Answer: Is it a character from a TV show that is widely considered a cultural phenomenon?<|im_end|>[0m
+<|im_start|>system
+You are Player in a game of 20 questions. A focused reasoner who uses binary-partition questions to narrow down the remaining possibilities.
+Your personal goal is: Minimize uncertainty and identify the hidden entity within 20 yes/no questions.
+
+To give my best complete final answer to the task respond using the exact following format:
+
+Thought: I now can give a great answer
+Final Answer: Your final answer must be the great and the most complete as possible, it must be outcome described.
+
+I MUST use these formats, my job depends on it!<|im_end|>
+<|im_start|>user
+You are playing 20 Questions as the **Player**.
+Ask one high-information **yes/no** question that most reduces the remaining possibility space.
+If you think you have figured out the secret entity, ask a direct guess in the form: **"Is it <entity>?"**
+
+THIS IS TURN #10 OF 20. You have 11 turns left. The quicker you make a correct guess, the higher your score.
+
+## Important assumptions
+- Your answer BELONGS TO the category of "character".
+- The answer is **straightforward, familiar, and commonly known**. They can be at most 3 words long (and only one word long in a majority of cases).
+- The answer refers to a **single, clear entity** — not a variant, version, or situation-dependent form.
+
+## What you have: Game history (Q/A pairs):
+
+Question #1: Is it a fictional character?
+Response #1: yes
+
+Question #2: Is it a character from a well-known children's book?
+Response #2: no
+
+Question #3: Is it a character from a famous anime or manga?
+Response #3: no
+
+Question #4: Is it a character from a major superhero comic book series?
+Response #4: no
+
+Question #5: Is it a character from a classic literary work?
+Response #5: no
+
+Question #6: Is it a character from a famous play?
+Response #6: no
+
+Question #7: Is it a character from a famous film or television show?
+Response #7: yes
+
+Question #8: Is it a character from a widely popular TV series that aired in the 21st century?
+Response #8: yes
+
+Question #9: Is it a character from a TV show that aired on a major network in the United States?
+Response #9: yes
+
+## Strategy guidelines (concise, practical)
+- **Start broad, then narrow**: prioritize sub-category-level splits first (within character), then mid-level properties, then identifiers.
+- **Binary partitioning**: prefer questions that split the remaining set near the middle.
+- **Property over identity**: ask about features/roles/usages before naming brands, species, or specific titles.
+- **Contradiction guard**: if past answers imply a contradiction, ask a short reset/sanity-check question to reconcile.
+- **n/a handling**: if the last answer was **n/a**, pivot wording to a clearer, factual property.
+- **Endgame**: if you have only one turn left, make a direct guess.
+
+## How to ask questions
+- Directly confirm your guess instead of asking about entities that directly name or define the answer (e.g., "Is it a type of pizza?" if "Pizza" is an option).
+- Avoid questions that depend on subjective or situational conditions (e.g., "Would most people consider it artistic?").
+- You are encouraged to use the search tool to check factual details or implications behind your potential question. This helps ensure your reasoning is grounded, accurate, and avoids irrelevant or trivial inquiries. However, you can only use the search tool at most once for each question; you must not use the search tool consecutively without asking a question in between.
+
+## Output format (critical)
+
+- Output **only** one yes/no question on a single line.
+- No preamble, no numbering, no quotes, no meta commentary.
+- Keep it concise, under 50 words.
+- If guessing: use the form **Is it <entity>?**
+
+Now produce your single best next question.<|im_end|>
+<|im_start|>assistant
+[31mThought: I now can give a great answer
+[31mFinal Answer: Is it a character from a TV show that is widely considered a cultural phenomenon?<|im_end|>
 
 
 30B later:
 
-[33m<|im_start|>system
-[0m[33mYou are Player in a game of 20 questions. A focused reasoner who uses binary-partition questions to narrow down the remaining possibilities.
-[0m[33mYour personal goal is: Minimize uncertainty and identify the hidden entity within 20 yes/no questions.
-[0m[33m
-[0m[33mTo give my best complete final answer to the task respond using the exact following format:
-[0m[33m
-[0m[33mThought: I now can give a great answer
-[0m[33mFinal Answer: Your final answer must be the great and the most complete as possible, it must be outcome described.
-[0m[33m
-[0m[33mI MUST use these formats, my job depends on it!<|im_end|>
-[0m[33m<|im_start|>user
-[0m[33mYou are playing 20 Questions as the **Player**.
-[0m[33mAsk one high-information **yes/no** question that most reduces the remaining possibility space.
-[0m[33mIf you think you have figured out the secret entity, ask a direct guess in the form: **"Is it <entity>?"**
-[0m[33m
-[0m[33mTHIS IS TURN #15 OF 20. You have 6 turns left. The quicker you make a correct guess, the higher your score.
-[0m[33m
-[0m[33m## Important assumptions
-[0m[33m- Your answer BELONGS TO the category of "celebrity".
-[0m[33m- The answer is **straightforward, familiar, and commonly known**. They can be at most 3 words long (and only one word long in a majority of cases).
-[0m[33m- The answer refers to a **single, clear entity** — not a variant, version, or situation-dependent form.
-[0m[33m
-[0m[33m## What you have: Game history (Q/A pairs):
-[0m[33m
-[0m[33mQuestion #1: Is it Marilyn Monroe?
-[0m[33mResponse #1: no
-[0m[33m
-[0m[33mQuestion #2: Is it Elvis?
-[0m[33mResponse #2: no
-[0m[33m
-[0m[33mQuestion #3: Is it Freddie Mercury?
-[0m[33mResponse #3: no
-[0m[33m
-[0m[33mQuestion #4: Is it Albert Einstein?
-[0m[33mResponse #4: no
-[0m[33m
-[0m[33mQuestion #5: Is it Audrey Hepburn?
-[0m[33mResponse #5: no
-[0m[33m
-[0m[33mQuestion #6: Is it David Bowie?
-[0m[33mResponse #6: no
-[0m[33m
-[0m[33mQuestion #7: Is it Muhammad Ali?
-[0m[33mResponse #7: no
-[0m[33m
-[0m[33mQuestion #8: Is it Gandalf?
-[0m[33mResponse #8: no
-[0m[33m
-[0m[33mQuestion #9: Is it Bruce Lee?
-[0m[33mResponse #9: no
-[0m[33m
-[0m[33mQuestion #10: Is it Kobe?
-[0m[33mResponse #10: no
-[0m[33m
-[0m[33mQuestion #11: Is it Einstein?
-[0m[33mResponse #11: no
-[0m[33m
-[0m[33mQuestion #12: Is it Freddie?
-[0m[33mResponse #12: no
-[0m[33m
-[0m[33mQuestion #13: Is it Michael Jackson?
-[0m[33mResponse #13: no
-[0m[33m
-[0m[33mQuestion #14: Is it Amy Winehouse?
-[0m[33mResponse #14: no
-[0m[33m
-[0m[33m## Strategy guidelines (concise, practical)
-[0m[33m- **Start broad, then narrow**: prioritize sub-category-level splits first (within celebrity), then mid-level properties, then identifiers.
-[0m[33m- **Binary partitioning**: prefer questions that split the remaining set near the middle.
-[0m[33m- **Property over identity**: ask about features/roles/usages before naming brands, species, or specific titles.
-[0m[33m- **Contradiction guard**: if past answers imply a contradiction, ask a short reset/sanity-check question to reconcile.
-[0m[33m- **n/a handling**: if the last answer was **n/a**, pivot wording to a clearer, factual property.
-[0m[33m- **Endgame**: if you have only one turn left, make a direct guess.
-[0m[33m
-[0m[33m## How to ask questions
-[0m[33m- Directly confirm your guess instead of asking about entities that directly name or define the answer (e.g., "Is it a type of pizza?" if "Pizza" is an option).
-[0m[33m- Avoid questions that depend on subjective or situational conditions (e.g., "Would most people consider it artistic?").
-[0m[33m- You are encouraged to use the search tool to check factual details or implications behind your potential question. This helps ensure your reasoning is grounded, accurate, and avoids irrelevant or trivial inquiries. However, you can only use the search tool at most once for each question; you must not use the search tool consecutively without asking a question in between.
-[0m[33m
-[0m[33m## Output format (critical)
-[0m[33m
-[0m[33m- Output **only** one yes/no question on a single line.
-[0m[33m- No preamble, no numbering, no quotes, no meta commentary.
-[0m[33m- Keep it concise, under 50 words.
-[0m[33m- If guessing: use the form **Is it <entity>?**
-[0m[33m
-[0m[33mNow produce your single best next question.<|im_end|>
-[0m[33m<|im_start|>assistant
-[0m[33mThought: I now can give a great answer.
-[0m[33mFinal Answer: Is it John Lennon?<|im_end|>[0m
+<|im_start|>system
+You are Player in a game of 20 questions. A focused reasoner who uses binary-partition questions to narrow down the remaining possibilities.
+Your personal goal is: Minimize uncertainty and identify the hidden entity within 20 yes/no questions.
+
+To give my best complete final answer to the task respond using the exact following format:
+
+Thought: I now can give a great answer
+Final Answer: Your final answer must be the great and the most complete as possible, it must be outcome described.
+
+I MUST use these formats, my job depends on it!<|im_end|>
+<|im_start|>user
+You are playing 20 Questions as the **Player**.
+Ask one high-information **yes/no** question that most reduces the remaining possibility space.
+If you think you have figured out the secret entity, ask a direct guess in the form: **"Is it <entity>?"**
+
+THIS IS TURN #15 OF 20. You have 6 turns left. The quicker you make a correct guess, the higher your score.
+
+## Important assumptions
+- Your answer BELONGS TO the category of "celebrity".
+- The answer is **straightforward, familiar, and commonly known**. They can be at most 3 words long (and only one word long in a majority of cases).
+- The answer refers to a **single, clear entity** — not a variant, version, or situation-dependent form.
+
+## What you have: Game history (Q/A pairs):
+
+Question #1: Is it Marilyn Monroe?
+Response #1: no
+
+Question #2: Is it Elvis?
+Response #2: no
+
+Question #3: Is it Freddie Mercury?
+Response #3: no
+
+Question #4: Is it Albert Einstein?
+Response #4: no
+
+Question #5: Is it Audrey Hepburn?
+Response #5: no
+
+Question #6: Is it David Bowie?
+Response #6: no
+
+Question #7: Is it Muhammad Ali?
+Response #7: no
+
+Question #8: Is it Gandalf?
+Response #8: no
+
+Question #9: Is it Bruce Lee?
+Response #9: no
+
+Question #10: Is it Kobe?
+Response #10: no
+
+Question #11: Is it Einstein?
+Response #11: no
+
+Question #12: Is it Freddie?
+Response #12: no
+
+Question #13: Is it Michael Jackson?
+Response #13: no
+
+Question #14: Is it Amy Winehouse?
+Response #14: no
+
+## Strategy guidelines (concise, practical)
+- **Start broad, then narrow**: prioritize sub-category-level splits first (within celebrity), then mid-level properties, then identifiers.
+- **Binary partitioning**: prefer questions that split the remaining set near the middle.
+- **Property over identity**: ask about features/roles/usages before naming brands, species, or specific titles.
+- **Contradiction guard**: if past answers imply a contradiction, ask a short reset/sanity-check question to reconcile.
+- **n/a handling**: if the last answer was **n/a**, pivot wording to a clearer, factual property.
+- **Endgame**: if you have only one turn left, make a direct guess.
+
+## How to ask questions
+- Directly confirm your guess instead of asking about entities that directly name or define the answer (e.g., "Is it a type of pizza?" if "Pizza" is an option).
+- Avoid questions that depend on subjective or situational conditions (e.g., "Would most people consider it artistic?").
+- You are encouraged to use the search tool to check factual details or implications behind your potential question. This helps ensure your reasoning is grounded, accurate, and avoids irrelevant or trivial inquiries. However, you can only use the search tool at most once for each question; you must not use the search tool consecutively without asking a question in between.
+
+## Output format (critical)
+
+- Output **only** one yes/no question on a single line.
+- No preamble, no numbering, no quotes, no meta commentary.
+- Keep it concise, under 50 words.
+- If guessing: use the form **Is it <entity>?**
+
+Now produce your single best next question.<|im_end|>
+<|im_start|>assistant
+Thought: I now can give a great answer.
+Final Answer: Is it John Lennon?<|im_end|>
