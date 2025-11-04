@@ -36,7 +36,6 @@ from .sqlite import AttemptInDB, ResourcesUpdateInDB, RolloutInDB, SpanInDB, Spa
 
 logger = logging.getLogger(__name__)
 
-# TODO add periodic heartbeat checker for attempts and timeout watchdog
 # TODO add periodic cleanup of old rollouts/attempts/spans
 
 ExceptionRegistry.register("sqlalchemy.orm.exc.StaleDataError")
@@ -317,12 +316,12 @@ class DatabaseLightningStore(LightningStore):
                             result = await session.scalars(
                                 select(RolloutInDB).where(RolloutInDB.rollout_id.in_(non_completed_ids))
                             )
-                            rollouts = result.all()
+                            rollouts = [r.as_rollout() for r in result.all()]
                             for r in rollouts:
                                 if r.rollout_id in non_existing_ids:
                                     non_existing_ids.discard(r.rollout_id) # found existing rollout
-                                if is_finished(r):  # type: ignore
-                                    completed_rollouts[r.rollout_id] = r.as_rollout()
+                                if is_finished(r):
+                                    completed_rollouts[r.rollout_id] = r
                                     non_completed_ids.discard(r.rollout_id)
                             # check termination conditions
                             if self.wait_for_nonexistent_rollout:
@@ -570,10 +569,11 @@ class DatabaseLightningStore(LightningStore):
         )
         session.add(attempt_obj)
         # pre-update the rollout_obj fields for CAS
-        rollout_obj.status = attempt_obj.status  # type: ignore pre-update the status in the object for CAS
+        rollout_obj.status = "running"  # type: ignore pre-update the status in the object for CAS
         rollout_obj.enqueue_time = None  # pre-update the enqueue_time in the object for CAS
         rollout_obj.num_attempts += 1  # pre-update the num_attempts in the object for CAS
         rollout_obj.latest_attempt_id = attempt_obj.attempt_id  # pre-update the latest_attempt_id in the object for CAS
+        rollout_obj.latest_attempt_status = attempt_obj.status  # type: ignore
 
         # create a sequence id tracker for each attempt
         # FIXME currently InMemoryLightningStore let all attempts under the same rollout share the same span sequence for sorting
