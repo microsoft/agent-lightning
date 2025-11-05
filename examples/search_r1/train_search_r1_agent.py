@@ -79,7 +79,7 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
         "save_freq":10,
         "total_epochs": 15,
         "total_training_steps": 300,
-        "default_local_dir": "/mnt/teamdrive/RAG_RL/checkpoints/searchr1_checkpoints/test1102"
+        "default_local_dir": "checkpoints/searchr1_checkpoints/"
     },
 }
 
