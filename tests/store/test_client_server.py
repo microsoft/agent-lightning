@@ -539,7 +539,7 @@ async def test_retry_on_400_application_error(
     with pytest.raises(ClientResponseError) as ei:
         await client.enqueue_rollout(input={"origin": "should-fail"})
 
-    assert ei.value.status == 500
+    assert ei.value.status == 400
     assert call_count["n"] == 4
 
     # Restore original method
