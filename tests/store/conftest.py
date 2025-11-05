@@ -5,6 +5,7 @@ from unittest.mock import Mock
 
 import pytest
 from opentelemetry.sdk.trace import ReadableSpan
+from pytest import FixtureRequest
 
 from agentlightning.store.memory import InMemoryLightningStore
 
@@ -18,6 +19,18 @@ __all__ = [
 def inmemory_store() -> InMemoryLightningStore:
     """Create a fresh InMemoryLightningStore instance."""
     return InMemoryLightningStore()
+
+
+@pytest.fixture
+def sql_store():
+    return None
+
+
+# Uncomment this when sql store is ready
+# @pytest.fixture(params=["inmemory_store", "sql_store"])
+@pytest.fixture(params=["inmemory_store"])
+def store_fixture(request: FixtureRequest):
+    return request.getfixturevalue(request.param)
 
 
 @pytest.fixture
