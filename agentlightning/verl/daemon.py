@@ -259,7 +259,7 @@ class AgentModeDaemon:
         self.pad_token_id = pad_token_id
         self.tokenizer = tokenizer
         self.reward_fillna_value = reward_fillna_value
-        self.trace_agg_mode = trace_agg_mode
+        self.trace_aggregator = trace_aggregator
 
         # Internal State
         self.backend_llm_server_addresses: List[str] = []
@@ -826,14 +826,14 @@ class AgentModeDaemon:
                     rollout_id_list.append(rollout_id)
                     turn_index_list.append(current_merged_trace_idx)
         else:
-            raise ValueError(f"Unknown trace_agg_mode: {self.trace_agg_mode}")
+            raise ValueError(f"Unknown trace_aggregator mode: {self.trace_aggregator.mode}")
 
         n_transition = len(input_ids_list)
         batch_input_ids = torch.LongTensor(input_ids_list).to(device)
         input_attention_mask = torch.LongTensor(input_attention_mask_list).to(device)
         batch_response_ids = torch.LongTensor(response_ids_list).to(device)
         response_attention_mask = torch.LongTensor(response_attention_mask_list).to(device)
-        response_mask = torch.LongTensor(response_mask_list).to(device) if self.trace_agg_mode == "trajectory" else None
+        response_mask = torch.LongTensor(response_mask_list).to(device) if self.trace_aggregator.mode == "trajectory" else None
 
         # Concatenate prompts and responses to form the full sequence
         batch_seq = torch.cat([batch_input_ids, batch_response_ids], dim=-1)
@@ -861,7 +861,7 @@ class AgentModeDaemon:
                 "position_ids": position_ids,
                 "is_drop_mask": is_drop_mask,
                 "token_level_scores": token_level_scores.contiguous(),
-                **({"response_mask": response_mask} if self.trace_agg_mode == "trajectory" else {}),
+                **({"response_mask": response_mask} if self.trace_aggregator.mode == "trajectory" else {}),
             },
             batch_size=n_transition,
         )
@@ -892,7 +892,7 @@ class AgentModeDaemon:
         # This implementation assumes that `set_up_data_and_server` is called
         # for each new run, effectively starting a fresh batch.
 
-    def _fillna_reward(self, rollout: RolloutLegacy):
+    def _fillna_reward(self, rollout: Rollout):
         if rollout.final_reward is None:
             if self.reward_fillna_value is not None:  # type: ignore
                 final_reward = self.reward_fillna_value
