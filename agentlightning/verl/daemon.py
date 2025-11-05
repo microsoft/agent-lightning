@@ -58,14 +58,18 @@ def fuzzy_startswith(full_ids, prefix_ids, tokenizer, special_token_tolerance=0,
     m = len(prefix_string)
     n = len(full_string)
 
-    if m == 0: return True # Empty B always matches (distance 0 to empty prefix)
-    if n == 0: return m <= string_tolerance # B non-empty but A empty: only match if we can delete all of B within tolerance
-    if string_tolerance == 0: return full_string.startswith(prefix_string) # exact match required
+    if m == 0:
+        return True  # Empty B always matches (distance 0 to empty prefix)
+    if n == 0:
+        return m <= string_tolerance  # B non-empty but A empty: only match if we can delete all of B within tolerance
+    if string_tolerance == 0:
+        return full_string.startswith(prefix_string)  # exact match required
 
     # use DP to compute edit distance with banded optimization
     min_j = max(0, m - string_tolerance)
     max_j = min(n, m + string_tolerance)
-    if min_j > max_j: return False  # no possible prefix length
+    if min_j > max_j:
+        return False  # no possible prefix length
 
     prev_start = max(0, 0 - string_tolerance)
     prev_end = min(n, 0 + string_tolerance)
@@ -807,19 +811,25 @@ class AgentModeDaemon:
 
         elif self.trace_aggregator.mode == "trajectory":
             response_mask_list: List[List[int]] = []
-            unmerged_count = 0 # only for debug
+            unmerged_count = 0  # only for debug
 
             for rollout_id, sample_info in finished_id_to_sample_info.items():
                 merged_trace_idx: List[List[int]] = []
                 current_merged_trace_idx: List[int] = []
                 current_context: List[int] = []
-                turn_ids = [] # log data, only for debug testing
+                turn_ids = []  # log data, only for debug testing
                 for turn_index, trace in enumerate(sample_info["trace_list"]):
                     # log data, only for debug testing
-                    turn_ids.append({"nxt_turn":trace["prompt_ids"][:] + trace["response_ids"][:], "cur":current_context[:]})
-                    if fuzzy_startswith(trace["prompt_ids"] + trace["response_ids"], current_context, self.tokenizer,
-                                        special_token_tolerance=self.trace_aggregator.special_token_tolerance,
-                                        string_tolerance=self.trace_aggregator.string_tolerance):
+                    turn_ids.append(
+                        {"nxt_turn":trace["prompt_ids"][:] + trace["response_ids"][:], "cur":current_context[:]}
+                    )
+                    if fuzzy_startswith(
+                        trace["prompt_ids"] + trace["response_ids"],
+                        current_context,
+                        self.tokenizer,
+                        special_token_tolerance=self.trace_aggregator.special_token_tolerance,
+                        string_tolerance=self.trace_aggregator.string_tolerance,
+                    ):
                         current_context = trace["prompt_ids"] + trace["response_ids"]
                         current_merged_trace_idx.append(turn_index)
                     else:
@@ -831,14 +841,12 @@ class AgentModeDaemon:
 
                 # log data, only for debug testing
                 if len(merged_trace_idx) > 1:
-                # import random
-                # if random.random() < 0.5:
                     unmerged_count += 1
                     for turn_index, d in enumerate(turn_ids):
-                        with open('bad_case_jiahang.log', 'a+') as f: 
+                        with open("bad_case_jiahang.log", "a+") as f:
                             print("-" * 20, file=f)
                             print(merged_trace_idx, file=f)
-                            print('~' * 20, file=f)
+                            print("~" * 20, file=f)
                             print(turn_index, file=f)
                             print(d["nxt_turn"], file=f)
                             print(d["cur"], file=f)
@@ -857,7 +865,7 @@ class AgentModeDaemon:
                         response_mask += [1] * len(trace["response_ids"])
                     final_sample = sample_info["trace_list"][current_merged_trace_idx[-1]]
                     response_ids = final_sample["prompt_ids"][prompt_length:] + final_sample["response_ids"]
-                    assert len(response_ids) == len(accum_response_ids) # only for debug testing
+                    assert len(response_ids) == len(accum_response_ids)  # only for debug testing
 
                     reward_list.append(sample_info["reward"])
 
@@ -901,7 +909,9 @@ class AgentModeDaemon:
         input_attention_mask = torch.LongTensor(input_attention_mask_list).to(device)
         batch_response_ids = torch.LongTensor(response_ids_list).to(device)
         response_attention_mask = torch.LongTensor(response_attention_mask_list).to(device)
-        response_mask = torch.LongTensor(response_mask_list).to(device) if self.trace_aggregator.mode == "trajectory" else None
+        response_mask = (
+            torch.LongTensor(response_mask_list).to(device) if self.trace_aggregator.mode == "trajectory" else None
+        )
 
         # Concatenate prompts and responses to form the full sequence
         batch_seq = torch.cat([batch_input_ids, batch_response_ids], dim=-1)
