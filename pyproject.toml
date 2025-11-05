@@ -204,7 +204,7 @@ torch = [
 
 [[tool.uv.index]]
 name = "pypi"
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://pypi.org/simple"
 
 [[tool.uv.index]]
 name = "pytorch-cu128"
