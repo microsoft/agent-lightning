@@ -51,6 +51,20 @@ def _make_span(rollout_id: str, attempt_id: str, sequence_id: int, name: str) ->
     )
 
 
+@contextlib.asynccontextmanager
+async def _run_server_with_cors(cors_origins: List[str] | str | None = None):
+    store = InMemoryLightningStore()
+    port = _get_free_port()
+    server = LightningStoreServer(store, "127.0.0.1", port, cors_allow_origins=cors_origins)
+    await server.start()
+    session = aiohttp.ClientSession()
+    try:
+        yield server, session
+    finally:
+        await session.close()
+        await server.stop()
+
+
 @pytest_asyncio.fixture
 async def server_client() -> (
     AsyncGenerator[Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str], None]
@@ -69,6 +83,55 @@ async def server_client() -> (
         await session.close()
         await client.close()
         await server.stop()
+
+
+# CORS configuration tests
+
+
+@pytest.mark.asyncio
+async def test_cors_allows_specific_origin() -> None:
+    async with _run_server_with_cors(cors_origins=["http://localhost:3000"]) as (server, session):
+        url = f"{server.endpoint}/v1/agl/health"
+        origin = "http://localhost:3000"
+        async with session.get(url, headers={"Origin": origin}) as resp:
+            assert resp.status == 200
+            assert resp.headers.get("access-control-allow-origin") == origin
+            assert resp.headers.get("access-control-allow-credentials") == "true"
+
+        async with session.options(
+            url,
+            headers={
+                "Origin": origin,
+                "Access-Control-Request-Method": "GET",
+            },
+        ) as resp:
+            assert resp.status == 200
+            assert resp.headers.get("access-control-allow-origin") == origin
+            allow_methods = resp.headers.get("access-control-allow-methods") or ""
+            assert "GET" in {method.strip() for method in allow_methods.split(",") if method}
+
+
+@pytest.mark.asyncio
+async def test_cors_disallows_unconfigured_origin() -> None:
+    async with _run_server_with_cors(cors_origins=["http://localhost:3000"]) as (server, session):
+        url = f"{server.endpoint}/v1/agl/health"
+        async with session.get(url, headers={"Origin": "http://malicious.example"}) as resp:
+            assert resp.status == 200
+            assert "access-control-allow-origin" not in resp.headers
+
+
+@pytest.mark.asyncio
+async def test_cors_allows_wildcard_origin() -> None:
+    async with _run_server_with_cors(cors_origins="*") as (server, session):
+        url = f"{server.endpoint}/v1/agl/health"
+        origin = "https://wildcard.example"
+        async with session.get(url, headers={"Origin": origin}) as resp:
+            assert resp.status == 200
+            allow_origin = resp.headers.get("access-control-allow-origin")
+            assert allow_origin in {origin, "*"}
+            allow_credentials = resp.headers.get("access-control-allow-credentials")
+            if allow_credentials is not None:
+                assert allow_credentials == "true"
 
 
 # Rollouts Pagination, Sorting, and Filtering Tests

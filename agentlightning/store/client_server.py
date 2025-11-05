@@ -16,6 +16,7 @@ import uvicorn
 from fastapi import Body, Depends, FastAPI, HTTPException
 from fastapi import Query as FastAPIQuery
 from fastapi import Request, Response
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from opentelemetry.sdk.trace import ReadableSpan
 from pydantic import BaseModel, Field, TypeAdapter
@@ -243,15 +244,29 @@ class LightningStoreServer(LightningStore):
     Healthcheck and watchdog relies on the underlying store.
 
     `agl store` is a convenient CLI to start a store server.
+
+    Args:
+        store: The underlying store to delegate operations to.
+        host: The hostname or IP address to bind the server to.
+        port: The TCP port to listen on.
+        cors_allow_origins: A list of CORS origins to allow. Use '*' to allow all origins.
     """
 
-    def __init__(self, store: LightningStore, host: str, port: int):
+    def __init__(
+        self,
+        store: LightningStore,
+        host: str,
+        port: int,
+        cors_allow_origins: Sequence[str] | str | None = None,
+    ):
         super().__init__()
         self.store = store
         self._lock = threading.Lock()
         self.host = host
         self.port = port
+        self._cors_allow_origins = self._normalize_cors_origins(cors_allow_origins)
         self.app: FastAPI | None = FastAPI(title="LightningStore Server")
+        self._apply_cors()
         self._setup_routes()
         self._uvicorn_config: uvicorn.Config | None = uvicorn.Config(
             self.app, host="0.0.0.0", port=self.port, log_level="error"
@@ -286,6 +301,7 @@ class LightningStoreServer(LightningStore):
             "host": self.host,
             "port": self.port,
             "_owner_pid": self._owner_pid,
+            "_cors_allow_origins": self._cors_allow_origins,
         }
 
     def __setstate__(self, state: Dict[str, Any]):
@@ -300,10 +316,48 @@ class LightningStoreServer(LightningStore):
         self.host = state["host"]
         self.port = state["port"]
         self._owner_pid = state["_owner_pid"]
+        self._cors_allow_origins = state.get("_cors_allow_origins")
         self._client = None
         self._lock = threading.Lock()
         # Do NOT reconstruct app, _uvicorn_config, _uvicorn_server
         # to avoid transferring server state to subprocess
+
+    @staticmethod
+    def _normalize_cors_origins(
+        origins: Sequence[str] | str | None,
+    ) -> list[str] | None:
+        if origins is None:
+            return None
+
+        if isinstance(origins, str):
+            candidates = [origins]
+        else:
+            candidates = list(origins)
+
+        cleaned: list[str] = []
+        for origin in candidates:
+            if not origin or not origin.strip():
+                continue
+            value = origin.strip()
+            if value == "*":
+                return ["*"]
+            cleaned.append(value)
+
+        return cleaned or None
+
+    def _apply_cors(self) -> None:
+        if self.app is None or not self._cors_allow_origins:
+            return
+
+        allow_origins = ["*"] if self._cors_allow_origins == ["*"] else self._cors_allow_origins
+        self.app.add_middleware(
+            CORSMiddleware,
+            allow_origins=allow_origins,
+            allow_methods=["*"],
+            allow_headers=["*"],
+            allow_credentials=True,
+            expose_headers=["*"],
+        )
 
     @property
     def endpoint(self) -> str:

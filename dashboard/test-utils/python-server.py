@@ -644,7 +644,7 @@ async def main():
     inject_mock_data(store, now=args.now)
 
     # Start server
-    server = LightningStoreServer(store, "127.0.0.1", 8765)
+    server = LightningStoreServer(store, "127.0.0.1", 8765, "*")
     await server.start()
 
     print(f"Server started at {server.endpoint}")
