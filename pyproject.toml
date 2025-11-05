@@ -158,6 +158,9 @@ autogen = [
 ]
 openai-agents = [
   "openai-agents",
+  "openai<2.7.0",
+  # Compatibility issues with the latest version of OpenAI, temporarily fixed version
+  # Issue: https://github.com/openai/openai-agents-python/issues/2038
   "mcp",
   # Required by AOAI FT example.
   "pandas",
