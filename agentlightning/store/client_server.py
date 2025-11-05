@@ -37,7 +37,7 @@ from .base import UNSET, LightningStore, Unset
 
 logger = logging.getLogger(__name__)
 
-AGL_API_V1_PREFIX = "/agl/v1"
+AGL_API_V1_PREFIX = "/v1/agl"
 
 T = TypeVar("T")
 
@@ -464,7 +464,7 @@ class LightningStoreServer(LightningStore):
             """
             Convert unhandled application exceptions into 500 responses.
 
-            Only covers /agl/v1 requests.
+            Only covers /v1/agl requests.
 
             - Client needs a reliable signal to distinguish "app bug / bad request"
               from transport/session failures.
@@ -491,7 +491,7 @@ class LightningStoreServer(LightningStore):
         async def _log_time(  # pyright: ignore[reportUnusedFunction]
             request: Request, call_next: Callable[[Request], Awaitable[Response]]
         ):
-            if not request.url.path.startswith("/agl/v1/"):
+            if not request.url.path.startswith("/v1/agl/"):
                 return await call_next(request)
 
             start = time.perf_counter()

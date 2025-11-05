@@ -367,7 +367,7 @@ describe('sortRolloutsForParams', () => {
 
 describe('buildRolloutsResponse', () => {
   it('returns all rollouts with default pagination', () => {
-    const request = new Request('http://localhost/agl/v1/rollouts');
+    const request = new Request('http://localhost/v1/agl/rollouts');
     const response = buildRolloutsResponse(sampleRollouts, request);
     expect(response.items).toHaveLength(3);
     expect(response.total).toBe(3);
@@ -376,7 +376,7 @@ describe('buildRolloutsResponse', () => {
   });
 
   it('applies limit pagination', () => {
-    const request = new Request('http://localhost/agl/v1/rollouts?limit=2');
+    const request = new Request('http://localhost/v1/agl/rollouts?limit=2');
     const response = buildRolloutsResponse(sampleRollouts, request);
     expect(response.items).toHaveLength(2);
     expect(response.limit).toBe(2);
@@ -384,14 +384,14 @@ describe('buildRolloutsResponse', () => {
   });
 
   it('applies offset pagination', () => {
-    const request = new Request('http://localhost/agl/v1/rollouts?offset=1');
+    const request = new Request('http://localhost/v1/agl/rollouts?offset=1');
     const response = buildRolloutsResponse(sampleRollouts, request);
     expect(response.items).toHaveLength(2);
     expect(response.offset).toBe(1);
   });
 
   it('applies limit and offset together', () => {
-    const request = new Request('http://localhost/agl/v1/rollouts?limit=1&offset=1');
+    const request = new Request('http://localhost/v1/agl/rollouts?limit=1&offset=1');
     const response = buildRolloutsResponse(sampleRollouts, request);
     expect(response.items).toHaveLength(1);
     expect(response.limit).toBe(1);
@@ -399,28 +399,28 @@ describe('buildRolloutsResponse', () => {
   });
 
   it('handles negative limit (returns all)', () => {
-    const request = new Request('http://localhost/agl/v1/rollouts?limit=-1');
+    const request = new Request('http://localhost/v1/agl/rollouts?limit=-1');
     const response = buildRolloutsResponse(sampleRollouts, request);
     expect(response.items).toHaveLength(3);
     expect(response.limit).toBe(3);
   });
 
   it('applies filtering before pagination', () => {
-    const request = new Request('http://localhost/agl/v1/rollouts?status_in=running&limit=10');
+    const request = new Request('http://localhost/v1/agl/rollouts?status_in=running&limit=10');
     const response = buildRolloutsResponse(sampleRollouts, request);
     expect(response.items).toHaveLength(1);
     expect(response.total).toBe(1);
   });
 
   it('applies sorting before pagination', () => {
-    const request = new Request('http://localhost/agl/v1/rollouts?sort_by=rollout_id&sort_order=desc&limit=1');
+    const request = new Request('http://localhost/v1/agl/rollouts?sort_by=rollout_id&sort_order=desc&limit=1');
     const response = buildRolloutsResponse(sampleRollouts, request);
     const items = response.items as Array<Record<string, unknown>>;
     expect(items[0].rollout_id).toBe('ro-003');
   });
 
   it('uses snake_case keys in response', () => {
-    const request = new Request('http://localhost/agl/v1/rollouts');
+    const request = new Request('http://localhost/v1/agl/rollouts');
     const response = buildRolloutsResponse(sampleRollouts, request);
     const items = response.items as Array<Record<string, unknown>>;
     expect(items[0]).toHaveProperty('rollout_id');
@@ -451,14 +451,14 @@ describe('sortAttemptsForParams', () => {
 
 describe('buildAttemptsResponse', () => {
   it('returns all attempts with default pagination', () => {
-    const request = new Request('http://localhost/agl/v1/rollouts/ro-001/attempts');
+    const request = new Request('http://localhost/v1/agl/rollouts/ro-001/attempts');
     const response = buildAttemptsResponse(sampleAttempts, request);
     expect(response.items).toHaveLength(3);
     expect(response.total).toBe(3);
   });
 
   it('applies pagination correctly', () => {
-    const request = new Request('http://localhost/agl/v1/rollouts/ro-001/attempts?limit=2&offset=1');
+    const request = new Request('http://localhost/v1/agl/rollouts/ro-001/attempts?limit=2&offset=1');
     const response = buildAttemptsResponse(sampleAttempts, request);
     expect(response.items).toHaveLength(2);
     expect(response.offset).toBe(1);
@@ -466,7 +466,7 @@ describe('buildAttemptsResponse', () => {
 
   it('sorts before paginating', () => {
     const request = new Request(
-      'http://localhost/agl/v1/rollouts/ro-001/attempts?sort_by=sequence_id&sort_order=desc&limit=1',
+      'http://localhost/v1/agl/rollouts/ro-001/attempts?sort_by=sequence_id&sort_order=desc&limit=1',
     );
     const response = buildAttemptsResponse(sampleAttempts, request);
     const items = response.items as Array<Record<string, unknown>>;
@@ -588,28 +588,28 @@ describe('buildSpansResponse', () => {
   };
 
   it('returns empty when rollout_id is missing', () => {
-    const request = new Request('http://localhost/agl/v1/spans');
+    const request = new Request('http://localhost/v1/agl/spans');
     const response = buildSpansResponse(spansByAttempt, request);
     expect(response.items).toHaveLength(0);
     expect(response.total).toBe(0);
   });
 
   it('returns spans for rollout and attempt', () => {
-    const request = new Request('http://localhost/agl/v1/spans?rollout_id=ro-001&attempt_id=at-001');
+    const request = new Request('http://localhost/v1/agl/spans?rollout_id=ro-001&attempt_id=at-001');
     const response = buildSpansResponse(spansByAttempt, request);
     expect(response.items).toHaveLength(3);
     expect(response.total).toBe(3);
   });
 
   it('handles missing attempt_id', () => {
-    const request = new Request('http://localhost/agl/v1/spans?rollout_id=ro-001');
+    const request = new Request('http://localhost/v1/agl/spans?rollout_id=ro-001');
     const response = buildSpansResponse(spansByAttempt, request);
     expect(response.items).toHaveLength(0);
   });
 
   it('applies filtering', () => {
     const request = new Request(
-      'http://localhost/agl/v1/spans?rollout_id=ro-001&attempt_id=at-001&trace_id_contains=tr-001',
+      'http://localhost/v1/agl/spans?rollout_id=ro-001&attempt_id=at-001&trace_id_contains=tr-001',
     );
     const response = buildSpansResponse(spansByAttempt, request);
     expect(response.items).toHaveLength(2);
@@ -617,7 +617,7 @@ describe('buildSpansResponse', () => {
 
   it('applies sorting and pagination', () => {
     const request = new Request(
-      'http://localhost/agl/v1/spans?rollout_id=ro-001&attempt_id=at-001&sort_by=name&limit=2',
+      'http://localhost/v1/agl/spans?rollout_id=ro-001&attempt_id=at-001&sort_by=name&limit=2',
     );
     const response = buildSpansResponse(spansByAttempt, request);
     expect(response.items).toHaveLength(2);
@@ -627,7 +627,7 @@ describe('buildSpansResponse', () => {
 
   it('supports filter_logic=or in responses', () => {
     const request = new Request(
-      'http://localhost/agl/v1/spans?rollout_id=ro-001&attempt_id=at-001&trace_id_contains=tr-001&name_contains=Finalize&filter_logic=or',
+      'http://localhost/v1/agl/spans?rollout_id=ro-001&attempt_id=at-001&trace_id_contains=tr-001&name_contains=Finalize&filter_logic=or',
     );
     const response = buildSpansResponse(spansByAttempt, request);
     expect(response.items).toHaveLength(3);
@@ -691,7 +691,7 @@ describe('sortResourcesForParams', () => {
 
 describe('buildResourcesResponse', () => {
   it('returns paginated resources with defaults', () => {
-    const request = new Request('http://localhost/agl/v1/resources');
+    const request = new Request('http://localhost/v1/agl/resources');
     const response = buildResourcesResponse(sampleResources, request);
     expect(response.items).toHaveLength(3);
     expect(response.offset).toBe(0);
@@ -700,7 +700,7 @@ describe('buildResourcesResponse', () => {
   });
 
   it('applies filter before pagination', () => {
-    const request = new Request('http://localhost/agl/v1/resources?resources_id_contains=003');
+    const request = new Request('http://localhost/v1/agl/resources?resources_id_contains=003');
     const response = buildResourcesResponse(sampleResources, request);
     expect(response.items).toHaveLength(1);
     const items = response.items as Array<Record<string, unknown>>;
@@ -708,7 +708,7 @@ describe('buildResourcesResponse', () => {
   });
 
   it('applies sort order and pagination parameters', () => {
-    const request = new Request('http://localhost/agl/v1/resources?sort_by=version&sort_order=desc&limit=1&offset=1');
+    const request = new Request('http://localhost/v1/agl/resources?sort_by=version&sort_order=desc&limit=1&offset=1');
     const response = buildResourcesResponse(sampleResources, request);
     expect(response.items).toHaveLength(1);
     expect(response.offset).toBe(1);

@@ -175,7 +175,7 @@ export const EmptyState: Story = {
   render: () => renderWithStore(),
   parameters: {
     msw: {
-      handlers: [http.get('*/agl/v1/resources', () => HttpResponse.json({ items: [], limit: 0, offset: 0, total: 0 }))],
+      handlers: [http.get('*/v1/agl/resources', () => HttpResponse.json({ items: [], limit: 0, offset: 0, total: 0 }))],
     },
   },
 };
@@ -185,7 +185,7 @@ export const ServerError: Story = {
   parameters: {
     msw: {
       handlers: [
-        http.get('*/agl/v1/resources', () => HttpResponse.json({ detail: 'Internal server error' }, { status: 500 })),
+        http.get('*/v1/agl/resources', () => HttpResponse.json({ detail: 'Internal server error' }, { status: 500 })),
       ],
     },
   },
@@ -196,7 +196,7 @@ export const RequestTimeout: Story = {
   parameters: {
     msw: {
       handlers: [
-        http.get('*/agl/v1/resources', async () => {
+        http.get('*/v1/agl/resources', async () => {
           await delay(1200);
           return HttpResponse.json({ detail: 'Request timed out' }, { status: 504, statusText: 'Timeout' });
         }),
@@ -219,7 +219,7 @@ export const ParseFailure: Story = {
   parameters: {
     msw: {
       handlers: [
-        http.get('*/agl/v1/resources', () =>
+        http.get('*/v1/agl/resources', () =>
           HttpResponse.text('{ malformed json', {
             status: 200,
             headers: {

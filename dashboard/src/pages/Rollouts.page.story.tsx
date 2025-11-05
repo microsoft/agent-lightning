@@ -601,8 +601,8 @@ export const EmptyState: Story = {
   parameters: {
     msw: {
       handlers: [
-        http.get('*/agl/v1/rollouts', () => HttpResponse.json({ items: [], limit: 0, offset: 0, total: 0 })),
-        http.get('*/agl/v1/rollouts/:rolloutId/attempts', () =>
+        http.get('*/v1/agl/rollouts', () => HttpResponse.json({ items: [], limit: 0, offset: 0, total: 0 })),
+        http.get('*/v1/agl/rollouts/:rolloutId/attempts', () =>
           HttpResponse.json({ items: [], limit: 0, offset: 0, total: 0 }),
         ),
       ],
@@ -615,8 +615,8 @@ export const ServerError: Story = {
   parameters: {
     msw: {
       handlers: [
-        http.get('*/agl/v1/rollouts', () => HttpResponse.json({ detail: 'Internal error' }, { status: 500 })),
-        http.get('*/agl/v1/rollouts/:rolloutId/attempts', () =>
+        http.get('*/v1/agl/rollouts', () => HttpResponse.json({ detail: 'Internal error' }, { status: 500 })),
+        http.get('*/v1/agl/rollouts/:rolloutId/attempts', () =>
           HttpResponse.json({ items: [], limit: 0, offset: 0, total: 0 }, { status: 200 }),
         ),
       ],
@@ -629,11 +629,11 @@ export const Loading: Story = {
   parameters: {
     msw: {
       handlers: [
-        http.get('*/agl/v1/rollouts', async () => {
+        http.get('*/v1/agl/rollouts', async () => {
           await delay('infinite');
           return HttpResponse.json({ items: [], limit: 0, offset: 0, total: 0 });
         }),
-        http.get('*/agl/v1/rollouts/:rolloutId/attempts', async () => {
+        http.get('*/v1/agl/rollouts/:rolloutId/attempts', async () => {
           await delay('infinite');
           return HttpResponse.json({ items: [], limit: 0, offset: 0, total: 0 });
         }),

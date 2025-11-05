@@ -300,18 +300,18 @@ function createHandlers(delayMs?: number) {
 
 function createRequestTimeoutHandlers() {
   return [
-    http.get('*/agl/v1/rollouts', async () => {
+    http.get('*/v1/agl/rollouts', async () => {
       await delay(1200);
       return HttpResponse.json({ detail: 'Request timed out' }, { status: 504, statusText: 'Timeout' });
     }),
-    http.get('*/agl/v1/rollouts/:rolloutId/attempts', async ({ params }) => {
+    http.get('*/v1/agl/rollouts/:rolloutId/attempts', async ({ params }) => {
       await delay(1200);
       return HttpResponse.json(
         { detail: 'Request timed out', rolloutId: params.rolloutId },
         { status: 504, statusText: 'Timeout' },
       );
     }),
-    http.get('*/agl/v1/spans', async () => {
+    http.get('*/v1/agl/spans', async () => {
       await delay(1200);
       return HttpResponse.json({ detail: 'Request timed out' }, { status: 504, statusText: 'Timeout' });
     }),
@@ -425,13 +425,13 @@ export const ServerError: Story = {
   parameters: {
     msw: {
       handlers: [
-        http.get('*/agl/v1/rollouts', () =>
+        http.get('*/v1/agl/rollouts', () =>
           HttpResponse.json({ items: [], limit: 0, offset: 0, total: 0 }, { status: 200 }),
         ),
-        http.get('*/agl/v1/rollouts/:rolloutId/attempts', () =>
+        http.get('*/v1/agl/rollouts/:rolloutId/attempts', () =>
           HttpResponse.json({ items: [], limit: 0, offset: 0, total: 0 }, { status: 200 }),
         ),
-        http.get('*/agl/v1/spans', () => HttpResponse.json({ detail: 'server error' }, { status: 500 })),
+        http.get('*/v1/agl/spans', () => HttpResponse.json({ detail: 'server error' }, { status: 500 })),
       ],
     },
   },
@@ -442,7 +442,7 @@ export const RolloutParseFailure: Story = {
   parameters: {
     msw: {
       handlers: [
-        http.get('*/agl/v1/rollouts', () =>
+        http.get('*/v1/agl/rollouts', () =>
           HttpResponse.text('not valid json', {
             status: 200,
             headers: {
@@ -450,10 +450,10 @@ export const RolloutParseFailure: Story = {
             },
           }),
         ),
-        http.get('*/agl/v1/rollouts/:rolloutId/attempts', () =>
+        http.get('*/v1/agl/rollouts/:rolloutId/attempts', () =>
           HttpResponse.json({ items: [], limit: 0, offset: 0, total: 0 }),
         ),
-        http.get('*/agl/v1/spans', () => HttpResponse.json({ items: [], limit: 0, offset: 0, total: 0 })),
+        http.get('*/v1/agl/spans', () => HttpResponse.json({ items: [], limit: 0, offset: 0, total: 0 })),
       ],
     },
   },
@@ -465,7 +465,7 @@ export const ParseFailure: Story = {
     msw: {
       handlers: [
         ...rolloutsAndAttemptsHandlers,
-        http.get('*/agl/v1/spans', () =>
+        http.get('*/v1/agl/spans', () =>
           HttpResponse.text('not valid json', {
             status: 200,
             headers: {

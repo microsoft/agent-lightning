@@ -15,7 +15,7 @@ const serverPort = Number.parseInt(process.env.VITEST_PYTHON_PORT ?? '8765', 10)
 const serverUrl =
   (process.env.VITEST_PYTHON_URL && process.env.VITEST_PYTHON_URL.trim().replace(/\/$/, '')) ??
   `http://${serverHost}:${Number.isFinite(serverPort) ? serverPort : 8765}`;
-const serverHealthUrl = `${serverUrl}/agl/v1/health`;
+const serverHealthUrl = `${serverUrl}/v1/agl/health`;
 
 const globalServerState = globalThis;
 

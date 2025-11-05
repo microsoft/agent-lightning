@@ -318,8 +318,8 @@ export function buildSpansResponse(spansByAttempt: Record<string, Span[]>, reque
  */
 export function createRolloutsHandlers(rollouts: Rollout[], attemptsByRollout: Record<string, Attempt[]>) {
   return [
-    http.get('*/agl/v1/rollouts', ({ request }) => HttpResponse.json(buildRolloutsResponse(rollouts, request))),
-    http.get('*/agl/v1/rollouts/:rolloutId/attempts', ({ params, request }) => {
+    http.get('*/v1/agl/rollouts', ({ request }) => HttpResponse.json(buildRolloutsResponse(rollouts, request))),
+    http.get('*/v1/agl/rollouts/:rolloutId/attempts', ({ params, request }) => {
       const rolloutId = params.rolloutId as string;
       const attempts = attemptsByRollout[rolloutId] ?? [];
       return HttpResponse.json(buildAttemptsResponse(attempts, request));
@@ -339,7 +339,7 @@ export function createRolloutsHandlers(rollouts: Rollout[], attemptsByRollout: R
  * ```
  */
 export function createSpansHandlers(spansByAttempt: Record<string, Span[]>) {
-  return [http.get('*/agl/v1/spans', ({ request }) => HttpResponse.json(buildSpansResponse(spansByAttempt, request)))];
+  return [http.get('*/v1/agl/spans', ({ request }) => HttpResponse.json(buildSpansResponse(spansByAttempt, request)))];
 }
 
 /**
@@ -447,7 +447,7 @@ export function buildResourcesResponse(resources: Resources[], request: Request)
  */
 export function createResourcesHandlers(resources: Resources[]) {
   return [
-    http.get('*/agl/v1/resources', ({ request }) => HttpResponse.json(buildResourcesResponse(resources, request))),
+    http.get('*/v1/agl/resources', ({ request }) => HttpResponse.json(buildResourcesResponse(resources, request))),
   ];
 }
 
@@ -489,11 +489,11 @@ export function createMockHandlers(
 
   // Create delayed handlers
   return [
-    http.get('*/agl/v1/rollouts', async ({ request }) => {
+    http.get('*/v1/agl/rollouts', async ({ request }) => {
       await delay(delayMs);
       return HttpResponse.json(buildRolloutsResponse(rollouts, request));
     }),
-    http.get('*/agl/v1/rollouts/:rolloutId/attempts', async ({ params, request }) => {
+    http.get('*/v1/agl/rollouts/:rolloutId/attempts', async ({ params, request }) => {
       await delay(delayMs);
       const rolloutId = params.rolloutId as string;
       const attempts = attemptsByRollout[rolloutId] ?? [];
@@ -501,7 +501,7 @@ export function createMockHandlers(
     }),
     ...(spansByAttempt
       ? [
-          http.get('*/agl/v1/spans', async ({ request }) => {
+          http.get('*/v1/agl/spans', async ({ request }) => {
             await delay(delayMs);
             return HttpResponse.json(buildSpansResponse(spansByAttempt, request));
           }),

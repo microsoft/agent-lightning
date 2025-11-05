@@ -220,7 +220,7 @@ export const rolloutsApi = createApi({
         }
 
         const queryString = searchParams.toString();
-        const url = queryString.length > 0 ? `agl/v1/resources?${queryString}` : 'agl/v1/resources';
+        const url = queryString.length > 0 ? `v1/agl/resources?${queryString}` : 'v1/agl/resources';
         return { url, method: 'GET' };
       },
       transformResponse: (response: unknown) => normalizePaginatedResponse(response, normalizeResources),
@@ -254,7 +254,7 @@ export const rolloutsApi = createApi({
         }
 
         const queryString = searchParams.toString();
-        const url = queryString.length > 0 ? `agl/v1/rollouts?${queryString}` : 'agl/v1/rollouts';
+        const url = queryString.length > 0 ? `v1/agl/rollouts?${queryString}` : 'v1/agl/rollouts';
         return { url, method: 'GET' };
       },
       transformResponse: (response: unknown) => normalizePaginatedResponse(response, normalizeRollout),
@@ -280,8 +280,8 @@ export const rolloutsApi = createApi({
         const queryString = searchParams.toString();
         const url =
           queryString.length > 0
-            ? `agl/v1/rollouts/${rolloutId}/attempts?${queryString}`
-            : `agl/v1/rollouts/${rolloutId}/attempts`;
+            ? `v1/agl/rollouts/${rolloutId}/attempts?${queryString}`
+            : `v1/agl/rollouts/${rolloutId}/attempts`;
         return { url, method: 'GET' };
       },
       transformResponse: (response: unknown) => normalizePaginatedResponse(response, normalizeAttemptStrict),
@@ -323,7 +323,7 @@ export const rolloutsApi = createApi({
         if (args.filterLogic) {
           searchParams.set('filter_logic', args.filterLogic);
         }
-        return { url: `agl/v1/spans?${searchParams.toString()}`, method: 'GET' };
+        return { url: `v1/agl/spans?${searchParams.toString()}`, method: 'GET' };
       },
       transformResponse: (response: unknown) => normalizePaginatedResponse(response, normalizeSpan),
       providesTags: (_result, _error, args) =>

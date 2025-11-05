@@ -61,7 +61,7 @@ async def server_client() -> (
     await server.start()
     client = LightningStoreClient(server.endpoint)
     session = aiohttp.ClientSession()
-    # Get the full API endpoint with /agl/v1 prefix
+    # Get the full API endpoint with /v1/agl prefix
     api_endpoint = client.server_address
     try:
         yield server, client, session, api_endpoint
