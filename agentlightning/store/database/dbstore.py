@@ -569,7 +569,8 @@ class DatabaseLightningStore(LightningStore):
         )
         session.add(attempt_obj)
         # pre-update the rollout_obj fields for CAS
-        rollout_obj.status = "running"  # type: ignore pre-update the status in the object for CAS
+        if rollout_obj.status in ["queuing", "requeuing"]:
+            rollout_obj.status = "running"  # type: ignore pre-update the status in the object for CAS
         rollout_obj.enqueue_time = None  # pre-update the enqueue_time in the object for CAS
         rollout_obj.num_attempts += 1  # pre-update the num_attempts in the object for CAS
         rollout_obj.latest_attempt_id = attempt_obj.attempt_id  # pre-update the latest_attempt_id in the object for CAS

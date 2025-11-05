@@ -1,6 +1,10 @@
 # Copyright (c) Microsoft. All rights reserved.
 
 import time
+
+import os
+import uuid
+import typing
 from unittest.mock import Mock
 
 import pytest
@@ -16,27 +20,31 @@ __all__ = [
 ]
 
 
-@pytest.fixture
-def inmemory_store() -> InMemoryLightningStore:
+@pytest_asyncio.fixture
+async def inmemory_store() -> InMemoryLightningStore | typing.AsyncGenerator[DatabaseLightningStore, None]:
     """Create a fresh InMemoryLightningStore instance."""
-    return InMemoryLightningStore()
+    store_selection = os.getenv("PYTEST_STORE_SELECTION", "0")
+    if store_selection == "0":
+        yield InMemoryLightningStore()
+    else:
+        # Fallback to db_store
+        async for store in _db_store_generator():  # type: ignore
+            yield store
 
-
-import os
-import uuid
-import typing
 
 @pytest_asyncio.fixture
 async def db_store() -> typing.AsyncGenerator[DatabaseLightningStore, None]:
     """Create a DatabaseLightningStore using a SQLite file for testing."""
+    async for store in _db_store_generator():
+        yield store
+
+
+async def _db_store_generator() -> typing.AsyncGenerator[DatabaseLightningStore, None]:
+    """Helper generator to create a DatabaseLightningStore using a SQLite file for testing."""
+    tmp_path = ".pytest_cache"
     # Ensure the directory exists and create a random file in it
-    use_in_memory = os.getenv("PYTEST_DBSTORE_IN_MEMORY", "0") == "1"
-    if use_in_memory:
-        db_path = ":memory:"
-    else:
-        tmp_path = ".pytest_cache"
-        os.makedirs(tmp_path, exist_ok=True)
-        db_path = os.path.join(tmp_path, f"test_db_{uuid.uuid4().hex}.sqlite3")
+    os.makedirs(tmp_path, exist_ok=True)
+    db_path = os.path.join(tmp_path, f"test_db_{uuid.uuid4().hex}.sqlite3")
     database_url = f"sqlite+aiosqlite:///{db_path}"
     store = DatabaseLightningStore(database_url=database_url)
     store.retry_for_waiting.wait_seconds = .2  # Set polling interval to 0.2s for test
