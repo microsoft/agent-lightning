@@ -835,7 +835,7 @@ class AgentModeDaemon:
                 # if random.random() < 0.5:
                     unmerged_count += 1
                     for turn_index, d in enumerate(turn_ids):
-                        with open('bad_case_jiahang.log', 'w') as f: 
+                        with open('bad_case_jiahang.log', 'a+') as f: 
                             print("-" * 20, file=f)
                             print(merged_trace_idx, file=f)
                             print('~' * 20, file=f)
