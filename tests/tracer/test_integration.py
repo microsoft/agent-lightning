@@ -26,6 +26,7 @@ import multiprocessing
 import os
 import pprint
 import re
+import socket
 import threading
 import time
 from contextlib import asynccontextmanager, contextmanager
@@ -101,12 +102,14 @@ class MockOpenAICompatibleServer:
     Now supports replaying from prompt caches.
     """
 
-    def __init__(self, host: str = "127.0.0.1", port: int = 58000) -> None:
+    def __init__(self, host: str = "127.0.0.1", port: Optional[int] = None) -> None:
         self.host = host
-        self.port = port
+        self._requested_port = port
+        self.port: Optional[int] = port
         self.app = FastAPI()
         self.server_thread = None
         self.server = None
+        self._prev_openai_base_url: Optional[str] = None
         self.prompt_caches = self._load_prompt_caches()
         self._setup_routes()
 
@@ -167,8 +170,17 @@ class MockOpenAICompatibleServer:
                 return cached_response
             raise ValueError("No suitable cached response found. Please ensure the prompt caches are populated.")
 
+    def _resolve_port(self) -> int:
+        if self._requested_port:
+            return self._requested_port
+
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.bind((self.host, 0))
+            return sock.getsockname()[1]
+
     async def __aenter__(self):
         # Start the server manually
+        self.port = self._resolve_port()
         config = uvicorn.Config(self.app, host=self.host, port=self.port, log_level="error")
         self.server = uvicorn.Server(config)
         self.server_thread = threading.Thread(target=self.server.run, daemon=True)
@@ -184,6 +196,11 @@ class MockOpenAICompatibleServer:
         if not getattr(self.server, "started", False):
             raise RuntimeError("Server failed to start within timeout")
 
+        # Update the module-level base URL so downstream clients use the live port.
+        global OPENAI_BASE_URL
+        self._prev_openai_base_url = OPENAI_BASE_URL
+        OPENAI_BASE_URL = f"http://{self.host}:{self.port}/v1"
+
         return self
 
     async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
@@ -191,6 +208,10 @@ class MockOpenAICompatibleServer:
             self.server.should_exit = True
         if self.server_thread and self.server_thread.is_alive():
             self.server_thread.join(timeout=5)
+        if self._prev_openai_base_url is not None:
+            global OPENAI_BASE_URL
+            OPENAI_BASE_URL = self._prev_openai_base_url
+            self._prev_openai_base_url = None
 
 
 async def run_agent(agent_func: Callable[[], Any]) -> None:
