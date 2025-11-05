@@ -19,12 +19,23 @@ logger = logging.getLogger(__name__)
 def main(argv: Iterable[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run a LightningStore server")
     parser.add_argument("--port", type=int, default=4747, help="Port to run the server on")
+    parser.add_argument(
+        "--cors-origin",
+        dest="cors_origins",
+        action="append",
+        help="Allowed CORS origin. Repeat for multiple origins. Use '*' to allow all origins.",
+    )
     args = parser.parse_args(list(argv) if argv is not None else None)
 
     configure_logger()
 
     store = InMemoryLightningStore()
-    server = LightningStoreServer(store, host="0.0.0.0", port=args.port)
+    server = LightningStoreServer(
+        store,
+        host="0.0.0.0",
+        port=args.port,
+        cors_allow_origins=args.cors_origins,
+    )
     try:
         asyncio.run(server.run_forever())
     except RuntimeError as exc:

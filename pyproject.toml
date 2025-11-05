@@ -21,6 +21,7 @@ dependencies = [
   "pydantic>=2.11",
   "openai",
   "rich",
+  "portpicker",
 ]
 
 [project.optional-dependencies]
