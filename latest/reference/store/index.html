@@ -5076,6 +5076,45 @@ Delegates all operations to an underlying store implementation.</p>
 <p><code>agl store</code> is a convenient CLI to start a store server.</p>
 
 
+<p><span class="doc-section-title">Parameters:</span></p>
+    <ul>
+        <li class="doc-section-item field-body">
+            <b><code>store</code></b>
+              (<code><a class="autorefs autorefs-internal" title="            agentlightning.LightningStore (agentlightning.store.base.LightningStore)" href="#agentlightning.LightningStore">LightningStore</a></code>)
+          –
+          <div class="doc-md-description">
+            <p>The underlying store to delegate operations to.</p>
+          </div>
+        </li>
+        <li class="doc-section-item field-body">
+            <b><code>host</code></b>
+              (<code><span title="str">str</span></code>)
+          –
+          <div class="doc-md-description">
+            <p>The hostname or IP address to bind the server to.</p>
+          </div>
+        </li>
+        <li class="doc-section-item field-body">
+            <b><code>port</code></b>
+              (<code><span title="int">int</span></code>)
+          –
+          <div class="doc-md-description">
+            <p>The TCP port to listen on.</p>
+          </div>
+        </li>
+        <li class="doc-section-item field-body">
+            <b><code>cors_allow_origins</code></b>
+              (<code><span title="typing.Sequence">Sequence</span>[<span title="str">str</span>] | <span title="str">str</span> | None</code>, default:
+                  <code>None</code>
+)
+          –
+          <div class="doc-md-description">
+            <p>A list of CORS origins to allow. Use '*' to allow all origins.</p>
+          </div>
+        </li>
+    </ul>
+
+
 
 
 
