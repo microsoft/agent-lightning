@@ -781,13 +781,11 @@ class AgentModeDaemon:
                 if current_merged_trace_idx not in merged_trace_idx:
                     merged_trace_idx.append(current_merged_trace_idx)
 
-                # if len(merged_trace_idx) > 1:
-                import random
-                if random.random() < 0.5:
+                if len(merged_trace_idx) > 1:
                     unmerged_count += 1
                     # log data, only for debug testing
                     for turn_index, d in enumerate(turn_ids):
-                        with open('bad_case_jiahang.log', 'a+') as f: 
+                        with open("bad_case_jiahang.log", "a+") as f:
                             print("-" * 20, file=f)
                             print(merged_trace_idx, file=f)
                             print('~' * 20, file=f)
