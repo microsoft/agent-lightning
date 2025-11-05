@@ -111,7 +111,9 @@ export const NoServerConfigured: Story = {
 export const ServerOnline: Story = {
   parameters: {
     msw: {
-      handlers: [http.get('http://localhost:8000/health', () => HttpResponse.json({ status: 'ok' }, { status: 200 }))],
+      handlers: [
+        http.get('http://localhost:8000/v1/agl/health', () => HttpResponse.json({ status: 'ok' }, { status: 200 })),
+      ],
     },
   },
 };
@@ -120,7 +122,9 @@ export const ServerOffline: Story = {
   parameters: {
     msw: {
       handlers: [
-        http.get('http://localhost:8000/health', () => HttpResponse.json({ message: 'unavailable' }, { status: 503 })),
+        http.get('http://localhost:8000/v1/agl/health', () =>
+          HttpResponse.json({ message: 'unavailable' }, { status: 503 }),
+        ),
       ],
     },
   },
@@ -147,7 +151,9 @@ export const PollingEveryFiveSeconds: Story = {
   },
   parameters: {
     msw: {
-      handlers: [http.get('http://localhost:8000/health', () => HttpResponse.json({ status: 'ok' }, { status: 200 }))],
+      handlers: [
+        http.get('http://localhost:8000/v1/agl/health', () => HttpResponse.json({ status: 'ok' }, { status: 200 })),
+      ],
     },
   },
 };

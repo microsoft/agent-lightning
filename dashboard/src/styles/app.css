@@ -56,6 +56,7 @@
 
 [data-mantine-color-scheme='dark'] .mantine-datatable {
   --mantine-datatable-border-color-dark: var(--mantine-color-dark-6);
+  --mantine-datatable-highlight-on-hover-color: var(--mantine-color-dark-7);
 }
 
 /* Rollout Nested Table */

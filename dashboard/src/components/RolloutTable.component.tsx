@@ -67,8 +67,8 @@ const ROLLOUT_STATUS_COLORS: Record<RolloutStatus, string> = {
   cancelled: 'gray',
   failed: 'red',
   preparing: 'violet',
-  queuing: 'blue',
-  requeuing: 'cyan',
+  queuing: 'gray',
+  requeuing: 'gray',
   running: 'blue',
   succeeded: 'teal',
 };

@@ -45,12 +45,12 @@ function getSameOriginUrl() {
 function buildHealthUrl(baseUrl: string) {
   if (baseUrl.startsWith('http://') || baseUrl.startsWith('https://')) {
     const normalized = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
-    return new URL('health', normalized).toString();
+    return new URL('v1/agl/health', normalized).toString();
   }
 
   const normalizedBase = baseUrl.startsWith('/') ? baseUrl : `/${baseUrl}`;
   const trimmed = normalizedBase.replace(/\/+$/, '');
-  return `${trimmed}/health`;
+  return `${trimmed}/v1/agl/health`;
 }
 
 function useServerConnection({ baseUrl, autoRefreshMs }: ConnectionOptions) {
