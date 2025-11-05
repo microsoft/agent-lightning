@@ -806,14 +806,17 @@ class AgentModeDaemon:
                     turn_index_list.append(turn_index)
 
         elif self.trace_aggregator.mode == "trajectory":
-            breakpoint()
             response_mask_list: List[List[int]] = []
+            unmerged_count = 0 # only for debug
 
             for rollout_id, sample_info in finished_id_to_sample_info.items():
                 merged_trace_idx: List[List[int]] = []
                 current_merged_trace_idx: List[int] = []
                 current_context: List[int] = []
+                turn_ids = [] # log data, only for debug testing
                 for turn_index, trace in enumerate(sample_info["trace_list"]):
+                    # log data, only for debug testing
+                    turn_ids.append({"nxt_turn":trace["prompt_ids"][:] + trace["response_ids"][:], "cur":current_context[:]})
                     if fuzzy_startswith(trace["prompt_ids"] + trace["response_ids"], current_context, self.tokenizer,
                                         special_token_tolerance=self.trace_aggregator.special_token_tolerance,
                                         string_tolerance=self.trace_aggregator.string_tolerance):
@@ -826,18 +829,35 @@ class AgentModeDaemon:
                 if current_merged_trace_idx not in merged_trace_idx:
                     merged_trace_idx.append(current_merged_trace_idx)
 
+                # log data, only for debug testing
+                if len(merged_trace_idx) > 1:
+                # import random
+                # if random.random() < 0.5:
+                    unmerged_count += 1
+                    for turn_index, d in enumerate(turn_ids):
+                        with open('bad_case_jiahang.log', 'w') as f: 
+                            print("-" * 20, file=f)
+                            print(merged_trace_idx, file=f)
+                            print('~' * 20, file=f)
+                            print(turn_index, file=f)
+                            print(d["nxt_turn"], file=f)
+                            print(d["cur"], file=f)
+
                 for current_merged_trace_idx in merged_trace_idx:
                     prompt_ids = sample_info["trace_list"][current_merged_trace_idx[0]]["prompt_ids"]
-                    response_ids = sample_info["trace_list"][current_merged_trace_idx[0]]["response_ids"]
+                    accum_response_ids = sample_info["trace_list"][current_merged_trace_idx[0]]["response_ids"]
                     prompt_length = len(prompt_ids)
-                    response_mask = [1] * len(response_ids)
+                    response_mask = [1] * len(accum_response_ids)
                     for turn_index in current_merged_trace_idx[1:]:
                         trace = sample_info["trace_list"][turn_index]
-                        new_prompt_length = len(trace["prompt_ids"]) - len(response_ids) - prompt_length
-                        response_ids += trace["prompt_ids"][-new_prompt_length:]
-                        response_ids += trace["response_ids"]
+                        new_prompt_length = len(trace["prompt_ids"]) - len(accum_response_ids) - prompt_length
+                        accum_response_ids += trace["prompt_ids"][-new_prompt_length:]
+                        accum_response_ids += trace["response_ids"]
                         response_mask += [0] * new_prompt_length
                         response_mask += [1] * len(trace["response_ids"])
+                    final_sample = sample_info["trace_list"][current_merged_trace_idx[-1]]
+                    response_ids = final_sample["prompt_ids"][prompt_length:] + final_sample["response_ids"]
+                    assert len(response_ids) == len(accum_response_ids) # only for debug testing
 
                     reward_list.append(sample_info["reward"])
 
@@ -921,6 +941,8 @@ class AgentModeDaemon:
             "training/n_rollouts_w_trace": len(finished_id_to_sample_info),
             "training/n_truncated_triplets": n_trunc_sample_because_of_response,
             "training/n_triplets": n_transition,
+            # log data, only for debug testing
+            **({"training/n_unmerged_turns": unmerged_count} if self.trace_aggregator.mode == "trajectory" else {}),
         }
 
         # Add non-tensor data for advantage calculation and logging
