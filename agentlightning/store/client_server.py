@@ -349,10 +349,9 @@ class LightningStoreServer(LightningStore):
         if self.app is None or not self._cors_allow_origins:
             return
 
-        allow_origins = ["*"] if self._cors_allow_origins == ["*"] else self._cors_allow_origins
         self.app.add_middleware(
             CORSMiddleware,
-            allow_origins=allow_origins,
+            allow_origins=self._cors_allow_origins.copy(),
             allow_methods=["*"],
             allow_headers=["*"],
             allow_credentials=True,
