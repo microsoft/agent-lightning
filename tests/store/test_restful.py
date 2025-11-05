@@ -12,22 +12,16 @@ Test categories:
 
 import asyncio
 import contextlib
-import socket
 from typing import AsyncGenerator, List, Tuple
 
 import aiohttp
 import pytest
 import pytest_asyncio
+from portpicker import pick_unused_port
 
 from agentlightning.store.client_server import LightningStoreClient, LightningStoreServer
 from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.types import LLM, AttemptedRollout, OtelResource, Rollout, Span, TraceStatus
-
-
-def _get_free_port() -> int:
-    with contextlib.closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as sock:
-        sock.bind(("127.0.0.1", 0))
-        return sock.getsockname()[1]
 
 
 def _make_span(rollout_id: str, attempt_id: str, sequence_id: int, name: str) -> Span:
@@ -54,7 +48,7 @@ def _make_span(rollout_id: str, attempt_id: str, sequence_id: int, name: str) ->
 @contextlib.asynccontextmanager
 async def _run_server_with_cors(cors_origins: List[str] | str | None = None):
     store = InMemoryLightningStore()
-    port = _get_free_port()
+    port = pick_unused_port()
     server = LightningStoreServer(store, "127.0.0.1", port, cors_allow_origins=cors_origins)
     await server.start()
     session = aiohttp.ClientSession()
@@ -70,7 +64,7 @@ async def server_client() -> (
     AsyncGenerator[Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str], None]
 ):
     store = InMemoryLightningStore()
-    port = _get_free_port()
+    port = pick_unused_port()
     server = LightningStoreServer(store, "127.0.0.1", port)
     await server.start()
     client = LightningStoreClient(server.endpoint)

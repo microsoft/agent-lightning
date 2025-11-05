@@ -1,9 +1,7 @@
 # Copyright (c) Microsoft. All rights reserved.
 
 import asyncio
-import contextlib
 import multiprocessing
-import socket
 import sys
 from typing import Any, AsyncGenerator, Dict, Tuple, cast
 from unittest.mock import patch
@@ -14,18 +12,13 @@ import pytest_asyncio
 from _pytest.monkeypatch import MonkeyPatch
 from aiohttp import ClientConnectorError, ClientResponseError, ServerDisconnectedError
 from opentelemetry.sdk.trace import ReadableSpan
+from portpicker import pick_unused_port
 from yarl import URL
 
 from agentlightning.store.base import UNSET
 from agentlightning.store.client_server import LightningStoreClient, LightningStoreServer
 from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.types import LLM, OtelResource, PromptTemplate, RolloutConfig, Span, TraceStatus
-
-
-def _get_free_port() -> int:
-    with contextlib.closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as sock:
-        sock.bind(("127.0.0.1", 0))
-        return sock.getsockname()[1]
 
 
 def _make_span(rollout_id: str, attempt_id: str, sequence_id: int, name: str) -> Span:
@@ -65,7 +58,7 @@ class MockResponse:
 @pytest_asyncio.fixture
 async def server_client() -> AsyncGenerator[Tuple[LightningStoreServer, LightningStoreClient], None]:
     store = InMemoryLightningStore()
-    port = _get_free_port()
+    port = pick_unused_port()
     server = LightningStoreServer(store, "127.0.0.1", port)
     await server.start()
     client = LightningStoreClient(server.endpoint)
@@ -80,7 +73,7 @@ async def server_client() -> AsyncGenerator[Tuple[LightningStoreServer, Lightnin
 async def test_server_start_rejects_port_conflict() -> None:
     """Ensure startup fails loudly when the port is already owned by another store."""
     store_a = InMemoryLightningStore()
-    port = _get_free_port()
+    port = pick_unused_port()
     server_a = LightningStoreServer(store_a, "127.0.0.1", port)
     await server_a.start()
 
@@ -97,7 +90,7 @@ async def test_server_start_rejects_port_conflict() -> None:
 async def test_run_forever_rejects_port_conflict() -> None:
     """Ensure run_forever also reports port conflicts with the friendly message."""
     store_a = InMemoryLightningStore()
-    port = _get_free_port()
+    port = pick_unused_port()
     server_a = LightningStoreServer(store_a, "127.0.0.1", port)
     await server_a.start()
 
@@ -475,7 +468,7 @@ async def test_subprocess_operations_sync_via_http_automatically() -> None:
     main process via the HTTP server.
     """
     store = InMemoryLightningStore()
-    port = _get_free_port()
+    port = pick_unused_port()
     server = LightningStoreServer(store, "127.0.0.1", port)
     await server.start()
 
@@ -524,7 +517,7 @@ async def test_subprocess_client_operations_work_but_direct_store_access_fails()
     2. Direct store access in subprocess does NOT work (data isolated to subprocess)
     """
     store = InMemoryLightningStore()
-    port = _get_free_port()
+    port = pick_unused_port()
     server = LightningStoreServer(store, "127.0.0.1", port)
     await server.start()
 
@@ -759,7 +752,7 @@ async def test_retry_mechanism_with_custom_delays_and_health_recovery(
     - Final success after health recovery
     """
     store = InMemoryLightningStore()
-    port = _get_free_port()
+    port = pick_unused_port()
     server = LightningStoreServer(store, "127.0.0.1", port)
     await server.start()
 
