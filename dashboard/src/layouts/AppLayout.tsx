@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { IconCpu, IconRouteSquare, IconSettings, IconTimeline } from '@tabler/icons-react';
-import { Outlet, NavLink as RouterNavLink, useLocation } from 'react-router-dom';
-import { AppShell, Badge, Group, Image, NavLink as MantineNavLink, Stack, Text } from '@mantine/core';
+import { Outlet, NavLink as RouterNavLink, useLocation, useNavigate } from 'react-router-dom';
+import { AppShell, Badge, Group, Image, NavLink as MantineNavLink, Stack, Text, UnstyledButton } from '@mantine/core';
 import { AppAlertBanner } from '@/components/AppAlertBanner';
 import { AppDrawerContainer } from '@/components/AppDrawer.component';
 import faviconUrl from '../favicon.svg';
@@ -119,15 +119,17 @@ function ConnectionIndicator({
   baseUrl,
   status = 'unknown',
   isRefreshing = false,
+  onClick,
 }: {
   baseUrl?: string;
   status?: ConnectionStatus;
   isRefreshing?: boolean;
+  onClick?: () => void;
 }) {
   const { color, label } = CONNECTION_STATUS_META[status ?? 'unknown'];
   const connectionTarget = baseUrl && baseUrl.length > 0 ? baseUrl : 'No server configured';
 
-  return (
+  const content = (
     <Stack gap={4} data-testid='connection-indicator'>
       <Text size='xs' fw={600} c='dimmed'>
         Server connection
@@ -148,6 +150,20 @@ function ConnectionIndicator({
       </Group>
     </Stack>
   );
+
+  if (!onClick) {
+    return content;
+  }
+
+  return (
+    <UnstyledButton
+      onClick={onClick}
+      aria-label='Open settings to edit server connection'
+      className='connection-indicator-button'
+    >
+      {content}
+    </UnstyledButton>
+  );
 }
 
 export type AppLayoutProps = {
@@ -156,6 +172,7 @@ export type AppLayoutProps = {
 
 export function AppLayout({ config }: AppLayoutProps = {}) {
   const location = useLocation();
+  const navigate = useNavigate();
   const resolvedBaseUrl = config?.baseUrl ?? getSameOriginUrl() ?? '';
   const autoRefreshMs = config?.autoRefreshMs !== undefined ? config.autoRefreshMs : DEFAULT_AUTO_REFRESH_MS;
   const connectionState = useServerConnection({
@@ -202,6 +219,7 @@ export function AppLayout({ config }: AppLayoutProps = {}) {
             baseUrl={resolvedBaseUrl || undefined}
             status={connectionState.status}
             isRefreshing={connectionState.isRefreshing}
+            onClick={() => navigate('/settings')}
           />
         </AppShell.Section>
       </AppShell.Navbar>

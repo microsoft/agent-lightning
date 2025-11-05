@@ -13,6 +13,35 @@
   animation: connection-refreshing-blink 1s linear infinite;
 }
 
+.connection-indicator-button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: var(--mantine-spacing-xs);
+  border-radius: var(--mantine-radius-sm);
+  transition: background-color 150ms ease;
+  cursor: pointer;
+}
+
+.connection-indicator-button:hover,
+.connection-indicator-button:focus-visible {
+  background-color: var(--mantine-color-gray-0);
+}
+
+[data-mantine-color-scheme='dark'] .connection-indicator-button:hover,
+[data-mantine-color-scheme='dark'] .connection-indicator-button:focus-visible {
+  background-color: var(--mantine-color-dark-8);
+}
+
+.connection-indicator-button:focus-visible {
+  outline: 2px solid var(--mantine-color-blue-filled);
+  outline-offset: 2px;
+}
+
+[data-mantine-color-scheme='dark'] .mantine-AppShell-root .mantine-AppShell-navbar {
+  --app-shell-border-color: var(--mantine-color-dark-6);
+}
+
 .mantine-datatable {
   --mantine-datatable-background-color: var(--mantine-color-body);
 }
