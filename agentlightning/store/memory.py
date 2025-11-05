@@ -369,6 +369,9 @@ class InMemoryLightningStore(LightningStore):
                         self._attempts[rollout.rollout_id] = []
                     self._attempts[rollout.rollout_id].append(attempt)
 
+                    # Sync attempt status to rollout
+                    await self._update_rollout_unlocked(rollout.rollout_id, status="preparing")
+
                     return AttemptedRollout(**rollout.model_dump(), attempt=attempt)
 
                 # If not in queuing state, skip this rollout and continue
@@ -412,6 +415,9 @@ class InMemoryLightningStore(LightningStore):
             if rollout_id not in self._attempts:
                 self._attempts[rollout_id] = []
             self._attempts[rollout_id].append(attempt)
+
+            # Sync attempt status to rollout
+            await self._update_rollout_unlocked(rollout_id, status="preparing")
 
             self._completion_events.setdefault(rollout.rollout_id, threading.Event())
 
