@@ -19,4 +19,7 @@ actor_rollout_ref:
       custom_async_server:
         path: pkg://agentlightning.verl.async_server
         name: PatchedvLLMServer
-    trace_agg_mode: transition # transition or trajectory
+    trace_aggregator:
+      mode: transition # transition or trajectory
+      special_token_tolerance: 10 # only supported in trajectory mode, suggest to set as n_turns
+      string_tolerance: 20 # only supported in trajectory mode, suggest to set as n_turns * 2

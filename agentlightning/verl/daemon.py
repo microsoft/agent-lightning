@@ -32,18 +32,10 @@ __all__ = [
     "get_right_padded_ids_and_attention_mask",
 ]
 
-from transformers import AutoTokenizer
-model_dir = '/mnt/teamdrive/RAG_RL/models/meta-llama/Llama-3.2-3B'
-tok = AutoTokenizer.from_pretrained(str(model_dir), local_files_only=True, use_fast=True)
-# def _decode(ids, skip_special_tokens=True):
-#     return tok.decode(ids, skip_special_tokens=skip_special_tokens, clean_up_tokenization_spaces=False)
 
 def fuzzy_startswith(full_ids, prefix_ids, tokenizer, special_token_tolerance=0, string_tolerance=0):
     def _special_token_sequence(ids):
         return [id for id in ids if id in tokenizer.all_special_ids]
-    
-    def _decode(ids, skip_special_tokens=True):
-        return tokenizer.decode(ids, skip_special_tokens=skip_special_tokens, clean_up_tokenization_spaces=False)
 
     if special_token_tolerance < 0 or string_tolerance < 0:
         raise ValueError("tolerance must be non-negative")
@@ -57,8 +49,12 @@ def fuzzy_startswith(full_ids, prefix_ids, tokenizer, special_token_tolerance=0,
         return False
 
     # Next, handle string content
-    full_string = _decode(full_ids, skip_special_tokens=True)
-    prefix_string = _decode(prefix_ids, skip_special_tokens=True)
+    full_string = tokenizer.decode(full_ids, skip_special_tokens=True)
+    prefix_string = tokenizer.decode(prefix_ids, skip_special_tokens=True)
+    full_ids = tokenizer.encode(full_string)
+    prefix_ids = tokenizer.encode(prefix_string)
+    full_string = tokenizer.decode(full_ids, skip_special_tokens=True)
+    prefix_string = tokenizer.decode(prefix_ids, skip_special_tokens=True)
     m = len(prefix_string)
     n = len(full_string)
 
@@ -229,7 +225,7 @@ class AgentModeDaemon:
         llm_proxy: LLMProxy | None = None,
         store: LightningStore | None = None,
         adapter: TraceToTripletBase | None = None,
-        trace_agg_mode: Literal["transition", "trajectory"] = "transition",
+        trace_aggregator: Optional[Dict[str, Any]] = None,
     ):
         self.mode = mode
         self.llm_timeout_seconds = llm_timeout_seconds
@@ -270,7 +266,7 @@ class AgentModeDaemon:
         self.pad_token_id = pad_token_id
         self.tokenizer = tokenizer
         self.reward_fillna_value = reward_fillna_value
-        self.trace_agg_mode = trace_agg_mode
+        self.trace_aggregator = trace_aggregator
 
         # Internal State
         self.backend_llm_server_addresses: List[str] = []
@@ -774,7 +770,7 @@ class AgentModeDaemon:
         is_drop_list: List[bool] = []
         n_trunc_sample_because_of_response = 0
 
-        if self.trace_agg_mode == "transition":
+        if self.trace_aggregator.mode == "transition":
             for rollout_id, sample_info in finished_id_to_sample_info.items():
                 for turn_index, trace in enumerate(sample_info["trace_list"]):
 
@@ -809,7 +805,8 @@ class AgentModeDaemon:
                     rollout_id_list.append(rollout_id)
                     turn_index_list.append(turn_index)
 
-        elif self.trace_agg_mode == "trajectory":
+        elif self.trace_aggregator.mode == "trajectory":
+            breakpoint()
             response_mask_list: List[List[int]] = []
 
             for rollout_id, sample_info in finished_id_to_sample_info.items():
@@ -817,11 +814,12 @@ class AgentModeDaemon:
                 current_merged_trace_idx: List[int] = []
                 current_context: List[int] = []
                 for turn_index, trace in enumerate(sample_info["trace_list"]):
-                    if fuzzy_startswith(trace["prompt_ids"] + trace["response_ids"], current_context, tok, special_token_tolerance=5):
+                    if fuzzy_startswith(trace["prompt_ids"] + trace["response_ids"], current_context, self.tokenizer,
+                                        special_token_tolerance=self.trace_aggregator.special_token_tolerance,
+                                        string_tolerance=self.trace_aggregator.string_tolerance):
                         current_context = trace["prompt_ids"] + trace["response_ids"]
                         current_merged_trace_idx.append(turn_index)
                     else:
-                        # assert len(current_merged_trace_idx) > 0
                         merged_trace_idx.append(current_merged_trace_idx)
                         current_merged_trace_idx = [turn_index]
                         current_context = trace["prompt_ids"] + trace["response_ids"]

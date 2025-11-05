@@ -421,7 +421,7 @@ class AgentLightningTrainer(RayPPOTrainer):
             store=self.store,
             llm_proxy=self.llm_proxy,
             adapter=self.adapter,
-            trace_agg_mode=self.config.actor_rollout_ref.rollout.trace_agg_mode,
+            trace_aggregator=self.config.actor_rollout_ref.rollout.trace_aggregator,
         )
         self.agent_mode_daemon.start()
 
