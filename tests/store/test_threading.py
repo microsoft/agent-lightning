@@ -1,6 +1,7 @@
 # Copyright (c) Microsoft. All rights reserved.
 
 import asyncio
+import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, cast
 from unittest.mock import MagicMock
@@ -77,7 +78,13 @@ class IncrementingResourceStore(LightningStore):
         snapshot = self.counter
         await asyncio.sleep(0.01)
         self.counter = snapshot + 1
-        return ResourcesUpdate(resources_id=f"res-{self.counter}", resources=resources)
+        return ResourcesUpdate(
+            resources_id=f"res-{self.counter}",
+            resources=resources,
+            create_time=time.time(),
+            update_time=time.time(),
+            version=1,
+        )
 
 
 def make_span(rollout_id: str, attempt_id: str, sequence_id: int = 1) -> Span:
@@ -128,7 +135,9 @@ async def test_threaded_store_delegates_all_methods() -> None:
         metadata={},
         attempt=base_attempt,
     )
-    resources_update = ResourcesUpdate(resources_id="resources-1", resources={})
+    resources_update = ResourcesUpdate(
+        resources_id="resources-1", resources={}, create_time=time.time(), update_time=time.time(), version=1
+    )
     span = make_span(rollout_id, attempt_id)
     readable_span = MagicMock(spec=ReadableSpan)
 
@@ -298,7 +307,9 @@ async def test_threaded_store_add_resources_delegates() -> None:
         sampling_parameters={"temperature": 0.7},
     )
     resources: NamedResources = cast(NamedResources, {"main_llm": llm})
-    resources_update = ResourcesUpdate(resources_id="resources-1", resources=resources)
+    resources_update = ResourcesUpdate(
+        resources_id="resources-1", resources=resources, create_time=time.time(), update_time=time.time(), version=1
+    )
 
     return_values = {
         "add_resources": resources_update,

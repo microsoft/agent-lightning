@@ -40,7 +40,7 @@ import agentlightning as agl
 
 
 def verl_default_config() -> Dict[str, Any]:
-    return {
+    config = {
         "algorithm": {
             "adv_estimator": "grpo",
             "use_kl_in_reward": False,
@@ -58,6 +58,12 @@ def verl_default_config() -> Dict[str, Any]:
                 "multi_turn": {"format": "hermes"},
                 "name": "vllm",
                 "gpu_memory_utilization": 0.6,
+                "engine_kwargs": {
+                    "vllm": {
+                        "enable_auto_tool_choice": True,
+                        "tool_call_parser": "hermes",
+                    }
+                },
             },
             "actor": {
                 "ppo_mini_batch_size": 32,
@@ -96,6 +102,7 @@ def verl_default_config() -> Dict[str, Any]:
             "total_epochs": 2,
         },
     }
+    return config
 
 
 def train(
@@ -105,6 +112,7 @@ def train(
     model: Optional[str],
     llm_proxy: bool,
     ci: bool,
+    ci_fast: bool,
     n_runners: int,
     external_store_address: str,
 ):
@@ -117,6 +125,7 @@ def train(
         llm_proxy: Whether to enable LLM Proxy tracing/adapter.
         ci: Whether to run a minimal CI-style training loop.
         n_runners: The number of runners for the Trainer.
+        ci_fast: Whether to cap the training loop at a single step (implies CI toggles).
         external_store_address: Connects to an external store instead of creating a new one in memory.
     """
     # Load datasets (respect CLI file paths)
@@ -134,7 +143,7 @@ def train(
         config["actor_rollout_ref"]["model"]["path"] = model
 
     # CI toggle keeps everything else the same but you can tweak the lightweight bits here if desired
-    if ci:
+    if ci or ci_fast:
         # Config the experiment name and project name so that they are available to CI
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
         EXPERIMENT_NAME = f"calc_x_{timestamp}"
@@ -161,6 +170,11 @@ def train(
         config["trainer"]["project_name"] = PROJECT_NAME
         config["trainer"].pop("save_freq", None)
 
+        if ci_fast:
+            # Extra fast CI toggle for testing purposes.
+            config["trainer"]["total_training_steps"] = 1
+            config["trainer"]["test_freq"] = 1
+
     algorithm = agl.VERL(config)
 
     if external_store_address:
@@ -185,6 +199,9 @@ def main():
     parser.add_argument("--model", type=str, default=None, help="HF model id or path (optional)")
     parser.add_argument("--llm-proxy", action="store_true", help="Enable LLM Proxy tracing/adapter")
     parser.add_argument("--ci", action="store_true", help="Run a minimal CI-style training loop")
+    parser.add_argument(
+        "--ci-fast", action="store_true", help="Limit the training loop to a single step (implies --ci)"
+    )
     parser.add_argument("--n-runners", type=int, default=10, help="Number of runners for Trainer")
     parser.add_argument(
         "--external-store-address",
@@ -203,12 +220,16 @@ def main():
                 "Otherwise the trainer will still try to manage the store lifecycle for you!"
             )
 
+    if args.ci_fast:
+        args.ci = True
+
     train(
         train_file=args.train_file,
         val_file=args.val_file,
         model=args.model,
         llm_proxy=args.llm_proxy,
         ci=args.ci,
+        ci_fast=args.ci_fast,
         n_runners=args.n_runners,
         external_store_address=args.external_store_address,
     )

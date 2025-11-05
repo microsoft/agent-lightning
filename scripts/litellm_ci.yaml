@@ -47,3 +47,7 @@ model_list:
       api_base: os.environ/AZURE_API_BASE
       api_version: 2025-04-01-preview
       api_key: os.environ/AZURE_API_KEY
+
+general_settings:
+  # https://github.com/BerriAI/litellm/issues/15952
+  disable_responses_id_security: true

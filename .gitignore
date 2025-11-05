@@ -189,6 +189,9 @@ cython_debug/
 #  you could uncomment the following to ignore the enitre vscode folder
 .vscode/
 
+# Emacs backup files
+*~
+
 # Ruff stuff:
 .ruff_cache/
 

@@ -8,27 +8,25 @@ on:
 
   workflow_dispatch:
 
-  pull_request_target:
-    types: [reopened, ready_for_review]
+  repository_dispatch:
+    types: [ci-calc-x, ci-all]
+
+run-name: >-
+  ${{ github.event_name == 'repository_dispatch'
+      && format(
+        'PR #{0} - Label {1} - {2}',
+        github.event.client_payload.pull_number,
+        github.event.client_payload.ci_label,
+        github.event.client_payload.correlation_id
+      )
+      || format('Calc-X - {0}', github.event_name) }}
 
 jobs:
-  label-check:
-    runs-on: ubuntu-latest
-    outputs:
-      should-run: ${{ steps.evaluate.outputs.should-run }}
-    steps:
-      - uses: actions/checkout@v4
-      - name: Decide whether to run
-        id: evaluate
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const evaluateTrigger = require('./scripts/trigger_on_label.js');
-            evaluateTrigger({ core, context, labelName: 'ci-calc-x' });
-
   calc-x:
-    needs: label-check
-    if: needs.label-check.outputs.should-run == 'true'
+    if: >
+      github.event_name != 'repository_dispatch' ||
+      github.event.action == 'ci-calc-x' ||
+      github.event.action == 'ci-all'
     name: Calc-X (Python ${{ matrix.python-version }}, ${{ matrix.setup-script }})
     runs-on: [self-hosted, 1ES.Pool=agl-runner-gpu]
     timeout-minutes: 90
@@ -49,7 +47,7 @@ jobs:
         run: df -h
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.number && format('refs/pull/{0}/merge', github.event.pull_request.number) || github.ref }}
+          ref: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.pr_ref || (github.event.pull_request.number && format('refs/pull/{0}/merge', github.event.pull_request.number)) || github.ref }}
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
@@ -156,16 +154,16 @@ jobs:
 
       - name: Calc-X training with external store
         run: |
-          set -ex
+          set -euo pipefail
           source .venv/bin/activate
           cd examples/calc_x
           ../../scripts/restart_ray.sh
 
           agl store --port 4747 &
           sleep 5
-          AGL_MANAGED_STORE=0 AGL_CURRENT_ROLE=runner python train_calc_agent.py --external-store-address http://localhost:4747 --val-file data/test_mini.parquet --ci &
+          AGL_MANAGED_STORE=0 AGL_CURRENT_ROLE=runner python train_calc_agent.py --external-store-address http://localhost:4747 --val-file data/test_mini.parquet --ci-fast &
           sleep 5
-          AGL_MANAGED_STORE=0 AGL_CURRENT_ROLE=algorithm python train_calc_agent.py --external-store-address http://localhost:4747 --val-file data/test_mini.parquet --ci
+          AGL_MANAGED_STORE=0 AGL_CURRENT_ROLE=algorithm python train_calc_agent.py --external-store-address http://localhost:4747 --val-file data/test_mini.parquet --ci-fast
 
           pkill -f agl && echo "SIGTERM sent to agl" || echo "No agl process found"
           while pgrep -f agl; do
@@ -178,10 +176,30 @@ jobs:
             sleep 5
           done
           echo "train_calc_agent.py has finished."
-
-          sleep 10
         shell: bash
         env:
           WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
           WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
         id: calc_x_train_external_store
+
+      - name: Calc-X training with role-based environment variables
+        run: |
+          set -euo pipefail
+          source .venv/bin/activate
+          cd examples/calc_x
+          ../../scripts/restart_ray.sh
+
+          PYTHONUNBUFFERED=1 AGL_SERVER_HOST=127.0.0.1 AGL_SERVER_PORT=5858 AGL_CURRENT_ROLE=runner python train_calc_agent.py --val-file data/test_mini.parquet --ci-fast &
+          sleep 5
+          PYTHONUNBUFFERED=1 AGL_SERVER_HOST=0.0.0.0 AGL_SERVER_PORT=5858 AGL_CURRENT_ROLE=algorithm python train_calc_agent.py --val-file data/test_mini.parquet --ci-fast
+
+          pkill -f train_calc_agent.py && echo "SIGTERM sent to train_calc_agent.py" || echo "No train_calc_agent.py process found"
+          while pgrep -f train_calc_agent.py; do
+            echo "Waiting for train_calc_agent.py to finish..."
+            sleep 5
+          done
+          echo "train_calc_agent.py has finished."
+        shell: bash
+        env:
+          WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
+          WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}

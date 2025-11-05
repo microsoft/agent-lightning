@@ -136,7 +136,7 @@ def replace_cur_year(query: str) -> str:
 def get_cursor_from_path(sqlite_path: str):
     try:
         if not os.path.exists(sqlite_path):
-            print("Openning a new connection %s" % sqlite_path)
+            print("Opening a new connection %s" % sqlite_path)
         connection = sqlite3.connect(sqlite_path)
     except Exception as e:
         print(sqlite_path)

@@ -1,11 +1,9 @@
 # Copyright (c) Microsoft. All rights reserved.
 
 import asyncio
-import contextlib
 import multiprocessing
-import socket
 import sys
-from typing import Any, AsyncGenerator, Tuple, cast
+from typing import Any, AsyncGenerator, Dict, Tuple, cast
 from unittest.mock import patch
 
 import aiohttp
@@ -14,18 +12,13 @@ import pytest_asyncio
 from _pytest.monkeypatch import MonkeyPatch
 from aiohttp import ClientConnectorError, ClientResponseError, ServerDisconnectedError
 from opentelemetry.sdk.trace import ReadableSpan
+from portpicker import pick_unused_port
 from yarl import URL
 
 from agentlightning.store.base import UNSET
 from agentlightning.store.client_server import LightningStoreClient, LightningStoreServer
 from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.types import LLM, OtelResource, PromptTemplate, RolloutConfig, Span, TraceStatus
-
-
-def _get_free_port() -> int:
-    with contextlib.closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as sock:
-        sock.bind(("127.0.0.1", 0))
-        return sock.getsockname()[1]
 
 
 def _make_span(rollout_id: str, attempt_id: str, sequence_id: int, name: str) -> Span:
@@ -65,7 +58,7 @@ class MockResponse:
 @pytest_asyncio.fixture
 async def server_client() -> AsyncGenerator[Tuple[LightningStoreServer, LightningStoreClient], None]:
     store = InMemoryLightningStore()
-    port = _get_free_port()
+    port = pick_unused_port()
     server = LightningStoreServer(store, "127.0.0.1", port)
     await server.start()
     client = LightningStoreClient(server.endpoint)
@@ -74,6 +67,40 @@ async def server_client() -> AsyncGenerator[Tuple[LightningStoreServer, Lightnin
     finally:
         await client.close()
         await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_server_start_rejects_port_conflict() -> None:
+    """Ensure startup fails loudly when the port is already owned by another store."""
+    store_a = InMemoryLightningStore()
+    port = pick_unused_port()
+    server_a = LightningStoreServer(store_a, "127.0.0.1", port)
+    await server_a.start()
+
+    store_b = InMemoryLightningStore()
+    server_b = LightningStoreServer(store_b, "127.0.0.1", port)
+
+    with pytest.raises(RuntimeError, match="Another process may already be using this port"):
+        await server_b.start()
+
+    await server_a.stop()
+
+
+@pytest.mark.asyncio
+async def test_run_forever_rejects_port_conflict() -> None:
+    """Ensure run_forever also reports port conflicts with the friendly message."""
+    store_a = InMemoryLightningStore()
+    port = pick_unused_port()
+    server_a = LightningStoreServer(store_a, "127.0.0.1", port)
+    await server_a.start()
+
+    store_b = InMemoryLightningStore()
+    server_b = LightningStoreServer(store_b, "127.0.0.1", port)
+
+    with pytest.raises(RuntimeError, match="Another process may already be using this port"):
+        await server_b.run_forever()
+
+    await server_a.stop()
 
 
 @pytest.mark.asyncio
@@ -102,6 +129,9 @@ async def test_add_resources_via_server(server_client: Tuple[LightningStoreServe
     assert retrieved.resources_id == resources_update.resources_id
     assert isinstance(retrieved.resources["main_llm"], LLM)
     assert retrieved.resources["main_llm"].model == "test-model"
+
+    assert isinstance(retrieved.resources["greeting"], PromptTemplate)
+    assert retrieved.resources["greeting"].template == "Hello {name}!"
 
     # Verify it's set as latest
     latest = await server.get_latest_resources()
@@ -141,6 +171,43 @@ async def test_add_resources_via_client(server_client: Tuple[LightningStoreServe
     latest = await client.get_latest_resources()
     assert latest is not None
     assert latest.resources_id == resources_update.resources_id
+
+
+@pytest.mark.asyncio
+async def test_query_resources_history(server_client: Tuple[LightningStoreServer, LightningStoreClient]) -> None:
+    """Server and client should return identical resource history ordering."""
+    server, client = server_client
+
+    assert await server.query_resources() == []
+    assert await client.query_resources() == []
+
+    first = await server.add_resources(
+        cast(
+            Any,
+            {
+                "llm": LLM(
+                    resource_type="llm",
+                    endpoint="http://localhost:8000",
+                    model="hist-model-1",
+                    sampling_parameters={},
+                )
+            },
+        )
+    )
+    second = await server.update_resources(
+        "manual-id",
+        cast(
+            Any,
+            {"prompt": PromptTemplate(resource_type="prompt_template", template="Hi {user}", engine="f-string")},
+        ),
+    )
+
+    server_history = await server.query_resources()
+    client_history = await client.query_resources()
+
+    expected_ids = [first.resources_id, second.resources_id]
+    assert sorted([item.resources_id for item in server_history]) == sorted(expected_ids)
+    assert sorted([item.resources_id for item in client_history]) == sorted(expected_ids)
 
 
 @pytest.mark.asyncio
@@ -293,6 +360,28 @@ async def test_update_rollout_none_vs_unset(server_client: Tuple[LightningStoreS
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "bad_payload",
+    [
+        {"status": None},
+        {"config": None},
+    ],
+)
+async def test_update_rollout_rejects_none_values(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient],
+    bad_payload: Dict[str, Any],
+) -> None:
+    _, client = server_client
+
+    attempted = await client.start_rollout(input={"payload": "bad-none"})
+    with pytest.raises((ClientResponseError, AttributeError)) as exc_info:
+        await client.update_rollout(attempted.rollout_id, **bad_payload)
+
+    if isinstance(exc_info.value, ClientResponseError):
+        assert exc_info.value.status == 400
+
+
+@pytest.mark.asyncio
 async def test_update_attempt_none_vs_unset(server_client: Tuple[LightningStoreServer, LightningStoreClient]) -> None:
     _, client = server_client
 
@@ -319,6 +408,27 @@ async def test_update_attempt_none_vs_unset(server_client: Tuple[LightningStoreS
     assert preserved.worker_id == ""
     assert preserved.metadata == {}
     assert preserved.status == "running"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "bad_payload",
+    [
+        {"last_heartbeat_time": None},
+        {"metadata": None},
+    ],
+)
+async def test_update_attempt_rejects_none_values(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient],
+    bad_payload: Dict[str, Any],
+) -> None:
+    _, client = server_client
+
+    attempted = await client.start_rollout(input={"payload": "bad-none-attempt"})
+    with pytest.raises(ClientResponseError) as exc_info:
+        await client.update_attempt(attempted.rollout_id, attempted.attempt.attempt_id, **bad_payload)
+
+    assert exc_info.value.status == 400
 
 
 @pytest.mark.asyncio
@@ -358,7 +468,7 @@ async def test_subprocess_operations_sync_via_http_automatically() -> None:
     main process via the HTTP server.
     """
     store = InMemoryLightningStore()
-    port = _get_free_port()
+    port = pick_unused_port()
     server = LightningStoreServer(store, "127.0.0.1", port)
     await server.start()
 
@@ -407,7 +517,7 @@ async def test_subprocess_client_operations_work_but_direct_store_access_fails()
     2. Direct store access in subprocess does NOT work (data isolated to subprocess)
     """
     store = InMemoryLightningStore()
-    port = _get_free_port()
+    port = pick_unused_port()
     server = LightningStoreServer(store, "127.0.0.1", port)
     await server.start()
 
@@ -484,59 +594,69 @@ async def test_subprocess_client_operations_work_but_direct_store_access_fails()
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "status,endpoint,make_app_error",
-    [
-        (400, "/enqueue_rollout", True),  # server-marked app error -> 400 -> no retry
-        (404, "/update_rollout", False),  # non-408 4xx -> no retry
-    ],
-)
-async def test_no_retry_on_4xx_application_and_non408(
+@pytest.mark.flaky(reruns=3, reruns_delay=2)
+async def test_retry_on_400_application_error(
     server_client: Tuple[LightningStoreServer, LightningStoreClient],
     monkeypatch: MonkeyPatch,
-    status: int,
-    endpoint: str,
-    make_app_error: bool,
 ) -> None:
+    """Test that client retries on app-side 400 that becomes a 500 due to server exception handling."""
     server, client = server_client
 
-    if make_app_error:
-        # Force app-side exception so server returns 400 via exception handler.
-        call_count = {"n": 0}
-        original = server.store.enqueue_rollout
+    # Force app-side exception so server returns 400 via exception handler.
+    call_count = {"n": 0}
+    original = server.store.enqueue_rollout
 
-        async def boom(*args: Any, **kwargs: Any) -> Any:
-            call_count["n"] += 1
-            raise RuntimeError("synthetic app error")
+    async def boom(*args: Any, **kwargs: Any) -> Any:
+        call_count["n"] += 1
+        raise RuntimeError("synthetic app error")
 
-        monkeypatch.setattr(server.store, "enqueue_rollout", boom, raising=True)
+    monkeypatch.setattr(server.store, "enqueue_rollout", boom, raising=True)
 
-        with pytest.raises(ClientResponseError) as ei:
-            await client.enqueue_rollout(input={"origin": "should-fail"})
-        assert ei.value.status == 400
-        assert call_count["n"] == 1
+    with pytest.raises(ClientResponseError) as ei:
+        await client.enqueue_rollout(input={"origin": "should-fail"})
 
-        monkeypatch.setattr(server.store, "enqueue_rollout", original, raising=True)
-    else:
-        # Raise 404 once for /update_rollout; client must not retry.
-        original_post = aiohttp.ClientSession.post
-        calls = {"n": 0}
+    assert ei.value.status == 500
+    assert call_count["n"] == 4
 
-        def post_404(self: aiohttp.ClientSession, url: Any, *args: Any, **kwargs: Any) -> MockResponse:
-            if str(url).endswith(endpoint):
-                calls["n"] += 1
-                req_info = aiohttp.RequestInfo(
-                    url=URL(str(url)), method="POST", headers=cast(Any, {}), real_url=URL(str(url))
-                )
-                raise ClientResponseError(request_info=req_info, history=(), status=status, message="not found")
-            return MockResponse(original_post(self, url, *args, **kwargs))
+    # Restore original method
+    monkeypatch.setattr(server.store, "enqueue_rollout", original, raising=True)
 
-        monkeypatch.setattr(aiohttp.ClientSession, "post", post_404, raising=True)
 
-        with pytest.raises(ClientResponseError) as ei:
-            await client.update_rollout("nonexistent", status="running")
-        assert ei.value.status == 404
-        assert calls["n"] == 1
+@pytest.mark.asyncio
+async def test_no_retry_on_non408_4xx(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient],
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """Test that client does not retry on non-408 4xx errors such as 404."""
+    _, client = server_client
+
+    original_post = aiohttp.ClientSession.post
+    calls = {"n": 0}
+
+    def post_404(self: aiohttp.ClientSession, url: Any, *args: Any, **kwargs: Any):
+        if str(url).endswith("/rollouts/nonexistent"):
+            calls["n"] += 1
+            req_info = aiohttp.RequestInfo(
+                url=URL(str(url)),
+                method="POST",
+                headers=cast(Any, {}),
+                real_url=URL(str(url)),
+            )
+            raise ClientResponseError(
+                request_info=req_info,
+                history=(),
+                status=404,
+                message="not found",
+            )
+        return MockResponse(original_post(self, url, *args, **kwargs))
+
+    monkeypatch.setattr(aiohttp.ClientSession, "post", post_404, raising=True)
+
+    with pytest.raises(ClientResponseError) as ei:
+        await client.update_rollout("nonexistent", status="running")
+
+    assert ei.value.status == 404
+    assert calls["n"] == 1
 
 
 @pytest.mark.asyncio
@@ -550,7 +670,7 @@ async def test_retry_on_transient_network_errors_then_success(
     counters = {"post_calls": 0}
 
     def flaky_post(self: aiohttp.ClientSession, url: Any, *args: Any, **kwargs: Any) -> MockResponse:
-        if str(url).endswith("/start_rollout"):
+        if str(url).endswith("/rollouts"):
             if counters["post_calls"] == 0:
                 counters["post_calls"] += 1
                 # raise chosen transient network exception
@@ -575,7 +695,7 @@ async def test_retry_on_transient_http_status_then_success(
     fired = {"once": False}
 
     def post_then_ok(self: aiohttp.ClientSession, url: Any, *args: Any, **kwargs: Any) -> MockResponse:
-        if str(url).endswith("/enqueue_rollout") and not fired["once"]:
+        if str(url).endswith("/queues/rollouts/enqueue") and not fired["once"]:
             fired["once"] = True
             req_info = aiohttp.RequestInfo(
                 url=URL(str(url)), method="POST", headers=cast(Any, {}), real_url=URL(str(url))
@@ -601,7 +721,7 @@ async def test_unhealthy_health_probe_stops_retries(
     post_calls = {"n": 0}
 
     def failing_post(self: aiohttp.ClientSession, url: Any, *args: Any, **kwargs: Any) -> MockResponse:
-        if str(url).endswith("/start_rollout"):
+        if str(url).endswith("/rollouts"):
             post_calls["n"] += 1
             raise ServerDisconnectedError("synthetic disconnect")
         return MockResponse(original_post(self, url, *args, **kwargs))
@@ -642,7 +762,7 @@ async def test_retry_mechanism_with_custom_delays_and_health_recovery(
     - Final success after health recovery
     """
     store = InMemoryLightningStore()
-    port = _get_free_port()
+    port = pick_unused_port()
     server = LightningStoreServer(store, "127.0.0.1", port)
     await server.start()
 
@@ -660,7 +780,7 @@ async def test_retry_mechanism_with_custom_delays_and_health_recovery(
         timestamps: list[float] = []
 
         def monitored_post(self: aiohttp.ClientSession, url: Any, *args: Any, **kwargs: Any) -> MockResponse:
-            if str(url).endswith("/start_rollout"):
+            if str(url).endswith("/rollouts"):
                 import time
 
                 counters["post_attempts"] += 1
@@ -721,7 +841,7 @@ async def test_client_response_error_with_different_status_codes(
 
     # Test 403 Forbidden - should NOT retry
     def post_403(self: aiohttp.ClientSession, url: Any, *args: Any, **kwargs: Any) -> MockResponse:
-        if str(url).endswith("/start_rollout"):
+        if str(url).endswith("/rollouts"):
             req_info = aiohttp.RequestInfo(
                 url=URL(str(url)), method="POST", headers=cast(Any, {}), real_url=URL(str(url))
             )
@@ -738,7 +858,7 @@ async def test_client_response_error_with_different_status_codes(
     call_count = {"n": 0}
 
     def post_503_then_ok(self: aiohttp.ClientSession, url: Any, *args: Any, **kwargs: Any) -> MockResponse:
-        if str(url).endswith("/enqueue_rollout"):
+        if str(url).endswith("/queues/rollouts/enqueue"):
             call_count["n"] += 1
             if call_count["n"] == 1:
                 req_info = aiohttp.RequestInfo(

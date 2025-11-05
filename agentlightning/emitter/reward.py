@@ -149,6 +149,7 @@ def emit_reward(reward: float) -> ReadableSpan:
     if not isinstance(reward, float):
         raise ValueError(f"Reward must be a number, got: {type(reward)}")
 
+    # TODO: This should use the tracer from current context by tracer
     tracer = get_tracer()
     span = tracer.start_span(SpanNames.REWARD.value, attributes={"reward": reward})
     # Do nothing; it's just a number

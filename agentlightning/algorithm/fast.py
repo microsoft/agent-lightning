@@ -128,11 +128,13 @@ class Baseline(FastAlgorithm):
         # Attempts to adapt the spans using the adapter if provided
         try:
             adapter = self.get_adapter()
+        except ValueError:
+            logger.warning("No adapter set for MockAlgorithm. Skipping trace adaptation.")
+            adapter = None
+        if adapter is not None:
             spans = await store.query_spans(rollout_id=rollout_id, attempt_id="latest")
             transformed_data = adapter.adapt(spans)
             logger.info(f"[Rollout {rollout_id}] Adapted data: {transformed_data}")
-        except ValueError:
-            logger.warning("No adapter set for MockAlgorithm. Skipping trace adaptation.")
 
     async def _enqueue_rollouts(
         self, dataset: Dataset[Any], train_indices: List[int], val_indices: List[int], resources_id: str

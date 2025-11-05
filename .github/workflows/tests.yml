@@ -5,9 +5,9 @@ permissions:
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, stable/**/* ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, stable/**/* ]
   workflow_dispatch:
 
   schedule:
@@ -41,6 +41,7 @@ jobs:
             --group torch-cpu \
             --group torch-stable \
             --group trl \
+            --group tinker \
             --group agents \
             --no-default-groups
         if: matrix.setup == 'slow'

@@ -8,27 +8,25 @@ on:
 
   workflow_dispatch:
 
-  pull_request_target:
-    types: [reopened, ready_for_review]
+  repository_dispatch:
+    types: [ci-apo, ci-all]
+
+run-name: >-
+  ${{ github.event_name == 'repository_dispatch'
+      && format(
+        'PR #{0} - Label {1} - {2}',
+        github.event.client_payload.pull_number,
+        github.event.client_payload.ci_label,
+        github.event.client_payload.correlation_id
+      )
+      || format('APO - {0}', github.event_name) }}
 
 jobs:
-  label-check:
-    runs-on: ubuntu-latest
-    outputs:
-      should-run: ${{ steps.evaluate.outputs.should-run }}
-    steps:
-      - uses: actions/checkout@v4
-      - name: Decide whether to run
-        id: evaluate
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const evaluateTrigger = require('./scripts/trigger_on_label.js');
-            evaluateTrigger({ core, context, labelName: 'ci-apo' });
-
   apo:
-    needs: label-check
-    if: needs.label-check.outputs.should-run == 'true'
+    if: >
+      github.event_name != 'repository_dispatch' ||
+      github.event.action == 'ci-apo' ||
+      github.event.action == 'ci-all'
     name: APO (Python ${{ matrix.python-version }}, ${{ matrix.setup-script }})
     # This job is run on GitHub hosted runners rather than self-hosted runners because it needs no GPU.
     runs-on: ubuntu-latest
@@ -46,7 +44,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.number && format('refs/pull/{0}/merge', github.event.pull_request.number) || github.ref }}
+          ref: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.pr_ref || (github.event.pull_request.number && format('refs/pull/{0}/merge', github.event.pull_request.number)) || github.ref }}
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true

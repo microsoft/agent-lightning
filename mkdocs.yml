@@ -122,7 +122,12 @@ nav:
     - Store: reference/store.md
     - Trainer: reference/trainer.md
     - Types: reference/types.md
+    - RESTful: reference/restful.md
     - Internal: reference/internal.md
+  - Miscellaneous:
+    - Contributing Guide: community/contributing.md
+    - Maintainer Guide: community/maintainers.md
+    - Changelog: changelog.md
 
 extra_css:
   - https://unpkg.com/katex@0/dist/katex.min.css

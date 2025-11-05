@@ -264,7 +264,7 @@ dev_data = pd.read_parquet("data/test_dev_500.parquet").to_dict("records")[:10]
 trainer.dev(agent, dev_dataset=dev_data)
 ```
 
-Run this in a Python session or adapt your script to include a `--dev` flag. Once the spans appear healthy and the rewards are non-zero, switch back to [`trainer.fit(...)`][agentlightning.Trainer.fit] for full RL training.
+Run this in a Python session or adapt your script to include a `--dev` flag. Once the spans appear healthy and the rewards are non-zero, switch back to [`trainer.fit(...)`][agentlightning.Trainer.fit] for full RL training. See the [debugging tutorial](../tutorials/debug.md) for more tips on how to debug the agent.
 
 ## Running the Sample Code
 

@@ -1,0 +1,309 @@
+name: Issue Comment
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  pull-requests: write
+  issues: write
+  contents: write
+  actions: read
+
+jobs:
+  dispatch:
+    # Only run for comments on pull requests AND when the comment starts with "/ci"
+    if: >
+      github.event.issue.pull_request != null &&
+      startsWith(github.event.comment.body, '/ci')
+    runs-on: ubuntu-latest
+    outputs:
+      dispatched: ${{ steps.dispatch.outputs.dispatched }}
+      event_types: ${{ steps.dispatch.outputs.event_types }}
+      correlation_id: ${{ steps.dispatch.outputs.correlation_id }}
+      trigger_comment_id: ${{ steps.dispatch.outputs.trigger_comment_id }}
+      ack_comment_id: ${{ steps.ack.outputs.comment_id }}
+    steps:
+      - name: Guardrail — allow only members/collaborators
+        id: guard
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const allowed = ['MEMBER','OWNER','COLLABORATOR'];
+            const assoc = context.payload.comment.author_association;
+            if (!allowed.includes(assoc)) {
+              core.notice(`Ignoring /ci from ${context.payload.comment.user.login} (author_association=${assoc}).`);
+              core.setOutput('skip', 'true');
+            }
+
+      - name: Trigger repository dispatch
+        id: dispatch
+        if: steps.guard.outputs.skip != 'true'
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const pull_number = context.payload.issue.number;
+            const comment = context.payload.comment;
+
+            // Fetch current PR state
+            const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number });
+
+            // Add reaction so folks know we saw it
+            try {
+              await github.rest.reactions.createForIssueComment({
+                owner,
+                repo,
+                comment_id: comment.id,
+                content: 'rocket'
+              });
+            } catch (e) {
+              core.info('Could not add reaction (likely due to permissions). Continuing.');
+            }
+
+            const labels = (pr.labels ?? []).map(label => label.name);
+            const directCiLabels = labels.filter(label => label.startsWith('ci-'));
+            const hasCiAll = directCiLabels.includes('ci-all');
+            const dedupe = new Set(
+              directCiLabels.filter(label => label !== 'ci-all')
+            );
+
+            if (!hasCiAll && dedupe.size === 0) {
+              core.notice('No ci-* labels found on the pull request; nothing to dispatch.');
+              core.setOutput('dispatched', 'false');
+              core.setOutput('event_types', '');
+              return;
+            }
+
+            const correlation_id = `id-${comment.id}-${Date.now().toString(36)}`;
+
+            const clientPayload = {
+              correlation_id,
+              pull_number,
+              pr_ref: `refs/pull/${pull_number}/merge`,
+              pr_head_ref: pr.head.ref,
+              pr_head_sha: pr.head.sha,
+              pr_base_ref: pr.base.ref,
+              pr_base_sha: pr.base.sha,
+              trigger_comment_id: comment.id,
+              trigger_comment_user: comment.user.login,
+            };
+
+            const eventTypes = hasCiAll
+              ? ['ci-all']
+              : Array.from(dedupe);
+            for (const eventType of eventTypes) {
+              await github.rest.repos.createDispatchEvent({
+                owner,
+                repo,
+                event_type: eventType,
+                client_payload: { ...clientPayload, ci_label: eventType }
+              });
+              core.notice(`Dispatched '${eventType}' event for PR #${pull_number}.`);
+            }
+
+            core.setOutput('dispatched', 'true');
+            core.setOutput('event_types', eventTypes.join(','));
+            core.setOutput('correlation_id', correlation_id);
+            core.setOutput('trigger_comment_id', String(comment.id));
+
+      - name: Acknowledge in thread (optional)
+        if: steps.guard.outputs.skip != 'true' && steps.dispatch.outputs.dispatched == 'true'
+        id: ack
+        uses: actions/github-script@v8
+        env:
+          EVENT_TYPES: ${{ steps.dispatch.outputs.event_types }}
+          CORRELATION_ID: ${{ steps.dispatch.outputs.correlation_id }}
+        with:
+          script: |
+            const eventTypes = (process.env.EVENT_TYPES || '')
+              .split(',')
+              .map(label => label.trim())
+              .filter(Boolean);
+            const formatted = eventTypes.map(label => `\`repository_dispatch:${label}\``).join(', ');
+            const { owner, repo } = context.repo;
+            const issue_number = context.payload.issue.number;
+            const body = [
+              `✅ CI trigger requested by @${context.payload.comment.user.login}.`,
+              `Fired ${formatted}.`,
+              '',
+              `_Collecting run links for correlation \`${process.env.CORRELATION_ID}\`…_`
+            ].join('\n');
+            const { data: comment } = await github.rest.issues.createComment({
+              owner, repo, issue_number,
+              body
+            });
+            core.setOutput('comment_id', String(comment.id));
+
+      - name: Notify missing ci label
+        if: steps.guard.outputs.skip != 'true' && steps.dispatch.outputs.dispatched != 'true'
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const issue_number = context.payload.issue.number;
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number,
+              body: `⚠️ CI trigger ignored because the pull request has no \`ci-*\` labels (e.g. \`ci-apo\`, \`ci-calc-x\`). Add the desired labels and try \`/ci\` again.`
+            });
+
+  watch:
+    needs: dispatch
+    if: needs.dispatch.outputs.dispatched == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - name: Track dispatched runs and update comment
+        uses: actions/github-script@v8
+        env:
+          CORRELATION_ID: ${{ needs.dispatch.outputs.correlation_id }}
+          ACK_COMMENT_ID: ${{ needs.dispatch.outputs.ack_comment_id }}
+          TRIGGER_COMMENT_ID: ${{ needs.dispatch.outputs.trigger_comment_id }}
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const correlationId = process.env.CORRELATION_ID;
+            if (!correlationId) {
+              core.warning('No correlation id supplied; nothing to watch.');
+              return;
+            }
+
+            const ackCommentId = Number(process.env.ACK_COMMENT_ID || 0);
+            if (!ackCommentId) {
+              core.warning('No comment id available for updates; skipping watch.');
+              return;
+            }
+            const triggerCommentId = Number(process.env.TRIGGER_COMMENT_ID || 0);
+            if (!triggerCommentId) {
+              core.warning('No trigger comment id available; skipping watch.');
+              return;
+            }
+
+            const prefix = `🚀 CI Watcher for correlation ${correlationId} triggered by comment ${triggerCommentId}`;
+            core.notice(`Watching workflow runs for correlation '${correlationId}' using comment ${ackCommentId}.`);
+
+            function fmt(run) {
+              const status = run.status;
+              const conclusion = run.conclusion;
+              const badge = status === 'completed'
+                ? (conclusion === 'success' ? '🟢' : conclusion === 'failure' ? '🔴' : '🟡')
+                : (status === 'in_progress' ? '🟣' : '⚪️');
+              const title = run.display_title || run.name || `run ${run.id}`;
+              const statusText = status === 'completed' ? `${status}/${conclusion}` : status;
+              return `- ${badge} [${title}](${run.html_url}) — \`${statusText}\``;
+            }
+
+            const signatureOf = runs =>
+              runs
+                .map(run => `${run.id}:${run.status}/${run.conclusion || ''}`)
+                .sort()
+                .join('|');
+
+            const deadlineMs = Date.now() + 175 * 60 * 1000; // 175 minutes
+            let found = [];
+
+            async function searchOnce() {
+              const runs = await github.paginate(
+                github.rest.actions.listWorkflowRunsForRepo,
+                { owner, repo, event: 'repository_dispatch', per_page: 100 }
+              );
+              const cutoff = new Date(Date.now() - 60 * 60 * 1000); // last hour
+              return runs.filter(run => {
+                const createdAt = new Date(run.created_at);
+                const title = String(run.display_title || run.name || '');
+                return createdAt >= cutoff && title.includes(correlationId);
+              });
+            }
+
+            while (Date.now() < deadlineMs) {
+              found = await searchOnce();
+              if (found.length > 0) {
+                core.notice(`Discovered ${found.length} workflow run(s) for correlation '${correlationId}'.`);
+                break;
+              }
+              core.notice(`No runs found yet for correlation '${correlationId}'; retrying shortly.`);
+              await new Promise(res => setTimeout(res, 10000));
+            }
+
+            if (found.length === 0) {
+              core.notice(`Watcher timed out with no runs for correlation '${correlationId}'; notifying thread.`);
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: ackCommentId,
+                body: [
+                  prefix,
+                  `⚠️ I couldn't find any workflow runs for correlation \`${correlationId}\`.`,
+                  `They may be delayed or misconfigured.`
+                ].join('\n')
+              });
+              return;
+            }
+
+            const runIds = new Set(found.map(run => run.id));
+            let lastSignature = '';
+
+            async function refreshRuns() {
+              const ids = Array.from(runIds);
+              const refreshed = [];
+              for (const id of ids) {
+                const { data } = await github.rest.actions.getWorkflowRun({
+                  owner,
+                  repo,
+                  run_id: id
+                });
+                refreshed.push(data);
+              }
+              return refreshed;
+            }
+
+            async function updateCommentIfChanged(runs, allDone) {
+              const signature = signatureOf(runs);
+              if (signature === lastSignature) {
+                // Run statuses unchanged; skipping comment update.
+                return;
+              }
+              lastSignature = signature;
+              core.notice(`Updating comment ${ackCommentId} with ${runs.length} run status entries (allDone=${allDone}).`);
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: ackCommentId,
+                body: [
+                  prefix,
+                  `🏃‍♀️ Tracking ${runs.length} workflow run(s):`,
+                  '',
+                  ...runs.map(fmt),
+                  '',
+                  allDone ? '✅ All runs completed.' : '_Still running…_'
+                ].join('\n')
+              });
+            }
+
+            await updateCommentIfChanged(found, found.every(run => run.status === 'completed'));
+
+            while (Date.now() < deadlineMs) {
+              const latest = await searchOnce();
+              for (const run of latest) {
+                if (!runIds.has(run.id)) {
+                  runIds.add(run.id);
+                  core.notice(`Detected additional run ${run.id} (${run.name || run.display_title || 'unnamed'}) for correlation '${correlationId}'.`);
+                }
+              }
+              const current = await refreshRuns();
+              const allDone = current.every(run => run.status === 'completed');
+              await updateCommentIfChanged(current, allDone);
+              if (allDone) {
+                core.notice(`All runs for correlation '${correlationId}' completed; stopping watcher.`);
+                break;
+              }
+              await new Promise(res => setTimeout(res, 60000));
+            }
+
+            if (Date.now() >= deadlineMs) {
+              core.warning(`Watcher hit the deadline while monitoring correlation '${correlationId}'.`);
+            }

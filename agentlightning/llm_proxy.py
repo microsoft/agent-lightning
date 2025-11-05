@@ -528,6 +528,7 @@ class LLMProxy:
         host: str | None = None,
         litellm_config: Dict[str, Any] | None = None,
         num_retries: int = 0,
+        _add_return_token_ids: bool = True,
     ):
         self.store = store
         self.host = host or _get_default_ipv4_address()
@@ -543,6 +544,8 @@ class LLMProxy:
         self._config_file = None
         self._uvicorn_server = None
         self._ready_event = threading.Event()
+
+        self._add_return_token_ids = _add_return_token_ids
 
     def get_store(self) -> Optional[LightningStore]:
         """Get the store used by the proxy.
@@ -637,7 +640,7 @@ class LLMProxy:
             logger.info("Adding a new middleware to the FastAPI app.")
             app.add_middleware(RolloutAttemptMiddleware)
 
-        if not initialize_llm_callbacks():
+        if not initialize_llm_callbacks(self._add_return_token_ids):
             # If it's not the first time to initialize the callbacks, also
             # reset LiteLLM's logging worker so its asyncio.Queue binds to the new loop.
             _reset_litellm_logging_worker()
@@ -827,12 +830,16 @@ def set_active_llm_proxy(proxy: LLMProxy) -> None:
     _global_llm_proxy = proxy
 
 
-def initialize_llm_callbacks() -> bool:
+def initialize_llm_callbacks(_add_return_token_ids: bool = True) -> bool:
     """Restore `litellm.callbacks` to a state that is just initialized by agent-lightning.
 
     When litellm is restarted multiple times in the same process, more and more callbacks
     will be appended to `litellm.callbacks`, which may exceed the MAX_CALLBACKS limit.
     This function remembers the initial state of `litellm.callbacks` and always restore to that state.
+
+    Args:
+        _add_return_token_ids: Whether to add the return token ids callback. Internal use only.
+        Ideally the callback should automatically be enabled when the backend supports it.
 
     Returns:
         Whether the callbacks are initialized for the first time.
@@ -843,6 +850,10 @@ def initialize_llm_callbacks() -> bool:
         litellm.callbacks.extend(  # type: ignore
             [
                 AddReturnTokenIds(),
+                LightningOpenTelemetry(),
+            ]
+            if _add_return_token_ids
+            else [
                 LightningOpenTelemetry(),
             ]
         )

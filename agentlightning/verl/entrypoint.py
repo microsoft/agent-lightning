@@ -2,10 +2,12 @@
 
 # type: ignore
 
+from importlib.metadata import version
 from typing import Any
 
 import hydra
 import ray
+from packaging import version as packaging_version
 from verl.trainer.main_ppo import create_rl_sampler
 from verl.trainer.ppo.reward import load_reward_manager
 
@@ -39,11 +41,17 @@ def run_ppo(
 ) -> None:
     if not ray.is_initialized():
         # this is for local ray cluster
+        try:
+            # verl >= 0.6.0
+            num_cpus = config.ray_kwargs.ray_init.num_cpus
+        except AttributeError:
+            # verl < 0.6.0
+            num_cpus = config.ray_init.num_cpus
         ray.init(
             runtime_env={
                 "env_vars": {"TOKENIZERS_PARALLELISM": "true", "NCCL_DEBUG": "WARN", "VLLM_LOGGING_LEVEL": "WARN"}
             },
-            num_cpus=config.ray_init.num_cpus,
+            num_cpus=num_cpus,
         )
 
     runner = TaskRunner.remote()
