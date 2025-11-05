@@ -821,7 +821,7 @@ class AgentModeDaemon:
                 for turn_index, trace in enumerate(sample_info["trace_list"]):
                     # log data, only for debug testing
                     turn_ids.append(
-                        {"nxt_turn":trace["prompt_ids"][:] + trace["response_ids"][:], "cur":current_context[:]}
+                        {"nxt_turn": trace["prompt_ids"][:] + trace["response_ids"][:], "cur": current_context[:]}
                     )
                     if fuzzy_startswith(
                         trace["prompt_ids"] + trace["response_ids"],
