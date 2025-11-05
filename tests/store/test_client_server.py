@@ -558,7 +558,7 @@ async def test_no_retry_on_non408_4xx(
     calls = {"n": 0}
 
     def post_404(self: aiohttp.ClientSession, url: Any, *args: Any, **kwargs: Any):
-        if str(url).endswith("/rollouts/nonexistent"):
+        if str(url).endswith("/update_rollout"):
             calls["n"] += 1
             req_info = aiohttp.RequestInfo(
                 url=URL(str(url)),
