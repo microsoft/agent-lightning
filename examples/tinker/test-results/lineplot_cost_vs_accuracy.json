@@ -1,7 +1,7 @@
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
   "description": "Val Accuracy vs Cost",
-  "width": 600,
+  "width": 800,
   "height": 400,
   "config": {
     "axis": {
@@ -21,159 +21,164 @@
   "data": {
     "values": [
       {
-        "cost": 3.7392773500000005,
+        "cost": 0,
         "val_accuracy": 0.075,
         "configuration": "Tinker Qwen3-4B"
       },
       {
-        "cost": 14.95379565,
+        "cost": 11.214518299999998,
         "val_accuracy": 0.325,
         "configuration": "Tinker Qwen3-4B"
       },
       {
-        "cost": 27.66787565,
+        "cost": 23.928598299999997,
         "val_accuracy": 0.45,
         "configuration": "Tinker Qwen3-4B"
       },
       {
-        "cost": 47.911811650000004,
+        "cost": 44.172534299999995,
         "val_accuracy": 0.475,
         "configuration": "Tinker Qwen3-4B"
       },
       {
-        "cost": 65.1157225,
+        "cost": 61.376445149999995,
         "val_accuracy": 0.5,
         "configuration": "Tinker Qwen3-4B"
       },
       {
-        "cost": 81.66279970000001,
+        "cost": 77.92352235,
         "val_accuracy": 0.5,
         "configuration": "Tinker Qwen3-4B"
       },
       {
-        "cost": 101.13140965000001,
+        "cost": 97.3921323,
         "val_accuracy": 0.525,
         "configuration": "Tinker Qwen3-4B"
       },
       {
-        "cost": 116.8564511,
+        "cost": 113.11717374999999,
         "val_accuracy": 0.525,
         "configuration": "Tinker Qwen3-4B"
       },
       {
-        "cost": 135.12867545,
+        "cost": 131.3893981,
         "val_accuracy": 0.6,
         "configuration": "Tinker Qwen3-4B"
       },
       {
-        "cost": 153.6816058,
+        "cost": 149.94232845,
         "val_accuracy": 0.525,
         "configuration": "Tinker Qwen3-4B"
       },
       {
-        "cost": 167.44704445,
+        "cost": 163.70776709999998,
         "val_accuracy": 0.475,
         "configuration": "Tinker Qwen3-4B"
       },
       {
-        "cost": 181.8056233,
+        "cost": 178.06634595,
         "val_accuracy": 0.55,
         "configuration": "Tinker Qwen3-4B"
       },
       {
-        "cost": 198.6999795,
+        "cost": 194.96070215,
         "val_accuracy": 0.55,
         "configuration": "Tinker Qwen3-4B"
       },
       {
-        "cost": 227.40255685000002,
+        "cost": 223.66327950000002,
         "val_accuracy": 0.6,
         "configuration": "Tinker Qwen3-4B"
       },
       {
-        "cost": 251.62529285000002,
+        "cost": 247.8860155,
         "val_accuracy": 0.5,
         "configuration": "Tinker Qwen3-4B"
       },
       {
-        "cost": 5.624407739999999,
+        "cost": 0,
         "val_accuracy": 0.45,
         "configuration": "Tinker Qwen3-30B"
       },
       {
-        "cost": 23.97244242,
+        "cost": 18.348034679999998,
         "val_accuracy": 0.55,
         "configuration": "Tinker Qwen3-30B"
       },
       {
-        "cost": 42.03107424,
+        "cost": 36.4066665,
         "val_accuracy": 0.55,
         "configuration": "Tinker Qwen3-30B"
       },
       {
-        "cost": 59.24323644,
+        "cost": 53.618828699999995,
         "val_accuracy": 0.35,
         "configuration": "Tinker Qwen3-30B"
       },
       {
-        "cost": 74.73064284,
+        "cost": 69.10623509999999,
         "val_accuracy": 0.425,
         "configuration": "Tinker Qwen3-30B"
       },
       {
-        "cost": 94.90378338,
+        "cost": 89.27937563999998,
         "val_accuracy": 0.65,
         "configuration": "Tinker Qwen3-30B"
       },
       {
-        "cost": 110.74922045999999,
+        "cost": 105.12481271999998,
         "val_accuracy": 0.375,
         "configuration": "Tinker Qwen3-30B"
       },
       {
-        "cost": 124.05859518,
+        "cost": 118.43418743999999,
         "val_accuracy": 0.65,
         "configuration": "Tinker Qwen3-30B"
       },
       {
-        "cost": 139.97157606000002,
+        "cost": 134.34716832,
         "val_accuracy": 0.475,
         "configuration": "Tinker Qwen3-30B"
       },
       {
-        "cost": 154.39442820000002,
+        "cost": 148.77002046,
         "val_accuracy": 0.55,
         "configuration": "Tinker Qwen3-30B"
       },
       {
-        "cost": 168.87388362000002,
+        "cost": 163.24947588,
         "val_accuracy": 0.575,
         "configuration": "Tinker Qwen3-30B"
       },
       {
-        "cost": 184.0533441,
+        "cost": 178.42893636,
         "val_accuracy": 0.45,
         "configuration": "Tinker Qwen3-30B"
       },
       {
-        "cost": 201.06419861999998,
+        "cost": 195.43979087999998,
         "val_accuracy": 0.475,
         "configuration": "Tinker Qwen3-30B"
       },
       {
-        "cost": 218.93213687999997,
+        "cost": 213.30772913999996,
         "val_accuracy": 0.4,
         "configuration": "Tinker Qwen3-30B"
       },
       {
-        "cost": 235.73605745999998,
+        "cost": 230.11164971999997,
         "val_accuracy": 0.45,
         "configuration": "Tinker Qwen3-30B"
       },
       {
-        "cost": 252.83231526,
+        "cost": 247.20790752,
         "val_accuracy": 0.375,
         "configuration": "Tinker Qwen3-30B"
+      },
+      {
+        "cost": 0,
+        "val_accuracy": 0.1,
+        "configuration": "VERL Qwen2.5-3B"
       },
       {
         "cost": 4.770676390511556,

@@ -1,7 +1,7 @@
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
   "description": "Action Tokens Per Turn Comparison",
-  "width": 600,
+  "width": 800,
   "height": 400,
   "config": {
     "axis": {

@@ -105,7 +105,7 @@ for key, config in training_files.items():
     vega_spec = {
         "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
         "description": f"Training and Val Accuracy - {config['name']}",
-        "width": 600,
+        "width": 800,
         "height": 400,
         "config": {
             "axis": {"labelFontSize": 14, "titleFontSize": 16, "titleFontWeight": "normal"},
@@ -157,7 +157,7 @@ for _, row in verl_data.iterrows():
 vega_spec_verl = {
     "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
     "description": "Training and Val Accuracy - VERL",
-    "width": 600,
+    "width": 800,
     "height": 400,
     "config": {
         "axis": {"labelFontSize": 14, "titleFontSize": 16, "titleFontWeight": "normal"},
@@ -215,7 +215,7 @@ for key in ["q20_no_search_4b", "q20_no_search_30b", "q20_search_4b"]:
 vega_spec_tokens = {
     "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
     "description": "Action Tokens Per Turn Comparison",
-    "width": 600,
+    "width": 800,
     "height": 400,
     "config": {
         "axis": {"labelFontSize": 14, "titleFontSize": 16, "titleFontWeight": "normal"},
@@ -269,7 +269,14 @@ for key in ["q20_no_search_4b", "q20_no_search_30b"]:
     data = all_training_data[key]
 
     cumulative_cost = 0
-    for entry in data:
+    cost_chart_data.append(
+        {
+            "cost": 0,
+            "val_accuracy": data[0]["test/env/all/reward/total"],
+            "configuration": config["name"],
+        }
+    )
+    for entry in data[1:]:
         step = entry.get("step", 0)
         cumulative_cost += compute_tinker_cost(entry, config["model"])
 
@@ -284,6 +291,13 @@ for key in ["q20_no_search_4b", "q20_no_search_30b"]:
 
 # Process VERL data
 cumulative_verl_cost = 0
+cost_chart_data.append(
+    {
+        "cost": 0,
+        "val_accuracy": verl_data["val/reward"].iloc[0],
+        "configuration": "VERL Qwen2.5-3B",
+    }
+)
 for _, row in verl_data.iterrows():
     if pd.notna(row.get("timing_s/step")):
         # Cost = (timing_s/step / 3600) * A100_PRICE_PER_HOUR
@@ -302,7 +316,7 @@ for _, row in verl_data.iterrows():
 vega_spec_cost = {
     "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
     "description": "Val Accuracy vs Cost",
-    "width": 600,
+    "width": 800,
     "height": 400,
     "config": {
         "axis": {"labelFontSize": 14, "titleFontSize": 16, "titleFontWeight": "normal"},
@@ -351,7 +365,14 @@ for key in ["q20_no_search_4b", "q20_no_search_30b"]:
     data = all_training_data[key]
 
     cumulative_time = 0
-    for entry in data:
+    time_chart_data.append(
+        {
+            "time_hours": 0,
+            "val_accuracy": data[0]["test/env/all/reward/total"],
+            "configuration": config["name"],
+        }
+    )
+    for entry in data[1:]:
         step = entry.get("step", 0)
         # Use time/total field if available (in seconds)
         if "time/total" in entry:
@@ -368,6 +389,13 @@ for key in ["q20_no_search_4b", "q20_no_search_30b"]:
 
 # Process VERL data
 cumulative_verl_time = 0
+time_chart_data.append(
+    {
+        "time_hours": 0,
+        "val_accuracy": verl_data["val/reward"].iloc[0],
+        "configuration": "VERL Qwen2.5-3B",
+    }
+)
 for _, row in verl_data.iterrows():
     if pd.notna(row.get("timing_s/step")):
         cumulative_verl_time += row["timing_s/step"]
@@ -384,7 +412,7 @@ for _, row in verl_data.iterrows():
 vega_spec_time = {
     "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
     "description": "Val Accuracy vs Time",
-    "width": 600,
+    "width": 800,
     "height": 400,
     "config": {
         "axis": {"labelFontSize": 14, "titleFontSize": 16, "titleFontWeight": "normal"},

@@ -1,7 +1,7 @@
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
   "description": "Training and Val Accuracy - Tinker Qwen3-4B + Tool",
-  "width": 600,
+  "width": 800,
   "height": 400,
   "config": {
     "axis": {
