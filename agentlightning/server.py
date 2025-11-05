@@ -142,7 +142,13 @@ class ServerDataStore:
         async with self._resources_lock:
             resources = self._resource_versions.get(resources_id)
             if resources:
-                return ResourcesUpdate(resources_id=resources_id, resources=resources)
+                return ResourcesUpdate(
+                    resources_id=resources_id,
+                    resources=resources,
+                    create_time=time.time(),
+                    update_time=time.time(),
+                    version=1,
+                )
             return None
 
     async def get_latest_resources(self) -> Optional[ResourcesUpdate]:
@@ -357,7 +363,9 @@ class AgentLightningServer:
         if not self._store:
             raise RuntimeError("Store not initialized. The server may not be running.")
         resources_id = f"res-{uuid.uuid4()}"
-        update = ResourcesUpdate(resources_id=resources_id, resources=resources)
+        update = ResourcesUpdate(
+            resources_id=resources_id, resources=resources, create_time=time.time(), update_time=time.time(), version=1
+        )
         await self._store.update_resources(update)
         return resources_id
 

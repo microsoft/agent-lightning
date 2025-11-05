@@ -332,7 +332,9 @@ class DevTaskLoader(AgentLightningClient):
         if isinstance(resources, ResourcesUpdate):
             self._resources_update = resources
         else:
-            self._resources_update = ResourcesUpdate(resources_id="local", resources=resources)
+            self._resources_update = ResourcesUpdate(
+                resources_id="local", resources=resources, create_time=time.time(), update_time=time.time(), version=1
+            )
 
         # Store rollouts posted back to the loader for easy debugging of local runs
         self._rollouts: List[RolloutLegacy] = []

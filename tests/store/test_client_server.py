@@ -181,6 +181,43 @@ async def test_add_resources_via_client(server_client: Tuple[LightningStoreServe
 
 
 @pytest.mark.asyncio
+async def test_query_resources_history(server_client: Tuple[LightningStoreServer, LightningStoreClient]) -> None:
+    """Server and client should return identical resource history ordering."""
+    server, client = server_client
+
+    assert await server.query_resources() == []
+    assert await client.query_resources() == []
+
+    first = await server.add_resources(
+        cast(
+            Any,
+            {
+                "llm": LLM(
+                    resource_type="llm",
+                    endpoint="http://localhost:8000",
+                    model="hist-model-1",
+                    sampling_parameters={},
+                )
+            },
+        )
+    )
+    second = await server.update_resources(
+        "manual-id",
+        cast(
+            Any,
+            {"prompt": PromptTemplate(resource_type="prompt_template", template="Hi {user}", engine="f-string")},
+        ),
+    )
+
+    server_history = await server.query_resources()
+    client_history = await client.query_resources()
+
+    expected_ids = [first.resources_id, second.resources_id]
+    assert sorted([item.resources_id for item in server_history]) == sorted(expected_ids)
+    assert sorted([item.resources_id for item in client_history]) == sorted(expected_ids)
+
+
+@pytest.mark.asyncio
 async def test_client_server_end_to_end(
     server_client: Tuple[LightningStoreServer, LightningStoreClient], mock_readable_span: ReadableSpan
 ) -> None:

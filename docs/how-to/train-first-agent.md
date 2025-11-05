@@ -126,7 +126,7 @@ A span represents a single unit of work or an operation within a **rollout**. Sp
 
     If the rollout is "baking a cake," a span could be "preheating the oven," "mixing flour and sugar," or "adding frosting." Each is a distinct step or unit of work.
 
-The picture below from [ADK](https://google.github.io/adk-docs/observability/cloud-trace/) shows a typical rollout, where each rectangle in the waterfall visualizes a span. As can be seen in the visualization, spans can be sequential, parallel or nested among each other. In other frameworks, the terminilogy might be slightly different. Agent-lightning follows the terminalogies used by OpenTelemetry to avoid confusion.
+The picture below from [ADK](https://google.github.io/adk-docs/observability/cloud-trace/) shows a typical rollout, where each rectangle in the waterfall visualizes a span. As can be seen in the visualization, spans can be sequential, parallel or nested among each other. In other frameworks, the terminology might be slightly different. Agent-lightning follows the terminologies used by OpenTelemetry to avoid confusion.
 
 ![AgentOps Waterfall Visualization](../assets/agentops-waterfall-visualization.jpg)
 
@@ -146,7 +146,7 @@ Training in Agent-lightning revolves around a clear, managed loop, orchestrated 
 
 **The Loop Explained:**
 
-- **Algorithm to Agent (via Trainer):** The **Algorithm** (the "brain") creates an improved **Prompt Template** and selects **Tasks**. The Trainer then sends both to the Trainer.
+- **Algorithm to Agent (via Trainer):** The **Algorithm** (the "brain") creates an improved **Prompt Template** and selects **Tasks**. The Trainer then sends both to the Agent.
 - **Agent to Algorithm (via Trainer):** For each task it receives, the Agent uses the provided prompt template to perform a Rollout, executing its logic and potentially using tools. During this rollout, the runner that runs the agent captures Spans that detail every step. The agent also calculates a Reward for its performance on the task. These spans and rewards are then sent back to the Algorithm via the Trainer.
 - **Algorithm Learning:** The Algorithm then analyzes these spans and rewards to learn how to improve the agent's behavior, for example, by generating a better prompt. This improved prompt is then used in the next iteration of tasks.
 
@@ -214,11 +214,11 @@ trainer.fit(
 
 The APO algorithm successfully improved the agent's performance. We ran the example with the following hyper-parameters:
 
-* `val_batch_size` = 10
-* `gradient_batch_size` = 4
-* `beam_width` = 2
-* `branch_factor` = 2
-* `beam_rounds` = 2
+- `val_batch_size` = 10
+- `gradient_batch_size` = 4
+- `beam_width` = 2
+- `branch_factor` = 2
+- `beam_rounds` = 2
 
 The validation accuracy on the 29 samples of datasets steadily increase from 0.569 (baseline) to **0.721** (after round 2). The tuning takes around 10 minutes with 8 runners. We ran twice, and the results are shown in the chart below.
 
