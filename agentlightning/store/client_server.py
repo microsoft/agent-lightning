@@ -711,6 +711,24 @@ class LightningStoreServer(LightningStore):
         async def wait_for_rollouts(request: WaitForRolloutsRequest):  # pyright: ignore[reportUnusedFunction]
             return await self.wait_for_rollouts(rollout_ids=request.rollout_ids, timeout=request.timeout)
 
+        # Reserved methods for OTEL traces
+        # https://opentelemetry.io/docs/specs/otlp/#otlphttp-request
+        @self.app.post("/v1/traces")
+        async def otlp_traces():  # pyright: ignore[reportUnusedFunction]
+            return Response(status_code=501)
+
+        @self.app.post("/v1/metrics")
+        async def otlp_metrics():  # pyright: ignore[reportUnusedFunction]
+            return Response(status_code=501)
+
+        @self.app.post("/v1/logs")
+        async def otlp_logs():  # pyright: ignore[reportUnusedFunction]
+            return Response(status_code=501)
+
+        @self.app.post("/v1/development/profiles")
+        async def otlp_development_profiles():  # pyright: ignore[reportUnusedFunction]
+            return Response(status_code=501)
+
     # Delegate methods
     async def _call_store_method(self, method_name: str, *args: Any, **kwargs: Any) -> Any:
         backend = self._backend()
