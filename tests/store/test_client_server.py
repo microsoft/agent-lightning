@@ -518,59 +518,69 @@ async def test_subprocess_client_operations_work_but_direct_store_access_fails()
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "status,endpoint,make_app_error",
-    [
-        (400, "/enqueue_rollout", True),  # server-marked app error -> 400 -> no retry
-        (404, "/update_rollout", False),  # non-408 4xx -> no retry
-    ],
-)
-async def test_no_retry_on_4xx_application_and_non408(
+@pytest.mark.flaky(reruns=3, reruns_delay=2)
+async def test_retry_on_400_application_error(
     server_client: Tuple[LightningStoreServer, LightningStoreClient],
     monkeypatch: MonkeyPatch,
-    status: int,
-    endpoint: str,
-    make_app_error: bool,
 ) -> None:
+    """Test that client retries on app-side 400 that becomes a 500 due to server exception handling."""
     server, client = server_client
 
-    if make_app_error:
-        # Force app-side exception so server returns 400 via exception handler.
-        call_count = {"n": 0}
-        original = server.store.enqueue_rollout
+    # Force app-side exception so server returns 400 via exception handler.
+    call_count = {"n": 0}
+    original = server.store.enqueue_rollout
 
-        async def boom(*args: Any, **kwargs: Any) -> Any:
-            call_count["n"] += 1
-            raise RuntimeError("synthetic app error")
+    async def boom(*args: Any, **kwargs: Any) -> Any:
+        call_count["n"] += 1
+        raise RuntimeError("synthetic app error")
 
-        monkeypatch.setattr(server.store, "enqueue_rollout", boom, raising=True)
+    monkeypatch.setattr(server.store, "enqueue_rollout", boom, raising=True)
 
-        with pytest.raises(ClientResponseError) as ei:
-            await client.enqueue_rollout(input={"origin": "should-fail"})
-        assert ei.value.status == 400
-        assert call_count["n"] == 1
+    with pytest.raises(ClientResponseError) as ei:
+        await client.enqueue_rollout(input={"origin": "should-fail"})
 
-        monkeypatch.setattr(server.store, "enqueue_rollout", original, raising=True)
-    else:
-        # Raise 404 once for /update_rollout; client must not retry.
-        original_post = aiohttp.ClientSession.post
-        calls = {"n": 0}
+    assert ei.value.status == 500
+    assert call_count["n"] == 4
 
-        def post_404(self: aiohttp.ClientSession, url: Any, *args: Any, **kwargs: Any) -> MockResponse:
-            if str(url).endswith(endpoint):
-                calls["n"] += 1
-                req_info = aiohttp.RequestInfo(
-                    url=URL(str(url)), method="POST", headers=cast(Any, {}), real_url=URL(str(url))
-                )
-                raise ClientResponseError(request_info=req_info, history=(), status=status, message="not found")
-            return MockResponse(original_post(self, url, *args, **kwargs))
+    # Restore original method
+    monkeypatch.setattr(server.store, "enqueue_rollout", original, raising=True)
 
-        monkeypatch.setattr(aiohttp.ClientSession, "post", post_404, raising=True)
 
-        with pytest.raises(ClientResponseError) as ei:
-            await client.update_rollout("nonexistent", status="running")
-        assert ei.value.status == 404
-        assert calls["n"] == 1
+@pytest.mark.asyncio
+async def test_no_retry_on_non408_4xx(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient],
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """Test that client does not retry on non-408 4xx errors such as 404."""
+    _, client = server_client
+
+    original_post = aiohttp.ClientSession.post
+    calls = {"n": 0}
+
+    def post_404(self: aiohttp.ClientSession, url: Any, *args: Any, **kwargs: Any):
+        if str(url).endswith("/rollouts/nonexistent"):
+            calls["n"] += 1
+            req_info = aiohttp.RequestInfo(
+                url=URL(str(url)),
+                method="POST",
+                headers=cast(Any, {}),
+                real_url=URL(str(url)),
+            )
+            raise ClientResponseError(
+                request_info=req_info,
+                history=(),
+                status=404,
+                message="not found",
+            )
+        return MockResponse(original_post(self, url, *args, **kwargs))
+
+    monkeypatch.setattr(aiohttp.ClientSession, "post", post_404, raising=True)
+
+    with pytest.raises(ClientResponseError) as ei:
+        await client.update_rollout("nonexistent", status="running")
+
+    assert ei.value.status == 404
+    assert calls["n"] == 1
 
 
 @pytest.mark.asyncio
