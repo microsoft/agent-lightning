@@ -540,7 +540,7 @@ async def test_retry_on_400_application_error(
         await client.enqueue_rollout(input={"origin": "should-fail"})
 
     assert ei.value.status == 400
-    assert call_count["n"] == 4
+    assert call_count["n"] == 1
 
     # Restore original method
     monkeypatch.setattr(server.store, "enqueue_rollout", original, raising=True)
