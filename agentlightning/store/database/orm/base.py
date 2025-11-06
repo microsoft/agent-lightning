@@ -1,17 +1,17 @@
 # Copyright (c) Microsoft. All rights reserved.
 
 from __future__ import annotations
-from pydantic import BaseModel, TypeAdapter, Field, computed_field
-from typing import Any, Dict, List, Optional, Callable
+
 import json
-import logging
 import time
+from typing import Any, Callable, Dict, List, Optional
+
+from pydantic import BaseModel, Field, TypeAdapter, computed_field
 
 # from dataclasses import asdict
 from sqlalchemy import JSON, TypeDecorator
-from sqlalchemy.orm import DeclarativeBase, MappedAsDataclass
 from sqlalchemy.ext.asyncio import AsyncAttrs
-
+from sqlalchemy.orm import DeclarativeBase, MappedAsDataclass
 
 
 class SqlAlchemyBase(AsyncAttrs, MappedAsDataclass, DeclarativeBase):
@@ -71,27 +71,27 @@ class PydanticInDB(TypeDecorator):
 class PydanticListInDB(TypeDecorator):
     """Custom SQLAlchemy type to store List[pydantic.BaseModel] as JSON in the database.
     Attributes:
-        target_type: type[BaseModel], the type of the pydantic model to be stored in the list.
+        value_type: type[BaseModel], the type of the pydantic model to be stored in the list.
     """
 
     impl = JSON
-    target_type: type[BaseModel] | None = None
+    value_type: type[BaseModel] | None = None
 
     def process_bind_param(self, value: List[BaseModel] | None, dialect) -> Optional[str]:
         if value is None:
             return None
-        if self.target_type is not None:
-            lst = [TypeAdapter(self.target_type).validate_python(v).model_dump() for v in value]
+        if self.value_type is not None:
+            lst = [TypeAdapter(self.value_type).validate_python(v).model_dump() for v in value]
             return json.dumps(lst)
         raise ValueError("target_type must be set for PydanticListInDB")
 
     def process_result_value(self, value: Optional[str], dialect) -> Optional[List[BaseModel]]:
         if value is None:
             return None
-        if self.target_type is not None:
+        if self.value_type is not None:
             dic = json.loads(value)
             return [
-                TypeAdapter(self.target_type).validate_python(v)  # type: ignore
+                TypeAdapter(self.value_type).validate_python(v)  # type: ignore
                 for v in dic
             ]
         raise ValueError("target_type must be set for PydanticListInDB")
@@ -109,15 +109,15 @@ class NamedDictBase(TypeDecorator):
 
     impl = JSON
     target_alias: type | None = None
-    target_type: type[BaseModel] | None = None
+    value_type: type[BaseModel] | None = None
 
     def process_bind_param(self, value: Dict[str, Any] | None, dialect) -> Optional[str]:
         if value is None:
             return None
 
         # ignore target_alias for when dumping because Dict is not a pydantic model
-        if self.target_type is not None:
-            dic = {k: TypeAdapter(self.target_type).validate_python(v).model_dump() if isinstance(v, BaseModel) else v for k, v in value.items()}
+        if self.value_type is not None:
+            dic = {k: TypeAdapter(self.value_type).validate_python(v).model_dump() if isinstance(v, BaseModel) else v for k, v in value.items()}
             return json.dumps(dic)
         dic = {k: v.model_dump() if isinstance(v, BaseModel) else v for k, v in value.items()}
         return json.dumps(dic)
@@ -127,10 +127,10 @@ class NamedDictBase(TypeDecorator):
             return None
         if self.target_alias is not None:
             return TypeAdapter(self.target_alias).validate_json(value)  # type: ignore
-        if self.target_type is not None:
+        if self.value_type is not None:
             dic = json.loads(value)
             return {
-                k: TypeAdapter(self.target_type).validate_python(v)  # type: ignore
+                k: TypeAdapter(self.value_type).validate_python(v)  # type: ignore
                 for k, v in dic.items()
             }
         return json.loads(value)

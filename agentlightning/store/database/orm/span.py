@@ -1,23 +1,26 @@
 # Copyright (c) Microsoft. All rights reserved.
 from __future__ import annotations
-from sqlalchemy import Float, Integer, String, JSON
-from sqlalchemy import update
-from sqlalchemy.ext.asyncio import async_sessionmaker
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import Mapped
-from sqlalchemy.orm import mapped_column
-from sqlalchemy.orm.exc import StaleDataError
-from typing import Any, Dict, Optional, List
 
-import time
 import logging
+from typing import Any, Dict, List, Optional
+
+from sqlalchemy import JSON, Float, Integer, String
+from sqlalchemy.orm import Mapped, mapped_column
+
 logger = logging.getLogger(__name__)
 
-from agentlightning.types.tracer import Span, SpanContext, TraceStatus, Attributes, Event, Link, OtelResource, AttributeValue
+from agentlightning.types.tracer import (
+    Attributes,
+    AttributeValue,
+    Event,
+    Link,
+    OtelResource,
+    Span,
+    SpanContext,
+    TraceStatus,
+)
 
-from .base import SqlAlchemyBase, PydanticInDB, NamedDictBase, PydanticListInDB
-from .rollout import RolloutInDB
-from .attempt import AttemptInDB
+from .base import NamedDictBase, PydanticInDB, PydanticListInDB, SqlAlchemyBase
 
 
 class TraceStatusInDB(PydanticInDB):
@@ -26,15 +29,15 @@ class TraceStatusInDB(PydanticInDB):
 
 class AttributesInDB(NamedDictBase):
     target_alias = None  # type: ignore
-    target_type = AttributeValue
+    value_type = AttributeValue
 
 
 class EventListInDB(PydanticListInDB):
-    target_type = Event
+    value_type = Event
 
 
 class LinkListInDB(PydanticListInDB):
-    target_type = Link
+    value_type = Link
 
 
 class SpanContextInDB(PydanticInDB):
