@@ -43,15 +43,10 @@ class AttemptInDB(SqlAlchemyBase):
 
     def as_attempt(self) -> Attempt:
         return Attempt(
-            rollout_id=self.rollout_id,
-            attempt_id=self.attempt_id,
-            sequence_id=self.sequence_id,
-            start_time=self.start_time,
-            end_time=self.end_time,
-            status=self.status,  # type: ignore
-            worker_id=self.worker_id,
-            last_heartbeat_time=self.last_heartbeat_time,
-            metadata=self.attempt_metadata if self.attempt_metadata is not None else {},
+            **self.model_dump(
+                exclude={"max_duration", "max_heartbeat_interval"},
+                mapper={"metadata": lambda obj: obj.attempt_metadata}, # type: ignore
+            )
         )
 
     def _validate_status_message(self, msg: Dict[str, Any]) -> None:

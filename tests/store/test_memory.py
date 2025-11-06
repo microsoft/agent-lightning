@@ -898,9 +898,16 @@ async def test_span_triggers_status_transition(
     # Get the attempt
     attempts = await inmemory_store.query_attempts(rollout.rollout_id)
     attempt_id = attempts[0].attempt_id
+    assert attempts[0].status == "preparing"
 
     # Add first span
     await inmemory_store.add_otel_span(rollout.rollout_id, attempt_id, mock_readable_span)
+
+    # Attempt status should be changed
+    attempt_v2 = await inmemory_store.get_latest_attempt(rollout.rollout_id)
+    assert attempt_v2 is not None
+    assert attempt_v2.attempt_id == attempt_id
+    assert attempt_v2.status == "running"
 
     # Status should transition to running
     rollouts = await inmemory_store.query_rollouts(status=["running"])

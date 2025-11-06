@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Literal, Optional, Sequence
+from typing import Any, Dict, List, Literal, Optional, Sequence, Union
 
 from opentelemetry.sdk.trace import ReadableSpan
 
@@ -248,7 +248,7 @@ class LightningStore:
 
     async def query_rollouts(
         self, *, status: Optional[Sequence[RolloutStatus]] = None, rollout_ids: Optional[Sequence[str]] = None
-    ) -> List[Rollout]:
+    ) -> List[Union[Rollout, AttemptedRollout]]:
         """Retrieve rollouts filtered by status and/or explicit identifiers.
 
         Args:
@@ -278,7 +278,7 @@ class LightningStore:
         """
         raise NotImplementedError()
 
-    async def get_rollout_by_id(self, rollout_id: str) -> Optional[Rollout]:
+    async def get_rollout_by_id(self, rollout_id: str) -> Optional[Union[Rollout, AttemptedRollout]]:
         """Fetch a rollout by identifier without mutating its state.
 
         Args:
@@ -438,6 +438,8 @@ class LightningStore:
         This API is typically used by algorithms that maintain mutable resources (e.g., model
         checkpoints) under a stable identifier.
 
+        If `resources_id` does not exist, implementations should add it as a new snapshot.
+
         Args:
             resources_id: Identifier of the snapshot to replace.
             resources: Updated mapping of resource names to payloads.
@@ -447,7 +449,6 @@ class LightningStore:
 
         Raises:
             NotImplementedError: Subclasses must implement resource persistence.
-            ValueError: Implementations must raise when `resources_id` does not exist.
         """
         raise NotImplementedError()
 

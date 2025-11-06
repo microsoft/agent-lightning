@@ -14,7 +14,7 @@ from sqlalchemy.ext.hybrid import hybrid_property
 
 from sqlalchemy import select, and_, case
 
-from agentlightning.types import Rollout, RolloutConfig, RolloutStatus, AttemptStatus
+from agentlightning.types import Rollout, RolloutConfig, RolloutStatus, AttemptStatus, AttemptedRollout
 from .base import PydanticInDB, SqlAlchemyBase, AttemptStatusUpdateMessage
 from .attempt import AttemptInDB
 from ...base import is_finished, is_queuing, is_running
@@ -43,14 +43,13 @@ class RolloutInDB(SqlAlchemyBase):
     mode: Mapped[Optional[str]] = mapped_column(String, nullable=True, default=None)
     resources_id: Mapped[Optional[str]] = mapped_column(String, nullable=True, default=None)
     status: Mapped[RolloutStatus] = mapped_column(String, default="queuing", nullable=False)
-    config: Mapped[Optional[RolloutConfig]] = mapped_column(RolloutConfigInDB, nullable=True, default=None)  # JSON serialized, convert to RolloutConfig when needed
+    config: Mapped[RolloutConfig] = mapped_column(RolloutConfigInDB, nullable=True, default=None)  # JSON serialized, convert to RolloutConfig when needed
     rollout_metadata: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True, default=None) # JSON serialized, convert to Dict when needed
 
     # Attempt-related helper methods can be added here if needed
     num_attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)  # number of attempts made for this rollout
     enqueue_time: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default_factory=time.time)  # time when the rollout was enqueued (for FIFO scheduling)
     latest_attempt_id: Mapped[Optional[str]] = mapped_column(String, nullable=True, default=None)  # the attempt_id of the latest attempt
-    latest_attempt_status: Mapped[Optional[AttemptStatus]] = mapped_column(String, nullable=True, default=None)
 
     # use optimistic concurrency control
     version_id: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
@@ -58,31 +57,20 @@ class RolloutInDB(SqlAlchemyBase):
         "version_id_col": version_id,
     }
 
-    @hybrid_property
-    def reported_status(self):
-        if self.status == "running" and self.latest_attempt_status is not None:
-            if self.latest_attempt_status in ["unresponsive", "timeout"]:
-                return "failed"
-            return self.latest_attempt_status
-        return self.status
-
-    @reported_status.expression
-    @classmethod
-    def reported_status(cls):
-        return case(
-            (cls.status == "running",
-             case(
-             (cls.latest_attempt_status.in_(["unresponsive", "timeout"]), "failed"),
-             else_=cls.latest_attempt_status,
-             )),
-            else_=cls.status,
-        )
-
     def __post_init__(self):
         if self.status not in ["queuing", "running", "succeeded", "failed", "requeuing"]:
             raise ValueError(f"Invalid rollout status: {self.status}")
 
     def as_rollout(self) -> Rollout:
+        return Rollout(
+            **self.model_dump(
+                exclude={"rollout_metadata", "num_attempts", "enqueue_time", "latest_attempt_id", "version_id"},
+                mapper={
+                    "metadata": lambda obj: obj.rollout_metadata, # type: ignore
+                    "config": lambda obj: obj.config if obj.config is not None else RolloutConfig(), # type: ignore
+                },
+            )
+        )
         return Rollout(
             rollout_id=self.rollout_id,
             input=self.input,
@@ -90,7 +78,7 @@ class RolloutInDB(SqlAlchemyBase):
             end_time=self.end_time,
             mode=self.mode, # type: ignore
             resources_id=self.resources_id,
-            status=self.reported_status, # type: ignore
+            status=self.status, # type: ignore
             config=self.config if self.config is not None else RolloutConfig(),
             metadata=self.rollout_metadata if self.rollout_metadata is not None else {},
         )
@@ -139,53 +127,22 @@ class RolloutInDB(SqlAlchemyBase):
             new_status = msg["new_status"]
         elif event == "attempt_status_update":
             msg = AttemptStatusUpdateMessage(**msg) if isinstance(msg, dict) else msg
-            if old_status in ["running", "preparing"]: # in running state
-                if msg.attempt_id == self.latest_attempt_id:
-                    # new_status = msg.new_status # directly take the latest attempt status
-                    self.latest_attempt_status = msg.new_status # type: ignore
-
-                if msg.is_succeeded and msg.attempt_id == self.latest_attempt_id:
+            if msg.attempt_id == self.latest_attempt_id:
+                new_status = msg.new_status # directly take the latest attempt status
+                if msg.is_succeeded:
                     new_status = "succeeded"
-                    # FIXME current InMemoryLightningStore only take the latest attempt success as rollout success
-                elif msg.is_failed and msg.attempt_id == self.latest_attempt_id:
-                    # First, we check if this is the latest attempt, if not, ignore
-                    # Second, we check whether some other attempt is still running, if yes, switch latest attempt to that one
-                    # Third, we decide whether to requeue or fail based on the rollout config and num_attempts
-                    # check for other running attempts
-                    result = await session.scalars(
-                        select(AttemptInDB)
-                        .where(
-                            AttemptInDB.rollout_id == self.rollout_id,
-                        ).order_by(AttemptInDB.start_time.desc())
-                    )
-                    attempts = [attempt for attempt in result.all() if attempt.status in ["running", "preparing"]]
-                    if len(attempts) > 0:
-                        # some other attempt is still running, no need to retry and switch latest attempt to the active one
-                        new_status = "running"
-                        self.latest_attempt_id = attempts[0].attempt_id
-                        self.latest_attempt_status = attempts[0].status # type: ignore
+                elif msg.is_failed:
+                    # no other attempts running, decide whether to requeue or fail
+                    config = self.config if self.config is not None else RolloutConfig()
+                    if config.max_attempts > self.num_attempts and msg.new_status in config.retry_condition:
+                        new_status = "requeuing"
                     else:
-                        # no other attempts running, decide whether to requeue or fail
-                        config = self.config if self.config is not None else RolloutConfig()
-                        if config.max_attempts > self.num_attempts and msg.new_status in config.retry_condition:
-                            new_status = "requeuing"
-                        else:
-                            new_status = "failed"
-
-            elif old_status in ["failed", "requeuing"]:
-                # an attempt may recover from unresponsive to resume the failed rollout
-                if msg.is_running:
-                    new_status = "running"
-                    self.latest_attempt_id = msg.attempt_id
-                    self.latest_attempt_status = cast(AttemptStatus, msg.new_status)
-            # elif old_status in ["queuing", "requeuing"]:
-            #     # when in queuing or requeuing state, any attempt starting will set the rollout to running
-            #     logger.warning(f"Rollout {self.rollout_id} in status {old_status} received attempt status update for attempt {msg.attempt_id} with status {msg.new_status}. Setting rollout to running.")
-            #     if msg.is_running:
-            #         new_status = msg.new_status
-            #         self.latest_attempt_id = msg.attempt_id
+                        new_status = "failed"
+                # elif msg.is_running and old_status in ["failed", "requeuing"]:
+                    # new_status = "running"
             else:
-                logger.warning(f"Active attempt {msg.attempt_id} found for non-running rollout {self.rollout_id} with status {old_status}.")
+                # ignore attempts from old attempts
+                new_status = old_status
 
         # Step 2: Update the status if it has changed and handle follow-up actions
         if new_status is None:
@@ -202,17 +159,30 @@ class RolloutInDB(SqlAlchemyBase):
             # as they should persist across requeues.
 
     @classmethod
-    async def get_rollout_by_id(cls: type[RolloutInDB], session_factory: async_sessionmaker[AsyncSession], rollout_id: str) -> Optional[Rollout]:
+    async def get_rollout_by_id(cls: type[RolloutInDB], session_factory: async_sessionmaker[AsyncSession], rollout_id: str) -> Optional[Rollout|AttemptedRollout]:
         """Query a specific rollout from the database."""
         async with session_factory() as session:
             async with session.begin():
                 rollout_obj = await session.get(cls, rollout_id)
                 if rollout_obj is None:
                     return None
+                if rollout_obj.latest_attempt_id is not None:
+                    attempt_obj = await session.get(AttemptInDB, rollout_obj.latest_attempt_id)
+                    if attempt_obj is not None:
+                        return AttemptedRollout(
+                            **rollout_obj.as_rollout().model_dump(),
+                            attempt=attempt_obj.as_attempt()
+                        )
                 return rollout_obj.as_rollout()
 
     @classmethod
-    async def query_rollouts(cls: type[RolloutInDB], session_factory: async_sessionmaker[AsyncSession], *, statuses: Optional[List[str]] = None, ids: Optional[List[str]] = None) -> List[Rollout]:
+    async def query_rollouts(
+        cls: type[RolloutInDB],
+        session_factory: async_sessionmaker[AsyncSession],
+        *,
+        statuses: Optional[List[str]] = None,
+        ids: Optional[List[str]] = None
+    ) -> List[RolloutInDB]:
         """
         Query rollouts from the database with optional filters.
         """
@@ -220,7 +190,7 @@ class RolloutInDB(SqlAlchemyBase):
             async with session.begin():
                 conditions :list[Any] = []
                 if statuses is not None:
-                    conditions.append(cls.reported_status.in_(statuses))
+                    conditions.append(cls.status.in_(statuses))
                 if ids is not None:
                     conditions.append(cls.rollout_id.in_(ids))
                 query = select(cls)
@@ -228,5 +198,5 @@ class RolloutInDB(SqlAlchemyBase):
                     query = query.where(and_(*conditions))
                 result = await session.scalars(query)
                 rollout_objs = result.all()
-                return [obj.as_rollout() for obj in rollout_objs]
+                return list(rollout_objs)
 

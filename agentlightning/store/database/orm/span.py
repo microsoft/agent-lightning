@@ -83,9 +83,10 @@ class SpanInDB(SqlAlchemyBase):
     }
 
     def as_span(self) -> Span:
-        # FIXME extra field is not included yet
-        dic = {k: getattr(self, k) for k in self.__table__.columns.keys() if k != "extra"}
-        if self.extra is not None:
-            dic.update(self.extra)
-        return Span(**dic)
+        return Span(
+            **self.model_dump(
+                exclude={"extra"},
+                mapper={"*": lambda obj: obj.extra or {}}, # type: ignore
+            )
+        )
 

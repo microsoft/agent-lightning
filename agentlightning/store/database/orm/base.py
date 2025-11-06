@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 from pydantic import BaseModel, TypeAdapter, Field, computed_field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Callable
 import json
 import logging
 import time
 
+# from dataclasses import asdict
 from sqlalchemy import JSON, TypeDecorator
 from sqlalchemy.orm import DeclarativeBase, MappedAsDataclass
 from sqlalchemy.ext.asyncio import AsyncAttrs
@@ -15,6 +16,31 @@ from sqlalchemy.ext.asyncio import AsyncAttrs
 
 class SqlAlchemyBase(AsyncAttrs, MappedAsDataclass, DeclarativeBase):
     pass
+
+    def model_dump(
+        self,
+        exclude: set[str] | None = None,
+        mapper: Dict[str, Callable[["SqlAlchemyBase"], Any]] | None = None,
+    ) -> Dict[str, Any]:
+        """Dump the SQLAlchemy model to a dictionary.
+        Args:
+            exclude: set[str]
+                The set of field names to exclude.
+            mapper: Dict[str, Callable[[SqlAlchemyBase], Any]]
+                A mapping from field names to functions that take the model instance and return the value to be used for that field.
+                If the key is "*", the function should return a dictionary of additional fields to be added to the output.
+        Returns:
+            Dict[str, Any]: The dumped model as a dictionary.
+        """
+        exclude = exclude or set()
+        mapper = mapper or {}
+        dic = {k: getattr(self, k) for k in self.__table__.columns.keys() if k not in exclude}
+        for k, func in mapper.items():
+            if k == "*":
+                dic.update(func(self))
+            else:
+                dic[k] = func(self)
+        return dic
 
 
 class PydanticInDB(TypeDecorator):

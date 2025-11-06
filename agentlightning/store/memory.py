@@ -427,7 +427,7 @@ class InMemoryLightningStore(LightningStore):
     @_healthcheck_wrapper
     async def query_rollouts(
         self, *, status: Optional[Sequence[RolloutStatus]] = None, rollout_ids: Optional[Sequence[str]] = None
-    ) -> List[Rollout]:
+    ) -> List[Union[Rollout, AttemptedRollout]]:
         """Retrieves rollouts filtered by their status and rollout ids.
         If no status is provided, returns all rollouts.
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Optional
 import uuid
 import hashlib
+import time
 
 from agentlightning.types import NamedResources, ResourcesUpdate
 from .base import SqlAlchemyBase, NamedDictBase
@@ -27,6 +28,13 @@ class ResourcesUpdateInDB(SqlAlchemyBase):
     __tablename__ = "resources"
     resources: Mapped[NamedResources] = mapped_column(NamedResourcesInDB, nullable=False)  # JSON serialized, convert to NamedResources when needed
     resources_id: Mapped[str] = mapped_column(primary_key=True, default_factory=_generate_resources_id)
+    create_time: Mapped[float] = mapped_column(nullable=False, default_factory=time.time)
+    update_time: Mapped[float] = mapped_column(nullable=False, default_factory=time.time, onupdate=time.time)
+    version: Mapped[int] = mapped_column(nullable=False, default=1)
+
+    __mapper_args__ = {
+        "version_id_col": version,
+    }
 
     @classmethod
     async def get_resources_by_id(cls, session_factory: async_sessionmaker[AsyncSession], resources_id: str) -> Optional[ResourcesUpdate]:
@@ -35,13 +43,9 @@ class ResourcesUpdateInDB(SqlAlchemyBase):
                 obj = await session.get(cls, resources_id)
                 if obj is None:
                     return None
-                return ResourcesUpdate(
-                    resources_id=obj.resources_id,
-                    resources=obj.resources
-                )
+                return obj.as_resources_update()
 
     def as_resources_update(self) -> ResourcesUpdate:
         return ResourcesUpdate(
-            resources_id=self.resources_id,
-            resources=self.resources
+            **self.model_dump()
         )

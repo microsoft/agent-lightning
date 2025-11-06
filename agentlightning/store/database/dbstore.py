@@ -262,14 +262,28 @@ class DatabaseLightningStore(LightningStore):
     async def query_rollouts(
         self, *, status: Optional[Sequence[RolloutStatus]] = None, rollout_ids: Optional[Sequence[str]] = None
     ) -> List[Rollout]:
-        return await RolloutInDB.query_rollouts(self._async_session, statuses=status, ids=rollout_ids) # type: ignore
+        rollouts = await RolloutInDB.query_rollouts(self._async_session, statuses=status, ids=rollout_ids) # type: ignore
+        attempt_ids = [r.latest_attempt_id for r in rollouts if r.latest_attempt_id is not None]
+        async with self._async_session() as session:
+            async with session.begin():
+                scalars = await session.scalars(
+                    select(AttemptInDB).where(AttemptInDB.attempt_id.in_(attempt_ids))
+                )
+                attempts = scalars.all()
+                attempt_map = {a.attempt_id: a.as_attempt() for a in attempts}
+                return [
+                    AttemptedRollout(
+                        **r.as_rollout().model_dump(),
+                        attempt=attempt_map[r.latest_attempt_id]
+                    ) if r.latest_attempt_id in attempt_map else r.as_rollout()
+                    for r in rollouts] # type: ignore
 
     @db_retry
     async def query_attempts(self, rollout_id: str) -> List[Attempt]:
         return await AttemptInDB.get_attempts_for_rollout(self._async_session, rollout_id) # type: ignore
 
     @db_retry
-    async def get_rollout_by_id(self, rollout_id: str) -> Optional[Rollout]:
+    async def get_rollout_by_id(self, rollout_id: str) -> Optional[Union[Rollout, AttemptedRollout]]:
         return await RolloutInDB.get_rollout_by_id(self._async_session, rollout_id)
 
     @db_retry
@@ -359,8 +373,11 @@ class DatabaseLightningStore(LightningStore):
     async def add_resources(self, resources: NamedResources) -> ResourcesUpdate:
         async with self._async_session() as session:
             async with session.begin():
+                current_time = time.time()
                 resource_obj = ResourcesUpdateInDB(
                     resources=resources,
+                    create_time=current_time,
+                    update_time=current_time,
                 )
                 session.add(resource_obj)
                 await session.flush()  # ensure the object is written to the DB
@@ -376,9 +393,12 @@ class DatabaseLightningStore(LightningStore):
                     # raise ValueError(f"Failed to update resources {resources_id}. It may not exist.")
                     # FIXME InMemoryLightningStore will create the resources if not exist, but the base method require to raise error
                     # HACK here stick to the behavior of InMemoryLightningStore for compatibility
+                    current_time = time.time()
                     obj = ResourcesUpdateInDB(
                         resources_id=resources_id,
                         resources=resources,
+                        create_time=current_time,
+                        update_time=current_time,
                     )
                     session.add(obj)
                 else:
@@ -386,6 +406,14 @@ class DatabaseLightningStore(LightningStore):
                 await session.flush()
                 self._latest_resources_id = resources_id
                 return obj.as_resources_update()
+
+    @db_retry
+    async def query_resources(self) -> List[ResourcesUpdate]:
+        async with self._async_session() as session:
+            async with session.begin():
+                result = await session.scalars(select(ResourcesUpdateInDB).order_by(ResourcesUpdateInDB.create_time.asc()))
+                resource_objs = result.all()
+                return [obj.as_resources_update() for obj in resource_objs]
 
     @db_retry
     async def update_rollout(
@@ -569,12 +597,10 @@ class DatabaseLightningStore(LightningStore):
         )
         session.add(attempt_obj)
         # pre-update the rollout_obj fields for CAS
-        if rollout_obj.status in ["queuing", "requeuing"]:
-            rollout_obj.status = "running"  # type: ignore pre-update the status in the object for CAS
+        rollout_obj.status = attempt_obj.status  # type: ignore pre-update the status in the object for CAS
         rollout_obj.enqueue_time = None  # pre-update the enqueue_time in the object for CAS
         rollout_obj.num_attempts += 1  # pre-update the num_attempts in the object for CAS
         rollout_obj.latest_attempt_id = attempt_obj.attempt_id  # pre-update the latest_attempt_id in the object for CAS
-        rollout_obj.latest_attempt_status = attempt_obj.status  # type: ignore
 
         # create a sequence id tracker for each attempt
         # FIXME currently InMemoryLightningStore let all attempts under the same rollout share the same span sequence for sorting
