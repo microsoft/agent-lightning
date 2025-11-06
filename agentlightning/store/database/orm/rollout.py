@@ -188,7 +188,7 @@ class RolloutInDB(SqlAlchemyBase):
         """
         async with session_factory() as session:
             async with session.begin():
-                conditions :list[Any] = []
+                conditions: list[Any] = []
                 if statuses is not None:
                     conditions.append(cls.status.in_(statuses))
                 if ids is not None:
