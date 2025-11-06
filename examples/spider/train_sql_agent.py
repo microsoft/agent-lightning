@@ -78,7 +78,7 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
             "fsdp_config": {"param_offload": True},
         },
         "model": {
-            "path": "/data/c00940018/Qwen2.5-Coder-1.5B-Instruct",
+            "path": "Qwen/Qwen2.5-Coder-1.5B-Instruct",
             "use_remove_padding": True,
             "enable_gradient_checkpointing": True,
         },
@@ -132,8 +132,8 @@ def config_train_fast() -> Dict[str, Any]:
 
 def config_train_qwen() -> Dict[str, Any]:
     """A configuration for training with Qwen-2.5B."""
-    config = deepcopy(RL_TRAINING_CONFIG)
     
+    config = deepcopy(RL_TRAINING_CONFIG)
     return config
 
 
