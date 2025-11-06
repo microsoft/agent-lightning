@@ -15,7 +15,7 @@ from opentelemetry.sdk.trace import ReadableSpan
 from portpicker import pick_unused_port
 from yarl import URL
 
-from agentlightning.store.base import UNSET
+from agentlightning.store.base import UNSET, LightningStore
 from agentlightning.store.client_server import LightningStoreClient, LightningStoreServer
 from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.types import LLM, OtelResource, PromptTemplate, RolloutConfig, Span, TraceStatus
@@ -56,10 +56,11 @@ class MockResponse:
 
 
 @pytest_asyncio.fixture
-async def server_client() -> AsyncGenerator[Tuple[LightningStoreServer, LightningStoreClient], None]:
-    store = InMemoryLightningStore()
+async def server_client(
+    store_fixture: LightningStore,
+) -> AsyncGenerator[Tuple[LightningStoreServer, LightningStoreClient], None]:
     port = pick_unused_port()
-    server = LightningStoreServer(store, "127.0.0.1", port)
+    server = LightningStoreServer(store_fixture, "127.0.0.1", port)
     await server.start()
     client = LightningStoreClient(server.endpoint)
     try:

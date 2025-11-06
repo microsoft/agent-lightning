@@ -10,7 +10,9 @@ from unittest.mock import Mock
 import pytest
 import pytest_asyncio
 from opentelemetry.sdk.trace import ReadableSpan
+from pytest import FixtureRequest
 
+from agentlightning.store.base import LightningStore
 from agentlightning.store import InMemoryLightningStore, DatabaseLightningStore
 
 __all__ = [
@@ -20,26 +22,22 @@ __all__ = [
 ]
 
 
-@pytest_asyncio.fixture
-async def inmemory_store() -> InMemoryLightningStore | typing.AsyncGenerator[DatabaseLightningStore, None]:
+@pytest.fixture
+def inmemory_store() -> InMemoryLightningStore:
     """Create a fresh InMemoryLightningStore instance."""
-    store_selection = os.getenv("PYTEST_STORE_SELECTION", "0")
-    if store_selection == "0":
-        yield InMemoryLightningStore()
-    else:
-        # Fallback to db_store
-        async for store in _db_store_generator():  # type: ignore
-            yield store
+    return InMemoryLightningStore()
+
+
+# @pytest_asyncio.fixture
+# async def db_store() -> typing.AsyncGenerator[DatabaseLightningStore, None]:
+#     """Create a DatabaseLightningStore using a SQLite file for testing."""
+#     async for store in _db_store_generator():
+#         yield store
 
 
 @pytest_asyncio.fixture
-async def db_store() -> typing.AsyncGenerator[DatabaseLightningStore, None]:
-    """Create a DatabaseLightningStore using a SQLite file for testing."""
-    async for store in _db_store_generator():
-        yield store
-
-
-async def _db_store_generator() -> typing.AsyncGenerator[DatabaseLightningStore, None]:
+async def sql_store() -> typing.AsyncGenerator[DatabaseLightningStore, None]:
+    """Placeholder fixture for SQL store implementation. Returns None until SQL store is ready."""
     """Helper generator to create a DatabaseLightningStore using a SQLite file for testing."""
     tmp_path = ".pytest_cache"
     # Ensure the directory exists and create a random file in it
@@ -61,6 +59,16 @@ async def _db_store_generator() -> typing.AsyncGenerator[DatabaseLightningStore,
         await store.stop()
         if os.path.exists(db_path):
             os.remove(db_path)
+
+
+# Uncomment this when sql store is ready
+@pytest.fixture(params=["inmemory_store", "sql_store"])
+# @pytest.fixture(params=["inmemory_store"])
+def store_fixture(request: FixtureRequest) -> LightningStore:
+    """Parameterized fixture that provides different store implementations for testing.
+    Currently supports InMemoryLightningStore, with SQL store support planned.
+    """
+    return request.getfixturevalue(request.param)
 
 
 @pytest.fixture
