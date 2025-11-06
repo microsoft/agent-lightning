@@ -1,23 +1,22 @@
 # Copyright (c) Microsoft. All rights reserved.
 from __future__ import annotations
-from typing import Any, Dict, List, Optional, cast
-import time
-import uuid
+
 import hashlib
 import logging
+import time
+import uuid
+from typing import Any, Dict, List, Optional, cast
 
-from sqlalchemy import String, Integer, Float, JSON
-from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy.ext.asyncio import async_sessionmaker
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import JSON, Float, Integer, String, and_, case, select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.ext.hybrid import hybrid_property
+from sqlalchemy.orm import Mapped, mapped_column
 
-from sqlalchemy import select, and_, case
+from agentlightning.types import AttemptedRollout, AttemptStatus, Rollout, RolloutConfig, RolloutStatus
 
-from agentlightning.types import Rollout, RolloutConfig, RolloutStatus, AttemptStatus, AttemptedRollout
-from .base import PydanticInDB, SqlAlchemyBase, AttemptStatusUpdateMessage
-from .attempt import AttemptInDB
 from ...base import is_finished, is_queuing, is_running
+from .attempt import AttemptInDB
+from .base import AttemptStatusUpdateMessage, PydanticInDB, SqlAlchemyBase
 
 logger = logging.getLogger(__name__)
 
@@ -43,13 +42,23 @@ class RolloutInDB(SqlAlchemyBase):
     mode: Mapped[Optional[str]] = mapped_column(String, nullable=True, default=None)
     resources_id: Mapped[Optional[str]] = mapped_column(String, nullable=True, default=None)
     status: Mapped[RolloutStatus] = mapped_column(String, default="queuing", nullable=False)
-    config: Mapped[RolloutConfig] = mapped_column(RolloutConfigInDB, nullable=True, default=None)  # JSON serialized, convert to RolloutConfig when needed
-    rollout_metadata: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True, default=None) # JSON serialized, convert to Dict when needed
+    config: Mapped[RolloutConfig] = mapped_column(
+        RolloutConfigInDB, nullable=True, default=None
+    )  # JSON serialized, convert to RolloutConfig when needed
+    rollout_metadata: Mapped[Optional[Dict[str, Any]]] = mapped_column(
+        JSON, nullable=True, default=None
+    )  # JSON serialized, convert to Dict when needed
 
     # Attempt-related helper methods can be added here if needed
-    num_attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)  # number of attempts made for this rollout
-    enqueue_time: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default_factory=time.time)  # time when the rollout was enqueued (for FIFO scheduling)
-    latest_attempt_id: Mapped[Optional[str]] = mapped_column(String, nullable=True, default=None)  # the attempt_id of the latest attempt
+    num_attempts: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False
+    )  # number of attempts made for this rollout
+    enqueue_time: Mapped[Optional[float]] = mapped_column(
+        Float, nullable=True, default_factory=time.time
+    )  # time when the rollout was enqueued (for FIFO scheduling)
+    latest_attempt_id: Mapped[Optional[str]] = mapped_column(
+        String, nullable=True, default=None
+    )  # the attempt_id of the latest attempt
 
     # use optimistic concurrency control
     version_id: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
@@ -66,8 +75,8 @@ class RolloutInDB(SqlAlchemyBase):
             **self.model_dump(
                 exclude={"rollout_metadata", "num_attempts", "enqueue_time", "latest_attempt_id", "version_id"},
                 mapper={
-                    "metadata": lambda obj: obj.rollout_metadata, # type: ignore
-                    "config": lambda obj: obj.config if obj.config is not None else RolloutConfig(), # type: ignore
+                    "metadata": lambda obj: obj.rollout_metadata,  # type: ignore
+                    "config": lambda obj: obj.config if obj.config is not None else RolloutConfig(),  # type: ignore
                 },
             )
         )
@@ -76,9 +85,9 @@ class RolloutInDB(SqlAlchemyBase):
             input=self.input,
             start_time=self.start_time,
             end_time=self.end_time,
-            mode=self.mode, # type: ignore
+            mode=self.mode,  # type: ignore
             resources_id=self.resources_id,
-            status=self.status, # type: ignore
+            status=self.status,  # type: ignore
             config=self.config if self.config is not None else RolloutConfig(),
             metadata=self.rollout_metadata if self.rollout_metadata is not None else {},
         )
@@ -92,8 +101,8 @@ class RolloutInDB(SqlAlchemyBase):
             raise ValueError("Status update message must contain 'event' field.")
         event = msg["event"]
         if event not in [
-            "attempt_status_update", # from attempt status update
-            "user_update",         # from user-initiated update
+            "attempt_status_update",  # from attempt status update
+            "user_update",  # from user-initiated update
         ]:
             raise ValueError(f"Invalid event type in status update message: {event}")
         if event == "user_update":
@@ -103,8 +112,7 @@ class RolloutInDB(SqlAlchemyBase):
             # leverage AttemptStatusUpdateMessage for validation
             pass
 
-
-    async def update_status(self, msg: Dict[str, Any]|AttemptStatusUpdateMessage, session: AsyncSession) -> None:
+    async def update_status(self, msg: Dict[str, Any] | AttemptStatusUpdateMessage, session: AsyncSession) -> None:
         """Update the rollout status based on the provided message.
         Args:
             msg (Dict[str, str]): The status update message. Refer to `_validate_status_message` for the expected format.
@@ -119,7 +127,7 @@ class RolloutInDB(SqlAlchemyBase):
             current_time = msg.timestamp
 
         old_status = self.status
-        new_status = self.status # initialize new_status with old_status
+        new_status = self.status  # initialize new_status with old_status
 
         # Step 1: Determine the new status based on the event
         if event == "user_update":
@@ -128,7 +136,7 @@ class RolloutInDB(SqlAlchemyBase):
         elif event == "attempt_status_update":
             msg = AttemptStatusUpdateMessage(**msg) if isinstance(msg, dict) else msg
             if msg.attempt_id == self.latest_attempt_id:
-                new_status = msg.new_status # directly take the latest attempt status
+                new_status = msg.new_status  # directly take the latest attempt status
                 if msg.is_succeeded:
                     new_status = "succeeded"
                 elif msg.is_failed:
@@ -139,27 +147,31 @@ class RolloutInDB(SqlAlchemyBase):
                     else:
                         new_status = "failed"
                 # elif msg.is_running and old_status in ["failed", "requeuing"]:
-                    # new_status = "running"
+                # new_status = "running"
             else:
                 # ignore attempts from old attempts
                 new_status = old_status
 
         # Step 2: Update the status if it has changed and handle follow-up actions
         if new_status is None:
-            raise RuntimeError(f"New status of `{old_status}` and `{self.latest_attempt_id}` could not be determined from the message {msg}.")
+            raise RuntimeError(
+                f"New status of `{old_status}` and `{self.latest_attempt_id}` could not be determined from the message {msg}."
+            )
         if new_status == old_status:
             return
         self.status = cast(RolloutStatus, new_status)
 
-        if is_finished(self): # type: ignore
+        if is_finished(self):  # type: ignore
             self.end_time = current_time
-        if is_queuing(self): # type: ignore
+        if is_queuing(self):  # type: ignore
             self.enqueue_time = current_time
             # When requeuing, we do not reset latest_attempt_id or num_attempts,
             # as they should persist across requeues.
 
     @classmethod
-    async def get_rollout_by_id(cls: type[RolloutInDB], session_factory: async_sessionmaker[AsyncSession], rollout_id: str) -> Optional[Rollout|AttemptedRollout]:
+    async def get_rollout_by_id(
+        cls: type[RolloutInDB], session_factory: async_sessionmaker[AsyncSession], rollout_id: str
+    ) -> Optional[Rollout | AttemptedRollout]:
         """Query a specific rollout from the database."""
         async with session_factory() as session:
             async with session.begin():
@@ -170,8 +182,7 @@ class RolloutInDB(SqlAlchemyBase):
                     attempt_obj = await session.get(AttemptInDB, rollout_obj.latest_attempt_id)
                     if attempt_obj is not None:
                         return AttemptedRollout(
-                            **rollout_obj.as_rollout().model_dump(),
-                            attempt=attempt_obj.as_attempt()
+                            **rollout_obj.as_rollout().model_dump(), attempt=attempt_obj.as_attempt()
                         )
                 return rollout_obj.as_rollout()
 
@@ -181,14 +192,14 @@ class RolloutInDB(SqlAlchemyBase):
         session_factory: async_sessionmaker[AsyncSession],
         *,
         statuses: Optional[List[str]] = None,
-        ids: Optional[List[str]] = None
+        ids: Optional[List[str]] = None,
     ) -> List[RolloutInDB]:
         """
         Query rollouts from the database with optional filters.
         """
         async with session_factory() as session:
             async with session.begin():
-                conditions :list[Any] = []
+                conditions: list[Any] = []
                 if statuses is not None:
                     conditions.append(cls.status.in_(statuses))
                 if ids is not None:
@@ -199,4 +210,3 @@ class RolloutInDB(SqlAlchemyBase):
                 result = await session.scalars(query)
                 rollout_objs = result.all()
                 return list(rollout_objs)
-

@@ -1,10 +1,9 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-import time
-
 import os
-import uuid
+import time
 import typing
+import uuid
 from unittest.mock import Mock
 
 import pytest
@@ -12,8 +11,8 @@ import pytest_asyncio
 from opentelemetry.sdk.trace import ReadableSpan
 from pytest import FixtureRequest
 
-from agentlightning.store.base import LightningStore
 from agentlightning.store import InMemoryLightningStore, SqlLightningStore
+from agentlightning.store.base import LightningStore
 
 __all__ = [
     "inmemory_store",
@@ -37,7 +36,7 @@ async def sql_store() -> typing.AsyncGenerator[SqlLightningStore, None]:
     db_path = os.path.join(tmp_path, f"test_db_{uuid.uuid4().hex}.sqlite3")
     database_url = f"sqlite+aiosqlite:///{db_path}"
     store = SqlLightningStore(database_url=database_url)
-    store.retry_for_waiting.wait_seconds = .2  # Set polling interval to 0.2s for test
+    store.retry_for_waiting.wait_seconds = 0.2  # Set polling interval to 0.2s for test
 
     # Config db_store with a short time interval for healthcheck
     store.add_background_task(

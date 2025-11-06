@@ -1,19 +1,20 @@
 # Copyright (c) Microsoft. All rights reserved.
 from __future__ import annotations
-from typing import Any, Dict, List, Optional
-import time
-import uuid
+
 import hashlib
 import logging
+import time
+import uuid
 from dataclasses import InitVar
-from sqlalchemy import String, Integer, Float, JSON
+from typing import Any, Dict, List, Optional
+
+from sqlalchemy import JSON, Float, Integer, String, select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy.ext.asyncio import async_sessionmaker
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 
 from agentlightning.types import Attempt
-from .base import SqlAlchemyBase, AttemptStatusUpdateMessage
+
+from .base import AttemptStatusUpdateMessage, SqlAlchemyBase
 
 logger = logging.getLogger(__name__)
 
@@ -38,14 +39,18 @@ class AttemptInDB(SqlAlchemyBase):
     attempt_metadata: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True, default=None)
 
     # addition columns for processing
-    max_duration: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)  # maximum duration allowed for this attempt in seconds
-    max_heartbeat_interval: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=None)  # maximum allowed heartbeat interval in seconds
+    max_duration: Mapped[Optional[float]] = mapped_column(
+        Float, nullable=True, default=None
+    )  # maximum duration allowed for this attempt in seconds
+    max_heartbeat_interval: Mapped[Optional[float]] = mapped_column(
+        Float, nullable=True, default=None
+    )  # maximum allowed heartbeat interval in seconds
 
     def as_attempt(self) -> Attempt:
         return Attempt(
             **self.model_dump(
                 exclude={"max_duration", "max_heartbeat_interval"},
-                mapper={"metadata": lambda obj: obj.attempt_metadata}, # type: ignore
+                mapper={"metadata": lambda obj: obj.attempt_metadata},  # type: ignore
             )
         )
 
@@ -58,18 +63,17 @@ class AttemptInDB(SqlAlchemyBase):
         if "timestamp" not in msg:
             msg["timestamp"] = time.time()
         if msg["event"] not in [
-            "user_update", # user update attempt status via dbstore.update_attempt()
-            "span_received", # new span received
-            "single_step_timeout", # single step timeout detected (from last span heartbeat)
-            "overall_timeout", # overall timeout detected
+            "user_update",  # user update attempt status via dbstore.update_attempt()
+            "span_received",  # new span received
+            "single_step_timeout",  # single step timeout detected (from last span heartbeat)
+            "overall_timeout",  # overall timeout detected
         ]:
             raise ValueError(f"Unsupported event type: {msg['event']}")
         if msg["event"] == "user_update" and "new_status" not in msg:
             raise ValueError("User update event must contain 'new_status' field.")
 
     def get_finished_statuses(self) -> List[str]:
-        """This function returns the list of statuses that are considered finished.
-        """
+        """This function returns the list of statuses that are considered finished."""
         return [
             "succeeded",
             "failed",
@@ -105,30 +109,41 @@ class AttemptInDB(SqlAlchemyBase):
             if old_status in ["preparing", "unresponsive", "running"]:
                 new_status = "running"
             elif old_status in self.get_finished_statuses():
-                logger.warning(f"Span received after attempt is already in status {self.status}. No status update performed.")
-                return # no further status update needed
+                logger.warning(
+                    f"Span received after attempt is already in status {self.status}. No status update performed."
+                )
+                return  # no further status update needed
             else:
                 raise NotImplementedError(f"Event {event} is not implemented for status {old_status}.")
         elif event == "single_step_timeout":
-            if old_status in ["preparing", "running", ]:
+            if old_status in [
+                "preparing",
+                "running",
+            ]:
                 new_status = "unresponsive"
             else:
-                logger.warning(f"Single step timeout detected but attempt is in status {self.status}. No status update performed.")
-                return # no further status update needed
+                logger.warning(
+                    f"Single step timeout detected but attempt is in status {self.status}. No status update performed."
+                )
+                return  # no further status update needed
         elif event == "overall_timeout":
             if old_status not in self.get_finished_statuses():
                 new_status = "timeout"
             else:
-                logger.warning(f"Overall timeout detected but attempt is in status {self.status}. No status update performed.")
-                return # no further status update needed
+                logger.warning(
+                    f"Overall timeout detected but attempt is in status {self.status}. No status update performed."
+                )
+                return  # no further status update needed
         else:
             raise NotImplementedError(f"Event {event} is not implemented for status update.")
 
         # Step 2: Update the status
         if not new_status:
-            raise RuntimeError(f"new_status should not be {new_status} after processing event for {event} on status {old_status}.")
+            raise RuntimeError(
+                f"new_status should not be {new_status} after processing event for {event} on status {old_status}."
+            )
         if new_status == old_status:
-            return # no status change
+            return  # no status change
         if new_status in self.get_finished_statuses():
             # when attempt is finished, set end_time
             self.end_time = current_time
@@ -144,33 +159,29 @@ class AttemptInDB(SqlAlchemyBase):
         )
 
     @classmethod
-    async def get_latest_attempt_for_rollout(cls: type[AttemptInDB], session_factory: async_sessionmaker[AsyncSession], rollout_id: str) -> Optional[Attempt]:
+    async def get_latest_attempt_for_rollout(
+        cls: type[AttemptInDB], session_factory: async_sessionmaker[AsyncSession], rollout_id: str
+    ) -> Optional[Attempt]:
         async with session_factory() as session:
             async with session.begin():
                 result = await session.scalars(
-                    select(cls)
-                    .where(cls.rollout_id == rollout_id)
-                    .order_by(cls.sequence_id.desc())
-                    .limit(1)
+                    select(cls).where(cls.rollout_id == rollout_id).order_by(cls.sequence_id.desc()).limit(1)
                 )
                 attempt_obj = result.one_or_none()
                 if attempt_obj is None:
                     return None
                 return attempt_obj.as_attempt()
 
-
     @classmethod
-    async def get_attempts_for_rollout(cls: type[AttemptInDB], session_factory: async_sessionmaker[AsyncSession], rollout_id: str) -> List[Attempt]:
+    async def get_attempts_for_rollout(
+        cls: type[AttemptInDB], session_factory: async_sessionmaker[AsyncSession], rollout_id: str
+    ) -> List[Attempt]:
         async with session_factory() as session:
             async with session.begin():
                 result = await session.scalars(
-                    select(cls)
-                    .where(cls.rollout_id == rollout_id)
-                    .order_by(cls.sequence_id.asc())
+                    select(cls).where(cls.rollout_id == rollout_id).order_by(cls.sequence_id.asc())
                 )
                 return [attempt.as_attempt() for attempt in result.all()]
-
-
 
 
 class SpanSeqIdInDB(SqlAlchemyBase):
@@ -180,7 +191,7 @@ class SpanSeqIdInDB(SqlAlchemyBase):
 
     # FIXME InMemoryLightningStore let all attempts under the same rollout share the same span sequence for sorting
     # attempt_id: Mapped[str] = mapped_column(nullable=False)
-    attempt_id: InitVar[str] # not mapped column, just for type hinting
+    attempt_id: InitVar[str]  # not mapped column, just for type hinting
 
     current_sequence: Mapped[int] = mapped_column(default=1, nullable=False)
 
@@ -193,7 +204,13 @@ class SpanSeqIdInDB(SqlAlchemyBase):
     }
 
     @classmethod
-    async def get_next_sequence_id(cls: type[SpanSeqIdInDB], session_factory: async_sessionmaker[AsyncSession], rollout_id: str, attempt_id: str, external_seq_id: Optional[int] = None) -> int:
+    async def get_next_sequence_id(
+        cls: type[SpanSeqIdInDB],
+        session_factory: async_sessionmaker[AsyncSession],
+        rollout_id: str,
+        attempt_id: str,
+        external_seq_id: Optional[int] = None,
+    ) -> int:
         """Get the next sequence ID with retries to handle race conditions.
         IF external_seq_id is provided and is greater than current_sequence, set current_sequence to external_seq_id.
         """
@@ -204,7 +221,11 @@ class SpanSeqIdInDB(SqlAlchemyBase):
                 if seq_obj is None:
                     raise ValueError(f"Rollout {rollout_id} not found")
                 else:
-                    current_seq = external_seq_id if external_seq_id is not None and external_seq_id > seq_obj.current_sequence else seq_obj.current_sequence
+                    current_seq = (
+                        external_seq_id
+                        if external_seq_id is not None and external_seq_id > seq_obj.current_sequence
+                        else seq_obj.current_sequence
+                    )
                     seq_obj.current_sequence = current_seq + 1
                     await session.flush()
                     return current_seq

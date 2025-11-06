@@ -2,9 +2,9 @@
 
 from .base import LightningStore
 from .client_server import LightningStoreClient, LightningStoreServer
+from .database import SqlLightningStore
 from .memory import InMemoryLightningStore
 from .threading import LightningStoreThreaded
-from .database import SqlLightningStore
 
 __all__ = [
     "LightningStore",

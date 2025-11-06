@@ -49,22 +49,29 @@ logger = logging.getLogger(__name__)
 ExceptionRegistry.register("sqlalchemy.orm.exc.StaleDataError")
 ExceptionRegistry.register("sqlalchemy.exc.OperationalError")
 
-db_retry = AsyncTypeBasedRetry({
-    "sqlalchemy.exc.OperationalError": RetryStrategy(max_attempts=5, wait_seconds=1, backoff=1.5, jitter=0.3, log=True),
-    "sqlalchemy.orm.exc.StaleDataError": RetryStrategy(max_attempts=100, wait_seconds=1e-3, backoff=1.0, jitter=0.1, log=True)
-})
+db_retry = AsyncTypeBasedRetry(
+    {
+        "sqlalchemy.exc.OperationalError": RetryStrategy(
+            max_attempts=5, wait_seconds=1, backoff=1.5, jitter=0.3, log=True
+        ),
+        "sqlalchemy.orm.exc.StaleDataError": RetryStrategy(
+            max_attempts=100, wait_seconds=1e-3, backoff=1.0, jitter=0.1, log=True
+        ),
+    }
+)
 
 
 class _WaitForRolloutsCompleted(Exception):
     """Internal exception to signal that not all rollouts have completed yet."""
+
     pass
 
 
 class BackgroundTaskConfig(BaseModel):
-    name: str # unique name for the task
-    method: str # method name to call, currently only supports methods of SqlLightningStore
-    interval: Dict[Literal["seconds", "minutes", "hours"], float] # interval for the task
-    is_async: bool = True # whether the task method is async, default to True
+    name: str  # unique name for the task
+    method: str  # method name to call, currently only supports methods of SqlLightningStore
+    interval: Dict[Literal["seconds", "minutes", "hours"], float]  # interval for the task
+    is_async: bool = True  # whether the task method is async, default to True
 
 
 class SqlLightningStore(LightningStore):
@@ -97,7 +104,7 @@ class SqlLightningStore(LightningStore):
         self,
         database_url: Optional[str] = None,
         *,
-        retry_for_waiting: Optional[dict[str, Any]|RetryStrategy] = None,
+        retry_for_waiting: Optional[dict[str, Any] | RetryStrategy] = None,
         wait_for_nonexistent_rollout: bool = False,
         background_tasks_cfg: list[Dict[str, Any]] | None = None,
     ) -> None:
@@ -105,7 +112,9 @@ class SqlLightningStore(LightningStore):
         if database_url is None:
             database_url = os.getenv("DATABASE_URL", None)
         if database_url is None:
-            raise ValueError("A database URL must be provided either via the 'database_url' parameter or the 'DATABASE_URL' environment variable.")
+            raise ValueError(
+                "A database URL must be provided either via the 'database_url' parameter or the 'DATABASE_URL' environment variable."
+            )
 
         self._engine = create_async_engine(database_url, echo=False)
         self._async_session = async_sessionmaker(self._engine, expire_on_commit=False)
@@ -115,25 +124,27 @@ class SqlLightningStore(LightningStore):
         # special handling for retry strategy
         retry_for_waiting = retry_for_waiting or RetryStrategy(
             max_attempts=10,  # set a limit for retries if timeout is specified, otherwise will change to None later
-            max_retry_delay=None, # set later
-            wait_seconds=10.0, # poll every 10 seconds
-            max_wait_seconds=60.0, # at most wait 60 seconds between retries
+            max_retry_delay=None,  # set later
+            wait_seconds=10.0,  # poll every 10 seconds
+            max_wait_seconds=60.0,  # at most wait 60 seconds between retries
             backoff=1.0,
             jitter=0.0,
             log=True,
         )
-        self.retry_for_waiting = retry_for_waiting if isinstance(retry_for_waiting, RetryStrategy) else RetryStrategy(**retry_for_waiting)
+        self.retry_for_waiting = (
+            retry_for_waiting if isinstance(retry_for_waiting, RetryStrategy) else RetryStrategy(**retry_for_waiting)
+        )
         self.wait_for_nonexistent_rollout = wait_for_nonexistent_rollout
 
         # setup in-process periodic tasks
         if background_tasks_cfg is None:
             self.background_tasks_cfg = [
-                BackgroundTaskConfig(name="check_attempt_timeout", method="check_attempt_timeout", interval={"seconds": 10.0}),
+                BackgroundTaskConfig(
+                    name="check_attempt_timeout", method="check_attempt_timeout", interval={"seconds": 10.0}
+                ),
             ]
         else:
-            self.background_tasks_cfg = [
-                BackgroundTaskConfig(**cfg) for cfg in background_tasks_cfg
-            ]
+            self.background_tasks_cfg = [BackgroundTaskConfig(**cfg) for cfg in background_tasks_cfg]
         self._background_scheduler = BackgroundScheduler()
 
     async def start(self):
@@ -141,13 +152,15 @@ class SqlLightningStore(LightningStore):
             await conn.run_sync(SqlAlchemyBase.metadata.create_all)
         for task_cfg in self.background_tasks_cfg:
             self.add_background_task(task_cfg, to_scheduler_only=True)
-        self._background_scheduler.start() # type: ignore
+        self._background_scheduler.start()  # type: ignore
 
     async def stop(self):
         await self._engine.dispose()
-        self._background_scheduler.shutdown() # type: ignore
+        self._background_scheduler.shutdown()  # type: ignore
 
-    def add_background_task(self, task_cfg: Dict[str, Any] | BackgroundTaskConfig, to_scheduler_only: bool = False) -> None:
+    def add_background_task(
+        self, task_cfg: Dict[str, Any] | BackgroundTaskConfig, to_scheduler_only: bool = False
+    ) -> None:
         """Add a new periodic background task to the scheduler.
         Args:
             task_cfg (Dict[str, Any] | BackgroundTaskConfig): The configuration for the background task.
@@ -160,7 +173,9 @@ class SqlLightningStore(LightningStore):
             # check existing tasks
             for existing in self.background_tasks_cfg:
                 if existing.name == config.name:
-                    logger.warning(f"Background task {config.name} is already scheduled, will update its configuration.")
+                    logger.warning(
+                        f"Background task {config.name} is already scheduled, will update its configuration."
+                    )
             self.background_tasks_cfg.append(config)
         delta_t = timedelta(**config.interval)
         if not hasattr(self, config.method):
@@ -170,9 +185,9 @@ class SqlLightningStore(LightningStore):
         else:
             func = lambda: getattr(self, config.method)()
 
-        self._background_scheduler.add_job( # type: ignore
+        self._background_scheduler.add_job(  # type: ignore
             func=func,
-            trigger=IntervalTrigger(**config.interval), # type: ignore
+            trigger=IntervalTrigger(**config.interval),  # type: ignore
             name=f"SqlLightningStore.{config.name}",
             replace_existing=True,
             next_run_time=datetime.now() + delta_t,  # schedule the first run after the interval
@@ -270,25 +285,25 @@ class SqlLightningStore(LightningStore):
     async def query_rollouts(
         self, *, status: Optional[Sequence[RolloutStatus]] = None, rollout_ids: Optional[Sequence[str]] = None
     ) -> List[Rollout]:
-        rollouts = await RolloutInDB.query_rollouts(self._async_session, statuses=status, ids=rollout_ids) # type: ignore
+        rollouts = await RolloutInDB.query_rollouts(self._async_session, statuses=status, ids=rollout_ids)  # type: ignore
         attempt_ids = [r.latest_attempt_id for r in rollouts if r.latest_attempt_id is not None]
         async with self._async_session() as session:
             async with session.begin():
-                scalars = await session.scalars(
-                    select(AttemptInDB).where(AttemptInDB.attempt_id.in_(attempt_ids))
-                )
+                scalars = await session.scalars(select(AttemptInDB).where(AttemptInDB.attempt_id.in_(attempt_ids)))
                 attempts = scalars.all()
                 attempt_map = {a.attempt_id: a.as_attempt() for a in attempts}
                 return [
-                    AttemptedRollout(
-                        **r.as_rollout().model_dump(),
-                        attempt=attempt_map[r.latest_attempt_id]
-                    ) if r.latest_attempt_id in attempt_map else r.as_rollout()
-                    for r in rollouts] # type: ignore
+                    (
+                        AttemptedRollout(**r.as_rollout().model_dump(), attempt=attempt_map[r.latest_attempt_id])
+                        if r.latest_attempt_id in attempt_map
+                        else r.as_rollout()
+                    )
+                    for r in rollouts
+                ]  # type: ignore
 
     @db_retry
     async def query_attempts(self, rollout_id: str) -> List[Attempt]:
-        return await AttemptInDB.get_attempts_for_rollout(self._async_session, rollout_id) # type: ignore
+        return await AttemptInDB.get_attempts_for_rollout(self._async_session, rollout_id)  # type: ignore
 
     @db_retry
     async def get_rollout_by_id(self, rollout_id: str) -> Optional[Union[Rollout, AttemptedRollout]]:
@@ -318,7 +333,7 @@ class SqlLightningStore(LightningStore):
         if timeout is not None:
             strategy.max_retry_delay = timeout
             if strategy.max_attempts is not None:
-                strategy.wait_seconds = min(strategy.wait_seconds, timeout / (strategy.max_attempts+1))
+                strategy.wait_seconds = min(strategy.wait_seconds, timeout / (strategy.max_attempts + 1))
         else:
             strategy.max_attempts = None  # infinite retries
 
@@ -341,7 +356,7 @@ class SqlLightningStore(LightningStore):
                             rollouts = [r.as_rollout() for r in result.all()]
                             for r in rollouts:
                                 if r.rollout_id in non_existing_ids:
-                                    non_existing_ids.discard(r.rollout_id) # found existing rollout
+                                    non_existing_ids.discard(r.rollout_id)  # found existing rollout
                                 if is_finished(r):
                                     completed_rollouts[r.rollout_id] = r
                                     non_completed_ids.discard(r.rollout_id)
@@ -349,12 +364,16 @@ class SqlLightningStore(LightningStore):
                             if self.wait_for_nonexistent_rollout:
                                 if len(non_completed_ids) == 0:
                                     return [completed_rollouts[rid] for rid in rollout_ids if rid in completed_rollouts]
-                                raise _WaitForRolloutsCompleted(f"WaitForRolloutsCompleted: requested={len(rollout_ids)}, completed={len(completed_rollouts)}, non_existing={len(non_existing_ids)}")
+                                raise _WaitForRolloutsCompleted(
+                                    f"WaitForRolloutsCompleted: requested={len(rollout_ids)}, completed={len(completed_rollouts)}, non_existing={len(non_existing_ids)}"
+                                )
                             else:
                                 if len(non_completed_ids) == len(non_existing_ids):
                                     logger.warning(f"All remaining rollouts are non-existing: {non_existing_ids}.")
                                     return [completed_rollouts[rid] for rid in rollout_ids if rid in completed_rollouts]
-                                raise _WaitForRolloutsCompleted(f"WaitForRolloutsCompleted: requested={len(rollout_ids)}, completed={len(completed_rollouts)}, non_existing={len(non_existing_ids)}")
+                                raise _WaitForRolloutsCompleted(
+                                    f"WaitForRolloutsCompleted: requested={len(rollout_ids)}, completed={len(completed_rollouts)}, non_existing={len(non_existing_ids)}"
+                                )
 
         except (RetryError, _WaitForRolloutsCompleted):
             return [completed_rollouts[rid] for rid in rollout_ids if rid in completed_rollouts]
@@ -419,14 +438,16 @@ class SqlLightningStore(LightningStore):
     async def query_resources(self) -> List[ResourcesUpdate]:
         async with self._async_session() as session:
             async with session.begin():
-                result = await session.scalars(select(ResourcesUpdateInDB).order_by(ResourcesUpdateInDB.create_time.asc()))
+                result = await session.scalars(
+                    select(ResourcesUpdateInDB).order_by(ResourcesUpdateInDB.create_time.asc())
+                )
                 resource_objs = result.all()
                 return [obj.as_resources_update() for obj in resource_objs]
 
     @db_retry
     async def update_rollout(
         self,
-        rollout_id: str|None,
+        rollout_id: str | None,
         input: TaskInput | Unset = UNSET,
         mode: Optional[Literal["train", "val", "test"]] | Unset = UNSET,
         resources_id: Optional[str] | Unset = UNSET,
@@ -478,7 +499,9 @@ class SqlLightningStore(LightningStore):
                         raise ValueError(f"Rollout {rollout_id} has no attempts. Cannot update latest attempt.")
                     attempt_id = rollout_obj.latest_attempt_id
                 if attempt_id != rollout_obj.latest_attempt_id:
-                    logger.warning(f"Updating attempt {attempt_id} which is not the latest attempt for rollout {rollout_id}. Latest is {rollout_obj.latest_attempt_id}.")
+                    logger.warning(
+                        f"Updating attempt {attempt_id} which is not the latest attempt for rollout {rollout_id}. Latest is {rollout_obj.latest_attempt_id}."
+                    )
                 attempt_obj = await session.get(AttemptInDB, attempt_id)
                 if attempt_obj is None:
                     raise ValueError(f"No attempts found")
@@ -511,7 +534,7 @@ class SqlLightningStore(LightningStore):
         async with self._async_session() as session:
             async with session.begin():
                 # Step 1: Filter and update timed-out attempts
-                for mode in ["max_heartbeat_interval", "max_duration"]: # max_duration has higher priority
+                for mode in ["max_heartbeat_interval", "max_duration"]:  # max_duration has higher priority
                     attempts_timed_out.extend(await self._attempt_timeout_check(session, mode, current_time))
 
                 # Step 2: Create messages to update rollout
@@ -527,9 +550,7 @@ class SqlLightningStore(LightningStore):
                     rollout_ids.add(attempt.rollout_id)
 
                 # Step 3: Update rollouts
-                result = await session.scalars(
-                    select(RolloutInDB).where(RolloutInDB.rollout_id.in_(rollout_ids))
-                )
+                result = await session.scalars(select(RolloutInDB).where(RolloutInDB.rollout_id.in_(rollout_ids)))
                 rollout_objs = {r.rollout_id: r for r in result.all()}
                 for msg in messages.values():
                     rollout_obj = rollout_objs[msg.rollout_id]
@@ -542,7 +563,7 @@ class SqlLightningStore(LightningStore):
     async def _add_span(self, span: Dict[str, Any], seq_id: Optional[int] = None) -> Span:
         """Add a new span to the database."""
         if seq_id is not None:
-            span['sequence_id'] = seq_id
+            span["sequence_id"] = seq_id
         extra_dic: Dict[str, Any] = {}
         for k in list(span.keys()):
             if k not in SpanInDB.__table__.columns.keys():
@@ -639,9 +660,6 @@ class SqlLightningStore(LightningStore):
         else:
             raise ValueError(f"Unsupported timeout checking mode {mode}")
         result = await session.scalars(
-            update(AttemptInDB)
-            .where(conditions)
-            .values(status=new_status)
-            .returning(AttemptInDB)
+            update(AttemptInDB).where(conditions).values(status=new_status).returning(AttemptInDB)
         )
         return list(result.all())

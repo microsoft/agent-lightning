@@ -1,16 +1,17 @@
 # Copyright (c) Microsoft. All rights reserved.
 from __future__ import annotations
-from typing import Optional
-import uuid
+
 import hashlib
 import time
+import uuid
+from typing import Optional
+
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.orm import Mapped, mapped_column
 
 from agentlightning.types import NamedResources, ResourcesUpdate
-from .base import SqlAlchemyBase, NamedDictBase
-from sqlalchemy.ext.asyncio import async_sessionmaker
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import Mapped
-from sqlalchemy.orm import mapped_column
+
+from .base import NamedDictBase, SqlAlchemyBase
 
 
 def _generate_resources_id() -> str:
@@ -26,7 +27,9 @@ class NamedResourcesInDB(NamedDictBase):
 
 class ResourcesUpdateInDB(SqlAlchemyBase):
     __tablename__ = "resources"
-    resources: Mapped[NamedResources] = mapped_column(NamedResourcesInDB, nullable=False)  # JSON serialized, convert to NamedResources when needed
+    resources: Mapped[NamedResources] = mapped_column(
+        NamedResourcesInDB, nullable=False
+    )  # JSON serialized, convert to NamedResources when needed
     resources_id: Mapped[str] = mapped_column(primary_key=True, default_factory=_generate_resources_id)
     create_time: Mapped[float] = mapped_column(nullable=False, default_factory=time.time)
     update_time: Mapped[float] = mapped_column(nullable=False, default_factory=time.time, onupdate=time.time)
@@ -37,7 +40,9 @@ class ResourcesUpdateInDB(SqlAlchemyBase):
     }
 
     @classmethod
-    async def get_resources_by_id(cls, session_factory: async_sessionmaker[AsyncSession], resources_id: str) -> Optional[ResourcesUpdate]:
+    async def get_resources_by_id(
+        cls, session_factory: async_sessionmaker[AsyncSession], resources_id: str
+    ) -> Optional[ResourcesUpdate]:
         async with session_factory() as session:
             async with session.begin():
                 obj = await session.get(cls, resources_id)
@@ -46,6 +51,4 @@ class ResourcesUpdateInDB(SqlAlchemyBase):
                 return obj.as_resources_update()
 
     def as_resources_update(self) -> ResourcesUpdate:
-        return ResourcesUpdate(
-            **self.model_dump()
-        )
+        return ResourcesUpdate(**self.model_dump())

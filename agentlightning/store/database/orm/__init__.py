@@ -1,13 +1,12 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-from .base import (
-    SqlAlchemyBase,
-    AttemptStatusUpdateMessage,
-)
-
-from .rollout import RolloutInDB
 from .attempt import AttemptInDB, SpanSeqIdInDB
+from .base import (
+    AttemptStatusUpdateMessage,
+    SqlAlchemyBase,
+)
 from .resources import ResourcesUpdateInDB
+from .rollout import RolloutInDB
 from .span import SpanInDB
 
 __all__ = [

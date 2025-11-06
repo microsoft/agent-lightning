@@ -90,10 +90,7 @@ class PydanticListInDB(TypeDecorator):
             return None
         if self.value_type is not None:
             dic = json.loads(value)
-            return [
-                TypeAdapter(self.value_type).validate_python(v)  # type: ignore
-                for v in dic
-            ]
+            return [TypeAdapter(self.value_type).validate_python(v) for v in dic]  # type: ignore
         raise ValueError("target_type must be set for PydanticListInDB")
 
 
@@ -117,7 +114,10 @@ class NamedDictBase(TypeDecorator):
 
         # ignore target_alias for when dumping because Dict is not a pydantic model
         if self.value_type is not None:
-            dic = {k: TypeAdapter(self.value_type).validate_python(v).model_dump() if isinstance(v, BaseModel) else v for k, v in value.items()}
+            dic = {
+                k: TypeAdapter(self.value_type).validate_python(v).model_dump() if isinstance(v, BaseModel) else v
+                for k, v in value.items()
+            }
             return json.dumps(dic)
         dic = {k: v.model_dump() if isinstance(v, BaseModel) else v for k, v in value.items()}
         return json.dumps(dic)
@@ -129,10 +129,7 @@ class NamedDictBase(TypeDecorator):
             return TypeAdapter(self.target_alias).validate_json(value)  # type: ignore
         if self.value_type is not None:
             dic = json.loads(value)
-            return {
-                k: TypeAdapter(self.value_type).validate_python(v)  # type: ignore
-                for k, v in dic.items()
-            }
+            return {k: TypeAdapter(self.value_type).validate_python(v) for k, v in dic.items()}  # type: ignore
         return json.loads(value)
 
 
@@ -140,17 +137,19 @@ class DatabaseRuntimeError(Exception):
     """Raised when a runtime error occurs during database operations.
     Particularly used when the execution of a query fails.
     """
+
     pass
 
+
 class RaceConditionError(Exception):
-    """Raised when a race condition is detected during database operations.
-    """
+    """Raised when a race condition is detected during database operations."""
+
     pass
 
 
 class NoRolloutToDequeueError(Exception):
-    """Raised when there is no rollout available to dequeue.
-    """
+    """Raised when there is no rollout available to dequeue."""
+
     pass
 
 

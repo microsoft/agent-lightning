@@ -1,16 +1,16 @@
 # Copyright (c) Microsoft. All rights reserved.
-"""This file contains a configurable async retry decorator based on exception type.
-"""
+"""This file contains a configurable async retry decorator based on exception type."""
 
 from __future__ import annotations
 
-import logging
-import random
 import functools
 import importlib
-from dataclasses import dataclass, asdict
-from typing import AsyncIterator, Dict, Type, Any, TypeVar, Callable, Awaitable, Optional
-from tenacity import AsyncRetrying, retry_if_exception, RetryCallState
+import logging
+import random
+from dataclasses import asdict, dataclass
+from typing import Any, AsyncIterator, Awaitable, Callable, Dict, Optional, Type, TypeVar
+
+from tenacity import AsyncRetrying, RetryCallState, retry_if_exception
 
 # ----------------------------------------------------------------------
 # Logging setup
@@ -42,6 +42,7 @@ class RetryStrategy:
         jitter: Fractional (relative) jitter to apply to wait time. Default is 0.0 (no jitter).
         log: Whether to log each retry attempt. Default is False.
     """
+
     max_attempts: Optional[int] = 1
     max_retry_delay: Optional[float] = None
     wait_seconds: float = 0.0
@@ -104,6 +105,7 @@ class RetryStrategy:
                 f"next_wait={next_wait:.2f}s, message={exc}"
             )
 
+
 # ----------------------------------------------------------------------
 # Exception Registry — shared, reusable, and extensible
 # ----------------------------------------------------------------------
@@ -116,7 +118,7 @@ class ExceptionRegistry:
     _registry: Dict[str, Type[BaseException]] = {}
 
     @classmethod
-    def register(cls, name: str, exc_type: Type[BaseException]|None = None) -> None:
+    def register(cls, name: str, exc_type: Type[BaseException] | None = None) -> None:
         """Register an exception type under a given name."""
         if name in cls._registry:
             logger.warning(f"Overwriting existing exception registration for name '{name}'.")
@@ -219,7 +221,7 @@ class AsyncTypeBasedRetry:
     # ------------------------------------------------------------------
     def __call__(self, func: F) -> F:
         @functools.wraps(func)
-        async def wrapper(*args, **kwargs): # type: ignore
+        async def wrapper(*args, **kwargs):  # type: ignore
             async for attempt in AsyncRetrying(
                 retry=retry_if_exception(lambda e: self.should_retry(e)),
                 wait=self.wait_func,
@@ -229,13 +231,14 @@ class AsyncTypeBasedRetry:
             ):
                 with attempt:
                     return await func(*args, **kwargs)
-        return wrapper  # type: ignore
 
+        return wrapper  # type: ignore
 
 
 # ----------------------------------------------------------------------
 # A configurable async retrier for any code block
 # ----------------------------------------------------------------------
+
 
 class AsyncRetryBlock:
     """
@@ -245,13 +248,14 @@ class AsyncRetryBlock:
         async with AsyncRetryBlock(strategy):
             await some_async_function()
     """
-    def __init__(self, strategy: RetryStrategy, **retry_kwargs): # type: ignore
+
+    def __init__(self, strategy: RetryStrategy, **retry_kwargs):  # type: ignore
         self.strategy = strategy
         self._retryer = AsyncRetrying(
             wait=self._wait_func,
             stop=self._stop_func,
             before_sleep=self._before_sleep,
-            **retry_kwargs, # type: ignore
+            **retry_kwargs,  # type: ignore
         )
 
     async def run(self, coro: Callable[..., Awaitable[Any]]) -> Any:
@@ -271,11 +275,11 @@ class AsyncRetryBlock:
     # ------------------------------------------------------------------
     def __aiter__(self) -> AsyncIterator[Any]:
         """Return an async iterator that yields retry attempts.
-         Usage:
-             async for attempt in retry_block:
-                 with attempt:
-                     await some_async_function()
-         """
+        Usage:
+            async for attempt in retry_block:
+                with attempt:
+                    await some_async_function()
+        """
         return self._retryer.__aiter__()
 
     # ------------------------------------------------------------------
@@ -285,7 +289,7 @@ class AsyncRetryBlock:
         self._aiter = self._retryer.__aiter__()
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb): # type: ignore
+    async def __aexit__(self, exc_type, exc_val, exc_tb):  # type: ignore
         # Consume the retry iterator
         try:
             # If exception occurred, let the retryer handle it
@@ -309,5 +313,3 @@ class AsyncRetryBlock:
 
     async def _before_sleep(self, retry_state: RetryCallState):
         await self.strategy.before_sleep(retry_state)
-
-

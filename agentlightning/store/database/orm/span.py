@@ -51,16 +51,22 @@ class OtelResourceInDB(PydanticInDB):
 class SpanInDB(SqlAlchemyBase):
     __tablename__ = "spans"
 
-    rollout_id: Mapped[str] = mapped_column(String, nullable=False) # The rollout which this span belongs to.
-    attempt_id: Mapped[str] = mapped_column(String, nullable=False) # The attempt which this span belongs to.
-    sequence_id: Mapped[int] = mapped_column(Integer, nullable=False) # The ID to make spans ordered within a single attempt.
+    rollout_id: Mapped[str] = mapped_column(String, nullable=False)  # The rollout which this span belongs to.
+    attempt_id: Mapped[str] = mapped_column(String, nullable=False)  # The attempt which this span belongs to.
+    sequence_id: Mapped[int] = mapped_column(
+        Integer, nullable=False
+    )  # The ID to make spans ordered within a single attempt.
 
     # Current ID (in hex, formatted via trace_api.format_*)
-    trace_id: Mapped[str] = mapped_column(String, nullable=False) # one rollout can have traces coming from multiple places
+    trace_id: Mapped[str] = mapped_column(
+        String, nullable=False
+    )  # one rollout can have traces coming from multiple places
 
     # FIXME: span_id may be not unique across different attempts/rollouts, use (rollout_id, attempt_id, sequence_id) as the primary key instead
-    span_id: Mapped[str] = mapped_column(String, nullable=False) # The span ID of the span. This ID comes from the OpenTelemetry span ID generator.
-    parent_id: Mapped[Optional[str]] = mapped_column(String, nullable=True) # The parent span ID of the span.
+    span_id: Mapped[str] = mapped_column(
+        String, nullable=False
+    )  # The span ID of the span. This ID comes from the OpenTelemetry span ID generator.
+    parent_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # The parent span ID of the span.
 
     # Core ReadableSpan fields
     name: Mapped[str] = mapped_column(String, nullable=False)
@@ -89,7 +95,6 @@ class SpanInDB(SqlAlchemyBase):
         return Span(
             **self.model_dump(
                 exclude={"extra"},
-                mapper={"*": lambda obj: obj.extra or {}}, # type: ignore
+                mapper={"*": lambda obj: obj.extra or {}},  # type: ignore
             )
         )
-
