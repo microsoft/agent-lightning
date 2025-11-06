@@ -320,6 +320,92 @@ For the LLaMA profile, export an `HF_TOKEN` before running so VERL can download 
     ```bash
     env RAY_DEBUG=legacy HYDRA_FULL_ERROR=1 VLLM_USE_V1=1 ray start --head --dashboard-host=0.0.0.0
     ```
+### Launch Training with NPUS
+
+We have added support for **Huawei Ascend NPUs** in **agent-lightning**, and create a  function `config_train_npu` in the script .
+
+#### Hardware Support
+
+- **Atlas 200T A2 Box16**
+- **Atlas 900 A2 PODc**
+- **Atlas 800T A3**
+
+At least **a single 40GB NPU** is required to run the **Qwen2.5-Coder-1.5B-Instruct** model.
+
+#### Environment Setup
+
+##### Basic Environment
+
+- **Python:** 3.11.13
+- **CANN:** 8.2.RC1
+- **torch:** 2.7.1+cpu
+- **torch_npu:** 2.7.1.dev20250724
+
+> For basic environment preparation, please refer to this [document](https://gitcode.com/Ascend/pytorch).
+
+##### Configure Mirror Sources
+
+Before installing dependencies, configure the following pip mirrors:
+
+```
+pip config set global.index-url http://repo.huaweicloud.com/repository/pypi/simple
+pip config set global.extra-index-url "https://download.pytorch.org/whl/cpu/ https://mirrors.huaweicloud.com/ascend/repos/pypi"
+```
+
+##### Install vLLM & vLLM-Ascend
+
+```
+pip install vllm==0.10.0 --trusted-host repo.huaweicloud.com
+pip install vllm-Ascend==0.10.0rc1 --trusted-host repo.huaweicloud.com
+```
+
+##### Install VERL
+
+```
+pip install verl==0.5.0
+```
+
+> ⚠️ **Note:** To ensure the VERL framework runs correctly on NPU, add the following lines to
+>  `verl/utils/vllm_utils.py`:
+
+```
+from vllm_ascend.patch import platform
+from vllm_ascend.patch import worker
+```
+
+##### Install Agent-Lightning
+
+```
+pip install agentlightning==0.2.1
+```
+
+##### Install Other Dependencies
+
+```
+pip install autogen-agentchat autogen-ext mcp
+pip install langgraph "langchain[openai]" langchain-community langchain-text-splitters
+pip install sqlparse nltk
+```
+
+#### Model
+
+We use the [**Qwen2.5-Coder-1.5B-Instruct**](https://huggingface.co/Qwen/Qwen2.5-Coder-1.5B) model to train the SQL agent.
+
+#### Dataset
+
+Refer to the method above for obtaining the dataset.
+
+#### Training Workflow
+
+1. **Prepare the dataset**: Convert the Spider dataset into Parquet format and place it in the `data/` directory.
+
+2. **Configure the environment**: Ensure vLLM-Ascend, VERL, and agent-lightning are correctly installed.
+
+3. **Start training**: Run the following command to begin training the SQL agent:
+
+```
+python train_sql_agent_npu.py npu
+```
 
 ### Debugging the Agent without VERL
 
