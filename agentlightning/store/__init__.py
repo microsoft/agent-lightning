@@ -4,7 +4,7 @@ from .base import LightningStore
 from .client_server import LightningStoreClient, LightningStoreServer
 from .memory import InMemoryLightningStore
 from .threading import LightningStoreThreaded
-from .database import DatabaseLightningStore
+from .database import SqlLightningStore
 
 __all__ = [
     "LightningStore",
@@ -12,5 +12,5 @@ __all__ = [
     "LightningStoreServer",
     "InMemoryLightningStore",
     "LightningStoreThreaded",
-    "DatabaseLightningStore",
+    "SqlLightningStore",
 ]

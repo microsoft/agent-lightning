@@ -13,11 +13,10 @@ from opentelemetry.sdk.trace import ReadableSpan
 from pytest import FixtureRequest
 
 from agentlightning.store.base import LightningStore
-from agentlightning.store import InMemoryLightningStore, DatabaseLightningStore
+from agentlightning.store import InMemoryLightningStore, SqlLightningStore
 
 __all__ = [
     "inmemory_store",
-    "db_store",
     "mock_readable_span",
 ]
 
@@ -28,23 +27,16 @@ def inmemory_store() -> InMemoryLightningStore:
     return InMemoryLightningStore()
 
 
-# @pytest_asyncio.fixture
-# async def db_store() -> typing.AsyncGenerator[DatabaseLightningStore, None]:
-#     """Create a DatabaseLightningStore using a SQLite file for testing."""
-#     async for store in _db_store_generator():
-#         yield store
-
-
 @pytest_asyncio.fixture
-async def sql_store() -> typing.AsyncGenerator[DatabaseLightningStore, None]:
+async def sql_store() -> typing.AsyncGenerator[SqlLightningStore, None]:
     """Placeholder fixture for SQL store implementation. Returns None until SQL store is ready."""
-    """Helper generator to create a DatabaseLightningStore using a SQLite file for testing."""
+    """Helper generator to create a SqlLightningStore using a SQLite file for testing."""
     tmp_path = ".pytest_cache"
     # Ensure the directory exists and create a random file in it
     os.makedirs(tmp_path, exist_ok=True)
     db_path = os.path.join(tmp_path, f"test_db_{uuid.uuid4().hex}.sqlite3")
     database_url = f"sqlite+aiosqlite:///{db_path}"
-    store = DatabaseLightningStore(database_url=database_url)
+    store = SqlLightningStore(database_url=database_url)
     store.retry_for_waiting.wait_seconds = .2  # Set polling interval to 0.2s for test
 
     # Config db_store with a short time interval for healthcheck

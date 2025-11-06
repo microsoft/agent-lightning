@@ -1,5 +1,5 @@
-from .dbstore import DatabaseLightningStore
+from .sqlite import SqlLightningStore
 
 __all__ = [
-    "DatabaseLightningStore",
+    "SqlLightningStore",
 ]
