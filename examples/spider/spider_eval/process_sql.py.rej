@@ -1,0 +1,30 @@
+--- examples/spider/spider_eval/process_sql.py
++++ examples/spider/spider_eval/process_sql.py
+@@ -8,6 +8,7 @@
+ import re
+ import os
+ import sys
++import pathlib
+ import json
+ import sqlite3
+ import traceback
+@@ -94,7 +95,8 @@
+     # without defining them in the FROM clause.
+     if 't1' in query or 't2' in query:
+         db_path = os.path.join(db_dir, db, db + ".sqlite")
+-        conn = sqlite3.connect(db_path)
++        db_uri = f"file:{pathlib.Path(db_path).resolve()}?mode=ro"
++        conn = sqlite3.connect(db_uri, uri=True)
+         table_info = conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+         tables = [str(table[0]) for table in table_info]
+         conn.close()
+@@ -115,7 +117,8 @@
+     in the execution result
+     """
+     db_path = os.path.join(db_dir, db, db + ".sqlite")
+-    conn = sqlite3.connect(db_path)
++    db_uri = f"file:{pathlib.Path(db_path).resolve()}?mode=ro"
++    conn = sqlite3.connect(db_uri, uri=True)
+     cursor = conn.cursor()
+     g_str = g_str.replace('"', "'")
+     p_str = p_str.replace('"', "'")
