@@ -43,7 +43,7 @@ class SqlAlchemyBase(AsyncAttrs, MappedAsDataclass, DeclarativeBase):
         return dic
 
 
-class PydanticInDB(TypeDecorator):
+class PydanticInDB(TypeDecorator[BaseModel]):
     """Custom SQLAlchemy type to store pydantic.BaseModel as JSON in the database.
     Attributes:
         target_type: type[BaseModel], the type of the pydantic model to be stored.
@@ -52,14 +52,14 @@ class PydanticInDB(TypeDecorator):
     impl = JSON
     target_type: type[BaseModel] | None = None
 
-    def process_bind_param(self, value: BaseModel | None, dialect) -> Optional[str]:
+    def process_bind_param(self, value: BaseModel | None, dialect: Any) -> Optional[str]:
         if value is None:
             return None
         if self.target_type is not None:
             return TypeAdapter(self.target_type).validate_python(value).model_dump_json()  # type: ignore
         return json.dumps(value)
 
-    def process_result_value(self, value: Optional[str], dialect) -> Optional[BaseModel]:
+    def process_result_value(self, value: Optional[str], dialect: Any) -> Optional[BaseModel]:
         if value is None:
             return None
         if self.target_type is not None:
@@ -68,7 +68,7 @@ class PydanticInDB(TypeDecorator):
         return dic  # type: ignore
 
 
-class PydanticListInDB(TypeDecorator):
+class PydanticListInDB(TypeDecorator[list[BaseModel]]):
     """Custom SQLAlchemy type to store List[pydantic.BaseModel] as JSON in the database.
     Attributes:
         value_type: type[BaseModel], the type of the pydantic model to be stored in the list.
@@ -77,7 +77,7 @@ class PydanticListInDB(TypeDecorator):
     impl = JSON
     value_type: type[BaseModel] | None = None
 
-    def process_bind_param(self, value: List[BaseModel] | None, dialect) -> Optional[str]:
+    def process_bind_param(self, value: List[BaseModel] | None, dialect: Any) -> Optional[str]:
         if value is None:
             return None
         if self.value_type is not None:
@@ -85,7 +85,7 @@ class PydanticListInDB(TypeDecorator):
             return json.dumps(lst)
         raise ValueError("target_type must be set for PydanticListInDB")
 
-    def process_result_value(self, value: Optional[str], dialect) -> Optional[List[BaseModel]]:
+    def process_result_value(self, value: Optional[str], dialect: Any) -> Optional[List[BaseModel]]:
         if value is None:
             return None
         if self.value_type is not None:
@@ -94,7 +94,7 @@ class PydanticListInDB(TypeDecorator):
         raise ValueError("target_type must be set for PydanticListInDB")
 
 
-class NamedDictBase(TypeDecorator):
+class NamedDictBase(TypeDecorator[Dict[str, Any]]):
     """Custom SQLAlchemy type to store Dict[str, pydantic.BaseModel] as JSON in the database.
     Attributes:
         target_alias: type[Dict[str, BaseModel]], the alias type of the dict.
@@ -106,9 +106,9 @@ class NamedDictBase(TypeDecorator):
 
     impl = JSON
     target_alias: type | None = None
-    value_type: type[BaseModel] | None = None
+    value_type: type[BaseModel] | Any = None
 
-    def process_bind_param(self, value: Dict[str, Any] | None, dialect) -> Optional[str]:
+    def process_bind_param(self, value: Dict[str, Any] | None, dialect: Any) -> Optional[str]:
         if value is None:
             return None
 
@@ -122,7 +122,7 @@ class NamedDictBase(TypeDecorator):
         dic = {k: v.model_dump() if isinstance(v, BaseModel) else v for k, v in value.items()}
         return json.dumps(dic)
 
-    def process_result_value(self, value: Optional[str], dialect) -> Optional[Dict[str, Any]]:
+    def process_result_value(self, value: Optional[str], dialect: Any) -> Optional[Dict[str, Any]]:
         if value is None:
             return None
         if self.target_alias is not None:

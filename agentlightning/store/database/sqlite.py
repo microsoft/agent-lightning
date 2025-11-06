@@ -213,7 +213,7 @@ class SqlLightningStore(LightningStore):
                     mode=mode,
                     resources_id=resources_id or self._latest_resources_id,
                     status="queuing",
-                    config=config,
+                    config=config or RolloutConfig(),
                     rollout_metadata=metadata,
                 )
                 session.add(rollout_obj)
@@ -237,7 +237,7 @@ class SqlLightningStore(LightningStore):
                     mode=mode,
                     resources_id=resources_id or self._latest_resources_id,
                     status="queuing",
-                    config=config,
+                    config=config or RolloutConfig(),
                     rollout_metadata=metadata,
                 )
                 session.add(rollout_obj)
@@ -377,6 +377,12 @@ class SqlLightningStore(LightningStore):
 
         except (RetryError, _WaitForRolloutsCompleted):
             return [completed_rollouts[rid] for rid in rollout_ids if rid in completed_rollouts]
+        except Exception as e:
+            logger.error(f"Error while waiting for rollouts: {e}")
+            raise e
+
+        # Ensure a return value in case no rollouts are completed
+        return [completed_rollouts[rid] for rid in rollout_ids if rid in completed_rollouts]
 
     @db_retry
     async def query_spans(self, rollout_id: str, attempt_id: str | Literal["latest"] | None = None) -> List[Span]:
@@ -614,7 +620,7 @@ class SqlLightningStore(LightningStore):
     async def _start_attempt_for_rollout(self, session: AsyncSession, rollout_obj: RolloutInDB) -> AttemptedRollout:
         """Create a new attempt for the given rollout and update the rollout's fields."""
         # create a new attempt for this rollout
-        rollout_config = rollout_obj.config if rollout_obj.config is not None else RolloutConfig()
+        rollout_config = rollout_obj.config
         attempt_obj = AttemptInDB(
             rollout_id=rollout_obj.rollout_id,
             sequence_id=rollout_obj.num_attempts + 1,

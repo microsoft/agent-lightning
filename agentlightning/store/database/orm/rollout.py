@@ -7,14 +7,13 @@ import time
 import uuid
 from typing import Any, Dict, List, Optional, cast
 
-from sqlalchemy import JSON, Float, Integer, String, and_, case, select
+from sqlalchemy import JSON, Float, Integer, String, and_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Mapped, mapped_column
 
-from agentlightning.types import AttemptedRollout, AttemptStatus, Rollout, RolloutConfig, RolloutStatus
+from agentlightning.types import AttemptedRollout, Rollout, RolloutConfig, RolloutStatus
 
-from ...base import is_finished, is_queuing, is_running
+from ...base import is_finished, is_queuing
 from .attempt import AttemptInDB
 from .base import AttemptStatusUpdateMessage, PydanticInDB, SqlAlchemyBase
 
@@ -141,7 +140,7 @@ class RolloutInDB(SqlAlchemyBase):
                     new_status = "succeeded"
                 elif msg.is_failed:
                     # no other attempts running, decide whether to requeue or fail
-                    config = self.config if self.config is not None else RolloutConfig()
+                    config = self.config
                     if config.max_attempts > self.num_attempts and msg.new_status in config.retry_condition:
                         new_status = "requeuing"
                     else:
