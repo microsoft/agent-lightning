@@ -116,7 +116,7 @@ class ExceptionRegistry:
     _registry: Dict[str, Type[BaseException]] = {}
 
     @classmethod
-    def register(cls, name: str, exc_type: Type[BaseException]|None = None) -> None:
+    def register(cls, name: str, exc_type: Type[BaseException] | None = None) -> None:
         """Register an exception type under a given name."""
         if name in cls._registry:
             logger.warning(f"Overwriting existing exception registration for name '{name}'.")
