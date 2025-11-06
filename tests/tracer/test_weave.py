@@ -48,6 +48,14 @@ def _func_without_exception():
 #     )
 
 from openai import OpenAI
+from opentelemetry.sdk.trace import ReadableSpan
+
+from agentlightning.adapter.triplet import TracerTraceToTriplet, TraceTree
+from agentlightning.reward import reward
+from agentlightning.tracer.agentops import AgentOpsTracer, LightningSpanProcessor
+from agentlightning.tracer.http import HttpTracer
+from agentlightning.tracer.weave import WeaveTracer
+from agentlightning.types import Span, Triplet
 
 
 def _create_completion(message: str) -> str:
@@ -66,6 +74,13 @@ def test_weave_trace_workable():
 
     try:
         tracer.trace_run(_create_completion, "Hello there, how are you?")
+        last_trace_normalized = [
+            Span.from_opentelemetry(span, "dummy", "dummy", 0) if isinstance(span, ReadableSpan) else span
+            for span in tracer.get_last_trace()
+        ]
+        tree = TraceTree.from_spans(last_trace_normalized)
+        print(tree.names_tuple())
+
         # tracer.trace_run(_func_with_exception)
         calls = tracer.get_last_trace()
         assert len(calls) > 0
@@ -73,3 +88,15 @@ def test_weave_trace_workable():
     finally:
         tracer.teardown_worker(0)
         tracer.teardown()
+
+
+def test_span_format():
+    pass
+
+
+def test_initialization_and_shutdown():
+    pass
+
+
+def test_concurrent_access():
+    pass
