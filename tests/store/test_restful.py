@@ -12,22 +12,16 @@ Test categories:
 
 import asyncio
 import contextlib
-import socket
 from typing import AsyncGenerator, List, Tuple
 
 import aiohttp
 import pytest
 import pytest_asyncio
+from portpicker import pick_unused_port
 
 from agentlightning.store.client_server import LightningStoreClient, LightningStoreServer
 from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.types import LLM, AttemptedRollout, OtelResource, Rollout, Span, TraceStatus
-
-
-def _get_free_port() -> int:
-    with contextlib.closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as sock:
-        sock.bind(("127.0.0.1", 0))
-        return sock.getsockname()[1]
 
 
 def _make_span(rollout_id: str, attempt_id: str, sequence_id: int, name: str) -> Span:
@@ -51,17 +45,31 @@ def _make_span(rollout_id: str, attempt_id: str, sequence_id: int, name: str) ->
     )
 
 
+@contextlib.asynccontextmanager
+async def _run_server_with_cors(cors_origins: List[str] | str | None = None):
+    store = InMemoryLightningStore()
+    port = pick_unused_port()
+    server = LightningStoreServer(store, "127.0.0.1", port, cors_allow_origins=cors_origins)
+    await server.start()
+    session = aiohttp.ClientSession()
+    try:
+        yield server, session
+    finally:
+        await session.close()
+        await server.stop()
+
+
 @pytest_asyncio.fixture
 async def server_client() -> (
     AsyncGenerator[Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str], None]
 ):
     store = InMemoryLightningStore()
-    port = _get_free_port()
+    port = pick_unused_port()
     server = LightningStoreServer(store, "127.0.0.1", port)
     await server.start()
     client = LightningStoreClient(server.endpoint)
     session = aiohttp.ClientSession()
-    # Get the full API endpoint with /agl/v1 prefix
+    # Get the full API endpoint with /v1/agl prefix
     api_endpoint = client.server_address
     try:
         yield server, client, session, api_endpoint
@@ -69,6 +77,55 @@ async def server_client() -> (
         await session.close()
         await client.close()
         await server.stop()
+
+
+# CORS configuration tests
+
+
+@pytest.mark.asyncio
+async def test_cors_allows_specific_origin() -> None:
+    async with _run_server_with_cors(cors_origins=["http://localhost:3000"]) as (server, session):
+        url = f"{server.endpoint}/v1/agl/health"
+        origin = "http://localhost:3000"
+        async with session.get(url, headers={"Origin": origin}) as resp:
+            assert resp.status == 200
+            assert resp.headers.get("access-control-allow-origin") == origin
+            assert resp.headers.get("access-control-allow-credentials") == "true"
+
+        async with session.options(
+            url,
+            headers={
+                "Origin": origin,
+                "Access-Control-Request-Method": "GET",
+            },
+        ) as resp:
+            assert resp.status == 200
+            assert resp.headers.get("access-control-allow-origin") == origin
+            allow_methods = resp.headers.get("access-control-allow-methods") or ""
+            assert "GET" in {method.strip() for method in allow_methods.split(",") if method}
+
+
+@pytest.mark.asyncio
+async def test_cors_disallows_unconfigured_origin() -> None:
+    async with _run_server_with_cors(cors_origins=["http://localhost:3000"]) as (server, session):
+        url = f"{server.endpoint}/v1/agl/health"
+        async with session.get(url, headers={"Origin": "http://malicious.example"}) as resp:
+            assert resp.status == 200
+            assert "access-control-allow-origin" not in resp.headers
+
+
+@pytest.mark.asyncio
+async def test_cors_allows_wildcard_origin() -> None:
+    async with _run_server_with_cors(cors_origins="*") as (server, session):
+        url = f"{server.endpoint}/v1/agl/health"
+        origin = "https://wildcard.example"
+        async with session.get(url, headers={"Origin": origin}) as resp:
+            assert resp.status == 200
+            allow_origin = resp.headers.get("access-control-allow-origin")
+            assert allow_origin in {origin, "*"}
+            allow_credentials = resp.headers.get("access-control-allow-credentials")
+            if allow_credentials is not None:
+                assert allow_credentials == "true"
 
 
 # Rollouts Pagination, Sorting, and Filtering Tests
@@ -542,6 +599,91 @@ async def test_resources_sorting_by_resources_id(
         items = data["items"]
         for i in range(len(items) - 1):
             assert items[i]["resources_id"] >= items[i + 1]["resources_id"]
+
+
+@pytest.mark.asyncio
+async def test_resources_filter_by_resources_id_contains(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    """Test filtering resources by resources_id_contains."""
+    server, _client, session, api_endpoint = server_client
+
+    # Create resources with specific IDs
+    await server.update_resources("test-resource-001", {})
+    await server.update_resources("test-resource-002", {})
+    await server.update_resources("prod-resource-003", {})
+
+    # Filter by "test-" prefix
+    async with session.get(f"{api_endpoint}/resources", params={"resources_id_contains": "test-", "limit": -1}) as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        assert data["total"] == 2
+        ids = [item["resources_id"] for item in data["items"]]
+        assert "test-resource-001" in ids
+        assert "test-resource-002" in ids
+        assert "prod-resource-003" not in ids
+
+    # Filter by "-003" suffix
+    async with session.get(f"{api_endpoint}/resources", params={"resources_id_contains": "-003", "limit": -1}) as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        assert data["total"] == 1
+        assert data["items"][0]["resources_id"] == "prod-resource-003"
+
+
+@pytest.mark.asyncio
+async def test_resources_combined_filter_sort_and_pagination(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    """Test combining filter, sort, and pagination for resources."""
+    server, _client, session, api_endpoint = server_client
+
+    # Create resources with pattern
+    await server.update_resources("prod-app-001", {})
+    await asyncio.sleep(0.01)
+    await server.update_resources("prod-app-002", {})
+    await asyncio.sleep(0.01)
+    await server.update_resources("test-app-001", {})
+    await asyncio.sleep(0.01)
+    await server.update_resources("prod-db-001", {})
+
+    # Filter by "prod-" and sort by resources_id, then paginate
+    async with session.get(
+        f"{api_endpoint}/resources",
+        params={
+            "resources_id_contains": "prod-",
+            "sort_by": "resources_id",
+            "sort_order": "asc",
+            "limit": 2,
+            "offset": 0,
+        },
+    ) as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        assert data["total"] == 3  # 3 resources contain "prod-"
+        assert data["limit"] == 2
+        assert data["offset"] == 0
+        assert len(data["items"]) == 2
+        # Should get first 2 when sorted by resources_id asc
+        assert data["items"][0]["resources_id"] == "prod-app-001"
+        assert data["items"][1]["resources_id"] == "prod-app-002"
+
+    # Get the next page
+    async with session.get(
+        f"{api_endpoint}/resources",
+        params={
+            "resources_id_contains": "prod-",
+            "sort_by": "resources_id",
+            "sort_order": "asc",
+            "limit": 2,
+            "offset": 2,
+        },
+    ) as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        assert data["total"] == 3
+        assert len(data["items"]) == 1  # Only 1 item remaining
+        assert data["items"][0]["resources_id"] == "prod-db-001"
 
 
 # Spans Pagination, Sorting, and Filtering Tests

@@ -16,6 +16,7 @@ import uvicorn
 from fastapi import Body, Depends, FastAPI, HTTPException
 from fastapi import Query as FastAPIQuery
 from fastapi import Request, Response
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from opentelemetry.sdk.trace import ReadableSpan
 from pydantic import BaseModel, Field, TypeAdapter
@@ -37,7 +38,7 @@ from .base import UNSET, LightningStore, Unset
 
 logger = logging.getLogger(__name__)
 
-AGL_API_V1_PREFIX = "/agl/v1"
+AGL_API_V1_PREFIX = "/v1/agl"
 
 T = TypeVar("T")
 
@@ -111,6 +112,9 @@ class QueryAttemptsRequest(BaseModel):
 
 
 class QueryResourcesRequest(BaseModel):
+    # Filtering
+    resources_id: Optional[str] = None
+    resources_id_contains: Optional[str] = None
     # Pagination
     limit: int = -1
     offset: int = 0
@@ -240,15 +244,29 @@ class LightningStoreServer(LightningStore):
     Healthcheck and watchdog relies on the underlying store.
 
     `agl store` is a convenient CLI to start a store server.
+
+    Args:
+        store: The underlying store to delegate operations to.
+        host: The hostname or IP address to bind the server to.
+        port: The TCP port to listen on.
+        cors_allow_origins: A list of CORS origins to allow. Use '*' to allow all origins.
     """
 
-    def __init__(self, store: LightningStore, host: str, port: int):
+    def __init__(
+        self,
+        store: LightningStore,
+        host: str,
+        port: int,
+        cors_allow_origins: Sequence[str] | str | None = None,
+    ):
         super().__init__()
         self.store = store
         self._lock = threading.Lock()
         self.host = host
         self.port = port
+        self._cors_allow_origins = self._normalize_cors_origins(cors_allow_origins)
         self.app: FastAPI | None = FastAPI(title="LightningStore Server")
+        self._apply_cors()
         self._setup_routes()
         self._uvicorn_config: uvicorn.Config | None = uvicorn.Config(
             self.app, host="0.0.0.0", port=self.port, log_level="error"
@@ -283,6 +301,7 @@ class LightningStoreServer(LightningStore):
             "host": self.host,
             "port": self.port,
             "_owner_pid": self._owner_pid,
+            "_cors_allow_origins": self._cors_allow_origins,
         }
 
     def __setstate__(self, state: Dict[str, Any]):
@@ -297,10 +316,47 @@ class LightningStoreServer(LightningStore):
         self.host = state["host"]
         self.port = state["port"]
         self._owner_pid = state["_owner_pid"]
+        self._cors_allow_origins = state.get("_cors_allow_origins")
         self._client = None
         self._lock = threading.Lock()
         # Do NOT reconstruct app, _uvicorn_config, _uvicorn_server
         # to avoid transferring server state to subprocess
+
+    @staticmethod
+    def _normalize_cors_origins(
+        origins: Sequence[str] | str | None,
+    ) -> list[str] | None:
+        if origins is None:
+            return None
+
+        if isinstance(origins, str):
+            candidates = [origins]
+        else:
+            candidates = list(origins)
+
+        cleaned: list[str] = []
+        for origin in candidates:
+            if not origin or not origin.strip():
+                continue
+            value = origin.strip()
+            if value == "*":
+                return ["*"]
+            cleaned.append(value)
+
+        return cleaned or None
+
+    def _apply_cors(self) -> None:
+        if self.app is None or not self._cors_allow_origins:
+            return
+
+        self.app.add_middleware(
+            CORSMiddleware,
+            allow_origins=self._cors_allow_origins.copy(),
+            allow_methods=["*"],
+            allow_headers=["*"],
+            allow_credentials=True,
+            expose_headers=["*"],
+        )
 
     @property
     def endpoint(self) -> str:
@@ -461,7 +517,7 @@ class LightningStoreServer(LightningStore):
             """
             Convert unhandled application exceptions into 500 responses.
 
-            Only covers /agl/v1 requests.
+            Only covers /v1/agl requests.
 
             - Client needs a reliable signal to distinguish "app bug / bad request"
               from transport/session failures.
@@ -488,7 +544,7 @@ class LightningStoreServer(LightningStore):
         async def _log_time(  # pyright: ignore[reportUnusedFunction]
             request: Request, call_next: Callable[[Request], Awaitable[Response]]
         ):
-            if not request.url.path.startswith("/agl/v1/"):
+            if not request.url.path.startswith("/v1/agl/"):
                 return await call_next(request)
 
             start = time.perf_counter()
@@ -632,9 +688,16 @@ class LightningStoreServer(LightningStore):
             # Get all resources
             all_resources = await self.query_resources()
 
+            # Build filter dict
+            filters: Dict[str, Any] = {}
+            if params.resources_id is not None:
+                filters["resources_id"] = params.resources_id
+            if params.resources_id_contains is not None:
+                filters["resources_id_contains"] = params.resources_id_contains
+
             return _apply_filters_sort_paginate(
                 all_resources,
-                {},  # No filters for resources
+                filters,
                 "and",
                 params.sort_by,
                 params.sort_order,
@@ -700,6 +763,24 @@ class LightningStoreServer(LightningStore):
         @self.app.post(AGL_API_V1_PREFIX + "/waits/rollouts", response_model=List[Rollout])
         async def wait_for_rollouts(request: WaitForRolloutsRequest):  # pyright: ignore[reportUnusedFunction]
             return await self.wait_for_rollouts(rollout_ids=request.rollout_ids, timeout=request.timeout)
+
+        # Reserved methods for OTEL traces
+        # https://opentelemetry.io/docs/specs/otlp/#otlphttp-request
+        @self.app.post("/v1/traces")
+        async def otlp_traces():  # pyright: ignore[reportUnusedFunction]
+            return Response(status_code=501)
+
+        @self.app.post("/v1/metrics")
+        async def otlp_metrics():  # pyright: ignore[reportUnusedFunction]
+            return Response(status_code=501)
+
+        @self.app.post("/v1/logs")
+        async def otlp_logs():  # pyright: ignore[reportUnusedFunction]
+            return Response(status_code=501)
+
+        @self.app.post("/v1/development/profiles")
+        async def otlp_development_profiles():  # pyright: ignore[reportUnusedFunction]
+            return Response(status_code=501)
 
     # Delegate methods
     async def _call_store_method(self, method_name: str, *args: Any, **kwargs: Any) -> Any:
