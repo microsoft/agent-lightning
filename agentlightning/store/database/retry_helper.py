@@ -1,4 +1,5 @@
 # Copyright (c) Microsoft. All rights reserved.
+
 """This file contains a configurable async retry decorator based on exception type."""
 
 from __future__ import annotations

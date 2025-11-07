@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-from collections import defaultdict
 import logging
 import os
 import time
@@ -14,7 +13,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from opentelemetry.sdk.trace import ReadableSpan
 from pydantic import BaseModel
-from sqlalchemy import and_, select, update, or_
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm.exc import StaleDataError
 from tenacity import RetryError
@@ -35,7 +34,6 @@ from agentlightning.types import (
 from ..base import UNSET, LightningStore, Unset, is_finished
 from .orm import (
     AttemptInDB,
-    AttemptStatusUpdateMessage,
     ResourcesUpdateInDB,
     RolloutInDB,
     SpanInDB,
@@ -548,7 +546,9 @@ class SqlLightningStore(LightningStore):
         async with self._async_session() as session:
             async with session.begin():
                 # Step 1: Update attempt status
-                attempt_obj = await session.get(AttemptInDB, attempt_ref.attempt_id) # refresh the object in the new session
+                attempt_obj = await session.get(
+                    AttemptInDB, attempt_ref.attempt_id
+                )  # refresh the object in the new session
                 if attempt_obj is None:
                     raise ValueError(f"Attempt {attempt_ref.attempt_id} not found during timeout processing")
                 if attempt_obj.version_id != attempt_ref.version_id:
@@ -563,7 +563,7 @@ class SqlLightningStore(LightningStore):
                     raise ValueError(f"Attempt {attempt_ref.attempt_id} is not timed out during timeout processing")
                 msg2rollout = attempt_obj.update_status(msg)
                 if msg2rollout is None:
-                    return # no further update needed
+                    return  # no further update needed
 
                 # Step 2: Update rollouts
                 rollout_obj = await session.get(RolloutInDB, attempt_obj.rollout_id)
@@ -666,8 +666,7 @@ class SqlLightningStore(LightningStore):
         async with self._async_session() as session:
             async with session.begin():
                 scalars = await session.scalars(
-                    select(AttemptInDB)
-                    .where(
+                    select(AttemptInDB).where(
                         and_(
                             AttemptInDB.status.in_(["preparing", "running"]),
                             or_(
@@ -679,7 +678,7 @@ class SqlLightningStore(LightningStore):
                                     AttemptInDB.max_heartbeat_interval.isnot(None),
                                     (now - AttemptInDB.last_heartbeat_time) > AttemptInDB.max_heartbeat_interval,
                                 ),
-                            )
+                            ),
                         )
                     )
                 )
