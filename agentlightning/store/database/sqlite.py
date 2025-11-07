@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections import defaultdict
 import logging
 import os
 import time
@@ -13,8 +14,9 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from opentelemetry.sdk.trace import ReadableSpan
 from pydantic import BaseModel
-from sqlalchemy import and_, select, update
+from sqlalchemy import and_, select, update, or_
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.orm.exc import StaleDataError
 from tenacity import RetryError
 
 from agentlightning.types import (
@@ -477,7 +479,7 @@ class SqlLightningStore(LightningStore):
                 if not isinstance(resources_id, Unset):
                     rollout_obj.resources_id = resources_id
                 if not isinstance(status, Unset):
-                    await rollout_obj.update_status(dict(event="user_update", new_status=status), session)
+                    await rollout_obj.update_status(dict(event="user_update", new_status=status))
                 if not isinstance(config, Unset):
                     rollout_obj.config = config
                 if not isinstance(metadata, Unset):
@@ -517,7 +519,7 @@ class SqlLightningStore(LightningStore):
                 if not isinstance(status, Unset):
                     msg = attempt_obj.update_status(dict(event="user_update", new_status=status))
                     if msg is not None:
-                        await rollout_obj.update_status(msg, session)
+                        await rollout_obj.update_status(msg)
                 if not isinstance(worker_id, Unset):
                     attempt_obj.worker_id = worker_id
                 if not isinstance(last_heartbeat_time, Unset):
@@ -535,32 +537,39 @@ class SqlLightningStore(LightningStore):
         """Periodically check for attempts that have timed out and update their status accordingly."""
         # use update with where condition to find and update timed-out attempts
         current_time = time.time()
-        attempts_timed_out: list[AttemptInDB] = []
 
+        timed_out_results = await self._attempt_timeout_check(current_time)
+
+        # TODO run the tasks with a wrapper with asyncio semaphore to limit concurrency and handle exceptions
+        tasks = [self._process_timed_out_attempt(attempt, current_time) for attempt in timed_out_results]
+        await asyncio.gather(*tasks)
+
+    async def _process_timed_out_attempt(self, attempt_ref: AttemptInDB, current_time: float) -> None:
         async with self._async_session() as session:
             async with session.begin():
-                # Step 1: Filter and update timed-out attempts
-                for mode in ["max_heartbeat_interval", "max_duration"]:  # max_duration has higher priority
-                    attempts_timed_out.extend(await self._attempt_timeout_check(session, mode, current_time))
+                # Step 1: Update attempt status
+                attempt_obj = await session.get(AttemptInDB, attempt_ref.attempt_id) # refresh the object in the new session
+                if attempt_obj is None:
+                    raise ValueError(f"Attempt {attempt_ref.attempt_id} not found during timeout processing")
+                if attempt_obj.version_id != attempt_ref.version_id:
+                    # version mismatch, skip processing to avoid race conditions
+                    raise StaleDataError(f"Attempt {attempt_ref.attempt_id} version mismatch during timeout processing")
+                msg = {}
+                if attempt_obj.is_timed_out(current_time):
+                    msg = dict(event="overall_timeout", timestamp=current_time)
+                elif attempt_obj.is_unresponsive(current_time):
+                    msg = dict(event="single_step_timeout", timestamp=current_time)
+                else:
+                    raise ValueError(f"Attempt {attempt_ref.attempt_id} is not timed out during timeout processing")
+                msg2rollout = attempt_obj.update_status(msg)
+                if msg2rollout is None:
+                    return # no further update needed
 
-                # Step 2: Create messages to update rollout
-                messages: Dict[str, AttemptStatusUpdateMessage] = {}
-                rollout_ids: set[str] = set()
-                for attempt in attempts_timed_out:
-                    messages[attempt.attempt_id] = AttemptStatusUpdateMessage(
-                        timestamp=current_time,
-                        new_status=attempt.status,
-                        attempt_id=attempt.attempt_id,
-                        rollout_id=attempt.rollout_id,
-                    )
-                    rollout_ids.add(attempt.rollout_id)
-
-                # Step 3: Update rollouts
-                result = await session.scalars(select(RolloutInDB).where(RolloutInDB.rollout_id.in_(rollout_ids)))
-                rollout_objs = {r.rollout_id: r for r in result.all()}
-                for msg in messages.values():
-                    rollout_obj = rollout_objs[msg.rollout_id]
-                    await rollout_obj.update_status(msg, session)
+                # Step 2: Update rollouts
+                rollout_obj = await session.get(RolloutInDB, attempt_obj.rollout_id)
+                if rollout_obj is None:
+                    raise ValueError(f"Rollout {attempt_obj.rollout_id} not found during timeout processing")
+                await rollout_obj.update_status(msg2rollout)
 
     # ------------------------------------------------------
     # internal helper methods can be added here
@@ -591,7 +600,7 @@ class SqlLightningStore(LightningStore):
                     rollout_obj = await session.get(RolloutInDB, attempt_obj.rollout_id)
                     if rollout_obj is None:
                         raise ValueError(f"Rollout {attempt_obj.rollout_id} not found")
-                    await rollout_obj.update_status(msg, session)
+                    await rollout_obj.update_status(msg)
                 await session.flush()  # ensure the object is written to the DB
                 return span_obj.as_span()
 
@@ -648,24 +657,30 @@ class SqlLightningStore(LightningStore):
 
         return AttemptedRollout(**rollout_obj.as_rollout().model_dump(), attempt=attempt_obj.as_attempt())
 
-    async def _attempt_timeout_check(self, session: AsyncSession, mode: str, current_time: float) -> list[AttemptInDB]:
-        if mode == "max_duration":
-            new_status = "timeout"
-            conditions = and_(
-                AttemptInDB.status.in_(["preparing", "running"]),
-                AttemptInDB.max_duration.isnot(None),
-                (current_time - AttemptInDB.start_time) > AttemptInDB.max_duration,
-            )
-        elif mode == "max_heartbeat_interval":
-            new_status = "unresponsive"
-            conditions = and_(
-                AttemptInDB.status.in_(["preparing", "running"]),
-                AttemptInDB.max_heartbeat_interval.isnot(None),
-                (current_time - AttemptInDB.last_heartbeat_time) > AttemptInDB.max_heartbeat_interval,
-            )
-        else:
-            raise ValueError(f"Unsupported timeout checking mode {mode}")
-        result = await session.scalars(
-            update(AttemptInDB).where(conditions).values(status=new_status).returning(AttemptInDB)
-        )
-        return list(result.all())
+    async def _attempt_timeout_check(self, now: float) -> Sequence[AttemptInDB]:
+        """Scan the table for attempts that have timed out based on the given mode, and return them for further processing.
+        Returns:
+            list[AttemptInDB]:
+                A list of AttemptInDB objects that timed out.
+        """
+        async with self._async_session() as session:
+            async with session.begin():
+                scalars = await session.scalars(
+                    select(AttemptInDB)
+                    .where(
+                        and_(
+                            AttemptInDB.status.in_(["preparing", "running"]),
+                            or_(
+                                and_(
+                                    AttemptInDB.max_duration.isnot(None),
+                                    (now - AttemptInDB.start_time) > AttemptInDB.max_duration,
+                                ),
+                                and_(
+                                    AttemptInDB.max_heartbeat_interval.isnot(None),
+                                    (now - AttemptInDB.last_heartbeat_time) > AttemptInDB.max_heartbeat_interval,
+                                ),
+                            )
+                        )
+                    )
+                )
+                return scalars.all()

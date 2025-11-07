@@ -42,7 +42,7 @@ class RolloutInDB(SqlAlchemyBase):
     resources_id: Mapped[Optional[str]] = mapped_column(String, nullable=True, default=None)
     status: Mapped[RolloutStatus] = mapped_column(String, default="queuing", nullable=False)
     config: Mapped[RolloutConfig] = mapped_column(
-        RolloutConfigInDB, nullable=True, default=None
+        RolloutConfigInDB, nullable=False, default_factory=RolloutConfig
     )  # JSON serialized, convert to RolloutConfig when needed
     rollout_metadata: Mapped[Optional[Dict[str, Any]]] = mapped_column(
         JSON, nullable=True, default=None
@@ -79,17 +79,6 @@ class RolloutInDB(SqlAlchemyBase):
                 },
             )
         )
-        return Rollout(
-            rollout_id=self.rollout_id,
-            input=self.input,
-            start_time=self.start_time,
-            end_time=self.end_time,
-            mode=self.mode,  # type: ignore
-            resources_id=self.resources_id,
-            status=self.status,  # type: ignore
-            config=self.config if self.config is not None else RolloutConfig(),
-            metadata=self.rollout_metadata if self.rollout_metadata is not None else {},
-        )
 
     def _validate_status_message(self, msg: Dict[str, str]) -> None:
         """Validate the status update message.
@@ -111,7 +100,7 @@ class RolloutInDB(SqlAlchemyBase):
             # leverage AttemptStatusUpdateMessage for validation
             pass
 
-    async def update_status(self, msg: Dict[str, Any] | AttemptStatusUpdateMessage, session: AsyncSession) -> None:
+    async def update_status(self, msg: Dict[str, Any] | AttemptStatusUpdateMessage) -> None:
         """Update the rollout status based on the provided message.
         Args:
             msg (Dict[str, str]): The status update message. Refer to `_validate_status_message` for the expected format.

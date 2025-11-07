@@ -46,10 +46,29 @@ class AttemptInDB(SqlAlchemyBase):
         Float, nullable=True, default=None
     )  # maximum allowed heartbeat interval in seconds
 
+    version_id: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    __mapper_args__ = {
+        "version_id_col": version_id,
+    }
+
+    def is_unresponsive(self, current_time: float) -> bool:
+        """Check if the attempt is unresponsive based on the last heartbeat time and max_heartbeat_interval."""
+        if self.max_heartbeat_interval is None:
+            return False
+        if self.last_heartbeat_time is None:
+            return False
+        return (current_time - self.last_heartbeat_time) > self.max_heartbeat_interval
+
+    def is_timed_out(self, current_time: float) -> bool:
+        """Check if the attempt has timed out based on the start time and max_duration."""
+        if self.max_duration is None:
+            return False
+        return (current_time - self.start_time) > self.max_duration
+
     def as_attempt(self) -> Attempt:
         return Attempt(
             **self.model_dump(
-                exclude={"max_duration", "max_heartbeat_interval"},
+                exclude={"max_duration", "max_heartbeat_interval", "version_id"},
                 mapper={"metadata": lambda obj: obj.attempt_metadata},  # type: ignore
             )
         )
