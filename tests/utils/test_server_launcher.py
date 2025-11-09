@@ -22,6 +22,8 @@ from fastapi import FastAPI, Response
 
 from agentlightning.utils.server_launcher import (
     ChildEvent,
+    GunicornApp,
+    run_gunicorn,
     run_uvicorn_asyncio,
     run_uvicorn_subprocess,
     run_uvicorn_thread,
@@ -64,29 +66,27 @@ def _new_server(app: FastAPI, host: str, port: int) -> uvicorn.Server:
     return uvicorn.Server(cfg)
 
 
-async def _queue_get_async(q: queue.Queue[ChildEvent] | multiprocessing.Queue, timeout: float) -> ChildEvent:
+async def _queue_get_async(
+    q: queue.Queue[ChildEvent] | multiprocessing.Queue[ChildEvent], timeout: float
+) -> ChildEvent:
     """Wait for a queue event without blocking the asyncio loop."""
     return await asyncio.to_thread(q.get, True, timeout)
 
 
-def _subprocess_uvicorn_entry(
-    always_ok: bool,
-    host: str,
-    port: int,
-    event_queue: multiprocessing.Queue,
-    timeout: float,
-) -> None:
-    """Helper that runs inside a spawned subprocess for exercising run_uvicorn_subprocess."""
-    app = _make_app_health(always_ok=always_ok)
-    server = _new_server(app, host, port)
-    health_url = f"http://{host}:{port}/health"
-    run_uvicorn_subprocess(
-        uvicorn_server=server,
-        serve_context=noop_context(),
-        event_queue=event_queue,
-        timeout=timeout,
-        health_url=health_url,
-    )
+def _build_gunicorn_app(app: FastAPI, host: str, port: int, workers: int = 2) -> GunicornApp:
+    """
+    Build a GunicornApp with preload enabled and uvicorn workers.
+    """
+    options = {
+        "bind": f"{host}:{port}",
+        "workers": workers,
+        "worker_class": "uvicorn_worker.UvicornWorker",
+        "loglevel": "warning",
+        "accesslog": None,
+        "errorlog": "-",
+        "preload_app": True,
+    }
+    return GunicornApp(app=app, options=options)
 
 
 @pytest.mark.asyncio
@@ -708,3 +708,176 @@ async def test_run_uvicorn_subprocess_ready_and_handles_sigint():
     with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         s.bind((host, port))
+
+
+@pytest.mark.asyncio
+async def test_run_gunicorn_ready_and_handles_sigterm_preload():
+    """
+    Gunicorn (preload, fork) starts healthy, serves '/', then shuts down cleanly on SIGTERM.
+    """
+    host = "127.0.0.1"
+    port = portpicker.pick_unused_port()
+    ctx = multiprocessing.get_context("fork")
+    event_queue: multiprocessing.Queue[ChildEvent] = ctx.Queue()
+
+    app = _make_app_health(always_ok=True)
+    gapp = _build_gunicorn_app(app, host, port, workers=2)
+    health_url = f"http://{host}:{port}/health"
+
+    proc = ctx.Process(
+        target=run_gunicorn,
+        args=(gapp, event_queue, 10.0, health_url),
+        daemon=False,  # master must be able to fork workers
+    )
+    proc.start()
+
+    try:
+        event = await _queue_get_async(event_queue, timeout=20.0)
+        assert event.kind == "ready"
+
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"http://{host}:{port}/") as resp:
+                assert resp.status == 200
+                assert await resp.json() == {"hello": "world"}
+
+        if proc.pid is not None:
+            os.kill(proc.pid, signal.SIGTERM)
+        await asyncio.to_thread(proc.join, 20.0)
+    finally:
+        if proc.is_alive():
+            if proc.pid is not None:
+                os.kill(proc.pid, signal.SIGTERM)
+            await asyncio.to_thread(proc.join, 20.0)
+
+    assert proc.exitcode == 0
+    # Port released
+    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.bind((host, port))
+
+
+@pytest.mark.asyncio
+async def test_run_gunicorn_reports_health_failure_preload():
+    """
+    Health endpoint returns 503 -> watchdog posts error and requests graceful shutdown.
+    """
+    host = "127.0.0.1"
+    port = portpicker.pick_unused_port()
+    ctx = multiprocessing.get_context("fork")
+    event_queue: multiprocessing.Queue[ChildEvent] = ctx.Queue()
+
+    app = _make_app_health(always_ok=False)  # /health -> 503
+    gapp = _build_gunicorn_app(app, host, port, workers=2)
+    health_url = f"http://{host}:{port}/health"
+
+    proc = ctx.Process(
+        target=run_gunicorn,
+        args=(gapp, event_queue, 5.0, health_url),
+        daemon=False,
+    )
+    proc.start()
+
+    try:
+        event = await _queue_get_async(event_queue, timeout=20.0)
+        assert event.kind == "error"
+        assert "Server is not healthy" in (event.message or "")
+        await asyncio.to_thread(proc.join, 20.0)
+    finally:
+        if proc.is_alive():
+            await asyncio.to_thread(proc.join, 20.0)
+
+    assert proc.exitcode == 0
+    # Port released
+    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.bind((host, port))
+
+
+@pytest.mark.asyncio
+async def test_run_gunicorn_no_health_reports_ready_and_sigint_preload():
+    """
+    Start Gunicorn without health URL; readiness is based on workers spawning.
+    Serve '/', then SIGINT to stop.
+    """
+    host = "127.0.0.1"
+    port = portpicker.pick_unused_port()
+    ctx = multiprocessing.get_context("fork")
+    event_queue: multiprocessing.Queue[ChildEvent] = ctx.Queue()
+
+    app = _make_app_health(always_ok=True)
+    gapp = _build_gunicorn_app(app, host, port, workers=2)
+
+    proc = ctx.Process(
+        target=run_gunicorn,
+        args=(gapp, event_queue, 10.0, None),  # no health check
+        daemon=False,
+    )
+    proc.start()
+
+    try:
+        event = await _queue_get_async(event_queue, timeout=20.0)
+        assert event.kind == "ready"
+
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"http://{host}:{port}/") as resp:
+                assert resp.status == 200
+                assert await resp.json() == {"hello": "world"}
+
+        if proc.pid is not None:
+            os.kill(proc.pid, signal.SIGINT)
+        await asyncio.to_thread(proc.join, 20.0)
+    finally:
+        if proc.is_alive():
+            await asyncio.to_thread(proc.join, 20.0)
+
+    assert proc.exitcode == 0
+    # Port released
+    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.bind((host, port))
+
+
+@pytest.mark.asyncio
+async def test_run_gunicorn_reports_startup_bind_failure_preload(caplog: pytest.LogCaptureFixture):
+    """
+    Occupy the port so Gunicorn cannot bind; watchdog should emit an error like
+    'Gunicorn workers did not start within ... seconds.'
+    """
+    host = "127.0.0.1"
+    conflict_port = portpicker.pick_unused_port()
+    ctx = multiprocessing.get_context("fork")
+    event_queue: multiprocessing.Queue[ChildEvent] = ctx.Queue()
+
+    # Occupy the port in parent so child fails to bind
+    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.bind((host, conflict_port))
+        s.listen(1)
+
+        caplog.set_level(logging.ERROR)
+
+        app = _make_app_health(always_ok=True)
+        gapp = _build_gunicorn_app(app, host, conflict_port, workers=2)
+
+        proc = ctx.Process(
+            target=run_gunicorn,
+            args=(gapp, event_queue, 5.0, None),
+            daemon=False,
+        )
+        proc.start()
+
+        try:
+            event = await _queue_get_async(event_queue, timeout=20.0)
+            assert event.kind == "error"
+            assert "Gunicorn workers did not start within" in (event.message or "")
+            await asyncio.to_thread(proc.join, 20.0)
+        finally:
+            if proc.is_alive():
+                await asyncio.to_thread(proc.join, 20.0)
+
+        assert proc.exitcode == 0
+
+    # After releasing 's', the port should be available again
+    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s2:
+        s2.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s2.bind((host, conflict_port))
