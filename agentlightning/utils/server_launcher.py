@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import multiprocessing
+import queue
+import signal
 import socket
 import threading
 import time
@@ -110,6 +112,7 @@ async def run_uvicorn_asyncio(
         start_time = time.time()
         deadline = start_time + timeout  # child-side startup window
         logger.debug(f"Waiting for server to start up for {timeout:.2f} seconds...")
+        # Wait for the server to start up or the deadline to be reached, or an exception to be raised.
         while time.time() < deadline and not uvicorn_server.started and server_start_exception is None:
             await asyncio.sleep(0.1)
 
@@ -132,6 +135,7 @@ async def run_uvicorn_asyncio(
                                 return
                     await asyncio.sleep(0.1)
 
+            # If the server is not healthy, kill it if requested.
             health_failed_seconds = time.time() - start_time
             if kill_unhealthy_server:
                 logger.error(
@@ -156,10 +160,10 @@ async def run_uvicorn_asyncio(
         async with serve_context:
             try:
                 await uvicorn_server.serve()
-            except asyncio.CancelledError:
+            except (asyncio.CancelledError, KeyboardInterrupt):
                 # Normal shutdown path; propagate without rewrapping
                 raise
-            except BaseException as exc:  # including KeyboardInterrupt
+            except BaseException as exc:
                 server_start_exception = exc
                 # This probably sends out earlier than watcher exception; but either one is fine.
                 raise RuntimeError("Uvicorn server failed to serve") from exc
@@ -173,6 +177,185 @@ async def run_uvicorn_asyncio(
         # Wait for watch only, the serve task will run in the background.
         await watch_task
     return serve_task
+
+
+async def shutdown_uvicorn_server(server: uvicorn.Server, task: asyncio.Task[None], timeout: float = 5.0) -> None:
+    """Shutdown a uvicorn server and await the serving task."""
+    logger.debug("Requesting graceful shutdown of uvicorn server.")
+    server.should_exit = True
+    # Give uvicorn a brief window to shut down cleanly.
+    try:
+        logger.debug("Waiting for graceful shutdown of uvicorn server.")
+        await asyncio.wait_for(task, timeout=timeout)
+        logger.debug("Graceful shutdown of uvicorn server completed.")
+    except asyncio.TimeoutError:
+        logger.error("Graceful shutdown of uvicorn server timed out.")
+        # As a last resort, cancel; this shouldn't happen under normal circumstances.
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+        logger.warning("Uvicorn server forced to stop.")
+
+
+def run_uvicorn_thread(
+    uvicorn_server: uvicorn.Server,
+    serve_context: AsyncContextManager[Any],
+    event_queue: queue.Queue[ChildEvent],
+    stop_event: threading.Event,
+    timeout: float = 60.0,
+    health_url: Optional[str] = None,
+):
+    """
+    Run a uvicorn server in a thread.
+
+    How to stop programmatically (from the main thread):
+
+        uvicorn_server.should_exit = True
+
+    This function:
+
+    - starts the server and waits for startup/health (if provided),
+    - then blocks until the server exits,
+    - shuts down cleanly if an error happens during startup/health,
+    - or if the thread is stopped by stop event.
+    """
+
+    async def _main() -> None:
+        # Start server without waiting for full lifecycle; return once startup/health is done.
+        serve_task: Optional[asyncio.Task[None]] = None
+        try:
+            serve_task = await run_uvicorn_asyncio(
+                uvicorn_server=uvicorn_server,
+                serve_context=serve_context,
+                timeout=timeout,
+                health_url=health_url,
+                wait_for_serve=False,  # return after startup watcher finishes
+                kill_unhealthy_server=True,  # raise if health fails within timeout
+            )
+            event_queue.put(ChildEvent(kind="ready"))
+        except Exception as exc:
+            # Startup/health failed; nothing is running in the background.
+            logger.exception("Uvicorn failed to start or was unhealthy.")
+            event_queue.put(
+                ChildEvent(
+                    kind="error", exc_type=type(exc).__name__, message=str(exc), traceback=traceback.format_exc()
+                )
+            )
+            return
+
+        logger.debug("Thread server started and ready.")
+        try:
+            # At this point, the server is up and serving in the same thread's loop.
+            # Block here until it exits (caller can stop it via setting the stop_event).
+            while not stop_event.is_set():
+                await asyncio.sleep(0.1)
+        except asyncio.CancelledError:
+            # Shutdown the server.
+            logger.warning(
+                "Thread server received asyncio cancellation signal. Shutting down gracefully. This is not the recommended way to stop the server."
+            )
+            raise
+        except Exception as exc:
+            logger.exception("Exception during the thread event waiting loop.")
+            event_queue.put(
+                ChildEvent(
+                    kind="error", exc_type=type(exc).__name__, message=str(exc), traceback=traceback.format_exc()
+                )
+            )
+        finally:
+            logger.info("Requesting graceful shutdown of uvicorn server.")
+            await shutdown_uvicorn_server(uvicorn_server, serve_task)
+            logger.info("Uvicorn server shut down gracefully.")
+
+    # Each thread needs its own event loop; use asyncio.run to manage it cleanly.
+    try:
+        asyncio.run(_main())
+    except Exception:
+        # Exceptions are already logged above; don't crash the process from a thread.
+        # (Caller can inspect logs or add a queue/handler if they need to propagate.)
+        logger.exception("Exception within the thread server loop. Inspect the logs for details.")
+
+
+def run_uvicorn_subprocess(
+    uvicorn_server: uvicorn.Server,
+    serve_context: AsyncContextManager[Any],
+    event_queue: multiprocessing.Queue[ChildEvent],
+    timeout: float = 60.0,
+    health_url: Optional[str] = None,
+):
+    """Run a uvicorn server in a subprocess.
+
+    Behavior:
+
+    - Start uvicorn and wait for startup/health (if provided).
+    - Post ChildEvent(kind="ready") once the server is up.
+    - Stay alive until a termination signal (SIGTERM/SIGINT).
+    - On signal, request graceful shutdown and wait for the server to exit.
+    """
+
+    async def _main() -> None:
+        stop_event = asyncio.Event()
+
+        # Register signal handlers
+        loop = asyncio.get_running_loop()
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            loop.add_signal_handler(sig, stop_event.set)
+        logger.debug("Subprocess signal handlers registered.")
+
+        serve_task: Optional[asyncio.Task[None]] = None
+
+        try:
+            # Start server but don't block on its full lifecycle; this returns once the watcher finishes.
+            serve_task = await run_uvicorn_asyncio(
+                uvicorn_server=uvicorn_server,
+                serve_context=serve_context,
+                timeout=timeout,
+                health_url=health_url,
+                wait_for_serve=False,  # return after startup/health passes
+                kill_unhealthy_server=True,  # if unhealthy, fail fast in the child
+            )
+
+            # Announce readiness only after watcher success.
+            event_queue.put(ChildEvent(kind="ready"))
+
+            logger.debug("Subprocess server started and ready.")
+
+            # Wait until we're told to stop.
+            await stop_event.wait()
+
+        except Exception as exc:
+            # Propagate any startup/health errors to the parent.
+            event_queue.put(
+                ChildEvent(
+                    kind="error",
+                    exc_type=type(exc).__name__,
+                    message=str(exc),
+                    traceback=traceback.format_exc(),
+                )
+            )
+            logger.exception("Subprocess server failed to start or was unhealthy.")
+
+        finally:
+            # Request graceful shutdown if the server is running.
+            if serve_task is not None:
+                logger.info("Requesting graceful shutdown of subprocess server.")
+                await shutdown_uvicorn_server(uvicorn_server, serve_task)
+                logger.info("Subprocess server shut down gracefully.")
+            else:
+                logger.info("Subprocess server was not running. Nothing to stop.")
+
+    try:
+        asyncio.run(_main())
+    except Exception as exc:
+        # If something escapes _main(), make sure the parent hears about it.
+        event_queue.put(
+            ChildEvent(
+                kind="error",
+                exc_type=type(exc).__name__,
+                message=str(exc),
+                traceback=traceback.format_exc(),
+            )
+        )
 
 
 class PythonServerLauncher:
