@@ -366,6 +366,7 @@ def run_uvicorn_subprocess(
 
 def run_gunicorn(
     gunicorn_app: GunicornApp,
+    serve_context: AsyncContextManager[Any],
     event_queue: multiprocessing.Queue[ChildEvent],
     timeout: float = 60.0,
     health_url: Optional[str] = None,
@@ -486,19 +487,26 @@ def run_gunicorn(
     watchdog_thread = threading.Thread(target=_watchdog, daemon=True)
     watchdog_thread.start()
 
-    try:
-        arbiter.run()
-    except RuntimeError as exc:
-        event_queue.put(
-            ChildEvent(
-                kind="error",
-                exc_type=type(exc).__name__,
-                message=str(exc),
-                traceback=traceback.format_exc(),
+    async def _serve() -> None:
+        nonlocal runtime_error
+        try:
+            async with serve_context:
+                arbiter.run()
+        except Exception as exc:
+            runtime_error = exc
+            event_queue.put(
+                ChildEvent(
+                    kind="error",
+                    exc_type=type(exc).__name__,
+                    message=str(exc),
+                    traceback=traceback.format_exc(),
+                )
             )
-        )
-        logger.exception("Gunicorn server failed to start.")
-        runtime_error = exc
+            logger.exception("Gunicorn server failed to start.")
+
+    try:
+        asyncio.run(_serve())
+        # Most exceptions should have been caught within the _serve() coroutine.
     finally:
         # Ensure watchdog doesn't try to act on a dead arbiter for long.
         watchdog_thread.join(timeout=5.0)
