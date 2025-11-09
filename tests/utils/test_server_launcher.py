@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import multiprocessing
+import os
+import queue
+import signal
 import socket
+import threading
 import time
 from contextlib import asynccontextmanager, closing
 from typing import AsyncIterator
@@ -15,7 +20,13 @@ import pytest
 import uvicorn
 from fastapi import FastAPI, Response
 
-from agentlightning.utils.server_launcher import run_uvicorn_asyncio, shutdown_uvicorn_server
+from agentlightning.utils.server_launcher import (
+    ChildEvent,
+    run_uvicorn_asyncio,
+    run_uvicorn_subprocess,
+    run_uvicorn_thread,
+    shutdown_uvicorn_server,
+)
 
 
 @asynccontextmanager
@@ -51,6 +62,31 @@ def _new_server(app: FastAPI, host: str, port: int) -> uvicorn.Server:
         loop="asyncio",
     )
     return uvicorn.Server(cfg)
+
+
+async def _queue_get_async(q: queue.Queue[ChildEvent] | multiprocessing.Queue, timeout: float) -> ChildEvent:
+    """Wait for a queue event without blocking the asyncio loop."""
+    return await asyncio.to_thread(q.get, True, timeout)
+
+
+def _subprocess_uvicorn_entry(
+    always_ok: bool,
+    host: str,
+    port: int,
+    event_queue: multiprocessing.Queue,
+    timeout: float,
+) -> None:
+    """Helper that runs inside a spawned subprocess for exercising run_uvicorn_subprocess."""
+    app = _make_app_health(always_ok=always_ok)
+    server = _new_server(app, host, port)
+    health_url = f"http://{host}:{port}/health"
+    run_uvicorn_subprocess(
+        uvicorn_server=server,
+        serve_context=noop_context(),
+        event_queue=event_queue,
+        timeout=timeout,
+        health_url=health_url,
+    )
 
 
 @pytest.mark.asyncio
@@ -355,3 +391,153 @@ async def test_unhealthy_left_running_wait_for_serve_true(caplog: pytest.LogCapt
     print("cancelling run_task")
     with pytest.raises(asyncio.CancelledError):
         await run_task
+
+
+@pytest.mark.asyncio
+async def test_run_uvicorn_thread_reports_ready_and_stops_cleanly():
+    host = "127.0.0.1"
+    port = portpicker.pick_unused_port()
+    app = _make_app_health(always_ok=True)
+    server = _new_server(app, host, port)
+
+    event_queue: queue.Queue[ChildEvent] = queue.Queue()
+    stop_event = threading.Event()
+
+    thread = threading.Thread(
+        target=run_uvicorn_thread,
+        args=(
+            server,
+            noop_context(),
+            event_queue,
+            stop_event,
+            10.0,
+            f"http://{host}:{port}/health",
+        ),
+        daemon=True,
+    )
+    thread.start()
+
+    try:
+        event = await _queue_get_async(event_queue, timeout=10.0)
+        assert event.kind == "ready"
+
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"http://{host}:{port}/") as resp:
+                assert resp.status == 200
+                assert await resp.json() == {"hello": "world"}
+    finally:
+        stop_event.set()
+        await asyncio.to_thread(thread.join, 10.0)
+
+    assert not thread.is_alive()
+    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.bind((host, port))
+
+
+@pytest.mark.asyncio
+async def test_run_uvicorn_thread_reports_health_failure_event():
+    host = "127.0.0.1"
+    port = portpicker.pick_unused_port()
+    app = _make_app_health(always_ok=False)
+    server = _new_server(app, host, port)
+
+    event_queue: queue.Queue[ChildEvent] = queue.Queue()
+    stop_event = threading.Event()
+
+    thread = threading.Thread(
+        target=run_uvicorn_thread,
+        args=(
+            server,
+            noop_context(),
+            event_queue,
+            stop_event,
+            5.0,
+            f"http://{host}:{port}/health",
+        ),
+        daemon=True,
+    )
+    thread.start()
+
+    event = await _queue_get_async(event_queue, timeout=10.0)
+    assert event.kind == "error"
+    assert "Server is not healthy" in (event.message or "")
+
+    stop_event.set()
+    await asyncio.to_thread(thread.join, 10.0)
+    assert not thread.is_alive()
+
+    # The port should be available again because the thread shut down the server.
+    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.bind((host, port))
+
+
+@pytest.mark.asyncio
+async def test_run_uvicorn_subprocess_ready_and_handles_sigterm():
+    host = "127.0.0.1"
+    port = portpicker.pick_unused_port()
+    ctx = multiprocessing.get_context("spawn")
+    event_queue: multiprocessing.Queue[ChildEvent] = ctx.Queue()
+
+    app = _make_app_health(always_ok=True)
+    server = _new_server(app, host, port)
+    health_url = f"http://{host}:{port}/health"
+
+    process = ctx.Process(
+        target=run_uvicorn_subprocess,
+        args=(server, noop_context(), event_queue, 10.0, health_url),
+    )
+    process.start()
+
+    try:
+        event = await _queue_get_async(event_queue, timeout=20.0)
+        assert event.kind == "ready"
+
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"http://{host}:{port}/") as resp:
+                assert resp.status == 200
+                assert await resp.json() == {"hello": "world"}
+
+        if process.pid is not None:
+            os.kill(process.pid, signal.SIGTERM)
+        await asyncio.to_thread(process.join, 20.0)
+    finally:
+        if process.is_alive():
+            if process.pid is not None:
+                os.kill(process.pid, signal.SIGTERM)
+            await asyncio.to_thread(process.join, 20.0)
+
+    assert process.exitcode == 0
+    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.bind((host, port))
+
+
+@pytest.mark.asyncio
+async def test_run_uvicorn_subprocess_reports_health_failure():
+    host = "127.0.0.1"
+    port = portpicker.pick_unused_port()
+    ctx = multiprocessing.get_context("spawn")
+    event_queue: multiprocessing.Queue[ChildEvent] = ctx.Queue()
+
+    app = _make_app_health(always_ok=False)
+    server = _new_server(app, host, port)
+    health_url = f"http://{host}:{port}/health"
+
+    process = ctx.Process(
+        target=run_uvicorn_subprocess,
+        args=(server, noop_context(), event_queue, 5.0, health_url),
+    )
+    process.start()
+
+    event = await _queue_get_async(event_queue, timeout=20.0)
+    assert event.kind == "error"
+    assert "Server is not healthy" in (event.message or "")
+
+    await asyncio.to_thread(process.join, 20.0)
+    assert process.exitcode == 0
+
+    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.bind((host, port))
