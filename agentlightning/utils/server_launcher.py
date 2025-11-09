@@ -5,16 +5,20 @@ from __future__ import annotations
 import asyncio
 import logging
 import multiprocessing
+import socket
 import threading
 import time
+import traceback
+from contextlib import suppress
 from dataclasses import dataclass
-from typing import Any, Dict, Literal, Optional, Union
+from typing import Any, AsyncContextManager, Dict, Literal, Optional, Union
 
 import aiohttp
 import uvicorn
 from fastapi import FastAPI
 from gunicorn.app.base import BaseApplication
 from gunicorn.arbiter import Arbiter
+from portpicker import pick_unused_port
 
 __all__ = ["PythonServerLauncher", "PythonServerLauncherArgs"]
 
@@ -41,6 +45,20 @@ class PythonServerLauncherArgs:
     """
     log_level: int = logging.INFO
     """The log level to use."""
+
+
+@dataclass
+class ChildEvent:
+    """An event that occurred in a child process."""
+
+    kind: Literal["ready", "error"]
+    """The kind of message."""
+    exc_type: Optional[str] = None
+    """The type of the exception, only used for error messages."""
+    message: Optional[str] = None
+    """The message of the exception, only used for error messages."""
+    traceback: Optional[str] = None
+    """The traceback of the exception, only used for error messages."""
 
 
 logger = logging.getLogger(__name__)
@@ -72,27 +90,113 @@ class _GunicornApp(BaseApplication):
         return self.application
 
 
+async def run_uvicorn_asyncio(
+    uvicorn_server: uvicorn.Server,
+    serve_context: AsyncContextManager[Any],
+    timeout: float = 60.0,
+    health_url: Optional[str] = None,
+    wait_for_serve: bool = True,
+    kill_unhealthy_server: bool = True,
+) -> asyncio.Task[None]:
+    """Run two Asyncio tasks in parallel:
+
+    - A watcher task that waits for the server to start up and then checks for healthiness.
+    - A server task that serves the server.
+    """
+    server_start_exception: Optional[BaseException] = None
+
+    # watcher: when server.started flips True, announce READY once
+    async def _watch_server() -> None:
+        start_time = time.time()
+        deadline = start_time + timeout  # child-side startup window
+        logger.debug(f"Waiting for server to start up for {timeout:.2f} seconds...")
+        while time.time() < deadline and not uvicorn_server.started and server_start_exception is None:
+            await asyncio.sleep(0.1)
+
+        if not uvicorn_server.started:
+            # Normally, the program will not reach this point, as the server will throw the exception itself earlier.
+            raise RuntimeError(f"Server did not start up within {timeout:.2f} seconds.") from server_start_exception
+
+        logger.debug(f"Server started up in {time.time() - start_time:.2f} seconds.")
+
+        # Check for health endpoint status if provided
+        if health_url is not None:
+            async with aiohttp.ClientSession() as session:
+                while time.time() < deadline:
+                    with suppress(Exception):
+                        async with session.get(health_url) as resp:
+                            if resp.status == 200:
+                                logger.debug(
+                                    f"Server is healthy at {health_url} in {time.time() - start_time:.2f} seconds."
+                                )
+                                return
+                    await asyncio.sleep(0.1)
+
+            health_failed_seconds = time.time() - start_time
+            if kill_unhealthy_server:
+                logger.error(
+                    f"Server is not healthy at {health_url} after {health_failed_seconds:.2f} seconds. Shutting down server gracefully."
+                )
+                uvicorn_server.should_exit = True
+                await serve_task
+
+                raise RuntimeError(
+                    f"Server is not healthy at {health_url} after {health_failed_seconds:.2f} seconds. It has been killed."
+                )
+            else:
+                raise RuntimeError(
+                    f"Server is not healthy at {health_url} after {health_failed_seconds:.2f} seconds. It has been left running."
+                )
+
+        else:
+            logger.debug("Server does not provide a health check endpoint. Skipping health check.")
+
+    async def _serve_server() -> None:
+        nonlocal server_start_exception
+        async with serve_context:
+            try:
+                await uvicorn_server.serve()
+            except BaseException as exc:  # including KeyboardInterrupt
+                server_start_exception = exc
+                # This probably sends out earlier than watcher exception; but either one is fine.
+                raise RuntimeError("Uvicorn server failed to serve") from exc
+
+    watch_task = asyncio.create_task(_watch_server())
+    serve_task = asyncio.create_task(_serve_server())
+
+    if wait_for_serve:
+        await asyncio.gather(watch_task, serve_task)
+    else:
+        # Wait for watch only, the serve task will run in the background.
+        await watch_task
+    return serve_task
+
+
 class PythonServerLauncher:
     """Unified launcher for FastAPI, using uvicorn or gunicorn per mode/worker count."""
 
-    def __init__(self, app: FastAPI, args: PythonServerLauncherArgs):
+    def __init__(
+        self, app: FastAPI, args: PythonServerLauncherArgs, serve_context: Optional[AsyncContextManager[Any]] = None
+    ):
         self.app = app
         self.args = args
+        self.serve_context = serve_context
+        self._port: Optional[int] = self.args.port
 
-        self._endpoint = f"http://{self.args.host}:{self.args.port}"
-
-        # uvicorn in-proc state (server inside this process)
         self._uvicorn_server: Optional[uvicorn.Server] = None
         self._serving_thread: Optional[threading.Thread] = None
         self._server_start_exception: Optional[BaseException] = None
 
         # gunicorn/uvicorn state: master inside an arbiter process; workers are forked (if gunicorn)
         self._serving_process: Optional[multiprocessing.Process] = None
+        self._child_error_queue: Optional[multiprocessing.Queue[ChildEvent]] = None
+        self._gunicorn_app: Optional[_GunicornApp] = None
+        self._gunicorn_thread: Optional[threading.Thread] = None
 
     @property
     def endpoint(self) -> str:
         """The endpoint of the server."""
-        return self._endpoint
+        return f"http://{self.args.host}:{self._port}"
 
     @property
     def health_url(self) -> Optional[str]:
@@ -100,6 +204,15 @@ class PythonServerLauncher:
         if self.args.healthcheck_url is not None:
             return f"{self.endpoint}{self.args.healthcheck_url}"
         return None
+
+    def _update_endpoint(self, port: int) -> None:
+        self._endpoint = f"http://{self.args.host}:{port}"
+
+    def _ensure_port(self) -> int:
+        """Ensure we have a concrete TCP port and update endpoint accordingly."""
+        if self._port is None:
+            self._port = pick_unused_port()
+        return self._port
 
     @staticmethod
     def _normalize_app_ref(app: FastAPI) -> str:
@@ -119,9 +232,7 @@ class PythonServerLauncher:
             # Multi-process mode, starts a new process first
             # Then decides whether to use uvicorn or gunicorn
             await self._start_serving_process()
-        elif self.args.launch_mode in ("asyncio", "thread") or (
-            self.args.launch_mode == "mp" and self.args.n_workers == 1
-        ):
+        elif self.args.launch_mode in ("asyncio", "thread"):
             # Always in-proc uvicorn (never subprocess)
             if self.args.launch_mode == "asyncio":
                 await self._start_uvicorn_asyncio()
@@ -150,107 +261,190 @@ class PythonServerLauncher:
             logger.info(f"Starting server {self._normalize_app_ref(self.app)} directly because it is not running.")
             await self.start()
 
+    async def _start_serving_process(self):
+        """Starts a server in a separate process (uvicorn) or via gunicorn."""
+        if self.args.n_workers > 1:
+            await self._start_gunicorn()
+            return
+
+        if self._serving_process is not None and self._serving_process.is_alive():
+            await self._stop_serving_process()
+
+        port = self._ensure_port()
+        self._child_error_queue = multiprocessing.Queue(maxsize=1)
+
+        process = multiprocessing.Process(
+            target=_serve_uvicorn_in_process,
+            args=(self.app, self.args.host, port, self.args.log_level, self._child_error_queue),
+            daemon=True,
+        )
+        logger.info(f"Starting uvicorn server process on port {port}...")
+        process.start()
+        self._serving_process = process
+
+        if not await self._server_health_check():
+            await self._stop_serving_process()
+            raise RuntimeError("Server failed to start within the 10 seconds.")
+
+    async def _stop_serving_process(self):
+        """Stops the server that was started in a separate process."""
+        if self.args.n_workers > 1:
+            await self._stop_gunicorn()
+            return
+
+        if self._serving_process is None:
+            return
+
+        logger.info("Stopping uvicorn server process...")
+        process = self._serving_process
+        if process.is_alive():
+            process.terminate()
+            process.join(timeout=10.0)
+            if process.is_alive():
+                logger.error("Uvicorn process did not stop within timeout.")
+        self._serving_process = None
+
     async def run_forever(self):
-        mode = LaunchMode(self.args.launch_mode)
+        """Block until the server exits."""
+        mode = self.args.launch_mode
 
-        if mode == LaunchMode.ASYNCIO:
-            assert self._uvicorn_server is not None
+        if mode == "asyncio":
+            await self._run_uvicorn_forever()
+            return
 
-            async def _wait_till_healthy():
-                if not await self._server_health_check():
-                    raise RuntimeError("Server did not become healthy within the 10 seconds.")
-                logger.info("Server is online at %s", self.endpoint)
+        if mode == "thread":
+            await self._wait_for_thread()
+            return
 
-            async def _serve_capture():
-                try:
-                    await self._uvicorn_server.serve()
-                except KeyboardInterrupt:
-                    raise
-                except (SystemExit, Exception) as exc:
-                    logger.debug("uvicorn serve() raised %s", exc, exc_info=exc)
-                    self._server_start_exception = exc
-                    raise RuntimeError("uvicorn server failed to serve") from exc
+        if mode == "mp":
+            if self.args.n_workers > 1:
+                await self._wait_for_gunicorn()
+            else:
+                await self._wait_for_process()
+            return
 
-            try:
-                await asyncio.gather(_wait_till_healthy(), _serve_capture())
-            except BaseException as exc:
-                if isinstance(exc, KeyboardInterrupt):
-                    raise
-                startup_failed = not self._uvicorn_server.started or isinstance(
-                    self._server_start_exception, (SystemExit, OSError)
-                )
-                if startup_failed:
-                    self._handle_failed_start()
-                    raise RuntimeError(self._format_start_failure_reason())
-                raise
-
-        elif mode == LaunchMode.MP and self.args.n_workers > 1:
-            # Gunicorn: just wait for health then block while thread is alive.
-            if not await self._server_health_check():
-                raise RuntimeError("Server did not become healthy within the 10 seconds.")
-            logger.info("Server is online at %s", self.endpoint)
-            while True:
-                if self._gunicorn_thread is None or not self._gunicorn_thread.is_alive():
-                    return
-                await asyncio.sleep(0.5)
-
-        else:
-            # uvicorn in a thread
-            if not await self._server_health_check():
-                raise RuntimeError("Server did not become healthy within the 10 seconds.")
-            logger.info("Server is online at %s", self.endpoint)
-            while True:
-                if self._serving_thread is None or not self._serving_thread.is_alive():
-                    if self._server_start_exception:
-                        raise RuntimeError(self._format_start_failure_reason())
-                    return
-                await asyncio.sleep(0.5)
+        raise ValueError(f"Unsupported launch mode: {mode}")
 
     def is_running(self) -> bool:
-        mode = LaunchMode(self.args.launch_mode)
+        mode = self.args.launch_mode
 
-        if mode == LaunchMode.MP and self.args.n_workers > 1:
-            return self._gunicorn_thread is not None and self._gunicorn_thread.is_alive()
-        else:
-            return self._uvicorn_server is not None and self._uvicorn_server.started
+        if mode == "mp":
+            if self.args.n_workers > 1:
+                return self._gunicorn_thread is not None and self._gunicorn_thread.is_alive()
+            return self._serving_process is not None and self._serving_process.is_alive()
+
+        return self._uvicorn_server is not None and self._uvicorn_server.started
+
+    async def _run_uvicorn_forever(self):
+        """Share the same uvicorn serving loop pattern used elsewhere in the project."""
+        if self._serving_thread is not None and self._serving_thread.is_alive():
+            raise RuntimeError("run_forever cannot be used while the server is already running in a thread.")
+
+        if self._uvicorn_server is None:
+            self._uvicorn_server = self._create_uvicorn_server()
+
+        uvicorn_server = self._uvicorn_server
+
+        async def _wait_till_healthy():
+            health = await self._server_health_check()
+            if not health:
+                raise RuntimeError("Server did not become healthy within the 10 seconds.")
+            logger.info("Server is online at %s", self.endpoint)
+
+        async def _serve_capture():
+            try:
+                await uvicorn_server.serve()
+            except KeyboardInterrupt:
+                raise
+            except (SystemExit, Exception) as exc:
+                logger.debug("uvicorn serve() raised %s", exc, exc_info=exc)
+                self._server_start_exception = exc
+                raise RuntimeError("uvicorn server failed to serve") from exc
+
+        try:
+            await asyncio.gather(_wait_till_healthy(), _serve_capture())
+        except BaseException as exc:
+            if isinstance(exc, KeyboardInterrupt):
+                raise
+            startup_failed = not uvicorn_server.started or isinstance(
+                self._server_start_exception, (SystemExit, OSError)
+            )
+            if startup_failed:
+                self._handle_failed_start()
+                raise RuntimeError(self._format_start_failure_reason())
+            raise
+
+    async def _wait_for_thread(self):
+        if not await self._server_health_check():
+            raise RuntimeError("Server did not become healthy within the 10 seconds.")
+        logger.info("Server is online at %s", self.endpoint)
+        while True:
+            thread = self._serving_thread
+            if thread is None or not thread.is_alive():
+                if self._server_start_exception:
+                    raise RuntimeError(self._format_start_failure_reason())
+                return
+            await asyncio.sleep(0.5)
+
+    async def _wait_for_gunicorn(self):
+        if not await self._server_health_check():
+            raise RuntimeError("Server did not become healthy within the 10 seconds.")
+        logger.info("Server is online at %s", self.endpoint)
+        while True:
+            thread = self._gunicorn_thread
+            if thread is None or not thread.is_alive():
+                return
+            await asyncio.sleep(0.5)
+
+    async def _wait_for_process(self):
+        if not await self._server_health_check():
+            raise RuntimeError("Server did not become healthy within the 10 seconds.")
+        logger.info("Server is online at %s", self.endpoint)
+        while True:
+            process = self._serving_process
+            if process is None or not process.is_alive():
+                return
+            await asyncio.sleep(0.5)
 
     # ---------------
     # Uvicorn (in-process)
     # ---------------
+    def _create_uvicorn_server(self) -> uvicorn.Server:
+        port = self._ensure_port()
+        config = uvicorn.Config(
+            app=self.app,
+            host=self.args.host,
+            port=port,
+            log_level=self.args.log_level,
+        )
+        return uvicorn.Server(config)
+
     async def _start_uvicorn_asyncio(self):
         if self.is_running():
             await self._stop_uvicorn_inproc()
 
-        config = uvicorn.Config(
-            app=self.args.app,
-            host=self.args.host,
-            port=self.args.port,
-            log_level=self.args.log_level,
-            access_log=self.args.uvicorn_access_log,
-            timeout_keep_alive=self.args.uvicorn_timeout_keep_alive,
-        )
-        self._uvicorn_server = uvicorn.Server(config)
+        self._uvicorn_server = self._create_uvicorn_server()
+        uvicorn_server = self._uvicorn_server
 
         logger.info(f"Starting server at {self.endpoint}")
         self._server_start_exception = None
 
         def run_server_forever():
             try:
-                asyncio.run(self._uvicorn_server.serve())
+                asyncio.run(uvicorn_server.serve())
             except (SystemExit, Exception) as exc:
                 logger.debug("Server thread exiting due to %s", exc, exc_info=exc)
                 self._server_start_exception = exc
 
-        serving_thread = threading.Thread(target=run_server_forever, daemon=True)
-        self._serving_thread = serving_thread
-        serving_thread.start()
+        self._serving_thread = threading.Thread(target=run_server_forever, daemon=True)
+        self._serving_thread.start()
 
         # Wait for uvicorn started flag
         start_deadline = time.time() + 10
         while time.time() < start_deadline:
-            if self._uvicorn_server.started:
+            if uvicorn_server.started:
                 break
-            if self._server_start_exception is not None or not serving_thread.is_alive():
+            if self._server_start_exception is not None or not self._serving_thread.is_alive():
                 self._handle_failed_start()
                 raise RuntimeError(self._format_start_failure_reason())
             await asyncio.sleep(0.05)
@@ -263,8 +457,8 @@ class PythonServerLauncher:
             raise RuntimeError("Server failed to start within the 10 seconds.")
 
         if (
-            not self._uvicorn_server.started
-            or not serving_thread.is_alive()
+            not uvicorn_server.started
+            or not self._serving_thread.is_alive()
             or self._server_start_exception is not None
         ):
             self._handle_failed_start()
@@ -274,15 +468,7 @@ class PythonServerLauncher:
         if self.is_running():
             await self._stop_uvicorn_inproc()
 
-        config = uvicorn.Config(
-            app=self.args.app,
-            host=self.args.host,
-            port=self.args.port,
-            log_level=self.args.log_level,
-            access_log=self.args.uvicorn_access_log,
-            timeout_keep_alive=self.args.uvicorn_timeout_keep_alive,
-        )
-        self._uvicorn_server = uvicorn.Server(config)
+        self._uvicorn_server = self._create_uvicorn_server()
 
         def run_server():
             assert self._uvicorn_server is not None
@@ -316,28 +502,16 @@ class PythonServerLauncher:
         if self.is_running():
             await self._stop_gunicorn()
 
-        # Validate imports only when needed
-        try:
-            import gunicorn  # noqa: F401
-            import uvicorn_worker  # noqa: F401
-        except Exception as exc:
-            raise RuntimeError("mp mode with n_workers>1 requires `gunicorn` and `uvicorn-worker` packages.") from exc
-
+        port = self._ensure_port()
         options = {
-            "bind": f"{self.args.host}:{self.args.port}",
+            "bind": f"{self.args.host}:{port}",
             "workers": int(self.args.n_workers),
             # IMPORTANT: use uvicorn_worker.UvicornWorker (preferred over deprecated class)
             "worker_class": "uvicorn_worker.UvicornWorker",
-            "preload_app": bool(self.args.gunicorn_preload_app),
-            "timeout": int(self.args.gunicorn_timeout),
-            "graceful_timeout": int(self.args.gunicorn_graceful_timeout),
-            "backlog": int(self.args.gunicorn_backlog),
-            "accesslog": self.args.gunicorn_accesslog,
-            "errorlog": self.args.gunicorn_errorlog,
-            "loglevel": self.args.log_level,
+            "loglevel": self._gunicorn_loglevel(),
         }
 
-        app = self._expect_fastapi_instance(self.args.app)
+        app = self._expect_fastapi_instance(self.app)
         self._gunicorn_app = _GunicornApp(app, options)
 
         def run_gunicorn():
@@ -374,16 +548,20 @@ class PythonServerLauncher:
         await self.start()
 
     async def _server_health_check(self, timeout_s: float = 10.0) -> bool:
+        if self.health_url is None:
+            # If a health URL is not provided, assume success once the server reports started.
+            return True
+
         deadline = time.time() + timeout_s
-        while time.time() < deadline:
-            try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(self._health_url) as resp:
+        async with aiohttp.ClientSession() as session:
+            while time.time() < deadline:
+                try:
+                    async with session.get(self.health_url) as resp:
                         if resp.status == 200:
                             return True
-            except Exception:
-                pass
-            await asyncio.sleep(0.1)
+                except Exception:
+                    pass
+                await asyncio.sleep(0.1)
         return False
 
     def _handle_failed_start(self) -> None:
@@ -403,11 +581,15 @@ class PythonServerLauncher:
             return f"{base_message} Reason: {self._server_start_exception}."
         return f"{base_message} Another process may already be using this port."
 
+    def _gunicorn_loglevel(self) -> str:
+        level_name = logging.getLevelName(self.args.log_level)
+        return level_name.lower() if isinstance(level_name, str) else "info"
+
     @staticmethod
     def _expect_fastapi_instance(app: Union[FastAPI, str]) -> FastAPI:
         if isinstance(app, FastAPI):
             return app
         raise ValueError(
-            "When using Gunicorn (mp with n_workers>1), pass a FastAPI instance to PythonServerLauncherArgs.app "
+            "When using Gunicorn (mp with n_workers>1), pass a FastAPI instance to PythonServerLauncher "
             "(Gunicorn wrapper runs the object directly)."
         )
