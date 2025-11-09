@@ -144,7 +144,7 @@ async def run_uvicorn_asyncio(
                     f"Server is not healthy at {health_url} after {health_failed_seconds:.2f} seconds. It has been killed."
                 )
             else:
-                raise RuntimeError(
+                logger.error(
                     f"Server is not healthy at {health_url} after {health_failed_seconds:.2f} seconds. It has been left running."
                 )
 
@@ -156,6 +156,9 @@ async def run_uvicorn_asyncio(
         async with serve_context:
             try:
                 await uvicorn_server.serve()
+            except asyncio.CancelledError:
+                # Normal shutdown path; propagate without rewrapping
+                raise
             except BaseException as exc:  # including KeyboardInterrupt
                 server_start_exception = exc
                 # This probably sends out earlier than watcher exception; but either one is fine.

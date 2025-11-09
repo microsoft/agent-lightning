@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import socket
 import time
 from contextlib import asynccontextmanager, closing
@@ -139,12 +140,21 @@ async def test_fastapi_health_timeout_raises_and_server_is_stopped():
             timeout=2.0,  # short to keep tests snappy
             health_url=f"http://{host}:{port}/health",
             wait_for_serve=False,  # only waits for watcher; it will raise
+            kill_unhealthy_server=True,
         )
 
     assert "Server is not healthy" in str(ei.value)
     assert "has been killed" in str(ei.value)
 
     assert serve_task is None
+
+    # The function raised before returning a serve_task, but server should be stopped.
+    # Check if the port is still occupied.
+    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.bind((host, port))
+        s.listen(1)
+        assert s.fileno() is not None
 
 
 @pytest.mark.asyncio
@@ -273,5 +283,89 @@ async def test_wait_for_serve_true_graceful_shutdown():
 
     # Trigger graceful shutdown and wait for run_task to finish
     run_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await run_task
+
+
+@pytest.mark.asyncio
+async def test_unhealthy_left_running_background_then_manual_shutdown(caplog: pytest.LogCaptureFixture):
+    """
+    When kill_unhealthy_server=False and wait_for_serve=False, the watcher raises
+    while the server continues running. We verify it's still reachable, then shut it down.
+    """
+    host = "127.0.0.1"
+    port = portpicker.pick_unused_port()
+    app = _make_app_health(always_ok=False)  # health returns 503
+    server = _new_server(app, host, port)
+
+    # run_uvicorn_asyncio will raise; server continues running in background
+    caplog.set_level(logging.ERROR)
+    serve_task = await run_uvicorn_asyncio(
+        uvicorn_server=server,
+        serve_context=noop_context(),
+        timeout=2.0,
+        health_url=f"http://{host}:{port}/health",
+        wait_for_serve=False,
+        kill_unhealthy_server=False,  # <-- leave server running
+    )
+    assert any("left running" in rec.message for rec in caplog.records)
+
+    # Should still be started and serving:
+    assert server.started is True
+
+    # Root endpoint should be reachable even though /health is failing.
+    async with aiohttp.ClientSession() as session:
+        async with session.get(f"http://{host}:{port}/") as resp:
+            assert resp.status == 200
+            assert await resp.json() == {"hello": "world"}
+
+    # Now manually stop the server and wait for it to go down.
+    await _shutdown_uvicorn(server, serve_task)
+
+
+@pytest.mark.asyncio
+async def test_unhealthy_left_running_wait_for_serve_true(caplog: pytest.LogCaptureFixture):
+    """
+    With kill_unhealthy_server=False and wait_for_serve=True, the call raises,
+    but uvicorn keeps running. Verify it's serving, then stop it.
+    """
+    host = "127.0.0.1"
+    port = portpicker.pick_unused_port()
+    app = _make_app_health(always_ok=False)
+    server = _new_server(app, host, port)
+    print("entered")
+
+    caplog.set_level(logging.ERROR)
+    run_task = asyncio.create_task(
+        run_uvicorn_asyncio(
+            uvicorn_server=server,
+            serve_context=noop_context(),
+            timeout=2.0,
+            health_url=f"http://{host}:{port}/health",
+            wait_for_serve=True,
+            kill_unhealthy_server=False,  # leave server running
+        )
+    )
+
+    # Wait until uvicorn flips `started` or time out
+    start = time.time()
+    while not server.started and (time.time() - start) < 5.0:
+        await asyncio.sleep(0.05)
+    print("server started", server.started)
+    assert server.started is True, "Server did not report started in time"
+    await asyncio.sleep(max(0.01, start + 3.0 - time.time()))
+    print("after sleep")
+    assert any("left running" in rec.message for rec in caplog.records)
+    print("server started")
+
+    # Verify we can still hit the root.
+    async with aiohttp.ClientSession() as session:
+        async with session.get(f"http://{host}:{port}/") as resp:
+            assert resp.status == 200
+            assert await resp.json() == {"hello": "world"}
+
+    # Trigger graceful shutdown and wait for run_task to finish
+    run_task.cancel()
+    print("cancelling run_task")
     with pytest.raises(asyncio.CancelledError):
         await run_task
