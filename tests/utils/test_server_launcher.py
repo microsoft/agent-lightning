@@ -477,7 +477,7 @@ async def test_run_uvicorn_thread_reports_health_failure_event():
 async def test_run_uvicorn_subprocess_ready_and_handles_sigterm():
     host = "127.0.0.1"
     port = portpicker.pick_unused_port()
-    ctx = multiprocessing.get_context("spawn")
+    ctx = multiprocessing.get_context("fork")
     event_queue: multiprocessing.Queue[ChildEvent] = ctx.Queue()
 
     app = _make_app_health(always_ok=True)
@@ -518,7 +518,7 @@ async def test_run_uvicorn_subprocess_ready_and_handles_sigterm():
 async def test_run_uvicorn_subprocess_reports_health_failure():
     host = "127.0.0.1"
     port = portpicker.pick_unused_port()
-    ctx = multiprocessing.get_context("spawn")
+    ctx = multiprocessing.get_context("fork")
     event_queue: multiprocessing.Queue[ChildEvent] = ctx.Queue()
 
     app = _make_app_health(always_ok=False)
@@ -538,6 +538,173 @@ async def test_run_uvicorn_subprocess_reports_health_failure():
     await asyncio.to_thread(process.join, 20.0)
     assert process.exitcode == 0
 
+    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.bind((host, port))
+
+
+@pytest.mark.asyncio
+async def test_run_uvicorn_thread_no_health_reports_ready_and_stops_cleanly():
+    host = "127.0.0.1"
+    port = portpicker.pick_unused_port()
+    app = _make_app_health(always_ok=True)
+    server = _new_server(app, host, port)
+
+    event_queue: queue.Queue[ChildEvent] = queue.Queue()
+    stop_event = threading.Event()
+
+    thread = threading.Thread(
+        target=run_uvicorn_thread,
+        args=(
+            server,  # uvicorn.Server
+            noop_context(),
+            event_queue,
+            stop_event,
+            10.0,  # timeout
+            None,
+        ),  # <-- health_url=None
+        daemon=True,
+    )
+    thread.start()
+
+    try:
+        event = await _queue_get_async(event_queue, timeout=10.0)
+        assert event.kind == "ready"
+
+        # Should be serving even without health checks
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"http://{host}:{port}/") as resp:
+                assert resp.status == 200
+                assert await resp.json() == {"hello": "world"}
+    finally:
+        stop_event.set()
+        await asyncio.to_thread(thread.join, 10.0)
+
+    assert not thread.is_alive()
+    # Port should be released
+    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.bind((host, port))
+
+
+@pytest.mark.asyncio
+async def test_run_uvicorn_thread_reports_startup_bind_failure_event():
+    host = "127.0.0.1"
+    conflict_port = portpicker.pick_unused_port()
+
+    # Occupy the port to force a bind failure
+    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.bind((host, conflict_port))
+        s.listen(1)
+
+        app = _make_app_health(always_ok=True)
+        server = _new_server(app, host, conflict_port)
+
+        event_queue: queue.Queue[ChildEvent] = queue.Queue()
+        stop_event = threading.Event()
+
+        thread = threading.Thread(
+            target=run_uvicorn_thread,
+            args=(server, noop_context(), event_queue, stop_event, 5.0, None),
+            daemon=True,
+        )
+        thread.start()
+
+        try:
+            event = await _queue_get_async(event_queue, timeout=10.0)
+            assert event.kind == "error"
+            # Message should reflect uvicorn startup/serve failure
+            assert "Server did not start up within" in (event.message or "")
+        finally:
+            stop_event.set()
+            await asyncio.to_thread(thread.join, 10.0)
+
+        assert not thread.is_alive()
+
+    # After thread cleanup, port remains available because we released s above
+    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s2:
+        s2.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s2.bind((host, conflict_port))
+
+
+@pytest.mark.asyncio
+async def test_run_uvicorn_subprocess_reports_startup_bind_failure():
+    host = "127.0.0.1"
+    conflict_port = portpicker.pick_unused_port()
+    ctx = multiprocessing.get_context("fork")
+    event_queue: multiprocessing.Queue[ChildEvent] = ctx.Queue()
+
+    # Occupy the port in parent so child fails to bind
+    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.bind((host, conflict_port))
+        s.listen(1)
+
+        app = _make_app_health(always_ok=True)
+        server = _new_server(app, host, conflict_port)
+
+        process = ctx.Process(
+            target=run_uvicorn_subprocess,
+            args=(server, noop_context(), event_queue, 5.0, None),
+        )
+        process.start()
+
+        try:
+            event = await _queue_get_async(event_queue, timeout=20.0)
+            assert event.kind == "error"
+            # Expect a wrapped serve/startup error message
+            assert "Server did not start up within" in (event.message or "")
+            await asyncio.to_thread(process.join, 20.0)
+        finally:
+            if process.is_alive():
+                await asyncio.to_thread(process.join, 20.0)
+
+        # Child should exit cleanly even on error
+        assert process.exitcode == 0
+
+    # Port remains available now that parent released it
+    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s2:
+        s2.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s2.bind((host, conflict_port))
+
+
+@pytest.mark.asyncio
+async def test_run_uvicorn_subprocess_ready_and_handles_sigint():
+    host = "127.0.0.1"
+    port = portpicker.pick_unused_port()
+    ctx = multiprocessing.get_context("fork")
+    event_queue: multiprocessing.Queue[ChildEvent] = ctx.Queue()
+
+    app = _make_app_health(always_ok=True)
+    server = _new_server(app, host, port)
+    health_url = f"http://{host}:{port}/health"
+
+    process = ctx.Process(
+        target=run_uvicorn_subprocess,
+        args=(server, noop_context(), event_queue, 10.0, health_url),
+    )
+    process.start()
+
+    try:
+        event = await _queue_get_async(event_queue, timeout=20.0)
+        assert event.kind == "ready"
+
+        # Confirm it serves
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"http://{host}:{port}/") as resp:
+                assert resp.status == 200
+                assert await resp.json() == {"hello": "world"}
+
+        # Send SIGINT instead of SIGTERM to exercise both handlers
+        if process.pid is not None:
+            os.kill(process.pid, signal.SIGINT)
+        await asyncio.to_thread(process.join, 20.0)
+    finally:
+        assert not process.is_alive()
+
+    assert process.exitcode == 0
+    # Port should be free after shutdown
     with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         s.bind((host, port))

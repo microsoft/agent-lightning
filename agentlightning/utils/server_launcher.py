@@ -92,6 +92,24 @@ class _GunicornApp(BaseApplication):
         return self.application
 
 
+async def shutdown_uvicorn_server(server: uvicorn.Server, task: asyncio.Task[None], timeout: float = 5.0) -> None:
+    """Shutdown a uvicorn server and await the serving task."""
+    logger.debug("Requesting graceful shutdown of uvicorn server.")
+    server.should_exit = True
+    # Give uvicorn a brief window to shut down cleanly.
+    try:
+        logger.debug("Waiting for graceful shutdown of uvicorn server.")
+        await asyncio.wait_for(task, timeout=timeout)
+        logger.debug("Graceful shutdown of uvicorn server completed.")
+    except asyncio.TimeoutError:
+        logger.error("Graceful shutdown of uvicorn server timed out.")
+        # As a last resort, cancel; this shouldn't happen under normal circumstances.
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+        logger.warning("Uvicorn server forced to stop.")
+
+
 async def run_uvicorn_asyncio(
     uvicorn_server: uvicorn.Server,
     serve_context: AsyncContextManager[Any],
@@ -165,8 +183,13 @@ async def run_uvicorn_asyncio(
                 raise
             except BaseException as exc:
                 server_start_exception = exc
-                # This probably sends out earlier than watcher exception; but either one is fine.
-                raise RuntimeError("Uvicorn server failed to serve") from exc
+                if wait_for_serve:
+                    # This probably sends out earlier than watcher exception; but either one is fine.
+                    raise RuntimeError("Uvicorn server failed to serve") from exc
+                else:
+                    # If the caller is not waiting for this coroutine, we just log the error.
+                    # It will be handled by the watch task.
+                    logger.exception("Uvicorn server failed to serve. Inspect the logs for details.")
 
     watch_task = asyncio.create_task(_watch_server())
     serve_task = asyncio.create_task(_serve_server())
@@ -177,24 +200,6 @@ async def run_uvicorn_asyncio(
         # Wait for watch only, the serve task will run in the background.
         await watch_task
     return serve_task
-
-
-async def shutdown_uvicorn_server(server: uvicorn.Server, task: asyncio.Task[None], timeout: float = 5.0) -> None:
-    """Shutdown a uvicorn server and await the serving task."""
-    logger.debug("Requesting graceful shutdown of uvicorn server.")
-    server.should_exit = True
-    # Give uvicorn a brief window to shut down cleanly.
-    try:
-        logger.debug("Waiting for graceful shutdown of uvicorn server.")
-        await asyncio.wait_for(task, timeout=timeout)
-        logger.debug("Graceful shutdown of uvicorn server completed.")
-    except asyncio.TimeoutError:
-        logger.error("Graceful shutdown of uvicorn server timed out.")
-        # As a last resort, cancel; this shouldn't happen under normal circumstances.
-        task.cancel()
-        with suppress(asyncio.CancelledError):
-            await task
-        logger.warning("Uvicorn server forced to stop.")
 
 
 def run_uvicorn_thread(
