@@ -15,27 +15,13 @@ import pytest
 import uvicorn
 from fastapi import FastAPI, Response
 
-from agentlightning.utils.server_launcher import run_uvicorn_asyncio
+from agentlightning.utils.server_launcher import run_uvicorn_asyncio, shutdown_uvicorn_server
 
 
 @asynccontextmanager
 async def noop_context() -> AsyncIterator[None]:
     """A real async context manager that does nothing (satisfies serve_context)."""
     yield
-
-
-async def _shutdown_uvicorn(server: uvicorn.Server, task: asyncio.Task[None], timeout: float = 5.0) -> None:
-    """Ask uvicorn to stop and await the serving task."""
-    server.should_exit = True
-    # uvicorn sets server.started False after shutdown;
-    # awaiting the task ensures we don't leak background tasks.
-    try:
-        await asyncio.wait_for(task, timeout=timeout)
-    except asyncio.TimeoutError:
-        # As a last resort, cancel; this shouldn't happen under normal circumstances.
-        task.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await task
 
 
 def _make_app_health(always_ok: bool = True) -> FastAPI:
@@ -95,7 +81,7 @@ async def test_fastapi_health_ok_background_then_shutdown():
             assert await resp.json() == {"hello": "world"}
 
     # Clean shutdown
-    await _shutdown_uvicorn(server, serve_task)
+    await shutdown_uvicorn_server(server, serve_task)
 
 
 @pytest.mark.asyncio
@@ -118,7 +104,7 @@ async def test_fastapi_no_health_background_then_shutdown():
     assert not serve_task.done()
     assert server.started is True
 
-    await _shutdown_uvicorn(server, serve_task)
+    await shutdown_uvicorn_server(server, serve_task)
 
 
 @pytest.mark.asyncio
@@ -320,7 +306,7 @@ async def test_unhealthy_left_running_background_then_manual_shutdown(caplog: py
             assert await resp.json() == {"hello": "world"}
 
     # Now manually stop the server and wait for it to go down.
-    await _shutdown_uvicorn(server, serve_task)
+    await shutdown_uvicorn_server(server, serve_task)
 
 
 @pytest.mark.asyncio
