@@ -61,7 +61,7 @@ jobs:
         if: matrix.setup == 'slow'
 
   lint-js:
-    name: Lint JavaScript
+    name: Lint - JavaScript
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -159,7 +159,7 @@ jobs:
           PYTEST_ADDOPTS: "--color=yes"
 
   test-js:
-    name: Test JavaScript
+    name: Test - JavaScript
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -170,7 +170,7 @@ jobs:
       - name: Install dependencies
         run: cd dashboard && npm ci
       - name: Run vitest
-        run: cd dashboard && npm run test
+        run: cd dashboard && npm run vitest
       - name: Run Chromatic
         uses: chromaui/action@latest
         with:
