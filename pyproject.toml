@@ -22,6 +22,8 @@ dependencies = [
   "openai",
   "rich",
   "portpicker",
+  "gunicorn",
+  "uvicorn_worker",
 ]
 
 [project.optional-dependencies]
