@@ -12,7 +12,7 @@ import socket
 import threading
 import time
 from contextlib import asynccontextmanager, closing
-from typing import AsyncIterator
+from typing import Any, AsyncContextManager, AsyncIterator, Dict, cast
 
 import aiohttp
 import portpicker
@@ -66,6 +66,18 @@ def _new_server(app: FastAPI, host: str, port: int) -> uvicorn.Server:
     return uvicorn.Server(cfg)
 
 
+def _make_flag_context(flag_dict: Dict[str, bool], key_prefix: str = "ctx") -> AsyncContextManager[None]:
+    @asynccontextmanager
+    async def ctx():
+        flag_dict[f"{key_prefix}_entered"] = True
+        try:
+            yield
+        finally:
+            flag_dict[f"{key_prefix}_exited"] = True
+
+    return ctx()
+
+
 async def _queue_get_async(
     q: queue.Queue[ChildEvent] | multiprocessing.Queue[ChildEvent], timeout: float
 ) -> ChildEvent:
@@ -85,6 +97,7 @@ def _build_gunicorn_app(app: FastAPI, host: str, port: int, workers: int = 2) ->
         "accesslog": None,
         "errorlog": "-",
         "preload_app": True,
+        "graceful_timeout": 2,
     }
     return GunicornApp(app=app, options=options)
 
@@ -841,7 +854,7 @@ async def test_run_gunicorn_no_health_reports_ready_and_sigint_preload():
 
 
 @pytest.mark.asyncio
-async def test_run_gunicorn_reports_startup_bind_failure_preload(caplog: pytest.LogCaptureFixture):
+async def test_run_gunicorn_reports_startup_bind_failure_preload(capfd: pytest.CaptureFixture[str]):
     """
     Occupy the port so Gunicorn cannot bind; watchdog should emit an error like
     'Gunicorn workers did not start within ... seconds.'
@@ -856,8 +869,6 @@ async def test_run_gunicorn_reports_startup_bind_failure_preload(caplog: pytest.
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         s.bind((host, conflict_port))
         s.listen(1)
-
-        caplog.set_level(logging.ERROR)
 
         app = _make_app_health(always_ok=True)
         gapp = _build_gunicorn_app(app, host, conflict_port, workers=2)
@@ -878,9 +889,204 @@ async def test_run_gunicorn_reports_startup_bind_failure_preload(caplog: pytest.
             if proc.is_alive():
                 await asyncio.to_thread(proc.join, 10.0)
 
-        assert proc.exitcode == 0
+        assert proc.exitcode != 0
+        captured = capfd.readouterr()
+        assert "Address already in use" in captured.err
 
     # After releasing 's', the port should be available again
     with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s2:
         s2.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         s2.bind((host, conflict_port))
+
+
+@pytest.mark.asyncio
+async def test_run_uvicorn_asyncio_applies_serve_context():
+    """
+    run_uvicorn_asyncio should enter and exit the provided serve_context.
+    """
+    host = "127.0.0.1"
+    port = portpicker.pick_unused_port()
+    app = _make_app_health(always_ok=True)
+    server = _new_server(app, host, port)
+
+    # local dict is fine (same-process)
+    flags: Dict[str, bool] = {}
+
+    serve_task = await run_uvicorn_asyncio(
+        uvicorn_server=server,
+        serve_context=_make_flag_context(flags, "asyncio"),
+        timeout=10.0,
+        health_url=f"http://{host}:{port}/health",
+        wait_for_serve=False,  # return after health passes
+    )
+
+    # Confirm serving
+    async with aiohttp.ClientSession() as session:
+        async with session.get(f"http://{host}:{port}/") as resp:
+            assert resp.status == 200
+            assert await resp.json() == {"hello": "world"}
+
+    # Now shut down and confirm context exit happened
+    await shutdown_uvicorn_server(server, serve_task)
+
+    assert flags.get("asyncio_entered") is True
+    assert flags.get("asyncio_exited") is True
+
+
+@pytest.mark.asyncio
+async def test_run_uvicorn_thread_applies_serve_context():
+    """
+    run_uvicorn_thread should enter and exit the provided serve_context.
+    """
+    host = "127.0.0.1"
+    port = portpicker.pick_unused_port()
+    app = _make_app_health(always_ok=True)
+    server = _new_server(app, host, port)
+
+    event_queue: queue.Queue[ChildEvent] = queue.Queue()
+    stop_event = threading.Event()
+
+    flags: Dict[str, Any] = {}
+
+    thread = threading.Thread(
+        target=run_uvicorn_thread,
+        args=(
+            server,
+            _make_flag_context(flags, "thread"),
+            event_queue,
+            stop_event,
+            10.0,
+            f"http://{host}:{port}/health",
+        ),
+        daemon=True,
+    )
+    thread.start()
+
+    try:
+        # Wait for readiness
+        event = await _queue_get_async(event_queue, timeout=10.0)
+        assert event.kind == "ready"
+
+        # Probe root
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"http://{host}:{port}/") as resp:
+                assert resp.status == 200
+                assert await resp.json() == {"hello": "world"}
+    finally:
+        stop_event.set()
+        await asyncio.to_thread(thread.join, 10.0)
+
+    assert flags.get("thread_entered") is True
+    assert flags.get("thread_exited") is True
+
+    # Port freed
+    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.bind((host, port))
+
+
+@pytest.mark.asyncio
+async def test_run_uvicorn_subprocess_applies_serve_context():
+    """
+    run_uvicorn_subprocess should enter and exit the provided serve_context.
+    We track entry/exit via a multiprocessing.Manager dict.
+    """
+    host = "127.0.0.1"
+    port = portpicker.pick_unused_port()
+    ctx = multiprocessing.get_context("fork")
+    event_queue: multiprocessing.Queue[ChildEvent] = ctx.Queue()
+    mgr = ctx.Manager()
+    flags = cast(Dict[str, bool], mgr.dict())  # shared across processes
+
+    app = _make_app_health(always_ok=True)
+    server = _new_server(app, host, port)
+    health_url = f"http://{host}:{port}/health"
+
+    proc = ctx.Process(
+        target=run_uvicorn_subprocess,
+        args=(server, _make_flag_context(flags, "mp_uvicorn"), event_queue, 10.0, health_url),
+    )
+    proc.start()
+
+    try:
+        event = await _queue_get_async(event_queue, timeout=20.0)
+        assert event.kind == "ready"
+
+        # Confirm serving
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"http://{host}:{port}/") as resp:
+                assert resp.status == 200
+                assert await resp.json() == {"hello": "world"}
+
+        # Stop child
+        if proc.pid is not None:
+            os.kill(proc.pid, signal.SIGTERM)
+        await asyncio.to_thread(proc.join, 20.0)
+    finally:
+        if proc.is_alive():
+            if proc.pid is not None:
+                os.kill(proc.pid, signal.SIGTERM)
+            await asyncio.to_thread(proc.join, 20.0)
+
+    assert proc.exitcode == 0
+    assert flags.get("mp_uvicorn_entered") is True
+    assert flags.get("mp_uvicorn_exited") is True
+
+    # Port freed
+    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.bind((host, port))
+
+
+@pytest.mark.asyncio
+async def test_run_gunicorn_applies_serve_context_preload():
+    """
+    run_gunicorn should enter and exit the provided serve_context.
+    We verify via a multiprocessing.Manager dict.
+    """
+    host = "127.0.0.1"
+    port = portpicker.pick_unused_port()
+    ctx = multiprocessing.get_context("fork")
+    event_queue: multiprocessing.Queue[ChildEvent] = ctx.Queue()
+    mgr = ctx.Manager()
+    flags = cast(Dict[str, bool], mgr.dict())
+
+    app = _make_app_health(always_ok=True)
+    gapp = _build_gunicorn_app(app, host, port, workers=2)
+    health_url = f"http://{host}:{port}/health"
+
+    proc = ctx.Process(
+        target=run_gunicorn,
+        args=(gapp, _make_flag_context(flags, "mp_gunicorn"), event_queue, 10.0, health_url),
+        daemon=False,  # gunicorn master must be non-daemon; mirrors your other tests
+    )
+    proc.start()
+
+    try:
+        event = await _queue_get_async(event_queue, timeout=20.0)
+        assert event.kind == "ready"
+
+        # Confirm serving
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"http://{host}:{port}/") as resp:
+                assert resp.status == 200
+                assert await resp.json() == {"hello": "world"}
+
+        # Stop master
+        if proc.pid is not None:
+            os.kill(proc.pid, signal.SIGTERM)
+        await asyncio.to_thread(proc.join, 20.0)
+    finally:
+        if proc.is_alive():
+            if proc.pid is not None:
+                os.kill(proc.pid, signal.SIGTERM)
+            await asyncio.to_thread(proc.join, 20.0)
+
+    assert proc.exitcode == 0
+    assert flags.get("mp_gunicorn_entered") is True
+    assert flags.get("mp_gunicorn_exited") is True
+
+    # Port freed
+    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.bind((host, port))
