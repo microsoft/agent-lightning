@@ -5,8 +5,10 @@ import { http, HttpResponse } from 'msw';
 import { Provider } from 'react-redux';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { Stack, Text } from '@mantine/core';
+import { initialConfigState } from '@/features/config/slice';
 import type { AlertsState, AlertTone } from '@/features/ui/alert';
 import { createAppStore } from '@/store';
+import { STORY_BASE_URL, STORY_DATE_NOW_MS } from '../../.storybook/constants';
 import { AppLayout, AppLayoutProps } from './AppLayout';
 
 const Placeholder = ({ title, description }: { title: string; description: string }) => (
@@ -55,7 +57,7 @@ function createAlertState(message: string, tone: AlertTone): AlertsState {
         message,
         tone,
         isVisible: true,
-        createdAt: Date.now(),
+        createdAt: STORY_DATE_NOW_MS,
       },
     ],
   };
@@ -63,6 +65,10 @@ function createAlertState(message: string, tone: AlertTone): AlertsState {
 
 function renderAppLayout(args: AppLayoutProps, initialEntry = '/rollouts', alertState?: AlertsState) {
   const store = createAppStore({
+    config: {
+      ...initialConfigState,
+      baseUrl: STORY_BASE_URL,
+    },
     alert: alertState ?? { alerts: [] },
   });
   const router = createMemoryRouter(

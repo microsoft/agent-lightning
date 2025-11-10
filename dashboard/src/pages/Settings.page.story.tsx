@@ -5,6 +5,7 @@ import { Provider } from 'react-redux';
 import { initialConfigState } from '@/features/config/slice';
 import { createAppStore } from '@/store';
 import type { ConfigState } from '@/types';
+import { STORY_BASE_URL } from '../../.storybook/constants';
 import { SettingsPage } from './Settings.page';
 
 const meta: Meta<typeof SettingsPage> = {
@@ -23,6 +24,7 @@ function renderWithConfig(partial?: Partial<ConfigState>) {
   const store = createAppStore({
     config: {
       ...initialConfigState,
+      baseUrl: STORY_BASE_URL,
       ...partial,
     },
   });

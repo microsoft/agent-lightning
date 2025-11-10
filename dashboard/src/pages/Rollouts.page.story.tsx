@@ -8,6 +8,7 @@ import { Provider } from 'react-redux';
 import { AppAlertBanner } from '@/components/AppAlertBanner';
 import { AppDrawerContainer } from '@/components/AppDrawer.component';
 import { createMockHandlers } from '@/utils/mock';
+import { STORY_BASE_URL, STORY_DATE_NOW_SECONDS } from '../../.storybook/constants';
 import { allModes } from '../../.storybook/modes';
 import { initialConfigState } from '../features/config/slice';
 import { initialResourcesUiState } from '../features/resources/slice';
@@ -31,7 +32,7 @@ export default meta;
 
 type Story = StoryObj<typeof RolloutsPage>;
 
-const now = Math.floor(Date.now() / 1000);
+const now = STORY_DATE_NOW_SECONDS;
 
 const sampleRollouts: Rollout[] = [
   {
@@ -558,6 +559,7 @@ function renderWithStore(uiOverrides?: Partial<RolloutsUiState>, configOverrides
   const store = createAppStore({
     config: {
       ...initialConfigState,
+      baseUrl: STORY_BASE_URL,
       autoRefreshMs: 0,
       ...configOverrides,
     },

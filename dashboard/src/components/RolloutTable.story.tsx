@@ -7,6 +7,7 @@ import { Box, Stack, TextInput, Title } from '@mantine/core';
 import type { RolloutsSortState } from '@/features/rollouts';
 import type { Rollout, RolloutMode, RolloutStatus } from '@/types';
 import { compareRecords } from '@/utils/table';
+import { STORY_DATE_NOW_SECONDS } from '../../.storybook/constants';
 import { buildRolloutRecord, RolloutTable, type RolloutTableRecord } from './RolloutTable.component';
 
 const meta: Meta<typeof RolloutTable> = {
@@ -21,7 +22,7 @@ export default meta;
 
 type Story = StoryObj<typeof RolloutTable>;
 
-const now = Math.floor(Date.now() / 1000);
+const now = STORY_DATE_NOW_SECONDS;
 
 const sampleRollouts: Rollout[] = [
   {

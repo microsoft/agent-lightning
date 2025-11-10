@@ -10,6 +10,7 @@ import { initialTracesUiState } from '@/features/traces/slice';
 import type { DrawerContent } from '@/features/ui/drawer';
 import { createAppStore } from '@/store';
 import type { Attempt, Rollout, Span } from '@/types';
+import { STORY_BASE_URL, STORY_DATE_NOW_SECONDS } from '../../.storybook/constants';
 import { AppDrawerContainer } from './AppDrawer.component';
 
 const meta = {
@@ -24,7 +25,7 @@ export default meta;
 
 type Story = StoryObj<typeof AppDrawerContainer>;
 
-const now = Math.floor(Date.now() / 1000);
+const now = STORY_DATE_NOW_SECONDS;
 
 const baseAttempt: Attempt = {
   rolloutId: 'ro-story-001',
@@ -114,7 +115,10 @@ const sampleTraces: Span[] = [
 
 function renderWithDrawer(content: DrawerContent, options?: { spans?: Span[] }) {
   const store = createAppStore({
-    config: initialConfigState,
+    config: {
+      ...initialConfigState,
+      baseUrl: STORY_BASE_URL,
+    },
     rollouts: initialRolloutsUiState,
     resources: initialResourcesUiState,
     traces: initialTracesUiState,

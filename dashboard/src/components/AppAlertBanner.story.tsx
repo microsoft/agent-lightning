@@ -7,6 +7,7 @@ import { initialRolloutsUiState } from '@/features/rollouts/slice';
 import type { AlertsState, AlertTone } from '@/features/ui/alert';
 import { initialDrawerState } from '@/features/ui/drawer/slice';
 import { createAppStore } from '@/store';
+import { STORY_BASE_URL, STORY_DATE_NOW_MS } from '../../.storybook/constants';
 import { AppAlertBanner } from './AppAlertBanner';
 
 const meta: Meta<typeof AppAlertBanner> = {
@@ -29,13 +30,16 @@ function renderWithAlert(message: string, tone: AlertTone) {
         message,
         tone,
         isVisible: true,
-        createdAt: Date.now(),
+        createdAt: STORY_DATE_NOW_MS,
       },
     ],
   };
 
   const store = createAppStore({
-    config: initialConfigState,
+    config: {
+      ...initialConfigState,
+      baseUrl: STORY_BASE_URL,
+    },
     drawer: initialDrawerState,
     rollouts: initialRolloutsUiState,
     alert: alertState,
@@ -67,7 +71,10 @@ export const ErrorAlert: Story = {
 export const NoAlert: Story = {
   render: () => {
     const store = createAppStore({
-      config: initialConfigState,
+      config: {
+        ...initialConfigState,
+        baseUrl: STORY_BASE_URL,
+      },
       drawer: initialDrawerState,
       rollouts: initialRolloutsUiState,
       alert: { alerts: [] },

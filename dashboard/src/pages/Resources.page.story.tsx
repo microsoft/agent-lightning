@@ -10,6 +10,7 @@ import { initialRolloutsUiState } from '@/features/rollouts/slice';
 import { createAppStore } from '@/store';
 import type { Resources } from '@/types';
 import { createResourcesHandlers } from '@/utils/mock';
+import { STORY_BASE_URL, STORY_DATE_NOW_SECONDS } from '../../.storybook/constants';
 import { allModes } from '../../.storybook/modes';
 import { ResourcesPage } from './Resources.page';
 
@@ -28,7 +29,7 @@ export default meta;
 
 type Story = StoryObj<typeof ResourcesPage>;
 
-const now = Math.floor(Date.now() / 1000);
+const now = STORY_DATE_NOW_SECONDS;
 
 const sampleResources: Resources[] = [
   {
@@ -151,6 +152,7 @@ function renderWithStore(configOverrides?: Partial<typeof initialConfigState>) {
   const store = createAppStore({
     config: {
       ...initialConfigState,
+      baseUrl: STORY_BASE_URL,
       autoRefreshMs: 0,
       ...configOverrides,
     },

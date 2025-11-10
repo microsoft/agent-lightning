@@ -20,7 +20,7 @@ export default meta;
 
 type Story = StoryObj<typeof TracesTable>;
 
-const now = Math.floor(Date.now() / 1000);
+const now = Math.floor(1762775145209 / 1000);
 
 const sampleSpans: Span[] = [
   {
