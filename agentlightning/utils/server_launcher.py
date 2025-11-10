@@ -207,8 +207,8 @@ async def run_uvicorn_asyncio(
                     # It will be handled by the watch task.
                     logger.exception("Uvicorn server failed to serve. Inspect the logs for details.")
 
-    watch_task = asyncio.create_task(_watch_server())
     serve_task = asyncio.create_task(_serve_server())
+    watch_task = asyncio.create_task(_watch_server())
 
     if wait_for_serve:
         await asyncio.gather(watch_task, serve_task)
@@ -585,10 +585,19 @@ class PythonServerLauncher:
         return f"http://{self.args.host}:{self._ensure_port()}"
 
     @property
+    def access_url(self) -> str:
+        # Probe host normalization for 0.0.0.0
+        host_for_probe = "127.0.0.1" if self.args.host in ("0.0.0.0", "::") else self.args.host
+        return f"http://{host_for_probe}:{self._ensure_port()}"
+
+    @property
     def health_url(self) -> Optional[str]:
-        if self.args.healthcheck_url:
-            return f"{self.endpoint}{self.args.healthcheck_url}"
-        return None
+        if not self.args.healthcheck_url:
+            return None
+        path = self.args.healthcheck_url
+        if not path.startswith("/"):
+            path = "/" + path
+        return f"{self.access_url}{path}"
 
     async def start(self):
         """Starts the server according to launch_mode and n_workers."""
@@ -765,7 +774,13 @@ class PythonServerLauncher:
 
         # Wait for ready or error event from the thread
         timeout = self.args.startup_timeout * 2  # Allows twice the timeout for the thread to get the event
-        evt: ChildEvent = await asyncio.to_thread(self._thread_event_queue.get, True, timeout)
+        try:
+            evt: ChildEvent = await asyncio.to_thread(self._thread_event_queue.get, True, timeout)
+        except queue.Empty:
+            logger.error("Threaded server failed to start and sends no event. This should not happen.")
+            await self._stop_uvicorn_thread()
+            return
+
         if evt.kind == "error":
             logger.error("Threaded server failed to start (%s): %s\n%s", evt.exc_type, evt.message, evt.traceback)
             await asyncio.to_thread(self._thread.join, self.args.thread_join_timeout)
@@ -779,6 +794,9 @@ class PythonServerLauncher:
             self._thread_stop_event.set()
         if self._thread:
             await asyncio.to_thread(self._thread.join, self.args.thread_join_timeout)
+            if self._thread.is_alive():
+                raise RuntimeError("Threaded server refused to shut down.")
+
         self._thread = None
         self._thread_event_queue = None
         self._thread_stop_event = None
@@ -792,7 +810,13 @@ class PythonServerLauncher:
 
         port = self._ensure_port()
 
-        ctx = multiprocessing.get_context("fork")
+        try:
+            ctx = multiprocessing.get_context("fork")
+        except ValueError as e:
+            raise RuntimeError(
+                "Process launch requires 'fork' start method (Linux/macOS). "
+                "On Windows, use 'thread' or 'asyncio' modes."
+            ) from e
         self._mp_event_queue = ctx.Queue()
 
         # Gunicorn path when n_workers > 1
@@ -843,7 +867,13 @@ class PythonServerLauncher:
 
         # Wait for ready or error event from the thread
         timeout = self.args.startup_timeout * 2  # Allows twice the timeout for the thread to get the event
-        evt: ChildEvent = await asyncio.to_thread(self._mp_event_queue.get, True, timeout)
+        try:
+            evt: ChildEvent = await asyncio.to_thread(self._mp_event_queue.get, True, timeout)
+        except queue.Empty:
+            logger.error("Server process failed to start and sends no event. This should not happen.")
+            await self._stop_serving_process()
+            return
+
         if evt.kind == "error":
             logger.error(
                 "Server process (%s) failed to start (%s): %s\n%s",
@@ -874,13 +904,17 @@ class PythonServerLauncher:
                     self._proc.kill()
                 except Exception:
                     logger.exception("Error sending SIGKILL to server process.")
-                await asyncio.to_thread(self._proc.join, 5.0)
+                await asyncio.to_thread(self._proc.join, 5.0)  # Use a constant timeout for SIGKILL
 
             if self._proc.is_alive():
                 raise RuntimeError("Server process failed to shut down after SIGTERM and SIGKILL.")
 
         if self._mp_event_queue is not None:
             self._mp_event_queue.close()
+            try:
+                self._mp_event_queue.join_thread()
+            except Exception:
+                logger.exception("Error joining event queue thread.")
 
         self._proc = None
         self._mp_event_queue = None
