@@ -12,7 +12,7 @@ import socket
 import threading
 import time
 from contextlib import asynccontextmanager, closing
-from typing import Any, AsyncContextManager, AsyncIterator, Dict, cast
+from typing import Any, AsyncContextManager, Dict, cast
 
 import aiohttp
 import portpicker
@@ -23,18 +23,13 @@ from fastapi import FastAPI, Response
 from agentlightning.utils.server_launcher import (
     ChildEvent,
     GunicornApp,
+    noop_context,
     run_gunicorn,
     run_uvicorn_asyncio,
     run_uvicorn_subprocess,
     run_uvicorn_thread,
     shutdown_uvicorn_server,
 )
-
-
-@asynccontextmanager
-async def noop_context() -> AsyncIterator[None]:
-    """A real async context manager that does nothing (satisfies serve_context)."""
-    yield
 
 
 def _make_app_health(always_ok: bool = True) -> FastAPI:
