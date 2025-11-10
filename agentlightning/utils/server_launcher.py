@@ -728,6 +728,7 @@ class PythonServerLauncher:
         if self.is_running():
             raise RuntimeError("Server is already running. Stopping it first.")
 
+        logger.info("Starting uvicorn asyncio server...")
         self._uvicorn_server = self._create_uvicorn_server()
         # Start server; return after health passes; keep serving in background task
         self._uvicorn_task = await run_uvicorn_asyncio(
@@ -739,16 +740,17 @@ class PythonServerLauncher:
             kill_unhealthy_server=self.args.kill_unhealthy_server,
         )
         self._is_running = True
+        logger.info("Uvicorn asyncio server started")
 
     async def _stop_uvicorn_asyncio(self):
         # Gracefully shut down the in-proc uvicorn server task if running
+        logger.info("Stopping uvicorn asyncio server...")
         if self._uvicorn_server and self._uvicorn_task:
-            print("shutdown_uvicorn_server start")
             await shutdown_uvicorn_server(self._uvicorn_server, self._uvicorn_task)
-            print("shutdown_uvicorn_server complete")
         self._uvicorn_task = None
         self._uvicorn_server = None
         self._is_running = False
+        logger.info("Uvicorn asyncio server stopped")
 
     # --- Mode 2: thread (in-proc) using run_uvicorn_thread ---
 
@@ -756,6 +758,7 @@ class PythonServerLauncher:
         if self.is_running():
             raise RuntimeError("Server is already running. Stopping it first.")
 
+        logger.info("Starting uvicorn thread server...")
         self._uvicorn_server = self._create_uvicorn_server()
         self._thread_event_queue = queue.Queue()
         self._thread_stop_event = threading.Event()
@@ -793,18 +796,22 @@ class PythonServerLauncher:
             self._is_running = True
 
     async def _stop_uvicorn_thread(self):
+        logger.info("Stopping uvicorn thread server...")
         if self._thread_stop_event:
             self._thread_stop_event.set()
         if self._thread:
             await asyncio.to_thread(self._thread.join, self.args.thread_join_timeout)
             if self._thread.is_alive():
                 raise RuntimeError("Threaded server refused to shut down.")
+        else:
+            logger.info("Uvicorn thread server was not running. Nothing to stop.")
 
         self._thread = None
         self._thread_event_queue = None
         self._thread_stop_event = None
         self._uvicorn_server = None
         self._is_running = False
+        logger.info("Uvicorn thread server stopped")
 
     # --- Mode 3: subprocess (uvicorn / gunicorn) using run_uvicorn_subprocess or run_gunicorn ---
 
@@ -825,6 +832,7 @@ class PythonServerLauncher:
 
         # Gunicorn path when n_workers > 1
         if self.args.n_workers > 1:
+            logger.info(f"Starting Gunicorn server...")
             options = {
                 "bind": f"{self.args.host}:{port}",
                 "workers": int(self.args.n_workers),
@@ -854,6 +862,7 @@ class PythonServerLauncher:
 
         else:
             # Single-worker subprocess uvicorn
+            logger.info("Starting uvicorn subprocess server...")
             self._uvicorn_server = self._create_uvicorn_server()
 
             self._proc = ctx.Process(
@@ -894,6 +903,7 @@ class PythonServerLauncher:
             self._is_running = True
 
     async def _stop_serving_process(self):
+        logger.info("Stopping subprocess server...")
         if self._proc is not None:
             if self._proc.is_alive():
                 # Prefer graceful: SIGTERM, then wait
@@ -913,6 +923,8 @@ class PythonServerLauncher:
 
             if self._proc.is_alive():
                 raise RuntimeError("Server process failed to shut down after SIGTERM and SIGKILL.")
+        else:
+            logger.info("Subprocess server was not running. Nothing to stop.")
 
         if self._mp_event_queue is not None:
             self._mp_event_queue.close()
@@ -926,3 +938,4 @@ class PythonServerLauncher:
         self._gunicorn_app = None
         self._uvicorn_server = None
         self._is_running = False
+        logger.info("Subprocess server stopped")
