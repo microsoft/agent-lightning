@@ -11,6 +11,7 @@ import socket
 import tempfile
 import threading
 import time
+from datetime import datetime
 from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Sequence, TypedDict, Union, cast
 
 import litellm
@@ -254,9 +255,23 @@ class LightningSpanExporter(SpanExporter):
         Returns:
             SpanExportResult: SUCCESS on flush success, else FAILURE.
         """
+        import traceback
+
+        traceback.print_stack()
         # Buffer append under lock to protect against concurrent exporters.
         with self._ensure_lock():
             for span in spans:
+                print(
+                    span.name,
+                    "Span =",
+                    span.get_span_context().span_id,
+                    "Parent =",
+                    span.parent.span_id if span.parent else None,
+                    "Start =",
+                    span.start_time,
+                    "End =",
+                    span.end_time,
+                )
                 self._buffer.append(span)
 
         # Run the async flush on our private loop, synchronously from caller's POV.
@@ -436,6 +451,22 @@ class LightningOpenTelemetry(OpenTelemetry):
             logger.error("Tracer is already initialized. OpenTelemetry may not work as expected.")
 
         super().__init__(config=config)  # pyright: ignore[reportUnknownMemberType]
+
+    async def async_pre_call_hook(self, *args: Any, **kwargs: Any) -> Optional[Union[Exception, str, Dict[str, Any]]]:
+        try:
+            data = _get_pre_call_data(args, kwargs)
+        except Exception as e:
+            return e
+
+        if "metadata" not in data or "litellm_parent_otel_span" not in data["metadata"]:
+            parent_otel_span = self.create_litellm_proxy_request_started_span(  # type: ignore
+                start_time=datetime.now(),
+                headers=data.get("headers", {}),
+            )
+            updated_metadata = {**data.get("metadata", {}), "litellm_parent_otel_span": parent_otel_span}
+            return {**data, "metadata": updated_metadata}
+        else:
+            return data
 
 
 class RolloutAttemptMiddleware(BaseHTTPMiddleware):
