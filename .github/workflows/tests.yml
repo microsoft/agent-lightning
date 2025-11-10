@@ -60,6 +60,26 @@ jobs:
         run: uv run --locked --no-sync pyright -p pyrightconfig.json
         if: matrix.setup == 'slow'
 
+  lint-js:
+    name: Lint JavaScript
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        run: cd dashboard && npm ci
+      - name: Run ESLint
+        run: cd dashboard && npm run eslint
+      - name: Run Prettier
+        run: cd dashboard && npm run prettier
+      - name: Run Stylelint
+        run: cd dashboard && npm run stylelint
+      - name: Run Typecheck
+        run: cd dashboard && npm run typecheck
+
   docs:
     name: Build documentation
     runs-on: ubuntu-latest
@@ -137,3 +157,23 @@ jobs:
           uv run pytest -v --durations=0 tests
         env:
           PYTEST_ADDOPTS: "--color=yes"
+
+  test-js:
+    name: Test JavaScript
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        run: cd dashboard && npm ci
+      - name: Run vitest
+        run: cd dashboard && npm run test
+      - name: Run Chromatic
+        uses: chromaui/action@latest
+        with:
+          projectToken: ${{ secrets.CHROMATIC_PROJECT_TOKEN }}
+          workingDir: dashboard
+          exitZeroOnChanges: false

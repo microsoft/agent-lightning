@@ -14,12 +14,14 @@ The dashboard is built with React, Mantine UI, and Storybook.
 
 ### Testing scripts
 
-- `typecheck` – checks TypeScript types
-- `lint` – runs ESLint
+- `eslint` - runs ESLint
+- `stylelint` - runs Stylelint
+- `prettier` - runs Prettier
+- `typecheck` - runs TypeScript typecheck
 - `vitest` – runs vitest tests
-- `test` – runs `vitest`, `prettier:check`, `lint` and `typecheck` scripts
+- `chromatic` – runs chromatic tests
 
 ### Other scripts
 
 - `storybook` – starts storybook dev server
-- `storybook:build` – build production storybook bundle to `storybook-static`
+- `build-storybook` – build production storybook bundle to `storybook-static`

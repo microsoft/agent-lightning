@@ -7,12 +7,10 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "lint": "npm run eslint && npm run stylelint",
     "eslint": "eslint .",
     "stylelint": "stylelint '**/*.css'",
     "prettier": "prettier --check \"**/*.{ts,tsx,mjs,cjs}\"",
     "vitest": "vitest run",
-    "test": "npm run typecheck && npm run prettier && npm run lint && npm run vitest && npm run build",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
     "chromatic": "chromatic"
