@@ -28,6 +28,7 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     setupFiles: './vitest.setup.mjs',
+    globalSetup: './vitest.global-setup.mjs',
     root: projectRoot,
   },
 });
