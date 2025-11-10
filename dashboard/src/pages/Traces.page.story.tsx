@@ -6,6 +6,7 @@ import { Provider } from 'react-redux';
 import { AppAlertBanner } from '@/components/AppAlertBanner';
 import { AppDrawerContainer } from '@/components/AppDrawer.component';
 import { createMockHandlers } from '@/utils/mock';
+import { allModes } from '../../.storybook/modes';
 import { initialConfigState } from '../features/config/slice';
 import { initialResourcesUiState } from '../features/resources/slice';
 import { initialRolloutsUiState } from '../features/rollouts/slice';
@@ -19,6 +20,9 @@ const meta: Meta<typeof TracesPage> = {
   component: TracesPage,
   parameters: {
     layout: 'fullscreen',
+    chromatic: {
+      modes: allModes,
+    },
   },
 };
 

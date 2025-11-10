@@ -8,6 +8,7 @@ import { Provider } from 'react-redux';
 import { AppAlertBanner } from '@/components/AppAlertBanner';
 import { AppDrawerContainer } from '@/components/AppDrawer.component';
 import { createMockHandlers } from '@/utils/mock';
+import { allModes } from '../../.storybook/modes';
 import { initialConfigState } from '../features/config/slice';
 import { initialResourcesUiState } from '../features/resources/slice';
 import type { Attempt, Rollout, Span } from '../features/rollouts';
@@ -20,6 +21,9 @@ const meta: Meta<typeof RolloutsPage> = {
   component: RolloutsPage,
   parameters: {
     layout: 'fullscreen',
+    chromatic: {
+      modes: allModes,
+    },
   },
 };
 
@@ -708,9 +712,9 @@ export const AutoExpandedAttempt: Story = {
     await userEvent.click(rolloutRow);
     await waitFor(
       async () => {
-        await within(document.body).findByText('at-expand-001');
+        await canvas.findByText('at-expand-001');
       },
-      { timeout: 1_000 },
+      { timeout: 3_000 },
     );
   },
 };

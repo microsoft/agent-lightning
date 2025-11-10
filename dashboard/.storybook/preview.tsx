@@ -27,6 +27,13 @@ export const parameters = {
     storySort: (a, b) => a.title.localeCompare(b.title, undefined, { numeric: true }),
   },
   backgrounds: { disable: true },
+  viewport: {
+    options: {
+      md: { name: 'md', styles: { width: '1280px', height: '800px' } },
+      lg: { name: 'lg', styles: { width: '1920px', height: '1080px' } },
+      xl: { name: 'xl', styles: { width: '2560px', height: '1440px' } },
+    },
+  },
 };
 
 export const globalTypes = {

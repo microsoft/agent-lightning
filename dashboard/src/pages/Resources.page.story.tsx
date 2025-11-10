@@ -10,6 +10,7 @@ import { initialRolloutsUiState } from '@/features/rollouts/slice';
 import { createAppStore } from '@/store';
 import type { Resources } from '@/types';
 import { createResourcesHandlers } from '@/utils/mock';
+import { allModes } from '../../.storybook/modes';
 import { ResourcesPage } from './Resources.page';
 
 const meta: Meta<typeof ResourcesPage> = {
@@ -17,6 +18,9 @@ const meta: Meta<typeof ResourcesPage> = {
   component: ResourcesPage,
   parameters: {
     layout: 'fullscreen',
+    chromatic: {
+      modes: allModes,
+    },
   },
 };
 
