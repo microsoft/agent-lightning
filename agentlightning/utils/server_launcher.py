@@ -34,7 +34,7 @@ LaunchMode = Literal["asyncio", "thread", "mp"]
 class PythonServerLauncherArgs:
     port: Optional[int] = None
     """The TCP port to listen on. If not provided, the server will use a random available port."""
-    host: str = "127.0.0.1"
+    host: Optional[str] = None
     """The hostname or IP address to bind the server to."""
     launch_mode: LaunchMode = "asyncio"
     """The launch mode. `asyncio` is the default mode to runs the server in the current thread.
@@ -573,6 +573,7 @@ class PythonServerLauncher:
         self.app = app
         self.args = args
         self.serve_context = serve_context
+        self._host: Optional[str] = self.args.host
         self._port: Optional[int] = self.args.port
 
         # uvicorn (in-proc asyncio)
@@ -699,6 +700,12 @@ class PythonServerLauncher:
             return f"{module}:app"
         return "unknown:app"
 
+    def _ensure_host(self) -> str:
+        if self._host is None:
+            logger.warning("No host provided, using 127.0.0.1.")
+            self._host = "127.0.0.1"
+        return self._host
+
     def _ensure_port(self) -> int:
         if self._port is None:
             logger.warning("No port provided, using pick_unused_port to pick a random unused port.")
@@ -708,7 +715,7 @@ class PythonServerLauncher:
     def _create_uvicorn_server(self) -> uvicorn.Server:
         config = uvicorn.Config(
             app=self.app,
-            host=self.args.host,
+            host=self._ensure_host(),
             port=self._ensure_port(),
             log_level=self.args.log_level,
             loop="asyncio",
@@ -819,6 +826,7 @@ class PythonServerLauncher:
         if self.is_running():
             raise RuntimeError("Server process is already running. Stopping it first.")
 
+        host = self._ensure_host()
         port = self._ensure_port()
 
         try:
@@ -834,7 +842,7 @@ class PythonServerLauncher:
         if self.args.n_workers > 1:
             logger.info(f"Starting Gunicorn server...")
             options = {
-                "bind": f"{self.args.host}:{port}",
+                "bind": f"{host}:{port}",
                 "workers": int(self.args.n_workers),
                 "worker_class": "uvicorn_worker.UvicornWorker",
                 "loglevel": logging.getLevelName(self.args.log_level).lower(),
