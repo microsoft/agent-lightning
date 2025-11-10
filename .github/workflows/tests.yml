@@ -45,6 +45,7 @@ jobs:
             --group agents \
             --no-default-groups
         if: matrix.setup == 'slow'
+      # This pre-commit skips JavaScript on purpose.
       - name: Run pre-commit
         uses: pre-commit/action@v3.0.1
       - name: Check Python headers
@@ -167,6 +168,8 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
+      - name: Sync Python dependencies
+        run: uv sync --frozen --no-default-groups --extra apo --group dev --group agents --group core-stable
       - name: Install dependencies
         run: cd dashboard && npm ci
       - name: Run vitest
