@@ -1,0 +1,47 @@
+name: Dashboard
+permissions:
+  contents: read
+on:
+  schedule:
+    # Every day at 5 AM UTC+8
+    - cron: '0 21 * * *'
+
+  workflow_dispatch:
+
+  repository_dispatch:
+    types: [ci-dashboard, ci-all]
+
+run-name: >-
+  ${{ github.event_name == 'repository_dispatch'
+      && format(
+        'PR #{0} - Label {1} - {2}',
+        github.event.client_payload.pull_number,
+        github.event.client_payload.ci_label,
+        github.event.client_payload.correlation_id
+      )
+      || format('Dashboard - {0}', github.event_name) }}
+
+jobs:
+  dashboard:
+    if: >
+      github.event_name != 'repository_dispatch' ||
+      github.event.action == 'ci-dashboard' ||
+      github.event.action == 'ci-all'
+    name: Chromatic
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - name: Install JavaScript dependencies
+        run: cd dashboard && npm ci
+      - name: Run Chromatic
+        uses: chromaui/action@latest
+        with:
+          projectToken: ${{ secrets.CHROMATIC_PROJECT_TOKEN }}
+          workingDir: dashboard
+          exitZeroOnChanges: false
