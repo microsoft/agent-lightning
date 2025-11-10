@@ -24,29 +24,3 @@ repos:
         pass_filenames: false
         always_run: true
         args: ["."]
-
-  - repo: local
-    hooks:
-    - id: prettier
-      name: prettier (dashboard)
-      language: system
-      pass_filenames: false
-      always_run: true
-      entry: >
-        bash -c 'cd dashboard && npx prettier --cache --write "**/*.{ts,tsx,mjs,cjs}"'
-
-    - id: eslint
-      name: eslint (dashboard)
-      language: system
-      pass_filenames: false
-      always_run: true
-      entry: >
-        bash -c 'cd dashboard && npx eslint --cache --fix .'
-
-    - id: stylelint
-      name: stylelint (dashboard)
-      language: system
-      pass_filenames: false
-      always_run: true
-      entry: >
-        bash -c 'cd dashboard && npx stylelint --cache --fix "**/*.css"'
