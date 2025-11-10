@@ -168,9 +168,13 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          python-version: '3.12'
       - name: Sync Python dependencies
         run: uv sync --frozen --no-default-groups --extra apo --group dev --group agents --group core-stable
-      - name: Install dependencies
+      - name: Install JavaScript dependencies
         run: cd dashboard && npm ci
       - name: Run vitest
         run: cd dashboard && npm run vitest
