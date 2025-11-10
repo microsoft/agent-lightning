@@ -22,6 +22,7 @@ from fastapi import Request, Response
 from litellm.integrations.custom_logger import CustomLogger
 from litellm.integrations.opentelemetry import OpenTelemetry, OpenTelemetryConfig
 from litellm.proxy.proxy_server import app, save_worker_config  # pyright: ignore[reportUnknownVariableType]
+from litellm.types.utils import CallTypes
 from opentelemetry.sdk.trace import ReadableSpan
 from opentelemetry.sdk.trace.export import SpanExporter, SpanExportResult
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -452,21 +453,21 @@ class LightningOpenTelemetry(OpenTelemetry):
 
         super().__init__(config=config)  # pyright: ignore[reportUnknownMemberType]
 
-    async def async_pre_call_hook(self, *args: Any, **kwargs: Any) -> Optional[Union[Exception, str, Dict[str, Any]]]:
-        try:
-            data = _get_pre_call_data(args, kwargs)
-        except Exception as e:
-            return e
-
-        if "metadata" not in data or "litellm_parent_otel_span" not in data["metadata"]:
+    async def async_pre_call_deployment_hook(
+        self, kwargs: Dict[str, Any], call_type: Optional[CallTypes] = None
+    ) -> Optional[Dict[str, Any]]:
+        print("kwargs keys =", kwargs.keys())
+        print("call type =", call_type)
+        if "metadata" not in kwargs or "litellm_parent_otel_span" not in kwargs["metadata"]:
             parent_otel_span = self.create_litellm_proxy_request_started_span(  # type: ignore
                 start_time=datetime.now(),
-                headers=data.get("headers", {}),
+                headers=kwargs.get("headers", {}),
             )
-            updated_metadata = {**data.get("metadata", {}), "litellm_parent_otel_span": parent_otel_span}
-            return {**data, "metadata": updated_metadata}
+            updated_metadata = {**kwargs.get("metadata", {}), "litellm_parent_otel_span": parent_otel_span}
+            print("updated_metadata =", updated_metadata)
+            return {**kwargs, "metadata": updated_metadata}
         else:
-            return data
+            return kwargs
 
 
 class RolloutAttemptMiddleware(BaseHTTPMiddleware):
