@@ -23,6 +23,9 @@ from fastapi import FastAPI, Response
 from agentlightning.utils.server_launcher import (
     ChildEvent,
     GunicornApp,
+    LaunchMode,
+    PythonServerLauncher,
+    PythonServerLauncherArgs,
     noop_context,
     run_gunicorn,
     run_uvicorn_asyncio,
@@ -95,6 +98,30 @@ def _build_gunicorn_app(app: FastAPI, host: str, port: int, workers: int = 2) ->
         "graceful_timeout": 2,
     }
     return GunicornApp(app=app, options=options)
+
+
+async def _probe_json(url: str, expected: Dict[str, Any], timeout: float = 5.0) -> None:
+    start = time.time()
+    last_exc = None
+    while time.time() - start < timeout:
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url) as resp:
+                    if resp.status == 200 and await resp.json() == expected:
+                        return
+        except Exception as exc:  # server may not be up yet
+            last_exc = exc
+        await asyncio.sleep(0.05)
+    if last_exc:
+        raise last_exc
+    raise AssertionError(f"Failed to probe {url} within {timeout:.1f}s")
+
+
+def _free_port(host: str, port: int) -> None:
+    # Ensure port is free
+    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.bind((host, port))
 
 
 @pytest.mark.asyncio
@@ -363,7 +390,6 @@ async def test_unhealthy_left_running_wait_for_serve_true(caplog: pytest.LogCapt
     port = portpicker.pick_unused_port()
     app = _make_app_health(always_ok=False)
     server = _new_server(app, host, port)
-    print("entered")
 
     caplog.set_level(logging.ERROR)
     run_task = asyncio.create_task(
@@ -381,12 +407,9 @@ async def test_unhealthy_left_running_wait_for_serve_true(caplog: pytest.LogCapt
     start = time.time()
     while not server.started and (time.time() - start) < 5.0:
         await asyncio.sleep(0.05)
-    print("server started", server.started)
     assert server.started is True, "Server did not report started in time"
     await asyncio.sleep(max(0.01, start + 3.0 - time.time()))
-    print("after sleep")
     assert any("left running" in rec.message for rec in caplog.records)
-    print("server started")
 
     # Verify we can still hit the root.
     async with aiohttp.ClientSession() as session:
@@ -396,7 +419,6 @@ async def test_unhealthy_left_running_wait_for_serve_true(caplog: pytest.LogCapt
 
     # Trigger graceful shutdown and wait for run_task to finish
     run_task.cancel()
-    print("cancelling run_task")
     with pytest.raises(asyncio.CancelledError):
         await run_task
 
@@ -974,10 +996,7 @@ async def test_run_uvicorn_thread_applies_serve_context():
     assert flags.get("thread_entered") is True
     assert flags.get("thread_exited") is True
 
-    # Port freed
-    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
-        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        s.bind((host, port))
+    _free_port(host, port)
 
 
 @pytest.mark.asyncio
@@ -1027,10 +1046,7 @@ async def test_run_uvicorn_subprocess_applies_serve_context():
     assert flags.get("mp_uvicorn_entered") is True
     assert flags.get("mp_uvicorn_exited") is True
 
-    # Port freed
-    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
-        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        s.bind((host, port))
+    _free_port(host, port)
 
 
 @pytest.mark.asyncio
@@ -1081,7 +1097,248 @@ async def test_run_gunicorn_applies_serve_context_preload():
     assert flags.get("mp_gunicorn_entered") is True
     assert flags.get("mp_gunicorn_exited") is True
 
-    # Port freed
-    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
-        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        s.bind((host, port))
+    _free_port(host, port)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("launch_mode", ["asyncio", "thread"])
+async def test_launcher_start_stop_basic_modes(launch_mode: LaunchMode):
+    host = "127.0.0.1"
+    port = portpicker.pick_unused_port()
+    app = _make_app_health()
+
+    args = PythonServerLauncherArgs(
+        host=host,
+        port=port,
+        launch_mode=launch_mode,
+        healthcheck_url="/health",
+        startup_timeout=10.0,
+    )
+    launcher = PythonServerLauncher(app, args)
+
+    # Start
+    await launcher.start()
+    assert launcher.is_running()
+    assert launcher.endpoint.endswith(f":{port}")
+    assert launcher.health_url == f"http://{host}:{port}/health"
+
+    # Probe root
+    await _probe_json(f"http://{host}:{port}/", {"hello": "world"})
+
+    # Stop
+    await launcher.stop()
+    assert not launcher.is_running()
+    _free_port(host, port)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("n_workers", [1, 2])  # 1 => uvicorn, 2 => gunicorn
+async def test_launcher_start_stop_mp_modes(n_workers: int):
+    host = "127.0.0.1"
+    port = portpicker.pick_unused_port()
+    app = _make_app_health()
+
+    args = PythonServerLauncherArgs(
+        host=host,
+        port=port,
+        launch_mode="mp",
+        n_workers=n_workers,
+        healthcheck_url="/health",
+        startup_timeout=15.0,
+        process_join_timeout=10.0,
+    )
+    launcher = PythonServerLauncher(app, args)
+
+    await launcher.start()
+    assert launcher.is_running()
+    await _probe_json(f"http://{host}:{port}/", {"hello": "world"})
+
+    await launcher.stop()
+    assert not launcher.is_running()
+    _free_port(host, port)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("launch_mode", ["asyncio", "thread"])
+async def test_launcher_reload_preserves_port_and_recovers(launch_mode: LaunchMode):
+    host = "127.0.0.1"
+    port = portpicker.pick_unused_port()
+    app = _make_app_health()
+    args = PythonServerLauncherArgs(
+        host=host,
+        port=port,
+        launch_mode=launch_mode,
+        healthcheck_url="/health",
+        startup_timeout=10.0,
+    )
+    launcher = PythonServerLauncher(app, args)
+
+    await launcher.start()
+    assert launcher.is_running()
+    await _probe_json(f"http://{host}:{port}/", {"hello": "world"})
+
+    # Reload (stop + start)
+    await launcher.reload()
+    assert launcher.is_running()
+    # Endpoint/port must be identical
+    assert launcher.endpoint.endswith(f":{port}")
+    await _probe_json(f"http://{host}:{port}/", {"hello": "world"})
+
+    await launcher.stop()
+    _free_port(host, port)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("n_workers", [1, 2])
+async def test_launcher_reload_preserves_port_mp(n_workers: int):
+    host = "127.0.0.1"
+    port = portpicker.pick_unused_port()
+    app = _make_app_health()
+    args = PythonServerLauncherArgs(
+        host=host,
+        port=port,
+        launch_mode="mp",
+        n_workers=n_workers,
+        healthcheck_url="/health",
+        startup_timeout=15.0,
+    )
+    launcher = PythonServerLauncher(app, args)
+
+    await launcher.start()
+    assert launcher.is_running()
+    await _probe_json(f"http://{host}:{port}/", {"hello": "world"})
+
+    await launcher.reload()
+    assert launcher.is_running()
+    assert launcher.endpoint.endswith(f":{port}")
+    await _probe_json(f"http://{host}:{port}/", {"hello": "world"})
+
+    await launcher.stop()
+    _free_port(host, port)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("launch_mode", ["asyncio", "thread"])
+async def test_launcher_run_forever_cancellable(launch_mode: LaunchMode):
+    host = "127.0.0.1"
+    port = portpicker.pick_unused_port()
+    app = _make_app_health()
+    args = PythonServerLauncherArgs(
+        host=host,
+        port=port,
+        launch_mode=launch_mode,
+        healthcheck_url="/health",
+        startup_timeout=10.0,
+    )
+    launcher = PythonServerLauncher(app, args)
+
+    # Run in background so we can cancel it
+    run_task = asyncio.create_task(launcher.run_forever())
+
+    # Wait until started
+    start = time.time()
+    while not launcher.is_running() and (time.time() - start) < 5.0:
+        await asyncio.sleep(0.05)
+    assert launcher.is_running()
+
+    await _probe_json(f"http://{host}:{port}/", {"hello": "world"})
+
+    # Cancel run_forever which should shut things down (the method handles cancellation)
+    run_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await run_task
+
+    # Give a moment for shutdown to propagate
+    await asyncio.sleep(1.0)
+    assert not launcher.is_running()
+    _free_port(host, port)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("n_workers", [1, 2])
+async def test_launcher_run_forever_cancellable_mp(n_workers: int):
+    host = "127.0.0.1"
+    port = portpicker.pick_unused_port()
+    app = _make_app_health()
+    args = PythonServerLauncherArgs(
+        host=host,
+        port=port,
+        launch_mode="mp",
+        n_workers=n_workers,
+        healthcheck_url="/health",
+        startup_timeout=15.0,
+        process_join_timeout=10.0,
+    )
+    launcher = PythonServerLauncher(app, args)
+
+    run_task = asyncio.create_task(launcher.run_forever())
+
+    # Wait until started
+    start = time.time()
+    while not launcher.is_running() and (time.time() - start) < 7.0:
+        await asyncio.sleep(0.05)
+    assert launcher.is_running()
+
+    await _probe_json(f"http://{host}:{port}/", {"hello": "world"})
+
+    # Cancel run_forever (should trigger graceful process stop)
+    run_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await run_task
+
+    # Allow cleanup to finish
+    await asyncio.sleep(1.0)
+    assert not launcher.is_running()
+    _free_port(host, port)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("launch_mode", ["asyncio", "thread"])
+async def test_launcher_assigns_random_port_when_none(launch_mode: LaunchMode):
+    host = "127.0.0.1"
+    app = _make_app_health()
+    args = PythonServerLauncherArgs(
+        host=host,
+        port=None,  # force random
+        launch_mode=launch_mode,
+        healthcheck_url="/health",
+        startup_timeout=10.0,
+    )
+    launcher = PythonServerLauncher(app, args)
+
+    await launcher.start()
+    assert launcher.is_running()
+    # Port is chosen and embedded in endpoint/access_url
+    assert launcher.endpoint.startswith(f"http://{host}:")
+    assert launcher.access_url.startswith(f"http://{host}:")
+    await _probe_json(f"{launcher.access_url}/", {"hello": "world"})
+
+    await launcher.stop()
+
+
+@pytest.mark.asyncio
+async def test_launcher_endpoint_access_url_health_url_normalization():
+    host = "0.0.0.0"  # should flip to 127.0.0.1 for access_url
+    port = portpicker.pick_unused_port()
+    app = _make_app_health()
+
+    args = PythonServerLauncherArgs(
+        host=host,
+        port=port,
+        launch_mode="mp",
+        n_workers=1,
+        healthcheck_url="health",  # missing leading slash should be normalized
+        startup_timeout=15.0,
+    )
+    launcher = PythonServerLauncher(app, args)
+
+    await launcher.start()
+    try:
+        assert launcher.endpoint == f"http://{host}:{port}"
+        # access_url should map 0.0.0.0 -> 127.0.0.1
+        assert launcher.access_url == f"http://127.0.0.1:{port}"
+        assert launcher.health_url == f"http://127.0.0.1:{port}/health"
+        await _probe_json(f"{launcher.access_url}/", {"hello": "world"})
+    finally:
+        await launcher.stop()
+        _free_port("127.0.0.1", port)

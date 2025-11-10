@@ -580,6 +580,9 @@ class PythonServerLauncher:
         self._mp_event_queue: Optional[multiprocessing.Queue[ChildEvent]] = None
         self._gunicorn_app: Optional[GunicornApp] = None  # programmatic gunicorn wrapper
 
+        # is_running flag
+        self._is_running: bool = False
+
     @property
     def endpoint(self) -> str:
         return f"http://{self.args.host}:{self._ensure_port()}"
@@ -636,7 +639,16 @@ class PythonServerLauncher:
         """Block until the server exits."""
         mode = self.args.launch_mode
         if mode == "asyncio":
-            await self._run_uvicorn_asyncio_forever()
+            await self._start_uvicorn_asyncio()
+            try:
+                if self._uvicorn_task is not None:
+                    # Wait for the server
+                    # Won't allow outer cancel to directly cancel the inner task
+                    await asyncio.shield(self._uvicorn_task)
+            except (asyncio.CancelledError, KeyboardInterrupt):
+                logger.warning("Server received cancellation signal. Shutting down gracefully.")
+                await self._stop_uvicorn_asyncio()
+                raise
 
         elif mode == "thread":
             await self._start_uvicorn_thread()
@@ -647,6 +659,7 @@ class PythonServerLauncher:
             except (asyncio.CancelledError, KeyboardInterrupt):
                 logger.warning("Server thread received cancellation signal. Shutting down gracefully.")
                 await self._stop_uvicorn_thread()
+                raise
 
         elif mode == "mp":
             await self._start_serving_process()
@@ -657,24 +670,13 @@ class PythonServerLauncher:
             except (asyncio.CancelledError, KeyboardInterrupt):
                 logger.warning("Server process received cancellation signal. Shutting down gracefully.")
                 await self._stop_serving_process()
+                raise
 
         else:
             raise ValueError(f"Unsupported launch mode: {mode}")
 
     def is_running(self) -> bool:
-        mode = self.args.launch_mode
-        if mode == "asyncio":
-            return bool(
-                self._uvicorn_server
-                and self._uvicorn_server.started
-                and self._uvicorn_task
-                and not self._uvicorn_task.done()
-            )
-        if mode == "thread":
-            return bool(self._thread and self._thread.is_alive())
-        if mode == "mp":
-            return bool(self._proc and self._proc.is_alive())
-        return False
+        return self._is_running
 
     @staticmethod
     def _normalize_app_ref(app: FastAPI) -> str:
@@ -695,7 +697,6 @@ class PythonServerLauncher:
             host=self.args.host,
             port=self._ensure_port(),
             log_level=self.args.log_level,
-            lifespan="on",
             loop="asyncio",
         )
         return uvicorn.Server(config)
@@ -723,30 +724,17 @@ class PythonServerLauncher:
             wait_for_serve=False,  # return once startup/health OK
             kill_unhealthy_server=self.args.kill_unhealthy_server,
         )
+        self._is_running = True
 
     async def _stop_uvicorn_asyncio(self):
         # Gracefully shut down the in-proc uvicorn server task if running
         if self._uvicorn_server and self._uvicorn_task:
+            print("shutdown_uvicorn_server start")
             await shutdown_uvicorn_server(self._uvicorn_server, self._uvicorn_task)
+            print("shutdown_uvicorn_server complete")
         self._uvicorn_task = None
         self._uvicorn_server = None
-
-    async def _run_uvicorn_asyncio_forever(self):
-        if self.is_running():
-            raise RuntimeError("Server is already running. Stopping it first.")
-
-        self._uvicorn_server = self._create_uvicorn_server()
-        self._uvicorn_task = await run_uvicorn_asyncio(
-            uvicorn_server=self._uvicorn_server,
-            serve_context=self._ctx(),
-            timeout=self.args.startup_timeout,
-            health_url=self.health_url,
-            wait_for_serve=True,  # block until server exits
-            kill_unhealthy_server=self.args.kill_unhealthy_server,
-        )
-        # Keyboard interrupt will be processed internally.
-        # We can just wait for the serve task to complete.
-        return await self._uvicorn_task
+        self._is_running = False
 
     # --- Mode 2: thread (in-proc) using run_uvicorn_thread ---
 
@@ -788,6 +776,7 @@ class PythonServerLauncher:
                 raise RuntimeError(evt.message or "Threaded server failed to start and refused to shut down.")
         else:
             logger.info("Threaded server started successfully.")
+            self._is_running = True
 
     async def _stop_uvicorn_thread(self):
         if self._thread_stop_event:
@@ -801,6 +790,7 @@ class PythonServerLauncher:
         self._thread_event_queue = None
         self._thread_stop_event = None
         self._uvicorn_server = None
+        self._is_running = False
 
     # --- Mode 3: subprocess (uvicorn / gunicorn) using run_uvicorn_subprocess or run_gunicorn ---
 
@@ -887,6 +877,7 @@ class PythonServerLauncher:
                 raise RuntimeError(evt.message or "Server process failed to start and refused to shut down.")
         else:
             logger.info("Subprocess server started successfully.")
+            self._is_running = True
 
     async def _stop_serving_process(self):
         if self._proc is not None:
@@ -920,3 +911,4 @@ class PythonServerLauncher:
         self._mp_event_queue = None
         self._gunicorn_app = None
         self._uvicorn_server = None
+        self._is_running = False
