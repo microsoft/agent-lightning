@@ -556,11 +556,20 @@ def run_gunicorn(
 
 
 class PythonServerLauncher:
-    """Unified launcher for FastAPI, using uvicorn or gunicorn per mode/worker count."""
+    """Unified launcher for FastAPI, using uvicorn or gunicorn per mode/worker count.
+
+    See [`PythonServerLauncherArgs`][agentlightning.utils.server_launcher.PythonServerLauncherArgs] for configuration options.
+
+    Args:
+        app: The FastAPI app to launch.
+        args: The configuration for the server.
+        serve_context: An optional context manager to apply around the server startup.
+    """
 
     def __init__(
         self, app: FastAPI, args: PythonServerLauncherArgs, serve_context: Optional[AsyncContextManager[Any]] = None
     ):
+        """Initialize the launcher with the FastAPI app, configuration, and optional serve context."""
         self.app = app
         self.args = args
         self.serve_context = serve_context
@@ -585,16 +594,19 @@ class PythonServerLauncher:
 
     @property
     def endpoint(self) -> str:
+        """Return the externally advertised host:port pair regardless of accessibility."""
         return f"http://{self.args.host}:{self._ensure_port()}"
 
     @property
     def access_url(self) -> str:
+        """Return a loopback-friendly URL so health checks succeed even when binding to 0.0.0.0."""
         # Probe host normalization for 0.0.0.0
         host_for_probe = "127.0.0.1" if self.args.host in ("0.0.0.0", "::") else self.args.host
         return f"http://{host_for_probe}:{self._ensure_port()}"
 
     @property
     def health_url(self) -> Optional[str]:
+        """Build the absolute health-check endpoint from args, if one is configured."""
         if not self.args.healthcheck_url:
             return None
         path = self.args.healthcheck_url
@@ -617,7 +629,7 @@ class PythonServerLauncher:
         logger.info(f"Server {self._normalize_app_ref(self.app)} started at {self.endpoint}")
 
     async def stop(self):
-        """Stops the server."""
+        """Stop the server using the inverse of whatever launch mode was used to start it."""
         logger.info(f"Stopping server {self._normalize_app_ref(self.app)}...")
         mode = self.args.launch_mode
         if mode == "mp":
@@ -631,12 +643,13 @@ class PythonServerLauncher:
         logger.info(f"Server {self._normalize_app_ref(self.app)} stopped")
 
     async def reload(self):
+        """Restart the server by stopping it if necessary and invoking start again."""
         if self.is_running():
             await self.stop()
         await self.start()
 
     async def run_forever(self):
-        """Block until the server exits."""
+        """Start the server and block the caller until it exits, respecting the configured mode."""
         mode = self.args.launch_mode
         if mode == "asyncio":
             await self._start_uvicorn_asyncio()
@@ -676,6 +689,7 @@ class PythonServerLauncher:
             raise ValueError(f"Unsupported launch mode: {mode}")
 
     def is_running(self) -> bool:
+        """Return True if the server has been started and not yet stopped."""
         return self._is_running
 
     @staticmethod
