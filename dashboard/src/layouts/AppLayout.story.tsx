@@ -95,7 +95,7 @@ const meta: Meta<AppLayoutProps> = {
   render: (args) => renderAppLayout(args, '/rollouts'),
   args: {
     config: {
-      baseUrl: 'http://localhost:8000',
+      baseUrl: STORY_BASE_URL,
       autoRefreshMs: 0,
     },
   },
@@ -118,7 +118,7 @@ export const ServerOnline: Story = {
   parameters: {
     msw: {
       handlers: [
-        http.get('http://localhost:8000/v1/agl/health', () => HttpResponse.json({ status: 'ok' }, { status: 200 })),
+        http.get(`${STORY_BASE_URL}/v1/agl/health`, () => HttpResponse.json({ status: 'ok' }, { status: 200 })),
       ],
     },
   },
@@ -128,7 +128,7 @@ export const ServerOffline: Story = {
   parameters: {
     msw: {
       handlers: [
-        http.get('http://localhost:8000/v1/agl/health', () =>
+        http.get(`${STORY_BASE_URL}/v1/agl/health`, () =>
           HttpResponse.json({ message: 'unavailable' }, { status: 503 }),
         ),
       ],
@@ -151,14 +151,14 @@ export const SettingsNavActive: Story = {
 export const PollingEveryFiveSeconds: Story = {
   args: {
     config: {
-      baseUrl: 'http://localhost:8000',
+      baseUrl: STORY_BASE_URL,
       autoRefreshMs: 5000,
     },
   },
   parameters: {
     msw: {
       handlers: [
-        http.get('http://localhost:8000/v1/agl/health', () => HttpResponse.json({ status: 'ok' }, { status: 200 })),
+        http.get(`${STORY_BASE_URL}/v1/agl/health`, () => HttpResponse.json({ status: 'ok' }, { status: 200 })),
       ],
     },
   },
