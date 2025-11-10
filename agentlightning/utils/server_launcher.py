@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 import multiprocessing
 import queue
@@ -22,6 +23,7 @@ from fastapi import FastAPI
 from gunicorn.app.base import BaseApplication
 from gunicorn.arbiter import Arbiter
 from portpicker import pick_unused_port
+from uvicorn_worker import UvicornWorker
 
 __all__ = ["PythonServerLauncher", "PythonServerLauncherArgs"]
 
@@ -76,9 +78,9 @@ class GunicornApp(BaseApplication):
     """
 
     def __init__(self, app: FastAPI, options: Dict[str, Any]):
-        super().__init__()  # type: ignore
         self.application = app
-        self.options = options or {}
+        self.options = options
+        super().__init__()  # type: ignore
 
     def load_config(self):
         cfg = self.cfg
@@ -126,34 +128,34 @@ async def run_uvicorn_asyncio(
 
     # watcher: when server.started flips True, announce READY once
     async def _watch_server() -> None:
-        start_time = time.monotonic()
+        start_time = time.time()
         deadline = start_time + timeout  # child-side startup window
         logger.debug(f"Waiting for server to start up for {timeout:.2f} seconds...")
         # Wait for the server to start up or the deadline to be reached, or an exception to be raised.
-        while time.monotonic() < deadline and not uvicorn_server.started and server_start_exception is None:
+        while time.time() < deadline and not uvicorn_server.started and server_start_exception is None:
             await asyncio.sleep(0.1)
 
         if not uvicorn_server.started:
             # Normally, the program will not reach this point, as the server will throw the exception itself earlier.
             raise RuntimeError(f"Server did not start up within {timeout:.2f} seconds.") from server_start_exception
 
-        logger.debug(f"Server started up in {time.monotonic() - start_time:.2f} seconds.")
+        logger.debug(f"Server started up in {time.time() - start_time:.2f} seconds.")
 
         # Check for health endpoint status if provided
         if health_url is not None:
             async with aiohttp.ClientSession() as session:
-                while time.monotonic() < deadline:
+                while time.time() < deadline:
                     with suppress(Exception):
                         async with session.get(health_url) as resp:
                             if resp.status == 200:
                                 logger.debug(
-                                    f"Server is healthy at {health_url} in {time.monotonic() - start_time:.2f} seconds."
+                                    f"Server is healthy at {health_url} in {time.time() - start_time:.2f} seconds."
                                 )
                                 return
                     await asyncio.sleep(0.1)
 
             # If the server is not healthy, kill it if requested.
-            health_failed_seconds = time.monotonic() - start_time
+            health_failed_seconds = time.time() - start_time
             if kill_unhealthy_server:
                 logger.error(
                     f"Server is not healthy at {health_url} after {health_failed_seconds:.2f} seconds. Shutting down server gracefully."
@@ -292,7 +294,7 @@ def run_uvicorn_subprocess(
     Behavior:
 
     - Start uvicorn and wait for startup/health (if provided).
-    - Post ChildEvent(kind="ready") once the server is up.
+    - Post `ChildEvent(kind="ready")` once the server is up.
     - Stay alive until a termination signal (SIGTERM/SIGINT).
     - On signal, request graceful shutdown and wait for the server to exit.
 
@@ -380,8 +382,10 @@ def run_gunicorn(
 
     - Start Arbiter.run() (blocking) in this process.
     - A watchdog thread waits for workers to spawn, then (optionally) verifies a health URL.
-    - On success: put ChildEvent(kind="ready").
-    - On failure/timeout: put ChildEvent(kind="error") and request a graceful shutdown.
+    - On success: put `ChildEvent(kind="ready")`.
+    - On failure/timeout: put `ChildEvent(kind="error")` and request a graceful shutdown.
+
+    `serve_context` will be applied around the `arbiter.run()` call.
     """
     # Create the arbiter up-front so the watchdog can inspect it.
     try:
@@ -401,11 +405,11 @@ def run_gunicorn(
     runtime_error: Optional[BaseException] = None
 
     def _watchdog() -> None:
-        start = time.monotonic()
+        start = time.time()
         deadline = start + timeout
 
         # First, wait for arbiter.workers to get populated
-        while time.monotonic() < deadline and not arbiter.WORKERS:  # type: ignore
+        while time.time() < deadline and not arbiter.WORKERS:  # type: ignore
             # If arbiter died early, abort quickly.
             if runtime_error is not None:
                 logger.error("Gunicorn arbiter exited during startup. Watchdog exiting.")
@@ -413,9 +417,10 @@ def run_gunicorn(
             time.sleep(0.1)
 
         if not arbiter.WORKERS:  # type: ignore
-            elapsed_time = time.monotonic() - start
+            elapsed_time = time.time() - start
             logger.error("Gunicorn workers did not start within %.2f seconds.", elapsed_time)
             if runtime_error is None:
+                # Timeout case: arbiter throws no exception.
                 event_queue.put(
                     ChildEvent(
                         kind="error",
@@ -424,31 +429,39 @@ def run_gunicorn(
                         traceback=None,
                     )
                 )
+                logger.info("Halting Gunicorn arbiter.")
                 # Ask arbiter to stop if it's still alive.
                 # It will make the watchdog exit too.
-                arbiter.halt()  # type: ignore
+                arbiter.signal(signal.SIGTERM, inspect.currentframe())  # type: ignore
             else:
+                # Timeout case: arbiter has thrown an exception.
                 logger.error("Gunicorn arbiter exited during startup. Watchdog exiting.")
             return
 
         # Second, check for health endpoint status if provided
         if health_url:
-            while time.monotonic() < deadline:
+            while time.time() < deadline:
+                # If arbiter died early, abort.
                 if runtime_error is not None:
                     logger.error("Gunicorn arbiter exited during health check. Watchdog exiting.")
                     return
+
+                # Check if the server is healthy.
                 try:
                     resp = requests.get(health_url, timeout=2.0)
                     if resp.status_code == 200:
-                        logger.debug(f"Server is healthy at {health_url} in {time.monotonic() - start:.2f} seconds.")
+                        logger.debug(f"Server is healthy at {health_url} in {time.time() - start:.2f} seconds.")
+                        # Check arbiter status again.
                         if runtime_error is None:
                             event_queue.put(ChildEvent(kind="ready"))
                         else:
-                            logger.error("Gunicorn arbiter exited unexpectedly during health check. Watchdog exiting.")
+                            logger.error(
+                                "Response status is 200 but arbiter has thrown an exception. This should not happen."
+                            )
                         return
                 except Exception:
                     logger.debug(
-                        f"Server is still not healthy at {health_url} in {time.monotonic() - start:.2f} seconds.",
+                        f"Server is still not healthy at {health_url} in {time.time() - start:.2f} seconds.",
                         exc_info=True,
                     )
                 time.sleep(0.1)
@@ -461,6 +474,7 @@ def run_gunicorn(
                 elapsed,
             )
             if runtime_error is None:
+                # Arbiter throws no exception. This is a simple timeout case.
                 event_queue.put(
                     ChildEvent(
                         kind="error",
@@ -472,19 +486,33 @@ def run_gunicorn(
                         traceback=None,
                     )
                 )
+                logger.info("Halting Gunicorn arbiter.")
                 # Ask arbiter to stop if it's still alive.
-                arbiter.halt()  # type: ignore
+                arbiter.signal(signal.SIGTERM, inspect.currentframe())  # type: ignore
             else:
+                # If arbiter has thrown an exception, report it.
                 logger.error("Gunicorn arbiter exited during health check. Watchdog exiting.")
-            return
+
         else:
             # No health check; workers up => ready.
             if runtime_error is None:
                 event_queue.put(ChildEvent(kind="ready"))
             else:
+                # If arbiter has thrown an exception, report it.
                 logger.error("Gunicorn arbiter exited unexpectedly before health check. Watchdog exiting.")
 
-    watchdog_thread = threading.Thread(target=_watchdog, daemon=True)
+    def _watchdog_with_exception() -> None:
+        try:
+            _watchdog()
+        except Exception as exc:
+            logger.exception("Exception in watchdog thread.")
+            event_queue.put(
+                ChildEvent(
+                    kind="error", exc_type=type(exc).__name__, message=str(exc), traceback=traceback.format_exc()
+                )
+            )
+
+    watchdog_thread = threading.Thread(target=_watchdog_with_exception, daemon=True)
     watchdog_thread.start()
 
     async def _serve() -> None:
@@ -780,8 +808,8 @@ class PythonServerLauncher:
         self._serving_thread.start()
 
         # Wait for uvicorn started flag
-        start_deadline = time.monotonic() + 10
-        while time.monotonic() < start_deadline:
+        start_deadline = time.time() + 10
+        while time.time() < start_deadline:
             if uvicorn_server.started:
                 break
             if self._server_start_exception is not None or not self._serving_thread.is_alive():
@@ -892,9 +920,9 @@ class PythonServerLauncher:
             # If a health URL is not provided, assume success once the server reports started.
             return True
 
-        deadline = time.monotonic() + timeout_s
+        deadline = time.time() + timeout_s
         async with aiohttp.ClientSession() as session:
-            while time.monotonic() < deadline:
+            while time.time() < deadline:
                 try:
                     async with session.get(self.health_url) as resp:
                         if resp.status == 200:

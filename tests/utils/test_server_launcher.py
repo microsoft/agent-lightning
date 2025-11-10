@@ -726,7 +726,7 @@ async def test_run_gunicorn_ready_and_handles_sigterm_preload():
 
     proc = ctx.Process(
         target=run_gunicorn,
-        args=(gapp, event_queue, 10.0, health_url),
+        args=(gapp, noop_context(), event_queue, 10.0, health_url),
         daemon=False,  # master must be able to fork workers
     )
     proc.start()
@@ -761,6 +761,9 @@ async def test_run_gunicorn_reports_health_failure_preload():
     """
     Health endpoint returns 503 -> watchdog posts error and requests graceful shutdown.
     """
+    from agentlightning.logging import configure_logger
+
+    configure_logger(logging.DEBUG)
     host = "127.0.0.1"
     port = portpicker.pick_unused_port()
     ctx = multiprocessing.get_context("fork")
@@ -772,7 +775,7 @@ async def test_run_gunicorn_reports_health_failure_preload():
 
     proc = ctx.Process(
         target=run_gunicorn,
-        args=(gapp, event_queue, 5.0, health_url),
+        args=(gapp, noop_context(), event_queue, 3.0, health_url),
         daemon=False,
     )
     proc.start()
@@ -809,13 +812,13 @@ async def test_run_gunicorn_no_health_reports_ready_and_sigint_preload():
 
     proc = ctx.Process(
         target=run_gunicorn,
-        args=(gapp, event_queue, 10.0, None),  # no health check
+        args=(gapp, noop_context(), event_queue, 3.0, None),  # no health check
         daemon=False,
     )
     proc.start()
 
     try:
-        event = await _queue_get_async(event_queue, timeout=20.0)
+        event = await _queue_get_async(event_queue, timeout=10.0)
         assert event.kind == "ready"
 
         async with aiohttp.ClientSession() as session:
@@ -825,10 +828,10 @@ async def test_run_gunicorn_no_health_reports_ready_and_sigint_preload():
 
         if proc.pid is not None:
             os.kill(proc.pid, signal.SIGINT)
-        await asyncio.to_thread(proc.join, 20.0)
+        await asyncio.to_thread(proc.join, 10.0)
     finally:
         if proc.is_alive():
-            await asyncio.to_thread(proc.join, 20.0)
+            await asyncio.to_thread(proc.join, 10.0)
 
     assert proc.exitcode == 0
     # Port released
@@ -861,19 +864,19 @@ async def test_run_gunicorn_reports_startup_bind_failure_preload(caplog: pytest.
 
         proc = ctx.Process(
             target=run_gunicorn,
-            args=(gapp, event_queue, 5.0, None),
+            args=(gapp, noop_context(), event_queue, 3.0, None),
             daemon=False,
         )
         proc.start()
 
         try:
-            event = await _queue_get_async(event_queue, timeout=20.0)
+            event = await _queue_get_async(event_queue, timeout=10.0)
             assert event.kind == "error"
             assert "Gunicorn workers did not start within" in (event.message or "")
-            await asyncio.to_thread(proc.join, 20.0)
+            await asyncio.to_thread(proc.join, 10.0)
         finally:
             if proc.is_alive():
-                await asyncio.to_thread(proc.join, 20.0)
+                await asyncio.to_thread(proc.join, 10.0)
 
         assert proc.exitcode == 0
 
