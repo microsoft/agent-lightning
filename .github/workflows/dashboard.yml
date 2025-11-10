@@ -11,6 +11,9 @@ on:
   repository_dispatch:
     types: [ci-dashboard, ci-all]
 
+  push:
+    branches: [ main, stable/**/* ]
+
 run-name: >-
   ${{ github.event_name == 'repository_dispatch'
       && format(
@@ -40,7 +43,7 @@ jobs:
       - name: Install JavaScript dependencies
         run: cd dashboard && npm ci
       - name: Run Chromatic
-        uses: chromaui/action@latest
+        uses: chromaui/action@v13
         with:
           projectToken: ${{ secrets.CHROMATIC_PROJECT_TOKEN }}
           workingDir: dashboard
