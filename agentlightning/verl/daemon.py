@@ -785,7 +785,14 @@ class AgentModeDaemon:
                     unmerged_count += 1
                     # log data, only for debug testing
                     for turn_index, d in enumerate(turn_ids):
-                        with open("bad_case_jiahang.log", "a+") as f:
+                        with open("bad_case.log", "a+") as f:
+                            print("-" * 20, file=f)
+                            print(merged_trace_idx, file=f)
+                            print('~' * 20, file=f)
+                            print(turn_index, file=f)
+                            print(d["nxt_turn"], file=f)
+                            print(d["cur"], file=f)
+                        with open("/mnt/teamdrive/RAG_RL/checkpoints/logs/search_r1_agl/bad_case.log", "a+") as f:
                             print("-" * 20, file=f)
                             print(merged_trace_idx, file=f)
                             print('~' * 20, file=f)
@@ -807,8 +814,16 @@ class AgentModeDaemon:
                         response_mask += [1] * len(trace["response_ids"])
                     final_sample = sample_info["trace_list"][current_merged_trace_idx[-1]]
                     response_ids = final_sample["prompt_ids"][prompt_length:] + final_sample["response_ids"]
-                    assert len(response_ids) == len(accum_response_ids) # only for debug testing
-
+                    if len(response_ids) != len(accum_response_ids):  # only for debug testing
+                        with open("bad_case.log", "a+") as f:
+                            print("-" * 10 + "response_ids NUM NOT MATCH" + "-" * 10, file=f)
+                            print(response_ids, file=f)
+                            print(accum_response_ids, file=f)
+                        with open("/mnt/teamdrive/RAG_RL/checkpoints/logs/search_r1_agl/bad_case.log", "a+") as f:
+                            print("-" * 10 + "response_ids NUM NOT MATCH" + "-" * 10, file=f)
+                            print(response_ids, file=f)
+                            print(accum_response_ids, file=f)
+                    response_ids = accum_response_ids  # convert to the generating response ids, only for debug testing
                     reward_list.append(sample_info["reward"])
 
                     # Mark samples with prompts exceeding max_prompt_length to be dropped later
@@ -898,7 +913,7 @@ class AgentModeDaemon:
         # Add non-tensor data for advantage calculation and logging
         data_proto.non_tensor_batch["data_id_list"] = np.array(data_id_list)  # type: ignore
         data_proto.non_tensor_batch["rollout_id_list"] = np.array(rollout_id_list)  # type: ignore
-        data_proto.non_tensor_batch["turn_index_list"] = np.array(turn_index_list)  # type: ignore
+        # data_proto.non_tensor_batch["turn_index_list"] = np.array(turn_index_list)  # type: ignore
 
         return data_proto, data_metrics
 
