@@ -9,6 +9,7 @@ import { initialize, mswLoader } from 'msw-storybook-addon';
 import { ColorSchemeScript, MantineProvider } from '@mantine/core';
 import { shadcnCssVariableResolver } from '../src/cssVariableResolver';
 import { theme as mantineTheme } from '../src/theme';
+import { STORY_DATE_NOW_MS } from './constants';
 
 type ColorSchemeValue = 'light' | 'dark';
 
@@ -18,6 +19,18 @@ initialize({
     url: '/mockServiceWorker.js',
   },
 });
+
+const fixedDateNow = (() => {
+  const patched = Date.now as typeof Date.now & { __storybookPatched?: boolean };
+  if (patched.__storybookPatched) {
+    return patched;
+  }
+  const replacement = (() => STORY_DATE_NOW_MS) as typeof Date.now & { __storybookPatched?: boolean };
+  replacement.__storybookPatched = true;
+  return replacement;
+})();
+
+Date.now = fixedDateNow;
 
 export const parameters = {
   layout: 'fullscreen',
