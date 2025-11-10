@@ -80,6 +80,8 @@ jobs:
         run: cd dashboard && npm run stylelint
       - name: Run Typecheck
         run: cd dashboard && npm run typecheck
+      - name: Verify build
+        run: cd dashboard && npm run build
 
   docs:
     name: Build documentation
