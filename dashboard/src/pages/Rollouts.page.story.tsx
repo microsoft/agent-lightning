@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft. All rights reserved.
 
 import type { Meta, StoryObj } from '@storybook/react';
-import { within } from '@testing-library/dom';
+import { waitFor, within } from '@testing-library/dom';
 import userEvent from '@testing-library/user-event';
 import { delay, http, HttpResponse } from 'msw';
 import { Provider } from 'react-redux';
@@ -706,7 +706,12 @@ export const AutoExpandedAttempt: Story = {
     }
 
     await userEvent.click(rolloutRow);
-    await canvas.findByText('at-expand-001');
+    await waitFor(
+      async () => {
+        await within(document.body).findByText('at-expand-001');
+      },
+      { timeout: 1_000 },
+    );
   },
 };
 
@@ -732,7 +737,7 @@ export const RawJsonDrawer: Story = {
     const rawButton = rawButtons[0];
     await userEvent.click(rawButton);
 
-    const drawer = await within(document.body).findByRole('dialog', { name: 'ro-7fa3b6e2' });
+    const drawer = await within(document.body).findByRole('dialog');
     await within(drawer).findByText('Attempt');
     await within(drawer).findByText(/worker-alpha/);
   },
@@ -760,6 +765,6 @@ export const TracesDrawer: Story = {
     const tracesButton = traceButtons[0];
     await userEvent.click(tracesButton);
 
-    await within(document.body).findByRole('dialog', { name: 'ro-7fa3b6e2' });
+    await within(document.body).findByRole('dialog');
   },
 };

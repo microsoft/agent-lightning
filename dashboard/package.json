@@ -14,7 +14,7 @@
     "vitest": "vitest run",
     "test": "npm run typecheck && npm run prettier && npm run lint && npm run vitest && npm run build",
     "storybook": "storybook dev -p 6006",
-    "storybook:build": "storybook build"
+    "build-storybook": "storybook build"
   },
   "dependencies": {
     "@mantine/core": "8.3.5",
@@ -45,6 +45,7 @@
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.1",
     "@vitejs/plugin-react": "^5.0.4",
+    "chromatic": "^13.3.3",
     "eslint": "^9.37.0",
     "eslint-config-mantine": "^4.0.3",
     "eslint-plugin-jsx-a11y": "^6.10.2",
