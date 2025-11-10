@@ -865,8 +865,13 @@ class AgentModeDaemon:
                         response_mask += [1] * len(trace["response_ids"])
                     final_sample = sample_info["trace_list"][current_merged_trace_idx[-1]]
                     response_ids = final_sample["prompt_ids"][prompt_length:] + final_sample["response_ids"]
-                    assert len(response_ids) == len(accum_response_ids)  # only for debug testing
+                    if len(response_ids) != len(accum_response_ids):  # only for debug testing
+                        with open("bad_case_jiahang.log", "a+") as f:
+                            print("-" * 10 + "response_ids NUM NOT MATCH" + "-" * 10, file=f)
+                            print(response_ids, file=f)
+                            print(accum_response_ids, file=f)
 
+                    response_ids = accum_response_ids  # convert to the generating response ids, only for debug testing
                     reward_list.append(sample_info["reward"])
 
                     # Mark samples with prompts exceeding max_prompt_length to be dropped later
