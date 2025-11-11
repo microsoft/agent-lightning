@@ -568,6 +568,9 @@ export const LargeDatasetSearch: Story = {
     const canvas = within(canvasElement);
     const rolloutTrigger = (await canvas.findByLabelText('Select rollout')) as HTMLInputElement;
     await userEvent.click(rolloutTrigger);
+    for (let i = 0; i < 'ro-vast-001'.length; i++) {
+      await userEvent.type(rolloutTrigger, '{backspace}');
+    }
     await userEvent.type(rolloutTrigger, 'ro-vast-150');
 
     await waitFor(() => {
