@@ -26,6 +26,14 @@ jobs:
       - name: Sync dependencies
         run: uv sync --frozen --no-default-groups --group dev
 
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - name: Install JavaScript dependencies
+        run: cd dashboard && npm ci
+      - name: Build dashboard
+        run: cd dashboard && npm run build
+
       - name: Get current version
         id: get_version
         run: |
