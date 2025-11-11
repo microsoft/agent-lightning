@@ -25,10 +25,11 @@ from gunicorn.app.base import BaseApplication
 from gunicorn.arbiter import Arbiter
 from portpicker import pick_unused_port
 
-__all__ = ["PythonServerLauncher", "PythonServerLauncherArgs"]
+__all__ = ["PythonServerLauncher", "PythonServerLauncherArgs", "LaunchMode"]
 
 
 LaunchMode = Literal["asyncio", "thread", "mp"]
+"""The launch mode for the server."""
 
 
 @dataclass

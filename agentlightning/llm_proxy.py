@@ -533,15 +533,16 @@ class LLMProxy:
         port: TCP port to bind. Will bind to a random port if not provided.
         model_list: LiteLLM `model_list` entries.
         store: LightningStore used for span sequence and persistence.
-        host: Publicly reachable host used in resource endpoints. Defaults to best-guess IPv4. If provided, will bind to the given host and port.
+        host: Publicly reachable host used in resource endpoints. See `host` of `launcher_args` for more details.
         litellm_config: Extra LiteLLM proxy config merged with `model_list`.
         num_retries: Default LiteLLM retry count injected into `litellm_settings`.
         num_workers: Number of workers to run in the server. Only applicable for "mp" launch mode. Ignored if launcher_args is provided.
+            When `num_workers > 1`, the server will be run using [gunicorn](https://gunicorn.org/).
         launch_mode: Launch mode for the server. Defaults to "mp". Cannot be used together with launcher_args. Ignored if launcher_args is provided.
-            It's recommended to use `launch_mode="mp"` to launch the proxy.
-            `launch_mode="thread"` can also be used if used in caution.
-            `launch_mode="asyncio"` is always NOT recommended because it often causes hanging requests.
-            Only use it if you know what you are doing.
+            It's recommended to use `launch_mode="mp"` to launch the proxy, which will launch the server in a separate process.
+            `launch_mode="thread"` can also be used if used in caution. It will launch the server in a separate thread.
+            `launch_mode="asyncio"` launches the server in the current thread as an asyncio task.
+            It is NOT recommended because it often causes hanging requests. Only use it if you know what you are doing.
         launcher_args: Arguments for the server launcher. If this is provided, host, port, and launch_mode will be ignored. Cannot be used together with port, host, and launch_mode.
     """
 
