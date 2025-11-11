@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 from __future__ import annotations
 
 import logging
@@ -59,7 +61,7 @@ class WeaveTracer(Tracer):
         provider.add_span_processor(self._lightning_span_processor)
 
         otel_trace.set_tracer_provider(provider)
-        self._otel_trace = otel_trace.get_tracer("agent-lightning.weave")
+        self._otel_tracer = otel_trace.get_tracer("agent-lightning.weave")
 
         logger.info(f"[Worker {worker_id}] Setting up Weave tracer...")
         self._initialized = True
@@ -101,29 +103,28 @@ class WeaveTracer(Tracer):
         if not self._client:
             raise RuntimeError("Weave client is not initialized. Call init_worker() first.")
 
-        arg_op = name if name is not None else "weave_trace"
+        arg_op = name or "weave_trace"
         arg_inputs = {"rollout_id": rollout_id or ""}
-
-        trace_call = self._client.create_call(op=arg_op, inputs=arg_inputs) # type: ignore
+        trace_call = self._client.create_call(op=arg_op, inputs=arg_inputs)  # type: ignore
 
         try:
-            with self._otel_trace.start_as_current_span(arg_op):
-                if store and rollout_id and attempt_id:
-                    ctx = self._lightning_span_processor.with_context(
-                        store=store, rollout_id=rollout_id, attempt_id=attempt_id
+            with self._otel_tracer.start_as_current_span(arg_op):
+                if all(x is None for x in (store, rollout_id, attempt_id)):
+                    processor_ctx = self._lightning_span_processor
+                elif all(x is not None for x in (store, rollout_id, attempt_id)):
+                    processor_ctx = self._lightning_span_processor.with_context(
+                        store=store, rollout_id=rollout_id, attempt_id=attempt_id  # type: ignore
                     )
-                    with ctx as processor:
-                        yield processor
-                elif store is None and rollout_id is None and attempt_id is None:
-                    with self._lightning_span_processor:
-                        yield self._lightning_span_processor
                 else:
                     raise ValueError("store, rollout_id, and attempt_id must be either all provided or all None")
+
+                with processor_ctx as processor:
+                    yield processor
         except Exception as e:
             self._client.fail_call(trace_call, exception=e)
             logger.error(f"Trace failed for rollout_id={rollout_id}, attempt_id={attempt_id}, error={e}")
         finally:
-            self._client.finish_call(trace_call) # type: ignore
+            self._client.finish_call(trace_call)  # type: ignore
 
     def get_last_trace(self) -> List[ReadableSpan]:
         """
