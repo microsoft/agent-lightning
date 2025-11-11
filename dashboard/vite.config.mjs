@@ -21,7 +21,7 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: path.resolve(projectRoot, 'dist'),
+    outDir: path.resolve(projectRoot, '../agentlightning/dashboard'),
     emptyOutDir: true,
   },
   test: {

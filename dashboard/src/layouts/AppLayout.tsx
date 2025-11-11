@@ -99,6 +99,7 @@ function useServerConnection({ baseUrl, autoRefreshMs }: ConnectionOptions) {
 
     check();
 
+    // FIXME: autorefresh only refresh server status, not the data
     if (autoRefreshMs && autoRefreshMs > 0) {
       intervalId = window.setInterval(check, autoRefreshMs);
     }

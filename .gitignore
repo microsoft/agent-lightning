@@ -207,3 +207,8 @@ cython_debug/
 
 # Claude
 .claude/*.local.json
+
+# Dashboard generated files
+agentlightning/dashboard/**/*.css
+agentlightning/dashboard/**/*.js
+agentlightning/dashboard/**/*.html
