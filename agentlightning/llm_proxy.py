@@ -7,15 +7,13 @@ import asyncio
 import logging
 import os
 import re
-import socket
 import tempfile
 import threading
-import time
+from contextlib import asynccontextmanager
 from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Sequence, TypedDict, Union, cast
 
 import litellm
 import opentelemetry.trace as trace_api
-import uvicorn
 import yaml
 from fastapi import Request, Response
 from litellm.integrations.custom_logger import CustomLogger
@@ -26,6 +24,7 @@ from opentelemetry.sdk.trace.export import SpanExporter, SpanExportResult
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from agentlightning.types import LLM, ProxyLLM
+from agentlightning.utils.server_launcher import PythonServerLauncher, PythonServerLauncherArgs, noop_context
 
 from .store.base import LightningStore
 
@@ -518,32 +517,40 @@ class LLMProxy:
         host: Publicly reachable host used in resource endpoints. Defaults to best-guess IPv4.
         litellm_config: Extra LiteLLM proxy config merged with `model_list`.
         num_retries: Default LiteLLM retry count injected into `litellm_settings`.
+        launch_args: Arguments for the server launcher. If this is provided, the host and proxy will be ignored.
     """
 
     def __init__(
         self,
-        port: int,
+        port: int | None = None,
         model_list: List[ModelConfig] | None = None,
         store: Optional[LightningStore] = None,
         host: str | None = None,
         litellm_config: Dict[str, Any] | None = None,
         num_retries: int = 0,
+        launch_args: PythonServerLauncherArgs | None = None,
         _add_return_token_ids: bool = True,
     ):
         self.store = store
-        self.host = host or _get_default_ipv4_address()
-        self.port = port
+
+        self.server_launcher_args = launch_args or PythonServerLauncherArgs(
+            port=port,
+            host=host,
+            launch_mode="mp",
+            healthcheck_url="/health",
+            startup_timeout=10.0,
+            process_join_timeout=10.0,
+        )
+
         self.model_list = model_list or []
         self.litellm_config = litellm_config or {}
 
         # Ensure num_retries is present inside the litellm_settings block.
         self.litellm_config.setdefault("litellm_settings", {})
         self.litellm_config["litellm_settings"].setdefault("num_retries", num_retries)
+        self.server_launcher = PythonServerLauncher(app, self.server_launcher_args, noop_context())
 
-        self._server_thread = None
         self._config_file = None
-        self._uvicorn_server = None
-        self._ready_event = threading.Event()
 
         self._add_return_token_ids = _add_return_token_ids
 
@@ -564,15 +571,13 @@ class LLMProxy:
         self.store = store
 
     def update_model_list(self, model_list: List[ModelConfig]) -> None:
-        """Replace the in-memory model list and hot-restart if running.
+        """Replace the in-memory model list.
 
         Args:
             model_list: New list of model entries.
         """
         self.model_list = model_list
         logger.info(f"Updating LLMProxy model list to: {model_list}")
-        if self.is_running():
-            self.restart()
         # Do nothing if the server is not running.
 
     def update_port(self, port: int) -> None:
@@ -582,25 +587,6 @@ class LLMProxy:
             port: The new port to use for the proxy.
         """
         self.port = port
-
-    def _wait_until_started(self, startup_timeout: float = 20.0):
-        """Block until the uvicorn server reports started or timeout.
-
-        Args:
-            startup_timeout: Maximum seconds to wait.
-        """
-        start = time.time()
-        while True:
-            if self._uvicorn_server is None:
-                break
-            if self._uvicorn_server.started:
-                self._ready_event.set()
-                break
-            if self._uvicorn_server.should_exit:
-                break
-            if time.time() - start > startup_timeout:
-                break
-            time.sleep(0.01)
 
     def initialize(self):
         """Initialize global middleware and LiteLLM callbacks.
@@ -645,19 +631,12 @@ class LLMProxy:
             # reset LiteLLM's logging worker so its asyncio.Queue binds to the new loop.
             _reset_litellm_logging_worker()
 
-    def start(self):
-        """Start the proxy server thread and initialize global wiring.
+    @asynccontextmanager
+    async def _serve_context(self):
+        """Context manager to serve the proxy server.
 
-        Side effects:
-
-        * Sets the module-level global store for middleware/exporter access.
-        * Calls `initialize()` once to register middleware and callbacks.
-        * Writes a temporary YAML config consumed by LiteLLM worker.
-        * Launches uvicorn in a daemon thread and waits for readiness.
+        See [`start`][agentlightning.LLMProxy.start] and [`stop`][agentlightning.LLMProxy.stop] for more details.
         """
-        if self.is_running():
-            # Trigger restart
-            self.stop()
 
         if not self.store:
             raise ValueError("Store is not set. Please set the store before starting the LLMProxy.")
@@ -678,24 +657,44 @@ class LLMProxy:
 
         save_worker_config(config=self._config_file)
 
-        # Bind to all interfaces to allow other hosts to reach it if needed.
-        self._uvicorn_server = uvicorn.Server(uvicorn.Config(app, host="0.0.0.0", port=self.port))
-
-        def run_server():
-            # Serve uvicorn in this background thread with its own event loop.
-            assert self._uvicorn_server is not None
-            asyncio.run(self._uvicorn_server.serve())
-
-        logger.info("Starting LLMProxy server thread...")
-        self._ready_event.clear()
-        # FIXME: This thread should either be reused or the whole proxy should live in another process.
+        # NOTE: When running the _serve_context in current process, you might encounter the following problems:
         # Problem 1: in litellm worker, <Queue at 0x70f1d028cd90 maxsize=50000> is bound to a different event loop
         # Problem 2: Proxy has conflicted opentelemetry setup with the main process.
-        self._server_thread = threading.Thread(target=run_server, daemon=True)
-        self._server_thread.start()
-        self._wait_until_started()
 
-    def stop(self):
+        # Ready
+        logger.info("LLMProxy preparation is done. Will start the server.")
+        yield
+
+        # Clean up
+
+        logger.info("LLMProxy server is cleaning up.")
+
+        # Remove worker config to avoid stale references.
+        if self._config_file and os.path.exists(self._config_file):
+            os.unlink(self._config_file)
+
+        logger.info("LLMProxy server finishes.")
+
+    async def start(self):
+        """Start the proxy server thread and initialize global wiring.
+
+        Side effects:
+
+        * Sets the module-level global store for middleware/exporter access.
+        * Calls `initialize()` once to register middleware and callbacks.
+        * Writes a temporary YAML config consumed by LiteLLM worker.
+        * Launches uvicorn in a daemon thread and waits for readiness.
+        """
+        if self.is_running():
+            # Trigger restart
+            await self.stop()
+
+        # Refresh the serve context
+        self.server_launcher.serve_context = self._serve_context()
+
+        await self.server_launcher.start()
+
+    async def stop(self):
         """Stop the proxy server and clean up temporary artifacts.
 
         This is a best-effort graceful shutdown with a bounded join timeout.
@@ -704,43 +703,19 @@ class LLMProxy:
             logger.warning("LLMProxy is not running. Nothing to stop.")
             return
 
-        # Remove worker config to avoid stale references.
-        if self._config_file and os.path.exists(self._config_file):
-            os.unlink(self._config_file)
+        await self.server_launcher.stop()
 
-        logger.info("Stopping LLMProxy server thread...")
-        stop_success = True
-        if self._server_thread is not None and self._uvicorn_server is not None and self._uvicorn_server.started:
-            self._uvicorn_server.should_exit = True
-            self._server_thread.join(timeout=10.0)  # Allow time for graceful shutdown.
-            if self._server_thread.is_alive():
-                logger.error(
-                    "LLMProxy server thread is still alive after 10 seconds. Cannot kill it because it's a thread."
-                )
-                stop_success = False
-            self._server_thread = None
-            self._uvicorn_server = None
-            self._config_file = None
-            self._ready_event.clear()
-            if not _check_port(self.host, self.port):
-                logger.error(f"Port {self.port} is still in use. Stopping LLMProxy is not successful.")
-                stop_success = False
-        if stop_success:
-            logger.info("LLMProxy server thread stopped.")
-        else:
-            logger.error("LLMProxy server is not stopped successfully.")
-
-    def restart(self, *, _port: int | None = None) -> None:
+    async def restart(self, *, _port: int | None = None) -> None:
         """Restart the proxy if running, else start it.
 
         Convenience wrapper calling `stop()` followed by `start()`.
         """
         logger.info("Restarting LLMProxy server...")
         if self.is_running():
-            self.stop()
+            await self.stop()
         if _port is not None:
-            self.port = _port
-        self.start()
+            self.server_launcher_args.port = _port
+        await self.start()
 
     def is_running(self) -> bool:
         """Return whether the uvicorn server is active.
@@ -748,7 +723,7 @@ class LLMProxy:
         Returns:
             bool: True if server was started and did not signal exit.
         """
-        return self._uvicorn_server is not None and self._uvicorn_server.started
+        return self.server_launcher.is_running()
 
     def as_resource(
         self,
@@ -791,13 +766,13 @@ class LLMProxy:
 
         if rollout_id is None and attempt_id is None:
             return ProxyLLM(
-                endpoint=f"http://{self.host}:{self.port}",
+                endpoint=self.server_launcher.access_endpoint,
                 model=model,
                 sampling_parameters=dict(sampling_parameters or {}),
             )
         elif rollout_id is not None and attempt_id is not None:
             return LLM(
-                endpoint=f"http://{self.host}:{self.port}/rollout/{rollout_id}/attempt/{attempt_id}",
+                endpoint=f"{self.server_launcher.access_endpoint}/rollout/{rollout_id}/attempt/{attempt_id}",
                 model=model,
                 sampling_parameters=dict(sampling_parameters or {}),
             )
@@ -876,35 +851,6 @@ def initialize_llm_callbacks(_add_return_token_ids: bool = True) -> bool:
     litellm.callbacks.clear()  # type: ignore
     litellm.callbacks.extend(_callbacks_before_litellm_start)  # type: ignore
     return False
-
-
-def _get_default_ipv4_address() -> str:
-    """Determine the default outbound IPv4 address for this machine.
-
-    Implementation:
-        Opens a UDP socket and "connects" to a public address to force route
-        selection, then inspects the socket's local address. No packets are sent.
-
-    Returns:
-        str: Best-guess IPv4 like `192.168.x.y`. Falls back to `127.0.0.1`.
-    """
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    try:
-        # Doesn't actually contact 8.8.8.8; just forces the OS to pick a route.
-        s.connect(("8.8.8.8", 80))
-        return s.getsockname()[0]
-    except Exception:
-        return "127.0.0.1"
-    finally:
-        s.close()
-
-
-def _check_port(host: str, port: int) -> bool:
-    """Check if a port is available."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.settimeout(1)
-        result = s.connect_ex((host, port))
-        return result != 0  # True if unavailable
 
 
 def _check_tracer_provider() -> bool:

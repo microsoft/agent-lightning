@@ -22,6 +22,7 @@ import openai
 import pytest
 
 from agentlightning.llm_proxy import LLMProxy, _reset_litellm_logging_worker  # pyright: ignore[reportPrivateUsage]
+from agentlightning.store import LightningStore, LightningStoreServer
 from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.types import LLM, Span
 
@@ -85,7 +86,7 @@ async def test_basic_integration(qwen25_model: RemoteOpenAIServer):
 
     rollout = await store.start_rollout(None)
 
-    proxy.start()
+    await proxy.start()
 
     resource = proxy.as_resource(rollout.rollout_id, rollout.attempt.attempt_id)
 
@@ -100,7 +101,7 @@ async def test_basic_integration(qwen25_model: RemoteOpenAIServer):
     assert response.choices[0].message.content is not None
     assert "hello, world" in response.choices[0].message.content.lower()
 
-    proxy.stop()
+    await proxy.stop()
 
     spans = await store.query_spans(rollout.rollout_id, rollout.attempt.attempt_id)
 
@@ -168,7 +169,7 @@ async def test_basic_integration(qwen25_model: RemoteOpenAIServer):
     assert "gen_ai.completion.0.finish_reason" in litellm_span.attributes, "gen_ai.completion.0.finish_reason not found"
 
 
-def _make_proxy_and_store(qwen25_model: RemoteOpenAIServer, *, retries: int = 0):
+async def _make_proxy_and_store(qwen25_model: RemoteOpenAIServer, *, retries: int = 0):
     clear_tracer_provider()
     _reset_litellm_logging_worker()  # type: ignore
     store = InMemoryLightningStore()
@@ -186,11 +187,14 @@ def _make_proxy_and_store(qwen25_model: RemoteOpenAIServer, *, retries: int = 0)
         store=store,
         num_retries=retries,
     )
-    proxy.start()
-    return proxy, store
+    store_server = LightningStoreServer(store=store, host="127.0.0.1", port=get_free_port())
+    # When the server is forked into subprocess, it automatically becomes a client of the store
+    await proxy.start()
+    await store_server.start()
+    return proxy, store_server
 
 
-async def _new_resource(proxy: LLMProxy, store: InMemoryLightningStore):
+async def _new_resource(proxy: LLMProxy, store: LightningStore):
     rollout = await store.start_rollout(None)
     return proxy.as_resource(rollout.rollout_id, rollout.attempt.attempt_id), rollout
 
@@ -213,7 +217,7 @@ def _attr(s: Span, key: str, default: Any = None):  # type: ignore
 
 @pytest.mark.asyncio
 async def test_multiple_requests_one_attempt(qwen25_model: RemoteOpenAIServer):
-    proxy, store = _make_proxy_and_store(qwen25_model)
+    proxy, store = await _make_proxy_and_store(qwen25_model)
     try:
         resource, rollout = await _new_resource(proxy, store)
         client = _get_client_for_resource(resource)
@@ -234,12 +238,13 @@ async def test_multiple_requests_one_attempt(qwen25_model: RemoteOpenAIServer):
         assert len(_find_span(spans, "raw_gen_ai_request")) == 3
         # TODO: Check response contents and token ids for the 3 requests respectively
     finally:
-        proxy.stop()
+        await proxy.stop()
+        await store.stop()
 
 
 @pytest.mark.asyncio
 async def test_ten_concurrent_requests(qwen25_model: RemoteOpenAIServer):
-    proxy, store = _make_proxy_and_store(qwen25_model)
+    proxy, store = await _make_proxy_and_store(qwen25_model)
     try:
         resource, rollout = await _new_resource(proxy, store)
         aclient = _get_async_client_for_resource(resource)
@@ -260,13 +265,14 @@ async def test_ten_concurrent_requests(qwen25_model: RemoteOpenAIServer):
         assert {s.sequence_id for s in spans} == {1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
         # TODO: Check whether the sequence ids get mixed up or not
     finally:
-        proxy.stop()
+        await proxy.stop()
+        await store.stop()
 
 
 @pytest.mark.asyncio
 async def test_anthropic_client_compat(qwen25_model: RemoteOpenAIServer):
     # litellm proxy accepts Anthropic schema and forwards to OpenAI backend
-    proxy, store = _make_proxy_and_store(qwen25_model)
+    proxy, store = await _make_proxy_and_store(qwen25_model)
     try:
         resource, rollout = await _new_resource(proxy, store)
 
@@ -283,12 +289,13 @@ async def test_anthropic_client_compat(qwen25_model: RemoteOpenAIServer):
         spans = await store.query_spans(rollout.rollout_id, rollout.attempt.attempt_id)
         assert len(spans) > 0
     finally:
-        proxy.stop()
+        await proxy.stop()
+        await store.stop()
 
 
 @pytest.mark.asyncio
 async def test_tool_call_roundtrip(qwen25_model: RemoteOpenAIServer):
-    proxy, store = _make_proxy_and_store(qwen25_model)
+    proxy, store = await _make_proxy_and_store(qwen25_model)
     try:
         resource, rollout = await _new_resource(proxy, store)
         client = _get_client_for_resource(resource)
@@ -351,13 +358,14 @@ async def test_tool_call_roundtrip(qwen25_model: RemoteOpenAIServer):
 
         # TODO: Check response contents and token ids for the 2 requests respectively
     finally:
-        proxy.stop()
+        await proxy.stop()
+        await store.stop()
 
 
 @pytest.mark.skip(reason="Streaming is not supported yet")
 @pytest.mark.asyncio
 async def test_streaming_chunks(qwen25_model: RemoteOpenAIServer):
-    proxy, store = _make_proxy_and_store(qwen25_model)
+    proxy, store = await _make_proxy_and_store(qwen25_model)
     try:
         resource, rollout = await _new_resource(proxy, store)
         client = _get_client_for_resource(resource)
@@ -379,4 +387,5 @@ async def test_streaming_chunks(qwen25_model: RemoteOpenAIServer):
         assert len(spans) > 0
         # TODO: didn't test the token ids in streaming chunks here
     finally:
-        proxy.stop()
+        await proxy.stop()
+        await store.stop()

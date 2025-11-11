@@ -16,6 +16,7 @@ from opentelemetry.sdk.trace import ReadableSpan
 from agentlightning.llm_proxy import LightningSpanExporter, LLMProxy
 from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.types import Span
+from agentlightning.utils.server_launcher import PythonServerLauncherArgs
 
 from ..common.network import get_free_port
 from ..common.tracer import clear_tracer_provider
@@ -121,7 +122,8 @@ def test_exporter_helpers():
     # TODO: add more complex tests for the exporter helper
 
 
-def test_update_model_list():
+@pytest.mark.asyncio
+async def test_update_model_list():
     store = InMemoryLightningStore()
     proxy = LLMProxy(
         port=get_free_port(),
@@ -135,7 +137,7 @@ def test_update_model_list():
         ],
         store=store,
     )
-    proxy.start()
+    await proxy.start()
     assert proxy.is_running()
     assert proxy.model_list == [
         {
@@ -164,10 +166,11 @@ def test_update_model_list():
         }
     ]
     assert proxy.is_running()
-    proxy.stop()
+    await proxy.stop()
 
 
-def test_restart_resets_litellm_logging_worker() -> None:
+@pytest.mark.asyncio
+async def test_restart_resets_litellm_logging_worker() -> None:
     """LLMProxy.start() should recreate LiteLLM's logging worker on each run."""
 
     try:
@@ -177,7 +180,6 @@ def test_restart_resets_litellm_logging_worker() -> None:
 
     store = InMemoryLightningStore()
     proxy = LLMProxy(
-        port=get_free_port(),
         model_list=[
             {
                 "model_name": "dummy-model",
@@ -186,17 +188,24 @@ def test_restart_resets_litellm_logging_worker() -> None:
             }
         ],
         store=store,
+        launch_args=PythonServerLauncherArgs(
+            port=get_free_port(),
+            launch_mode="thread",
+            healthcheck_url="/health",
+            startup_timeout=10.0,
+            process_join_timeout=10.0,
+        ),
     )
 
     try:
-        proxy.start()
+        await proxy.start()
         first_worker = litellm_logging_worker.GLOBAL_LOGGING_WORKER
-        proxy.stop()
+        await proxy.stop()
 
-        proxy.start()
+        await proxy.start()
         second_worker = litellm_logging_worker.GLOBAL_LOGGING_WORKER
     finally:
-        proxy.stop()
+        await proxy.stop()
 
     assert first_worker is not second_worker, "LiteLLM logging worker should be refreshed after restart"
 
@@ -221,7 +230,8 @@ class TestLLM(CustomLLM):
         )
 
 
-def test_custom_llm_restarted_multiple_times(caplog: pytest.LogCaptureFixture) -> None:
+@pytest.mark.asyncio
+async def test_custom_llm_restarted_multiple_times(caplog: pytest.LogCaptureFixture) -> None:
     clear_tracer_provider()
 
     restart_times: int = 30
@@ -249,7 +259,7 @@ def test_custom_llm_restarted_multiple_times(caplog: pytest.LogCaptureFixture) -
             llm_instance = TestLLM(f"Hi! {restart_idx}")
             litellm.custom_provider_map = [{"provider": "test-llm", "custom_handler": llm_instance}]
             custom_llm_setup()
-            llm_proxy.restart()
+            await llm_proxy.restart()
             assert llm_proxy.is_running()
 
             openai_client = openai.OpenAI(
@@ -269,7 +279,7 @@ def test_custom_llm_restarted_multiple_times(caplog: pytest.LogCaptureFixture) -
             assert not error_logs, f"Found error logs: {error_logs}"
             assert not any("Cannot add callback" in record.message for record in caplog.records)
 
-        llm_proxy.stop()
+        await llm_proxy.stop()
     finally:
         litellm.custom_provider_map = []
         custom_llm_setup()
