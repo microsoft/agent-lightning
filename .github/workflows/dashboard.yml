@@ -1,0 +1,33 @@
+name: Dashboard
+permissions:
+  contents: read
+on:
+  schedule:
+    # Every day at 5 AM UTC+8
+    - cron: '0 21 * * *'
+
+  workflow_dispatch:
+
+  push:
+    branches: [ main, stable/**/* ]
+
+jobs:
+  dashboard:
+    name: Chromatic
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - name: Install JavaScript dependencies
+        run: cd dashboard && npm ci
+      - name: Run Chromatic
+        uses: chromaui/action@v13
+        with:
+          projectToken: ${{ secrets.CHROMATIC_PROJECT_TOKEN }}
+          workingDir: dashboard
+          exitZeroOnChanges: false
