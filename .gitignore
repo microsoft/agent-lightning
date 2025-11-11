@@ -212,3 +212,4 @@ cython_debug/
 agentlightning/dashboard/**/*.css
 agentlightning/dashboard/**/*.js
 agentlightning/dashboard/**/*.html
+agentlightning/dashboard/**/*.svg

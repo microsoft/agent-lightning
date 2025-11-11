@@ -271,7 +271,7 @@ export function JsonEditor({ value }: JsonEditorProps) {
   const editorTheme = colorScheme === 'dark' ? 'vs-dark' : 'vs-light';
 
   return (
-    <Box style={{ flex: 1, minHeight: 0 }}>
+    <Box data-testid='json-editor-container' style={{ flex: 1, minHeight: 0 }}>
       <Editor
         height='100%'
         language='json'
