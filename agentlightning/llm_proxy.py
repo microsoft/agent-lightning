@@ -685,12 +685,27 @@ class LLMProxy:
         * Writes a temporary YAML config consumed by LiteLLM worker.
         * Launches uvicorn in a daemon thread and waits for readiness.
         """
-        if self.is_running():
-            # Trigger restart
-            await self.stop()
-
         # Refresh the serve context
         self.server_launcher.serve_context = self._serve_context()
+
+        if self.store is None:
+            raise ValueError("Store is not set. Please set the store before starting the LLMProxy.")
+
+        store_capabilities = self.store.capabilities()
+        if self.server_launcher.args.launch_mode == "mp" and not store_capabilities["zero_copy"]:
+            raise RuntimeError(
+                "The store does not support zero-copy. Please use another store, or use asyncio or thread mode to launch the server."
+            )
+        elif self.server_launcher.args.launch_mode == "thread" and not store_capabilities["thread_safe"]:
+            raise RuntimeError(
+                "The store is not thread-safe. Please use another store, or use asyncio mode to launch the server."
+            )
+        elif self.server_launcher.args.launch_mode == "asyncio" and not store_capabilities["async_safe"]:
+            raise RuntimeError("The store is not async-safe. Please use another store.")
+
+        logger.info(
+            f"Starting LLMProxy server in {self.server_launcher.args.launch_mode} mode with store capabilities: {store_capabilities}"
+        )
 
         await self.server_launcher.start()
 

@@ -168,7 +168,7 @@ async def do_sync_training(
         t_start = time.time()
 
         llm_proxy.update_model_list(tinker_llm.as_model_list())
-        llm_proxy.restart()
+        await llm_proxy.restart()
 
         logger.info(f"[Batch {i_batch}] LiteLLM model list: {llm_proxy.model_list}")
         llm_resource = llm_proxy.as_resource()

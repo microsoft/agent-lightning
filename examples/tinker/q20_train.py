@@ -128,7 +128,7 @@ async def q20_agent(task: Q20Task, llm: agl.LLM, rollout: agl.Rollout) -> None:
         # agl.emit_reward(0.0)
 
 
-def dry_run():
+async def dry_run():
     """Run a quick dry-run test of the 20 Questions training setup.
 
     Uses in-memory store and processes 4 sample tasks to verify the setup works.
@@ -141,13 +141,13 @@ def dry_run():
         store=store,
     )
     try:
-        llm_proxy.start()
+        await llm_proxy.start()
         sampled_csv = pd.read_csv("q20_nouns.csv").sample(n=4, random_state=42)  # type: ignore
         sampled_csv["search_enabled"] = False
         dataset = sampled_csv.to_dict(orient="records")  # type: ignore
         trainer.dev(q20_agent, cast(agl.Dataset[Q20Task], dataset))
     finally:
-        llm_proxy.stop()
+        await llm_proxy.stop()
 
 
 async def algo(search: bool, model: Literal["qwen4b", "qwen30b"], port: int):
@@ -316,7 +316,7 @@ def runner(port: int = 4747, n_runners: int = 2):
 
 
 def _run_dryrun(_args: argparse.Namespace) -> None:
-    dry_run()
+    asyncio.run(dry_run())
 
 
 def _run_algo(args: argparse.Namespace) -> None:

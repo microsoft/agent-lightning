@@ -294,7 +294,7 @@ class AgentModeDaemon:
         self._proxy_thread.start()
         print(f"Proxy server running on port {self.proxy_port}")
 
-    def _update_proxy_server_v1(self):
+    async def _update_proxy_server_v1(self):
         model_name = self.train_information.get("model")
         if not model_name:
             raise ValueError("Model name is not set.")
@@ -313,12 +313,7 @@ class AgentModeDaemon:
             ],
         )
 
-        if self.llm_proxy.is_running():
-            # FIXME: Need to switch to a different port right now
-            # because the forked processes carried the old fd
-            self.llm_proxy.restart(_port=_find_available_port())
-        else:
-            self.llm_proxy.start()
+        await self.llm_proxy.restart()
 
     def start(self):
         """Starts the main AgentLightningServer and the proxy server."""
@@ -352,7 +347,7 @@ class AgentModeDaemon:
         if server_addresses != self.backend_llm_server_addresses:
             self.backend_llm_server_addresses = server_addresses
             if self.mode == "v1" and not self.llm_proxy.is_running():
-                self._update_proxy_server_v1()
+                await self._update_proxy_server_v1()
         self.is_train = is_train
 
         # 1. Update resources on the server for clients to use

@@ -61,7 +61,7 @@ async def test_tracer():
 
         # init tracer before llm_proxy to avoid tracer provider being not active.
         console.print("Starting LLM proxy...")
-        llm_proxy.start()
+        await llm_proxy.start()
         console.print("LLM proxy started")
 
         # client = openai.OpenAI(
@@ -99,7 +99,7 @@ async def test_tracer():
         print(trajectory)
     finally:
         console.print("Stopping LLM proxy...")
-        llm_proxy.stop()
+        await llm_proxy.stop()
         console.print("LLM proxy stopped")
 
 
@@ -129,7 +129,7 @@ async def test_llm_proxy():
     try:
         # init tracer before llm_proxy to avoid tracer provider being not active.
         console.print("Starting LLM proxy...")
-        llm_proxy.start()
+        await llm_proxy.start()
         console.print("LLM proxy started")
 
         client = openai.OpenAI(
@@ -157,7 +157,7 @@ async def test_llm_proxy():
         print(trajectory)
     finally:
         console.print("Stopping LLM proxy...")
-        llm_proxy.stop()
+        await llm_proxy.stop()
         console.print("LLM proxy stopped")
 
 

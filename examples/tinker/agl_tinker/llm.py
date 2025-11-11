@@ -31,6 +31,7 @@ from transformers import AutoTokenizer, PreTrainedTokenizer
 
 from agentlightning.llm_proxy import LLMProxy, ModelConfig
 from agentlightning.store import LightningStore
+from agentlightning.utils.server_launcher import PythonServerLauncherArgs
 
 logger = logging.getLogger(__name__)
 
@@ -303,5 +304,8 @@ def create_llm_proxy(
         store=store,
         model_list=tinker_llm.as_model_list(),
         num_retries=2,
+        launch_args=PythonServerLauncherArgs(
+            launch_mode="asyncio",
+        ),
         _add_return_token_ids=_add_return_token_ids,
     )
