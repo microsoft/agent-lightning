@@ -1,9 +1,11 @@
 // Copyright (c) Microsoft. All rights reserved.
 
 import type { Meta, StoryObj } from '@storybook/react';
+import { waitFor, within } from '@testing-library/dom';
+import userEvent from '@testing-library/user-event';
 import { delay, http, HttpResponse } from 'msw';
 import { Provider } from 'react-redux';
-import { createMemoryRouter, RouterProvider } from 'react-router-dom';
+import { createMemoryRouter, MemoryRouter, RouterProvider } from 'react-router-dom';
 import { AppAlertBanner } from '@/components/AppAlertBanner';
 import { AppDrawerContainer } from '@/components/AppDrawer.component';
 import { AppLayout } from '@/layouts/AppLayout';
@@ -351,11 +353,11 @@ function renderTracesPage(
 
   return (
     <Provider store={store}>
-      <>
+      <MemoryRouter initialEntries={['/traces']}>
         <TracesPage />
         <AppAlertBanner />
         <AppDrawerContainer />
-      </>
+      </MemoryRouter>
     </Provider>
   );
 }
@@ -363,6 +365,7 @@ function renderTracesPage(
 function renderTracesPageWithAppLayout(
   preloadedTracesState?: Partial<TracesUiState>,
   configOverrides?: Partial<typeof initialConfigState>,
+  initialEntry: string = '/traces',
 ) {
   const store = createStoryStore(preloadedTracesState, configOverrides);
   const router = createMemoryRouter(
@@ -385,7 +388,7 @@ function renderTracesPageWithAppLayout(
         ],
       },
     ],
-    { initialEntries: ['/traces'] },
+    { initialEntries: [initialEntry] },
   );
 
   return (
@@ -414,6 +417,32 @@ export const WithSidebarLayout: Story = {
     msw: {
       handlers: createHandlers(),
     },
+  },
+};
+
+export const QueryParams: Story = {
+  name: 'Loads From Query Params',
+  render: () =>
+    renderTracesPageWithAppLayout(undefined, undefined, '/traces?rolloutId=ro-traces-002&attemptId=at-traces-004'),
+  parameters: {
+    msw: {
+      handlers: createHandlers(),
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const rolloutInput = (await canvas.findByLabelText('Select rollout')) as HTMLInputElement;
+    await waitFor(() => {
+      if (rolloutInput.value !== 'ro-traces-002') {
+        throw new Error('Expected rollout select to use value from query string');
+      }
+    });
+    const attemptInput = (await canvas.findByLabelText('Select attempt')) as HTMLInputElement;
+    await waitFor(() => {
+      if (attemptInput.value !== 'at-traces-004') {
+        throw new Error('Expected attempt select to use value from query string');
+      }
+    });
   },
 };
 
@@ -451,6 +480,31 @@ export const ManyResults: Story = {
     msw: {
       handlers: createMockHandlers(manyRollouts, manyAttemptsByRollout, manySpansByAttempt),
     },
+  },
+};
+
+export const Search: Story = {
+  render: () => renderTracesPage(),
+  parameters: {
+    msw: {
+      handlers: createHandlers(),
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await canvas.findByLabelText('Search spans');
+
+    const searchInput = canvas.getByLabelText('Search spans');
+    await userEvent.type(searchInput, 'Fetch');
+
+    await waitFor(() => {
+      if (!canvas.queryByText('Fetch resources')) {
+        throw new Error('Expected matching span to be displayed after searching');
+      }
+      if (canvas.queryByText('Initialize rollout')) {
+        throw new Error('Expected non-matching spans to be filtered out');
+      }
+    });
   },
 };
 

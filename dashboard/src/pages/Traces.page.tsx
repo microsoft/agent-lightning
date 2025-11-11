@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo } from 'react';
 import { skipToken } from '@reduxjs/toolkit/query';
 import { IconCheck, IconChevronDown, IconSearch } from '@tabler/icons-react';
 import type { DataTableSortStatus } from 'mantine-datatable';
+import { useSearchParams } from 'react-router-dom';
 import { Button, Group, Menu, Select, Skeleton, Stack, TextInput, Title } from '@mantine/core';
 import { TracesTable, type TracesTableRecord } from '@/components/TracesTable.component';
 import { selectAutoRefreshMs } from '@/features/config';
@@ -14,6 +15,7 @@ import {
   type GetRolloutsQueryArgs,
 } from '@/features/rollouts';
 import {
+  hydrateTracesStateFromQuery,
   resetTracesFilters,
   selectTracesAttemptId,
   selectTracesPage,
@@ -63,6 +65,7 @@ function findRollout(rollouts: Rollout[] | undefined, rolloutId: string | null):
 export function TracesPage() {
   const dispatch = useAppDispatch();
   const autoRefreshMs = useAppSelector(selectAutoRefreshMs);
+  const [searchParams, setSearchParams] = useSearchParams();
   const rolloutId = useAppSelector(selectTracesRolloutId);
   const attemptId = useAppSelector(selectTracesAttemptId);
   const searchTerm = useAppSelector(selectTracesSearchTerm);
@@ -263,6 +266,53 @@ export function TracesPage() {
     },
     [dispatch],
   );
+
+  const hasRolloutQueryParam = searchParams.has('rolloutId');
+  const hasAttemptQueryParam = searchParams.has('attemptId');
+  const rolloutIdFromQuery = hasRolloutQueryParam ? searchParams.get('rolloutId') || null : undefined;
+  const attemptIdFromQuery = hasAttemptQueryParam ? searchParams.get('attemptId') || null : undefined;
+
+  useEffect(() => {
+    const payload: { rolloutId?: string | null; attemptId?: string | null } = {};
+    if (hasRolloutQueryParam) {
+      payload.rolloutId = rolloutIdFromQuery;
+    }
+    if (hasAttemptQueryParam) {
+      payload.attemptId = attemptIdFromQuery;
+    }
+    if (Object.keys(payload).length > 0) {
+      dispatch(hydrateTracesStateFromQuery(payload));
+    }
+  }, [attemptIdFromQuery, dispatch, hasAttemptQueryParam, hasRolloutQueryParam, rolloutIdFromQuery]);
+
+  useEffect(() => {
+    const next = new URLSearchParams(searchParams);
+    let changed = false;
+
+    if (rolloutId) {
+      if (next.get('rolloutId') !== rolloutId) {
+        next.set('rolloutId', rolloutId);
+        changed = true;
+      }
+    } else if (next.has('rolloutId')) {
+      next.delete('rolloutId');
+      changed = true;
+    }
+
+    if (rolloutId && attemptId) {
+      if (next.get('attemptId') !== attemptId) {
+        next.set('attemptId', attemptId);
+        changed = true;
+      }
+    } else if (next.has('attemptId')) {
+      next.delete('attemptId');
+      changed = true;
+    }
+
+    if (changed) {
+      setSearchParams(next, { replace: true });
+    }
+  }, [attemptId, rolloutId, searchParams, setSearchParams]);
 
   const handleSearchTermChange = useCallback(
     (value: string) => {

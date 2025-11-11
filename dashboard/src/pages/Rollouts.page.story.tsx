@@ -297,6 +297,30 @@ const sampleSpansByAttempt: Record<string, Span[]> = {
   ],
 };
 
+const overflowDrawerSpans: Span[] = Array.from({ length: 160 }, (_, index) => ({
+  rolloutId: 'ro-7fa3b6e2',
+  attemptId: 'at-9001',
+  sequenceId: index + 1,
+  traceId: `tr-overflow-${Math.floor(index / 5)}`,
+  spanId: `sp-overflow-${index + 1}`,
+  parentId: index === 0 ? null : `sp-overflow-${index}`,
+  name: `Overflow span ${index + 1}`,
+  status: { status_code: 'OK', description: null },
+  attributes: { step: `overflow-${index + 1}`, duration_ms: 20 + (index % 5) },
+  startTime: now - 1_200 - index * 20,
+  endTime: now - 1_180 - index * 20,
+  events: [],
+  links: [],
+  context: {},
+  parent: null,
+  resource: {},
+}));
+
+const overflowSpansByAttempt: Record<string, Span[]> = {
+  ...sampleSpansByAttempt,
+  'ro-7fa3b6e2:at-9001': overflowDrawerSpans,
+};
+
 const longDurationRollouts: Rollout[] = [
   {
     rolloutId: 'ro-long-duration',
@@ -630,6 +654,7 @@ function renderWithAppLayout(
 }
 
 const defaultHandlers = createMockHandlers(sampleRollouts, attemptsByRollout, sampleSpansByAttempt);
+const overflowHandlers = createMockHandlers(sampleRollouts, attemptsByRollout, overflowSpansByAttempt);
 
 export const Default: Story = {
   render: () => renderWithStore(),
@@ -779,6 +804,49 @@ export const AutoExpandedAttempt: Story = {
   },
 };
 
+export const Search: Story = {
+  render: () => renderWithStore(),
+  parameters: {
+    msw: {
+      handlers: defaultHandlers,
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await canvas.findByText('ro-7fa3b6e2');
+
+    const searchInput = canvas.getByPlaceholderText('Search by Rollout ID');
+    await userEvent.type(searchInput, 'ro-116eab45');
+
+    await waitFor(() => {
+      if (canvas.queryByText('ro-7fa3b6e2')) {
+        throw new Error('Expected search to filter out non-matching rollouts');
+      }
+      if (!canvas.queryByText('ro-116eab45')) {
+        throw new Error('Expected search to keep the matching rollout visible');
+      }
+    });
+  },
+};
+
+async function openSampleTracesDrawer(canvasElement: HTMLElement) {
+  const canvas = within(canvasElement);
+  await canvas.findByText('ro-7fa3b6e2');
+  const rolloutCell = canvas.getByText('ro-7fa3b6e2');
+  const rolloutRow = rolloutCell.closest('tr');
+
+  if (!rolloutRow) {
+    throw new Error('Unable to locate rollout row for traces drawer');
+  }
+
+  const rowScope = within(rolloutRow);
+  const traceButtons = rowScope.getAllByRole('button', { name: 'View traces' });
+  const tracesButton = traceButtons[0];
+  await userEvent.click(tracesButton);
+
+  return within(document.body).findByRole('dialog');
+}
+
 export const RawJsonDrawer: Story = {
   render: () => renderWithStore(),
   parameters: {
@@ -815,20 +883,56 @@ export const TracesDrawer: Story = {
     },
   },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    await canvas.findByText('ro-7fa3b6e2');
-    const rolloutCell = canvas.getByText('ro-7fa3b6e2');
-    const rolloutRow = rolloutCell.closest('tr');
+    await openSampleTracesDrawer(canvasElement);
+  },
+};
 
-    if (!rolloutRow) {
-      throw new Error('Unable to locate rollout row for traces drawer');
+export const TracesDrawerLink: Story = {
+  name: 'Traces Drawer Link',
+  render: () => renderWithStore(),
+  parameters: {
+    msw: {
+      handlers: defaultHandlers,
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const drawer = await openSampleTracesDrawer(canvasElement);
+    const link = await within(drawer).findByRole('link', { name: 'View full traces' });
+    const href = link.getAttribute('href');
+    if (!href) {
+      throw new Error('Expected traces drawer to render a link to the traces page');
     }
+    if (!href.includes('rolloutId=ro-7fa3b6e2')) {
+      throw new Error(`Link href ${href} is missing rolloutId query parameter`);
+    }
+    if (!href.includes('attemptId=at-9001')) {
+      throw new Error(`Link href ${href} is missing attemptId query parameter`);
+    }
+  },
+};
 
-    const rowScope = within(rolloutRow);
-    const traceButtons = rowScope.getAllByRole('button', { name: 'View traces' });
-    const tracesButton = traceButtons[0];
-    await userEvent.click(tracesButton);
-
-    await within(document.body).findByRole('dialog');
+export const TracesDrawerScrollableTable: Story = {
+  name: 'Traces Drawer Scrollable Table',
+  render: () => renderWithStore(),
+  parameters: {
+    msw: {
+      handlers: overflowHandlers,
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const drawer = await openSampleTracesDrawer(canvasElement);
+    const container = drawer.querySelector('[data-testid="traces-drawer-table-container"]') as HTMLElement | null;
+    if (!container) {
+      throw new Error('Unable to locate traces table container inside drawer');
+    }
+    const overflowStyle = window.getComputedStyle(container).overflowY;
+    if (overflowStyle !== 'auto' && overflowStyle !== 'scroll') {
+      throw new Error('Expected traces table container to allow vertical scrolling');
+    }
+    await waitFor(() => {
+      if (container.scrollHeight <= container.clientHeight) {
+        throw new Error('Expected traces table content to overflow and enable scrolling');
+      }
+    });
   },
 };
