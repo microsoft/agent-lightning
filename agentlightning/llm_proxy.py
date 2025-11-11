@@ -517,7 +517,7 @@ class LLMProxy:
         host: Publicly reachable host used in resource endpoints. Defaults to best-guess IPv4.
         litellm_config: Extra LiteLLM proxy config merged with `model_list`.
         num_retries: Default LiteLLM retry count injected into `litellm_settings`.
-        launch_args: Arguments for the server launcher. If this is provided, the host and proxy will be ignored.
+        launch_args: Arguments for the server launcher. If this is provided, the host and port will be ignored.
     """
 
     def __init__(
@@ -579,14 +579,6 @@ class LLMProxy:
         self.model_list = model_list
         logger.info(f"Updating LLMProxy model list to: {model_list}")
         # Do nothing if the server is not running.
-
-    def update_port(self, port: int) -> None:
-        """Update the port for the proxy.
-
-        Args:
-            port: The new port to use for the proxy.
-        """
-        self.port = port
 
     def initialize(self):
         """Initialize global middleware and LiteLLM callbacks.
