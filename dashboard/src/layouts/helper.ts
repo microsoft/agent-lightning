@@ -85,7 +85,5 @@ export function getLayoutAwareWidth(containerWidth: number, viewportWidth: numbe
     return containerWidth;
   }
 
-  console.log('containerWidth', containerWidth, 'effectiveAvailable', effectiveAvailable);
-
   return Math.min(containerWidth, effectiveAvailable);
 }
