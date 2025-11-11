@@ -15,6 +15,7 @@ from opentelemetry.sdk.trace import ReadableSpan
 
 from agentlightning.llm_proxy import LightningSpanExporter, LLMProxy
 from agentlightning.store.memory import InMemoryLightningStore
+from agentlightning.store.threading import LightningStoreThreaded
 from agentlightning.types import Span
 from agentlightning.utils.server_launcher import PythonServerLauncherArgs
 
@@ -239,7 +240,7 @@ async def test_custom_llm_restarted_multiple_times(caplog: pytest.LogCaptureFixt
 
     restart_times: int = 30
 
-    store = InMemoryLightningStore()
+    store = LightningStoreThreaded(InMemoryLightningStore())
     caplog.set_level(logging.WARNING)
 
     port = get_free_port()
@@ -257,7 +258,7 @@ async def test_custom_llm_restarted_multiple_times(caplog: pytest.LogCaptureFixt
                 }
             ],
             launch_args=PythonServerLauncherArgs(
-                launch_mode="asyncio",
+                launch_mode="thread",
                 healthcheck_url="/health",
             ),
             store=store,
