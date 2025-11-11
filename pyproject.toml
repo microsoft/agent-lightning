@@ -23,7 +23,7 @@ dependencies = [
   "rich",
   "portpicker",
   "gunicorn",
-  "uvicorn_worker",  
+  "uvicorn_worker",
 ]
 
 [project.optional-dependencies]
