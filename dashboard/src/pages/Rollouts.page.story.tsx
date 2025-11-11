@@ -5,8 +5,10 @@ import { waitFor, within } from '@testing-library/dom';
 import userEvent from '@testing-library/user-event';
 import { delay, http, HttpResponse } from 'msw';
 import { Provider } from 'react-redux';
+import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { AppAlertBanner } from '@/components/AppAlertBanner';
 import { AppDrawerContainer } from '@/components/AppDrawer.component';
+import { AppLayout } from '@/layouts/AppLayout';
 import { createMockHandlers } from '@/utils/mock';
 import { STORY_BASE_URL, STORY_DATE_NOW_SECONDS } from '../../.storybook/constants';
 import { allModes } from '../../.storybook/modes';
@@ -555,8 +557,12 @@ const autoExpandAttempts: Record<string, Attempt[]> = {
     },
   ],
 };
-function renderWithStore(uiOverrides?: Partial<RolloutsUiState>, configOverrides?: Partial<typeof initialConfigState>) {
-  const store = createAppStore({
+
+function createStoryStore(
+  uiOverrides?: Partial<RolloutsUiState>,
+  configOverrides?: Partial<typeof initialConfigState>,
+) {
+  return createAppStore({
     config: {
       ...initialConfigState,
       baseUrl: STORY_BASE_URL,
@@ -569,6 +575,10 @@ function renderWithStore(uiOverrides?: Partial<RolloutsUiState>, configOverrides
     },
     resources: initialResourcesUiState,
   });
+}
+
+function renderWithStore(uiOverrides?: Partial<RolloutsUiState>, configOverrides?: Partial<typeof initialConfigState>) {
+  const store = createStoryStore(uiOverrides, configOverrides);
 
   return (
     <Provider store={store}>
@@ -581,10 +591,58 @@ function renderWithStore(uiOverrides?: Partial<RolloutsUiState>, configOverrides
   );
 }
 
+function renderWithAppLayout(
+  uiOverrides?: Partial<RolloutsUiState>,
+  configOverrides?: Partial<typeof initialConfigState>,
+) {
+  const store = createStoryStore(uiOverrides, configOverrides);
+  const router = createMemoryRouter(
+    [
+      {
+        path: '/',
+        element: (
+          <AppLayout
+            config={{
+              baseUrl: store.getState().config.baseUrl,
+              autoRefreshMs: store.getState().config.autoRefreshMs,
+            }}
+          />
+        ),
+        children: [
+          {
+            path: '/rollouts',
+            element: <RolloutsPage />,
+          },
+        ],
+      },
+    ],
+    { initialEntries: ['/rollouts'] },
+  );
+
+  return (
+    <Provider store={store}>
+      <>
+        <RouterProvider router={router} />
+        <AppDrawerContainer />
+      </>
+    </Provider>
+  );
+}
+
 const defaultHandlers = createMockHandlers(sampleRollouts, attemptsByRollout, sampleSpansByAttempt);
 
 export const Default: Story = {
   render: () => renderWithStore(),
+  parameters: {
+    msw: {
+      handlers: defaultHandlers,
+    },
+  },
+};
+
+export const WithSidebarLayout: Story = {
+  name: 'Within AppLayout',
+  render: () => renderWithAppLayout(),
   parameters: {
     msw: {
       handlers: defaultHandlers,

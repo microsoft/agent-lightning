@@ -3,8 +3,10 @@
 import type { Meta, StoryObj } from '@storybook/react';
 import { delay, http, HttpResponse } from 'msw';
 import { Provider } from 'react-redux';
+import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { AppAlertBanner } from '@/components/AppAlertBanner';
 import { AppDrawerContainer } from '@/components/AppDrawer.component';
+import { AppLayout } from '@/layouts/AppLayout';
 import { createMockHandlers } from '@/utils/mock';
 import { STORY_BASE_URL, STORY_DATE_NOW_SECONDS } from '../../.storybook/constants';
 import { allModes } from '../../.storybook/modes';
@@ -325,11 +327,11 @@ function createRequestTimeoutHandlers() {
 
 const rolloutsAndAttemptsHandlers = createMockHandlers(sampleRollouts, attemptsByRollout);
 
-function renderTracesPage(
+function createStoryStore(
   preloadedTracesState?: Partial<TracesUiState>,
   configOverrides?: Partial<typeof initialConfigState>,
 ) {
-  const store = createAppStore({
+  return createAppStore({
     config: {
       ...initialConfigState,
       baseUrl: STORY_BASE_URL,
@@ -339,18 +341,75 @@ function renderTracesPage(
     resources: initialResourcesUiState,
     traces: { ...initialTracesUiState, ...preloadedTracesState },
   });
+}
+
+function renderTracesPage(
+  preloadedTracesState?: Partial<TracesUiState>,
+  configOverrides?: Partial<typeof initialConfigState>,
+) {
+  const store = createStoryStore(preloadedTracesState, configOverrides);
 
   return (
     <Provider store={store}>
-      <TracesPage />
-      <AppAlertBanner />
-      <AppDrawerContainer />
+      <>
+        <TracesPage />
+        <AppAlertBanner />
+        <AppDrawerContainer />
+      </>
+    </Provider>
+  );
+}
+
+function renderTracesPageWithAppLayout(
+  preloadedTracesState?: Partial<TracesUiState>,
+  configOverrides?: Partial<typeof initialConfigState>,
+) {
+  const store = createStoryStore(preloadedTracesState, configOverrides);
+  const router = createMemoryRouter(
+    [
+      {
+        path: '/',
+        element: (
+          <AppLayout
+            config={{
+              baseUrl: store.getState().config.baseUrl,
+              autoRefreshMs: store.getState().config.autoRefreshMs,
+            }}
+          />
+        ),
+        children: [
+          {
+            path: '/traces',
+            element: <TracesPage />,
+          },
+        ],
+      },
+    ],
+    { initialEntries: ['/traces'] },
+  );
+
+  return (
+    <Provider store={store}>
+      <>
+        <RouterProvider router={router} />
+        <AppDrawerContainer />
+      </>
     </Provider>
   );
 }
 
 export const DefaultView: Story = {
   render: () => renderTracesPage(),
+  parameters: {
+    msw: {
+      handlers: createHandlers(),
+    },
+  },
+};
+
+export const WithSidebarLayout: Story = {
+  name: 'Within AppLayout',
+  render: () => renderTracesPageWithAppLayout(),
   parameters: {
     msw: {
       handlers: createHandlers(),

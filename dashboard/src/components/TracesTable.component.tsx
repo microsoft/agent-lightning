@@ -11,7 +11,8 @@ import {
 } from '@tabler/icons-react';
 import { DataTable, type DataTableColumn, type DataTableSortStatus } from 'mantine-datatable';
 import { ActionIcon, Badge, Box, Button, CopyButton, Group, Stack, Text, Tooltip } from '@mantine/core';
-import { useElementSize } from '@mantine/hooks';
+import { useElementSize, useViewportSize } from '@mantine/hooks';
+import { getLayoutAwareWidth } from '@/layouts/helper';
 import type { Span } from '@/types';
 import { getErrorDescriptor } from '@/utils/error';
 import { formatDateTime, formatDuration, toTimestamp } from '@/utils/format';
@@ -301,6 +302,7 @@ export function TracesTable({
   recordsPerPageOptions = DEFAULT_RECORDS_PER_PAGE_OPTIONS,
 }: TracesTableProps) {
   const { ref: tableContainerRef, width: containerWidth } = useElementSize();
+  const { width: viewportWidth } = useViewportSize();
 
   const traceRecords = useMemo<TracesTableRecord[]>(() => {
     if (!spans) {
@@ -324,9 +326,14 @@ export function TracesTable({
     [onShowRollout, onShowSpanDetail, onParentIdClick, spanIds],
   );
 
+  const layoutAwareContainerWidth = useMemo(
+    () => getLayoutAwareWidth(containerWidth, viewportWidth),
+    [containerWidth, viewportWidth],
+  );
+
   const responsiveColumns = useMemo(
-    () => createResponsiveColumns(columns, containerWidth, COLUMN_VISIBILITY),
-    [columns, containerWidth],
+    () => createResponsiveColumns(columns, layoutAwareContainerWidth, COLUMN_VISIBILITY),
+    [columns, layoutAwareContainerWidth],
   );
 
   const totalPages = useMemo(

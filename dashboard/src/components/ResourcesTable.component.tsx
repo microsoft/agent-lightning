@@ -4,7 +4,8 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode, type SetStat
 import { IconCheck, IconCopy, IconRefresh } from '@tabler/icons-react';
 import { DataTable, type DataTableColumn, type DataTableSortStatus } from 'mantine-datatable';
 import { ActionIcon, Box, Button, CopyButton, Group, Stack, Text, Tooltip } from '@mantine/core';
-import { useElementSize } from '@mantine/hooks';
+import { useElementSize, useViewportSize } from '@mantine/hooks';
+import { getLayoutAwareWidth } from '@/layouts/helper';
 import type { Resources } from '@/types';
 import { getErrorDescriptor } from '@/utils/error';
 import { formatDateTime, safeStringify } from '@/utils/format';
@@ -162,6 +163,12 @@ export function ResourcesTable({
 }: ResourcesTableProps) {
   const [expandedRecordIds, setExpandedRecordIds] = useState<string[]>([]);
   const { ref: tableContainerRef, width: containerWidth } = useElementSize();
+  const { width: viewportWidth } = useViewportSize();
+
+  const layoutAwareContainerWidth = useMemo(
+    () => getLayoutAwareWidth(containerWidth, viewportWidth),
+    [containerWidth, viewportWidth],
+  );
 
   const resourcesRecords = useMemo<ResourcesTableRecord[]>(() => {
     if (!resourcesList) {
@@ -173,8 +180,8 @@ export function ResourcesTable({
   const columns = useMemo(() => createResourcesColumns({}), []);
 
   const responsiveColumns = useMemo(
-    () => createResponsiveColumns(columns, containerWidth, COLUMN_VISIBILITY),
-    [columns, containerWidth],
+    () => createResponsiveColumns(columns, layoutAwareContainerWidth, COLUMN_VISIBILITY),
+    [columns, layoutAwareContainerWidth],
   );
 
   const totalPages = useMemo(

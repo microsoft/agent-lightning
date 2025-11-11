@@ -24,7 +24,7 @@ import {
   Text,
   Tooltip,
 } from '@mantine/core';
-import { useElementSize } from '@mantine/hooks';
+import { useElementSize, useViewportSize } from '@mantine/hooks';
 import {
   type Attempt,
   type AttemptStatus,
@@ -33,6 +33,7 @@ import {
   type RolloutsSortState,
   type RolloutStatus,
 } from '@/features/rollouts';
+import { getLayoutAwareWidth } from '@/layouts/helper';
 import {
   clampToNow,
   formatDateTime,
@@ -533,6 +534,11 @@ export function RolloutTable({
 }: RolloutTableProps) {
   const [expandedRecordIds, setExpandedRecordIds] = useState<string[]>([]);
   const { ref: tableContainerRef, width: containerWidth } = useElementSize();
+  const { width: viewportWidth } = useViewportSize();
+
+  const layoutAwareContainerWidth = useMemo(() => {
+    return getLayoutAwareWidth(containerWidth, viewportWidth);
+  }, [containerWidth, viewportWidth]);
 
   const rolloutRecords = useMemo<RolloutTableRecord[]>(() => {
     if (!rollouts) {
@@ -566,8 +572,8 @@ export function RolloutTable({
   );
 
   const responsiveColumns = useMemo(
-    () => createResponsiveColumns(columns, containerWidth, COLUMN_VISIBILITY),
-    [columns, containerWidth],
+    () => createResponsiveColumns(columns, layoutAwareContainerWidth, COLUMN_VISIBILITY),
+    [columns, layoutAwareContainerWidth],
   );
 
   const totalPages = useMemo(
