@@ -276,6 +276,7 @@ exclude = [
   "tests/**",
   "docs/**",
   "scripts/**",
+  "dashboard/**",
 ]
 
 [tool.pytest.ini_options]
