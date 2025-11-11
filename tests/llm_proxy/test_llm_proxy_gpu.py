@@ -69,7 +69,9 @@ def test_qwen25_model_sanity(qwen25_model: RemoteOpenAIServer):
 @pytest.mark.asyncio
 async def test_basic_integration(qwen25_model: RemoteOpenAIServer):
     clear_tracer_provider()
-    store = InMemoryLightningStore()
+    inmemory_store = InMemoryLightningStore()
+    store = LightningStoreServer(store=inmemory_store, host="127.0.0.1", port=get_free_port())
+    await store.start()
     proxy = LLMProxy(
         port=get_free_port(),
         model_list=[
@@ -90,8 +92,6 @@ async def test_basic_integration(qwen25_model: RemoteOpenAIServer):
 
     resource = proxy.as_resource(rollout.rollout_id, rollout.attempt.attempt_id)
 
-    import openai
-
     client = openai.OpenAI(base_url=resource.endpoint, api_key="token-abc123")
     response = client.chat.completions.create(
         model="gpt-4o-arbitrary",
@@ -104,6 +104,8 @@ async def test_basic_integration(qwen25_model: RemoteOpenAIServer):
     await proxy.stop()
 
     spans = await store.query_spans(rollout.rollout_id, rollout.attempt.attempt_id)
+
+    await store.stop()
 
     # Verify all spans have correct rollout_id, attempt_id, and sequence_id
     assert len(spans) > 0, "Should have captured spans"
@@ -173,6 +175,9 @@ async def _make_proxy_and_store(qwen25_model: RemoteOpenAIServer, *, retries: in
     clear_tracer_provider()
     _reset_litellm_logging_worker()  # type: ignore
     store = InMemoryLightningStore()
+    store_server = LightningStoreServer(store=store, host="127.0.0.1", port=get_free_port())
+    # When the server is forked into subprocess, it automatically becomes a client of the store
+    await store_server.start()
     proxy = LLMProxy(
         port=get_free_port(),
         model_list=[
@@ -184,13 +189,10 @@ async def _make_proxy_and_store(qwen25_model: RemoteOpenAIServer, *, retries: in
                 },
             }
         ],
-        store=store,
+        store=store_server,
         num_retries=retries,
     )
-    store_server = LightningStoreServer(store=store, host="127.0.0.1", port=get_free_port())
-    # When the server is forked into subprocess, it automatically becomes a client of the store
     await proxy.start()
-    await store_server.start()
     return proxy, store_server
 
 
