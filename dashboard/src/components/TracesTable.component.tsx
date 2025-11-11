@@ -23,7 +23,7 @@ const DEFAULT_RECORDS_PER_PAGE_OPTIONS = [50, 100, 200, 500];
 const COLUMN_VISIBILITY: Record<string, ColumnVisibilityConfig> = {
   name: { minWidth: 12.5, priority: 0 },
   spanId: { fixedWidth: 12, priority: 1 },
-  traceId: { fixedWidth: 12, priority: 2 },
+  traceId: { fixedWidth: 24, priority: 2 },
   parentId: { fixedWidth: 12, priority: 2 },
   statusCode: { fixedWidth: 8, priority: 2 },
   attributeKeys: { minWidth: 12.5, priority: 2 },

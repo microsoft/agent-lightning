@@ -97,7 +97,10 @@ const normalizeSpan = (value: unknown): Span => {
   return {
     ...camelized,
     parentId: camelized.parentId ?? null,
-    attributes: camelized.attributes ?? {},
+    attributes: (value as any).attributes ?? {},
+    context: (value as any).context ?? {},
+    parent: (value as any).parent ?? null,
+    resource: (value as any).resource ?? {},
     status: {
       status_code: rawStatus.status_code ?? rawStatus.statusCode ?? 'UNSET',
       description: rawStatus.description ?? null,
