@@ -221,7 +221,7 @@ async def do_sync_training(
         ml_logger.log_metrics(metrics, step=i_batch)
         logger.info(f"[Batch {i_batch}] Sampling and training completed")
 
-    llm_proxy.stop()
+    await llm_proxy.stop()
 
 
 @scope

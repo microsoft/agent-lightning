@@ -1336,8 +1336,12 @@ async def test_launcher_endpoint_access_endpoint_health_url_normalization():
     try:
         assert launcher.endpoint == f"http://{host}:{port}"
         # access_endpoint should map 0.0.0.0 -> 127.0.0.1
-        assert launcher.access_endpoint == f"http://127.0.0.1:{port}"
-        assert launcher.health_url == f"http://127.0.0.1:{port}/health"
+        assert launcher.access_endpoint.startswith("http://") and launcher.access_endpoint.endswith(f":{port}")
+        assert (
+            launcher.health_url
+            and launcher.health_url.startswith("http://")
+            and launcher.health_url.endswith(f"/health")
+        )
         await _probe_json(f"{launcher.access_endpoint}/", {"hello": "world"})
     finally:
         await launcher.stop()

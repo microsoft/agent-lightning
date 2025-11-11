@@ -10,7 +10,20 @@ import re
 import tempfile
 import threading
 from contextlib import asynccontextmanager
-from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Sequence, TypedDict, Union, cast
+from typing import (
+    Any,
+    AsyncGenerator,
+    Awaitable,
+    Callable,
+    Dict,
+    Iterable,
+    List,
+    Optional,
+    Sequence,
+    TypedDict,
+    Union,
+    cast,
+)
 
 import litellm
 import opentelemetry.trace as trace_api
@@ -624,7 +637,7 @@ class LLMProxy:
             _reset_litellm_logging_worker()
 
     @asynccontextmanager
-    async def _serve_context(self):
+    async def _serve_context(self) -> AsyncGenerator[None, None]:
         """Context manager to serve the proxy server.
 
         See [`start`][agentlightning.LLMProxy.start] and [`stop`][agentlightning.LLMProxy.stop] for more details.
