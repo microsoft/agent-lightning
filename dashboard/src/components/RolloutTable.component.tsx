@@ -79,14 +79,14 @@ const ROLLOUT_MODE_OPTIONS: RolloutMode[] = ['train', 'val', 'test'];
 const DEFAULT_RECORDS_PER_PAGE_OPTIONS = [50, 100, 200, 500];
 
 const COLUMN_VISIBILITY: Record<string, ColumnVisibilityConfig> = {
-  rolloutId: { fixedWidth: 10, priority: 0 },
+  rolloutId: { fixedWidth: 12.5, priority: 0 },
   actionsPlaceholder: { fixedWidth: 6.5, priority: 0 },
   inputText: { minWidth: 14, priority: 1 },
   statusValue: { fixedWidth: 10, priority: 1 },
   startTimestamp: { fixedWidth: 12, priority: 2 },
   durationSeconds: { fixedWidth: 10, priority: 2 },
   attemptId: { fixedWidth: 12, priority: 3 },
-  resourcesId: { fixedWidth: 8, priority: 3 },
+  resourcesId: { fixedWidth: 10, priority: 3 },
   mode: { fixedWidth: 8, priority: 3 },
   lastHeartbeatTimestamp: { fixedWidth: 10, priority: 3 },
   workerId: { fixedWidth: 10, priority: 3 },

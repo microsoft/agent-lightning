@@ -15,20 +15,21 @@ import { useElementSize, useViewportSize } from '@mantine/hooks';
 import { getLayoutAwareWidth } from '@/layouts/helper';
 import type { Span } from '@/types';
 import { getErrorDescriptor } from '@/utils/error';
-import { formatDateTime, formatDuration, toTimestamp } from '@/utils/format';
+import { formatDateTimeWithMilliseconds, formatDuration, toTimestamp } from '@/utils/format';
 import { createResponsiveColumns, type ColumnVisibilityConfig } from '@/utils/table';
 
 const DEFAULT_RECORDS_PER_PAGE_OPTIONS = [50, 100, 200, 500];
 
 const COLUMN_VISIBILITY: Record<string, ColumnVisibilityConfig> = {
   name: { minWidth: 12.5, priority: 0 },
-  spanId: { fixedWidth: 12, priority: 1 },
-  traceId: { fixedWidth: 24, priority: 2 },
+  spanId: { fixedWidth: 14, priority: 1 },
+  traceId: { fixedWidth: 24, priority: 3 },
   parentId: { fixedWidth: 12, priority: 2 },
   statusCode: { fixedWidth: 8, priority: 2 },
   attributeKeys: { minWidth: 12.5, priority: 2 },
-  startTime: { fixedWidth: 12, priority: 1 },
-  duration: { fixedWidth: 10, priority: 2 },
+  startTime: { fixedWidth: 15, priority: 1 },
+  endTime: { fixedWidth: 15, priority: 1 },
+  duration: { fixedWidth: 10, priority: 3 },
   actionsPlaceholder: { fixedWidth: 6, priority: 0 },
 };
 
@@ -212,7 +213,14 @@ function createTracesColumns({
       title: 'Start Time',
       sortable: true,
       textAlign: 'left',
-      render: ({ startTime }) => <Text size='sm'>{formatDateTime(toTimestamp(startTime))}</Text>,
+      render: ({ startTime }) => <Text size='sm'>{formatDateTimeWithMilliseconds(toTimestamp(startTime))}</Text>,
+    },
+    {
+      accessor: 'endTime',
+      title: 'End Time',
+      sortable: true,
+      textAlign: 'left',
+      render: ({ endTime }) => <Text size='sm'>{formatDateTimeWithMilliseconds(toTimestamp(endTime))}</Text>,
     },
     {
       accessor: 'duration',

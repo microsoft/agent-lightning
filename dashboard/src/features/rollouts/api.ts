@@ -94,7 +94,7 @@ const normalizeSpan = (value: unknown): Span => {
     };
   };
   const rawStatus = camelized.status ?? { status_code: 'UNSET', description: null };
-  return {
+  const result = {
     ...camelized,
     parentId: camelized.parentId ?? null,
     attributes: (value as any).attributes ?? {},
@@ -106,6 +106,7 @@ const normalizeSpan = (value: unknown): Span => {
       description: rawStatus.description ?? null,
     },
   };
+  return result;
 };
 
 const normalizeResources = (value: unknown): Resources => {
@@ -328,6 +329,7 @@ export const rolloutsApi = createApi({
         }
         return { url: `v1/agl/spans?${searchParams.toString()}`, method: 'GET' };
       },
+      // FIXME: should skip normalization for some attributes like gen_ai.xxx
       transformResponse: (response: unknown) => normalizePaginatedResponse(response, normalizeSpan),
       providesTags: (_result, _error, args) =>
         args
