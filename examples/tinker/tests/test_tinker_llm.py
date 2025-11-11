@@ -27,6 +27,8 @@ from agentlightning import (
     configure_logger,
     emit_reward,
 )
+from agentlightning.store import LightningStoreThreaded
+from agentlightning.utils.server_launcher import PythonServerLauncherArgs
 
 configure_logger(name="agentlightning")
 configure_logger(name="agl_tinker", level=logging.INFO)
@@ -117,13 +119,17 @@ async def test_llm_proxy():
     )
     tinker_llm.rewrite_litellm_custom_providers()
 
-    store = InMemoryLightningStore()
+    store = LightningStoreThreaded(InMemoryLightningStore())
     rollout = await store.start_rollout("dummy", "train")
     llm_proxy = LLMProxy(
-        port=4000,
         store=store,
         model_list=tinker_llm.as_model_list(),
         num_retries=0,
+        launcher_args=PythonServerLauncherArgs(
+            launch_mode="thread",
+            healthcheck_url="/health",
+            port=4000,
+        ),
     )
 
     try:
@@ -133,7 +139,7 @@ async def test_llm_proxy():
         console.print("LLM proxy started")
 
         client = openai.OpenAI(
-            base_url=f"http://localhost:4000/rollout/{rollout.rollout_id}/attempt/{rollout.attempt.attempt_id}",
+            base_url=f"http://127.0.0.1:4000/rollout/{rollout.rollout_id}/attempt/{rollout.attempt.attempt_id}",
             api_key="dummy",
         )
 

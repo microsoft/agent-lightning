@@ -127,7 +127,6 @@ def test_exporter_helpers():
 async def test_update_model_list():
     store = InMemoryLightningStore()
     proxy = LLMProxy(
-        port=get_free_port(),
         model_list=[
             {
                 "model_name": "gpt-4o-arbitrary",
@@ -136,8 +135,9 @@ async def test_update_model_list():
                 },
             }
         ],
-        launch_args=PythonServerLauncherArgs(
+        launcher_args=PythonServerLauncherArgs(
             launch_mode="asyncio",
+            port=get_free_port(),
         ),
         store=store,
     )
@@ -192,7 +192,7 @@ async def test_restart_resets_litellm_logging_worker() -> None:
             }
         ],
         store=store,
-        launch_args=PythonServerLauncherArgs(
+        launcher_args=PythonServerLauncherArgs(
             port=get_free_port(),
             launch_mode="asyncio",
             healthcheck_url="/health",
@@ -246,7 +246,6 @@ async def test_custom_llm_restarted_multiple_times(caplog: pytest.LogCaptureFixt
     port = get_free_port()
     try:
         llm_proxy = LLMProxy(
-            port=port,
             model_list=[
                 {
                     "model_name": "gpt-4o-arbitrary",
@@ -257,9 +256,10 @@ async def test_custom_llm_restarted_multiple_times(caplog: pytest.LogCaptureFixt
                     },
                 }
             ],
-            launch_args=PythonServerLauncherArgs(
+            launcher_args=PythonServerLauncherArgs(
                 launch_mode="thread",
                 healthcheck_url="/health",
+                port=port,
             ),
             store=store,
         )

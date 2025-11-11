@@ -180,7 +180,6 @@ async def _make_proxy_and_store(qwen25_model: RemoteOpenAIServer, *, retries: in
     # When the server is forked into subprocess, it automatically becomes a client of the store
     await store_server.start()
     proxy = LLMProxy(
-        port=get_free_port(),
         model_list=[
             {
                 "model_name": "gpt-4o-arbitrary",
@@ -190,10 +189,11 @@ async def _make_proxy_and_store(qwen25_model: RemoteOpenAIServer, *, retries: in
                 },
             }
         ],
-        launch_args=(
+        launcher_args=(
             PythonServerLauncherArgs(
                 launch_mode="mp",
                 n_workers=4,
+                port=get_free_port(),
             )
             if gunicorn
             else None

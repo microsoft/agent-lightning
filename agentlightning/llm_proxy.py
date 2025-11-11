@@ -530,7 +530,7 @@ class LLMProxy:
         host: Publicly reachable host used in resource endpoints. Defaults to best-guess IPv4.
         litellm_config: Extra LiteLLM proxy config merged with `model_list`.
         num_retries: Default LiteLLM retry count injected into `litellm_settings`.
-        launch_args: Arguments for the server launcher. If this is provided, the host and port will be ignored.
+        launcher_args: Arguments for the server launcher. If this is provided, the host and port will be ignored.
     """
 
     def __init__(
@@ -541,12 +541,15 @@ class LLMProxy:
         host: str | None = None,
         litellm_config: Dict[str, Any] | None = None,
         num_retries: int = 0,
-        launch_args: PythonServerLauncherArgs | None = None,
+        launcher_args: PythonServerLauncherArgs | None = None,
         _add_return_token_ids: bool = True,
     ):
         self.store = store
 
-        self.server_launcher_args = launch_args or PythonServerLauncherArgs(
+        if launcher_args is not None and (port is not None or host is not None):
+            raise ValueError("port and host cannot be set when launcher_args is provided.")
+
+        self.server_launcher_args = launcher_args or PythonServerLauncherArgs(
             port=port,
             host=host,
             launch_mode="mp",
@@ -554,6 +557,9 @@ class LLMProxy:
             startup_timeout=10.0,
             process_join_timeout=10.0,
         )
+
+        if self.server_launcher_args.healthcheck_url is None:
+            logger.warning("healthcheck_url is not set. LLM Proxy will not be checked for healthiness after starting.")
 
         self.model_list = model_list or []
         self.litellm_config = litellm_config or {}

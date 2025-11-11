@@ -304,7 +304,7 @@ def create_llm_proxy(
         store=store,
         model_list=tinker_llm.as_model_list(),
         num_retries=2,
-        launch_args=PythonServerLauncherArgs(
+        launcher_args=PythonServerLauncherArgs(
             launch_mode="asyncio",
         ),
         _add_return_token_ids=_add_return_token_ids,
