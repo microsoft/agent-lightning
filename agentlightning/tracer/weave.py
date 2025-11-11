@@ -1,26 +1,15 @@
 from __future__ import annotations
 
-import base64
-import json
 import logging
 import os
-import time
-import uuid
 from contextlib import asynccontextmanager, contextmanager
-from datetime import datetime
-from typing import TYPE_CHECKING, Any, AsyncGenerator, Iterator, Optional
+from typing import TYPE_CHECKING, AsyncGenerator, Iterator, List, Optional
 
 import weave
-from opentelemetry import trace
-from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
-from opentelemetry.sdk.trace import ReadableSpan, Resource, TracerProvider
-from opentelemetry.sdk.trace.export import SimpleSpanProcessor
-from opentelemetry.trace import (
-    SpanContext,
-    Status,
-    StatusCode,
-    TraceFlags,
-)
+
+# from weave.client import WeaveClient
+from opentelemetry import trace as otel_trace
+from opentelemetry.sdk.trace import ReadableSpan, TracerProvider
 
 from agentlightning.store.base import LightningStore
 from agentlightning.tracer.agentops import LightningSpanProcessor
@@ -29,11 +18,8 @@ from .base import Tracer
 
 logger = logging.getLogger(__name__)
 
-
 if TYPE_CHECKING:
-    from weave.client import WeaveClient
-
-logger = logging.getLogger(__name__)
+    from weave.trace.weave_client import WeaveClient
 
 
 class WeaveTracer(Tracer):
@@ -43,11 +29,13 @@ class WeaveTracer(Tracer):
     It logs function calls, input/output, and exceptions to Weave Cloud (W&B backend).
     """
 
-    def __init__(self, *, project_name: str | None = None):
+    def __init__(self, *, project_name: str | None = None, wandb_api_key: str | None = None):
         super().__init__()
         self._lightning_span_processor: Optional[LightningSpanProcessor] = None
         self.project_name = project_name or __name__
         self._client: Optional[WeaveClient] = None
+        self._wandb_api_key = wandb_api_key or os.getenv("WANDB_API_KEY")
+        self.otel_trace: Optional[otel_trace.Tracer] = None
         self._initialized = False
 
     def init_worker(self, worker_id: int):
@@ -56,18 +44,22 @@ class WeaveTracer(Tracer):
             logger.warning(f"[Worker {worker_id}] Weave client was already initialized.")
             return
 
-        weave.init(project_name=self.project_name)
-        self._client = weave.get_client()
+        if weave.get_client() is None:
+            try:
+                weave.init(project_name=self.project_name)
+            except Exception as e:
+                raise RuntimeError(f"Failed to initialize Weave for project '{self.project_name}': {e}")
 
-        self._wandb_api_key = os.getenv("WANDB_API_KEY")
+        self._client = weave.get_client()
+        if not self._client:
+            raise RuntimeError(f"Failed to initialize Weave client for project '{self.project_name}'")
 
         self._lightning_span_processor = LightningSpanProcessor()
         provider = TracerProvider()
         provider.add_span_processor(self._lightning_span_processor)
 
-        # ✅ 让 global tracer provider 生效
-        trace.set_tracer_provider(provider)
-        self.tracer = trace.get_tracer("agent-lightning.weave")
+        otel_trace.set_tracer_provider(provider)
+        self._otel_trace = otel_trace.get_tracer("agent-lightning.weave")
 
         logger.info(f"[Worker {worker_id}] Setting up Weave tracer...")
         self._initialized = True
@@ -106,44 +98,34 @@ class WeaveTracer(Tracer):
         """Manual tracing context using Weave for synchronous execution."""
         if not self._lightning_span_processor:
             raise RuntimeError("LightningSpanProcessor is not initialized. Call init_worker() first.")
+        if not self._client:
+            raise RuntimeError("Weave client is not initialized. Call init_worker() first.")
 
         arg_op = name if name is not None else "weave_trace"
         arg_inputs = {"rollout_id": rollout_id or ""}
 
-        trace_call = self._client.create_call(op=arg_op, inputs=arg_inputs)
-
-        tracer = trace.get_tracer("agent-lightning.weave")
+        trace_call = self._client.create_call(op=arg_op, inputs=arg_inputs) # type: ignore
 
         try:
-            with tracer.start_as_current_span(arg_op) as span:
-                span.set_attribute("rollout_id", rollout_id or "")
-                span.set_attribute("attempt_id", attempt_id or "")
-                span.set_attribute("source", "WeaveTracer")
-
+            with self._otel_trace.start_as_current_span(arg_op):
                 if store and rollout_id and attempt_id:
                     ctx = self._lightning_span_processor.with_context(
                         store=store, rollout_id=rollout_id, attempt_id=attempt_id
                     )
                     with ctx as processor:
                         yield processor
-                else:
+                elif store is None and rollout_id is None and attempt_id is None:
                     with self._lightning_span_processor:
                         yield self._lightning_span_processor
-
-                # ✅ span will automatically end here
-                span.set_status(Status(StatusCode.OK))
-                self._client.finish_call(trace_call, {"result": "ok"})
-
+                else:
+                    raise ValueError("store, rollout_id, and attempt_id must be either all provided or all None")
         except Exception as e:
-            span.record_exception(e)
-            span.set_status(Status(StatusCode.ERROR, str(e)))
-            self._client.fail_call(trace_call, e)
-            raise
-
+            self._client.fail_call(trace_call, exception=e)
+            logger.error(f"Trace failed for rollout_id={rollout_id}, attempt_id={attempt_id}, error={e}")
         finally:
-            self._client.finish()
+            self._client.finish_call(trace_call) # type: ignore
 
-    def get_last_trace(self):
+    def get_last_trace(self) -> List[ReadableSpan]:
         """
         Retrieves the raw list of captured spans from the most recent trace.
 
