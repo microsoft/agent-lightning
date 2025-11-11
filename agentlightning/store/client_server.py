@@ -9,15 +9,17 @@ import threading
 import time
 import traceback
 from contextlib import suppress
-from typing import Any, Awaitable, Callable, Dict, Generic, List, Literal, Optional, Sequence, TypeVar
+from pathlib import Path
+from typing import Any, Awaitable, Callable, Dict, Generic, List, Literal, Optional, Sequence, TypeVar, Union
 
 import aiohttp
 import uvicorn
-from fastapi import Body, Depends, FastAPI, HTTPException
+from fastapi import APIRouter, Body, Depends, FastAPI, HTTPException
 from fastapi import Query as FastAPIQuery
 from fastapi import Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from opentelemetry.sdk.trace import ReadableSpan
 from pydantic import BaseModel, Field, TypeAdapter
 
@@ -38,7 +40,9 @@ from .base import UNSET, LightningStore, LightningStoreCapabilities, Unset
 
 logger = logging.getLogger(__name__)
 
-AGL_API_V1_PREFIX = "/v1/agl"
+API_V1_PREFIX = "/v1"
+API_AGL_PREFIX = "/agl"
+API_V1_AGL_PREFIX = API_V1_PREFIX + API_AGL_PREFIX
 
 T = TypeVar("T")
 
@@ -236,6 +240,14 @@ def _apply_filters_sort_paginate(
     return PaginatedResponse(items=paginated_items, limit=limit, offset=offset, total=total)
 
 
+class CachedStaticFiles(StaticFiles):
+    def file_response(self, *args: Any, **kwargs: Any) -> Response:
+        resp = super().file_response(*args, **kwargs)
+        # hashed filenames are safe to cache "forever"
+        resp.headers.setdefault("Cache-Control", "public, max-age=31536000, immutable")
+        return resp
+
+
 class LightningStoreServer(LightningStore):
     """
     Server wrapper that exposes a LightningStore via HTTP API.
@@ -424,7 +436,7 @@ class LightningStoreServer(LightningStore):
         while time.time() - current_time < 10:
             async with aiohttp.ClientSession() as session:
                 with suppress(Exception):
-                    async with session.get(f"{self.endpoint}{AGL_API_V1_PREFIX}/health") as response:
+                    async with session.get(f"{self.endpoint}{API_V1_AGL_PREFIX}/health") as response:
                         if response.status == 200:
                             return True
             await asyncio.sleep(0.1)
@@ -536,7 +548,7 @@ class LightningStoreServer(LightningStore):
                 return await call_next(request)
             except Exception as exc:
                 # decide whether to convert this into your 400 JSONResponse
-                if request.url.path.startswith(AGL_API_V1_PREFIX):
+                if request.url.path.startswith(API_V1_AGL_PREFIX):
                     logger.exception("Unhandled application error", exc_info=exc)
                     payload = {
                         "detail": "Internal server error",
@@ -552,7 +564,8 @@ class LightningStoreServer(LightningStore):
         async def _log_time(  # pyright: ignore[reportUnusedFunction]
             request: Request, call_next: Callable[[Request], Awaitable[Response]]
         ):
-            if not request.url.path.startswith("/v1/agl/"):
+            # If not API request, just pass through
+            if not request.url.path.startswith(API_V1_AGL_PREFIX):
                 return await call_next(request)
 
             start = time.perf_counter()
@@ -570,11 +583,13 @@ class LightningStoreServer(LightningStore):
             )
             return response
 
-        @self.app.get(AGL_API_V1_PREFIX + "/health")
+        api = APIRouter(prefix=API_V1_PREFIX)
+
+        @api.get(API_AGL_PREFIX + "/health")
         async def health():  # pyright: ignore[reportUnusedFunction]
             return {"status": "ok"}
 
-        @self.app.post(AGL_API_V1_PREFIX + "/queues/rollouts/enqueue", status_code=201, response_model=Rollout)
+        @api.post(API_AGL_PREFIX + "/queues/rollouts/enqueue", status_code=201, response_model=Rollout)
         async def enqueue_rollout(request: RolloutRequest):  # pyright: ignore[reportUnusedFunction]
             return await self.enqueue_rollout(
                 input=request.input,
@@ -584,11 +599,11 @@ class LightningStoreServer(LightningStore):
                 metadata=request.metadata,
             )
 
-        @self.app.post(AGL_API_V1_PREFIX + "/queues/rollouts/dequeue", response_model=Optional[AttemptedRollout])
+        @api.post(API_AGL_PREFIX + "/queues/rollouts/dequeue", response_model=Optional[AttemptedRollout])
         async def dequeue_rollout():  # pyright: ignore[reportUnusedFunction]
             return await self.dequeue_rollout()
 
-        @self.app.post(AGL_API_V1_PREFIX + "/rollouts", status_code=201, response_model=AttemptedRollout)
+        @api.post(API_AGL_PREFIX + "/rollouts", status_code=201, response_model=AttemptedRollout)
         async def start_rollout(request: RolloutRequest):  # pyright: ignore[reportUnusedFunction]
             return await self.start_rollout(
                 input=request.input,
@@ -598,7 +613,7 @@ class LightningStoreServer(LightningStore):
                 metadata=request.metadata,
             )
 
-        @self.app.get(AGL_API_V1_PREFIX + "/rollouts", response_model=PaginatedResponse[Rollout])
+        @api.get(API_AGL_PREFIX + "/rollouts", response_model=PaginatedResponse[Union[AttemptedRollout, Rollout]])
         async def query_rollouts(params: QueryRolloutsRequest = Depends()):  # pyright: ignore[reportUnusedFunction]
             # Get all rollouts from the underlying store
             all_rollouts = await self.query_rollouts()
@@ -622,7 +637,7 @@ class LightningStoreServer(LightningStore):
                 params.offset,
             )
 
-        @self.app.get(AGL_API_V1_PREFIX + "/rollouts/{rollout_id}", response_model=Rollout)
+        @api.get(API_AGL_PREFIX + "/rollouts/{rollout_id}", response_model=Union[AttemptedRollout, Rollout])
         async def get_rollout_by_id(rollout_id: str):  # pyright: ignore[reportUnusedFunction]
             return await self.get_rollout_by_id(rollout_id)
 
@@ -637,7 +652,7 @@ class LightningStoreServer(LightningStore):
             else:
                 return UNSET
 
-        @self.app.post(AGL_API_V1_PREFIX + "/rollouts/{rollout_id}", response_model=Rollout)
+        @api.post(API_AGL_PREFIX + "/rollouts/{rollout_id}", response_model=Rollout)
         async def update_rollout(  # pyright: ignore[reportUnusedFunction]
             rollout_id: str, request: UpdateRolloutRequest = Body(...)
         ):
@@ -651,13 +666,11 @@ class LightningStoreServer(LightningStore):
                 metadata=request.metadata if "metadata" in request.model_fields_set else UNSET,
             )
 
-        @self.app.post(
-            AGL_API_V1_PREFIX + "/rollouts/{rollout_id}/attempts", status_code=201, response_model=AttemptedRollout
-        )
+        @api.post(API_AGL_PREFIX + "/rollouts/{rollout_id}/attempts", status_code=201, response_model=AttemptedRollout)
         async def start_attempt(rollout_id: str):  # pyright: ignore[reportUnusedFunction]
             return await self.start_attempt(rollout_id)
 
-        @self.app.post(AGL_API_V1_PREFIX + "/rollouts/{rollout_id}/attempts/{attempt_id}", response_model=Attempt)
+        @api.post(API_AGL_PREFIX + "/rollouts/{rollout_id}/attempts/{attempt_id}", response_model=Attempt)
         async def update_attempt(  # pyright: ignore[reportUnusedFunction]
             rollout_id: str, attempt_id: str, request: UpdateAttemptRequest = Body(...)
         ):
@@ -670,7 +683,7 @@ class LightningStoreServer(LightningStore):
                 metadata=_get_mandatory_field_or_unset(request, "metadata"),
             )
 
-        @self.app.get(AGL_API_V1_PREFIX + "/rollouts/{rollout_id}/attempts", response_model=PaginatedResponse[Attempt])
+        @api.get(API_AGL_PREFIX + "/rollouts/{rollout_id}/attempts", response_model=PaginatedResponse[Attempt])
         async def query_attempts(  # pyright: ignore[reportUnusedFunction]
             rollout_id: str, params: QueryAttemptsRequest = Depends()
         ):
@@ -687,11 +700,11 @@ class LightningStoreServer(LightningStore):
                 params.offset,
             )
 
-        @self.app.get(AGL_API_V1_PREFIX + "/rollouts/{rollout_id}/attempts/latest", response_model=Optional[Attempt])
+        @api.get(API_AGL_PREFIX + "/rollouts/{rollout_id}/attempts/latest", response_model=Optional[Attempt])
         async def get_latest_attempt(rollout_id: str):  # pyright: ignore[reportUnusedFunction]
             return await self.get_latest_attempt(rollout_id)
 
-        @self.app.get(AGL_API_V1_PREFIX + "/resources", response_model=PaginatedResponse[ResourcesUpdate])
+        @api.get(API_AGL_PREFIX + "/resources", response_model=PaginatedResponse[ResourcesUpdate])
         async def query_resources(params: QueryResourcesRequest = Depends()):  # pyright: ignore[reportUnusedFunction]
             # Get all resources
             all_resources = await self.query_resources()
@@ -713,29 +726,29 @@ class LightningStoreServer(LightningStore):
                 params.offset,
             )
 
-        @self.app.post(AGL_API_V1_PREFIX + "/resources", status_code=201, response_model=ResourcesUpdate)
+        @api.post(API_AGL_PREFIX + "/resources", status_code=201, response_model=ResourcesUpdate)
         async def add_resources(resources: NamedResources):  # pyright: ignore[reportUnusedFunction]
             return await self.add_resources(resources)
 
-        @self.app.get(AGL_API_V1_PREFIX + "/resources/latest", response_model=Optional[ResourcesUpdate])
+        @api.get(API_AGL_PREFIX + "/resources/latest", response_model=Optional[ResourcesUpdate])
         async def get_latest_resources():  # pyright: ignore[reportUnusedFunction]
             return await self.get_latest_resources()
 
-        @self.app.post(AGL_API_V1_PREFIX + "/resources/{resources_id}", response_model=ResourcesUpdate)
+        @api.post(API_AGL_PREFIX + "/resources/{resources_id}", response_model=ResourcesUpdate)
         async def update_resources(  # pyright: ignore[reportUnusedFunction]
             resources_id: str, resources: NamedResources
         ):
             return await self.update_resources(resources_id, resources)
 
-        @self.app.get(AGL_API_V1_PREFIX + "/resources/{resources_id}", response_model=Optional[ResourcesUpdate])
+        @api.get(API_AGL_PREFIX + "/resources/{resources_id}", response_model=Optional[ResourcesUpdate])
         async def get_resources_by_id(resources_id: str):  # pyright: ignore[reportUnusedFunction]
             return await self.get_resources_by_id(resources_id)
 
-        @self.app.post(AGL_API_V1_PREFIX + "/spans", status_code=201, response_model=Span)
+        @api.post(API_AGL_PREFIX + "/spans", status_code=201, response_model=Span)
         async def add_span(span: Span):  # pyright: ignore[reportUnusedFunction]
             return await self.add_span(span)
 
-        @self.app.get(AGL_API_V1_PREFIX + "/spans", response_model=PaginatedResponse[Span])
+        @api.get(API_AGL_PREFIX + "/spans", response_model=PaginatedResponse[Span])
         async def query_spans(params: QuerySpansRequest = Depends()):  # pyright: ignore[reportUnusedFunction]
             # Get all spans for the rollout/attempt
             all_spans = await self.query_spans(params.rollout_id, params.attempt_id)
@@ -763,32 +776,75 @@ class LightningStoreServer(LightningStore):
                 all_spans, filters, params.filter_logic, params.sort_by, params.sort_order, params.limit, params.offset
             )
 
-        @self.app.post(AGL_API_V1_PREFIX + "/spans/next", response_model=NextSequenceIdResponse)
+        @api.post(API_AGL_PREFIX + "/spans/next", response_model=NextSequenceIdResponse)
         async def get_next_span_sequence_id(request: NextSequenceIdRequest):  # pyright: ignore[reportUnusedFunction]
             sequence_id = await self.get_next_span_sequence_id(request.rollout_id, request.attempt_id)
             return NextSequenceIdResponse(sequence_id=sequence_id)
 
-        @self.app.post(AGL_API_V1_PREFIX + "/waits/rollouts", response_model=List[Rollout])
+        @api.post(API_AGL_PREFIX + "/waits/rollouts", response_model=List[Rollout])
         async def wait_for_rollouts(request: WaitForRolloutsRequest):  # pyright: ignore[reportUnusedFunction]
             return await self.wait_for_rollouts(rollout_ids=request.rollout_ids, timeout=request.timeout)
 
         # Reserved methods for OTEL traces
         # https://opentelemetry.io/docs/specs/otlp/#otlphttp-request
-        @self.app.post("/v1/traces")
+        @api.post("/traces")
         async def otlp_traces():  # pyright: ignore[reportUnusedFunction]
             return Response(status_code=501)
 
-        @self.app.post("/v1/metrics")
+        @api.post("/metrics")
         async def otlp_metrics():  # pyright: ignore[reportUnusedFunction]
             return Response(status_code=501)
 
-        @self.app.post("/v1/logs")
+        @api.post("/logs")
         async def otlp_logs():  # pyright: ignore[reportUnusedFunction]
             return Response(status_code=501)
 
-        @self.app.post("/v1/development/profiles")
+        @api.post("/development/profiles")
         async def otlp_development_profiles():  # pyright: ignore[reportUnusedFunction]
             return Response(status_code=501)
+
+        # Mount the API router of /v1/...
+        self.app.include_router(api)
+
+        # Finally, mount the dashboard assets
+        self._setup_dashboard()
+
+    def _setup_dashboard(self):
+        """Setup the dashboard static files and SPA."""
+        assert self.app is not None
+
+        dashboard_dir = (Path(__file__).parent.parent / "dashboard").resolve()
+        if not dashboard_dir.exists():
+            logger.error("Dashboard directory not found at %s. Please build the dashboard first.", dashboard_dir)
+            return
+
+        dashboard_assets_dir = dashboard_dir / "assets"
+        if not dashboard_assets_dir.exists():
+            logger.error(
+                "Dashboard assets directory not found at %s. Please build the dashboard first.", dashboard_assets_dir
+            )
+            return
+
+        index_file = dashboard_dir / "index.html"
+        if not index_file.exists():
+            logger.error("Dashboard index file not found at %s. Please build the dashboard first.", index_file)
+            return
+
+        # Mount the static files in dashboard/assets
+        self.app.mount("/assets", CachedStaticFiles(directory=dashboard_assets_dir), name="assets")
+
+        # SPA fallback (client-side routing)
+        # Anything that's not /v1/* or a real file in /assets will serve index.html
+        @self.app.get("/", include_in_schema=False)
+        def root():  # pyright: ignore[reportUnusedFunction]
+            return FileResponse(index_file)
+
+        @self.app.get("/{full_path:path}", include_in_schema=False)
+        def spa_fallback(full_path: str):  # pyright: ignore[reportUnusedFunction]
+            # Let the frontend router handle it
+            return FileResponse(index_file)
+
+        logger.info("Agent-lightning dashboard will be available at %s", self.endpoint)
 
     # Delegate methods
     async def _call_store_method(self, method_name: str, *args: Any, **kwargs: Any) -> Any:
@@ -963,7 +1019,7 @@ class LightningStoreClient(LightningStore):
         retry_delays: Sequence[float] = (1.0, 2.0, 5.0),
         health_retry_delays: Sequence[float] = (0.1, 0.2, 0.5),
     ):
-        self.server_address = server_address.rstrip("/") + AGL_API_V1_PREFIX
+        self.server_address = server_address.rstrip("/") + API_V1_AGL_PREFIX
         self._sessions: Dict[int, aiohttp.ClientSession] = {}  # id(loop) -> ClientSession
         self._lock = threading.RLock()
 
@@ -1232,7 +1288,14 @@ class LightningStoreClient(LightningStore):
 
         data = await self._request_json("get", "/rollouts", params=params if params else None)
         # Extract items from PaginatedResponse
-        return [Rollout.model_validate(item) for item in data["items"]]
+        return [
+            (
+                AttemptedRollout.model_validate(item)
+                if isinstance(item, dict) and "attempt" in item
+                else Rollout.model_validate(item)
+            )
+            for item in data["items"]
+        ]
 
     async def query_attempts(self, rollout_id: str) -> List[Attempt]:
         data = await self._request_json("get", f"/rollouts/{rollout_id}/attempts")
@@ -1276,7 +1339,10 @@ class LightningStoreClient(LightningStore):
         """
         try:
             data = await self._request_json("get", f"/rollouts/{rollout_id}")
-            return Rollout.model_validate(data) if data else None
+            if isinstance(data, dict) and "attempt" in data:
+                return AttemptedRollout.model_validate(data)
+            else:
+                return Rollout.model_validate(data)
         except Exception as e:
             logger.error(f"get_rollout_by_id failed after all retries for rollout_id={rollout_id}: {e}", exc_info=True)
             return None
