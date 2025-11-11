@@ -518,10 +518,7 @@ class LLMProxy:
     !!! note
 
         As the LLM Proxy sets up an OpenTelemetry tracer, it's recommended to run it in a different
-        process from the main runner (i.e., tracer from agents).
-        It's recommended to use `launch_mode="mp"` to launch the proxy.
-        `launch_mode="thread"` can also be used if used in caution.
-        `launch_mode="asyncio"` is not recommended because it often causes hanging requests.
+        process from the main runner (i.e., tracer from agents). See `launch_mode` for how to change that.
 
     !!! warning
 
@@ -541,6 +538,10 @@ class LLMProxy:
         num_retries: Default LiteLLM retry count injected into `litellm_settings`.
         num_workers: Number of workers to run in the server. Only applicable for "mp" launch mode. Ignored if launcher_args is provided.
         launch_mode: Launch mode for the server. Defaults to "mp". Cannot be used together with launcher_args. Ignored if launcher_args is provided.
+            It's recommended to use `launch_mode="mp"` to launch the proxy.
+            `launch_mode="thread"` can also be used if used in caution.
+            `launch_mode="asyncio"` is always NOT recommended because it often causes hanging requests.
+            Only use it if you know what you are doing.
         launcher_args: Arguments for the server launcher. If this is provided, host, port, and launch_mode will be ignored. Cannot be used together with port, host, and launch_mode.
     """
 
