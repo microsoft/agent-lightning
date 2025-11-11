@@ -294,7 +294,14 @@ function createRolloutColumns({
       accessor: 'inputText',
       title: 'Input',
       render: ({ inputText }) => (
-        <Text size='sm' ff='monospace' c='dimmed' lineClamp={1} style={{ width: '100%' }}>
+        <Text
+          size='sm'
+          ff='monospace'
+          c='dimmed'
+          lineClamp={1}
+          title={inputText}
+          style={{ width: '100%', wordBreak: 'break-all', overflow: 'hidden' }}
+        >
           {inputText}
         </Text>
       ),
@@ -659,7 +666,7 @@ export function RolloutTable({
   );
 
   return (
-    <Box ref={tableContainerRef}>
+    <Box ref={tableContainerRef} data-testid='rollouts-table-container'>
       <DataTable<RolloutTableRecord>
         classNames={{ root: 'rollouts-table' }}
         withTableBorder

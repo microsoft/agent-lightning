@@ -48,7 +48,21 @@ export function compareRecords<T, K extends keyof T>(a: T, b: T, key: K): number
  * Create responsive columns based on container width
  * Columns with priority 0 are always shown, others are shown based on available space
  */
-const EM_IN_PIXELS = 16;
+const FALLBACK_EM_IN_PIXELS = 16;
+
+function getEmInPixels(): number {
+  if (typeof window === 'undefined' || !window.document?.documentElement) {
+    return FALLBACK_EM_IN_PIXELS;
+  }
+
+  const rootFontSize = window.getComputedStyle(window.document.documentElement).fontSize;
+  const parsed = Number.parseFloat(rootFontSize);
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return parsed;
+  }
+
+  return FALLBACK_EM_IN_PIXELS;
+}
 
 function resolveWidth(config: ColumnVisibilityConfig): { widthEm: number; fixed: boolean } {
   if ('fixedWidth' in config && typeof config.fixedWidth === 'number') {
@@ -62,7 +76,8 @@ export function createResponsiveColumns<T>(
   containerWidth: number,
   columnVisibilityConfig: Record<string, ColumnVisibilityConfig>,
 ): DataTableColumn<T>[] {
-  const measuredWidth = containerWidth ? Math.max(containerWidth - 48, 0) : Number.POSITIVE_INFINITY;
+  const measuredWidth = containerWidth ? Math.max(containerWidth, 0) : Number.POSITIVE_INFINITY;
+  const emInPixels = getEmInPixels();
 
   const columnEntries = columns.map((column, index) => {
     const accessorKey = String(column.accessor);
@@ -79,7 +94,7 @@ export function createResponsiveColumns<T>(
       accessorKey,
       ...config,
       widthEm,
-      widthPx: widthEm * EM_IN_PIXELS,
+      widthPx: widthEm * emInPixels,
       fixed,
     };
   });

@@ -755,6 +755,30 @@ export const WithSidebarLayout: Story = {
   },
 };
 
+export const WithSidebarStatusFilter: Story = {
+  name: 'Within AppLayout (Status Filter)',
+  render: () => renderWithAppLayout({ statusFilters: ['running'] }),
+  parameters: {
+    msw: {
+      handlers: defaultHandlers,
+    },
+  },
+  play: async () => {
+    await waitFor(() => {
+      const container = document.querySelector<HTMLElement>('[data-testid="rollouts-table-container"]');
+      const main = document.querySelector<HTMLElement>('.mantine-AppShell-main');
+      if (!container || !main) {
+        throw new Error('Unable to locate rollout table container or AppShell main region');
+      }
+      const containerRect = container.getBoundingClientRect();
+      const mainRect = main.getBoundingClientRect();
+      if (containerRect.right > mainRect.right + 1) {
+        throw new Error('Rollouts table extends beyond the AppShell content area');
+      }
+    });
+  },
+};
+
 export const DarkTheme: Story = {
   render: () => renderWithStore(undefined, { theme: 'dark' }),
   parameters: {
