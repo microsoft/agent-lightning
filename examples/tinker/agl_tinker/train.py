@@ -343,6 +343,7 @@ async def main(config: Config) -> None:
         model_list=[],
         store=store,
         num_retries=config.llm_proxy_retry_attempts,
+        launch_mode="thread",
     )
 
     await main_training_loop(config, store, adapter, llm_proxy)

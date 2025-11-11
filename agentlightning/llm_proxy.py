@@ -37,7 +37,12 @@ from opentelemetry.sdk.trace.export import SpanExporter, SpanExportResult
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from agentlightning.types import LLM, ProxyLLM
-from agentlightning.utils.server_launcher import PythonServerLauncher, PythonServerLauncherArgs, noop_context
+from agentlightning.utils.server_launcher import (
+    LaunchMode,
+    PythonServerLauncher,
+    PythonServerLauncherArgs,
+    noop_context,
+)
 
 from .store.base import LightningStore
 
@@ -513,6 +518,9 @@ class LLMProxy:
     Usage Note:
     As the LLM Proxy sets up an OpenTelemetry tracer, it's recommended to run it in a different
     process from the main runner (i.e., tracer from agents).
+    It's recommended to use `launch_mode="mp"` to launch the proxy.
+    `launch_mode="thread"` can also be used if used in caution.
+    `launch_mode="asyncio"` is not recommended because it often causes hanging requests.
 
     !!! warning
 
@@ -530,7 +538,8 @@ class LLMProxy:
         host: Publicly reachable host used in resource endpoints. Defaults to best-guess IPv4.
         litellm_config: Extra LiteLLM proxy config merged with `model_list`.
         num_retries: Default LiteLLM retry count injected into `litellm_settings`.
-        launcher_args: Arguments for the server launcher. If this is provided, the host and port will be ignored.
+        launch_mode: Launch mode for the server. Defaults to "mp". Cannot be used together with launcher_args.
+        launcher_args: Arguments for the server launcher. If this is provided, host, port, and launch_mode will be ignored.
     """
 
     def __init__(
@@ -541,21 +550,21 @@ class LLMProxy:
         host: str | None = None,
         litellm_config: Dict[str, Any] | None = None,
         num_retries: int = 0,
+        launch_mode: LaunchMode | None = None,
         launcher_args: PythonServerLauncherArgs | None = None,
         _add_return_token_ids: bool = True,
     ):
         self.store = store
 
-        if launcher_args is not None and (port is not None or host is not None):
-            raise ValueError("port and host cannot be set when launcher_args is provided.")
+        if launcher_args is not None and (port is not None or host is not None or launch_mode is not None):
+            raise ValueError("port, host, and launch_mode cannot be set when launcher_args is provided.")
 
         self.server_launcher_args = launcher_args or PythonServerLauncherArgs(
             port=port,
             host=host,
-            launch_mode="mp",
+            launch_mode=launch_mode or "mp",
             healthcheck_url="/health",
-            startup_timeout=10.0,
-            process_join_timeout=10.0,
+            startup_timeout=60.0,
         )
 
         if self.server_launcher_args.healthcheck_url is None:

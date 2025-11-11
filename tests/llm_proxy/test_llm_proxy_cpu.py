@@ -135,10 +135,8 @@ async def test_update_model_list():
                 },
             }
         ],
-        launcher_args=PythonServerLauncherArgs(
-            launch_mode="asyncio",
-            port=get_free_port(),
-        ),
+        launch_mode="asyncio",
+        port=get_free_port(),
         store=store,
     )
     await proxy.start()

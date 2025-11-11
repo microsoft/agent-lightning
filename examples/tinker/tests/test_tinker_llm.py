@@ -28,7 +28,6 @@ from agentlightning import (
     emit_reward,
 )
 from agentlightning.store import LightningStoreThreaded
-from agentlightning.utils.server_launcher import PythonServerLauncherArgs
 
 configure_logger(name="agentlightning")
 configure_logger(name="agl_tinker", level=logging.INFO)
@@ -125,11 +124,8 @@ async def test_llm_proxy():
         store=store,
         model_list=tinker_llm.as_model_list(),
         num_retries=0,
-        launcher_args=PythonServerLauncherArgs(
-            launch_mode="thread",
-            healthcheck_url="/health",
-            port=4000,
-        ),
+        launch_mode="thread",
+        port=4000,
     )
 
     try:

@@ -157,19 +157,26 @@ async def run_uvicorn_asyncio(
             # Normally, the program will not reach this point, as the server will throw the exception itself earlier.
             raise RuntimeError(f"Server did not start up within {timeout:.2f} seconds.") from server_start_exception
 
-        logger.debug(f"Server started up in {time.time() - start_time:.2f} seconds.")
+        logger.info(f"Server started up in {time.time() - start_time:.2f} seconds.")
 
         # Check for health endpoint status if provided
         if health_url is not None:
+            logger.info(f"Probing health endpoint {health_url}...")
             async with aiohttp.ClientSession() as session:
                 while time.time() < deadline:
-                    with suppress(Exception):
+                    try:
                         async with session.get(health_url) as resp:
                             if resp.status == 200:
-                                logger.debug(
+                                logger.info(
                                     f"Server is healthy at {health_url} in {time.time() - start_time:.2f} seconds."
                                 )
                                 return
+                            else:
+                                logger.debug(
+                                    f"Server is NOT healthy at {health_url} in {time.time() - start_time:.2f} seconds. Got status {resp.status}."
+                                )
+                    except Exception as e:
+                        logger.debug(f"Error probing health endpoint {health_url}: {str(e)}")
                     await asyncio.sleep(0.1)
 
             # If the server is not healthy, kill it if requested.
@@ -190,7 +197,7 @@ async def run_uvicorn_asyncio(
                 )
 
         else:
-            logger.debug("Server does not provide a health check endpoint. Skipping health check.")
+            logger.info("Server does not provide a health check endpoint. Skipping health check.")
 
     async def _serve_server() -> None:
         nonlocal server_start_exception
@@ -825,6 +832,9 @@ class PythonServerLauncher:
         try:
             evt: ChildEvent = await asyncio.to_thread(self._thread_event_queue.get, True, timeout)
         except queue.Empty:
+            if not self._thread.is_alive():
+                logger.error("Threaded server failed to start and is not alive. No error event was received.")
+                return
             logger.error("Threaded server failed to start and sends no event. This should not happen.")
             await self._stop_uvicorn_thread()
             return
@@ -927,6 +937,9 @@ class PythonServerLauncher:
         try:
             evt: ChildEvent = await asyncio.to_thread(self._mp_event_queue.get, True, timeout)
         except queue.Empty:
+            if not self._proc.is_alive():
+                logger.error("Server process failed to start and is not alive. No error event was received.")
+                return
             logger.error("Server process failed to start and sends no event. This should not happen.")
             await self._stop_serving_process()
             return
