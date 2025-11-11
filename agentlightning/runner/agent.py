@@ -52,7 +52,13 @@ class LitAgentRunner(Runner[T_task]):
         worker_id: Identifier for the active worker process, if any.
     """
 
-    def __init__(self, tracer: Tracer, max_rollouts: Optional[int] = None, poll_interval: float = 5.0) -> None:
+    def __init__(
+        self,
+        tracer: Tracer,
+        max_rollouts: Optional[int] = None,
+        poll_interval: float = 5.0,
+        heartbeat_interval: float = 10.0,
+    ) -> None:
         """Initialize the agent runner.
 
         Args:
@@ -60,6 +66,7 @@ class LitAgentRunner(Runner[T_task]):
             max_rollouts: Optional cap on iterations processed by
                 [`iter`][agentlightning.LitAgentRunner.iter].
             poll_interval: Seconds to wait between store polls when no work is available.
+            heartbeat_interval: Seconds to wait between sending heartbeats to the store.
         """
         super().__init__()
         self._tracer = tracer
