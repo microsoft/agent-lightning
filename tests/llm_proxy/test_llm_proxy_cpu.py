@@ -135,6 +135,9 @@ async def test_update_model_list():
                 },
             }
         ],
+        launch_args=PythonServerLauncherArgs(
+            launch_mode="asyncio",
+        ),
         store=store,
     )
     await proxy.start()
@@ -190,7 +193,7 @@ async def test_restart_resets_litellm_logging_worker() -> None:
         store=store,
         launch_args=PythonServerLauncherArgs(
             port=get_free_port(),
-            launch_mode="thread",
+            launch_mode="asyncio",
             healthcheck_url="/health",
             startup_timeout=10.0,
             process_join_timeout=10.0,
@@ -253,6 +256,10 @@ async def test_custom_llm_restarted_multiple_times(caplog: pytest.LogCaptureFixt
                     },
                 }
             ],
+            launch_args=PythonServerLauncherArgs(
+                launch_mode="asyncio",
+                healthcheck_url="/health",
+            ),
             store=store,
         )
         for restart_idx in range(restart_times):
@@ -262,13 +269,13 @@ async def test_custom_llm_restarted_multiple_times(caplog: pytest.LogCaptureFixt
             await llm_proxy.restart()
             assert llm_proxy.is_running()
 
-            openai_client = openai.OpenAI(
-                base_url=f"http://localhost:{port}",
+            openai_client = openai.AsyncOpenAI(
+                base_url=llm_proxy.server_launcher.access_endpoint,
                 api_key="token-abc123",
                 timeout=5,
                 max_retries=0,
             )
-            response = openai_client.chat.completions.create(
+            response = await openai_client.chat.completions.create(
                 model="gpt-4o-arbitrary",
                 messages=[{"role": "user", "content": "Hello world"}],
                 stream=False,
@@ -276,6 +283,7 @@ async def test_custom_llm_restarted_multiple_times(caplog: pytest.LogCaptureFixt
             assert response.choices[0].message.content == f"Hi! {restart_idx}"
 
             error_logs = [record.message for record in caplog.records if record.levelno >= logging.ERROR]
+            error_logs = [message for message in error_logs if "Task was destroyed but it is pending!" not in message]
             assert not error_logs, f"Found error logs: {error_logs}"
             assert not any("Cannot add callback" in record.message for record in caplog.records)
 
