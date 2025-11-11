@@ -21,5 +21,5 @@
       "@test-utils": ["./test-utils"]
     }
   },
-  "include": ["src", "public", "test-utils", ".storybook/main.ts", ".storybook/preview.tsx", ".storybook/modes.ts", ".storybook/constants.ts"]
+  "include": ["src", "public", "test-utils", ".storybook/main.ts", ".storybook/preview.tsx", ".storybook/modes.ts", ".storybook/constants.ts", ".storybook/vitest.setup.ts"]
 }

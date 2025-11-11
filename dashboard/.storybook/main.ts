@@ -10,7 +10,7 @@ const config: StorybookConfig = {
   },
   stories: ['../src/**/*.mdx', '../src/**/*.story.@(js|jsx|ts|tsx)'],
   staticDirs: ['../static'],
-  addons: ['@storybook/addon-themes'],
+  addons: ['@storybook/addon-themes', '@storybook/addon-vitest'],
   framework: {
     name: '@storybook/react-vite',
     options: {},
