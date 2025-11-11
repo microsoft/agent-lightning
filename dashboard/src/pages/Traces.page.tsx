@@ -1,6 +1,6 @@
 // Copyright (c) Microsoft. All rights reserved.
 
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { skipToken } from '@reduxjs/toolkit/query';
 import { IconCheck, IconChevronDown, IconSearch } from '@tabler/icons-react';
 import type { DataTableSortStatus } from 'mantine-datatable';
@@ -66,6 +66,8 @@ export function TracesPage() {
   const dispatch = useAppDispatch();
   const autoRefreshMs = useAppSelector(selectAutoRefreshMs);
   const [searchParams, setSearchParams] = useSearchParams();
+  const searchParamsKey = searchParams.toString();
+  const [hydratedSearchParamsKey, setHydratedSearchParamsKey] = useState<string | null>(null);
   const rolloutId = useAppSelector(selectTracesRolloutId);
   const attemptId = useAppSelector(selectTracesAttemptId);
   const searchTerm = useAppSelector(selectTracesSearchTerm);
@@ -163,9 +165,11 @@ export function TracesPage() {
       return;
     }
 
-    const fallbackAttemptId = selectedRollout?.attempt?.attemptId ?? null;
-    if (fallbackAttemptId !== attemptId) {
-      dispatch(setTracesAttemptId(fallbackAttemptId));
+    if (attemptId === null) {
+      const fallbackAttemptId = selectedRollout?.attempt?.attemptId ?? null;
+      if (fallbackAttemptId !== attemptId) {
+        dispatch(setTracesAttemptId(fallbackAttemptId));
+      }
     }
   }, [attemptsData, attemptId, dispatch, rolloutId, selectedRollout]);
 
@@ -198,6 +202,16 @@ export function TracesPage() {
     }
     return [];
   }, [attemptsData, selectedRollout]);
+
+  const attemptPlaceholder = useMemo(() => {
+    if (!rolloutId) {
+      return 'Select Attempt';
+    }
+    if (attemptOptions.length === 0) {
+      return 'No Attempt';
+    }
+    return 'Latest Attempt';
+  }, [attemptOptions.length, rolloutId]);
 
   const rawSpansData = spansData as any as { items?: Span[]; total?: number } | undefined;
   const spans = rawSpansData?.items ?? [];
@@ -283,9 +297,13 @@ export function TracesPage() {
     if (Object.keys(payload).length > 0) {
       dispatch(hydrateTracesStateFromQuery(payload));
     }
-  }, [attemptIdFromQuery, dispatch, hasAttemptQueryParam, hasRolloutQueryParam, rolloutIdFromQuery]);
+    setHydratedSearchParamsKey((prev) => (prev === searchParamsKey ? prev : searchParamsKey));
+  }, [attemptIdFromQuery, dispatch, hasAttemptQueryParam, hasRolloutQueryParam, rolloutIdFromQuery, searchParamsKey]);
 
   useEffect(() => {
+    if (hydratedSearchParamsKey !== searchParamsKey) {
+      return;
+    }
     const next = new URLSearchParams(searchParams);
     let changed = false;
 
@@ -312,7 +330,7 @@ export function TracesPage() {
     if (changed) {
       setSearchParams(next, { replace: true });
     }
-  }, [attemptId, rolloutId, searchParams, setSearchParams]);
+  }, [attemptId, hydratedSearchParamsKey, rolloutId, searchParams, searchParamsKey, setSearchParams]);
 
   const handleSearchTermChange = useCallback(
     (value: string) => {
@@ -450,7 +468,7 @@ export function TracesPage() {
                 }
               }}
               searchable
-              placeholder='Latest attempt'
+              placeholder={attemptPlaceholder}
               aria-label='Select attempt'
               nothingFoundMessage={attemptsFetching ? 'Loading...' : 'No attempts'}
               comboboxProps={{ withinPortal: true }}

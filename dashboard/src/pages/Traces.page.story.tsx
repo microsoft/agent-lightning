@@ -235,6 +235,24 @@ const singleSpansByAttempt = Object.fromEntries(
   Object.entries(spansByAttempt).filter(([key]) => key.startsWith(`${singleRollout.rolloutId}:`)),
 ) as Record<string, Span[]>;
 
+const rolloutWithoutAttempt: Rollout = {
+  rolloutId: 'ro-traces-no-attempt',
+  input: { task: 'Legacy rollout without attempts' },
+  status: 'failed',
+  mode: 'train',
+  resourcesId: 'rs-traces-no-attempt',
+  startTime: now - 7200,
+  endTime: now - 7000,
+  attempt: null,
+  config: { retries: 0 },
+  metadata: { owner: 'casey' },
+};
+const noAttemptRollouts: Rollout[] = [rolloutWithoutAttempt];
+const noAttemptAttemptsByRollout: Record<string, Attempt[]> = {
+  [rolloutWithoutAttempt.rolloutId]: [],
+};
+const noAttemptSpansByAttempt: Record<string, Span[]> = {};
+
 const owners = ['ava', 'ben', 'carla', 'diego'] as const;
 
 const manyAttemptsByRollout: Record<string, Attempt[]> = {};
@@ -471,6 +489,24 @@ export const SingleResult: Story = {
     msw: {
       handlers: createMockHandlers(singleRollouts, singleAttemptsByRollout, singleSpansByAttempt),
     },
+  },
+};
+
+export const NoAttemptPlaceholder: Story = {
+  render: () => renderTracesPage(),
+  parameters: {
+    msw: {
+      handlers: createMockHandlers(noAttemptRollouts, noAttemptAttemptsByRollout, noAttemptSpansByAttempt),
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const attemptInput = (await canvas.findByLabelText('Select attempt')) as HTMLInputElement;
+    await waitFor(() => {
+      if (attemptInput.placeholder !== 'No Attempt') {
+        throw new Error('Expected attempt select placeholder to read "No Attempt" when no attempts are available');
+      }
+    });
   },
 };
 
