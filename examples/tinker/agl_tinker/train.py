@@ -343,6 +343,7 @@ async def main(config: Config) -> None:
         model_list=[],
         store=store,
         num_retries=config.llm_proxy_retry_attempts,
+        # Must use thread mode here because otherwise the Tinker sampling client will hang.
         launch_mode="thread",
     )
 
