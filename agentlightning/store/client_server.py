@@ -10,7 +10,7 @@ import time
 import traceback
 from contextlib import suppress
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Dict, Generic, List, Literal, Optional, Sequence, TypeVar
+from typing import Any, Awaitable, Callable, Dict, Generic, List, Literal, Optional, Sequence, TypeVar, Union
 
 import aiohttp
 import uvicorn
@@ -605,7 +605,7 @@ class LightningStoreServer(LightningStore):
                 metadata=request.metadata,
             )
 
-        @api.get(API_AGL_PREFIX + "/rollouts", response_model=PaginatedResponse[Rollout])
+        @api.get(API_AGL_PREFIX + "/rollouts", response_model=PaginatedResponse[Union[AttemptedRollout, Rollout]])
         async def query_rollouts(params: QueryRolloutsRequest = Depends()):  # pyright: ignore[reportUnusedFunction]
             # Get all rollouts from the underlying store
             all_rollouts = await self.query_rollouts()
@@ -629,7 +629,7 @@ class LightningStoreServer(LightningStore):
                 params.offset,
             )
 
-        @api.get(API_AGL_PREFIX + "/rollouts/{rollout_id}", response_model=Rollout)
+        @api.get(API_AGL_PREFIX + "/rollouts/{rollout_id}", response_model=Union[AttemptedRollout, Rollout])
         async def get_rollout_by_id(rollout_id: str):  # pyright: ignore[reportUnusedFunction]
             return await self.get_rollout_by_id(rollout_id)
 
@@ -658,9 +658,7 @@ class LightningStoreServer(LightningStore):
                 metadata=request.metadata if "metadata" in request.model_fields_set else UNSET,
             )
 
-        @self.app.post(
-            API_AGL_PREFIX + "/rollouts/{rollout_id}/attempts", status_code=201, response_model=AttemptedRollout
-        )
+        @api.post(API_AGL_PREFIX + "/rollouts/{rollout_id}/attempts", status_code=201, response_model=AttemptedRollout)
         async def start_attempt(rollout_id: str):  # pyright: ignore[reportUnusedFunction]
             return await self.start_attempt(rollout_id)
 
@@ -1274,7 +1272,14 @@ class LightningStoreClient(LightningStore):
 
         data = await self._request_json("get", "/rollouts", params=params if params else None)
         # Extract items from PaginatedResponse
-        return [Rollout.model_validate(item) for item in data["items"]]
+        return [
+            (
+                AttemptedRollout.model_validate(item)
+                if isinstance(item, dict) and "attempt" in item
+                else Rollout.model_validate(item)
+            )
+            for item in data["items"]
+        ]
 
     async def query_attempts(self, rollout_id: str) -> List[Attempt]:
         data = await self._request_json("get", f"/rollouts/{rollout_id}/attempts")
@@ -1318,7 +1323,10 @@ class LightningStoreClient(LightningStore):
         """
         try:
             data = await self._request_json("get", f"/rollouts/{rollout_id}")
-            return Rollout.model_validate(data) if data else None
+            if isinstance(data, dict) and "attempt" in data:
+                return AttemptedRollout.model_validate(data)
+            else:
+                return Rollout.model_validate(data)
         except Exception as e:
             logger.error(f"get_rollout_by_id failed after all retries for rollout_id={rollout_id}: {e}", exc_info=True)
             return None
