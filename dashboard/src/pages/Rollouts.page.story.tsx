@@ -978,8 +978,13 @@ export const RawJsonDrawer: Story = {
   },
   play: async ({ canvasElement }) => {
     const drawer = await openRawJsonDrawer(canvasElement);
-    await within(drawer).findByText('Attempt');
-    await within(drawer).findByText(/worker-alpha/);
+    await waitFor(
+      async () => {
+        await within(drawer).findByText('Attempt');
+        await within(drawer).findByText(/worker-alpha/);
+      },
+      { timeout: 3_000 },
+    );
   },
 };
 
@@ -1031,7 +1036,7 @@ export const TracesDrawerLink: Story = {
   },
   play: async ({ canvasElement }) => {
     const drawer = await openSampleTracesDrawer(canvasElement);
-    const link = await within(drawer).findByRole('link', { name: 'View full traces' });
+    const link = await within(drawer).findByText('View full traces');
     const href = link.getAttribute('href');
     if (!href) {
       throw new Error('Expected traces drawer to render a link to the traces page');

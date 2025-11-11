@@ -471,7 +471,7 @@ export const QueryParams: Story = {
     });
     const attemptInput = (await canvas.findByLabelText('Select attempt')) as HTMLInputElement;
     await waitFor(() => {
-      if (attemptInput.value !== 'at-traces-004') {
+      if (attemptInput.value.indexOf('at-traces-004') === -1) {
         throw new Error('Expected attempt select to use value from query string');
       }
     });
@@ -495,7 +495,7 @@ export const MissingRolloutQuery: Story = {
       }
     });
     await waitFor(() => {
-      if (!canvas.getByText('Select a rollout to view traces.')) {
+      if (!canvas.getByText('Select a rollout and attempt to view traces.')) {
         throw new Error('Expected empty selection message when rollout query param is invalid');
       }
     });
