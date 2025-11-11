@@ -1487,15 +1487,6 @@
   
 </li>
         
-          <li class="md-nav__item">
-  <a href="#agentlightning.LLMProxy.update_port" class="md-nav__link">
-    <span class="md-ellipsis">
-      <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;update_port
-    </span>
-  </a>
-  
-</li>
-        
       </ul>
     </nav>
   
@@ -2325,15 +2316,6 @@
   <a href="#agentlightning.LLMProxy.update_model_list" class="md-nav__link">
     <span class="md-ellipsis">
       <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;update_model_list
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#agentlightning.LLMProxy.update_port" class="md-nav__link">
-    <span class="md-ellipsis">
-      <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;update_port
     </span>
   </a>
   
@@ -3961,13 +3943,27 @@ children of the associated completion span.</p>
 </ul>
 <p>Lifecycle:</p>
 <ul>
-<li><a class="autorefs autorefs-internal" title="            start()" href="#agentlightning.LLMProxy.start"><code>start()</code></a> writes config, starts uvicorn server in a thread, and waits until ready.</li>
-<li><a class="autorefs autorefs-internal" title="            stop()" href="#agentlightning.LLMProxy.stop"><code>stop()</code></a> tears down the server and removes the temp config file.</li>
-<li><a class="autorefs autorefs-internal" title="            restart(*, _port=None)" href="#agentlightning.LLMProxy.restart"><code>restart()</code></a> convenience wrapper to stop then start.</li>
+<li><a class="autorefs autorefs-internal" title="            start()
+
+  
+      async
+  " href="#agentlightning.LLMProxy.start"><code>start()</code></a> writes config, starts uvicorn server in a thread, and waits until ready.</li>
+<li><a class="autorefs autorefs-internal" title="            stop()
+
+  
+      async
+  " href="#agentlightning.LLMProxy.stop"><code>stop()</code></a> tears down the server and removes the temp config file.</li>
+<li><a class="autorefs autorefs-internal" title="            restart(*, _port=None)
+
+  
+      async
+  " href="#agentlightning.LLMProxy.restart"><code>restart()</code></a> convenience wrapper to stop then start.</li>
 </ul>
-<p>Usage Note:
-As the LLM Proxy sets up an OpenTelemetry tracer, it's recommended to run it in a different
-process from the main runner (i.e., tracer from agents).</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>As the LLM Proxy sets up an OpenTelemetry tracer, it's recommended to run it in a different
+process from the main runner (i.e., tracer from agents). See <code>launch_mode</code> for how to change that.</p>
+</div>
 <div class="admonition warning">
 <p class="admonition-title">Warning</p>
 <p>The LLM Proxy does support streaming, but the tracing is still problematic when streaming is enabled.</p>
@@ -3983,10 +3979,12 @@ with tracers like <a class="autorefs autorefs-internal" title="            agent
     <ul>
         <li class="doc-section-item field-body">
             <b><code>port</code></b>
-              (<code><span title="int">int</span></code>)
+              (<code><span title="int">int</span> | None</code>, default:
+                  <code>None</code>
+)
           –
           <div class="doc-md-description">
-            <p>TCP port to bind.</p>
+            <p>TCP port to bind. Will bind to a random port if not provided.</p>
           </div>
         </li>
         <li class="doc-section-item field-body">
@@ -4016,7 +4014,7 @@ with tracers like <a class="autorefs autorefs-internal" title="            agent
 )
           –
           <div class="doc-md-description">
-            <p>Publicly reachable host used in resource endpoints. Defaults to best-guess IPv4.</p>
+            <p>Publicly reachable host used in resource endpoints. See <code>host</code> of <code>launcher_args</code> for more details.</p>
           </div>
         </li>
         <li class="doc-section-item field-body">
@@ -4037,6 +4035,50 @@ with tracers like <a class="autorefs autorefs-internal" title="            agent
           –
           <div class="doc-md-description">
             <p>Default LiteLLM retry count injected into <code>litellm_settings</code>.</p>
+          </div>
+        </li>
+        <li class="doc-section-item field-body">
+            <b><code>num_workers</code></b>
+              (<code><span title="int">int</span></code>, default:
+                  <code>1</code>
+)
+          –
+          <div class="doc-md-description">
+            <p>Number of workers to run in the server. Only applicable for "mp" launch mode. Ignored if launcher_args is provided.
+When <code>num_workers &gt; 1</code>, the server will be run using <a href="https://gunicorn.org/">gunicorn</a>.</p>
+          </div>
+        </li>
+        <li class="doc-section-item field-body">
+            <b><code>launch_mode</code></b>
+              (<code><a class="autorefs autorefs-internal" title="            agentlightning.utils.server_launcher.LaunchMode = Literal['asyncio', 'thread', 'mp']
+
+  
+      module-attribute
+   (agentlightning.utils.server_launcher.LaunchMode)" href="../internal/#agentlightning.utils.server_launcher.LaunchMode">LaunchMode</a></code>, default:
+                  <code>&#39;mp&#39;</code>
+)
+          –
+          <div class="doc-md-description">
+            <p>Launch mode for the server. Defaults to "mp". Cannot be used together with launcher_args. Ignored if launcher_args is provided.
+It's recommended to use <code>launch_mode="mp"</code> to launch the proxy, which will launch the server in a separate process.
+<code>launch_mode="thread"</code> can also be used if used in caution. It will launch the server in a separate thread.
+<code>launch_mode="asyncio"</code> launches the server in the current thread as an asyncio task.
+It is NOT recommended because it often causes hanging requests. Only use it if you know what you are doing.</p>
+          </div>
+        </li>
+        <li class="doc-section-item field-body">
+            <b><code>launcher_args</code></b>
+              (<code><a class="autorefs autorefs-internal" title="            agentlightning.utils.server_launcher.PythonServerLauncherArgs
+
+
+  
+      dataclass
+  " href="../internal/#agentlightning.utils.server_launcher.PythonServerLauncherArgs">PythonServerLauncherArgs</a> | None</code>, default:
+                  <code>None</code>
+)
+          –
+          <div class="doc-md-description">
+            <p>Arguments for the server launcher. If this is provided, host, port, and launch_mode will be ignored. Cannot be used together with port, host, and launch_mode.</p>
           </div>
         </li>
     </ul>
@@ -4248,6 +4290,10 @@ the middleware cannot be changed any more.</p>
 <h4 id="agentlightning.LLMProxy.restart" class="doc doc-heading">
 <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">restart</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">_port</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
 
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-async"><code>async</code></small>
+  </span>
+
 <a href="#agentlightning.LLMProxy.restart" class="headerlink" title="Permanent link">&para;</a></h4>
 
 
@@ -4298,6 +4344,10 @@ the middleware cannot be changed any more.</p>
 <h4 id="agentlightning.LLMProxy.start" class="doc doc-heading">
 <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">start</span><span class="p">()</span></code>
 
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-async"><code>async</code></small>
+  </span>
+
 <a href="#agentlightning.LLMProxy.start" class="headerlink" title="Permanent link">&para;</a></h4>
 
 
@@ -4323,6 +4373,10 @@ the middleware cannot be changed any more.</p>
 <h4 id="agentlightning.LLMProxy.stop" class="doc doc-heading">
 <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">stop</span><span class="p">()</span></code>
 
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-async"><code>async</code></small>
+  </span>
+
 <a href="#agentlightning.LLMProxy.stop" class="headerlink" title="Permanent link">&para;</a></h4>
 
 
@@ -4347,7 +4401,7 @@ the middleware cannot be changed any more.</p>
 
     <div class="doc doc-contents ">
 
-        <p>Replace the in-memory model list and hot-restart if running.</p>
+        <p>Replace the in-memory model list.</p>
 
 
 <p><span class="doc-section-title">Parameters:</span></p>
@@ -4358,37 +4412,6 @@ the middleware cannot be changed any more.</p>
           –
           <div class="doc-md-description">
             <p>New list of model entries.</p>
-          </div>
-        </li>
-    </ul>
-
-
-    </div>
-
-</div>
-
-<div class="doc doc-object doc-function">
-
-
-<h4 id="agentlightning.LLMProxy.update_port" class="doc doc-heading">
-<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">update_port</span><span class="p">(</span><span class="n">port</span><span class="p">)</span></code>
-
-<a href="#agentlightning.LLMProxy.update_port" class="headerlink" title="Permanent link">&para;</a></h4>
-
-
-    <div class="doc doc-contents ">
-
-        <p>Update the port for the proxy.</p>
-
-
-<p><span class="doc-section-title">Parameters:</span></p>
-    <ul>
-        <li class="doc-section-item field-body">
-            <b><code>port</code></b>
-              (<code><span title="int">int</span></code>)
-          –
-          <div class="doc-md-description">
-            <p>The new port to use for the proxy.</p>
           </div>
         </li>
     </ul>
