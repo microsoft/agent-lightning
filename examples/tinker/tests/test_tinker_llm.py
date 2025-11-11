@@ -121,11 +121,11 @@ async def test_llm_proxy():
     store = LightningStoreThreaded(InMemoryLightningStore())
     rollout = await store.start_rollout("dummy", "train")
     llm_proxy = LLMProxy(
+        port=4000,
         store=store,
         model_list=tinker_llm.as_model_list(),
         num_retries=0,
         launch_mode="thread",
-        port=4000,
     )
 
     try:
@@ -135,7 +135,7 @@ async def test_llm_proxy():
         console.print("LLM proxy started")
 
         client = openai.OpenAI(
-            base_url=f"http://127.0.0.1:4000/rollout/{rollout.rollout_id}/attempt/{rollout.attempt.attempt_id}",
+            base_url=f"http://localhost:4000/rollout/{rollout.rollout_id}/attempt/{rollout.attempt.attempt_id}",
             api_key="dummy",
         )
 

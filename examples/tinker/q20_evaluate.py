@@ -83,13 +83,13 @@ async def evaluate_q20(
     else:
         console.print(f"Assuming {model_name} is an OpenAI model.")
         llm_proxy = LLMProxy(
+            port=port,
             store=store,
             model_list=[
                 {"model_name": model_name, "litellm_params": {"model": "openai/" + model_name}},
             ],
             num_retries=2,
             launch_mode="thread",
-            port=port,
             _add_return_token_ids=False,
         )
 

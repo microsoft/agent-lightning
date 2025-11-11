@@ -78,6 +78,7 @@ class Tinker(Algorithm):
             logger.warning("No LLM proxy found, creating one for you.")
 
             llm_proxy = LLMProxy(
+                port=config.llm_proxy_port,
                 model_list=[],
                 store=store,
                 launch_mode="thread",
