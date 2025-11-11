@@ -515,12 +515,13 @@ class LLMProxy:
     * [`stop()`][agentlightning.LLMProxy.stop] tears down the server and removes the temp config file.
     * [`restart()`][agentlightning.LLMProxy.restart] convenience wrapper to stop then start.
 
-    Usage Note:
-    As the LLM Proxy sets up an OpenTelemetry tracer, it's recommended to run it in a different
-    process from the main runner (i.e., tracer from agents).
-    It's recommended to use `launch_mode="mp"` to launch the proxy.
-    `launch_mode="thread"` can also be used if used in caution.
-    `launch_mode="asyncio"` is not recommended because it often causes hanging requests.
+    !!! note
+
+        As the LLM Proxy sets up an OpenTelemetry tracer, it's recommended to run it in a different
+        process from the main runner (i.e., tracer from agents).
+        It's recommended to use `launch_mode="mp"` to launch the proxy.
+        `launch_mode="thread"` can also be used if used in caution.
+        `launch_mode="asyncio"` is not recommended because it often causes hanging requests.
 
     !!! warning
 
@@ -532,14 +533,15 @@ class LLMProxy:
         with tracers like [`AgentOpsTracer`][agentlightning.AgentOpsTracer].
 
     Args:
-        port: TCP port to bind.
+        port: TCP port to bind. Will bind to a random port if not provided.
         model_list: LiteLLM `model_list` entries.
         store: LightningStore used for span sequence and persistence.
-        host: Publicly reachable host used in resource endpoints. Defaults to best-guess IPv4.
+        host: Publicly reachable host used in resource endpoints. Defaults to best-guess IPv4. If provided, will bind to the given host and port.
         litellm_config: Extra LiteLLM proxy config merged with `model_list`.
         num_retries: Default LiteLLM retry count injected into `litellm_settings`.
-        launch_mode: Launch mode for the server. Defaults to "mp". Cannot be used together with launcher_args.
-        launcher_args: Arguments for the server launcher. If this is provided, host, port, and launch_mode will be ignored.
+        num_workers: Number of workers to run in the server. Only applicable for "mp" launch mode. Ignored if launcher_args is provided.
+        launch_mode: Launch mode for the server. Defaults to "mp". Cannot be used together with launcher_args. Ignored if launcher_args is provided.
+        launcher_args: Arguments for the server launcher. If this is provided, host, port, and launch_mode will be ignored. Cannot be used together with port, host, and launch_mode.
     """
 
     def __init__(
@@ -550,19 +552,24 @@ class LLMProxy:
         host: str | None = None,
         litellm_config: Dict[str, Any] | None = None,
         num_retries: int = 0,
-        launch_mode: LaunchMode | None = None,
+        num_workers: int = 1,
+        launch_mode: LaunchMode = "mp",
         launcher_args: PythonServerLauncherArgs | None = None,
         _add_return_token_ids: bool = True,
     ):
         self.store = store
 
-        if launcher_args is not None and (port is not None or host is not None or launch_mode is not None):
-            raise ValueError("port, host, and launch_mode cannot be set when launcher_args is provided.")
+        if launcher_args is not None and (
+            port is not None or host is not None or launch_mode != "mp" or num_workers != 1
+        ):
+            raise ValueError("port, host, launch_mode, and num_workers cannot be set when launcher_args is provided.")
 
         self.server_launcher_args = launcher_args or PythonServerLauncherArgs(
             port=port,
             host=host,
-            launch_mode=launch_mode or "mp",
+            launch_mode=launch_mode,
+            n_workers=num_workers,
+            # NOTE: This /health endpoint can be slow sometimes because it actually probes the backend LLM service.
             healthcheck_url="/health",
             startup_timeout=60.0,
         )

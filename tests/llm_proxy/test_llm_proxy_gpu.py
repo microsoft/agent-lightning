@@ -189,15 +189,8 @@ async def _make_proxy_and_store(qwen25_model: RemoteOpenAIServer, *, retries: in
                 },
             }
         ],
-        launcher_args=(
-            PythonServerLauncherArgs(
-                launch_mode="mp",
-                n_workers=4,
-                port=get_free_port(),
-            )
-            if gunicorn
-            else None
-        ),
+        port=get_free_port(),
+        num_workers=4 if gunicorn else 1,
         store=store_server,
         num_retries=retries,
     )
