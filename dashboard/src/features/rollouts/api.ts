@@ -97,6 +97,8 @@ const normalizeSpan = (value: unknown): Span => {
   const result = {
     ...camelized,
     parentId: camelized.parentId ?? null,
+    // The following fields does not need to be normalized to camel case
+    // For example, gen_ai.xxx should not become genAi.xxx
     attributes: (value as any).attributes ?? {},
     context: (value as any).context ?? {},
     parent: (value as any).parent ?? null,
