@@ -506,6 +506,15 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#building-the-dashboard" class="md-nav__link">
+    <span class="md-ellipsis">
+      Building the Dashboard
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#activating-your-environment" class="md-nav__link">
     <span class="md-ellipsis">
       Activating Your Environment
@@ -1616,6 +1625,15 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#building-the-dashboard" class="md-nav__link">
+    <span class="md-ellipsis">
+      Building the Dashboard
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#activating-your-environment" class="md-nav__link">
     <span class="md-ellipsis">
       Activating Your Environment
@@ -1687,7 +1705,7 @@
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="October 22, 2025 02:03:43 UTC"><span class="timeago" datetime="2025-10-22T02:03:43+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="October 22, 2025 02:03:43 UTC">2025-10-22</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="November 11, 2025 08:29:02 UTC"><span class="timeago" datetime="2025-11-11T08:29:02+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="November 11, 2025 08:29:02 UTC">2025-11-11</span>
   </span>
 
     
@@ -1783,7 +1801,7 @@ For a more stable setup, install dependencies step-by-step:</p>
 <h2 id="example-specific-installation">Example-specific Installation<a class="headerlink" href="#example-specific-installation" title="Permanent link">&para;</a></h2>
 <p>Each example in the <code>examples/</code> directory may have its own additional dependencies.
 Please refer to the <strong>README</strong> file of each example for detailed setup instructions:</p>
-<p><a href="https://github.com/microsoft/agent-lightning/tree/1eae9a34f0350e1b3e9e642207c8a383f81cd4ba/examples">See Example READMEs</a>.</p>
+<p><a href="https://github.com/microsoft/agent-lightning/tree/2ab977ed181db706afce0fc7382e08ed299a2ef3/examples">See Example READMEs</a>.</p>
 <h2 id="installing-from-source-for-developers-and-contributors">Installing from Source (for Developers and Contributors)<a class="headerlink" href="#installing-from-source-for-developers-and-contributors" title="Permanent link">&para;</a></h2>
 <p>If you plan to contribute to Agent-Lightning or prefer to work with the latest development code, install it directly from the <strong>source repository</strong>.</p>
 <h3 id="why-install-from-source">Why Install from Source?<a class="headerlink" href="#why-install-from-source" title="Permanent link">&para;</a></h3>
@@ -1830,23 +1848,30 @@ Please refer to the <strong>README</strong> file of each example for detailed se
 <a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="w">    </span>--group<span class="w"> </span>agents<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="w">    </span>--no-default-groups
 </code></pre></div>
-<p>Read more about Agent-lightning managed dependency groups <a href="https://github.com/microsoft/agent-lightning/tree/1eae9a34f0350e1b3e9e642207c8a383f81cd4ba/pyproject.toml">here</a>.</p>
+<p>Read more about Agent-lightning managed dependency groups <a href="https://github.com/microsoft/agent-lightning/tree/2ab977ed181db706afce0fc7382e08ed299a2ef3/pyproject.toml">here</a>.</p>
+<h3 id="building-the-dashboard">Building the Dashboard<a class="headerlink" href="#building-the-dashboard" title="Permanent link">&para;</a></h3>
+<p>The Agent-Lightning dashboard is built using <a href="https://vite.dev/">Vite</a>. To build the dashboard, run the following command:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="nb">cd</span><span class="w"> </span>dashboard
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>npm<span class="w"> </span>ci
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>npm<span class="w"> </span>run<span class="w"> </span>build
+</code></pre></div>
+<p>Some HTML and JavaScript assets will be generated in the <code>agentlightning/dashboard</code> directory.</p>
 <h3 id="activating-your-environment">Activating Your Environment<a class="headerlink" href="#activating-your-environment" title="Permanent link">&para;</a></h3>
 <p>After syncing dependencies, <code>uv</code> automatically creates a virtual environment inside the <code>.venv/</code> directory.</p>
 <p>You can use it in two ways:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="c1"># Option 1: Prefix commands with uv run</span>
-<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>uv<span class="w"> </span>run<span class="w"> </span>python<span class="w"> </span>your_script.py
-<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>
-<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="c1"># Option 2: Activate the virtual environment</span>
-<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="nb">source</span><span class="w"> </span>.venv/bin/activate
-<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>python<span class="w"> </span>your_script.py
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="c1"># Option 1: Prefix commands with uv run</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>uv<span class="w"> </span>run<span class="w"> </span>python<span class="w"> </span>your_script.py
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="c1"># Option 2: Activate the virtual environment</span>
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="nb">source</span><span class="w"> </span>.venv/bin/activate
+<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a>python<span class="w"> </span>your_script.py
 </code></pre></div>
 <div class="admonition warning">
 <p class="admonition-title">Before Contributing</p>
 <p>Agent-Lightning enforces code style and linting rules via <strong>pre-commit hooks</strong>.
 Installing them early prevents many avoidable formatting issues.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>uv<span class="w"> </span>run<span class="w"> </span>pre-commit<span class="w"> </span>install
-<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>uv<span class="w"> </span>run<span class="w"> </span>pre-commit<span class="w"> </span>run<span class="w"> </span>--all-files<span class="w"> </span>--show-diff-on-failure<span class="w"> </span>--color<span class="o">=</span>always
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>uv<span class="w"> </span>run<span class="w"> </span>pre-commit<span class="w"> </span>install
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>uv<span class="w"> </span>run<span class="w"> </span>pre-commit<span class="w"> </span>run<span class="w"> </span>--all-files<span class="w"> </span>--show-diff-on-failure<span class="w"> </span>--color<span class="o">=</span>always
 </code></pre></div>
 </div>
 
