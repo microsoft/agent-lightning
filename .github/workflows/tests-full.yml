@@ -73,6 +73,14 @@ jobs:
           path: requirements-freeze.txt
           compression-level: 0
 
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - name: Install JavaScript dependencies
+        run: cd dashboard && npm ci
+      - name: Build dashboard
+        run: cd dashboard && npm run build
+
       - name: Launch LiteLLM Proxy
         run: |
           ./scripts/litellm_run.sh

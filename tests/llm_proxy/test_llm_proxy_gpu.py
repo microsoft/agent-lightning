@@ -25,6 +25,7 @@ from agentlightning.llm_proxy import LLMProxy, _reset_litellm_logging_worker  # 
 from agentlightning.store import LightningStore, LightningStoreServer
 from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.types import LLM, Span
+from agentlightning.utils.server_launcher import PythonServerLauncherArgs
 
 from ..common.network import get_free_port
 from ..common.tracer import clear_tracer_provider
@@ -171,7 +172,7 @@ async def test_basic_integration(qwen25_model: RemoteOpenAIServer):
     assert "gen_ai.completion.0.finish_reason" in litellm_span.attributes, "gen_ai.completion.0.finish_reason not found"
 
 
-async def _make_proxy_and_store(qwen25_model: RemoteOpenAIServer, *, retries: int = 0):
+async def _make_proxy_and_store(qwen25_model: RemoteOpenAIServer, *, retries: int = 0, gunicorn: bool = False):
     clear_tracer_provider()
     _reset_litellm_logging_worker()  # type: ignore
     store = InMemoryLightningStore()
@@ -189,6 +190,14 @@ async def _make_proxy_and_store(qwen25_model: RemoteOpenAIServer, *, retries: in
                 },
             }
         ],
+        launch_args=(
+            PythonServerLauncherArgs(
+                launch_mode="mp",
+                n_workers=4,
+            )
+            if gunicorn
+            else None
+        ),
         store=store_server,
         num_retries=retries,
     )
@@ -245,8 +254,9 @@ async def test_multiple_requests_one_attempt(qwen25_model: RemoteOpenAIServer):
 
 
 @pytest.mark.asyncio
-async def test_ten_concurrent_requests(qwen25_model: RemoteOpenAIServer):
-    proxy, store = await _make_proxy_and_store(qwen25_model)
+@pytest.mark.parametrize("gunicorn", [False, True])
+async def test_ten_concurrent_requests(qwen25_model: RemoteOpenAIServer, gunicorn: bool):
+    proxy, store = await _make_proxy_and_store(qwen25_model, gunicorn=gunicorn)
     try:
         resource, rollout = await _new_resource(proxy, store)
         aclient = _get_async_client_for_resource(resource)
@@ -261,6 +271,7 @@ async def test_ten_concurrent_requests(qwen25_model: RemoteOpenAIServer):
 
         outs = await asyncio.gather(*[_one(i) for i in range(10)])
         assert len([o for o in outs if o]) == 10
+        await asyncio.sleep(1.0)  # Allow some extra time for the spans to be recorded
 
         spans = await store.query_spans(rollout.rollout_id, rollout.attempt.attempt_id)
         assert len(_find_span(spans, "raw_gen_ai_request")) == 10
