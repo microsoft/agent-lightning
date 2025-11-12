@@ -12,6 +12,7 @@ from typing import Dict, Tuple
 
 import numpy as np
 import torch
+import verl
 from codetiming import Timer
 from omegaconf import OmegaConf
 from tqdm import tqdm
@@ -298,14 +299,20 @@ class AgentLightningTrainer(RayPPOTrainer):
         assert self.async_rollout_mode, "If agent mode is enabled, async server must be enabled"
         if self.adapter is not None and not isinstance(self.adapter, TraceToTripletBase):
             raise ValueError("Adapter must be a TraceToTripletBase for currently VERL implementation.")
+        verl_version = verl.__version__
+        if verl_version == "0.5.0":
+            # Note (Zhiyuan): To avoid further patch into vllm async server, using the same sentence to get the naming here.
+            # However, it is possible that verl updates the naming and causes incompatibility.
+            # Reference: https://github.com/volcengine/verl/blob/5b5e09d9cc20625e436d01f69d9cc739ff681c54/verl/workers/rollout/vllm_rollout/vllm_async_server.py#L217
+            model = "/".join(self.config.actor_rollout_ref.model.path.split("/")[-2:])
+        else:
+            # For other versions (e.g., 0.6.0), we use the full path to the model.
+            model = self.config.actor_rollout_ref.model.path
         self.agent_mode_daemon = AgentModeDaemon(
             self.config.agentlightning.port,
             self.config.actor_rollout_ref.rollout.n,
             train_information={
-                # Note (Zhiyuan): To avoid further patch into vllm async server, using the same sentence to get the naming here.
-                # However, it is possible that verl updates the naming and causes incompatibility.
-                # Reference: https://github.com/volcengine/verl/blob/5b5e09d9cc20625e436d01f69d9cc739ff681c54/verl/workers/rollout/vllm_rollout/vllm_async_server.py#L217
-                "model": "/".join(self.config.actor_rollout_ref.model.path.split("/")[-2:]),
+                "model": model,
                 "temperature": self.config.actor_rollout_ref.rollout.temperature,
             },
             tokenizer=self.tokenizer,

@@ -137,6 +137,22 @@ jobs:
           WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
           WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
 
+      - name: Calc-X training with local model
+        run: |
+          set -ex
+          source .venv/bin/activate
+          cd examples/calc_x
+          ../../scripts/restart_ray.sh
+          sleep 5
+          hf download Qwen/Qwen2.5-0.5B-Instruct --local-dir data/qwen_model
+          PYTHONUNBUFFERED=1 python train_calc_agent.py --val-file data/test_mini.parquet --ci --model $(realpath data/qwen_model)
+          sleep 10
+        shell: bash
+        env:
+          WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
+          WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
+        id: calc_x_train_local_model
+
       - name: Calc-X training LLM Proxy
         run: |
           set -ex
