@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import platform
 import socket
+from contextlib import suppress
 from datetime import datetime
 from typing import Any, Dict, List, cast
 
@@ -11,7 +12,7 @@ import psutil
 from gpustat import GPUStat, GPUStatCollection
 
 
-def snapshot(include_gpu: bool = False) -> Dict[str, Any]:
+def system_snapshot(include_gpu: bool = False) -> Dict[str, Any]:
     # CPU
     cpu = {
         "cpu_name": platform.processor(),
@@ -38,7 +39,7 @@ def snapshot(include_gpu: bool = False) -> Dict[str, Any]:
 
     # GPU
     gpus: List[Dict[str, Any]] = []
-    try:
+    with suppress(Exception):
         for g in GPUStatCollection.new_query().gpus:  # type: ignore
             g = cast(GPUStat, g)
             gpus.append(
@@ -50,8 +51,6 @@ def snapshot(include_gpu: bool = False) -> Dict[str, Any]:
                     "temp_c": g.temperature,
                 }
             )
-    except Exception:
-        pass
 
     # Network
     net = psutil.net_io_counters()
