@@ -35,6 +35,7 @@ def main(argv: Iterable[str] | None = None) -> int:
         host="0.0.0.0",
         port=args.port,
         cors_allow_origins=args.cors_origins,
+        launch_mode="asyncio",
     )
     try:
         asyncio.run(server.run_forever())

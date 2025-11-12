@@ -53,6 +53,8 @@ class PythonServerLauncherArgs:
     """
     log_level: int = logging.INFO
     """The log level to use."""
+    access_log: bool = False
+    """Whether to turn on access logs."""
     startup_timeout: float = 60.0
     """The timeout to wait for the server to start up."""
     kill_unhealthy_server: bool = True
@@ -156,7 +158,9 @@ async def run_uvicorn_asyncio(
 
         if not uvicorn_server.started:
             # Normally, the program will not reach this point, as the server will throw the exception itself earlier.
-            raise RuntimeError(f"Server did not start up within {timeout:.2f} seconds.") from server_start_exception
+            raise RuntimeError(
+                f"Server did not start up within {time.time() - start_time:.2f} seconds."
+            ) from server_start_exception
 
         logger.info(f"Server started up in {time.time() - start_time:.2f} seconds.")
 
@@ -608,6 +612,13 @@ class PythonServerLauncher:
         self._host: Optional[str] = self.args.host
         self._port: Optional[int] = self.args.port
         self._access_host: Optional[str] = self.args.access_host
+        self.initialize()
+
+    def initialize(self):
+        # ensure the host/port/access_host are set
+        self._ensure_host()
+        self._ensure_port()
+        self._ensure_access_host()
 
         # uvicorn (in-proc asyncio)
         self._uvicorn_server: Optional[uvicorn.Server] = None
@@ -625,6 +636,26 @@ class PythonServerLauncher:
 
         # is_running flag
         self._is_running: bool = False
+
+    def __getstate__(self):
+        """Control pickling to prevent server state from being sent to subprocesses."""
+        return {
+            "app": self.app,
+            "args": self.args,
+            "serve_context": self.serve_context,
+            "_host": self._host,
+            "_port": self._port,
+            "_access_host": self._access_host,
+        }
+
+    def __setstate__(self, state: Dict[str, Any]):
+        self.app = state["app"]
+        self.args = state["args"]
+        self.serve_context = state["serve_context"]
+        self._host = state["_host"]
+        self._port = state["_port"]
+        self._access_host = state["_access_host"]
+        self.initialize()
 
     @property
     def endpoint(self) -> str:
@@ -744,17 +775,18 @@ class PythonServerLauncher:
         return self._port
 
     def _ensure_access_host(self) -> str:
-        if self.args.access_host is None:
-            if self._ensure_host() in ("0.0.0.0", "::"):
-                # Probe host normalization for 0.0.0.0
-                logger.warning("No access host provided, using default outbound IPv4 address for this machine.")
-                self._access_host = _get_default_ipv4_address()
+        if self._access_host is None:
+            if self.args.access_host is None:
+                if self._ensure_host() in ("0.0.0.0", "::"):
+                    # Probe host normalization for 0.0.0.0
+                    logger.warning("No access host provided, using default outbound IPv4 address for this machine.")
+                    self._access_host = _get_default_ipv4_address()
+                else:
+                    logger.warning("No access host provided, using the host provided.")
+                    self._access_host = self._ensure_host()
             else:
-                logger.warning("No access host provided, using the host provided.")
-                self._access_host = self._ensure_host()
-        else:
-            self._access_host = self.args.access_host
-        return self._access_host
+                self._access_host = self.args.access_host
+        return self._access_host  # type: ignore
 
     def _create_uvicorn_server(self) -> uvicorn.Server:
         config = uvicorn.Config(
@@ -762,6 +794,7 @@ class PythonServerLauncher:
             host=self._ensure_host(),
             port=self._ensure_port(),
             log_level=self.args.log_level,
+            access_log=self.args.access_log,
             loop="asyncio",
         )
         return uvicorn.Server(config)
@@ -834,17 +867,19 @@ class PythonServerLauncher:
             evt: ChildEvent = await asyncio.to_thread(self._thread_event_queue.get, True, timeout)
         except queue.Empty:
             if not self._thread.is_alive():
-                logger.error("Threaded server failed to start and is not alive. No error event was received.")
-                return
-            logger.error("Threaded server failed to start and sends no event. This should not happen.")
+                raise RuntimeError("Threaded server failed to start and is not alive. No error event was received.")
+            logger.error(
+                "Threaded server failed to start and sends no event. This should not happen. Shutting down server."
+            )
             await self._stop_uvicorn_thread()
-            return
+            raise RuntimeError("Threaded server failed to start and sends no event. This should not happen.")
 
         if evt.kind == "error":
             logger.error("Threaded server failed to start (%s): %s\n%s", evt.exc_type, evt.message, evt.traceback)
             await asyncio.to_thread(self._thread.join, self.args.thread_join_timeout)
             if self._thread.is_alive():
-                raise RuntimeError(evt.message or "Threaded server failed to start and refused to shut down.")
+                logger.error("Threaded server failed to start and refused to shut down.")
+            raise RuntimeError(evt.message)
         else:
             logger.info("Threaded server started successfully.")
             self._is_running = True
@@ -893,7 +928,7 @@ class PythonServerLauncher:
                 "workers": int(self.args.n_workers),
                 "worker_class": "uvicorn_worker.UvicornWorker",
                 "loglevel": logging.getLevelName(self.args.log_level).lower(),
-                "accesslog": None,
+                "accesslog": "-" if self.args.access_log else None,
                 "errorlog": "-",
                 "preload_app": True,
                 "graceful_timeout": int(
@@ -939,11 +974,12 @@ class PythonServerLauncher:
             evt: ChildEvent = await asyncio.to_thread(self._mp_event_queue.get, True, timeout)
         except queue.Empty:
             if not self._proc.is_alive():
-                logger.error("Server process failed to start and is not alive. No error event was received.")
-                return
-            logger.error("Server process failed to start and sends no event. This should not happen.")
+                raise RuntimeError("Server process failed to start and is not alive. No error event was received.")
+            logger.error(
+                "Server process failed to start and sends no event. This should not happen. Shutting down server."
+            )
             await self._stop_serving_process()
-            return
+            raise RuntimeError("Server process failed to start and sends no event. This should not happen.")
 
         if evt.kind == "error":
             logger.error(
@@ -955,7 +991,8 @@ class PythonServerLauncher:
             )
             await asyncio.to_thread(self._proc.join, self.args.process_join_timeout)
             if self._proc.is_alive():
-                raise RuntimeError(evt.message or "Server process failed to start and refused to shut down.")
+                logger.error("Server process failed to start and refused to shut down.")
+            raise RuntimeError(evt.message)
         else:
             logger.info("Subprocess server started successfully.")
             self._is_running = True

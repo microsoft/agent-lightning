@@ -19,6 +19,7 @@ from agentlightning.store.base import UNSET, LightningStore
 from agentlightning.store.client_server import LightningStoreClient, LightningStoreServer
 from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.types import LLM, OtelResource, PromptTemplate, RolloutConfig, Span, TraceStatus
+from agentlightning.utils.server_launcher import LaunchMode
 
 
 def _make_span(rollout_id: str, attempt_id: str, sequence_id: int, name: str) -> Span:
@@ -71,35 +72,42 @@ async def server_client(
 
 
 @pytest.mark.asyncio
-async def test_server_start_rejects_port_conflict() -> None:
+@pytest.mark.parametrize("launch_mode", ["asyncio", "thread"])
+async def test_server_start_rejects_port_conflict(caplog: pytest.LogCaptureFixture, launch_mode: LaunchMode) -> None:
     """Ensure startup fails loudly when the port is already owned by another store."""
     store_a = InMemoryLightningStore()
     port = pick_unused_port()
     server_a = LightningStoreServer(store_a, "127.0.0.1", port)
     await server_a.start()
+    import logging
+
+    caplog.set_level(logging.INFO)
 
     store_b = InMemoryLightningStore()
-    server_b = LightningStoreServer(store_b, "127.0.0.1", port)
+    server_b = LightningStoreServer(store_b, "127.0.0.1", port, launch_mode=launch_mode)
 
-    with pytest.raises(RuntimeError, match="Another process may already be using this port"):
+    with pytest.raises(RuntimeError, match="did not start up within"):
         await server_b.start()
+    assert "address already in use" in caplog.text
 
     await server_a.stop()
 
 
 @pytest.mark.asyncio
-async def test_run_forever_rejects_port_conflict() -> None:
+@pytest.mark.parametrize("launch_mode", ["asyncio", "thread"])
+async def test_run_forever_rejects_port_conflict(caplog: pytest.LogCaptureFixture, launch_mode: LaunchMode) -> None:
     """Ensure run_forever also reports port conflicts with the friendly message."""
     store_a = InMemoryLightningStore()
     port = pick_unused_port()
-    server_a = LightningStoreServer(store_a, "127.0.0.1", port)
+    server_a = LightningStoreServer(store_a, "127.0.0.1", port, launch_mode=launch_mode)
     await server_a.start()
 
     store_b = InMemoryLightningStore()
-    server_b = LightningStoreServer(store_b, "127.0.0.1", port)
+    server_b = LightningStoreServer(store_b, "127.0.0.1", port, launch_mode=launch_mode)
 
-    with pytest.raises(RuntimeError, match="Another process may already be using this port"):
+    with pytest.raises(RuntimeError, match="did not start up within"):
         await server_b.run_forever()
+    assert "address already in use" in caplog.text
 
     await server_a.stop()
 
@@ -722,7 +730,7 @@ async def test_retry_on_400_application_error(
 
     # Force app-side exception so server returns 400 via exception handler.
     call_count = {"n": 0}
-    original = server.store.enqueue_rollout
+    original = server.store.enqueue_rollout  # type: ignore
 
     async def boom(*args: Any, **kwargs: Any) -> Any:
         call_count["n"] += 1

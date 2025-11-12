@@ -8,12 +8,10 @@ import os
 import threading
 import time
 import traceback
-from contextlib import suppress
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, Generic, List, Literal, Optional, Sequence, TypeVar, Union
 
 import aiohttp
-import uvicorn
 from fastapi import APIRouter, Body, Depends, FastAPI, HTTPException
 from fastapi import Query as FastAPIQuery
 from fastapi import Request, Response
@@ -37,10 +35,12 @@ from agentlightning.types import (
     Worker,
     WorkerStatus,
 )
+from agentlightning.utils.server_launcher import LaunchMode, PythonServerLauncher, PythonServerLauncherArgs
 
 from .base import UNSET, LightningStore, LightningStoreCapabilities, Unset
 
-logger = logging.getLogger(__name__)
+server_logger = logging.getLogger("agentlightning.store.server")
+client_logger = logging.getLogger("agentlightning.store.client")
 
 API_V1_PREFIX = "/v1"
 API_AGL_PREFIX = "/agl"
@@ -280,36 +280,69 @@ class LightningStoreServer(LightningStore):
 
     `agl store` is a convenient CLI to start a store server.
 
+    When the server is executed in a subprocess, the store will discover itself having a different PID
+    and automatically delegate to an HTTP client instead of using the local store.
+    This ensures one single copy of the store will be shared across all processes.
+
     Args:
         store: The underlying store to delegate operations to.
         host: The hostname or IP address to bind the server to.
         port: The TCP port to listen on.
         cors_allow_origins: A list of CORS origins to allow. Use '*' to allow all origins.
+        launch_mode: The launch mode to use for the server. Defaults to "thread",
+            which runs the server in a separate thread.
+        launcher_args: The arguments to use for the server launcher.
+            It's not allowed to set `host`, `port`, `launch_mode` together with `launcher_args`.
     """
 
     def __init__(
         self,
         store: LightningStore,
-        host: str,
-        port: int,
+        host: str | None = None,
+        port: int | None = None,
         cors_allow_origins: Sequence[str] | str | None = None,
+        launch_mode: LaunchMode = "thread",
+        launcher_args: PythonServerLauncherArgs | None = None,
     ):
         super().__init__()
         self.store = store
-        self._lock = threading.Lock()
-        self.host = host
-        self.port = port
-        self._cors_allow_origins = self._normalize_cors_origins(cors_allow_origins)
+
+        if launcher_args is not None:
+            if host is not None or port is not None or launch_mode != "thread":
+                raise ValueError("host, port, and launch_mode cannot be set when launcher_args is provided.")
+            self.launcher_args = launcher_args
+        else:
+            if port is None:
+                server_logger.warning("No port provided, using default port 4747.")
+            self.launcher_args = PythonServerLauncherArgs(
+                host=host,
+                port=port,
+                launch_mode=launch_mode,
+                healthcheck_url=API_AGL_PREFIX + "/health",
+            )
+
+        store_capabilities = self.store.capabilities()
+        if not store_capabilities["async_safe"]:
+            raise ValueError("The store is not async-safe. Please use another store for the server.")
+        if self.launcher_args.launch_mode == "mp" and not store_capabilities["zero_copy"]:
+            raise ValueError(
+                "The store does not support zero-copy. Please use another store, or use asyncio or thread mode to launch the server."
+            )
+        if self.launcher_args.launch_mode == "thread" and not store_capabilities["thread_safe"]:
+            server_logger.warning(
+                "The store is not thread-safe. Please be careful when using the store server and the underlying store in different threads."
+            )
+
         self.app: FastAPI | None = FastAPI(title="LightningStore Server")
+        self.server_launcher = PythonServerLauncher(
+            app=self.app,
+            args=self.launcher_args,
+        )
+
+        self._lock: threading.Lock = threading.Lock()
+        self._cors_allow_origins = self._normalize_cors_origins(cors_allow_origins)
         self._apply_cors()
         self._setup_routes()
-        self._uvicorn_config: uvicorn.Config | None = uvicorn.Config(
-            self.app, host="0.0.0.0", port=self.port, log_level="error"
-        )
-        self._uvicorn_server: uvicorn.Server | None = uvicorn.Server(self._uvicorn_config)
-
-        self._serving_thread: Optional[threading.Thread] = None
-        self._server_start_exception: Optional[BaseException] = None
 
         # Process-awareness:
         # LightningStoreServer holds a plain Python object (self.store) in one process
@@ -323,28 +356,27 @@ class LightningStoreServer(LightningStore):
 
     def capabilities(self) -> LightningStoreCapabilities:
         """Return the capabilities of the store."""
-        capabilities = self.store.capabilities().copy()
-        capabilities["async_safe"] = True
-        capabilities["thread_safe"] = True
-        capabilities["zero_copy"] = True
-        return capabilities
+        return LightningStoreCapabilities(
+            async_safe=True,
+            thread_safe=True,
+            zero_copy=True,
+        )
 
     def __getstate__(self):
         """
         Control pickling to prevent server state from being sent to subprocesses.
 
         When LightningStoreServer is pickled (e.g., passed to a subprocess), we only
-        serialize the underlying store and connection details. The FastAPI app and
-        uvicorn server are excluded as they should not be transferred between processes.
+        serialize the underlying store and connection details. The client instance
+        and process-awareness state are excluded as they should not be transferred between processes.
 
         The subprocess should create its own server instance if needed.
         """
+        # server-launcher is needed for the host/port address are propagated to the subprocess
         return {
-            "store": self.store,
-            "host": self.host,
-            "port": self.port,
+            "launcher_args": self.launcher_args,
+            "server_launcher": self.server_launcher,
             "_owner_pid": self._owner_pid,
-            "_cors_allow_origins": self._cors_allow_origins,
         }
 
     def __setstate__(self, state: Dict[str, Any]):
@@ -355,9 +387,10 @@ class LightningStoreServer(LightningStore):
         Call __init__() pattern or create a new LightningStoreServer if you need
         a fully functional server in the subprocess.
         """
-        self.store = state["store"]
-        self.host = state["host"]
-        self.port = state["port"]
+        self.app = None
+        self.store = None
+        self.launcher_args = state["launcher_args"]
+        self.server_launcher = state["server_launcher"]
         self._owner_pid = state["_owner_pid"]
         self._cors_allow_origins = state.get("_cors_allow_origins")
         self._client = None
@@ -403,151 +436,38 @@ class LightningStoreServer(LightningStore):
 
     @property
     def endpoint(self) -> str:
-        return f"http://{self.host}:{self.port}"
+        """Endpoint is the address that the client will use to connect to the server."""
+        return self.server_launcher.access_endpoint
 
     async def start(self):
         """Starts the FastAPI server in the background.
 
         You need to call this method in the same process as the server was created in.
         """
-        assert self._uvicorn_server is not None
-        logger.info(f"Starting server at {self.endpoint}")
+        server_logger.info(
+            f"Serving the lightning store at {self.server_launcher.endpoint}, accessible at {self.server_launcher.access_endpoint}"
+        )
 
-        uvicorn_server = self._uvicorn_server
-        self._server_start_exception = None
-
-        def run_server_forever():
-            try:
-                asyncio.run(uvicorn_server.serve())
-            except (SystemExit, Exception) as exc:
-                logger.debug("LightningStore server thread exiting due to %s", exc, exc_info=exc)
-                self._server_start_exception = exc
-
-        serving_thread = threading.Thread(target=run_server_forever, daemon=True)
-        self._serving_thread = serving_thread
-        serving_thread.start()
-
-        # Wait for uvicorn to report that it has started before pinging /health.
-        start_deadline = time.time() + 10
-        while time.time() < start_deadline:
-            if uvicorn_server.started:
-                break
-            if self._server_start_exception is not None or not serving_thread.is_alive():
-                self._handle_failed_start()
-                raise RuntimeError(self._format_start_failure_reason())
-            await asyncio.sleep(0.05)
-        else:
-            self._handle_failed_start()
-            raise RuntimeError("Server failed to start within the 10 seconds.")
-
-        # Wait for /health to be available once uvicorn reports started.
-        if not await self._server_health_check():
-            self._handle_failed_start()
-            raise RuntimeError("Server failed to start within the 10 seconds.")
-
-        # If startup failed (e.g. port already in use), uvicorn never flips `started`
-        # and the worker thread stops immediately. Guard against latching on to a
-        # different process that happened to satisfy the health check.
-        if not uvicorn_server.started or not serving_thread.is_alive() or self._server_start_exception is not None:
-            self._handle_failed_start()
-            failure_reason = self._format_start_failure_reason()
-            raise RuntimeError(failure_reason)
-
-    async def _server_health_check(self) -> bool:
-        """Checks if the server is healthy."""
-        current_time = time.time()
-        while time.time() - current_time < 10:
-            async with aiohttp.ClientSession() as session:
-                with suppress(Exception):
-                    async with session.get(f"{self.endpoint}{API_V1_AGL_PREFIX}/health") as response:
-                        if response.status == 200:
-                            return True
-            await asyncio.sleep(0.1)
-        return False
-
-    def _handle_failed_start(self) -> None:
-        """Clean up thread state when startup fails."""
-        if self._uvicorn_server is not None:
-            self._uvicorn_server.should_exit = True
-        if self._serving_thread is not None:
-            # Thread already exited in most failure scenarios; join defensively.
-            self._serving_thread.join(timeout=0.1)
-            self._serving_thread = None
-
-    def _format_start_failure_reason(self) -> str:
-        base_message = f"LightningStore server failed to start on {self.endpoint}."
-        if isinstance(self._server_start_exception, SystemExit):
-            return f"{base_message} Another process may already be using this port."
-        if isinstance(self._server_start_exception, OSError):
-            return f"{base_message} {self._server_start_exception.strerror}."
-        if self._server_start_exception is not None:
-            return f"{base_message} Reason: {self._server_start_exception}."
-        return f"{base_message} Another process may already be using this port."
+        start_time = time.time()
+        await self.server_launcher.start()
+        end_time = time.time()
+        server_logger.info(f"Lightning store server started in {end_time - start_time:.2f} seconds")
 
     async def run_forever(self):
-        """Runs the FastAPI server indefinitely.
-
-        You need to call this method in the same process as the server was created in.
-        """
-        assert self._uvicorn_server is not None
-        uvicorn_server = self._uvicorn_server
-
-        async def _wait_till_healthy():
-            health = await self._server_health_check()
-            if not health:
-                raise RuntimeError("Server did not become healthy within the 10 seconds.")
-            logger.info("Store server is online at %s", self.endpoint)
-
-        async def _serve_capture():
-            try:
-                await uvicorn_server.serve()
-            except KeyboardInterrupt:
-                raise
-            except (SystemExit, Exception) as exc:
-                logger.debug("LightningStore server serve() raised %s", exc, exc_info=exc)
-                self._server_start_exception = exc
-                raise RuntimeError("LightningStore server failed to serve") from exc
-
-        # We run _wait_till_healthy and self._uvicorn_server.serve in parallel
-        # until one of them raises an exception.
-        try:
-            await asyncio.gather(_wait_till_healthy(), _serve_capture())
-        except BaseException as exc:
-            if isinstance(exc, KeyboardInterrupt):
-                raise
-            startup_failed = not uvicorn_server.started or isinstance(
-                self._server_start_exception, (SystemExit, OSError)
-            )
-            if startup_failed:
-                self._handle_failed_start()
-                raise RuntimeError(self._format_start_failure_reason())
-            raise
+        """Runs the FastAPI server indefinitely."""
+        server_logger.info(
+            f"Running the lightning store server at {self.server_launcher.endpoint}, accessible at {self.server_launcher.access_endpoint}"
+        )
+        await self.server_launcher.run_forever()
 
     async def stop(self):
         """Gracefully stops the running FastAPI server.
 
         You need to call this method in the same process as the server was created in.
         """
-        assert self._uvicorn_server is not None
-        if self._uvicorn_server.started:
-            logger.info("Stopping server...")
-            self._uvicorn_server.should_exit = True
-            if self._serving_thread is not None:
-                self._serving_thread.join(timeout=10)
-            self._serving_thread = None
-            logger.info("Server stopped.")
-
-    def _backend(self) -> LightningStore:
-        """Returns the object to delegate to in *this* process.
-
-        - In the owner process: delegate to the in-process store.
-        - In a different process: delegate to a HTTP client talking to the server.
-        """
-        if os.getpid() == self._owner_pid:
-            return self.store
-        if self._client is None:
-            self._client = LightningStoreClient(self.endpoint)
-        return self._client
+        server_logger.info("Stopping the lightning store server...")
+        await self.server_launcher.stop()
+        server_logger.info("Lightning store server stopped.")
 
     def _setup_routes(self):
         """Set up FastAPI routes for all store operations."""
@@ -572,7 +492,7 @@ class LightningStoreServer(LightningStore):
             except Exception as exc:
                 # decide whether to convert this into your 400 JSONResponse
                 if request.url.path.startswith(API_V1_AGL_PREFIX):
-                    logger.exception("Unhandled application error", exc_info=exc)
+                    server_logger.exception("Unhandled application error", exc_info=exc)
                     payload = {
                         "detail": "Internal server error",
                         "error_type": type(exc).__name__,
@@ -599,7 +519,7 @@ class LightningStoreServer(LightningStore):
                 client_address = "unknown"
             else:
                 client_address = f"{client.host}:{client.port}"
-            logger.info(
+            server_logger.debug(
                 f"{client_address} - "
                 f'"{request.method} {request.url.path} HTTP/{request.scope["http_version"]}" '
                 f"{response.status_code} in {duration:.2f} ms"
@@ -876,19 +796,19 @@ class LightningStoreServer(LightningStore):
 
         dashboard_dir = (Path(__file__).parent.parent / "dashboard").resolve()
         if not dashboard_dir.exists():
-            logger.error("Dashboard directory not found at %s. Please build the dashboard first.", dashboard_dir)
+            server_logger.error("Dashboard directory not found at %s. Please build the dashboard first.", dashboard_dir)
             return
 
         dashboard_assets_dir = dashboard_dir / "assets"
         if not dashboard_assets_dir.exists():
-            logger.error(
+            server_logger.error(
                 "Dashboard assets directory not found at %s. Please build the dashboard first.", dashboard_assets_dir
             )
             return
 
         index_file = dashboard_dir / "index.html"
         if not index_file.exists():
-            logger.error("Dashboard index file not found at %s. Please build the dashboard first.", index_file)
+            server_logger.error("Dashboard index file not found at %s. Please build the dashboard first.", index_file)
             return
 
         # Mount the static files in dashboard/assets
@@ -905,20 +825,25 @@ class LightningStoreServer(LightningStore):
             # Let the frontend router handle it
             return FileResponse(index_file)
 
-        logger.info("Agent-lightning dashboard will be available at %s", self.endpoint)
+        server_logger.info("Agent-lightning dashboard will be available at %s", self.endpoint)
 
     # Delegate methods
     async def _call_store_method(self, method_name: str, *args: Any, **kwargs: Any) -> Any:
-        backend = self._backend()
-        method = getattr(backend, method_name)
-        if backend is self.store:
+        """First decide what store to delegate to in *this* process, and then call the method on it.
+
+        - In the owner process: delegate to the in-process store.
+        - In a different process: delegate to a HTTP client talking to the server.
+        """
+        if os.getpid() == self._owner_pid:
             if method_name == "wait_for_rollouts":
                 # wait_for_rollouts can block for a long time; avoid holding the lock
                 # so other requests can make progress while we wait.
-                return await method(*args, **kwargs)
+                return await getattr(self.store, method_name)(*args, **kwargs)
             with self._lock:
-                return await method(*args, **kwargs)
-        return await method(*args, **kwargs)
+                return await getattr(self.store, method_name)(*args, **kwargs)
+        if self._client is None:
+            self._client = LightningStoreClient(self.endpoint)
+        return await getattr(self._client, method_name)(*args, **kwargs)
 
     async def start_rollout(
         self,
@@ -1099,7 +1024,7 @@ class LightningStoreClient(LightningStore):
     ):
         self.server_address = server_address.rstrip("/") + API_V1_AGL_PREFIX
         self._sessions: Dict[int, aiohttp.ClientSession] = {}  # id(loop) -> ClientSession
-        self._lock = threading.RLock()
+        self._lock = threading.Lock()
 
         # retry config
         self._retry_delays = tuple(float(d) for d in retry_delays)
@@ -1137,7 +1062,7 @@ class LightningStoreClient(LightningStore):
         """
         self.server_address = state["server_address"]
         self._sessions = {}
-        self._lock = threading.RLock()
+        self._lock = threading.Lock()
         self._retry_delays = state["_retry_delays"]
         self._health_retry_delays = state["_health_retry_delays"]
         self._dequeue_was_successful = False
@@ -1175,20 +1100,20 @@ class LightningStoreClient(LightningStore):
         Probe the server's /health until it responds 200 or retries are exhausted.
         Returns True if healthy, False otherwise.
         """
-        logger.info(f"Waiting for server to be healthy at {self.server_address}/health")
+        client_logger.info(f"Waiting for server to be healthy at {self.server_address}/health")
         for delay in [*self._health_retry_delays, 0.0]:
             try:
                 async with session.get(f"{self.server_address}/health") as r:
                     if r.status == 200:
-                        logger.info(f"Server is healthy at {self.server_address}/health")
+                        client_logger.info(f"Server is healthy at {self.server_address}/health")
                         return True
             except Exception:
                 # swallow and retry
                 if delay > 0.0:
-                    logger.warning(f"Server is not healthy yet. Retrying in {delay} seconds.")
+                    client_logger.warning(f"Server is not healthy yet. Retrying in {delay} seconds.")
             if delay > 0.0:
                 await asyncio.sleep(delay)
-        logger.error(
+        client_logger.error(
             f"Server is not healthy at {self.server_address}/health after {len(self._health_retry_delays)} retry attempts"
         )
         return False
@@ -1221,7 +1146,7 @@ class LightningStoreClient(LightningStore):
 
         for delay in attempts:
             if delay:
-                logger.info(f"Waiting {delay} seconds before retrying {method}: {path}")
+                client_logger.info(f"Waiting {delay} seconds before retrying {method}: {path}")
                 await asyncio.sleep(delay)
             try:
                 http_call = getattr(session, method)
@@ -1231,12 +1156,12 @@ class LightningStoreClient(LightningStore):
             except aiohttp.ClientResponseError as cre:
                 # Respect app-level 4xx as final
                 # 4xx => application issue; do not retry (except 408 which is transient)
-                logger.debug(f"ClientResponseError: {cre.status} {cre.message}", exc_info=True)
+                client_logger.debug(f"ClientResponseError: {cre.status} {cre.message}", exc_info=True)
                 if 400 <= cre.status < 500 and cre.status != 408:
                     raise
                 # 5xx and others will be retried below if they raise
                 last_exc = cre
-                logger.info(f"5xx and other status codes will be retried. Retrying the request {method}: {path}")
+                client_logger.info(f"5xx and other status codes will be retried. Retrying the request {method}: {path}")
                 # before next retry, ensure server is healthy
                 if not await self._wait_until_healthy(session):
                     break  # server is not healthy, do not retry
@@ -1247,9 +1172,9 @@ class LightningStoreClient(LightningStore):
                 asyncio.TimeoutError,
             ) as net_exc:
                 # Network/session issue: probe health before retrying
-                logger.debug(f"Network/session issue: {net_exc}", exc_info=True)
+                client_logger.debug(f"Network/session issue: {net_exc}", exc_info=True)
                 last_exc = net_exc
-                logger.info(f"Network/session issue will be retried. Retrying the request {method}: {path}")
+                client_logger.info(f"Network/session issue will be retried. Retrying the request {method}: {path}")
                 if not await self._wait_until_healthy(session):
                     break  # server is not healthy, do not retry
 
@@ -1345,9 +1270,9 @@ class LightningStoreClient(LightningStore):
         except Exception as e:
             if self._dequeue_was_successful:
                 if self._dequeue_first_unsuccessful:
-                    logger.warning(f"dequeue_rollout failed with exception: {e}")
+                    client_logger.warning(f"dequeue_rollout failed with exception: {e}")
                     self._dequeue_first_unsuccessful = False
-            logger.debug("dequeue_rollout failed with exception. Details:", exc_info=True)
+            client_logger.debug("dequeue_rollout failed with exception. Details:", exc_info=True)
             # Else ignore the exception because the server is not ready yet
             return None
 
@@ -1401,7 +1326,9 @@ class LightningStoreClient(LightningStore):
             data = await self._request_json("get", f"/rollouts/{rollout_id}/attempts/latest")
             return Attempt.model_validate(data) if data else None
         except Exception as e:
-            logger.error(f"get_latest_attempt failed after all retries for rollout_id={rollout_id}: {e}", exc_info=True)
+            client_logger.error(
+                f"get_latest_attempt failed after all retries for rollout_id={rollout_id}: {e}", exc_info=True
+            )
             return None
 
     async def get_rollout_by_id(self, rollout_id: str) -> Optional[Rollout]:
@@ -1425,7 +1352,9 @@ class LightningStoreClient(LightningStore):
             else:
                 return Rollout.model_validate(data)
         except Exception as e:
-            logger.error(f"get_rollout_by_id failed after all retries for rollout_id={rollout_id}: {e}", exc_info=True)
+            client_logger.error(
+                f"get_rollout_by_id failed after all retries for rollout_id={rollout_id}: {e}", exc_info=True
+            )
             return None
 
     async def query_resources(self) -> List[ResourcesUpdate]:
@@ -1466,7 +1395,7 @@ class LightningStoreClient(LightningStore):
             data = await self._request_json("get", f"/resources/{resources_id}")
             return ResourcesUpdate.model_validate(data) if data else None
         except Exception as e:
-            logger.error(
+            client_logger.error(
                 f"get_resources_by_id failed after all retries for resources_id={resources_id}: {e}", exc_info=True
             )
             return None
@@ -1486,7 +1415,7 @@ class LightningStoreClient(LightningStore):
             data = await self._request_json("get", "/resources/latest")
             return ResourcesUpdate.model_validate(data) if data else None
         except Exception as e:
-            logger.error(f"get_latest_resources failed after all retries: {e}", exc_info=True)
+            client_logger.error(f"get_latest_resources failed after all retries: {e}", exc_info=True)
             return None
 
     async def add_span(self, span: Span) -> Span:
