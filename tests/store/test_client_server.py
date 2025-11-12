@@ -19,7 +19,7 @@ from agentlightning.store.base import UNSET, LightningStore
 from agentlightning.store.client_server import LightningStoreClient, LightningStoreServer
 from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.types import LLM, OtelResource, PromptTemplate, RolloutConfig, Span, TraceStatus
-from agentlightning.utils.server_launcher import LaunchMode
+from agentlightning.utils.server_launcher import LaunchMode, PythonServerLauncherArgs
 
 
 def _make_span(rollout_id: str, attempt_id: str, sequence_id: int, name: str) -> Span:
@@ -117,6 +117,31 @@ async def test_run_forever_rejects_port_conflict(caplog: pytest.LogCaptureFixtur
     assert "address already in use" in caplog.text
 
     await server_a.stop()
+
+
+@pytest.mark.asyncio
+async def test_server_accepts_custom_launcher_args(store_fixture: LightningStore) -> None:
+    """Ensure providing launcher_args works end-to-end and is propagated to the launcher."""
+    port = pick_unused_port()
+    launcher_args = PythonServerLauncherArgs(
+        host="127.0.0.1",
+        port=port,
+        launch_mode="asyncio",
+        healthcheck_url="/v1/agl/health",
+    )
+    server = LightningStoreServer(store_fixture, launcher_args=launcher_args)
+    assert server.launcher_args is launcher_args
+    assert server.server_launcher.args is launcher_args
+    assert server.server_launcher.health_url == f"http://127.0.0.1:{port}/v1/agl/health"
+
+    await server.start()
+    client = LightningStoreClient(server.endpoint)
+    try:
+        rollout = await client.start_rollout(input={"source": "launcher-args"})
+        assert rollout.rollout_id
+    finally:
+        await client.close()
+        await server.stop()
 
 
 @pytest.mark.asyncio
