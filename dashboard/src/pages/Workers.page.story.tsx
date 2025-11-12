@@ -213,7 +213,7 @@ export const Search: Story = {
     const canvas = within(canvasElement);
     await canvas.findByText('worker-east');
 
-    const searchInput = canvas.getByPlaceholderText('Search by Worker ID');
+    const searchInput = canvas.getByPlaceholderText('Search by Runner ID');
     await userEvent.type(searchInput, 'worker-west');
 
     await waitFor(() => {
