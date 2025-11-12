@@ -72,6 +72,13 @@ async def server_client(
 
 
 @pytest.mark.asyncio
+async def test_mp_server_does_not_work_with_inmemory_store() -> None:
+    store = InMemoryLightningStore()
+    with pytest.raises(ValueError, match="The store does not support zero-copy."):
+        LightningStoreServer(store, "127.0.0.1", pick_unused_port(), launch_mode="mp")
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("launch_mode", ["asyncio", "thread"])
 async def test_server_start_rejects_port_conflict(caplog: pytest.LogCaptureFixture, launch_mode: LaunchMode) -> None:
     """Ensure startup fails loudly when the port is already owned by another store."""
