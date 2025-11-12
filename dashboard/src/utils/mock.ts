@@ -467,6 +467,10 @@ export function getWorkerSortValue(worker: Worker, sortBy: string): string | num
       return worker.workerId;
     case 'status':
       return worker.status;
+    case 'current_rollout_id':
+      return worker.currentRolloutId ?? '';
+    case 'current_attempt_id':
+      return worker.currentAttemptId ?? '';
     case 'last_busy_time':
       return worker.lastBusyTime ?? null;
     case 'last_idle_time':

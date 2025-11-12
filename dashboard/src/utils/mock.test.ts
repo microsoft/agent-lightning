@@ -804,6 +804,11 @@ describe('getWorkerSortValue', () => {
     expect(getWorkerSortValue(worker, 'last_dequeue_time')).toBe(worker.lastDequeueTime);
   });
 
+  it('returns rollout and attempt identifiers', () => {
+    expect(getWorkerSortValue(worker, 'current_rollout_id')).toBe(worker.currentRolloutId);
+    expect(getWorkerSortValue(worker, 'current_attempt_id')).toBe(worker.currentAttemptId);
+  });
+
   it('falls back to last_heartbeat_time', () => {
     expect(getWorkerSortValue(worker, 'unknown')).toBe(worker.lastHeartbeatTime);
   });
@@ -818,6 +823,11 @@ describe('sortWorkersForParams', () => {
   it('sorts descending by worker_id when requested', () => {
     const result = sortWorkersForParams(sampleWorkers, 'worker_id', 'desc');
     expect(result.map((worker) => worker.workerId)).toEqual(['worker-gamma', 'worker-beta', 'worker-alpha']);
+  });
+
+  it('sorts by current_rollout_id', () => {
+    const result = sortWorkersForParams(sampleWorkers, 'current_rollout_id', 'asc');
+    expect(result.map((worker) => worker.currentRolloutId)).toEqual([null, 'ro-001', 'ro-003']);
   });
 });
 

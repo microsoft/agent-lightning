@@ -8,6 +8,8 @@ import type { WorkersSortState } from './slice';
 const WORKERS_SORT_FIELD_MAP: Record<string, string> = {
   workerId: 'worker_id',
   status: 'status',
+  currentRolloutId: 'current_rollout_id',
+  currentAttemptId: 'current_attempt_id',
   lastHeartbeatTime: 'last_heartbeat_time',
   lastDequeueTime: 'last_dequeue_time',
   lastBusyTime: 'last_busy_time',

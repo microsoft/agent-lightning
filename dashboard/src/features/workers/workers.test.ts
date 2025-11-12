@@ -86,4 +86,17 @@ describe('workers feature integration', () => {
     expect(data.items).toHaveLength(1);
     expect(data.items[0].workerId).toBe('worker-west');
   });
+
+  it('maps current rollout/attempt sorting to backend fields', () => {
+    const store = createServerBackedStore();
+    store.dispatch(setWorkersSort({ column: 'currentRolloutId', direction: 'desc' }));
+    let queryArgs = selectWorkersQueryArgs(store.getState());
+    expect(queryArgs.sortBy).toBe('current_rollout_id');
+    expect(queryArgs.sortOrder).toBe('desc');
+
+    store.dispatch(setWorkersSort({ column: 'currentAttemptId', direction: 'asc' }));
+    queryArgs = selectWorkersQueryArgs(store.getState());
+    expect(queryArgs.sortBy).toBe('current_attempt_id');
+    expect(queryArgs.sortOrder).toBe('asc');
+  });
 });

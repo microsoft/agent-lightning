@@ -68,14 +68,18 @@ const sampleWorkers: Worker[] = [
   },
 ];
 
-function WorkersTableStoryWrapper({ maxWidth }: { maxWidth: number }) {
+type WorkersTableStoryWrapperProps = {
+  maxWidth: number;
+  initialSort?: { column: string; direction: 'asc' | 'desc' };
+};
+
+function WorkersTableStoryWrapper({ maxWidth, initialSort }: WorkersTableStoryWrapperProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [page, setPage] = useState(1);
   const [recordsPerPage, setRecordsPerPage] = useState(5);
-  const [sort, setSort] = useState<{ column: string; direction: 'asc' | 'desc' }>(() => ({
-    column: 'lastHeartbeatTime',
-    direction: 'desc',
-  }));
+  const [sort, setSort] = useState<{ column: string; direction: 'asc' | 'desc' }>(
+    () => initialSort ?? { column: 'lastHeartbeatTime', direction: 'desc' },
+  );
 
   const filteredWorkers = useMemo(() => {
     const normalized = searchTerm.trim().toLowerCase();
@@ -130,4 +134,10 @@ export const Wide: Story = {
 
 export const Narrow: Story = {
   render: () => <WorkersTableStoryWrapper maxWidth={780} />,
+};
+
+export const SortedByCurrentRollout: Story = {
+  render: () => (
+    <WorkersTableStoryWrapper maxWidth={1200} initialSort={{ column: 'currentRolloutId', direction: 'asc' }} />
+  ),
 };
