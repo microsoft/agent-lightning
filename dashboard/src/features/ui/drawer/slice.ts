@@ -1,9 +1,9 @@
 // Copyright (c) Microsoft. All rights reserved.
 
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
-import type { Attempt, Rollout, Span } from '@/types';
+import type { Attempt, Rollout, Span, Worker } from '@/types';
 
-export type DrawerType = 'rollout-json' | 'rollout-traces' | 'trace-detail';
+export type DrawerType = 'rollout-json' | 'rollout-traces' | 'trace-detail' | 'worker-detail';
 
 export type DrawerContent =
   | {
@@ -17,6 +17,10 @@ export type DrawerContent =
       span: Span;
       rollout: Rollout | null;
       attempt: Attempt | null;
+    }
+  | {
+      type: 'worker-detail';
+      worker: Worker;
     };
 
 export type DrawerState = {

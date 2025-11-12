@@ -28,6 +28,24 @@ export type Attempt = {
   metadata: Record<string, any> | null;
 };
 
+export type WorkerStatus = 'idle' | 'busy';
+
+/**
+ * Synced with agentlightning.types.core.Worker
+ * with camel case and snake case conversions
+ */
+export type Worker = {
+  workerId: string;
+  status: WorkerStatus;
+  heartbeatStats: Record<string, any> | null;
+  lastHeartbeatTime: Timestamp | null;
+  lastDequeueTime: Timestamp | null;
+  lastBusyTime: Timestamp | null;
+  lastIdleTime: Timestamp | null;
+  currentRolloutId: string | null;
+  currentAttemptId: string | null;
+};
+
 /**
  * Synced with agentlightning.types.core.Rollout
  * with camel case and snake case conversions

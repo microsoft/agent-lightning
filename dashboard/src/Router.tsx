@@ -6,6 +6,7 @@ import { ResourcesPage } from './pages/Resources.page';
 import { RolloutsPage } from './pages/Rollouts.page';
 import { SettingsPage } from './pages/Settings.page';
 import { TracesPage } from './pages/Traces.page';
+import { WorkersPage } from './pages/Workers.page';
 
 const router = createBrowserRouter([
   {
@@ -27,6 +28,10 @@ const router = createBrowserRouter([
       {
         path: 'traces',
         element: <TracesPage />,
+      },
+      {
+        path: 'workers',
+        element: <WorkersPage />,
       },
       {
         path: 'settings',

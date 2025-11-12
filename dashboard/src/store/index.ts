@@ -7,6 +7,7 @@ import { rolloutsApi, rolloutsReducer } from '../features/rollouts';
 import { tracesReducer } from '../features/traces';
 import { alertReducer } from '../features/ui/alert';
 import { drawerReducer } from '../features/ui/drawer';
+import { workersReducer } from '../features/workers';
 
 const rootReducer = combineReducers({
   config: configReducer,
@@ -14,6 +15,7 @@ const rootReducer = combineReducers({
   alert: alertReducer,
   rollouts: rolloutsReducer,
   resources: resourcesReducer,
+  workers: workersReducer,
   traces: tracesReducer,
   [rolloutsApi.reducerPath]: rolloutsApi.reducer,
 });

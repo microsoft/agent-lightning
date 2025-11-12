@@ -14,7 +14,7 @@
  */
 
 import { delay, http, HttpResponse } from 'msw';
-import type { Attempt, Resources, Rollout, Span } from '@/types';
+import type { Attempt, Resources, Rollout, Span, Worker } from '@/types';
 import { snakeCaseKeys } from './format';
 
 /**
@@ -432,6 +432,113 @@ export function buildResourcesResponse(resources: Resources[], request: Request)
     offset,
     total: filtered.length,
   });
+}
+
+/**
+ * Filter workers based on query parameters.
+ * Supports: status_in, worker_id_contains
+ */
+export function filterWorkersForParams(workers: Worker[], params: URLSearchParams): Worker[] {
+  const statusFilters = params.getAll('status_in');
+  const workerIdContains = params.get('worker_id_contains');
+  const filterLogic = params.get('filter_logic') === 'or' ? 'or' : 'and';
+
+  return workers.filter((worker) => {
+    const checks: boolean[] = [];
+    if (statusFilters.length > 0) {
+      checks.push(statusFilters.includes(worker.status));
+    }
+    if (workerIdContains) {
+      checks.push(worker.workerId.toLowerCase().includes(workerIdContains.toLowerCase()));
+    }
+    if (checks.length === 0) {
+      return true;
+    }
+    return filterLogic === 'or' ? checks.some(Boolean) : checks.every(Boolean);
+  });
+}
+
+/**
+ * Resolve a worker sort value for the given column.
+ */
+export function getWorkerSortValue(worker: Worker, sortBy: string): string | number | null {
+  switch (sortBy) {
+    case 'worker_id':
+      return worker.workerId;
+    case 'status':
+      return worker.status;
+    case 'last_busy_time':
+      return worker.lastBusyTime ?? null;
+    case 'last_idle_time':
+      return worker.lastIdleTime ?? null;
+    case 'last_dequeue_time':
+      return worker.lastDequeueTime ?? null;
+    case 'last_heartbeat_time':
+    default:
+      return worker.lastHeartbeatTime ?? null;
+  }
+}
+
+/**
+ * Sort workers based on query parameters.
+ * Default sort_by is 'last_heartbeat_time'.
+ */
+export function sortWorkersForParams(workers: Worker[], sortBy: string | null, sortOrder: 'asc' | 'desc'): Worker[] {
+  const resolvedSortBy = sortBy ?? 'last_heartbeat_time';
+  const sorted = [...workers].sort((a, b) => {
+    const aValue = getWorkerSortValue(a, resolvedSortBy);
+    const bValue = getWorkerSortValue(b, resolvedSortBy);
+    if (aValue === bValue) {
+      return 0;
+    }
+    if (aValue == null) {
+      return -1;
+    }
+    if (bValue == null) {
+      return 1;
+    }
+    if (typeof aValue === 'number' && typeof bValue === 'number') {
+      return aValue - bValue;
+    }
+    return String(aValue).localeCompare(String(bValue));
+  });
+
+  if (sortOrder === 'desc') {
+    sorted.reverse();
+  }
+
+  return sorted;
+}
+
+/**
+ * Build a paginated workers response matching the Python server's format.
+ */
+export function buildWorkersResponse(workers: Worker[], request: Request): Record<string, unknown> {
+  const url = new URL(request.url);
+  const params = url.searchParams;
+  const filtered = filterWorkersForParams(workers, params);
+  const sortBy = params.get('sort_by');
+  const sortOrder = params.get('sort_order') === 'desc' ? 'desc' : 'asc';
+  const sorted = sortWorkersForParams(filtered, sortBy, sortOrder);
+  const limitParam = parseNumberParam(params, 'limit', sorted.length);
+  const offsetParam = parseNumberParam(params, 'offset', 0);
+  const effectiveLimit = limitParam < 0 ? sorted.length : limitParam;
+  const offset = offsetParam < 0 ? 0 : offsetParam;
+  const paginated = effectiveLimit >= 0 ? sorted.slice(offset, offset + effectiveLimit) : [...sorted];
+
+  return snakeCaseKeys({
+    items: paginated,
+    limit: effectiveLimit,
+    offset,
+    total: filtered.length,
+  });
+}
+
+/**
+ * Create MSW handlers for workers endpoints.
+ */
+export function createWorkersHandlers(workers: Worker[]) {
+  return [http.get('*/v1/agl/workers', ({ request }) => HttpResponse.json(buildWorkersResponse(workers, request)))];
 }
 
 /**
