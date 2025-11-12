@@ -1308,17 +1308,17 @@ async def test_launcher_assigns_random_port_when_none(launch_mode: LaunchMode):
 
     await launcher.start()
     assert launcher.is_running()
-    # Port is chosen and embedded in endpoint/access_url
+    # Port is chosen and embedded in endpoint/access_endpoint
     assert launcher.endpoint.startswith(f"http://{host}:")
-    assert launcher.access_url.startswith(f"http://{host}:")
-    await _probe_json(f"{launcher.access_url}/", {"hello": "world"})
+    assert launcher.access_endpoint.startswith(f"http://{host}:")
+    await _probe_json(f"{launcher.access_endpoint}/", {"hello": "world"})
 
     await launcher.stop()
 
 
 @pytest.mark.asyncio
-async def test_launcher_endpoint_access_url_health_url_normalization():
-    host = "0.0.0.0"  # should flip to 127.0.0.1 for access_url
+async def test_launcher_endpoint_access_endpoint_health_url_normalization():
+    host = "0.0.0.0"  # should flip to 127.0.0.1 for access_endpoint
     port = portpicker.pick_unused_port()
     app = _make_app_health()
 
@@ -1335,10 +1335,14 @@ async def test_launcher_endpoint_access_url_health_url_normalization():
     await launcher.start()
     try:
         assert launcher.endpoint == f"http://{host}:{port}"
-        # access_url should map 0.0.0.0 -> 127.0.0.1
-        assert launcher.access_url == f"http://127.0.0.1:{port}"
-        assert launcher.health_url == f"http://127.0.0.1:{port}/health"
-        await _probe_json(f"{launcher.access_url}/", {"hello": "world"})
+        # access_endpoint should map 0.0.0.0 -> 127.0.0.1
+        assert launcher.access_endpoint.startswith("http://") and launcher.access_endpoint.endswith(f":{port}")
+        assert (
+            launcher.health_url
+            and launcher.health_url.startswith("http://")
+            and launcher.health_url.endswith(f"/health")
+        )
+        await _probe_json(f"{launcher.access_endpoint}/", {"hello": "world"})
     finally:
         await launcher.stop()
         _free_port("127.0.0.1", port)

@@ -36,7 +36,7 @@ from agentlightning.types import (
     TaskInput,
 )
 
-from .base import UNSET, LightningStore, Unset
+from .base import UNSET, LightningStore, LightningStoreCapabilities, Unset
 
 logger = logging.getLogger(__name__)
 
@@ -297,6 +297,14 @@ class LightningStoreServer(LightningStore):
         # and only mutate the store in that process.
         self._owner_pid = os.getpid()
         self._client: Optional[LightningStoreClient] = None
+
+    def capabilities(self) -> LightningStoreCapabilities:
+        """Return the capabilities of the store."""
+        capabilities = self.store.capabilities().copy()
+        capabilities["async_safe"] = True
+        capabilities["thread_safe"] = True
+        capabilities["zero_copy"] = True
+        return capabilities
 
     def __getstate__(self):
         """
@@ -1022,6 +1030,14 @@ class LightningStoreClient(LightningStore):
         # Store whether the dequeue was successful in history
         self._dequeue_was_successful: bool = False
         self._dequeue_first_unsuccessful: bool = True
+
+    def capabilities(self) -> LightningStoreCapabilities:
+        """Return the capabilities of the store."""
+        return LightningStoreCapabilities(
+            thread_safe=True,
+            async_safe=True,
+            zero_copy=True,
+        )
 
     def __getstate__(self):
         """

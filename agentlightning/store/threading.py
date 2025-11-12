@@ -20,7 +20,7 @@ from agentlightning.types import (
     TaskInput,
 )
 
-from .base import UNSET, LightningStore, Unset
+from .base import UNSET, LightningStore, LightningStoreCapabilities, Unset
 
 
 class LightningStoreThreaded(LightningStore):
@@ -34,6 +34,15 @@ class LightningStoreThreaded(LightningStore):
         super().__init__()  # watchdog relies on the underlying store
         self.store = store
         self._lock = threading.Lock()
+
+    def capabilities(self) -> LightningStoreCapabilities:
+        """Return the capabilities of the store."""
+        capabilities = self.store.capabilities()
+        return {
+            **capabilities,
+            "async_safe": True,
+            "thread_safe": True,
+        }
 
     async def start_rollout(
         self,

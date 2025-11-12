@@ -133,7 +133,7 @@ def dry_run():
 
     Uses in-memory store and processes 4 sample tasks to verify the setup works.
     """
-    store = agl.InMemoryLightningStore()
+    store = agl.LightningStoreThreaded(agl.InMemoryLightningStore())
     llm_proxy = create_llm_proxy("Qwen/Qwen3-30B-A3B-Instruct-2507", "qwen3_instruct", store=store)
     trainer = agl.Trainer(
         n_runners=2,
@@ -141,13 +141,13 @@ def dry_run():
         store=store,
     )
     try:
-        llm_proxy.start()
+        asyncio.run(llm_proxy.start())
         sampled_csv = pd.read_csv("q20_nouns.csv").sample(n=4, random_state=42)  # type: ignore
         sampled_csv["search_enabled"] = False
         dataset = sampled_csv.to_dict(orient="records")  # type: ignore
         trainer.dev(q20_agent, cast(agl.Dataset[Q20Task], dataset))
     finally:
-        llm_proxy.stop()
+        asyncio.run(llm_proxy.stop())
 
 
 async def algo(search: bool, model: Literal["qwen4b", "qwen30b"], port: int):

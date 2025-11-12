@@ -34,6 +34,12 @@
 
 ::: agentlightning.tracer.agentops.LightningSpanProcessor
 
+::: agentlightning.utils.server_launcher.PythonServerLauncher
+
+::: agentlightning.utils.server_launcher.PythonServerLauncherArgs
+
+::: agentlightning.utils.server_launcher.LaunchMode
+
 ## Deprecated APIs
 
 ::: agentlightning.server.AgentLightningServer

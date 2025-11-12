@@ -33,6 +33,7 @@ game statistics after the run.
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import traceback
 from pathlib import Path
@@ -44,12 +45,12 @@ from crewai import LLM as CrewLLM
 from q20_agent import AnswererResponse, SearchTool, TwentyQuestionsFlow
 from rich.console import Console
 
-from agentlightning import InMemoryLightningStore, LLMProxy
+from agentlightning import InMemoryLightningStore, LightningStoreThreaded, LLMProxy
 
 console = Console()
 
 
-def evaluate_q20(
+async def evaluate_q20(
     model_name: str,
     search: bool,
     port: int,
@@ -68,7 +69,7 @@ def evaluate_q20(
         seed: Optional random seed for shuffling the dataset; ``None`` disables deterministic shuffling.
     """
 
-    store = InMemoryLightningStore()
+    store = LightningStoreThreaded(InMemoryLightningStore())
     df = pd.read_csv(dataset_path)  # type: ignore
     if df.empty:
         console.print(f"[bold yellow]Dataset '{dataset_path}' is empty. Nothing to evaluate.[/bold yellow]")
@@ -88,6 +89,7 @@ def evaluate_q20(
                 {"model_name": model_name, "litellm_params": {"model": "openai/" + model_name}},
             ],
             num_retries=2,
+            launch_mode="thread",
             _add_return_token_ids=False,
         )
 
@@ -108,7 +110,7 @@ def evaluate_q20(
     console.print("Model list:", llm_proxy.model_list)
 
     try:
-        llm_proxy.start()
+        await llm_proxy.start()
         player_llm = CrewLLM(
             model="openai/" + model_name, base_url=f"http://localhost:{port}/v1", api_key="dummy", timeout=60.0
         )
@@ -143,7 +145,7 @@ def evaluate_q20(
 
             flow = TwentyQuestionsFlow(player_llm=player_llm, answer_llm=answer_llm, search_tool=search_tool)
             try:
-                flow.kickoff(
+                await flow.kickoff_async(
                     {
                         "answer": row["answer"],
                         "category": row["category"],
@@ -161,7 +163,7 @@ def evaluate_q20(
             with output_path.open("a") as f:
                 f.write(json.dumps(result_json) + "\n")
     finally:
-        llm_proxy.stop()
+        await llm_proxy.stop()
 
 
 def main(argv: Optional[List[str]] = None) -> None:
@@ -205,13 +207,15 @@ def main(argv: Optional[List[str]] = None) -> None:
     )
 
     args = parser.parse_args(argv)
-    evaluate_q20(
-        model_name=args.model,
-        search=args.search,
-        port=args.port,
-        output_file=args.output_file,
-        dataset_path=args.dataset,
-        seed=None if args.seed == -1 else args.seed,
+    asyncio.run(
+        evaluate_q20(
+            model_name=args.model,
+            search=args.search,
+            port=args.port,
+            output_file=args.output_file,
+            dataset_path=args.dataset,
+            seed=None if args.seed == -1 else args.seed,
+        )
     )
 
 

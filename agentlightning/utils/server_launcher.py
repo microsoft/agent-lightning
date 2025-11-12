@@ -8,6 +8,7 @@ import logging
 import multiprocessing
 import queue
 import signal
+import socket
 import threading
 import time
 import traceback
@@ -24,18 +25,21 @@ from gunicorn.app.base import BaseApplication
 from gunicorn.arbiter import Arbiter
 from portpicker import pick_unused_port
 
-__all__ = ["PythonServerLauncher", "PythonServerLauncherArgs"]
+__all__ = ["PythonServerLauncher", "PythonServerLauncherArgs", "LaunchMode"]
 
 
 LaunchMode = Literal["asyncio", "thread", "mp"]
+"""The launch mode for the server."""
 
 
 @dataclass
 class PythonServerLauncherArgs:
     port: Optional[int] = None
     """The TCP port to listen on. If not provided, the server will use a random available port."""
-    host: str = "127.0.0.1"
+    host: Optional[str] = None
     """The hostname or IP address to bind the server to."""
+    access_host: Optional[str] = None
+    """The hostname or IP address to advertise to the client. If not provided, the server will use the default outbound IPv4 address for this machine."""
     launch_mode: LaunchMode = "asyncio"
     """The launch mode. `asyncio` is the default mode to runs the server in the current thread.
     `thread` runs the server in a separate thread. `mp` runs the server in a separate process."""
@@ -154,19 +158,26 @@ async def run_uvicorn_asyncio(
             # Normally, the program will not reach this point, as the server will throw the exception itself earlier.
             raise RuntimeError(f"Server did not start up within {timeout:.2f} seconds.") from server_start_exception
 
-        logger.debug(f"Server started up in {time.time() - start_time:.2f} seconds.")
+        logger.info(f"Server started up in {time.time() - start_time:.2f} seconds.")
 
         # Check for health endpoint status if provided
         if health_url is not None:
+            logger.info(f"Probing health endpoint {health_url}...")
             async with aiohttp.ClientSession() as session:
                 while time.time() < deadline:
-                    with suppress(Exception):
+                    try:
                         async with session.get(health_url) as resp:
                             if resp.status == 200:
-                                logger.debug(
+                                logger.info(
                                     f"Server is healthy at {health_url} in {time.time() - start_time:.2f} seconds."
                                 )
                                 return
+                            else:
+                                logger.debug(
+                                    f"Server is NOT healthy at {health_url} in {time.time() - start_time:.2f} seconds. Got status {resp.status}."
+                                )
+                    except Exception as e:
+                        logger.debug(f"Error probing health endpoint {health_url}: {str(e)}")
                     await asyncio.sleep(0.1)
 
             # If the server is not healthy, kill it if requested.
@@ -187,7 +198,7 @@ async def run_uvicorn_asyncio(
                 )
 
         else:
-            logger.debug("Server does not provide a health check endpoint. Skipping health check.")
+            logger.info("Server does not provide a health check endpoint. Skipping health check.")
 
     async def _serve_server() -> None:
         nonlocal server_start_exception
@@ -555,6 +566,27 @@ def run_gunicorn(
         watchdog_thread.join(timeout=5.0)
 
 
+def _get_default_ipv4_address() -> str:
+    """Determine the default outbound IPv4 address for this machine.
+
+    Implementation:
+        Opens a UDP socket and "connects" to a public address to force route
+        selection, then inspects the socket's local address. No packets are sent.
+
+    Returns:
+        str: Best-guess IPv4 like `192.168.x.y`. Falls back to `127.0.0.1`.
+    """
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        # Doesn't actually contact 8.8.8.8; just forces the OS to pick a route.
+        s.connect(("8.8.8.8", 80))
+        return s.getsockname()[0]
+    except Exception:
+        return "127.0.0.1"
+    finally:
+        s.close()
+
+
 class PythonServerLauncher:
     """Unified launcher for FastAPI, using uvicorn or gunicorn per mode/worker count.
 
@@ -573,7 +605,9 @@ class PythonServerLauncher:
         self.app = app
         self.args = args
         self.serve_context = serve_context
+        self._host: Optional[str] = self.args.host
         self._port: Optional[int] = self.args.port
+        self._access_host: Optional[str] = self.args.access_host
 
         # uvicorn (in-proc asyncio)
         self._uvicorn_server: Optional[uvicorn.Server] = None
@@ -595,14 +629,12 @@ class PythonServerLauncher:
     @property
     def endpoint(self) -> str:
         """Return the externally advertised host:port pair regardless of accessibility."""
-        return f"http://{self.args.host}:{self._ensure_port()}"
+        return f"http://{self._ensure_host()}:{self._ensure_port()}"
 
     @property
-    def access_url(self) -> str:
+    def access_endpoint(self) -> str:
         """Return a loopback-friendly URL so health checks succeed even when binding to 0.0.0.0."""
-        # Probe host normalization for 0.0.0.0
-        host_for_probe = "127.0.0.1" if self.args.host in ("0.0.0.0", "::") else self.args.host
-        return f"http://{host_for_probe}:{self._ensure_port()}"
+        return f"http://{self._ensure_access_host()}:{self._ensure_port()}"
 
     @property
     def health_url(self) -> Optional[str]:
@@ -612,7 +644,7 @@ class PythonServerLauncher:
         path = self.args.healthcheck_url
         if not path.startswith("/"):
             path = "/" + path
-        return f"{self.access_url}{path}"
+        return f"{self.access_endpoint}{path}"
 
     async def start(self):
         """Starts the server according to launch_mode and n_workers."""
@@ -699,16 +731,35 @@ class PythonServerLauncher:
             return f"{module}:app"
         return "unknown:app"
 
+    def _ensure_host(self) -> str:
+        if self._host is None:
+            logger.warning("No host provided, using 0.0.0.0.")
+            self._host = "0.0.0.0"
+        return self._host
+
     def _ensure_port(self) -> int:
         if self._port is None:
             logger.warning("No port provided, using pick_unused_port to pick a random unused port.")
             self._port = pick_unused_port()
         return self._port
 
+    def _ensure_access_host(self) -> str:
+        if self.args.access_host is None:
+            if self._ensure_host() in ("0.0.0.0", "::"):
+                # Probe host normalization for 0.0.0.0
+                logger.warning("No access host provided, using default outbound IPv4 address for this machine.")
+                self._access_host = _get_default_ipv4_address()
+            else:
+                logger.warning("No access host provided, using the host provided.")
+                self._access_host = self._ensure_host()
+        else:
+            self._access_host = self.args.access_host
+        return self._access_host
+
     def _create_uvicorn_server(self) -> uvicorn.Server:
         config = uvicorn.Config(
             app=self.app,
-            host=self.args.host,
+            host=self._ensure_host(),
             port=self._ensure_port(),
             log_level=self.args.log_level,
             loop="asyncio",
@@ -782,6 +833,9 @@ class PythonServerLauncher:
         try:
             evt: ChildEvent = await asyncio.to_thread(self._thread_event_queue.get, True, timeout)
         except queue.Empty:
+            if not self._thread.is_alive():
+                logger.error("Threaded server failed to start and is not alive. No error event was received.")
+                return
             logger.error("Threaded server failed to start and sends no event. This should not happen.")
             await self._stop_uvicorn_thread()
             return
@@ -819,6 +873,7 @@ class PythonServerLauncher:
         if self.is_running():
             raise RuntimeError("Server process is already running. Stopping it first.")
 
+        host = self._ensure_host()
         port = self._ensure_port()
 
         try:
@@ -834,7 +889,7 @@ class PythonServerLauncher:
         if self.args.n_workers > 1:
             logger.info(f"Starting Gunicorn server...")
             options = {
-                "bind": f"{self.args.host}:{port}",
+                "bind": f"{host}:{port}",
                 "workers": int(self.args.n_workers),
                 "worker_class": "uvicorn_worker.UvicornWorker",
                 "loglevel": logging.getLevelName(self.args.log_level).lower(),
@@ -883,6 +938,9 @@ class PythonServerLauncher:
         try:
             evt: ChildEvent = await asyncio.to_thread(self._mp_event_queue.get, True, timeout)
         except queue.Empty:
+            if not self._proc.is_alive():
+                logger.error("Server process failed to start and is not alive. No error event was received.")
+                return
             logger.error("Server process failed to start and sends no event. This should not happen.")
             await self._stop_serving_process()
             return
