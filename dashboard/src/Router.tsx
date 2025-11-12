@@ -30,7 +30,7 @@ const router = createBrowserRouter([
         element: <TracesPage />,
       },
       {
-        path: 'workers',
+        path: 'runners',
         element: <WorkersPage />,
       },
       {
