@@ -82,6 +82,8 @@ class LitAgentRunner(Runner[T_task]):
                 [`iter`][agentlightning.LitAgentRunner.iter].
             poll_interval: Seconds to wait between store polls when no work is available.
             heartbeat_interval: Seconds to wait between sending heartbeats to the store.
+            heartbeat_launch_mode: Launch mode for the heartbeat loop. Can be "asyncio" or "thread".
+                "asyncio" is the default and recommended mode. Use "thread" if you are experiencing blocking coroutines.
         """
         super().__init__()
         self._tracer = tracer
