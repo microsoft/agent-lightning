@@ -233,7 +233,7 @@ async def test_client_server_end_to_end(
     dequeued = await server.dequeue_rollout(worker_id=server_worker_id)
     server_worker_after_dequeue = await server.get_worker_by_id(server_worker_id)
     assert server_worker_after_dequeue is not None
-    assert server_worker_after_dequeue.status == "unknown"
+    assert server_worker_after_dequeue.status == "idle"
     assert server_worker_after_dequeue.last_dequeue_time is not None
     dequeue_time = server_worker_after_dequeue.last_dequeue_time
     started_attempt = await server.start_attempt(queued_rollout.rollout_id)
@@ -311,7 +311,7 @@ async def test_client_server_end_to_end(
     assert dequeued_client is not None
     client_worker_after_dequeue = await client.get_worker_by_id(client_worker_id)
     assert client_worker_after_dequeue is not None
-    assert client_worker_after_dequeue.status == "unknown"
+    assert client_worker_after_dequeue.status == "idle"
     assert client_worker_after_dequeue.last_dequeue_time is not None
     client_dequeue_time = client_worker_after_dequeue.last_dequeue_time
     started_client_attempt = await client.start_attempt(dequeued_client.rollout_id)

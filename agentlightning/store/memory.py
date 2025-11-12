@@ -394,6 +394,7 @@ class InMemoryLightningStore(LightningStore):
             if worker_id is not None:
                 worker = self._get_or_create_worker(worker_id)
                 worker.last_dequeue_time = time.time()
+                worker.status = "idle"
 
             # Keep looking until we find a rollout that's still in queuing status
             # or the queue is empty
