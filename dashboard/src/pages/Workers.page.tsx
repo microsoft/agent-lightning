@@ -121,10 +121,10 @@ export function WorkersPage() {
 
   return (
     <Stack gap='md'>
-      <Title order={1}>Workers</Title>
+      <Title order={1}>Runners</Title>
 
       <TextInput
-        placeholder='Search by Worker ID'
+        placeholder='Search by Runner ID'
         value={searchTerm}
         onChange={(event) => handleSearchTermChange(event.currentTarget.value)}
         leftSection={<IconSearch size={16} />}

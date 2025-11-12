@@ -206,7 +206,7 @@ WorkerStatus = Literal["idle", "busy", "unknown"]
 
 
 class Worker(BaseModel):
-    """Worker information."""
+    """Worker information. This is actually the same as Runner info."""
 
     worker_id: str
     """The ID of the worker."""

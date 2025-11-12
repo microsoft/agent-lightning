@@ -63,7 +63,7 @@ function createWorkersColumns({ onShowDetails }: WorkersColumnsOptions): DataTab
   return [
     {
       accessor: 'workerId',
-      title: 'Worker ID',
+      title: 'Runner ID',
       sortable: true,
       render: ({ workerId }) => (
         <Group gap={2} wrap='nowrap'>
@@ -181,9 +181,9 @@ function createWorkersColumns({ onShowDetails }: WorkersColumnsOptions): DataTab
       title: 'Actions',
       textAlign: 'left',
       render: (record) => (
-        <Tooltip label='Show worker detail' withArrow disabled={!onShowDetails}>
+        <Tooltip label='Show runner detail' withArrow disabled={!onShowDetails}>
           <ActionIcon
-            aria-label='Show worker detail'
+            aria-label='Show runner detail'
             variant='subtle'
             color='gray'
             onClick={(event) => {

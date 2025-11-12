@@ -158,13 +158,13 @@ function renderWithinAppLayout(configOverrides?: Partial<typeof initialConfigSta
         ),
         children: [
           {
-            path: '/workers',
+            path: '/runners',
             element: <WorkersPage />,
           },
         ],
       },
     ],
-    { initialEntries: ['/workers'] },
+    { initialEntries: ['/runners'] },
   );
 
   return (

@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft. All rights reserved.
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { IconCpu, IconRouteSquare, IconSettings, IconTimeline, IconUsers } from '@tabler/icons-react';
+import { IconCpu, IconRouteSquare, IconRun, IconSettings, IconTimeline } from '@tabler/icons-react';
 import { Outlet, NavLink as RouterNavLink, useLocation, useNavigate } from 'react-router-dom';
 import { AppShell, Badge, Group, Image, NavLink as MantineNavLink, Stack, Text, UnstyledButton } from '@mantine/core';
 import { AppAlertBanner } from '@/components/AppAlertBanner';
@@ -22,7 +22,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Rollouts', to: '/rollouts', icon: <IconRouteSquare size={16} /> },
   { label: 'Resources', to: '/resources', icon: <IconCpu size={16} /> },
   { label: 'Traces', to: '/traces', icon: <IconTimeline size={16} /> },
-  { label: 'Workers', to: '/workers', icon: <IconUsers size={16} /> },
+  { label: 'Runners', to: '/runners', icon: <IconRun size={16} /> },
   { label: 'Settings', to: '/settings', icon: <IconSettings size={16} /> },
 ];
 
