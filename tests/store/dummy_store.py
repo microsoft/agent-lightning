@@ -162,6 +162,10 @@ class DummyLightningStore(LightningStore):
         self.calls.append(("query_workers", (), {}))
         return self.return_values["query_workers"]
 
+    async def get_worker_by_id(self, worker_id: str) -> Optional[Worker]:
+        self.calls.append(("get_worker_by_id", (worker_id,), {}))
+        return self.return_values["get_worker_by_id"]
+
     async def update_worker(
         self,
         worker_id: str,
@@ -218,6 +222,7 @@ def minimal_dummy_store() -> DummyLightningStore:
             "update_rollout": None,
             "update_attempt": None,
             "query_workers": [],
+            "get_worker_by_id": None,
             "update_worker": Worker(worker_id="worker-0"),
         }
     )

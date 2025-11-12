@@ -484,6 +484,23 @@ async def test_update_worker_rejects_none_forbidden_fields(
 
 
 @pytest.mark.asyncio
+async def test_get_worker_by_id(server_client: Tuple[LightningStoreServer, LightningStoreClient]) -> None:
+    server, client = server_client
+
+    await server.update_worker("runner-lookup", status="busy", heartbeat_stats={"cpu": 0.3})
+
+    server_worker = await server.get_worker_by_id("runner-lookup")
+    assert server_worker is not None
+    assert server_worker.worker_id == "runner-lookup"
+    assert await server.get_worker_by_id("missing") is None
+
+    client_worker = await client.get_worker_by_id("runner-lookup")
+    assert client_worker is not None
+    assert client_worker.worker_id == "runner-lookup"
+    assert await client.get_worker_by_id("missing") is None
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "bad_payload",
     [

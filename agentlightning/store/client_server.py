@@ -735,6 +735,10 @@ class LightningStoreServer(LightningStore):
                 params.offset,
             )
 
+        @api.get(API_AGL_PREFIX + "/workers/{worker_id}", response_model=Optional[Worker])
+        async def get_worker(worker_id: str):  # pyright: ignore[reportUnusedFunction]
+            return await self.get_worker_by_id(worker_id)
+
         @api.post(API_AGL_PREFIX + "/workers/{worker_id}", response_model=Worker)
         async def update_worker(  # pyright: ignore[reportUnusedFunction]
             worker_id: str, request: UpdateWorkerRequest = Body(...)
@@ -1069,6 +1073,9 @@ class LightningStoreServer(LightningStore):
 
     async def query_workers(self) -> List[Worker]:
         return await self._call_store_method("query_workers")
+
+    async def get_worker_by_id(self, worker_id: str) -> Optional[Worker]:
+        return await self._call_store_method("get_worker_by_id", worker_id)
 
     async def update_worker(
         self,
@@ -1626,6 +1633,12 @@ class LightningStoreClient(LightningStore):
         data = await self._request_json("get", "/workers")
         items = data.get("items", [])
         return [Worker.model_validate(item) for item in items]
+
+    async def get_worker_by_id(self, worker_id: str) -> Optional[Worker]:
+        data = await self._request_json("get", f"/workers/{worker_id}")
+        if data is None:
+            return None
+        return Worker.model_validate(data)
 
     async def update_worker(
         self,

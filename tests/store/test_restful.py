@@ -1063,6 +1063,25 @@ async def test_workers_endpoint_rejects_none_stats(
 
 
 @pytest.mark.asyncio
+async def test_get_worker_by_id_restful(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    server, _client, session, api_endpoint = server_client
+
+    await server.update_worker("worker-fetch", status="busy", heartbeat_stats={"cpu": 0.4})
+
+    async with session.get(f"{api_endpoint}/workers/worker-fetch") as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        assert data["worker_id"] == "worker-fetch"
+
+    async with session.get(f"{api_endpoint}/workers/missing") as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        assert data is None
+
+
+@pytest.mark.asyncio
 async def test_workers_endpoint_filter_and_sort(
     server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
 ) -> None:

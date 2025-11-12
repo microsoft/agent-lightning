@@ -187,6 +187,10 @@ class LightningStoreThreaded(LightningStore):
         with self._lock:
             return await self.store.query_workers()
 
+    async def get_worker_by_id(self, worker_id: str) -> Optional[Worker]:
+        with self._lock:
+            return await self.store.get_worker_by_id(worker_id)
+
     async def update_worker(
         self,
         worker_id: str,

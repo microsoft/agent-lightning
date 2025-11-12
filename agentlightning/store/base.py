@@ -556,6 +556,20 @@ class LightningStore:
         """
         raise NotImplementedError()
 
+    async def get_worker_by_id(self, worker_id: str) -> Optional[Worker]:
+        """Retrieve a single worker by identifier.
+
+        Args:
+            worker_id: Identifier of the worker.
+
+        Returns:
+            The worker record if it exists, otherwise `None`.
+
+        Raises:
+            NotImplementedError: Subclasses must implement lookup semantics.
+        """
+        raise NotImplementedError()
+
     async def update_worker(
         self,
         worker_id: str,

@@ -469,6 +469,11 @@ async def test_update_and_query_workers(store_fixture: LightningStore) -> None:
     assert len(workers) == 1
     assert workers[0].worker_id == "worker-1"
 
+    fetched = await store_fixture.get_worker_by_id("worker-1")
+    assert fetched is not None
+    assert fetched.worker_id == "worker-1"
+    assert await store_fixture.get_worker_by_id("missing") is None
+
     updated = await store_fixture.update_worker(
         "worker-1",
         status="idle",

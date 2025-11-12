@@ -992,6 +992,11 @@ class InMemoryLightningStore(LightningStore):
             return list(self._workers.values())
 
     @_healthcheck_wrapper
+    async def get_worker_by_id(self, worker_id: str) -> Optional[Worker]:
+        async with self._lock:
+            return self._workers.get(worker_id)
+
+    @_healthcheck_wrapper
     async def update_worker(
         self,
         worker_id: str,

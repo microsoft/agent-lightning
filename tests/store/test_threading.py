@@ -184,6 +184,7 @@ async def test_threaded_store_delegates_all_methods() -> None:
         "update_rollout": updated_rollout,
         "update_attempt": updated_attempt,
         "query_workers": worker_list,
+        "get_worker_by_id": worker_list[0],
         "update_worker": updated_worker,
     }
 
@@ -237,6 +238,7 @@ async def test_threaded_store_delegates_all_methods() -> None:
         == updated_attempt
     )
     assert await threaded_store.query_workers() == worker_list
+    assert await threaded_store.get_worker_by_id("worker-1") == worker_list[0]
     assert (
         await threaded_store.update_worker(
             "worker-1",
@@ -267,6 +269,7 @@ async def test_threaded_store_delegates_all_methods() -> None:
         "update_rollout",
         "update_attempt",
         "query_workers",
+        "get_worker_by_id",
         "update_worker",
     ]
     assert [name for name, *_ in dummy_store.calls] == expected_order
