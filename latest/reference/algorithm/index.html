@@ -3966,7 +3966,10 @@ process from the main runner (i.e., tracer from agents). See <code>launch_mode</
 </div>
 <div class="admonition warning">
 <p class="admonition-title">Warning</p>
-<p>The LLM Proxy does support streaming, but the tracing is still problematic when streaming is enabled.</p>
+<p>By default (or when "stream_conversion" middleware is enabled), the LLM Proxy will convert OpenAI and Anthropic requests with <code>stream=True</code>
+to a non-streaming request before going through the LiteLLM proxy. This is because the OpenTelemetry tracer provided by
+LiteLLM is buggy with streaming responses. You can disable this by removing the "stream_conversion" middleware.
+In that case, you might lose some tracing information like token IDs.</p>
 </div>
 <div class="admonition danger">
 <p class="admonition-title">Danger</p>
@@ -4079,6 +4082,31 @@ It is NOT recommended because it often causes hanging requests. Only use it if y
           –
           <div class="doc-md-description">
             <p>Arguments for the server launcher. If this is provided, host, port, and launch_mode will be ignored. Cannot be used together with port, host, and launch_mode.</p>
+          </div>
+        </li>
+        <li class="doc-section-item field-body">
+            <b><code>middlewares</code></b>
+              (<code><span title="typing.List">List</span>[<span title="typing.Union">Union</span>[<span title="typing.Type">Type</span>[<span title="starlette.middleware.base.BaseHTTPMiddleware">BaseHTTPMiddleware</span>], <span title="str">str</span>]] | None</code>, default:
+                  <code>None</code>
+)
+          –
+          <div class="doc-md-description">
+            <p>List of FastAPI middleware classes or strings to register. You can specify the class aliases or classes that have been imported.
+If not provided, the default middlewares (RolloutAttemptMiddleware and StreamConversionMiddleware) will be used.
+Available middleware aliases are: "rollout_attempt", "stream_conversion", "message_inspection".
+Middlewares are the <strong>first layer</strong> of request processing. They are applied to all requests before the LiteLLM proxy.</p>
+          </div>
+        </li>
+        <li class="doc-section-item field-body">
+            <b><code>callbacks</code></b>
+              (<code><span title="typing.List">List</span>[<span title="typing.Union">Union</span>[<span title="typing.Type">Type</span>[<span title="litellm.integrations.custom_logger.CustomLogger">CustomLogger</span>], <span title="str">str</span>]] | None</code>, default:
+                  <code>None</code>
+)
+          –
+          <div class="doc-md-description">
+            <p>List of LiteLLM callback classes or strings to register. You can specify the class aliases or classes that have been imported.
+If not provided, the default callbacks (AddReturnTokenIds and LightningOpenTelemetry) will be used.
+Available callback aliases are: "return_token_ids", "opentelemetry".</p>
           </div>
         </li>
     </ul>
