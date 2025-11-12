@@ -17,7 +17,6 @@ from agentlightning.types import (
     Span,
     TaskInput,
     Worker,
-    WorkerStatus,
 )
 
 
@@ -49,8 +48,8 @@ class DummyLightningStore(LightningStore):
         self.calls.append(("enqueue_rollout", (input, mode, resources_id, config, metadata), {}))
         return self.return_values["enqueue_rollout"]
 
-    async def dequeue_rollout(self) -> Optional[AttemptedRollout]:
-        self.calls.append(("dequeue_rollout", (), {}))
+    async def dequeue_rollout(self, worker_id: Optional[str] = None) -> Optional[AttemptedRollout]:
+        self.calls.append(("dequeue_rollout", (worker_id,), {}))
         return self.return_values["dequeue_rollout"]
 
     async def start_attempt(self, rollout_id: str) -> AttemptedRollout:
@@ -169,28 +168,14 @@ class DummyLightningStore(LightningStore):
     async def update_worker(
         self,
         worker_id: str,
-        status: WorkerStatus | Any = UNSET,
         heartbeat_stats: Dict[str, Any] | Any = UNSET,
-        last_heartbeat_time: float | Any = UNSET,
-        last_dequeue_time: float | Any = UNSET,
-        last_busy_time: float | Any = UNSET,
-        last_idle_time: float | Any = UNSET,
-        current_rollout_id: Optional[str] | Any = UNSET,
-        current_attempt_id: Optional[str] | Any = UNSET,
     ) -> Worker:
         self.calls.append(
             (
                 "update_worker",
                 (
                     worker_id,
-                    status,
                     heartbeat_stats,
-                    last_heartbeat_time,
-                    last_dequeue_time,
-                    last_busy_time,
-                    last_idle_time,
-                    current_rollout_id,
-                    current_attempt_id,
                 ),
                 {},
             )

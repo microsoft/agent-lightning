@@ -64,6 +64,10 @@ class RolloutRequest(BaseModel):
     metadata: Optional[Dict[str, Any]] = None
 
 
+class DequeueRolloutRequest(BaseModel):
+    worker_id: Optional[str] = None
+
+
 class QueryRolloutsRequest(BaseModel):
     status_in: Optional[List[RolloutStatus]] = Field(FastAPIQuery(default=None))
     rollout_id_in: Optional[List[str]] = Field(FastAPIQuery(default=None))
@@ -109,14 +113,7 @@ class UpdateAttemptRequest(BaseModel):
 
 
 class UpdateWorkerRequest(BaseModel):
-    status: Optional[WorkerStatus] = None
     heartbeat_stats: Optional[Dict[str, Any]] = None
-    last_heartbeat_time: Optional[float] = None
-    last_dequeue_time: Optional[float] = None
-    last_busy_time: Optional[float] = None
-    last_idle_time: Optional[float] = None
-    current_rollout_id: Optional[str] = None
-    current_attempt_id: Optional[str] = None
 
 
 class QueryAttemptsRequest(BaseModel):
@@ -626,8 +623,11 @@ class LightningStoreServer(LightningStore):
             )
 
         @api.post(API_AGL_PREFIX + "/queues/rollouts/dequeue", response_model=Optional[AttemptedRollout])
-        async def dequeue_rollout():  # pyright: ignore[reportUnusedFunction]
-            return await self.dequeue_rollout()
+        async def dequeue_rollout(  # pyright: ignore[reportUnusedFunction]
+            request: DequeueRolloutRequest | None = Body(None),
+        ):
+            worker_id = request.worker_id if request else None
+            return await self.dequeue_rollout(worker_id=worker_id)
 
         @api.post(API_AGL_PREFIX + "/rollouts", status_code=201, response_model=AttemptedRollout)
         async def start_rollout(request: RolloutRequest):  # pyright: ignore[reportUnusedFunction]
@@ -667,9 +667,11 @@ class LightningStoreServer(LightningStore):
         async def get_rollout_by_id(rollout_id: str):  # pyright: ignore[reportUnusedFunction]
             return await self.get_rollout_by_id(rollout_id)
 
-        def _get_mandatory_field_or_unset(request: BaseModel, field: str) -> Any:
+        def _get_mandatory_field_or_unset(request: BaseModel | None, field: str) -> Any:
             # If some fields are mandatory by the underlying store, but optional in the FastAPI,
             # we make sure it's set to non-null value or UNSET via this function.
+            if request is None:
+                return UNSET
             if field in request.model_fields_set:
                 value = getattr(request, field)
                 if value is None:
@@ -677,12 +679,6 @@ class LightningStoreServer(LightningStore):
                 return value
             else:
                 return UNSET
-
-        def _optional_field_or_unset(request: BaseModel, field: str) -> Any:
-            # Same as above but allows explicit nulls to clear optional fields.
-            if field in request.model_fields_set:
-                return getattr(request, field)
-            return UNSET
 
         @api.post(API_AGL_PREFIX + "/rollouts/{rollout_id}", response_model=Rollout)
         async def update_rollout(  # pyright: ignore[reportUnusedFunction]
@@ -741,18 +737,11 @@ class LightningStoreServer(LightningStore):
 
         @api.post(API_AGL_PREFIX + "/workers/{worker_id}", response_model=Worker)
         async def update_worker(  # pyright: ignore[reportUnusedFunction]
-            worker_id: str, request: UpdateWorkerRequest = Body(...)
+            worker_id: str, request: UpdateWorkerRequest | None = Body(None)
         ):
             return await self.update_worker(
                 worker_id=worker_id,
-                status=_get_mandatory_field_or_unset(request, "status"),
                 heartbeat_stats=_get_mandatory_field_or_unset(request, "heartbeat_stats"),
-                last_heartbeat_time=_get_mandatory_field_or_unset(request, "last_heartbeat_time"),
-                last_dequeue_time=_get_mandatory_field_or_unset(request, "last_dequeue_time"),
-                last_busy_time=_get_mandatory_field_or_unset(request, "last_busy_time"),
-                last_idle_time=_get_mandatory_field_or_unset(request, "last_idle_time"),
-                current_rollout_id=_optional_field_or_unset(request, "current_rollout_id"),
-                current_attempt_id=_optional_field_or_unset(request, "current_attempt_id"),
             )
 
         @api.get(API_AGL_PREFIX + "/rollouts/{rollout_id}/attempts", response_model=PaginatedResponse[Attempt])
@@ -965,8 +954,8 @@ class LightningStoreServer(LightningStore):
             metadata,
         )
 
-    async def dequeue_rollout(self) -> Optional[AttemptedRollout]:
-        return await self._call_store_method("dequeue_rollout")
+    async def dequeue_rollout(self, worker_id: Optional[str] = None) -> Optional[AttemptedRollout]:
+        return await self._call_store_method("dequeue_rollout", worker_id)
 
     async def start_attempt(self, rollout_id: str) -> AttemptedRollout:
         return await self._call_store_method("start_attempt", rollout_id)
@@ -1080,26 +1069,12 @@ class LightningStoreServer(LightningStore):
     async def update_worker(
         self,
         worker_id: str,
-        status: WorkerStatus | Unset = UNSET,
         heartbeat_stats: Dict[str, Any] | Unset = UNSET,
-        last_heartbeat_time: float | Unset = UNSET,
-        last_dequeue_time: float | Unset = UNSET,
-        last_busy_time: float | Unset = UNSET,
-        last_idle_time: float | Unset = UNSET,
-        current_rollout_id: Optional[str] | Unset = UNSET,
-        current_attempt_id: Optional[str] | Unset = UNSET,
     ) -> Worker:
         return await self._call_store_method(
             "update_worker",
             worker_id,
-            status,
             heartbeat_stats,
-            last_heartbeat_time,
-            last_dequeue_time,
-            last_busy_time,
-            last_idle_time,
-            current_rollout_id,
-            current_attempt_id,
         )
 
 
@@ -1345,7 +1320,7 @@ class LightningStoreClient(LightningStore):
         )
         return Rollout.model_validate(data)
 
-    async def dequeue_rollout(self) -> Optional[AttemptedRollout]:
+    async def dequeue_rollout(self, worker_id: Optional[str] = None) -> Optional[AttemptedRollout]:
         """
         Dequeue a rollout from the server queue.
 
@@ -1358,8 +1333,11 @@ class LightningStoreClient(LightningStore):
         """
         session = await self._get_session()
         url = f"{self.server_address}/queues/rollouts/dequeue"
+        request_kwargs: Dict[str, Any] = {}
+        if worker_id is not None:
+            request_kwargs["json"] = {"worker_id": worker_id}
         try:
-            async with session.post(url) as resp:
+            async with session.post(url, **request_kwargs) as resp:
                 resp.raise_for_status()
                 data = await resp.json()
                 self._dequeue_was_successful = True
@@ -1643,32 +1621,12 @@ class LightningStoreClient(LightningStore):
     async def update_worker(
         self,
         worker_id: str,
-        status: WorkerStatus | Unset = UNSET,
         heartbeat_stats: Dict[str, Any] | Unset = UNSET,
-        last_heartbeat_time: float | Unset = UNSET,
-        last_dequeue_time: float | Unset = UNSET,
-        last_busy_time: float | Unset = UNSET,
-        last_idle_time: float | Unset = UNSET,
-        current_rollout_id: Optional[str] | Unset = UNSET,
-        current_attempt_id: Optional[str] | Unset = UNSET,
     ) -> Worker:
         payload: Dict[str, Any] = {}
-        if not isinstance(status, Unset):
-            payload["status"] = status
         if not isinstance(heartbeat_stats, Unset):
             payload["heartbeat_stats"] = heartbeat_stats
-        if not isinstance(last_heartbeat_time, Unset):
-            payload["last_heartbeat_time"] = last_heartbeat_time
-        if not isinstance(last_dequeue_time, Unset):
-            payload["last_dequeue_time"] = last_dequeue_time
-        if not isinstance(last_busy_time, Unset):
-            payload["last_busy_time"] = last_busy_time
-        if not isinstance(last_idle_time, Unset):
-            payload["last_idle_time"] = last_idle_time
-        if not isinstance(current_rollout_id, Unset):
-            payload["current_rollout_id"] = current_rollout_id
-        if not isinstance(current_attempt_id, Unset):
-            payload["current_attempt_id"] = current_attempt_id
+        json_payload = payload if payload else None
 
-        data = await self._request_json("post", f"/workers/{worker_id}", json=payload)
+        data = await self._request_json("post", f"/workers/{worker_id}", json=json_payload)
         return Worker.model_validate(data)

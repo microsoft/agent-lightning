@@ -18,7 +18,6 @@ from agentlightning.types import (
     Span,
     TaskInput,
     Worker,
-    WorkerStatus,
 )
 
 
@@ -169,7 +168,7 @@ class LightningStore:
         """
         raise NotImplementedError()
 
-    async def dequeue_rollout(self) -> Optional[AttemptedRollout]:
+    async def dequeue_rollout(self, worker_id: Optional[str] = None) -> Optional[AttemptedRollout]:
         """Claim the oldest queued rollout and transition it to `preparing`.
 
         This function do not block.
@@ -182,6 +181,8 @@ class LightningStore:
           the number of attempts already registered for the rollout plus one.
         * Return an [`AttemptedRollout`][agentlightning.AttemptedRollout] snapshot so the
           runner knows both rollout metadata and the attempt identifier.
+        * Optionally refresh the caller's [`Worker`][agentlightning.Worker] telemetry
+          (e.g., `last_dequeue_time`) when `worker_id` is provided.
 
         Returns:
             The next attempt to execute, or `None` when no eligible rollouts are queued.
@@ -529,6 +530,12 @@ class LightningStore:
         Similar to [`update_rollout()`][agentlightning.LightningStore.update_rollout],
         parameters also default to the sentinel [`UNSET`][agentlightning.store.base.UNSET].
 
+        If `worker_id` is present, the worker status will be updated following the rules:
+
+        1. If attempt status is "succeeded" or "failed", the corresponding worker status will be set to "idle".
+        2. If attempt status is "unresponsive" or "timeout", the corresponding worker status will be set to "unknown".
+        3. Otherwise, the worker status will be set to "busy".
+
         Args:
             rollout_id: Identifier of the rollout whose attempt will be updated.
             attempt_id: Attempt identifier or `"latest"` as a convenience.
@@ -573,26 +580,18 @@ class LightningStore:
     async def update_worker(
         self,
         worker_id: str,
-        status: WorkerStatus | Unset = UNSET,
         heartbeat_stats: Dict[str, Any] | Unset = UNSET,
-        last_heartbeat_time: float | Unset = UNSET,
-        last_dequeue_time: float | Unset = UNSET,
-        last_busy_time: float | Unset = UNSET,
-        last_idle_time: float | Unset = UNSET,
-        current_rollout_id: Optional[str] | Unset = UNSET,
-        current_attempt_id: Optional[str] | Unset = UNSET,
     ) -> Worker:
-        """Update worker information.
+        """Record a heartbeat for `worker_id` and refresh telemetry.
+
+        Implementations must treat this API as heartbeat-only: it should snapshot
+        the latest stats when provided, stamp `last_heartbeat_time` with the
+        current wall clock, and rely on other store mutations (`dequeue_rollout`,
+        `update_attempt`, etc.) to drive the worker's busy/idle status,
+        assignment, and activity timestamps.
 
         Args:
             worker_id: Identifier of the worker to update.
-            status: Replacement worker status.
             heartbeat_stats: Replacement worker heartbeat statistics (non-null when provided).
-            last_heartbeat_time: Replacement last heartbeat time.
-            last_dequeue_time: Replacement last dequeue time.
-            last_busy_time: Replacement last busy time.
-            last_idle_time: Replacement last idle time.
-            current_rollout_id: Replacement current rollout ID (pass `None` to clear).
-            current_attempt_id: Replacement current attempt ID (pass `None` to clear).
         """
         raise NotImplementedError()

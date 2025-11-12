@@ -416,37 +416,20 @@ async def test_update_attempt_none_vs_unset(server_client: Tuple[LightningStoreS
 
 
 @pytest.mark.asyncio
-async def test_update_worker_none_vs_unset(server_client: Tuple[LightningStoreServer, LightningStoreClient]) -> None:
-    _, client = server_client
-
-    await client.update_worker("runner-1", status="busy", current_rollout_id="ro-1", current_attempt_id="at-1")
-    workers = await client.query_workers()
-    worker = next(w for w in workers if w.worker_id == "runner-1")
-    assert worker.status == "busy"
-    assert worker.current_rollout_id == "ro-1"
-    assert worker.current_attempt_id == "at-1"
-
-    await client.update_worker("runner-1", status="idle", current_rollout_id=None, current_attempt_id=None)
-    workers = await client.query_workers()
-    worker = next(w for w in workers if w.worker_id == "runner-1")
-    assert worker.status == "idle"
-    assert worker.current_rollout_id is None
-    assert worker.current_attempt_id is None
-
-    await client.update_worker("runner-1", status=UNSET, current_rollout_id=UNSET, current_attempt_id=UNSET)
-    workers = await client.query_workers()
-    worker = next(w for w in workers if w.worker_id == "runner-1")
-    assert worker.status == "idle"
-
-
-@pytest.mark.asyncio
-async def test_update_worker_rejects_none_status(
+async def test_update_worker_records_heartbeat(
     server_client: Tuple[LightningStoreServer, LightningStoreClient],
 ) -> None:
     _, client = server_client
-    with pytest.raises(ClientResponseError) as exc_info:
-        await client.update_worker("runner-err", status=cast(Any, None))
-    assert exc_info.value.status == 400
+
+    first = await client.update_worker("runner-1", heartbeat_stats={"cpu": 0.4})
+    assert first.status == "unknown"
+    assert first.heartbeat_stats == {"cpu": 0.4}
+    assert first.last_heartbeat_time is not None
+
+    second = await client.update_worker("runner-1")
+    assert second.last_heartbeat_time is not None
+    assert second.last_heartbeat_time >= first.last_heartbeat_time
+    assert second.heartbeat_stats == {"cpu": 0.4}
 
 
 @pytest.mark.asyncio
@@ -455,39 +438,42 @@ async def test_update_worker_rejects_none_stats(
 ) -> None:
     _, client = server_client
     with pytest.raises(ClientResponseError) as exc_info:
-        await client.update_worker("runner-err", status="busy", heartbeat_stats=cast(Any, None))
+        await client.update_worker("runner-err", heartbeat_stats=cast(Any, None))
     assert exc_info.value.status == 400
 
 
 @pytest.mark.asyncio
-async def test_update_worker_rejects_none_forbidden_fields(
+async def test_worker_status_transitions_via_attempts(
     server_client: Tuple[LightningStoreServer, LightningStoreClient],
 ) -> None:
     _, client = server_client
-    attempted = await client.start_rollout(input={"payload": True})
 
-    forbidden_payloads = [
-        {"heartbeat_stats": None},
-        {"last_heartbeat_time": None},
-        {"last_dequeue_time": None},
-        {"last_busy_time": None},
-        {"last_idle_time": None},
-    ]
+    await client.enqueue_rollout(input={"payload": "worker"})
+    claimed = await client.dequeue_rollout(worker_id="runner-auto")
+    assert claimed is not None
 
-    for payload in forbidden_payloads:
-        with pytest.raises(ClientResponseError):
-            await client.update_worker("runner-2", status="busy", **payload)  # type: ignore
+    await client.update_attempt(claimed.rollout_id, claimed.attempt.attempt_id, worker_id="runner-auto")
+    busy = await client.get_worker_by_id("runner-auto")
+    assert busy is not None
+    assert busy.status == "busy"
+    assert busy.current_rollout_id == claimed.rollout_id
+    assert busy.current_attempt_id == claimed.attempt.attempt_id
+    assert busy.last_dequeue_time is not None
+    assert busy.last_busy_time is not None
 
-    # These fields can be set to None explicitly
-    await client.update_worker("runner-3", status="busy", current_rollout_id=attempted.rollout_id)
-    await client.update_worker("runner-3", current_rollout_id=None, current_attempt_id=None)
+    await client.update_attempt(claimed.rollout_id, claimed.attempt.attempt_id, status="succeeded")
+    idle = await client.get_worker_by_id("runner-auto")
+    assert idle is not None
+    assert idle.status == "idle"
+    assert idle.current_rollout_id is None
+    assert idle.current_attempt_id is None
 
 
 @pytest.mark.asyncio
 async def test_get_worker_by_id(server_client: Tuple[LightningStoreServer, LightningStoreClient]) -> None:
     server, client = server_client
 
-    await server.update_worker("runner-lookup", status="busy", heartbeat_stats={"cpu": 0.3})
+    await server.update_worker("runner-lookup", heartbeat_stats={"cpu": 0.3})
 
     server_worker = await server.get_worker_by_id("runner-lookup")
     assert server_worker is not None

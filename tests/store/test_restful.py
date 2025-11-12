@@ -1022,31 +1022,35 @@ async def test_workers_endpoint_supports_updates(
 
     async with session.post(
         f"{api_endpoint}/workers/worker-1",
-        json={"status": "busy", "current_rollout_id": "ro-1", "current_attempt_id": "at-1"},
+        json={"heartbeat_stats": {"cpu": 0.7}},
     ) as resp:
         assert resp.status == 200
         created = await resp.json()
         assert created["worker_id"] == "worker-1"
+        assert created["status"] == "unknown"
+        assert created["heartbeat_stats"] == {"cpu": 0.7}
+        first_heartbeat = created["last_heartbeat_time"]
 
     async with session.get(f"{api_endpoint}/workers") as resp:
         assert resp.status == 200
         data = await resp.json()
         workers = data["items"]
         assert len(workers) == 1
-        assert workers[0]["current_rollout_id"] == "ro-1"
+        assert workers[0]["worker_id"] == "worker-1"
 
     async with session.post(
         f"{api_endpoint}/workers/worker-1",
-        json={"status": "idle", "current_rollout_id": None, "current_attempt_id": None},
+        json={"heartbeat_stats": {"cpu": 0.8}},
     ) as resp:
         assert resp.status == 200
+        updated = await resp.json()
+        assert updated["last_heartbeat_time"] >= first_heartbeat
 
     async with session.get(f"{api_endpoint}/workers") as resp:
         assert resp.status == 200
         data = await resp.json()
         workers = data["items"]
-        assert workers[0]["status"] == "idle"
-        assert workers[0]["current_rollout_id"] is None
+        assert workers[0]["status"] == "unknown"
 
 
 @pytest.mark.asyncio
@@ -1057,7 +1061,7 @@ async def test_workers_endpoint_rejects_none_stats(
 
     async with session.post(
         f"{api_endpoint}/workers/worker-err",
-        json={"status": "busy", "heartbeat_stats": None},
+        json={"heartbeat_stats": None},
     ) as resp:
         assert resp.status == 400
 
@@ -1068,7 +1072,7 @@ async def test_get_worker_by_id_restful(
 ) -> None:
     server, _client, session, api_endpoint = server_client
 
-    await server.update_worker("worker-fetch", status="busy", heartbeat_stats={"cpu": 0.4})
+    await server.update_worker("worker-fetch", heartbeat_stats={"cpu": 0.4})
 
     async with session.get(f"{api_endpoint}/workers/worker-fetch") as resp:
         assert resp.status == 200
@@ -1087,9 +1091,28 @@ async def test_workers_endpoint_filter_and_sort(
 ) -> None:
     server, _client, session, api_endpoint = server_client
 
-    await server.update_worker("worker-a", status="idle", heartbeat_stats={"cpu": 0.1})
-    await server.update_worker("worker-b", status="busy", heartbeat_stats={"cpu": 0.9})
-    await server.update_worker("worker-c", status="busy", heartbeat_stats={"cpu": 0.2})
+    # Worker A: finishes an attempt and becomes idle.
+    await server.update_worker("worker-a", heartbeat_stats={"cpu": 0.1})
+    await server.enqueue_rollout(input={"worker": "a"})
+    claimed_a = await server.dequeue_rollout(worker_id="worker-a")
+    assert claimed_a is not None
+    await server.update_attempt(
+        claimed_a.rollout_id, claimed_a.attempt.attempt_id, worker_id="worker-a", status="succeeded"
+    )
+
+    # Worker B: currently busy on an attempt.
+    await server.update_worker("worker-b", heartbeat_stats={"cpu": 0.9})
+    await server.enqueue_rollout(input={"worker": "b"})
+    claimed_b = await server.dequeue_rollout(worker_id="worker-b")
+    assert claimed_b is not None
+    await server.update_attempt(claimed_b.rollout_id, claimed_b.attempt.attempt_id, worker_id="worker-b")
+
+    # Worker C: also busy.
+    await server.update_worker("worker-c", heartbeat_stats={"cpu": 0.2})
+    await server.enqueue_rollout(input={"worker": "c"})
+    claimed_c = await server.dequeue_rollout(worker_id="worker-c")
+    assert claimed_c is not None
+    await server.update_attempt(claimed_c.rollout_id, claimed_c.attempt.attempt_id, worker_id="worker-c")
 
     async with session.get(
         f"{api_endpoint}/workers",

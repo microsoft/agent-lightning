@@ -45,7 +45,6 @@ from agentlightning.types import (
     Span,
     TaskInput,
     Worker,
-    WorkerStatus,
 )
 
 from .base import UNSET, LightningStore, LightningStoreCapabilities, Unset, is_finished, is_queuing
@@ -247,6 +246,43 @@ class InMemoryLightningStore(LightningStore):
         # Worker tracking
         self._workers: Dict[str, Worker] = {}
 
+    def _get_or_create_worker(self, worker_id: str) -> Worker:
+        worker = self._workers.get(worker_id)
+        if worker is None:
+            worker = Worker(worker_id=worker_id)
+            self._workers[worker_id] = worker
+        return worker
+
+    def _sync_worker_with_attempt(self, attempt: Attempt) -> None:
+        worker_id = attempt.worker_id
+        if not worker_id:
+            return
+
+        worker = self._get_or_create_worker(worker_id)
+        now = time.time()
+
+        if attempt.status in ("succeeded", "failed"):
+            if worker.status != "idle":
+                worker.last_idle_time = now
+            worker.status = "idle"
+            worker.current_rollout_id = None
+            worker.current_attempt_id = None
+        elif attempt.status in ("timeout", "unresponsive"):
+            if worker.status != "unknown":
+                worker.last_idle_time = now
+            worker.status = "unknown"
+            worker.current_rollout_id = None
+            worker.current_attempt_id = None
+        else:
+            transitioned = worker.status != "busy" or worker.current_attempt_id != attempt.attempt_id
+            if transitioned:
+                worker.last_busy_time = now
+            worker.status = "busy"
+            worker.current_rollout_id = attempt.rollout_id
+            worker.current_attempt_id = attempt.attempt_id
+
+        Worker.model_validate(worker.model_dump())
+
     def capabilities(self) -> LightningStoreCapabilities:
         """Return the capabilities of the store."""
         return LightningStoreCapabilities(
@@ -342,7 +378,7 @@ class InMemoryLightningStore(LightningStore):
             return rollout
 
     @_healthcheck_wrapper
-    async def dequeue_rollout(self) -> Optional[AttemptedRollout]:
+    async def dequeue_rollout(self, worker_id: Optional[str] = None) -> Optional[AttemptedRollout]:
         """Retrieves the next task from the queue without blocking.
         Returns `None` if the queue is empty.
 
@@ -351,6 +387,10 @@ class InMemoryLightningStore(LightningStore):
         See [`LightningStore.dequeue_rollout()`][agentlightning.LightningStore.dequeue_rollout] for semantics.
         """
         async with self._lock:
+            if worker_id is not None:
+                worker = self._get_or_create_worker(worker_id)
+                worker.last_dequeue_time = time.time()
+
             # Keep looking until we find a rollout that's still in queuing status
             # or the queue is empty
             while self._task_queue:
@@ -955,18 +995,25 @@ class InMemoryLightningStore(LightningStore):
             if not attempt:
                 raise ValueError(f"Attempt {attempt_id} not found for rollout {rollout_id}")
 
+        worker_sync_required = False
+
         # Update fields if they are not UNSET
+        if not isinstance(worker_id, Unset):
+            attempt.worker_id = worker_id
+            worker_sync_required = worker_sync_required or bool(worker_id)
         if not isinstance(status, Unset):
             attempt.status = status
             # Also update end_time if the status indicates completion
             if status in ["failed", "succeeded"]:
                 attempt.end_time = time.time()
-        if not isinstance(worker_id, Unset):
-            attempt.worker_id = worker_id
+            worker_sync_required = worker_sync_required or bool(attempt.worker_id)
         if not isinstance(last_heartbeat_time, Unset):
             attempt.last_heartbeat_time = last_heartbeat_time
         if not isinstance(metadata, Unset):
             attempt.metadata = metadata
+
+        if worker_sync_required and attempt.worker_id:
+            self._sync_worker_with_attempt(attempt)
 
         # Re-validate the attempt to ensure legality
         Attempt.model_validate(attempt.model_dump())
@@ -1000,40 +1047,14 @@ class InMemoryLightningStore(LightningStore):
     async def update_worker(
         self,
         worker_id: str,
-        status: WorkerStatus | Unset = UNSET,
         heartbeat_stats: Dict[str, Any] | Unset = UNSET,
-        last_heartbeat_time: float | Unset = UNSET,
-        last_dequeue_time: float | Unset = UNSET,
-        last_busy_time: float | Unset = UNSET,
-        last_idle_time: float | Unset = UNSET,
-        current_rollout_id: Optional[str] | Unset = UNSET,
-        current_attempt_id: Optional[str] | Unset = UNSET,
     ) -> Worker:
         """Create or update a worker entry."""
         async with self._lock:
-            worker = self._workers.get(worker_id)
-            if worker is None:
-                worker = Worker(worker_id=worker_id)
-                self._workers[worker_id] = worker
-
-            if not isinstance(status, Unset):
-                worker.status = status
+            worker = self._get_or_create_worker(worker_id)
             if not isinstance(heartbeat_stats, Unset):
-                if heartbeat_stats is None:
-                    raise ValueError("heartbeat_stats cannot be None")
                 worker.heartbeat_stats = dict(heartbeat_stats)
-            if not isinstance(last_heartbeat_time, Unset):
-                worker.last_heartbeat_time = last_heartbeat_time
-            if not isinstance(last_dequeue_time, Unset):
-                worker.last_dequeue_time = last_dequeue_time
-            if not isinstance(last_busy_time, Unset):
-                worker.last_busy_time = last_busy_time
-            if not isinstance(last_idle_time, Unset):
-                worker.last_idle_time = last_idle_time
-            if not isinstance(current_rollout_id, Unset):
-                worker.current_rollout_id = current_rollout_id
-            if not isinstance(current_attempt_id, Unset):
-                worker.current_attempt_id = current_attempt_id
+            worker.last_heartbeat_time = time.time()
 
             Worker.model_validate(worker.model_dump())
             return worker

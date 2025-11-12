@@ -239,15 +239,7 @@ async def test_threaded_store_delegates_all_methods() -> None:
     )
     assert await threaded_store.query_workers() == worker_list
     assert await threaded_store.get_worker_by_id("worker-1") == worker_list[0]
-    assert (
-        await threaded_store.update_worker(
-            "worker-1",
-            status="idle",
-            heartbeat_stats={"cpu": 0.5},
-            last_heartbeat_time=1.5,
-        )
-        == updated_worker
-    )
+    assert await threaded_store.update_worker("worker-1", heartbeat_stats={"cpu": 0.5}) == updated_worker
 
     expected_order = [
         "start_rollout",

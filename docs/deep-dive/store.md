@@ -72,6 +72,16 @@ Each attempt begins in **preparing**, created either when a rollout is dequeued 
 
 This simple model allows the system to distinguish between normal termination, abnormal stalling, and recoverable interruption without additional state flags.
 
+## Worker Telemetry
+
+Workers track runner-level activity timestamps (`last_heartbeat_time`, `last_dequeue_time`, `last_busy_time`, `last_idle_time`) plus their current rollout assignment. Those fields are now derived automatically:
+
+- [`dequeue_rollout(worker_id=...)`][agentlightning.LightningStore.dequeue_rollout] records which worker polled the queue and refreshes `last_dequeue_time`.
+- [`update_attempt(..., worker_id=...)`][agentlightning.LightningStore.update_attempt] drives the worker status machine. Assigning an attempt marks the worker **busy** and stamps `last_busy_time`; finishing with `status in {"succeeded","failed"}` switches to **idle**, while watchdog transitions such as `timeout`/`unresponsive` make the worker **unknown** and clear `current_rollout_id` / `current_attempt_id`.
+- [`update_worker(...)`][agentlightning.LightningStore.update_worker] is reserved for heartbeats. It snapshots optional `heartbeat_stats` and always updates `last_heartbeat_time`.
+
+Because every transition flows through these APIs, there is no longer a manual way to flip worker status out of band; telemetry stays consistent with rollout execution.
+
 
 ## Rollout Transition Map
 

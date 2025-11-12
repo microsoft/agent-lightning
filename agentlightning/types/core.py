@@ -202,7 +202,7 @@ class AttemptedRollout(Rollout):
         return self
 
 
-WorkerStatus = Literal["idle", "busy"]
+WorkerStatus = Literal["idle", "busy", "unknown"]
 
 
 class Worker(BaseModel):
@@ -210,7 +210,7 @@ class Worker(BaseModel):
 
     worker_id: str
     """The ID of the worker."""
-    status: WorkerStatus = "idle"
+    status: WorkerStatus = "unknown"
     """The status of the worker."""
     heartbeat_stats: Optional[Dict[str, Any]] = None
     """Statistics about the worker's heartbeat."""
