@@ -358,7 +358,6 @@ class LitAgentRunner(Runner[T_task]):
                     await self._emit_heartbeat(store)
                     with suppress(asyncio.TimeoutError):
                         await asyncio.wait_for(stop_event.wait(), timeout=self._heartbeat_interval)
-                    await asyncio.sleep(self._heartbeat_interval)
 
             task = asyncio.create_task(heartbeat_loop(), name=f"{self.get_worker_id()}-heartbeat")
 
@@ -373,8 +372,10 @@ class LitAgentRunner(Runner[T_task]):
             stop_evt = threading.Event()
 
             def thread_worker() -> None:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
                 while not stop_evt.is_set():
-                    asyncio.run(self._emit_heartbeat(store))
+                    loop.run_until_complete(self._emit_heartbeat(store))
                     stop_evt.wait(self._heartbeat_interval)
 
             thread = threading.Thread(target=thread_worker, name=f"{self.get_worker_id()}-heartbeat", daemon=True)

@@ -80,8 +80,7 @@ Workers track runner-level activity timestamps (`last_heartbeat_time`, `last_deq
 - [`update_attempt(..., worker_id=...)`][agentlightning.LightningStore.update_attempt] drives the worker status machine. Assigning an attempt marks the worker **busy** and stamps `last_busy_time`; finishing with `status in {"succeeded","failed"}` switches to **idle**, while watchdog transitions such as `timeout`/`unresponsive` make the worker **unknown** and clear `current_rollout_id` / `current_attempt_id`.
 - [`update_worker(...)`][agentlightning.LightningStore.update_worker] is reserved for heartbeats. It snapshots optional `heartbeat_stats` and always updates `last_heartbeat_time`.
 
-Because every transition flows through these APIs, there is no longer a manual way to flip worker status out of band; telemetry stays consistent with rollout execution.
-
+Because every transition flows through these APIs, worker status is derived automatically from rollout execution and heartbeats. Note, however, that calling `update_worker` with a new `worker_id` will create a new worker record with status "unknown" if one does not exist. Thus, while manual status changes are not allowed, new worker records can be created externally via heartbeats.
 
 ## Rollout Transition Map
 
