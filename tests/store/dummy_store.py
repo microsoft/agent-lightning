@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Literal, Optional, Sequence
 
 from opentelemetry.sdk.trace import ReadableSpan
 
+from agentlightning.store import LightningStoreCapabilities
 from agentlightning.store.base import UNSET, LightningStore
 from agentlightning.types import (
     Attempt,
@@ -25,6 +26,13 @@ class DummyLightningStore(LightningStore):
         super().__init__()
         self.calls: List[tuple[str, tuple[Any, ...], Dict[str, Any]]] = []
         self.return_values = return_values
+
+    def capabilities(self) -> LightningStoreCapabilities:
+        return LightningStoreCapabilities(
+            async_safe=True,
+            thread_safe=False,
+            zero_copy=False,
+        )
 
     async def start_rollout(
         self,

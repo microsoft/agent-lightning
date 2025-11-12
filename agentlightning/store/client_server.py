@@ -314,6 +314,7 @@ class LightningStoreServer(LightningStore):
         else:
             if port is None:
                 server_logger.warning("No port provided, using default port 4747.")
+                port = 4747
             self.launcher_args = PythonServerLauncherArgs(
                 host=host,
                 port=port,
@@ -386,6 +387,8 @@ class LightningStoreServer(LightningStore):
         Note: This creates a new server instance without FastAPI/uvicorn initialized.
         Call __init__() pattern or create a new LightningStoreServer if you need
         a fully functional server in the subprocess.
+        The unpickled server will also have no app and store attributes,
+        this is to make sure there is only one copy of the server in the whole system.
         """
         self.app = None
         self.store = None

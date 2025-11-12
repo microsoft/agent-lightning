@@ -86,9 +86,6 @@ async def test_server_start_rejects_port_conflict(caplog: pytest.LogCaptureFixtu
     port = pick_unused_port()
     server_a = LightningStoreServer(store_a, "127.0.0.1", port)
     await server_a.start()
-    import logging
-
-    caplog.set_level(logging.INFO)
 
     store_b = InMemoryLightningStore()
     server_b = LightningStoreServer(store_b, "127.0.0.1", port, launch_mode=launch_mode)
