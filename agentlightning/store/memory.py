@@ -44,6 +44,7 @@ from agentlightning.types import (
     RolloutStatus,
     Span,
     TaskInput,
+    Worker,
 )
 
 from .base import UNSET, LightningStore, LightningStoreCapabilities, Unset, is_finished, is_queuing
@@ -242,6 +243,48 @@ class InMemoryLightningStore(LightningStore):
 
         # Completion tracking for wait_for_rollouts (cross-loop safe)
         self._completion_events: Dict[str, threading.Event] = {}
+        # Worker tracking
+        self._workers: Dict[str, Worker] = {}
+
+        # Running rollouts cache, including preparing and running rollouts
+        self._running_rollout_ids: Set[str] = set()
+
+    def _get_or_create_worker(self, worker_id: str) -> Worker:
+        worker = self._workers.get(worker_id)
+        if worker is None:
+            worker = Worker(worker_id=worker_id)
+            self._workers[worker_id] = worker
+        return worker
+
+    def _sync_worker_with_attempt(self, attempt: Attempt) -> None:
+        worker_id = attempt.worker_id
+        if not worker_id:
+            return
+
+        worker = self._get_or_create_worker(worker_id)
+        now = time.time()
+
+        if attempt.status in ("succeeded", "failed"):
+            if worker.status != "idle":
+                worker.last_idle_time = now
+            worker.status = "idle"
+            worker.current_rollout_id = None
+            worker.current_attempt_id = None
+        elif attempt.status in ("timeout", "unresponsive"):
+            if worker.status != "unknown":
+                worker.last_idle_time = now
+            worker.status = "unknown"
+            worker.current_rollout_id = None
+            worker.current_attempt_id = None
+        else:
+            transitioned = worker.status != "busy" or worker.current_attempt_id != attempt.attempt_id
+            if transitioned:
+                worker.last_busy_time = now
+            worker.status = "busy"
+            worker.current_rollout_id = attempt.rollout_id
+            worker.current_attempt_id = attempt.attempt_id
+
+        Worker.model_validate(worker.model_dump())
 
     def capabilities(self) -> LightningStoreCapabilities:
         """Return the capabilities of the store."""
@@ -281,6 +324,7 @@ class InMemoryLightningStore(LightningStore):
                 config=rollout_config,
                 metadata=rollout_metadata,
             )
+            self._running_rollout_ids.add(rollout.rollout_id)
 
             # Create the initial attempt
             attempt_id = _generate_attempt_id()
@@ -338,7 +382,7 @@ class InMemoryLightningStore(LightningStore):
             return rollout
 
     @_healthcheck_wrapper
-    async def dequeue_rollout(self) -> Optional[AttemptedRollout]:
+    async def dequeue_rollout(self, worker_id: Optional[str] = None) -> Optional[AttemptedRollout]:
         """Retrieves the next task from the queue without blocking.
         Returns `None` if the queue is empty.
 
@@ -347,6 +391,11 @@ class InMemoryLightningStore(LightningStore):
         See [`LightningStore.dequeue_rollout()`][agentlightning.LightningStore.dequeue_rollout] for semantics.
         """
         async with self._lock:
+            if worker_id is not None:
+                worker = self._get_or_create_worker(worker_id)
+                worker.last_dequeue_time = time.time()
+                worker.status = "idle"
+
             # Keep looking until we find a rollout that's still in queuing status
             # or the queue is empty
             while self._task_queue:
@@ -357,6 +406,7 @@ class InMemoryLightningStore(LightningStore):
                 if is_queuing(rollout):
                     # Update status to preparing
                     rollout.status = "preparing"
+                    self._running_rollout_ids.add(rollout.rollout_id)
 
                     # Create a new attempt (could be first attempt or retry)
                     attempt_id = _generate_attempt_id()
@@ -655,6 +705,7 @@ class InMemoryLightningStore(LightningStore):
         if current_attempt == latest_attempt:
             if rollout.status == "preparing":
                 rollout.status = "running"
+                self._running_rollout_ids.add(rollout.rollout_id)
             elif rollout.status in ["queuing", "requeuing"]:
                 try:
                     self._task_queue.remove(rollout)
@@ -663,6 +714,7 @@ class InMemoryLightningStore(LightningStore):
                         f"Trying to remove rollout {rollout.rollout_id} from the queue but it's not in the queue."
                     )
                 rollout.status = "running"
+                self._running_rollout_ids.add(rollout.rollout_id)
 
         return span
 
@@ -908,6 +960,12 @@ class InMemoryLightningStore(LightningStore):
         elif is_queuing(rollout) and rollout not in self._task_queue:
             self._task_queue.append(rollout)
 
+        # Updating running rollouts cache
+        if rollout.status in ["preparing", "running"]:
+            self._running_rollout_ids.add(rollout.rollout_id)
+        else:
+            self._running_rollout_ids.discard(rollout.rollout_id)
+
         # If the rollout is no longer in a queueing state, remove it from the queue.
         if not isinstance(status, Unset) and not is_queuing(rollout) and rollout in self._task_queue:
             try:
@@ -951,18 +1009,25 @@ class InMemoryLightningStore(LightningStore):
             if not attempt:
                 raise ValueError(f"Attempt {attempt_id} not found for rollout {rollout_id}")
 
+        worker_sync_required = False
+
         # Update fields if they are not UNSET
+        if not isinstance(worker_id, Unset):
+            attempt.worker_id = worker_id
+            worker_sync_required = worker_sync_required or bool(worker_id)
         if not isinstance(status, Unset):
             attempt.status = status
             # Also update end_time if the status indicates completion
             if status in ["failed", "succeeded"]:
                 attempt.end_time = time.time()
-        if not isinstance(worker_id, Unset):
-            attempt.worker_id = worker_id
+            worker_sync_required = worker_sync_required or bool(attempt.worker_id)
         if not isinstance(last_heartbeat_time, Unset):
             attempt.last_heartbeat_time = last_heartbeat_time
         if not isinstance(metadata, Unset):
             attempt.metadata = metadata
+
+        if worker_sync_required and attempt.worker_id:
+            self._sync_worker_with_attempt(attempt)
 
         # Re-validate the attempt to ensure legality
         Attempt.model_validate(attempt.model_dump())
@@ -981,12 +1046,40 @@ class InMemoryLightningStore(LightningStore):
 
         return attempt
 
+    @_healthcheck_wrapper
+    async def query_workers(self) -> List[Worker]:
+        """Return the current snapshot of all workers."""
+        async with self._lock:
+            return list(self._workers.values())
+
+    @_healthcheck_wrapper
+    async def get_worker_by_id(self, worker_id: str) -> Optional[Worker]:
+        async with self._lock:
+            return self._workers.get(worker_id)
+
+    @_healthcheck_wrapper
+    async def update_worker(
+        self,
+        worker_id: str,
+        heartbeat_stats: Dict[str, Any] | Unset = UNSET,
+    ) -> Worker:
+        """Create or update a worker entry."""
+        async with self._lock:
+            worker = self._get_or_create_worker(worker_id)
+            if not isinstance(heartbeat_stats, Unset):
+                worker.heartbeat_stats = dict(heartbeat_stats)
+            worker.last_heartbeat_time = time.time()
+
+            Worker.model_validate(worker.model_dump())
+            return worker
+
     async def _healthcheck(self) -> None:
         """Perform healthcheck against all running rollouts in the store."""
         async with self._lock:
             running_rollouts: List[AttemptedRollout] = []
-            for rollout in self._rollouts.values():
-                if rollout.status in ["preparing", "running"]:
+            for rollout_id in self._running_rollout_ids:
+                rollout = self._rollouts.get(rollout_id)
+                if rollout is not None and rollout.status in ["preparing", "running"]:
                     all_attempts = self._attempts.get(rollout.rollout_id, [])
                     if not all_attempts:
                         # The rollout is running but has no attempts, this should not happen

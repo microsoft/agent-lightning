@@ -13,6 +13,8 @@ import type {
   RolloutStatus,
   Span,
   Timestamp,
+  Worker,
+  WorkerStatus,
 } from '../../types';
 
 const rawBaseQuery = fetchBaseQuery({
@@ -122,6 +124,21 @@ const normalizeResources = (value: unknown): Resources => {
   };
 };
 
+const normalizeWorker = (value: unknown): Worker => {
+  const camelized = camelCaseKeys(value) as Worker;
+  return {
+    workerId: camelized.workerId,
+    status: camelized.status,
+    heartbeatStats: camelized.heartbeatStats ?? null,
+    lastHeartbeatTime: camelized.lastHeartbeatTime ?? null,
+    lastDequeueTime: camelized.lastDequeueTime ?? null,
+    lastBusyTime: camelized.lastBusyTime ?? null,
+    lastIdleTime: camelized.lastIdleTime ?? null,
+    currentRolloutId: camelized.currentRolloutId ?? null,
+    currentAttemptId: camelized.currentAttemptId ?? null,
+  };
+};
+
 const normalizePaginatedResponse = <T>(value: unknown, normalizer: (item: unknown) => T): PaginatedResponse<T> => {
   if (!value || typeof value !== 'object') {
     throw new Error('Expected paginated response payload');
@@ -183,6 +200,15 @@ export type GetResourcesQueryArgs = {
   resourcesIdContains?: string | null;
 };
 
+export type GetWorkersQueryArgs = {
+  limit: number;
+  offset: number;
+  sortBy?: string | null;
+  sortOrder?: 'asc' | 'desc';
+  workerIdContains?: string | null;
+  statusIn?: WorkerStatus[];
+};
+
 export type GetRolloutAttemptsQueryArgs = {
   rolloutId: string;
   limit?: number;
@@ -208,7 +234,7 @@ export type GetSpansQueryArgs = {
 export const rolloutsApi = createApi({
   reducerPath: 'rolloutsApi',
   baseQuery: dynamicBaseQuery,
-  tagTypes: ['Rollout', 'Span', 'Resources'],
+  tagTypes: ['Rollout', 'Span', 'Resources', 'Worker'],
   endpoints: (builder) => ({
     getResources: builder.query<PaginatedResponse<Resources>, GetResourcesQueryArgs>({
       query: ({ limit, offset, sortBy, sortOrder, resourcesIdContains }) => {
@@ -237,6 +263,37 @@ export const rolloutsApi = createApi({
               ...result.items.map((item) => ({ type: 'Resources' as const, id: item.resourcesId })),
             ]
           : [{ type: 'Resources' as const, id: 'LIST' }],
+    }),
+    getWorkers: builder.query<PaginatedResponse<Worker>, GetWorkersQueryArgs>({
+      query: ({ limit, offset, sortBy, sortOrder, workerIdContains, statusIn }) => {
+        const searchParams = new URLSearchParams();
+        searchParams.set('limit', String(typeof limit === 'number' ? limit : -1));
+        searchParams.set('offset', String(typeof offset === 'number' ? offset : 0));
+        if (sortBy) {
+          searchParams.set('sort_by', sortBy);
+        }
+        if (sortOrder) {
+          searchParams.set('sort_order', sortOrder);
+        }
+        if (workerIdContains && workerIdContains.trim().length > 0) {
+          searchParams.set('worker_id_contains', workerIdContains.trim());
+        }
+        if (statusIn && statusIn.length > 0) {
+          statusIn.forEach((status) => searchParams.append('status_in', status));
+        }
+
+        const queryString = searchParams.toString();
+        const url = queryString.length > 0 ? `v1/agl/workers?${queryString}` : 'v1/agl/workers';
+        return { url, method: 'GET' };
+      },
+      transformResponse: (response: unknown) => normalizePaginatedResponse(response, normalizeWorker),
+      providesTags: (result) =>
+        result
+          ? [
+              { type: 'Worker' as const, id: 'LIST' },
+              ...result.items.map((worker) => ({ type: 'Worker' as const, id: worker.workerId })),
+            ]
+          : [{ type: 'Worker' as const, id: 'LIST' }],
     }),
     getRollouts: builder.query<PaginatedResponse<Rollout>, GetRolloutsQueryArgs>({
       query: ({ limit, offset, sortBy, sortOrder, statusIn, rolloutIdContains, modeIn }) => {
@@ -343,4 +400,10 @@ export const rolloutsApi = createApi({
   }),
 });
 
-export const { useGetResourcesQuery, useGetRolloutsQuery, useGetRolloutAttemptsQuery, useGetSpansQuery } = rolloutsApi;
+export const {
+  useGetResourcesQuery,
+  useGetWorkersQuery,
+  useGetRolloutsQuery,
+  useGetRolloutAttemptsQuery,
+  useGetSpansQuery,
+} = rolloutsApi;

@@ -271,7 +271,7 @@ def create_llm_proxy(
     renderer_name: str,
     port: int = 1899,
     store: Optional[LightningStore] = None,
-    _add_return_token_ids: bool = True,
+    add_return_token_ids: bool = True,
 ) -> LLMProxy:
     """Create an LLMProxy configured for a Tinker-based model.
 
@@ -284,6 +284,7 @@ def create_llm_proxy(
         renderer_name: Renderer type for prompt formatting (e.g., "qwen3", "qwen3_instruct").
         port: Port to expose the LiteLLM proxy. Defaults to 1899.
         store: Optional Lightning store for tracking usage. Defaults to None.
+        add_return_token_ids: Whether to add return token ids to the response. Defaults to True.
 
     Returns:
         Configured LLMProxy instance ready to serve the model.
@@ -305,5 +306,5 @@ def create_llm_proxy(
         num_retries=2,
         # Must use thread mode here because otherwise the Tinker sampling client will hang.
         launch_mode="thread",
-        _add_return_token_ids=_add_return_token_ids,
+        callbacks=["opentelemetry"] if add_return_token_ids else None,
     )

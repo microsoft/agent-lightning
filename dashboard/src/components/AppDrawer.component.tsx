@@ -21,7 +21,7 @@ import {
 import { useGetSpansQuery } from '@/features/rollouts';
 import { closeDrawer, openDrawer, selectDrawerContent, selectDrawerIsOpen } from '@/features/ui/drawer';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
-import type { Attempt, AttemptStatus, Rollout, RolloutStatus, Span } from '@/types';
+import type { Attempt, AttemptStatus, Rollout, RolloutStatus, Span, Worker } from '@/types';
 import { formatStatusLabel } from '@/utils/format';
 import { TracesTable, type TracesTableRecord } from './TracesTable.component';
 
@@ -48,6 +48,12 @@ const SPAN_STATUS_COLORS: Record<Span['status']['status_code'], string> = {
   UNSET: 'gray',
   OK: 'teal',
   ERROR: 'red',
+};
+
+const WORKER_STATUS_COLORS: Record<Worker['status'], string> = {
+  busy: 'orange',
+  idle: 'teal',
+  unknown: 'gray',
 };
 
 const TRACES_SORT_FIELD_MAP: Record<string, string> = {
@@ -408,6 +414,60 @@ function RolloutTracesDrawerBody({ rollout, attempt, onShowRollout, onShowSpanDe
   );
 }
 
+type WorkerDrawerTitleProps = {
+  worker: Worker;
+};
+
+function WorkerDrawerTitle({ worker }: WorkerDrawerTitleProps) {
+  const badgeColor = WORKER_STATUS_COLORS[worker.status] ?? 'gray';
+  return (
+    <Stack gap={3}>
+      <Group gap={6} align='center'>
+        <Text fw={600}>{worker.workerId}</Text>
+        <CopyButton value={worker.workerId}>
+          {({ copied, copy }) => (
+            <Tooltip label={copied ? 'Copied' : 'Copy'} withArrow>
+              <ActionIcon
+                aria-label={`Copy worker ID ${worker.workerId}`}
+                variant='subtle'
+                color={copied ? 'teal' : 'gray'}
+                size='sm'
+                onClick={(event) => {
+                  event.stopPropagation();
+                  copy();
+                }}
+              >
+                {copied ? <IconCheck size={14} /> : <IconCopy size={14} />}
+              </ActionIcon>
+            </Tooltip>
+          )}
+        </CopyButton>
+        <Badge size='sm' variant='light' color={badgeColor}>
+          {formatStatusLabel(worker.status)}
+        </Badge>
+      </Group>
+      <Group gap='xl'>
+        <Group gap={4}>
+          <Text size='sm' c='dimmed' fw={500}>
+            Rollout
+          </Text>
+          <Text size='sm' c='dimmed'>
+            {worker.currentRolloutId ?? '—'}
+          </Text>
+        </Group>
+        <Group gap={4}>
+          <Text size='sm' c='dimmed' fw={500}>
+            Attempt
+          </Text>
+          <Text size='sm' c='dimmed'>
+            {worker.currentAttemptId ?? '—'}
+          </Text>
+        </Group>
+      </Group>
+    </Stack>
+  );
+}
+
 export function AppDrawerContainer() {
   const dispatch = useAppDispatch();
   const isOpen = useAppSelector(selectDrawerIsOpen);
@@ -426,6 +486,13 @@ export function AppDrawerContainer() {
   const derivedContent = useMemo(() => {
     if (!content) {
       return null;
+    }
+
+    if (content.type === 'worker-detail') {
+      const { worker } = content;
+      const title = <WorkerDrawerTitle worker={worker} />;
+      const body = <JsonEditor value={worker} />;
+      return { title, body };
     }
 
     if (content.type === 'trace-detail') {

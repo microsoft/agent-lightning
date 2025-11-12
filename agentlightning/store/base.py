@@ -17,6 +17,7 @@ from agentlightning.types import (
     RolloutStatus,
     Span,
     TaskInput,
+    Worker,
 )
 
 
@@ -167,7 +168,7 @@ class LightningStore:
         """
         raise NotImplementedError()
 
-    async def dequeue_rollout(self) -> Optional[AttemptedRollout]:
+    async def dequeue_rollout(self, worker_id: Optional[str] = None) -> Optional[AttemptedRollout]:
         """Claim the oldest queued rollout and transition it to `preparing`.
 
         This function do not block.
@@ -180,6 +181,8 @@ class LightningStore:
           the number of attempts already registered for the rollout plus one.
         * Return an [`AttemptedRollout`][agentlightning.AttemptedRollout] snapshot so the
           runner knows both rollout metadata and the attempt identifier.
+        * Optionally refresh the caller's [`Worker`][agentlightning.Worker] telemetry
+          (e.g., `last_dequeue_time`) when `worker_id` is provided.
 
         Returns:
             The next attempt to execute, or `None` when no eligible rollouts are queued.
@@ -527,6 +530,12 @@ class LightningStore:
         Similar to [`update_rollout()`][agentlightning.LightningStore.update_rollout],
         parameters also default to the sentinel [`UNSET`][agentlightning.store.base.UNSET].
 
+        If `worker_id` is present, the worker status will be updated following the rules:
+
+        1. If attempt status is "succeeded" or "failed", the corresponding worker status will be set to "idle".
+        2. If attempt status is "unresponsive" or "timeout", the corresponding worker status will be set to "unknown".
+        3. Otherwise, the worker status will be set to "busy".
+
         Args:
             rollout_id: Identifier of the rollout whose attempt will be updated.
             attempt_id: Attempt identifier or `"latest"` as a convenience.
@@ -541,5 +550,48 @@ class LightningStore:
         Raises:
             NotImplementedError: Subclasses must implement mutation logic.
             ValueError: Implementations must raise when the rollout or attempt is unknown.
+        """
+        raise NotImplementedError()
+
+    async def query_workers(
+        self,
+    ) -> List[Worker]:
+        """Query all workers in the system.
+
+        Returns:
+            A list of all workers.
+        """
+        raise NotImplementedError()
+
+    async def get_worker_by_id(self, worker_id: str) -> Optional[Worker]:
+        """Retrieve a single worker by identifier.
+
+        Args:
+            worker_id: Identifier of the worker.
+
+        Returns:
+            The worker record if it exists, otherwise `None`.
+
+        Raises:
+            NotImplementedError: Subclasses must implement lookup semantics.
+        """
+        raise NotImplementedError()
+
+    async def update_worker(
+        self,
+        worker_id: str,
+        heartbeat_stats: Dict[str, Any] | Unset = UNSET,
+    ) -> Worker:
+        """Record a heartbeat for `worker_id` and refresh telemetry.
+
+        Implementations must treat this API as heartbeat-only: it should snapshot
+        the latest stats when provided, stamp `last_heartbeat_time` with the
+        current wall clock, and rely on other store mutations (`dequeue_rollout`,
+        `update_attempt`, etc.) to drive the worker's busy/idle status,
+        assignment, and activity timestamps.
+
+        Args:
+            worker_id: Identifier of the worker to update.
+            heartbeat_stats: Replacement worker heartbeat statistics (non-null when provided).
         """
         raise NotImplementedError()

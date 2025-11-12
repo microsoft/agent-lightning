@@ -79,7 +79,7 @@ async def evaluate_q20(
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     if model_name.startswith("Qwen/"):
-        llm_proxy = create_llm_proxy(model_name, "qwen3", port, store, _add_return_token_ids=False)
+        llm_proxy = create_llm_proxy(model_name, "qwen3", port, store, add_return_token_ids=False)
     else:
         console.print(f"Assuming {model_name} is an OpenAI model.")
         llm_proxy = LLMProxy(
@@ -90,7 +90,8 @@ async def evaluate_q20(
             ],
             num_retries=2,
             launch_mode="thread",
-            _add_return_token_ids=False,
+            # Not going to add return_token_ids because we are not using Tinker.
+            callbacks=["opentelemetry"],
         )
 
     answerer_model_name = "gpt-5-mini"

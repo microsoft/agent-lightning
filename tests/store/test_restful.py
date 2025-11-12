@@ -1012,3 +1012,123 @@ async def test_client_query_with_filters(
     rollouts = await client.query_rollouts(rollout_ids=[r2.rollout_id])
     assert len(rollouts) == 1
     assert rollouts[0].rollout_id == r2.rollout_id
+
+
+@pytest.mark.asyncio
+async def test_workers_endpoint_supports_updates(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    _server, _client, session, api_endpoint = server_client
+
+    async with session.post(
+        f"{api_endpoint}/workers/worker-1",
+        json={"heartbeat_stats": {"cpu": 0.7}},
+    ) as resp:
+        assert resp.status == 200
+        created = await resp.json()
+        assert created["worker_id"] == "worker-1"
+        assert created["status"] == "unknown"
+        assert created["heartbeat_stats"] == {"cpu": 0.7}
+        first_heartbeat = created["last_heartbeat_time"]
+
+    async with session.get(f"{api_endpoint}/workers") as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        workers = data["items"]
+        assert len(workers) == 1
+        assert workers[0]["worker_id"] == "worker-1"
+
+    async with session.post(
+        f"{api_endpoint}/workers/worker-1",
+        json={"heartbeat_stats": {"cpu": 0.8}},
+    ) as resp:
+        assert resp.status == 200
+        updated = await resp.json()
+        assert updated["last_heartbeat_time"] >= first_heartbeat
+
+    async with session.get(f"{api_endpoint}/workers") as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        workers = data["items"]
+        assert workers[0]["status"] == "unknown"
+
+
+@pytest.mark.asyncio
+async def test_workers_endpoint_rejects_none_stats(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    _server, _client, session, api_endpoint = server_client
+
+    async with session.post(
+        f"{api_endpoint}/workers/worker-err",
+        json={"heartbeat_stats": None},
+    ) as resp:
+        assert resp.status == 400
+
+
+@pytest.mark.asyncio
+async def test_get_worker_by_id_restful(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    server, _client, session, api_endpoint = server_client
+
+    await server.update_worker("worker-fetch", heartbeat_stats={"cpu": 0.4})
+
+    async with session.get(f"{api_endpoint}/workers/worker-fetch") as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        assert data["worker_id"] == "worker-fetch"
+
+    async with session.get(f"{api_endpoint}/workers/missing") as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        assert data is None
+
+
+@pytest.mark.asyncio
+async def test_workers_endpoint_filter_and_sort(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    server, _client, session, api_endpoint = server_client
+
+    # Worker A: finishes an attempt and becomes idle.
+    await server.update_worker("worker-a", heartbeat_stats={"cpu": 0.1})
+    await server.enqueue_rollout(input={"worker": "a"})
+    claimed_a = await server.dequeue_rollout(worker_id="worker-a")
+    assert claimed_a is not None
+    await server.update_attempt(
+        claimed_a.rollout_id, claimed_a.attempt.attempt_id, worker_id="worker-a", status="succeeded"
+    )
+
+    # Worker B: currently busy on an attempt.
+    await server.update_worker("worker-b", heartbeat_stats={"cpu": 0.9})
+    await server.enqueue_rollout(input={"worker": "b"})
+    claimed_b = await server.dequeue_rollout(worker_id="worker-b")
+    assert claimed_b is not None
+    await server.update_attempt(claimed_b.rollout_id, claimed_b.attempt.attempt_id, worker_id="worker-b")
+
+    # Worker C: also busy.
+    await server.update_worker("worker-c", heartbeat_stats={"cpu": 0.2})
+    await server.enqueue_rollout(input={"worker": "c"})
+    claimed_c = await server.dequeue_rollout(worker_id="worker-c")
+    assert claimed_c is not None
+    await server.update_attempt(claimed_c.rollout_id, claimed_c.attempt.attempt_id, worker_id="worker-c")
+
+    async with session.get(
+        f"{api_endpoint}/workers",
+        params={"status_in": ["busy"], "worker_id_contains": "worker", "sort_by": "worker_id", "sort_order": "desc"},
+    ) as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        items = data["items"]
+        assert [w["worker_id"] for w in items] == ["worker-c", "worker-b"]
+
+    async with session.get(
+        f"{api_endpoint}/workers",
+        params={"limit": 1, "offset": 1, "sort_by": "worker_id", "sort_order": "asc"},
+    ) as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        assert data["limit"] == 1
+        assert data["offset"] == 1
+        assert len(data["items"]) == 1

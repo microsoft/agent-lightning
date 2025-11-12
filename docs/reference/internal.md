@@ -28,6 +28,12 @@
 
 ::: agentlightning.llm_proxy.AddReturnTokenIds
 
+::: agentlightning.llm_proxy.StreamConversionMiddleware
+
+::: agentlightning.llm_proxy.MessageInspectionMiddleware
+
+::: agentlightning.llm_proxy.RolloutAttemptMiddleware
+
 ::: agentlightning.store.base.UNSET
 
 ::: agentlightning.store.utils.propagate_status

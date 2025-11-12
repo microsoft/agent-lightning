@@ -15,12 +15,14 @@ There are some specific TODOs for each test function.
 import ast
 import asyncio
 import json
-from typing import Any, cast
+from typing import Any, Dict, List, Type, Union, cast
 
 import anthropic
 import openai
 import pytest
+from litellm.integrations.custom_logger import CustomLogger
 
+from agentlightning import LlmProxyTraceToTriplet
 from agentlightning.llm_proxy import LLMProxy, _reset_litellm_logging_worker  # pyright: ignore[reportPrivateUsage]
 from agentlightning.store import LightningStore, LightningStoreServer
 from agentlightning.store.memory import InMemoryLightningStore
@@ -171,7 +173,13 @@ async def test_basic_integration(qwen25_model: RemoteOpenAIServer):
     assert "gen_ai.completion.0.finish_reason" in litellm_span.attributes, "gen_ai.completion.0.finish_reason not found"
 
 
-async def _make_proxy_and_store(qwen25_model: RemoteOpenAIServer, *, retries: int = 0, gunicorn: bool = False):
+async def _make_proxy_and_store(
+    qwen25_model: RemoteOpenAIServer,
+    *,
+    retries: int = 0,
+    gunicorn: bool = False,
+    callbacks: List[Union[Type[CustomLogger], str]] | None = None,
+):
     clear_tracer_provider()
     _reset_litellm_logging_worker()  # type: ignore
     store = InMemoryLightningStore()
@@ -192,6 +200,7 @@ async def _make_proxy_and_store(qwen25_model: RemoteOpenAIServer, *, retries: in
         num_workers=4 if gunicorn else 1,
         store=store_server,
         num_retries=retries,
+        callbacks=callbacks,
     )
     await proxy.start()
     return proxy, store_server
@@ -367,7 +376,6 @@ async def test_tool_call_roundtrip(qwen25_model: RemoteOpenAIServer):
         await store.stop()
 
 
-@pytest.mark.skip(reason="Streaming is not supported yet")
 @pytest.mark.asyncio
 async def test_streaming_chunks(qwen25_model: RemoteOpenAIServer):
     proxy, store = await _make_proxy_and_store(qwen25_model)
@@ -382,6 +390,7 @@ async def test_streaming_chunks(qwen25_model: RemoteOpenAIServer):
         )
         collected: list[str] = []
         for evt in stream:
+            print(f">>> Event: {evt}")
             for c in evt.choices:
                 if c.delta and getattr(c.delta, "content", None):
                     assert isinstance(c.delta.content, str)
@@ -390,7 +399,139 @@ async def test_streaming_chunks(qwen25_model: RemoteOpenAIServer):
 
         spans = await store.query_spans(rollout.rollout_id, rollout.attempt.attempt_id)
         assert len(spans) > 0
-        # TODO: didn't test the token ids in streaming chunks here
+        for span in spans:
+            print(f">>> Span {span.name}: {span.attributes}")
+            if span.name == "raw_gen_ai_request":
+                assert "llm.hosted_vllm.prompt_token_ids" in span.attributes
+                assert "llm.hosted_vllm.choices" in span.attributes
+            if span.name == "litellm_request":
+                assert "gen_ai.completion.0.content" in span.attributes
+    finally:
+        await proxy.stop()
+        await store.stop()
+
+
+@pytest.mark.asyncio
+async def test_anthropic_token_ids(qwen25_model: RemoteOpenAIServer):
+    proxy, store = await _make_proxy_and_store(qwen25_model)
+    try:
+        resource, rollout = await _new_resource(proxy, store)
+        adapter = LlmProxyTraceToTriplet()
+        client = anthropic.Anthropic(base_url=resource.endpoint, api_key="token-abc123", timeout=120)
+
+        # non-stream
+        response = client.messages.create(
+            model="gpt-4o-arbitrary",
+            max_tokens=64,
+            messages=[{"role": "user", "content": "Say the word: banana"}],
+        )
+
+        txt = "".join([b.text for b in response.content if b.type == "text"])
+        assert "banana" in txt.lower(), f"Response does not contain 'banana': {txt}"
+
+        spans = await store.query_spans(rollout.rollout_id, rollout.attempt.attempt_id)
+        for i, span in enumerate(spans):
+            print(f">>> Span {i}: {span.name}, attributes: {span.attributes}")
+        assert len(spans) > 0
+
+        triplets = adapter.adapt(spans)
+        for i, triplet in enumerate(triplets):
+            print(f">>> Triplet {i}: {triplet}")
+        assert len(triplets) == 1
+        assert triplets[0].prompt["token_ids"]
+        assert triplets[0].response["token_ids"]
+
+        # stream
+        response = client.messages.create(
+            model="gpt-4o-arbitrary",
+            max_tokens=64,
+            messages=[{"role": "user", "content": "Say the word: banana"}],
+            stream=True,
+        )
+        chunk_number: int = 0
+        for chunk in response:
+            print(f">>> Chunk: {chunk}")
+            chunk_number += 1
+        assert chunk_number >= 1
+        spans = await store.query_spans(rollout.rollout_id, rollout.attempt.attempt_id)
+        for i, span in enumerate(spans):
+            print(f">>> Span {i}: {span.name}, attributes: {span.attributes}")
+            if span.name == "raw_gen_ai_request":
+                assert "llm.hosted_vllm.prompt_token_ids" in span.attributes
+                assert "llm.hosted_vllm.choices" in span.attributes
+            if span.name == "litellm_request":
+                assert "gen_ai.completion.0.content" in span.attributes
+        assert len(spans) > 0
+        triplets = adapter.adapt(spans)
+        for i, triplet in enumerate(triplets):
+            print(f">>> Triplet {i}: {triplet}")
+            assert triplet.prompt["token_ids"]
+            assert triplet.response["token_ids"]
+        assert len(triplets) == 2
+    finally:
+        await proxy.stop()
+        await store.stop()
+
+
+class LogprobsCallback(CustomLogger):
+
+    async def async_pre_call_hook(self, data: Dict[str, Any], **kwargs: Any) -> Dict[str, Any]:  # type: ignore
+        return {**data, "logprobs": 1}
+
+
+@pytest.mark.asyncio
+async def test_anthropic_logprobs(qwen25_model: RemoteOpenAIServer):
+    proxy, store = await _make_proxy_and_store(
+        qwen25_model, callbacks=[LogprobsCallback, "return_token_ids", "opentelemetry"]
+    )
+    try:
+        resource, rollout = await _new_resource(proxy, store)
+        client = anthropic.Anthropic(base_url=resource.endpoint, api_key="token-abc123", timeout=120)
+        adapter = LlmProxyTraceToTriplet()
+
+        # test streaming case only
+        response = client.messages.create(
+            model="gpt-4o-arbitrary",
+            max_tokens=64,
+            messages=[{"role": "user", "content": "Say the word: banana"}],
+            stream=True,
+        )
+
+        chunk_number: int = 0
+        for chunk in response:
+            print(f">>> Chunk: {chunk}")
+            chunk_number += 1
+        assert chunk_number >= 1
+
+        spans = await store.query_spans(rollout.rollout_id, rollout.attempt.attempt_id)
+        for i, span in enumerate(spans):
+            print(f">>> Span {i}: {span.name}, attributes: {span.attributes}")
+            if span.name == "raw_gen_ai_request":
+                assert "llm.hosted_vllm.prompt_token_ids" in span.attributes
+                assert "llm.hosted_vllm.choices" in span.attributes
+                choices: list[dict[str, Any]] = ast.literal_eval(span.attributes["llm.hosted_vllm.choices"])  # type: ignore
+
+                # Check for token IDs and logprobs in the first choice
+                assert len(choices) > 0
+                if VLLM_VERSION >= (0, 10, 2):
+                    assert "token_ids" in choices[0]
+                    assert choices[0]["token_ids"]
+                assert "logprobs" in choices[0]
+                assert "content" in choices[0]["logprobs"]
+                assert len(choices[0]["logprobs"]["content"]) > 0
+                assert isinstance(choices[0]["logprobs"]["content"][0], dict)
+                assert "token" in choices[0]["logprobs"]["content"][0]
+                assert "logprob" in choices[0]["logprobs"]["content"][0]
+                assert isinstance(choices[0]["logprobs"]["content"][0]["logprob"], float)
+
+        assert len(spans) > 0
+
+        triplets = adapter.adapt(spans)
+        for i, triplet in enumerate(triplets):
+            print(f">>> Triplet {i}: {triplet}")
+            assert triplet.prompt["token_ids"]
+            assert triplet.response["token_ids"]
+            # TODO: Check logprobs
     finally:
         await proxy.stop()
         await store.stop()

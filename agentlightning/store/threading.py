@@ -18,6 +18,7 @@ from agentlightning.types import (
     RolloutStatus,
     Span,
     TaskInput,
+    Worker,
 )
 
 from .base import UNSET, LightningStore, LightningStoreCapabilities, Unset
@@ -66,9 +67,9 @@ class LightningStoreThreaded(LightningStore):
         with self._lock:
             return await self.store.enqueue_rollout(input, mode, resources_id, config, metadata)
 
-    async def dequeue_rollout(self) -> Optional[AttemptedRollout]:
+    async def dequeue_rollout(self, worker_id: Optional[str] = None) -> Optional[AttemptedRollout]:
         with self._lock:
-            return await self.store.dequeue_rollout()
+            return await self.store.dequeue_rollout(worker_id=worker_id)
 
     async def start_attempt(self, rollout_id: str) -> AttemptedRollout:
         with self._lock:
@@ -179,4 +180,23 @@ class LightningStoreThreaded(LightningStore):
                 worker_id=worker_id,
                 last_heartbeat_time=last_heartbeat_time,
                 metadata=metadata,
+            )
+
+    async def query_workers(self) -> List[Worker]:
+        with self._lock:
+            return await self.store.query_workers()
+
+    async def get_worker_by_id(self, worker_id: str) -> Optional[Worker]:
+        with self._lock:
+            return await self.store.get_worker_by_id(worker_id)
+
+    async def update_worker(
+        self,
+        worker_id: str,
+        heartbeat_stats: Dict[str, Any] | Unset = UNSET,
+    ) -> Worker:
+        with self._lock:
+            return await self.store.update_worker(
+                worker_id=worker_id,
+                heartbeat_stats=heartbeat_stats,
             )

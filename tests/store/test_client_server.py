@@ -229,7 +229,13 @@ async def test_client_server_end_to_end(
     server_queue_config = RolloutConfig(unresponsive_seconds=4.2, max_attempts=2)
     queued_rollout = await server.enqueue_rollout(input={"origin": "server-queue"}, config=server_queue_config)
     assert queued_rollout.config.unresponsive_seconds == 4.2
-    dequeued = await server.dequeue_rollout()
+    server_worker_id = "server-worker"
+    dequeued = await server.dequeue_rollout(worker_id=server_worker_id)
+    server_worker_after_dequeue = await server.get_worker_by_id(server_worker_id)
+    assert server_worker_after_dequeue is not None
+    assert server_worker_after_dequeue.status == "idle"
+    assert server_worker_after_dequeue.last_dequeue_time is not None
+    dequeue_time = server_worker_after_dequeue.last_dequeue_time
     started_attempt = await server.start_attempt(queued_rollout.rollout_id)
 
     await server.query_rollouts()
@@ -260,10 +266,25 @@ async def test_client_server_end_to_end(
         queued_rollout.rollout_id,
         started_attempt.attempt.attempt_id,
         status="running",
-        worker_id="server-worker",
+        worker_id=server_worker_id,
         metadata={"phase": "warmup"},
     )
+    server_worker_busy = await server.get_worker_by_id(server_worker_id)
+    assert server_worker_busy is not None
+    assert server_worker_busy.status == "busy"
+    assert server_worker_busy.current_rollout_id == queued_rollout.rollout_id
+    assert server_worker_busy.current_attempt_id == started_attempt.attempt.attempt_id
+    assert server_worker_busy.last_busy_time is not None
+    assert server_worker_busy.last_busy_time >= dequeue_time
+
     await server.update_attempt(queued_rollout.rollout_id, "latest", status="succeeded")
+    server_worker_idle = await server.get_worker_by_id(server_worker_id)
+    assert server_worker_idle is not None
+    assert server_worker_idle.status == "idle"
+    assert server_worker_idle.current_rollout_id is None
+    assert server_worker_idle.current_attempt_id is None
+    assert server_worker_idle.last_idle_time is not None
+    assert server_worker_idle.last_idle_time >= server_worker_busy.last_busy_time
     completed = await server.wait_for_rollouts(rollout_ids=[queued_rollout.rollout_id], timeout=0.1)
     assert completed and completed[0].status in {"succeeded", "failed", "cancelled"}
 
@@ -285,8 +306,14 @@ async def test_client_server_end_to_end(
     client_queue_config = RolloutConfig(unresponsive_seconds=6.0)
     enqueued = await client.enqueue_rollout(input={"origin": "client-queue"}, config=client_queue_config)
     assert enqueued.config.unresponsive_seconds == 6.0
-    dequeued_client = await client.dequeue_rollout()
+    client_worker_id = "client-worker"
+    dequeued_client = await client.dequeue_rollout(worker_id=client_worker_id)
     assert dequeued_client is not None
+    client_worker_after_dequeue = await client.get_worker_by_id(client_worker_id)
+    assert client_worker_after_dequeue is not None
+    assert client_worker_after_dequeue.status == "idle"
+    assert client_worker_after_dequeue.last_dequeue_time is not None
+    client_dequeue_time = client_worker_after_dequeue.last_dequeue_time
     started_client_attempt = await client.start_attempt(dequeued_client.rollout_id)
 
     all_rollouts = await client.query_rollouts()
@@ -324,11 +351,26 @@ async def test_client_server_end_to_end(
     await client.update_attempt(
         dequeued_client.rollout_id,
         started_client_attempt.attempt.attempt_id,
-        worker_id="client-worker",
+        worker_id=client_worker_id,
         metadata={"info": "started"},
     )
+    client_worker_busy = await client.get_worker_by_id(client_worker_id)
+    assert client_worker_busy is not None
+    assert client_worker_busy.status == "busy"
+    assert client_worker_busy.current_rollout_id == dequeued_client.rollout_id
+    assert client_worker_busy.current_attempt_id == started_client_attempt.attempt.attempt_id
+    assert client_worker_busy.last_busy_time is not None
+    assert client_worker_busy.last_busy_time >= client_dequeue_time
+
     await client.update_attempt(dequeued_client.rollout_id, "latest", status="succeeded")
     await client.update_rollout(dequeued_client.rollout_id, status="succeeded")
+    client_worker_idle = await client.get_worker_by_id(client_worker_id)
+    assert client_worker_idle is not None
+    assert client_worker_idle.status == "idle"
+    assert client_worker_idle.current_rollout_id is None
+    assert client_worker_idle.current_attempt_id is None
+    assert client_worker_idle.last_idle_time is not None
+    assert client_worker_idle.last_idle_time >= client_worker_busy.last_busy_time
 
     wait_result = await client.wait_for_rollouts(rollout_ids=[dequeued_client.rollout_id], timeout=0.05)
     assert wait_result and wait_result[0].status == "succeeded"
@@ -413,6 +455,77 @@ async def test_update_attempt_none_vs_unset(server_client: Tuple[LightningStoreS
     assert preserved.worker_id == ""
     assert preserved.metadata == {}
     assert preserved.status == "running"
+
+
+@pytest.mark.asyncio
+async def test_update_worker_records_heartbeat(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient],
+) -> None:
+    _, client = server_client
+
+    first = await client.update_worker("runner-1", heartbeat_stats={"cpu": 0.4})
+    assert first.status == "unknown"
+    assert first.heartbeat_stats == {"cpu": 0.4}
+    assert first.last_heartbeat_time is not None
+
+    second = await client.update_worker("runner-1")
+    assert second.last_heartbeat_time is not None
+    assert second.last_heartbeat_time >= first.last_heartbeat_time
+    assert second.heartbeat_stats == {"cpu": 0.4}
+
+
+@pytest.mark.asyncio
+async def test_update_worker_rejects_none_stats(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient],
+) -> None:
+    _, client = server_client
+    with pytest.raises(ClientResponseError) as exc_info:
+        await client.update_worker("runner-err", heartbeat_stats=cast(Any, None))
+    assert exc_info.value.status == 400
+
+
+@pytest.mark.asyncio
+async def test_worker_status_transitions_via_attempts(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient],
+) -> None:
+    _, client = server_client
+
+    await client.enqueue_rollout(input={"payload": "worker"})
+    claimed = await client.dequeue_rollout(worker_id="runner-auto")
+    assert claimed is not None
+
+    await client.update_attempt(claimed.rollout_id, claimed.attempt.attempt_id, worker_id="runner-auto")
+    busy = await client.get_worker_by_id("runner-auto")
+    assert busy is not None
+    assert busy.status == "busy"
+    assert busy.current_rollout_id == claimed.rollout_id
+    assert busy.current_attempt_id == claimed.attempt.attempt_id
+    assert busy.last_dequeue_time is not None
+    assert busy.last_busy_time is not None
+
+    await client.update_attempt(claimed.rollout_id, claimed.attempt.attempt_id, status="succeeded")
+    idle = await client.get_worker_by_id("runner-auto")
+    assert idle is not None
+    assert idle.status == "idle"
+    assert idle.current_rollout_id is None
+    assert idle.current_attempt_id is None
+
+
+@pytest.mark.asyncio
+async def test_get_worker_by_id(server_client: Tuple[LightningStoreServer, LightningStoreClient]) -> None:
+    server, client = server_client
+
+    await server.update_worker("runner-lookup", heartbeat_stats={"cpu": 0.3})
+
+    server_worker = await server.get_worker_by_id("runner-lookup")
+    assert server_worker is not None
+    assert server_worker.worker_id == "runner-lookup"
+    assert await server.get_worker_by_id("missing") is None
+
+    client_worker = await client.get_worker_by_id("runner-lookup")
+    assert client_worker is not None
+    assert client_worker.worker_id == "runner-lookup"
+    assert await client.get_worker_by_id("missing") is None
 
 
 @pytest.mark.asyncio

@@ -33,6 +33,7 @@ from agentlightning.types import (
     RolloutConfig,
     Span,
     TraceStatus,
+    Worker,
 )
 
 
@@ -633,6 +634,68 @@ def inject_mock_data(store: InMemoryLightningStore, now: float | None = None) ->
     store._resources["rs-story-004"] = resource4
     store._resources["rs-story-005"] = resource5
     store._latest_resources_id = "rs-story-005"
+
+    # Register workers with diverse states and activity windows.
+    workers = [
+        Worker(
+            worker_id="worker-east",
+            status="busy",
+            heartbeat_stats={"queue_depth": 2, "gpu_utilization": 0.82},
+            last_heartbeat_time=now - 20,
+            last_dequeue_time=now - 60,
+            last_busy_time=now - 120,
+            last_idle_time=now - 600,
+            current_rollout_id="ro-story-001",
+            current_attempt_id="at-story-010",
+        ),
+        Worker(
+            worker_id="worker-north",
+            status="idle",
+            heartbeat_stats={"queue_depth": 0, "gpu_utilization": 0.15},
+            last_heartbeat_time=now - 90,
+            last_dequeue_time=now - 3600,
+            last_busy_time=now - 5400,
+            last_idle_time=now - 5400,
+            current_rollout_id=None,
+            current_attempt_id=None,
+        ),
+        Worker(
+            worker_id="worker-west",
+            status="busy",
+            heartbeat_stats={"queue_depth": 1, "gpu_utilization": 0.41},
+            last_heartbeat_time=now - 45,
+            last_dequeue_time=now - 300,
+            last_busy_time=now - 200,
+            last_idle_time=now - 4800,
+            current_rollout_id="ro-story-003",
+            current_attempt_id="at-story-033",
+        ),
+        Worker(
+            worker_id="worker-south",
+            status="idle",
+            heartbeat_stats={"queue_depth": 0},
+            last_heartbeat_time=now - 900,
+            last_dequeue_time=now - 7200,
+            last_busy_time=now - 8600,
+            last_idle_time=now - 8600,
+            current_rollout_id=None,
+            current_attempt_id=None,
+        ),
+        Worker(
+            worker_id="worker-observer",
+            status="unknown",
+            heartbeat_stats={"queue_depth": 0},
+            last_heartbeat_time=now - 15,
+            last_dequeue_time=now - 4000,
+            last_busy_time=None,
+            last_idle_time=None,
+            current_rollout_id=None,
+            current_attempt_id=None,
+        ),
+    ]
+
+    for worker in workers:
+        store._workers[worker.worker_id] = worker
 
 
 async def main():

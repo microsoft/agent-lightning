@@ -40,6 +40,10 @@ const ROUTES = [
         element: <Placeholder title='Traces' description='Browse telemetry spans across attempts.' />,
       },
       {
+        path: 'runners',
+        element: <Placeholder title='Runners' description='Monitor runner activity and status.' />,
+      },
+      {
         path: 'settings',
         element: (
           <Placeholder title='Settings' description='Configure server connection, refresh cadence, and appearance.' />

@@ -34,6 +34,8 @@ from agentlightning.types import (
     RolloutStatus,
     Span,
     TaskInput,
+    Worker,
+    WorkerStatus,
 )
 
 from .base import UNSET, LightningStore, LightningStoreCapabilities, Unset
@@ -60,6 +62,10 @@ class RolloutRequest(BaseModel):
     resources_id: Optional[str] = None
     config: Optional[RolloutConfig] = None
     metadata: Optional[Dict[str, Any]] = None
+
+
+class DequeueRolloutRequest(BaseModel):
+    worker_id: Optional[str] = None
 
 
 class QueryRolloutsRequest(BaseModel):
@@ -106,6 +112,10 @@ class UpdateAttemptRequest(BaseModel):
     metadata: Optional[Dict[str, Any]] = None
 
 
+class UpdateWorkerRequest(BaseModel):
+    heartbeat_stats: Optional[Dict[str, Any]] = None
+
+
 class QueryAttemptsRequest(BaseModel):
     # Pagination
     limit: int = -1
@@ -146,6 +156,19 @@ class QuerySpansRequest(BaseModel):
     # Sorting
     sort_by: Optional[str] = None
     sort_order: Literal["asc", "desc"] = "asc"
+
+
+class QueryWorkersRequest(BaseModel):
+    status_in: Optional[List[WorkerStatus]] = Field(FastAPIQuery(default=None))
+    worker_id_contains: Optional[str] = None
+    # Pagination
+    limit: int = -1
+    offset: int = 0
+    # Sorting
+    sort_by: Optional[str] = None
+    sort_order: Literal["asc", "desc"] = "asc"
+    # Filtering logic
+    filter_logic: Literal["and", "or"] = "and"
 
 
 def _apply_filters_sort_paginate(
@@ -600,8 +623,11 @@ class LightningStoreServer(LightningStore):
             )
 
         @api.post(API_AGL_PREFIX + "/queues/rollouts/dequeue", response_model=Optional[AttemptedRollout])
-        async def dequeue_rollout():  # pyright: ignore[reportUnusedFunction]
-            return await self.dequeue_rollout()
+        async def dequeue_rollout(  # pyright: ignore[reportUnusedFunction]
+            request: DequeueRolloutRequest | None = Body(None),
+        ):
+            worker_id = request.worker_id if request else None
+            return await self.dequeue_rollout(worker_id=worker_id)
 
         @api.post(API_AGL_PREFIX + "/rollouts", status_code=201, response_model=AttemptedRollout)
         async def start_rollout(request: RolloutRequest):  # pyright: ignore[reportUnusedFunction]
@@ -641,9 +667,11 @@ class LightningStoreServer(LightningStore):
         async def get_rollout_by_id(rollout_id: str):  # pyright: ignore[reportUnusedFunction]
             return await self.get_rollout_by_id(rollout_id)
 
-        def _get_mandatory_field_or_unset(request: BaseModel, field: str) -> Any:
+        def _get_mandatory_field_or_unset(request: BaseModel | None, field: str) -> Any:
             # If some fields are mandatory by the underlying store, but optional in the FastAPI,
             # we make sure it's set to non-null value or UNSET via this function.
+            if request is None:
+                return UNSET
             if field in request.model_fields_set:
                 value = getattr(request, field)
                 if value is None:
@@ -681,6 +709,39 @@ class LightningStoreServer(LightningStore):
                 worker_id=_get_mandatory_field_or_unset(request, "worker_id"),
                 last_heartbeat_time=_get_mandatory_field_or_unset(request, "last_heartbeat_time"),
                 metadata=_get_mandatory_field_or_unset(request, "metadata"),
+            )
+
+        @api.get(API_AGL_PREFIX + "/workers", response_model=PaginatedResponse[Worker])
+        async def query_workers(params: QueryWorkersRequest = Depends()):  # pyright: ignore[reportUnusedFunction]
+            all_workers = await self.query_workers()
+
+            filters: Dict[str, Any] = {}
+            if params.status_in:
+                filters["status_in"] = params.status_in
+            if params.worker_id_contains is not None:
+                filters["worker_id_contains"] = params.worker_id_contains
+
+            return _apply_filters_sort_paginate(
+                all_workers,
+                filters,
+                params.filter_logic,
+                params.sort_by,
+                params.sort_order,
+                params.limit,
+                params.offset,
+            )
+
+        @api.get(API_AGL_PREFIX + "/workers/{worker_id}", response_model=Optional[Worker])
+        async def get_worker(worker_id: str):  # pyright: ignore[reportUnusedFunction]
+            return await self.get_worker_by_id(worker_id)
+
+        @api.post(API_AGL_PREFIX + "/workers/{worker_id}", response_model=Worker)
+        async def update_worker(  # pyright: ignore[reportUnusedFunction]
+            worker_id: str, request: UpdateWorkerRequest | None = Body(None)
+        ):
+            return await self.update_worker(
+                worker_id=worker_id,
+                heartbeat_stats=_get_mandatory_field_or_unset(request, "heartbeat_stats"),
             )
 
         @api.get(API_AGL_PREFIX + "/rollouts/{rollout_id}/attempts", response_model=PaginatedResponse[Attempt])
@@ -893,8 +954,8 @@ class LightningStoreServer(LightningStore):
             metadata,
         )
 
-    async def dequeue_rollout(self) -> Optional[AttemptedRollout]:
-        return await self._call_store_method("dequeue_rollout")
+    async def dequeue_rollout(self, worker_id: Optional[str] = None) -> Optional[AttemptedRollout]:
+        return await self._call_store_method("dequeue_rollout", worker_id)
 
     async def start_attempt(self, rollout_id: str) -> AttemptedRollout:
         return await self._call_store_method("start_attempt", rollout_id)
@@ -997,6 +1058,23 @@ class LightningStoreServer(LightningStore):
             worker_id,
             last_heartbeat_time,
             metadata,
+        )
+
+    async def query_workers(self) -> List[Worker]:
+        return await self._call_store_method("query_workers")
+
+    async def get_worker_by_id(self, worker_id: str) -> Optional[Worker]:
+        return await self._call_store_method("get_worker_by_id", worker_id)
+
+    async def update_worker(
+        self,
+        worker_id: str,
+        heartbeat_stats: Dict[str, Any] | Unset = UNSET,
+    ) -> Worker:
+        return await self._call_store_method(
+            "update_worker",
+            worker_id,
+            heartbeat_stats,
         )
 
 
@@ -1242,7 +1320,7 @@ class LightningStoreClient(LightningStore):
         )
         return Rollout.model_validate(data)
 
-    async def dequeue_rollout(self) -> Optional[AttemptedRollout]:
+    async def dequeue_rollout(self, worker_id: Optional[str] = None) -> Optional[AttemptedRollout]:
         """
         Dequeue a rollout from the server queue.
 
@@ -1255,8 +1333,11 @@ class LightningStoreClient(LightningStore):
         """
         session = await self._get_session()
         url = f"{self.server_address}/queues/rollouts/dequeue"
+        request_kwargs: Dict[str, Any] = {}
+        if worker_id is not None:
+            request_kwargs["json"] = {"worker_id": worker_id}
         try:
-            async with session.post(url) as resp:
+            async with session.post(url, **request_kwargs) as resp:
                 resp.raise_for_status()
                 data = await resp.json()
                 self._dequeue_was_successful = True
@@ -1525,3 +1606,27 @@ class LightningStoreClient(LightningStore):
             json=payload,
         )
         return Attempt.model_validate(data)
+
+    async def query_workers(self) -> List[Worker]:
+        data = await self._request_json("get", "/workers")
+        items = data.get("items", [])
+        return [Worker.model_validate(item) for item in items]
+
+    async def get_worker_by_id(self, worker_id: str) -> Optional[Worker]:
+        data = await self._request_json("get", f"/workers/{worker_id}")
+        if data is None:
+            return None
+        return Worker.model_validate(data)
+
+    async def update_worker(
+        self,
+        worker_id: str,
+        heartbeat_stats: Dict[str, Any] | Unset = UNSET,
+    ) -> Worker:
+        payload: Dict[str, Any] = {}
+        if not isinstance(heartbeat_stats, Unset):
+            payload["heartbeat_stats"] = heartbeat_stats
+        json_payload = payload if payload else None
+
+        data = await self._request_json("post", f"/workers/{worker_id}", json=json_payload)
+        return Worker.model_validate(data)

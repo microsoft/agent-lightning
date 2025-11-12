@@ -22,6 +22,7 @@ const DEFAULT_RECORDS_PER_PAGE_OPTIONS = [50, 100, 200, 500];
 
 const COLUMN_VISIBILITY: Record<string, ColumnVisibilityConfig> = {
   name: { minWidth: 12.5, priority: 0 },
+  sequenceId: { fixedWidth: 6, priority: 1 },
   spanId: { fixedWidth: 14, priority: 1 },
   traceId: { fixedWidth: 24, priority: 3 },
   parentId: { fixedWidth: 12, priority: 2 },
@@ -85,6 +86,12 @@ function createTracesColumns({
           {name}
         </Text>
       ),
+    },
+    {
+      accessor: 'sequenceId',
+      title: 'Seq.',
+      sortable: true,
+      render: ({ sequenceId }) => <Text size='sm'>{sequenceId}</Text>,
     },
     {
       accessor: 'traceId',
