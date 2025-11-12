@@ -15,7 +15,8 @@ def get_tracer() -> trace_api.Tracer:
     Raises:
         RuntimeError: If OpenTelemetry was not initialized before calling this helper.
     """
-    if hasattr(trace_api, "_TRACER_PROVIDER") and trace_api._TRACER_PROVIDER is None:  # type: ignore[attr-defined]
+    is_trace_api = getattr(trace_api, "_TRACER_PROVIDER", None)
+    if is_trace_api is None:
         raise RuntimeError("Tracer is not initialized. Cannot emit a meaningful span.")
 
     tracer_provider = get_tracer_provider()
