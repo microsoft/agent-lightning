@@ -5,6 +5,7 @@
 Agent-lightning v0.2.2 is a stabilization release for v0.2.1. It introduces several bug fixes.
 
 * Fix compatibility issues with VERL 0.6.0.
+* Fix model name for pre-downloaded models in VERL.
 * Fix preparing status transition on rollout when creating attempts.
 * Fix OpenAI Agents SDK compatibility issues.
 
