@@ -446,6 +446,46 @@ async def test_requeue_mechanism(store_fixture: LightningStore) -> None:
     assert latest_attempt.sequence_id == 2
 
 
+@pytest.mark.asyncio
+async def test_update_and_query_workers(store_fixture: LightningStore) -> None:
+    """Workers can be created, updated, and queried."""
+    now = time.time()
+    worker = await store_fixture.update_worker(
+        "worker-1",
+        status="busy",
+        heartbeat_stats={"cpu": 0.5},
+        last_heartbeat_time=now,
+        last_dequeue_time=now - 5,
+        last_busy_time=now,
+        current_rollout_id="ro-1",
+        current_attempt_id="at-1",
+    )
+    assert worker.worker_id == "worker-1"
+    assert worker.status == "busy"
+    assert worker.heartbeat_stats == {"cpu": 0.5}
+    assert worker.current_rollout_id == "ro-1"
+
+    workers = await store_fixture.query_workers()
+    assert len(workers) == 1
+    assert workers[0].worker_id == "worker-1"
+
+    updated = await store_fixture.update_worker(
+        "worker-1",
+        status="idle",
+        heartbeat_stats={"cpu": 0.25},
+        current_rollout_id=None,
+        current_attempt_id=None,
+        last_idle_time=now + 1,
+    )
+    assert updated.status == "idle"
+    assert updated.heartbeat_stats == {"cpu": 0.25}
+    assert updated.current_rollout_id is None
+    assert updated.current_attempt_id is None
+
+    with pytest.raises(ValueError):
+        await store_fixture.update_worker("worker-1", heartbeat_stats=None)  # type: ignore[arg-type]
+
+
 # Resource Management Tests
 
 

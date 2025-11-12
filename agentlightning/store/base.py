@@ -560,25 +560,25 @@ class LightningStore:
         self,
         worker_id: str,
         status: WorkerStatus | Unset = UNSET,
-        heartbeat_stats: Optional[Dict[str, Any]] | Unset = UNSET,
+        heartbeat_stats: Dict[str, Any] | Unset = UNSET,
         last_heartbeat_time: float | Unset = UNSET,
         last_dequeue_time: float | Unset = UNSET,
         last_busy_time: float | Unset = UNSET,
         last_idle_time: float | Unset = UNSET,
-        current_rollout_id: str | Unset = UNSET,
-        current_attempt_id: str | Unset = UNSET,
+        current_rollout_id: Optional[str] | Unset = UNSET,
+        current_attempt_id: Optional[str] | Unset = UNSET,
     ) -> Worker:
         """Update worker information.
 
         Args:
             worker_id: Identifier of the worker to update.
             status: Replacement worker status.
-            heartbeat_stats: Replacement worker heartbeat statistics.
+            heartbeat_stats: Replacement worker heartbeat statistics (non-null when provided).
             last_heartbeat_time: Replacement last heartbeat time.
             last_dequeue_time: Replacement last dequeue time.
             last_busy_time: Replacement last busy time.
             last_idle_time: Replacement last idle time.
-            current_rollout_id: Replacement current rollout ID.
-            current_attempt_id: Replacement current attempt ID.
+            current_rollout_id: Replacement current rollout ID (pass `None` to clear).
+            current_attempt_id: Replacement current attempt ID (pass `None` to clear).
         """
         raise NotImplementedError()

@@ -25,6 +25,7 @@ from agentlightning.types import (
     SpanContext,
     TaskInput,
     TraceStatus,
+    Worker,
 )
 
 from .dummy_store import DummyLightningStore
@@ -160,6 +161,8 @@ async def test_threaded_store_delegates_all_methods() -> None:
         last_heartbeat_time=1.5,
         metadata={"idx": 0},
     )
+    worker_list = [Worker(worker_id="worker-1", status="busy")]
+    updated_worker = Worker(worker_id="worker-1", status="idle")
 
     return_values = {
         "start_rollout": attempted_rollout,
@@ -180,6 +183,8 @@ async def test_threaded_store_delegates_all_methods() -> None:
         "query_spans": [span],
         "update_rollout": updated_rollout,
         "update_attempt": updated_attempt,
+        "query_workers": worker_list,
+        "update_worker": updated_worker,
     }
 
     dummy_store = DummyLightningStore(return_values)
@@ -231,6 +236,16 @@ async def test_threaded_store_delegates_all_methods() -> None:
         )
         == updated_attempt
     )
+    assert await threaded_store.query_workers() == worker_list
+    assert (
+        await threaded_store.update_worker(
+            "worker-1",
+            status="idle",
+            heartbeat_stats={"cpu": 0.5},
+            last_heartbeat_time=1.5,
+        )
+        == updated_worker
+    )
 
     expected_order = [
         "start_rollout",
@@ -251,6 +266,8 @@ async def test_threaded_store_delegates_all_methods() -> None:
         "query_spans",
         "update_rollout",
         "update_attempt",
+        "query_workers",
+        "update_worker",
     ]
     assert [name for name, *_ in dummy_store.calls] == expected_order
 

@@ -1012,3 +1012,81 @@ async def test_client_query_with_filters(
     rollouts = await client.query_rollouts(rollout_ids=[r2.rollout_id])
     assert len(rollouts) == 1
     assert rollouts[0].rollout_id == r2.rollout_id
+
+
+@pytest.mark.asyncio
+async def test_workers_endpoint_supports_updates(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    _server, _client, session, api_endpoint = server_client
+
+    async with session.post(
+        f"{api_endpoint}/workers/worker-1",
+        json={"status": "busy", "current_rollout_id": "ro-1", "current_attempt_id": "at-1"},
+    ) as resp:
+        assert resp.status == 200
+        created = await resp.json()
+        assert created["worker_id"] == "worker-1"
+
+    async with session.get(f"{api_endpoint}/workers") as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        workers = data["items"]
+        assert len(workers) == 1
+        assert workers[0]["current_rollout_id"] == "ro-1"
+
+    async with session.post(
+        f"{api_endpoint}/workers/worker-1",
+        json={"status": "idle", "current_rollout_id": None, "current_attempt_id": None},
+    ) as resp:
+        assert resp.status == 200
+
+    async with session.get(f"{api_endpoint}/workers") as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        workers = data["items"]
+        assert workers[0]["status"] == "idle"
+        assert workers[0]["current_rollout_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_workers_endpoint_rejects_none_stats(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    _server, _client, session, api_endpoint = server_client
+
+    async with session.post(
+        f"{api_endpoint}/workers/worker-err",
+        json={"status": "busy", "heartbeat_stats": None},
+    ) as resp:
+        assert resp.status == 400
+
+
+@pytest.mark.asyncio
+async def test_workers_endpoint_filter_and_sort(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    server, _client, session, api_endpoint = server_client
+
+    await server.update_worker("worker-a", status="idle", heartbeat_stats={"cpu": 0.1})
+    await server.update_worker("worker-b", status="busy", heartbeat_stats={"cpu": 0.9})
+    await server.update_worker("worker-c", status="busy", heartbeat_stats={"cpu": 0.2})
+
+    async with session.get(
+        f"{api_endpoint}/workers",
+        params={"status_in": ["busy"], "worker_id_contains": "worker", "sort_by": "worker_id", "sort_order": "desc"},
+    ) as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        items = data["items"]
+        assert [w["worker_id"] for w in items] == ["worker-c", "worker-b"]
+
+    async with session.get(
+        f"{api_endpoint}/workers",
+        params={"limit": 1, "offset": 1, "sort_by": "worker_id", "sort_order": "asc"},
+    ) as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        assert data["limit"] == 1
+        assert data["offset"] == 1
+        assert len(data["items"]) == 1

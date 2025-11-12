@@ -18,6 +18,8 @@ from agentlightning.types import (
     RolloutStatus,
     Span,
     TaskInput,
+    Worker,
+    WorkerStatus,
 )
 
 from .base import UNSET, LightningStore, LightningStoreCapabilities, Unset
@@ -179,4 +181,33 @@ class LightningStoreThreaded(LightningStore):
                 worker_id=worker_id,
                 last_heartbeat_time=last_heartbeat_time,
                 metadata=metadata,
+            )
+
+    async def query_workers(self) -> List[Worker]:
+        with self._lock:
+            return await self.store.query_workers()
+
+    async def update_worker(
+        self,
+        worker_id: str,
+        status: WorkerStatus | Unset = UNSET,
+        heartbeat_stats: Dict[str, Any] | Unset = UNSET,
+        last_heartbeat_time: float | Unset = UNSET,
+        last_dequeue_time: float | Unset = UNSET,
+        last_busy_time: float | Unset = UNSET,
+        last_idle_time: float | Unset = UNSET,
+        current_rollout_id: Optional[str] | Unset = UNSET,
+        current_attempt_id: Optional[str] | Unset = UNSET,
+    ) -> Worker:
+        with self._lock:
+            return await self.store.update_worker(
+                worker_id=worker_id,
+                status=status,
+                heartbeat_stats=heartbeat_stats,
+                last_heartbeat_time=last_heartbeat_time,
+                last_dequeue_time=last_dequeue_time,
+                last_busy_time=last_busy_time,
+                last_idle_time=last_idle_time,
+                current_rollout_id=current_rollout_id,
+                current_attempt_id=current_attempt_id,
             )

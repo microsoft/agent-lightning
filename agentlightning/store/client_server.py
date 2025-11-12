@@ -34,6 +34,8 @@ from agentlightning.types import (
     RolloutStatus,
     Span,
     TaskInput,
+    Worker,
+    WorkerStatus,
 )
 
 from .base import UNSET, LightningStore, LightningStoreCapabilities, Unset
@@ -106,6 +108,17 @@ class UpdateAttemptRequest(BaseModel):
     metadata: Optional[Dict[str, Any]] = None
 
 
+class UpdateWorkerRequest(BaseModel):
+    status: Optional[WorkerStatus] = None
+    heartbeat_stats: Optional[Dict[str, Any]] = None
+    last_heartbeat_time: Optional[float] = None
+    last_dequeue_time: Optional[float] = None
+    last_busy_time: Optional[float] = None
+    last_idle_time: Optional[float] = None
+    current_rollout_id: Optional[str] = None
+    current_attempt_id: Optional[str] = None
+
+
 class QueryAttemptsRequest(BaseModel):
     # Pagination
     limit: int = -1
@@ -146,6 +159,19 @@ class QuerySpansRequest(BaseModel):
     # Sorting
     sort_by: Optional[str] = None
     sort_order: Literal["asc", "desc"] = "asc"
+
+
+class QueryWorkersRequest(BaseModel):
+    status_in: Optional[List[WorkerStatus]] = Field(FastAPIQuery(default=None))
+    worker_id_contains: Optional[str] = None
+    # Pagination
+    limit: int = -1
+    offset: int = 0
+    # Sorting
+    sort_by: Optional[str] = None
+    sort_order: Literal["asc", "desc"] = "asc"
+    # Filtering logic
+    filter_logic: Literal["and", "or"] = "and"
 
 
 def _apply_filters_sort_paginate(
@@ -652,6 +678,12 @@ class LightningStoreServer(LightningStore):
             else:
                 return UNSET
 
+        def _optional_field_or_unset(request: BaseModel, field: str) -> Any:
+            # Same as above but allows explicit nulls to clear optional fields.
+            if field in request.model_fields_set:
+                return getattr(request, field)
+            return UNSET
+
         @api.post(API_AGL_PREFIX + "/rollouts/{rollout_id}", response_model=Rollout)
         async def update_rollout(  # pyright: ignore[reportUnusedFunction]
             rollout_id: str, request: UpdateRolloutRequest = Body(...)
@@ -681,6 +713,42 @@ class LightningStoreServer(LightningStore):
                 worker_id=_get_mandatory_field_or_unset(request, "worker_id"),
                 last_heartbeat_time=_get_mandatory_field_or_unset(request, "last_heartbeat_time"),
                 metadata=_get_mandatory_field_or_unset(request, "metadata"),
+            )
+
+        @api.get(API_AGL_PREFIX + "/workers", response_model=PaginatedResponse[Worker])
+        async def query_workers(params: QueryWorkersRequest = Depends()):  # pyright: ignore[reportUnusedFunction]
+            all_workers = await self.query_workers()
+
+            filters: Dict[str, Any] = {}
+            if params.status_in:
+                filters["status_in"] = params.status_in
+            if params.worker_id_contains is not None:
+                filters["worker_id_contains"] = params.worker_id_contains
+
+            return _apply_filters_sort_paginate(
+                all_workers,
+                filters,
+                params.filter_logic,
+                params.sort_by,
+                params.sort_order,
+                params.limit,
+                params.offset,
+            )
+
+        @api.post(API_AGL_PREFIX + "/workers/{worker_id}", response_model=Worker)
+        async def update_worker(  # pyright: ignore[reportUnusedFunction]
+            worker_id: str, request: UpdateWorkerRequest = Body(...)
+        ):
+            return await self.update_worker(
+                worker_id=worker_id,
+                status=_get_mandatory_field_or_unset(request, "status"),
+                heartbeat_stats=_get_mandatory_field_or_unset(request, "heartbeat_stats"),
+                last_heartbeat_time=_get_mandatory_field_or_unset(request, "last_heartbeat_time"),
+                last_dequeue_time=_get_mandatory_field_or_unset(request, "last_dequeue_time"),
+                last_busy_time=_get_mandatory_field_or_unset(request, "last_busy_time"),
+                last_idle_time=_get_mandatory_field_or_unset(request, "last_idle_time"),
+                current_rollout_id=_optional_field_or_unset(request, "current_rollout_id"),
+                current_attempt_id=_optional_field_or_unset(request, "current_attempt_id"),
             )
 
         @api.get(API_AGL_PREFIX + "/rollouts/{rollout_id}/attempts", response_model=PaginatedResponse[Attempt])
@@ -997,6 +1065,34 @@ class LightningStoreServer(LightningStore):
             worker_id,
             last_heartbeat_time,
             metadata,
+        )
+
+    async def query_workers(self) -> List[Worker]:
+        return await self._call_store_method("query_workers")
+
+    async def update_worker(
+        self,
+        worker_id: str,
+        status: WorkerStatus | Unset = UNSET,
+        heartbeat_stats: Dict[str, Any] | Unset = UNSET,
+        last_heartbeat_time: float | Unset = UNSET,
+        last_dequeue_time: float | Unset = UNSET,
+        last_busy_time: float | Unset = UNSET,
+        last_idle_time: float | Unset = UNSET,
+        current_rollout_id: Optional[str] | Unset = UNSET,
+        current_attempt_id: Optional[str] | Unset = UNSET,
+    ) -> Worker:
+        return await self._call_store_method(
+            "update_worker",
+            worker_id,
+            status,
+            heartbeat_stats,
+            last_heartbeat_time,
+            last_dequeue_time,
+            last_busy_time,
+            last_idle_time,
+            current_rollout_id,
+            current_attempt_id,
         )
 
 
@@ -1525,3 +1621,41 @@ class LightningStoreClient(LightningStore):
             json=payload,
         )
         return Attempt.model_validate(data)
+
+    async def query_workers(self) -> List[Worker]:
+        data = await self._request_json("get", "/workers")
+        items = data.get("items", [])
+        return [Worker.model_validate(item) for item in items]
+
+    async def update_worker(
+        self,
+        worker_id: str,
+        status: WorkerStatus | Unset = UNSET,
+        heartbeat_stats: Dict[str, Any] | Unset = UNSET,
+        last_heartbeat_time: float | Unset = UNSET,
+        last_dequeue_time: float | Unset = UNSET,
+        last_busy_time: float | Unset = UNSET,
+        last_idle_time: float | Unset = UNSET,
+        current_rollout_id: Optional[str] | Unset = UNSET,
+        current_attempt_id: Optional[str] | Unset = UNSET,
+    ) -> Worker:
+        payload: Dict[str, Any] = {}
+        if not isinstance(status, Unset):
+            payload["status"] = status
+        if not isinstance(heartbeat_stats, Unset):
+            payload["heartbeat_stats"] = heartbeat_stats
+        if not isinstance(last_heartbeat_time, Unset):
+            payload["last_heartbeat_time"] = last_heartbeat_time
+        if not isinstance(last_dequeue_time, Unset):
+            payload["last_dequeue_time"] = last_dequeue_time
+        if not isinstance(last_busy_time, Unset):
+            payload["last_busy_time"] = last_busy_time
+        if not isinstance(last_idle_time, Unset):
+            payload["last_idle_time"] = last_idle_time
+        if not isinstance(current_rollout_id, Unset):
+            payload["current_rollout_id"] = current_rollout_id
+        if not isinstance(current_attempt_id, Unset):
+            payload["current_attempt_id"] = current_attempt_id
+
+        data = await self._request_json("post", f"/workers/{worker_id}", json=payload)
+        return Worker.model_validate(data)

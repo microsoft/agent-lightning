@@ -44,6 +44,8 @@ from agentlightning.types import (
     RolloutStatus,
     Span,
     TaskInput,
+    Worker,
+    WorkerStatus,
 )
 
 from .base import UNSET, LightningStore, LightningStoreCapabilities, Unset, is_finished, is_queuing
@@ -242,6 +244,8 @@ class InMemoryLightningStore(LightningStore):
 
         # Completion tracking for wait_for_rollouts (cross-loop safe)
         self._completion_events: Dict[str, threading.Event] = {}
+        # Worker tracking
+        self._workers: Dict[str, Worker] = {}
 
     def capabilities(self) -> LightningStoreCapabilities:
         """Return the capabilities of the store."""
@@ -980,6 +984,54 @@ class InMemoryLightningStore(LightningStore):
             )
 
         return attempt
+
+    @_healthcheck_wrapper
+    async def query_workers(self) -> List[Worker]:
+        """Return the current snapshot of all workers."""
+        async with self._lock:
+            return list(self._workers.values())
+
+    @_healthcheck_wrapper
+    async def update_worker(
+        self,
+        worker_id: str,
+        status: WorkerStatus | Unset = UNSET,
+        heartbeat_stats: Dict[str, Any] | Unset = UNSET,
+        last_heartbeat_time: float | Unset = UNSET,
+        last_dequeue_time: float | Unset = UNSET,
+        last_busy_time: float | Unset = UNSET,
+        last_idle_time: float | Unset = UNSET,
+        current_rollout_id: Optional[str] | Unset = UNSET,
+        current_attempt_id: Optional[str] | Unset = UNSET,
+    ) -> Worker:
+        """Create or update a worker entry."""
+        async with self._lock:
+            worker = self._workers.get(worker_id)
+            if worker is None:
+                worker = Worker(worker_id=worker_id)
+                self._workers[worker_id] = worker
+
+            if not isinstance(status, Unset):
+                worker.status = status
+            if not isinstance(heartbeat_stats, Unset):
+                if heartbeat_stats is None:
+                    raise ValueError("heartbeat_stats cannot be None")
+                worker.heartbeat_stats = dict(heartbeat_stats)
+            if not isinstance(last_heartbeat_time, Unset):
+                worker.last_heartbeat_time = last_heartbeat_time
+            if not isinstance(last_dequeue_time, Unset):
+                worker.last_dequeue_time = last_dequeue_time
+            if not isinstance(last_busy_time, Unset):
+                worker.last_busy_time = last_busy_time
+            if not isinstance(last_idle_time, Unset):
+                worker.last_idle_time = last_idle_time
+            if not isinstance(current_rollout_id, Unset):
+                worker.current_rollout_id = current_rollout_id
+            if not isinstance(current_attempt_id, Unset):
+                worker.current_attempt_id = current_attempt_id
+
+            Worker.model_validate(worker.model_dump())
+            return worker
 
     async def _healthcheck(self) -> None:
         """Perform healthcheck against all running rollouts in the store."""

@@ -416,6 +416,74 @@ async def test_update_attempt_none_vs_unset(server_client: Tuple[LightningStoreS
 
 
 @pytest.mark.asyncio
+async def test_update_worker_none_vs_unset(server_client: Tuple[LightningStoreServer, LightningStoreClient]) -> None:
+    _, client = server_client
+
+    await client.update_worker("runner-1", status="busy", current_rollout_id="ro-1", current_attempt_id="at-1")
+    workers = await client.query_workers()
+    worker = next(w for w in workers if w.worker_id == "runner-1")
+    assert worker.status == "busy"
+    assert worker.current_rollout_id == "ro-1"
+    assert worker.current_attempt_id == "at-1"
+
+    await client.update_worker("runner-1", status="idle", current_rollout_id=None, current_attempt_id=None)
+    workers = await client.query_workers()
+    worker = next(w for w in workers if w.worker_id == "runner-1")
+    assert worker.status == "idle"
+    assert worker.current_rollout_id is None
+    assert worker.current_attempt_id is None
+
+    await client.update_worker("runner-1", status=UNSET, current_rollout_id=UNSET, current_attempt_id=UNSET)
+    workers = await client.query_workers()
+    worker = next(w for w in workers if w.worker_id == "runner-1")
+    assert worker.status == "idle"
+
+
+@pytest.mark.asyncio
+async def test_update_worker_rejects_none_status(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient],
+) -> None:
+    _, client = server_client
+    with pytest.raises(ClientResponseError) as exc_info:
+        await client.update_worker("runner-err", status=cast(Any, None))
+    assert exc_info.value.status == 400
+
+
+@pytest.mark.asyncio
+async def test_update_worker_rejects_none_stats(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient],
+) -> None:
+    _, client = server_client
+    with pytest.raises(ClientResponseError) as exc_info:
+        await client.update_worker("runner-err", status="busy", heartbeat_stats=cast(Any, None))
+    assert exc_info.value.status == 400
+
+
+@pytest.mark.asyncio
+async def test_update_worker_rejects_none_forbidden_fields(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient],
+) -> None:
+    _, client = server_client
+    attempted = await client.start_rollout(input={"payload": True})
+
+    forbidden_payloads = [
+        {"heartbeat_stats": None},
+        {"last_heartbeat_time": None},
+        {"last_dequeue_time": None},
+        {"last_busy_time": None},
+        {"last_idle_time": None},
+    ]
+
+    for payload in forbidden_payloads:
+        with pytest.raises(ClientResponseError):
+            await client.update_worker("runner-2", status="busy", **payload)  # type: ignore
+
+    # These fields can be set to None explicitly
+    await client.update_worker("runner-3", status="busy", current_rollout_id=attempted.rollout_id)
+    await client.update_worker("runner-3", current_rollout_id=None, current_attempt_id=None)
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "bad_payload",
     [

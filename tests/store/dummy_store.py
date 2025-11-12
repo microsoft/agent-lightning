@@ -16,6 +16,8 @@ from agentlightning.types import (
     RolloutStatus,
     Span,
     TaskInput,
+    Worker,
+    WorkerStatus,
 )
 
 
@@ -156,6 +158,41 @@ class DummyLightningStore(LightningStore):
         )
         return self.return_values["update_attempt"]
 
+    async def query_workers(self) -> List[Worker]:
+        self.calls.append(("query_workers", (), {}))
+        return self.return_values["query_workers"]
+
+    async def update_worker(
+        self,
+        worker_id: str,
+        status: WorkerStatus | Any = UNSET,
+        heartbeat_stats: Dict[str, Any] | Any = UNSET,
+        last_heartbeat_time: float | Any = UNSET,
+        last_dequeue_time: float | Any = UNSET,
+        last_busy_time: float | Any = UNSET,
+        last_idle_time: float | Any = UNSET,
+        current_rollout_id: Optional[str] | Any = UNSET,
+        current_attempt_id: Optional[str] | Any = UNSET,
+    ) -> Worker:
+        self.calls.append(
+            (
+                "update_worker",
+                (
+                    worker_id,
+                    status,
+                    heartbeat_stats,
+                    last_heartbeat_time,
+                    last_dequeue_time,
+                    last_busy_time,
+                    last_idle_time,
+                    current_rollout_id,
+                    current_attempt_id,
+                ),
+                {},
+            )
+        )
+        return self.return_values["update_worker"]
+
 
 def minimal_dummy_store() -> DummyLightningStore:
     # Provide minimal return values
@@ -180,5 +217,7 @@ def minimal_dummy_store() -> DummyLightningStore:
             "query_spans": [],
             "update_rollout": None,
             "update_attempt": None,
+            "query_workers": [],
+            "update_worker": Worker(worker_id="worker-0"),
         }
     )
