@@ -409,7 +409,7 @@ class AgentLightningTrainer(RayPPOTrainer):
             # Note (Zhiyuan): To avoid further patch into vllm async server, using the same sentence to get the naming here.
             # However, it is possible that verl updates the naming and causes incompatibility.
             # Reference: https://github.com/volcengine/verl/blob/5b5e09d9cc20625e436d01f69d9cc739ff681c54/verl/workers/rollout/vllm_rollout/vllm_async_server.py#L217
-            model = ("/".join(self.config.actor_rollout_ref.model.path.split("/")[-2:]),)
+            model = "/".join(self.config.actor_rollout_ref.model.path.split("/")[-2:])
         else:
             # For other versions (e.g., 0.6.0), we use the full path to the model.
             model = self.config.actor_rollout_ref.model.path
