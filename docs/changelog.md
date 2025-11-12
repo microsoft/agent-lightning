@@ -1,5 +1,17 @@
 # Changelog
 
+## Agent-lightning v0.2.2 (11/12/2025)
+
+Agent-lightning v0.2.2 is a stabilization release for v0.2.1. It introduces several bug fixes.
+
+* Fix compatibility issues with VERL 0.6.0.
+* Fix preparing status transition on rollout when creating attempts.
+* Fix OpenAI Agents SDK compatibility issues.
+
+**Full Changelog**: https://github.com/microsoft/agent-lightning/compare/v0.2.1...v0.2.2
+
+---
+
 ## Agent-lightning v0.2.1 (10/30/2025)
 
 Agent-lightning v0.2.1 is a stabilization release for v0.2.0. It introduces several bug fixes and new features, plus a number of unlisted CI improvements.
