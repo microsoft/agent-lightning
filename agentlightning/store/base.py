@@ -17,6 +17,8 @@ from agentlightning.types import (
     RolloutStatus,
     Span,
     TaskInput,
+    Worker,
+    WorkerStatus,
 )
 
 
@@ -541,5 +543,42 @@ class LightningStore:
         Raises:
             NotImplementedError: Subclasses must implement mutation logic.
             ValueError: Implementations must raise when the rollout or attempt is unknown.
+        """
+        raise NotImplementedError()
+
+    async def query_workers(
+        self,
+    ) -> List[Worker]:
+        """Query all workers in the system.
+
+        Returns:
+            A list of all workers.
+        """
+        raise NotImplementedError()
+
+    async def update_worker(
+        self,
+        worker_id: str,
+        status: WorkerStatus | Unset = UNSET,
+        heartbeat_stats: Optional[Dict[str, Any]] | Unset = UNSET,
+        last_heartbeat_time: float | Unset = UNSET,
+        last_dequeue_time: float | Unset = UNSET,
+        last_busy_time: float | Unset = UNSET,
+        last_idle_time: float | Unset = UNSET,
+        current_rollout_id: str | Unset = UNSET,
+        current_attempt_id: str | Unset = UNSET,
+    ) -> Worker:
+        """Update worker information.
+
+        Args:
+            worker_id: Identifier of the worker to update.
+            status: Replacement worker status.
+            heartbeat_stats: Replacement worker heartbeat statistics.
+            last_heartbeat_time: Replacement last heartbeat time.
+            last_dequeue_time: Replacement last dequeue time.
+            last_busy_time: Replacement last busy time.
+            last_idle_time: Replacement last idle time.
+            current_rollout_id: Replacement current rollout ID.
+            current_attempt_id: Replacement current attempt ID.
         """
         raise NotImplementedError()

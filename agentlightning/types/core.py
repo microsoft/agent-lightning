@@ -49,6 +49,8 @@ __all__ = [
     "Attempt",
     "AttemptedRollout",
     "Hook",
+    "Worker",
+    "WorkerStatus",
 ]
 
 T_co = TypeVar("T_co", covariant=True)
