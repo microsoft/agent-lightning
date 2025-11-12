@@ -246,6 +246,9 @@ class InMemoryLightningStore(LightningStore):
         # Worker tracking
         self._workers: Dict[str, Worker] = {}
 
+        # Running rollouts cache, including preparing and running rollouts
+        self._running_rollout_ids: Set[str] = set()
+
     def _get_or_create_worker(self, worker_id: str) -> Worker:
         worker = self._workers.get(worker_id)
         if worker is None:
@@ -321,6 +324,7 @@ class InMemoryLightningStore(LightningStore):
                 config=rollout_config,
                 metadata=rollout_metadata,
             )
+            self._running_rollout_ids.add(rollout.rollout_id)
 
             # Create the initial attempt
             attempt_id = _generate_attempt_id()
@@ -401,6 +405,7 @@ class InMemoryLightningStore(LightningStore):
                 if is_queuing(rollout):
                     # Update status to preparing
                     rollout.status = "preparing"
+                    self._running_rollout_ids.add(rollout.rollout_id)
 
                     # Create a new attempt (could be first attempt or retry)
                     attempt_id = _generate_attempt_id()
@@ -699,6 +704,7 @@ class InMemoryLightningStore(LightningStore):
         if current_attempt == latest_attempt:
             if rollout.status == "preparing":
                 rollout.status = "running"
+                self._running_rollout_ids.add(rollout.rollout_id)
             elif rollout.status in ["queuing", "requeuing"]:
                 try:
                     self._task_queue.remove(rollout)
@@ -707,6 +713,7 @@ class InMemoryLightningStore(LightningStore):
                         f"Trying to remove rollout {rollout.rollout_id} from the queue but it's not in the queue."
                     )
                 rollout.status = "running"
+                self._running_rollout_ids.add(rollout.rollout_id)
 
         return span
 
@@ -952,6 +959,12 @@ class InMemoryLightningStore(LightningStore):
         elif is_queuing(rollout) and rollout not in self._task_queue:
             self._task_queue.append(rollout)
 
+        # Updating running rollouts cache
+        if rollout.status in ["preparing", "running"]:
+            self._running_rollout_ids.add(rollout.rollout_id)
+        else:
+            self._running_rollout_ids.discard(rollout.rollout_id)
+
         # If the rollout is no longer in a queueing state, remove it from the queue.
         if not isinstance(status, Unset) and not is_queuing(rollout) and rollout in self._task_queue:
             try:
@@ -1063,8 +1076,9 @@ class InMemoryLightningStore(LightningStore):
         """Perform healthcheck against all running rollouts in the store."""
         async with self._lock:
             running_rollouts: List[AttemptedRollout] = []
-            for rollout in self._rollouts.values():
-                if rollout.status in ["preparing", "running"]:
+            for rollout_id in self._running_rollout_ids:
+                rollout = self._rollouts.get(rollout_id)
+                if rollout is not None and rollout.status in ["preparing", "running"]:
                     all_attempts = self._attempts.get(rollout.rollout_id, [])
                     if not all_attempts:
                         # The rollout is running but has no attempts, this should not happen
