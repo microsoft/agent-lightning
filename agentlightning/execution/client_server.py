@@ -67,8 +67,8 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
         server_host: str | None = None,
         server_port: int | None = None,
         n_runners: int = 1,
-        graceful_timeout: float = 5.0,
-        terminate_timeout: float = 5.0,
+        graceful_timeout: float = 10.0,
+        terminate_timeout: float = 10.0,
         main_process: Literal["algorithm", "runner"] = "algorithm",
         managed_store: bool | None = None,
     ) -> None:
