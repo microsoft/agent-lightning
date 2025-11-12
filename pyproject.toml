@@ -181,6 +181,9 @@ sql = [
 crewai = [
   "crewai[tools]>=1.2.0",
 ]
+adk = [
+  "google-adk>=0.3.0",
+]
 
 # Summarize into large installable groups.
 agents = [
@@ -190,6 +193,7 @@ agents = [
   {include-group = "sql"},
   {include-group = "anthropic"},
   {include-group = "crewai"},
+  {include-group = "adk"},
 ]
 
 [tool.uv]
