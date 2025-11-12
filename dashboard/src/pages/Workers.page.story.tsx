@@ -101,6 +101,17 @@ const sampleWorkers: Worker[] = [
     currentRolloutId: null,
     currentAttemptId: null,
   },
+  {
+    workerId: 'worker-observer',
+    status: 'unknown',
+    heartbeatStats: { queueDepth: 0 },
+    lastHeartbeatTime: now - 30,
+    lastDequeueTime: now - 6400,
+    lastBusyTime: null,
+    lastIdleTime: null,
+    currentRolloutId: null,
+    currentAttemptId: null,
+  },
 ];
 
 const defaultHandlers = createWorkersHandlers(sampleWorkers);

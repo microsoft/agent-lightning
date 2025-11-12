@@ -56,6 +56,7 @@ type WorkersColumnsOptions = {
 const STATUS_COLORS: Record<Worker['status'], string> = {
   busy: 'orange',
   idle: 'teal',
+  unknown: 'gray',
 };
 
 function createWorkersColumns({ onShowDetails }: WorkersColumnsOptions): DataTableColumn<WorkersTableRecord>[] {

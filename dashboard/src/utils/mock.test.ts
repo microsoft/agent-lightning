@@ -258,6 +258,17 @@ const sampleWorkers: Worker[] = [
     currentRolloutId: 'ro-003',
     currentAttemptId: 'at-003',
   },
+  {
+    workerId: 'worker-delta',
+    status: 'unknown',
+    heartbeatStats: { queueDepth: 0 },
+    lastHeartbeatTime: now - 5,
+    lastDequeueTime: now - 80,
+    lastBusyTime: null,
+    lastIdleTime: null,
+    currentRolloutId: null,
+    currentAttemptId: null,
+  },
 ];
 
 describe('parseNumberParam', () => {
@@ -770,7 +781,7 @@ describe('filterWorkersForParams', () => {
   it('returns all workers without filters', () => {
     const params = new URLSearchParams();
     const result = filterWorkersForParams(sampleWorkers, params);
-    expect(result).toHaveLength(3);
+    expect(result).toHaveLength(4);
   });
 
   it('filters by status and worker ID substring using AND logic', () => {
@@ -784,6 +795,13 @@ describe('filterWorkersForParams', () => {
     const params = new URLSearchParams('status_in=idle&worker_id_contains=gamma&filter_logic=or');
     const result = filterWorkersForParams(sampleWorkers, params);
     expect(result).toHaveLength(2);
+  });
+
+  it('filters by unknown status', () => {
+    const params = new URLSearchParams('status_in=unknown');
+    const result = filterWorkersForParams(sampleWorkers, params);
+    expect(result).toHaveLength(1);
+    expect(result[0].workerId).toBe('worker-delta');
   });
 });
 
@@ -817,17 +835,27 @@ describe('getWorkerSortValue', () => {
 describe('sortWorkersForParams', () => {
   it('sorts by last heartbeat ascending by default', () => {
     const result = sortWorkersForParams(sampleWorkers, null, 'asc');
-    expect(result.map((worker) => worker.workerId)).toEqual(['worker-beta', 'worker-alpha', 'worker-gamma']);
+    expect(result.map((worker) => worker.workerId)).toEqual([
+      'worker-beta',
+      'worker-alpha',
+      'worker-gamma',
+      'worker-delta',
+    ]);
   });
 
   it('sorts descending by worker_id when requested', () => {
     const result = sortWorkersForParams(sampleWorkers, 'worker_id', 'desc');
-    expect(result.map((worker) => worker.workerId)).toEqual(['worker-gamma', 'worker-beta', 'worker-alpha']);
+    expect(result.map((worker) => worker.workerId)).toEqual([
+      'worker-gamma',
+      'worker-delta',
+      'worker-beta',
+      'worker-alpha',
+    ]);
   });
 
   it('sorts by current_rollout_id', () => {
     const result = sortWorkersForParams(sampleWorkers, 'current_rollout_id', 'asc');
-    expect(result.map((worker) => worker.currentRolloutId)).toEqual([null, 'ro-001', 'ro-003']);
+    expect(result.map((worker) => worker.currentRolloutId)).toEqual([null, null, 'ro-001', 'ro-003']);
   });
 });
 
@@ -846,7 +874,7 @@ describe('buildWorkersResponse', () => {
     expect(response.items).toHaveLength(2);
     const items = response.items as Array<Record<string, unknown>>;
     expect(items[0].worker_id).toBe('worker-beta');
-    expect(response.total).toBe(3);
+    expect(response.total).toBe(4);
   });
 });
 

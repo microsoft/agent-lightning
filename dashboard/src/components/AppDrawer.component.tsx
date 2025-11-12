@@ -53,6 +53,7 @@ const SPAN_STATUS_COLORS: Record<Span['status']['status_code'], string> = {
 const WORKER_STATUS_COLORS: Record<Worker['status'], string> = {
   busy: 'orange',
   idle: 'teal',
+  unknown: 'gray',
 };
 
 const TRACES_SORT_FIELD_MAP: Record<string, string> = {

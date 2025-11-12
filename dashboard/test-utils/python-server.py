@@ -681,6 +681,17 @@ def inject_mock_data(store: InMemoryLightningStore, now: float | None = None) ->
             current_rollout_id=None,
             current_attempt_id=None,
         ),
+        Worker(
+            worker_id="worker-observer",
+            status="unknown",
+            heartbeat_stats={"queue_depth": 0},
+            last_heartbeat_time=now - 15,
+            last_dequeue_time=now - 4000,
+            last_busy_time=None,
+            last_idle_time=None,
+            current_rollout_id=None,
+            current_attempt_id=None,
+        ),
     ]
 
     for worker in workers:

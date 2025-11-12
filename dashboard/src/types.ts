@@ -28,7 +28,7 @@ export type Attempt = {
   metadata: Record<string, any> | null;
 };
 
-export type WorkerStatus = 'idle' | 'busy';
+export type WorkerStatus = 'idle' | 'busy' | 'unknown';
 
 /**
  * Synced with agentlightning.types.core.Worker

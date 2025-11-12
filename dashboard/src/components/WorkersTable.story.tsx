@@ -66,6 +66,17 @@ const sampleWorkers: Worker[] = [
     currentRolloutId: null,
     currentAttemptId: null,
   },
+  {
+    workerId: 'worker-standby',
+    status: 'unknown',
+    heartbeatStats: { queueDepth: 0 },
+    lastHeartbeatTime: now - 15,
+    lastDequeueTime: now - 4000,
+    lastBusyTime: null,
+    lastIdleTime: null,
+    currentRolloutId: null,
+    currentAttemptId: null,
+  },
 ];
 
 type WorkersTableStoryWrapperProps = {
