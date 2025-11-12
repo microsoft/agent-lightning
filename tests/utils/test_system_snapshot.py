@@ -6,11 +6,15 @@ from types import SimpleNamespace
 from typing import Optional
 
 import pytest
-import torch
 
 from agentlightning.utils import system_snapshot
 
-GPU_AVAILABLE = torch.cuda.is_available()
+try:
+    import torch  # type: ignore
+
+    GPU_AVAILABLE = torch.cuda.is_available()
+except Exception:
+    GPU_AVAILABLE = False  # type: ignore
 
 
 def _patch_system_snapshot(monkeypatch: pytest.MonkeyPatch, include_gpu: bool = False) -> Optional[SimpleNamespace]:
