@@ -1,0 +1,1819 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+        <link rel="canonical" href="https://microsoft.github.io/agent-lightning/latest/tutorials/debug/">
+      
+      
+        <link rel="prev" href="../write-agents/">
+      
+      
+        <link rel="next" href="../traces/">
+      
+      
+      <link rel="icon" href="../../assets/favicon.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.22">
+    
+    
+      
+        <title>Debugging - Agent-lightning</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.84d31ad4.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.06af60db.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+      <link rel="stylesheet" href="../../css/timeago.css">
+    
+      <link rel="stylesheet" href="https://unpkg.com/katex@0/dist/katex.min.css">
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="agl" data-md-color-accent="agl">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#debugging-and-troubleshooting" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Agent-lightning" class="md-header__button md-logo" aria-label="Agent-lightning" data-md-component="logo">
+      
+  <img src="../../assets/favicon-white.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Agent-lightning
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Debugging
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="agl" data-md-color-accent="agl"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="agl" data-md-color-accent="agl"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/microsoft/agent-lightning" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    agent-lightning
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Agent-lightning" class="md-nav__button md-logo" aria-label="Agent-lightning" data-md-component="logo">
+      
+  <img src="../../assets/favicon-white.svg" alt="logo">
+
+    </a>
+    Agent-lightning
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/microsoft/agent-lightning" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    agent-lightning
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Home
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    Quickstart
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            Quickstart
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Installation
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-to/train-first-agent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Train the First Agent
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-to/write-first-algorithm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Write the First Algorithm
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    How-To Recipes
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            How-To Recipes
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-to/unsloth-sft/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    SFT with Unsloth
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-to/train-sql-agent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Train SQL Agent with RL
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    Learning More
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            Learning More
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../write-agents/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Write Agents
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    Debugging
+    
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    Debugging
+    
+  </span>
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#using-runner-in-isolation" class="md-nav__link">
+    <span class="md-ellipsis">
+      Using Runner in Isolation
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#debug-with-llm-proxy" class="md-nav__link">
+    <span class="md-ellipsis">
+      Debug with LLM Proxy
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#hook-into-runners-lifecycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      Hook into Runner's Lifecycle
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#dry-run-the-trainer-loop" class="md-nav__link">
+    <span class="md-ellipsis">
+      Dry-Run the Trainer Loop
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#debug-the-algorithm-runner-boundary" class="md-nav__link">
+    <span class="md-ellipsis">
+      Debug the Algorithm-Runner Boundary
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../traces/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Working with Traces
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../parallelize/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Parallelize
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    Algorithm Zoo
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            Algorithm Zoo
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../algorithm-zoo/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../algorithm-zoo/apo/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    APO
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../algorithm-zoo/verl/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    VERL
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    Deep Dive
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            Deep Dive
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deep-dive/birds-eye-view/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Bird's Eye View
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deep-dive/store/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Understanding Store
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deep-dive/serving-llm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Serving LLM
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    API References
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            API References
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/agent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Agent
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/algorithm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Algorithm
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Command Line
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/instrumentation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Instrumentation
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/runner/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Runner
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/store/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Store
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/trainer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Trainer
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Types
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/internal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Internal
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    Miscellaneous
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            Miscellaneous
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Changelog
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#using-runner-in-isolation" class="md-nav__link">
+    <span class="md-ellipsis">
+      Using Runner in Isolation
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#debug-with-llm-proxy" class="md-nav__link">
+    <span class="md-ellipsis">
+      Debug with LLM Proxy
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#hook-into-runners-lifecycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      Hook into Runner's Lifecycle
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#dry-run-the-trainer-loop" class="md-nav__link">
+    <span class="md-ellipsis">
+      Dry-Run the Trainer Loop
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#debug-the-algorithm-runner-boundary" class="md-nav__link">
+    <span class="md-ellipsis">
+      Debug the Algorithm-Runner Boundary
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+  <div id="version-warning" class="version-warning" style="display: none;">
+    ⚠️ You are viewing development documentation. For stable documentation, please visit
+    <a href="https://microsoft.github.io/agent-lightning/stable/">https://microsoft.github.io/agent-lightning/stable/</a>
+  </div>
+  
+                  <!-- Copied and modified from https://github.com/squidfunk/mkdocs-material/blob/master/src/templates/partials/content.html -->
+
+<!-- Tags -->
+
+
+
+<!-- Actions -->
+
+  
+  
+
+
+<!--
+  Hack: check whether the content contains a h1 headline. If it doesn't, the
+  page title (or respectively site name) is used as the main headline.
+-->
+
+
+<!-- Source file information -->
+
+
+
+
+
+
+
+  
+    
+  
+  
+    
+  
+
+
+  <aside class="md-source-file">
+    
+      
+  <span class="md-source-file__fact">
+    <span class="md-icon" title="Last update">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
+    </span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="October 31, 2025 10:14:11 UTC"><span class="timeago" datetime="2025-10-31T10:14:11+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="October 31, 2025 10:14:11 UTC">2025-10-31</span>
+  </span>
+
+    
+    
+      
+  <span class="md-source-file__fact">
+    <span class="md-icon" title="Created">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M14.47 15.08 11 13V7h1.5v5.25l3.08 1.83c-.41.28-.79.62-1.11 1m-1.39 4.84c-.36.05-.71.08-1.08.08-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8c0 .37-.03.72-.08 1.08.69.1 1.33.32 1.92.64.1-.56.16-1.13.16-1.72 0-5.5-4.5-10-10-10S2 6.5 2 12s4.47 10 10 10c.59 0 1.16-.06 1.72-.16-.32-.59-.54-1.23-.64-1.92M18 15v3h-3v2h3v3h2v-3h3v-2h-3v-3z"/></svg>
+    </span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="October 15, 2025 10:01:09 UTC"><span class="timeago" datetime="2025-10-15T10:01:09+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="October 15, 2025 10:01:09 UTC">2025-10-15</span>
+  </span>
+
+    
+    
+      
+  
+  <span class="md-source-file__fact">
+    <span class="md-icon" title="Contributors">
+      
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 5.5A3.5 3.5 0 0 1 15.5 9a3.5 3.5 0 0 1-3.5 3.5A3.5 3.5 0 0 1 8.5 9 3.5 3.5 0 0 1 12 5.5M5 8c.56 0 1.08.15 1.53.42-.15 1.43.27 2.85 1.13 3.96C7.16 13.34 6.16 14 5 14a3 3 0 0 1-3-3 3 3 0 0 1 3-3m14 0a3 3 0 0 1 3 3 3 3 0 0 1-3 3c-1.16 0-2.16-.66-2.66-1.62a5.54 5.54 0 0 0 1.13-3.96c.45-.27.97-.42 1.53-.42M5.5 18.25c0-2.07 2.91-3.75 6.5-3.75s6.5 1.68 6.5 3.75V20h-13zM0 20v-1.5c0-1.39 1.89-2.56 4.45-2.9-.59.68-.95 1.62-.95 2.65V20zm24 0h-3.5v-1.75c0-1.03-.36-1.97-.95-2.65 2.56.34 4.45 1.51 4.45 2.9z"/></svg>
+      
+    </span>
+    <nav>
+      
+        <a href="mailto:yuge.zhang@microsoft.com">Yuge Zhang</a>, 
+        <a href="mailto:agl.msft@outlook.com">agent-lightning-bot</a>
+    </nav>
+  </span>
+
+    
+    
+  </aside>
+
+
+<!-- Page content -->
+<h1 id="debugging-and-troubleshooting">Debugging and Troubleshooting<a class="headerlink" href="#debugging-and-troubleshooting" title="Permanent link">&para;</a></h1>
+<p>When you train your own agent with Agent-lightning, most failures surface because the agent logic is brittle or simply incorrect. Debugging becomes easier when you peel back the stack: start by driving the rollout logic on its own, dry-run the trainer loop, and only then bring the full algorithm and runner topology online. The <a href="https://github.com/microsoft/agent-lightning/tree/289c9ca25b9cc8de23aba597e4e6a02a3c69d3a1/examples/apo/apo_debug.py"><code>examples/apo/apo_debug.py</code></a> script demonstrates these techniques; this guide expands on each approach and helps you decide when to reach for them.</p>
+<h2 id="using-runner-in-isolation">Using <a class="autorefs autorefs-internal" title="            agentlightning.Runner" href="../../reference/runner/#agentlightning.Runner"><code>Runner</code></a> in Isolation<a class="headerlink" href="#using-runner-in-isolation" title="Permanent link">&para;</a></h2>
+<p><a class="autorefs autorefs-internal" title="            agentlightning.Runner" href="../../reference/runner/#agentlightning.Runner"><code>Runner</code></a> is a long-lived worker that wraps your <a class="autorefs autorefs-internal" title="            agentlightning.LitAgent" href="../../reference/agent/#agentlightning.LitAgent"><code>LitAgent</code></a>, coordinates tracing, and talks to the <a class="autorefs autorefs-internal" title="            agentlightning.LightningStore" href="../../reference/store/#agentlightning.LightningStore"><code>LightningStore</code></a>. In typical training flows the trainer manages runners for you, but being able to spin one up manually is invaluable while debugging.</p>
+<p>If you define rollout logic with <a class="autorefs autorefs-internal" title="            agentlightning.rollout(func)" href="../../reference/agent/#agentlightning.rollout"><code>@rollout</code></a> or implement a <a class="autorefs autorefs-internal" title="            agentlightning.LitAgent" href="../../reference/agent/#agentlightning.LitAgent"><code>LitAgent</code></a> directly, you will get a <a class="autorefs autorefs-internal" title="            agentlightning.LitAgent" href="../../reference/agent/#agentlightning.LitAgent"><code>LitAgent</code></a> instance and you should be able to execute it with <a class="autorefs autorefs-internal" title="            agentlightning.LitAgentRunner" href="../../reference/runner/#agentlightning.LitAgentRunner"><code>LitAgentRunner</code></a>, which is a subclass of <a class="autorefs autorefs-internal" title="            agentlightning.Runner" href="../../reference/runner/#agentlightning.Runner"><code>Runner</code></a>. The runner needs but does not instantiate a <a class="autorefs autorefs-internal" title="            agentlightning.Tracer" href="../../reference/runner/#agentlightning.Tracer"><code>Tracer</code></a>, so supply one yourself. See <a href="../traces/">Working with Traces</a> for a walkthrough of tracer options.</p>
+<p><a class="autorefs autorefs-internal" title="            run_context(*, agent, store, hooks=None, worker_id=None)" href="../../reference/runner/#agentlightning.Runner.run_context"><code>Runner.run_context</code></a> prepares the runner to execute a particular agent. Besides the agent and tracer you must provide a store that will collect spans and rollouts. <a class="autorefs autorefs-internal" title="            agentlightning.InMemoryLightningStore" href="../../reference/store/#agentlightning.InMemoryLightningStore"><code>InMemoryLightningStore</code></a> keeps everything in-process, which is perfect for debugging sessions.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">agentlightning</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">agl</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="n">tracer</span> <span class="o">=</span> <span class="n">agl</span><span class="o">.</span><span class="n">OtelTracer</span><span class="p">()</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="n">runner</span> <span class="o">=</span> <span class="n">agl</span><span class="o">.</span><span class="n">LitAgentRunner</span><span class="p">(</span><span class="n">tracer</span><span class="p">)</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="n">store</span> <span class="o">=</span> <span class="n">agl</span><span class="o">.</span><span class="n">InMemoryLightningStore</span><span class="p">()</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="k">with</span> <span class="n">runner</span><span class="o">.</span><span class="n">run_context</span><span class="p">(</span><span class="n">agent</span><span class="o">=</span><span class="n">apo_rollout</span><span class="p">,</span> <span class="n">store</span><span class="o">=</span><span class="n">store</span><span class="p">):</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>    <span class="o">...</span>
+</code></pre></div>
+<p>Inside the <a class="autorefs autorefs-internal" title="            run_context(*, agent, store, hooks=None, worker_id=None)" href="../../reference/runner/#agentlightning.Runner.run_context"><code>run_context</code></a> block you can call <a class="autorefs autorefs-internal" title="            step(input, *, resources=None, mode=None, event=None)
+
+  
+      async
+  " href="../../reference/runner/#agentlightning.Runner.step"><code>runner.step(...)</code></a> to execute a single rollout. The payload includes the task input and any <a class="autorefs autorefs-internal" title="            agentlightning.NamedResources = Dict[str, ResourceUnion]
+
+  
+      module-attribute
+  " href="../../reference/types/#agentlightning.NamedResources"><code>NamedResources</code></a> the agent expects. Read <a class="autorefs autorefs-internal" title="Resources: The Tunable Assets" href="../../how-to/write-first-algorithm/#introduction-to-resources">introduction to Resources</a> and <a class="autorefs autorefs-internal" title="Class-based Agents" href="../write-agents/#introduction-to-named-resources">NamedResources</a> for more details. For example, if your agent references a <a class="autorefs autorefs-internal" title="            agentlightning.PromptTemplate" href="../../reference/types/#agentlightning.PromptTemplate"><code>PromptTemplate</code></a>, pass it through the <code>resources</code> argument:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="k">with</span> <span class="n">runner</span><span class="o">.</span><span class="n">run_context</span><span class="p">(</span><span class="n">agent</span><span class="o">=</span><span class="n">apo_rollout</span><span class="p">,</span> <span class="n">store</span><span class="o">=</span><span class="n">store</span><span class="p">):</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>    <span class="n">resource</span> <span class="o">=</span> <span class="n">agl</span><span class="o">.</span><span class="n">PromptTemplate</span><span class="p">(</span><span class="n">template</span><span class="o">=</span><span class="s2">&quot;You are a helpful assistant. </span><span class="si">{any_question}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">engine</span><span class="o">=</span><span class="s2">&quot;f-string&quot;</span><span class="p">)</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>    <span class="n">rollout</span> <span class="o">=</span> <span class="k">await</span> <span class="n">runner</span><span class="o">.</span><span class="n">step</span><span class="p">(</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>        <span class="s2">&quot;Explain why the sky appears blue using principles of light scattering in 100 words.&quot;</span><span class="p">,</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>        <span class="n">resources</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;main_prompt&quot;</span><span class="p">:</span> <span class="n">resource</span><span class="p">},</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>    <span class="p">)</span>
+</code></pre></div>
+<p>You can do as many things as you want within the <a class="autorefs autorefs-internal" title="            run_context(*, agent, store, hooks=None, worker_id=None)" href="../../reference/runner/#agentlightning.Runner.run_context"><code>Runner.run_context</code></a> block. After the rollout finishes you can query the store to inspect what happened:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nb">print</span><span class="p">(</span><span class="k">await</span> <span class="n">store</span><span class="o">.</span><span class="n">query_rollouts</span><span class="p">())</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nb">print</span><span class="p">(</span><span class="k">await</span> <span class="n">store</span><span class="o">.</span><span class="n">query_spans</span><span class="p">(</span><span class="n">rollout</span><span class="o">.</span><span class="n">rollout_id</span><span class="p">))</span>
+</code></pre></div>
+<p>Example output (with a reward span captured):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="p">[</span><span class="n">Rollout</span><span class="p">(</span><span class="n">rollout_id</span><span class="o">=</span><span class="s1">&#39;ro-519769241af8&#39;</span><span class="p">,</span> <span class="nb">input</span><span class="o">=</span><span class="s1">&#39;Explain why the sky appears blue using principles of light scattering in 100 words.&#39;</span><span class="p">,</span> <span class="n">start_time</span><span class="o">=</span><span class="mf">1760706315.6996238</span><span class="p">,</span> <span class="o">...</span><span class="p">,</span> <span class="n">status</span><span class="o">=</span><span class="s1">&#39;succeeded&#39;</span><span class="p">)]</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="p">[</span><span class="n">Span</span><span class="p">(</span><span class="n">rollout_id</span><span class="o">=</span><span class="s1">&#39;ro-519769241af8&#39;</span><span class="p">,</span> <span class="n">attempt_id</span><span class="o">=</span><span class="s1">&#39;at-a6b62caf&#39;</span><span class="p">,</span> <span class="n">sequence_id</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="o">...</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s1">&#39;agentlightning.reward&#39;</span><span class="p">,</span> <span class="n">attributes</span><span class="o">=</span><span class="p">{</span><span class="s1">&#39;reward&#39;</span><span class="p">:</span> <span class="mf">0.95</span><span class="p">},</span> <span class="o">...</span><span class="p">)]</span>
+</code></pre></div>
+<p>Swap in an <a class="autorefs autorefs-internal" title="            agentlightning.AgentOpsTracer" href="../../reference/runner/#agentlightning.AgentOpsTracer"><code>AgentOpsTracer</code></a> instead of <a class="autorefs autorefs-internal" title="            agentlightning.OtelTracer" href="../../reference/runner/#agentlightning.OtelTracer"><code>OtelTracer</code></a> to see the underlying LLM spans alongside reward information:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="p">[</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>    <span class="n">Span</span><span class="p">(</span><span class="n">rollout_id</span><span class="o">=</span><span class="s1">&#39;ro-519769241af8&#39;</span><span class="p">,</span> <span class="n">attempt_id</span><span class="o">=</span><span class="s1">&#39;at-a6b62caf&#39;</span><span class="p">,</span> <span class="n">sequence_id</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="o">...</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s1">&#39;openai.chat.completion&#39;</span><span class="p">,</span> <span class="n">attributes</span><span class="o">=</span><span class="p">{</span><span class="o">...</span><span class="p">,</span> <span class="s1">&#39;gen_ai.prompt.0.role&#39;</span><span class="p">:</span> <span class="s1">&#39;user&#39;</span><span class="p">,</span> <span class="s1">&#39;gen_ai.prompt.0.content&#39;</span><span class="p">:</span> <span class="s1">&#39;You are a helpful assistant. Explain why the sky appears blue using principles of light scattering in 100 words.&#39;</span><span class="p">,</span> <span class="o">...</span><span class="p">}),</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>    <span class="n">Span</span><span class="p">(</span><span class="n">rollout_id</span><span class="o">=</span><span class="s1">&#39;ro-519769241af8&#39;</span><span class="p">,</span> <span class="n">attempt_id</span><span class="o">=</span><span class="s1">&#39;at-a6b62caf&#39;</span><span class="p">,</span> <span class="n">sequence_id</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="o">...</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s1">&#39;openai.chat.completion&#39;</span><span class="p">,</span> <span class="n">attributes</span><span class="o">=</span><span class="p">{</span><span class="o">...</span><span class="p">,</span> <span class="s1">&#39;gen_ai.prompt.0.role&#39;</span><span class="p">:</span> <span class="s1">&#39;user&#39;</span><span class="p">,</span> <span class="s1">&#39;gen_ai.prompt.0.content&#39;</span><span class="p">:</span> <span class="s1">&#39;Evaluate how well the output fulfills the task...&#39;</span><span class="p">,</span> <span class="o">...</span><span class="p">}),</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    <span class="n">Span</span><span class="p">(</span><span class="n">rollout_id</span><span class="o">=</span><span class="s1">&#39;ro-519769241af8&#39;</span><span class="p">,</span> <span class="n">attempt_id</span><span class="o">=</span><span class="s1">&#39;at-a6b62caf&#39;</span><span class="p">,</span> <span class="n">sequence_id</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="o">...</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s1">&#39;agentlightning.reward&#39;</span><span class="p">,</span> <span class="n">attributes</span><span class="o">=</span><span class="p">{</span><span class="s1">&#39;reward&#39;</span><span class="p">:</span> <span class="mf">0.95</span><span class="p">},</span> <span class="o">...</span><span class="p">)</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="p">]</span>
+</code></pre></div>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p>Spans too difficult to read? Try using <a class="autorefs autorefs-internal" title="            agentlightning.Adapter" href="../../reference/algorithm/#agentlightning.Adapter"><code>Adapter</code></a> to convert them into a <a href="../traces/">more readable format</a>.</p>
+</div>
+<p><a class="autorefs autorefs-internal" title="            step(input, *, resources=None, mode=None, event=None)
+
+  
+      async
+  " href="../../reference/runner/#agentlightning.Runner.step"><code>Runner.step</code></a> executes a full rollout even though it is named "step". The companion method <a class="autorefs autorefs-internal" title="            iter(*, event=None)
+
+  
+      async
+  " href="../../reference/runner/#agentlightning.Runner.iter"><code>Runner.iter</code></a> executes multiple "steps" by continuously pulling new rollout inputs from the store until a stop event is set. Use <code>iter</code> once you are confident the single-step path works and you have another worker <a class="autorefs autorefs-internal" title="            enqueue_rollout(input, mode=None, resources_id=None, config=None, metadata=None)
+
+  
+      async
+  " href="../../reference/store/#agentlightning.LightningStore.enqueue_rollout"><code>enqueue_rollout</code></a> to the store.</p>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p>You can also call <a class="autorefs autorefs-internal" title="            step(input, *, resources=None, mode=None, event=None)
+
+  
+      async
+  " href="../../reference/runner/#agentlightning.Runner.step"><code>Runner.step</code></a> to inject ad-hoc rollouts into a running store being used by another algorithm, so that the rollouts can be consumed by the algorithms. This is very recently known as the paradigm of <a href="https://cursor.com/blog/tab-rl">"online RL"</a>. At the moment, no algorithm in the <a href="../../algorithm-zoo/">algorithm zoo</a> consumes externally generated rollouts, but the data flow is available there if you need it.</p>
+</div>
+<h2 id="debug-with-llm-proxy">Debug with LLM Proxy<a class="headerlink" href="#debug-with-llm-proxy" title="Permanent link">&para;</a></h2>
+<p>If you are dealing with LLM optimization like Reinforcement Learning, we generally recommend using an online stable LLM service for your debugging purposes, like <code>openai/gpt-4.1-nano</code>. After the debugging is done, you can switch to a local training endpoint.</p>
+<p>However, if you want to use a local LLM features like <a href="../../deep-dive/serving-llm/">getting the token IDs</a>, you can also manually start a local vLLM server by:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>vllm<span class="w"> </span>serve<span class="w"> </span>Qwen/Qwen2.5-0.5B-Instruct<span class="w"> </span>--port<span class="w"> </span><span class="m">8080</span>
+</code></pre></div>
+<p>Then start the LLM proxy via the following script:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">agentlightning</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">agl</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="n">llm_proxy</span> <span class="o">=</span> <span class="n">agl</span><span class="o">.</span><span class="n">LLMProxy</span><span class="p">(</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>    <span class="n">port</span><span class="o">=</span><span class="mi">8081</span><span class="p">,</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>    <span class="n">model_list</span><span class="o">=</span><span class="p">[</span>
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>        <span class="p">{</span>
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>            <span class="s2">&quot;model_name&quot;</span><span class="p">:</span> <span class="s2">&quot;Qwen/Qwen2.5-0.5B-Instruct&quot;</span><span class="p">,</span>
+<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>            <span class="s2">&quot;litellm_params&quot;</span><span class="p">:</span> <span class="p">{</span>
+<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a>                <span class="s2">&quot;model&quot;</span><span class="p">:</span> <span class="s2">&quot;hosted_vllm/Qwen/Qwen2.5-0.5B-Instruct&quot;</span><span class="p">,</span>
+<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a>                <span class="s2">&quot;api_base&quot;</span><span class="p">:</span> <span class="s2">&quot;http://localhost:8080/v1&quot;</span><span class="p">,</span>
+<a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a>            <span class="p">},</span>
+<a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a>        <span class="p">}</span>
+<a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a>    <span class="p">],</span>
+<a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a>    <span class="n">store</span><span class="o">=</span><span class="n">agl</span><span class="o">.</span><span class="n">InMemoryLightningStore</span><span class="p">(),</span>
+<a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a><span class="p">)</span>
+<a id="__codelineno-6-16" name="__codelineno-6-16" href="#__codelineno-6-16"></a>
+<a id="__codelineno-6-17" name="__codelineno-6-17" href="#__codelineno-6-17"></a><span class="n">llm_proxy</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+<a id="__codelineno-6-18" name="__codelineno-6-18" href="#__codelineno-6-18"></a><span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mi">1000000</span><span class="p">)</span>
+</code></pre></div>
+<p>You can now use the LLM proxy by specifying environment variables:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">OPENAI_API_BASE</span><span class="o">=</span>http://localhost:8081/v1
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">OPENAI_API_KEY</span><span class="o">=</span>dummy
+</code></pre></div>
+<p>You might see warnings about <code>Missing or invalid rollout_id, attempt_id, or sequence_id</code> in the LLM proxy logs. This is fine because you don't have a rollout and attempt yet when you are debugging. When you started the training, the algorithm will create the rollouts for you and the warnings will go away.</p>
+<h2 id="hook-into-runners-lifecycle">Hook into Runner's Lifecycle<a class="headerlink" href="#hook-into-runners-lifecycle" title="Permanent link">&para;</a></h2>
+<p><a class="autorefs autorefs-internal" title="            run_context(*, agent, store, hooks=None, worker_id=None)" href="../../reference/runner/#agentlightning.Runner.run_context"><code>Runner.run_context</code></a> accepts a <code>hooks</code> argument so you can observe or augment lifecycle events without editing your agent. Hooks subclass <a class="autorefs autorefs-internal" title="            agentlightning.Hook" href="../../reference/types/#agentlightning.Hook"><code>Hook</code></a> and can respond to four asynchronous callbacks: <a class="autorefs autorefs-internal" title="            on_trace_start(*, agent, runner, tracer, rollout)
+
+  
+      async
+  " href="../../reference/types/#agentlightning.Hook.on_trace_start"><code>on_trace_start</code></a>, <a class="autorefs autorefs-internal" title="            on_rollout_start(*, agent, runner, rollout)
+
+  
+      async
+  " href="../../reference/types/#agentlightning.Hook.on_rollout_start"><code>on_rollout_start</code></a>, <a class="autorefs autorefs-internal" title="            on_rollout_end(*, agent, runner, rollout, spans)
+
+  
+      async
+  " href="../../reference/types/#agentlightning.Hook.on_rollout_end"><code>on_rollout_end</code></a>, and <a class="autorefs autorefs-internal" title="            on_trace_end(*, agent, runner, tracer, rollout)
+
+  
+      async
+  " href="../../reference/types/#agentlightning.Hook.on_trace_end"><code>on_trace_end</code></a>. This is useful for:</p>
+<ul>
+<li>Capturing raw OpenTelemetry spans before they hit the store and before the <a class="autorefs autorefs-internal" title="            agentlightning.LitAgentRunner" href="../../reference/runner/#agentlightning.LitAgentRunner"><code>LitAgentRunner</code></a> do postprocessing on the rollout</li>
+<li>Inspecting the tracer instance after they are activated</li>
+<li>Logging rollout inputs before they are processed by the agent</li>
+</ul>
+<p>The <code>hook</code> mode in <a href="https://github.com/microsoft/agent-lightning/tree/289c9ca25b9cc8de23aba597e4e6a02a3c69d3a1/examples/apo/apo_debug.py"><code>examples/apo/apo_debug.py</code></a> prints every span collected during a rollout:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">agentlightning</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">agl</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="c1"># ... Same as previous example</span>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="k">class</span><span class="w"> </span><span class="nc">DebugHook</span><span class="p">(</span><span class="n">agl</span><span class="o">.</span><span class="n">Hook</span><span class="p">):</span>
+<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">on_trace_end</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">agent</span><span class="p">,</span> <span class="n">runner</span><span class="p">,</span> <span class="n">tracer</span><span class="p">,</span> <span class="n">rollout</span><span class="p">):</span>
+<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a>        <span class="n">trace</span> <span class="o">=</span> <span class="n">tracer</span><span class="o">.</span><span class="n">get_last_trace</span><span class="p">()</span>
+<a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a>        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Trace spans collected during the rollout:&quot;</span><span class="p">)</span>
+<a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a>        <span class="k">for</span> <span class="n">span</span> <span class="ow">in</span> <span class="n">trace</span><span class="p">:</span>
+<a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a>            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;- </span><span class="si">{</span><span class="n">span</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> (status: </span><span class="si">{</span><span class="n">span</span><span class="o">.</span><span class="n">status</span><span class="si">}</span><span class="s2">):</span><span class="se">\n</span><span class="s2">  </span><span class="si">{</span><span class="n">span</span><span class="o">.</span><span class="n">attributes</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a>
+<a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a><span class="k">with</span> <span class="n">runner</span><span class="o">.</span><span class="n">run_context</span><span class="p">(</span>
+<a id="__codelineno-8-13" name="__codelineno-8-13" href="#__codelineno-8-13"></a>    <span class="n">agent</span><span class="o">=</span><span class="n">apo_rollout</span><span class="p">,</span>
+<a id="__codelineno-8-14" name="__codelineno-8-14" href="#__codelineno-8-14"></a>    <span class="n">store</span><span class="o">=</span><span class="n">store</span><span class="p">,</span>
+<a id="__codelineno-8-15" name="__codelineno-8-15" href="#__codelineno-8-15"></a>    <span class="n">hooks</span><span class="o">=</span><span class="p">[</span><span class="n">DebugHook</span><span class="p">()],</span>
+<a id="__codelineno-8-16" name="__codelineno-8-16" href="#__codelineno-8-16"></a><span class="p">):</span>
+<a id="__codelineno-8-17" name="__codelineno-8-17" href="#__codelineno-8-17"></a>    <span class="k">await</span> <span class="n">runner</span><span class="o">.</span><span class="n">step</span><span class="p">(</span>
+<a id="__codelineno-8-18" name="__codelineno-8-18" href="#__codelineno-8-18"></a>        <span class="s2">&quot;Explain why the sky appears blue using principles of light scattering in 100 words.&quot;</span><span class="p">,</span>
+<a id="__codelineno-8-19" name="__codelineno-8-19" href="#__codelineno-8-19"></a>        <span class="n">resources</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;main_prompt&quot;</span><span class="p">:</span> <span class="n">resource</span><span class="p">},</span>
+<a id="__codelineno-8-20" name="__codelineno-8-20" href="#__codelineno-8-20"></a>    <span class="p">)</span>
+</code></pre></div>
+<p>Because hooks run inside the runner process you can also attach debuggers or breakpoints directly in the callback implementations.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>For a better understanding of where hooks are called, we show a pseudo code of Runner's working flow below:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="n">resources</span> <span class="o">=</span> <span class="k">await</span> <span class="n">store</span><span class="o">.</span><span class="n">get_latest_resources</span><span class="p">()</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="n">rollout</span> <span class="o">=</span> <span class="o">...</span>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="k">try</span><span class="p">:</span>
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>    <span class="c1"># &lt;-- on_rollout_start</span>
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>    <span class="k">with</span> <span class="n">tracer</span><span class="o">.</span><span class="n">trace_context</span><span class="p">(</span><span class="o">...</span><span class="p">):</span>
+<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a>        <span class="c1"># &lt;--- on_trace_start</span>
+<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a>        <span class="n">result</span> <span class="o">=</span> <span class="k">await</span> <span class="n">agent</span><span class="o">.</span><span class="n">rollout</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
+<a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a>        <span class="c1"># &lt;--- on_trace_end</span>
+<a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a>    <span class="n">post_process_result</span><span class="p">(</span><span class="n">result</span><span class="p">)</span>
+<a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a><span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+<a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a>    <span class="c1"># &lt;-- on_rollout_end</span>
+<a id="__codelineno-9-12" name="__codelineno-9-12" href="#__codelineno-9-12"></a>    <span class="k">await</span> <span class="n">store</span><span class="o">.</span><span class="n">update_attempt</span><span class="p">(</span><span class="n">status</span><span class="o">=...</span><span class="p">)</span>
+</code></pre></div>
+</div>
+<h2 id="dry-run-the-trainer-loop">Dry-Run the Trainer Loop<a class="headerlink" href="#dry-run-the-trainer-loop" title="Permanent link">&para;</a></h2>
+<p>Once single rollouts behave, switch to the trainer’s dry-run mode. <a class="autorefs autorefs-internal" title="            dev(agent, train_dataset=None, *, val_dataset=None)" href="../../reference/trainer/#agentlightning.Trainer.dev"><code>Trainer.dev</code></a> spins up a lightweight fast algorithm — <a class="autorefs autorefs-internal" title="            agentlightning.Baseline" href="../../reference/algorithm/#agentlightning.Baseline"><code>agentlightning.Baseline</code></a> by default — so you can exercise the same infrastructure as <a class="autorefs autorefs-internal" title="            fit(agent, train_dataset=None, *, val_dataset=None)" href="../../reference/trainer/#agentlightning.Trainer.fit"><code>Trainer.fit</code></a> without standing up complex stacks like RL or SFT.</p>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>When you enable multiple runners via <code>n_runners</code>, the trainer may execute them in separate worker processes. Attaching a debugger such as <code>pdb</code> is only practical when <code>n_runners=1</code>, and even then the runner might not live in the main process.</p>
+</div>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">agentlightning</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">agl</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="n">dataset</span><span class="p">:</span> <span class="n">agl</span><span class="o">.</span><span class="n">Dataset</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span>
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>    <span class="s2">&quot;Explain why the sky appears blue using principles of light scattering in 100 words.&quot;</span><span class="p">,</span>
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>    <span class="s2">&quot;What&#39;s the capital of France?&quot;</span><span class="p">,</span>
+<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a><span class="p">]</span>
+<a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a><span class="n">resource</span> <span class="o">=</span> <span class="n">agl</span><span class="o">.</span><span class="n">PromptTemplate</span><span class="p">(</span><span class="n">template</span><span class="o">=</span><span class="s2">&quot;You are a helpful assistant. </span><span class="si">{any_question}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">engine</span><span class="o">=</span><span class="s2">&quot;f-string&quot;</span><span class="p">)</span>
+<a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a>
+<a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a><span class="n">trainer</span> <span class="o">=</span> <span class="n">agl</span><span class="o">.</span><span class="n">Trainer</span><span class="p">(</span>
+<a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a>    <span class="n">n_runners</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+<a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a>    <span class="n">initial_resources</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;main_prompt&quot;</span><span class="p">:</span> <span class="n">resource</span><span class="p">},</span>
+<a id="__codelineno-10-12" name="__codelineno-10-12" href="#__codelineno-10-12"></a><span class="p">)</span>
+<a id="__codelineno-10-13" name="__codelineno-10-13" href="#__codelineno-10-13"></a><span class="n">trainer</span><span class="o">.</span><span class="n">dev</span><span class="p">(</span><span class="n">apo_rollout</span><span class="p">,</span> <span class="n">dataset</span><span class="p">)</span>
+</code></pre></div>
+<p>Just like <a class="autorefs autorefs-internal" title="            run_context(*, agent, store, hooks=None, worker_id=None)" href="../../reference/runner/#agentlightning.Runner.run_context"><code>Runner.run_context</code></a>, <a class="autorefs autorefs-internal" title="            dev(agent, train_dataset=None, *, val_dataset=None)" href="../../reference/trainer/#agentlightning.Trainer.dev"><code>Trainer.dev</code></a> requires the <a class="autorefs autorefs-internal" title="            agentlightning.NamedResources = Dict[str, ResourceUnion]
+
+  
+      module-attribute
+  " href="../../reference/types/#agentlightning.NamedResources"><code>NamedResources</code></a> your agent expects. The key difference is that resources are attached to the trainer rather than the runner.</p>
+<p><a class="autorefs autorefs-internal" title="            dev(agent, train_dataset=None, *, val_dataset=None)" href="../../reference/trainer/#agentlightning.Trainer.dev"><code>Trainer.dev</code></a> uses an almost switchable interface from <a class="autorefs autorefs-internal" title="            fit(agent, train_dataset=None, *, val_dataset=None)" href="../../reference/trainer/#agentlightning.Trainer.fit"><code>Trainer.fit</code></a>. It also needs a dataset to iterate over, similar to <a class="autorefs autorefs-internal" title="            fit(agent, train_dataset=None, *, val_dataset=None)" href="../../reference/trainer/#agentlightning.Trainer.fit"><code>fit</code></a>. Under the hood <a class="autorefs autorefs-internal" title="            dev(agent, train_dataset=None, *, val_dataset=None)" href="../../reference/trainer/#agentlightning.Trainer.dev"><code>dev</code></a> uses the same implementation as <a class="autorefs autorefs-internal" title="            fit(agent, train_dataset=None, *, val_dataset=None)" href="../../reference/trainer/#agentlightning.Trainer.fit"><code>fit</code></a>, which means you can spin up multiple runners, observe scheduler behavior, and validate how algorithms adapt rollouts. The default <a class="autorefs autorefs-internal" title="            agentlightning.Baseline" href="../../reference/algorithm/#agentlightning.Baseline"><code>Baseline</code></a> logs detailed traces so you can see each rollout as the algorithm perceives it:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>21:20:30 Initial resources set: {&#39;main_prompt&#39;: PromptTemplate(resource_type=&#39;prompt_template&#39;, template=&#39;You are a helpful assistant. {any_question}&#39;, engine=&#39;f-string&#39;)}
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>21:20:30 Proceeding epoch 1/1.
+<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>21:20:30 Enqueued rollout ro-302fb202bd85 in train mode with sample: Explain why the sky appears blue using principles of light scattering in 100 words.
+<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a>21:20:30 Enqueued rollout ro-e65a3ffaa540 in train mode with sample: What&#39;s the capital of France?
+<a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a>21:20:30 Waiting for 2 harvest tasks to complete...
+<a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a>21:20:30 [Rollout ro-302fb202bd85] Status is initialized to queuing.
+<a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a>21:20:30 [Rollout ro-e65a3ffaa540] Status is initialized to queuing.
+<a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a>21:20:35 [Rollout ro-302fb202bd85] Finished with status succeeded in 3.80 seconds.
+<a id="__codelineno-11-9" name="__codelineno-11-9" href="#__codelineno-11-9"></a>21:20:35 [Rollout ro-302fb202bd85 | Attempt 1] ID: at-f84ad21c. Status: succeeded. Worker: Worker-0
+<a id="__codelineno-11-10" name="__codelineno-11-10" href="#__codelineno-11-10"></a>21:20:35 [Rollout ro-302fb202bd85 | Attempt at-f84ad21c | Span 3a286a856af6bea8] #1 (openai.chat.completion) ... 1.95 seconds. Attribute keys: [&#39;gen_ai.request.type&#39;, &#39;gen_ai.system&#39;, ...]
+<a id="__codelineno-11-11" name="__codelineno-11-11" href="#__codelineno-11-11"></a>21:20:35 [Rollout ro-302fb202bd85 | Attempt at-f84ad21c | Span e2f44b775e058dd6] #2 (openai.chat.completion) ... 1.24 seconds. Attribute keys: [&#39;gen_ai.request.type&#39;, &#39;gen_ai.system&#39;, ...]
+<a id="__codelineno-11-12" name="__codelineno-11-12" href="#__codelineno-11-12"></a>21:20:35 [Rollout ro-302fb202bd85 | Attempt at-f84ad21c | Span 45ee3c94fa1070ec] #3 (agentlightning.reward) ... 0.00 seconds. Attribute keys: [&#39;reward&#39;]
+<a id="__codelineno-11-13" name="__codelineno-11-13" href="#__codelineno-11-13"></a>21:20:35 [Rollout ro-302fb202bd85] Adapted data: [Triplet(prompt={&#39;token_ids&#39;: []}, response={&#39;token_ids&#39;: []}, reward=None, metadata={&#39;response_id&#39;: &#39;...&#39;, &#39;agent_name&#39;: &#39;&#39;}), Triplet(prompt={&#39;token_ids&#39;: []}, response={&#39;token_ids&#39;: []}, reward=0.95, metadata={&#39;response_id&#39;: &#39;...&#39;, &#39;agent_name&#39;: &#39;&#39;})]
+<a id="__codelineno-11-14" name="__codelineno-11-14" href="#__codelineno-11-14"></a>21:20:35 Finished 1 rollouts.
+<a id="__codelineno-11-15" name="__codelineno-11-15" href="#__codelineno-11-15"></a>21:20:35 [Rollout ro-e65a3ffaa540] Status changed to preparing.
+<a id="__codelineno-11-16" name="__codelineno-11-16" href="#__codelineno-11-16"></a>21:20:40 [Rollout ro-e65a3ffaa540] Finished with status succeeded in 6.39 seconds.
+<a id="__codelineno-11-17" name="__codelineno-11-17" href="#__codelineno-11-17"></a>21:20:40 [Rollout ro-e65a3ffaa540 | Attempt 1] ID: at-eaefa5d4. Status: succeeded. Worker: Worker-0
+<a id="__codelineno-11-18" name="__codelineno-11-18" href="#__codelineno-11-18"></a>21:20:40 [Rollout ro-e65a3ffaa540 | Attempt at-eaefa5d4 | Span 901dd6acc0f50147] #1 (openai.chat.completion) ... 1.30 seconds. Attribute keys: [&#39;gen_ai.request.type&#39;, &#39;gen_ai.system&#39;, ...]
+<a id="__codelineno-11-19" name="__codelineno-11-19" href="#__codelineno-11-19"></a>21:20:40 [Rollout ro-e65a3ffaa540 | Attempt at-eaefa5d4 | Span 52e0aa63e02be611] #2 (openai.chat.completion) ... 1.26 seconds. Attribute keys: [&#39;gen_ai.request.type&#39;, &#39;gen_ai.system&#39;, ...]
+<a id="__codelineno-11-20" name="__codelineno-11-20" href="#__codelineno-11-20"></a>21:20:40 [Rollout ro-e65a3ffaa540 | Attempt at-eaefa5d4 | Span 6c452de193fbffd3] #3 (agentlightning.reward) ... 0.00 seconds. Attribute keys: [&#39;reward&#39;]
+<a id="__codelineno-11-21" name="__codelineno-11-21" href="#__codelineno-11-21"></a>21:20:40 [Rollout ro-e65a3ffaa540] Adapted data: [Triplet(prompt={&#39;token_ids&#39;: []}, response={&#39;token_ids&#39;: []}, reward=None, metadata={&#39;response_id&#39;: &#39;...&#39;, &#39;agent_name&#39;: &#39;&#39;}), Triplet(prompt={&#39;token_ids&#39;: []}, response={&#39;token_ids&#39;: []}, reward=1.0, metadata={&#39;response_id&#39;: &#39;...&#39;, &#39;agent_name&#39;: &#39;&#39;})]
+<a id="__codelineno-11-22" name="__codelineno-11-22" href="#__codelineno-11-22"></a>21:20:40 Finished 2 rollouts.
+</code></pre></div>
+<p>The only limitation is that resources remain static and components like <a class="autorefs autorefs-internal" title="            agentlightning.LLMProxy" href="../../reference/algorithm/#agentlightning.LLMProxy"><code>LLMProxy</code></a> are not wired in. For richer dry runs you can subclass <a class="autorefs autorefs-internal" title="            agentlightning.FastAlgorithm" href="../../reference/algorithm/#agentlightning.FastAlgorithm"><code>FastAlgorithm</code></a> and override the pieces you care about.</p>
+<h2 id="debug-the-algorithm-runner-boundary">Debug the Algorithm-Runner Boundary<a class="headerlink" href="#debug-the-algorithm-runner-boundary" title="Permanent link">&para;</a></h2>
+<p><a href="" id="debug-with-external-store"></a></p>
+<p>Debugging algorithms in Agent-Lightning is often more challenging than debugging agents. Algorithms are typically <strong>stateful</strong> and depend on several moving parts — runners, stores, and trainers — which makes it difficult to isolate and inspect their behavior. Even mocking an agent to cooperate with an algorithm can be costly and error-prone. To simplify this, Agent-Lightning provides a way to run algorithms in isolation so you can attach a debugger and inspect internal state without interference from other components.</p>
+<p>By default, <a class="autorefs autorefs-internal" title="            fit(agent, train_dataset=None, *, val_dataset=None)" href="../../reference/trainer/#agentlightning.Trainer.fit"><code>Trainer.fit</code></a> runs the algorithm in the main process and thread, but its logs are interleaved with those from the store and runners, making it hard to follow what’s happening inside the algorithm itself. In <a href="../../how-to/write-first-algorithm/"><em>Write Your First Algorithm</em></a>, we covered how to stand up a store, algorithm, and runner in isolation for your own implementations. This section extends that approach to cover two common questions:</p>
+<ol>
+<li>How can I run built-in or class-based algorithms (inheriting from <a class="autorefs autorefs-internal" title="            agentlightning.Algorithm" href="../../reference/algorithm/#agentlightning.Algorithm"><code>Algorithm</code></a>) in isolation?</li>
+<li>How can I still use <a class="autorefs autorefs-internal" title="            agentlightning.Trainer" href="../../reference/trainer/#agentlightning.Trainer"><code>Trainer</code></a> features like <code>n_runners</code>, <code>adapter</code>, or <code>llm_proxy</code> while debugging?</li>
+</ol>
+<p>The solution is to keep using a <a class="autorefs autorefs-internal" title="            agentlightning.Trainer" href="../../reference/trainer/#agentlightning.Trainer"><code>Trainer</code></a> instance but <strong>manage the store yourself</strong>, running the algorithm and runner roles separately. This approach mirrors the internal process orchestration of <a class="autorefs autorefs-internal" title="            fit(agent, train_dataset=None, *, val_dataset=None)" href="../../reference/trainer/#agentlightning.Trainer.fit"><code>Trainer.fit</code></a>, but with more visibility and control. Below, we show a step-by-step guide to achieve this with the <a href="https://github.com/microsoft/agent-lightning/tree/289c9ca25b9cc8de23aba597e4e6a02a3c69d3a1/examples/calc_x/train_calc_agent.py"><code>calc_agent</code> example</a>.</p>
+<p><strong>1. Launch the store manually.</strong>
+In a separate terminal, start the store:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>agl<span class="w"> </span>store<span class="w"> </span>--port<span class="w"> </span><span class="m">4747</span>
+</code></pre></div>
+<p>Then, in your training script, create a <a class="autorefs autorefs-internal" title="            agentlightning.LightningStoreClient" href="../../reference/store/#agentlightning.LightningStoreClient"><code>LightningStoreClient</code></a> and pass it to the trainer:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="n">client</span> <span class="o">=</span> <span class="n">agl</span><span class="o">.</span><span class="n">LightningStoreClient</span><span class="p">(</span><span class="s2">&quot;http://localhost:4747&quot;</span><span class="p">)</span>
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="n">trainer</span> <span class="o">=</span> <span class="n">agl</span><span class="o">.</span><span class="n">Trainer</span><span class="p">(</span><span class="n">store</span><span class="o">=</span><span class="n">client</span><span class="p">,</span> <span class="o">...</span><span class="p">)</span>
+</code></pre></div>
+<p>Set the environment variable <code>AGL_MANAGED_STORE=0</code> so the trainer doesn't attempt to manage the store automatically.</p>
+<p><strong>2. Start the runner and algorithm processes separately.</strong>
+Each process should run the same training script, but with different environment variables specifying the current role.
+This setup faithfully mirrors how <a class="autorefs autorefs-internal" title="            fit(agent, train_dataset=None, *, val_dataset=None)" href="../../reference/trainer/#agentlightning.Trainer.fit"><code>Trainer.fit</code></a> orchestrates these components behind the scenes.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="c1"># Terminal 2 – Runner process</span>
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="nv">AGL_MANAGED_STORE</span><span class="o">=</span><span class="m">0</span><span class="w"> </span><span class="nv">AGL_CURRENT_ROLE</span><span class="o">=</span>runner<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a><span class="w">    </span>python<span class="w"> </span>train_calc_agent.py<span class="w"> </span>--external-store-address<span class="w"> </span>http://localhost:4747<span class="w"> </span>--val-file<span class="w"> </span>data/test_mini.parquet
+<a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a>
+<a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a><span class="c1"># Terminal 3 – Algorithm process</span>
+<a id="__codelineno-14-6" name="__codelineno-14-6" href="#__codelineno-14-6"></a><span class="nv">AGL_MANAGED_STORE</span><span class="o">=</span><span class="m">0</span><span class="w"> </span><span class="nv">AGL_CURRENT_ROLE</span><span class="o">=</span>algorithm<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-14-7" name="__codelineno-14-7" href="#__codelineno-14-7"></a><span class="w">    </span>python<span class="w"> </span>train_calc_agent.py<span class="w"> </span>--external-store-address<span class="w"> </span>http://localhost:4747<span class="w"> </span>--val-file<span class="w"> </span>data/test_mini.parquet
+</code></pre></div>
+<p><strong>3. Reuse your existing trainer configuration.</strong>
+You can continue using the same datasets, adapters, and proxies as usual. Because the store is now external, you can:</p>
+<ul>
+<li>Attach debuggers to either the algorithm or runner process</li>
+<li>Add fine-grained logging or tracing</li>
+<li>Simulate partial failures or latency in individual components</li>
+</ul>
+<p>This setup provides a faithful reproduction of the algorithm–runner interaction while keeping the store visible for inspection. Once you’ve resolved the issue, simply set <code>AGL_MANAGED_STORE=1</code> (or omit it) to return to the standard managed training workflow.</p>
+
+<!-- Was this page helpful? -->
+
+
+
+
+<!-- Comment system -->
+
+                
+
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      <script id="__config" type="application/json">{"base": "../..", "features": ["navigation.sections", "navigation.expand", "navigation.top", "search.suggest", "search.highlight", "content.code.copy"], "search": "../../assets/javascripts/workers/search.973d3a69.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "stable", "provider": "mike"}}</script>
+    
+    
+  
+      <script src="../../assets/javascripts/bundle.f55a23d4.min.js"></script>
+      
+        <script src="../../js/timeago.min.js"></script>
+      
+        <script src="../../js/timeago_mkdocs_material.js"></script>
+      
+        <script src="https://unpkg.com/mermaid@10.6.1/dist/mermaid.min.js"></script>
+      
+        <script src="https://unpkg.com/chart.js@4.5.1/dist/chart.umd.min.js"></script>
+      
+        <script src="https://unpkg.com/katex@0/dist/katex.min.js"></script>
+      
+        <script src="https://unpkg.com/katex@0/dist/contrib/auto-render.min.js"></script>
+      
+        <script src="../../javascripts/charts.js"></script>
+      
+        <script src="../../javascripts/move-source-file.js"></script>
+      
+        <script src="../../javascripts/katex.js"></script>
+      
+    
+  <script>
+    // Show warning banner if not viewing stable documentation
+    document.addEventListener("DOMContentLoaded", function() {
+      const currentURL = window.location.href;
+      const warningDiv = document.getElementById("version-warning");
+
+      // Check if we're on the stable docs or the redirect page
+      if (currentURL.includes('agent-lightning/latest/')) {
+        // Show warning for explicitly latest docs
+        warningDiv.style.display = "block";
+      }
+    });
+  </script>
+
+  </body>
+</html>
