@@ -26,6 +26,10 @@
 
 ::: agentlightning.AttemptedRollout
 
+::: agentlightning.Worker
+
+::: agentlightning.WorkerStatus
+
 ::: agentlightning.Hook
 
 ## Resources
