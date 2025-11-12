@@ -334,6 +334,8 @@ At least **a single 40GB NPU** is required to run the **Qwen2.5-Coder-1.5B-Instr
 
 #### Environment Setup
 
+In addition to the dependencies originally required by the project, the following dependencies must be installed if you want to run it in an NPU environment.
+
 ##### Basic Environment
 
 - **Python:** 3.11.13
@@ -365,46 +367,21 @@ pip install vllm-Ascend==0.10.0rc1 --trusted-host repo.huaweicloud.com
 pip install verl==0.5.0
 ```
 
-> ⚠️ **Note:** To ensure the VERL framework runs correctly on NPU, add the following lines to
->  `verl/utils/vllm_utils.py`:
+> Reference: [https://github.com/vllm-project/vllm-ascend/issues/1776](https://github.com/vllm-project/vllm-ascend/issues/1776?utm_source=chatgpt.com)
+> ⚠️**Note:** To ensure the VERL framework runs correctly on NPU, add the following lines to
+> `verl/utils/vllm_utils.py`:
 
 ```
 from vllm_ascend.patch import platform
 from vllm_ascend.patch import worker
 ```
 
-##### Install Agent-Lightning
+#### Launch Training
+
+After the above dependencies have been installed，from [`examples/spider`]({{ src("examples/spider") }})Run the following script command:
 
 ```
-pip install agentlightning==0.2.1
-```
-
-##### Install Other Dependencies
-
-```
-pip install autogen-agentchat autogen-ext mcp
-pip install langgraph "langchain[openai]" langchain-community langchain-text-splitters
-pip install sqlparse nltk
-```
-
-#### Model
-
-We use the [**Qwen2.5-Coder-1.5B-Instruct**](https://huggingface.co/Qwen/Qwen2.5-Coder-1.5B) model to train the SQL agent.
-
-#### Dataset
-
-Refer to the method above for obtaining the dataset.
-
-#### Training Workflow
-
-1. **Prepare the dataset**: Convert the Spider dataset into Parquet format and place it in the `data/` directory.
-
-2. **Configure the environment**: Ensure vLLM-Ascend, VERL, and agent-lightning are correctly installed.
-
-3. **Start training**: Run the following command to begin training the SQL agent:
-
-```
-python train_sql_agent_npu.py npu
+python train_sql_agent.py npu
 ```
 
 ### Debugging the Agent without VERL
