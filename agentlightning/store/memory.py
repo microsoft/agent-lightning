@@ -46,7 +46,7 @@ from agentlightning.types import (
     TaskInput,
 )
 
-from .base import UNSET, LightningStore, Unset, is_finished, is_queuing
+from .base import UNSET, LightningStore, LightningStoreCapabilities, Unset, is_finished, is_queuing
 from .utils import healthcheck, propagate_status
 
 T_callable = TypeVar("T_callable", bound=Callable[..., Any])
@@ -242,6 +242,14 @@ class InMemoryLightningStore(LightningStore):
 
         # Completion tracking for wait_for_rollouts (cross-loop safe)
         self._completion_events: Dict[str, threading.Event] = {}
+
+    def capabilities(self) -> LightningStoreCapabilities:
+        """Return the capabilities of the store."""
+        return LightningStoreCapabilities(
+            thread_safe=False,
+            async_safe=True,
+            zero_copy=False,
+        )
 
     @_healthcheck_wrapper
     async def start_rollout(

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Literal, Optional, Sequence, Union
+from typing import Any, Dict, List, Literal, Optional, Sequence, Union, TypedDict
 
 from opentelemetry.sdk.trace import ReadableSpan
 
@@ -52,6 +52,17 @@ UNSET = _UnsetType()
 Unset = _UnsetType  # Alias for convenience
 
 
+class LightningStoreCapabilities(TypedDict):
+    """Capability of a LightningStore implementation."""
+
+    thread_safe: bool
+    """Whether the store is thread-safe."""
+    async_safe: bool
+    """Whether the store is async-safe."""
+    zero_copy: bool
+    """Whether the store has only one copy across all threads/processes."""
+
+
 class LightningStore:
     """Contract for the persistent control-plane that coordinates training rollouts.
 
@@ -73,6 +84,14 @@ class LightningStore:
     appear atomic to callers even when multiple algorithms or runners call the API concurrently.
     Unless stated otherwise, missing identifiers should result in a `ValueError`.
     """
+
+    def capabilities(self) -> LightningStoreCapabilities:
+        """Return the capabilities of the store."""
+        return LightningStoreCapabilities(
+            thread_safe=False,
+            async_safe=False,
+            zero_copy=False,
+        )
 
     async def start_rollout(
         self,

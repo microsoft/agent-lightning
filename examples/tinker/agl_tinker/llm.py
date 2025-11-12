@@ -303,5 +303,7 @@ def create_llm_proxy(
         store=store,
         model_list=tinker_llm.as_model_list(),
         num_retries=2,
+        # Must use thread mode here because otherwise the Tinker sampling client will hang.
+        launch_mode="thread",
         _add_return_token_ids=_add_return_token_ids,
     )

@@ -45,10 +45,11 @@ jobs:
             --group agents \
             --no-default-groups
         if: matrix.setup == 'slow'
+      # This pre-commit skips JavaScript on purpose.
       - name: Run pre-commit
         uses: pre-commit/action@v3.0.1
       - name: Check Python headers
-        run: uv run --locked --no-sync scripts/check_python_headers.py
+        run: uv run --locked --no-sync scripts/check_headers.py
       - name: Run Black
         run: uv run --locked --no-sync black --check .
       - name: Run isort
@@ -59,6 +60,28 @@ jobs:
       - name: Run pyright (slow)
         run: uv run --locked --no-sync pyright -p pyrightconfig.json
         if: matrix.setup == 'slow'
+
+  lint-js:
+    name: Lint - JavaScript
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        run: cd dashboard && npm ci
+      - name: Run ESLint
+        run: cd dashboard && npm run eslint
+      - name: Run Prettier
+        run: cd dashboard && npm run prettier
+      - name: Run Stylelint
+        run: cd dashboard && npm run stylelint
+      - name: Run Typecheck
+        run: cd dashboard && npm run typecheck
+      - name: Verify build
+        run: cd dashboard && npm run build
 
   docs:
     name: Build documentation
@@ -132,8 +155,39 @@ jobs:
           name: dependencies-${{ matrix.python-version }}-${{ matrix.setup-script }}
           path: requirements-freeze.txt
           compression-level: 0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - name: Install JavaScript dependencies
+        run: cd dashboard && npm ci
+      - name: Build dashboard
+        run: cd dashboard && npm run build
+
       - name: Run tests
         run: |
           uv run pytest -v --durations=0 tests
         env:
           PYTEST_ADDOPTS: "--color=yes"
+
+  test-js:
+    name: Test - JavaScript
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          python-version: '3.12'
+      - name: Sync Python dependencies
+        run: uv sync --frozen --no-default-groups --extra apo --group dev --group agents --group core-stable
+      - name: Install JavaScript dependencies
+        run: cd dashboard && npm ci
+      - name: Run vitest
+        run: cd dashboard && npm run vitest

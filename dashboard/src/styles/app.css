@@ -1,0 +1,99 @@
+@keyframes connection-refreshing-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.3;
+  }
+}
+
+.connection-refreshing {
+  animation: connection-refreshing-blink 1s linear infinite;
+}
+
+.connection-indicator-button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: var(--mantine-spacing-xs);
+  border-radius: var(--mantine-radius-sm);
+  transition: background-color 150ms ease;
+  cursor: pointer;
+}
+
+.connection-indicator-button:hover,
+.connection-indicator-button:focus-visible {
+  background-color: var(--mantine-color-gray-0);
+}
+
+[data-mantine-color-scheme='dark'] .connection-indicator-button:hover,
+[data-mantine-color-scheme='dark'] .connection-indicator-button:focus-visible {
+  background-color: var(--mantine-color-dark-8);
+}
+
+.connection-indicator-button:focus-visible {
+  outline: 2px solid var(--mantine-color-blue-filled);
+  outline-offset: 2px;
+}
+
+[data-mantine-color-scheme='dark'] .mantine-AppShell-root .mantine-AppShell-navbar {
+  --app-shell-border-color: var(--mantine-color-dark-6);
+}
+
+.mantine-datatable {
+  --mantine-datatable-background-color: var(--mantine-color-body);
+}
+
+.mantine-datatable .mantine-datatable-empty-state {
+  pointer-events: none;
+}
+
+.mantine-datatable .mantine-datatable-empty-state[data-active] {
+  pointer-events: auto;
+}
+
+[data-mantine-color-scheme='dark'] .mantine-datatable {
+  --mantine-datatable-border-color-dark: var(--mantine-color-dark-6);
+  --mantine-datatable-highlight-on-hover-color: var(--mantine-color-dark-7);
+}
+
+/* Rollout Nested Table */
+.rollouts-table .mantine-datatable-row-expansion-cell {
+  padding: 0;
+}
+
+.rollouts-table .mantine-datatable-row-expansion-cell-content {
+  border: 0;
+  padding: 0;
+  background-color: transparent;
+}
+
+.rollouts-table--nested {
+  --mantine-datatable-background-color: var(--mantine-color-gray-1);
+}
+
+.rollouts-table--nested .mantine-datatable-table,
+.rollouts-table--nested .mantine-datatable-table td,
+.rollouts-table--nested .mantine-datatable-table th {
+  background-color: var(--mantine-datatable-background-color);
+}
+
+.rollouts-table--nested .mantine-datatable-table tbody tr:first-of-type td {
+  border-top: 1px solid var(--mantine-color-gray-3);
+}
+
+[data-mantine-color-scheme='dark'] .rollouts-table--nested {
+  --mantine-datatable-background-color: var(--mantine-color-dark-6);
+}
+
+[data-mantine-color-scheme='dark'] .rollouts-table--nested .mantine-datatable-table tbody tr:first-of-type td {
+  border-top: 1px solid var(--mantine-color-dark-4);
+}
+
+/* Fix Mantine Conflicts with Mantine-datatable */
+.mantine-datatable-page-size-selector-active {
+  color: var(--mantine-color-text);
+  background: transparent;
+}

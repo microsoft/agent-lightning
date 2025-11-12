@@ -212,3 +212,9 @@ cython_debug/
 *.tmp
 *.bak
 *.backup
+
+# Dashboard generated files
+agentlightning/dashboard/**/*.css
+agentlightning/dashboard/**/*.js
+agentlightning/dashboard/**/*.html
+agentlightning/dashboard/**/*.svg

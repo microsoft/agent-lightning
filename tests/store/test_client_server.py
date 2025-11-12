@@ -292,12 +292,16 @@ async def test_client_server_end_to_end(
     all_rollouts = await client.query_rollouts()
     assert any(r.rollout_id == enqueued.rollout_id for r in all_rollouts)
     assert await client.query_rollouts(rollout_ids=[enqueued.rollout_id])
+    # Test that attempt is present in the rollout
+    assert any(hasattr(r, "attempt") and r.attempt is not None for r in all_rollouts)  # type: ignore
     attempts = await client.query_attempts(dequeued_client.rollout_id)
     assert attempts
     assert await client.get_latest_attempt(dequeued_client.rollout_id) is not None
     stored_client_rollout = await client.get_rollout_by_id(dequeued_client.rollout_id)
     assert stored_client_rollout is not None
     assert stored_client_rollout.config.unresponsive_seconds == 6.0
+    # Test that attempt is present in the rollout
+    assert hasattr(stored_client_rollout, "attempt") and stored_client_rollout.attempt is not None  # type: ignore
 
     client_span = _make_span(dequeued_client.rollout_id, dequeued_client.attempt.attempt_id, 101, "client-span")
     stored_span = await client.add_span(client_span)

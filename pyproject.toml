@@ -25,6 +25,8 @@ dependencies = [
   "aiosqlite",
   "tenacity",
   "portpicker",
+  "gunicorn",
+  "uvicorn_worker",
 ]
 
 [project.optional-dependencies]
@@ -261,7 +263,15 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["agentlightning"]
-include = ["agentlightning/**/*.yaml", "agentlightning/**/*.yml", "agentlightning/**/*.poml"]
+include = [
+  "agentlightning/**/*.yaml",
+  "agentlightning/**/*.yml",
+  "agentlightning/**/*.poml",
+  "agentlightning/**/*.html",
+  "agentlightning/**/*.js",
+  "agentlightning/**/*.css",
+  "agentlightning/**/*.svg",
+]
 
 [tool.hatch.build.targets.sdist]
 exclude = [
@@ -269,6 +279,7 @@ exclude = [
   "tests/**",
   "docs/**",
   "scripts/**",
+  "dashboard/**",
 ]
 
 [tool.pytest.ini_options]

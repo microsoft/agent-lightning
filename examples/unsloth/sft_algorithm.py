@@ -185,7 +185,7 @@ async def sft_one_iter(
         llm_proxy.update_model_list(model_list)
         # Restart the LLM proxy after backend model list update
         # If LLM proxy has never been started, it will be started
-        llm_proxy.restart()
+        await llm_proxy.restart()
 
         # Put the LLM proxy address into the store as an address
         resources_update = await store.add_resources(

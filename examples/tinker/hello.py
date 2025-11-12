@@ -173,7 +173,12 @@ def oneclick():
     )
     trainer = agl.Trainer(
         algorithm=Tinker(config),
-        llm_proxy=agl.LLMProxy(port=12306, num_retries=3),
+        llm_proxy=agl.LLMProxy(
+            port=12306,
+            num_retries=3,
+            # Must use thread mode here because otherwise the Tinker sampling client will hang.
+            launch_mode="thread",
+        ),
         n_runners=8,
         port=_find_available_port(),
     )
