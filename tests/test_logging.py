@@ -4,6 +4,7 @@ import io
 import logging
 import multiprocessing as mp
 from multiprocessing.queues import Queue
+from pathlib import Path
 from typing import Any, Dict, List
 
 import pytest
@@ -15,7 +16,7 @@ from agentlightning.logging import (
 )
 
 
-def _logging_worker(case: str, queue: Queue[Dict[str, Any]]):
+def _logging_worker(case: str, queue: Queue[Dict[str, Any]]) -> None:
     """
     Runs in a separate process using spawn. It performs a specific logging
     configuration scenario and returns a summary dict via the queue.
@@ -100,11 +101,11 @@ def _logging_worker(case: str, queue: Queue[Dict[str, Any]]):
 
         # Capture warnings via logging after capture_warnings=True
         class ListHandler(logging.Handler):
-            def __init__(self):
+            def __init__(self) -> None:
                 super().__init__()
                 self.records: List[logging.LogRecord] = []
 
-            def emit(self, record: logging.LogRecord):
+            def emit(self, record: logging.LogRecord) -> None:
                 self.records.append(record)
 
         lh = ListHandler()
@@ -159,10 +160,117 @@ def _logging_worker(case: str, queue: Queue[Dict[str, Any]]):
         queue.put({})
 
 
+def _logging_worker_files_string(queue: Queue[Dict[str, Any]], base_dir: str) -> None:
+    """
+    Runs in a separate spawned process and configures logging with a single
+    files=str path. Returns information about the attached FileHandler.
+    """
+    import logging
+    import os
+
+    from agentlightning.logging import setup
+
+    log_path = os.path.join(base_dir, "logs", "agent.log")
+
+    setup(
+        level="INFO",
+        console=False,
+        color=False,
+        propagate=False,
+        files=log_path,
+    )
+
+    base = logging.getLogger("agentlightning")
+    file_handlers = [h for h in base.handlers if isinstance(h, logging.FileHandler)]
+    fh = file_handlers[0] if file_handlers else None
+
+    fmt = fh.formatter._fmt if fh and fh.formatter else None
+    datefmt = fh.formatter.datefmt if fh and fh.formatter else None
+
+    queue.put(
+        {
+            "logger_level": base.level,
+            "num_handlers": len(base.handlers),
+            "num_file_handlers": len(file_handlers),
+            "file_base": fh.baseFilename if fh else None,
+            "file_level": fh.level if fh else None,
+            "fmt": fmt,
+            "datefmt": datefmt,
+        }
+    )
+
+
+def _logging_worker_files_mapping(queue: Queue[Dict[str, Any]], base_dir: str) -> None:
+    """
+    Runs in a separate spawned process and configures logging with a files=dict
+    mapping, then calls setup twice to verify idempotent FileHandler attachment.
+    """
+    import logging
+    import os
+
+    from agentlightning.logging import setup
+
+    base_log = os.path.join(base_dir, "agent.log")
+    external_log = os.path.join(base_dir, "external.log")
+
+    files_mapping: Dict[str, str] = {
+        "agentlightning": base_log,
+        "external": external_log,
+    }
+
+    def file_handlers(logger: logging.Logger) -> list[logging.FileHandler]:
+        return [h for h in logger.handlers if isinstance(h, logging.FileHandler)]
+
+    # First setup call
+    setup(
+        level="DEBUG",
+        console=False,
+        color=False,
+        propagate=False,
+        files=files_mapping,
+    )
+
+    base_logger = logging.getLogger("agentlightning")
+    ext_logger = logging.getLogger("external")
+
+    base_fh_first = file_handlers(base_logger)
+    ext_fh_first = file_handlers(ext_logger)
+
+    # Second setup call with the same mapping should not add duplicate FileHandlers
+    setup(
+        level="DEBUG",
+        console=False,
+        color=False,
+        propagate=False,
+        files=files_mapping,
+    )
+
+    base_fh_second = file_handlers(base_logger)
+    ext_fh_second = file_handlers(ext_logger)
+
+    queue.put(
+        {
+            "base_level": base_logger.level,
+            "ext_level": ext_logger.level,
+            "base_first_count": len(base_fh_first),
+            "ext_first_count": len(ext_fh_first),
+            "base_second_count": len(base_fh_second),
+            "ext_second_count": len(ext_fh_second),
+            "base_file_first": base_fh_first[0].baseFilename if base_fh_first else None,
+            "ext_file_first": ext_fh_first[0].baseFilename if ext_fh_first else None,
+            "base_file_second": base_fh_second[0].baseFilename if base_fh_second else None,
+            "ext_file_second": ext_fh_second[0].baseFilename if ext_fh_second else None,
+            # For sanity: capture handler levels as well
+            "base_handler_level": base_fh_first[0].level if base_fh_first else None,
+            "ext_handler_level": ext_fh_first[0].level if ext_fh_first else None,
+        }
+    )
+
+
 def _run_case(case: str) -> Dict[str, Any]:
     """Helper to run a scenario in a spawn’ed process and fetch the result."""
     ctx = mp.get_context("spawn")
-    q = ctx.Queue()
+    q: Queue[Dict[str, Any]] = ctx.Queue()
     p = ctx.Process(target=_logging_worker, args=(case, q))
     p.start()
     result = q.get(timeout=10)
@@ -171,7 +279,7 @@ def _run_case(case: str) -> Dict[str, Any]:
     return result
 
 
-def test_to_level_value_int_and_str():
+def test_to_level_value_int_and_str() -> None:
     # direct, no multiprocessing needed
     assert _to_level_value(logging.DEBUG) == logging.DEBUG
     assert _to_level_value("info") == logging.INFO
@@ -181,7 +289,7 @@ def test_to_level_value_int_and_str():
         _to_level_value("not-a-level")
 
 
-def test_setup_module_plain_console_spawn():
+def test_setup_module_plain_console_spawn() -> None:
     result = _run_case("setup_module_plain_console")
 
     assert result["logger_name"] == "agentlightning.test"
@@ -195,7 +303,7 @@ def test_setup_module_plain_console_spawn():
     assert result["datefmt"] == DATE_FORMAT
 
 
-def test_setup_module_color_rich_spawn():
+def test_setup_module_color_rich_spawn() -> None:
     # Only run this test if rich is installed
     pytest.importorskip("rich")
 
@@ -208,7 +316,7 @@ def test_setup_module_color_rich_spawn():
     assert result["handler_class"].endswith("RichHandler")
 
 
-def test_setup_with_submodules_apply_to_and_capture_warnings_spawn():
+def test_setup_with_submodules_apply_to_and_capture_warnings_spawn() -> None:
     result = _run_case("setup_with_submodules_apply_to_capture_warnings")
 
     # Base logger level and handler attachment
@@ -228,7 +336,7 @@ def test_setup_with_submodules_apply_to_and_capture_warnings_spawn():
     assert result["warnings_logged"] >= 1
 
 
-def test_setup_with_console_and_extra_handler_spawn():
+def test_setup_with_console_and_extra_handler_spawn() -> None:
     result = _run_case("setup_with_console_and_extra_handler")
 
     # Level propagated to base logger
@@ -238,3 +346,74 @@ def test_setup_with_console_and_extra_handler_spawn():
     assert result["num_handlers"] >= 2
     assert any(cls.endswith("StreamHandler") for cls in result["handler_classes"])
     assert result["has_extra"] is True
+
+
+def test_setup_files_string_spawn(tmp_path: Path) -> None:
+    """
+    Verifies that passing files as a string attaches a single FileHandler with
+    the expected level and default formatter in a spawned process.
+    """
+    ctx = mp.get_context("spawn")
+    q: Queue[Dict[str, Any]] = ctx.Queue()
+    p = ctx.Process(target=_logging_worker_files_string, args=(q, str(tmp_path)))
+    p.start()
+    result = q.get(timeout=10)
+    p.join(timeout=10)
+    assert p.exitcode == 0
+
+    assert result["logger_level"] == logging.INFO
+    # We expect at least one handler and exactly one FileHandler
+    assert result["num_handlers"] >= 1
+    assert result["num_file_handlers"] == 1
+
+    # Filename should be inside the tmp_path tree
+    assert str(tmp_path) in result["file_base"]
+    # FileHandler uses the base logger level
+    assert result["file_level"] == logging.INFO
+
+    # Default formatter applied by _ensure_file_handler
+    assert result["fmt"] == DEFAULT_FORMAT
+    assert result["datefmt"] == DATE_FORMAT
+
+
+def test_setup_files_mapping_spawn(tmp_path: Path) -> None:
+    """
+    Verifies that passing files as a mapping attaches FileHandlers to each
+    logger and that calling setup twice does not create duplicate handlers.
+    """
+    ctx = mp.get_context("spawn")
+    q: Queue[Dict[str, Any]] = ctx.Queue()
+    p = ctx.Process(target=_logging_worker_files_mapping, args=(q, str(tmp_path)))
+    p.start()
+    result = q.get(timeout=10)
+    p.join(timeout=10)
+    assert p.exitcode == 0
+
+    # Base logger level is the configured level from setup(...)
+    assert result["base_level"] == logging.DEBUG
+
+    # 'external' logger keeps its default WARNING level (setup(files=...)
+    # does not change logger levels, it only attaches handlers)
+    assert result["ext_level"] == logging.WARNING
+
+    # First setup: one FileHandler per logger
+    assert result["base_first_count"] == 1
+    assert result["ext_first_count"] == 1
+
+    # Second setup: still one FileHandler per logger (idempotence)
+    assert result["base_second_count"] == 1
+    assert result["ext_second_count"] == 1
+
+    # File paths are stable across calls
+    assert result["base_file_first"] == result["base_file_second"]
+    assert result["ext_file_first"] == result["ext_file_second"]
+
+    # Paths should live under tmp_path
+    assert str(tmp_path) in result["base_file_first"]
+    assert str(tmp_path) in result["ext_file_first"]
+
+    # Handler levels:
+    # - base handler uses the base logger level (DEBUG)
+    # - external handler uses external's effective level at creation (WARNING)
+    assert result["base_handler_level"] == logging.DEBUG
+    assert result["ext_handler_level"] == logging.WARNING

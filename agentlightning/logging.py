@@ -53,6 +53,36 @@ def _to_level_value(lvl: int | str) -> int:
     return val
 
 
+def _ensure_file_handler(
+    logger: logging.Logger,
+    filename: str,
+    *,
+    level: int,
+    formatter: Optional[logging.Formatter],
+) -> None:
+    """Attach a FileHandler to `logger` for `filename` if it doesn't already exist."""
+    abspath = os.path.abspath(filename)
+
+    # Avoid duplicates
+    for h in logger.handlers:
+        if isinstance(h, logging.FileHandler) and getattr(h, "baseFilename", None) == abspath:
+            return
+
+    # Ensure directory exists
+    dirname = os.path.dirname(abspath)
+    if dirname:
+        os.makedirs(dirname, exist_ok=True)
+
+    fh = logging.FileHandler(abspath, encoding="utf-8")
+    fh.setLevel(level)
+    if formatter is not None:
+        fh.setFormatter(formatter)
+    else:
+        fh.setFormatter(logging.Formatter(DEFAULT_FORMAT, DATE_FORMAT))
+
+    logger.addHandler(fh)
+
+
 def setup(
     level: int | str = "INFO",
     *,
@@ -65,6 +95,7 @@ def setup(
     extra_handlers: Optional[list[logging.Handler]] = None,
     formatter: Optional[logging.Formatter] = None,
     apply_to: Optional[list[str]] = None,
+    files: Optional[str | dict[str, str]] = None,
 ) -> None:
     """Configures logging for the `agentlightning` logger hierarchy.
 
@@ -111,8 +142,12 @@ def setup(
             formatters on custom handlers.
         apply_to:
             A list of additional logger names to configure identically to
-            `agentlightning`. Their handlers are replaced with copies of the base
+            `agentlightning` base logger. Their handlers are replaced with copies of the base
             handlers, and propagation is disabled to avoid duplicate log emission.
+        files:
+            If a string, attach a FileHandler to the base `agentlightning` logger.
+            If a dict, for each `(logger_name, filename)` pair, attach a FileHandler
+            directly to that logger.
 
     Notes:
         * On Windows, this function forces UTF-8 mode in the console to prevent
@@ -157,6 +192,8 @@ def setup(
         disable_existing_loggers=disable_existing_loggers,
     )
 
+    base_level_value = base_logger.level
+
     # Apply user-provided formatter (only to handlers without one,
     # so we don't clobber custom extra_handlers)
     if formatter is not None:
@@ -172,12 +209,11 @@ def setup(
 
     # Per-submodule levels
     if submodule_levels:
-        base_level = base_logger.level
         for name, lvl in submodule_levels.items():
             sub_level = _to_level_value(lvl)
 
             # Emit a warning if submodule level is lower (more verbose) than the global/base level
-            if sub_level < base_level:
+            if sub_level < base_level_value:
                 base_logger.warning(
                     "Submodule logger '%s' level %s (%s) is more verbose than base "
                     "logger level %s (%s). Records below the base level may still be "
@@ -185,14 +221,37 @@ def setup(
                     name,
                     lvl,
                     sub_level,
-                    logging.getLevelName(base_level),
-                    base_level,
+                    logging.getLevelName(base_level_value),
+                    base_level_value,
                 )
 
             # The logger will *create* records down to the logger's level, but a handler
             # with a higher level will still drop anything below its own threshold.
             # Effective emission is gated by both: record.level >= logger.level AND handler.level.
             logging.getLogger(name).setLevel(lvl)
+
+    # Attach file handlers if requested
+    if files is not None:
+        if isinstance(files, str):
+            # Single file for the entire `agentlightning` hierarchy.
+            _ensure_file_handler(
+                logger=base_logger,
+                filename=files,
+                level=base_level_value,
+                formatter=formatter,
+            )
+        else:
+            # Per-logger files
+            for logger_name, filename in files.items():
+                lg = logging.getLogger(logger_name)
+                # Use the logger's effective level if set, otherwise fall back to base
+                effective_level = lg.level if lg.level != logging.NOTSET else base_level_value
+                _ensure_file_handler(
+                    logger=lg,
+                    filename=filename,
+                    level=effective_level,
+                    formatter=formatter,
+                )
 
     # Optionally apply the same handler setup to other loggers outside this module
     if apply_to:
@@ -289,6 +348,3 @@ def setup_module(
     dictConfig(root_cfg)
 
     return logging.getLogger(name)
-
-
-# I'm not sure about the safety and correctness of this method. Please write some type annotated functional-style pytests to test the logger.
