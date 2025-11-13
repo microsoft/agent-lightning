@@ -66,6 +66,8 @@ module.exports = async function badgeAggregation({ github, context, core, depend
       branch: 'main', // Always check the main branch status no matter what
       status: 'completed', // only completed runs
       per_page: 50, // retrieve latest 50 so we can filter
+      sort: 'created',
+      direction: 'desc',
     });
 
     const filteredRuns = runsData?.workflow_runs?.filter(run => ['schedule', 'workflow_dispatch'].includes(run.event));
