@@ -1,0 +1,5 @@
+[opentelemetry_environment_variables]
+gcp_trace = opentelemetry.exporter.cloud_trace.environment_variables
+
+[opentelemetry_traces_exporter]
+gcp_trace = opentelemetry.exporter.cloud_trace:CloudTraceSpanExporter

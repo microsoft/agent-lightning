@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+message DummyRequest {
+    string input = 1;
+}
+
+message DummyResponse {
+    string output = 1;
+}
+
+service DummyService {
+    rpc Execute (DummyRequest) returns (DummyResponse);
+    rpc ExecuteClientStream (stream DummyRequest) returns (DummyResponse);
+    rpc ExecuteServerStream (DummyRequest) returns (stream DummyResponse);
+    rpc ExecuteClientServerStream (stream DummyRequest) returns (stream DummyResponse);
+}

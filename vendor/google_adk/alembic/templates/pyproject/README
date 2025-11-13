@@ -1,0 +1,1 @@
+pyproject configuration, based on the generic configuration.

@@ -1,0 +1,58 @@
+ {
+  "comment": "This file maps proto services/RPCs to the corresponding library clients/methods",
+  "language": "python",
+  "libraryPackage": "google.cloud.trace_v2",
+  "protoPackage": "google.devtools.cloudtrace.v2",
+  "schema": "1.0",
+  "services": {
+    "TraceService": {
+      "clients": {
+        "grpc": {
+          "libraryClient": "TraceServiceClient",
+          "rpcs": {
+            "BatchWriteSpans": {
+              "methods": [
+                "batch_write_spans"
+              ]
+            },
+            "CreateSpan": {
+              "methods": [
+                "create_span"
+              ]
+            }
+          }
+        },
+        "grpc-async": {
+          "libraryClient": "TraceServiceAsyncClient",
+          "rpcs": {
+            "BatchWriteSpans": {
+              "methods": [
+                "batch_write_spans"
+              ]
+            },
+            "CreateSpan": {
+              "methods": [
+                "create_span"
+              ]
+            }
+          }
+        },
+        "rest": {
+          "libraryClient": "TraceServiceClient",
+          "rpcs": {
+            "BatchWriteSpans": {
+              "methods": [
+                "batch_write_spans"
+              ]
+            },
+            "CreateSpan": {
+              "methods": [
+                "create_span"
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

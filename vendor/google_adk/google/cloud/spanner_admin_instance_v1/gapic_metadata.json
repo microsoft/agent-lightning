@@ -1,0 +1,343 @@
+ {
+  "comment": "This file maps proto services/RPCs to the corresponding library clients/methods",
+  "language": "python",
+  "libraryPackage": "google.cloud.spanner_admin_instance_v1",
+  "protoPackage": "google.spanner.admin.instance.v1",
+  "schema": "1.0",
+  "services": {
+    "InstanceAdmin": {
+      "clients": {
+        "grpc": {
+          "libraryClient": "InstanceAdminClient",
+          "rpcs": {
+            "CreateInstance": {
+              "methods": [
+                "create_instance"
+              ]
+            },
+            "CreateInstanceConfig": {
+              "methods": [
+                "create_instance_config"
+              ]
+            },
+            "CreateInstancePartition": {
+              "methods": [
+                "create_instance_partition"
+              ]
+            },
+            "DeleteInstance": {
+              "methods": [
+                "delete_instance"
+              ]
+            },
+            "DeleteInstanceConfig": {
+              "methods": [
+                "delete_instance_config"
+              ]
+            },
+            "DeleteInstancePartition": {
+              "methods": [
+                "delete_instance_partition"
+              ]
+            },
+            "GetIamPolicy": {
+              "methods": [
+                "get_iam_policy"
+              ]
+            },
+            "GetInstance": {
+              "methods": [
+                "get_instance"
+              ]
+            },
+            "GetInstanceConfig": {
+              "methods": [
+                "get_instance_config"
+              ]
+            },
+            "GetInstancePartition": {
+              "methods": [
+                "get_instance_partition"
+              ]
+            },
+            "ListInstanceConfigOperations": {
+              "methods": [
+                "list_instance_config_operations"
+              ]
+            },
+            "ListInstanceConfigs": {
+              "methods": [
+                "list_instance_configs"
+              ]
+            },
+            "ListInstancePartitionOperations": {
+              "methods": [
+                "list_instance_partition_operations"
+              ]
+            },
+            "ListInstancePartitions": {
+              "methods": [
+                "list_instance_partitions"
+              ]
+            },
+            "ListInstances": {
+              "methods": [
+                "list_instances"
+              ]
+            },
+            "MoveInstance": {
+              "methods": [
+                "move_instance"
+              ]
+            },
+            "SetIamPolicy": {
+              "methods": [
+                "set_iam_policy"
+              ]
+            },
+            "TestIamPermissions": {
+              "methods": [
+                "test_iam_permissions"
+              ]
+            },
+            "UpdateInstance": {
+              "methods": [
+                "update_instance"
+              ]
+            },
+            "UpdateInstanceConfig": {
+              "methods": [
+                "update_instance_config"
+              ]
+            },
+            "UpdateInstancePartition": {
+              "methods": [
+                "update_instance_partition"
+              ]
+            }
+          }
+        },
+        "grpc-async": {
+          "libraryClient": "InstanceAdminAsyncClient",
+          "rpcs": {
+            "CreateInstance": {
+              "methods": [
+                "create_instance"
+              ]
+            },
+            "CreateInstanceConfig": {
+              "methods": [
+                "create_instance_config"
+              ]
+            },
+            "CreateInstancePartition": {
+              "methods": [
+                "create_instance_partition"
+              ]
+            },
+            "DeleteInstance": {
+              "methods": [
+                "delete_instance"
+              ]
+            },
+            "DeleteInstanceConfig": {
+              "methods": [
+                "delete_instance_config"
+              ]
+            },
+            "DeleteInstancePartition": {
+              "methods": [
+                "delete_instance_partition"
+              ]
+            },
+            "GetIamPolicy": {
+              "methods": [
+                "get_iam_policy"
+              ]
+            },
+            "GetInstance": {
+              "methods": [
+                "get_instance"
+              ]
+            },
+            "GetInstanceConfig": {
+              "methods": [
+                "get_instance_config"
+              ]
+            },
+            "GetInstancePartition": {
+              "methods": [
+                "get_instance_partition"
+              ]
+            },
+            "ListInstanceConfigOperations": {
+              "methods": [
+                "list_instance_config_operations"
+              ]
+            },
+            "ListInstanceConfigs": {
+              "methods": [
+                "list_instance_configs"
+              ]
+            },
+            "ListInstancePartitionOperations": {
+              "methods": [
+                "list_instance_partition_operations"
+              ]
+            },
+            "ListInstancePartitions": {
+              "methods": [
+                "list_instance_partitions"
+              ]
+            },
+            "ListInstances": {
+              "methods": [
+                "list_instances"
+              ]
+            },
+            "MoveInstance": {
+              "methods": [
+                "move_instance"
+              ]
+            },
+            "SetIamPolicy": {
+              "methods": [
+                "set_iam_policy"
+              ]
+            },
+            "TestIamPermissions": {
+              "methods": [
+                "test_iam_permissions"
+              ]
+            },
+            "UpdateInstance": {
+              "methods": [
+                "update_instance"
+              ]
+            },
+            "UpdateInstanceConfig": {
+              "methods": [
+                "update_instance_config"
+              ]
+            },
+            "UpdateInstancePartition": {
+              "methods": [
+                "update_instance_partition"
+              ]
+            }
+          }
+        },
+        "rest": {
+          "libraryClient": "InstanceAdminClient",
+          "rpcs": {
+            "CreateInstance": {
+              "methods": [
+                "create_instance"
+              ]
+            },
+            "CreateInstanceConfig": {
+              "methods": [
+                "create_instance_config"
+              ]
+            },
+            "CreateInstancePartition": {
+              "methods": [
+                "create_instance_partition"
+              ]
+            },
+            "DeleteInstance": {
+              "methods": [
+                "delete_instance"
+              ]
+            },
+            "DeleteInstanceConfig": {
+              "methods": [
+                "delete_instance_config"
+              ]
+            },
+            "DeleteInstancePartition": {
+              "methods": [
+                "delete_instance_partition"
+              ]
+            },
+            "GetIamPolicy": {
+              "methods": [
+                "get_iam_policy"
+              ]
+            },
+            "GetInstance": {
+              "methods": [
+                "get_instance"
+              ]
+            },
+            "GetInstanceConfig": {
+              "methods": [
+                "get_instance_config"
+              ]
+            },
+            "GetInstancePartition": {
+              "methods": [
+                "get_instance_partition"
+              ]
+            },
+            "ListInstanceConfigOperations": {
+              "methods": [
+                "list_instance_config_operations"
+              ]
+            },
+            "ListInstanceConfigs": {
+              "methods": [
+                "list_instance_configs"
+              ]
+            },
+            "ListInstancePartitionOperations": {
+              "methods": [
+                "list_instance_partition_operations"
+              ]
+            },
+            "ListInstancePartitions": {
+              "methods": [
+                "list_instance_partitions"
+              ]
+            },
+            "ListInstances": {
+              "methods": [
+                "list_instances"
+              ]
+            },
+            "MoveInstance": {
+              "methods": [
+                "move_instance"
+              ]
+            },
+            "SetIamPolicy": {
+              "methods": [
+                "set_iam_policy"
+              ]
+            },
+            "TestIamPermissions": {
+              "methods": [
+                "test_iam_permissions"
+              ]
+            },
+            "UpdateInstance": {
+              "methods": [
+                "update_instance"
+              ]
+            },
+            "UpdateInstanceConfig": {
+              "methods": [
+                "update_instance_config"
+              ]
+            },
+            "UpdateInstancePartition": {
+              "methods": [
+                "update_instance_partition"
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

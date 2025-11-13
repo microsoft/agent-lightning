@@ -1,0 +1,178 @@
+Metadata-Version: 2.4
+Name: Authlib
+Version: 1.6.5
+Summary: The ultimate Python library in building OAuth and OpenID Connect servers and clients.
+Author-email: Hsiaoming Yang <me@lepture.com>
+License: BSD-3-Clause
+Project-URL: Documentation, https://docs.authlib.org/
+Project-URL: Purchase, https://authlib.org/plans
+Project-URL: Issues, https://github.com/authlib/authlib/issues
+Project-URL: Source, https://github.com/authlib/authlib
+Project-URL: Donate, https://github.com/sponsors/lepture
+Project-URL: Blog, https://blog.authlib.org/
+Classifier: Development Status :: 5 - Production/Stable
+Classifier: Environment :: Console
+Classifier: Environment :: Web Environment
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: BSD License
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Classifier: Programming Language :: Python :: Implementation :: CPython
+Classifier: Programming Language :: Python :: Implementation :: PyPy
+Classifier: Topic :: Security
+Classifier: Topic :: Security :: Cryptography
+Classifier: Topic :: Internet :: WWW/HTTP :: Dynamic Content
+Classifier: Topic :: Internet :: WWW/HTTP :: WSGI :: Application
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: cryptography
+Dynamic: license-file
+
+<div align="center">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/_static/dark-logo.svg" />
+  <img alt="Authlib" src="docs/_static/light-logo.svg" height="68" />
+</picture>
+
+[![Build Status](https://github.com/authlib/authlib/workflows/tests/badge.svg)](https://github.com/authlib/authlib/actions)
+[![PyPI version](https://img.shields.io/pypi/v/authlib.svg)](https://pypi.org/project/authlib)
+[![conda-forge version](https://img.shields.io/conda/v/conda-forge/authlib.svg?label=conda-forge&colorB=0090ff)](https://anaconda.org/conda-forge/authlib)
+[![PyPI Downloads](https://static.pepy.tech/badge/authlib/month)](https://pepy.tech/projects/authlib)
+[![Code Coverage](https://codecov.io/gh/authlib/authlib/graph/badge.svg?token=OWTdxAIsPI)](https://codecov.io/gh/authlib/authlib)
+[![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=authlib_authlib&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=authlib_authlib)
+
+</div>
+
+The ultimate Python library in building OAuth and OpenID Connect servers.
+JWS, JWK, JWA, JWT are included.
+
+Authlib is compatible with Python3.9+.
+
+## Migrations
+
+Authlib will deprecate `authlib.jose` module, please read:
+
+- [Migrating from `authlib.jose` to `joserfc`](https://jose.authlib.org/en/dev/migrations/authlib/)
+
+## Sponsors
+
+<table>
+<tr>
+<td><img align="middle" width="48" src="https://cdn.auth0.com/website/website/favicons/auth0-favicon.svg"></td>
+<td>If you want to quickly add secure token-based authentication to Python projects, feel free to check Auth0's Python SDK and free plan at <a href="https://auth0.com/overview?utm_source=GHsponsor&utm_medium=GHsponsor&utm_campaign=authlib&utm_content=auth">auth0.com/overview</a>.</td>
+</tr>
+<tr>
+<td><img align="middle" width="48" src="https://typlog.com/assets/icon-white.svg"></td>
+<td>A blogging and podcast hosting platform with minimal design but powerful features. Host your blog and Podcast with <a href="https://typlog.com/">Typlog.com</a>.
+</td>
+</tr>
+</table>
+
+[**Fund Authlib to access additional features**](https://docs.authlib.org/en/latest/community/funding.html)
+
+## Features
+
+Generic, spec-compliant implementation to build clients and providers:
+
+- [The OAuth 1.0 Protocol](https://docs.authlib.org/en/latest/basic/oauth1.html)
+  - [RFC5849: The OAuth 1.0 Protocol](https://docs.authlib.org/en/latest/specs/rfc5849.html)
+- [The OAuth 2.0 Authorization Framework](https://docs.authlib.org/en/latest/basic/oauth2.html)
+  - [RFC6749: The OAuth 2.0 Authorization Framework](https://docs.authlib.org/en/latest/specs/rfc6749.html)
+  - [RFC6750: The OAuth 2.0 Authorization Framework: Bearer Token Usage](https://docs.authlib.org/en/latest/specs/rfc6750.html)
+  - [RFC7009: OAuth 2.0 Token Revocation](https://docs.authlib.org/en/latest/specs/rfc7009.html)
+  - [RFC7523: JWT Profile for OAuth 2.0 Client Authentication and Authorization Grants](https://docs.authlib.org/en/latest/specs/rfc7523.html)
+  - [RFC7591: OAuth 2.0 Dynamic Client Registration Protocol](https://docs.authlib.org/en/latest/specs/rfc7591.html)
+  - [RFC7592: OAuth 2.0 Dynamic Client Registration Management Protocol](https://docs.authlib.org/en/latest/specs/rfc7592.html)
+  - [RFC7636: Proof Key for Code Exchange by OAuth Public Clients](https://docs.authlib.org/en/latest/specs/rfc7636.html)
+  - [RFC7662: OAuth 2.0 Token Introspection](https://docs.authlib.org/en/latest/specs/rfc7662.html)
+  - [RFC8414: OAuth 2.0 Authorization Server Metadata](https://docs.authlib.org/en/latest/specs/rfc8414.html)
+  - [RFC8628: OAuth 2.0 Device Authorization Grant](https://docs.authlib.org/en/latest/specs/rfc8628.html)
+  - [RFC9068: JSON Web Token (JWT) Profile for OAuth 2.0 Access Tokens](https://docs.authlib.org/en/latest/specs/rfc9068.html)
+  - [RFC9101: The OAuth 2.0 Authorization Framework: JWT-Secured Authorization Request (JAR)](https://docs.authlib.org/en/latest/specs/rfc9101.html)
+  - [RFC9207: OAuth 2.0 Authorization Server Issuer Identification](https://docs.authlib.org/en/latest/specs/rfc9207.html)
+- [Javascript Object Signing and Encryption](https://docs.authlib.org/en/latest/jose/index.html)
+  - [RFC7515: JSON Web Signature](https://docs.authlib.org/en/latest/jose/jws.html)
+  - [RFC7516: JSON Web Encryption](https://docs.authlib.org/en/latest/jose/jwe.html)
+  - [RFC7517: JSON Web Key](https://docs.authlib.org/en/latest/jose/jwk.html)
+  - [RFC7518: JSON Web Algorithms](https://docs.authlib.org/en/latest/specs/rfc7518.html)
+  - [RFC7519: JSON Web Token](https://docs.authlib.org/en/latest/jose/jwt.html)
+  - [RFC7638: JSON Web Key (JWK) Thumbprint](https://docs.authlib.org/en/latest/specs/rfc7638.html)
+  - [ ] RFC7797: JSON Web Signature (JWS) Unencoded Payload Option
+  - [RFC8037: ECDH in JWS and JWE](https://docs.authlib.org/en/latest/specs/rfc8037.html)
+  - [ ] draft-madden-jose-ecdh-1pu-04: Public Key Authenticated Encryption for JOSE: ECDH-1PU
+- [OpenID Connect 1.0](https://docs.authlib.org/en/latest/specs/oidc.html)
+  - [x] OpenID Connect Core 1.0
+  - [x] OpenID Connect Discovery 1.0
+  - [x] OpenID Connect Dynamic Client Registration 1.0
+
+Connect third party OAuth providers with Authlib built-in client integrations:
+
+- Requests
+  - [OAuth1Session](https://docs.authlib.org/en/latest/client/requests.html#requests-oauth-1-0)
+  - [OAuth2Session](https://docs.authlib.org/en/latest/client/requests.html#requests-oauth-2-0)
+  - [OpenID Connect](https://docs.authlib.org/en/latest/client/requests.html#requests-openid-connect)
+  - [AssertionSession](https://docs.authlib.org/en/latest/client/requests.html#requests-service-account)
+- HTTPX
+  - [AsyncOAuth1Client](https://docs.authlib.org/en/latest/client/httpx.html#httpx-oauth-1-0)
+  - [AsyncOAuth2Client](https://docs.authlib.org/en/latest/client/httpx.html#httpx-oauth-2-0)
+  - [OpenID Connect](https://docs.authlib.org/en/latest/client/httpx.html#httpx-oauth-2-0)
+  - [AsyncAssertionClient](https://docs.authlib.org/en/latest/client/httpx.html#async-service-account)
+- [Flask OAuth Client](https://docs.authlib.org/en/latest/client/flask.html)
+- [Django OAuth Client](https://docs.authlib.org/en/latest/client/django.html)
+- [Starlette OAuth Client](https://docs.authlib.org/en/latest/client/starlette.html)
+- [FastAPI OAuth Client](https://docs.authlib.org/en/latest/client/fastapi.html)
+
+Build your own OAuth 1.0, OAuth 2.0, and OpenID Connect providers:
+
+- Flask
+  - [Flask OAuth 1.0 Provider](https://docs.authlib.org/en/latest/flask/1/)
+  - [Flask OAuth 2.0 Provider](https://docs.authlib.org/en/latest/flask/2/)
+  - [Flask OpenID Connect 1.0 Provider](https://docs.authlib.org/en/latest/flask/2/openid-connect.html)
+- Django
+  - [Django OAuth 1.0 Provider](https://docs.authlib.org/en/latest/django/1/)
+  - [Django OAuth 2.0 Provider](https://docs.authlib.org/en/latest/django/2/)
+  - [Django OpenID Connect 1.0 Provider](https://docs.authlib.org/en/latest/django/2/openid-connect.html)
+
+## Useful Links
+
+1. Homepage: <https://authlib.org/>.
+2. Documentation: <https://docs.authlib.org/>.
+3. Purchase Commercial License: <https://authlib.org/plans>.
+4. Blog: <https://blog.authlib.org/>.
+5. Twitter: <https://twitter.com/authlib>.
+6. StackOverflow: <https://stackoverflow.com/questions/tagged/authlib>.
+7. Other Repositories: <https://github.com/authlib>.
+8. Subscribe Tidelift: [https://tidelift.com/subscription/pkg/pypi-authlib](https://tidelift.com/subscription/pkg/pypi-authlib?utm_source=pypi-authlib&utm_medium=referral&utm_campaign=links).
+
+## Security Reporting
+
+If you found security bugs, please do not send a public issue or patch.
+You can send me email at <me@lepture.com>. Attachment with patch is welcome.
+My PGP Key fingerprint is:
+
+```
+72F8 E895 A70C EBDF 4F2A DFE0 7E55 E3E0 118B 2B4C
+```
+
+Or, you can use the [Tidelift security contact](https://tidelift.com/security).
+Tidelift will coordinate the fix and disclosure.
+
+## License
+
+Authlib offers two licenses:
+
+1. BSD LICENSE
+2. COMMERCIAL-LICENSE
+
+Any project, open or closed source, can use the BSD license.
+If your company needs commercial support, you can purchase a commercial license at
+[Authlib Plans](https://authlib.org/plans). You can find more information at
+<https://authlib.org/support>.

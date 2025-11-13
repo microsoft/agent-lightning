@@ -1,0 +1,84 @@
+Metadata-Version: 2.4
+Name: opentelemetry-resourcedetector-gcp
+Version: 1.11.0a0
+Summary: Google Cloud resource detector for OpenTelemetry
+Home-page: https://github.com/GoogleCloudPlatform/opentelemetry-operations-python/tree/main/opentelemetry-resourcedetector-gcp
+Author: Google
+Author-email: opentelemetry-pypi@google.com
+License: Apache-2.0
+Platform: any
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: Apache Software License
+Classifier: Programming Language :: Python
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Requires-Python: >=3.9
+Description-Content-Type: text/x-rst
+License-File: LICENSE
+Requires-Dist: opentelemetry-api~=1.30
+Requires-Dist: opentelemetry-sdk~=1.30
+Requires-Dist: requests~=2.24
+Requires-Dist: typing_extensions~=4.0
+Provides-Extra: test
+Dynamic: license-file
+
+OpenTelemetry Google Cloud Resource Detector
+============================================
+
+.. image:: https://badge.fury.io/py/opentelemetry-resourcedetector-gcp.svg
+    :target: https://badge.fury.io/py/opentelemetry-resourcedetector-gcp
+
+.. image:: https://readthedocs.org/projects/google-cloud-opentelemetry/badge/?version=latest
+    :target: https://google-cloud-opentelemetry.readthedocs.io/en/latest/?badge=latest
+    :alt: Documentation Status
+
+This library provides support for detecting GCP resources like GCE, GKE, etc.
+
+To get started with instrumentation in Google Cloud, see `Generate traces and metrics with
+Python <https://cloud.google.com/stackdriver/docs/instrumentation/setup/python>`_.
+
+To learn more about instrumentation and observability, including opinionated recommendations
+for Google Cloud Observability, visit `Instrumentation and observability
+<https://cloud.google.com/stackdriver/docs/instrumentation/overview>`_.
+
+Installation
+------------
+
+.. code:: bash
+
+    pip install opentelemetry-resourcedetector-gcp
+
+Usage
+-----
+
+.. code:: python
+
+    from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import BatchSpanProcessor
+    from opentelemetry import trace
+    from opentelemetry.sdk.resources import SERVICE_INSTANCE_ID, Resource
+
+    # This will use the GooglecloudResourceDetector under the covers.
+    resource = Resource.create(
+        attributes={
+            # Use the PID as the service.instance.id to avoid duplicate timeseries
+            # from different Gunicorn worker processes.
+            SERVICE_INSTANCE_ID: f"worker-{os.getpid()}",
+        }
+    )
+    traceProvider = TracerProvider(resource=resource)
+    processor = BatchSpanProcessor(OTLPSpanExporter())
+    traceProvider.add_span_processor(processor)
+    trace.set_tracer_provider(traceProvider)
+
+References
+----------
+
+* `Cloud Monitoring <https://cloud.google.com/monitoring>`_
+* `OpenTelemetry Project <https://opentelemetry.io/>`_

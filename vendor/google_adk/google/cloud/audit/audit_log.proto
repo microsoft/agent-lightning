@@ -1,0 +1,376 @@
+// Copyright 2025 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package google.cloud.audit;
+
+import "google/api/field_behavior.proto";
+import "google/protobuf/any.proto";
+import "google/protobuf/struct.proto";
+import "google/rpc/context/attribute_context.proto";
+import "google/rpc/status.proto";
+
+option cc_enable_arenas = true;
+option go_package = "google.golang.org/genproto/googleapis/cloud/audit;audit";
+option java_multiple_files = true;
+option java_outer_classname = "AuditLogProto";
+option java_package = "com.google.cloud.audit";
+
+// Common audit log format for Google Cloud Platform API operations.
+message AuditLog {
+  // The name of the API service performing the operation. For example,
+  // `"compute.googleapis.com"`.
+  string service_name = 7;
+
+  // The name of the service method or operation.
+  // For API calls, this should be the name of the API method.
+  // For example,
+  //
+  //     "google.cloud.bigquery.v2.TableService.InsertTable"
+  //     "google.logging.v2.ConfigServiceV2.CreateSink"
+  string method_name = 8;
+
+  // The resource or collection that is the target of the operation.
+  // The name is a scheme-less URI, not including the API service name.
+  // For example:
+  //
+  //     "projects/PROJECT_ID/zones/us-central1-a/instances"
+  //     "projects/PROJECT_ID/datasets/DATASET_ID"
+  string resource_name = 11;
+
+  // The resource location information.
+  ResourceLocation resource_location = 20;
+
+  // The resource's original state before mutation. Present only for
+  // operations which have successfully modified the targeted resource(s).
+  // In general, this field should contain all changed fields, except those
+  // that are already been included in `request`, `response`, `metadata` or
+  // `service_data` fields.
+  // When the JSON object represented here has a proto equivalent,
+  // the proto name will be indicated in the `@type` property.
+  google.protobuf.Struct resource_original_state = 19;
+
+  // The number of items returned from a List or Query API method,
+  // if applicable.
+  int64 num_response_items = 12;
+
+  // The status of the overall operation.
+  google.rpc.Status status = 2;
+
+  // Authentication information.
+  AuthenticationInfo authentication_info = 3;
+
+  // Authorization information. If there are multiple
+  // resources or permissions involved, then there is
+  // one AuthorizationInfo element for each {resource, permission} tuple.
+  repeated AuthorizationInfo authorization_info = 9;
+
+  // Indicates the policy violations for this request. If the request
+  // is denied by the policy, violation information will be logged
+  // here.
+  PolicyViolationInfo policy_violation_info = 25;
+
+  // Metadata about the operation.
+  RequestMetadata request_metadata = 4;
+
+  // The operation request. This may not include all request parameters,
+  // such as those that are too large, privacy-sensitive, or duplicated
+  // elsewhere in the log record.
+  // It should never include user-generated data, such as file contents.
+  // When the JSON object represented here has a proto equivalent, the proto
+  // name will be indicated in the `@type` property.
+  google.protobuf.Struct request = 16;
+
+  // The operation response. This may not include all response elements,
+  // such as those that are too large, privacy-sensitive, or duplicated
+  // elsewhere in the log record.
+  // It should never include user-generated data, such as file contents.
+  // When the JSON object represented here has a proto equivalent, the proto
+  // name will be indicated in the `@type` property.
+  google.protobuf.Struct response = 17;
+
+  // Other service-specific data about the request, response, and other
+  // information associated with the current audited event.
+  google.protobuf.Struct metadata = 18;
+
+  // Deprecated. Use the `metadata` field instead.
+  // Other service-specific data about the request, response, and other
+  // activities.
+  google.protobuf.Any service_data = 15 [deprecated = true];
+}
+
+// Authentication information for the operation.
+message AuthenticationInfo {
+  // The email address of the authenticated user (or service account on behalf
+  // of third party principal) making the request. For third party identity
+  // callers, the `principal_subject` field is populated instead of this field.
+  // For privacy reasons, the principal email address is sometimes redacted.
+  // For more information, see [Caller identities in audit
+  // logs](https://cloud.google.com/logging/docs/audit#user-id).
+  string principal_email = 1;
+
+  // The authority selector specified by the requestor, if any.
+  // It is not guaranteed that the principal was allowed to use this authority.
+  string authority_selector = 2;
+
+  // The third party identification (if any) of the authenticated user making
+  // the request.
+  // When the JSON object represented here has a proto equivalent, the proto
+  // name will be indicated in the `@type` property.
+  google.protobuf.Struct third_party_principal = 4;
+
+  // The name of the service account key used to create or exchange
+  // credentials for authenticating the service account making the request.
+  // This is a scheme-less URI full resource name. For example:
+  //
+  // "//iam.googleapis.com/projects/{PROJECT_ID}/serviceAccounts/{ACCOUNT}/keys/{key}"
+  string service_account_key_name = 5;
+
+  // Identity delegation history of an authenticated service account that makes
+  // the request. It contains information on the real authorities that try to
+  // access GCP resources by delegating on a service account. When multiple
+  // authorities present, they are guaranteed to be sorted based on the original
+  // ordering of the identity delegation events.
+  repeated ServiceAccountDelegationInfo service_account_delegation_info = 6;
+
+  // String representation of identity of requesting party.
+  // Populated for both first and third party identities.
+  string principal_subject = 8;
+}
+
+// Authorization information for the operation.
+message AuthorizationInfo {
+  // The list of valid permission types that can be checked.
+  enum PermissionType {
+    // Default. Should not be used.
+    PERMISSION_TYPE_UNSPECIFIED = 0;
+
+    // Permissions that gate reading resource configuration or metadata.
+    ADMIN_READ = 1;
+
+    // Permissions that gate modification of resource configuration or metadata.
+    ADMIN_WRITE = 2;
+
+    // Permissions that gate reading user-provided data.
+    DATA_READ = 3;
+
+    // Permissions that gate writing user-provided data.
+    DATA_WRITE = 4;
+  }
+
+  // The resource being accessed, as a REST-style or cloud resource string.
+  // For example:
+  //
+  //     bigquery.googleapis.com/projects/PROJECTID/datasets/DATASETID
+  // or
+  //     projects/PROJECTID/datasets/DATASETID
+  string resource = 1;
+
+  // The required IAM permission.
+  string permission = 2;
+
+  // Whether or not authorization for `resource` and `permission`
+  // was granted.
+  bool granted = 3;
+
+  // Resource attributes used in IAM condition evaluation. This field contains
+  // resource attributes like resource type and resource name.
+  //
+  // To get the whole view of the attributes used in IAM
+  // condition evaluation, the user must also look into
+  // `AuditLog.request_metadata.request_attributes`.
+  google.rpc.context.AttributeContext.Resource resource_attributes = 5;
+
+  // The type of the permission that was checked. For data access audit logs
+  // this corresponds with the permission type that must be enabled in the
+  // project/folder/organization IAM policy in order for the log to be written.
+  PermissionType permission_type = 7;
+}
+
+// Metadata about the request.
+message RequestMetadata {
+  // The IP address of the caller.
+  // For a caller from the internet, this will be the public IPv4 or IPv6
+  // address. For calls made from inside Google's internal production network
+  // from one GCP service to another, `caller_ip` will be redacted to "private".
+  // For a caller from a Compute Engine VM with a external IP address,
+  // `caller_ip` will be the VM's external IP address. For a caller from a
+  // Compute Engine VM without a external IP address, if the VM is in the same
+  // organization (or project) as the accessed resource, `caller_ip` will be the
+  // VM's internal IPv4 address, otherwise `caller_ip` will be redacted to
+  // "gce-internal-ip". See https://cloud.google.com/compute/docs/vpc/ for more
+  // information.
+  string caller_ip = 1;
+
+  // The user agent of the caller.
+  // This information is not authenticated and should be treated accordingly.
+  // For example:
+  //
+  // +   `google-api-python-client/1.4.0`:
+  //     The request was made by the Google API client for Python.
+  // +   `Cloud SDK Command Line Tool apitools-client/1.0 gcloud/0.9.62`:
+  //     The request was made by the Google Cloud SDK CLI (gcloud).
+  // +   `AppEngine-Google; (+http://code.google.com/appengine; appid:
+  // s~my-project`:
+  //     The request was made from the `my-project` App Engine app.
+  string caller_supplied_user_agent = 2;
+
+  // The network of the caller.
+  // Set only if the network host project is part of the same GCP organization
+  // (or project) as the accessed resource.
+  // See https://cloud.google.com/compute/docs/vpc/ for more information.
+  // This is a scheme-less URI full resource name. For example:
+  //
+  //     "//compute.googleapis.com/projects/PROJECT_ID/global/networks/NETWORK_ID"
+  string caller_network = 3;
+
+  // Request attributes used in IAM condition evaluation. This field contains
+  // request attributes like request time and access levels associated with
+  // the request.
+  //
+  //
+  // To get the whole view of the attributes used in IAM
+  // condition evaluation, the user must also look into
+  // `AuditLog.authentication_info.resource_attributes`.
+  google.rpc.context.AttributeContext.Request request_attributes = 7;
+
+  // The destination of a network activity, such as accepting a TCP connection.
+  // In a multi hop network activity, the destination represents the receiver of
+  // the last hop. Only two fields are used in this message, Peer.port and
+  // Peer.ip. These fields are optionally populated by those services utilizing
+  // the IAM condition feature.
+  google.rpc.context.AttributeContext.Peer destination_attributes = 8;
+}
+
+// Location information about a resource.
+message ResourceLocation {
+  // The locations of a resource after the execution of the operation.
+  // Requests to create or delete a location based resource must populate
+  // the 'current_locations' field and not the 'original_locations' field.
+  // For example:
+  //
+  //     "europe-west1-a"
+  //     "us-east1"
+  //     "nam3"
+  repeated string current_locations = 1;
+
+  // The locations of a resource prior to the execution of the operation.
+  // Requests that mutate the resource's location must populate both the
+  // 'original_locations' as well as the 'current_locations' fields.
+  // For example:
+  //
+  //     "europe-west1-a"
+  //     "us-east1"
+  //     "nam3"
+  repeated string original_locations = 2;
+}
+
+// Identity delegation history of an authenticated service account.
+message ServiceAccountDelegationInfo {
+  // First party identity principal.
+  message FirstPartyPrincipal {
+    // The email address of a Google account.
+    string principal_email = 1;
+
+    // Metadata about the service that uses the service account.
+    google.protobuf.Struct service_metadata = 2;
+  }
+
+  // Third party identity principal.
+  message ThirdPartyPrincipal {
+    // Metadata about third party identity.
+    google.protobuf.Struct third_party_claims = 1;
+  }
+
+  // A string representing the principal_subject associated with the identity.
+  // For most identities, the format will be
+  // `principal://iam.googleapis.com/{identity pool name}/subject/{subject)`
+  // except for some GKE identities (GKE_WORKLOAD, FREEFORM, GKE_HUB_WORKLOAD)
+  // that are still in the legacy format `serviceAccount:{identity pool
+  // name}[{subject}]`
+  string principal_subject = 3;
+
+  // Entity that creates credentials for service account and assumes its
+  // identity for authentication.
+  oneof Authority {
+    // First party (Google) identity as the real authority.
+    FirstPartyPrincipal first_party_principal = 1;
+
+    // Third party identity as the real authority.
+    ThirdPartyPrincipal third_party_principal = 2;
+  }
+}
+
+// Information related to policy violations for this request.
+message PolicyViolationInfo {
+  // Indicates the orgpolicy violations for this resource.
+  OrgPolicyViolationInfo org_policy_violation_info = 1;
+}
+
+// Represents OrgPolicy Violation information.
+message OrgPolicyViolationInfo {
+  // Optional. Resource payload that is currently in scope and is subjected to orgpolicy
+  // conditions. This payload may be the subset of the actual Resource that may
+  // come in the request. This payload should not contain any core content.
+  google.protobuf.Struct payload = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Resource type that the orgpolicy is checked against.
+  // Example: compute.googleapis.com/Instance, store.googleapis.com/bucket
+  string resource_type = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Tags referenced on the resource at the time of evaluation. These also
+  // include the federated tags, if they are supplied in the CheckOrgPolicy
+  // or CheckCustomConstraints Requests.
+  //
+  // Optional field as of now. These tags are the Cloud tags that are
+  // available on the resource during the policy evaluation and will
+  // be available as part of the OrgPolicy check response for logging purposes.
+  map<string, string> resource_tags = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Policy violations
+  repeated ViolationInfo violation_info = 4 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Provides information about the Policy violation info for this request.
+message ViolationInfo {
+  // Policy Type enum
+  enum PolicyType {
+    // Default value. This value should not be used.
+    POLICY_TYPE_UNSPECIFIED = 0;
+
+    // Indicates boolean policy constraint
+    BOOLEAN_CONSTRAINT = 1;
+
+    // Indicates list policy constraint
+    LIST_CONSTRAINT = 2;
+
+    // Indicates custom policy constraint
+    CUSTOM_CONSTRAINT = 3;
+  }
+
+  // Optional. Constraint name
+  string constraint = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Error message that policy is indicating.
+  string error_message = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Value that is being checked for the policy.
+  // This could be in encrypted form (if pii sensitive).
+  // This field will only be emitted in LIST_POLICY types
+  string checked_value = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Optional. Indicates the type of the policy.
+  PolicyType policy_type = 4 [(google.api.field_behavior) = OPTIONAL];
+}

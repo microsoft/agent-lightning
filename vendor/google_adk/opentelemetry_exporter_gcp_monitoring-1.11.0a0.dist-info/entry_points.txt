@@ -1,0 +1,5 @@
+[opentelemetry_environment_variables]
+gcp_monitoring = opentelemetry.exporter.cloud_monitoring.environment_variables
+
+[opentelemetry_metrics_exporter]
+gcp_monitoring = opentelemetry.exporter.cloud_monitoring:CloudMonitoringMetricsExporter

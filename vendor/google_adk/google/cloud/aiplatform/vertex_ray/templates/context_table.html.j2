@@ -1,0 +1,24 @@
+
+<table class="jp-RenderedHTMLCommon" style="border-collapse: collapse;color: var(--jp-ui-font-color1);font-size: var(--jp-ui-font-size1);">
+    <tr>
+        <td style="text-align: left"><b>Python version:</b></td>
+        <td style="text-align: left"><b>{{ python_version }}</b></td>
+    </tr>
+    <tr>
+        <td style="text-align: left"><b>Ray version:</b></td>
+        <td style="text-align: left"><b> {{ ray_version }}</b></td>
+    </tr>
+    <tr>
+        <td style="text-align: left"><b>Vertex SDK version:</b></td>
+        <td style="text-align: left"><b> {{ vertex_sdk_version }}</b></td>
+    </tr>
+    <tr>
+        <td style="text-align: left"><b>Dashboard:</b></td>
+        <td style="text-align: left"><b><a href="https://{{ dashboard_url }}" target="_blank">{{ dashboard_url }}</a></b></td>
+    </tr>
+    {{ shell_uri_row }}
+    <tr>
+        <td style="text-align: left"><b>Cluster Name:</b></td>
+        <td style="text-align: left"><b> {{ persistent_resource_id }}</b></td>
+    </tr>
+</table>

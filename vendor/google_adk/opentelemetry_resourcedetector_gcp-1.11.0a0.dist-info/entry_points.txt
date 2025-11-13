@@ -1,0 +1,2 @@
+[opentelemetry_resource_detector]
+gcp_resource_detector = opentelemetry.resourcedetector.gcp_resource_detector:GoogleCloudResourceDetector

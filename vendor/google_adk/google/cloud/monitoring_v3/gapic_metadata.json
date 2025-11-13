@@ -1,0 +1,631 @@
+ {
+  "comment": "This file maps proto services/RPCs to the corresponding library clients/methods",
+  "language": "python",
+  "libraryPackage": "google.cloud.monitoring_v3",
+  "protoPackage": "google.monitoring.v3",
+  "schema": "1.0",
+  "services": {
+    "AlertPolicyService": {
+      "clients": {
+        "grpc": {
+          "libraryClient": "AlertPolicyServiceClient",
+          "rpcs": {
+            "CreateAlertPolicy": {
+              "methods": [
+                "create_alert_policy"
+              ]
+            },
+            "DeleteAlertPolicy": {
+              "methods": [
+                "delete_alert_policy"
+              ]
+            },
+            "GetAlertPolicy": {
+              "methods": [
+                "get_alert_policy"
+              ]
+            },
+            "ListAlertPolicies": {
+              "methods": [
+                "list_alert_policies"
+              ]
+            },
+            "UpdateAlertPolicy": {
+              "methods": [
+                "update_alert_policy"
+              ]
+            }
+          }
+        },
+        "grpc-async": {
+          "libraryClient": "AlertPolicyServiceAsyncClient",
+          "rpcs": {
+            "CreateAlertPolicy": {
+              "methods": [
+                "create_alert_policy"
+              ]
+            },
+            "DeleteAlertPolicy": {
+              "methods": [
+                "delete_alert_policy"
+              ]
+            },
+            "GetAlertPolicy": {
+              "methods": [
+                "get_alert_policy"
+              ]
+            },
+            "ListAlertPolicies": {
+              "methods": [
+                "list_alert_policies"
+              ]
+            },
+            "UpdateAlertPolicy": {
+              "methods": [
+                "update_alert_policy"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "GroupService": {
+      "clients": {
+        "grpc": {
+          "libraryClient": "GroupServiceClient",
+          "rpcs": {
+            "CreateGroup": {
+              "methods": [
+                "create_group"
+              ]
+            },
+            "DeleteGroup": {
+              "methods": [
+                "delete_group"
+              ]
+            },
+            "GetGroup": {
+              "methods": [
+                "get_group"
+              ]
+            },
+            "ListGroupMembers": {
+              "methods": [
+                "list_group_members"
+              ]
+            },
+            "ListGroups": {
+              "methods": [
+                "list_groups"
+              ]
+            },
+            "UpdateGroup": {
+              "methods": [
+                "update_group"
+              ]
+            }
+          }
+        },
+        "grpc-async": {
+          "libraryClient": "GroupServiceAsyncClient",
+          "rpcs": {
+            "CreateGroup": {
+              "methods": [
+                "create_group"
+              ]
+            },
+            "DeleteGroup": {
+              "methods": [
+                "delete_group"
+              ]
+            },
+            "GetGroup": {
+              "methods": [
+                "get_group"
+              ]
+            },
+            "ListGroupMembers": {
+              "methods": [
+                "list_group_members"
+              ]
+            },
+            "ListGroups": {
+              "methods": [
+                "list_groups"
+              ]
+            },
+            "UpdateGroup": {
+              "methods": [
+                "update_group"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "MetricService": {
+      "clients": {
+        "grpc": {
+          "libraryClient": "MetricServiceClient",
+          "rpcs": {
+            "CreateMetricDescriptor": {
+              "methods": [
+                "create_metric_descriptor"
+              ]
+            },
+            "CreateServiceTimeSeries": {
+              "methods": [
+                "create_service_time_series"
+              ]
+            },
+            "CreateTimeSeries": {
+              "methods": [
+                "create_time_series"
+              ]
+            },
+            "DeleteMetricDescriptor": {
+              "methods": [
+                "delete_metric_descriptor"
+              ]
+            },
+            "GetMetricDescriptor": {
+              "methods": [
+                "get_metric_descriptor"
+              ]
+            },
+            "GetMonitoredResourceDescriptor": {
+              "methods": [
+                "get_monitored_resource_descriptor"
+              ]
+            },
+            "ListMetricDescriptors": {
+              "methods": [
+                "list_metric_descriptors"
+              ]
+            },
+            "ListMonitoredResourceDescriptors": {
+              "methods": [
+                "list_monitored_resource_descriptors"
+              ]
+            },
+            "ListTimeSeries": {
+              "methods": [
+                "list_time_series"
+              ]
+            }
+          }
+        },
+        "grpc-async": {
+          "libraryClient": "MetricServiceAsyncClient",
+          "rpcs": {
+            "CreateMetricDescriptor": {
+              "methods": [
+                "create_metric_descriptor"
+              ]
+            },
+            "CreateServiceTimeSeries": {
+              "methods": [
+                "create_service_time_series"
+              ]
+            },
+            "CreateTimeSeries": {
+              "methods": [
+                "create_time_series"
+              ]
+            },
+            "DeleteMetricDescriptor": {
+              "methods": [
+                "delete_metric_descriptor"
+              ]
+            },
+            "GetMetricDescriptor": {
+              "methods": [
+                "get_metric_descriptor"
+              ]
+            },
+            "GetMonitoredResourceDescriptor": {
+              "methods": [
+                "get_monitored_resource_descriptor"
+              ]
+            },
+            "ListMetricDescriptors": {
+              "methods": [
+                "list_metric_descriptors"
+              ]
+            },
+            "ListMonitoredResourceDescriptors": {
+              "methods": [
+                "list_monitored_resource_descriptors"
+              ]
+            },
+            "ListTimeSeries": {
+              "methods": [
+                "list_time_series"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "NotificationChannelService": {
+      "clients": {
+        "grpc": {
+          "libraryClient": "NotificationChannelServiceClient",
+          "rpcs": {
+            "CreateNotificationChannel": {
+              "methods": [
+                "create_notification_channel"
+              ]
+            },
+            "DeleteNotificationChannel": {
+              "methods": [
+                "delete_notification_channel"
+              ]
+            },
+            "GetNotificationChannel": {
+              "methods": [
+                "get_notification_channel"
+              ]
+            },
+            "GetNotificationChannelDescriptor": {
+              "methods": [
+                "get_notification_channel_descriptor"
+              ]
+            },
+            "GetNotificationChannelVerificationCode": {
+              "methods": [
+                "get_notification_channel_verification_code"
+              ]
+            },
+            "ListNotificationChannelDescriptors": {
+              "methods": [
+                "list_notification_channel_descriptors"
+              ]
+            },
+            "ListNotificationChannels": {
+              "methods": [
+                "list_notification_channels"
+              ]
+            },
+            "SendNotificationChannelVerificationCode": {
+              "methods": [
+                "send_notification_channel_verification_code"
+              ]
+            },
+            "UpdateNotificationChannel": {
+              "methods": [
+                "update_notification_channel"
+              ]
+            },
+            "VerifyNotificationChannel": {
+              "methods": [
+                "verify_notification_channel"
+              ]
+            }
+          }
+        },
+        "grpc-async": {
+          "libraryClient": "NotificationChannelServiceAsyncClient",
+          "rpcs": {
+            "CreateNotificationChannel": {
+              "methods": [
+                "create_notification_channel"
+              ]
+            },
+            "DeleteNotificationChannel": {
+              "methods": [
+                "delete_notification_channel"
+              ]
+            },
+            "GetNotificationChannel": {
+              "methods": [
+                "get_notification_channel"
+              ]
+            },
+            "GetNotificationChannelDescriptor": {
+              "methods": [
+                "get_notification_channel_descriptor"
+              ]
+            },
+            "GetNotificationChannelVerificationCode": {
+              "methods": [
+                "get_notification_channel_verification_code"
+              ]
+            },
+            "ListNotificationChannelDescriptors": {
+              "methods": [
+                "list_notification_channel_descriptors"
+              ]
+            },
+            "ListNotificationChannels": {
+              "methods": [
+                "list_notification_channels"
+              ]
+            },
+            "SendNotificationChannelVerificationCode": {
+              "methods": [
+                "send_notification_channel_verification_code"
+              ]
+            },
+            "UpdateNotificationChannel": {
+              "methods": [
+                "update_notification_channel"
+              ]
+            },
+            "VerifyNotificationChannel": {
+              "methods": [
+                "verify_notification_channel"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "QueryService": {
+      "clients": {
+        "grpc": {
+          "libraryClient": "QueryServiceClient",
+          "rpcs": {
+            "QueryTimeSeries": {
+              "methods": [
+                "query_time_series"
+              ]
+            }
+          }
+        },
+        "grpc-async": {
+          "libraryClient": "QueryServiceAsyncClient",
+          "rpcs": {
+            "QueryTimeSeries": {
+              "methods": [
+                "query_time_series"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "ServiceMonitoringService": {
+      "clients": {
+        "grpc": {
+          "libraryClient": "ServiceMonitoringServiceClient",
+          "rpcs": {
+            "CreateService": {
+              "methods": [
+                "create_service"
+              ]
+            },
+            "CreateServiceLevelObjective": {
+              "methods": [
+                "create_service_level_objective"
+              ]
+            },
+            "DeleteService": {
+              "methods": [
+                "delete_service"
+              ]
+            },
+            "DeleteServiceLevelObjective": {
+              "methods": [
+                "delete_service_level_objective"
+              ]
+            },
+            "GetService": {
+              "methods": [
+                "get_service"
+              ]
+            },
+            "GetServiceLevelObjective": {
+              "methods": [
+                "get_service_level_objective"
+              ]
+            },
+            "ListServiceLevelObjectives": {
+              "methods": [
+                "list_service_level_objectives"
+              ]
+            },
+            "ListServices": {
+              "methods": [
+                "list_services"
+              ]
+            },
+            "UpdateService": {
+              "methods": [
+                "update_service"
+              ]
+            },
+            "UpdateServiceLevelObjective": {
+              "methods": [
+                "update_service_level_objective"
+              ]
+            }
+          }
+        },
+        "grpc-async": {
+          "libraryClient": "ServiceMonitoringServiceAsyncClient",
+          "rpcs": {
+            "CreateService": {
+              "methods": [
+                "create_service"
+              ]
+            },
+            "CreateServiceLevelObjective": {
+              "methods": [
+                "create_service_level_objective"
+              ]
+            },
+            "DeleteService": {
+              "methods": [
+                "delete_service"
+              ]
+            },
+            "DeleteServiceLevelObjective": {
+              "methods": [
+                "delete_service_level_objective"
+              ]
+            },
+            "GetService": {
+              "methods": [
+                "get_service"
+              ]
+            },
+            "GetServiceLevelObjective": {
+              "methods": [
+                "get_service_level_objective"
+              ]
+            },
+            "ListServiceLevelObjectives": {
+              "methods": [
+                "list_service_level_objectives"
+              ]
+            },
+            "ListServices": {
+              "methods": [
+                "list_services"
+              ]
+            },
+            "UpdateService": {
+              "methods": [
+                "update_service"
+              ]
+            },
+            "UpdateServiceLevelObjective": {
+              "methods": [
+                "update_service_level_objective"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "SnoozeService": {
+      "clients": {
+        "grpc": {
+          "libraryClient": "SnoozeServiceClient",
+          "rpcs": {
+            "CreateSnooze": {
+              "methods": [
+                "create_snooze"
+              ]
+            },
+            "GetSnooze": {
+              "methods": [
+                "get_snooze"
+              ]
+            },
+            "ListSnoozes": {
+              "methods": [
+                "list_snoozes"
+              ]
+            },
+            "UpdateSnooze": {
+              "methods": [
+                "update_snooze"
+              ]
+            }
+          }
+        },
+        "grpc-async": {
+          "libraryClient": "SnoozeServiceAsyncClient",
+          "rpcs": {
+            "CreateSnooze": {
+              "methods": [
+                "create_snooze"
+              ]
+            },
+            "GetSnooze": {
+              "methods": [
+                "get_snooze"
+              ]
+            },
+            "ListSnoozes": {
+              "methods": [
+                "list_snoozes"
+              ]
+            },
+            "UpdateSnooze": {
+              "methods": [
+                "update_snooze"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "UptimeCheckService": {
+      "clients": {
+        "grpc": {
+          "libraryClient": "UptimeCheckServiceClient",
+          "rpcs": {
+            "CreateUptimeCheckConfig": {
+              "methods": [
+                "create_uptime_check_config"
+              ]
+            },
+            "DeleteUptimeCheckConfig": {
+              "methods": [
+                "delete_uptime_check_config"
+              ]
+            },
+            "GetUptimeCheckConfig": {
+              "methods": [
+                "get_uptime_check_config"
+              ]
+            },
+            "ListUptimeCheckConfigs": {
+              "methods": [
+                "list_uptime_check_configs"
+              ]
+            },
+            "ListUptimeCheckIps": {
+              "methods": [
+                "list_uptime_check_ips"
+              ]
+            },
+            "UpdateUptimeCheckConfig": {
+              "methods": [
+                "update_uptime_check_config"
+              ]
+            }
+          }
+        },
+        "grpc-async": {
+          "libraryClient": "UptimeCheckServiceAsyncClient",
+          "rpcs": {
+            "CreateUptimeCheckConfig": {
+              "methods": [
+                "create_uptime_check_config"
+              ]
+            },
+            "DeleteUptimeCheckConfig": {
+              "methods": [
+                "delete_uptime_check_config"
+              ]
+            },
+            "GetUptimeCheckConfig": {
+              "methods": [
+                "get_uptime_check_config"
+              ]
+            },
+            "ListUptimeCheckConfigs": {
+              "methods": [
+                "list_uptime_check_configs"
+              ]
+            },
+            "ListUptimeCheckIps": {
+              "methods": [
+                "list_uptime_check_ips"
+              ]
+            },
+            "UpdateUptimeCheckConfig": {
+              "methods": [
+                "update_uptime_check_config"
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

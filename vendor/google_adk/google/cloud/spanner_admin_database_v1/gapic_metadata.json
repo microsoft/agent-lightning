@@ -1,0 +1,433 @@
+ {
+  "comment": "This file maps proto services/RPCs to the corresponding library clients/methods",
+  "language": "python",
+  "libraryPackage": "google.cloud.spanner_admin_database_v1",
+  "protoPackage": "google.spanner.admin.database.v1",
+  "schema": "1.0",
+  "services": {
+    "DatabaseAdmin": {
+      "clients": {
+        "grpc": {
+          "libraryClient": "DatabaseAdminClient",
+          "rpcs": {
+            "AddSplitPoints": {
+              "methods": [
+                "add_split_points"
+              ]
+            },
+            "CopyBackup": {
+              "methods": [
+                "copy_backup"
+              ]
+            },
+            "CreateBackup": {
+              "methods": [
+                "create_backup"
+              ]
+            },
+            "CreateBackupSchedule": {
+              "methods": [
+                "create_backup_schedule"
+              ]
+            },
+            "CreateDatabase": {
+              "methods": [
+                "create_database"
+              ]
+            },
+            "DeleteBackup": {
+              "methods": [
+                "delete_backup"
+              ]
+            },
+            "DeleteBackupSchedule": {
+              "methods": [
+                "delete_backup_schedule"
+              ]
+            },
+            "DropDatabase": {
+              "methods": [
+                "drop_database"
+              ]
+            },
+            "GetBackup": {
+              "methods": [
+                "get_backup"
+              ]
+            },
+            "GetBackupSchedule": {
+              "methods": [
+                "get_backup_schedule"
+              ]
+            },
+            "GetDatabase": {
+              "methods": [
+                "get_database"
+              ]
+            },
+            "GetDatabaseDdl": {
+              "methods": [
+                "get_database_ddl"
+              ]
+            },
+            "GetIamPolicy": {
+              "methods": [
+                "get_iam_policy"
+              ]
+            },
+            "InternalUpdateGraphOperation": {
+              "methods": [
+                "internal_update_graph_operation"
+              ]
+            },
+            "ListBackupOperations": {
+              "methods": [
+                "list_backup_operations"
+              ]
+            },
+            "ListBackupSchedules": {
+              "methods": [
+                "list_backup_schedules"
+              ]
+            },
+            "ListBackups": {
+              "methods": [
+                "list_backups"
+              ]
+            },
+            "ListDatabaseOperations": {
+              "methods": [
+                "list_database_operations"
+              ]
+            },
+            "ListDatabaseRoles": {
+              "methods": [
+                "list_database_roles"
+              ]
+            },
+            "ListDatabases": {
+              "methods": [
+                "list_databases"
+              ]
+            },
+            "RestoreDatabase": {
+              "methods": [
+                "restore_database"
+              ]
+            },
+            "SetIamPolicy": {
+              "methods": [
+                "set_iam_policy"
+              ]
+            },
+            "TestIamPermissions": {
+              "methods": [
+                "test_iam_permissions"
+              ]
+            },
+            "UpdateBackup": {
+              "methods": [
+                "update_backup"
+              ]
+            },
+            "UpdateBackupSchedule": {
+              "methods": [
+                "update_backup_schedule"
+              ]
+            },
+            "UpdateDatabase": {
+              "methods": [
+                "update_database"
+              ]
+            },
+            "UpdateDatabaseDdl": {
+              "methods": [
+                "update_database_ddl"
+              ]
+            }
+          }
+        },
+        "grpc-async": {
+          "libraryClient": "DatabaseAdminAsyncClient",
+          "rpcs": {
+            "AddSplitPoints": {
+              "methods": [
+                "add_split_points"
+              ]
+            },
+            "CopyBackup": {
+              "methods": [
+                "copy_backup"
+              ]
+            },
+            "CreateBackup": {
+              "methods": [
+                "create_backup"
+              ]
+            },
+            "CreateBackupSchedule": {
+              "methods": [
+                "create_backup_schedule"
+              ]
+            },
+            "CreateDatabase": {
+              "methods": [
+                "create_database"
+              ]
+            },
+            "DeleteBackup": {
+              "methods": [
+                "delete_backup"
+              ]
+            },
+            "DeleteBackupSchedule": {
+              "methods": [
+                "delete_backup_schedule"
+              ]
+            },
+            "DropDatabase": {
+              "methods": [
+                "drop_database"
+              ]
+            },
+            "GetBackup": {
+              "methods": [
+                "get_backup"
+              ]
+            },
+            "GetBackupSchedule": {
+              "methods": [
+                "get_backup_schedule"
+              ]
+            },
+            "GetDatabase": {
+              "methods": [
+                "get_database"
+              ]
+            },
+            "GetDatabaseDdl": {
+              "methods": [
+                "get_database_ddl"
+              ]
+            },
+            "GetIamPolicy": {
+              "methods": [
+                "get_iam_policy"
+              ]
+            },
+            "InternalUpdateGraphOperation": {
+              "methods": [
+                "internal_update_graph_operation"
+              ]
+            },
+            "ListBackupOperations": {
+              "methods": [
+                "list_backup_operations"
+              ]
+            },
+            "ListBackupSchedules": {
+              "methods": [
+                "list_backup_schedules"
+              ]
+            },
+            "ListBackups": {
+              "methods": [
+                "list_backups"
+              ]
+            },
+            "ListDatabaseOperations": {
+              "methods": [
+                "list_database_operations"
+              ]
+            },
+            "ListDatabaseRoles": {
+              "methods": [
+                "list_database_roles"
+              ]
+            },
+            "ListDatabases": {
+              "methods": [
+                "list_databases"
+              ]
+            },
+            "RestoreDatabase": {
+              "methods": [
+                "restore_database"
+              ]
+            },
+            "SetIamPolicy": {
+              "methods": [
+                "set_iam_policy"
+              ]
+            },
+            "TestIamPermissions": {
+              "methods": [
+                "test_iam_permissions"
+              ]
+            },
+            "UpdateBackup": {
+              "methods": [
+                "update_backup"
+              ]
+            },
+            "UpdateBackupSchedule": {
+              "methods": [
+                "update_backup_schedule"
+              ]
+            },
+            "UpdateDatabase": {
+              "methods": [
+                "update_database"
+              ]
+            },
+            "UpdateDatabaseDdl": {
+              "methods": [
+                "update_database_ddl"
+              ]
+            }
+          }
+        },
+        "rest": {
+          "libraryClient": "DatabaseAdminClient",
+          "rpcs": {
+            "AddSplitPoints": {
+              "methods": [
+                "add_split_points"
+              ]
+            },
+            "CopyBackup": {
+              "methods": [
+                "copy_backup"
+              ]
+            },
+            "CreateBackup": {
+              "methods": [
+                "create_backup"
+              ]
+            },
+            "CreateBackupSchedule": {
+              "methods": [
+                "create_backup_schedule"
+              ]
+            },
+            "CreateDatabase": {
+              "methods": [
+                "create_database"
+              ]
+            },
+            "DeleteBackup": {
+              "methods": [
+                "delete_backup"
+              ]
+            },
+            "DeleteBackupSchedule": {
+              "methods": [
+                "delete_backup_schedule"
+              ]
+            },
+            "DropDatabase": {
+              "methods": [
+                "drop_database"
+              ]
+            },
+            "GetBackup": {
+              "methods": [
+                "get_backup"
+              ]
+            },
+            "GetBackupSchedule": {
+              "methods": [
+                "get_backup_schedule"
+              ]
+            },
+            "GetDatabase": {
+              "methods": [
+                "get_database"
+              ]
+            },
+            "GetDatabaseDdl": {
+              "methods": [
+                "get_database_ddl"
+              ]
+            },
+            "GetIamPolicy": {
+              "methods": [
+                "get_iam_policy"
+              ]
+            },
+            "InternalUpdateGraphOperation": {
+              "methods": [
+                "internal_update_graph_operation"
+              ]
+            },
+            "ListBackupOperations": {
+              "methods": [
+                "list_backup_operations"
+              ]
+            },
+            "ListBackupSchedules": {
+              "methods": [
+                "list_backup_schedules"
+              ]
+            },
+            "ListBackups": {
+              "methods": [
+                "list_backups"
+              ]
+            },
+            "ListDatabaseOperations": {
+              "methods": [
+                "list_database_operations"
+              ]
+            },
+            "ListDatabaseRoles": {
+              "methods": [
+                "list_database_roles"
+              ]
+            },
+            "ListDatabases": {
+              "methods": [
+                "list_databases"
+              ]
+            },
+            "RestoreDatabase": {
+              "methods": [
+                "restore_database"
+              ]
+            },
+            "SetIamPolicy": {
+              "methods": [
+                "set_iam_policy"
+              ]
+            },
+            "TestIamPermissions": {
+              "methods": [
+                "test_iam_permissions"
+              ]
+            },
+            "UpdateBackup": {
+              "methods": [
+                "update_backup"
+              ]
+            },
+            "UpdateBackupSchedule": {
+              "methods": [
+                "update_backup_schedule"
+              ]
+            },
+            "UpdateDatabase": {
+              "methods": [
+                "update_database"
+              ]
+            },
+            "UpdateDatabaseDdl": {
+              "methods": [
+                "update_database_ddl"
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

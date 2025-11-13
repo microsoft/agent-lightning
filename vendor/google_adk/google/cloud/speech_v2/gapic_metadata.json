@@ -1,0 +1,373 @@
+ {
+  "comment": "This file maps proto services/RPCs to the corresponding library clients/methods",
+  "language": "python",
+  "libraryPackage": "google.cloud.speech_v2",
+  "protoPackage": "google.cloud.speech.v2",
+  "schema": "1.0",
+  "services": {
+    "Speech": {
+      "clients": {
+        "grpc": {
+          "libraryClient": "SpeechClient",
+          "rpcs": {
+            "BatchRecognize": {
+              "methods": [
+                "batch_recognize"
+              ]
+            },
+            "CreateCustomClass": {
+              "methods": [
+                "create_custom_class"
+              ]
+            },
+            "CreatePhraseSet": {
+              "methods": [
+                "create_phrase_set"
+              ]
+            },
+            "CreateRecognizer": {
+              "methods": [
+                "create_recognizer"
+              ]
+            },
+            "DeleteCustomClass": {
+              "methods": [
+                "delete_custom_class"
+              ]
+            },
+            "DeletePhraseSet": {
+              "methods": [
+                "delete_phrase_set"
+              ]
+            },
+            "DeleteRecognizer": {
+              "methods": [
+                "delete_recognizer"
+              ]
+            },
+            "GetConfig": {
+              "methods": [
+                "get_config"
+              ]
+            },
+            "GetCustomClass": {
+              "methods": [
+                "get_custom_class"
+              ]
+            },
+            "GetPhraseSet": {
+              "methods": [
+                "get_phrase_set"
+              ]
+            },
+            "GetRecognizer": {
+              "methods": [
+                "get_recognizer"
+              ]
+            },
+            "ListCustomClasses": {
+              "methods": [
+                "list_custom_classes"
+              ]
+            },
+            "ListPhraseSets": {
+              "methods": [
+                "list_phrase_sets"
+              ]
+            },
+            "ListRecognizers": {
+              "methods": [
+                "list_recognizers"
+              ]
+            },
+            "Recognize": {
+              "methods": [
+                "recognize"
+              ]
+            },
+            "StreamingRecognize": {
+              "methods": [
+                "streaming_recognize"
+              ]
+            },
+            "UndeleteCustomClass": {
+              "methods": [
+                "undelete_custom_class"
+              ]
+            },
+            "UndeletePhraseSet": {
+              "methods": [
+                "undelete_phrase_set"
+              ]
+            },
+            "UndeleteRecognizer": {
+              "methods": [
+                "undelete_recognizer"
+              ]
+            },
+            "UpdateConfig": {
+              "methods": [
+                "update_config"
+              ]
+            },
+            "UpdateCustomClass": {
+              "methods": [
+                "update_custom_class"
+              ]
+            },
+            "UpdatePhraseSet": {
+              "methods": [
+                "update_phrase_set"
+              ]
+            },
+            "UpdateRecognizer": {
+              "methods": [
+                "update_recognizer"
+              ]
+            }
+          }
+        },
+        "grpc-async": {
+          "libraryClient": "SpeechAsyncClient",
+          "rpcs": {
+            "BatchRecognize": {
+              "methods": [
+                "batch_recognize"
+              ]
+            },
+            "CreateCustomClass": {
+              "methods": [
+                "create_custom_class"
+              ]
+            },
+            "CreatePhraseSet": {
+              "methods": [
+                "create_phrase_set"
+              ]
+            },
+            "CreateRecognizer": {
+              "methods": [
+                "create_recognizer"
+              ]
+            },
+            "DeleteCustomClass": {
+              "methods": [
+                "delete_custom_class"
+              ]
+            },
+            "DeletePhraseSet": {
+              "methods": [
+                "delete_phrase_set"
+              ]
+            },
+            "DeleteRecognizer": {
+              "methods": [
+                "delete_recognizer"
+              ]
+            },
+            "GetConfig": {
+              "methods": [
+                "get_config"
+              ]
+            },
+            "GetCustomClass": {
+              "methods": [
+                "get_custom_class"
+              ]
+            },
+            "GetPhraseSet": {
+              "methods": [
+                "get_phrase_set"
+              ]
+            },
+            "GetRecognizer": {
+              "methods": [
+                "get_recognizer"
+              ]
+            },
+            "ListCustomClasses": {
+              "methods": [
+                "list_custom_classes"
+              ]
+            },
+            "ListPhraseSets": {
+              "methods": [
+                "list_phrase_sets"
+              ]
+            },
+            "ListRecognizers": {
+              "methods": [
+                "list_recognizers"
+              ]
+            },
+            "Recognize": {
+              "methods": [
+                "recognize"
+              ]
+            },
+            "StreamingRecognize": {
+              "methods": [
+                "streaming_recognize"
+              ]
+            },
+            "UndeleteCustomClass": {
+              "methods": [
+                "undelete_custom_class"
+              ]
+            },
+            "UndeletePhraseSet": {
+              "methods": [
+                "undelete_phrase_set"
+              ]
+            },
+            "UndeleteRecognizer": {
+              "methods": [
+                "undelete_recognizer"
+              ]
+            },
+            "UpdateConfig": {
+              "methods": [
+                "update_config"
+              ]
+            },
+            "UpdateCustomClass": {
+              "methods": [
+                "update_custom_class"
+              ]
+            },
+            "UpdatePhraseSet": {
+              "methods": [
+                "update_phrase_set"
+              ]
+            },
+            "UpdateRecognizer": {
+              "methods": [
+                "update_recognizer"
+              ]
+            }
+          }
+        },
+        "rest": {
+          "libraryClient": "SpeechClient",
+          "rpcs": {
+            "BatchRecognize": {
+              "methods": [
+                "batch_recognize"
+              ]
+            },
+            "CreateCustomClass": {
+              "methods": [
+                "create_custom_class"
+              ]
+            },
+            "CreatePhraseSet": {
+              "methods": [
+                "create_phrase_set"
+              ]
+            },
+            "CreateRecognizer": {
+              "methods": [
+                "create_recognizer"
+              ]
+            },
+            "DeleteCustomClass": {
+              "methods": [
+                "delete_custom_class"
+              ]
+            },
+            "DeletePhraseSet": {
+              "methods": [
+                "delete_phrase_set"
+              ]
+            },
+            "DeleteRecognizer": {
+              "methods": [
+                "delete_recognizer"
+              ]
+            },
+            "GetConfig": {
+              "methods": [
+                "get_config"
+              ]
+            },
+            "GetCustomClass": {
+              "methods": [
+                "get_custom_class"
+              ]
+            },
+            "GetPhraseSet": {
+              "methods": [
+                "get_phrase_set"
+              ]
+            },
+            "GetRecognizer": {
+              "methods": [
+                "get_recognizer"
+              ]
+            },
+            "ListCustomClasses": {
+              "methods": [
+                "list_custom_classes"
+              ]
+            },
+            "ListPhraseSets": {
+              "methods": [
+                "list_phrase_sets"
+              ]
+            },
+            "ListRecognizers": {
+              "methods": [
+                "list_recognizers"
+              ]
+            },
+            "Recognize": {
+              "methods": [
+                "recognize"
+              ]
+            },
+            "StreamingRecognize": {
+              "methods": [
+                "streaming_recognize"
+              ]
+            },
+            "UndeleteCustomClass": {
+              "methods": [
+                "undelete_custom_class"
+              ]
+            },
+            "UndeletePhraseSet": {
+              "methods": [
+                "undelete_phrase_set"
+              ]
+            },
+            "UndeleteRecognizer": {
+              "methods": [
+                "undelete_recognizer"
+              ]
+            },
+            "UpdateConfig": {
+              "methods": [
+                "update_config"
+              ]
+            },
+            "UpdateCustomClass": {
+              "methods": [
+                "update_custom_class"
+              ]
+            },
+            "UpdatePhraseSet": {
+              "methods": [
+                "update_phrase_set"
+              ]
+            },
+            "UpdateRecognizer": {
+              "methods": [
+                "update_recognizer"
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

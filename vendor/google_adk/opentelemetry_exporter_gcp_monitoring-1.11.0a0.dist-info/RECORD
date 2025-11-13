@@ -1,0 +1,14 @@
+opentelemetry/exporter/cloud_monitoring/__init__.py,sha256=mDCVz3ZtikT-G_grRpfQMAUt-2UUY25D8AaYKeIsQIU,17296
+opentelemetry/exporter/cloud_monitoring/__pycache__/__init__.cpython-39.pyc,,
+opentelemetry/exporter/cloud_monitoring/__pycache__/environment_variables.cpython-39.pyc,,
+opentelemetry/exporter/cloud_monitoring/__pycache__/version.cpython-39.pyc,,
+opentelemetry/exporter/cloud_monitoring/environment_variables.py,sha256=aBzUAX0o8roMTRH5Gpc9hdf4NolWuddT6ucQZSzl-ug,910
+opentelemetry/exporter/cloud_monitoring/version.py,sha256=-asSj18OMS92nv1gngMtgkR3Vy1_YSm-m3vo22n4tW0,615
+opentelemetry/py.typed,sha256=47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU,0
+opentelemetry_exporter_gcp_monitoring-1.11.0a0.dist-info/INSTALLER,sha256=zuuue4knoyJ-UwPPXg8fezS7VCrXJQrAP7zeNuwvFQg,4
+opentelemetry_exporter_gcp_monitoring-1.11.0a0.dist-info/METADATA,sha256=TEZHNmWfWahO0Fzzn_3iklRC6PpL6Z3XiPXJrK4EEE4,3993
+opentelemetry_exporter_gcp_monitoring-1.11.0a0.dist-info/RECORD,,
+opentelemetry_exporter_gcp_monitoring-1.11.0a0.dist-info/WHEEL,sha256=_zCd3N1l69ArxyTb8rzEoP9TpbYXkqRFSNOD5OuxnTs,91
+opentelemetry_exporter_gcp_monitoring-1.11.0a0.dist-info/entry_points.txt,sha256=nw3S7gBzzFYUZlcpHRq8-R5Tit9hnNfRq5YUm41apWo,239
+opentelemetry_exporter_gcp_monitoring-1.11.0a0.dist-info/licenses/LICENSE,sha256=xx0jnfkXJvxRnG63LTGOxlggYnIysveWIZ6H3PNdCrQ,11357
+opentelemetry_exporter_gcp_monitoring-1.11.0a0.dist-info/top_level.txt,sha256=5p97iTMneNm1LAKDalzEVpYhvPZsaqJZzdLuD_upSaQ,14

@@ -1,0 +1,168 @@
+Metadata-Version: 2.4
+Name: google-cloud-bigtable
+Version: 2.34.0
+Summary: Google Cloud Bigtable API client library
+Home-page: https://github.com/googleapis/python-bigtable
+Author: Google LLC
+Author-email: googleapis-packages@google.com
+License: Apache 2.0
+Platform: Posix; MacOS X; Windows
+Classifier: Development Status :: 5 - Production/Stable
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: Apache Software License
+Classifier: Programming Language :: Python
+Classifier: Programming Language :: Python :: 3.7
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Classifier: Programming Language :: Python :: 3.14
+Classifier: Operating System :: OS Independent
+Classifier: Topic :: Internet
+Requires-Python: >=3.7
+License-File: LICENSE
+Requires-Dist: google-api-core[grpc]<3.0.0,>=2.17.0
+Requires-Dist: google-cloud-core<3.0.0,>=1.4.4
+Requires-Dist: google-auth!=2.24.0,!=2.25.0,<3.0.0,>=2.23.0
+Requires-Dist: grpc-google-iam-v1<1.0.0,>=0.12.4
+Requires-Dist: proto-plus<2.0.0,>=1.22.3
+Requires-Dist: proto-plus<2.0.0,>=1.25.0; python_version >= "3.13"
+Requires-Dist: protobuf!=4.21.0,!=4.21.1,!=4.21.2,!=4.21.3,!=4.21.4,!=4.21.5,<7.0.0,>=3.20.2
+Requires-Dist: google-crc32c<2.0.0dev,>=1.5.0
+Provides-Extra: libcst
+Requires-Dist: libcst>=0.2.5; extra == "libcst"
+Dynamic: author
+Dynamic: author-email
+Dynamic: classifier
+Dynamic: description
+Dynamic: home-page
+Dynamic: license
+Dynamic: license-file
+Dynamic: platform
+Dynamic: provides-extra
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary
+
+Python Client for Google Cloud Bigtable
+=======================================
+
+|GA| |pypi| |versions| 
+
+`Google Cloud Bigtable`_ is Google's NoSQL Big Data database service. It's the
+same database that powers many core Google services, including Search,
+Analytics, Maps, and Gmail.
+
+- `Client Library Documentation`_
+- `Product Documentation`_
+
+.. |GA| image:: https://img.shields.io/badge/support-GA-gold.svg
+   :target: https://github.com/googleapis/google-cloud-python/blob/main/README.rst#general-availability
+.. |pypi| image:: https://img.shields.io/pypi/v/google-cloud-bigtable.svg
+   :target: https://pypi.org/project/google-cloud-bigtable/
+.. |versions| image:: https://img.shields.io/pypi/pyversions/google-cloud-bigtable.svg
+   :target: https://pypi.org/project/google-cloud-bigtable/
+.. _Google Cloud Bigtable: https://cloud.google.com/bigtable
+.. _Client Library Documentation: https://googleapis.dev/python/bigtable/latest
+.. _Product Documentation:  https://cloud.google.com/bigtable/docs
+
+
+Async Data Client
+-------------------------
+
+:code:`v2.23.0` includes a release of the new :code:`BigtableDataClientAsync` client, accessible at the import path
+:code:`google.cloud.bigtable.data`.
+
+The new client brings a simplified API and increased performance using asyncio.
+The new client is focused on the data API (i.e. reading and writing Bigtable data), with admin operations
+remaining exclusively in the existing synchronous client.
+
+Feedback and bug reports are welcome at cbt-python-client-v3-feedback@google.com,
+or through the Github `issue tracker`_.
+
+
+    .. note::
+
+        It is generally not recommended to use the async client in an otherwise synchronous codebase. To make use of asyncio's
+        performance benefits, the codebase should be designed to be async from the ground up.
+
+
+.. _issue tracker: https://github.com/googleapis/python-bigtable/issues
+
+
+Quick Start
+-----------
+
+In order to use this library, you first need to go through the following steps:
+
+1. `Select or create a Cloud Platform project.`_
+2. `Enable billing for your project.`_
+3. `Enable the Cloud Bigtable API.`_
+4. `Setup Authentication.`_
+
+.. _Select or create a Cloud Platform project.: https://console.cloud.google.com/project
+.. _Enable billing for your project.: https://cloud.google.com/billing/docs/how-to/modify-project#enable_billing_for_a_project
+.. _Enable the Cloud Bigtable API.:  https://cloud.google.com/bigtable
+.. _Setup Authentication.: https://googleapis.dev/python/google-api-core/latest/auth.html
+
+Installation
+~~~~~~~~~~~~
+
+Install this library in a `virtualenv`_ using pip. `virtualenv`_ is a tool to
+create isolated Python environments. The basic problem it addresses is one of
+dependencies and versions, and indirectly permissions.
+
+With `virtualenv`_, it's possible to install this library without needing system
+install permissions, and without clashing with the installed system
+dependencies.
+
+.. _`virtualenv`: https://virtualenv.pypa.io/en/latest/
+
+
+Supported Python Versions
+^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Python >= 3.7
+
+Deprecated Python Versions
+^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+- Python 2.7:  the last released version which supported Python 2.7 was
+  version 1.7.0, released 2021-02-09.
+
+- Python 3.5:  the last released version which supported Python 3.5 was
+  version 1.7.0, released 2021-02-09.
+
+- Python 3.6:  the last released version which supported Python 3.6 was
+  version v2.10.1, released 2022-06-03.
+
+Mac/Linux
+^^^^^^^^^
+
+.. code-block:: console
+
+    pip install virtualenv
+    virtualenv <your-env>
+    source <your-env>/bin/activate
+    <your-env>/bin/pip install google-cloud-bigtable
+
+
+Windows
+^^^^^^^
+
+.. code-block:: console
+
+    pip install virtualenv
+    virtualenv <your-env>
+    <your-env>\Scripts\activate
+    <your-env>\Scripts\pip.exe install google-cloud-bigtable
+
+Next Steps
+~~~~~~~~~~
+
+-  Read the `Client Library Documentation`_ for Cloud Bigtable API
+   to see other available methods on the client.
+-  Read the `Product documentation`_ to learn
+   more about the product and see How-to Guides.

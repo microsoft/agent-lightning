@@ -1,0 +1,73 @@
+ {
+  "comment": "This file maps proto services/RPCs to the corresponding library clients/methods",
+  "language": "python",
+  "libraryPackage": "google.cloud.trace_v1",
+  "protoPackage": "google.devtools.cloudtrace.v1",
+  "schema": "1.0",
+  "services": {
+    "TraceService": {
+      "clients": {
+        "grpc": {
+          "libraryClient": "TraceServiceClient",
+          "rpcs": {
+            "GetTrace": {
+              "methods": [
+                "get_trace"
+              ]
+            },
+            "ListTraces": {
+              "methods": [
+                "list_traces"
+              ]
+            },
+            "PatchTraces": {
+              "methods": [
+                "patch_traces"
+              ]
+            }
+          }
+        },
+        "grpc-async": {
+          "libraryClient": "TraceServiceAsyncClient",
+          "rpcs": {
+            "GetTrace": {
+              "methods": [
+                "get_trace"
+              ]
+            },
+            "ListTraces": {
+              "methods": [
+                "list_traces"
+              ]
+            },
+            "PatchTraces": {
+              "methods": [
+                "patch_traces"
+              ]
+            }
+          }
+        },
+        "rest": {
+          "libraryClient": "TraceServiceClient",
+          "rpcs": {
+            "GetTrace": {
+              "methods": [
+                "get_trace"
+              ]
+            },
+            "ListTraces": {
+              "methods": [
+                "list_traces"
+              ]
+            },
+            "PatchTraces": {
+              "methods": [
+                "patch_traces"
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

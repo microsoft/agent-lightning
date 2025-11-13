@@ -1,0 +1,5 @@
+[opentelemetry_environment_variables]
+gcp_logging = opentelemetry.exporter.cloud_logging.environment_variables
+
+[opentelemetry_logs_exporter]
+gcp_logging = opentelemetry.exporter.cloud_logging:CloudLoggingExporter

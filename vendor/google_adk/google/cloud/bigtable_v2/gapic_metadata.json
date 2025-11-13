@@ -1,0 +1,193 @@
+ {
+  "comment": "This file maps proto services/RPCs to the corresponding library clients/methods",
+  "language": "python",
+  "libraryPackage": "google.cloud.bigtable_v2",
+  "protoPackage": "google.bigtable.v2",
+  "schema": "1.0",
+  "services": {
+    "Bigtable": {
+      "clients": {
+        "grpc": {
+          "libraryClient": "BigtableClient",
+          "rpcs": {
+            "CheckAndMutateRow": {
+              "methods": [
+                "check_and_mutate_row"
+              ]
+            },
+            "ExecuteQuery": {
+              "methods": [
+                "execute_query"
+              ]
+            },
+            "GenerateInitialChangeStreamPartitions": {
+              "methods": [
+                "generate_initial_change_stream_partitions"
+              ]
+            },
+            "MutateRow": {
+              "methods": [
+                "mutate_row"
+              ]
+            },
+            "MutateRows": {
+              "methods": [
+                "mutate_rows"
+              ]
+            },
+            "PingAndWarm": {
+              "methods": [
+                "ping_and_warm"
+              ]
+            },
+            "PrepareQuery": {
+              "methods": [
+                "prepare_query"
+              ]
+            },
+            "ReadChangeStream": {
+              "methods": [
+                "read_change_stream"
+              ]
+            },
+            "ReadModifyWriteRow": {
+              "methods": [
+                "read_modify_write_row"
+              ]
+            },
+            "ReadRows": {
+              "methods": [
+                "read_rows"
+              ]
+            },
+            "SampleRowKeys": {
+              "methods": [
+                "sample_row_keys"
+              ]
+            }
+          }
+        },
+        "grpc-async": {
+          "libraryClient": "BigtableAsyncClient",
+          "rpcs": {
+            "CheckAndMutateRow": {
+              "methods": [
+                "check_and_mutate_row"
+              ]
+            },
+            "ExecuteQuery": {
+              "methods": [
+                "execute_query"
+              ]
+            },
+            "GenerateInitialChangeStreamPartitions": {
+              "methods": [
+                "generate_initial_change_stream_partitions"
+              ]
+            },
+            "MutateRow": {
+              "methods": [
+                "mutate_row"
+              ]
+            },
+            "MutateRows": {
+              "methods": [
+                "mutate_rows"
+              ]
+            },
+            "PingAndWarm": {
+              "methods": [
+                "ping_and_warm"
+              ]
+            },
+            "PrepareQuery": {
+              "methods": [
+                "prepare_query"
+              ]
+            },
+            "ReadChangeStream": {
+              "methods": [
+                "read_change_stream"
+              ]
+            },
+            "ReadModifyWriteRow": {
+              "methods": [
+                "read_modify_write_row"
+              ]
+            },
+            "ReadRows": {
+              "methods": [
+                "read_rows"
+              ]
+            },
+            "SampleRowKeys": {
+              "methods": [
+                "sample_row_keys"
+              ]
+            }
+          }
+        },
+        "rest": {
+          "libraryClient": "BigtableClient",
+          "rpcs": {
+            "CheckAndMutateRow": {
+              "methods": [
+                "check_and_mutate_row"
+              ]
+            },
+            "ExecuteQuery": {
+              "methods": [
+                "execute_query"
+              ]
+            },
+            "GenerateInitialChangeStreamPartitions": {
+              "methods": [
+                "generate_initial_change_stream_partitions"
+              ]
+            },
+            "MutateRow": {
+              "methods": [
+                "mutate_row"
+              ]
+            },
+            "MutateRows": {
+              "methods": [
+                "mutate_rows"
+              ]
+            },
+            "PingAndWarm": {
+              "methods": [
+                "ping_and_warm"
+              ]
+            },
+            "PrepareQuery": {
+              "methods": [
+                "prepare_query"
+              ]
+            },
+            "ReadChangeStream": {
+              "methods": [
+                "read_change_stream"
+              ]
+            },
+            "ReadModifyWriteRow": {
+              "methods": [
+                "read_modify_write_row"
+              ]
+            },
+            "ReadRows": {
+              "methods": [
+                "read_rows"
+              ]
+            },
+            "SampleRowKeys": {
+              "methods": [
+                "sample_row_keys"
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,1315 @@
+{
+"auth": {
+"oauth2": {
+"scopes": {
+"https://www.googleapis.com/auth/datamanager": {
+"description": "See, edit, create, import, or delete your customer data in Google Ads, Google Marketing Platform (Campaign Manager 360, Search Ads 360, Display & Video 360), and Google Analytics"
+}
+}
+}
+},
+"basePath": "",
+"baseUrl": "https://datamanager.googleapis.com/",
+"batchPath": "batch",
+"canonicalName": "Data Manager",
+"description": "A unified ingestion API for data partners, agencies and advertisers to connect first-party data across Google advertising products.",
+"discoveryVersion": "v1",
+"documentationLink": "https://developers.google.com/data-manager",
+"fullyEncodeReservedExpansion": true,
+"icons": {
+"x16": "http://www.google.com/images/icons/product/search-16.gif",
+"x32": "http://www.google.com/images/icons/product/search-32.gif"
+},
+"id": "datamanager:v1",
+"kind": "discovery#restDescription",
+"mtlsRootUrl": "https://datamanager.mtls.googleapis.com/",
+"name": "datamanager",
+"ownerDomain": "google.com",
+"ownerName": "Google",
+"parameters": {
+"$.xgafv": {
+"description": "V1 error format.",
+"enum": [
+"1",
+"2"
+],
+"enumDescriptions": [
+"v1 error format",
+"v2 error format"
+],
+"location": "query",
+"type": "string"
+},
+"access_token": {
+"description": "OAuth access token.",
+"location": "query",
+"type": "string"
+},
+"alt": {
+"default": "json",
+"description": "Data format for response.",
+"enum": [
+"json",
+"media",
+"proto"
+],
+"enumDescriptions": [
+"Responses with Content-Type of application/json",
+"Media download with context-dependent Content-Type",
+"Responses with Content-Type of application/x-protobuf"
+],
+"location": "query",
+"type": "string"
+},
+"callback": {
+"description": "JSONP",
+"location": "query",
+"type": "string"
+},
+"fields": {
+"description": "Selector specifying which fields to include in a partial response.",
+"location": "query",
+"type": "string"
+},
+"key": {
+"description": "API key. Your API key identifies your project and provides you with API access, quota, and reports. Required unless you provide an OAuth 2.0 token.",
+"location": "query",
+"type": "string"
+},
+"oauth_token": {
+"description": "OAuth 2.0 token for the current user.",
+"location": "query",
+"type": "string"
+},
+"prettyPrint": {
+"default": "true",
+"description": "Returns response with indentations and line breaks.",
+"location": "query",
+"type": "boolean"
+},
+"quotaUser": {
+"description": "Available to use for quota purposes for server-side applications. Can be any arbitrary string assigned to a user, but should not exceed 40 characters.",
+"location": "query",
+"type": "string"
+},
+"uploadType": {
+"description": "Legacy upload protocol for media (e.g. \"media\", \"multipart\").",
+"location": "query",
+"type": "string"
+},
+"upload_protocol": {
+"description": "Upload protocol for media (e.g. \"raw\", \"multipart\").",
+"location": "query",
+"type": "string"
+}
+},
+"protocol": "rest",
+"resources": {
+"audienceMembers": {
+"methods": {
+"ingest": {
+"description": "Uploads a list of AudienceMember resources to the provided Destination.",
+"flatPath": "v1/audienceMembers:ingest",
+"httpMethod": "POST",
+"id": "datamanager.audienceMembers.ingest",
+"parameterOrder": [],
+"parameters": {},
+"path": "v1/audienceMembers:ingest",
+"request": {
+"$ref": "IngestAudienceMembersRequest"
+},
+"response": {
+"$ref": "IngestAudienceMembersResponse"
+},
+"scopes": [
+"https://www.googleapis.com/auth/datamanager"
+]
+},
+"remove": {
+"description": "Removes a list of AudienceMember resources from the provided Destination.",
+"flatPath": "v1/audienceMembers:remove",
+"httpMethod": "POST",
+"id": "datamanager.audienceMembers.remove",
+"parameterOrder": [],
+"parameters": {},
+"path": "v1/audienceMembers:remove",
+"request": {
+"$ref": "RemoveAudienceMembersRequest"
+},
+"response": {
+"$ref": "RemoveAudienceMembersResponse"
+},
+"scopes": [
+"https://www.googleapis.com/auth/datamanager"
+]
+}
+}
+},
+"events": {
+"methods": {
+"ingest": {
+"description": "Uploads a list of Event resources from the provided Destination.",
+"flatPath": "v1/events:ingest",
+"httpMethod": "POST",
+"id": "datamanager.events.ingest",
+"parameterOrder": [],
+"parameters": {},
+"path": "v1/events:ingest",
+"request": {
+"$ref": "IngestEventsRequest"
+},
+"response": {
+"$ref": "IngestEventsResponse"
+},
+"scopes": [
+"https://www.googleapis.com/auth/datamanager"
+]
+}
+}
+},
+"requestStatus": {
+"methods": {
+"retrieve": {
+"description": "Gets the status of a request given request id.",
+"flatPath": "v1/requestStatus:retrieve",
+"httpMethod": "GET",
+"id": "datamanager.requestStatus.retrieve",
+"parameterOrder": [],
+"parameters": {
+"requestId": {
+"description": "Required. Required. The request ID of the Data Manager API request.",
+"location": "query",
+"type": "string"
+}
+},
+"path": "v1/requestStatus:retrieve",
+"response": {
+"$ref": "RetrieveRequestStatusResponse"
+},
+"scopes": [
+"https://www.googleapis.com/auth/datamanager"
+]
+}
+}
+}
+},
+"revision": "20251006",
+"rootUrl": "https://datamanager.googleapis.com/",
+"schemas": {
+"AdIdentifiers": {
+"description": "Identifiers and other information used to match the conversion event with other online activity (such as ad clicks).",
+"id": "AdIdentifiers",
+"properties": {
+"gbraid": {
+"description": "Optional. The click identifier for clicks associated with app events and originating from iOS devices starting with iOS14.",
+"type": "string"
+},
+"gclid": {
+"description": "Optional. The Google click ID (gclid) associated with this event.",
+"type": "string"
+},
+"landingPageDeviceInfo": {
+"$ref": "DeviceInfo",
+"description": "Optional. Information gathered about the device being used (if any) at the time of landing onto the advertiser\u2019s site after interacting with the ad."
+},
+"sessionAttributes": {
+"description": "Optional. Session attributes for event attribution and modeling.",
+"type": "string"
+},
+"wbraid": {
+"description": "Optional. The click identifier for clicks associated with web events and originating from iOS devices starting with iOS14.",
+"type": "string"
+}
+},
+"type": "object"
+},
+"AddressInfo": {
+"description": "Address information for the user.",
+"id": "AddressInfo",
+"properties": {
+"familyName": {
+"description": "Required. Family (last) name of the user, all lowercase, with no punctuation, no leading or trailing whitespace, and hashed as SHA-256.",
+"type": "string"
+},
+"givenName": {
+"description": "Required. Given (first) name of the user, all lowercase, with no punctuation, no leading or trailing whitespace, and hashed as SHA-256.",
+"type": "string"
+},
+"postalCode": {
+"description": "Required. The postal code of the user's address.",
+"type": "string"
+},
+"regionCode": {
+"description": "Required. The 2-letter region code in ISO-3166-1 alpha-2 of the user's address.",
+"type": "string"
+}
+},
+"type": "object"
+},
+"AudienceMember": {
+"description": "The audience member to be operated on.",
+"id": "AudienceMember",
+"properties": {
+"consent": {
+"$ref": "Consent",
+"description": "Optional. The consent setting for the user."
+},
+"destinationReferences": {
+"description": "Optional. Defines which Destination to send the audience member to.",
+"items": {
+"type": "string"
+},
+"type": "array"
+},
+"mobileData": {
+"$ref": "MobileData",
+"description": "Data identifying the user's mobile devices."
+},
+"pairData": {
+"$ref": "PairData",
+"description": "[Publisher Advertiser Identity Reconciliation (PAIR) IDs](//support.google.com/admanager/answer/15067908)."
+},
+"userData": {
+"$ref": "UserData",
+"description": "User-provided data that identifies the user."
+}
+},
+"type": "object"
+},
+"CartData": {
+"description": "The cart data associated with the event.",
+"id": "CartData",
+"properties": {
+"items": {
+"description": "Optional. The list of items associated with the event.",
+"items": {
+"$ref": "Item"
+},
+"type": "array"
+},
+"merchantFeedLabel": {
+"description": "Optional. The Merchant Center feed label associated with the feed of the items.",
+"type": "string"
+},
+"merchantFeedLanguageCode": {
+"description": "Optional. The language code in ISO 639-1 associated with the Merchant Center feed of the items.where your items are uploaded.",
+"type": "string"
+},
+"merchantId": {
+"description": "Optional. The Merchant Center ID associated with the items.",
+"type": "string"
+},
+"transactionDiscount": {
+"description": "Optional. The sum of all discounts associated with the transaction.",
+"format": "double",
+"type": "number"
+}
+},
+"type": "object"
+},
+"Consent": {
+"description": "[Digital Markets Act (DMA)](//digital-markets-act.ec.europa.eu/index_en) consent settings for the user.",
+"id": "Consent",
+"properties": {
+"adPersonalization": {
+"description": "Optional. Represents if the user consents to ad personalization.",
+"enum": [
+"CONSENT_STATUS_UNSPECIFIED",
+"CONSENT_GRANTED",
+"CONSENT_DENIED"
+],
+"enumDescriptions": [
+"Not specified.",
+"Granted.",
+"Denied."
+],
+"type": "string"
+},
+"adUserData": {
+"description": "Optional. Represents if the user consents to ad user data.",
+"enum": [
+"CONSENT_STATUS_UNSPECIFIED",
+"CONSENT_GRANTED",
+"CONSENT_DENIED"
+],
+"enumDescriptions": [
+"Not specified.",
+"Granted.",
+"Denied."
+],
+"type": "string"
+}
+},
+"type": "object"
+},
+"CustomVariable": {
+"description": "Custom variable for ads conversions.",
+"id": "CustomVariable",
+"properties": {
+"destinationReferences": {
+"description": "Optional. Reference string used to determine which of the Event.destination_references the custom variable should be sent to. If empty, the Event.destination_references will be used.",
+"items": {
+"type": "string"
+},
+"type": "array"
+},
+"value": {
+"description": "Optional. The value to store for the custom variable.",
+"type": "string"
+},
+"variable": {
+"description": "Optional. The name of the custom variable to set. If the variable is not found for the given destination, it will be ignored.",
+"type": "string"
+}
+},
+"type": "object"
+},
+"Destination": {
+"description": "The Google product you're sending data to. For example, a Google Ads account.",
+"id": "Destination",
+"properties": {
+"linkedAccount": {
+"$ref": "ProductAccount",
+"description": "Optional. An account that the calling user's `login_account` has access to, through an established account link. For example, a data partner's `login_account` might have access to a client's `linked_account`. The partner might use this field to send data from the `linked_account` to another `operating_account`."
+},
+"loginAccount": {
+"$ref": "ProductAccount",
+"description": "Optional. The account used to make this API call. To add or remove data from the `operating_account`, this `login_account` must have write access to the `operating_account`. For example, a manager account of the `operating_account`, or an account with an established link to the `operating_account`."
+},
+"operatingAccount": {
+"$ref": "ProductAccount",
+"description": "Required. The account to send the data to or remove the data from."
+},
+"productDestinationId": {
+"description": "Required. The object within the product account to ingest into. For example, a Google Ads audience ID, a Display & Video 360 audience ID or a Google Ads conversion action ID.",
+"type": "string"
+},
+"reference": {
+"description": "Optional. ID for this `Destination` resource, unique within the request. Use to reference this `Destination` in the IngestEventsRequest and IngestAudienceMembersRequest.",
+"type": "string"
+}
+},
+"type": "object"
+},
+"DeviceInfo": {
+"description": "Information about the device being used (if any) when the event happened.",
+"id": "DeviceInfo",
+"properties": {
+"ipAddress": {
+"description": "Optional. The IP address of the device for the given context. **Note:** Google Ads does not support IP address matching for end users in the European Economic Area (EEA), United Kingdom (UK), or Switzerland (CH). Add logic to conditionally exclude sharing IP addresses from users from these regions and ensure that you provide users with clear and comprehensive information about the data you collect on your sites, apps, and other properties and get consent where required by law or any applicable Google policies. See the [About offline conversion imports](https://support.google.com/google-ads/answer/2998031) page for more details.",
+"type": "string"
+},
+"userAgent": {
+"description": "Optional. The user-agent string of the device for the given context.",
+"type": "string"
+}
+},
+"type": "object"
+},
+"EncryptionInfo": {
+"description": "Encryption information for the data being ingested.",
+"id": "EncryptionInfo",
+"properties": {
+"gcpWrappedKeyInfo": {
+"$ref": "GcpWrappedKeyInfo",
+"description": "Google Cloud Platform wrapped key information."
+}
+},
+"type": "object"
+},
+"ErrorCount": {
+"description": "The error count for a given error reason.",
+"id": "ErrorCount",
+"properties": {
+"reason": {
+"description": "The error reason of the failed records.",
+"enum": [
+"PROCESSING_ERROR_REASON_UNSPECIFIED",
+"PROCESSING_ERROR_REASON_INVALID_CUSTOM_VARIABLE",
+"PROCESSING_ERROR_REASON_CUSTOM_VARIABLE_NOT_ENABLED",
+"PROCESSING_ERROR_REASON_EVENT_TOO_OLD",
+"PROCESSING_ERROR_REASON_DENIED_CONSENT",
+"PROCESSING_ERROR_REASON_NO_CONSENT",
+"PROCESSING_ERROR_REASON_UNKNOWN_CONSENT",
+"PROCESSING_ERROR_REASON_DUPLICATE_GCLID",
+"PROCESSING_ERROR_REASON_DUPLICATE_TRANSACTION_ID",
+"PROCESSING_ERROR_REASON_INVALID_GBRAID",
+"PROCESSING_ERROR_REASON_INVALID_GCLID",
+"PROCESSING_ERROR_REASON_INVALID_MERCHANT_ID",
+"PROCESSING_ERROR_REASON_INVALID_WBRAID",
+"PROCESSING_ERROR_REASON_INTERNAL_ERROR",
+"PROCESSING_ERROR_REASON_DESTINATION_ACCOUNT_ENHANCED_CONVERSIONS_TERMS_NOT_SIGNED",
+"PROCESSING_ERROR_REASON_INVALID_EVENT",
+"PROCESSING_ERROR_REASON_INSUFFICIENT_MATCHED_TRANSACTIONS",
+"PROCESSING_ERROR_REASON_INSUFFICIENT_TRANSACTIONS",
+"PROCESSING_ERROR_REASON_INVALID_FORMAT",
+"PROCESSING_ERROR_REASON_DECRYPTION_ERROR",
+"PROCESSING_ERROR_REASON_DEK_DECRYPTION_ERROR",
+"PROCESSING_ERROR_REASON_INVALID_WIP",
+"PROCESSING_ERROR_REASON_INVALID_KEK",
+"PROCESSING_ERROR_REASON_WIP_AUTH_FAILED",
+"PROCESSING_ERROR_REASON_KEK_PERMISSION_DENIED",
+"PROCESSING_ERROR_REASON_USER_IDENTIFIER_DECRYPTION_ERROR",
+"PROCESSING_ERROR_OPERATING_ACCOUNT_MISMATCH_FOR_AD_IDENTIFIER"
+],
+"enumDescriptions": [
+"The processing error reason is unknown.",
+"The custom variable is invalid.",
+"The status of the custom variable is not enabled.",
+"The conversion is older than max supported age.",
+"The ad user data is denied, either by the user or in the advertiser default settings.",
+"Advertiser did not give 3P consent for the Ads core platform services.",
+"The overall consent (determined from row level consent, request level consent, and account settings) could not be determined for this user",
+"A conversion with the same GCLID and conversion time already exists in the system.",
+"A conversion with the same order id and conversion action combination was already uploaded.",
+"The gbraid could not be decoded.",
+"The google click ID could not be decoded.",
+"Merchant id contains non-digit characters.",
+"The wbraid could not be decoded.",
+"Internal error.",
+"Enhanced conversions terms are not signed in the destination account.",
+"The event is invalid.",
+"The matched transactions are less than the minimum threshold.",
+"The transactions are less than the minimum threshold.",
+"The event has format error.",
+"The event has a decryption error.",
+"The DEK failed to be decrypted.",
+"The WIP is formatted incorrectly or the WIP does not exist.",
+"The KEK cannot decrypt data because it is the wrong KEK, or it does not exist.",
+"The WIP could not be used because it was rejected by its attestation condition.",
+"The system did not have the permissions needed to access the KEK.",
+"Failed to decrypt the UserIdentifier data using the DEK.",
+"The user attempted to ingest events with an ad identifier that isn't from the operating account's ads."
+],
+"type": "string"
+},
+"recordCount": {
+"description": "The count of records that failed to upload for a given reason.",
+"format": "int64",
+"type": "string"
+}
+},
+"type": "object"
+},
+"ErrorInfo": {
+"description": "Error counts for each type of error.",
+"id": "ErrorInfo",
+"properties": {
+"errorCounts": {
+"description": "A list of errors and counts per error reason. May not be populated in all cases.",
+"items": {
+"$ref": "ErrorCount"
+},
+"type": "array"
+}
+},
+"type": "object"
+},
+"Event": {
+"description": "An event representing a user interaction with an advertiser's website or app.",
+"id": "Event",
+"properties": {
+"adIdentifiers": {
+"$ref": "AdIdentifiers",
+"description": "Optional. Identifiers and other information used to match the conversion event with other online activity (such as ad clicks)."
+},
+"cartData": {
+"$ref": "CartData",
+"description": "Optional. Information about the transaction and items associated with the event."
+},
+"consent": {
+"$ref": "Consent",
+"description": "Optional. Information about whether the associated user has provided different types of consent."
+},
+"conversionValue": {
+"description": "Optional. The conversion value associated with the event, for value-based conversions.",
+"format": "double",
+"type": "number"
+},
+"currency": {
+"description": "Optional. The currency code associated with all monetary values within this event.",
+"type": "string"
+},
+"customVariables": {
+"description": "Optional. Additional key/value pair information to send to the conversion containers (conversion action or FL activity).",
+"items": {
+"$ref": "CustomVariable"
+},
+"type": "array"
+},
+"destinationReferences": {
+"description": "Optional. Reference string used to determine the destination. If empty, the event will be sent to all destinations in the request.",
+"items": {
+"type": "string"
+},
+"type": "array"
+},
+"eventDeviceInfo": {
+"$ref": "DeviceInfo",
+"description": "Optional. Information gathered about the device being used (if any) when the event happened."
+},
+"eventSource": {
+"description": "Optional. Signal for where the event happened (web, app, in-store, etc.).",
+"enum": [
+"EVENT_SOURCE_UNSPECIFIED",
+"WEB",
+"APP",
+"IN_STORE",
+"PHONE",
+"OTHER"
+],
+"enumDescriptions": [
+"Unspecified EventSource. Should never be used.",
+"The event was generated from a web browser.",
+"The event was generated from an app.",
+"The event was generated from an in-store transaction.",
+"The event was generated from a phone call.",
+"The event was generated from other sources."
+],
+"type": "string"
+},
+"eventTimestamp": {
+"description": "Required. The time the event occurred.",
+"format": "google-datetime",
+"type": "string"
+},
+"experimentalFields": {
+"description": "Optional. A list of key/value pairs for experimental fields that may eventually be promoted to be part of the API.",
+"items": {
+"$ref": "ExperimentalField"
+},
+"type": "array"
+},
+"lastUpdatedTimestamp": {
+"description": "Optional. The last time the event was updated.",
+"format": "google-datetime",
+"type": "string"
+},
+"transactionId": {
+"description": "Optional. The unique identifier for this event. Required for conversions using multiple data sources.",
+"type": "string"
+},
+"userData": {
+"$ref": "UserData",
+"description": "Optional. Pieces of user provided data, representing the user the event is associated with."
+},
+"userProperties": {
+"$ref": "UserProperties",
+"description": "Optional. Advertiser-assessed information about the user at the time that the event happened."
+}
+},
+"type": "object"
+},
+"ExperimentalField": {
+"description": "Experimental field representing unofficial fields.",
+"id": "ExperimentalField",
+"properties": {
+"field": {
+"description": "Optional. The name of the field to use.",
+"type": "string"
+},
+"value": {
+"description": "Optional. The value the field to set.",
+"type": "string"
+}
+},
+"type": "object"
+},
+"GcpWrappedKeyInfo": {
+"description": "Information about the Google Cloud Platform wrapped key.",
+"id": "GcpWrappedKeyInfo",
+"properties": {
+"encryptedDek": {
+"description": "Required. The base64 encoded encrypted data encryption key.",
+"type": "string"
+},
+"kekUri": {
+"description": "Required. Google Cloud Platform [Cloud Key Management Service resource ID](//cloud.google.com/kms/docs/getting-resource-ids). Should be in the format of \"projects/{project}/locations/{location}/keyRings/{key_ring}/cryptoKeys/{key}\".",
+"type": "string"
+},
+"keyType": {
+"description": "Required. The type of algorithm used to encrypt the data.",
+"enum": [
+"KEY_TYPE_UNSPECIFIED",
+"XCHACHA20_POLY1305"
+],
+"enumDescriptions": [
+"Unspecified key type. Should never be used.",
+"Algorithm XChaCha20-Poly1305"
+],
+"type": "string"
+},
+"wipProvider": {
+"description": "Required. The [Workload Identity](//cloud.google.com/iam/docs/workload-identity-federation) pool provider required to use KEK.",
+"type": "string"
+}
+},
+"type": "object"
+},
+"IngestAudienceMembersRequest": {
+"description": "Request to upload audience members to the provided destinations. Returns an IngestAudienceMembersResponse.",
+"id": "IngestAudienceMembersRequest",
+"properties": {
+"audienceMembers": {
+"description": "Required. The list of users to send to the specified destinations. At most 10000 AudienceMember resources can be sent in a single request.",
+"items": {
+"$ref": "AudienceMember"
+},
+"type": "array"
+},
+"consent": {
+"$ref": "Consent",
+"description": "Optional. Request-level consent to apply to all users in the request. User-level consent overrides request-level consent, and can be specified in each AudienceMember."
+},
+"destinations": {
+"description": "Required. The list of destinations to send the audience members to.",
+"items": {
+"$ref": "Destination"
+},
+"type": "array"
+},
+"encoding": {
+"description": "Optional. Required for UserData uploads. The encoding type of the user identifiers. For hashed user identifiers, this is the encoding type of the hashed string. For encrypted hashed user identifiers, this is the encoding type of the outer encrypted string, but not necessarily the inner hashed string, meaning the inner hashed string could be encoded in a different way than the outer encrypted string. For non `UserData` uploads, this field is ignored.",
+"enum": [
+"ENCODING_UNSPECIFIED",
+"HEX",
+"BASE64"
+],
+"enumDescriptions": [
+"Unspecified Encoding type. Should never be used.",
+"Hex encoding.",
+"Base 64 encoding."
+],
+"type": "string"
+},
+"encryptionInfo": {
+"$ref": "EncryptionInfo",
+"description": "Optional. Encryption information for UserData uploads. If not set, it's assumed that uploaded identifying information is hashed but not encrypted. For non `UserData` uploads, this field is ignored."
+},
+"termsOfService": {
+"$ref": "TermsOfService",
+"description": "Optional. The terms of service that the user has accepted/rejected."
+},
+"validateOnly": {
+"description": "Optional. For testing purposes. If `true`, the request is validated but not executed. Only errors are returned, not results.",
+"type": "boolean"
+}
+},
+"type": "object"
+},
+"IngestAudienceMembersResponse": {
+"description": "Response from the IngestAudienceMembersRequest.",
+"id": "IngestAudienceMembersResponse",
+"properties": {
+"requestId": {
+"description": "The auto-generated ID of the request.",
+"type": "string"
+}
+},
+"type": "object"
+},
+"IngestAudienceMembersStatus": {
+"description": "The status of the ingest audience members request.",
+"id": "IngestAudienceMembersStatus",
+"properties": {
+"mobileDataIngestionStatus": {
+"$ref": "IngestMobileDataStatus",
+"description": "The status of the mobile data ingestion to the destination."
+},
+"pairDataIngestionStatus": {
+"$ref": "IngestPairDataStatus",
+"description": "The status of the pair data ingestion to the destination."
+},
+"userDataIngestionStatus": {
+"$ref": "IngestUserDataStatus",
+"description": "The status of the user data ingestion to the destination."
+}
+},
+"type": "object"
+},
+"IngestEventsRequest": {
+"description": "Request to upload audience members to the provided destinations. Returns an IngestEventsResponse.",
+"id": "IngestEventsRequest",
+"properties": {
+"consent": {
+"$ref": "Consent",
+"description": "Optional. Request-level consent to apply to all users in the request. User-level consent overrides request-level consent, and can be specified in each Event."
+},
+"destinations": {
+"description": "Required. The list of destinations to send the events to.",
+"items": {
+"$ref": "Destination"
+},
+"type": "array"
+},
+"encoding": {
+"description": "Optional. Required for UserData uploads. The encoding type of the user identifiers. For hashed user identifiers, this is the encoding type of the hashed string. For encrypted hashed user identifiers, this is the encoding type of the outer encrypted string, but not necessarily the inner hashed string, meaning the inner hashed string could be encoded in a different way than the outer encrypted string. For non `UserData` uploads, this field is ignored.",
+"enum": [
+"ENCODING_UNSPECIFIED",
+"HEX",
+"BASE64"
+],
+"enumDescriptions": [
+"Unspecified Encoding type. Should never be used.",
+"Hex encoding.",
+"Base 64 encoding."
+],
+"type": "string"
+},
+"encryptionInfo": {
+"$ref": "EncryptionInfo",
+"description": "Optional. Encryption information for UserData uploads. If not set, it's assumed that uploaded identifying information is hashed but not encrypted. For non `UserData` uploads, this field is ignored."
+},
+"events": {
+"description": "Required. The list of events to send to the specified destinations. At most 2000 Event resources can be sent in a single request.",
+"items": {
+"$ref": "Event"
+},
+"type": "array"
+},
+"validateOnly": {
+"description": "Optional. For testing purposes. If `true`, the request is validated but not executed. Only errors are returned, not results.",
+"type": "boolean"
+}
+},
+"type": "object"
+},
+"IngestEventsResponse": {
+"description": "Response from the IngestEventsRequest.",
+"id": "IngestEventsResponse",
+"properties": {
+"requestId": {
+"description": "The auto-generated ID of the request.",
+"type": "string"
+}
+},
+"type": "object"
+},
+"IngestEventsStatus": {
+"description": "The status of the events ingestion to the destination.",
+"id": "IngestEventsStatus",
+"properties": {
+"recordCount": {
+"description": "The total count of events sent in the upload request. Includes all events in the request, regardless of whether they were successfully ingested or not.",
+"format": "int64",
+"type": "string"
+}
+},
+"type": "object"
+},
+"IngestMobileDataStatus": {
+"description": "The status of the mobile data ingestion to the destination containing stats related to the ingestion.",
+"id": "IngestMobileDataStatus",
+"properties": {
+"mobileIdCount": {
+"description": "The total count of mobile ids sent in the upload request for the destination. Includes all mobile ids in the request, regardless of whether they were successfully ingested or not.",
+"format": "int64",
+"type": "string"
+},
+"recordCount": {
+"description": "The total count of audience members sent in the upload request for the destination. Includes all audience members in the request, regardless of whether they were successfully ingested or not.",
+"format": "int64",
+"type": "string"
+}
+},
+"type": "object"
+},
+"IngestPairDataStatus": {
+"description": "The status of the pair data ingestion to the destination containing stats related to the ingestion.",
+"id": "IngestPairDataStatus",
+"properties": {
+"pairIdCount": {
+"description": "The total count of pair ids sent in the upload request for the destination. Includes all pair ids in the request, regardless of whether they were successfully ingested or not.",
+"format": "int64",
+"type": "string"
+},
+"recordCount": {
+"description": "The total count of audience members sent in the upload request for the destination. Includes all audience members in the request, regardless of whether they were successfully ingested or not.",
+"format": "int64",
+"type": "string"
+}
+},
+"type": "object"
+},
+"IngestUserDataStatus": {
+"description": "The status of the user data ingestion to the destination containing stats related to the ingestion.",
+"id": "IngestUserDataStatus",
+"properties": {
+"recordCount": {
+"description": "The total count of audience members sent in the upload request for the destination. Includes all audience members in the request, regardless of whether they were successfully ingested or not.",
+"format": "int64",
+"type": "string"
+},
+"uploadMatchRateRange": {
+"description": "The match rate range of the upload.",
+"enum": [
+"MATCH_RATE_RANGE_UNKNOWN",
+"MATCH_RATE_RANGE_NOT_ELIGIBLE",
+"MATCH_RATE_RANGE_LESS_THAN_20",
+"MATCH_RATE_RANGE_20_TO_30",
+"MATCH_RATE_RANGE_31_TO_40",
+"MATCH_RATE_RANGE_41_TO_50",
+"MATCH_RATE_RANGE_51_TO_60",
+"MATCH_RATE_RANGE_61_TO_70",
+"MATCH_RATE_RANGE_71_TO_80",
+"MATCH_RATE_RANGE_81_TO_90",
+"MATCH_RATE_RANGE_91_TO_100"
+],
+"enumDescriptions": [
+"The match rate range is unknown.",
+"The match rate range is not eligible.",
+"The match rate range is less than 20% (in the interval `[0, 20)`).",
+"The match rate range is between 20% and 30% (in the interval `[20, 31)`).",
+"The match rate range is between 31% and 40% (in the interval `[31, 41)`).",
+"The match rate range is between 41% and 50% (in the interval `[41, 51)`).",
+"The match rate range is between 51% and 60% (in the interval `[51, 61)`.",
+"The match rate range is between 61% and 70% (in the interval `[61, 71)`).",
+"The match rate range is between 71% and 80% (in the interval `[71, 81)`).",
+"The match rate range is between 81% and 90% (in the interval `[81, 91)`).",
+"The match rate range is between 91% and 100% (in the interval `[91, 100]`)."
+],
+"type": "string"
+},
+"userIdentifierCount": {
+"description": "The total count of user identifiers sent in the upload request for the destination. Includes all user identifiers in the request, regardless of whether they were successfully ingested or not.",
+"format": "int64",
+"type": "string"
+}
+},
+"type": "object"
+},
+"Item": {
+"description": "Represents an item in the cart associated with the event.",
+"id": "Item",
+"properties": {
+"merchantProductId": {
+"description": "Optional. The product ID within the Merchant Center account.",
+"type": "string"
+},
+"quantity": {
+"description": "Optional. The number of this item associated with the event.",
+"format": "int64",
+"type": "string"
+},
+"unitPrice": {
+"description": "Optional. The unit price excluding tax, shipping, and any transaction level discounts.",
+"format": "double",
+"type": "number"
+}
+},
+"type": "object"
+},
+"MobileData": {
+"description": "Mobile IDs for the audience. At least one mobile ID is required.",
+"id": "MobileData",
+"properties": {
+"mobileIds": {
+"description": "Required. The list of mobile device IDs (advertising ID/IDFA). At most 10 `mobileIds` can be provided in a single AudienceMember.",
+"items": {
+"type": "string"
+},
+"type": "array"
+}
+},
+"type": "object"
+},
+"PairData": {
+"description": "[PAIR](//support.google.com/admanager/answer/15067908) IDs for the audience. At least one PAIR ID is required.",
+"id": "PairData",
+"properties": {
+"pairIds": {
+"description": "Required. Cleanroom-provided PII data, hashed with SHA256, and encrypted with an EC commutative cipher using publisher key for the [PAIR]((//support.google.com/admanager/answer/15067908)) user list. At most 10 `pairIds` can be provided in a single AudienceMember.",
+"items": {
+"type": "string"
+},
+"type": "array"
+}
+},
+"type": "object"
+},
+"ProductAccount": {
+"description": "Represents a specific account.",
+"id": "ProductAccount",
+"properties": {
+"accountId": {
+"description": "Required. The ID of the account. For example, your Google Ads account ID.",
+"type": "string"
+},
+"accountType": {
+"description": "Optional. The type of the account. For example, `GOOGLE_ADS`. Either `account_type` or the deprecated `product` is required. If both are set, the values must match.",
+"enum": [
+"ACCOUNT_TYPE_UNSPECIFIED",
+"GOOGLE_ADS",
+"DISPLAY_VIDEO_PARTNER",
+"DISPLAY_VIDEO_ADVERTISER",
+"DATA_PARTNER"
+],
+"enumDescriptions": [
+"Unspecified product. Should never be used.",
+"Google Ads.",
+"Display & Video 360 partner.",
+"Display & Video 360 advertiser.",
+"Data Partner."
+],
+"type": "string"
+},
+"product": {
+"deprecated": true,
+"description": "Deprecated. Use `account_type` instead.",
+"enum": [
+"PRODUCT_UNSPECIFIED",
+"GOOGLE_ADS",
+"DISPLAY_VIDEO_PARTNER",
+"DISPLAY_VIDEO_ADVERTISER",
+"DATA_PARTNER"
+],
+"enumDescriptions": [
+"Unspecified product. Should never be used.",
+"Google Ads.",
+"Display & Video 360 partner.",
+"Display & Video 360 advertiser.",
+"Data Partner."
+],
+"type": "string"
+}
+},
+"type": "object"
+},
+"RemoveAudienceMembersRequest": {
+"description": "Request to remove users from an audience in the provided destinations. Returns a RemoveAudienceMembersResponse.",
+"id": "RemoveAudienceMembersRequest",
+"properties": {
+"audienceMembers": {
+"description": "Required. The list of users to remove.",
+"items": {
+"$ref": "AudienceMember"
+},
+"type": "array"
+},
+"destinations": {
+"description": "Required. The list of destinations to remove the users from.",
+"items": {
+"$ref": "Destination"
+},
+"type": "array"
+},
+"encoding": {
+"description": "Optional. Required for UserData uploads. The encoding type of the user identifiers. Applies to only the outer encoding for encrypted user identifiers. For non `UserData` uploads, this field is ignored.",
+"enum": [
+"ENCODING_UNSPECIFIED",
+"HEX",
+"BASE64"
+],
+"enumDescriptions": [
+"Unspecified Encoding type. Should never be used.",
+"Hex encoding.",
+"Base 64 encoding."
+],
+"type": "string"
+},
+"encryptionInfo": {
+"$ref": "EncryptionInfo",
+"description": "Optional. Encryption information for UserData uploads. If not set, it's assumed that uploaded identifying information is hashed but not encrypted. For non `UserData` uploads, this field is ignored."
+},
+"validateOnly": {
+"description": "Optional. For testing purposes. If `true`, the request is validated but not executed. Only errors are returned, not results.",
+"type": "boolean"
+}
+},
+"type": "object"
+},
+"RemoveAudienceMembersResponse": {
+"description": "Response from the RemoveAudienceMembersRequest.",
+"id": "RemoveAudienceMembersResponse",
+"properties": {
+"requestId": {
+"description": "The auto-generated ID of the request.",
+"type": "string"
+}
+},
+"type": "object"
+},
+"RemoveAudienceMembersStatus": {
+"description": "The status of the remove audience members request.",
+"id": "RemoveAudienceMembersStatus",
+"properties": {
+"mobileDataRemovalStatus": {
+"$ref": "RemoveMobileDataStatus",
+"description": "The status of the mobile data removal from the destination."
+},
+"pairDataRemovalStatus": {
+"$ref": "RemovePairDataStatus",
+"description": "The status of the pair data removal from the destination."
+},
+"userDataRemovalStatus": {
+"$ref": "RemoveUserDataStatus",
+"description": "The status of the user data removal from the destination."
+}
+},
+"type": "object"
+},
+"RemoveMobileDataStatus": {
+"description": "The status of the mobile data removal from the destination.",
+"id": "RemoveMobileDataStatus",
+"properties": {
+"mobileIdCount": {
+"description": "The total count of mobile Ids sent in the removal request. Includes all mobile ids in the request, regardless of whether they were successfully removed or not.",
+"format": "int64",
+"type": "string"
+},
+"recordCount": {
+"description": "The total count of audience members sent in the removal request. Includes all audience members in the request, regardless of whether they were successfully removed or not.",
+"format": "int64",
+"type": "string"
+}
+},
+"type": "object"
+},
+"RemovePairDataStatus": {
+"description": "The status of the pair data removal from the destination.",
+"id": "RemovePairDataStatus",
+"properties": {
+"pairIdCount": {
+"description": "The total count of pair ids sent in the removal request. Includes all pair ids in the request, regardless of whether they were successfully removed or not.",
+"format": "int64",
+"type": "string"
+},
+"recordCount": {
+"description": "The total count of audience members sent in the removal request. Includes all audience members in the request, regardless of whether they were successfully removed or not.",
+"format": "int64",
+"type": "string"
+}
+},
+"type": "object"
+},
+"RemoveUserDataStatus": {
+"description": "The status of the user data removal from the destination.",
+"id": "RemoveUserDataStatus",
+"properties": {
+"recordCount": {
+"description": "The total count of audience members sent in the removal request. Includes all audience members in the request, regardless of whether they were successfully removed or not.",
+"format": "int64",
+"type": "string"
+},
+"userIdentifierCount": {
+"description": "The total count of user identifiers sent in the removal request. Includes all user identifiers in the request, regardless of whether they were successfully removed or not.",
+"format": "int64",
+"type": "string"
+}
+},
+"type": "object"
+},
+"RequestStatusPerDestination": {
+"description": "A request status per destination.",
+"id": "RequestStatusPerDestination",
+"properties": {
+"audienceMembersIngestionStatus": {
+"$ref": "IngestAudienceMembersStatus",
+"description": "The status of the ingest audience members request."
+},
+"audienceMembersRemovalStatus": {
+"$ref": "RemoveAudienceMembersStatus",
+"description": "The status of the remove audience members request."
+},
+"destination": {
+"$ref": "Destination",
+"description": "A destination within a DM API request."
+},
+"errorInfo": {
+"$ref": "ErrorInfo",
+"description": "An error info error containing the error reason and error counts related to the upload."
+},
+"eventsIngestionStatus": {
+"$ref": "IngestEventsStatus",
+"description": "The status of the ingest events request."
+},
+"requestStatus": {
+"description": "The request status of the destination.",
+"enum": [
+"REQUEST_STATUS_UNKNOWN",
+"SUCCESS",
+"PROCESSING",
+"FAILED",
+"PARTIAL_SUCCESS"
+],
+"enumDescriptions": [
+"The request status is unknown.",
+"The request succeeded.",
+"The request is processing.",
+"The request failed.",
+"The request partially succeeded."
+],
+"type": "string"
+},
+"warningInfo": {
+"$ref": "WarningInfo",
+"description": "A warning info containing the warning reason and warning counts related to the upload."
+}
+},
+"type": "object"
+},
+"RetrieveRequestStatusResponse": {
+"description": "Response from the RetrieveRequestStatusRequest.",
+"id": "RetrieveRequestStatusResponse",
+"properties": {
+"requestStatusPerDestination": {
+"description": "A list of request statuses per destination. The order of the statuses matches the order of the destinations in the original request.",
+"items": {
+"$ref": "RequestStatusPerDestination"
+},
+"type": "array"
+}
+},
+"type": "object"
+},
+"TermsOfService": {
+"description": "The terms of service that the user has accepted/rejected.",
+"id": "TermsOfService",
+"properties": {
+"customerMatchTermsOfServiceStatus": {
+"description": "Optional. The Customer Match terms of service: https://support.google.com/adspolicy/answer/6299717. This must be accepted when ingesting UserData or MobileData. This field is not required for Partner Match User list.",
+"enum": [
+"TERMS_OF_SERVICE_STATUS_UNSPECIFIED",
+"ACCEPTED",
+"REJECTED"
+],
+"enumDescriptions": [
+"Not specified.",
+"Status indicating the caller has chosen to accept the terms of service.",
+"Status indicating the caller has chosen to reject the terms of service."
+],
+"type": "string"
+}
+},
+"type": "object"
+},
+"UserData": {
+"description": "Data that identifies the user. At least one identifier is required.",
+"id": "UserData",
+"properties": {
+"userIdentifiers": {
+"description": "Required. The identifiers for the user. It's possible to provide multiple instances of the same type of data (for example, multiple email addresses). To increase the likelihood of a match, provide as many identifiers as possible. At most 10 `userIdentifiers` can be provided in a single AudienceMember or Event.",
+"items": {
+"$ref": "UserIdentifier"
+},
+"type": "array"
+}
+},
+"type": "object"
+},
+"UserIdentifier": {
+"description": "A single identifier for the user.",
+"id": "UserIdentifier",
+"properties": {
+"address": {
+"$ref": "AddressInfo",
+"description": "The known components of a user's address. Holds a grouping of identifiers that are matched all at once."
+},
+"emailAddress": {
+"description": "Hashed email address using SHA-256 hash function after normalization.",
+"type": "string"
+},
+"phoneNumber": {
+"description": "Hashed phone number using SHA-256 hash function after normalization (E164 standard).",
+"type": "string"
+}
+},
+"type": "object"
+},
+"UserProperties": {
+"description": "Advertiser-assessed information about the user at the time that the event happened. See https://support.google.com/google-ads/answer/14007601 for more details.",
+"id": "UserProperties",
+"properties": {
+"customerType": {
+"description": "Optional. Type of the customer associated with the event.",
+"enum": [
+"CUSTOMER_TYPE_UNSPECIFIED",
+"NEW",
+"RETURNING",
+"REENGAGED"
+],
+"enumDescriptions": [
+"Unspecified CustomerType. Should never be used.",
+"The customer is new to the advertiser.",
+"The customer is returning to the advertiser.",
+"The customer has re-engaged with the advertiser."
+],
+"type": "string"
+},
+"customerValueBucket": {
+"description": "Optional. The advertiser-assessed value of the customer.",
+"enum": [
+"CUSTOMER_VALUE_BUCKET_UNSPECIFIED",
+"LOW",
+"MEDIUM",
+"HIGH"
+],
+"enumDescriptions": [
+"Unspecified CustomerValueBucket. Should never be used.",
+"The customer is low value.",
+"The customer is medium value.",
+"The customer is high value."
+],
+"type": "string"
+}
+},
+"type": "object"
+},
+"WarningCount": {
+"description": "The warning count for a given warning reason.",
+"id": "WarningCount",
+"properties": {
+"reason": {
+"description": "The warning reason.",
+"enum": [
+"PROCESSING_WARNING_REASON_UNSPECIFIED",
+"PROCESSING_WARNING_REASON_KEK_PERMISSION_DENIED",
+"PROCESSING_WARNING_REASON_DEK_DECRYPTION_ERROR",
+"PROCESSING_WARNING_REASON_DECRYPTION_ERROR",
+"PROCESSING_WARNING_REASON_WIP_AUTH_FAILED",
+"PROCESSING_WARNING_REASON_INVALID_WIP",
+"PROCESSING_WARNING_REASON_INVALID_KEK",
+"PROCESSING_WARNING_REASON_USER_IDENTIFIER_DECRYPTION_ERROR",
+"PROCESSING_WARNING_REASON_INTERNAL_ERROR"
+],
+"enumDescriptions": [
+"The processing warning reason is unknown.",
+"The system did not have the permissions needed to access the KEK.",
+"The DEK failed to be decrypted.",
+"The event has a decryption error.",
+"The WIP could not be used because it was rejected by its attestation condition.",
+"The WIP is formatted incorrectly or the WIP does not exist.",
+"The KEK cannot decrypt data because it is the wrong KEK, or it does not exist.",
+"Failed to decrypt th UserIdentifier data using the DEK.",
+"Internal error."
+],
+"type": "string"
+},
+"recordCount": {
+"description": "The count of records that have a warning.",
+"format": "int64",
+"type": "string"
+}
+},
+"type": "object"
+},
+"WarningInfo": {
+"description": "Warning counts for each type of warning.",
+"id": "WarningInfo",
+"properties": {
+"warningCounts": {
+"description": "A list of warnings and counts per warning reason.",
+"items": {
+"$ref": "WarningCount"
+},
+"type": "array"
+}
+},
+"type": "object"
+}
+},
+"servicePath": "",
+"title": "Data Manager API",
+"version": "v1",
+"version_module": true
+}

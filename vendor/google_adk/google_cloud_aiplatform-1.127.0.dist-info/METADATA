@@ -1,0 +1,1113 @@
+Metadata-Version: 2.4
+Name: google-cloud-aiplatform
+Version: 1.127.0
+Summary: Vertex AI API client library
+Home-page: https://github.com/googleapis/python-aiplatform
+Author: Google LLC
+Author-email: googleapis-packages@google.com
+License: Apache 2.0
+Platform: Posix; MacOS X; Windows
+Classifier: Development Status :: 5 - Production/Stable
+Classifier: Intended Audience :: Developers
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Classifier: Programming Language :: Python :: 3.14
+Classifier: Topic :: Internet
+Classifier: Topic :: Software Development :: Libraries :: Python Modules
+Requires-Python: >=3.9
+License-File: LICENSE
+Requires-Dist: google-api-core[grpc]!=2.0.*,!=2.1.*,!=2.2.*,!=2.3.*,!=2.4.*,!=2.5.*,!=2.6.*,!=2.7.*,<3.0.0,>=1.34.1
+Requires-Dist: google-auth<3.0.0,>=2.14.1
+Requires-Dist: proto-plus<2.0.0,>=1.22.3
+Requires-Dist: protobuf!=4.21.0,!=4.21.1,!=4.21.2,!=4.21.3,!=4.21.4,!=4.21.5,<7.0.0,>=3.20.2
+Requires-Dist: packaging>=14.3
+Requires-Dist: google-cloud-storage<4.0.0,>=1.32.0; python_version < "3.13"
+Requires-Dist: google-cloud-storage<4.0.0,>=2.10.0; python_version >= "3.13"
+Requires-Dist: google-cloud-bigquery!=3.20.0,<4.0.0,>=1.15.0
+Requires-Dist: google-cloud-resource-manager<3.0.0,>=1.3.3
+Requires-Dist: shapely<3.0.0
+Requires-Dist: google-genai<2.0.0,>=1.37.0
+Requires-Dist: pydantic<3
+Requires-Dist: typing_extensions
+Requires-Dist: docstring_parser<1
+Provides-Extra: endpoint
+Requires-Dist: requests>=2.28.1; extra == "endpoint"
+Requires-Dist: requests-toolbelt<=1.0.0; extra == "endpoint"
+Provides-Extra: full
+Requires-Dist: google-vizier>=0.1.6; extra == "full"
+Requires-Dist: jsonschema; extra == "full"
+Requires-Dist: mlflow<=2.16.0,>=1.27.0; python_version < "3.13" and extra == "full"
+Requires-Dist: ruamel.yaml; extra == "full"
+Requires-Dist: numpy>=1.15.0; extra == "full"
+Requires-Dist: mlflow>=1.27.0; python_version >= "3.13" and extra == "full"
+Requires-Dist: google-cloud-bigquery-storage; extra == "full"
+Requires-Dist: requests>=2.28.1; extra == "full"
+Requires-Dist: tensorflow<3.0.0,>=2.3.0; python_version < "3.13" and extra == "full"
+Requires-Dist: pandas>=1.0.0; extra == "full"
+Requires-Dist: ray[default]!=2.10.*,!=2.11.*,!=2.12.*,!=2.13.*,!=2.14.*,!=2.15.*,!=2.16.*,!=2.17.*,!=2.18.*,!=2.19.*,!=2.20.*,!=2.21.*,!=2.22.*,!=2.23.*,!=2.24.*,!=2.25.*,!=2.26.*,!=2.27.*,!=2.28.*,!=2.29.*,!=2.30.*,!=2.31.*,!=2.32.*,!=2.34.*,!=2.35.*,!=2.36.*,!=2.37.*,!=2.38.*,!=2.39.*,!=2.40.*,!=2.41.*,!=2.5.*,!=2.6.*,!=2.7.*,!=2.8.*,!=2.9.0,!=2.9.1,!=2.9.2,<=2.42.0,>=2.4; python_version < "3.11" and extra == "full"
+Requires-Dist: pyarrow>=10.0.1; python_version == "3.11" and extra == "full"
+Requires-Dist: pyyaml<7,>=5.3.1; extra == "full"
+Requires-Dist: uvicorn[standard]>=0.16.0; extra == "full"
+Requires-Dist: fastapi<=0.114.0,>=0.71.0; extra == "full"
+Requires-Dist: tqdm>=4.23.0; extra == "full"
+Requires-Dist: ray[default]<=2.47.1,>=2.5; python_version == "3.11" and extra == "full"
+Requires-Dist: urllib3<1.27,>=1.21.1; extra == "full"
+Requires-Dist: tensorboard-plugin-profile<2.18.0,>=2.4.0; extra == "full"
+Requires-Dist: pyarrow>=14.0.0; python_version >= "3.12" and extra == "full"
+Requires-Dist: starlette>=0.17.1; extra == "full"
+Requires-Dist: litellm!=1.77.2,!=1.77.3,!=1.77.4,>=1.72.4; extra == "full"
+Requires-Dist: immutabledict; extra == "full"
+Requires-Dist: httpx<=0.28.1,>=0.23.0; extra == "full"
+Requires-Dist: scikit-learn; python_version > "3.10" and extra == "full"
+Requires-Dist: requests-toolbelt<=1.0.0; extra == "full"
+Requires-Dist: tensorflow<3.0.0,>=2.3.0; python_version < "3.13" and extra == "full"
+Requires-Dist: scikit-learn<1.6.0; python_version <= "3.10" and extra == "full"
+Requires-Dist: werkzeug<4.0.0,>=2.0.0; extra == "full"
+Requires-Dist: docker>=5.0.3; extra == "full"
+Requires-Dist: pyarrow<8.0.0,>=3.0.0; python_version < "3.11" and extra == "full"
+Requires-Dist: explainable-ai-sdk>=1.0.0; python_version < "3.13" and extra == "full"
+Requires-Dist: pyarrow>=6.0.1; extra == "full"
+Requires-Dist: pyyaml; extra == "full"
+Requires-Dist: lit-nlp==0.4.0; python_version < "3.14" and extra == "full"
+Requires-Dist: google-cloud-bigquery; extra == "full"
+Provides-Extra: metadata
+Requires-Dist: pandas>=1.0.0; extra == "metadata"
+Requires-Dist: numpy>=1.15.0; extra == "metadata"
+Provides-Extra: tensorboard
+Requires-Dist: tensorboard-plugin-profile<2.18.0,>=2.4.0; extra == "tensorboard"
+Requires-Dist: werkzeug<4.0.0,>=2.0.0; extra == "tensorboard"
+Provides-Extra: testing
+Requires-Dist: google-vizier>=0.1.6; extra == "testing"
+Requires-Dist: jsonschema; extra == "testing"
+Requires-Dist: mlflow<=2.16.0,>=1.27.0; python_version < "3.13" and extra == "testing"
+Requires-Dist: ruamel.yaml; extra == "testing"
+Requires-Dist: numpy>=1.15.0; extra == "testing"
+Requires-Dist: mlflow>=1.27.0; python_version >= "3.13" and extra == "testing"
+Requires-Dist: google-cloud-bigquery-storage; extra == "testing"
+Requires-Dist: requests>=2.28.1; extra == "testing"
+Requires-Dist: tensorflow<3.0.0,>=2.3.0; python_version < "3.13" and extra == "testing"
+Requires-Dist: pandas>=1.0.0; extra == "testing"
+Requires-Dist: ray[default]!=2.10.*,!=2.11.*,!=2.12.*,!=2.13.*,!=2.14.*,!=2.15.*,!=2.16.*,!=2.17.*,!=2.18.*,!=2.19.*,!=2.20.*,!=2.21.*,!=2.22.*,!=2.23.*,!=2.24.*,!=2.25.*,!=2.26.*,!=2.27.*,!=2.28.*,!=2.29.*,!=2.30.*,!=2.31.*,!=2.32.*,!=2.34.*,!=2.35.*,!=2.36.*,!=2.37.*,!=2.38.*,!=2.39.*,!=2.40.*,!=2.41.*,!=2.5.*,!=2.6.*,!=2.7.*,!=2.8.*,!=2.9.0,!=2.9.1,!=2.9.2,<=2.42.0,>=2.4; python_version < "3.11" and extra == "testing"
+Requires-Dist: pyarrow>=10.0.1; python_version == "3.11" and extra == "testing"
+Requires-Dist: pyyaml<7,>=5.3.1; extra == "testing"
+Requires-Dist: uvicorn[standard]>=0.16.0; extra == "testing"
+Requires-Dist: fastapi<=0.114.0,>=0.71.0; extra == "testing"
+Requires-Dist: tqdm>=4.23.0; extra == "testing"
+Requires-Dist: ray[default]<=2.47.1,>=2.5; python_version == "3.11" and extra == "testing"
+Requires-Dist: urllib3<1.27,>=1.21.1; extra == "testing"
+Requires-Dist: tensorboard-plugin-profile<2.18.0,>=2.4.0; extra == "testing"
+Requires-Dist: pyarrow>=14.0.0; python_version >= "3.12" and extra == "testing"
+Requires-Dist: starlette>=0.17.1; extra == "testing"
+Requires-Dist: litellm!=1.77.2,!=1.77.3,!=1.77.4,>=1.72.4; extra == "testing"
+Requires-Dist: immutabledict; extra == "testing"
+Requires-Dist: httpx<=0.28.1,>=0.23.0; extra == "testing"
+Requires-Dist: scikit-learn; python_version > "3.10" and extra == "testing"
+Requires-Dist: requests-toolbelt<=1.0.0; extra == "testing"
+Requires-Dist: tensorflow<3.0.0,>=2.3.0; python_version < "3.13" and extra == "testing"
+Requires-Dist: scikit-learn<1.6.0; python_version <= "3.10" and extra == "testing"
+Requires-Dist: werkzeug<4.0.0,>=2.0.0; extra == "testing"
+Requires-Dist: docker>=5.0.3; extra == "testing"
+Requires-Dist: pyarrow<8.0.0,>=3.0.0; python_version < "3.11" and extra == "testing"
+Requires-Dist: explainable-ai-sdk>=1.0.0; python_version < "3.13" and extra == "testing"
+Requires-Dist: pyarrow>=6.0.1; extra == "testing"
+Requires-Dist: pyyaml; extra == "testing"
+Requires-Dist: lit-nlp==0.4.0; python_version < "3.14" and extra == "testing"
+Requires-Dist: google-cloud-bigquery; extra == "testing"
+Requires-Dist: tensorboard-plugin-profile<2.18.0,>=2.4.0; extra == "testing"
+Requires-Dist: werkzeug<4.0.0,>=2.0.0; extra == "testing"
+Requires-Dist: sentencepiece>=0.2.0; extra == "testing"
+Requires-Dist: nltk; extra == "testing"
+Requires-Dist: google-vizier>=0.1.6; extra == "testing"
+Requires-Dist: aiohttp; extra == "testing"
+Requires-Dist: bigframes; (python_version >= "3.10" and python_version < "3.14") and extra == "testing"
+Requires-Dist: google-api-core<3.0.0,>=2.11; extra == "testing"
+Requires-Dist: grpcio-testing; extra == "testing"
+Requires-Dist: grpcio-tools>=1.63.0; python_version >= "3.13" and extra == "testing"
+Requires-Dist: ipython; extra == "testing"
+Requires-Dist: kfp<3.0.0,>=2.6.0; python_version < "3.13" and extra == "testing"
+Requires-Dist: pytest-asyncio; extra == "testing"
+Requires-Dist: pytest-cov; extra == "testing"
+Requires-Dist: mock; extra == "testing"
+Requires-Dist: pytest-xdist; extra == "testing"
+Requires-Dist: Pillow; extra == "testing"
+Requires-Dist: scikit-learn<1.6.0; python_version <= "3.10" and extra == "testing"
+Requires-Dist: scikit-learn; python_version > "3.10" and extra == "testing"
+Requires-Dist: tensorflow==2.14.1; python_version <= "3.11" and extra == "testing"
+Requires-Dist: tensorflow==2.19.0; (python_version > "3.11" and python_version < "3.13") and extra == "testing"
+Requires-Dist: protobuf<=5.29.4; extra == "testing"
+Requires-Dist: torch<2.1.0,>=2.0.0; python_version <= "3.11" and extra == "testing"
+Requires-Dist: torch>=2.2.0; (python_version > "3.11" and python_version < "3.13") and extra == "testing"
+Requires-Dist: requests-toolbelt<=1.0.0; extra == "testing"
+Requires-Dist: immutabledict; extra == "testing"
+Requires-Dist: xgboost; extra == "testing"
+Provides-Extra: xai
+Requires-Dist: tensorflow<3.0.0,>=2.3.0; python_version < "3.13" and extra == "xai"
+Provides-Extra: lit
+Requires-Dist: tensorflow<3.0.0,>=2.3.0; python_version < "3.13" and extra == "lit"
+Requires-Dist: pandas>=1.0.0; extra == "lit"
+Requires-Dist: lit-nlp==0.4.0; python_version < "3.14" and extra == "lit"
+Requires-Dist: explainable-ai-sdk>=1.0.0; python_version < "3.13" and extra == "lit"
+Provides-Extra: cloud-profiler
+Requires-Dist: tensorboard-plugin-profile<2.18.0,>=2.4.0; extra == "cloud-profiler"
+Requires-Dist: werkzeug<4.0.0,>=2.0.0; extra == "cloud-profiler"
+Provides-Extra: pipelines
+Requires-Dist: pyyaml<7,>=5.3.1; extra == "pipelines"
+Provides-Extra: vizier
+Requires-Dist: google-vizier>=0.1.6; extra == "vizier"
+Provides-Extra: prediction
+Requires-Dist: docker>=5.0.3; extra == "prediction"
+Requires-Dist: fastapi<=0.114.0,>=0.71.0; extra == "prediction"
+Requires-Dist: httpx<=0.28.1,>=0.23.0; extra == "prediction"
+Requires-Dist: starlette>=0.17.1; extra == "prediction"
+Requires-Dist: uvicorn[standard]>=0.16.0; extra == "prediction"
+Provides-Extra: datasets
+Requires-Dist: pyarrow<8.0.0,>=3.0.0; python_version < "3.11" and extra == "datasets"
+Requires-Dist: pyarrow>=10.0.1; python_version == "3.11" and extra == "datasets"
+Requires-Dist: pyarrow>=14.0.0; python_version >= "3.12" and extra == "datasets"
+Provides-Extra: private-endpoints
+Requires-Dist: urllib3<1.27,>=1.21.1; extra == "private-endpoints"
+Requires-Dist: requests>=2.28.1; extra == "private-endpoints"
+Provides-Extra: autologging
+Requires-Dist: mlflow<=2.16.0,>=1.27.0; python_version < "3.13" and extra == "autologging"
+Requires-Dist: mlflow>=1.27.0; python_version >= "3.13" and extra == "autologging"
+Provides-Extra: preview
+Provides-Extra: ray
+Requires-Dist: ray[default]!=2.10.*,!=2.11.*,!=2.12.*,!=2.13.*,!=2.14.*,!=2.15.*,!=2.16.*,!=2.17.*,!=2.18.*,!=2.19.*,!=2.20.*,!=2.21.*,!=2.22.*,!=2.23.*,!=2.24.*,!=2.25.*,!=2.26.*,!=2.27.*,!=2.28.*,!=2.29.*,!=2.30.*,!=2.31.*,!=2.32.*,!=2.34.*,!=2.35.*,!=2.36.*,!=2.37.*,!=2.38.*,!=2.39.*,!=2.40.*,!=2.41.*,!=2.5.*,!=2.6.*,!=2.7.*,!=2.8.*,!=2.9.0,!=2.9.1,!=2.9.2,<=2.42.0,>=2.4; python_version < "3.11" and extra == "ray"
+Requires-Dist: ray[default]<=2.47.1,>=2.5; python_version == "3.11" and extra == "ray"
+Requires-Dist: google-cloud-bigquery-storage; extra == "ray"
+Requires-Dist: google-cloud-bigquery; extra == "ray"
+Requires-Dist: pandas>=1.0.0; extra == "ray"
+Requires-Dist: pyarrow>=6.0.1; extra == "ray"
+Requires-Dist: immutabledict; extra == "ray"
+Provides-Extra: ray-testing
+Requires-Dist: ray[default]!=2.10.*,!=2.11.*,!=2.12.*,!=2.13.*,!=2.14.*,!=2.15.*,!=2.16.*,!=2.17.*,!=2.18.*,!=2.19.*,!=2.20.*,!=2.21.*,!=2.22.*,!=2.23.*,!=2.24.*,!=2.25.*,!=2.26.*,!=2.27.*,!=2.28.*,!=2.29.*,!=2.30.*,!=2.31.*,!=2.32.*,!=2.34.*,!=2.35.*,!=2.36.*,!=2.37.*,!=2.38.*,!=2.39.*,!=2.40.*,!=2.41.*,!=2.5.*,!=2.6.*,!=2.7.*,!=2.8.*,!=2.9.0,!=2.9.1,!=2.9.2,<=2.42.0,>=2.4; python_version < "3.11" and extra == "ray-testing"
+Requires-Dist: ray[default]<=2.47.1,>=2.5; python_version == "3.11" and extra == "ray-testing"
+Requires-Dist: google-cloud-bigquery-storage; extra == "ray-testing"
+Requires-Dist: google-cloud-bigquery; extra == "ray-testing"
+Requires-Dist: pandas>=1.0.0; extra == "ray-testing"
+Requires-Dist: pyarrow>=6.0.1; extra == "ray-testing"
+Requires-Dist: immutabledict; extra == "ray-testing"
+Requires-Dist: pytest-xdist; extra == "ray-testing"
+Requires-Dist: ray[train]; extra == "ray-testing"
+Requires-Dist: scikit-learn<1.6.0; extra == "ray-testing"
+Requires-Dist: tensorflow; python_version < "3.13" and extra == "ray-testing"
+Requires-Dist: torch<2.1.0,>=2.0.0; extra == "ray-testing"
+Requires-Dist: xgboost; extra == "ray-testing"
+Requires-Dist: xgboost_ray; extra == "ray-testing"
+Provides-Extra: adk
+Requires-Dist: google-adk<2.0.0,>=1.0.0; extra == "adk"
+Requires-Dist: opentelemetry-instrumentation-google-genai<1.0.0,>=0.3b0; extra == "adk"
+Provides-Extra: reasoningengine
+Requires-Dist: cloudpickle<4.0,>=3.0; extra == "reasoningengine"
+Requires-Dist: google-cloud-trace<2; extra == "reasoningengine"
+Requires-Dist: opentelemetry-sdk<2; extra == "reasoningengine"
+Requires-Dist: opentelemetry-exporter-gcp-logging<2.0.0,>=1.11.0a0; extra == "reasoningengine"
+Requires-Dist: opentelemetry-exporter-gcp-trace<2; extra == "reasoningengine"
+Requires-Dist: opentelemetry-exporter-otlp-proto-http<2; extra == "reasoningengine"
+Requires-Dist: pydantic<3,>=2.11.1; extra == "reasoningengine"
+Requires-Dist: typing_extensions; extra == "reasoningengine"
+Provides-Extra: agent-engines
+Requires-Dist: packaging>=24.0; extra == "agent-engines"
+Requires-Dist: cloudpickle<4.0,>=3.0; extra == "agent-engines"
+Requires-Dist: google-cloud-trace<2; extra == "agent-engines"
+Requires-Dist: google-cloud-logging<4; extra == "agent-engines"
+Requires-Dist: opentelemetry-sdk<2; extra == "agent-engines"
+Requires-Dist: opentelemetry-exporter-gcp-logging<2.0.0,>=1.11.0a0; extra == "agent-engines"
+Requires-Dist: opentelemetry-exporter-gcp-trace<2; extra == "agent-engines"
+Requires-Dist: opentelemetry-exporter-otlp-proto-http<2; extra == "agent-engines"
+Requires-Dist: pydantic<3,>=2.11.1; extra == "agent-engines"
+Requires-Dist: typing_extensions; extra == "agent-engines"
+Provides-Extra: evaluation
+Requires-Dist: pandas>=1.0.0; extra == "evaluation"
+Requires-Dist: tqdm>=4.23.0; extra == "evaluation"
+Requires-Dist: scikit-learn<1.6.0; python_version <= "3.10" and extra == "evaluation"
+Requires-Dist: scikit-learn; python_version > "3.10" and extra == "evaluation"
+Requires-Dist: jsonschema; extra == "evaluation"
+Requires-Dist: ruamel.yaml; extra == "evaluation"
+Requires-Dist: pyyaml; extra == "evaluation"
+Requires-Dist: litellm!=1.77.2,!=1.77.3,!=1.77.4,>=1.72.4; extra == "evaluation"
+Provides-Extra: langchain
+Requires-Dist: langchain<0.4,>=0.3; extra == "langchain"
+Requires-Dist: langchain-core<0.4,>=0.3; extra == "langchain"
+Requires-Dist: langchain-google-vertexai<3,>=2.0.22; extra == "langchain"
+Requires-Dist: langgraph<0.4,>=0.2.45; extra == "langchain"
+Requires-Dist: openinference-instrumentation-langchain<0.2,>=0.1.19; extra == "langchain"
+Provides-Extra: langchain-testing
+Requires-Dist: opentelemetry-sdk<2; extra == "langchain-testing"
+Requires-Dist: langgraph<0.4,>=0.2.45; extra == "langchain-testing"
+Requires-Dist: openinference-instrumentation-langchain<0.2,>=0.1.19; extra == "langchain-testing"
+Requires-Dist: langchain-core<0.4,>=0.3; extra == "langchain-testing"
+Requires-Dist: opentelemetry-exporter-otlp-proto-http<2; extra == "langchain-testing"
+Requires-Dist: langchain<0.4,>=0.3; extra == "langchain-testing"
+Requires-Dist: absl-py; extra == "langchain-testing"
+Requires-Dist: opentelemetry-exporter-gcp-trace<2; extra == "langchain-testing"
+Requires-Dist: google-cloud-trace<2; extra == "langchain-testing"
+Requires-Dist: opentelemetry-exporter-gcp-logging<2.0.0,>=1.11.0a0; extra == "langchain-testing"
+Requires-Dist: langchain-google-vertexai<3,>=2.0.22; extra == "langchain-testing"
+Requires-Dist: cloudpickle<4.0,>=3.0; extra == "langchain-testing"
+Requires-Dist: pytest-xdist; extra == "langchain-testing"
+Requires-Dist: pydantic<3,>=2.11.1; extra == "langchain-testing"
+Requires-Dist: typing_extensions; extra == "langchain-testing"
+Provides-Extra: tokenization
+Requires-Dist: sentencepiece>=0.2.0; extra == "tokenization"
+Provides-Extra: ag2
+Requires-Dist: ag2[gemini]; extra == "ag2"
+Requires-Dist: openinference-instrumentation-autogen<0.2,>=0.1.6; extra == "ag2"
+Provides-Extra: ag2-testing
+Requires-Dist: opentelemetry-sdk<2; extra == "ag2-testing"
+Requires-Dist: openinference-instrumentation-autogen<0.2,>=0.1.6; extra == "ag2-testing"
+Requires-Dist: ag2[gemini]; extra == "ag2-testing"
+Requires-Dist: opentelemetry-exporter-otlp-proto-http<2; extra == "ag2-testing"
+Requires-Dist: absl-py; extra == "ag2-testing"
+Requires-Dist: opentelemetry-exporter-gcp-trace<2; extra == "ag2-testing"
+Requires-Dist: google-cloud-trace<2; extra == "ag2-testing"
+Requires-Dist: opentelemetry-exporter-gcp-logging<2.0.0,>=1.11.0a0; extra == "ag2-testing"
+Requires-Dist: cloudpickle<4.0,>=3.0; extra == "ag2-testing"
+Requires-Dist: pytest-xdist; extra == "ag2-testing"
+Requires-Dist: pydantic<3,>=2.11.1; extra == "ag2-testing"
+Requires-Dist: typing_extensions; extra == "ag2-testing"
+Provides-Extra: llama-index
+Requires-Dist: llama-index; extra == "llama-index"
+Requires-Dist: llama-index-llms-google-genai; extra == "llama-index"
+Requires-Dist: openinference-instrumentation-llama-index<4.0,>=3.0; extra == "llama-index"
+Provides-Extra: llama-index-testing
+Requires-Dist: opentelemetry-sdk<2; extra == "llama-index-testing"
+Requires-Dist: llama-index-llms-google-genai; extra == "llama-index-testing"
+Requires-Dist: opentelemetry-exporter-otlp-proto-http<2; extra == "llama-index-testing"
+Requires-Dist: absl-py; extra == "llama-index-testing"
+Requires-Dist: opentelemetry-exporter-gcp-trace<2; extra == "llama-index-testing"
+Requires-Dist: google-cloud-trace<2; extra == "llama-index-testing"
+Requires-Dist: llama-index; extra == "llama-index-testing"
+Requires-Dist: opentelemetry-exporter-gcp-logging<2.0.0,>=1.11.0a0; extra == "llama-index-testing"
+Requires-Dist: openinference-instrumentation-llama-index<4.0,>=3.0; extra == "llama-index-testing"
+Requires-Dist: cloudpickle<4.0,>=3.0; extra == "llama-index-testing"
+Requires-Dist: pytest-xdist; extra == "llama-index-testing"
+Requires-Dist: pydantic<3,>=2.11.1; extra == "llama-index-testing"
+Requires-Dist: typing_extensions; extra == "llama-index-testing"
+Dynamic: author
+Dynamic: author-email
+Dynamic: classifier
+Dynamic: description
+Dynamic: home-page
+Dynamic: license
+Dynamic: license-file
+Dynamic: platform
+Dynamic: provides-extra
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary
+
+Vertex AI SDK for Python
+=================================================
+
+|GA| |pypi| |versions| |unit-tests| |system-tests| |sample-tests|
+
+`Vertex AI`_: Google Vertex AI is an integrated suite of machine learning tools and services for building and using ML models with AutoML or custom code. It offers both novices and experts the best workbench for the entire machine learning development lifecycle.
+
+- `Client Library Documentation`_
+- `Product Documentation`_
+
+.. |GA| image:: https://img.shields.io/badge/support-ga-gold.svg
+   :target: https://github.com/googleapis/google-cloud-python/blob/main/README.rst#general-availability
+.. |pypi| image:: https://img.shields.io/pypi/v/google-cloud-aiplatform.svg
+   :target: https://pypi.org/project/google-cloud-aiplatform/
+.. |versions| image:: https://img.shields.io/pypi/pyversions/google-cloud-aiplatform.svg
+   :target: https://pypi.org/project/google-cloud-aiplatform/
+.. |unit-tests| image:: https://storage.googleapis.com/cloud-devrel-public/python-aiplatform/badges/sdk-unit-tests.svg
+   :target: https://storage.googleapis.com/cloud-devrel-public/python-aiplatform/badges/sdk-unit-tests.html
+.. |system-tests| image:: https://storage.googleapis.com/cloud-devrel-public/python-aiplatform/badges/sdk-system-tests.svg
+   :target: https://storage.googleapis.com/cloud-devrel-public/python-aiplatform/badges/sdk-system-tests.html
+.. |sample-tests| image:: https://storage.googleapis.com/cloud-devrel-public/python-aiplatform/badges/sdk-sample-tests.svg
+   :target: https://storage.googleapis.com/cloud-devrel-public/python-aiplatform/badges/sdk-sample-tests.html
+.. _Vertex AI: https://cloud.google.com/vertex-ai/docs
+.. _Client Library Documentation: https://cloud.google.com/python/docs/reference/aiplatform/latest
+.. _Product Documentation:  https://cloud.google.com/vertex-ai/docs
+
+Installation
+~~~~~~~~~~~~
+
+.. code-block:: console
+
+    pip install google-cloud-aiplatform
+
+
+With :code:`uv`:
+
+.. code-block:: console
+
+    uv pip install google-cloud-aiplatform
+
+Generative AI in the Vertex AI SDK
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+To use Gen AI features from the Vertex AI SDK, you can instantiate a Vertex SDK client with the following:
+
+.. code-block:: Python
+
+    import vertexai
+    from vertexai import types
+
+    # Instantiate GenAI client from Vertex SDK
+    # Replace with your project ID and location
+    client = vertexai.Client(project='my-project', location='us-central1')
+
+See the examples below for guidance on how to use specific features supported by the Vertex SDK client.
+
+Gen AI Evaluation
+^^^^^^^^^^^^^^^^^
+
+To run evaluation, first generate model responses from a set of prompts.
+
+.. code-block:: Python
+
+    import pandas as pd
+
+    prompts_df = pd.DataFrame({
+        "prompt": [
+            "What is the capital of France?",
+            "Write a haiku about a cat.",
+            "Write a Python function to calculate the factorial of a number.",
+            "Translate 'How are you?' to French.",
+        ],
+
+        "reference": [
+            "Paris",
+            "Sunbeam on the floor,\nA furry puddle sleeping,\nTwitching tail tells tales.",
+            "def factorial(n):\n    if n < 0:\n        return 'Factorial does not exist for negative numbers'\n    elif n == 0:\n        return 1\n    else:\n        fact = 1\n        i = 1\n        while i <= n:\n            fact *= i\n            i += 1\n        return fact",
+            "Comment ça va ?",
+        ]
+    })
+
+    inference_results = client.evals.run_inference(
+        model="gemini-2.5-flash-preview-05-20",
+        src=prompts_df
+    )
+
+Then run evaluation by providing the inference results and specifying the metric types.
+
+.. code-block:: Python
+
+    eval_result = client.evals.evaluate(
+        dataset=inference_results,
+        metrics=[
+            types.Metric(name='exact_match'),
+            types.Metric(name='rouge_l_sum'),
+            types.RubricMetric.TEXT_QUALITY,
+        ]
+    )
+
+Agent Engine with Agent Development Kit (ADK)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+First, define a function that looks up the exchange rate:
+
+.. code-block:: Python
+
+    def get_exchange_rate(
+        currency_from: str = "USD",
+        currency_to: str = "EUR",
+        currency_date: str = "latest",
+    ):
+        """Retrieves the exchange rate between two currencies on a specified date.
+
+        Uses the Frankfurter API (https://api.frankfurter.app/) to obtain
+        exchange rate data.
+
+        Returns:
+            dict: A dictionary containing the exchange rate information.
+                Example: {"amount": 1.0, "base": "USD", "date": "2023-11-24",
+                    "rates": {"EUR": 0.95534}}
+        """
+        import requests
+        response = requests.get(
+            f"https://api.frankfurter.app/{currency_date}",
+            params={"from": currency_from, "to": currency_to},
+        )
+        return response.json()
+
+Next, define an ADK Agent:
+
+.. code-block:: Python
+
+    from google.adk.agents import Agent
+    from vertexai.agent_engines import AdkApp
+
+    app = AdkApp(agent=Agent(
+        model="gemini-2.0-flash",        # Required.
+        name='currency_exchange_agent',  # Required.
+        tools=[get_exchange_rate],       # Optional.
+    ))
+
+Test the agent locally using US dollars and Swedish Krona:
+
+.. code-block:: Python
+
+    async for event in app.async_stream_query(
+        user_id="user-id",
+        message="What is the exchange rate from US dollars to SEK today?",
+    ):
+        print(event)
+
+To deploy the agent to Agent Engine:
+
+.. code-block:: Python
+
+    remote_app = client.agent_engines.create(
+        agent=app,
+        config={
+            "requirements": ["google-cloud-aiplatform[agent_engines,adk]"],
+        },
+    )
+
+You can also run queries against the deployed agent:
+
+.. code-block:: Python
+
+    async for event in remote_app.async_stream_query(
+        user_id="user-id",
+        message="What is the exchange rate from US dollars to SEK today?",
+    ):
+        print(event)
+
+Prompt optimization
+^^^^^^^^^^^^^^^^^^^
+
+To do a zero-shot prompt optimization, use the `optimize_prompt`
+method.
+
+.. code-block:: Python
+
+    prompt = "Generate system instructions for a question-answering assistant"
+    response = client.prompt_optimizer.optimize_prompt(prompt=prompt)
+    print(response.raw_text_response)
+    if response.parsed_response:
+      print(response.parsed_response.suggested_prompt)
+
+To call the data-driven prompt optimization, call the `optimize` method.
+In this case however, we need to provide `vapo_config`. This config needs to
+have either service account or project **number** and the config path.
+Please refer to this [tutorial](https://cloud.google.com/vertex-ai/generative-ai/docs/learn/prompts/data-driven-optimizer)
+for more details on config parameter.
+
+.. code-block:: Python
+
+    from vertexai import types
+
+    project_number = PROJECT_NUMBER # replace with your project number
+    service_account = f"{project_number}-compute@developer.gserviceaccount.com"
+
+    vapo_config = vertexai.types.PromptOptimizerVAPOConfig(
+        config_path="gs://your-bucket/config.json",
+        service_account_project_number=project_number,
+        wait_for_completion=False
+    )
+
+    # Set up logging to see the progress of the optimization job
+    logging.basicConfig(encoding='utf-8', level=logging.INFO, force=True)
+
+    result = client.prompt_optimizer.optimize(method="vapo", config=vapo_config)
+
+If you want to use the project number instead of the service account, you can
+instead use the following config:
+
+.. code-block:: Python
+
+    vapo_config = vertexai.types.PromptOptimizerVAPOConfig(
+        config_path="gs://your-bucket/config.json",
+        service_account_project_number=project_number,
+        wait_for_completion=False
+    )
+
+We can also call optimize method async.
+
+.. code-block:: Python
+
+    await client.aio.prompt_optimizer.optimize(method="vapo", config=vapo_config)
+
+Prompt Management
+^^^^^^^^^^^^^^^^^
+
+First define your prompt as a dictionary or types.Prompt object. Then call create_prompt.
+
+.. code-block:: Python
+
+    prompt = {
+        "prompt_data": {
+            "contents": [{"parts": [{"text": "Hello, {name}! How are you?"}]}],
+            "system_instruction": {"parts": [{"text": "Please answer in a short sentence."}]},
+            "variables": [
+                {"name": {"text": "Alice"}},
+            ],
+            "model": "gemini-2.5-flash",
+        },
+    }
+
+    prompt_resource = client.prompts.create(
+        prompt=prompt,
+    )
+
+Note that you can also use the types.Prompt object to define your prompt. Some of the types used to do this are from the Gen AI SDK.
+
+.. code-block:: Python
+
+    import types
+    from google.genai import types as genai_types
+
+    prompt = types.Prompt(
+        prompt_data=types.PromptData(
+          contents=[genai_types.Content(parts=[genai_types.Part(text="Hello, {name}! How are you?")])],
+          system_instruction=genai_types.Content(parts=[genai_types.Part(text="Please answer in a short sentence.")]),
+          variables=[
+            {"name": genai_types.Part(text="Alice")},
+          ],
+          model="gemini-2.5-flash",
+        ),
+    )
+
+Retrieve a prompt by calling get() with the prompt_id.
+
+.. code-block:: Python
+
+    retrieved_prompt = client.prompts.get(
+        prompt_id=prompt_resource.prompt_id,
+    )
+
+After creating or retrieving a prompt, you can call `generate_content()` with that prompt using the Gen AI SDK.
+
+The following uses a utility function available on Prompt objects to transform a Prompt object into a list of Content objects for use with `generate_content`. To run this you need to have the Gen AI SDK installed, which you can do via `pip install google-genai`.
+
+.. code-block:: Python
+
+    from google import genai
+    from google.genai import types as genai_types
+
+    # Create a Client in the Gen AI SDK
+    genai_client = genai.Client(vertexai=True, project="your-project", location="your-location")
+
+    # Call generate_content() with the prompt
+    response = genai_client.models.generate_content(
+        model=retrieved_prompt.prompt_data.model,
+        contents=retrieved_prompt.assemble_contents(),
+    )
+
+-----------------------------------------
+
+.. note::
+
+   The following Generative AI modules in the Vertex AI SDK are deprecated as of June 24, 2025 and will be removed on June 24, 2026:
+   `vertexai.generative_models`, `vertexai.language_models`, `vertexai.vision_models`, `vertexai.tuning`, `vertexai.caching`. Please use the
+   [Google Gen AI SDK](https://pypi.org/project/google-genai/) to access these features. See
+   [the migration guide](https://cloud.google.com/vertex-ai/generative-ai/docs/deprecations/genai-vertexai-sdk) for details.
+   You can continue using all other Vertex AI SDK modules, as they are the recommended way to use the API.
+
+Quick Start
+-----------
+
+In order to use this library, you first need to go through the following steps:
+
+1. `Select or create a Cloud Platform project.`_
+2. `Enable billing for your project.`_
+3. `Enable the Vertex AI API.`_
+4. `Setup Authentication.`_
+
+.. _Select or create a Cloud Platform project.: https://console.cloud.google.com/project
+.. _Enable billing for your project.: https://cloud.google.com/billing/docs/how-to/modify-project#enable_billing_for_a_project
+.. _Enable the Vertex AI API.:  https://cloud.google.com/vertex-ai/docs/start/use-vertex-ai-python-sdk
+.. _Setup Authentication.: https://googleapis.dev/python/google-api-core/latest/auth.html
+
+
+Supported Python Versions
+^^^^^^^^^^^^^^^^^^^^^^^^^
+Python >= 3.9
+
+Deprecated Python Versions
+^^^^^^^^^^^^^^^^^^^^^^^^^^
+Python <= 3.8.
+
+The last version of this library compatible with Python 3.8 is google-cloud-aiplatform==1.90.0.
+
+The last version of this library compatible with Python 3.7 is google-cloud-aiplatform==1.31.1.
+
+The last version of this library compatible with Python 3.6 is google-cloud-aiplatform==1.12.1.
+
+Overview
+~~~~~~~~
+This section provides a brief overview of the Vertex AI SDK for Python. You can also reference the notebooks in `vertex-ai-samples`_ for examples.
+
+.. _vertex-ai-samples: https://github.com/GoogleCloudPlatform/vertex-ai-samples/tree/main/notebooks/community/sdk
+
+All publicly available SDK features can be found in the :code:`google/cloud/aiplatform` directory.
+Under the hood, Vertex SDK builds on top of GAPIC, which stands for Google API CodeGen.
+The GAPIC library code sits in :code:`google/cloud/aiplatform_v1` and :code:`google/cloud/aiplatform_v1beta1`,
+and it is auto-generated from Google's service proto files.
+
+For most developers' programmatic needs, they can follow these steps to figure out which libraries to import:
+
+1. Look through :code:`google/cloud/aiplatform` first -- Vertex SDK's APIs will almost always be easier to use and more concise comparing with GAPIC
+2. If the feature that you are looking for cannot be found there, look through :code:`aiplatform_v1` to see if it's available in GAPIC
+3. If it is still in beta phase, it will be available in :code:`aiplatform_v1beta1`
+
+If none of the above scenarios could help you find the right tools for your task, please feel free to open a github issue and send us a feature request.
+
+Importing
+^^^^^^^^^
+Vertex AI SDK resource based functionality can be used by importing the following namespace:
+
+.. code-block:: Python
+
+    from google.cloud import aiplatform
+
+Initialization
+^^^^^^^^^^^^^^
+Initialize the SDK to store common configurations that you use with the SDK.
+
+.. code-block:: Python
+
+    aiplatform.init(
+        # your Google Cloud Project ID or number
+        # environment default used is not set
+        project='my-project',
+
+        # the Vertex AI region you will use
+        # defaults to us-central1
+        location='us-central1',
+
+        # Google Cloud Storage bucket in same region as location
+        # used to stage artifacts
+        staging_bucket='gs://my_staging_bucket',
+
+        # custom google.auth.credentials.Credentials
+        # environment default credentials used if not set
+        credentials=my_credentials,
+
+        # customer managed encryption key resource name
+        # will be applied to all Vertex AI resources if set
+        encryption_spec_key_name=my_encryption_key_name,
+
+        # the name of the experiment to use to track
+        # logged metrics and parameters
+        experiment='my-experiment',
+
+        # description of the experiment above
+        experiment_description='my experiment description'
+    )
+
+Datasets
+^^^^^^^^
+Vertex AI provides managed tabular, text, image, and video datasets. In the SDK, datasets can be used downstream to
+train models.
+
+To create a tabular dataset:
+
+.. code-block:: Python
+
+    my_dataset = aiplatform.TabularDataset.create(
+        display_name="my-dataset", gcs_source=['gs://path/to/my/dataset.csv'])
+
+You can also create and import a dataset in separate steps:
+
+.. code-block:: Python
+
+    from google.cloud import aiplatform
+
+    my_dataset = aiplatform.TextDataset.create(
+        display_name="my-dataset")
+
+    my_dataset.import_data(
+        gcs_source=['gs://path/to/my/dataset.csv'],
+        import_schema_uri=aiplatform.schema.dataset.ioformat.text.multi_label_classification
+    )
+
+To get a previously created Dataset:
+
+.. code-block:: Python
+
+  dataset = aiplatform.ImageDataset('projects/my-project/location/us-central1/datasets/{DATASET_ID}')
+
+Vertex AI supports a variety of dataset schemas. References to these schemas are available under the
+:code:`aiplatform.schema.dataset` namespace. For more information on the supported dataset schemas please refer to the
+`Preparing data docs`_.
+
+.. _Preparing data docs: https://cloud.google.com/ai-platform-unified/docs/datasets/prepare
+
+Training
+^^^^^^^^
+The Vertex AI SDK for Python allows you train Custom and AutoML Models.
+
+You can train custom models using a custom Python script, custom Python package, or container.
+
+**Preparing Your Custom Code**
+
+Vertex AI custom training enables you to train on Vertex AI datasets and produce Vertex AI models. To do so your
+script must adhere to the following contract:
+
+It must read datasets from the environment variables populated by the training service:
+
+.. code-block:: Python
+
+  os.environ['AIP_DATA_FORMAT']  # provides format of data
+  os.environ['AIP_TRAINING_DATA_URI']  # uri to training split
+  os.environ['AIP_VALIDATION_DATA_URI']  # uri to validation split
+  os.environ['AIP_TEST_DATA_URI']  # uri to test split
+
+Please visit `Using a managed dataset in a custom training application`_ for a detailed overview.
+
+.. _Using a managed dataset in a custom training application: https://cloud.google.com/vertex-ai/docs/training/using-managed-datasets
+
+It must write the model artifact to the environment variable populated by the training service:
+
+.. code-block:: Python
+
+  os.environ['AIP_MODEL_DIR']
+
+**Running Training**
+
+.. code-block:: Python
+
+  job = aiplatform.CustomTrainingJob(
+      display_name="my-training-job",
+      script_path="training_script.py",
+      container_uri="us-docker.pkg.dev/vertex-ai/training/tf-cpu.2-2:latest",
+      requirements=["gcsfs==0.7.1"],
+      model_serving_container_image_uri="us-docker.pkg.dev/vertex-ai/prediction/tf2-cpu.2-2:latest",
+  )
+
+  model = job.run(my_dataset,
+                  replica_count=1,
+                  machine_type="n1-standard-4",
+                  accelerator_type='NVIDIA_TESLA_K80',
+                  accelerator_count=1)
+
+In the code block above `my_dataset` is managed dataset created in the `Dataset` section above. The `model` variable is a managed Vertex AI model that can be deployed or exported.
+
+
+AutoMLs
+-------
+The Vertex AI SDK for Python supports AutoML tabular, image, text, video, and forecasting.
+
+To train an AutoML tabular model:
+
+.. code-block:: Python
+
+  dataset = aiplatform.TabularDataset('projects/my-project/location/us-central1/datasets/{DATASET_ID}')
+
+  job = aiplatform.AutoMLTabularTrainingJob(
+    display_name="train-automl",
+    optimization_prediction_type="regression",
+    optimization_objective="minimize-rmse",
+  )
+
+  model = job.run(
+      dataset=dataset,
+      target_column="target_column_name",
+      training_fraction_split=0.6,
+      validation_fraction_split=0.2,
+      test_fraction_split=0.2,
+      budget_milli_node_hours=1000,
+      model_display_name="my-automl-model",
+      disable_early_stopping=False,
+  )
+
+
+Models
+------
+To get a model:
+
+
+.. code-block:: Python
+
+  model = aiplatform.Model('/projects/my-project/locations/us-central1/models/{MODEL_ID}')
+
+
+
+To upload a model:
+
+.. code-block:: Python
+
+  model = aiplatform.Model.upload(
+      display_name='my-model',
+      artifact_uri="gs://python/to/my/model/dir",
+      serving_container_image_uri="us-docker.pkg.dev/vertex-ai/prediction/tf2-cpu.2-2:latest",
+  )
+
+
+
+To deploy a model:
+
+
+.. code-block:: Python
+
+  endpoint = model.deploy(machine_type="n1-standard-4",
+                          min_replica_count=1,
+                          max_replica_count=5
+                          machine_type='n1-standard-4',
+                          accelerator_type='NVIDIA_TESLA_K80',
+                          accelerator_count=1)
+
+
+Please visit `Importing models to Vertex AI`_ for a detailed overview:
+
+.. _Importing models to Vertex AI: https://cloud.google.com/vertex-ai/docs/general/import-model
+
+Model Evaluation
+----------------
+
+The Vertex AI SDK for Python currently supports getting model evaluation metrics for all AutoML models.
+
+To list all model evaluations for a model:
+
+.. code-block:: Python
+
+  model = aiplatform.Model('projects/my-project/locations/us-central1/models/{MODEL_ID}')
+
+  evaluations = model.list_model_evaluations()
+
+
+To get the model evaluation resource for a given model:
+
+.. code-block:: Python
+
+  model = aiplatform.Model('projects/my-project/locations/us-central1/models/{MODEL_ID}')
+
+  # returns the first evaluation with no arguments, you can also pass the evaluation ID
+  evaluation = model.get_model_evaluation()
+
+  eval_metrics = evaluation.metrics
+
+
+You can also create a reference to your model evaluation directly by passing in the resource name of the model evaluation:
+
+.. code-block:: Python
+
+  evaluation = aiplatform.ModelEvaluation(
+    evaluation_name='projects/my-project/locations/us-central1/models/{MODEL_ID}/evaluations/{EVALUATION_ID}')
+
+Alternatively, you can create a reference to your evaluation by passing in the model and evaluation IDs:
+
+.. code-block:: Python
+
+  evaluation = aiplatform.ModelEvaluation(
+    evaluation_name={EVALUATION_ID},
+    model_id={MODEL_ID})
+
+
+Batch Prediction
+----------------
+
+To create a batch prediction job:
+
+.. code-block:: Python
+
+  model = aiplatform.Model('/projects/my-project/locations/us-central1/models/{MODEL_ID}')
+
+  batch_prediction_job = model.batch_predict(
+    job_display_name='my-batch-prediction-job',
+    instances_format='csv',
+    machine_type='n1-standard-4',
+    gcs_source=['gs://path/to/my/file.csv'],
+    gcs_destination_prefix='gs://path/to/my/batch_prediction/results/',
+    service_account='my-sa@my-project.iam.gserviceaccount.com'
+  )
+
+You can also create a batch prediction job asynchronously by including the `sync=False` argument:
+
+.. code-block:: Python
+
+  batch_prediction_job = model.batch_predict(..., sync=False)
+
+  # wait for resource to be created
+  batch_prediction_job.wait_for_resource_creation()
+
+  # get the state
+  batch_prediction_job.state
+
+  # block until job is complete
+  batch_prediction_job.wait()
+
+
+Endpoints
+---------
+
+To create an endpoint:
+
+.. code-block:: Python
+
+  endpoint = aiplatform.Endpoint.create(display_name='my-endpoint')
+
+To deploy a model to a created endpoint:
+
+.. code-block:: Python
+
+  model = aiplatform.Model('/projects/my-project/locations/us-central1/models/{MODEL_ID}')
+
+  endpoint.deploy(model,
+                  min_replica_count=1,
+                  max_replica_count=5,
+                  machine_type='n1-standard-4',
+                  accelerator_type='NVIDIA_TESLA_K80',
+                  accelerator_count=1)
+
+To get predictions from endpoints:
+
+.. code-block:: Python
+
+  endpoint.predict(instances=[[6.7, 3.1, 4.7, 1.5], [4.6, 3.1, 1.5, 0.2]])
+
+To undeploy models from an endpoint:
+
+.. code-block:: Python
+
+  endpoint.undeploy_all()
+
+To delete an endpoint:
+
+.. code-block:: Python
+
+  endpoint.delete()
+
+
+Pipelines
+---------
+
+To create a Vertex AI Pipeline run and monitor until completion:
+
+.. code-block:: Python
+
+  # Instantiate PipelineJob object
+  pl = PipelineJob(
+      display_name="My first pipeline",
+
+      # Whether or not to enable caching
+      # True = always cache pipeline step result
+      # False = never cache pipeline step result
+      # None = defer to cache option for each pipeline component in the pipeline definition
+      enable_caching=False,
+
+      # Local or GCS path to a compiled pipeline definition
+      template_path="pipeline.json",
+
+      # Dictionary containing input parameters for your pipeline
+      parameter_values=parameter_values,
+
+      # GCS path to act as the pipeline root
+      pipeline_root=pipeline_root,
+  )
+
+  # Execute pipeline in Vertex AI and monitor until completion
+  pl.run(
+    # Email address of service account to use for the pipeline run
+    # You must have iam.serviceAccounts.actAs permission on the service account to use it
+    service_account=service_account,
+
+    # Whether this function call should be synchronous (wait for pipeline run to finish before terminating)
+    # or asynchronous (return immediately)
+    sync=True
+  )
+
+To create a Vertex AI Pipeline without monitoring until completion, use `submit` instead of `run`:
+
+.. code-block:: Python
+
+  # Instantiate PipelineJob object
+  pl = PipelineJob(
+      display_name="My first pipeline",
+
+      # Whether or not to enable caching
+      # True = always cache pipeline step result
+      # False = never cache pipeline step result
+      # None = defer to cache option for each pipeline component in the pipeline definition
+      enable_caching=False,
+
+      # Local or GCS path to a compiled pipeline definition
+      template_path="pipeline.json",
+
+      # Dictionary containing input parameters for your pipeline
+      parameter_values=parameter_values,
+
+      # GCS path to act as the pipeline root
+      pipeline_root=pipeline_root,
+  )
+
+  # Submit the Pipeline to Vertex AI
+  pl.submit(
+    # Email address of service account to use for the pipeline run
+    # You must have iam.serviceAccounts.actAs permission on the service account to use it
+    service_account=service_account,
+  )
+
+
+Explainable AI: Get Metadata
+----------------------------
+
+To get metadata in dictionary format from TensorFlow 1 models:
+
+.. code-block:: Python
+
+  from google.cloud.aiplatform.explain.metadata.tf.v1 import saved_model_metadata_builder
+
+  builder = saved_model_metadata_builder.SavedModelMetadataBuilder(
+            'gs://python/to/my/model/dir', tags=[tf.saved_model.tag_constants.SERVING]
+        )
+  generated_md = builder.get_metadata()
+
+To get metadata in dictionary format from TensorFlow 2 models:
+
+.. code-block:: Python
+
+  from google.cloud.aiplatform.explain.metadata.tf.v2 import saved_model_metadata_builder
+
+  builder = saved_model_metadata_builder.SavedModelMetadataBuilder('gs://python/to/my/model/dir')
+  generated_md = builder.get_metadata()
+
+To use Explanation Metadata in endpoint deployment and model upload:
+
+.. code-block:: Python
+
+  explanation_metadata = builder.get_metadata_protobuf()
+
+  # To deploy a model to an endpoint with explanation
+  model.deploy(..., explanation_metadata=explanation_metadata)
+
+  # To deploy a model to a created endpoint with explanation
+  endpoint.deploy(..., explanation_metadata=explanation_metadata)
+
+  # To upload a model with explanation
+  aiplatform.Model.upload(..., explanation_metadata=explanation_metadata)
+
+
+Cloud Profiler
+----------------------------
+
+Cloud Profiler allows you to profile your remote Vertex AI Training jobs on demand and visualize the results in Vertex AI Tensorboard.
+
+To start using the profiler with TensorFlow, update your training script to include the following:
+
+.. code-block:: Python
+
+    from google.cloud.aiplatform.training_utils import cloud_profiler
+    ...
+    cloud_profiler.init()
+
+Next, run the job with with a Vertex AI TensorBoard instance. For full details on how to do this, visit https://cloud.google.com/vertex-ai/docs/experiments/tensorboard-overview
+
+Finally, visit your TensorBoard in your Google Cloud Console, navigate to the "Profile" tab, and click the `Capture Profile` button. This will allow users to capture profiling statistics for the running jobs.
+
+
+Next Steps
+~~~~~~~~~~
+
+-  Read the `Client Library Documentation`_ for Vertex AI
+   API to see other available methods on the client.
+-  Read the `Vertex AI API Product documentation`_ to learn
+   more about the product and see How-to Guides.
+-  View this `README`_ to see the full list of Cloud
+   APIs that we cover.
+
+.. _Vertex AI API Product documentation:  https://cloud.google.com/vertex-ai/docs
+.. _README: https://github.com/googleapis/google-cloud-python/blob/main/README.rst
