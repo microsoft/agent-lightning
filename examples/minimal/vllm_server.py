@@ -2,7 +2,6 @@
 
 """Programmatically launch and stop an vLLM server."""
 
-
 import subprocess
 import time
 from contextlib import contextmanager
