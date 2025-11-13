@@ -5828,7 +5828,8 @@ this is to make sure there is only one copy of the server in the whole system.</
           –
           <div class="doc-md-description">
             <p>Backoff schedule (seconds) used when the initial request fails for a
-non-application reason. Each entry is a retry attempt.</p>
+non-application reason. Each entry is a retry attempt.
+Setting to an empty sequence to disable retries.</p>
           </div>
         </li>
         <li class="doc-section-item field-body">
@@ -5838,7 +5839,28 @@ non-application reason. Each entry is a retry attempt.</p>
 )
           –
           <div class="doc-md-description">
-            <p>Delays between /health probes while waiting for the server to come back.</p>
+            <p>Delays between /health probes while waiting for the server to come back.
+Setting to an empty sequence to disable health checks.</p>
+          </div>
+        </li>
+        <li class="doc-section-item field-body">
+            <b><code>request_timeout</code></b>
+              (<code><span title="float">float</span></code>, default:
+                  <code>30.0</code>
+)
+          –
+          <div class="doc-md-description">
+            <p>Timeout (seconds) for each request.</p>
+          </div>
+        </li>
+        <li class="doc-section-item field-body">
+            <b><code>connection_timeout</code></b>
+              (<code><span title="float">float</span></code>, default:
+                  <code>5.0</code>
+)
+          –
+          <div class="doc-md-description">
+            <p>Timeout (seconds) for establishing connection.</p>
           </div>
         </li>
     </ul>
