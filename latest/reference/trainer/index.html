@@ -3172,7 +3172,7 @@ but adapts them to multiple processes and the HTTP client/server boundary.</p>
 
 
 <h4 id="agentlightning.ClientServerExecutionStrategy.__init__" class="doc doc-heading">
-<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="fm">__init__</span><span class="p">(</span><span class="n">role</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">server_host</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">server_port</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">n_runners</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">graceful_timeout</span><span class="o">=</span><span class="mf">5.0</span><span class="p">,</span> <span class="n">terminate_timeout</span><span class="o">=</span><span class="mf">5.0</span><span class="p">,</span> <span class="n">main_process</span><span class="o">=</span><span class="s1">&#39;algorithm&#39;</span><span class="p">,</span> <span class="n">managed_store</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="fm">__init__</span><span class="p">(</span><span class="n">role</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">server_host</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">server_port</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">n_runners</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">graceful_timeout</span><span class="o">=</span><span class="mf">10.0</span><span class="p">,</span> <span class="n">terminate_timeout</span><span class="o">=</span><span class="mf">10.0</span><span class="p">,</span> <span class="n">main_process</span><span class="o">=</span><span class="s1">&#39;algorithm&#39;</span><span class="p">,</span> <span class="n">managed_store</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
 
 <a href="#agentlightning.ClientServerExecutionStrategy.__init__" class="headerlink" title="Permanent link">&para;</a></h4>
 
@@ -3231,7 +3231,7 @@ Defaults to <code>AGL_SERVER_PORT</code> or <code>4747</code> if unset.</p>
         <li class="doc-section-item field-body">
             <b><code>graceful_timeout</code></b>
               (<code><span title="float">float</span></code>, default:
-                  <code>5.0</code>
+                  <code>10.0</code>
 )
           –
           <div class="doc-md-description">
@@ -3242,7 +3242,7 @@ event before escalating to signals.</p>
         <li class="doc-section-item field-body">
             <b><code>terminate_timeout</code></b>
               (<code><span title="float">float</span></code>, default:
-                  <code>5.0</code>
+                  <code>10.0</code>
 )
           –
           <div class="doc-md-description">
