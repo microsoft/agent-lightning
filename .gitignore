@@ -207,3 +207,4 @@ cython_debug/
 
 # Claude
 .claude/*.local.json
+vendor/

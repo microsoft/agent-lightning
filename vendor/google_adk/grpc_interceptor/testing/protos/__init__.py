@@ -1,1 +1,0 @@
-"""Protobuf definitions for testing."""

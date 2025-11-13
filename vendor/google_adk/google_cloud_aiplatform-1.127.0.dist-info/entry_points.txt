@@ -1,2 +1,0 @@
-[console_scripts]
-tb-gcp-uploader = google.cloud.aiplatform.tensorboard.uploader_main:run_main
