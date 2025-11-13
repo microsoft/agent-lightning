@@ -89,7 +89,7 @@ module.exports = async function badgeAggregation({ github, context, core, depend
     // Match each required variant to a job. We look for the variant in parentheses, e.g. "(latest)".
     for (const variant of dep.variants || []) {
       const matchingJobs = jobs.filter(
-        j => typeof j.name === 'string' && j.name.includes(`(${variant}`)
+        j => typeof j.name === 'string' && j.name.includes(variant)
       );
 
       if (matchingJobs.length === 0) {
