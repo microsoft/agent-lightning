@@ -1209,7 +1209,7 @@ class LLMProxy:
         if self.store is None:
             raise ValueError("Store is not set. Please set the store before starting the LLMProxy.")
 
-        store_capabilities = self.store.capabilities()
+        store_capabilities = self.store.capabilities
         if self.server_launcher.args.launch_mode == "mp" and not store_capabilities["zero_copy"]:
             raise RuntimeError(
                 "The store does not support zero-copy. Please use another store, or use asyncio or thread mode to launch the server."

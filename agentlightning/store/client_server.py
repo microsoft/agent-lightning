@@ -319,10 +319,10 @@ class LightningStoreServer(LightningStore):
                 host=host,
                 port=port,
                 launch_mode=launch_mode,
-                healthcheck_url=API_AGL_PREFIX + "/health",
+                healthcheck_url=API_V1_AGL_PREFIX + "/health",
             )
 
-        store_capabilities = self.store.capabilities()
+        store_capabilities = self.store.capabilities
         if not store_capabilities["async_safe"]:
             raise ValueError("The store is not async-safe. Please use another store for the server.")
         if self.launcher_args.launch_mode == "mp" and not store_capabilities["zero_copy"]:
@@ -355,6 +355,7 @@ class LightningStoreServer(LightningStore):
         self._owner_pid = os.getpid()
         self._client: Optional[LightningStoreClient] = None
 
+    @property
     def capabilities(self) -> LightningStoreCapabilities:
         """Return the capabilities of the store."""
         return LightningStoreCapabilities(
@@ -1037,6 +1038,7 @@ class LightningStoreClient(LightningStore):
         self._dequeue_was_successful: bool = False
         self._dequeue_first_unsuccessful: bool = True
 
+    @property
     def capabilities(self) -> LightningStoreCapabilities:
         """Return the capabilities of the store."""
         return LightningStoreCapabilities(

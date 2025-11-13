@@ -27,6 +27,7 @@ class DummyLightningStore(LightningStore):
         self.calls: List[tuple[str, tuple[Any, ...], Dict[str, Any]]] = []
         self.return_values = return_values
 
+    @property
     def capabilities(self) -> LightningStoreCapabilities:
         return LightningStoreCapabilities(
             async_safe=True,
