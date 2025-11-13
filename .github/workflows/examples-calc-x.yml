@@ -118,6 +118,8 @@ jobs:
         run: |
           source .venv/bin/activate
           cd examples/calc_x
+          ../../scripts/restart_ray.sh
+          sleep 5
           python train_calc_agent.py --val-file data/test_mini.parquet --ci
         shell: bash
         env:
