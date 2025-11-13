@@ -132,10 +132,7 @@ def config_train_fast() -> Dict[str, Any]:
 
 def config_train_qwen() -> Dict[str, Any]:
     """A configuration for training with Qwen-2.5B."""
-<<<<<<< HEAD
 
-=======
->>>>>>> parent of e425885 (fix: update according to review comments)
     config = deepcopy(RL_TRAINING_CONFIG)
 
     return config
@@ -207,6 +204,7 @@ def main() -> None:
         "npu": config_train_npu,
     }
     config = config_functions[args.config]()
+
     # Set active agent - use provided value or default based on config choice
     active_agent = args.active_agent
 

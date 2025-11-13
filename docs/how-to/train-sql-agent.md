@@ -320,61 +320,38 @@ For the LLaMA profile, export an `HF_TOKEN` before running so VERL can download 
     ```bash
     env RAY_DEBUG=legacy HYDRA_FULL_ERROR=1 VLLM_USE_V1=1 ray start --head --dashboard-host=0.0.0.0
     ```
-### Launch Training with NPUS
 
-We have added support for **Huawei Ascend NPUs** in **agent-lightning**, and create a  function `config_train_npu` in the script .
+!!! note "Launching Training with NPUs"
 
-#### Hardware Support
+    The example also supports running with **Huawei Ascend NPUs**. This feature is contributed by [Teams from Huawei](https://github.com/microsoft/agent-lightning/pull/272). To use it, resort to the function `config_train_npu` in the script.
 
-- **Atlas 200T A2 Box16**
-- **Atlas 900 A2 PODc**
-- **Atlas 800T A3**
+    **Hardware Supported:** Atlas 200T A2 Box16, Atlas 900 A2 PODc, Atlas 800T A3. At least **a single 40GB NPU** is required to run the **Qwen2.5-Coder-1.5B-Instruct** model.
 
-At least **a single 40GB NPU** is required to run the **Qwen2.5-Coder-1.5B-Instruct** model.
+    **Environment Setup:** Python 3.11.13, CANN 8.2.RC1, torch 2.7.1+cpu, torch_npu 2.7.1.dev20250724. For basic environment preparation, please refer to this [document](https://gitcode.com/Ascend/pytorch).
 
-#### Environment Setup
+    Before installing dependencies, configure the following pip mirrors:
 
-In addition to the dependencies originally required by the project, the following dependencies must be installed if you want to run it in an NPU environment.
+    ```
+    pip config set global.index-url http://repo.huaweicloud.com/repository/pypi/simple
+    pip config set global.extra-index-url "https://download.pytorch.org/whl/cpu/ https://mirrors.huaweicloud.com/ascend/repos/pypi"
+    ```
 
-##### Basic Environment
+    Then install vLLM, vLLM-Ascend and VERL:
 
-- **Python:** 3.11.13
-- **CANN:** 8.2.RC1
-- **torch:** 2.7.1+cpu
-- **torch_npu:** 2.7.1.dev20250724
+    ```
+    pip install vllm==0.10.0 --trusted-host repo.huaweicloud.com
+    pip install vllm-Ascend==0.10.0rc1 --trusted-host repo.huaweicloud.com
+    pip install verl==0.5.0
+    ```
 
-> For basic environment preparation, please refer to this [document](https://gitcode.com/Ascend/pytorch).
+    To ensure the VERL framework runs correctly on NPU, add the following lines to `verl/utils/vllm_utils.py`:
 
-##### Configure Mirror Sources
+    ```python
+    from vllm_ascend.patch import platform
+    from vllm_ascend.patch import worker
+    ```
 
-Before installing dependencies, configure the following pip mirrors:
-
-```
-pip config set global.index-url http://repo.huaweicloud.com/repository/pypi/simple
-pip config set global.extra-index-url "https://download.pytorch.org/whl/cpu/ https://mirrors.huaweicloud.com/ascend/repos/pypi"
-```
-
-##### Install vLLM & vLLM-Ascend
-
-```
-pip install vllm==0.10.0 --trusted-host repo.huaweicloud.com
-pip install vllm-Ascend==0.10.0rc1 --trusted-host repo.huaweicloud.com
-```
-
-##### Install VERL
-
-```
-pip install verl==0.5.0
-```
-
-> Reference: [https://github.com/vllm-project/vllm-ascend/issues/1776](https://github.com/vllm-project/vllm-ascend/issues/1776?utm_source=chatgpt.com)
-> ⚠️**Note:** To ensure the VERL framework runs correctly on NPU, add the following lines to
-> `verl/utils/vllm_utils.py`:
-
-```
-from vllm_ascend.patch import platform
-from vllm_ascend.patch import worker
-```
+    See the following reference for more details: [https://github.com/vllm-project/vllm-ascend/issues/1776](https://github.com/vllm-project/vllm-ascend/issues/1776).
 
 #### Launch Training
 
