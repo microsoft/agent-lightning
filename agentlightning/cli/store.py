@@ -9,7 +9,7 @@ import asyncio
 import logging
 from typing import Iterable
 
-from agentlightning.logging import configure_logger
+from agentlightning.logging import setup_logging
 from agentlightning.store.client_server import LightningStoreServer
 from agentlightning.store.memory import InMemoryLightningStore
 
@@ -27,7 +27,7 @@ def main(argv: Iterable[str] | None = None) -> int:
     )
     args = parser.parse_args(list(argv) if argv is not None else None)
 
-    configure_logger()
+    setup_logging()
 
     store = InMemoryLightningStore()
     server = LightningStoreServer(

@@ -9,10 +9,10 @@ import warnings
 from logging.config import dictConfig
 from typing import Any, Dict, Optional
 
-__all__ = ["configure_logger"]
+__all__ = ["setup_logging"]
 
 
-def configure_logger(level: int = logging.INFO, name: str = "agentlightning") -> logging.Logger:
+def setup_logging(level: int = logging.INFO, name: str = "agentlightning") -> logging.Logger:
     """Create or reset a namespaced logger with a consistent console format.
 
     This helper clears any previously attached handlers before binding a single
@@ -35,9 +35,9 @@ def configure_logger(level: int = logging.INFO, name: str = "agentlightning") ->
 
     Examples:
         ```python
-        from agentlightning import configure_logger
+        from agentlightning import setup_logging
 
-        logger = configure_logger(level=logging.INFO)
+        logger = setup_logging(level=logging.INFO)
         logger.info("agent-lightning is ready!")
         ```
     """

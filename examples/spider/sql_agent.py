@@ -29,9 +29,9 @@ from spider_eval.exec_eval import eval_exec_match
 
 import agentlightning as agl
 
-agl.configure_logger()
+agl.setup_logging()
 
-logger = agl.configure_logger(name=__name__)
+logger = agl.setup_logging(name=__name__)
 
 
 WRITE_QUERY_PROMPT = ChatPromptTemplate(

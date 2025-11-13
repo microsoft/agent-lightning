@@ -24,13 +24,13 @@ from agentlightning import (
     LLMProxy,
     LlmProxyTraceToTriplet,
     TracerTraceToTriplet,
-    configure_logger,
     emit_reward,
+    setup_logging,
 )
 from agentlightning.store import LightningStoreThreaded
 
-configure_logger(name="agentlightning")
-configure_logger(name="agl_tinker", level=logging.INFO)
+setup_logging(name="agentlightning")
+setup_logging(name="agl_tinker", level=logging.INFO)
 
 
 async def test_tracer():
