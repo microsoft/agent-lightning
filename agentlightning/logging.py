@@ -184,7 +184,7 @@ def setup(
         >>> setup(extra_handlers=[fh])
     """
     # Ensure UTF-8 encoding on Windows consoles
-    # Note: This change does not fully represent support for execution under the windown system.
+    # Note: This change does not fully represent support for execution under the windows system.
     # It only fixes console printing issues caused by special characters.
     # TODO: More comprehensive Windows support may be needed in the future.
     if platform.system() == "Windows":
@@ -316,7 +316,8 @@ def setup_module(
     }
 
     # Choose formatter / handler definition
-    if color is not False:
+    if color is not False and console:
+        # Console must be true to display colored outputs
         if isinstance(color, dict):
             rich_handler_config = color
         else:

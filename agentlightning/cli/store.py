@@ -9,7 +9,7 @@ import asyncio
 import logging
 from typing import Iterable
 
-from agentlightning.logging import setup_logging
+from agentlightning import setup_logging
 from agentlightning.store.client_server import LightningStoreServer
 from agentlightning.store.memory import InMemoryLightningStore
 
