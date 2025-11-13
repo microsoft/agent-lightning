@@ -19,6 +19,7 @@ from agentlightning.store.base import UNSET, LightningStore
 from agentlightning.store.client_server import LightningStoreClient, LightningStoreServer
 from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.types import LLM, OtelResource, PromptTemplate, RolloutConfig, Span, TraceStatus
+from agentlightning.utils.server_launcher import LaunchMode, PythonServerLauncherArgs
 
 
 def _make_span(rollout_id: str, attempt_id: str, sequence_id: int, name: str) -> Span:
@@ -71,7 +72,15 @@ async def server_client(
 
 
 @pytest.mark.asyncio
-async def test_server_start_rejects_port_conflict() -> None:
+async def test_mp_server_does_not_work_with_inmemory_store() -> None:
+    store = InMemoryLightningStore()
+    with pytest.raises(ValueError, match="The store does not support zero-copy."):
+        LightningStoreServer(store, "127.0.0.1", pick_unused_port(), launch_mode="mp")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("launch_mode", ["asyncio", "thread"])
+async def test_server_start_rejects_port_conflict(caplog: pytest.LogCaptureFixture, launch_mode: LaunchMode) -> None:
     """Ensure startup fails loudly when the port is already owned by another store."""
     store_a = InMemoryLightningStore()
     port = pick_unused_port()
@@ -79,29 +88,57 @@ async def test_server_start_rejects_port_conflict() -> None:
     await server_a.start()
 
     store_b = InMemoryLightningStore()
-    server_b = LightningStoreServer(store_b, "127.0.0.1", port)
+    server_b = LightningStoreServer(store_b, "127.0.0.1", port, launch_mode=launch_mode)
 
-    with pytest.raises(RuntimeError, match="Another process may already be using this port"):
+    with pytest.raises(RuntimeError, match="did not start up within"):
         await server_b.start()
+    assert "address already in use" in caplog.text
 
     await server_a.stop()
 
 
 @pytest.mark.asyncio
-async def test_run_forever_rejects_port_conflict() -> None:
+@pytest.mark.parametrize("launch_mode", ["asyncio", "thread"])
+async def test_run_forever_rejects_port_conflict(caplog: pytest.LogCaptureFixture, launch_mode: LaunchMode) -> None:
     """Ensure run_forever also reports port conflicts with the friendly message."""
     store_a = InMemoryLightningStore()
     port = pick_unused_port()
-    server_a = LightningStoreServer(store_a, "127.0.0.1", port)
+    server_a = LightningStoreServer(store_a, "127.0.0.1", port, launch_mode=launch_mode)
     await server_a.start()
 
     store_b = InMemoryLightningStore()
-    server_b = LightningStoreServer(store_b, "127.0.0.1", port)
+    server_b = LightningStoreServer(store_b, "127.0.0.1", port, launch_mode=launch_mode)
 
-    with pytest.raises(RuntimeError, match="Another process may already be using this port"):
+    with pytest.raises(RuntimeError, match="did not start up within"):
         await server_b.run_forever()
+    assert "address already in use" in caplog.text
 
     await server_a.stop()
+
+
+@pytest.mark.asyncio
+async def test_server_accepts_custom_launcher_args(store_fixture: LightningStore) -> None:
+    """Ensure providing launcher_args works end-to-end and is propagated to the launcher."""
+    port = pick_unused_port()
+    launcher_args = PythonServerLauncherArgs(
+        host="127.0.0.1",
+        port=port,
+        launch_mode="asyncio",
+        healthcheck_url="/v1/agl/health",
+    )
+    server = LightningStoreServer(store_fixture, launcher_args=launcher_args)
+    assert server.launcher_args is launcher_args
+    assert server.server_launcher.args is launcher_args
+    assert server.server_launcher.health_url == f"http://127.0.0.1:{port}/v1/agl/health"
+
+    await server.start()
+    client = LightningStoreClient(server.endpoint)
+    try:
+        rollout = await client.start_rollout(input={"source": "launcher-args"})
+        assert rollout.rollout_id
+    finally:
+        await client.close()
+        await server.stop()
 
 
 @pytest.mark.asyncio
@@ -722,7 +759,7 @@ async def test_retry_on_400_application_error(
 
     # Force app-side exception so server returns 400 via exception handler.
     call_count = {"n": 0}
-    original = server.store.enqueue_rollout
+    original = server.store.enqueue_rollout  # type: ignore
 
     async def boom(*args: Any, **kwargs: Any) -> Any:
         call_count["n"] += 1
@@ -1013,3 +1050,124 @@ async def test_get_next_span_sequence_id_returns_proper_int(
 
     # Verify monotonic increment
     assert seq_id_2 == seq_id_1 + 1
+
+
+@pytest.mark.asyncio
+async def test_empty_retry_delays_disable_retries(monkeypatch: MonkeyPatch) -> None:
+    """
+    When retry_delays is empty, the client should perform only the initial attempt
+    and not retry on transient network errors.
+    """
+    store = InMemoryLightningStore()
+    port = pick_unused_port()
+    server = LightningStoreServer(
+        store,
+        launcher_args=PythonServerLauncherArgs(
+            port=port,
+            host="127.0.0.1",
+            healthcheck_url=None,
+            launch_mode="thread",
+        ),
+    )
+    await server.start()
+
+    # retry_delays=() disables retries; health checks still enabled
+    client = LightningStoreClient(
+        server.endpoint,
+        retry_delays=(),
+        health_retry_delays=(0.01,),
+    )
+
+    try:
+        original_post = aiohttp.ClientSession.post
+        original_get = aiohttp.ClientSession.get
+
+        calls = {"post": 0, "health": 0}
+
+        def failing_post(self: aiohttp.ClientSession, url: Any, *args: Any, **kwargs: Any) -> MockResponse:
+            if str(url).endswith("/rollouts"):
+                calls["post"] += 1
+                # Always raise a transient error
+                raise ServerDisconnectedError("synthetic disconnect for empty retry_delays")
+            return MockResponse(original_post(self, url, *args, **kwargs))
+
+        def ok_health_get(self: aiohttp.ClientSession, url: Any, *args: Any, **kwargs: Any) -> MockResponse:
+            if str(url).endswith("/health"):
+                calls["health"] += 1
+            # delegate to the real get() and wrap in MockResponse so it stays an async CM
+            return MockResponse(original_get(self, url, *args, **kwargs))
+
+        monkeypatch.setattr(aiohttp.ClientSession, "post", failing_post, raising=True)
+        monkeypatch.setattr(aiohttp.ClientSession, "get", ok_health_get, raising=True)
+
+        with pytest.raises(ServerDisconnectedError):
+            await client.start_rollout(input={"origin": "empty-retry-delays"})
+
+        # Only the initial attempt should be made
+        assert calls["post"] == 1
+        # Health should be probed at least once
+        assert calls["health"] >= 1
+    finally:
+        await client.close()
+        await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_empty_health_retry_delays_skip_health_checks(monkeypatch: MonkeyPatch) -> None:
+    """
+    When health_retry_delays is empty, _wait_until_healthy should not perform any
+    /health probes, but retries governed by retry_delays should still occur.
+    """
+    store = InMemoryLightningStore()
+    port = pick_unused_port()
+    server = LightningStoreServer(
+        store,
+        launcher_args=PythonServerLauncherArgs(
+            port=port,
+            host="127.0.0.1",
+            healthcheck_url=None,
+            launch_mode="thread",
+        ),
+    )
+    await server.start()
+
+    # health_retry_delays=() disables health probes; still allow one retry
+    client = LightningStoreClient(
+        server.endpoint,
+        retry_delays=(0.01,),
+        health_retry_delays=(),
+    )
+
+    try:
+        original_post = aiohttp.ClientSession.post
+        original_get = aiohttp.ClientSession.get
+
+        calls = {"post": 0, "health": 0}
+
+        def flaky_post(self: aiohttp.ClientSession, url: Any, *args: Any, **kwargs: Any) -> MockResponse:
+            if str(url).endswith("/rollouts"):
+                calls["post"] += 1
+                # First call fails, second succeeds
+                if calls["post"] == 1:
+                    raise ServerDisconnectedError("synthetic disconnect for empty health_retry_delays")
+            return MockResponse(original_post(self, url, *args, **kwargs))
+
+        def counting_health_get(self: aiohttp.ClientSession, url: Any, *args: Any, **kwargs: Any) -> MockResponse:
+            if str(url).endswith("/health"):
+                calls["health"] += 1
+            return MockResponse(original_get(self, url, *args, **kwargs))
+
+        monkeypatch.setattr(aiohttp.ClientSession, "post", flaky_post, raising=True)
+        monkeypatch.setattr(aiohttp.ClientSession, "get", counting_health_get, raising=True)
+
+        # Should succeed after one retry, without ever calling /health
+        attempted = await client.start_rollout(input={"origin": "empty-health-delays"})
+        assert attempted.rollout_id
+
+        # One failure + one success
+        assert calls["post"] == 2
+        # No health checks should have been performed
+        assert calls["health"] == 0
+    finally:
+        await client.close()
+        await server.stop()

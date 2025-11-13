@@ -162,16 +162,17 @@ def train(
         print(f"EXPERIMENT_NAME={EXPERIMENT_NAME}")
 
         # Keep it tiny/light without adding new knobs
-        config["actor_rollout_ref"]["rollout"]["gpu_memory_utilization"] = 0.6
+        config["actor_rollout_ref"]["rollout"]["gpu_memory_utilization"] = 0.8
         config["trainer"]["total_epochs"] = 1
-        config["trainer"]["total_training_steps"] = 6
-        config["trainer"]["test_freq"] = 6
+        config["trainer"]["total_training_steps"] = 20
+        config["trainer"]["test_freq"] = 20
         config["trainer"]["experiment_name"] = EXPERIMENT_NAME
         config["trainer"]["project_name"] = PROJECT_NAME
         config["trainer"].pop("save_freq", None)
 
         if ci_fast:
             # Extra fast CI toggle for testing purposes.
+            config["actor_rollout_ref"]["rollout"]["gpu_memory_utilization"] = 0.6
             config["trainer"]["total_training_steps"] = 1
             config["trainer"]["test_freq"] = 1
 

@@ -36,9 +36,10 @@ class LightningStoreThreaded(LightningStore):
         self.store = store
         self._lock = threading.Lock()
 
+    @property
     def capabilities(self) -> LightningStoreCapabilities:
         """Return the capabilities of the store."""
-        capabilities = self.store.capabilities()
+        capabilities = self.store.capabilities
         return {
             **capabilities,
             "async_safe": True,

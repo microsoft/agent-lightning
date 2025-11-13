@@ -286,6 +286,7 @@ class InMemoryLightningStore(LightningStore):
 
         Worker.model_validate(worker.model_dump())
 
+    @property
     def capabilities(self) -> LightningStoreCapabilities:
         """Return the capabilities of the store."""
         return LightningStoreCapabilities(

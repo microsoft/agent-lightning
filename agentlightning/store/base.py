@@ -86,6 +86,7 @@ class LightningStore:
     Unless stated otherwise, missing identifiers should result in a `ValueError`.
     """
 
+    @property
     def capabilities(self) -> LightningStoreCapabilities:
         """Return the capabilities of the store."""
         return LightningStoreCapabilities(
