@@ -117,6 +117,7 @@ async def test_basic_integration(qwen25_model: RemoteOpenAIServer):
         assert span.sequence_id == 1, f"Span {span.name} has incorrect sequence_id"
 
         # Verify start time and end time
+        # TODO: Remove this when this PR is merged: https://github.com/BerriAI/litellm/pull/16558
         print(f">>> Span: {span.name}")
         print(f">>> Start time: {span.start_time}")
         print(f">>> End time: {span.end_time}")
