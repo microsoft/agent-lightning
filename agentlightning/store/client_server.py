@@ -1015,8 +1015,12 @@ class LightningStoreClient(LightningStore):
         retry_delays:
             Backoff schedule (seconds) used when the initial request fails for a
             non-application reason. Each entry is a retry attempt.
+            Setting to an empty sequence to disable retries.
         health_retry_delays:
             Delays between /health probes while waiting for the server to come back.
+            Setting to an empty sequence to disable health checks.
+        request_timeout: Timeout (seconds) for each request.
+        connection_timeout: Timeout (seconds) for establishing connection.
     """
 
     def __init__(
@@ -1025,6 +1029,8 @@ class LightningStoreClient(LightningStore):
         *,
         retry_delays: Sequence[float] = (1.0, 2.0, 5.0),
         health_retry_delays: Sequence[float] = (0.1, 0.2, 0.5),
+        request_timeout: float = 30.0,
+        connection_timeout: float = 5.0,
     ):
         self.server_address = server_address.rstrip("/") + API_V1_AGL_PREFIX
         self._sessions: Dict[int, aiohttp.ClientSession] = {}  # id(loop) -> ClientSession
@@ -1033,6 +1039,10 @@ class LightningStoreClient(LightningStore):
         # retry config
         self._retry_delays = tuple(float(d) for d in retry_delays)
         self._health_retry_delays = tuple(float(d) for d in health_retry_delays)
+
+        # Timeouts
+        self._request_timeout = request_timeout
+        self._connection_timeout = connection_timeout
 
         # Store whether the dequeue was successful in history
         self._dequeue_was_successful: bool = False
@@ -1095,7 +1105,12 @@ class LightningStoreClient(LightningStore):
         with self._lock:
             sess = self._sessions.get(key)
             if sess is None or sess.closed:
-                timeout = aiohttp.ClientTimeout(total=30.0, connect=5.0, sock_connect=5.0, sock_read=30.0)
+                timeout = aiohttp.ClientTimeout(
+                    total=self._request_timeout,
+                    connect=self._connection_timeout,
+                    sock_connect=self._connection_timeout,
+                    sock_read=self._request_timeout,
+                )
                 sess = aiohttp.ClientSession(timeout=timeout)
                 self._sessions[key] = sess
         return sess
@@ -1105,6 +1120,10 @@ class LightningStoreClient(LightningStore):
         Probe the server's /health until it responds 200 or retries are exhausted.
         Returns True if healthy, False otherwise.
         """
+        if not self._health_retry_delays:
+            client_logger.info("No health retry delays configured; skipping health checks.")
+            return True
+
         client_logger.info(f"Waiting for server to be healthy at {self.server_address}/health")
         for delay in [*self._health_retry_delays, 0.0]:
             try:
