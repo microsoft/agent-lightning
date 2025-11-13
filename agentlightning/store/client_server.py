@@ -1067,6 +1067,8 @@ class LightningStoreClient(LightningStore):
             "server_address": self.server_address,
             "_retry_delays": self._retry_delays,
             "_health_retry_delays": self._health_retry_delays,
+            "_request_timeout": self._request_timeout,
+            "_connection_timeout": self._connection_timeout,
         }
 
     def __setstate__(self, state: Dict[str, Any]):
@@ -1080,6 +1082,8 @@ class LightningStoreClient(LightningStore):
         self._lock = threading.Lock()
         self._retry_delays = state["_retry_delays"]
         self._health_retry_delays = state["_health_retry_delays"]
+        self._request_timeout = state["_request_timeout"]
+        self._connection_timeout = state["connection_timeout"]
         self._dequeue_was_successful = False
         self._dequeue_first_unsuccessful = True
 

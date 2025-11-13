@@ -5,9 +5,12 @@ from __future__ import annotations
 import logging
 import os
 import platform
+import sys
 import warnings
 from logging.config import dictConfig
 from typing import Any, Dict, Optional
+
+from rich.console import Console
 
 __all__ = ["setup", "configure_logger", "setup_module"]
 
@@ -327,6 +330,11 @@ def setup_module(
                 "show_time": True,
                 "show_path": True,
             }
+
+            if not _has_width():
+                # e.g., in a CI environment.
+                rich_handler_config["console"] = Console(width=200)
+
         root_cfg["handlers"]["console"] = {
             "class": "rich.logging.RichHandler",
             "level": level,
@@ -355,3 +363,8 @@ def setup_module(
     dictConfig(root_cfg)
 
     return logging.getLogger(name)
+
+
+def _has_width() -> bool:
+    """Automatically determine whether the terminal has a width."""
+    return sys.stdout.isatty()
