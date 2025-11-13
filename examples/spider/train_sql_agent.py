@@ -134,7 +134,6 @@ def config_train_qwen() -> Dict[str, Any]:
     """A configuration for training with Qwen-2.5B."""
 
     config = deepcopy(RL_TRAINING_CONFIG)
-
     return config
 
 

@@ -331,14 +331,14 @@ For the LLaMA profile, export an `HF_TOKEN` before running so VERL can download 
 
     Before installing dependencies, configure the following pip mirrors:
 
-    ```
+    ```bash
     pip config set global.index-url http://repo.huaweicloud.com/repository/pypi/simple
     pip config set global.extra-index-url "https://download.pytorch.org/whl/cpu/ https://mirrors.huaweicloud.com/ascend/repos/pypi"
     ```
 
     Then install vLLM, vLLM-Ascend and VERL:
 
-    ```
+    ```bash
     pip install vllm==0.10.0 --trusted-host repo.huaweicloud.com
     pip install vllm-Ascend==0.10.0rc1 --trusted-host repo.huaweicloud.com
     pip install verl==0.5.0
@@ -353,13 +353,11 @@ For the LLaMA profile, export an `HF_TOKEN` before running so VERL can download 
 
     See the following reference for more details: [https://github.com/vllm-project/vllm-ascend/issues/1776](https://github.com/vllm-project/vllm-ascend/issues/1776).
 
-#### Launch Training
+    After the above dependencies have been installed, from [`examples/spider`]({{ src("examples/spider") }}) run the following script command:
 
-After the above dependencies have been installed，from [`examples/spider`]({{ src("examples/spider") }})Run the following script command:
-
-```
-python train_sql_agent.py npu
-```
+    ```bash
+    python train_sql_agent.py npu
+    ```
 
 ### Debugging the Agent without VERL
 

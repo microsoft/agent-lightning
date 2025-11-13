@@ -36,6 +36,7 @@ Train a SQL agent using the Qwen2.5-Coder-1.5B-Instruct model with the following
 ```bash
 python train_sql_agent.py qwen
 ```
+
 If you want to use an NPU for training, please refer to the **Launch Training with NPUS** section in [How to Train a SQL Agent](../../docs/how-to/train-sql-agent.md).
 
 ### Debugging
