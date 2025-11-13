@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import platform
+import warnings
 from logging.config import dictConfig
 from typing import Any, Dict, Optional
 
@@ -18,6 +19,10 @@ def configure_logger(level: int = logging.INFO, name: str = "agentlightning") ->
     `StreamHandler` that writes to standard output. The resulting logger does
     not propagate to the root logger, preventing duplicate log emission when
     applications compose multiple logging configurations.
+
+    !!! danger
+
+        This function is deprecated in favor of `[agentlightning.setup_logging][agentlightning.setup_logging]`.
 
     Args:
         level: Logging level applied both to the logger and the installed
@@ -36,6 +41,7 @@ def configure_logger(level: int = logging.INFO, name: str = "agentlightning") ->
         logger.info("agent-lightning is ready!")
         ```
     """
+    warnings.warn("This function is deprecated in favor of `setup_logging`.", DeprecationWarning, stacklevel=2)
 
     return setup_module(level=level, name=name, console=True, color=True, propagate=False)
 
