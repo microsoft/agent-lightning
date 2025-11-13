@@ -1460,6 +1460,48 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#logging" class="md-nav__link">
+    <span class="md-ellipsis">
+      Logging
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Logging">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#agentlightning.configure_logger" class="md-nav__link">
+    <span class="md-ellipsis">
+      <code class="doc-symbol doc-symbol-toc doc-symbol-function"></code>&nbsp;configure_logger
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#agentlightning.setup_module_logging" class="md-nav__link">
+    <span class="md-ellipsis">
+      <code class="doc-symbol doc-symbol-toc doc-symbol-function"></code>&nbsp;setup_module_logging
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#agentlightning.setup_logging" class="md-nav__link">
+    <span class="md-ellipsis">
+      <code class="doc-symbol doc-symbol-toc doc-symbol-function"></code>&nbsp;setup_logging
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2025,6 +2067,48 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#logging" class="md-nav__link">
+    <span class="md-ellipsis">
+      Logging
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Logging">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#agentlightning.configure_logger" class="md-nav__link">
+    <span class="md-ellipsis">
+      <code class="doc-symbol doc-symbol-toc doc-symbol-function"></code>&nbsp;configure_logger
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#agentlightning.setup_module_logging" class="md-nav__link">
+    <span class="md-ellipsis">
+      <code class="doc-symbol doc-symbol-toc doc-symbol-function"></code>&nbsp;setup_module_logging
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#agentlightning.setup_logging" class="md-nav__link">
+    <span class="md-ellipsis">
+      <code class="doc-symbol doc-symbol-toc doc-symbol-function"></code>&nbsp;setup_logging
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2083,7 +2167,7 @@
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="October 15, 2025 05:37:44 UTC"><span class="timeago" datetime="2025-10-15T05:37:44+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="October 15, 2025 05:37:44 UTC">2025-10-15</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="November 13, 2025 14:48:52 UTC"><span class="timeago" datetime="2025-11-13T14:48:52+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="November 13, 2025 14:48:52 UTC">2025-11-13</span>
   </span>
 
     
@@ -3565,6 +3649,293 @@ wait: Block until the event is signaled or an optional timeout elapses.
           </div>
         </li>
     </ul>
+
+
+    </div>
+
+</div><h2 id="logging">Logging<a class="headerlink" href="#logging" title="Permanent link">&para;</a></h2>
+
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="agentlightning.configure_logger" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-function"></code>            <code class="highlight language-python"><span class="n">agentlightning</span><span class="o">.</span><span class="n">configure_logger</span><span class="p">(</span><span class="n">level</span><span class="o">=</span><span class="n">logging</span><span class="o">.</span><span class="n">INFO</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s1">&#39;agentlightning&#39;</span><span class="p">)</span></code>
+
+<a href="#agentlightning.configure_logger" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents first">
+
+        <p>Create or reset a namespaced logger with a consistent console format.</p>
+<p>This helper clears any previously attached handlers before binding a single
+<code>StreamHandler</code> that writes to standard output. The resulting logger does
+not propagate to the root logger, preventing duplicate log emission when
+applications compose multiple logging configurations.</p>
+<div class="admonition danger">
+<p class="admonition-title">Danger</p>
+<p>This function is deprecated in favor of <a class="autorefs autorefs-internal" title="            agentlightning.setup_logging(level='INFO', *, console=True, color=True, propagate=False, disable_existing_loggers=False, capture_warnings=False, submodule_levels=None, extra_handlers=None, formatter=None, apply_to=None, files=None)" href="#agentlightning.setup_logging"><code>setup_logging</code></a>.</p>
+</div>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <ul>
+        <li class="doc-section-item field-body">
+            <b><code>level</code></b>
+              (<code><span title="int">int</span></code>, default:
+                  <code><span title="logging.INFO">INFO</span></code>
+)
+          –
+          <div class="doc-md-description">
+            <p>Logging level applied both to the logger and the installed
+handler. Defaults to <code>logging.INFO</code>.</p>
+          </div>
+        </li>
+        <li class="doc-section-item field-body">
+            <b><code>name</code></b>
+              (<code><span title="str">str</span></code>, default:
+                  <code>&#39;agentlightning&#39;</code>
+)
+          –
+          <div class="doc-md-description">
+            <p>Dotted path for the logger instance. Defaults to
+<code>"agentlightning"</code>.</p>
+          </div>
+        </li>
+    </ul>
+
+
+<p><span class="doc-section-title">Returns:</span></p>
+    <ul>
+        <li class="doc-section-item field-body">
+              <code><span title="logging.Logger">Logger</span></code>
+          –
+          <div class="doc-md-description">
+            <p>Configured logger instance ready for immediate use.</p>
+          </div>
+        </li>
+    </ul>
+
+
+<p><span class="doc-section-title">Examples:</span></p>
+    <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">agentlightning</span><span class="w"> </span><span class="kn">import</span> <span class="n">configure_logger</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="n">logger</span> <span class="o">=</span> <span class="n">configure_logger</span><span class="p">(</span><span class="n">level</span><span class="o">=</span><span class="n">logging</span><span class="o">.</span><span class="n">INFO</span><span class="p">)</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;agent-lightning is ready!&quot;</span><span class="p">)</span>
+</code></pre></div>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="agentlightning.setup_module_logging" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-function"></code>            <code class="highlight language-python"><span class="n">agentlightning</span><span class="o">.</span><span class="n">setup_module_logging</span><span class="p">(</span><span class="n">level</span><span class="o">=</span><span class="s1">&#39;INFO&#39;</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s1">&#39;agentlightning&#39;</span><span class="p">,</span> <span class="n">console</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">propagate</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">disable_existing_loggers</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span></code>
+
+<a href="#agentlightning.setup_module_logging" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents first">
+
+        <p>Initializes and returns the base logger for <code>agentlightning</code>.</p>
+<p>This function constructs and applies a <code>dictConfig</code> configuration for the
+logger hierarchy rooted at <code>name</code>. It supports either rich console
+formatting (via <code>RichHandler</code>) or plain text formatting, based on the
+<code>color</code> argument.</p>
+<p>Unlike <a class="autorefs autorefs-internal" title="            agentlightning.setup_logging(level='INFO', *, console=True, color=True, propagate=False, disable_existing_loggers=False, capture_warnings=False, submodule_levels=None, extra_handlers=None, formatter=None, apply_to=None, files=None)" href="#agentlightning.setup_logging"><code>setup_logging</code></a>, this function configures only a single logger namespace
+and does not attach extra handlers or submodule levels. It is primarily used
+internally by <a class="autorefs autorefs-internal" title="            agentlightning.setup_logging(level='INFO', *, console=True, color=True, propagate=False, disable_existing_loggers=False, capture_warnings=False, submodule_levels=None, extra_handlers=None, formatter=None, apply_to=None, files=None)" href="#agentlightning.setup_logging"><code>setup_logging</code></a> but is also suitable for direct integration in
+custom logging workflows.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="agentlightning.setup_logging" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-function"></code>            <code class="highlight language-python"><span class="n">agentlightning</span><span class="o">.</span><span class="n">setup_logging</span><span class="p">(</span><span class="n">level</span><span class="o">=</span><span class="s1">&#39;INFO&#39;</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">console</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">propagate</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">disable_existing_loggers</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">capture_warnings</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">submodule_levels</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">extra_handlers</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">formatter</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">apply_to</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">files</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+
+<a href="#agentlightning.setup_logging" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents first">
+
+        <p>Configures logging for the <code>agentlightning</code> logger hierarchy.</p>
+<p>This function provides a one-stop setup utility for configuring the
+<code>agentlightning</code> root logger and optionally its submodules or external
+loggers. It supports console logging, colored rich output, per-submodule
+log levels, and optional handler/formatter injection.</p>
+<p>The setup is intentionally isolated: it does not modify the global root
+logger or loggers belonging to other libraries unless explicitly directed
+via <code>apply_to</code>.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <ul>
+        <li class="doc-section-item field-body">
+            <b><code>level</code></b>
+              (<code><span title="int">int</span> | <span title="str">str</span></code>, default:
+                  <code>&#39;INFO&#39;</code>
+)
+          –
+          <div class="doc-md-description">
+            <p>Logging level for the base <code>agentlightning</code> logger. Accepts either
+an integer (e.g., <code>logging.DEBUG</code>) or a string level name
+(e.g., <code>"INFO"</code>). Defaults to <code>"INFO"</code>.</p>
+          </div>
+        </li>
+        <li class="doc-section-item field-body">
+            <b><code>console</code></b>
+              (<code><span title="bool">bool</span></code>, default:
+                  <code>True</code>
+)
+          –
+          <div class="doc-md-description">
+            <p>Whether to attach a console handler to the logger. Defaults to
+<code>True</code>.</p>
+          </div>
+        </li>
+        <li class="doc-section-item field-body">
+            <b><code>color</code></b>
+              (<code><span title="bool">bool</span> | <span title="typing.Dict">Dict</span>[<span title="str">str</span>, <span title="typing.Any">Any</span>]</code>, default:
+                  <code>True</code>
+)
+          –
+          <div class="doc-md-description">
+            <p>Enables rich-formatted output using <code>RichHandler</code> when <code>True</code>
+or a configuration dict. If <code>False</code>, a plain text formatter is
+used instead. Defaults to <code>True</code>.</p>
+          </div>
+        </li>
+        <li class="doc-section-item field-body">
+            <b><code>propagate</code></b>
+              (<code><span title="bool">bool</span></code>, default:
+                  <code>False</code>
+)
+          –
+          <div class="doc-md-description">
+            <p>Whether <code>agentlightning</code> logs should propagate to ancestor
+loggers. Defaults to <code>False</code>.</p>
+          </div>
+        </li>
+        <li class="doc-section-item field-body">
+            <b><code>disable_existing_loggers</code></b>
+              (<code><span title="bool">bool</span></code>, default:
+                  <code>False</code>
+)
+          –
+          <div class="doc-md-description">
+            <p>Passed to <code>logging.config.dictConfig</code>. If <code>True</code>, disables all
+existing configured loggers before applying this configuration.
+Defaults to <code>False</code>.</p>
+          </div>
+        </li>
+        <li class="doc-section-item field-body">
+            <b><code>capture_warnings</code></b>
+              (<code><span title="bool">bool</span></code>, default:
+                  <code>False</code>
+)
+          –
+          <div class="doc-md-description">
+            <p>If <code>True</code>, redirects Python <code>warnings</code> emitted via the <code>warnings</code>
+module into the logging system. Defaults to <code>False</code>.</p>
+          </div>
+        </li>
+        <li class="doc-section-item field-body">
+            <b><code>submodule_levels</code></b>
+              (<code><span title="typing.Optional">Optional</span>[<span title="dict">dict</span>[<span title="str">str</span>, <span title="int">int</span> | <span title="str">str</span>]]</code>, default:
+                  <code>None</code>
+)
+          –
+          <div class="doc-md-description">
+            <p>Mapping of submodule logger names to logging levels. If a specified
+submodule level is more verbose than the base level, a warning is emitted.</p>
+          </div>
+        </li>
+        <li class="doc-section-item field-body">
+            <b><code>extra_handlers</code></b>
+              (<code><span title="typing.Optional">Optional</span>[<span title="list">list</span>[<span title="logging.Handler">Handler</span>]]</code>, default:
+                  <code>None</code>
+)
+          –
+          <div class="doc-md-description">
+            <p>A list of user-provided handlers to attach to the <code>agentlightning</code> logger.
+Handlers are added idempotently; duplicates are not reattached.</p>
+          </div>
+        </li>
+        <li class="doc-section-item field-body">
+            <b><code>formatter</code></b>
+              (<code><span title="typing.Optional">Optional</span>[<span title="logging.Formatter">Formatter</span>]</code>, default:
+                  <code>None</code>
+)
+          –
+          <div class="doc-md-description">
+            <p>A formatter to apply to any handler under <code>agentlightning</code> that does not
+already have one assigned. Useful for customizing output without overwriting
+formatters on custom handlers.</p>
+          </div>
+        </li>
+        <li class="doc-section-item field-body">
+            <b><code>apply_to</code></b>
+              (<code><span title="typing.Optional">Optional</span>[<span title="list">list</span>[<span title="str">str</span>]]</code>, default:
+                  <code>None</code>
+)
+          –
+          <div class="doc-md-description">
+            <p>A list of additional logger names to configure identically to
+<code>agentlightning</code> base logger. Their handlers are replaced with copies of the base
+handlers, and propagation is disabled to avoid duplicate log emission.</p>
+          </div>
+        </li>
+        <li class="doc-section-item field-body">
+            <b><code>files</code></b>
+              (<code><span title="typing.Optional">Optional</span>[<span title="str">str</span> | <span title="dict">dict</span>[<span title="str">str</span>, <span title="str">str</span>]]</code>, default:
+                  <code>None</code>
+)
+          –
+          <div class="doc-md-description">
+            <p>If a string, attach a FileHandler to the base <code>agentlightning</code> logger.
+If a dict, for each <code>(logger_name, filename)</code> pair, attach a FileHandler
+directly to that logger.
+Each file handler should use the logger's effective level at creation.</p>
+          </div>
+        </li>
+    </ul>
+
+
+<details class="notes" open>
+  <summary>Notes</summary>
+  <ul>
+<li>On Windows, this function forces UTF-8 mode in the console to prevent
+  issues with rich output or special characters.</li>
+<li>Submodule loggers can generate records below the handler's emission
+  threshold. Whether such records appear depends on both the logger's
+  level and the handler's level.</li>
+<li><code>apply_to</code> loggers inherit the same handlers but do not propagate
+  upward, yielding isolated, consistent behavior.</li>
+</ul>
+</details>
+
+<p><span class="doc-section-title">Examples:</span></p>
+    <p>Basic setup:</p>
+    <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="gp">&gt;&gt;&gt; </span><span class="n">setup</span><span class="p">()</span>
+</code></pre></div>
+    <p>Enabling debug mode with no color:</p>
+    <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="gp">&gt;&gt;&gt; </span><span class="n">setup</span><span class="p">(</span><span class="n">level</span><span class="o">=</span><span class="s2">&quot;DEBUG&quot;</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+</code></pre></div>
+    <p>Overriding specific submodule levels:</p>
+    <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="gp">&gt;&gt;&gt; </span><span class="n">setup</span><span class="p">(</span><span class="n">submodule_levels</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;agentlightning.io&quot;</span><span class="p">:</span> <span class="s2">&quot;DEBUG&quot;</span><span class="p">})</span>
+</code></pre></div>
+    <p>Attaching an additional file handler:</p>
+    <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="gp">&gt;&gt;&gt; </span><span class="n">fh</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">FileHandler</span><span class="p">(</span><span class="s2">&quot;app.log&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="gp">&gt;&gt;&gt; </span><span class="n">setup</span><span class="p">(</span><span class="n">extra_handlers</span><span class="o">=</span><span class="p">[</span><span class="n">fh</span><span class="p">])</span>
+</code></pre></div>
 
 
     </div>
