@@ -7,6 +7,7 @@ requires-python = ">=3.10"
 dependencies = [
   "graphviz",
   "psutil",
+  "gpustat",
   "setproctitle",
   "flask",
   "agentops>=0.4.13",
@@ -21,6 +22,9 @@ dependencies = [
   "pydantic>=2.11",
   "openai",
   "rich",
+  "portpicker",
+  "gunicorn",
+  "uvicorn_worker",
 ]
 
 [project.optional-dependencies]
@@ -157,6 +161,9 @@ autogen = [
 ]
 openai-agents = [
   "openai-agents",
+  "openai<2.7.0",
+  # Compatibility issues with the latest version of OpenAI, temporarily fixed version
+  # Issue: https://github.com/openai/openai-agents-python/issues/2038
   "mcp",
   # Required by AOAI FT example.
   "pandas",
@@ -254,7 +261,15 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["agentlightning"]
-include = ["agentlightning/**/*.yaml", "agentlightning/**/*.yml", "agentlightning/**/*.poml"]
+include = [
+  "agentlightning/**/*.yaml",
+  "agentlightning/**/*.yml",
+  "agentlightning/**/*.poml",
+  "agentlightning/**/*.html",
+  "agentlightning/**/*.js",
+  "agentlightning/**/*.css",
+  "agentlightning/**/*.svg",
+]
 
 [tool.hatch.build.targets.sdist]
 exclude = [
@@ -262,6 +277,7 @@ exclude = [
   "tests/**",
   "docs/**",
   "scripts/**",
+  "dashboard/**",
 ]
 
 [tool.pytest.ini_options]

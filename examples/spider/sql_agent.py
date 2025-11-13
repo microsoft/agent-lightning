@@ -256,7 +256,7 @@ class SQLAgent:
 
         return result  # type: ignore
 
-    def truncate_execuion(self, execution: str) -> str:
+    def truncate_execution(self, execution: str) -> str:
         """Truncate the execution result to a reasonable length."""
         if len(execution) > self.execution_truncate:
             return execution[: self.execution_truncate] + "\n... (truncated)"
@@ -306,7 +306,7 @@ class SQLAgent:
                 "dialect": self.db.dialect,
                 "input": state["question"],
                 "query": state["query"],
-                "execution": self.truncate_execuion(state["execution"]),
+                "execution": self.truncate_execution(state["execution"]),
                 "table_info": self.get_table_info(),
             }
         )
@@ -326,7 +326,7 @@ class SQLAgent:
                 "dialect": self.db.dialect,
                 "input": state["question"],
                 "query": state["query"],
-                "execution": self.truncate_execuion(state["execution"]),
+                "execution": self.truncate_execution(state["execution"]),
                 "feedback": state["feedback"],
                 "table_info": self.get_table_info(),
             }

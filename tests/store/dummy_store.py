@@ -16,6 +16,7 @@ from agentlightning.types import (
     RolloutStatus,
     Span,
     TaskInput,
+    Worker,
 )
 
 
@@ -47,8 +48,8 @@ class DummyLightningStore(LightningStore):
         self.calls.append(("enqueue_rollout", (input, mode, resources_id, config, metadata), {}))
         return self.return_values["enqueue_rollout"]
 
-    async def dequeue_rollout(self) -> Optional[AttemptedRollout]:
-        self.calls.append(("dequeue_rollout", (), {}))
+    async def dequeue_rollout(self, worker_id: Optional[str] = None) -> Optional[AttemptedRollout]:
+        self.calls.append(("dequeue_rollout", (worker_id,), {}))
         return self.return_values["dequeue_rollout"]
 
     async def start_attempt(self, rollout_id: str) -> AttemptedRollout:
@@ -156,6 +157,31 @@ class DummyLightningStore(LightningStore):
         )
         return self.return_values["update_attempt"]
 
+    async def query_workers(self) -> List[Worker]:
+        self.calls.append(("query_workers", (), {}))
+        return self.return_values["query_workers"]
+
+    async def get_worker_by_id(self, worker_id: str) -> Optional[Worker]:
+        self.calls.append(("get_worker_by_id", (worker_id,), {}))
+        return self.return_values["get_worker_by_id"]
+
+    async def update_worker(
+        self,
+        worker_id: str,
+        heartbeat_stats: Dict[str, Any] | Any = UNSET,
+    ) -> Worker:
+        self.calls.append(
+            (
+                "update_worker",
+                (
+                    worker_id,
+                    heartbeat_stats,
+                ),
+                {},
+            )
+        )
+        return self.return_values["update_worker"]
+
 
 def minimal_dummy_store() -> DummyLightningStore:
     # Provide minimal return values
@@ -180,5 +206,8 @@ def minimal_dummy_store() -> DummyLightningStore:
             "query_spans": [],
             "update_rollout": None,
             "update_attempt": None,
+            "query_workers": [],
+            "get_worker_by_id": None,
+            "update_worker": Worker(worker_id="worker-0"),
         }
     )

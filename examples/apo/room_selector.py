@@ -345,7 +345,7 @@ async def debug_room_selector(limit: int = 1):
         for task in tasks:
             console.print("[bold green]=== Task ===[/bold green]", task, sep="\n")
             # Run the agent
-            rollout = await runner.step(tasks[0], resources={"main_prompt": prompt_template})
+            rollout = await runner.step(task, resources={"main_prompt": prompt_template})
             # Get the spans and convert them to messages
             # Useful for debugging and analysis
             spans = await store.query_spans(rollout.rollout_id)
