@@ -192,7 +192,7 @@ class LightningSpanExporter(SpanExporter):
     def __init__(self, _store: Optional[LightningStore] = None):
         self._store: Optional[LightningStore] = _store  # this is only for testing purposes
         self._buffer: List[ReadableSpan] = []
-        self._lock: Optional[threading.RLock] = None
+        self._lock: Optional[threading.Lock] = None
         self._loop_lock_pid: Optional[int] = None
 
         # Single dedicated event loop running in a daemon thread.
@@ -214,15 +214,15 @@ class LightningSpanExporter(SpanExporter):
             self._loop_thread.start()
         return self._loop
 
-    def _ensure_lock(self) -> threading.RLock:
+    def _ensure_lock(self) -> threading.Lock:
         """Lazily initialize the lock on first use.
 
         Returns:
-            threading.RLock: The initialized lock.
+            threading.Lock: The initialized lock.
         """
         self._clear_loop_and_lock()
         if self._lock is None:
-            self._lock = threading.RLock()
+            self._lock = threading.Lock()
         return self._lock
 
     def _clear_loop_and_lock(self) -> None:
@@ -458,6 +458,7 @@ class LightningOpenTelemetry(OpenTelemetry):
 
     def __init__(self):
         config = OpenTelemetryConfig(exporter=LightningSpanExporter())
+        # config = OpenTelemetryConfig(exporter="otlp_http", endpoint=get_active_llm_proxy().get_store().otlp_traces_endpoint())
 
         # Check for tracer initialization
         if _check_tracer_provider():
