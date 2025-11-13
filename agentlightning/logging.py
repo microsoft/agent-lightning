@@ -9,10 +9,10 @@ import warnings
 from logging.config import dictConfig
 from typing import Any, Dict, Optional
 
-__all__ = ["setup_logging"]
+__all__ = ["setup", "configure_logger", "setup_module"]
 
 
-def setup_logging(level: int = logging.INFO, name: str = "agentlightning") -> logging.Logger:
+def configure_logger(level: int = logging.INFO, name: str = "agentlightning") -> logging.Logger:
     """Create or reset a namespaced logger with a consistent console format.
 
     This helper clears any previously attached handlers before binding a single
@@ -22,7 +22,7 @@ def setup_logging(level: int = logging.INFO, name: str = "agentlightning") -> lo
 
     !!! danger
 
-        This function is deprecated in favor of `[agentlightning.setup_logging][agentlightning.setup_logging]`.
+        This function is deprecated in favor of [`setup_logging`][agentlightning.setup_logging].
 
     Args:
         level: Logging level applied both to the logger and the installed
@@ -35,9 +35,9 @@ def setup_logging(level: int = logging.INFO, name: str = "agentlightning") -> lo
 
     Examples:
         ```python
-        from agentlightning import setup_logging
+        from agentlightning import configure_logger
 
-        logger = setup_logging(level=logging.INFO)
+        logger = configure_logger(level=logging.INFO)
         logger.info("agent-lightning is ready!")
         ```
     """
@@ -296,9 +296,9 @@ def setup_module(
     formatting (via `RichHandler`) or plain text formatting, based on the
     `color` argument.
 
-    Unlike `setup()`, this function configures only a single logger namespace
+    Unlike [`setup_logging`][agentlightning.setup_logging], this function configures only a single logger namespace
     and does not attach extra handlers or submodule levels. It is primarily used
-    internally by `setup()` but is also suitable for direct integration in
+    internally by [`setup_logging`][agentlightning.setup_logging] but is also suitable for direct integration in
     custom logging workflows.
     """
     root_cfg: Dict[str, Any] = {
@@ -317,7 +317,6 @@ def setup_module(
 
     # Choose formatter / handler definition
     if color is not False:
-        fmt_name = "rich"
         if isinstance(color, dict):
             rich_handler_config = color
         else:
