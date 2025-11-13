@@ -8,7 +8,7 @@ from typing import Tuple, cast
 from openai import AsyncOpenAI
 from room_selector import RoomSelectionTask, load_room_tasks, prompt_template_baseline, room_selector
 
-from agentlightning import Trainer, configure_logger
+from agentlightning import Trainer, setup_logging
 from agentlightning.adapter import TraceToMessages
 from agentlightning.algorithm.apo import APO
 from agentlightning.types import Dataset
@@ -33,7 +33,7 @@ def setup_apo_logger(file_path: str = "apo.log") -> None:
 
 
 def main() -> None:
-    configure_logger()
+    setup_logging()
     setup_apo_logger()
 
     openai_client = AsyncOpenAI()

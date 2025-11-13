@@ -79,24 +79,43 @@ vllm serve Qwen/Qwen2.5-0.5B-Instruct --port 8080
 Then start the LLM proxy via the following script:
 
 ```python
+import asyncio
+import aiohttp
 import agentlightning as agl
 
-llm_proxy = agl.LLMProxy(
-    port=8081,
-    model_list=[
-        {
-            "model_name": "Qwen/Qwen2.5-0.5B-Instruct",
-            "litellm_params": {
-                "model": "hosted_vllm/Qwen/Qwen2.5-0.5B-Instruct",
-                "api_base": "http://localhost:8080/v1",
-            },
-        }
-    ],
-    store=agl.InMemoryLightningStore(),
-)
+async def serve_llm_proxy():
+    store = agl.InMemoryLightningStore()
+    store_server = agl.LightningStoreServer(store, "127.0.0.1", 8081)
+    await store_server.start()
 
-llm_proxy.start()
-time.sleep(1000000)
+    llm_proxy = agl.LLMProxy(
+        port=8082,
+        model_list=[
+            {
+                "model_name": "Qwen/Qwen2.5-0.5B-Instruct",
+                "litellm_params": {
+                    "model": "hosted_vllm/Qwen/Qwen2.5-0.5B-Instruct",
+                    "api_base": "http://localhost:8080/v1",
+                },
+            }
+        ],
+        store=store_server,
+    )
+
+    await llm_proxy.start()
+    await asyncio.sleep(1000000)
+```
+
+Test the served LLM proxy with a client like:
+
+```python
+async def test_llm_proxy():
+    async with aiohttp.ClientSession() as session:
+        async with session.post("http://localhost:8082/v1/chat/completions", json={
+            "model": "Qwen/Qwen2.5-0.5B-Instruct",
+            "messages": [{"role": "user", "content": "Hello, world!"}],
+        }) as response:
+            print(await response.json())
 ```
 
 You can now use the LLM proxy by specifying environment variables:

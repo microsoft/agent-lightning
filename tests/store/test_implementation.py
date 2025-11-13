@@ -446,6 +446,49 @@ async def test_requeue_mechanism(store_fixture: LightningStore) -> None:
     assert latest_attempt.sequence_id == 2
 
 
+@pytest.mark.asyncio
+async def test_update_and_query_workers(store_fixture: LightningStore) -> None:
+    """Workers can be created, heartbeats recorded, and telemetry auto-updated."""
+    first = await store_fixture.update_worker("worker-1", heartbeat_stats={"cpu": 0.5})
+    assert first.worker_id == "worker-1"
+    assert first.heartbeat_stats == {"cpu": 0.5}
+    assert isinstance(first.last_heartbeat_time, float)
+    assert first.status == "unknown"
+
+    rollout = await store_fixture.enqueue_rollout(input={"task": "work"})
+    claimed = await store_fixture.dequeue_rollout(worker_id="worker-1")
+    assert claimed is not None
+    assert claimed.rollout_id == rollout.rollout_id
+
+    await store_fixture.update_attempt(claimed.rollout_id, claimed.attempt.attempt_id, worker_id="worker-1")
+    busy = await store_fixture.get_worker_by_id("worker-1")
+    assert busy is not None
+    assert busy.status == "busy"
+    assert busy.current_rollout_id == claimed.rollout_id
+    assert busy.current_attempt_id == claimed.attempt.attempt_id
+    assert isinstance(busy.last_dequeue_time, float)
+    assert isinstance(busy.last_busy_time, float)
+
+    heartbeat = await store_fixture.update_worker("worker-1")
+    assert heartbeat.last_heartbeat_time is not None
+    assert heartbeat.last_heartbeat_time >= first.last_heartbeat_time
+
+    await store_fixture.update_attempt(claimed.rollout_id, claimed.attempt.attempt_id, status="succeeded")
+    idle = await store_fixture.get_worker_by_id("worker-1")
+    assert idle is not None
+    assert idle.status == "idle"
+    assert idle.current_rollout_id is None
+    assert idle.current_attempt_id is None
+    assert isinstance(idle.last_idle_time, float)
+
+    workers = await store_fixture.query_workers()
+    assert any(w.worker_id == "worker-1" for w in workers)
+    assert await store_fixture.get_worker_by_id("missing") is None
+
+    with pytest.raises(TypeError):
+        await store_fixture.update_worker("worker-1", heartbeat_stats=None)  # type: ignore[arg-type]
+
+
 # Resource Management Tests
 
 
