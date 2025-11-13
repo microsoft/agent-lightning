@@ -74,7 +74,7 @@ jobs:
       - name: Upload dependencies artifact
         uses: actions/upload-artifact@v4
         with:
-          name: dependencies-calc-x-${{ matrix.python-version }}-${{ matrix.setup-script }}
+          name: dependencies-calc-x-performance-${{ matrix.python-version }}-${{ matrix.setup-script }}
           path: requirements-freeze.txt
           compression-level: 0
 
@@ -116,8 +116,9 @@ jobs:
       # Don't ask why. Don't touch this.
       - name: Calc-X training
         run: |
+          source .venv/bin/activate
           cd examples/calc_x
-          uv run --no-sync python train_calc_agent.py --val-file data/test_mini.parquet --ci
+          python train_calc_agent.py --val-file data/test_mini.parquet --ci
         shell: bash
         env:
           WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
@@ -175,6 +176,18 @@ jobs:
           uv sync --frozen --no-default-groups --extra verl \
             --group dev --group experiment --group agents --group torch-gpu-${{ matrix.setup-script }}
         if: matrix.setup-script != 'latest'
+      - name: Freeze dependencies
+        run: |
+          set -ex
+          uv pip freeze | tee requirements-freeze.txt
+          echo "UV_LOCKED=1" >> $GITHUB_ENV
+          echo "UV_NO_SYNC=1" >> $GITHUB_ENV
+      - name: Upload dependencies artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependencies-calc-x-variants-${{ matrix.python-version }}-${{ matrix.setup-script }}
+          path: requirements-freeze.txt
+          compression-level: 0
 
       - name: Launch LiteLLM Proxy
         run: |
