@@ -53,7 +53,7 @@ UNSET = _UnsetType()
 Unset = _UnsetType  # Alias for convenience
 
 
-class LightningStoreCapabilities(TypedDict):
+class LightningStoreCapabilities(TypedDict, total=False):
     """Capability of a LightningStore implementation."""
 
     thread_safe: bool
@@ -62,6 +62,8 @@ class LightningStoreCapabilities(TypedDict):
     """Whether the store is async-safe."""
     zero_copy: bool
     """Whether the store has only one copy across all threads/processes."""
+    otlp_traces: bool
+    """Whether the store supports OTLP/HTTP traces."""
 
 
 class LightningStore:
@@ -93,7 +95,24 @@ class LightningStore:
             thread_safe=False,
             async_safe=False,
             zero_copy=False,
+            otlp_traces=False,
         )
+
+    def otlp_traces_endpoint(self) -> str:
+        """Return the OTLP/HTTP traces endpoint of the store.
+
+        The traces can have rollout ID and attempt ID (and optionally sequence ID)
+        saved in the "resource" of the spans.
+        The store, if it supports OTLP, should be able to receive the traces and save them
+        via [`add_span`][agentlightning.LightningStore.add_span] or
+        [`add_otel_span`][agentlightning.LightningStore.add_otel_span].
+
+        The endpoint should be compatible with [OTLP HTTP protocol](https://opentelemetry.io/docs/specs/otlp/).
+        It's not necessarily compatible with OTLP gRPC protocol.
+
+        The returned endpoint will usually ends with `/v1/traces`.
+        """
+        raise NotImplementedError()
 
     async def start_rollout(
         self,

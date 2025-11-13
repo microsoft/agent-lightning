@@ -293,6 +293,7 @@ class InMemoryLightningStore(LightningStore):
             thread_safe=False,
             async_safe=True,
             zero_copy=False,
+            otlp_traces=False,
         )
 
     @_healthcheck_wrapper

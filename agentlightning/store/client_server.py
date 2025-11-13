@@ -323,13 +323,13 @@ class LightningStoreServer(LightningStore):
             )
 
         store_capabilities = self.store.capabilities
-        if not store_capabilities["async_safe"]:
+        if not store_capabilities.get("async_safe", False):
             raise ValueError("The store is not async-safe. Please use another store for the server.")
-        if self.launcher_args.launch_mode == "mp" and not store_capabilities["zero_copy"]:
+        if self.launcher_args.launch_mode == "mp" and not store_capabilities.get("zero_copy", False):
             raise ValueError(
                 "The store does not support zero-copy. Please use another store, or use asyncio or thread mode to launch the server."
             )
-        if self.launcher_args.launch_mode == "thread" and not store_capabilities["thread_safe"]:
+        if self.launcher_args.launch_mode == "thread" and not store_capabilities.get("thread_safe", False):
             server_logger.warning(
                 "The store is not thread-safe. Please be careful when using the store server and the underlying store in different threads."
             )
@@ -362,7 +362,12 @@ class LightningStoreServer(LightningStore):
             async_safe=True,
             thread_safe=True,
             zero_copy=True,
+            otlp_traces=True,
         )
+
+    def otlp_traces_endpoint(self) -> str:
+        """Return the OTLP/HTTP traces endpoint of the store."""
+        return f"{self.endpoint}/v1/traces"
 
     def __getstate__(self):
         """
@@ -773,8 +778,10 @@ class LightningStoreServer(LightningStore):
         # Reserved methods for OTEL traces
         # https://opentelemetry.io/docs/specs/otlp/#otlphttp-request
         @api.post("/traces")
-        async def otlp_traces():  # pyright: ignore[reportUnusedFunction]
-            return Response(status_code=501)
+        async def otlp_traces(request: Request):  # pyright: ignore[reportUnusedFunction]
+            raw = await request.body()
+            print(raw)
+            return Response(status_code=200)
 
         @api.post("/metrics")
         async def otlp_metrics():  # pyright: ignore[reportUnusedFunction]
@@ -1055,7 +1062,12 @@ class LightningStoreClient(LightningStore):
             thread_safe=True,
             async_safe=True,
             zero_copy=True,
+            otlp_traces=True,
         )
+
+    def otlp_traces_endpoint(self) -> str:
+        """Return the OTLP/HTTP traces endpoint of the store."""
+        return f"{self.server_address}/v1/traces"
 
     def __getstate__(self):
         """
