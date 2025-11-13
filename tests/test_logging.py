@@ -251,7 +251,7 @@ def _logging_worker_files_mapping(queue: Queue[Dict[str, Any]], base_dir: str) -
     queue.put(
         {
             "base_level": base_logger.level,
-            "ext_level": ext_logger.level,
+            "ext_level": ext_logger.getEffectiveLevel(),
             "base_first_count": len(base_fh_first),
             "ext_first_count": len(ext_fh_first),
             "base_second_count": len(base_fh_second),
@@ -389,11 +389,10 @@ def test_setup_files_mapping_spawn(tmp_path: Path) -> None:
     p.join(timeout=10)
     assert p.exitcode == 0
 
-    # Base logger level is the configured level from setup(...)
+    # Base logger level is DEBUG
     assert result["base_level"] == logging.DEBUG
 
-    # 'external' logger keeps its default WARNING level (setup(files=...)
-    # does not change logger levels, it only attaches handlers)
+    # External's effective level is WARNING (inherited from root)
     assert result["ext_level"] == logging.WARNING
 
     # First setup: one FileHandler per logger

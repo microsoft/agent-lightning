@@ -154,6 +154,7 @@ def setup(
             If a string, attach a FileHandler to the base `agentlightning` logger.
             If a dict, for each `(logger_name, filename)` pair, attach a FileHandler
             directly to that logger.
+            Each file handler should use the logger's effective level at creation.
 
     Notes:
         * On Windows, this function forces UTF-8 mode in the console to prevent
@@ -250,8 +251,8 @@ def setup(
             # Per-logger files
             for logger_name, filename in files.items():
                 lg = logging.getLogger(logger_name)
-                # Use the logger's effective level if set, otherwise fall back to base
-                effective_level = lg.level if lg.level != logging.NOTSET else base_level_value
+                # Use the logger's *effective* level at creation time
+                effective_level = lg.getEffectiveLevel()
                 _ensure_file_handler(
                     logger=lg,
                     filename=filename,
