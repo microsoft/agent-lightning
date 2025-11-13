@@ -8,8 +8,6 @@ import platform
 from logging.config import dictConfig
 from typing import Any, Dict, Optional
 
-from rich.logging import RichHandler
-
 __all__ = ["configure_logger"]
 
 
