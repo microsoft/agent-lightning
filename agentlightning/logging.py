@@ -322,7 +322,7 @@ def setup_module(
             rich_handler_config = color
         else:
             rich_handler_config: Dict[str, Any] = {
-                "rich_tracebacks": True,
+                "rich_tracebacks": False,
                 "markup": False,
                 "show_time": True,
                 "show_path": True,

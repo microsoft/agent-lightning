@@ -29,8 +29,7 @@ from agentlightning import (
 )
 from agentlightning.store import LightningStoreThreaded
 
-setup_logging(name="agentlightning")
-setup_logging(name="agl_tinker", level=logging.INFO)
+setup_logging(apply_to=["agl_tinker"])
 
 
 async def test_tracer():
