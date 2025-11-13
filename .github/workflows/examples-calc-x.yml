@@ -116,7 +116,7 @@ jobs:
       # Don't ask why. Don't touch this.
       - name: Calc-X training
         run: |
-          set -ex
+          cd examples/calc_x
           uv run --no-sync python train_calc_agent.py --val-file data/test_mini.parquet --ci
         shell: bash
         env:
@@ -175,6 +175,38 @@ jobs:
           uv sync --frozen --no-default-groups --extra verl \
             --group dev --group experiment --group agents --group torch-gpu-${{ matrix.setup-script }}
         if: matrix.setup-script != 'latest'
+
+      - name: Launch LiteLLM Proxy
+        run: |
+          ./scripts/litellm_run.sh
+        env:
+          AZURE_API_BASE: ${{ secrets.AZURE_GROUP_SUBSCRIPTION_API_BASE }}
+          AZURE_API_KEY: ${{ secrets.AZURE_GROUP_SUBSCRIPTION_API_KEY }}
+
+      - name: Prepare Calc-X dataset
+        run: |
+          set -ex
+          cd examples/calc_x
+          uv run gdown --fuzzy https://drive.google.com/file/d/1FQMyKLLd6hP9dw9rfZn1EZOWNvKaDsqw/view
+          unzip calc-x-data.zip -d data
+          rm calc-x-data.zip
+
+      - name: Calc-X MCP sanity check
+        run: |
+          set -ex
+          cd examples/calc_x
+          uv run tests/test_mcp_calculator.py
+        env:
+          OPENAI_API_BASE: http://localhost:12306/
+          OPENAI_API_KEY: dummy
+      - name: Calc-X sanity check
+        run: |
+          set -ex
+          cd examples/calc_x
+          uv run legacy_calc_agent_debug.py
+        env:
+          OPENAI_BASE_URL: http://localhost:12306/
+          OPENAI_API_KEY: dummy
 
       - name: Training with local model
         run: |
