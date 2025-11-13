@@ -7,7 +7,6 @@ It should be included in CI in future if we decided to maintain this example.
 """
 
 import asyncio
-import logging
 from typing import cast
 
 import openai
