@@ -1,38 +1,40 @@
 name: Examples - APO
 permissions:
-  contents: read
-on:
-  schedule:
+  contents: read #设为只读，只读取仓库内容，不做修改
+on: # 触发条件
+  schedule: #使用 cron 表达式 定义计划任务
     # Every day at 3 AM UTC+8
     - cron: '0 19 * * *'
 
-  workflow_dispatch:
+  workflow_dispatch:  #可以手动运行，点击“Run workflow”即可
 
-  repository_dispatch:
-    types: [ci-apo, ci-all]
+  repository_dispatch: #其他系统可以远程触发它，比如当其他模块测试完成后通知它运行。
+    types: [ci-apo, ci-all] #对应上条，只有这两种类型的系统才能触发
 
 run-name: >-
-  ${{ github.event_name == 'repository_dispatch'
+  ${{ github.event_name == 'repository_dispatch'　　# github模板语言（条件）
       && format(
-        'PR #{0} - Label {1} - {2}',
+        'PR #{0} - Label {1} - {2}', #表示如果被dispatch触发，就显示PR...
         github.event.client_payload.pull_number,
         github.event.client_payload.ci_label,
         github.event.client_payload.correlation_id
       )
-      || format('APO - {0}', github.event_name) }}
+      || format('APO - {0}', github.event_name) }} # 否则显示 APO，表示手动运行
 
-jobs:
-  apo:
-    if: >
+jobs: #定义任务
+  apo: # name of task
+    if: > # 只有当触发事件是 ci-apo 或 ci-all 时才运行
       github.event_name != 'repository_dispatch' ||
       github.event.action == 'ci-apo' ||
       github.event.action == 'ci-all'
     name: APO (Python ${{ matrix.python-version }}, ${{ matrix.setup-script }})
+    
     # This job is run on GitHub hosted runners rather than self-hosted runners because it needs no GPU.
-    runs-on: ubuntu-latest
+    
+    runs-on: ubuntu-latest # 运行环境（系统）是 GitHub 提供的 Ubuntu 虚拟机
     timeout-minutes: 30
     strategy:
-      matrix:
+      matrix: # 定义 矩阵策略，即：GitHub 会在三种不同 Python 版本下各跑一遍任务（就像同时测试三台电脑）。
         include:
         - python-version: '3.10'
           setup-script: 'legacy'
@@ -41,15 +43,18 @@ jobs:
         - python-version: '3.13'
           setup-script: 'latest'
       fail-fast: false
-    steps:
-      - uses: actions/checkout@v4
+    steps: #步骤列表
+      - uses: actions/checkout@v4  #use表示调用一个别人写好的action，即actions/checkout@v4 一个GitHub 官方动作，用来把仓库代码下载到虚拟机里
         with:
           ref: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.pr_ref || (github.event.pull_request.number && format('refs/pull/{0}/merge', github.event.pull_request.number)) || github.ref }}
-      - uses: astral-sh/setup-uv@v7
+      
+      - uses: astral-sh/setup-uv@v7 # 安装并设置 uv（一个 Python 依赖管理工具），并切换到相应版本的 Python
         with:
           enable-cache: true
-          python-version: ${{ matrix.python-version }}
-      - name: Upgrade dependencies (latest)
+          python-version: ${{ matrix.python-version }} 
+
+      # 升级和同步依赖
+      - name: Upgrade dependencies (latest) 
         run: uv lock --upgrade
         if: matrix.setup-script == 'latest'
       - name: Sync dependencies (latest)
@@ -62,6 +67,8 @@ jobs:
           uv sync --frozen --no-default-groups --extra apo \
             --group dev --group experiment --group agents --group core-${{ matrix.setup-script }}
         if: matrix.setup-script != 'latest'
+
+      # 保存依赖结果，并输出到 requirements-freeze.txt 文件中。
       - name: Freeze dependencies
         run: |
           set -ex
@@ -69,12 +76,14 @@ jobs:
           echo "UV_LOCKED=1" >> $GITHUB_ENV
           echo "UV_NO_SYNC=1" >> $GITHUB_ENV
       - name: Upload dependencies artifact
-        uses: actions/upload-artifact@v4
+      
+      - uses: actions/upload-artifact@v4  #把依赖文件上传到 GitHub 服务器上，保存为“构建产物”（artifact）
         with:
           name: dependencies-apo-${{ matrix.python-version }}-${{ matrix.setup-script }}
           path: requirements-freeze.txt
           compression-level: 0
 
+      # 运行项目提供的脚本，用于启动一个“假”API接口
       - name: Launch LiteLLM Proxy
         run: |
           ./scripts/litellm_run.sh
@@ -82,10 +91,11 @@ jobs:
           AZURE_API_BASE: ${{ secrets.AZURE_GROUP_SUBSCRIPTION_API_BASE }}
           AZURE_API_KEY: ${{ secrets.AZURE_GROUP_SUBSCRIPTION_API_KEY }}
 
+      #运行 APO 算法脚本
       - name: APO custom algorithm
         run: |
           set -ex
-          cd examples/apo
+          cd examples/apo # 进入 examples/apo 文件夹，运行 APO 算法训练器
           uv run apo_custom_algorithm_trainer.py | tee _ci_apo.log
           # Check whether the log contains "Best prompt found:"
           grep "Best prompt found:" _ci_apo.log
@@ -93,6 +103,8 @@ jobs:
           # New versions follow OPENAI_BASE_URL instead of OPENAI_API_BASE
           OPENAI_BASE_URL: http://localhost:12306/
           OPENAI_API_KEY: dummy
+
+       # 运行调试脚本与内置算法，确保不同模式都能正确执行
       - name: APO custom algorithm debugger
         run: |
           set -ex
@@ -114,3 +126,13 @@ jobs:
           OPENAI_BASE_URL: http://localhost:12306/
           OPENAI_API_KEY: dummy
         if: matrix.setup-script != 'legacy'
+
+
+#=========================================================
+#  每天凌晨3点（或手动触发）
+#          │
+#          ▼
+# 下载仓库 → 安装Python环境 → 安装依赖 → 记录依赖 → 上传结果
+#          │
+#          ▼
+# 启动假API接口 → 运行APO示例 → 检查输出正确性 → 调试 → 结束
