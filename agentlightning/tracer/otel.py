@@ -76,7 +76,7 @@ class OtelTracer(Tracer):
         store: Optional[LightningStore] = None,
         rollout_id: Optional[str] = None,
         attempt_id: Optional[str] = None,
-    ) -> AsyncGenerator[LightningSpanProcessor, None]:
+    ) -> AsyncGenerator[trace_api.Tracer, None]:
         """
         Starts a new tracing context. This should be used as a context manager.
 
@@ -87,7 +87,7 @@ class OtelTracer(Tracer):
             attempt_id: Optional attempt ID to add the spans to.
 
         Yields:
-            The LightningSpanProcessor instance to collect spans.
+            The OpenTelemetry tracer instance to collect spans.
         """
         if not self._lightning_span_processor:
             raise RuntimeError("LightningSpanProcessor is not initialized. Call init_worker() first.")
@@ -99,12 +99,12 @@ class OtelTracer(Tracer):
             else:
                 self._disable_native_otlp_exporter()
             ctx = self._lightning_span_processor.with_context(store=store, rollout_id=rollout_id, attempt_id=attempt_id)
-            with ctx as processor:
-                yield processor
+            with ctx:
+                yield trace_api.get_tracer(__name__, tracer_provider=self._tracer_provider)
         elif store is None and rollout_id is None and attempt_id is None:
             self._disable_native_otlp_exporter()
             with self._lightning_span_processor:
-                yield self._lightning_span_processor
+                yield trace_api.get_tracer(__name__, tracer_provider=self._tracer_provider)
         else:
             raise ValueError("store, rollout_id, and attempt_id must be either all provided or all None")
 

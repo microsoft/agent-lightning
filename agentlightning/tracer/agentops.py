@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any, AsyncGenerator, Iterator, List, Optional
 
 import agentops
 import agentops.sdk.core
+import opentelemetry.trace as trace_api
 from agentops.sdk.core import TracingCore
 from opentelemetry.sdk.trace import TracerProvider as TracerProviderImpl
 from opentelemetry.trace import get_tracer_provider
@@ -100,7 +101,7 @@ class AgentOpsTracer(OtelTracer):
         store: Optional[LightningStore] = None,
         rollout_id: Optional[str] = None,
         attempt_id: Optional[str] = None,
-    ) -> AsyncGenerator[LightningSpanProcessor, None]:
+    ) -> AsyncGenerator[trace_api.Tracer, None]:
         """
         Starts a new tracing context. This should be used as a context manager.
 
@@ -111,12 +112,10 @@ class AgentOpsTracer(OtelTracer):
             attempt_id: Optional attempt ID to add the spans to.
 
         Yields:
-            The [`LightningSpanProcessor`][agentlightning.tracer.agentops.LightningSpanProcessor] instance to collect spans.
+            The OpenTelemetry tracer instance to collect spans.
         """
-        with self._trace_context_sync(
-            name=name, store=store, rollout_id=rollout_id, attempt_id=attempt_id
-        ) as processor:
-            yield processor
+        with self._trace_context_sync(name=name, store=store, rollout_id=rollout_id, attempt_id=attempt_id) as tracer:
+            yield tracer
 
     @contextmanager
     def _trace_context_sync(
@@ -126,10 +125,11 @@ class AgentOpsTracer(OtelTracer):
         store: Optional[LightningStore] = None,
         rollout_id: Optional[str] = None,
         attempt_id: Optional[str] = None,
-    ) -> Iterator[LightningSpanProcessor]:
+    ) -> Iterator[trace_api.Tracer]:
         """Implementation of `trace_context` for synchronous execution."""
         if not self._lightning_span_processor:
             raise RuntimeError("LightningSpanProcessor is not initialized. Call init_worker() first.")
+        tracer_provider = self._get_tracer_provider()
 
         kwargs: dict[str, Any] = {}
         if name is not None:
@@ -148,12 +148,12 @@ class AgentOpsTracer(OtelTracer):
                 ctx = self._lightning_span_processor.with_context(
                     store=store, rollout_id=rollout_id, attempt_id=attempt_id
                 )
-                with ctx as processor:
-                    yield processor
+                with ctx:
+                    yield trace_api.get_tracer(__name__, tracer_provider=tracer_provider)
             elif store is None and rollout_id is None and attempt_id is None:
                 self._disable_native_otlp_exporter()
                 with self._lightning_span_processor:
-                    yield self._lightning_span_processor
+                    yield trace_api.get_tracer(__name__, tracer_provider=tracer_provider)
             else:
                 raise ValueError("store, rollout_id, and attempt_id must be either all provided or all None")
         except Exception as e:
@@ -204,8 +204,10 @@ class AgentOpsTracer(OtelTracer):
             if not isinstance(instance.provider, TracerProviderImpl):  # type: ignore
                 raise RuntimeError("Unsupported TracerProvider type for AgentOps instrumentation.")
 
-            return instance.provider
+            self._tracer_provider = instance.provider
+            return self._tracer_provider
         except AttributeError:
             # old versions
             instance = TracingCore.get_instance()  # type: ignore
-            return instance._provider  # type: ignore
+            self._tracer_provider = instance._provider  # type: ignore
+            return self._tracer_provider  # type: ignore

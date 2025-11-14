@@ -5,7 +5,7 @@
 Prior to running this example, please start a LightningStore server with OTLP enabled first:
 
 ```bash
-agl store --port 45993
+agl store --port 45993 --log-level DEBUG
 ```
 """
 
@@ -14,33 +14,39 @@ import asyncio
 import time
 
 from openai import AsyncOpenAI
-from opentelemetry import trace
-from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
-from opentelemetry.sdk.resources import Resource
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from rich.console import Console
 
-from agentlightning import AgentOpsTracer, LightningStoreClient, setup_logging
+from agentlightning import AgentOpsTracer, LightningStoreClient, OtelTracer, emit_reward, setup_logging
+
+console = Console()
 
 
-def manually_send_traces():
-    provider = TracerProvider(resource=Resource.create({"service.name": "otlp-demo-service"}))
-    trace.set_tracer_provider(provider)
+async def send_traces_via_otel():
+    tracer = OtelTracer()
+    client = LightningStoreClient("http://localhost:45993")
+    rollout = await client.start_rollout(input={"origin": "write_traces_example"})
 
-    exporter = OTLPSpanExporter(endpoint="http://localhost:45993/v1/traces")
+    with tracer.lifespan():
+        # Initialize the capture of one single trace for one single rollout
+        async with tracer.trace_context(
+            "trace-manual", store=client, rollout_id=rollout.rollout_id, attempt_id=rollout.attempt.attempt_id
+        ) as tracer:
 
-    processor = BatchSpanProcessor(exporter)
-    provider.add_span_processor(processor)
+            with tracer.start_as_current_span("grpc-span-1"):
+                time.sleep(0.01)
 
-    tracer = trace.get_tracer(__name__)
+                with tracer.start_as_current_span("grpc-span-2"):
+                    time.sleep(0.01)
 
-    with tracer.start_as_current_span("grpc-span-1"):
-        time.sleep(0.01)
+            with tracer.start_as_current_span("grpc-span-3"):
+                time.sleep(0.01)
 
-    with tracer.start_as_current_span("grpc-span-2"):
-        time.sleep(0.01)
+            emit_reward(1.0)
 
-    processor.force_flush()
+    traces = await client.query_spans(rollout_id=rollout.rollout_id)
+    console.print(traces)
+    assert len(traces) == 4
+    await client.close()
 
 
 async def send_traces_via_agentops():
@@ -67,20 +73,22 @@ async def send_traces_via_agentops():
             assert "chatgpt" in response.choices[0].message.content.lower()
 
     traces = await client.query_spans(rollout_id=rollout.rollout_id)
-    print(traces)
+    console.print(traces)
     await client.close()
 
 
 def main():
     setup_logging("DEBUG")
     parser = argparse.ArgumentParser()
-    parser.add_argument("mode", choices=["manual", "agentops"])
+    parser.add_argument("mode", choices=["otel", "agentops"])
     args = parser.parse_args()
 
-    if args.mode == "manual":
-        manually_send_traces()
-    else:
+    if args.mode == "otel":
+        asyncio.run(send_traces_via_otel())
+    elif args.mode == "agentops":
         asyncio.run(send_traces_via_agentops())
+    else:
+        raise ValueError(f"Invalid mode: {args.mode}")
 
 
 if __name__ == "__main__":
