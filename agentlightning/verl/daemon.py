@@ -963,7 +963,7 @@ class AgentModeDaemon:
         # Add non-tensor data for advantage calculation and logging
         data_proto.non_tensor_batch["data_id_list"] = np.array(data_id_list)  # type: ignore
         data_proto.non_tensor_batch["rollout_id_list"] = np.array(rollout_id_list)  # type: ignore
-        data_proto.non_tensor_batch["turn_index_list"] = np.array(turn_index_list)  # type: ignore
+        # data_proto.non_tensor_batch["turn_index_list"] = np.array(turn_index_list)  # type: ignore
 
         return data_proto, data_metrics
 

@@ -20,8 +20,8 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
         "use_kl_in_reward": False,
     },
     "data": {
-        "train_files": "data/train.parquet",
-        "val_files": "data/test.parquet",
+        "train_files": "data/agent_train.parquet",
+        "val_files": "data/agent_test_50select.parquet",
         "train_batch_size": 512,
         "max_prompt_length": 6000,
         "max_response_length": 4096,
