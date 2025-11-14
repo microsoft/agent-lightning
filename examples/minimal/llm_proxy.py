@@ -137,7 +137,7 @@ async def test_llm_proxy(model_name: str, store_port: int = 43887):
 
 
 if __name__ == "__main__":
-    agl.setup_logging("DEBUG")
+    agl.setup_logging()
     parser = argparse.ArgumentParser(description="LLM Proxy runner")
     parser.add_argument(
         "mode",

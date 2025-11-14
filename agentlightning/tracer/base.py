@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, AsyncContextManager, Awaitable, Callable, ContextManager, List, Optional
 
 from opentelemetry.sdk.trace import ReadableSpan
@@ -138,3 +139,27 @@ class Tracer(ParallelWorkerBase):
         """
         logger.warning(f"{self.__class__.__name__} does not provide a LangChain callback handler.")
         return None
+
+    @contextmanager
+    def lifespan(self):
+        """A context manager to manage the lifespan of the tracer.
+
+        This can be used to set up and tear down any necessary resources
+        for the tracer, useful for debugging purposes.
+        """
+        has_init = False
+        has_init_worker = False
+        try:
+            self.init()
+            has_init = True
+
+            self.init_worker(0)
+            has_init_worker = True
+
+            yield
+
+        finally:
+            if has_init_worker:
+                self.teardown_worker(0)
+            if has_init:
+                self.teardown()
