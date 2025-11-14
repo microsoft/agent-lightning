@@ -7,6 +7,7 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, Sequence, Tup
 from fastapi import Request, Response
 from google.protobuf import json_format
 from google.rpc.status_pb2 import Status
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.proto.collector.logs.v1.logs_service_pb2 import (
     ExportLogsServiceRequest,
     ExportLogsServiceResponse,
@@ -23,6 +24,9 @@ from opentelemetry.proto.common.v1.common_pb2 import AnyValue, KeyValue
 from opentelemetry.proto.resource.v1.resource_pb2 import Resource as ProtoResource
 from opentelemetry.proto.trace.v1.trace_pb2 import Span as ProtoSpan
 from opentelemetry.proto.trace.v1.trace_pb2 import Status as ProtoStatus
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace import ReadableSpan
+from opentelemetry.sdk.trace.export import SpanExportResult
 
 from agentlightning.store.base import LightningStore
 from agentlightning.types.tracer import (
@@ -40,51 +44,6 @@ from agentlightning.types.tracer import (
 PROTOBUF_CT = "application/x-protobuf"
 
 logger = logging.getLogger(__name__)
-
-
-def _read_body_maybe_gzip(request: Request, raw_body: bytes) -> bytes:
-    """
-    Decompress body if Content-Encoding: gzip; otherwise return as is.
-    """
-    encoding = request.headers.get("Content-Encoding", "").lower()
-    if encoding == "gzip":
-        return gzip.decompress(raw_body)
-    return raw_body
-
-
-def _maybe_gzip_response(request: Request, payload: bytes) -> Tuple[bytes, Dict[str, str]]:
-    """
-    If Accept-Encoding includes gzip, gzip the payload and set Content-Encoding header.
-    """
-    ae = request.headers.get("Accept-Encoding", "")
-    headers: Dict[str, str] = {}
-    if "gzip" in ae.replace(" ", "").split(","):
-        payload = gzip.compress(payload)
-        headers["Content-Encoding"] = "gzip"
-    return payload, headers
-
-
-def _bad_request_response(request: Request, message: str, content_type: str = PROTOBUF_CT) -> Response:
-    """
-    Build a 400 response whose body is a protobuf Status message, encoded
-    in the same Content-Type as the request (OTLP/HTTP requirement).
-    """
-    status_msg = Status(message=message)
-
-    if content_type == PROTOBUF_CT:
-        body = status_msg.SerializeToString()
-    else:
-        # Fallback: JSON representation of Status.
-        body = json_format.MessageToJson(status_msg).encode("utf-8")
-
-    body, headers = _maybe_gzip_response(request, body)
-
-    return Response(
-        content=body,
-        status_code=400,
-        media_type=content_type,
-        headers=headers,
-    )
 
 
 T_request = TypeVar("T_request", ExportLogsServiceRequest, ExportMetricsServiceRequest, ExportTraceServiceRequest)
@@ -157,7 +116,7 @@ async def spans_from_proto(request: ExportTraceServiceRequest, store: LightningS
 
     for resource_spans in request.resource_spans:
         # Resource-level attributes & IDs
-        resource_attrs = kv_list_to_dict(resource_spans.resource.attributes)
+        resource_attrs = _kv_list_to_dict(resource_spans.resource.attributes)
         # rollout_id, attempt_id from resource attributes when present.
         # Otherwise, raise a warning and give up.
         rollout_id = resource_attrs.get(SpanNames.ROLLOUT_ID)
@@ -174,24 +133,24 @@ async def spans_from_proto(request: ExportTraceServiceRequest, store: LightningS
 
         sequence_id = int(str(sequence_id)) if sequence_id is not None else None
 
-        otel_resource = resource_from_proto(resource_spans.resource)
+        otel_resource = _resource_from_proto(resource_spans.resource)
 
         # Each ScopeSpans contains multiple spans
         for scope_spans in resource_spans.scope_spans:
             for proto_span in scope_spans.spans:
-                trace_id_hex = bytes_to_trace_id_hex(proto_span.trace_id)
-                span_id_hex = bytes_to_span_id_hex(proto_span.span_id)
-                parent_id_hex = bytes_to_span_id_hex(proto_span.parent_span_id) if proto_span.parent_span_id else None
+                trace_id_hex = _bytes_to_trace_id_hex(proto_span.trace_id)
+                span_id_hex = _bytes_to_span_id_hex(proto_span.span_id)
+                parent_id_hex = _bytes_to_span_id_hex(proto_span.parent_span_id) if proto_span.parent_span_id else None
 
                 # Status
-                status_code_str = STATUS_CODE_MAP.get(proto_span.status.code, "UNSET")
+                status_code_str = _STATUS_CODE_MAP.get(proto_span.status.code, "UNSET")
                 status = TraceStatus(
                     status_code=status_code_str,
                     description=proto_span.status.message or None,
                 )
 
                 # Attributes
-                span_attrs = kv_list_to_dict(proto_span.attributes)
+                span_attrs = _kv_list_to_dict(proto_span.attributes)
 
                 # Context
                 context = SpanContext(
@@ -220,8 +179,8 @@ async def spans_from_proto(request: ExportTraceServiceRequest, store: LightningS
                     name=proto_span.name,
                     status=status,
                     attributes=span_attrs,
-                    events=events_from_proto(proto_span),
-                    links=links_from_proto(proto_span),
+                    events=_events_from_proto(proto_span),
+                    links=_links_from_proto(proto_span),
                     start_time=convert_timestamp(proto_span.start_time_unix_nano),
                     end_time=convert_timestamp(proto_span.end_time_unix_nano),
                     context=context,
@@ -234,7 +193,103 @@ async def spans_from_proto(request: ExportTraceServiceRequest, store: LightningS
     return output_spans
 
 
-def any_value_to_python(value: AnyValue) -> Any:
+class LightningStoreOTLPExporter(OTLPSpanExporter):
+    """OTLP Exporter that write to a LightningStore-compatible backend.
+
+    The backend requires two special attributes on each span:
+
+    - `agentlightning.rollout_id`: The rollout ID to associate the span with.
+    - `agentlightning.attempt_id`: The attempt ID to associate the span with.
+
+    It can optionally use the following attribute to sequence spans:
+
+    - `agentlightning.span_sequence_id`: A decimal string representing the sequence ID of the span.
+    """
+
+    _default_endpoint: Optional[str] = None
+    _rollout_id: Optional[str] = None
+    _attempt_id: Optional[str] = None
+
+    def enable_store_otlp(self, endpoint: str, rollout_id: str, attempt_id: str) -> None:
+        """Enable storing OTLP data to a specific LightningStore rollout/attempt."""
+        self._rollout_id = rollout_id
+        self._attempt_id = attempt_id
+
+        self._default_endpoint = self._endpoint
+        self._endpoint = endpoint
+
+    def disable_store_otlp(self) -> None:
+        """Disable storing OTLP data to LightningStore."""
+        self._rollout_id = None
+        self._attempt_id = None
+        if self._default_endpoint is not None:
+            self._endpoint = self._default_endpoint
+
+    def export(self, spans: Sequence[ReadableSpan]) -> SpanExportResult:
+        if self._rollout_id is not None and self._attempt_id is not None:
+            # rollout_id and attempt_id are present in resource attributes
+            for span in spans:
+                # Override the resources so that the server knows where the request comes from.
+                span._resource = span._resource.merge(  # pyright: ignore[reportPrivateUsage]
+                    Resource.create(
+                        {
+                            SpanNames.ROLLOUT_ID: self._rollout_id,
+                            SpanNames.ATTEMPT_ID: self._attempt_id,
+                        }
+                    )
+                )
+            return super().export(spans)
+        else:
+            logger.debug("Rollout ID and Attempt ID not set; using default OTLP exporter behavior.")
+            return super().export(spans)
+
+
+def _read_body_maybe_gzip(request: Request, raw_body: bytes) -> bytes:
+    """
+    Decompress body if Content-Encoding: gzip; otherwise return as is.
+    """
+    encoding = request.headers.get("Content-Encoding", "").lower()
+    if encoding == "gzip":
+        return gzip.decompress(raw_body)
+    return raw_body
+
+
+def _maybe_gzip_response(request: Request, payload: bytes) -> Tuple[bytes, Dict[str, str]]:
+    """
+    If Accept-Encoding includes gzip, gzip the payload and set Content-Encoding header.
+    """
+    ae = request.headers.get("Accept-Encoding", "")
+    headers: Dict[str, str] = {}
+    if "gzip" in ae.replace(" ", "").split(","):
+        payload = gzip.compress(payload)
+        headers["Content-Encoding"] = "gzip"
+    return payload, headers
+
+
+def _bad_request_response(request: Request, message: str, content_type: str = PROTOBUF_CT) -> Response:
+    """
+    Build a 400 response whose body is a protobuf Status message, encoded
+    in the same Content-Type as the request (OTLP/HTTP requirement).
+    """
+    status_msg = Status(message=message)
+
+    if content_type == PROTOBUF_CT:
+        body = status_msg.SerializeToString()
+    else:
+        # Fallback: JSON representation of Status.
+        body = json_format.MessageToJson(status_msg).encode("utf-8")
+
+    body, headers = _maybe_gzip_response(request, body)
+
+    return Response(
+        content=body,
+        status_code=400,
+        media_type=content_type,
+        headers=headers,
+    )
+
+
+def _any_value_to_python(value: AnyValue) -> Any:
     """Convert OTLP AnyValue -> plain Python value."""
     kind = value.WhichOneof("value")
     if kind is None:
@@ -248,75 +303,60 @@ def any_value_to_python(value: AnyValue) -> Any:
     if kind == "double_value":
         return float(value.double_value)
     if kind == "array_value":
-        return [any_value_to_python(v) for v in value.array_value.values]
+        return [_any_value_to_python(v) for v in value.array_value.values]
     if kind == "kvlist_value":
         # Map<string, AnyValue> -> dict
-        return {kv.key: any_value_to_python(kv.value) for kv in value.kvlist_value.values}
+        return {kv.key: _any_value_to_python(kv.value) for kv in value.kvlist_value.values}
     if kind == "bytes_value":
         # Serialize bytes as hex string to stay JSON-friendly
         return value.bytes_value.hex()
     return None
 
 
-def kv_list_to_dict(kvs: Sequence[KeyValue]) -> Attributes:
+def _kv_list_to_dict(kvs: Sequence[KeyValue]) -> Attributes:
     """Convert repeated KeyValue -> Attributes dict."""
-    return {kv.key: any_value_to_python(kv.value) for kv in kvs}
+    return {kv.key: _any_value_to_python(kv.value) for kv in kvs}
 
 
-STATUS_CODE_MAP = {
+_STATUS_CODE_MAP = {
     ProtoStatus.STATUS_CODE_UNSET: "UNSET",
     ProtoStatus.STATUS_CODE_OK: "OK",
     ProtoStatus.STATUS_CODE_ERROR: "ERROR",
 }
 
 
-def extract_ids_from_resource(
-    resource_attrs: Attributes,
-    resource_index: int,
-) -> Tuple[str, str]:
-    """rollout_id, attempt_id from resource attributes when present.
-    Otherwise, raise a warning and give up.
-    """
-    rollout_id = str(resource_attrs.get("rollout_id") or f"rollout-{resource_index}")
-    attempt_id = str(resource_attrs.get("attempt_id") or f"attempt-{resource_index}")
-    return rollout_id, attempt_id
-
-
-def bytes_to_trace_id_hex(b: bytes) -> str:
+def _bytes_to_trace_id_hex(b: bytes) -> str:
     # OTLP uses 16-byte trace IDs; format as 32-char hex
     if not b:
         return "0" * 32
     return b.hex().rjust(32, "0")
 
 
-def bytes_to_span_id_hex(b: bytes) -> str:
+def _bytes_to_span_id_hex(b: bytes) -> str:
     # OTLP uses 8-byte span IDs; format as 16-char hex
     if not b:
         return "0" * 16
     return b.hex().rjust(16, "0")
 
 
-# ---------- Event & Link converters ----------
-
-
-def events_from_proto(span: ProtoSpan) -> List[Event]:
+def _events_from_proto(span: ProtoSpan) -> List[Event]:
     """Event converter from OTLP ProtoSpan to List[Event]."""
     return [
         Event(
             name=e.name,
-            attributes=kv_list_to_dict(e.attributes),
+            attributes=_kv_list_to_dict(e.attributes),
             timestamp=convert_timestamp(e.time_unix_nano),
         )
         for e in span.events
     ]
 
 
-def links_from_proto(span: ProtoSpan) -> List[Link]:
+def _links_from_proto(span: ProtoSpan) -> List[Link]:
     """Link converter from OTLP ProtoSpan to List[Link]."""
     links: List[Link] = []
     for link in span.links:
-        trace_id_hex = bytes_to_trace_id_hex(link.trace_id)
-        span_id_hex = bytes_to_span_id_hex(link.span_id)
+        trace_id_hex = _bytes_to_trace_id_hex(link.trace_id)
+        span_id_hex = _bytes_to_span_id_hex(link.span_id)
         ctx = SpanContext(
             trace_id=trace_id_hex,
             span_id=span_id_hex,
@@ -326,14 +366,14 @@ def links_from_proto(span: ProtoSpan) -> List[Link]:
         links.append(
             Link(
                 context=ctx,
-                attributes=kv_list_to_dict(link.attributes) or None,
+                attributes=_kv_list_to_dict(link.attributes) or None,
             )
         )
     return links
 
 
-def resource_from_proto(resource: ProtoResource) -> OtelResource:
+def _resource_from_proto(resource: ProtoResource) -> OtelResource:
     return OtelResource(
-        attributes=kv_list_to_dict(resource.attributes),
+        attributes=_kv_list_to_dict(resource.attributes),
         schema_url=getattr(resource, "schema_url", ""),
     )

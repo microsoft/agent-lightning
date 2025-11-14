@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Callable, Optional, Sequence, no_type_check
+from typing import Any, Callable, Sequence, no_type_check
 
 import requests
 from agentops.client.api import V3Client, V4Client
@@ -13,11 +13,10 @@ from agentops.sdk.exporters import AuthenticatedOTLPExporter
 from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.sdk.metrics.export import MetricExportResult
-from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import ReadableSpan
 from opentelemetry.sdk.trace.export import SpanExportResult
 
-from agentlightning.types.tracer import SpanNames
+from agentlightning.utils.otlp import LightningStoreOTLPExporter
 
 logger = logging.getLogger(__name__)
 
@@ -251,50 +250,22 @@ def uninstrument_agentops():
         pass
 
 
-class BypassableAuthenticatedOTLPExporter(AuthenticatedOTLPExporter):
+class BypassableAuthenticatedOTLPExporter(LightningStoreOTLPExporter, AuthenticatedOTLPExporter):
     """
     AuthenticatedOTLPExporter with switchable service control.
-    When `_agentops_service_enabled` is False AND `_agentops_otlp_exporter_enabled` is False,
-    skip export and return success.
+
+    When `_agentops_service_enabled` is False, skip export and return success.
     """
-
-    _default_endpoint: Optional[str] = None
-    _rollout_id: Optional[str] = None
-    _attempt_id: Optional[str] = None
-
-    def enable_store_otlp(self, endpoint: str, rollout_id: str, attempt_id: str) -> None:
-        """Enable storing OTLP data to a specific LightningStore rollout/attempt."""
-        self._rollout_id = rollout_id
-        self._attempt_id = attempt_id
-
-        self._default_endpoint = self._endpoint
-        self._endpoint = endpoint
-
-    def disable_store_otlp(self) -> None:
-        """Disable storing OTLP data to LightningStore."""
-        self._rollout_id = None
-        self._attempt_id = None
-        if self._default_endpoint is not None:
-            self._endpoint = self._default_endpoint
 
     def export(self, spans: Sequence[ReadableSpan]) -> SpanExportResult:
         if _agentops_service_enabled:
-            # Directly bypass
+            # Opt-in for service
             return super().export(spans)
         elif self._rollout_id is not None and self._attempt_id is not None:
-            # Bypass with condition: add rollout_id and attempt_id to resource attributes
-            for span in spans:
-                # Override the resources so that the server knows where the request comes from.
-                span._resource = span._resource.merge(  # pyright: ignore[reportPrivateUsage]
-                    Resource.create(
-                        {
-                            SpanNames.ROLLOUT_ID: self._rollout_id,
-                            SpanNames.ATTEMPT_ID: self._attempt_id,
-                        }
-                    )
-                )
+            # Opt-in with condition: add rollout_id and attempt_id to resource attributes
             return super().export(spans)
         else:
+            # Directly bypass
             logger.debug("SwitchableAuthenticatedOTLPExporter is switched off, skipping export.")
             return SpanExportResult.SUCCESS
 
