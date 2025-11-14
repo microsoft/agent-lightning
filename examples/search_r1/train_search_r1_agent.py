@@ -134,12 +134,11 @@ def config_train_llama() -> Dict[str, Any]:
     return config
 
 
-def train(config: Dict[str, Any], active_agent: Optional[str]) -> None:
+def train(config: Dict[str, Any]) -> None:
 
     agent = SearchR1Agent()
     algorithm = agl.VERL(config)
-    trainer = agl.Trainer(n_runners=32, algorithm=algorithm, adapter={"agent_match": active_agent})
-    print("Adapter agent match acknowledged:", trainer.adapter.agent_match)  # type: ignore
+    trainer = agl.Trainer(n_runners=32, algorithm=algorithm)
 
     train_data = pd.read_parquet(config["data"]["train_files"]).to_dict(orient="records")  # type: ignore
     val_data = pd.read_parquet(config["data"]["val_files"]).to_dict(orient="records")  # type: ignore
@@ -158,10 +157,6 @@ def main() -> None:
         help="Training configuration: 'fast' (CI testing), 'qwen' (Qwen-2.5-Coder-1.5B), 'llama' (LLaMA-3.2-3B-Instruct)",
     )
 
-    parser.add_argument(
-        "--active-agent", type=str, help="Override the active agent name (default: auto-generated based on config)"
-    )
-
     args = parser.parse_args()
 
     # Get the appropriate configuration
@@ -169,13 +164,9 @@ def main() -> None:
 
     config = config_functions[args.config]()
 
-    # Set active agent - use provided value or default based on config choice
-    active_agent = args.active_agent
-
     print(f"Starting training with '{args.config}' configuration...")
-    print(f"Active agent: {active_agent}")
 
-    train(config, active_agent)
+    train(config)
 
 
 if __name__ == "__main__":
