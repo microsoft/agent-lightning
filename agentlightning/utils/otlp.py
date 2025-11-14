@@ -123,7 +123,7 @@ async def handle_otlp_export(
         req_msg = request_message_cls()
         try:
             req_msg.ParseFromString(body)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             return _bad_request_response(request, f"Unable to parse OTLP {signal_name} payload: {exc}")
 
     if message_callback is not None:

@@ -133,6 +133,9 @@ async def test_llm_proxy(model_name: str, store_port: int = 43887):
             else:
                 assert "chatgpt" in response_body["choices"][0]["message"]["content"].lower()
 
+    for span in await store.query_spans(rollout_id=rollout.rollout_id, attempt_id=rollout.attempt.attempt_id):
+        print("Span:", span.name, span.attributes)
+
     await store.close()
 
 
