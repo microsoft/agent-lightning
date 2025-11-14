@@ -1,9 +1,10 @@
 # Copyright (c) Microsoft. All rights reserved.
 
 import gzip
+import logging
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Sequence, Tuple, Type, TypeVar
 
-from fastapi import FastAPI, Request, Response
+from fastapi import Request, Response
 from google.protobuf import json_format
 from google.rpc.status_pb2 import Status
 from opentelemetry.proto.collector.logs.v1.logs_service_pb2 import (
@@ -23,6 +24,7 @@ from opentelemetry.proto.resource.v1.resource_pb2 import Resource as ProtoResour
 from opentelemetry.proto.trace.v1.trace_pb2 import Span as ProtoSpan
 from opentelemetry.proto.trace.v1.trace_pb2 import Status as ProtoStatus
 
+from agentlightning.store.base import LightningStore
 from agentlightning.types.tracer import (
     Attributes,
     Event,
@@ -30,13 +32,14 @@ from agentlightning.types.tracer import (
     OtelResource,
     Span,
     SpanContext,
+    SpanNames,
     TraceStatus,
     convert_timestamp,
 )
 
-app = FastAPI(title="Simple OTLP/HTTP Protobuf Collector")
-
 PROTOBUF_CT = "application/x-protobuf"
+
+logger = logging.getLogger(__name__)
 
 
 def _read_body_maybe_gzip(request: Request, raw_body: bytes) -> bytes:
@@ -145,15 +148,32 @@ async def handle_otlp_export(
     )
 
 
-def spans_from_text_proto(request: ExportTraceServiceRequest) -> List[Span]:
-    """Parse an OTLP proto payload into List[Span]."""
-    output_spans: List[Span] = []
-    sequence_counter = 0  # monotonically increasing sequence_id across all spans
+async def spans_from_proto(request: ExportTraceServiceRequest, store: LightningStore) -> List[Span]:
+    """Parse an OTLP proto payload into List[Span].
 
-    for r_index, resource_spans in enumerate(request.resource_spans):
+    A store is needed here for generating a sequence ID for each span.
+    """
+    output_spans: List[Span] = []
+
+    for resource_spans in request.resource_spans:
         # Resource-level attributes & IDs
         resource_attrs = kv_list_to_dict(resource_spans.resource.attributes)
-        rollout_id, attempt_id = extract_ids_from_resource(resource_attrs, r_index)
+        # rollout_id, attempt_id from resource attributes when present.
+        # Otherwise, raise a warning and give up.
+        rollout_id = resource_attrs.get(SpanNames.ROLLOUT_ID)
+        attempt_id = resource_attrs.get(SpanNames.ATTEMPT_ID)
+        # If sequence id is provided, all the spans will share the same sequence ID.
+        sequence_id = resource_attrs.get(SpanNames.SPAN_SEQUENCE_ID)
+        if rollout_id is None or attempt_id is None:
+            logger.warning(
+                "Both rollout_id and attempt_id must be present in resource attributes. Spans will not be able to log to the store because of missing IDs: rollout_id=%s, attempt_id=%s",
+                rollout_id,
+                attempt_id,
+            )
+            continue
+
+        sequence_id = int(str(sequence_id)) if sequence_id is not None else None
+
         otel_resource = resource_from_proto(resource_spans.resource)
 
         # Each ScopeSpans contains multiple spans
@@ -181,11 +201,19 @@ def spans_from_text_proto(request: ExportTraceServiceRequest) -> List[Span]:
                     trace_state={},
                 )
 
+                # Generate a new sequence ID if not provided
+                if sequence_id is None:
+                    current_sequence_id = await store.get_next_span_sequence_id(
+                        rollout_id=str(rollout_id), attempt_id=str(attempt_id)
+                    )
+                else:
+                    current_sequence_id = sequence_id
+
                 # Build Span
                 span = Span(
-                    rollout_id=rollout_id,
-                    attempt_id=attempt_id,
-                    sequence_id=sequence_counter,
+                    rollout_id=str(rollout_id),
+                    attempt_id=str(attempt_id),
+                    sequence_id=current_sequence_id,
                     trace_id=trace_id_hex,
                     span_id=span_id_hex,
                     parent_id=parent_id_hex,
@@ -202,7 +230,6 @@ def spans_from_text_proto(request: ExportTraceServiceRequest) -> List[Span]:
                 )
 
                 output_spans.append(span)
-                sequence_counter += 1
 
     return output_spans
 
@@ -247,8 +274,8 @@ def extract_ids_from_resource(
     resource_attrs: Attributes,
     resource_index: int,
 ) -> Tuple[str, str]:
-    """rollout_id, attempt_id from resource attributes when present,
-    otherwise fake them (as requested).
+    """rollout_id, attempt_id from resource attributes when present.
+    Otherwise, raise a warning and give up.
     """
     rollout_id = str(resource_attrs.get("rollout_id") or f"rollout-{resource_index}")
     attempt_id = str(resource_attrs.get("attempt_id") or f"attempt-{resource_index}")

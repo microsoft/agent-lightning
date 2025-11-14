@@ -285,9 +285,9 @@ class BypassableAuthenticatedOTLPExporter(AuthenticatedOTLPExporter):
             # Bypass with condition: add rollout_id and attempt_id to resource attributes
             for span in spans:
                 # Override the resources so that the server knows where the request comes from.
-                span._resource = span._resource.merge(
+                span._resource = span._resource.merge(  # pyright: ignore[reportPrivateUsage]
                     Resource.create(
-                        {  # pyright: ignore[reportPrivateUsage]
+                        {
                             SpanNames.ROLLOUT_ID: self._rollout_id,
                             SpanNames.ATTEMPT_ID: self._attempt_id,
                         }

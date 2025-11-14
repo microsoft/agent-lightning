@@ -412,9 +412,11 @@ class SpanNames(str, Enum):
     VIRTUAL = "agentlightning.virtual"
     """The name of the virtual span. It represents derived spans without concrete operations."""
     ROLLOUT_ID = "agentlightning.rollout_id"
-    """The name of the rollout ID span."""
+    """The name of the rollout ID."""
     ATTEMPT_ID = "agentlightning.attempt_id"
-    """The name of the attempt ID span."""
+    """The name of the attempt ID."""
+    SPAN_SEQUENCE_ID = "agentlightning.span_sequence_id"
+    """The name of the span sequence ID."""
 
 
 class SpanAttributeNames(str, Enum):
