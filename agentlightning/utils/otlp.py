@@ -1,7 +1,7 @@
 # Copyright (c) Microsoft. All rights reserved.
 
 import gzip
-from typing import Awaitable, Callable, Dict, Optional, Tuple, Type, TypeVar
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Sequence, Tuple, Type, TypeVar
 
 from fastapi import FastAPI, Request, Response
 from google.protobuf import json_format
@@ -17,6 +17,21 @@ from opentelemetry.proto.collector.metrics.v1.metrics_service_pb2 import (
 from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import (
     ExportTraceServiceRequest,
     ExportTraceServiceResponse,
+)
+from opentelemetry.proto.common.v1.common_pb2 import AnyValue, KeyValue
+from opentelemetry.proto.resource.v1.resource_pb2 import Resource as ProtoResource
+from opentelemetry.proto.trace.v1.trace_pb2 import Span as ProtoSpan
+from opentelemetry.proto.trace.v1.trace_pb2 import Status as ProtoStatus
+
+from agentlightning.types.tracer import (
+    Attributes,
+    Event,
+    Link,
+    OtelResource,
+    Span,
+    SpanContext,
+    TraceStatus,
+    convert_timestamp,
 )
 
 app = FastAPI(title="Simple OTLP/HTTP Protobuf Collector")
@@ -127,4 +142,171 @@ async def handle_otlp_export(
         media_type=content_type,
         status_code=200,
         headers=headers,
+    )
+
+
+def spans_from_text_proto(request: ExportTraceServiceRequest) -> List[Span]:
+    """Parse an OTLP proto payload into List[Span]."""
+    output_spans: List[Span] = []
+    sequence_counter = 0  # monotonically increasing sequence_id across all spans
+
+    for r_index, resource_spans in enumerate(request.resource_spans):
+        # Resource-level attributes & IDs
+        resource_attrs = kv_list_to_dict(resource_spans.resource.attributes)
+        rollout_id, attempt_id = extract_ids_from_resource(resource_attrs, r_index)
+        otel_resource = resource_from_proto(resource_spans.resource)
+
+        # Each ScopeSpans contains multiple spans
+        for scope_spans in resource_spans.scope_spans:
+            for proto_span in scope_spans.spans:
+                trace_id_hex = bytes_to_trace_id_hex(proto_span.trace_id)
+                span_id_hex = bytes_to_span_id_hex(proto_span.span_id)
+                parent_id_hex = bytes_to_span_id_hex(proto_span.parent_span_id) if proto_span.parent_span_id else None
+
+                # Status
+                status_code_str = STATUS_CODE_MAP.get(proto_span.status.code, "UNSET")
+                status = TraceStatus(
+                    status_code=status_code_str,
+                    description=proto_span.status.message or None,
+                )
+
+                # Attributes
+                span_attrs = kv_list_to_dict(proto_span.attributes)
+
+                # Context
+                context = SpanContext(
+                    trace_id=trace_id_hex,
+                    span_id=span_id_hex,
+                    is_remote=False,
+                    trace_state={},
+                )
+
+                # Build Span
+                span = Span(
+                    rollout_id=rollout_id,
+                    attempt_id=attempt_id,
+                    sequence_id=sequence_counter,
+                    trace_id=trace_id_hex,
+                    span_id=span_id_hex,
+                    parent_id=parent_id_hex,
+                    name=proto_span.name,
+                    status=status,
+                    attributes=span_attrs,
+                    events=events_from_proto(proto_span),
+                    links=links_from_proto(proto_span),
+                    start_time=convert_timestamp(proto_span.start_time_unix_nano),
+                    end_time=convert_timestamp(proto_span.end_time_unix_nano),
+                    context=context,
+                    parent=None,  # OTLP only has parent_span_id; we don't have full SpanContext
+                    resource=otel_resource,
+                )
+
+                output_spans.append(span)
+                sequence_counter += 1
+
+    return output_spans
+
+
+def any_value_to_python(value: AnyValue) -> Any:
+    """Convert OTLP AnyValue -> plain Python value."""
+    kind = value.WhichOneof("value")
+    if kind is None:
+        return None
+    if kind == "string_value":
+        return value.string_value
+    if kind == "bool_value":
+        return value.bool_value
+    if kind == "int_value":
+        return int(value.int_value)
+    if kind == "double_value":
+        return float(value.double_value)
+    if kind == "array_value":
+        return [any_value_to_python(v) for v in value.array_value.values]
+    if kind == "kvlist_value":
+        # Map<string, AnyValue> -> dict
+        return {kv.key: any_value_to_python(kv.value) for kv in value.kvlist_value.values}
+    if kind == "bytes_value":
+        # Serialize bytes as hex string to stay JSON-friendly
+        return value.bytes_value.hex()
+    return None
+
+
+def kv_list_to_dict(kvs: Sequence[KeyValue]) -> Attributes:
+    """Convert repeated KeyValue -> Attributes dict."""
+    return {kv.key: any_value_to_python(kv.value) for kv in kvs}
+
+
+STATUS_CODE_MAP = {
+    ProtoStatus.STATUS_CODE_UNSET: "UNSET",
+    ProtoStatus.STATUS_CODE_OK: "OK",
+    ProtoStatus.STATUS_CODE_ERROR: "ERROR",
+}
+
+
+def extract_ids_from_resource(
+    resource_attrs: Attributes,
+    resource_index: int,
+) -> Tuple[str, str]:
+    """rollout_id, attempt_id from resource attributes when present,
+    otherwise fake them (as requested).
+    """
+    rollout_id = str(resource_attrs.get("rollout_id") or f"rollout-{resource_index}")
+    attempt_id = str(resource_attrs.get("attempt_id") or f"attempt-{resource_index}")
+    return rollout_id, attempt_id
+
+
+def bytes_to_trace_id_hex(b: bytes) -> str:
+    # OTLP uses 16-byte trace IDs; format as 32-char hex
+    if not b:
+        return "0" * 32
+    return b.hex().rjust(32, "0")
+
+
+def bytes_to_span_id_hex(b: bytes) -> str:
+    # OTLP uses 8-byte span IDs; format as 16-char hex
+    if not b:
+        return "0" * 16
+    return b.hex().rjust(16, "0")
+
+
+# ---------- Event & Link converters ----------
+
+
+def events_from_proto(span: ProtoSpan) -> List[Event]:
+    """Event converter from OTLP ProtoSpan to List[Event]."""
+    return [
+        Event(
+            name=e.name,
+            attributes=kv_list_to_dict(e.attributes),
+            timestamp=convert_timestamp(e.time_unix_nano),
+        )
+        for e in span.events
+    ]
+
+
+def links_from_proto(span: ProtoSpan) -> List[Link]:
+    """Link converter from OTLP ProtoSpan to List[Link]."""
+    links: List[Link] = []
+    for link in span.links:
+        trace_id_hex = bytes_to_trace_id_hex(link.trace_id)
+        span_id_hex = bytes_to_span_id_hex(link.span_id)
+        ctx = SpanContext(
+            trace_id=trace_id_hex,
+            span_id=span_id_hex,
+            is_remote=False,
+            trace_state={},  # OTLP trace_state is currently a string; you can parse if needed
+        )
+        links.append(
+            Link(
+                context=ctx,
+                attributes=kv_list_to_dict(link.attributes) or None,
+            )
+        )
+    return links
+
+
+def resource_from_proto(resource: ProtoResource) -> OtelResource:
+    return OtelResource(
+        attributes=kv_list_to_dict(resource.attributes),
+        schema_url=getattr(resource, "schema_url", ""),
     )

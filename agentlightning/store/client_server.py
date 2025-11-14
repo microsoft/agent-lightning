@@ -41,7 +41,7 @@ from agentlightning.types import (
     Worker,
     WorkerStatus,
 )
-from agentlightning.utils.otlp import handle_otlp_export
+from agentlightning.utils.otlp import handle_otlp_export, spans_from_text_proto
 from agentlightning.utils.server_launcher import LaunchMode, PythonServerLauncher, PythonServerLauncherArgs
 
 from .base import UNSET, LightningStore, LightningStoreCapabilities, Unset
@@ -794,15 +794,18 @@ class LightningStoreServer(LightningStore):
     def _setup_otlp(self, api: APIRouter):
         """Setup OTLP endpoints."""
 
+        async def _trace_handler(request: PbExportTraceServiceRequest) -> None:
+            spans = spans_from_text_proto(request)
+            for span in spans:
+                print(span)
+                # await self.add_span(span)
+
         # Reserved methods for OTEL traces
         # https://opentelemetry.io/docs/specs/otlp/#otlphttp-request
         @api.post("/traces")
         async def otlp_traces(request: Request):  # pyright: ignore[reportUnusedFunction]
-            async def print_request(request: PbExportTraceServiceRequest) -> None:
-                print(request)
-
             return await handle_otlp_export(
-                request, PbExportTraceServiceRequest, PbExportTraceServiceResponse, print_request, "traces"
+                request, PbExportTraceServiceRequest, PbExportTraceServiceResponse, _trace_handler, "traces"
             )
 
         @api.post("/metrics")

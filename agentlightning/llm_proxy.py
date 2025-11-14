@@ -457,8 +457,10 @@ class LightningOpenTelemetry(OpenTelemetry):
     """
 
     def __init__(self):
-        config = OpenTelemetryConfig(exporter=LightningSpanExporter())
-        # config = OpenTelemetryConfig(exporter="otlp_http", endpoint=get_active_llm_proxy().get_store().otlp_traces_endpoint())
+        # config = OpenTelemetryConfig(exporter=LightningSpanExporter())
+        config = OpenTelemetryConfig(
+            exporter="otlp_http", endpoint=get_active_llm_proxy().get_store().otlp_traces_endpoint()
+        )
 
         # Check for tracer initialization
         if _check_tracer_provider():
@@ -1211,15 +1213,15 @@ class LLMProxy:
             raise ValueError("Store is not set. Please set the store before starting the LLMProxy.")
 
         store_capabilities = self.store.capabilities
-        if self.server_launcher.args.launch_mode == "mp" and not store_capabilities["zero_copy"]:
+        if self.server_launcher.args.launch_mode == "mp" and not store_capabilities.get("zero_copy", False):
             raise RuntimeError(
                 "The store does not support zero-copy. Please use another store, or use asyncio or thread mode to launch the server."
             )
-        elif self.server_launcher.args.launch_mode == "thread" and not store_capabilities["thread_safe"]:
+        elif self.server_launcher.args.launch_mode == "thread" and not store_capabilities.get("thread_safe", False):
             raise RuntimeError(
                 "The store is not thread-safe. Please use another store, or use asyncio mode to launch the server."
             )
-        elif self.server_launcher.args.launch_mode == "asyncio" and not store_capabilities["async_safe"]:
+        elif self.server_launcher.args.launch_mode == "asyncio" and not store_capabilities.get("async_safe", False):
             raise RuntimeError("The store is not async-safe. Please use another store.")
 
         logger.info(
