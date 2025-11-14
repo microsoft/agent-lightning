@@ -1058,7 +1058,8 @@ class LightningStoreClient(LightningStore):
         request_timeout: float = 30.0,
         connection_timeout: float = 5.0,
     ):
-        self.server_address = server_address.rstrip("/") + API_V1_AGL_PREFIX
+        self.server_address_root = server_address.rstrip("/")
+        self.server_address = self.server_address_root + API_V1_AGL_PREFIX
         self._sessions: Dict[int, aiohttp.ClientSession] = {}  # id(loop) -> ClientSession
         self._lock = threading.Lock()
 
@@ -1086,7 +1087,7 @@ class LightningStoreClient(LightningStore):
 
     def otlp_traces_endpoint(self) -> str:
         """Return the OTLP/HTTP traces endpoint of the store."""
-        return f"{self.server_address}/v1/traces"
+        return f"{self.server_address_root}/v1/traces"
 
     def __getstate__(self):
         """

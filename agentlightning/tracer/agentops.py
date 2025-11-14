@@ -14,10 +14,15 @@ import agentops.sdk.core
 from agentops.sdk.core import TracingCore
 from agentops.sdk.processors import SpanProcessor
 from opentelemetry.instrumentation.utils import suppress_instrumentation
+from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import ReadableSpan
+from opentelemetry.sdk.trace import TracerProvider as TracerProviderImpl
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.trace import get_tracer_provider
 from opentelemetry.trace.status import StatusCode
 
 from agentlightning.instrumentation import instrument_all, uninstrument_all
+from agentlightning.instrumentation.agentops import BypassableAuthenticatedOTLPExporter
 from agentlightning.store.base import LightningStore
 
 from .base import Tracer
@@ -85,16 +90,9 @@ class AgentOpsTracer(Tracer):
 
         self._lightning_span_processor = LightningSpanProcessor()
 
-        try:
-            # new versions
-            instance = agentops.sdk.core.tracer
-            # TODO: The span processor cannot be deleted once added.
-            # This might be a problem if the tracer is entered and exited multiple times.
-            instance.provider.add_span_processor(self._lightning_span_processor)  # type: ignore
-        except AttributeError:
-            # old versions
-            instance = TracingCore.get_instance()  # type: ignore
-            instance._provider.add_span_processor(self._lightning_span_processor)  # type: ignore
+        # TODO: The span processor cannot be deleted once added.
+        # This might be a problem if the tracer is entered and exited multiple times.
+        self._get_tracer_provider().add_span_processor(self._lightning_span_processor)  # type: ignore
 
     def teardown_worker(self, worker_id: int) -> None:
         super().teardown_worker(worker_id)
@@ -151,12 +149,18 @@ class AgentOpsTracer(Tracer):
         status = StatusCode.OK  # type: ignore
         try:
             if store is not None and rollout_id is not None and attempt_id is not None:
+                if store.capabilities.get("otlp_traces", False) is True:
+                    logger.debug(f"Tracing to LightningStore rollout_id={rollout_id}, attempt_id={attempt_id}")
+                    self._enable_native_otlp_exporter(store, rollout_id, attempt_id)
+                else:
+                    self._disable_native_otlp_exporter()
                 ctx = self._lightning_span_processor.with_context(
                     store=store, rollout_id=rollout_id, attempt_id=attempt_id
                 )
                 with ctx as processor:
                     yield processor
             elif store is None and rollout_id is None and attempt_id is None:
+                self._disable_native_otlp_exporter()
                 with self._lightning_span_processor:
                     yield self._lightning_span_processor
             else:
@@ -166,6 +170,77 @@ class AgentOpsTracer(Tracer):
             logger.error(f"Trace failed for rollout_id={rollout_id}, attempt_id={attempt_id}, error={e}")
         finally:
             agentops.end_trace(trace, end_state=status)  # type: ignore
+
+    def _enable_native_otlp_exporter(self, store: LightningStore, rollout_id: str, attempt_id: str):
+        tracer_provider = self._get_tracer_provider()
+        active_span_processor = tracer_provider._active_span_processor  # pyright: ignore[reportPrivateUsage]
+
+        # Override the resources so that the server knows where the request comes from.
+        tracer_provider.resource.merge(
+            Resource.create(
+                {
+                    "agentlightning.rollout_id": rollout_id,
+                    "agentlightning.attempt_id": attempt_id,
+                }
+            )
+        )
+        instrumented = False
+        for processor in active_span_processor._span_processors:  # pyright: ignore[reportPrivateUsage]
+            if isinstance(processor, LightningSpanProcessor):
+                # We don't need the LightningSpanProcessor any more.
+                logger.debug("LightningSpanProcessor already present in TracerProvider, disabling it.")
+                processor.disabled = True
+            if isinstance(processor, BatchSpanProcessor):
+                # Instead, we rely on the OTLPSpanExporter to send spans to the store.
+                if isinstance(processor.span_exporter, BypassableAuthenticatedOTLPExporter):
+                    processor.span_exporter.enable_store_otlp(store.otlp_traces_endpoint(), rollout_id, attempt_id)
+                    logger.debug(f"Set AuthenticatedOTLPExporter endpoint to {store.otlp_traces_endpoint()}")
+                    instrumented = True
+
+        if not instrumented:
+            raise RuntimeError(
+                "Failed to enable native OTLP exporter: no BatchSpanProcessor with "
+                "AuthenticatedOTLPExporter found in TracerProvider."
+            )
+
+    def _disable_native_otlp_exporter(self):
+        tracer_provider = self._get_tracer_provider()
+        active_span_processor = tracer_provider._active_span_processor  # pyright: ignore[reportPrivateUsage]
+        tracer_provider.resource.merge(
+            Resource.create(
+                {
+                    "agentlightning.rollout_id": "",
+                    "agentlightning.attempt_id": "",
+                }
+            )
+        )  # reset resource
+        for processor in active_span_processor._span_processors:  # pyright: ignore[reportPrivateUsage]
+            if isinstance(processor, LightningSpanProcessor):
+                # We will be in need of the LightningSpanProcessor again.
+                logger.debug("Enabling LightningSpanProcessor in TracerProvider.")
+                processor.disabled = False
+
+    def _get_tracer_provider(self) -> TracerProviderImpl:
+        try:
+            # new versions
+            instance = agentops.sdk.core.tracer
+            if instance.provider is None:
+                raise RuntimeError("AgentOps TracerProvider is not initialized.")
+
+            if get_tracer_provider() is not instance.provider:
+                logger.error(
+                    "Mismatch between global singleton TracerProvider and AgentOps TracerProvider. "
+                    "AgentOps might not work properly."
+                )
+
+            if not isinstance(instance.provider, TracerProviderImpl):  # type: ignore
+                raise RuntimeError("Unsupported TracerProvider type for AgentOps instrumentation.")
+
+            return instance.provider
+        except AttributeError:
+            # old versions
+            instance = TracingCore.get_instance()  # type: ignore
+            return instance._provider  # type: ignore
 
     def get_last_trace(self) -> List[ReadableSpan]:
         """
@@ -211,6 +286,7 @@ class LightningSpanProcessor(SpanProcessor):
     """
 
     def __init__(self):
+        self._disabled: bool = False
         self._spans: List[ReadableSpan] = []
 
         # Store related context and states
@@ -222,6 +298,16 @@ class LightningSpanProcessor(SpanProcessor):
         # private asyncio loop running in a daemon thread
         self._loop_ready = threading.Event()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
+
+    @property
+    def disabled(self) -> bool:
+        return self._disabled
+
+    @disabled.setter
+    def disabled(self, value: bool) -> None:
+        self._disabled = value
+
+    def _ensure_loop(self) -> None:
         self._loop_thread = threading.Thread(target=self._loop_runner, name="otel-loop", daemon=True)
         self._loop_thread.start()
         self._loop_ready.wait()  # loop is ready
@@ -319,6 +405,9 @@ class LightningSpanProcessor(SpanProcessor):
         Args:
             span: The span that has ended.
         """
+        if self.disabled:
+            return
+
         # Skip if span is not sampled
         if not span.context or not span.context.trace_flags.sampled:
             return
@@ -327,6 +416,7 @@ class LightningSpanProcessor(SpanProcessor):
             try:
                 # Submit add_otel_span to the event loop and wait for it to complete
                 with suppress_instrumentation():
+                    self._ensure_loop()
                     self._await_in_loop(
                         self._store.add_otel_span(self._rollout_id, self._attempt_id, span),
                         timeout=60.0,

@@ -411,6 +411,10 @@ class SpanNames(str, Enum):
     """The name of the exception span."""
     VIRTUAL = "agentlightning.virtual"
     """The name of the virtual span. It represents derived spans without concrete operations."""
+    ROLLOUT_ID = "agentlightning.rollout_id"
+    """The name of the rollout ID span."""
+    ATTEMPT_ID = "agentlightning.attempt_id"
+    """The name of the attempt ID span."""
 
 
 class SpanAttributeNames(str, Enum):

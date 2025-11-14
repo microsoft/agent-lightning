@@ -12,7 +12,6 @@ agl store --port 45993
 import argparse
 import asyncio
 import time
-from typing import Literal
 
 from openai import AsyncOpenAI
 from opentelemetry import trace
@@ -21,7 +20,7 @@ from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
-from agentlightning import AgentOpsTracer, LightningStoreClient
+from agentlightning import AgentOpsTracer, LightningStoreClient, setup_logging
 
 
 def manually_send_traces():
@@ -73,6 +72,7 @@ async def send_traces_via_agentops():
 
 
 def main():
+    setup_logging("DEBUG")
     parser = argparse.ArgumentParser()
     parser.add_argument("mode", choices=["manual", "agentops"])
     args = parser.parse_args()
