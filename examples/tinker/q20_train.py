@@ -367,7 +367,7 @@ def main() -> None:
     runner_parser.set_defaults(func=_run_runner)
 
     args = parser.parse_args()
-    agl.configure_logger()
+    agl.setup_logging()
     args.func(args)
 
 

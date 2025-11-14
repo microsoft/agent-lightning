@@ -192,7 +192,7 @@ def main():
 
     args = parser.parse_args()
 
-    agl.configure_logger()
+    agl.setup_logging()
     if args.mode == "algo":
         run_algo()
     elif args.mode == "runner":

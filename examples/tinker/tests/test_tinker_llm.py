@@ -7,7 +7,6 @@ It should be included in CI in future if we decided to maintain this example.
 """
 
 import asyncio
-import logging
 from typing import cast
 
 import openai
@@ -24,13 +23,12 @@ from agentlightning import (
     LLMProxy,
     LlmProxyTraceToTriplet,
     TracerTraceToTriplet,
-    configure_logger,
     emit_reward,
+    setup_logging,
 )
 from agentlightning.store import LightningStoreThreaded
 
-configure_logger(name="agentlightning")
-configure_logger(name="agl_tinker", level=logging.INFO)
+setup_logging(apply_to=["agl_tinker"])
 
 
 async def test_tracer():

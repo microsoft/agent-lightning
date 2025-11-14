@@ -791,9 +791,6 @@ async def test_run_gunicorn_reports_health_failure_preload():
     """
     Health endpoint returns 503 -> watchdog posts error and requests graceful shutdown.
     """
-    from agentlightning.logging import configure_logger
-
-    configure_logger(logging.DEBUG)
     host = "127.0.0.1"
     port = portpicker.pick_unused_port()
     ctx = multiprocessing.get_context("fork")

@@ -18,13 +18,13 @@ from flask import Flask, Response, abort, request
 from tensordict import TensorDict
 from verl import DataProto
 
-from agentlightning import LLM, AgentLightningServer, NamedResources, RolloutLegacy, configure_logger
+from agentlightning import LLM, AgentLightningServer, NamedResources, RolloutLegacy, setup_logging
 from agentlightning.adapter.triplet import TracerTraceToTriplet, TraceToTripletBase
 from agentlightning.llm_proxy import LLMProxy, ModelConfig
 from agentlightning.store.base import LightningStore
 from agentlightning.types import Rollout, RolloutConfig, Task
 
-configure_logger()
+setup_logging()
 
 __all__ = [
     "AgentModeDaemon",
