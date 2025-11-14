@@ -447,6 +447,7 @@ class AgentLightningTrainer(RayPPOTrainer):
         self.global_steps += 1
         last_val_metrics = None
 
+        breakpoint()
         for epoch in range(self.config.trainer.total_epochs):
             for batch_dict in self.train_dataloader:
                 metrics = {}
@@ -454,6 +455,7 @@ class AgentLightningTrainer(RayPPOTrainer):
                 is_last_step = self.global_steps >= self.total_training_steps
 
                 # train step
+                breakpoint()
                 metrics = self._train_step(batch_dict)
 
                 # validate
