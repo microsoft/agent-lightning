@@ -64,9 +64,8 @@ class AgentOpsTracer(OtelTracer):
     def uninstrument(self, worker_id: int):
         uninstrument_all()
 
-    def init_worker(self, worker_id: int):
-        super().init_worker(worker_id)
-        logger.info(f"[Worker {worker_id}] Setting up tracer...")  # worker_id included in process name
+    def _initialize_tracer_provider(self, worker_id: int):
+        logger.info(f"[Worker {worker_id}] Setting up AgentOps tracer...")  # worker_id included in process name
 
         if self.instrument_managed:
             self.instrument(worker_id)

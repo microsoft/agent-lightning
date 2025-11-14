@@ -44,6 +44,9 @@ class OtelTracer(Tracer):
 
     def init_worker(self, worker_id: int):
         super().init_worker(worker_id)
+        self._initialize_tracer_provider(worker_id)
+
+    def _initialize_tracer_provider(self, worker_id: int):
         logger.info(f"[Worker {worker_id}] Setting up OpenTelemetry tracer...")
 
         if self._initialized:

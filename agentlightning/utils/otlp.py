@@ -160,18 +160,32 @@ async def spans_from_proto(request: ExportTraceServiceRequest, store: LightningS
                     trace_state={},
                 )
 
+                # Try to get if span attributes contain something like rollout_id or attempt_id
+                # Override the resource-level attributes with the span-level attributes if present.
+                span_rollout_id = span_attrs.get(SpanNames.ROLLOUT_ID)
+                if span_rollout_id is None:
+                    span_rollout_id = rollout_id
+                span_attempt_id = span_attrs.get(SpanNames.ATTEMPT_ID)
+                if span_attempt_id is None:
+                    span_attempt_id = attempt_id
+                span_sequence_id = span_attrs.get(SpanNames.SPAN_SEQUENCE_ID)
+                if span_sequence_id is None:
+                    span_sequence_id = sequence_id
+                else:
+                    span_sequence_id = int(str(span_sequence_id))
+
                 # Generate a new sequence ID if not provided
-                if sequence_id is None:
+                if span_sequence_id is None:
                     current_sequence_id = await store.get_next_span_sequence_id(
-                        rollout_id=str(rollout_id), attempt_id=str(attempt_id)
+                        rollout_id=str(span_rollout_id), attempt_id=str(span_attempt_id)
                     )
                 else:
-                    current_sequence_id = sequence_id
+                    current_sequence_id = span_sequence_id
 
                 # Build Span
                 span = Span(
-                    rollout_id=str(rollout_id),
-                    attempt_id=str(attempt_id),
+                    rollout_id=str(span_rollout_id),
+                    attempt_id=str(span_attempt_id),
                     sequence_id=current_sequence_id,
                     trace_id=trace_id_hex,
                     span_id=span_id_hex,
