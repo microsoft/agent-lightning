@@ -33,6 +33,89 @@ __all__ = [
 ]
 
 
+def fuzzy_startswith(full_ids, prefix_ids, tokenizer, special_token_tolerance=0, string_tolerance=0):
+    def _special_token_sequence(ids):
+        return [id for id in ids if id in tokenizer.all_special_ids]
+
+    if special_token_tolerance < 0 or string_tolerance < 0:
+        raise ValueError("tolerance must be non-negative")
+
+    # First, handle special tokens
+    full_special_ids = _special_token_sequence(full_ids)
+    prefix_special_ids = _special_token_sequence(prefix_ids)
+    diff_count = sum(1 for a, b in zip(full_special_ids, prefix_special_ids) if a != b)
+    special_token_tolerance -= diff_count
+    if special_token_tolerance < 0:
+        return False
+
+    # Next, handle string content
+    full_string = tokenizer.decode(full_ids, skip_special_tokens=True)
+    prefix_string = tokenizer.decode(prefix_ids, skip_special_tokens=True)
+    full_ids = tokenizer.encode(full_string)
+    prefix_ids = tokenizer.encode(prefix_string)
+    full_string = tokenizer.decode(full_ids, skip_special_tokens=True)
+    prefix_string = tokenizer.decode(prefix_ids, skip_special_tokens=True)
+    m = len(prefix_string)
+    n = len(full_string)
+
+    if m == 0:
+        return True  # Empty B always matches (distance 0 to empty prefix)
+    if n == 0:
+        return m <= string_tolerance  # B non-empty but A empty: only match if we can delete all of B within tolerance
+    if string_tolerance == 0:
+        return full_string.startswith(prefix_string)  # exact match required
+
+    # use DP to compute edit distance with banded optimization
+    min_j = max(0, m - string_tolerance)
+    max_j = min(n, m + string_tolerance)
+    if min_j > max_j:
+        return False  # no possible prefix length
+
+    prev_start = max(0, 0 - string_tolerance)
+    prev_end = min(n, 0 + string_tolerance)
+    prev = [j for j in range(prev_start, prev_end + 1)]
+
+    for j_idx, j in enumerate(range(prev_start, prev_end + 1)):
+        if min_j <= j <= max_j and prev[j_idx] <= string_tolerance:
+            return True
+
+    for i in range(1, m + 1):
+        # valid j range for this row
+        start_j = max(0, i - string_tolerance)
+        end_j = min(n, i + string_tolerance)
+        cur_len = end_j - start_j + 1
+        cur = [0] * cur_len
+
+        for idx, j in enumerate(range(start_j, end_j + 1)):
+            del_cost = None
+            prev_start = max(0, (i - 1) - string_tolerance)
+            prev_end = min(n, (i - 1) + string_tolerance)
+            if prev_start <= j <= prev_end:
+                del_cost = prev[j - prev_start] + 1
+            else:
+                del_cost = abs((i - 1) - j) + 1  # safe over-approximation
+
+            ins_cost = None
+            if j - 1 >= start_j:
+                ins_cost = cur[idx - 1] + 1
+            else:
+                ins_cost = abs(i - (j - 1)) + 1
+
+            sub_cost = None
+            if prev_start <= (j - 1) <= prev_end:
+                sub_cost = prev[(j - 1) - prev_start] + (0 if prefix_string[i - 1] == full_string[j - 1] else 1)
+            else:
+                sub_cost = abs((i - 1) - (j - 1)) + (0 if prefix_string[i - 1] == full_string[j - 1] else 1)
+
+            cur[idx] = min(del_cost, ins_cost, sub_cost)
+
+        for idx, j in enumerate(range(start_j, end_j + 1)):
+            if min_j <= j <= max_j and cur[idx] <= string_tolerance:
+                return True
+        prev = cur
+    return False
+
+
 def get_left_padded_ids_and_attention_mask(
     ids: List[int], max_length: int, pad_token_id: int
 ) -> Tuple[List[int], List[int]]:
@@ -146,6 +229,7 @@ class AgentModeDaemon:
         llm_proxy: LLMProxy | None = None,
         store: LightningStore | None = None,
         adapter: TraceToTripletBase | None = None,
+        trace_aggregator: Optional[Dict[str, Any]] = None,
     ):
         self.mode = mode
         self.llm_timeout_seconds = llm_timeout_seconds
@@ -186,6 +270,7 @@ class AgentModeDaemon:
         self.pad_token_id = pad_token_id
         self.tokenizer = tokenizer
         self.reward_fillna_value = reward_fillna_value
+        self.trace_aggregator = trace_aggregator
 
         # Internal State
         self.backend_llm_server_addresses: List[str] = []
@@ -685,49 +770,153 @@ class AgentModeDaemon:
         reward_list: List[float] = []
         data_id_list: List[str] = []
         rollout_id_list: List[str] = []
-        turn_index_list: List[int] = []
+        turn_index_list: List[int] | List[List[int]] = []
         is_drop_list: List[bool] = []
         n_trunc_sample_because_of_response = 0
 
-        for rollout_id, sample_info in finished_id_to_sample_info.items():
-            for turn_index, trace in enumerate(sample_info["trace_list"]):
+        if self.trace_aggregator.mode == "transition":
+            for rollout_id, sample_info in finished_id_to_sample_info.items():
+                for turn_index, trace in enumerate(sample_info["trace_list"]):
 
-                reward_list.append(sample_info["reward"])
-                prompt_ids, response_ids = trace["prompt_ids"], trace["response_ids"]
+                    reward_list.append(sample_info["reward"])
+                    prompt_ids, response_ids = trace["prompt_ids"], trace["response_ids"]
 
-                # Mark samples with prompts exceeding max_prompt_length to be dropped later
-                if len(prompt_ids) > max_prompt_length:
-                    prompt_ids = prompt_ids[:max_prompt_length]
-                    is_drop_list.append(True)
-                else:
-                    is_drop_list.append(False)
+                    # Mark samples with prompts exceeding max_prompt_length to be dropped later
+                    if len(prompt_ids) > max_prompt_length:
+                        prompt_ids = prompt_ids[:max_prompt_length]
+                        is_drop_list.append(True)
+                    else:
+                        is_drop_list.append(False)
 
-                # Truncate responses that exceed max_response_length
-                if len(response_ids) > max_response_length:
-                    response_ids = response_ids[:max_response_length]
-                    n_trunc_sample_because_of_response += 1
+                    # Truncate responses that exceed max_response_length
+                    if len(response_ids) > max_response_length:
+                        response_ids = response_ids[:max_response_length]
+                        n_trunc_sample_because_of_response += 1
 
-                # Pad prompts to the left and responses to the right
-                one_input_ids, one_input_attention_mask = get_left_padded_ids_and_attention_mask(
-                    prompt_ids, max_prompt_length, self.pad_token_id
-                )
-                one_response_ids, one_response_attention_mask = get_right_padded_ids_and_attention_mask(
-                    response_ids, max_response_length, self.pad_token_id
-                )
+                    # Pad prompts to the left and responses to the right
+                    one_input_ids, one_input_attention_mask = get_left_padded_ids_and_attention_mask(
+                        prompt_ids, max_prompt_length, self.pad_token_id
+                    )
+                    one_response_ids, one_response_attention_mask = get_right_padded_ids_and_attention_mask(
+                        response_ids, max_response_length, self.pad_token_id
+                    )
 
-                input_ids_list.append(one_input_ids)
-                input_attention_mask_list.append(one_input_attention_mask)
-                response_ids_list.append(one_response_ids)
-                response_attention_mask_list.append(one_response_attention_mask)
-                data_id_list.append(sample_info["data_id"])
-                rollout_id_list.append(rollout_id)
-                turn_index_list.append(turn_index)
+                    input_ids_list.append(one_input_ids)
+                    input_attention_mask_list.append(one_input_attention_mask)
+                    response_ids_list.append(one_response_ids)
+                    response_attention_mask_list.append(one_response_attention_mask)
+                    data_id_list.append(sample_info["data_id"])
+                    rollout_id_list.append(rollout_id)
+                    turn_index_list.append(turn_index)
+
+        elif self.trace_aggregator.mode == "trajectory":
+            response_mask_list: List[List[int]] = []
+            unmerged_count = 0  # only for debug
+
+            for rollout_id, sample_info in finished_id_to_sample_info.items():
+                merged_trace_idx: List[List[int]] = []
+                current_merged_trace_idx: List[int] = []
+                current_context: List[int] = []
+                turn_ids = []  # log data, only for debug testing
+                for turn_index, trace in enumerate(sample_info["trace_list"]):
+                    # log data, only for debug testing
+                    turn_ids.append(
+                        {"nxt_turn": trace["prompt_ids"][:] + trace["response_ids"][:], "cur": current_context[:]}
+                    )
+                    if fuzzy_startswith(
+                        trace["prompt_ids"] + trace["response_ids"],
+                        current_context,
+                        self.tokenizer,
+                        special_token_tolerance=self.trace_aggregator.special_token_tolerance,
+                        string_tolerance=self.trace_aggregator.string_tolerance,
+                    ):
+                        current_context = trace["prompt_ids"] + trace["response_ids"]
+                        current_merged_trace_idx.append(turn_index)
+                    else:
+                        merged_trace_idx.append(current_merged_trace_idx)
+                        current_merged_trace_idx = [turn_index]
+                        current_context = trace["prompt_ids"] + trace["response_ids"]
+                if current_merged_trace_idx not in merged_trace_idx:
+                    merged_trace_idx.append(current_merged_trace_idx)
+
+                # log data, only for debug testing
+                if len(merged_trace_idx) > 1:
+                    unmerged_count += 1
+                    for turn_index, d in enumerate(turn_ids):
+                        with open("bad_case_jiahang.log", "a+") as f:
+                            print("-" * 20, file=f)
+                            print(merged_trace_idx, file=f)
+                            print("~" * 20, file=f)
+                            print(turn_index, file=f)
+                            print(d["nxt_turn"], file=f)
+                            print(d["cur"], file=f)
+
+                for current_merged_trace_idx in merged_trace_idx:
+                    prompt_ids = sample_info["trace_list"][current_merged_trace_idx[0]]["prompt_ids"]
+                    accum_response_ids = sample_info["trace_list"][current_merged_trace_idx[0]]["response_ids"]
+                    prompt_length = len(prompt_ids)
+                    response_mask = [1] * len(accum_response_ids)
+                    for turn_index in current_merged_trace_idx[1:]:
+                        trace = sample_info["trace_list"][turn_index]
+                        new_prompt_length = len(trace["prompt_ids"]) - len(accum_response_ids) - prompt_length
+                        accum_response_ids += trace["prompt_ids"][-new_prompt_length:]
+                        accum_response_ids += trace["response_ids"]
+                        response_mask += [0] * new_prompt_length
+                        response_mask += [1] * len(trace["response_ids"])
+                    final_sample = sample_info["trace_list"][current_merged_trace_idx[-1]]
+                    response_ids = final_sample["prompt_ids"][prompt_length:] + final_sample["response_ids"]
+                    if len(response_ids) != len(accum_response_ids):  # only for debug testing
+                        with open("bad_case_jiahang.log", "a+") as f:
+                            print("-" * 10 + "response_ids NUM NOT MATCH" + "-" * 10, file=f)
+                            print(response_ids, file=f)
+                            print(accum_response_ids, file=f)
+
+                    response_ids = accum_response_ids  # convert to the generating response ids, only for debug testing
+                    reward_list.append(sample_info["reward"])
+
+                    # Mark samples with prompts exceeding max_prompt_length to be dropped later
+                    if len(prompt_ids) > max_prompt_length:
+                        prompt_ids = prompt_ids[:max_prompt_length]
+                        is_drop_list.append(True)
+                    else:
+                        is_drop_list.append(False)
+
+                    # Truncate responses that exceed max_response_length
+                    if len(response_ids) > max_response_length:
+                        response_ids = response_ids[:max_response_length]
+                        response_mask = response_mask[:max_response_length]
+                        n_trunc_sample_because_of_response += 1
+
+                    # Pad prompts to the left and responses to the right
+                    one_input_ids, one_input_attention_mask = get_left_padded_ids_and_attention_mask(
+                        prompt_ids, max_prompt_length, self.pad_token_id
+                    )
+                    one_response_ids, one_response_attention_mask = get_right_padded_ids_and_attention_mask(
+                        response_ids, max_response_length, self.pad_token_id
+                    )
+                    one_response_mask, _ = get_right_padded_ids_and_attention_mask(
+                        response_mask, max_response_length, 0
+                    )
+
+                    input_ids_list.append(one_input_ids)
+                    input_attention_mask_list.append(one_input_attention_mask)
+                    response_ids_list.append(one_response_ids)
+                    response_attention_mask_list.append(one_response_attention_mask)
+                    response_mask_list.append(one_response_mask)
+                    data_id_list.append(sample_info["data_id"])
+                    rollout_id_list.append(rollout_id)
+                    turn_index_list.append(current_merged_trace_idx)
+        else:
+            raise ValueError(f"Unknown trace_aggregator mode: {self.trace_aggregator.mode}")
 
         n_transition = len(input_ids_list)
         batch_input_ids = torch.LongTensor(input_ids_list).to(device)
         input_attention_mask = torch.LongTensor(input_attention_mask_list).to(device)
         batch_response_ids = torch.LongTensor(response_ids_list).to(device)
         response_attention_mask = torch.LongTensor(response_attention_mask_list).to(device)
+        response_mask = (
+            torch.LongTensor(response_mask_list).to(device) if self.trace_aggregator.mode == "trajectory" else None
+        )
 
         # Concatenate prompts and responses to form the full sequence
         batch_seq = torch.cat([batch_input_ids, batch_response_ids], dim=-1)
@@ -755,6 +944,7 @@ class AgentModeDaemon:
                 "position_ids": position_ids,
                 "is_drop_mask": is_drop_mask,
                 "token_level_scores": token_level_scores.contiguous(),
+                **({"response_mask": response_mask} if self.trace_aggregator.mode == "trajectory" else {}),
             },
             batch_size=n_transition,
         )
@@ -766,6 +956,8 @@ class AgentModeDaemon:
             "training/n_rollouts_w_trace": len(finished_id_to_sample_info),
             "training/n_truncated_triplets": n_trunc_sample_because_of_response,
             "training/n_triplets": n_transition,
+            # log data, only for debug testing
+            **({"training/n_unmerged_turns": unmerged_count} if self.trace_aggregator.mode == "trajectory" else {}),
         }
 
         # Add non-tensor data for advantage calculation and logging
