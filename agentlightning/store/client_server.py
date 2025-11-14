@@ -18,6 +18,12 @@ from fastapi import Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import (
+    ExportTraceServiceRequest as PbExportTraceServiceRequest,
+)
+from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import (
+    ExportTraceServiceResponse as PbExportTraceServiceResponse,
+)
 from opentelemetry.sdk.trace import ReadableSpan
 from pydantic import BaseModel, Field, TypeAdapter
 
@@ -35,6 +41,7 @@ from agentlightning.types import (
     Worker,
     WorkerStatus,
 )
+from agentlightning.utils.otlp import handle_otlp_export
 from agentlightning.utils.server_launcher import LaunchMode, PythonServerLauncher, PythonServerLauncherArgs
 
 from .base import UNSET, LightningStore, LightningStoreCapabilities, Unset
@@ -775,13 +782,28 @@ class LightningStoreServer(LightningStore):
         async def wait_for_rollouts(request: WaitForRolloutsRequest):  # pyright: ignore[reportUnusedFunction]
             return await self.wait_for_rollouts(rollout_ids=request.rollout_ids, timeout=request.timeout)
 
+        # Setup OTLP endpoints
+        self._setup_otlp(api)
+
+        # Mount the API router of /v1/...
+        self.app.include_router(api)
+
+        # Finally, mount the dashboard assets
+        self._setup_dashboard()
+
+    def _setup_otlp(self, api: APIRouter):
+        """Setup OTLP endpoints."""
+
         # Reserved methods for OTEL traces
         # https://opentelemetry.io/docs/specs/otlp/#otlphttp-request
         @api.post("/traces")
         async def otlp_traces(request: Request):  # pyright: ignore[reportUnusedFunction]
-            raw = await request.body()
-            print(raw)
-            return Response(status_code=200)
+            async def print_request(request: PbExportTraceServiceRequest) -> None:
+                print(request)
+
+            return await handle_otlp_export(
+                request, PbExportTraceServiceRequest, PbExportTraceServiceResponse, print_request, "traces"
+            )
 
         @api.post("/metrics")
         async def otlp_metrics():  # pyright: ignore[reportUnusedFunction]
@@ -794,12 +816,6 @@ class LightningStoreServer(LightningStore):
         @api.post("/development/profiles")
         async def otlp_development_profiles():  # pyright: ignore[reportUnusedFunction]
             return Response(status_code=501)
-
-        # Mount the API router of /v1/...
-        self.app.include_router(api)
-
-        # Finally, mount the dashboard assets
-        self._setup_dashboard()
 
     def _setup_dashboard(self):
         """Setup the dashboard static files and SPA."""
