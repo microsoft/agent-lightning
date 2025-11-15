@@ -291,6 +291,8 @@ class LightningStoreServer(LightningStore):
     and automatically delegate to an HTTP client instead of using the local store.
     This ensures one single copy of the store will be shared across all processes.
 
+    This server exporting OTLP-compatible traces via the `/v1/traces` endpoint.
+
     Args:
         store: The underlying store to delegate operations to.
         host: The hostname or IP address to bind the server to.

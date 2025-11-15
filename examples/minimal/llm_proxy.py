@@ -5,8 +5,6 @@
 Usage: run one of the following commands to start a server.
 
 ```bash
-dotenv run python llm_proxy.py openai gpt-4.1-mini
-
 python llm_proxy.py vllm Qwen/Qwen2.5-0.5B-Instruct
 ```
 
@@ -14,6 +12,12 @@ Use the following command to test the LLM proxy.
 
 ```bash
 python llm_proxy.py test Qwen/Qwen2.5-0.5B-Instruct
+```
+
+You can also test the OpenAI Proxy path (`OPENAI_API_KEY` environment variable is required).
+
+```bash
+dotenv run python llm_proxy.py openai gpt-4.1-mini
 ```
 """
 
