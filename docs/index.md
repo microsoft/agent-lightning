@@ -16,7 +16,7 @@ Agent Lightning is the absolute trainer to light up AI agents.
 This documentation is organized into the following parts:
 
 - [Installation](tutorials/installation.md) - Get started with Agent Lightning
-- How-to Recipes (e.g., [Train SQL Agent with RL](how-to/train-sql-agent.md)) - Practical examples of training agents and customizing algorithms.
+- How-to Recipes (e.g., [Train SQL Agent with RL](how-to/train-sql-agent.md), [Evaluate with LLM-as-Judge](how-to/evaluate-with-llm-judge.md)) - Practical examples of training agents and customizing algorithms.
 - Learning More (e.g., [Debugging](tutorials/debug.md)) - Guides on specific topics like debugging or parallelization.
 - Algorithm Zoo (e.g., [APO](algorithm-zoo/apo.md)) - References for built-in algorithms.
 - Deep Dive (e.g., [Bird's Eye View](deep-dive/birds-eye-view.md)) - For a deeper understanding of what Agent-lightning is doing under the hood.
