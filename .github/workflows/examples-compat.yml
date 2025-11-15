@@ -14,7 +14,7 @@ on:
 run-name: >-
   ${{ github.event_name == 'repository_dispatch'
       && format(
-        'PR #{0} - Label {1} - {2}',
+        'Backward Compatibility - PR #{0} - {1} - {2}',
         github.event.client_payload.pull_number,
         github.event.client_payload.ci_label,
         github.event.client_payload.correlation_id
