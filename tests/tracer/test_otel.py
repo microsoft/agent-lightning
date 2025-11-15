@@ -10,17 +10,25 @@ import pickle
 import threading
 import time
 from multiprocessing.connection import Connection
-from typing import Any
+from typing import Any, Dict, List, Optional
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+import uvicorn
+from fastapi import FastAPI, Request
+from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import (
+    ExportTraceServiceRequest,
+    ExportTraceServiceResponse,
+)
 from opentelemetry.sdk.trace import ReadableSpan
 from opentelemetry.trace import SpanContext, TraceFlags
+from portpicker import pick_unused_port
 
 from agentlightning.reward import emit_reward, find_reward_spans, get_reward_value, reward
 from agentlightning.store.base import LightningStore
 from agentlightning.tracer.agentops import LightningSpanProcessor
 from agentlightning.tracer.otel import OtelTracer
+from agentlightning.utils import otlp
 
 from ..common.tracer import clear_agentops_init, clear_tracer_provider
 
@@ -41,11 +49,69 @@ def create_span(name: str, sampled: bool = True, with_context: bool = True) -> M
     return span
 
 
-def create_mock_store() -> MagicMock:
+def create_mock_store(otlp_supported: bool = False) -> MagicMock:
     """Helper to create a mock LightningStore."""
     store = MagicMock(spec=LightningStore)
     store.add_otel_span = AsyncMock(return_value=None)
+    store.capabilities = {"otlp_traces": otlp_supported}
+    store.otlp_traces_endpoint.return_value = "http://store/v1/traces"
     return store
+
+
+@pytest.fixture(params=[False, True], ids=["store-no-otlp", "store-otlp"])
+def store_supports_otlp(request: pytest.FixtureRequest) -> bool:
+    return bool(request.param)
+
+
+@pytest.fixture
+def otlp_server(store_supports_otlp: bool):
+    if not store_supports_otlp:
+        yield None
+        return
+
+    app = FastAPI()
+    received: List[ExportTraceServiceRequest] = []
+
+    @app.post("/v1/traces")
+    async def _export_traces(request: Request):  # type: ignore
+        async def capture(message: ExportTraceServiceRequest) -> None:
+            received.append(message)
+
+        return await otlp.handle_otlp_export(
+            request,
+            ExportTraceServiceRequest,
+            ExportTraceServiceResponse,
+            capture,
+            signal_name="traces",
+        )
+
+    port = pick_unused_port()
+    config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="error")
+    server = uvicorn.Server(config)
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    timeout = time.time() + 5
+    while not getattr(server, "started", False):
+        if time.time() > timeout:
+            raise RuntimeError("OTLP test server failed to start")
+        if not thread.is_alive():
+            raise RuntimeError("OTLP test server thread exited before startup")
+        time.sleep(0.01)
+
+    try:
+        yield {"url": f"http://127.0.0.1:{port}/v1/traces", "received": received}
+    finally:
+        server.should_exit = True
+        thread.join(timeout=5)
+
+
+@pytest.fixture
+def store(store_supports_otlp: bool, otlp_server: Optional[Dict[str, Any]]) -> MagicMock:
+    mock_store = create_mock_store(store_supports_otlp)
+    if store_supports_otlp:
+        assert otlp_server is not None
+        mock_store.otlp_traces_endpoint.return_value = otlp_server["url"]
+    return mock_store
 
 
 def test_initialization_and_shutdown():
@@ -106,10 +172,9 @@ def test_span_collection_with_filtering():
     processor.shutdown()
 
 
-def test_context_managers_clear_state():
+def test_context_managers_clear_state(store: MagicMock):
     """Test that both context managers properly manage state."""
     processor = LightningSpanProcessor()
-    store = create_mock_store()
 
     # Add a span first
     span1 = create_span("span1")
@@ -143,10 +208,9 @@ def test_context_managers_clear_state():
     processor.shutdown()
 
 
-def test_store_integration_complete():
+def test_store_integration_complete(store: MagicMock):
     """Test all store integration scenarios: writes, errors, timeout, thread verification."""
     processor = LightningSpanProcessor()
-    store = create_mock_store()
 
     # Test 1: Successful store writes
     with processor.with_context(store=store, rollout_id="r1", attempt_id="a1"):
@@ -238,10 +302,9 @@ def test_event_loop_operations():
     processor.shutdown()
 
 
-def test_concurrent_access():
+def test_concurrent_access(store: MagicMock):
     """Test thread-safe concurrent span processing."""
     processor = LightningSpanProcessor()
-    store = create_mock_store()
 
     num_threads = 10
     spans_per_thread = 5
@@ -268,11 +331,11 @@ def test_concurrent_access():
     processor.shutdown()
 
 
-def test_multiprocessing_behavior():
+def test_multiprocessing_behavior(store_supports_otlp: bool):
     """Test processor behavior across process boundaries."""
 
     # Test 1: Creating new processor in subprocess works
-    def subprocess_task(result_queue: "multiprocessing.Queue[tuple[str, Any]]") -> None:
+    def subprocess_task(result_queue: "multiprocessing.Queue[tuple[str, Any]]", supports_otlp: bool) -> None:
         try:
             processor = LightningSpanProcessor()
 
@@ -283,7 +346,7 @@ def test_multiprocessing_behavior():
             assert processor._loop is None
             assert processor._loop_thread is None
 
-            with processor.with_context(store=create_mock_store(), rollout_id="r1", attempt_id="a1"):
+            with processor.with_context(store=create_mock_store(supports_otlp), rollout_id="r1", attempt_id="a1"):
                 processor.on_end(span)
 
             # Verify processor works in new process
@@ -297,7 +360,7 @@ def test_multiprocessing_behavior():
             result_queue.put(("error", str(e)))
 
     result_queue: multiprocessing.Queue[tuple[str, Any]] = multiprocessing.Queue()
-    process = multiprocessing.Process(target=subprocess_task, args=(result_queue,))
+    process = multiprocessing.Process(target=subprocess_task, args=(result_queue, store_supports_otlp))
     process.start()
     process.join(timeout=5)
 
@@ -315,10 +378,9 @@ def test_multiprocessing_behavior():
     processor.shutdown()
 
 
-def test_store_write_timeout():
+def test_store_write_timeout(store: MagicMock):
     """Test that slow store writes respect timeout."""
     processor = LightningSpanProcessor()
-    store = create_mock_store()
 
     # Create a slow async function that exceeds timeout
     async def slow_write(*args: Any, **kwargs: Any) -> None:
@@ -368,10 +430,9 @@ def test_multiple_processors_in_same_process():
     processor2.shutdown()
 
 
-def test_context_manager_reusability():
+def test_context_manager_reusability(store: MagicMock):
     """Test that context managers can be entered and exited multiple times."""
     processor = LightningSpanProcessor()
-    store = create_mock_store()
 
     # First usage
     with processor.with_context(store=store, rollout_id="r1", attempt_id="a1"):

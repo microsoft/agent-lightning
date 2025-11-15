@@ -20,12 +20,16 @@ python llm_proxy.py test Qwen/Qwen2.5-0.5B-Instruct
 import argparse
 import asyncio
 import os
+from typing import List, no_type_check
 
 import aiohttp
 from portpicker import pick_unused_port
+from rich.console import Console
 from vllm_server import vllm_server
 
 import agentlightning as agl
+
+console = Console()
 
 
 async def serve_llm_proxy_with_vllm(model_name: str, store_port: int = 43887):
@@ -127,16 +131,104 @@ async def test_llm_proxy(model_name: str, store_port: int = 43887):
             },
         ) as response:
             response_body = await response.json()
-            print(response_body)
-            if "qwen" in model_name.lower():
-                assert "qwen" in response_body["choices"][0]["message"]["content"].lower()
-            else:
-                assert "chatgpt" in response_body["choices"][0]["message"]["content"].lower()
+            console.print("Response body:", response_body)
+            _verify_response_body(response_body, model_name)
 
-    for span in await store.query_spans(rollout_id=rollout.rollout_id, attempt_id=rollout.attempt.attempt_id):
-        print("Span:", span.name, span.attributes)
+    spans = await store.query_spans(rollout_id=rollout.rollout_id, attempt_id=rollout.attempt.attempt_id)
+    for span in spans:
+        console.print("Span:", span)
+    _verify_span(spans)
 
     await store.close()
+
+
+@no_type_check
+def _verify_response_body(response_body: dict, model_name: str):
+    """Expect Response body to be something like this:
+
+    ```python
+    {
+        'id': 'chatcmpl-996a90a8678e4ed0a0d2724df2c0bba5',
+        'created': 1763178218,
+        'model': 'hosted_vllm/Qwen/Qwen2.5-0.5B-Instruct',
+        'object': 'chat.completion',
+        'choices': [
+            {
+                'finish_reason': 'stop',
+                'index': 0,
+                'message': {
+                    'content': 'Hello! I am Qwen, an AI language model created by Alibaba Cloud. My name is Qwen, and I can assist you with
+    various tasks and provide information on a wide range of topics. How may I help you today?',
+                    'role': 'assistant'
+                },
+                'provider_specific_fields': {
+                    'stop_reason': None,
+                    'token_ids': [9707, 0, ...],
+                }
+            }
+        ],
+        'usage': {'completion_tokens': 48, 'prompt_tokens': 36, 'total_tokens': 84},
+        'prompt_token_ids': [151644, 8948, ...],
+    }
+    ```
+    """
+    if "qwen" in model_name.lower():
+        assert "qwen" in response_body["choices"][0]["message"]["content"].lower()
+        assert (
+            "provider_specific_fields" in response_body["choices"][0]
+        ), "provider_specific_fields not found in response body"
+        assert (
+            "token_ids" in response_body["choices"][0]["provider_specific_fields"]
+        ), "token_ids not found in response body"
+        assert "prompt_token_ids" in response_body, "prompt_token_ids not found in response body"
+    else:
+        assert "chatgpt" in response_body["choices"][0]["message"]["content"].lower()
+
+
+@no_type_check
+def _verify_span(spans: List[agl.Span]):
+    """Only a few spans are checked here.
+
+    `raw_gen_ai_request` span:
+
+    ```python
+    Span(
+        rollout_id='ro-4c68a7e686a1',
+        attempt_id='at-308eb814',
+        sequence_id=1,
+        name='raw_gen_ai_request',
+        attributes={
+            'llm.hosted_vllm.messages': '[{\'role\': \'user\', \'content\': "Hello, what\'s your name?"}]',
+            'llm.hosted_vllm.extra_body': "{'return_token_ids': True}",
+            'llm.hosted_vllm.choices': '... \'token_ids\': [40, 1079, 1207, 16948, ...',
+            'llm.hosted_vllm.model': 'Qwen/Qwen2.5-0.5B-Instruct',
+            'llm.hosted_vllm.prompt_token_ids': '[151644, 8948, ...]',
+        },
+        resource=OtelResource(
+            attributes={
+                'agentlightning.rollout_id': 'ro-4c68a7e686a1',
+                'agentlightning.attempt_id': 'at-308eb814',
+                'agentlightning.span_sequence_id': 1
+            },
+        )
+    )
+    ```
+    """
+
+    assert len(spans) > 1
+    has_raw_gen_ai_request = False
+    for span in spans:
+        if span.name == "raw_gen_ai_request":
+            has_raw_gen_ai_request = True
+            if "llm.hosted_vllm.messages" in span.attributes:
+                assert "return_token_ids" in span.attributes["llm.hosted_vllm.extra_body"]
+                assert "token_ids" in span.attributes["llm.hosted_vllm.choices"]
+                assert span.attributes["llm.hosted_vllm.prompt_token_ids"]
+        assert "agentlightning.rollout_id" in span.resource.attributes
+        assert "agentlightning.attempt_id" in span.resource.attributes
+        assert "agentlightning.span_sequence_id" in span.resource.attributes
+
+    assert has_raw_gen_ai_request, "raw_gen_ai_request span not found"
 
 
 if __name__ == "__main__":

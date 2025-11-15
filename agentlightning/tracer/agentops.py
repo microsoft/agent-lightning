@@ -151,6 +151,7 @@ class AgentOpsTracer(OtelTracer):
                 with ctx:
                     yield trace_api.get_tracer(__name__, tracer_provider=tracer_provider)
             elif store is None and rollout_id is None and attempt_id is None:
+                # TODO: Add tests to cover both paths
                 self._disable_native_otlp_exporter()
                 with self._lightning_span_processor:
                     yield trace_api.get_tracer(__name__, tracer_provider=tracer_provider)
