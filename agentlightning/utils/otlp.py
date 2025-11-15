@@ -125,7 +125,7 @@ async def spans_from_proto(request: ExportTraceServiceRequest, store: LightningS
         # unless otherwise overridden by span-level attributes.
         sequence_id_resource = resource_attrs.get(SpanNames.SPAN_SEQUENCE_ID)
 
-        otel_resource = _resource_from_proto(resource_spans.resource)
+        otel_resource = _resource_from_proto(resource_spans.resource, getattr(resource_spans, "schema_url", ""))
 
         # Each ScopeSpans contains multiple spans
         for scope_spans in resource_spans.scope_spans:
@@ -159,10 +159,12 @@ async def spans_from_proto(request: ExportTraceServiceRequest, store: LightningS
                 sequence_id_span = span_attrs.get(SpanNames.SPAN_SEQUENCE_ID)
 
                 # Normalize to regular strings and ints
-                rollout_id, attempt_id = _normalize_rollout_attempt_id(
-                    rollout_id_resource or rollout_id_span, attempt_id_resource or attempt_id_span
-                )
-                sequence_id = _normalize_sequence_id(sequence_id_resource or sequence_id_span)
+                rollout_id_raw = rollout_id_span if rollout_id_span is not None else rollout_id_resource
+                attempt_id_raw = attempt_id_span if attempt_id_span is not None else attempt_id_resource
+                sequence_id_raw = sequence_id_span if sequence_id_span is not None else sequence_id_resource
+
+                rollout_id, attempt_id = _normalize_rollout_attempt_id(rollout_id_raw, attempt_id_raw)
+                sequence_id = _normalize_sequence_id(sequence_id_raw)
 
                 if rollout_id is None or attempt_id is None:
                     logger.warning(
@@ -273,8 +275,9 @@ def _maybe_gzip_response(request: Request, payload: bytes) -> Tuple[bytes, Dict[
     If Accept-Encoding includes gzip, gzip the payload and set Content-Encoding header.
     """
     ae = request.headers.get("Accept-Encoding", "")
+    tokens = [token.split(";")[0].strip().lower() for token in ae.split(",") if token.strip()]
     headers: Dict[str, str] = {}
-    if "gzip" in ae.replace(" ", "").split(","):
+    if "gzip" in tokens:
         payload = gzip.compress(payload)
         headers["Content-Encoding"] = "gzip"
     return payload, headers
@@ -410,8 +413,8 @@ def _links_from_proto(span: ProtoSpan) -> List[Link]:
     return links
 
 
-def _resource_from_proto(resource: ProtoResource) -> OtelResource:
+def _resource_from_proto(resource: ProtoResource, schema_url: str = "") -> OtelResource:
     return OtelResource(
         attributes=_kv_list_to_dict(resource.attributes),
-        schema_url=getattr(resource, "schema_url", ""),
+        schema_url=schema_url or "",
     )

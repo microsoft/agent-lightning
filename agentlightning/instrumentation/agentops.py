@@ -283,16 +283,23 @@ class BypassableOTLPMetricExporter(OTLPMetricExporter):
             return MetricExportResult.SUCCESS
 
 
-class BypassableOTLPSpanExporter(OTLPSpanExporter):
+class BypassableOTLPSpanExporter(LightningStoreOTLPExporter):
     """
     OTLPSpanExporter with switchable service control.
     When `_agentops_service_enabled` is False, skip export and return success.
+
+    This is used instead of BypassableAuthenticatedOTLPExporter on legacy AgentOps versions.
     """
 
-    def export(self, *args: Any, **kwargs: Any) -> SpanExportResult:
+    def export(self, spans: Sequence[ReadableSpan]) -> SpanExportResult:
         if _agentops_service_enabled:
-            return super().export(*args, **kwargs)
+            # Opt-in for service
+            return super().export(spans)
+        elif self._rollout_id is not None and self._attempt_id is not None:
+            # Opt-in with condition: add rollout_id and attempt_id to resource attributes
+            return super().export(spans)
         else:
+            # Directly bypass
             logger.debug("SwitchableOTLPSpanExporter is switched off, skipping export.")
             return SpanExportResult.SUCCESS
 
