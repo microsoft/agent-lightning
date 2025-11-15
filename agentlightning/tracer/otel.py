@@ -328,7 +328,6 @@ class LightningSpanProcessor(SpanProcessor):
                 # Submit add_otel_span to the event loop and wait for it to complete
                 with suppress_instrumentation():
                     self._ensure_loop()
-                    print("adding span to store", span)
                     self._await_in_loop(
                         self._store.add_otel_span(self._rollout_id, self._attempt_id, span),
                         timeout=60.0,
