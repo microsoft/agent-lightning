@@ -683,12 +683,18 @@ class AgentModeDaemon:
         turn_index_list: List[int] = []
         is_drop_list: List[bool] = []
         n_trunc_sample_because_of_response = 0
+        valid_samples = 0
 
         for rollout_id, sample_info in finished_id_to_sample_info.items():
             for turn_index, trace in enumerate(sample_info["trace_list"]):
 
                 reward_list.append(sample_info["reward"])
                 prompt_ids, response_ids = trace["prompt_ids"], trace["response_ids"]
+
+                if len(prompt_ids) == 0 and len(response_ids) == 0:
+                    continue
+                else:
+                    valid_samples += 1
 
                 # Mark samples with prompts exceeding max_prompt_length to be dropped later
                 if len(prompt_ids) > max_prompt_length:
@@ -718,6 +724,11 @@ class AgentModeDaemon:
                 rollout_id_list.append(rollout_id)
                 turn_index_list.append(turn_index)
 
+        if valid_samples == 0:
+            return None, {
+                "agent_mode/n_trunc_sample_because_of_response": n_trunc_sample_because_of_response,
+                "agent_mode/n_sample_to_train": 0,
+            }
         n_transition = len(input_ids_list)
         batch_input_ids = torch.LongTensor(input_ids_list).to(device)
         input_attention_mask = torch.LongTensor(input_attention_mask_list).to(device)
