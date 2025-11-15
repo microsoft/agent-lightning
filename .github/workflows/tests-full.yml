@@ -162,6 +162,9 @@ jobs:
           python write_traces.py otel
 
       - name: Write Traces via AgentOps Tracer
+        env:
+          OPENAI_API_BASE: http://localhost:12306/
+          OPENAI_API_KEY: dummy
         run: |
           set -euo pipefail
           source .venv/bin/activate
@@ -183,6 +186,9 @@ jobs:
           done
 
       - name: Write Traces via AgentOps Tracer with Client
+        env:
+          OPENAI_API_BASE: http://localhost:12306/
+          OPENAI_API_KEY: dummy
         run: |
           set -euo pipefail
           source .venv/bin/activate

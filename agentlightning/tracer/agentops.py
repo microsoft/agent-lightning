@@ -144,6 +144,8 @@ class AgentOpsTracer(OtelTracer):
                 self._disable_native_otlp_exporter()
             ctx = self._lightning_span_processor.with_context(store=store, rollout_id=rollout_id, attempt_id=attempt_id)
             with ctx:
+                # AgentOps end_trace and start_trace must live inside the lightning span processor context.
+                # Otherwise some traces might not be recorded.
                 with self._agentops_trace_context(rollout_id, attempt_id, kwargs):
                     yield trace_api.get_tracer(__name__, tracer_provider=tracer_provider)
         elif store is None and rollout_id is None and attempt_id is None:
