@@ -21,6 +21,7 @@ import anthropic
 import openai
 import pytest
 from litellm.integrations.custom_logger import CustomLogger
+from portpicker import pick_unused_port
 
 from agentlightning import LlmProxyTraceToTriplet
 from agentlightning.llm_proxy import LLMProxy, _reset_litellm_logging_worker  # pyright: ignore[reportPrivateUsage]
@@ -28,7 +29,6 @@ from agentlightning.store import LightningStore, LightningStoreServer, Lightning
 from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.types import LLM, Span
 
-from ..common.network import get_free_port
 from ..common.tracer import clear_tracer_provider
 from ..common.vllm import VLLM_VERSION, RemoteOpenAIServer
 
@@ -52,7 +52,7 @@ def qwen25_model():
             "--tool-call-parser",
             "hermes",
             "--port",
-            str(get_free_port()),
+            str(pick_unused_port()),
         ],
     ) as server:
         yield server
@@ -74,12 +74,12 @@ async def test_basic_integration(qwen25_model: RemoteOpenAIServer, otlp_enabled:
     clear_tracer_provider()
     inmemory_store = InMemoryLightningStore()
     if otlp_enabled:
-        store = LightningStoreServer(store=inmemory_store, host="127.0.0.1", port=get_free_port())
+        store = LightningStoreServer(store=inmemory_store, host="127.0.0.1", port=pick_unused_port())
         await store.start()
     else:
         store = LightningStoreThreaded(inmemory_store)
     proxy = LLMProxy(
-        port=get_free_port(),
+        port=pick_unused_port(),
         model_list=[
             {
                 "model_name": "gpt-4o-arbitrary",
@@ -199,7 +199,7 @@ async def _make_proxy_and_store(
     _reset_litellm_logging_worker()  # type: ignore
     store = InMemoryLightningStore()
     if otlp_enabled:
-        store = LightningStoreServer(store=store, host="127.0.0.1", port=get_free_port())
+        store = LightningStoreServer(store=store, host="127.0.0.1", port=pick_unused_port())
         # When the server is forked into subprocess, it automatically becomes a client of the store
         await store.start()
     else:
@@ -216,7 +216,7 @@ async def _make_proxy_and_store(
             }
         ],
         launch_mode="thread" if not otlp_enabled else "mp",
-        port=get_free_port(),
+        port=pick_unused_port(),
         num_workers=4 if gunicorn else 1,
         store=store,
         num_retries=retries,
