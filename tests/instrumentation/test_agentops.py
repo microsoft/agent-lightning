@@ -17,7 +17,7 @@ def test_switchable_authenticated_exporter():
     switchable_authenticated_exporter = BypassableAuthenticatedOTLPExporter(endpoint="http://dummy", jwt="dummy")
 
     with patch.object(
-        switchable_authenticated_exporter.__class__.__bases__[0], "export", return_value=SpanExportResult.SUCCESS
+        switchable_authenticated_exporter.__class__.__bases__[-1], "export", return_value=SpanExportResult.SUCCESS
     ) as mock_export:
         enable_agentops_service()
         result = switchable_authenticated_exporter.export([])
@@ -34,7 +34,7 @@ def test_switchable_otlp_metric_exporter():
 
     switchable_otlp_metric_exporter = BypassableOTLPMetricExporter()
     with patch.object(
-        switchable_otlp_metric_exporter.__class__.__bases__[0], "export", return_value=MetricExportResult.SUCCESS
+        switchable_otlp_metric_exporter.__class__.__bases__[-1], "export", return_value=MetricExportResult.SUCCESS
     ) as mock_export:
         enable_agentops_service()
         result = switchable_otlp_metric_exporter.export(metrics_data=MagicMock())
@@ -51,7 +51,10 @@ def test_switchable_otlp_span_exporter():
 
     switchable_otlp_span_exporter = BypassableOTLPSpanExporter()
     with patch.object(
-        switchable_otlp_span_exporter.__class__.__bases__[0], "export", return_value=SpanExportResult.SUCCESS
+        # BypassableOTLPSpanExporter is a subclass of LightningStoreOTLPExporter, which is a subclass of OTLPSpanExporter
+        switchable_otlp_span_exporter.__class__.__bases__[-1].__bases__[0],
+        "export",
+        return_value=SpanExportResult.SUCCESS,
     ) as mock_export:
         enable_agentops_service()
         result = switchable_otlp_span_exporter.export([])

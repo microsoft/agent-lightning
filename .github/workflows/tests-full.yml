@@ -236,6 +236,7 @@ jobs:
           done
 
       - name: LLM Proxy (vLLM backend)
+        if: matrix.setup-script != 'legacy'  # Skip if return_token_ids is not supported
         run: |
           set -euo pipefail
           source .venv/bin/activate
