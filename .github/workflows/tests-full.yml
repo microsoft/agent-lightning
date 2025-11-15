@@ -163,7 +163,7 @@ jobs:
 
       - name: Write Traces via AgentOps Tracer
         env:
-          OPENAI_API_BASE: http://localhost:12306/
+          OPENAI_BASE_URL: http://localhost:12306/
           OPENAI_API_KEY: dummy
         run: |
           set -euo pipefail
@@ -187,7 +187,7 @@ jobs:
 
       - name: Write Traces via AgentOps Tracer with Client
         env:
-          OPENAI_API_BASE: http://localhost:12306/
+          OPENAI_BASE_URL: http://localhost:12306/
           OPENAI_API_KEY: dummy
         run: |
           set -euo pipefail
