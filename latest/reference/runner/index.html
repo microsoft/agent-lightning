@@ -1327,15 +1327,6 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#agentlightning.AgentOpsTracer.get_last_trace" class="md-nav__link">
-    <span class="md-ellipsis">
-      <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;get_last_trace
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
   <a href="#agentlightning.AgentOpsTracer.trace_context" class="md-nav__link">
     <span class="md-ellipsis">
       <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;trace_context
@@ -1405,6 +1396,15 @@
   <a href="#agentlightning.Tracer.get_last_trace" class="md-nav__link">
     <span class="md-ellipsis">
       <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;get_last_trace
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#agentlightning.Tracer.lifespan" class="md-nav__link">
+    <span class="md-ellipsis">
+      <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;lifespan
     </span>
   </a>
   
@@ -1971,15 +1971,6 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#agentlightning.AgentOpsTracer.get_last_trace" class="md-nav__link">
-    <span class="md-ellipsis">
-      <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;get_last_trace
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
   <a href="#agentlightning.AgentOpsTracer.trace_context" class="md-nav__link">
     <span class="md-ellipsis">
       <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;trace_context
@@ -2049,6 +2040,15 @@
   <a href="#agentlightning.Tracer.get_last_trace" class="md-nav__link">
     <span class="md-ellipsis">
       <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;get_last_trace
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#agentlightning.Tracer.lifespan" class="md-nav__link">
+    <span class="md-ellipsis">
+      <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;lifespan
     </span>
   </a>
   
@@ -3367,7 +3367,7 @@ directly, bypassing the store's task queue.</p>
 
     <div class="doc doc-contents first">
             <p class="doc doc-class-bases">
-              Bases: <code><a class="autorefs autorefs-internal" title="            agentlightning.Tracer (agentlightning.tracer.base.Tracer)" href="#agentlightning.Tracer">Tracer</a></code></p>
+              Bases: <code><a class="autorefs autorefs-internal" title="            agentlightning.OtelTracer (agentlightning.tracer.otel.OtelTracer)" href="#agentlightning.OtelTracer">OtelTracer</a></code></p>
 
 
         <p>Traces agent execution using AgentOps.</p>
@@ -3477,36 +3477,6 @@ and integration with the OpenTelemetry tracing ecosystem.</p>
 <div class="doc doc-object doc-function">
 
 
-<h4 id="agentlightning.AgentOpsTracer.get_last_trace" class="doc doc-heading">
-<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">get_last_trace</span><span class="p">()</span></code>
-
-<a href="#agentlightning.AgentOpsTracer.get_last_trace" class="headerlink" title="Permanent link">&para;</a></h4>
-
-
-    <div class="doc doc-contents ">
-
-        <p>Retrieves the raw list of captured spans from the most recent trace.</p>
-
-
-<p><span class="doc-section-title">Returns:</span></p>
-    <ul>
-        <li class="doc-section-item field-body">
-              <code><span title="typing.List">List</span>[<span title="opentelemetry.sdk.trace.ReadableSpan">ReadableSpan</span>]</code>
-          –
-          <div class="doc-md-description">
-            <p>A list of OpenTelemetry <code>ReadableSpan</code> objects.</p>
-          </div>
-        </li>
-    </ul>
-
-
-    </div>
-
-</div>
-
-<div class="doc doc-object doc-function">
-
-
 <h4 id="agentlightning.AgentOpsTracer.trace_context" class="doc doc-heading">
 <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">trace_context</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">store</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">rollout_id</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">attempt_id</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
 
@@ -3570,10 +3540,10 @@ and integration with the OpenTelemetry tracing ecosystem.</p>
 <p><span class="doc-section-title">Yields:</span></p>
     <ul>
         <li class="doc-section-item field-body">
-              <code><span title="typing.AsyncGenerator">AsyncGenerator</span>[<a class="autorefs autorefs-internal" title="            agentlightning.tracer.agentops.LightningSpanProcessor" href="../internal/#agentlightning.tracer.agentops.LightningSpanProcessor">LightningSpanProcessor</a>, None]</code>
+              <code><span title="typing.AsyncGenerator">AsyncGenerator</span>[<span title="opentelemetry.trace.Tracer">Tracer</span>, None]</code>
           –
           <div class="doc-md-description">
-            <p>The <a class="autorefs autorefs-internal" title="            agentlightning.tracer.agentops.LightningSpanProcessor" href="../internal/#agentlightning.tracer.agentops.LightningSpanProcessor"><code>LightningSpanProcessor</code></a> instance to collect spans.</p>
+            <p>The OpenTelemetry tracer instance to collect spans.</p>
           </div>
         </li>
     </ul>
@@ -3728,10 +3698,10 @@ but no other function instrumentations like <code>openai.chat.completion</code>.
 <p><span class="doc-section-title">Yields:</span></p>
     <ul>
         <li class="doc-section-item field-body">
-              <code><span title="typing.AsyncGenerator">AsyncGenerator</span>[<a class="autorefs autorefs-internal" title="            agentlightning.tracer.agentops.LightningSpanProcessor" href="../internal/#agentlightning.tracer.agentops.LightningSpanProcessor">LightningSpanProcessor</a>, None]</code>
+              <code><span title="typing.AsyncGenerator">AsyncGenerator</span>[<span title="opentelemetry.trace.Tracer">Tracer</span>, None]</code>
           –
           <div class="doc-md-description">
-            <p>The LightningSpanProcessor instance to collect spans.</p>
+            <p>The OpenTelemetry tracer instance to collect spans.</p>
           </div>
         </li>
     </ul>
@@ -3856,6 +3826,26 @@ even in the case of exceptions.</p>
           </div>
         </li>
     </ul>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h4 id="agentlightning.Tracer.lifespan" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">lifespan</span><span class="p">()</span></code>
+
+<a href="#agentlightning.Tracer.lifespan" class="headerlink" title="Permanent link">&para;</a></h4>
+
+
+    <div class="doc doc-contents ">
+
+        <p>A context manager to manage the lifespan of the tracer.</p>
+<p>This can be used to set up and tear down any necessary resources
+for the tracer, useful for debugging purposes.</p>
 
 
     </div>

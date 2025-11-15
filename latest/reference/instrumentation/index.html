@@ -2141,11 +2141,11 @@
 
     <div class="doc doc-contents ">
             <p class="doc doc-class-bases">
-              Bases: <code><span title="agentops.sdk.exporters.AuthenticatedOTLPExporter">AuthenticatedOTLPExporter</span></code></p>
+              Bases: <code><span title="agentlightning.utils.otlp.LightningStoreOTLPExporter">LightningStoreOTLPExporter</span></code>, <code><span title="agentops.sdk.exporters.AuthenticatedOTLPExporter">AuthenticatedOTLPExporter</span></code></p>
 
 
-        <p>AuthenticatedOTLPExporter with switchable service control.
-When <code>_agentops_service_enabled</code> is False, skip export and return success.</p>
+        <p>AuthenticatedOTLPExporter with switchable service control.</p>
+<p>When <code>_agentops_service_enabled</code> is False, skip export and return success.</p>
 
 
 
@@ -2237,11 +2237,12 @@ When <code>_agentops_service_enabled</code> is False, skip export and return suc
 
     <div class="doc doc-contents ">
             <p class="doc doc-class-bases">
-              Bases: <code><span title="opentelemetry.exporter.otlp.proto.http.trace_exporter.OTLPSpanExporter">OTLPSpanExporter</span></code></p>
+              Bases: <code><span title="agentlightning.utils.otlp.LightningStoreOTLPExporter">LightningStoreOTLPExporter</span></code></p>
 
 
         <p>OTLPSpanExporter with switchable service control.
 When <code>_agentops_service_enabled</code> is False, skip export and return success.</p>
+<p>This is used instead of BypassableAuthenticatedOTLPExporter on legacy AgentOps versions.</p>
 
 
 
@@ -2381,10 +2382,25 @@ Returns dummy response when <code>_agentops_service_enabled</code> is False.</p>
     <div class="doc doc-contents ">
 
         <p>Enable or disable communication with the AgentOps service.</p>
-<p>False (default): AgentOps exporters and clients will run in local mode
-and will not attempt to communicate with the remote AgentOps service.
-True: all exporters and clients will operate in normal mode and send data
-to the AgentOps service as expected.</p>
+<p>By default, AgentOps exporters and clients will run in local mode
+and will NOT attempt to communicate with the remote AgentOps service.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <ul>
+        <li class="doc-section-item field-body">
+            <b><code>enabled</code></b>
+              (<code><span title="bool">bool</span></code>, default:
+                  <code>True</code>
+)
+          –
+          <div class="doc-md-description">
+            <p>If True, enable all AgentOps exporters and clients.
+All exporters and clients will operate in normal mode and send data
+to the <a href="https://www.agentops.ai">AgentOps service</a>.</p>
+          </div>
+        </li>
+    </ul>
 
 
     </div>

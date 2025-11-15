@@ -952,6 +952,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#otlp-compatibility" class="md-nav__link">
+    <span class="md-ellipsis">
+      OTLP Compatibility
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#store-implementations" class="md-nav__link">
     <span class="md-ellipsis">
       Store Implementations
@@ -1507,6 +1516,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#otlp-compatibility" class="md-nav__link">
+    <span class="md-ellipsis">
+      OTLP Compatibility
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#store-implementations" class="md-nav__link">
     <span class="md-ellipsis">
       Store Implementations
@@ -1591,7 +1609,7 @@
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="November 12, 2025 13:27:31 UTC"><span class="timeago" datetime="2025-11-12T13:27:31+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="November 12, 2025 13:27:31 UTC">2025-11-12</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="November 15, 2025 08:34:09 UTC"><span class="timeago" datetime="2025-11-15T08:34:09+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="November 15, 2025 08:34:09 UTC">2025-11-15</span>
   </span>
 
     
@@ -1891,6 +1909,10 @@ unresponsive --&gt; running: &lt;b&gt;Runner calls&lt;/b&gt;&lt;br&gt;add_[otel_
       async
   " href="../../reference/store/#agentlightning.LightningStore.add_otel_span"><code>add_otel_span</code></a> both appends a span <em>and</em> acts as a heartbeat that can revive <code>unresponsive</code> → <code>running</code>.</p>
 </div>
+<h2 id="otlp-compatibility">OTLP Compatibility<a class="headerlink" href="#otlp-compatibility" title="Permanent link">&para;</a></h2>
+<p>Some of the LightningStore implementations support exporting traces via the <a href="https://opentelemetry.io/docs/specs/otlp/">OTLP/HTTP specification</a>. For example, <a class="autorefs autorefs-internal" title="            agentlightning.LightningStoreServer" href="../../reference/store/#agentlightning.LightningStoreServer"><code>LightningStoreServer</code></a> exposes <code>/v1/traces</code> endpoint, it implements the binary Protobuf variant defined by the spec, including the required <code>Content-Type: application/x-protobuf</code>, optional <code>Content-Encoding: gzip</code>, and status responses encoded as <code>google.rpc.Status</code>. Agent-lightning helps parsing <code>ExportTraceServiceRequest</code> messages, validate identifiers, normalize resource metadata, and allocate sequence
+numbers so store implementations only need to persist <a class="autorefs autorefs-internal" title="            agentlightning.Span" href="../../reference/types/#agentlightning.Span"><code>Span</code></a> objects in order.</p>
+<p>Because the interface speaks standard OTLP, any OpenTelemetry-compatible SDK or collector can emit spans directly to a LightningStore OTLP endpoint without custom shims. The server responds according to the OTLP contract (status code, encoding, and error payloads), which keeps Agent-lightning interoperable with existing observability tooling. This compatibility serves as a strong complement to the OpenTelemetry conversion discussed above.</p>
 <h2 id="store-implementations">Store Implementations<a class="headerlink" href="#store-implementations" title="Permanent link">&para;</a></h2>
 <p>Currently, the only out-of-the-box implementation is <a class="autorefs autorefs-internal" title="            agentlightning.InMemoryLightningStore" href="../../reference/store/#agentlightning.InMemoryLightningStore"><code>InMemoryLightningStore</code></a>:</p>
 <ul>
@@ -1899,6 +1921,11 @@ unresponsive --&gt; running: &lt;b&gt;Runner calls&lt;/b&gt;&lt;br&gt;add_[otel_
 <li>Includes a best-effort span eviction policy once memory crosses a configured watermark; querying evicted spans raises a clear error so callers can fall back.</li>
 </ul>
 <p>For production you will likely want persistence. We’re actively building a SQLite-backed store that keeps the same API surface while adding durability, crash recovery, and better historical span queries. If you need something sooner, implement your own store by subclassing <a class="autorefs autorefs-internal" title="            agentlightning.LightningStore" href="../../reference/store/#agentlightning.LightningStore"><code>LightningStore</code></a> and providing concrete storage for the small set of abstract methods (<code>enqueue_rollout</code>, <code>dequeue_rollout</code>, <code>update_attempt</code>, <code>add_span</code>, etc.). This document plus the tests in <code>tests/store/</code> illustrate the expected behavior.</p>
+<p>Different store implementations may have different capabilities. For example, <a class="autorefs autorefs-internal" title="            agentlightning.InMemoryLightningStore" href="../../reference/store/#agentlightning.InMemoryLightningStore"><code>InMemoryLightningStore</code></a> does not support exporting traces via OTLP. Try to distinguish the capabilities of a store implementation by checking the <a class="autorefs autorefs-internal" title="            capabilities
+
+  
+      property
+  " href="../../reference/store/#agentlightning.LightningStore.capabilities"><code>capabilities</code></a> property.</p>
 <h2 id="thread-safety">Thread Safety<a class="headerlink" href="#thread-safety" title="Permanent link">&para;</a></h2>
 <p><strong><a class="autorefs autorefs-internal" title="            agentlightning.LightningStoreThreaded" href="../../reference/store/#agentlightning.LightningStoreThreaded"><code>LightningStoreThreaded</code></a></strong> is a subclass of <a class="autorefs autorefs-internal" title="            agentlightning.LightningStore" href="../../reference/store/#agentlightning.LightningStore"><code>LightningStore</code></a> that wraps another underlying store to make a store instance safe for multi-threaded callers. It wraps every state-mutating call in a mutex. Specifically:</p>
 <ul>
