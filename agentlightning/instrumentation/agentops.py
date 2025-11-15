@@ -51,12 +51,11 @@ def enable_agentops_service(enabled: bool = True) -> None:
 def _patch_exporters():
     import agentops.client.api
     import agentops.sdk.core
-    import opentelemetry.exporter.otlp.proto.http.metric_exporter
-    import opentelemetry.exporter.otlp.proto.http.trace_exporter
 
     agentops.sdk.core.AuthenticatedOTLPExporter = BypassableAuthenticatedOTLPExporter  # type: ignore
-    opentelemetry.exporter.otlp.proto.http.metric_exporter.OTLPMetricExporter = BypassableOTLPMetricExporter
-    opentelemetry.exporter.otlp.proto.http.trace_exporter.OTLPSpanExporter = BypassableOTLPSpanExporter
+    agentops.sdk.core.OTLPMetricExporter = BypassableOTLPMetricExporter
+    if hasattr(agentops.sdk.core, "OTLPSpanExporter"):
+        agentops.sdk.core.OTLPSpanExporter = BypassableOTLPSpanExporter  # type: ignore
     agentops.client.api.V3Client = BypassableV3Client
     agentops.client.api.V4Client = BypassableV4Client
 
@@ -64,12 +63,11 @@ def _patch_exporters():
 def _unpatch_exporters():
     import agentops.client.api
     import agentops.sdk.core
-    import opentelemetry.exporter.otlp.proto.http.metric_exporter
-    import opentelemetry.exporter.otlp.proto.http.trace_exporter
 
     agentops.sdk.core.AuthenticatedOTLPExporter = AuthenticatedOTLPExporter  # type: ignore
-    opentelemetry.exporter.otlp.proto.http.metric_exporter.OTLPMetricExporter = OTLPMetricExporter
-    opentelemetry.exporter.otlp.proto.http.trace_exporter.OTLPSpanExporter = OTLPSpanExporter
+    agentops.sdk.core.OTLPMetricExporter = OTLPMetricExporter
+    if hasattr(agentops.sdk.core, "OTLPSpanExporter"):
+        agentops.sdk.core.OTLPSpanExporter = OTLPSpanExporter  # type: ignore
     agentops.client.api.V3Client = V3Client
     agentops.client.api.V4Client = V4Client
 
