@@ -9,6 +9,9 @@ from typing import Optional
 
 import httpx
 from openai import OpenAI
+from rich.console import Console
+
+console = Console()
 
 
 @contextmanager
@@ -84,5 +87,5 @@ if __name__ == "__main__":
             model="Qwen/Qwen2.5-0.5B-Instruct",
             messages=[{"role": "user", "content": "Hello, what's your name?"}],
         )
-        print(response)
+        console.print(response)
         assert "qwen" in response.choices[0].message.content.lower()  # type: ignore

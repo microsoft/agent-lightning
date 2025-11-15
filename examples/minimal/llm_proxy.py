@@ -185,7 +185,6 @@ def _verify_response_body(response_body: dict, model_name: str):
         assert "chatgpt" in response_body["choices"][0]["message"]["content"].lower()
 
 
-@no_type_check
 def _verify_span(spans: List[agl.Span]):
     """Only a few spans are checked here.
 
@@ -221,8 +220,8 @@ def _verify_span(spans: List[agl.Span]):
         if span.name == "raw_gen_ai_request":
             has_raw_gen_ai_request = True
             if "llm.hosted_vllm.messages" in span.attributes:
-                assert "return_token_ids" in span.attributes["llm.hosted_vllm.extra_body"]
-                assert "token_ids" in span.attributes["llm.hosted_vllm.choices"]
+                assert "return_token_ids" in span.attributes["llm.hosted_vllm.extra_body"]  # type: ignore
+                assert "token_ids" in span.attributes["llm.hosted_vllm.choices"]  # type: ignore
                 assert span.attributes["llm.hosted_vllm.prompt_token_ids"]
         assert "agentlightning.rollout_id" in span.resource.attributes
         assert "agentlightning.attempt_id" in span.resource.attributes
