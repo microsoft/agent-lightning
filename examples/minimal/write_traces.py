@@ -107,12 +107,12 @@ async def send_traces_via_agentops(use_client: bool = False):
 
     traces = await store.query_spans(rollout_id=rollout.rollout_id)
     console.print(traces)
-    _verify_agentops_traces(traces)
+    await _verify_agentops_traces(traces, use_client=use_client)
     if isinstance(store, LightningStoreClient):
         await store.close()
 
 
-def _verify_agentops_traces(spans: List[Span], use_client: bool = False):
+async def _verify_agentops_traces(spans: List[Span], use_client: bool = False):
     """Expected traces to something like:
 
     ```python
@@ -150,9 +150,7 @@ def _verify_agentops_traces(spans: List[Span], use_client: bool = False):
     )
     ```
     """
-    if use_client:
-        # TODO: when not using client, the session trace might not be recorded.
-        assert len(spans) == 2
+    assert len(spans) == 2
     for span in spans:
         if span.name == "openai.chat.completion":
             assert span.attributes["gen_ai.request.model"] == "gpt-4.1-mini"

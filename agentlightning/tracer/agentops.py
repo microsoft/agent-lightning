@@ -136,28 +136,33 @@ class AgentOpsTracer(OtelTracer):
             kwargs["trace_name"] = name
         elif rollout_id is not None:
             kwargs["trace_name"] = rollout_id
+        if store is not None and rollout_id is not None and attempt_id is not None:
+            if store.capabilities.get("otlp_traces", False) is True:
+                logger.debug(f"Tracing to LightningStore rollout_id={rollout_id}, attempt_id={attempt_id}")
+                self._enable_native_otlp_exporter(store, rollout_id, attempt_id)
+            else:
+                self._disable_native_otlp_exporter()
+            ctx = self._lightning_span_processor.with_context(store=store, rollout_id=rollout_id, attempt_id=attempt_id)
+            with ctx:
+                with self._agentops_trace_context(rollout_id, attempt_id, kwargs):
+                    yield trace_api.get_tracer(__name__, tracer_provider=tracer_provider)
+        elif store is None and rollout_id is None and attempt_id is None:
+            # TODO: Add tests to cover both paths
+            self._disable_native_otlp_exporter()
+            with self._lightning_span_processor:
+                with self._agentops_trace_context(None, None, kwargs):
+                    yield trace_api.get_tracer(__name__, tracer_provider=tracer_provider)
+        else:
+            raise ValueError("store, rollout_id, and attempt_id must be either all provided or all None")
+
+    @contextmanager
+    def _agentops_trace_context(self, rollout_id: Optional[str], attempt_id: Optional[str], kwargs: dict[str, Any]):
         trace = agentops.start_trace(**kwargs)
         status = StatusCode.OK  # type: ignore
         try:
-            if store is not None and rollout_id is not None and attempt_id is not None:
-                if store.capabilities.get("otlp_traces", False) is True:
-                    logger.debug(f"Tracing to LightningStore rollout_id={rollout_id}, attempt_id={attempt_id}")
-                    self._enable_native_otlp_exporter(store, rollout_id, attempt_id)
-                else:
-                    self._disable_native_otlp_exporter()
-                ctx = self._lightning_span_processor.with_context(
-                    store=store, rollout_id=rollout_id, attempt_id=attempt_id
-                )
-                with ctx:
-                    yield trace_api.get_tracer(__name__, tracer_provider=tracer_provider)
-            elif store is None and rollout_id is None and attempt_id is None:
-                # TODO: Add tests to cover both paths
-                self._disable_native_otlp_exporter()
-                with self._lightning_span_processor:
-                    yield trace_api.get_tracer(__name__, tracer_provider=tracer_provider)
-            else:
-                raise ValueError("store, rollout_id, and attempt_id must be either all provided or all None")
+            yield
         except Exception as e:
+            # TODO: I'm not sure whether this will catch errors in user code.
             status = StatusCode.ERROR  # type: ignore
             logger.error(f"Trace failed for rollout_id={rollout_id}, attempt_id={attempt_id}: {e}")
         finally:
