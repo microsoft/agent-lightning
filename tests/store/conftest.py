@@ -1,14 +1,18 @@
 # Copyright (c) Microsoft. All rights reserved.
 
+import os
 import time
+import typing
+import uuid
 from unittest.mock import Mock
 
 import pytest
+import pytest_asyncio
 from opentelemetry.sdk.trace import ReadableSpan
 from pytest import FixtureRequest
 
+from agentlightning.store import InMemoryLightningStore, SqlLightningStore
 from agentlightning.store.base import LightningStore
-from agentlightning.store.memory import InMemoryLightningStore
 
 __all__ = [
     "inmemory_store",
@@ -22,15 +26,35 @@ def inmemory_store() -> InMemoryLightningStore:
     return InMemoryLightningStore()
 
 
-@pytest.fixture
-def sql_store():
+@pytest_asyncio.fixture
+async def sql_store() -> typing.AsyncGenerator[SqlLightningStore, None]:
     """Placeholder fixture for SQL store implementation. Returns None until SQL store is ready."""
-    return None
+    """Helper generator to create a SqlLightningStore using a SQLite file for testing."""
+    tmp_path = ".pytest_cache"
+    # Ensure the directory exists and create a random file in it
+    os.makedirs(tmp_path, exist_ok=True)
+    db_path = os.path.join(tmp_path, f"test_db_{uuid.uuid4().hex}.sqlite3")
+    database_url = f"sqlite+aiosqlite:///{db_path}"
+    store = SqlLightningStore(database_url=database_url)
+    store.retry_for_waiting.wait_seconds = 0.2  # Set polling interval to 0.2s for test
+
+    # Config db_store with a short time interval for healthcheck
+    store.add_background_task(
+        {"name": "test_healthcheck", "method": "check_attempt_timeout", "interval": {"seconds": 0.1}}
+    )
+
+    await store.start()
+    try:
+        yield store
+    finally:
+        await store.stop()
+        if os.path.exists(db_path):
+            os.remove(db_path)
 
 
 # Uncomment this when sql store is ready
-# @pytest.fixture(params=["inmemory_store", "sql_store"])
-@pytest.fixture(params=["inmemory_store"])
+@pytest.fixture(params=["inmemory_store", "sql_store"])
+# @pytest.fixture(params=["inmemory_store"])
 def store_fixture(request: FixtureRequest) -> LightningStore:
     """Parameterized fixture that provides different store implementations for testing.
     Currently supports InMemoryLightningStore, with SQL store support planned.

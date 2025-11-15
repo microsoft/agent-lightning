@@ -940,9 +940,16 @@ async def test_span_triggers_status_transition(store_fixture: LightningStore, mo
     # Get the attempt
     attempts = await store_fixture.query_attempts(rollout.rollout_id)
     attempt_id = attempts[0].attempt_id
+    assert attempts[0].status == "preparing"
 
     # Add first span
     await store_fixture.add_otel_span(rollout.rollout_id, attempt_id, mock_readable_span)
+
+    # Attempt status should be changed
+    attempt_v2 = await store_fixture.get_latest_attempt(rollout.rollout_id)
+    assert attempt_v2 is not None
+    assert attempt_v2.attempt_id == attempt_id
+    assert attempt_v2.status == "running"
 
     # Status should transition to running
     rollouts = await store_fixture.query_rollouts(status=["running"])
@@ -1881,7 +1888,7 @@ async def test_healthcheck_timeout_behavior(store_fixture: LightningStore, mock_
     assert len(running_rollouts) == 1
 
     # Wait for timeout to occur
-    await asyncio.sleep(0.15)  # Wait longer than timeout_seconds
+    await asyncio.sleep(0.3)  # Wait longer than timeout_seconds
 
     # Trigger healthcheck by calling any decorated method
     # Verify the attempt was marked as timeout and rollout was requeued
@@ -1919,7 +1926,7 @@ async def test_healthcheck_unresponsive_behavior(store_fixture: LightningStore, 
     assert running_attempts[0].last_heartbeat_time is not None
 
     # Wait for unresponsive timeout
-    await asyncio.sleep(0.15)  # Wait longer than unresponsive_seconds
+    await asyncio.sleep(0.3)  # Wait longer than unresponsive_seconds
 
     # Verify attempt was marked as unresponsive
     attempts_after = await store_fixture.query_attempts(rollout.rollout_id)
