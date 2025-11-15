@@ -138,22 +138,30 @@ class OtelTracer(Tracer):
             )
         )
         instrumented = False
+        candidates: List[str] = []
         for processor in active_span_processor._span_processors:  # pyright: ignore[reportPrivateUsage]
             if isinstance(processor, LightningSpanProcessor):
                 # We don't need the LightningSpanProcessor any more.
                 logger.debug("LightningSpanProcessor already present in TracerProvider, disabling it.")
                 processor.disable_store_submission = True
-            if isinstance(processor, (SimpleSpanProcessor, BatchSpanProcessor)):
+            elif isinstance(processor, (SimpleSpanProcessor, BatchSpanProcessor)):
                 # Instead, we rely on the OTLPSpanExporter to send spans to the store.
                 if isinstance(processor.span_exporter, LightningStoreOTLPExporter):
                     processor.span_exporter.enable_store_otlp(store.otlp_traces_endpoint(), rollout_id, attempt_id)
                     logger.debug(f"Set LightningStoreOTLPExporter endpoint to {store.otlp_traces_endpoint()}")
                     instrumented = True
+                else:
+                    candidates.append(
+                        f"{processor.__class__.__name__} with {processor.span_exporter.__class__.__name__}"
+                    )
+            else:
+                candidates.append(f"{processor.__class__.__name__}")
 
         if not instrumented:
             raise RuntimeError(
-                "Failed to enable native OTLP exporter: no BatchSpanProcessor with "
-                "LightningStoreOTLPExporter found in TracerProvider."
+                "Failed to enable native OTLP exporter: no BatchSpanProcessor or SimpleSpanProcessor with "
+                "LightningStoreOTLPExporter found in TracerProvider. "
+                "Candidates are: " + ", ".join(candidates)
             )
 
     def _disable_native_otlp_exporter(self):

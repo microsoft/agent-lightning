@@ -158,7 +158,7 @@ class AgentOpsTracer(OtelTracer):
                 raise ValueError("store, rollout_id, and attempt_id must be either all provided or all None")
         except Exception as e:
             status = StatusCode.ERROR  # type: ignore
-            logger.error(f"Trace failed for rollout_id={rollout_id}, attempt_id={attempt_id}, error={e}")
+            logger.error(f"Trace failed for rollout_id={rollout_id}, attempt_id={attempt_id}: {e}")
         finally:
             agentops.end_trace(trace, end_state=status)  # type: ignore
 
