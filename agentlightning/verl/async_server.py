@@ -3,6 +3,7 @@
 # type: ignore
 
 from copy import deepcopy
+import logging
 
 import ray
 from starlette.requests import Request
@@ -10,7 +11,7 @@ from starlette.responses import JSONResponse, StreamingResponse
 from verl.workers.rollout.vllm_rollout.vllm_async_server import AsyncvLLMServer
 from vllm.entrypoints.openai.protocol import ChatCompletionRequest, ErrorResponse
 
-from agentlightning.instrumentation.vllm import ChatCompletionResponsePatched, instrument_vllm
+from agentlightning.instrumentation.vllm import instrument_vllm
 
 
 def _unwrap_ray_remote(cls):
@@ -19,9 +20,11 @@ def _unwrap_ray_remote(cls):
     return cls
 
 
+logger = logging.getLogger(__name__)
+
+
 @ray.remote(num_cpus=1)
 class PatchedvLLMServer(_unwrap_ray_remote(AsyncvLLMServer)):
-
     def __init__(self, *args, **kwargs):
         instrument_vllm()
         super().__init__(*args, **kwargs)
@@ -36,10 +39,18 @@ class PatchedvLLMServer(_unwrap_ray_remote(AsyncvLLMServer)):
         """
         request_json = await raw_request.json()
         request = ChatCompletionRequest(**request_json)
-        generator = await self.openai_serving_chat.create_chat_completion(request, raw_request)
+        generator = await self.openai_serving_chat.create_chat_completion(
+            request, raw_request
+        )
 
         if isinstance(generator, ErrorResponse):
-            return JSONResponse(content=generator.model_dump(), status_code=generator.code)
+            status_code = (
+                getattr(generator, "code", None)
+                or getattr(generator, "status_code", None)
+                or 500
+            )
+            logger.error("vLLM chat completion error: %s", generator.model_dump())
+            return JSONResponse(content=generator.model_dump(), status_code=status_code)
         if request.stream:
             return StreamingResponse(content=generator, media_type="text/event-stream")
         else:
