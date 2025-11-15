@@ -54,7 +54,10 @@ Unset = _UnsetType  # Alias for convenience
 
 
 class LightningStoreCapabilities(TypedDict, total=False):
-    """Capability of a LightningStore implementation."""
+    """Capability of a LightningStore implementation.
+
+    All keys are optional and false by default.
+    """
 
     thread_safe: bool
     """Whether the store is thread-safe."""

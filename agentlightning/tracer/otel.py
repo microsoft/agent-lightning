@@ -129,7 +129,7 @@ class OtelTracer(Tracer):
         active_span_processor = tracer_provider._active_span_processor  # pyright: ignore[reportPrivateUsage]
 
         # Override the resources so that the server knows where the request comes from.
-        tracer_provider.resource.merge(
+        tracer_provider._resource = tracer_provider._resource.merge(  # pyright: ignore[reportPrivateUsage]
             Resource.create(
                 {
                     SpanNames.ROLLOUT_ID: rollout_id,
@@ -147,19 +147,19 @@ class OtelTracer(Tracer):
                 # Instead, we rely on the OTLPSpanExporter to send spans to the store.
                 if isinstance(processor.span_exporter, LightningStoreOTLPExporter):
                     processor.span_exporter.enable_store_otlp(store.otlp_traces_endpoint(), rollout_id, attempt_id)
-                    logger.debug(f"Set AuthenticatedOTLPExporter endpoint to {store.otlp_traces_endpoint()}")
+                    logger.debug(f"Set LightningStoreOTLPExporter endpoint to {store.otlp_traces_endpoint()}")
                     instrumented = True
 
         if not instrumented:
             raise RuntimeError(
                 "Failed to enable native OTLP exporter: no BatchSpanProcessor with "
-                "AuthenticatedOTLPExporter found in TracerProvider."
+                "LightningStoreOTLPExporter found in TracerProvider."
             )
 
     def _disable_native_otlp_exporter(self):
         tracer_provider = self._get_tracer_provider()
         active_span_processor = tracer_provider._active_span_processor  # pyright: ignore[reportPrivateUsage]
-        tracer_provider.resource.merge(
+        tracer_provider._resource = tracer_provider._resource.merge(  # pyright: ignore[reportPrivateUsage]
             Resource.create(
                 {
                     SpanNames.ROLLOUT_ID: "",
@@ -197,9 +197,11 @@ class LightningSpanProcessor(SpanProcessor):
         # private asyncio loop running in a daemon thread
         self._loop_ready = threading.Event()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._loop_thread: Optional[threading.Thread] = None
 
     @property
     def disable_store_submission(self) -> bool:
+        """Whether to disable submitting spans to the store."""
         return self._disable_store_submission
 
     @disable_store_submission.setter
@@ -207,9 +209,11 @@ class LightningSpanProcessor(SpanProcessor):
         self._disable_store_submission = value
 
     def _ensure_loop(self) -> None:
-        self._loop_thread = threading.Thread(target=self._loop_runner, name="otel-loop", daemon=True)
-        self._loop_thread.start()
-        self._loop_ready.wait()  # loop is ready
+        if self._loop_thread is None or self._loop is None:
+            self._loop_ready.clear()
+            self._loop_thread = threading.Thread(target=self._loop_runner, name="otel-loop", daemon=True)
+            self._loop_thread.start()
+            self._loop_ready.wait()  # loop is ready
 
     def _loop_runner(self):
         loop = asyncio.new_event_loop()
@@ -231,6 +235,7 @@ class LightningSpanProcessor(SpanProcessor):
 
     def _await_in_loop(self, coro: Awaitable[Any], timeout: Optional[float] = None) -> Any:
         # submit to the dedicated loop and wait synchronously
+        self._ensure_loop()
         if self._loop is None:
             raise RuntimeError("Loop is not initialized. This should not happen.")
 
@@ -265,8 +270,9 @@ class LightningSpanProcessor(SpanProcessor):
     def shutdown(self) -> None:
         if self._loop:
             self._loop.call_soon_threadsafe(self._loop.stop)
-            self._loop_thread.join(timeout=5)
             self._loop = None
+        if self._loop_thread:
+            self._loop_thread.join(timeout=5)
 
     def force_flush(self, timeout_millis: int = 30000) -> bool:
         return True
@@ -285,6 +291,7 @@ class LightningSpanProcessor(SpanProcessor):
         # simple context manager without nesting into asyncio
         class _Ctx:
             def __enter__(_):  # type: ignore
+                # Use _ instead of self to avoid shadowing the instance method.
                 with self._lock:
                     self._store, self._rollout_id, self._attempt_id = store, rollout_id, attempt_id
                     self._last_trace = None

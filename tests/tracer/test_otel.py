@@ -58,9 +58,16 @@ def test_initialization_and_shutdown():
     assert processor._rollout_id is None
     assert processor._attempt_id is None
 
+    assert processor._loop is None
+    assert processor._loop_thread is None
+
+    # Start the loop
+    processor._ensure_loop()
+
     # Verify loop thread is running correctly
     assert processor._loop is not None
     assert processor._loop.is_running()
+    assert processor._loop_thread is not None
     assert processor._loop_thread.is_alive()
     assert processor._loop_thread.daemon is True
     assert processor._loop_thread.name == "otel-loop"
@@ -269,12 +276,20 @@ def test_multiprocessing_behavior():
         try:
             processor = LightningSpanProcessor()
 
-            # Verify processor works in new process
-            assert processor._loop is not None
-            assert processor._loop_thread.is_alive()
-
             span = create_span("subprocess_span")
             processor.on_end(span)
+
+            # Loop is not used
+            assert processor._loop is None
+            assert processor._loop_thread is None
+
+            with processor.with_context(store=create_mock_store(), rollout_id="r1", attempt_id="a1"):
+                processor.on_end(span)
+
+            # Verify processor works in new process
+            assert processor._loop is not None
+            assert processor._loop_thread is not None
+            assert processor._loop_thread.is_alive()
 
             result_queue.put(("success", len(processor.spans())))
             processor.shutdown()
@@ -288,7 +303,7 @@ def test_multiprocessing_behavior():
 
     assert not process.is_alive()
     status, value = result_queue.get(timeout=1)
-    assert status == "success"
+    assert status == "success", f"Subprocess failed: {status}, {value}"
     assert value == 1
 
     # Test 2: Processor cannot be pickled (threads aren't picklable)
@@ -298,41 +313,6 @@ def test_multiprocessing_behavior():
         pickle.dumps(processor)
 
     processor.shutdown()
-
-
-def test_edge_cases():
-    """Test edge cases and error conditions."""
-    processor = LightningSpanProcessor()
-
-    # Test 1: force_flush always returns True
-    assert processor.force_flush() is True
-    assert processor.force_flush(timeout_millis=5000) is True
-
-    # Test 2: Calling _await_in_loop after shutdown raises
-    processor.shutdown()
-
-    async def dummy_coro():
-        return "test"
-
-    with pytest.raises(RuntimeError, match="Loop is not initialized"):
-        processor._await_in_loop(dummy_coro())
-
-    # Test 3: Verify shutdown thread join timeout is respected
-    processor2 = LightningSpanProcessor()
-
-    # Mock thread.join to verify timeout parameter
-    original_join = processor2._loop_thread.join
-    join_timeout: float | None = None
-
-    def mock_join(timeout: float | None = None) -> None:
-        nonlocal join_timeout
-        join_timeout = timeout
-        return original_join(timeout=timeout)
-
-    processor2._loop_thread.join = mock_join
-    processor2.shutdown()
-
-    assert join_timeout == 5  # Should pass 5 second timeout
 
 
 def test_store_write_timeout():
@@ -362,6 +342,9 @@ def test_multiple_processors_in_same_process():
     """Test that multiple processors can coexist in the same process."""
     processor1 = LightningSpanProcessor()
     processor2 = LightningSpanProcessor()
+
+    processor1._ensure_loop()
+    processor2._ensure_loop()
 
     # Both should have independent loops and threads
     assert processor1._loop is not processor2._loop

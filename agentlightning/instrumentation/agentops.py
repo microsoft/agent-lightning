@@ -42,7 +42,6 @@ def enable_agentops_service(enabled: bool = True) -> None:
         enabled: If True, enable all AgentOps exporters and clients.
             All exporters and clients will operate in normal mode and send data
             to the [AgentOps service](https://www.agentops.ai).
-        otel_enabled: If True, enable only OpenTelemetry exporters to communicate with the AgentOps service.
     """
     global _agentops_service_enabled
     _agentops_service_enabled = enabled

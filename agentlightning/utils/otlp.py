@@ -27,6 +27,7 @@ from opentelemetry.proto.trace.v1.trace_pb2 import Status as ProtoStatus
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import ReadableSpan
 from opentelemetry.sdk.trace.export import SpanExportResult
+from opentelemetry.util.types import AttributeValue
 
 from agentlightning.store.base import LightningStore
 from agentlightning.types.tracer import (
@@ -118,20 +119,11 @@ async def spans_from_proto(request: ExportTraceServiceRequest, store: LightningS
         # Resource-level attributes & IDs
         resource_attrs = _kv_list_to_dict(resource_spans.resource.attributes)
         # rollout_id, attempt_id from resource attributes when present.
-        # Otherwise, raise a warning and give up.
-        rollout_id = resource_attrs.get(SpanNames.ROLLOUT_ID)
-        attempt_id = resource_attrs.get(SpanNames.ATTEMPT_ID)
+        rollout_id_resource = resource_attrs.get(SpanNames.ROLLOUT_ID)
+        attempt_id_resource = resource_attrs.get(SpanNames.ATTEMPT_ID)
         # If sequence id is provided, all the spans will share the same sequence ID.
-        sequence_id = resource_attrs.get(SpanNames.SPAN_SEQUENCE_ID)
-        if rollout_id is None or attempt_id is None:
-            logger.warning(
-                "Both rollout_id and attempt_id must be present in resource attributes. Spans will not be able to log to the store because of missing IDs: rollout_id=%s, attempt_id=%s",
-                rollout_id,
-                attempt_id,
-            )
-            continue
-
-        sequence_id = int(str(sequence_id)) if sequence_id is not None else None
+        # unless otherwise overridden by span-level attributes.
+        sequence_id_resource = resource_attrs.get(SpanNames.SPAN_SEQUENCE_ID)
 
         otel_resource = _resource_from_proto(resource_spans.resource)
 
@@ -162,30 +154,38 @@ async def spans_from_proto(request: ExportTraceServiceRequest, store: LightningS
 
                 # Try to get if span attributes contain something like rollout_id or attempt_id
                 # Override the resource-level attributes with the span-level attributes if present.
-                span_rollout_id = span_attrs.get(SpanNames.ROLLOUT_ID)
-                if span_rollout_id is None:
-                    span_rollout_id = rollout_id
-                span_attempt_id = span_attrs.get(SpanNames.ATTEMPT_ID)
-                if span_attempt_id is None:
-                    span_attempt_id = attempt_id
-                span_sequence_id = span_attrs.get(SpanNames.SPAN_SEQUENCE_ID)
-                if span_sequence_id is None:
-                    span_sequence_id = sequence_id
-                else:
-                    span_sequence_id = int(str(span_sequence_id))
+                rollout_id_span = span_attrs.get(SpanNames.ROLLOUT_ID)
+                attempt_id_span = span_attrs.get(SpanNames.ATTEMPT_ID)
+                sequence_id_span = span_attrs.get(SpanNames.SPAN_SEQUENCE_ID)
+
+                # Normalize to regular strings and ints
+                rollout_id, attempt_id = _normalize_rollout_attempt_id(
+                    rollout_id_resource or rollout_id_span, attempt_id_resource or attempt_id_span
+                )
+                sequence_id = _normalize_sequence_id(sequence_id_resource or sequence_id_span)
+
+                if rollout_id is None or attempt_id is None:
+                    logger.warning(
+                        "Both rollout_id and attempt_id must be present in resource attributes. "
+                        "Spans will not be able to log to the store because of missing IDs: rollout_id=%s, attempt_id=%s, sequence_id=%s",
+                        rollout_id,
+                        attempt_id,
+                        sequence_id,
+                    )
+                    continue
 
                 # Generate a new sequence ID if not provided
-                if span_sequence_id is None:
+                if sequence_id is None:
                     current_sequence_id = await store.get_next_span_sequence_id(
-                        rollout_id=str(span_rollout_id), attempt_id=str(span_attempt_id)
+                        rollout_id=rollout_id, attempt_id=attempt_id
                     )
                 else:
-                    current_sequence_id = span_sequence_id
+                    current_sequence_id = sequence_id
 
                 # Build Span
                 span = Span(
-                    rollout_id=str(span_rollout_id),
-                    attempt_id=str(span_attempt_id),
+                    rollout_id=rollout_id,
+                    attempt_id=attempt_id,
                     sequence_id=current_sequence_id,
                     trace_id=trace_id_hex,
                     span_id=span_id_hex,
@@ -301,6 +301,30 @@ def _bad_request_response(request: Request, message: str, content_type: str = PR
         media_type=content_type,
         headers=headers,
     )
+
+
+def _normalize_rollout_attempt_id(
+    rollout_id: Optional[AttributeValue], attempt_id: Optional[AttributeValue]
+) -> Tuple[Optional[str], Optional[str]]:
+    """Normalize a rollout or attempt ID to a string."""
+    rollout_id_str = str(rollout_id) if rollout_id is not None else None
+    attempt_id_str = str(attempt_id) if attempt_id is not None else None
+    return rollout_id_str, attempt_id_str
+
+
+def _normalize_sequence_id(sequence_id: Optional[AttributeValue]) -> Optional[int]:
+    """Normalize a sequence ID to an integer."""
+    if sequence_id is None:
+        return None
+    try:
+        sequence_id_int = int(str(sequence_id))
+    except (ValueError, TypeError):
+        logger.warning(
+            "Invalid sequence_id value in resource attributes: %r. Must be an integer or string representing an integer. Assuming None.",
+            sequence_id,
+        )
+        sequence_id_int = None
+    return sequence_id_int
 
 
 def _any_value_to_python(value: AnyValue) -> Any:
