@@ -24,7 +24,7 @@ from litellm.integrations.custom_logger import CustomLogger
 
 from agentlightning import LlmProxyTraceToTriplet
 from agentlightning.llm_proxy import LLMProxy, _reset_litellm_logging_worker  # pyright: ignore[reportPrivateUsage]
-from agentlightning.store import LightningStore, LightningStoreServer
+from agentlightning.store import LightningStore, LightningStoreServer, LightningStoreThreaded
 from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.types import LLM, Span
 
@@ -69,11 +69,15 @@ def test_qwen25_model_sanity(qwen25_model: RemoteOpenAIServer):
 
 
 @pytest.mark.asyncio
-async def test_basic_integration(qwen25_model: RemoteOpenAIServer):
+@pytest.mark.parametrize("otlp_enabled", [True, False])
+async def test_basic_integration(qwen25_model: RemoteOpenAIServer, otlp_enabled: bool):
     clear_tracer_provider()
     inmemory_store = InMemoryLightningStore()
-    store = LightningStoreServer(store=inmemory_store, host="127.0.0.1", port=get_free_port())
-    await store.start()
+    if otlp_enabled:
+        store = LightningStoreServer(store=inmemory_store, host="127.0.0.1", port=get_free_port())
+        await store.start()
+    else:
+        store = LightningStoreThreaded(inmemory_store)
     proxy = LLMProxy(
         port=get_free_port(),
         model_list=[
@@ -86,6 +90,7 @@ async def test_basic_integration(qwen25_model: RemoteOpenAIServer):
             }
         ],
         store=store,
+        launch_mode="thread" if not otlp_enabled else "mp",
     )
 
     rollout = await store.start_rollout(None)
@@ -107,7 +112,8 @@ async def test_basic_integration(qwen25_model: RemoteOpenAIServer):
 
     spans = await store.query_spans(rollout.rollout_id, rollout.attempt.attempt_id)
 
-    await store.stop()
+    if isinstance(store, LightningStoreServer):
+        await store.stop()
 
     # Verify all spans have correct rollout_id, attempt_id, and sequence_id
     assert len(spans) > 0, "Should have captured spans"
@@ -187,13 +193,18 @@ async def _make_proxy_and_store(
     retries: int = 0,
     gunicorn: bool = False,
     callbacks: List[Union[Type[CustomLogger], str]] | None = None,
+    otlp_enabled: bool = False,
 ):
     clear_tracer_provider()
     _reset_litellm_logging_worker()  # type: ignore
     store = InMemoryLightningStore()
-    store_server = LightningStoreServer(store=store, host="127.0.0.1", port=get_free_port())
-    # When the server is forked into subprocess, it automatically becomes a client of the store
-    await store_server.start()
+    if otlp_enabled:
+        store = LightningStoreServer(store=store, host="127.0.0.1", port=get_free_port())
+        # When the server is forked into subprocess, it automatically becomes a client of the store
+        await store.start()
+    else:
+        # Backward compatibility with legacy thread + non-otlp mode
+        store = LightningStoreThreaded(store)
     proxy = LLMProxy(
         model_list=[
             {
@@ -204,14 +215,15 @@ async def _make_proxy_and_store(
                 },
             }
         ],
+        launch_mode="thread" if not otlp_enabled else "mp",
         port=get_free_port(),
         num_workers=4 if gunicorn else 1,
-        store=store_server,
+        store=store,
         num_retries=retries,
         callbacks=callbacks,
     )
     await proxy.start()
-    return proxy, store_server
+    return proxy, store
 
 
 async def _new_resource(proxy: LLMProxy, store: LightningStore):
@@ -236,8 +248,9 @@ def _attr(s: Span, key: str, default: Any = None):  # type: ignore
 
 
 @pytest.mark.asyncio
-async def test_multiple_requests_one_attempt(qwen25_model: RemoteOpenAIServer):
-    proxy, store = await _make_proxy_and_store(qwen25_model)
+@pytest.mark.parametrize("otlp_enabled", [True, False])
+async def test_multiple_requests_one_attempt(qwen25_model: RemoteOpenAIServer, otlp_enabled: bool):
+    proxy, store = await _make_proxy_and_store(qwen25_model, otlp_enabled=otlp_enabled)
     try:
         resource, rollout = await _new_resource(proxy, store)
         client = _get_client_for_resource(resource)
@@ -259,13 +272,14 @@ async def test_multiple_requests_one_attempt(qwen25_model: RemoteOpenAIServer):
         # TODO: Check response contents and token ids for the 3 requests respectively
     finally:
         await proxy.stop()
-        await store.stop()
+        if isinstance(store, LightningStoreServer):
+            await store.stop()
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("gunicorn", [False, True])
-async def test_ten_concurrent_requests(qwen25_model: RemoteOpenAIServer, gunicorn: bool):
-    proxy, store = await _make_proxy_and_store(qwen25_model, gunicorn=gunicorn)
+@pytest.mark.parametrize("mode", ["gunicorn", "thread", "uvicorn"])
+async def test_ten_concurrent_requests(qwen25_model: RemoteOpenAIServer, mode: str):
+    proxy, store = await _make_proxy_and_store(qwen25_model, gunicorn=mode == "gunicorn", otlp_enabled=mode != "thread")
     try:
         resource, rollout = await _new_resource(proxy, store)
         aclient = _get_async_client_for_resource(resource)
@@ -288,13 +302,15 @@ async def test_ten_concurrent_requests(qwen25_model: RemoteOpenAIServer, gunicor
         # TODO: Check whether the sequence ids get mixed up or not
     finally:
         await proxy.stop()
-        await store.stop()
+        if isinstance(store, LightningStoreServer):
+            await store.stop()
 
 
 @pytest.mark.asyncio
-async def test_anthropic_client_compat(qwen25_model: RemoteOpenAIServer):
+@pytest.mark.parametrize("otlp_enabled", [True, False])
+async def test_anthropic_client_compat(qwen25_model: RemoteOpenAIServer, otlp_enabled: bool):
     # litellm proxy accepts Anthropic schema and forwards to OpenAI backend
-    proxy, store = await _make_proxy_and_store(qwen25_model)
+    proxy, store = await _make_proxy_and_store(qwen25_model, otlp_enabled=otlp_enabled)
     try:
         resource, rollout = await _new_resource(proxy, store)
 
@@ -312,12 +328,14 @@ async def test_anthropic_client_compat(qwen25_model: RemoteOpenAIServer):
         assert len(spans) > 0
     finally:
         await proxy.stop()
-        await store.stop()
+        if isinstance(store, LightningStoreServer):
+            await store.stop()
 
 
 @pytest.mark.asyncio
-async def test_tool_call_roundtrip(qwen25_model: RemoteOpenAIServer):
-    proxy, store = await _make_proxy_and_store(qwen25_model)
+@pytest.mark.parametrize("otlp_enabled", [True, False])
+async def test_tool_call_roundtrip(qwen25_model: RemoteOpenAIServer, otlp_enabled: bool):
+    proxy, store = await _make_proxy_and_store(qwen25_model, otlp_enabled=otlp_enabled)
     try:
         resource, rollout = await _new_resource(proxy, store)
         client = _get_client_for_resource(resource)
@@ -381,12 +399,14 @@ async def test_tool_call_roundtrip(qwen25_model: RemoteOpenAIServer):
         # TODO: Check response contents and token ids for the 2 requests respectively
     finally:
         await proxy.stop()
-        await store.stop()
+        if isinstance(store, LightningStoreServer):
+            await store.stop()
 
 
 @pytest.mark.asyncio
-async def test_streaming_chunks(qwen25_model: RemoteOpenAIServer):
-    proxy, store = await _make_proxy_and_store(qwen25_model)
+@pytest.mark.parametrize("otlp_enabled", [True, False])
+async def test_streaming_chunks(qwen25_model: RemoteOpenAIServer, otlp_enabled: bool):
+    proxy, store = await _make_proxy_and_store(qwen25_model, otlp_enabled=otlp_enabled)
     try:
         resource, rollout = await _new_resource(proxy, store)
         client = _get_client_for_resource(resource)
@@ -417,12 +437,14 @@ async def test_streaming_chunks(qwen25_model: RemoteOpenAIServer):
                 assert "gen_ai.completion.0.content" in span.attributes
     finally:
         await proxy.stop()
-        await store.stop()
+        if isinstance(store, LightningStoreServer):
+            await store.stop()
 
 
 @pytest.mark.asyncio
-async def test_anthropic_token_ids(qwen25_model: RemoteOpenAIServer):
-    proxy, store = await _make_proxy_and_store(qwen25_model)
+@pytest.mark.parametrize("otlp_enabled", [True, False])
+async def test_anthropic_token_ids(qwen25_model: RemoteOpenAIServer, otlp_enabled: bool):
+    proxy, store = await _make_proxy_and_store(qwen25_model, otlp_enabled=otlp_enabled)
     try:
         resource, rollout = await _new_resource(proxy, store)
         adapter = LlmProxyTraceToTriplet()
@@ -479,7 +501,8 @@ async def test_anthropic_token_ids(qwen25_model: RemoteOpenAIServer):
         assert len(triplets) == 2
     finally:
         await proxy.stop()
-        await store.stop()
+        if isinstance(store, LightningStoreServer):
+            await store.stop()
 
 
 class LogprobsCallback(CustomLogger):
@@ -489,9 +512,10 @@ class LogprobsCallback(CustomLogger):
 
 
 @pytest.mark.asyncio
-async def test_anthropic_logprobs(qwen25_model: RemoteOpenAIServer):
+@pytest.mark.parametrize("otlp_enabled", [True, False])
+async def test_anthropic_logprobs(qwen25_model: RemoteOpenAIServer, otlp_enabled: bool):
     proxy, store = await _make_proxy_and_store(
-        qwen25_model, callbacks=[LogprobsCallback, "return_token_ids", "opentelemetry"]
+        qwen25_model, callbacks=[LogprobsCallback, "return_token_ids", "opentelemetry"], otlp_enabled=otlp_enabled
     )
     try:
         resource, rollout = await _new_resource(proxy, store)
@@ -543,4 +567,5 @@ async def test_anthropic_logprobs(qwen25_model: RemoteOpenAIServer):
             # TODO: Check logprobs
     finally:
         await proxy.stop()
-        await store.stop()
+        if isinstance(store, LightningStoreServer):
+            await store.stop()
