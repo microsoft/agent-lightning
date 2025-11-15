@@ -2,6 +2,8 @@
 
 ::: agentlightning.LightningStore
 
+::: agentlightning.LightningStoreCapabilities
+
 ## Store Implementations
 
 ::: agentlightning.InMemoryLightningStore
