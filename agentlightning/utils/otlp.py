@@ -241,9 +241,14 @@ class LightningStoreOTLPExporter(OTLPSpanExporter):
         if self._default_endpoint is not None:
             self._endpoint = self._default_endpoint
 
+    def should_bypass(self) -> bool:
+        """Check if the exporter should bypass the default export if rollout_id and attempt_id are not set."""
+        return True
+
     def export(self, spans: Sequence[ReadableSpan]) -> SpanExportResult:
         if self._rollout_id is not None and self._attempt_id is not None:
             # rollout_id and attempt_id are present in resource attributes
+            # It means that the server supports OTLP endpoint.
             for span in spans:
                 # Override the resources so that the server knows where the request comes from.
                 span._resource = span._resource.merge(  # pyright: ignore[reportPrivateUsage]
@@ -255,9 +260,12 @@ class LightningStoreOTLPExporter(OTLPSpanExporter):
                     )
                 )
             return super().export(spans)
-        else:
+        elif not self.should_bypass():
             logger.debug("Rollout ID and Attempt ID not set; using default OTLP exporter behavior.")
             return super().export(spans)
+        else:
+            logger.debug("Rollout ID and Attempt ID not set; bypassing export.")
+            return SpanExportResult.SUCCESS
 
 
 def _read_body_maybe_gzip(request: Request, raw_body: bytes) -> bytes:

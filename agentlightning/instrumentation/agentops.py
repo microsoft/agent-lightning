@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Callable, Sequence, no_type_check
+from typing import Any, Callable, no_type_check
 
 import requests
 from agentops.client.api import V3Client, V4Client
@@ -13,8 +13,6 @@ from agentops.sdk.exporters import AuthenticatedOTLPExporter
 from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.sdk.metrics.export import MetricExportResult
-from opentelemetry.sdk.trace import ReadableSpan
-from opentelemetry.sdk.trace.export import SpanExportResult
 
 from agentlightning.utils.otlp import LightningStoreOTLPExporter
 
@@ -254,17 +252,8 @@ class BypassableAuthenticatedOTLPExporter(LightningStoreOTLPExporter, Authentica
     When `_agentops_service_enabled` is False, skip export and return success.
     """
 
-    def export(self, spans: Sequence[ReadableSpan]) -> SpanExportResult:
-        if _agentops_service_enabled:
-            # Opt-in for service
-            return super().export(spans)
-        elif self._rollout_id is not None and self._attempt_id is not None:
-            # Opt-in with condition: add rollout_id and attempt_id to resource attributes
-            return super().export(spans)
-        else:
-            # Directly bypass
-            logger.debug("SwitchableAuthenticatedOTLPExporter is switched off, skipping export.")
-            return SpanExportResult.SUCCESS
+    def should_bypass(self) -> bool:
+        return not _agentops_service_enabled
 
 
 class BypassableOTLPMetricExporter(OTLPMetricExporter):
@@ -289,17 +278,8 @@ class BypassableOTLPSpanExporter(LightningStoreOTLPExporter):
     This is used instead of BypassableAuthenticatedOTLPExporter on legacy AgentOps versions.
     """
 
-    def export(self, spans: Sequence[ReadableSpan]) -> SpanExportResult:
-        if _agentops_service_enabled:
-            # Opt-in for service
-            return super().export(spans)
-        elif self._rollout_id is not None and self._attempt_id is not None:
-            # Opt-in with condition: add rollout_id and attempt_id to resource attributes
-            return super().export(spans)
-        else:
-            # Directly bypass
-            logger.debug("SwitchableOTLPSpanExporter is switched off, skipping export.")
-            return SpanExportResult.SUCCESS
+    def should_bypass(self) -> bool:
+        return not _agentops_service_enabled
 
 
 class BypassableV3Client(V3Client):

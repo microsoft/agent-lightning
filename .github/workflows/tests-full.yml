@@ -147,6 +147,13 @@ jobs:
           path: requirements-freeze.txt
           compression-level: 0
 
+      - name: Launch LiteLLM Proxy
+        run: |
+          ./scripts/litellm_run.sh
+        env:
+          AZURE_API_BASE: ${{ secrets.AZURE_GROUP_SUBSCRIPTION_API_BASE }}
+          AZURE_API_KEY: ${{ secrets.AZURE_GROUP_SUBSCRIPTION_API_KEY }}
+
       - name: Write Traces via Otel Tracer
         run: |
           set -euo pipefail
