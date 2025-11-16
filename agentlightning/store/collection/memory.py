@@ -1,12 +1,16 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 from __future__ import annotations
 
+import asyncio
+import weakref
 from collections import deque
+from contextlib import asynccontextmanager
 from typing import (
     Any,
-    Callable,
+    AsyncGenerator,
     Deque,
     Dict,
-    Generic,
     Iterable,
     List,
     Literal,
@@ -16,10 +20,8 @@ from typing import (
     Sequence,
     Tuple,
     Type,
-    TypedDict,
     TypeVar,
     Union,
-    cast,
 )
 
 from pydantic import BaseModel
@@ -32,194 +34,9 @@ from agentlightning.types import (
     Worker,
 )
 
+from .base import Collection, LightningCollections, PaginatedResult, Queue
+
 T = TypeVar("T", bound=BaseModel)
-
-Filter = Mapping[str, Mapping[Literal["exact", "within", "contains"], Any]]
-"""Mapping of field name to filter conditions."""
-
-
-class PaginatedResult(BaseModel, Generic[T]):
-    """Result of a paginated query."""
-
-    items: Sequence[T]
-    """Items in the result."""
-    limit: int
-    """Limit of the result."""
-    offset: int
-    """Offset of the result."""
-    total: int
-    """Total number of items in the collection."""
-
-
-class Collection(Generic[T]):
-    """Behaves like a list of items. Supporting addition, updating, and deletion of items."""
-
-    def primary_keys(self) -> Sequence[str]:
-        """Get the primary keys of the collection."""
-        raise NotImplementedError()
-
-    def __repr__(self) -> str:
-        return f"<{self.__class__.__name__}[{self.item_type().__name__}] ({self.size()})>"
-
-    def item_type(self) -> Type[T]:
-        """Get the type of the items in the collection."""
-        raise NotImplementedError()
-
-    def size(self) -> int:
-        """Get the number of items in the collection."""
-        raise NotImplementedError()
-
-    async def query(
-        self,
-        filters: Optional[Filter] = None,
-        filter_logic: Literal["and", "or"] = "and",
-        sort_by: Optional[str] = None,
-        sort_order: Literal["asc", "desc"] = "asc",
-        limit: int = -1,
-        offset: int = 0,
-    ) -> PaginatedResult[T]:
-        """Query the collection with the given filters, sort order, and pagination.
-
-        Args:
-            filters:
-                A mapping of field name -> operator dict. Each operator dict can contain:
-
-                - "exact": value for exact equality.
-                - "in": iterable of allowed values.
-                - "contains": substring to search for in string fields.
-
-                Example:
-
-                ```json
-                {
-                    "status": {"exact": "active"},
-                    "id": {"in": [1, 2, 3]},
-                    "name": {"contains": "foo"},
-                }
-                ```
-
-            filter_logic:
-                How to combine filter results:
-
-                - "and": all conditions must match.
-                - "or": at least one condition must match.
-
-                All conditions within a field and between different fields are
-                stored in a unified pool and combined using `filter_logic`.
-
-            sort_by:
-                Optional field to sort by. Field must exist in the model.
-
-            sort_order:
-                "asc" or "desc" for ascending / descending sort.
-
-            limit:
-                Max number of items to return. Use -1 for "no limit".
-
-            offset:
-                Number of items to skip from the start of the *matching* items.
-
-        Returns:
-            PaginatedResult with items, limit, offset, and total matched items.
-        """
-        raise NotImplementedError()
-
-    async def get(self, filters: Filter, filter_logic: Literal["and", "or"] = "and") -> Optional[T]:
-        """Get the first item that matches the given filters.
-
-        Args:
-            filters: The filters to apply to the collection.
-
-        Returns:
-            The first item that matches the given filters, or None if no item matches.
-        """
-        raise NotImplementedError()
-
-    async def insert(self, items: Sequence[T]) -> None:
-        """Add the given items to the collection.
-
-        Raises:
-            ValueError: If an item with the same primary key already exists.
-        """
-        raise NotImplementedError()
-
-    async def update(self, items: Sequence[T]) -> None:
-        """Update the given items in the collection.
-
-        Raises:
-            ValueError: If an item with the primary keys does not exist.
-        """
-        raise NotImplementedError()
-
-    async def upsert(self, items: Sequence[T]) -> None:
-        """Upsert the given items into the collection.
-
-        If the items with the same primary keys already exist, they will be updated.
-        Otherwise, they will be inserted.
-        """
-        raise NotImplementedError()
-
-    async def delete(self, items: Sequence[T]) -> None:
-        """Delete the given items from the collection.
-
-        Args:
-            items: The items to delete from the collection.
-
-        Raises:
-            ValueError: If the items with the primary keys to be deleted do not exist.
-        """
-        raise NotImplementedError()
-
-
-class Queue(Generic[T]):
-    """Behaves like a deque. Supporting appending items to the end and popping items from the front."""
-
-    def __repr__(self) -> str:
-        return f"<{self.__class__.__name__}[{self.item_type().__name__}] ({self.size()})>"
-
-    def item_type(self) -> Type[T]:
-        """Get the type of the items in the queue."""
-        raise NotImplementedError()
-
-    async def enqueue(self, items: Sequence[T]) -> Sequence[T]:
-        """Append the given items to the end of the queue.
-
-        Args:
-            items: The items to append to the end of the queue.
-
-        Returns:
-            The items that were appended to the end of the queue.
-        """
-        raise NotImplementedError()
-
-    async def dequeue(self, limit: int = 1) -> Sequence[T]:
-        """Pop the given number of items from the front of the queue.
-
-        Args:
-            limit: The number of items to pop from the front of the queue.
-
-        Returns:
-            The items that were popped from the front of the queue.
-            If there are less than `limit` items in the queue, the remaining items will be returned.
-        """
-        raise NotImplementedError()
-
-    async def peek(self, limit: int = 1) -> Sequence[T]:
-        """Peek the given number of items from the front of the queue.
-
-        Args:
-            limit: The number of items to peek from the front of the queue.
-
-        Returns:
-            The items that were peeked from the front of the queue.
-            If there are less than `limit` items in the queue, the remaining items will be returned.
-        """
-        raise NotImplementedError()
-
-    def size(self) -> int:
-        """Get the number of items in the queue."""
-        raise NotImplementedError()
-
 
 # Nested structure type:
 # dict[pk1] -> dict[pk2] -> ... -> item
@@ -685,33 +502,86 @@ class DequeQueue(Queue[T]):
         return len(self._items)
 
 
-class LightningCollections:
-    """Collections of rollouts, attempts, spans, resources, and workers.
+class InMemoryLightningCollections(LightningCollections):
+    """In-memory implementation of LightningCollections using Python data structures.
 
-    [LightningStore][agentlightning.LightningStore] implementations can use this as a storage base
-    to implement the store API.
+    Serves as the storage base for [`InMemoryLightningStore`][agentlightning.InMemoryLightningStore].
     """
 
-    rollouts: Collection[Rollout]
-    """Collections of rollouts."""
-    attempts: Collection[Attempt]
-    """Collections of attempts."""
-    spans: Collection[Span]
-    """Collections of spans."""
-    resources: Collection[ResourcesUpdate]
-    """Collections of resources."""
-    workers: Collection[Worker]
-    """Collections of workers."""
-    rollout_queue: Queue[Rollout]
-    """Queue of rollouts (tasks)."""
+    def __init__(self):
+        self._lock = _LoopAwareAsyncLock()
+        self._rollouts = ListCollection(items=[], item_type=Rollout, primary_keys=["rollout_id"])
+        self._attempts = ListCollection(items=[], item_type=Attempt, primary_keys=["rollout_id", "attempt_id"])
+        self._spans = ListCollection(items=[], item_type=Span, primary_keys=["rollout_id", "attempt_id", "span_id"])
+        self._resources = ListCollection(items=[], item_type=ResourcesUpdate, primary_keys=["resources_id"])
+        self._workers = ListCollection(items=[], item_type=Worker, primary_keys=["worker_id"])
+        self._rollout_queue = DequeQueue(items=[], item_type=Rollout)
 
-    async def atomic(self, *args: Any, **kwargs: Any) -> None:
-        """Perform a atomic operation on the collections.
+    @property
+    def rollouts(self) -> Collection[Rollout]:
+        return self._rollouts
 
-        Subclass may use args and kwargs to support multiple levels of atomicity.
+    @property
+    def attempts(self) -> Collection[Attempt]:
+        return self._attempts
 
-        Args:
-            *args: Arguments to pass to the operation.
-            **kwargs: Keyword arguments to pass to the operation.
-        """
-        raise NotImplementedError()
+    @property
+    def spans(self) -> Collection[Span]:
+        return self._spans
+
+    @property
+    def resources(self) -> Collection[ResourcesUpdate]:
+        return self._resources
+
+    @property
+    def workers(self) -> Collection[Worker]:
+        return self._workers
+
+    @property
+    def rollout_queue(self) -> Queue[Rollout]:
+        return self._rollout_queue
+
+    @asynccontextmanager
+    async def atomic(self, *args: Any, **kwargs: Any) -> AsyncGenerator[None, None]:
+        async with self._lock:
+            yield
+
+
+class _LoopAwareAsyncLock:
+    """Async lock that transparently rebinds to the current event loop.
+
+    The lock intentionally remains *thread-unsafe*: callers must only use it from
+    one thread at a time. If multiple threads interact with the store, each
+    thread gets its own event loop specific lock.
+    """
+
+    def __init__(self) -> None:
+        self._locks: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Lock] = weakref.WeakKeyDictionary()
+
+    # When serializing and deserializing, we don't need to serialize the locks.
+    # Because another process will have its own set of event loops and its own lock.
+    def __getstate__(self) -> dict[str, Any]:
+        return {}
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        self._locks = weakref.WeakKeyDictionary()
+
+    def _get_lock_for_current_loop(self) -> asyncio.Lock:
+        loop = asyncio.get_running_loop()
+        lock = self._locks.get(loop)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._locks[loop] = lock
+        return lock
+
+    async def __aenter__(self) -> asyncio.Lock:
+        lock = self._get_lock_for_current_loop()
+        await lock.acquire()
+        return lock
+
+    async def __aexit__(self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: Any) -> None:
+        loop = asyncio.get_running_loop()
+        lock = self._locks.get(loop)
+        if lock is None or not lock.locked():
+            raise RuntimeError("Lock released without being acquired")
+        lock.release()
