@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Generic, Iterable, List, Literal, Mapping, Optional, Sequence, Type, TypeVar, Union
+from typing import Any, Dict, Generic, Iterable, List, Literal, Mapping, Optional, Sequence, Type, TypeVar, Union, cast
 
 from pydantic import BaseModel
 
@@ -168,7 +168,7 @@ class Queue(Generic[T]):
         raise NotImplementedError()
 
 
-ListCollectionItemType = Union[Dict[str, "ListCollectionItemType[T]"], List[T]]
+ListCollectionItemType = Union[Dict[str, "ListCollectionItemType[T]"], Dict[str, T]]
 
 
 class ListCollection(Collection[T]):
@@ -180,9 +180,7 @@ class ListCollection(Collection[T]):
     {
         "<primary_key_1>": {
             "<primary_key_2>": {
-                "<primary_key_3>": {
-                    ...
-                },
+                "<primary_key_3>": T,
             },
             "<primary_key_2>": {
                 ...
@@ -221,12 +219,15 @@ class ListCollection(Collection[T]):
 
     def _flatten_items(self, items: ListCollectionItemType[T]) -> Iterable[T]:
         """Flatten the nested dictionary of items into a flat list of items."""
-        if isinstance(items, dict):
-            for item in items.values():
-                yield from self._flatten_items(item)
+        if not items:
+            return
+
+        # Peek the first value
+        first_value = next(iter(items.values()))
+        if isinstance(first_value, dict):
+            yield from self._flatten_items(first_value)
         else:
-            for item in items:
-                yield item
+            yield from cast(Iterable[T], items.values())
 
     def query(
         self,
@@ -318,4 +319,30 @@ class ListCollection(Collection[T]):
 
     def insert(self, items: Sequence[T]) -> Sequence[T]:
         """Add the given items to the collection."""
-        raise NotImplementedError()
+        primary_keys = self.primary_keys()
+        for item in items:
+            primary_key_values: List[Any] = []
+            for primary_key in primary_keys:
+                if not hasattr(item, primary_key):
+                    raise ValueError(f"Item {item} does not have primary key {primary_key}")
+                value = getattr(item, primary_key)
+                primary_key_values.append(value)
+
+            # Find the target dictionary to insert the item into
+            target: ListCollectionItemType[T] = self._items
+            for i, value in enumerate(primary_key_values):
+                if i + 1 == len(primary_keys):
+                    # For the final layer, directly assign the item
+                    if value in target:
+                        key_values_str = ", ".join(
+                            [f"{key}={value}" for key, value in zip(primary_keys, primary_key_values)]
+                        )
+                        raise ValueError(f"Item {item} already exists with primary key {key_values_str}")
+                    target[value] = item  # type: ignore
+                else:
+                    if value not in target:
+                        target[value] = {}  # type: ignore
+                    target = target[value]  # type: ignore
+                    if not isinstance(target, dict):  # type: ignore
+                        raise ValueError(f"Insert target {target} is not a dictionary")
+        return items
