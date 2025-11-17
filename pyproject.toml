@@ -1,6 +1,6 @@
 [project]
 name = "agentlightning"
-version = "0.2.2"
+version = "0.3.0"
 description = "Agent-lightning is the absolute trainer to light up AI agents."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -35,7 +35,7 @@ apo = [
 # though it's listed here for completeness.
 verl = [
   "verl>=0.5.0",
-  "vllm>=0.8.4,<0.11.0", # Due to interface change of ExternalZeroMQDistributedExecutor
+  "vllm>=0.8.4", # Due to interface change of ExternalZeroMQDistributedExecutor
 ]
 
 [project.scripts]
@@ -161,7 +161,7 @@ autogen = [
 ]
 openai-agents = [
   "openai-agents",
-  "openai<2.7.0",
+  "openai",
   # Compatibility issues with the latest version of OpenAI, temporarily fixed version
   # Issue: https://github.com/openai/openai-agents-python/issues/2038
   "mcp",
@@ -196,7 +196,7 @@ agents = [
 ]
 
 [tool.uv]
-required-version = ">=0.9.5"
+required-version = ">=0.9.9"
 conflicts = [
   [
     { group = "core-legacy" },
@@ -233,7 +233,7 @@ torch = [
   { index = "pytorch-cu128", group = "torch-cu128" },
   { index = "pytorch-cpu", group = "torch-cpu" },
 ]
-tinker_cookbook = { git = "https://github.com/thinking-machines-lab/tinker-cookbook", rev = "72ba5e6a1f52c0887e2674615e318ce21a39cc2a" }
+tinker_cookbook = { git = "https://github.com/thinking-machines-lab/tinker-cookbook", rev = "20e26a629797188aa8c6f34474b0d4757b20b90d" }
 
 [[tool.uv.index]]
 name = "pypi"
