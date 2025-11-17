@@ -413,11 +413,15 @@ class ListBasedCollection(Collection[T]):
         self,
         filters: Filter,
         filter_logic: Literal["and", "or"] = "and",
+        sort_by: Optional[str] = None,
+        sort_order: Literal["asc", "desc"] = "asc",
     ) -> Optional[T]:
         """Return the first item that matches the given filters, or None."""
         result = await self.query(
             filters=filters,
             filter_logic=filter_logic,
+            sort_by=sort_by,
+            sort_order=sort_order,
             limit=1,
             offset=0,
         )

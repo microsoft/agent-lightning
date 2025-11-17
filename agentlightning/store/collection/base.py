@@ -29,7 +29,24 @@ K = TypeVar("K")
 V = TypeVar("V")
 
 Filter = Mapping[str, Mapping[Literal["exact", "within", "contains"], Any]]
-"""Mapping of field name to filter conditions."""
+"""A mapping of field name -> operator dict.
+
+Each operator dict can contain:
+
+- "exact": value for exact equality.
+- "within": iterable of allowed values.
+- "contains": substring to search for in string fields.
+
+Example:
+
+```json
+{
+    "status": {"exact": "active"},
+    "id": {"within": [1, 2, 3]},
+    "name": {"contains": "foo"},
+}
+```
+"""
 
 
 class PaginatedResult(BaseModel, Generic[T]):
@@ -76,21 +93,7 @@ class Collection(Generic[T]):
 
         Args:
             filters:
-                A mapping of field name -> operator dict. Each operator dict can contain:
-
-                - "exact": value for exact equality.
-                - "within": iterable of allowed values.
-                - "contains": substring to search for in string fields.
-
-                Example:
-
-                ```json
-                {
-                    "status": {"exact": "active"},
-                    "id": {"within": [1, 2, 3]},
-                    "name": {"contains": "foo"},
-                }
-                ```
+                The filters to apply to the collection. See [`Filter`][agentlightning.store.collection.Filter].
 
             filter_logic:
                 How to combine filter results:
@@ -118,11 +121,24 @@ class Collection(Generic[T]):
         """
         raise NotImplementedError()
 
-    async def get(self, filters: Filter, filter_logic: Literal["and", "or"] = "and") -> Optional[T]:
+    async def get(
+        self,
+        filters: Filter,
+        filter_logic: Literal["and", "or"] = "and",
+        sort_by: Optional[str] = None,
+        sort_order: Literal["asc", "desc"] = "asc",
+    ) -> Optional[T]:
         """Get the first item that matches the given filters.
 
         Args:
             filters: The filters to apply to the collection.
+                See [`Filter`][agentlightning.store.collection.Filter].
+            filter_logic: How to combine filter results.
+                See [`filter_logic`] parameter in [`query`][agentlightning.store.collection.Collection.query].
+            sort_by: Optional field to sort by. See [`sort_by`] parameter in
+                [`query`][agentlightning.store.collection.Collection.query].
+            sort_order: "asc" or "desc" for ascending / descending sort. When using "asc",
+                the "min" value will be returned. When using "desc", the "max" value will be returned.
 
         Returns:
             The first item that matches the given filters, or None if no item matches.

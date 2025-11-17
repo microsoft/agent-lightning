@@ -489,6 +489,22 @@ async def test_list_collection_get_respects_filter_logic(sample_collection: List
 
 
 @pytest.mark.asyncio()
+async def test_list_collection_get_honors_sort_by(sample_collection: ListBasedCollection[SampleItem]) -> None:
+    filters = {"partition": {"exact": "alpha"}}
+    item = await sample_collection.get(filters, sort_by="rank")  # type: ignore[arg-type]
+    assert item is not None
+    assert (item.partition, item.index) == ("alpha", 2)
+
+
+@pytest.mark.asyncio()
+async def test_list_collection_get_honors_sort_order(sample_collection: ListBasedCollection[SampleItem]) -> None:
+    filters = {"partition": {"exact": "alpha"}}
+    item = await sample_collection.get(filters, sort_by="rank", sort_order="desc")  # type: ignore[arg-type]
+    assert item is not None
+    assert (item.partition, item.index) == ("alpha", 3)
+
+
+@pytest.mark.asyncio()
 async def test_list_collection_query_handles_large_dataset() -> None:
     bulk_items = [
         SampleItem(
