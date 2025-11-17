@@ -66,6 +66,14 @@ class ListBasedCollection(Collection[T]):
         }
 
     where the nesting depth equals the number of primary keys.
+
+    Sorting behavior:
+
+    1. If no sort_by is provided, the items are returned in the order of insertion.
+    2. If sort_by is provided, the items are sorted by the value of the sort_by field.
+    3. If the sort_by field is a timestamp, the null values are treated as infinity.
+    4. If the sort_by field is not a timestamp, the null values are treated as empty string
+       if the field is str-like, 0 if the field is int-like, 0.0 if the field is float-like.
     """
 
     def __init__(self, items: List[T], item_type: Type[T], primary_keys: Sequence[str]):
@@ -201,17 +209,25 @@ class ListBasedCollection(Collection[T]):
         else:
             raise ValueError(f"Unknown mutation mode: {mode}")
 
-    def _iter_items(self) -> Iterable[T]:
-        """Iterate over all items in the nested dictionary structure."""
-        if not self._items:
+    def _iter_items(
+        self,
+        root: Optional[Mapping[Any, Any]] = None,
+        filters: Optional[Filter] = None,
+        filter_logic: Literal["and", "or"] = "and",
+    ) -> Iterable[T]:
+        """Iterate over all items in the nested dictionary structure, optionally applying filters."""
+        if root is None:
+            root = self._items
+        if not root:
             return
-        stack: List[Mapping[Any, Any]] = [self._items]
+        stack: List[Mapping[Any, Any]] = [root]
         while stack:
             node = stack.pop()
             for value in node.values():
                 # Leaf nodes contain items; intermediate nodes are dicts.
                 if isinstance(value, self._item_type):
-                    yield value
+                    if self._item_matches_filters(value, filters, filter_logic):
+                        yield value
                 elif isinstance(value, dict):
                     stack.append(value)  # type: ignore
                 else:
@@ -219,6 +235,56 @@ class ListBasedCollection(Collection[T]):
                         f"Internal structure corrupted: expected dict or {self._item_type.__name__}, "
                         f"got {type(value)!r}"
                     )
+
+    def _iter_matching_items(
+        self,
+        filters: Optional[Filter],
+        filter_logic: Literal["and", "or"],
+    ) -> Iterable[T]:
+        """Efficiently iterate over items matching filters, using primary-key prefix when possible."""
+        # Fast path: no filters or non-AND logic -> just delegate to _iter_items.
+        if not filters or filter_logic != "and":
+            return self._iter_items(filters=filters, filter_logic=filter_logic)
+
+        # Try to derive a primary-key prefix from exact filters.
+        pk_values_prefix: List[Any] = []
+        for pk in self._primary_keys:
+            field_ops = filters.get(pk)  # type: ignore[union-attr]
+            if not field_ops:
+                break
+            # Only allow a pure {"exact": value} constraint.
+            if set(field_ops.keys()) != {"exact"}:
+                pk_values_prefix = []
+                break
+            value = field_ops.get("exact")
+            if value is None:
+                pk_values_prefix = []
+                break
+            pk_values_prefix.append(value)
+
+        if not pk_values_prefix:
+            return self._iter_items(filters=filters, filter_logic=filter_logic)
+
+        try:
+            if len(pk_values_prefix) == len(self._primary_keys):
+                # All primary keys specified -> at most a single item.
+                parent, final_key = self._locate_node(pk_values_prefix, create_missing=False)
+                single_item = parent.get(final_key)
+                if isinstance(single_item, self._item_type) and self._item_matches_filters(
+                    single_item, filters, filter_logic
+                ):
+                    return (single_item,)
+                return ()
+            else:
+                # Prefix of primary keys specified -> iterate only the subtree below that prefix.
+                parent, final_key = self._locate_node(pk_values_prefix, create_missing=False)
+                subtree = parent.get(final_key)
+                if isinstance(subtree, dict):
+                    return self._iter_items(subtree, filters=filters, filter_logic=filter_logic)  # type: ignore
+                return ()
+        except KeyError:
+            # No items exist for this primary-key prefix.
+            return ()
 
     @staticmethod
     def _item_matches_filters(
@@ -326,48 +392,21 @@ class ListBasedCollection(Collection[T]):
         """Query the collection with filters, sort order, and pagination.
 
         Args:
-            filters:
-                Mapping of field name to operator dict. For each field:
-
-                    {
-                        "exact":   value_for_equality,
-                        "within":  iterable_of_allowed_values,
-                        "contains": substring_or_element_to_match,
-                    }
-
-            filter_logic:
-                How to combine per-field results:
-                - "and": all fields must match.
-                - "or":  at least one field must match.
-
-            sort_by:
-                Optional field name to sort by. Must exist on the model.
-
-            sort_order:
-                "asc" or "desc" for ascending / descending sort.
-
-            limit:
-                Max number of items to return. Use -1 for "no limit".
-
-            offset:
-                Number of items to skip from the start of the *matching* items.
-
-        Returns:
-            PaginatedResult with:
-                - items: the page of results
-                - limit: the requested limit
-                - offset: the requested offset
-                - total: total number of items that matched the filters
+            filters: Mapping of field name to operator dict.
+            filter_logic: How to combine per-field results.
+            sort_by: Optional field name to sort by. Must exist on the model.
+            sort_order: "asc" or "desc" for ascending / descending sort.
+            limit: Max number of items to return. Use -1 for "no limit".
+            offset: Number of items to skip from the start of the *matching* items.
         """
-        # No sorting: stream through items and apply filters on the fly.
+        items_iter: Iterable[T] = self._iter_matching_items(filters, filter_logic)
+
+        # No sorting: stream through items and apply pagination on the fly.
         if not sort_by:
             matched_items: List[T] = []
             total_matched = 0
 
-            for item in self._iter_items():
-                if not self._item_matches_filters(item, filters, filter_logic):
-                    continue
-
+            for item in items_iter:
                 # Count every match for 'total'
                 total_matched += 1
 
@@ -388,10 +427,7 @@ class ListBasedCollection(Collection[T]):
             )
 
         # With sorting: we must materialize all matching items to sort them.
-        all_matches: List[T] = []
-        for item in self._iter_items():
-            if self._item_matches_filters(item, filters, filter_logic):
-                all_matches.append(item)
+        all_matches: List[T] = list(items_iter)
 
         total_matched = len(all_matches)
         reverse = sort_order == "desc"
@@ -416,16 +452,34 @@ class ListBasedCollection(Collection[T]):
         sort_by: Optional[str] = None,
         sort_order: Literal["asc", "desc"] = "asc",
     ) -> Optional[T]:
-        """Return the first item that matches the given filters, or None."""
-        result = await self.query(
-            filters=filters,
-            filter_logic=filter_logic,
-            sort_by=sort_by,
-            sort_order=sort_order,
-            limit=1,
-            offset=0,
-        )
-        return result.items[0] if result.items else None
+        """Return the first (or best-sorted) item that matches the given filters, or None."""
+        items_iter: Iterable[T] = self._iter_matching_items(filters, filter_logic)
+
+        if not sort_by:
+            # Just return the first matching item, if any.
+            for item in items_iter:
+                return item
+            return None
+
+        # Single-pass min/max according to sort_order.
+        best_item: Optional[T] = None
+        best_key: Any = None
+
+        for item in items_iter:
+            key = self._get_sort_value(item, sort_by)
+            if best_item is None:
+                best_item = item
+                best_key = key
+                continue
+
+            if sort_order == "asc":
+                if key < best_key:
+                    best_item, best_key = item, key
+            else:
+                if key > best_key:
+                    best_item, best_key = item, key
+
+        return best_item
 
     async def insert(self, items: Sequence[T]) -> None:
         """Insert the given items.
