@@ -557,14 +557,17 @@ class AgentModeDaemon:
         )  # FIXME: Evaluate whether grouping stats by source is actually needed.
 
         for rollout_id, rollout in self._completed_rollouts_v0.items():
+            final_reward_raw: Optional[float] = rollout.final_reward
             final_reward = self._fillna_reward(rollout)
             if not rollout.triplets:
                 print(f"Warning: No triplets found for test rollout {rollout.rollout_id}.")
                 sample_stat_list.append({"reward": final_reward})
                 continue
             response_length_list = [len(triplet.response.get("token_ids", [])) for triplet in rollout.triplets]
+
             if "data_source" in self._task_id_to_original_sample[rollout_id]:
                 # When a test sample includes a 'data_source' field, record per-source statistics for test results.
+                # TODO: This is a flawed design. We should have a better way to handle this.
                 data_source = self._task_id_to_original_sample[rollout_id]["data_source"]
                 sample_stat_list_by_source[data_source].append(
                     {
@@ -572,6 +575,7 @@ class AgentModeDaemon:
                         "mean_response_length": np.mean(response_length_list) if response_length_list else 0,
                         "turn_count": len(rollout.triplets),
                         "reward": final_reward,
+                        "has_reward": final_reward_raw is not None,
                     }
                 )
             sample_stat_list.append(
@@ -580,6 +584,7 @@ class AgentModeDaemon:
                     "mean_response_length": np.mean(response_length_list) if response_length_list else 0,
                     "turn_count": len(rollout.triplets),
                     "reward": final_reward,
+                    "has_reward": final_reward_raw is not None,
                 }
             )
         metric_dict: Dict[str, Any] = {}
@@ -594,6 +599,9 @@ class AgentModeDaemon:
                 {
                     f"val/{data_source}/n_rollouts": len(sample_stats),
                     f"val/{data_source}/n_rollouts_w_trace": len(stats_w_trace_by_source[data_source]),
+                    f"val/{data_source}/n_rollouts_w_reward": len(
+                        [stat for stat in sample_stats if stat["has_reward"]]
+                    ),
                     f"val/{data_source}/reward": np.mean(
                         [stat["reward"] for stat in sample_stats]
                     ),  # each rollout must have a reward (fillna if missing)
@@ -612,6 +620,7 @@ class AgentModeDaemon:
             {
                 "val/n_rollouts": len(sample_stat_list),
                 "val/n_rollouts_w_trace": len(stats_w_trace),
+                "val/n_rollouts_w_reward": len([stat for stat in sample_stat_list if stat["has_reward"]]),
                 "val/reward": np.mean(
                     [stat["reward"] for stat in sample_stat_list]
                 ),  # each rollout must have a reward (fillna if missing)
@@ -636,9 +645,10 @@ class AgentModeDaemon:
         # 1. Reconstruct the `finished_id_to_sample_info` structure from completed rollouts
         finished_id_to_sample_info: Dict[str, Dict[str, Any]] = {}
         finished_id_to_final_reward: Dict[str, float] = {}
+        sample_with_reward_count = 0
         for rollout_id, rollout in self._completed_rollouts_v0.items():
             original_sample = self._task_id_to_original_sample[rollout_id]
-
+            sample_with_reward_count += int(rollout.final_reward is not None)
             final_reward = self._fillna_reward(rollout)
 
             if not rollout.triplets:
@@ -757,6 +767,7 @@ class AgentModeDaemon:
             "training/reward": np.mean(list(finished_id_to_final_reward.values())),
             "training/n_rollouts": len(finished_id_to_final_reward),
             "training/n_rollouts_w_trace": len(finished_id_to_sample_info),
+            "training/n_rollouts_w_reward": sample_with_reward_count,
             "training/n_truncated_triplets": n_trunc_sample_because_of_response,
             "training/n_triplets": n_transition,
         }
