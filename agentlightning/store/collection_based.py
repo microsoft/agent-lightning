@@ -266,7 +266,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
             )
 
             await self.collections.rollouts.insert([rollout])
-            await self.collections.rollout_queue.enqueue([rollout])  # add it to the end of the queue
+            await self.collections.rollout_queue.enqueue([rollout.rollout_id])  # add it to the end of the queue
 
             # Notify the subclass that the rollout status has changed.
             await self.on_rollout_update(rollout)
@@ -296,7 +296,12 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
                 dequeued = await self.collections.rollout_queue.dequeue(1)
                 if not dequeued:
                     break
-                rollout = dequeued[0]
+                rollout_id = dequeued[0]
+
+                rollout = await self.collections.rollouts.get({"rollout_id": {"exact": rollout_id}})
+                if not rollout:
+                    logger.warning(f"Rollout {rollout_id} not found, skipping dequeuing")
+                    continue
 
                 # Check if rollout is still in a queuing state
                 # (it might have been updated to a different status while in queue)
@@ -820,12 +825,10 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         if not isinstance(status, Unset) and is_finished(rollout):
             rollout.end_time = time.time()
 
-        # If requeuing, add back to queue
-        # NOTE: We don't need to check if the rollout is already in the queue,
-        # because when dequeuing, we will check if the rollout is still in queuing state.
-        # If the rollout has been dequeued twice, its status will be changed to preparing in the first dequeue.
-        elif is_queuing(rollout):
-            await self.collections.rollout_queue.enqueue([rollout])
+        # If requeuing, add back to queue.
+        # Check whether the rollout is already in queue.
+        elif is_queuing(rollout) and not await self.collections.rollout_queue.has(rollout.rollout_id):
+            await self.collections.rollout_queue.enqueue([rollout.rollout_id])
 
         # We also don't need to remove non-queuing rollouts from the queue, for similar reasons.
 

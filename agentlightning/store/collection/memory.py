@@ -25,8 +25,6 @@ from typing import (
     cast,
 )
 
-from pydantic import BaseModel
-
 from agentlightning.types import (
     Attempt,
     ResourcesUpdate,
@@ -46,7 +44,7 @@ from .base import (
     SortOptions,
 )
 
-T = TypeVar("T", bound=BaseModel)
+T = TypeVar("T")  # Recommended to be a BaseModel, not a dict
 K = TypeVar("K")
 V = TypeVar("V")
 
@@ -92,6 +90,8 @@ class ListBasedCollection(Collection[T]):
 
         self._items: Dict[Any, Any] = {}
         self._size: int = 0
+        if issubclass(item_type, dict):
+            raise TypeError(f"Expect item to be not a dict, got {item_type.__name__}")
         self._item_type: Type[T] = item_type
         self._primary_keys: Tuple[str, ...] = tuple(primary_keys)
 
@@ -575,6 +575,11 @@ class DequeBasedQueue(Queue[T]):
     def item_type(self) -> Type[T]:
         return self._item_type
 
+    async def has(self, item: T) -> bool:
+        if not isinstance(item, self._item_type):
+            raise TypeError(f"Expected item of type {self._item_type.__name__}, got {type(item).__name__}")
+        return item in self._items
+
     async def enqueue(self, items: Sequence[T]) -> Sequence[T]:
         for item in items:
             if not isinstance(item, self._item_type):
@@ -611,6 +616,9 @@ class DictBasedKeyValue(KeyValue[K, V]):
     def __init__(self, data: Optional[Mapping[K, V]] = None):
         self._values: Dict[K, V] = dict(data) if data else {}
 
+    async def has(self, key: K) -> bool:
+        return key in self._values
+
     async def get(self, key: K, default: V | None = None) -> V | None:
         return self._values.get(key, default)
 
@@ -639,7 +647,7 @@ class InMemoryLightningCollections(LightningCollections):
         )
         self._resources = ListBasedCollection(items=[], item_type=ResourcesUpdate, primary_keys=["resources_id"])
         self._workers = ListBasedCollection(items=[], item_type=Worker, primary_keys=["worker_id"])
-        self._rollout_queue = DequeBasedQueue(items=[], item_type=Rollout)
+        self._rollout_queue = DequeBasedQueue(items=[], item_type=str)
         self._span_sequence_ids = DictBasedKeyValue[str, int](data={})  # rollout_id -> sequence_id
 
     @property
@@ -663,7 +671,7 @@ class InMemoryLightningCollections(LightningCollections):
         return self._workers
 
     @property
-    def rollout_queue(self) -> DequeBasedQueue[Rollout]:
+    def rollout_queue(self) -> DequeBasedQueue[str]:
         return self._rollout_queue
 
     @property

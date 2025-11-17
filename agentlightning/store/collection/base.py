@@ -27,7 +27,7 @@ from agentlightning.types import (
     Worker,
 )
 
-T = TypeVar("T", bound=BaseModel)
+T = TypeVar("T")  # Recommended to be a BaseModel
 K = TypeVar("K")
 V = TypeVar("V")
 
@@ -204,6 +204,10 @@ class Queue(Generic[T]):
         """Get the type of the items in the queue."""
         raise NotImplementedError()
 
+    async def has(self, item: T) -> bool:
+        """Check if the given item is in the queue."""
+        raise NotImplementedError()
+
     async def enqueue(self, items: Sequence[T]) -> Sequence[T]:
         """Append the given items to the end of the queue.
 
@@ -249,6 +253,10 @@ class KeyValue(Generic[K, V]):
 
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__} ({self.size()})>"
+
+    async def has(self, key: K) -> bool:
+        """Check if the given key is in the dictionary."""
+        raise NotImplementedError()
 
     async def get(self, key: K, default: V | None = None) -> V | None:
         """Get the value for the given key, or the default value if the key is not found."""
@@ -300,7 +308,7 @@ class LightningCollections:
         raise NotImplementedError()
 
     @property
-    def rollout_queue(self) -> Queue[Rollout]:
+    def rollout_queue(self) -> Queue[str]:
         """Queue of rollouts (tasks)."""
         raise NotImplementedError()
 

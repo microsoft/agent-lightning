@@ -16,6 +16,7 @@ It should work for multiple store implementations (InMemory, SQL, etc.).
 """
 
 import asyncio
+import logging
 import sys
 import time
 from typing import List, Optional, cast
@@ -786,8 +787,11 @@ async def test_running_attempt_updates_heartbeat(
 
 
 @pytest.mark.asyncio
-async def test_duplicate_span_id_error(store_fixture: LightningStore, mock_readable_span: Mock) -> None:
+async def test_duplicate_span_id_error(
+    store_fixture: LightningStore, mock_readable_span: Mock, caplog: pytest.LogCaptureFixture
+) -> None:
     """Adding two spans with the same span_id should raise a ValueError."""
+    caplog.set_level(logging.ERROR)
     rollout = await store_fixture.enqueue_rollout(input={"test": "data"})
     await store_fixture.dequeue_rollout()
     attempts = await store_fixture.query_attempts(rollout.rollout_id)
@@ -799,8 +803,8 @@ async def test_duplicate_span_id_error(store_fixture: LightningStore, mock_reada
 
     await store_fixture.add_otel_span(rollout.rollout_id, attempt_id, mock_readable_span)
 
-    with pytest.raises(ValueError, match="Item already exists"):
-        await store_fixture.add_otel_span(rollout.rollout_id, attempt_id, mock_readable_span)
+    await store_fixture.add_otel_span(rollout.rollout_id, attempt_id, mock_readable_span)
+    assert "Duplicate span added" in caplog.text
 
 
 @pytest.mark.asyncio

@@ -624,6 +624,12 @@ def test_deque_queue_item_type(deque_queue: DequeBasedQueue[QueueItem]) -> None:
 
 
 @pytest.mark.asyncio()
+async def test_deque_queue_has_detects_members(deque_queue: DequeBasedQueue[QueueItem]) -> None:
+    assert await deque_queue.has(QueueItem(idx=1))
+    assert not await deque_queue.has(QueueItem(idx=99))
+
+
+@pytest.mark.asyncio()
 async def test_deque_queue_enqueue_appends_items(deque_queue: DequeBasedQueue[QueueItem]) -> None:
     items = [QueueItem(idx=3), QueueItem(idx=4)]
     returned = await deque_queue.enqueue(items)
@@ -705,6 +711,12 @@ async def test_dict_key_value_initial_state(dict_key_value: DictBasedKeyValue[st
     assert dict_key_value.size() == 2
     assert await dict_key_value.get("alpha") == 1
     assert await dict_key_value.get("missing") is None
+
+
+@pytest.mark.asyncio()
+async def test_dict_key_value_has_handles_presence(dict_key_value: DictBasedKeyValue[str, int]) -> None:
+    assert await dict_key_value.has("alpha")
+    assert not await dict_key_value.has("gamma")
 
 
 @pytest.mark.asyncio()
