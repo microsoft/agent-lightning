@@ -25,6 +25,8 @@ from agentlightning.types import (
 )
 
 T = TypeVar("T", bound=BaseModel)
+K = TypeVar("K")
+V = TypeVar("V")
 
 Filter = Mapping[str, Mapping[Literal["exact", "within", "contains"], Any]]
 """Mapping of field name to filter conditions."""
@@ -77,7 +79,7 @@ class Collection(Generic[T]):
                 A mapping of field name -> operator dict. Each operator dict can contain:
 
                 - "exact": value for exact equality.
-                - "in": iterable of allowed values.
+                - "within": iterable of allowed values.
                 - "contains": substring to search for in string fields.
 
                 Example:
@@ -85,7 +87,7 @@ class Collection(Generic[T]):
                 ```json
                 {
                     "status": {"exact": "active"},
-                    "id": {"in": [1, 2, 3]},
+                    "id": {"within": [1, 2, 3]},
                     "name": {"contains": "foo"},
                 }
                 ```
@@ -213,6 +215,29 @@ class Queue(Generic[T]):
         raise NotImplementedError()
 
 
+class KeyValue(Generic[K, V]):
+    """Behaves like a dictionary. Supporting addition, updating, and deletion of items."""
+
+    def __repr__(self) -> str:
+        return f"<{self.__class__.__name__} ({self.size()})>"
+
+    def get(self, key: K, default: V | None = None) -> V | None:
+        """Get the value for the given key, or the default value if the key is not found."""
+        raise NotImplementedError()
+
+    def set(self, key: K, value: V) -> None:
+        """Set the value for the given key."""
+        raise NotImplementedError()
+
+    def pop(self, key: K, default: V | None = None) -> V | None:
+        """Pop the value for the given key, or the default value if the key is not found."""
+        raise NotImplementedError()
+
+    def size(self) -> int:
+        """Get the number of items in the dictionary."""
+        raise NotImplementedError()
+
+
 class LightningCollections:
     """Collections of rollouts, attempts, spans, resources, and workers.
 
@@ -220,20 +245,42 @@ class LightningCollections:
     to implement the store API.
     """
 
-    rollouts: Collection[Rollout]
-    """Collections of rollouts."""
-    attempts: Collection[Attempt]
-    """Collections of attempts."""
-    spans: Collection[Span]
-    """Collections of spans."""
-    resources: Collection[ResourcesUpdate]
-    """Collections of resources."""
-    workers: Collection[Worker]
-    """Collections of workers."""
-    rollout_queue: Queue[Rollout]
-    """Queue of rollouts (tasks)."""
+    @property
+    def rollouts(self) -> Collection[Rollout]:
+        """Collections of rollouts."""
+        raise NotImplementedError()
 
-    async def atomic(self, *args: Any, **kwargs: Any) -> AsyncContextManager[None]:
+    @property
+    def attempts(self) -> Collection[Attempt]:
+        """Collections of attempts."""
+        raise NotImplementedError()
+
+    @property
+    def spans(self) -> Collection[Span]:
+        """Collections of spans."""
+        raise NotImplementedError()
+
+    @property
+    def resources(self) -> Collection[ResourcesUpdate]:
+        """Collections of resources."""
+        raise NotImplementedError()
+
+    @property
+    def workers(self) -> Collection[Worker]:
+        """Collections of workers."""
+        raise NotImplementedError()
+
+    @property
+    def rollout_queue(self) -> Queue[Rollout]:
+        """Queue of rollouts (tasks)."""
+        raise NotImplementedError()
+
+    @property
+    def span_sequence_ids(self) -> KeyValue[str, int]:
+        """Dictionary (counter) of span sequence IDs."""
+        raise NotImplementedError()
+
+    def atomic(self, *args: Any, **kwargs: Any) -> AsyncContextManager[None]:
         """Perform a atomic operation on the collections.
 
         Subclass may use args and kwargs to support multiple levels of atomicity.

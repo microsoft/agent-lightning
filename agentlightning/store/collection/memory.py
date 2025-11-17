@@ -34,14 +34,16 @@ from agentlightning.types import (
     Worker,
 )
 
-from .base import Collection, LightningCollections, PaginatedResult, Queue
+from .base import Collection, Filter, KeyValue, LightningCollections, PaginatedResult, Queue
 
 T = TypeVar("T", bound=BaseModel)
+K = TypeVar("K")
+V = TypeVar("V")
 
 # Nested structure type:
 # dict[pk1] -> dict[pk2] -> ... -> item
-ListCollectionItemType = Union[
-    Dict[Any, "ListCollectionItemType[T]"],  # intermediate node
+ListBasedCollectionItemType = Union[
+    Dict[Any, "ListBasedCollectionItemType[T]"],  # intermediate node
     Dict[Any, T],  # leaf node dictionary
 ]
 
@@ -49,7 +51,7 @@ ListCollectionItemType = Union[
 MutationMode = Literal["insert", "update", "upsert", "delete"]
 
 
-class ListCollection(Collection[T]):
+class ListBasedCollection(Collection[T]):
     """In-memory implementation of Collection using a nested dict for O(1) primary-key lookup.
 
     The internal structure is:
@@ -457,7 +459,7 @@ class ListCollection(Collection[T]):
             self._mutate_single(item, mode="delete")
 
 
-class DequeQueue(Queue[T]):
+class DequeBasedQueue(Queue[T]):
     """Queue implementation backed by collections.deque.
 
     Provides O(1) amortized enqueue (append) and dequeue (popleft).
@@ -502,6 +504,25 @@ class DequeQueue(Queue[T]):
         return len(self._items)
 
 
+class DictBasedKeyValue(KeyValue[K, V]):
+    """KeyValue implementation backed by a plain dictionary."""
+
+    def __init__(self, data: Optional[Mapping[K, V]] = None):
+        self._values: Dict[K, V] = dict(data) if data else {}
+
+    def get(self, key: K, default: V | None = None) -> V | None:
+        return self._values.get(key, default)
+
+    def set(self, key: K, value: V) -> None:
+        self._values[key] = value
+
+    def pop(self, key: K, default: V | None = None) -> V | None:
+        return self._values.pop(key, default)
+
+    def size(self) -> int:
+        return len(self._values)
+
+
 class InMemoryLightningCollections(LightningCollections):
     """In-memory implementation of LightningCollections using Python data structures.
 
@@ -510,41 +531,55 @@ class InMemoryLightningCollections(LightningCollections):
 
     def __init__(self):
         self._lock = _LoopAwareAsyncLock()
-        self._rollouts = ListCollection(items=[], item_type=Rollout, primary_keys=["rollout_id"])
-        self._attempts = ListCollection(items=[], item_type=Attempt, primary_keys=["rollout_id", "attempt_id"])
-        self._spans = ListCollection(items=[], item_type=Span, primary_keys=["rollout_id", "attempt_id", "span_id"])
-        self._resources = ListCollection(items=[], item_type=ResourcesUpdate, primary_keys=["resources_id"])
-        self._workers = ListCollection(items=[], item_type=Worker, primary_keys=["worker_id"])
-        self._rollout_queue = DequeQueue(items=[], item_type=Rollout)
+        self._rollouts = ListBasedCollection(items=[], item_type=Rollout, primary_keys=["rollout_id"])
+        self._attempts = ListBasedCollection(items=[], item_type=Attempt, primary_keys=["rollout_id", "attempt_id"])
+        self._spans = ListBasedCollection(
+            items=[], item_type=Span, primary_keys=["rollout_id", "attempt_id", "span_id"]
+        )
+        self._resources = ListBasedCollection(items=[], item_type=ResourcesUpdate, primary_keys=["resources_id"])
+        self._workers = ListBasedCollection(items=[], item_type=Worker, primary_keys=["worker_id"])
+        self._rollout_queue = DequeBasedQueue(items=[], item_type=Rollout)
+        self._span_sequence_ids = DictBasedKeyValue[str, int](data={})  # rollout_id -> sequence_id
 
     @property
-    def rollouts(self) -> Collection[Rollout]:
+    def rollouts(self) -> ListBasedCollection[Rollout]:
         return self._rollouts
 
     @property
-    def attempts(self) -> Collection[Attempt]:
+    def attempts(self) -> ListBasedCollection[Attempt]:
         return self._attempts
 
     @property
-    def spans(self) -> Collection[Span]:
+    def spans(self) -> ListBasedCollection[Span]:
         return self._spans
 
     @property
-    def resources(self) -> Collection[ResourcesUpdate]:
+    def resources(self) -> ListBasedCollection[ResourcesUpdate]:
         return self._resources
 
     @property
-    def workers(self) -> Collection[Worker]:
+    def workers(self) -> ListBasedCollection[Worker]:
         return self._workers
 
     @property
-    def rollout_queue(self) -> Queue[Rollout]:
+    def rollout_queue(self) -> DequeBasedQueue[Rollout]:
         return self._rollout_queue
+
+    @property
+    def span_sequence_ids(self) -> DictBasedKeyValue[str, int]:
+        return self._span_sequence_ids
 
     @asynccontextmanager
     async def atomic(self, *args: Any, **kwargs: Any) -> AsyncGenerator[None, None]:
         async with self._lock:
             yield
+
+    async def evict_spans_for_rollout(self, rollout_id: str) -> None:
+        """Evict all spans for a given rollout ID.
+
+        Uses private API for efficiency.
+        """
+        self._spans._items.pop(rollout_id, [])  # pyright: ignore[reportPrivateUsage]
 
 
 class _LoopAwareAsyncLock:
