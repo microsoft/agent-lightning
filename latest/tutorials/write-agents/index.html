@@ -1893,7 +1893,7 @@
 </ul>
 <div class="admonition important">
 <p class="admonition-title">Emitting the Final Reward</p>
-<p>When returning <code>None</code>, you must still ensure a final reward is logged. You can do this by using the <a class="autorefs autorefs-internal" title="            agentlightning.emit_reward(reward)" href="../../reference/agent/#agentlightning.emit_reward"><code>emit_reward</code></a> function (covered in the <a class="autorefs autorefs-internal" title="Using the Emitter" href="#using-emitter">Emitter section</a> below) or by wrapping your reward calculation function with the <a class="autorefs autorefs-internal" title="            agentlightning.reward.reward(fn)" href="../../reference/agent/#agentlightning.reward.reward"><code>@reward</code></a> decorator.</p>
+<p>When returning <code>None</code>, you must still ensure a final reward is logged. You can do this by using the <a class="autorefs autorefs-internal" title="            agentlightning.emit_reward(reward, auto_export=True)" href="../../reference/agent/#agentlightning.emit_reward"><code>emit_reward</code></a> function (covered in the <a class="autorefs autorefs-internal" title="Using the Emitter" href="#using-emitter">Emitter section</a> below) or by wrapping your reward calculation function with the <a class="autorefs autorefs-internal" title="            agentlightning.reward.reward(fn)" href="../../reference/agent/#agentlightning.reward.reward"><code>@reward</code></a> decorator.</p>
 </div>
 <ul>
 <li><strong><code>list[ReadableSpan]</code></strong> or <strong><code>list[Span]</code></strong>: For advanced use cases, you can manually construct and return a complete list of all spans for the rollout. This gives you full control over the trace data. You can return either a list of OpenTelemetry <code>ReadableSpan</code> objects or Agent-lightning's native <code>Span</code> objects.</li>
@@ -1983,7 +1983,7 @@
 <h3 id="emitting-rewards-messages-and-more">Emitting Rewards, Messages, and More<a class="headerlink" href="#emitting-rewards-messages-and-more" title="Permanent link">&para;</a></h3>
 <p>Here are the primary emitter functions:</p>
 <ul>
-<li><a class="autorefs autorefs-internal" title="            agentlightning.emit_reward(reward)" href="../../reference/agent/#agentlightning.emit_reward"><code>emit_reward(value: float)</code></a>: Records an intermediate reward.</li>
+<li><a class="autorefs autorefs-internal" title="            agentlightning.emit_reward(reward, auto_export=True)" href="../../reference/agent/#agentlightning.emit_reward"><code>emit_reward(value: float)</code></a>: Records an intermediate reward.</li>
 <li><a class="autorefs autorefs-internal" title="            agentlightning.emit_message(message)" href="../../reference/agent/#agentlightning.emit_message"><code>emit_message(message: str)</code></a>: Records a simple log message as a span.</li>
 <li><a class="autorefs autorefs-internal" title="            agentlightning.emit_exception(exception)" href="../../reference/agent/#agentlightning.emit_exception"><code>emit_exception(exception: BaseException)</code></a>: Records a Python exception, including its type, message, and stack trace.</li>
 <li><a class="autorefs autorefs-internal" title="            agentlightning.emit_object(object)" href="../../reference/agent/#agentlightning.emit_object"><code>emit_object(obj: Any)</code></a>: Records any JSON-serializable object, perfect for structured data.</li>

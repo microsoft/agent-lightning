@@ -3539,7 +3539,7 @@ implementation delegates to
 
 
 <h3 id="agentlightning.emit_reward" class="doc doc-heading">
-<code class="doc-symbol doc-symbol-heading doc-symbol-function"></code>            <code class="highlight language-python"><span class="n">agentlightning</span><span class="o">.</span><span class="n">emit_reward</span><span class="p">(</span><span class="n">reward</span><span class="p">)</span></code>
+<code class="doc-symbol doc-symbol-heading doc-symbol-function"></code>            <code class="highlight language-python"><span class="n">agentlightning</span><span class="o">.</span><span class="n">emit_reward</span><span class="p">(</span><span class="n">reward</span><span class="p">,</span> <span class="n">auto_export</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span></code>
 
 <a href="#agentlightning.emit_reward" class="headerlink" title="Permanent link">&para;</a></h3>
 
@@ -3558,6 +3558,16 @@ implementation delegates to
           <div class="doc-md-description">
             <p>Numeric reward to record. Integers and booleans are converted to
 floating point numbers for consistency.</p>
+          </div>
+        </li>
+        <li class="doc-section-item field-body">
+            <b><code>auto_export</code></b>
+              (<code><span title="bool">bool</span></code>, default:
+                  <code>True</code>
+)
+          –
+          <div class="doc-md-description">
+            <p>Whether to export the span automatically.</p>
           </div>
         </li>
     </ul>
@@ -3884,7 +3894,7 @@ are supported transparently.</p>
 
 <details class="deprecated" open>
   <summary>Deprecated</summary>
-  <p>This decorator is deprecated. Use <a class="autorefs autorefs-internal" title="            agentlightning.emit_reward(reward)" href="#agentlightning.emit_reward"><code>emit_reward</code></a> instead.</p>
+  <p>This decorator is deprecated. Use <a class="autorefs autorefs-internal" title="            agentlightning.emit_reward(reward, auto_export=True)" href="#agentlightning.emit_reward"><code>emit_reward</code></a> instead.</p>
 </details>
 
 <p><span class="doc-section-title">Parameters:</span></p>
