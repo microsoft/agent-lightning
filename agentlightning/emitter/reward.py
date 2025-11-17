@@ -129,12 +129,13 @@ def reward(fn: FnType) -> FnType:
         return wrapper  # type: ignore
 
 
-def emit_reward(reward: float) -> ReadableSpan:
+def emit_reward(reward: float, auto_export: bool = True) -> ReadableSpan:
     """Emit a reward value as an OpenTelemetry span.
 
     Args:
         reward: Numeric reward to record. Integers and booleans are converted to
             floating point numbers for consistency.
+        auto_export: Whether to export the span automatically.
 
     Returns:
         Readable span capturing the recorded reward.
@@ -150,7 +151,7 @@ def emit_reward(reward: float) -> ReadableSpan:
         raise ValueError(f"Reward must be a number, got: {type(reward)}")
 
     # TODO: This should use the tracer from current context by tracer
-    tracer = get_tracer()
+    tracer = get_tracer(use_active_span_processor=auto_export)
     span = tracer.start_span(SpanNames.REWARD.value, attributes={"reward": reward})
     # Do nothing; it's just a number
     with span:

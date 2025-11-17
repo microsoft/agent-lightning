@@ -37,7 +37,7 @@ from agentlightning.types import (
 )
 
 
-def inject_mock_data(store: InMemoryLightningStore, now: float | None = None) -> None:
+async def inject_mock_data(store: InMemoryLightningStore, now: float | None = None) -> None:
     """
     Inject mock data directly into the InMemoryLightningStore.
 
@@ -217,20 +217,12 @@ def inject_mock_data(store: InMemoryLightningStore, now: float | None = None) ->
     )
 
     # Inject rollouts directly into store
-    store._rollouts["ro-story-001"] = rollout1
-    store._rollouts["ro-story-002"] = rollout2
-    store._rollouts["ro-story-003"] = rollout3
-    store._rollouts["ro-story-004"] = rollout4
-    store._rollouts["ro-story-005"] = rollout5
-    store._rollouts["ro-story-006"] = rollout6
+    await store.collections.rollouts.insert([rollout1, rollout2, rollout3, rollout4, rollout5, rollout6])
 
     # Inject attempts directly into store
-    store._attempts["ro-story-001"] = [attempt1]
-    store._attempts["ro-story-002"] = [attempt2_1, attempt2_2]
-    store._attempts["ro-story-003"] = [attempt3_1, attempt3_2, attempt3_3]
-    store._attempts["ro-story-004"] = []  # No attempt for preparing rollout
-    store._attempts["ro-story-005"] = [attempt5]
-    store._attempts["ro-story-006"] = [attempt6]
+    await store.collections.attempts.insert(
+        [attempt1, attempt2_1, attempt2_2, attempt3_1, attempt3_2, attempt3_3, attempt5, attempt6]
+    )
 
     # Create and inject spans with diverse data
     # Spans for ro-story-001 (Running) - Multiple nested spans with ongoing execution
@@ -545,11 +537,7 @@ def inject_mock_data(store: InMemoryLightningStore, now: float | None = None) ->
         ),
     ]
 
-    store._spans["ro-story-001"] = spans_ro1
-    store._spans["ro-story-002"] = spans_ro2_a1 + spans_ro2_a2
-    store._spans["ro-story-003"] = spans_ro3_a3
-    store._spans["ro-story-005"] = spans_ro5
-    store._spans["ro-story-006"] = spans_ro6
+    await store.collections.spans.insert(spans_ro1 + spans_ro2_a1 + spans_ro2_a2 + spans_ro3_a3 + spans_ro5 + spans_ro6)
 
     # Create and inject resources with diverse types
     resource1 = ResourcesUpdate(
@@ -628,11 +616,7 @@ def inject_mock_data(store: InMemoryLightningStore, now: float | None = None) ->
         },
     )
 
-    store._resources["rs-story-001"] = resource1
-    store._resources["rs-story-002"] = resource2
-    store._resources["rs-story-003"] = resource3
-    store._resources["rs-story-004"] = resource4
-    store._resources["rs-story-005"] = resource5
+    await store.collections.resources.insert([resource1, resource2, resource3, resource4, resource5])
     store._latest_resources_id = "rs-story-005"
 
     # Register workers with diverse states and activity windows.
@@ -694,8 +678,7 @@ def inject_mock_data(store: InMemoryLightningStore, now: float | None = None) ->
         ),
     ]
 
-    for worker in workers:
-        store._workers[worker.worker_id] = worker
+    await store.collections.workers.insert(workers)
 
 
 async def main():
@@ -704,7 +687,7 @@ async def main():
     args = parser.parse_args()
 
     store = InMemoryLightningStore()
-    inject_mock_data(store, now=args.now)
+    await inject_mock_data(store, now=args.now)
 
     # Start server
     server = LightningStoreServer(store, "127.0.0.1", 8765, "*")
