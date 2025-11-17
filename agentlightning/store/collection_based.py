@@ -535,9 +535,10 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         See [`LightningStore.get_latest_resources()`][agentlightning.LightningStore.get_latest_resources] for semantics.
         """
         async with self.collections.atomic():
-            if self._latest_resources_id:
-                return await self.collections.resources.get({"resources_id": {"exact": self._latest_resources_id}})
-            return None
+            latest_id = await self._ensure_latest_resources_id()
+            if latest_id is None:
+                return None
+            return await self.collections.resources.get({"resources_id": {"exact": latest_id}})
 
     async def _issue_span_sequence_id_unlocked(self, rollout_id: str) -> int:
         """Issue a new span sequence ID for a given rollout."""
@@ -615,13 +616,13 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
 
         await self.collections.spans.insert([span])
 
-        # Update attempt heartbeat
+        # Update attempt heartbeat and ensure persistence
         current_attempt.last_heartbeat_time = time.time()
         if current_attempt.status in ["preparing", "unresponsive"]:
             current_attempt.status = "running"
-            await self.collections.attempts.update([current_attempt])
+        await self.collections.attempts.update([current_attempt])
 
-        # If the status has already timed out or failed, do not change it
+        # If the status has already timed out or failed, do not change it (but heartbeat is still recorded)
 
         # Update rollout status if it's the latest attempt
         if current_attempt.attempt_id == latest_attempt.attempt_id:

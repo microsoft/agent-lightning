@@ -24,7 +24,7 @@ from unittest.mock import Mock
 import pytest
 from pydantic import BaseModel
 
-from agentlightning.store.base import LightningStore
+from agentlightning.store.base import UNSET, LightningStore
 from agentlightning.store.memory import InMemoryLightningStore, estimate_model_size
 from agentlightning.types import (
     LLM,
@@ -630,6 +630,26 @@ async def test_resource_lifecycle(store_fixture: LightningStore) -> None:
 
 
 @pytest.mark.asyncio
+async def test_latest_resources_rehydrates_cache(store_fixture: LightningStore) -> None:
+    """get_latest_resources should consult storage even if the cache is unset."""
+    llm = LLM(
+        resource_type="llm",
+        endpoint="http://localhost:8080/v1",
+        model="cache-model",
+        sampling_parameters={"temperature": 0.1},
+    )
+    update = await store_fixture.update_resources("cache-test", {"main_llm": llm})
+
+    # Simulate a fresh process by clearing the cache.
+    store_fixture._latest_resources_id = UNSET  # type: ignore[attr-defined]
+
+    latest = await store_fixture.get_latest_resources()
+    assert latest is not None
+    assert latest.resources_id == update.resources_id
+    assert latest.resources["main_llm"].model == "cache-model"  # type: ignore
+
+
+@pytest.mark.asyncio
 async def test_task_inherits_latest_resources(store_fixture: LightningStore) -> None:
     """Test that new tasks inherit latest resources_id if not specified."""
     # Set up resources with proper PromptTemplate
@@ -741,6 +761,28 @@ async def test_unresponsive_attempt_recovers_after_span(
     attempt_after = (await store_fixture.query_attempts(rollout.rollout_id))[0]
     assert attempt_after.status == "running"
     assert attempt_after.last_heartbeat_time is not None
+
+
+@pytest.mark.asyncio
+async def test_running_attempt_updates_heartbeat(
+    store_fixture: LightningStore, mock_readable_span: Mock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Adding spans to an already running attempt should advance its heartbeat."""
+    rollout = await store_fixture.enqueue_rollout(input={"test": "running-heartbeat"})
+    await store_fixture.dequeue_rollout()
+    attempt_id = (await store_fixture.query_attempts(rollout.rollout_id))[0].attempt_id
+
+    await store_fixture.add_otel_span(rollout.rollout_id, attempt_id, mock_readable_span)
+    attempt_after_first = (await store_fixture.query_attempts(rollout.rollout_id))[0]
+    assert attempt_after_first.status == "running"
+    first_heartbeat = attempt_after_first.last_heartbeat_time
+    assert first_heartbeat is not None
+
+    monkeypatch.setattr("agentlightning.store.collection_based.time.time", lambda: first_heartbeat + 100.0)
+
+    await store_fixture.add_otel_span(rollout.rollout_id, attempt_id, mock_readable_span)
+    attempt_after_second = (await store_fixture.query_attempts(rollout.rollout_id))[0]
+    assert attempt_after_second.last_heartbeat_time == first_heartbeat + 100.0
 
 
 @pytest.mark.asyncio
