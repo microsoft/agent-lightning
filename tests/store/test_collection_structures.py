@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 from __future__ import annotations
 
 from typing import Dict, Iterable, List, Sequence, Tuple
@@ -5,8 +7,7 @@ from typing import Dict, Iterable, List, Sequence, Tuple
 import pytest
 from pydantic import BaseModel, Field
 
-from agentlightning.store.collection import DequeBasedQueue, ListBasedCollection
-from agentlightning.store.collection.memory import DictBasedKeyValue
+from agentlightning.store.collection import DequeBasedQueue, DictBasedKeyValue, ListBasedCollection
 
 
 class SampleItem(BaseModel):
