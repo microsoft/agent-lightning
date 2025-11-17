@@ -406,7 +406,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         if status_in is not None:
             resolved_status = status_in
         elif status is not None:
-            warnings.warn("status is deprecated, use status_in instead", DeprecationWarning, stacklevel=2)
+            warnings.warn("status is deprecated, use status_in instead", DeprecationWarning, stacklevel=3)
             resolved_status = status
         else:
             resolved_status = None
@@ -414,7 +414,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         if rollout_id_in is not None:
             resolved_rollout_ids = rollout_id_in
         elif rollout_ids is not None:
-            warnings.warn("rollout_ids is deprecated, use rollout_id_in instead", DeprecationWarning, stacklevel=2)
+            warnings.warn("rollout_ids is deprecated, use rollout_id_in instead", DeprecationWarning, stacklevel=3)
             resolved_rollout_ids = rollout_ids
         else:
             resolved_rollout_ids = None
@@ -441,9 +441,13 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
 
             # Attach the latest attempt to the rollout objects
             # TODO: Maybe we can use asyncio.gather here to speed up the process?
-            rollouts.items = [await self._rollout_to_attempted_rollout_unlocked(rollout) for rollout in rollouts.items]
+            attempted_rollouts = [
+                await self._rollout_to_attempted_rollout_unlocked(rollout) for rollout in rollouts.items
+            ]
 
-            return rollouts
+            return PaginatedResult(
+                items=attempted_rollouts, limit=rollouts.limit, offset=rollouts.offset, total=rollouts.total
+            )
 
     async def _query_attempts_for_rollout_unlocked(self, rollout_id: str) -> List[Attempt]:
         """The unlocked version of `query_attempts_for_rollout`."""
@@ -816,12 +820,13 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
             else:
                 resolved_attempt_id = attempt_id
 
+            must_filter: Dict[str, FilterField] = {"rollout_id": {"exact": rollout_id}}
+            if resolved_attempt_id is not None:
+                must_filter["attempt_id"] = {"exact": resolved_attempt_id}
             filter_options: FilterOptions = {
                 "_aggregate": filter_logic,  # this can be and/or
-                "_must": {"rollout_id": {"exact": rollout_id}},  # Must satisfy all the filters in the must list
+                "_must": must_filter,  # Must satisfy all the filters in the must list
             }
-            if resolved_attempt_id is not None:
-                filter_options["_must"]["attempt_id"] = {"exact": resolved_attempt_id}  # type: ignore
 
             def _resolve_filter_field(
                 field_name: str, filter_exact: Optional[str] | None, filter_contains: Optional[str] | None

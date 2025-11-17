@@ -461,7 +461,7 @@ to combine the results of the filters:
 All conditions within a field and between different fields are
 stored in a unified pool and combined using `_aggregate`.
 
-The filter can also have a special group called "_must", which is a list of filters that must all match,
+The filter can also have a special group called "_must", which is a mapping of filters that must all match,
 no matter whether the aggregate logic is "and" or "or".
 
 Example:
@@ -496,7 +496,7 @@ T_item = TypeVar("T_item")
 class PaginatedResult(BaseModel, Sequence[T_item]):
     """Result of a paginated query.
 
-    Looks like a sequence, but is NOT.
+    Behaves like a sequence, but also carries pagination metadata (limit, offset, total).
     """
 
     items: Sequence[T_item]
@@ -520,13 +520,14 @@ class PaginatedResult(BaseModel, Sequence[T_item]):
     def __getitem__(self, index: Union[int, slice]) -> Union[T_item, Sequence[T_item]]:
         return self.items[index]
 
-    # NOTE: This will make dict(paginated_result) NOT work.
-    # We sacrifice that for list(paginated_result) to work.
+    # Overriding __iter__ enables list(paginated_result) to work as expected,
+    # but changes Pydantic's default dict iteration behavior (which would otherwise
+    # iterate over field names).
     def __iter__(self) -> Iterator[T_item]:  # type: ignore
         return iter(self.items)
 
     def __repr__(self) -> str:
         first_item_repr = repr(self.items[0]) if self.items else "empty"
         items_repr = f"[{first_item_repr}, ...]" if len(self.items) > 1 else first_item_repr
-        slice_repr = f"{self.offset}:{self.offset + self.limit}" if self.limit >= 0 else f"{self.offset}:"
+        slice_repr = f"{self.offset}:" if self.limit == -1 else f"{self.offset}:{self.offset + self.limit}"
         return f"<PaginatedResult ({slice_repr} of {self.total}) {items_repr}>"

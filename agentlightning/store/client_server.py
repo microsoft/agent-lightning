@@ -483,13 +483,13 @@ class LightningStoreServer(LightningStore):
                 raise HTTPException(
                     status_code=400, detail=f"Invalid sort_order: {request.sort_order}, allowed values are: asc, desc"
                 )
-            if not request.limit > 0 and not request.limit == -1:
+            if request.limit == 0 or (request.limit < 0 and request.limit != -1):
                 raise HTTPException(status_code=400, detail="Limit must be greater than 0 or -1 for no limit")
             if not request.offset >= 0:
                 raise HTTPException(status_code=400, detail="Offset must be greater than or equal to 0")
             if hasattr(request, "filter_logic") and request.filter_logic not in ["and", "or"]:  # type: ignore
                 raise HTTPException(
-                    status_code=400, detail="Invalid filter_logic: {request.filter_logic}, allowed values are: and, or"
+                    status_code=400, detail=f"Invalid filter_logic: {request.filter_logic}, allowed values are: and, or"  # type: ignore
                 )
 
         def _build_paginated_response(items: Sequence[Any], *, limit: int, offset: int) -> PaginatedResult[Any]:
@@ -503,7 +503,7 @@ class LightningStoreServer(LightningStore):
                 "Total items count will be inaccurate: %d",
                 len(items),
             )
-            return PaginatedResult(items=list(items), limit=limit, offset=offset, total=len(items))
+            return PaginatedResult(items=items, limit=limit, offset=offset, total=len(items))
 
         @api.get(API_AGL_PREFIX + "/health")
         async def health():  # pyright: ignore[reportUnusedFunction]
@@ -903,7 +903,7 @@ class LightningStoreServer(LightningStore):
         sort_order: Literal["asc", "desc"] = "asc",
         limit: int = -1,
         offset: int = 0,
-    ) -> List[ResourcesUpdate]:
+    ) -> PaginatedResult[ResourcesUpdate]:
         return await self._call_store_method(
             "query_resources",
             resources_id=resources_id,
