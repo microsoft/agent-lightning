@@ -12,9 +12,12 @@ from typing import (
     Generic,
     List,
     Literal,
+    Mapping,
     Optional,
     Protocol,
+    Sequence,
     SupportsIndex,
+    TypedDict,
     TypeVar,
     Union,
     cast,
@@ -51,6 +54,10 @@ __all__ = [
     "Hook",
     "Worker",
     "WorkerStatus",
+    "PaginatedResult",
+    "FilterOptions",
+    "SortOptions",
+    "FilterField",
 ]
 
 T_co = TypeVar("T_co", covariant=True)
@@ -421,3 +428,68 @@ class Hook(ParallelWorkerBase):
         Subclasses can override this method for cleanup or additional
         logging. By default, this is a no-op.
         """
+
+
+class FilterField(TypedDict, total=False):
+    """An operator dict for a single field."""
+
+    exact: Any
+    within: Sequence[Any]
+    contains: str
+
+
+FilterOptions = Mapping[Union[str, Literal["_aggregate"]], Union[FilterField, Literal["and", "or"]]]
+
+"""A mapping of field name -> operator dict.
+
+Each operator dict can contain:
+
+- "exact": value for exact equality.
+- "within": iterable of allowed values.
+- "contains": substring to search for in string fields.
+
+Example:
+
+```json
+{
+    "_aggregate": "or",
+    "status": {"exact": "active"},
+    "id": {"within": [1, 2, 3]},
+    "name": {"contains": "foo"},
+}
+```
+
+The filter can also have a special field called "_aggregate" that can be used to specify the logic
+to combine the results of the filters:
+
+- "and": all conditions must match. This is the default value if not specified.
+- "or": at least one condition must match.
+
+All conditions within a field and between different fields are
+stored in a unified pool and combined using `_aggregate`.
+"""
+
+
+class SortOptions(TypedDict):
+    """Options for sorting the collection."""
+
+    name: str
+    """The name of the field to sort by."""
+    order: Literal["asc", "desc"]
+    """The order to sort by."""
+
+
+T_item = TypeVar("T_item")
+
+
+class PaginatedResult(BaseModel, Generic[T_item]):
+    """Result of a paginated query."""
+
+    items: Sequence[T_item]
+    """Items in the result."""
+    limit: int
+    """Limit of the result."""
+    offset: int
+    """Offset of the result."""
+    total: int
+    """Total number of items in the collection."""

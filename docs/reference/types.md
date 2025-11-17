@@ -32,6 +32,14 @@
 
 ::: agentlightning.Hook
 
+::: agentlightning.PaginatedResult
+
+::: agentlightning.FilterOptions
+
+::: agentlightning.SortOptions
+
+::: agentlightning.FilterField
+
 ## Resources
 
 ::: agentlightning.Resource
