@@ -175,6 +175,56 @@ async def test_query_rollouts_returns_latest_attempt(store_fixture: LightningSto
 
 
 @pytest.mark.asyncio
+async def test_query_rollouts_supports_new_filters(store_fixture: LightningStore) -> None:
+    """The expanded query interface should honor filtering, sorting, and pagination."""
+    rollouts = [await store_fixture.enqueue_rollout(input={"idx": idx}) for idx in range(3)]
+    await store_fixture.update_rollout(rollout_id=rollouts[2].rollout_id, status="failed")
+
+    failed = await store_fixture.query_rollouts(status_in=["failed"])
+    assert [r.rollout_id for r in failed] == [rollouts[2].rollout_id]
+
+    sorted_desc = sorted([r.rollout_id for r in rollouts], reverse=True)
+    paged = await store_fixture.query_rollouts(sort_by="rollout_id", sort_order="desc", limit=2)
+    assert [r.rollout_id for r in paged] == sorted_desc[:2]
+
+    offset_item = await store_fixture.query_rollouts(sort_by="rollout_id", sort_order="desc", limit=1, offset=1)
+    assert [r.rollout_id for r in offset_item] == sorted_desc[1:2]
+
+    contains = await store_fixture.query_rollouts(
+        rollout_id_contains=rollouts[0].rollout_id[-4:],
+        status_in=["queuing"],
+    )
+    assert any(r.rollout_id == rollouts[0].rollout_id for r in contains)
+
+    or_filtered = await store_fixture.query_rollouts(
+        status_in=["succeeded"],
+        rollout_id_in=[rollouts[1].rollout_id],
+        filter_logic="or",
+    )
+    assert [r.rollout_id for r in or_filtered] == [rollouts[1].rollout_id]
+
+
+@pytest.mark.asyncio
+async def test_query_attempts_supports_sort_and_limit(store_fixture: LightningStore) -> None:
+    """Attempt queries should respect sorting and pagination controls."""
+    attempted = await store_fixture.start_rollout(input={"payload": "attempt-filters"})
+    await store_fixture.start_attempt(attempted.rollout_id)
+    await store_fixture.start_attempt(attempted.rollout_id)
+
+    attempts_desc = await store_fixture.query_attempts(attempted.rollout_id, sort_by="sequence_id", sort_order="desc")
+    assert [attempt.sequence_id for attempt in attempts_desc] == [3, 2, 1]
+
+    middle_attempt = await store_fixture.query_attempts(
+        attempted.rollout_id,
+        sort_by="sequence_id",
+        sort_order="desc",
+        limit=1,
+        offset=1,
+    )
+    assert [attempt.sequence_id for attempt in middle_attempt] == [2]
+
+
+@pytest.mark.asyncio
 async def test_get_rollout_by_id_returns_latest_attempt(store_fixture: LightningStore) -> None:
     """Fetching a rollout by ID should include the latest attempt when available."""
     attempted = await store_fixture.start_rollout(input={"foo": "bar"})
@@ -490,6 +540,41 @@ async def test_update_and_query_workers(store_fixture: LightningStore) -> None:
         await store_fixture.update_worker("worker-1", heartbeat_stats=None)  # type: ignore[arg-type]
 
 
+@pytest.mark.asyncio
+async def test_query_workers_supports_filters(store_fixture: LightningStore) -> None:
+    """Worker queries should support filtering, sorting, and pagination."""
+    await store_fixture.update_worker("alpha-worker", heartbeat_stats={"cpu": 0.2})
+    await store_fixture.update_worker("beta-worker", heartbeat_stats={"cpu": 0.8})
+
+    busy_rollout = await store_fixture.start_rollout(input={"worker": "alpha"})
+    await store_fixture.update_attempt(
+        busy_rollout.rollout_id,
+        busy_rollout.attempt.attempt_id,
+        worker_id="alpha-worker",
+        status="running",
+    )
+
+    idle_rollout = await store_fixture.start_rollout(input={"worker": "beta"})
+    await store_fixture.update_attempt(
+        idle_rollout.rollout_id,
+        idle_rollout.attempt.attempt_id,
+        worker_id="beta-worker",
+        status="succeeded",
+    )
+
+    busy_workers = await store_fixture.query_workers(status_in=["busy"])
+    assert [worker.worker_id for worker in busy_workers] == ["alpha-worker"]
+
+    contains_beta = await store_fixture.query_workers(worker_id_contains="beta")
+    assert [worker.worker_id for worker in contains_beta] == ["beta-worker"]
+
+    sorted_workers = await store_fixture.query_workers(sort_by="worker_id", sort_order="desc")
+    assert [worker.worker_id for worker in sorted_workers] == ["beta-worker", "alpha-worker"]
+
+    paged = await store_fixture.query_workers(sort_by="worker_id", sort_order="desc", limit=1, offset=1)
+    assert [worker.worker_id for worker in paged] == ["alpha-worker"]
+
+
 # Resource Management Tests
 
 
@@ -581,6 +666,26 @@ async def test_query_resources_returns_history(store_fixture: LightningStore) ->
     assert [item.resources_id for item in history] == [first.resources_id, second.resources_id]
     assert isinstance(history[0], ResourcesUpdate)
     assert isinstance(history[1], ResourcesUpdate)
+
+
+@pytest.mark.asyncio
+async def test_query_resources_supports_filters(store_fixture: LightningStore) -> None:
+    """Resource queries should support substring filters and pagination."""
+    alpha = PromptTemplate(resource_type="prompt_template", template="alpha", engine="jinja")
+    beta = PromptTemplate(resource_type="prompt_template", template="beta", engine="jinja")
+
+    await store_fixture.update_resources("manual-alpha", {"prompt": alpha})
+    await store_fixture.update_resources("manual-beta", {"prompt": beta})
+
+    contains_beta = await store_fixture.query_resources(resources_id_contains="beta")
+    assert [item.resources_id for item in contains_beta] == ["manual-beta"]
+
+    sorted_ids = sorted(["manual-alpha", "manual-beta"], reverse=True)
+    paged = await store_fixture.query_resources(sort_by="resources_id", sort_order="desc", limit=1)
+    assert [item.resources_id for item in paged] == sorted_ids[:1]
+
+    offset_item = await store_fixture.query_resources(sort_by="resources_id", sort_order="desc", limit=1, offset=1)
+    assert [item.resources_id for item in offset_item] == sorted_ids[1:2]
 
 
 @pytest.mark.asyncio
@@ -864,6 +969,70 @@ async def test_query_spans_by_attempt(store_fixture: LightningStore, mock_readab
     # Query non-existent attempt
     no_spans = await store_fixture.query_spans(rollout.rollout_id, attempt_id="nonexistent")
     assert len(no_spans) == 0
+
+
+@pytest.mark.asyncio
+async def test_query_spans_supports_filters(store_fixture: LightningStore) -> None:
+    """Span queries should honor filtering logic and pagination."""
+    attempted = await store_fixture.start_rollout(input={"payload": "span-filters"})
+    attempt_id = attempted.attempt.attempt_id
+
+    def build_span(idx: int, *, name: str, parent: Optional[str]) -> Span:
+        trace_hex = f"{idx:032x}"
+        span_hex = f"{idx:016x}"
+        return Span(
+            rollout_id=attempted.rollout_id,
+            attempt_id=attempt_id,
+            sequence_id=idx,
+            trace_id=trace_hex,
+            span_id=span_hex,
+            parent_id=parent,
+            name=name,
+            status=TraceStatus(status_code="OK"),
+            attributes={},
+            events=[Event(name=f"event-{idx}", attributes={})],
+            links=[],
+            start_time=None,
+            end_time=None,
+            context=SpanContext(trace_id=trace_hex, span_id=span_hex, is_remote=False, trace_state={}),
+            parent=None,
+            resource=OtelResource(attributes={}, schema_url=""),
+        )
+
+    created_spans = [
+        build_span(1, name="reward", parent=None),
+        build_span(2, name="planner", parent=f"{1:016x}"),
+        build_span(3, name="tool-call", parent=f"{2:016x}"),
+    ]
+    for span in created_spans:
+        await store_fixture.add_span(span)
+
+    trace_filtered = await store_fixture.query_spans(attempted.rollout_id, trace_id=created_spans[1].trace_id)
+    assert [s.span_id for s in trace_filtered] == [created_spans[1].span_id]
+
+    or_filtered = await store_fixture.query_spans(
+        attempted.rollout_id,
+        span_id=created_spans[0].span_id,
+        trace_id_contains=created_spans[2].trace_id[-4:],
+        filter_logic="or",
+    )
+    assert {s.span_id for s in or_filtered} == {created_spans[0].span_id, created_spans[2].span_id}
+
+    parent_filtered = await store_fixture.query_spans(
+        attempted.rollout_id,
+        parent_id_contains=created_spans[1].span_id[-4:],
+    )
+    assert [s.span_id for s in parent_filtered] == [created_spans[2].span_id]
+
+    sorted_ids = sorted([span.span_id for span in created_spans], reverse=True)
+    paged = await store_fixture.query_spans(
+        attempted.rollout_id,
+        sort_by="span_id",
+        sort_order="desc",
+        limit=1,
+        offset=1,
+    )
+    assert [span.span_id for span in paged] == sorted_ids[1:2]
 
 
 @pytest.mark.asyncio

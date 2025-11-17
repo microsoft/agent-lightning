@@ -7,7 +7,9 @@ from typing import Dict, Iterable, List, Literal, Mapping, Sequence, Tuple
 import pytest
 from pydantic import BaseModel, Field
 
+import agentlightning.store.collection.memory as memory_module
 from agentlightning.store.collection import DequeBasedQueue, DictBasedKeyValue, ListBasedCollection
+from agentlightning.store.collection.memory import _item_matches_filters  # pyright: ignore[reportPrivateUsage]
 
 
 class SampleItem(BaseModel):
@@ -377,21 +379,85 @@ async def test_list_collection_filter_logic(
 
 
 @pytest.mark.asyncio()
+async def test_list_collection_must_filters_respected_with_or(
+    sample_collection: ListBasedCollection[SampleItem],
+) -> None:
+    filters = {
+        "_aggregate": "or",
+        "_must": {"partition": {"exact": "alpha"}},
+        "status": {"exact": "done"},
+        "tags": {"contains": "urgent"},
+    }
+    result = await sample_collection.query(filter=filters)  # type: ignore[arg-type]
+    assert _sorted_pairs(result.items) == [("alpha", 1)]
+
+
+@pytest.mark.asyncio()
+async def test_list_collection_must_filters_accept_sequence(
+    sample_collection: ListBasedCollection[SampleItem],
+) -> None:
+    filters = {
+        "_aggregate": "or",
+        "_must": [
+            {"partition": {"exact": "beta"}},
+            {"index": {"exact": 2}},
+        ],
+        "status": {"exact": "new"},
+        "tags": {"contains": "beta"},
+    }
+    result = await sample_collection.query(filter=filters)  # type: ignore[arg-type]
+    assert _sorted_pairs(result.items) == [("beta", 2)]
+
+
+@pytest.mark.asyncio()
+async def test_list_collection_must_filters_limit_tree_scan_even_with_or(
+    sample_collection: ListBasedCollection[SampleItem],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: List[Tuple[str, int]] = []
+    original = _item_matches_filters
+
+    def tracking(
+        item: SampleItem,
+        filters: object,
+        filter_logic: str,
+        must_filters: object | None = None,
+    ) -> bool:
+        seen.append((item.partition, item.index))
+        return original(item, filters, filter_logic, must_filters)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(memory_module, "_item_matches_filters", tracking)
+
+    filters = {
+        "_aggregate": "or",
+        "_must": {"partition": {"exact": "gamma"}},
+        "status": {"exact": "done"},
+        "tags": {"contains": "urgent"},
+    }
+    result = await sample_collection.query(filter=filters)  # type: ignore[arg-type]
+    assert _sorted_pairs(result.items) == [("gamma", 2)]
+    assert set(seen) == {("gamma", 1), ("gamma", 2)}
+
+
+@pytest.mark.asyncio()
 async def test_list_collection_primary_key_prefix_limits_filter_checks(
     sample_items: Sequence[SampleItem],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     collection = _build_collection(sample_items)
     seen: List[Tuple[str, int]] = []
-    original = (  # pyright: ignore[reportPrivateUsage,reportUnknownMemberType,reportUnknownVariableType]
-        ListBasedCollection._item_matches_filters  # pyright: ignore[reportPrivateUsage,reportUnknownMemberType]
-    )
+    original = _item_matches_filters
 
-    def tracking(item: SampleItem, filters: object, filter_logic: str) -> bool:
+    def tracking(
+        item: SampleItem,
+        filters: object,
+        filter_logic: str,
+        must_filters: object | None = None,
+    ) -> bool:
         seen.append((item.partition, item.index))
-        return original(item, filters, filter_logic)  # type: ignore[arg-type]
+        return original(item, filters, filter_logic, must_filters)  # type: ignore[arg-type]
 
-    monkeypatch.setattr(ListBasedCollection, "_item_matches_filters", staticmethod(tracking))  # type: ignore[arg-type]
+    monkeypatch.setattr(memory_module, "_item_matches_filters", tracking)
 
     filters = {"partition": {"exact": "alpha"}, "index": {"within": {1, 2}}}
     result = await collection.query(filter=filters)  # type: ignore[arg-type]
@@ -413,11 +479,12 @@ async def test_list_collection_full_primary_key_avoids_tree_scan(
         self: ListBasedCollection[SampleItem],
         root: Mapping[str, object] | None = None,
         filters: object | None = None,
+        must_filters: object | None = None,
         filter_logic: str = "and",
     ) -> Iterable[SampleItem]:
         nonlocal call_count
         call_count += 1
-        return original_iter_items(self, root, filters, filter_logic)  # type: ignore[arg-type]
+        return original_iter_items(self, root, filters, must_filters, filter_logic)  # type: ignore[arg-type]
 
     monkeypatch.setattr(ListBasedCollection, "_iter_items", tracking)
 

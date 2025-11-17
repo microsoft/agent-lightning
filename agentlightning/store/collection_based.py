@@ -29,14 +29,17 @@ from agentlightning.types import (
     Attempt,
     AttemptedRollout,
     AttemptStatus,
+    FilterField,
     NamedResources,
     ResourcesUpdate,
     Rollout,
     RolloutConfig,
     RolloutStatus,
+    SortOptions,
     Span,
     TaskInput,
     Worker,
+    WorkerStatus,
 )
 
 from .base import UNSET, LightningStore, LightningStoreCapabilities, Unset, is_finished, is_queuing
@@ -380,22 +383,46 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
 
     @_healthcheck_wrapper
     async def query_rollouts(
-        self, *, status: Optional[Sequence[RolloutStatus]] = None, rollout_ids: Optional[Sequence[str]] = None
+        self,
+        *,
+        status_in: Optional[Sequence[RolloutStatus]] = None,
+        rollout_id_in: Optional[Sequence[str]] = None,
+        rollout_id_contains: Optional[str] = None,
+        filter_logic: Literal["and", "or"] = "and",
+        sort_by: Optional[str] = None,
+        sort_order: Literal["asc", "desc"] = "asc",
+        limit: int = -1,
+        offset: int = 0,
+        status: Optional[Sequence[RolloutStatus]] = None,
+        rollout_ids: Optional[Sequence[str]] = None,
     ) -> List[Rollout]:
-        """Retrieves rollouts filtered by their status and rollout ids.
-        If no status is provided, returns all rollouts.
+        """Retrieve rollouts with filtering and pagination.
 
         See [`LightningStore.query_rollouts()`][agentlightning.LightningStore.query_rollouts] for semantics.
         """
         # Construct filters condition
+        resolved_status = status_in if status_in is not None else status
+        resolved_rollout_ids = rollout_id_in if rollout_id_in is not None else rollout_ids
+
         filters: FilterOptions = {}
-        if rollout_ids is not None:
-            filters["rollout_id"] = {"within": list(rollout_ids)}
-        if status is not None:
-            filters["status"] = {"within": list(status)}
+        if filter_logic == "or":
+            filters["_aggregate"] = "or"
+        if resolved_status is not None:
+            filters["status"] = {"within": list(resolved_status)}
+        if resolved_rollout_ids is not None:
+            rollout_id_field = cast(FilterField, filters.setdefault("rollout_id", {}))
+            rollout_id_field["within"] = list(resolved_rollout_ids)
+        if rollout_id_contains is not None:
+            rollout_id_field = cast(FilterField, filters.setdefault("rollout_id", {}))
+            rollout_id_field["contains"] = rollout_id_contains
 
         async with self.collections.atomic():
-            rollouts = await self.collections.rollouts.query(filter=filters or None)
+            rollouts = await self.collections.rollouts.query(
+                filter=filters or None,
+                sort=SortOptions(name=sort_by, order=sort_order) if sort_by else None,
+                limit=limit,
+                offset=offset,
+            )
 
             # Attach the latest attempt to the rollout objects
             # TODO: Maybe we can use asyncio.gather here to speed up the process?
@@ -446,16 +473,22 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         )
 
     @_healthcheck_wrapper
-    async def query_attempts(self, rollout_id: str) -> List[Attempt]:
-        """Retrieves all attempts associated with a specific rollout ID.
-        Returns an empty list if no attempts are found.
-
-        See [`LightningStore.query_attempts()`][agentlightning.LightningStore.query_attempts] for semantics.
-        """
+    async def query_attempts(
+        self,
+        rollout_id: str,
+        *,
+        sort_by: Optional[str] = "sequence_id",
+        sort_order: Literal["asc", "desc"] = "asc",
+        limit: int = -1,
+        offset: int = 0,
+    ) -> List[Attempt]:
+        """Retrieve attempts for a rollout with optional ordering/pagination."""
         async with self.collections.atomic():
             result = await self.collections.attempts.query(
                 filter={"rollout_id": {"exact": rollout_id}},
-                sort={"name": "sequence_id", "order": "asc"},
+                sort={"name": sort_by, "order": sort_order} if sort_by else None,
+                limit=limit,
+                offset=offset,
             )
             return list(result.items)
 
@@ -469,11 +502,32 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
             return await self._get_latest_attempt_unlocked(rollout_id)
 
     @_healthcheck_wrapper
-    async def query_resources(self) -> List[ResourcesUpdate]:
+    async def query_resources(
+        self,
+        *,
+        resources_id: Optional[str] = None,
+        resources_id_contains: Optional[str] = None,
+        sort_by: Optional[str] = None,
+        sort_order: Literal["asc", "desc"] = "asc",
+        limit: int = -1,
+        offset: int = 0,
+    ) -> List[ResourcesUpdate]:
         """Return every stored resource snapshot in insertion order."""
+        filters: FilterOptions = {}
+        if resources_id is not None:
+            resources_id_field = cast(FilterField, filters.setdefault("resources_id", {}))
+            resources_id_field["exact"] = resources_id
+        if resources_id_contains is not None:
+            resources_id_field = cast(FilterField, filters.setdefault("resources_id", {}))
+            resources_id_field["contains"] = resources_id_contains
+
         async with self.collections.atomic():
-            # No sorting and no pagination by default
-            result = await self.collections.resources.query()
+            result = await self.collections.resources.query(
+                filter=filters or None,
+                sort={"name": sort_by, "order": sort_order} if sort_by else None,
+                limit=limit,
+                offset=offset,
+            )
             return list(result.items)
 
     @_healthcheck_wrapper
@@ -709,16 +763,36 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         return None
 
     @_healthcheck_wrapper
-    async def query_spans(self, rollout_id: str, attempt_id: str | Literal["latest"] | None = None) -> List[Span]:
+    async def query_spans(
+        self,
+        rollout_id: str,
+        attempt_id: str | Literal["latest"] | None = None,
+        *,
+        trace_id: Optional[str] = None,
+        trace_id_contains: Optional[str] = None,
+        span_id: Optional[str] = None,
+        span_id_contains: Optional[str] = None,
+        parent_id: Optional[str] = None,
+        parent_id_contains: Optional[str] = None,
+        name: Optional[str] = None,
+        name_contains: Optional[str] = None,
+        filter_logic: Literal["and", "or"] = "and",
+        limit: int = -1,
+        offset: int = 0,
+        sort_by: Optional[str] = "sequence_id",
+        sort_order: Literal["asc", "desc"] = "asc",
+    ) -> List[Span]:
         """
-        Query and retrieve all spans associated with a specific rollout ID.
+        Query and retrieve spans associated with a specific rollout ID.
         Returns an empty list if no spans are found.
 
         See [`LightningStore.query_spans()`][agentlightning.LightningStore.query_spans] for semantics.
         """
+
         async with self.collections.atomic():
+            resolved_attempt_id: Optional[str]
             if attempt_id is None:
-                spans = await self.collections.spans.query(filter={"rollout_id": {"exact": rollout_id}})
+                resolved_attempt_id = None
             elif attempt_id == "latest":
                 latest_attempt = await self.collections.attempts.get(
                     filter={"rollout_id": {"exact": rollout_id}},
@@ -727,16 +801,37 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
                 if not latest_attempt:
                     logger.debug(f"No attempts found for rollout {rollout_id} when querying latest spans")
                     return []
-                spans = await self.collections.spans.query(
-                    filter={
-                        "rollout_id": {"exact": rollout_id},
-                        "attempt_id": {"exact": latest_attempt.attempt_id},
-                    }
-                )
+                resolved_attempt_id = latest_attempt.attempt_id
             else:
-                spans = await self.collections.spans.query(
-                    filter={"rollout_id": {"exact": rollout_id}, "attempt_id": {"exact": attempt_id}}
-                )
+                resolved_attempt_id = attempt_id
+
+            filter_options: FilterOptions = {
+                "_aggregate": filter_logic,  # this can be and/or
+                "_must": {"rollout_id": {"exact": rollout_id}},  # Must satisfy all the filters in the must list
+            }
+            if resolved_attempt_id is not None:
+                filter_options["_must"]["attempt_id"] = {"exact": resolved_attempt_id}  # type: ignore
+
+            def _resolve_filter_field(
+                field_name: str, filter_exact: Optional[str] | None, filter_contains: Optional[str] | None
+            ) -> None:
+                field = cast(FilterField, filter_options.setdefault(field_name, {}))
+                if filter_exact is not None:
+                    field["exact"] = filter_exact
+                if filter_contains is not None:
+                    field["contains"] = filter_contains
+
+            _resolve_filter_field("trace_id", trace_id, trace_id_contains)
+            _resolve_filter_field("span_id", span_id, span_id_contains)
+            _resolve_filter_field("parent_id", parent_id, parent_id_contains)
+            _resolve_filter_field("name", name, name_contains)
+
+            spans = await self.collections.spans.query(
+                filter=filter_options,
+                sort={"name": sort_by, "order": sort_order} if sort_by else None,
+                limit=limit,
+                offset=offset,
+            )
             return list(spans.items)
 
     @_healthcheck_wrapper
@@ -911,10 +1006,32 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         return attempt
 
     @_healthcheck_wrapper
-    async def query_workers(self) -> List[Worker]:
+    async def query_workers(
+        self,
+        *,
+        status_in: Optional[Sequence[WorkerStatus]] = None,
+        worker_id_contains: Optional[str] = None,
+        filter_logic: Literal["and", "or"] = "and",
+        sort_by: Optional[str] = None,
+        sort_order: Literal["asc", "desc"] = "asc",
+        limit: int = -1,
+        offset: int = 0,
+    ) -> List[Worker]:
         """Return the current snapshot of all workers."""
+        filters: FilterOptions = {}
+        if status_in is not None:
+            filters["status"] = {"within": list(status_in)}
+        if worker_id_contains is not None:
+            filters["worker_id"] = {"contains": worker_id_contains}
+        filters["_aggregate"] = filter_logic
+
         async with self.collections.atomic():
-            result = await self.collections.workers.query()
+            result = await self.collections.workers.query(
+                filter=filters or None,
+                sort={"name": sort_by, "order": sort_order} if sort_by else None,
+                limit=limit,
+                offset=offset,
+            )
             return list(result.items)
 
     @_healthcheck_wrapper

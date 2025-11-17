@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import weakref
 from collections import deque
 from contextlib import asynccontextmanager
@@ -48,6 +49,8 @@ T = TypeVar("T")  # Recommended to be a BaseModel, not a dict
 K = TypeVar("K")
 V = TypeVar("V")
 
+logger = logging.getLogger(__name__)
+
 # Nested structure type:
 # dict[pk1] -> dict[pk2] -> ... -> item
 ListBasedCollectionItemType = Union[
@@ -57,6 +60,176 @@ ListBasedCollectionItemType = Union[
 
 FilterMap = Mapping[str, FilterField]
 MutationMode = Literal["insert", "update", "upsert", "delete"]
+
+
+def _merge_must_filters(target: Dict[str, FilterField], definition: Any) -> None:
+    """Normalize a `_must` filter group into the provided mapping.
+
+    Mainly for validation purposes.
+    """
+    if definition is None:
+        return
+
+    entries: List[Mapping[str, FilterField]] = []
+    if isinstance(definition, Mapping):
+        entries.append(cast(Mapping[str, FilterField], definition))
+    elif isinstance(definition, Sequence) and not isinstance(definition, (str, bytes)):
+        for entry in definition:  # type: ignore
+            if not isinstance(entry, Mapping):
+                raise TypeError("Each `_must` entry must be a mapping of field names to operators")
+            entries.append(cast(Mapping[str, FilterField], entry))
+    else:
+        raise TypeError("`_must` filters must be provided as a mapping or sequence of mappings")
+
+    for entry in entries:
+        for field_name, ops in entry.items():
+            existing = target.get(field_name, {})
+            merged_ops: Dict[str, Any] = dict(existing)
+            for op_name, expected in ops.items():
+                if op_name in merged_ops:
+                    raise ValueError(f"Duplicate operator '{op_name}' for field '{field_name}' in must filters")
+                merged_ops[op_name] = expected
+            target[field_name] = cast(FilterField, merged_ops)
+
+
+def _normalize_filter_options(
+    filter_options: Optional[FilterOptions],
+) -> Tuple[Optional[FilterMap], Optional[FilterMap], Literal["and", "or"]]:
+    """Convert FilterOptions to the internal structure and resolve aggregate logic."""
+    if not filter_options:
+        return None, None, "and"
+
+    aggregate = cast(Literal["and", "or"], filter_options.get("_aggregate", "and"))
+    if aggregate not in ("and", "or"):
+        raise ValueError(f"Unsupported filter aggregate '{aggregate}'")
+
+    # Extract normalized filters and must filters from the filter options.
+    normalized: Dict[str, FilterField] = {}
+    must_filters: Dict[str, FilterField] = {}
+    for field_name, ops in filter_options.items():
+        if field_name == "_aggregate":
+            continue
+        if field_name == "_must":
+            _merge_must_filters(must_filters, ops)
+            continue
+        normalized[field_name] = cast(FilterField, dict(ops))  # type: ignore
+
+    return (normalized or None, must_filters or None, aggregate)
+
+
+def _resolve_sort_options(sort: Optional[SortOptions]) -> Tuple[Optional[str], Literal["asc", "desc"]]:
+    """Extract sort field/order from the caller-provided SortOptions."""
+    if not sort:
+        return None, "asc"
+
+    sort_name = sort.get("name")
+    if not sort_name:
+        raise ValueError("Sort options must include a 'name' field")
+
+    sort_order = sort.get("order", "asc")
+    if sort_order not in ("asc", "desc"):
+        raise ValueError(f"Unsupported sort order '{sort_order}'")
+
+    return sort_name, sort_order
+
+
+def _item_matches_filters(
+    item: object,
+    filters: Optional[FilterMap],
+    filter_logic: Literal["and", "or"],
+    must_filters: Optional[FilterMap] = None,
+) -> bool:
+    """Check whether an item matches the provided filter definition.
+
+    Filter format:
+
+    ```json
+    {
+        "_aggregate": "or",
+        "field_name": {
+            "exact": <value>,
+            "within": <iterable_of_allowed_values>,
+            "contains": <substring_or_element>,
+        },
+        ...
+    }
+    ```
+
+    Operators within the same field are stored in a unified pool and combined using
+    a universal logical operator.
+    """
+    if must_filters and not _item_matches_filters(item, must_filters, "and"):
+        return False
+
+    if not filters:
+        return True
+
+    all_conditions_match: List[bool] = []
+
+    for field_name, ops in filters.items():
+        item_value = getattr(item, field_name, None)
+
+        for op_name, expected in ops.items():
+            # Ignore no-op filters
+            if expected is None:
+                continue
+
+            if op_name == "exact":
+                all_conditions_match.append(item_value == expected)
+
+            elif op_name == "within":
+                try:
+                    all_conditions_match.append(item_value in expected)  # type: ignore[arg-type]
+                except TypeError:
+                    all_conditions_match.append(False)
+
+            elif op_name == "contains":
+                if item_value is None:
+                    all_conditions_match.append(False)
+                elif isinstance(item_value, str) and isinstance(expected, str):
+                    all_conditions_match.append(expected in item_value)
+                else:
+                    # Fallback: treat as generic iterable containment.
+                    try:
+                        all_conditions_match.append(expected in item_value)  # type: ignore[arg-type]
+                    except TypeError:
+                        all_conditions_match.append(False)
+            else:
+                raise ValueError(f"Unsupported filter operator '{op_name}' for field '{field_name}'")
+
+    return all(all_conditions_match) if filter_logic == "and" else any(all_conditions_match)
+
+
+def _get_sort_value(item: object, sort_by: str) -> Any:
+    """Get a sort key for the given item/field.
+
+    - If the field name ends with '_time', values are treated as comparable timestamps.
+    - For other fields we try to infer a safe default from the Pydantic model annotation.
+    """
+    value = getattr(item, sort_by, None)
+
+    if sort_by.endswith("_time"):
+        # For *_time fields, push missing values to the end.
+        return float("inf") if value is None else value
+
+    if value is None:
+        # Introspect model field type to choose a reasonable default for None.
+        model_fields = getattr(item.__class__, "model_fields", {})
+        if sort_by not in model_fields:
+            raise ValueError(
+                f"Failed to sort items by '{sort_by}': field does not exist " f"on {item.__class__.__name__}"
+            )
+
+        field_type_str = str(model_fields[sort_by].annotation)
+        if "str" in field_type_str or "Literal" in field_type_str:
+            return ""
+        if "int" in field_type_str:
+            return 0
+        if "float" in field_type_str:
+            return 0.0
+        raise ValueError(f"Failed to sort items by '{sort_by}': unsupported field type {field_type_str!r}")
+
+    return value
 
 
 class ListBasedCollection(Collection[T]):
@@ -219,46 +392,11 @@ class ListBasedCollection(Collection[T]):
         else:
             raise ValueError(f"Unknown mutation mode: {mode}")
 
-    @staticmethod
-    def _normalize_filter_options(
-        filter_options: Optional[FilterOptions],
-    ) -> Tuple[Optional[FilterMap], Literal["and", "or"]]:
-        """Convert FilterOptions to the internal structure and resolve aggregate logic."""
-        if not filter_options:
-            return None, "and"
-
-        aggregate = cast(Literal["and", "or"], filter_options.get("_aggregate", "and"))
-        if aggregate not in ("and", "or"):
-            raise ValueError(f"Unsupported filter aggregate '{aggregate}'")
-
-        normalized: Dict[str, FilterField] = {}
-        for field_name, ops in filter_options.items():
-            if field_name == "_aggregate":
-                continue
-            normalized[field_name] = cast(FilterField, ops)
-
-        return (normalized or None, aggregate)
-
-    @staticmethod
-    def _resolve_sort_options(sort: Optional[SortOptions]) -> Tuple[Optional[str], Literal["asc", "desc"]]:
-        """Extract sort field/order from the caller-provided SortOptions."""
-        if not sort:
-            return None, "asc"
-
-        sort_name = sort.get("name")
-        if not sort_name:
-            raise ValueError("Sort options must include a 'name' field")
-
-        sort_order = sort.get("order", "asc")
-        if sort_order not in ("asc", "desc"):
-            raise ValueError(f"Unsupported sort order '{sort_order}'")
-
-        return sort_name, sort_order
-
     def _iter_items(
         self,
         root: Optional[Mapping[Any, Any]] = None,
         filters: Optional[FilterMap] = None,
+        must_filters: Optional[FilterMap] = None,
         filter_logic: Literal["and", "or"] = "and",
     ) -> Iterable[T]:
         """Iterate over all items in the nested dictionary structure, optionally applying filters."""
@@ -272,7 +410,7 @@ class ListBasedCollection(Collection[T]):
             for value in node.values():
                 # Leaf nodes contain items; intermediate nodes are dicts.
                 if isinstance(value, self._item_type):
-                    if self._item_matches_filters(value, filters, filter_logic):
+                    if _item_matches_filters(value, filters, filter_logic, must_filters):
                         yield value
                 elif isinstance(value, dict):
                     stack.append(value)  # type: ignore
@@ -285,37 +423,69 @@ class ListBasedCollection(Collection[T]):
     def _iter_matching_items(
         self,
         filters: Optional[FilterMap],
+        must_filters: Optional[FilterMap],
         filter_logic: Literal["and", "or"],
     ) -> Iterable[T]:
         """Efficiently iterate over items matching filters, using primary-key prefix when possible."""
-        # Fast path: no filters or non-AND logic -> just delegate to _iter_items.
-        if not filters or filter_logic != "and":
-            return self._iter_items(filters=filters, filter_logic=filter_logic)
+        # Fast path: when optional filters can't form a prefix, fall back to scanning.
+        if filter_logic != "and" and must_filters is None:
+            return self._iter_items(filters=filters, must_filters=must_filters, filter_logic=filter_logic)
 
         # Try to derive a primary-key prefix from exact filters.
         pk_values_prefix: List[Any] = []
+        prefix_sources: List[FilterMap] = []
+        if must_filters:
+            prefix_sources.append(must_filters)
+        if filter_logic == "and" and filters:
+            prefix_sources.append(filters)
+
         for pk in self._primary_keys:
-            field_ops = filters.get(pk)  # type: ignore[union-attr]
-            if not field_ops:
+            # combined_ops are: [{"exact": value}, {"within": [...]}, ...]
+            combined_ops: List[FilterField] = []
+            for source in prefix_sources:
+                field_ops = source.get(pk)  # type: ignore[union-attr]
+                if field_ops:
+                    combined_ops.append(field_ops)
+            if not combined_ops:
                 break
             # Only allow a pure {"exact": value} constraint.
-            if set(field_ops.keys()) != {"exact"}:
+            exact_value: Any | None = None
+            allow_prefix = True
+            for ops in combined_ops:
+                if set(ops.keys()) != {"exact"}:
+                    allow_prefix = False
+                    break
+                candidate = ops.get("exact")
+                if candidate is None:
+                    allow_prefix = False
+                    break
+                if exact_value is not None and candidate != exact_value:
+                    # Contradictory exact filters mean no items can match.
+                    logger.warning(f"Contradictory exact filters for field '{pk}': {exact_value} != {candidate}")
+                    return ()
+                exact_value = candidate
+
+            if not allow_prefix:
                 break
-            value = field_ops.get("exact")
+
+            value = exact_value
             if value is None:
                 break
             pk_values_prefix.append(value)
 
         if not pk_values_prefix:
-            return self._iter_items(filters=filters, filter_logic=filter_logic)
+            return self._iter_items(filters=filters, must_filters=must_filters, filter_logic=filter_logic)
 
         try:
             if len(pk_values_prefix) == len(self._primary_keys):
                 # All primary keys specified -> at most a single item.
                 parent, final_key = self._locate_node(pk_values_prefix, create_missing=False)
                 single_item = parent.get(final_key)
-                if isinstance(single_item, self._item_type) and self._item_matches_filters(
-                    single_item, filters, filter_logic
+                if isinstance(single_item, self._item_type) and _item_matches_filters(
+                    single_item,
+                    filters,
+                    filter_logic,
+                    must_filters,
                 ):
                     return (single_item,)
                 return ()
@@ -324,106 +494,16 @@ class ListBasedCollection(Collection[T]):
                 parent, final_key = self._locate_node(pk_values_prefix, create_missing=False)
                 subtree = parent.get(final_key)
                 if isinstance(subtree, dict):
-                    return self._iter_items(subtree, filters=filters, filter_logic=filter_logic)  # type: ignore
+                    return self._iter_items(
+                        subtree,  # type: ignore
+                        filters=filters,
+                        must_filters=must_filters,
+                        filter_logic=filter_logic,
+                    )
                 return ()
         except KeyError:
             # No items exist for this primary-key prefix.
             return ()
-
-    @staticmethod
-    def _item_matches_filters(
-        item: T,
-        filters: Optional[FilterMap],
-        filter_logic: Literal["and", "or"],
-    ) -> bool:
-        """Check whether an item matches the provided filter definition.
-
-        Filter format:
-
-        ```json
-        {
-            "_aggregate": "or",
-            "field_name": {
-                "exact": <value>,
-                "within": <iterable_of_allowed_values>,
-                "contains": <substring_or_element>,
-            },
-            ...
-        }
-        ```
-
-        Operators within the same field are stored in a unified pool and combined using
-        a universal logical operator.
-        """
-        if not filters:
-            return True
-
-        all_conditions_match: List[bool] = []
-
-        for field_name, ops in filters.items():
-            item_value = getattr(item, field_name, None)
-
-            for op_name, expected in ops.items():
-                # Ignore no-op filters
-                if expected is None:
-                    continue
-
-                if op_name == "exact":
-                    all_conditions_match.append(item_value == expected)
-
-                elif op_name == "within":
-                    try:
-                        all_conditions_match.append(item_value in expected)  # type: ignore[arg-type]
-                    except TypeError:
-                        all_conditions_match.append(False)
-
-                elif op_name == "contains":
-                    if item_value is None:
-                        all_conditions_match.append(False)
-                    elif isinstance(item_value, str) and isinstance(expected, str):
-                        all_conditions_match.append(expected in item_value)
-                    else:
-                        # Fallback: treat as generic iterable containment.
-                        try:
-                            all_conditions_match.append(expected in item_value)  # type: ignore[arg-type]
-                        except TypeError:
-                            all_conditions_match.append(False)
-                else:
-                    raise ValueError(f"Unsupported filter operator '{op_name}' for field '{field_name}'")
-
-        return all(all_conditions_match) if filter_logic == "and" else any(all_conditions_match)
-
-    @staticmethod
-    def _get_sort_value(item: T, sort_by: str) -> Any:
-        """Get a sort key for the given item/field.
-
-        - If the field name ends with '_time', values are treated as comparable timestamps.
-        - For other fields we try to infer a safe default from the Pydantic model annotation.
-        """
-        value = getattr(item, sort_by, None)
-
-        if sort_by.endswith("_time"):
-            # For *_time fields, push missing values to the end.
-            return float("inf") if value is None else value
-
-        if value is None:
-            # Introspect model field type to choose a reasonable default for None.
-            model_fields = getattr(item.__class__, "model_fields", {})
-            if sort_by not in model_fields:
-                raise ValueError(
-                    f"Failed to sort items by '{sort_by}': field does not exist " f"on {item.__class__.__name__}"
-                )
-
-            field_type_str = str(model_fields[sort_by].annotation)
-            if "str" in field_type_str or "Literal" in field_type_str:
-                return ""
-            if "int" in field_type_str:
-                return 0
-            if "float" in field_type_str:
-                return 0.0
-            raise ValueError(f"Failed to sort items by '{sort_by}': unsupported field type {field_type_str!r}")
-
-        return value
 
     async def query(
         self,
@@ -440,9 +520,9 @@ class ListBasedCollection(Collection[T]):
             limit: Max number of items to return. Use -1 for "no limit".
             offset: Number of items to skip from the start of the *matching* items.
         """
-        filters, filter_logic = self._normalize_filter_options(filter)
-        sort_by, sort_order = self._resolve_sort_options(sort)
-        items_iter: Iterable[T] = self._iter_matching_items(filters, filter_logic)
+        filters, must_filters, filter_logic = _normalize_filter_options(filter)
+        sort_by, sort_order = _resolve_sort_options(sort)
+        items_iter: Iterable[T] = self._iter_matching_items(filters, must_filters, filter_logic)
 
         # No sorting: stream through items and apply pagination on the fly.
         if not sort_by:
@@ -474,7 +554,7 @@ class ListBasedCollection(Collection[T]):
 
         total_matched = len(all_matches)
         reverse = sort_order == "desc"
-        all_matches.sort(key=lambda x: self._get_sort_value(x, sort_by), reverse=reverse)
+        all_matches.sort(key=lambda x: _get_sort_value(x, sort_by), reverse=reverse)
 
         if limit == -1:
             paginated_items = all_matches[offset:]
@@ -494,9 +574,9 @@ class ListBasedCollection(Collection[T]):
         sort: Optional[SortOptions] = None,
     ) -> Optional[T]:
         """Return the first (or best-sorted) item that matches the given filters, or None."""
-        filters, filter_logic = self._normalize_filter_options(filter)
-        sort_by, sort_order = self._resolve_sort_options(sort)
-        items_iter: Iterable[T] = self._iter_matching_items(filters, filter_logic)
+        filters, must_filters, filter_logic = _normalize_filter_options(filter)
+        sort_by, sort_order = _resolve_sort_options(sort)
+        items_iter: Iterable[T] = self._iter_matching_items(filters, must_filters, filter_logic)
 
         if not sort_by:
             # Just return the first matching item, if any.
@@ -509,7 +589,7 @@ class ListBasedCollection(Collection[T]):
         best_key: Any = None
 
         for item in items_iter:
-            key = self._get_sort_value(item, sort_by)
+            key = _get_sort_value(item, sort_by)
             if best_item is None:
                 best_item = item
                 best_key = key

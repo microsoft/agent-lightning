@@ -2,7 +2,7 @@
 
 # pyright: reportPrivateUsage=false
 
-from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple, cast
+from typing import Any, Dict, Iterator, List, Literal, Optional, Sequence, Tuple, cast
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -79,7 +79,12 @@ class DummyStore:
             return self.wait_results_queue.pop(0)
         return []
 
-    async def query_spans(self, rollout_id: str) -> List[Span]:
+    async def query_spans(
+        self,
+        rollout_id: str,
+        attempt_id: str | Literal["latest"] | None = None,
+        **_: Any,
+    ) -> List[Span]:
         return list(self.query_spans_map.get(rollout_id, []))
 
 

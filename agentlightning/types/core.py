@@ -438,8 +438,10 @@ class FilterField(TypedDict, total=False):
     contains: str
 
 
-FilterOptions = Mapping[Union[str, Literal["_aggregate"]], Union[FilterField, Literal["and", "or"]]]
-
+FilterOptions = Mapping[
+    Union[str, Literal["_aggregate", "_must"]],
+    Union[FilterField, Literal["and", "or"], Mapping[str, FilterField]],
+]
 """A mapping of field name -> operator dict.
 
 Each operator dict can contain:
@@ -447,17 +449,6 @@ Each operator dict can contain:
 - "exact": value for exact equality.
 - "within": iterable of allowed values.
 - "contains": substring to search for in string fields.
-
-Example:
-
-```json
-{
-    "_aggregate": "or",
-    "status": {"exact": "active"},
-    "id": {"within": [1, 2, 3]},
-    "name": {"contains": "foo"},
-}
-```
 
 The filter can also have a special field called "_aggregate" that can be used to specify the logic
 to combine the results of the filters:
@@ -467,6 +458,24 @@ to combine the results of the filters:
 
 All conditions within a field and between different fields are
 stored in a unified pool and combined using `_aggregate`.
+
+The filter can also have a special group called "_must", which is a list of filters that must all match,
+no matter whether the aggregate logic is "and" or "or".
+
+Example:
+
+```json
+{
+    "_aggregate": "or",
+    "_must": {
+        "city": {"exact": "New York"},
+        "timezone": {"within": ["America/New_York", "America/Los_Angeles"]},
+    },
+    "status": {"exact": "active"},
+    "id": {"within": [1, 2, 3]},
+    "name": {"contains": "foo"},
+}
+```
 """
 
 
