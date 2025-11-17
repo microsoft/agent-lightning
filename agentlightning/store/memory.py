@@ -290,5 +290,7 @@ class InMemoryLightningStore(CollectionBasedLightningStore[InMemoryLightningColl
     async def _evict_spans_for_rollout(self, rollout_id: str) -> None:
         await self.collections.evict_spans_for_rollout(rollout_id)
         removed_bytes = self._span_bytes_by_rollout.pop(rollout_id, 0)
-        self._total_span_bytes = max(self._total_span_bytes - removed_bytes, 0)
-        self._evicted_rollout_span_sets.add(rollout_id)
+        if removed_bytes > 0:
+            # There is something removed for real
+            self._total_span_bytes = max(self._total_span_bytes - removed_bytes, 0)
+            self._evicted_rollout_span_sets.add(rollout_id)
