@@ -665,9 +665,11 @@ async def test_dict_key_value_set_updates_and_expands(dict_key_value: DictBasedK
 
 @pytest.mark.asyncio()
 async def test_dict_key_value_pop_returns_default(dict_key_value: DictBasedKeyValue[str, int]) -> None:
-    assert await dict_key_value.pop("beta") == 2
+    result = await dict_key_value.pop("beta")
+    assert result == 2
     assert dict_key_value.size() == 1
-    assert await dict_key_value.pop("missing", 42) == 42
+    result = await dict_key_value.pop("missing", 42)
+    assert result == 42
     assert dict_key_value.size() == 1
 
 

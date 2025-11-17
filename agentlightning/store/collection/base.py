@@ -106,6 +106,8 @@ class Collection(Generic[T]):
 
             sort_by:
                 Optional field to sort by. Field must exist in the model.
+                If field might contain null values, in which case the behavior is undefined
+                (i.e., depending on the implementation).
 
             sort_order:
                 "asc" or "desc" for ascending / descending sort.

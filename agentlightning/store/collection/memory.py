@@ -286,7 +286,7 @@ class ListBasedCollection(Collection[T]):
     def _get_sort_value(item: T, sort_by: str) -> Any:
         """Get a sort key for the given item/field.
 
-        - If the field name ends with '_time', values are treated as comparable timestamps.s
+        - If the field name ends with '_time', values are treated as comparable timestamps.
         - For other fields we try to infer a safe default from the Pydantic model annotation.
         """
         value = getattr(item, sort_by, None)

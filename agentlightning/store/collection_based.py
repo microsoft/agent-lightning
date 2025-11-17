@@ -619,6 +619,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         current_attempt.last_heartbeat_time = time.time()
         if current_attempt.status in ["preparing", "unresponsive"]:
             current_attempt.status = "running"
+            await self.collections.attempts.update([current_attempt])
 
         # If the status has already timed out or failed, do not change it
 
@@ -679,12 +680,14 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         # If not completed, wait for completion
         while deadline is None or time.time() < deadline:
             # Poll every 10 seconds by default
-            rest_time = max(0.01, deadline - time.time()) if deadline is not None else 10.0
+            rest_time = max(0.01, min(deadline - time.time(), 10.0)) if deadline is not None else 10.0
             await asyncio.sleep(rest_time)
             rollout = await self.collections.rollouts.get({"rollout_id": {"exact": rollout_id}})
             # check if rollout is finished
             if rollout and is_finished(rollout):
                 return rollout
+
+        return None
 
     @_healthcheck_wrapper
     async def query_spans(self, rollout_id: str, attempt_id: str | Literal["latest"] | None = None) -> List[Span]:

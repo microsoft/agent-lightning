@@ -699,6 +699,51 @@ async def test_span_sequence_generation(store_fixture: LightningStore, mock_read
 
 
 @pytest.mark.asyncio
+async def test_span_updates_attempt_status(store_fixture: LightningStore, mock_readable_span: Mock) -> None:
+    """Adding a span should persist attempt heartbeat and transition status to running."""
+    rollout = await store_fixture.enqueue_rollout(input={"test": "attempt-status"})
+    await store_fixture.dequeue_rollout()
+
+    attempts = await store_fixture.query_attempts(rollout.rollout_id)
+    assert attempts
+    attempt_id = attempts[0].attempt_id
+    assert attempts[0].status == "preparing"
+    assert attempts[0].last_heartbeat_time is None
+
+    await store_fixture.add_otel_span(rollout.rollout_id, attempt_id, mock_readable_span)
+
+    updated_attempt = (await store_fixture.query_attempts(rollout.rollout_id))[0]
+    assert updated_attempt.status == "running"
+    assert updated_attempt.last_heartbeat_time is not None
+
+
+@pytest.mark.asyncio
+async def test_unresponsive_attempt_recovers_after_span(
+    store_fixture: LightningStore, mock_readable_span: Mock
+) -> None:
+    """Spans arriving for an unresponsive attempt should mark it running again."""
+    rollout = await store_fixture.enqueue_rollout(input={"test": "unresponsive"})
+    dequeued = await store_fixture.dequeue_rollout()
+    assert dequeued is not None
+    attempt_id = dequeued.attempt.attempt_id
+
+    await store_fixture.update_attempt(
+        rollout_id=rollout.rollout_id,
+        attempt_id=attempt_id,
+        status="unresponsive",
+    )
+
+    attempt_before = (await store_fixture.query_attempts(rollout.rollout_id))[0]
+    assert attempt_before.status == "unresponsive"
+
+    await store_fixture.add_otel_span(rollout.rollout_id, attempt_id, mock_readable_span)
+
+    attempt_after = (await store_fixture.query_attempts(rollout.rollout_id))[0]
+    assert attempt_after.status == "running"
+    assert attempt_after.last_heartbeat_time is not None
+
+
+@pytest.mark.asyncio
 async def test_duplicate_span_id_error(store_fixture: LightningStore, mock_readable_span: Mock) -> None:
     """Adding two spans with the same span_id should raise a ValueError."""
     rollout = await store_fixture.enqueue_rollout(input={"test": "data"})
