@@ -31,6 +31,7 @@ from agentlightning.types import (
     AttemptStatus,
     FilterField,
     NamedResources,
+    PaginatedResult,
     ResourcesUpdate,
     Rollout,
     RolloutConfig,
@@ -395,7 +396,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         offset: int = 0,
         status: Optional[Sequence[RolloutStatus]] = None,
         rollout_ids: Optional[Sequence[str]] = None,
-    ) -> List[Rollout]:
+    ) -> PaginatedResult[Union[Rollout, AttemptedRollout]]:
         """Retrieve rollouts with filtering and pagination.
 
         See [`LightningStore.query_rollouts()`][agentlightning.LightningStore.query_rollouts] for semantics.
@@ -426,11 +427,9 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
 
             # Attach the latest attempt to the rollout objects
             # TODO: Maybe we can use asyncio.gather here to speed up the process?
-            attempted_rollouts = [
-                await self._rollout_to_attempted_rollout_unlocked(rollout) for rollout in rollouts.items
-            ]
+            rollouts.items = [await self._rollout_to_attempted_rollout_unlocked(rollout) for rollout in rollouts.items]
 
-            return attempted_rollouts
+            return rollouts
 
     async def _query_attempts_for_rollout_unlocked(self, rollout_id: str) -> List[Attempt]:
         """The unlocked version of `query_attempts_for_rollout`."""
@@ -481,16 +480,15 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         sort_order: Literal["asc", "desc"] = "asc",
         limit: int = -1,
         offset: int = 0,
-    ) -> List[Attempt]:
+    ) -> PaginatedResult[Attempt]:
         """Retrieve attempts for a rollout with optional ordering/pagination."""
         async with self.collections.atomic():
-            result = await self.collections.attempts.query(
+            return await self.collections.attempts.query(
                 filter={"rollout_id": {"exact": rollout_id}},
                 sort={"name": sort_by, "order": sort_order} if sort_by else None,
                 limit=limit,
                 offset=offset,
             )
-            return list(result.items)
 
     @_healthcheck_wrapper
     async def get_latest_attempt(self, rollout_id: str) -> Optional[Attempt]:
@@ -511,7 +509,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         sort_order: Literal["asc", "desc"] = "asc",
         limit: int = -1,
         offset: int = 0,
-    ) -> List[ResourcesUpdate]:
+    ) -> PaginatedResult[ResourcesUpdate]:
         """Return every stored resource snapshot in insertion order."""
         filters: FilterOptions = {}
         if resources_id is not None:
@@ -522,13 +520,12 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
             resources_id_field["contains"] = resources_id_contains
 
         async with self.collections.atomic():
-            result = await self.collections.resources.query(
+            return await self.collections.resources.query(
                 filter=filters or None,
                 sort={"name": sort_by, "order": sort_order} if sort_by else None,
                 limit=limit,
                 offset=offset,
             )
-            return list(result.items)
 
     @_healthcheck_wrapper
     async def add_resources(self, resources: NamedResources) -> ResourcesUpdate:
@@ -781,7 +778,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         offset: int = 0,
         sort_by: Optional[str] = "sequence_id",
         sort_order: Literal["asc", "desc"] = "asc",
-    ) -> List[Span]:
+    ) -> PaginatedResult[Span]:
         """
         Query and retrieve spans associated with a specific rollout ID.
         Returns an empty list if no spans are found.
@@ -800,7 +797,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
                 )
                 if not latest_attempt:
                     logger.debug(f"No attempts found for rollout {rollout_id} when querying latest spans")
-                    return []
+                    return PaginatedResult(items=[], limit=limit, offset=offset, total=0)
                 resolved_attempt_id = latest_attempt.attempt_id
             else:
                 resolved_attempt_id = attempt_id
@@ -826,13 +823,12 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
             _resolve_filter_field("parent_id", parent_id, parent_id_contains)
             _resolve_filter_field("name", name, name_contains)
 
-            spans = await self.collections.spans.query(
+            return await self.collections.spans.query(
                 filter=filter_options,
                 sort={"name": sort_by, "order": sort_order} if sort_by else None,
                 limit=limit,
                 offset=offset,
             )
-            return list(spans.items)
 
     @_healthcheck_wrapper
     async def update_rollout(
@@ -1016,7 +1012,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         sort_order: Literal["asc", "desc"] = "asc",
         limit: int = -1,
         offset: int = 0,
-    ) -> List[Worker]:
+    ) -> PaginatedResult[Worker]:
         """Return the current snapshot of all workers."""
         filters: FilterOptions = {}
         if status_in is not None:
@@ -1026,13 +1022,12 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         filters["_aggregate"] = filter_logic
 
         async with self.collections.atomic():
-            result = await self.collections.workers.query(
+            return await self.collections.workers.query(
                 filter=filters or None,
                 sort={"name": sort_by, "order": sort_order} if sort_by else None,
                 limit=limit,
                 offset=offset,
             )
-            return list(result.items)
 
     @_healthcheck_wrapper
     async def get_worker_by_id(self, worker_id: str) -> Optional[Worker]:

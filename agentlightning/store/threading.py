@@ -90,7 +90,7 @@ class LightningStoreThreaded(LightningStore):
         offset: int = 0,
         status: Optional[Sequence[RolloutStatus]] = None,
         rollout_ids: Optional[Sequence[str]] = None,
-    ) -> List[Rollout]:
+    ) -> Sequence[Rollout]:
         with self._lock:
             return await self.store.query_rollouts(
                 status_in=status_in,
@@ -113,7 +113,7 @@ class LightningStoreThreaded(LightningStore):
         sort_order: Literal["asc", "desc"] = "asc",
         limit: int = -1,
         offset: int = 0,
-    ) -> List[Attempt]:
+    ) -> Sequence[Attempt]:
         with self._lock:
             return await self.store.query_attempts(
                 rollout_id,
@@ -140,7 +140,7 @@ class LightningStoreThreaded(LightningStore):
         sort_order: Literal["asc", "desc"] = "asc",
         limit: int = -1,
         offset: int = 0,
-    ) -> List[ResourcesUpdate]:
+    ) -> Sequence[ResourcesUpdate]:
         with self._lock:
             return await self.store.query_resources(
                 resources_id=resources_id,
@@ -207,7 +207,7 @@ class LightningStoreThreaded(LightningStore):
         offset: int = 0,
         sort_by: Optional[str] = "sequence_id",
         sort_order: Literal["asc", "desc"] = "asc",
-    ) -> List[Span]:
+    ) -> Sequence[Span]:
         with self._lock:
             return await self.store.query_spans(
                 rollout_id,
@@ -277,7 +277,7 @@ class LightningStoreThreaded(LightningStore):
         sort_order: Literal["asc", "desc"] = "asc",
         limit: int = -1,
         offset: int = 0,
-    ) -> List[Worker]:
+    ) -> Sequence[Worker]:
         with self._lock:
             return await self.store.query_workers(
                 status_in=status_in,

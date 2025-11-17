@@ -19,7 +19,7 @@ import asyncio
 import logging
 import sys
 import time
-from typing import List, Optional, cast
+from typing import List, Optional, Sequence, cast
 from unittest.mock import Mock
 
 import pytest
@@ -33,6 +33,7 @@ from agentlightning.types import (
     Event,
     Link,
     OtelResource,
+    PaginatedResult,
     PromptTemplate,
     ResourcesUpdate,
     Rollout,
@@ -41,6 +42,19 @@ from agentlightning.types import (
     SpanContext,
     TraceStatus,
 )
+
+# Typing tests
+
+
+def test_paginated_result_behaves_like_sequence() -> None:
+    result = PaginatedResult(items=["a", "b", "c"], limit=2, offset=1, total=5)
+
+    assert isinstance(result, Sequence)
+    assert len(result) == 3
+    assert result[0] == "a"
+    assert result[1:] == ["b", "c"]
+    assert list(result) == ["a", "b", "c"]
+
 
 # Core CRUD Operations Tests
 
@@ -241,7 +255,7 @@ async def test_query_rollouts_filter_logic_controls_contains_behavior(store_fixt
         status_in=["failed"],
         rollout_id_contains=substring,
     )
-    assert and_results == []
+    assert len(and_results) == 0
 
     or_results = await store_fixture.query_rollouts(
         status_in=["failed"],
@@ -273,6 +287,18 @@ async def test_query_rollouts_combined_filters_with_sort_and_pagination(store_fi
 
     expected_ids = sorted({rollouts[0].rollout_id, rollouts[2].rollout_id, rollouts[3].rollout_id})
     assert [item.rollout_id for item in filtered] == expected_ids[1:3]
+
+
+@pytest.mark.asyncio
+async def test_query_rollouts_reports_pagination_metadata(store_fixture: LightningStore) -> None:
+    """Paginated rollouts should expose limit/offset/total values."""
+    rollouts = [await store_fixture.enqueue_rollout(input={"idx": idx}) for idx in range(3)]
+
+    paginated = await store_fixture.query_rollouts(sort_by="rollout_id", sort_order="asc", limit=1, offset=1)
+    assert isinstance(paginated, PaginatedResult)
+    assert paginated.limit == 1
+    assert paginated.offset == 1
+    assert paginated.total == len(rollouts)
 
 
 @pytest.mark.asyncio
@@ -309,7 +335,7 @@ async def test_query_attempts_offset_past_end_returns_empty(store_fixture: Light
         limit=1,
         offset=10,
     )
-    assert results == []
+    assert len(results) == 0
 
 
 @pytest.mark.asyncio
@@ -319,7 +345,27 @@ async def test_query_attempts_zero_limit_returns_no_items(store_fixture: Lightni
     await store_fixture.start_attempt(attempted.rollout_id)
 
     results = await store_fixture.query_attempts(attempted.rollout_id, limit=0)
-    assert results == []
+    assert len(results) == 0
+
+
+@pytest.mark.asyncio
+async def test_query_attempts_reports_pagination_metadata(store_fixture: LightningStore) -> None:
+    """Attempt pagination should retain metadata."""
+    attempted = await store_fixture.start_rollout(input={"payload": "attempt-pagination"})
+    await store_fixture.start_attempt(attempted.rollout_id)
+    await store_fixture.start_attempt(attempted.rollout_id)
+
+    paginated = await store_fixture.query_attempts(
+        attempted.rollout_id,
+        sort_by="sequence_id",
+        sort_order="asc",
+        limit=1,
+        offset=1,
+    )
+    assert isinstance(paginated, PaginatedResult)
+    assert paginated.limit == 1
+    assert paginated.offset == 1
+    assert paginated.total == 3
 
 
 @pytest.mark.asyncio
@@ -687,7 +733,7 @@ async def test_query_workers_filter_logic_or_combines_conditions(store_fixture: 
     )
 
     and_results = await store_fixture.query_workers(status_in=["busy"], worker_id_contains="cpu")
-    assert and_results == []
+    assert len(and_results) == 0
 
     or_results = await store_fixture.query_workers(
         status_in=["busy"],
@@ -728,6 +774,19 @@ async def test_query_workers_filter_logic_and_with_sort(store_fixture: Lightning
         limit=1,
     )
     assert [worker.worker_id for worker in filtered] == ["alpha-worker"]
+
+
+@pytest.mark.asyncio
+async def test_query_workers_reports_pagination_metadata(store_fixture: LightningStore) -> None:
+    """Worker pagination should expose metadata for callers."""
+    for worker_id in ["worker-a", "worker-b", "worker-c"]:
+        await store_fixture.update_worker(worker_id, heartbeat_stats={"cpu": 0.1})
+
+    paginated = await store_fixture.query_workers(sort_by="worker_id", sort_order="asc", limit=1, offset=1)
+    assert isinstance(paginated, PaginatedResult)
+    assert paginated.limit == 1
+    assert paginated.offset == 1
+    assert paginated.total == 3
 
 
 # Resource Management Tests
@@ -803,7 +862,7 @@ async def test_add_resources_multiple_times_generates_unique_ids(store_fixture: 
 @pytest.mark.asyncio
 async def test_query_resources_returns_history(store_fixture: LightningStore) -> None:
     """query_resources should list snapshots in the order they were stored."""
-    assert await store_fixture.query_resources() == []
+    assert len(await store_fixture.query_resources()) == 0
 
     first = await store_fixture.add_resources(
         {
@@ -869,7 +928,7 @@ async def test_query_resources_offset_beyond_range_returns_empty(store_fixture: 
     )
 
     results = await store_fixture.query_resources(sort_by="resources_id", limit=1, offset=5)
-    assert results == []
+    assert len(results) == 0
 
 
 @pytest.mark.asyncio
@@ -891,6 +950,25 @@ async def test_query_resources_contains_with_sort_and_pagination(store_fixture: 
 
     expected_ids = sorted([f"manual-{suffix}" for suffix in ["alpha", "beta", "gamma"]])
     assert [item.resources_id for item in filtered] == expected_ids[1:3]
+
+
+@pytest.mark.asyncio
+async def test_query_resources_reports_pagination_metadata(store_fixture: LightningStore) -> None:
+    """Resource pagination should expose metadata fields."""
+    await store_fixture.update_resources(
+        "snapshot-a",
+        {"prompt": PromptTemplate(resource_type="prompt_template", template="a", engine="jinja")},
+    )
+    await store_fixture.update_resources(
+        "snapshot-b",
+        {"prompt": PromptTemplate(resource_type="prompt_template", template="b", engine="jinja")},
+    )
+
+    paginated = await store_fixture.query_resources(sort_by="resources_id", limit=1, offset=1)
+    assert isinstance(paginated, PaginatedResult)
+    assert paginated.limit == 1
+    assert paginated.offset == 1
+    assert paginated.total == 2
 
 
 @pytest.mark.asyncio
@@ -1370,6 +1448,51 @@ async def test_query_spans_multiple_filters_require_all(store_fixture: Lightning
         name_contains="tool",
     )
     assert [span.span_id for span in filtered] == [target.span_id]
+
+
+@pytest.mark.asyncio
+async def test_query_spans_reports_pagination_metadata(store_fixture: LightningStore) -> None:
+    """Span pagination should return limit/offset/total values."""
+    attempted = await store_fixture.start_rollout(input={"payload": "span-pagination"})
+    attempt_id = attempted.attempt.attempt_id
+
+    def build_span(idx: int) -> Span:
+        span_hex = f"{idx:016x}"
+        trace_hex = f"{idx:032x}"
+        return Span(
+            rollout_id=attempted.rollout_id,
+            attempt_id=attempt_id,
+            sequence_id=idx,
+            trace_id=trace_hex,
+            span_id=span_hex,
+            parent_id=None,
+            name=f"span-{idx}",
+            status=TraceStatus(status_code="OK"),
+            attributes={},
+            events=[],
+            links=[],
+            start_time=None,
+            end_time=None,
+            context=SpanContext(trace_id=trace_hex, span_id=span_hex, is_remote=False, trace_state={}),
+            parent=None,
+            resource=OtelResource(attributes={}, schema_url=""),
+        )
+
+    for idx in range(1, 4):
+        await store_fixture.add_span(build_span(idx))
+
+    paginated = await store_fixture.query_spans(
+        attempted.rollout_id,
+        attempt_id=attempt_id,
+        sort_by="sequence_id",
+        sort_order="asc",
+        limit=1,
+        offset=1,
+    )
+    assert isinstance(paginated, PaginatedResult)
+    assert paginated.limit == 1
+    assert paginated.offset == 1
+    assert paginated.total == 3
 
 
 @pytest.mark.asyncio
@@ -2100,15 +2223,15 @@ async def test_add_span_with_missing_attempt(store_fixture: LightningStore, mock
 async def test_query_empty_spans(store_fixture: LightningStore) -> None:
     """Test querying spans for non-existent rollout returns empty."""
     spans = await store_fixture.query_spans("nonexistent")
-    assert spans == []
+    assert len(spans) == 0
 
     # With attempt_id
     spans = await store_fixture.query_spans("nonexistent", attempt_id="attempt-1")
-    assert spans == []
+    assert len(spans) == 0
 
     # With latest
     spans = await store_fixture.query_spans("nonexistent", attempt_id="latest")
-    assert spans == []
+    assert len(spans) == 0
 
 
 @pytest.mark.asyncio
@@ -2117,7 +2240,7 @@ async def test_query_latest_with_no_spans(store_fixture: LightningStore) -> None
     rollout = await store_fixture.enqueue_rollout(input={"test": "data"})
 
     spans = await store_fixture.query_spans(rollout.rollout_id, attempt_id="latest")
-    assert spans == []
+    assert len(spans) == 0
 
 
 @pytest.mark.asyncio

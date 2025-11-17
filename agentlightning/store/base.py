@@ -306,7 +306,7 @@ class LightningStore:
         # Deprecated fields
         status: Optional[Sequence[RolloutStatus]] = None,
         rollout_ids: Optional[Sequence[str]] = None,
-    ) -> List[Rollout]:
+    ) -> Sequence[Rollout]:
         """Retrieve rollouts filtered by status and/or explicit identifiers.
 
         This interface supports structured filtering, sorting, and pagination so
@@ -346,7 +346,7 @@ class LightningStore:
         sort_order: Literal["asc", "desc"] = "asc",
         limit: int = -1,
         offset: int = 0,
-    ) -> List[Attempt]:
+    ) -> Sequence[Attempt]:
         """Return every attempt ever created for `rollout_id` in ascending sequence order.
 
         The parameters allow callers to re-order or paginate the attempts so that
@@ -408,7 +408,7 @@ class LightningStore:
         sort_order: Literal["asc", "desc"] = "asc",
         limit: int = -1,
         offset: int = 0,
-    ) -> List[ResourcesUpdate]:
+    ) -> Sequence[ResourcesUpdate]:
         """List every stored resource snapshot in insertion order.
 
         Supports lightweight filtering, sorting, and pagination for embedding in
@@ -529,7 +529,7 @@ class LightningStore:
         # Sorting
         sort_by: Optional[str] = "sequence_id",
         sort_order: Literal["asc", "desc"] = "asc",
-    ) -> List[Span]:
+    ) -> Sequence[Span]:
         """Return the stored spans for a rollout, optionally scoped to one attempt.
 
         Supports a handful of filters that cover the most common debugging
@@ -696,7 +696,7 @@ class LightningStore:
         sort_order: Literal["asc", "desc"] = "asc",
         limit: int = -1,
         offset: int = 0,
-    ) -> List[Worker]:
+    ) -> Sequence[Worker]:
         """Query all workers in the system.
 
         Args:

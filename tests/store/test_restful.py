@@ -21,7 +21,16 @@ from portpicker import pick_unused_port
 
 from agentlightning.store.client_server import LightningStoreClient, LightningStoreServer
 from agentlightning.store.memory import InMemoryLightningStore
-from agentlightning.types import LLM, AttemptedRollout, OtelResource, Rollout, Span, TraceStatus
+from agentlightning.types import (
+    LLM,
+    AttemptedRollout,
+    OtelResource,
+    PaginatedResult,
+    PromptTemplate,
+    Rollout,
+    Span,
+    TraceStatus,
+)
 
 
 def _make_span(rollout_id: str, attempt_id: str, sequence_id: int, name: str) -> Span:
@@ -418,9 +427,7 @@ async def test_rollouts_sorting_by_unsupported_field(
     ) as resp:
         assert resp.status == 400
         data = await resp.json()
-        assert (
-            data["detail"] == "Failed to sort items by nonexistent_field: nonexistent_field is not a field of Rollout"
-        )
+        assert "Invalid sort_by: nonexistent_field, allowed fields are: " in data["detail"]
 
 
 # Attempts Pagination and Sorting Tests
@@ -966,7 +973,130 @@ async def test_spans_sorting_by_unsupported_field(
     ) as resp:
         assert resp.status == 400
         data = await resp.json()
-        assert data["detail"] == "Failed to sort items by invalid_field: invalid_field is not a field of Span"
+        assert "Invalid sort_by: invalid_field, allowed fields are: " in data["detail"]
+
+
+# LightningStoreClient._request_json pagination metadata tests
+
+
+@pytest.mark.asyncio
+async def test_request_json_rollouts_returns_pagination_metadata(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    server, client, _session, _api_endpoint = server_client
+
+    for idx in range(3):
+        await server.enqueue_rollout(input={"idx": idx})
+
+    params = [
+        ("sort_by", "rollout_id"),
+        ("sort_order", "asc"),
+        ("limit", 1),
+        ("offset", 1),
+    ]
+    data = await client._request_json("get", "/rollouts", params=params)  # pyright: ignore[reportPrivateUsage]
+    assert data["limit"] == 1
+    assert data["offset"] == 1
+    assert data["total"] == 3
+    assert len(data["items"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_request_json_attempts_returns_pagination_metadata(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    _server, client, _session, _api_endpoint = server_client
+
+    attempted = await client.start_rollout(input={"payload": "attempts"})
+    await client.start_attempt(attempted.rollout_id)
+    await client.start_attempt(attempted.rollout_id)
+
+    params = [
+        ("sort_by", "sequence_id"),
+        ("sort_order", "asc"),
+        ("limit", 1),
+        ("offset", 1),
+    ]
+    data = await client._request_json(  # pyright: ignore[reportPrivateUsage]
+        "get", f"/rollouts/{attempted.rollout_id}/attempts", params=params
+    )
+    assert data["limit"] == 1
+    assert data["offset"] == 1
+    assert data["total"] == 3
+    assert len(data["items"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_request_json_resources_returns_pagination_metadata(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    _server, client, _session, _api_endpoint = server_client
+
+    alpha = PromptTemplate(resource_type="prompt_template", template="alpha", engine="jinja")
+    beta = PromptTemplate(resource_type="prompt_template", template="beta", engine="jinja")
+
+    await client.update_resources("manual-alpha", {"prompt": alpha})
+    await client.update_resources("manual-beta", {"prompt": beta})
+
+    params = [
+        ("sort_by", "resources_id"),
+        ("sort_order", "asc"),
+        ("limit", 1),
+        ("offset", 1),
+    ]
+    data = await client._request_json("get", "/resources", params=params)  # pyright: ignore[reportPrivateUsage]
+    assert data["limit"] == 1
+    assert data["offset"] == 1
+    assert data["total"] == 2
+    assert len(data["items"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_request_json_workers_returns_pagination_metadata(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    _server, client, _session, _api_endpoint = server_client
+
+    for worker_id in ["worker-a", "worker-b", "worker-c"]:
+        await client.update_worker(worker_id, heartbeat_stats={"cpu": 0.1})
+
+    params = [
+        ("sort_by", "worker_id"),
+        ("sort_order", "asc"),
+        ("limit", 1),
+        ("offset", 1),
+    ]
+    data = await client._request_json("get", "/workers", params=params)  # pyright: ignore[reportPrivateUsage]
+    assert data["limit"] == 1
+    assert data["offset"] == 1
+    assert data["total"] == 3
+    assert len(data["items"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_request_json_spans_returns_pagination_metadata(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    server, client, _session, _api_endpoint = server_client
+
+    attempted = await server.start_rollout(input={"span": "meta"})
+    attempt_id = attempted.attempt.attempt_id
+    for idx in range(1, 4):
+        await server.add_span(_make_span(attempted.rollout_id, attempt_id, idx, f"span-{idx}"))
+
+    params = [
+        ("rollout_id", attempted.rollout_id),
+        ("attempt_id", attempt_id),
+        ("sort_by", "sequence_id"),
+        ("sort_order", "asc"),
+        ("limit", 1),
+        ("offset", 1),
+    ]
+    data = await client._request_json("get", "/spans", params=params)  # pyright: ignore[reportPrivateUsage]
+    assert data["limit"] == 1
+    assert data["offset"] == 1
+    assert data["total"] == 3
+    assert len(data["items"]) == 1
 
 
 # Client Compatibility Tests
@@ -983,9 +1113,10 @@ async def test_client_query_rollouts_extracts_items(
     for i in range(5):
         await server.enqueue_rollout(input={"index": i})
 
-    # Query via client (should extract items and return List[Rollout])
+    # Query via client (should return PaginatedResult that behaves like a sequence)
     rollouts = await client.query_rollouts()
-    assert isinstance(rollouts, list)
+    assert isinstance(rollouts, PaginatedResult)
+    assert rollouts.total == 5
     assert len(rollouts) == 5
     for rollout in rollouts:
         assert isinstance(rollout, Rollout)

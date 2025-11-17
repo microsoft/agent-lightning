@@ -10,6 +10,7 @@ from typing import (
     Callable,
     Dict,
     Generic,
+    Iterator,
     List,
     Literal,
     Mapping,
@@ -21,6 +22,7 @@ from typing import (
     TypeVar,
     Union,
     cast,
+    overload,
 )
 
 from opentelemetry.sdk.trace import ReadableSpan
@@ -491,8 +493,11 @@ class SortOptions(TypedDict):
 T_item = TypeVar("T_item")
 
 
-class PaginatedResult(BaseModel, Generic[T_item]):
-    """Result of a paginated query."""
+class PaginatedResult(BaseModel, Sequence[T_item]):
+    """Result of a paginated query.
+
+    Looks like a sequence, but is NOT.
+    """
 
     items: Sequence[T_item]
     """Items in the result."""
@@ -502,3 +507,20 @@ class PaginatedResult(BaseModel, Generic[T_item]):
     """Offset of the result."""
     total: int
     """Total number of items in the collection."""
+
+    def __len__(self) -> int:
+        return len(self.items)
+
+    @overload
+    def __getitem__(self, index: int) -> T_item: ...
+
+    @overload
+    def __getitem__(self, index: slice) -> Sequence[T_item]: ...
+
+    def __getitem__(self, index: Union[int, slice]) -> Union[T_item, Sequence[T_item]]:
+        return self.items[index]
+
+    # NOTE: This will make dict(paginated_result) NOT work.
+    # We sacrifice that for list(paginated_result) to work.
+    def __iter__(self) -> Iterator[T_item]:  # type: ignore
+        return iter(self.items)

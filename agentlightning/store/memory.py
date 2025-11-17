@@ -24,11 +24,7 @@ from typing import (
 
 from pydantic import BaseModel
 
-from agentlightning.types import (
-    AttemptedRollout,
-    Rollout,
-    Span,
-)
+from agentlightning.types import AttemptedRollout, PaginatedResult, Rollout, Span
 
 from .base import LightningStoreCapabilities, is_finished, is_running
 from .collection import InMemoryLightningCollections
@@ -219,7 +215,7 @@ class InMemoryLightningStore(CollectionBasedLightningStore[InMemoryLightningColl
         rollout_id: str,
         attempt_id: str | Literal["latest"] | None = None,
         **kwargs: Any,
-    ) -> List[Span]:
+    ) -> PaginatedResult[Span]:
         if rollout_id in self._evicted_rollout_span_sets:
             raise RuntimeError(f"Spans for rollout {rollout_id} have been evicted")
         return await super().query_spans(rollout_id, attempt_id, **kwargs)
