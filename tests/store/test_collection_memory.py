@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Dict, Iterable, List, Sequence, Tuple
+from typing import Dict, Iterable, List, Mapping, Sequence, Tuple
 
 import pytest
 from pydantic import BaseModel, Field
@@ -372,6 +372,57 @@ async def test_list_collection_filter_logic(
 ) -> None:
     result = await sample_collection.query(filters=filters, filter_logic=filter_logic)  # type: ignore[arg-type]
     assert _sorted_pairs(result.items) == sorted(expected)
+
+
+@pytest.mark.asyncio()
+async def test_list_collection_primary_key_prefix_limits_filter_checks(
+    sample_items: Sequence[SampleItem],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    collection = _build_collection(sample_items)
+    seen: List[Tuple[str, int]] = []
+    original = (
+        ListBasedCollection._item_matches_filters
+    )  # pyright: ignore[reportPrivateUsage,reportUnknownMemberType,reportUnknownVariableType]
+
+    def tracking(item: SampleItem, filters: object, filter_logic: str) -> bool:
+        seen.append((item.partition, item.index))
+        return original(item, filters, filter_logic)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(ListBasedCollection, "_item_matches_filters", staticmethod(tracking))  # type: ignore[arg-type]
+
+    filters = {"partition": {"exact": "alpha"}, "index": {"within": {1, 2}}}
+    result = await collection.query(filters=filters)  # type: ignore[arg-type]
+    assert _sorted_pairs(result.items) == [("alpha", 1), ("alpha", 2)]
+    assert set(seen) == {("alpha", 1), ("alpha", 2), ("alpha", 3)}
+
+
+@pytest.mark.asyncio()
+async def test_list_collection_full_primary_key_avoids_tree_scan(
+    sample_collection: ListBasedCollection[SampleItem],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    call_count = 0
+    original_iter_items = (
+        ListBasedCollection._iter_items
+    )  # pyright: ignore[reportPrivateUsage,reportUnknownMemberType,reportUnknownVariableType]
+
+    def tracking(
+        self: ListBasedCollection[SampleItem],
+        root: Mapping[str, object] | None = None,
+        filters: object | None = None,
+        filter_logic: str = "and",
+    ) -> Iterable[SampleItem]:
+        nonlocal call_count
+        call_count += 1
+        return original_iter_items(self, root, filters, filter_logic)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(ListBasedCollection, "_iter_items", tracking)
+
+    filters = {"partition": {"exact": "beta"}, "index": {"exact": 2}}
+    result = await sample_collection.query(filters=filters)  # type: ignore[arg-type]
+    assert _sorted_pairs(result.items) == [("beta", 2)]
+    assert call_count == 0
 
 
 @pytest.mark.asyncio()

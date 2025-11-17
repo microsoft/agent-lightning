@@ -254,11 +254,9 @@ class ListBasedCollection(Collection[T]):
                 break
             # Only allow a pure {"exact": value} constraint.
             if set(field_ops.keys()) != {"exact"}:
-                pk_values_prefix = []
                 break
             value = field_ops.get("exact")
             if value is None:
-                pk_values_prefix = []
                 break
             pk_values_prefix.append(value)
 
