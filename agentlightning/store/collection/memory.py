@@ -22,6 +22,7 @@ from typing import (
     Type,
     TypeVar,
     Union,
+    cast,
 )
 
 from pydantic import BaseModel
@@ -34,7 +35,16 @@ from agentlightning.types import (
     Worker,
 )
 
-from .base import Collection, Filter, KeyValue, LightningCollections, PaginatedResult, Queue
+from .base import (
+    Collection,
+    FilterField,
+    FilterOptions,
+    KeyValue,
+    LightningCollections,
+    PaginatedResult,
+    Queue,
+    SortOptions,
+)
 
 T = TypeVar("T", bound=BaseModel)
 K = TypeVar("K")
@@ -47,7 +57,7 @@ ListBasedCollectionItemType = Union[
     Dict[Any, T],  # leaf node dictionary
 ]
 
-
+FilterMap = Mapping[str, FilterField]
 MutationMode = Literal["insert", "update", "upsert", "delete"]
 
 
@@ -209,10 +219,46 @@ class ListBasedCollection(Collection[T]):
         else:
             raise ValueError(f"Unknown mutation mode: {mode}")
 
+    @staticmethod
+    def _normalize_filter_options(
+        filter_options: Optional[FilterOptions],
+    ) -> Tuple[Optional[FilterMap], Literal["and", "or"]]:
+        """Convert FilterOptions to the internal structure and resolve aggregate logic."""
+        if not filter_options:
+            return None, "and"
+
+        aggregate = cast(Literal["and", "or"], filter_options.get("_aggregate", "and"))
+        if aggregate not in ("and", "or"):
+            raise ValueError(f"Unsupported filter aggregate '{aggregate}'")
+
+        normalized: Dict[str, FilterField] = {}
+        for field_name, ops in filter_options.items():
+            if field_name == "_aggregate":
+                continue
+            normalized[field_name] = cast(FilterField, ops)
+
+        return (normalized or None, aggregate)
+
+    @staticmethod
+    def _resolve_sort_options(sort: Optional[SortOptions]) -> Tuple[Optional[str], Literal["asc", "desc"]]:
+        """Extract sort field/order from the caller-provided SortOptions."""
+        if not sort:
+            return None, "asc"
+
+        sort_name = sort.get("name")
+        if not sort_name:
+            raise ValueError("Sort options must include a 'name' field")
+
+        sort_order = sort.get("order", "asc")
+        if sort_order not in ("asc", "desc"):
+            raise ValueError(f"Unsupported sort order '{sort_order}'")
+
+        return sort_name, sort_order
+
     def _iter_items(
         self,
         root: Optional[Mapping[Any, Any]] = None,
-        filters: Optional[Filter] = None,
+        filters: Optional[FilterMap] = None,
         filter_logic: Literal["and", "or"] = "and",
     ) -> Iterable[T]:
         """Iterate over all items in the nested dictionary structure, optionally applying filters."""
@@ -238,7 +284,7 @@ class ListBasedCollection(Collection[T]):
 
     def _iter_matching_items(
         self,
-        filters: Optional[Filter],
+        filters: Optional[FilterMap],
         filter_logic: Literal["and", "or"],
     ) -> Iterable[T]:
         """Efficiently iterate over items matching filters, using primary-key prefix when possible."""
@@ -287,7 +333,7 @@ class ListBasedCollection(Collection[T]):
     @staticmethod
     def _item_matches_filters(
         item: T,
-        filters: Optional[Filter],
+        filters: Optional[FilterMap],
         filter_logic: Literal["and", "or"],
     ) -> bool:
         """Check whether an item matches the provided filter definition.
@@ -296,6 +342,7 @@ class ListBasedCollection(Collection[T]):
 
         ```json
         {
+            "_aggregate": "or",
             "field_name": {
                 "exact": <value>,
                 "within": <iterable_of_allowed_values>,
@@ -326,7 +373,7 @@ class ListBasedCollection(Collection[T]):
 
                 elif op_name == "within":
                     try:
-                        all_conditions_match.append(item_value in expected)
+                        all_conditions_match.append(item_value in expected)  # type: ignore[arg-type]
                     except TypeError:
                         all_conditions_match.append(False)
 
@@ -380,23 +427,21 @@ class ListBasedCollection(Collection[T]):
 
     async def query(
         self,
-        filters: Optional[Filter] = None,
-        filter_logic: Literal["and", "or"] = "and",
-        sort_by: Optional[str] = None,
-        sort_order: Literal["asc", "desc"] = "asc",
+        filter: Optional[FilterOptions] = None,
+        sort: Optional[SortOptions] = None,
         limit: int = -1,
         offset: int = 0,
     ) -> PaginatedResult[T]:
         """Query the collection with filters, sort order, and pagination.
 
         Args:
-            filters: Mapping of field name to operator dict.
-            filter_logic: How to combine per-field results.
-            sort_by: Optional field name to sort by. Must exist on the model.
-            sort_order: "asc" or "desc" for ascending / descending sort.
+            filter: Mapping of field name to operator dict along with the optional `_aggregate` logic.
+            sort: Options describing which field to sort by and in which order.
             limit: Max number of items to return. Use -1 for "no limit".
             offset: Number of items to skip from the start of the *matching* items.
         """
+        filters, filter_logic = self._normalize_filter_options(filter)
+        sort_by, sort_order = self._resolve_sort_options(sort)
         items_iter: Iterable[T] = self._iter_matching_items(filters, filter_logic)
 
         # No sorting: stream through items and apply pagination on the fly.
@@ -445,12 +490,12 @@ class ListBasedCollection(Collection[T]):
 
     async def get(
         self,
-        filters: Optional[Filter] = None,
-        filter_logic: Literal["and", "or"] = "and",
-        sort_by: Optional[str] = None,
-        sort_order: Literal["asc", "desc"] = "asc",
+        filter: Optional[FilterOptions] = None,
+        sort: Optional[SortOptions] = None,
     ) -> Optional[T]:
         """Return the first (or best-sorted) item that matches the given filters, or None."""
+        filters, filter_logic = self._normalize_filter_options(filter)
+        sort_by, sort_order = self._resolve_sort_options(sort)
         items_iter: Iterable[T] = self._iter_matching_items(filters, filter_logic)
 
         if not sort_by:

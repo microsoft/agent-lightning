@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Dict, Iterable, List, Mapping, Sequence, Tuple
+from typing import Dict, Iterable, List, Literal, Mapping, Sequence, Tuple
 
 import pytest
 from pydantic import BaseModel, Field
@@ -275,7 +275,7 @@ async def test_list_collection_insert_accepts_tuple_sequence(
     )
     await sample_collection.insert(extra)
     assert sample_collection.size() == 10
-    fetched = await sample_collection.query(filters={"partition": {"exact": "tuple"}})
+    fetched = await sample_collection.query(filter={"partition": {"exact": "tuple"}})
     assert _sorted_pairs(fetched.items) == [("tuple", 1), ("tuple", 2)]
 
 
@@ -333,7 +333,7 @@ async def test_list_collection_query_filters(
     filters: Dict[str, Dict[str, object]],
     expected: Sequence[Tuple[str, int]],
 ) -> None:
-    result = await sample_collection.query(filters=filters)  # type: ignore[arg-type]
+    result = await sample_collection.query(filter=filters)  # type: ignore[arg-type]
     assert _sorted_pairs(result.items) == sorted(expected)
     assert result.total == len(expected)
 
@@ -367,10 +367,12 @@ async def test_list_collection_query_filters(
 async def test_list_collection_filter_logic(
     sample_collection: ListBasedCollection[SampleItem],
     filters: Dict[str, Dict[str, object]],
-    filter_logic: str,
+    filter_logic: Literal["and", "or"],
     expected: Sequence[Tuple[str, int]],
 ) -> None:
-    result = await sample_collection.query(filters=filters, filter_logic=filter_logic)  # type: ignore[arg-type]
+    filter_payload = dict(filters)
+    filter_payload["_aggregate"] = filter_logic  # type: ignore[index]
+    result = await sample_collection.query(filter=filter_payload)  # type: ignore[arg-type]
     assert _sorted_pairs(result.items) == sorted(expected)
 
 
@@ -381,9 +383,9 @@ async def test_list_collection_primary_key_prefix_limits_filter_checks(
 ) -> None:
     collection = _build_collection(sample_items)
     seen: List[Tuple[str, int]] = []
-    original = (
-        ListBasedCollection._item_matches_filters
-    )  # pyright: ignore[reportPrivateUsage,reportUnknownMemberType,reportUnknownVariableType]
+    original = (  # pyright: ignore[reportPrivateUsage,reportUnknownMemberType,reportUnknownVariableType]
+        ListBasedCollection._item_matches_filters  # pyright: ignore[reportPrivateUsage,reportUnknownMemberType]
+    )
 
     def tracking(item: SampleItem, filters: object, filter_logic: str) -> bool:
         seen.append((item.partition, item.index))
@@ -392,7 +394,7 @@ async def test_list_collection_primary_key_prefix_limits_filter_checks(
     monkeypatch.setattr(ListBasedCollection, "_item_matches_filters", staticmethod(tracking))  # type: ignore[arg-type]
 
     filters = {"partition": {"exact": "alpha"}, "index": {"within": {1, 2}}}
-    result = await collection.query(filters=filters)  # type: ignore[arg-type]
+    result = await collection.query(filter=filters)  # type: ignore[arg-type]
     assert _sorted_pairs(result.items) == [("alpha", 1), ("alpha", 2)]
     assert set(seen) == {("alpha", 1), ("alpha", 2), ("alpha", 3)}
 
@@ -403,9 +405,9 @@ async def test_list_collection_full_primary_key_avoids_tree_scan(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     call_count = 0
-    original_iter_items = (
-        ListBasedCollection._iter_items
-    )  # pyright: ignore[reportPrivateUsage,reportUnknownMemberType,reportUnknownVariableType]
+    original_iter_items = (  # pyright: ignore[reportPrivateUsage,reportUnknownMemberType,reportUnknownVariableType]
+        ListBasedCollection._iter_items  # pyright: ignore[reportPrivateUsage,reportUnknownMemberType]
+    )
 
     def tracking(
         self: ListBasedCollection[SampleItem],
@@ -420,7 +422,7 @@ async def test_list_collection_full_primary_key_avoids_tree_scan(
     monkeypatch.setattr(ListBasedCollection, "_iter_items", tracking)
 
     filters = {"partition": {"exact": "beta"}, "index": {"exact": 2}}
-    result = await sample_collection.query(filters=filters)  # type: ignore[arg-type]
+    result = await sample_collection.query(filter=filters)  # type: ignore[arg-type]
     assert _sorted_pairs(result.items) == [("beta", 2)]
     assert call_count == 0
 
@@ -446,14 +448,14 @@ async def test_list_collection_sorting(
     limit: int,
     expected: Sequence[Tuple[str, int]],
 ) -> None:
-    result = await sample_collection.query(sort_by=sort_by, sort_order=sort_order, limit=limit)  # type: ignore
+    result = await sample_collection.query(sort={"name": sort_by, "order": sort_order}, limit=limit)  # type: ignore[arg-type]
     assert _key_pairs(result.items) == list(expected)
 
 
 @pytest.mark.asyncio()
 async def test_list_collection_sort_by_missing_field_raises(sample_collection: ListBasedCollection[SampleItem]) -> None:
     with pytest.raises(ValueError):
-        await sample_collection.query(sort_by="does_not_exist")
+        await sample_collection.query(sort={"name": "does_not_exist", "order": "asc"})
 
 
 @pytest.mark.asyncio()
@@ -475,28 +477,28 @@ async def test_list_collection_pagination_without_sort(
     expected: Sequence[Tuple[str, int]],
     total: int,
 ) -> None:
-    result = await sample_collection.query(filters={"partition": {"exact": "alpha"}}, limit=limit, offset=offset)
+    result = await sample_collection.query(filter={"partition": {"exact": "alpha"}}, limit=limit, offset=offset)
     assert _key_pairs(result.items) == list(expected)
     assert result.total == total
 
 
 @pytest.mark.asyncio()
 async def test_list_collection_pagination_with_sort(sample_collection: ListBasedCollection[SampleItem]) -> None:
-    result = await sample_collection.query(sort_by="name", sort_order="asc", limit=2, offset=3)
+    result = await sample_collection.query(sort={"name": "name", "order": "asc"}, limit=2, offset=3)
     assert _key_pairs(result.items) == [("delta", 1), ("gamma", 2)]
     assert result.total == 8
 
 
 @pytest.mark.asyncio()
 async def test_list_collection_limit_unbounded_with_sort(sample_collection: ListBasedCollection[SampleItem]) -> None:
-    result = await sample_collection.query(sort_by="name", sort_order="asc", limit=-1, offset=6)
+    result = await sample_collection.query(sort={"name": "name", "order": "asc"}, limit=-1, offset=6)
     assert _key_pairs(result.items) == [("alpha", 2), ("alpha", 1)]
     assert result.total == 8
 
 
 @pytest.mark.asyncio()
 async def test_list_collection_limit_zero_reports_total(sample_collection: ListBasedCollection[SampleItem]) -> None:
-    result = await sample_collection.query(filters={"status": {"exact": "done"}}, limit=0)
+    result = await sample_collection.query(filter={"status": {"exact": "done"}}, limit=0)
     assert result.items == []
     assert result.total == 2
 
@@ -505,7 +507,7 @@ async def test_list_collection_limit_zero_reports_total(sample_collection: ListB
 async def test_list_collection_offset_beyond_total_returns_empty(
     sample_collection: ListBasedCollection[SampleItem],
 ) -> None:
-    result = await sample_collection.query(filters={"status": {"exact": "done"}}, offset=10)
+    result = await sample_collection.query(filter={"status": {"exact": "done"}}, offset=10)
     assert result.items == []
     assert result.total == 2
 
@@ -514,7 +516,7 @@ async def test_list_collection_offset_beyond_total_returns_empty(
 async def test_list_collection_query_reports_total_with_limit(
     sample_collection: ListBasedCollection[SampleItem],
 ) -> None:
-    result = await sample_collection.query(filters={"partition": {"exact": "alpha"}}, limit=1)
+    result = await sample_collection.query(filter={"partition": {"exact": "alpha"}}, limit=1)
     assert result.total == 3
     assert len(result.items) == 1
 
@@ -534,8 +536,8 @@ async def test_list_collection_get_returns_none(sample_collection: ListBasedColl
 
 @pytest.mark.asyncio()
 async def test_list_collection_get_respects_filter_logic(sample_collection: ListBasedCollection[SampleItem]) -> None:
-    filters = {"status": {"exact": "done"}, "tags": {"contains": "urgent"}}
-    item = await sample_collection.get(filters, filter_logic="or")  # type: ignore[arg-type]
+    filters = {"status": {"exact": "done"}, "tags": {"contains": "urgent"}, "_aggregate": "or"}
+    item = await sample_collection.get(filters)  # type: ignore[arg-type]
     assert item is not None
     assert (item.partition, item.index) == ("gamma", 2)
 
@@ -543,7 +545,7 @@ async def test_list_collection_get_respects_filter_logic(sample_collection: List
 @pytest.mark.asyncio()
 async def test_list_collection_get_honors_sort_by(sample_collection: ListBasedCollection[SampleItem]) -> None:
     filters = {"partition": {"exact": "alpha"}}
-    item = await sample_collection.get(filters, sort_by="rank")  # type: ignore[arg-type]
+    item = await sample_collection.get(filters, sort={"name": "rank", "order": "asc"})  # type: ignore[arg-type]
     assert item is not None
     assert (item.partition, item.index) == ("alpha", 2)
 
@@ -551,7 +553,7 @@ async def test_list_collection_get_honors_sort_by(sample_collection: ListBasedCo
 @pytest.mark.asyncio()
 async def test_list_collection_get_honors_sort_order(sample_collection: ListBasedCollection[SampleItem]) -> None:
     filters = {"partition": {"exact": "alpha"}}
-    item = await sample_collection.get(filters, sort_by="rank", sort_order="desc")  # type: ignore[arg-type]
+    item = await sample_collection.get(filters, sort={"name": "rank", "order": "desc"})  # type: ignore[arg-type]
     assert item is not None
     assert (item.partition, item.index) == ("alpha", 3)
 
@@ -571,7 +573,7 @@ async def test_list_collection_query_handles_large_dataset() -> None:
         for i in range(1500)
     ]
     collection = _build_collection(bulk_items)
-    result = await collection.query(sort_by="index", limit=50, offset=100)
+    result = await collection.query(sort={"name": "index", "order": "asc"}, limit=50, offset=100)
     assert result.total == 1500
     assert len(result.items) == 50
     assert result.items[0].index == 100
@@ -593,13 +595,13 @@ async def test_list_collection_query_rejects_unknown_operator(
     sample_collection: ListBasedCollection[SampleItem],
 ) -> None:
     with pytest.raises(ValueError):
-        await sample_collection.query(filters={"status": {"invalid": "x"}})  # type: ignore[arg-type]
+        await sample_collection.query(filter={"status": {"invalid": "x"}})  # type: ignore[arg-type]
 
 
 @pytest.mark.asyncio()
 async def test_list_collection_query_result_type() -> None:
     collection = _build_collection([])
-    result = await collection.query(filters=None)
+    result = await collection.query(filter=None)
     assert result.items == []
     assert result.offset == 0
 

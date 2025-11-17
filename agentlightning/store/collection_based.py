@@ -40,7 +40,7 @@ from agentlightning.types import (
 )
 
 from .base import UNSET, LightningStore, LightningStoreCapabilities, Unset, is_finished, is_queuing
-from .collection import Filter, LightningCollections
+from .collection import FilterOptions, LightningCollections
 from .utils import healthcheck, propagate_status
 
 T_callable = TypeVar("T_callable", bound=Callable[..., Any])
@@ -122,7 +122,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
 
     async def _ensure_latest_resources_id(self) -> Optional[str]:
         if isinstance(self._latest_resources_id, Unset):
-            latest_resources = await self.collections.resources.get(sort_by="update_time", sort_order="desc")
+            latest_resources = await self.collections.resources.get(sort={"name": "update_time", "order": "desc"})
             if latest_resources:
                 self._latest_resources_id = latest_resources.resources_id
             else:
@@ -383,14 +383,14 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         See [`LightningStore.query_rollouts()`][agentlightning.LightningStore.query_rollouts] for semantics.
         """
         # Construct filters condition
-        filters: Filter = {}
+        filters: FilterOptions = {}
         if rollout_ids is not None:
             filters["rollout_id"] = {"within": list(rollout_ids)}
         if status is not None:
             filters["status"] = {"within": list(status)}
 
         async with self.collections.atomic():
-            rollouts = await self.collections.rollouts.query(filters=filters)
+            rollouts = await self.collections.rollouts.query(filter=filters or None)
 
             # Attach the latest attempt to the rollout objects
             # TODO: Maybe we can use asyncio.gather here to speed up the process?
@@ -403,7 +403,8 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
     async def _query_attempts_for_rollout_unlocked(self, rollout_id: str) -> List[Attempt]:
         """The unlocked version of `query_attempts_for_rollout`."""
         result = await self.collections.attempts.query(
-            filters={"rollout_id": {"exact": rollout_id}}, sort_by="sequence_id", sort_order="asc"
+            filter={"rollout_id": {"exact": rollout_id}},
+            sort={"name": "sequence_id", "order": "asc"},
         )
         return list(result.items)
 
@@ -435,7 +436,8 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
     async def _get_latest_attempt_unlocked(self, rollout_id: str) -> Optional[Attempt]:
         """The unlocked version of `get_latest_attempt`."""
         return await self.collections.attempts.get(
-            filters={"rollout_id": {"exact": rollout_id}}, sort_by="sequence_id", sort_order="desc"
+            filter={"rollout_id": {"exact": rollout_id}},
+            sort={"name": "sequence_id", "order": "desc"},
         )
 
     @_healthcheck_wrapper
@@ -447,7 +449,8 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         """
         async with self.collections.atomic():
             result = await self.collections.attempts.query(
-                filters={"rollout_id": {"exact": rollout_id}}, sort_by="sequence_id", sort_order="asc"
+                filter={"rollout_id": {"exact": rollout_id}},
+                sort={"name": "sequence_id", "order": "asc"},
             )
             return list(result.items)
 
@@ -604,10 +607,11 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         if not rollout:
             raise ValueError(f"Rollout {span.rollout_id} not found")
         current_attempt = await self.collections.attempts.get(
-            filters={"rollout_id": {"exact": span.rollout_id}, "attempt_id": {"exact": span.attempt_id}},
+            filter={"rollout_id": {"exact": span.rollout_id}, "attempt_id": {"exact": span.attempt_id}},
         )
         latest_attempt = await self.collections.attempts.get(
-            filters={"rollout_id": {"exact": span.rollout_id}}, sort_by="sequence_id", sort_order="desc"
+            filter={"rollout_id": {"exact": span.rollout_id}},
+            sort={"name": "sequence_id", "order": "desc"},
         )
         if not current_attempt:
             raise ValueError(f"Attempt {span.attempt_id} not found for rollout {span.rollout_id}")
@@ -700,20 +704,24 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         """
         async with self.collections.atomic():
             if attempt_id is None:
-                spans = await self.collections.spans.query(filters={"rollout_id": {"exact": rollout_id}})
+                spans = await self.collections.spans.query(filter={"rollout_id": {"exact": rollout_id}})
             elif attempt_id == "latest":
                 latest_attempt = await self.collections.attempts.get(
-                    filters={"rollout_id": {"exact": rollout_id}}, sort_by="sequence_id", sort_order="desc"
+                    filter={"rollout_id": {"exact": rollout_id}},
+                    sort={"name": "sequence_id", "order": "desc"},
                 )
                 if not latest_attempt:
                     logger.debug(f"No attempts found for rollout {rollout_id} when querying latest spans")
                     return []
                 spans = await self.collections.spans.query(
-                    filters={"rollout_id": {"exact": rollout_id}, "attempt_id": {"exact": latest_attempt.attempt_id}}
+                    filter={
+                        "rollout_id": {"exact": rollout_id},
+                        "attempt_id": {"exact": latest_attempt.attempt_id},
+                    }
                 )
             else:
                 spans = await self.collections.spans.query(
-                    filters={"rollout_id": {"exact": rollout_id}, "attempt_id": {"exact": attempt_id}}
+                    filter={"rollout_id": {"exact": rollout_id}, "attempt_id": {"exact": attempt_id}}
                 )
             return list(spans.items)
 
@@ -835,7 +843,8 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
             raise ValueError(f"Rollout {rollout_id} not found")
 
         latest_attempt = await self.collections.attempts.get(
-            {"rollout_id": {"exact": rollout_id}}, sort_by="sequence_id", sort_order="desc"
+            {"rollout_id": {"exact": rollout_id}},
+            sort={"name": "sequence_id", "order": "desc"},
         )
         if not latest_attempt:
             raise ValueError(f"No attempts found for rollout {rollout_id}")
@@ -933,11 +942,12 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         It should also be unlocked and let the caller hold the lock.
         """
         running_rollouts: List[AttemptedRollout] = []
-        rollouts = await self.collections.rollouts.query(filters={"status": {"within": ["preparing", "running"]}})
+        rollouts = await self.collections.rollouts.query(filter={"status": {"within": ["preparing", "running"]}})
 
         for rollout in rollouts.items:
             latest_attempt = await self.collections.attempts.get(
-                filters={"rollout_id": {"exact": rollout.rollout_id}}, sort_by="sequence_id", sort_order="desc"
+                filter={"rollout_id": {"exact": rollout.rollout_id}},
+                sort={"name": "sequence_id", "order": "desc"},
             )
             if not latest_attempt:
                 # The rollout is running but has no attempts, this should not happen

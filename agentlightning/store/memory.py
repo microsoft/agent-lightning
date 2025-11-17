@@ -198,11 +198,12 @@ class InMemoryLightningStore(CollectionBasedLightningStore[InMemoryLightningColl
 
     async def get_running_rollouts(self) -> List[AttemptedRollout]:
         """Accelerated version of `get_running_rollouts` for in-memory store. Used for healthcheck."""
-        rollouts = await self.collections.rollouts.query(filters={"rollout_id": {"within": self._running_rollout_ids}})
+        rollouts = await self.collections.rollouts.query(filter={"rollout_id": {"within": self._running_rollout_ids}})
         running_rollouts: List[AttemptedRollout] = []
         for rollout in rollouts.items:
             latest_attempt = await self.collections.attempts.get(
-                filters={"rollout_id": {"exact": rollout.rollout_id}}, sort_by="sequence_id", sort_order="desc"
+                filter={"rollout_id": {"exact": rollout.rollout_id}},
+                sort={"name": "sequence_id", "order": "desc"},
             )
             if not latest_attempt:
                 # The rollout is running but has no attempts, this should not happen
