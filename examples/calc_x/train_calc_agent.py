@@ -224,6 +224,8 @@ def main():
     if args.ci_fast:
         args.ci = True
 
+    agl.setup_logging("DEBUG")
+
     train(
         train_file=args.train_file,
         val_file=args.val_file,
