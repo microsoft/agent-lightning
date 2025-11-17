@@ -30,12 +30,28 @@ if hist.empty:
     print("::error::No history found for the run.")
     sys.exit(1)
 else:
-    first, last = hist["val/reward"].iloc[0], hist["val/reward"].iloc[-1]
-    if last <= first:
+    # Check whether all rollouts have succeeded
+    first_row = hist.iloc[0]
+    last_row = hist.iloc[-1]
+
+    if first_row["val/n_rollouts_w_reward"] != last_row["val/n_rollouts_w_reward"]:
         print(
-            f"::warning title=Training no improvement::No improvement (run_name={run_name} start={first:.4f}, end={last:.4f})"
+            f"::error::Some rollouts have failed to produce rewards: {first_row['val/n_rollouts_w_reward']} -> {last_row['val/n_rollouts_w_reward']}"
+        )
+        sys.exit(1)
+
+    if first_row["val/n_rollouts_w_trace"] != last_row["val/n_rollouts_w_trace"]:
+        print(
+            f"::error::Some rollouts have failed to produce traces: {first_row['val/n_rollouts_w_trace']} -> {last_row['val/n_rollouts_w_trace']}"
+        )
+        sys.exit(1)
+
+    first_reward, last_reward = first_row["val/reward"], last_row["val/reward"]
+    if last_reward <= first_reward:
+        print(
+            f"::warning title=Training no improvement::No improvement (run_name={run_name} start={first_reward:.4f}, end={last_reward:.4f})"
         )
     else:
         print(
-            f"::notice title=Training completed::Run has improved (run_name={run_name} start={first:.4f}, end={last:.4f})"
+            f"::notice title=Training completed::Run has improved (run_name={run_name} start={first_reward:.4f}, end={last_reward:.4f})"
         )
