@@ -6,12 +6,15 @@ from typing import (
     Any,
     AsyncContextManager,
     Generic,
+    Iterable,
     Literal,
     Mapping,
     Optional,
     Sequence,
     Type,
+    TypedDict,
     TypeVar,
+    Union,
 )
 
 from pydantic import BaseModel
@@ -28,7 +31,17 @@ T = TypeVar("T", bound=BaseModel)
 K = TypeVar("K")
 V = TypeVar("V")
 
-Filter = Mapping[str, Mapping[Literal["exact", "within", "contains"], Any]]
+
+class FilterField(TypedDict, total=False):
+    """An operator dict for a single field."""
+
+    exact: Any
+    within: Iterable[Any]
+    contains: str
+
+
+FilterOptions = Mapping[Union[str, Literal["_aggregate"]], Union[FilterField, Literal["and", "or"]]]
+
 """A mapping of field name -> operator dict.
 
 Each operator dict can contain:
@@ -41,12 +54,31 @@ Example:
 
 ```json
 {
+    "_aggregate": "or",
     "status": {"exact": "active"},
     "id": {"within": [1, 2, 3]},
     "name": {"contains": "foo"},
 }
 ```
+
+The filter can also have a special field called "_aggregate" that can be used to specify the logic
+to combine the results of the filters:
+
+- "and": all conditions must match. This is the default value if not specified.
+- "or": at least one condition must match.
+
+All conditions within a field and between different fields are
+stored in a unified pool and combined using `_aggregate`.
 """
+
+
+class SortOptions(TypedDict):
+    """Options for sorting the collection."""
+
+    name: str
+    """The name of the field to sort by."""
+    order: Literal["asc", "desc"]
+    """The order to sort by."""
 
 
 class PaginatedResult(BaseModel, Generic[T]):
@@ -82,35 +114,21 @@ class Collection(Generic[T]):
 
     async def query(
         self,
-        filters: Optional[Filter] = None,
-        filter_logic: Literal["and", "or"] = "and",
-        sort_by: Optional[str] = None,
-        sort_order: Literal["asc", "desc"] = "asc",
+        filter: Optional[FilterOptions] = None,
+        sort: Optional[SortOptions] = None,
         limit: int = -1,
         offset: int = 0,
     ) -> PaginatedResult[T]:
         """Query the collection with the given filters, sort order, and pagination.
 
         Args:
-            filters:
-                The filters to apply to the collection. See [`Filter`][agentlightning.store.collection.Filter].
+            filter:
+                The filters to apply to the collection. See [`FilterOptions`][agentlightning.store.collection.FilterOptions].
 
-            filter_logic:
-                How to combine filter results:
-
-                - "and": all conditions must match.
-                - "or": at least one condition must match.
-
-                All conditions within a field and between different fields are
-                stored in a unified pool and combined using `filter_logic`.
-
-            sort_by:
-                Optional field to sort by. Field must exist in the model.
-                If field might contain null values, in which case the behavior is undefined
+            sort:
+                The options for sorting the collection. See [`SortOptions`][agentlightning.store.collection.SortOptions].
+                The field must exist in the model. If field might contain null values, in which case the behavior is undefined
                 (i.e., depending on the implementation).
-
-            sort_order:
-                "asc" or "desc" for ascending / descending sort.
 
             limit:
                 Max number of items to return. Use -1 for "no limit".
@@ -125,22 +143,15 @@ class Collection(Generic[T]):
 
     async def get(
         self,
-        filters: Optional[Filter] = None,
-        filter_logic: Literal["and", "or"] = "and",
-        sort_by: Optional[str] = None,
-        sort_order: Literal["asc", "desc"] = "asc",
+        filter: Optional[FilterOptions] = None,
+        sort: Optional[SortOptions] = None,
     ) -> Optional[T]:
         """Get the first item that matches the given filters.
 
         Args:
-            filters: The filters to apply to the collection.
-                See [`Filter`][agentlightning.store.collection.Filter].
-            filter_logic: How to combine filter results.
-                See [`filter_logic`] parameter in [`query`][agentlightning.store.collection.Collection.query].
-            sort_by: Optional field to sort by. See [`sort_by`] parameter in
-                [`query`][agentlightning.store.collection.Collection.query].
-            sort_order: "asc" or "desc" for ascending / descending sort. When using "asc",
-                the "min" value will be returned. When using "desc", the "max" value will be returned.
+            filter: The filters to apply to the collection.
+                See [`FilterOptions`][agentlightning.store.collection.FilterOptions].
+            sort: Sort options. See [`SortOptions`][agentlightning.store.collection.SortOptions].
 
         Returns:
             The first item that matches the given filters, or None if no item matches.

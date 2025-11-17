@@ -26,7 +26,9 @@
 
 ::: agentlightning.store.collection.KeyValue
 
-::: agentlightning.store.collection.Filter
+::: agentlightning.store.collection.FilterOptions
+
+::: agentlightning.store.collection.SortOptions
 
 ::: agentlightning.store.collection.PaginatedResult
 
