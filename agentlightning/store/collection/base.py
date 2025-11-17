@@ -123,7 +123,7 @@ class Collection(Generic[T]):
 
     async def get(
         self,
-        filters: Filter,
+        filters: Optional[Filter] = None,
         filter_logic: Literal["and", "or"] = "and",
         sort_by: Optional[str] = None,
         sort_order: Literal["asc", "desc"] = "asc",
@@ -237,15 +237,15 @@ class KeyValue(Generic[K, V]):
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__} ({self.size()})>"
 
-    def get(self, key: K, default: V | None = None) -> V | None:
+    async def get(self, key: K, default: V | None = None) -> V | None:
         """Get the value for the given key, or the default value if the key is not found."""
         raise NotImplementedError()
 
-    def set(self, key: K, value: V) -> None:
+    async def set(self, key: K, value: V) -> None:
         """Set the value for the given key."""
         raise NotImplementedError()
 
-    def pop(self, key: K, default: V | None = None) -> V | None:
+    async def pop(self, key: K, default: V | None = None) -> V | None:
         """Pop the value for the given key, or the default value if the key is not found."""
         raise NotImplementedError()
 

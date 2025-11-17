@@ -646,29 +646,33 @@ def dict_key_value(dict_key_value_data: Dict[str, int]) -> DictBasedKeyValue[str
     return DictBasedKeyValue(dict_key_value_data)
 
 
-def test_dict_key_value_initial_state(dict_key_value: DictBasedKeyValue[str, int]) -> None:
+@pytest.mark.asyncio()
+async def test_dict_key_value_initial_state(dict_key_value: DictBasedKeyValue[str, int]) -> None:
     assert dict_key_value.size() == 2
-    assert dict_key_value.get("alpha") == 1
-    assert dict_key_value.get("missing") is None
+    assert await dict_key_value.get("alpha") == 1
+    assert await dict_key_value.get("missing") is None
 
 
-def test_dict_key_value_set_updates_and_expands(dict_key_value: DictBasedKeyValue[str, int]) -> None:
-    dict_key_value.set("gamma", 3)
+@pytest.mark.asyncio()
+async def test_dict_key_value_set_updates_and_expands(dict_key_value: DictBasedKeyValue[str, int]) -> None:
+    await dict_key_value.set("gamma", 3)
     assert dict_key_value.size() == 3
-    dict_key_value.set("alpha", 99)
-    assert dict_key_value.get("alpha") == 99
+    await dict_key_value.set("alpha", 99)
+    assert await dict_key_value.get("alpha") == 99
     assert dict_key_value.size() == 3
 
 
-def test_dict_key_value_pop_returns_default(dict_key_value: DictBasedKeyValue[str, int]) -> None:
-    assert dict_key_value.pop("beta") == 2
+@pytest.mark.asyncio()
+async def test_dict_key_value_pop_returns_default(dict_key_value: DictBasedKeyValue[str, int]) -> None:
+    assert await dict_key_value.pop("beta") == 2
     assert dict_key_value.size() == 1
-    assert dict_key_value.pop("missing", 42) == 42
+    assert await dict_key_value.pop("missing", 42) == 42
     assert dict_key_value.size() == 1
 
 
-def test_dict_key_value_does_not_mutate_input_mapping(dict_key_value_data: Dict[str, int]) -> None:
+@pytest.mark.asyncio()
+async def test_dict_key_value_does_not_mutate_input_mapping(dict_key_value_data: Dict[str, int]) -> None:
     key_value = DictBasedKeyValue(dict_key_value_data)
-    key_value.set("gamma", 3)
-    key_value.pop("alpha")
+    await key_value.set("gamma", 3)  # type: ignore[arg-type]
+    await key_value.pop("alpha")  # type: ignore[arg-type]
     assert dict_key_value_data == {"alpha": 1, "beta": 2}

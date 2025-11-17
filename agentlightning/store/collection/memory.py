@@ -411,7 +411,7 @@ class ListBasedCollection(Collection[T]):
 
     async def get(
         self,
-        filters: Filter,
+        filters: Optional[Filter] = None,
         filter_logic: Literal["and", "or"] = "and",
         sort_by: Optional[str] = None,
         sort_order: Literal["asc", "desc"] = "asc",
@@ -514,13 +514,13 @@ class DictBasedKeyValue(KeyValue[K, V]):
     def __init__(self, data: Optional[Mapping[K, V]] = None):
         self._values: Dict[K, V] = dict(data) if data else {}
 
-    def get(self, key: K, default: V | None = None) -> V | None:
+    async def get(self, key: K, default: V | None = None) -> V | None:
         return self._values.get(key, default)
 
-    def set(self, key: K, value: V) -> None:
+    async def set(self, key: K, value: V) -> None:
         self._values[key] = value
 
-    def pop(self, key: K, default: V | None = None) -> V | None:
+    async def pop(self, key: K, default: V | None = None) -> V | None:
         return self._values.pop(key, default)
 
     def size(self) -> int:
