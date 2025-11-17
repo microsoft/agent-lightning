@@ -1,6 +1,7 @@
 # Copyright (c) Microsoft. All rights reserved.
 
 import time
+from itertools import count
 from unittest.mock import Mock
 
 import pytest
@@ -43,14 +44,20 @@ def mock_readable_span() -> ReadableSpan:
     """Create a mock ReadableSpan for testing."""
     span = Mock()
     span.name = "test_span"
+    context_counter = count(1)
+
+    def _make_context() -> Mock:
+        """Generate a distinct span context each time it is requested."""
+        index = next(context_counter)
+        context = Mock()
+        context.trace_id = 111111
+        context.span_id = 222222 + index
+        context.is_remote = False
+        context.trace_state = {}
+        return context
 
     # Mock context
-    context = Mock()
-    context.trace_id = 111111
-    context.span_id = 222222
-    context.is_remote = False
-    context.trace_state = {}  # Make it an empty dict instead of Mock
-    span.get_span_context = Mock(return_value=context)
+    span.get_span_context = Mock(side_effect=_make_context)
 
     # Mock other attributes
     span.parent = None

@@ -699,6 +699,24 @@ async def test_span_sequence_generation(store_fixture: LightningStore, mock_read
 
 
 @pytest.mark.asyncio
+async def test_duplicate_span_id_error(store_fixture: LightningStore, mock_readable_span: Mock) -> None:
+    """Adding two spans with the same span_id should raise a ValueError."""
+    rollout = await store_fixture.enqueue_rollout(input={"test": "data"})
+    await store_fixture.dequeue_rollout()
+    attempts = await store_fixture.query_attempts(rollout.rollout_id)
+    attempt_id = attempts[0].attempt_id
+
+    # Force the mock to reuse the same span context for every call.
+    fixed_context = mock_readable_span.get_span_context()
+    mock_readable_span.get_span_context = Mock(return_value=fixed_context)
+
+    await store_fixture.add_otel_span(rollout.rollout_id, attempt_id, mock_readable_span)
+
+    with pytest.raises(ValueError, match="Item already exists"):
+        await store_fixture.add_otel_span(rollout.rollout_id, attempt_id, mock_readable_span)
+
+
+@pytest.mark.asyncio
 async def test_span_with_explicit_sequence_id(store_fixture: LightningStore, mock_readable_span: Mock) -> None:
     """Test providing explicit sequence_id to spans."""
     rollout = await store_fixture.enqueue_rollout(input={"test": "data"})

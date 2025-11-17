@@ -12,6 +12,7 @@ from typing import (
     Any,
     Callable,
     Dict,
+    Generic,
     List,
     Literal,
     Optional,
@@ -44,6 +45,8 @@ from .utils import healthcheck, propagate_status
 
 T_callable = TypeVar("T_callable", bound=Callable[..., Any])
 T_model = TypeVar("T_model", bound=BaseModel)
+T_collections = TypeVar("T_collections", bound=LightningCollections)
+
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +59,7 @@ def _healthcheck_wrapper(func: T_callable) -> T_callable:
     """
 
     @functools.wraps(func)
-    async def wrapper(self: CollectionBasedLightningStore, *args: Any, **kwargs: Any) -> Any:
+    async def wrapper(self: CollectionBasedLightningStore[T_collections], *args: Any, **kwargs: Any) -> Any:
         # Check if healthcheck is already running to prevent recursion
         if getattr(self, "_healthcheck_running", False):
             # Skip healthcheck if already running
@@ -95,7 +98,7 @@ def _generate_attempt_id() -> str:
     return "at-" + short_id
 
 
-class CollectionBasedLightningStore(LightningStore):
+class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
     """It's the standard implementation of LightningStore that uses collections to store data.
 
     If the store implementation is to use the store's default behavior, it's recommended to
@@ -109,10 +112,10 @@ class CollectionBasedLightningStore(LightningStore):
     def __init__(
         self,
         *,
-        collections: LightningCollections,
+        collections: T_collections,
     ):
         # rollouts and spans' storage
-        self.collections = LightningCollections()
+        self.collections = collections
 
         # Caches the latest resources ID.
         self._latest_resources_id: Union[str, None, Unset] = UNSET
@@ -224,7 +227,7 @@ class CollectionBasedLightningStore(LightningStore):
             await self.collections.rollouts.insert([rollout])
 
             # Notify the subclass that the rollout status has changed.
-            await self.on_rollout_status_change(rollout)
+            await self.on_rollout_update(rollout)
 
             # Return a rollout with attempt attached.
             return AttemptedRollout(**rollout.model_dump(), attempt=attempt)
@@ -266,7 +269,7 @@ class CollectionBasedLightningStore(LightningStore):
             await self.collections.rollout_queue.enqueue([rollout])  # add it to the end of the queue
 
             # Notify the subclass that the rollout status has changed.
-            await self.on_rollout_status_change(rollout)
+            await self.on_rollout_update(rollout)
 
             # Return the rollout with no attempt attached.
             return rollout
@@ -624,11 +627,11 @@ class CollectionBasedLightningStore(LightningStore):
             if rollout.status == "preparing":
                 rollout.status = "running"
                 await self.collections.rollouts.update([rollout])
-                await self.on_rollout_status_change(rollout)
+                await self.on_rollout_update(rollout)
             elif rollout.status in ["queuing", "requeuing"]:
                 rollout.status = "running"
                 await self.collections.rollouts.update([rollout])
-                await self.on_rollout_status_change(rollout)
+                await self.on_rollout_update(rollout)
 
         return span
 
@@ -809,7 +812,7 @@ class CollectionBasedLightningStore(LightningStore):
         Rollout.model_validate(rollout.model_dump())
 
         await self.collections.rollouts.update([rollout])
-        await self.on_rollout_status_change(rollout)
+        await self.on_rollout_update(rollout)
 
         return rollout
 
@@ -911,8 +914,8 @@ class CollectionBasedLightningStore(LightningStore):
             await self.collections.workers.update([worker])
             return worker
 
-    async def on_rollout_status_change(self, rollout: Rollout) -> None:
-        """Callback for subclasses to implement specific logic when a rollout status changes.
+    async def on_rollout_update(self, rollout: Rollout) -> None:
+        """Callback for subclasses to implement specific logic when a rollout changes.
 
         Subclass should not lock this method with `collections.atomic()` because the caller will already hold the lock.
         """
@@ -921,7 +924,8 @@ class CollectionBasedLightningStore(LightningStore):
     async def get_running_rollouts(self) -> List[AttemptedRollout]:
         """Get all running rollouts.
 
-        Subclass can implement hacks to make it more efficient.
+        As this is invoked very frequently (probably at every requests),
+        subclass can implement hacks to make it more efficient.
         It should also be unlocked and let the caller hold the lock.
         """
         running_rollouts: List[AttemptedRollout] = []
