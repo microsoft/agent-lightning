@@ -17,3 +17,26 @@ from .store import *
 from .tracer import *
 from .trainer import *
 from .types import *
+
+from typing import Any, Dict, List, Literal, Optional, Tuple, TypedDict, cast
+
+def wrap_message(content: str) -> str:
+    start_token = '<AGL_MESSAGE_START>'
+    end_token = '<AGL_MESSAGE_END>'
+    if not content.startswith(start_token):
+        content = start_token + content
+    if not content.endswith(end_token):
+        content += end_token
+    return content
+
+
+def add_message(message1: str | List[Dict[str, Any]], message2: str | Dict[str, Any]) -> str | List[Dict[str, Any]]:
+    
+    if isinstance(message1, list):
+        new_message = []
+        for msg in message1:
+            new_message.append({"role": msg["role"], "content": wrap_message(msg["content"])})
+        new_message.append({"role": message2["role"], "content": wrap_message(message2["content"])})
+        return new_message
+    else:
+        return wrap_message(message1) + wrap_message(message2)

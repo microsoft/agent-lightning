@@ -166,19 +166,19 @@ class SearchR1Agent(agl.LitAgent[Dict[str, Any]]):
                     client, llm.model, messages=hist_messages, temperature=temperature, max_tokens=500
                 )
                 valid_turn_response = postprocess_response(turn_response)
-                hist_messages.append({"role": "assistant", "content": valid_turn_response})
+                hist_messages = agl.add_message(hist_messages, {"role": "assistant", "content": valid_turn_response})
                 turn_env_feedback = execute_response(valid_turn_response)
                 if len(turn_env_feedback) == 0:
                     finished_flag = True
                 else:
-                    hist_messages.append({"role": "user", "content": turn_env_feedback})
+                    hist_messages = agl.add_message(hist_messages, {"role": "user", "content": turn_env_feedback})
                 logger.info(f"TURN ID {turn_id} | RESP: {turn_response} | ENV FEEDBACK: {turn_env_feedback}")
 
             if not finished_flag:
                 turn_response = call_llm(
                     client, llm.model, messages=hist_messages, temperature=temperature, max_tokens=500
                 )
-                hist_messages.append({"role": "assistant", "content": turn_response})
+                hist_messages = agl.add_message(hist_messages, {"role": "assistant", "content": turn_response})
                 logger.info(f"LAST TURN GENERATE | RESP: {turn_response}")
 
             last_turn_response = [msg["content"] for msg in hist_messages if msg["role"] == "assistant"][-1]

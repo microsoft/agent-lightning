@@ -68,10 +68,10 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
         },
     },
     "trainer": {
-        "n_gpus_per_node": 8,
+        "n_gpus_per_node": 1,
         "val_before_train": True,
         "critic_warmup": 0,
-        "logger": ["console", "wandb"],
+        "logger": ["console"],
         "project_name": "AgentLightning",
         "experiment_name": "searchr1",
         "nnodes": 1,

@@ -814,11 +814,13 @@ class AgentModeDaemon:
             unmerged_count = 0  # only for debug
 
             for rollout_id, sample_info in finished_id_to_sample_info.items():
+                breakpoint()
                 merged_trace_idx: List[List[int]] = []
                 current_merged_trace_idx: List[int] = []
                 current_context: List[int] = []
                 turn_ids = []  # log data, only for debug testing
                 for turn_index, trace in enumerate(sample_info["trace_list"]):
+                    breakpoint()
                     # log data, only for debug testing
                     turn_ids.append(
                         {"nxt_turn": trace["prompt_ids"][:] + trace["response_ids"][:], "cur": current_context[:]}
