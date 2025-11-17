@@ -618,7 +618,16 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         if not latest_attempt:
             raise ValueError(f"No attempts found for rollout {span.rollout_id}")
 
-        await self.collections.spans.insert([span])
+        try:
+            await self.collections.spans.insert([span])
+        except ValueError as e:
+            if "Item already exists" in str(e):
+                # This is a duplicate span, we warn it
+                logger.error(
+                    f"Duplicate span added for rollout={span.rollout_id}, attempt={span.attempt_id}, span={span.span_id}. Skipping."
+                )
+                return span
+            raise
 
         # Update attempt heartbeat and ensure persistence
         current_attempt.last_heartbeat_time = time.time()
