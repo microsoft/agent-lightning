@@ -55,6 +55,11 @@ def test_paginated_result_behaves_like_sequence() -> None:
     assert result[1:] == ["b", "c"]
     assert list(result) == ["a", "b", "c"]
 
+    assert repr(result) == "<PaginatedResult (1:3 of 5) ['a', ...]>"
+
+    result2 = PaginatedResult(items=["a", "b", "c"], limit=-1, offset=1, total=5)
+    assert repr(result2) == "<PaginatedResult (1: of 5) ['a', ...]>"
+
 
 # Core CRUD Operations Tests
 

@@ -524,3 +524,9 @@ class PaginatedResult(BaseModel, Sequence[T_item]):
     # We sacrifice that for list(paginated_result) to work.
     def __iter__(self) -> Iterator[T_item]:  # type: ignore
         return iter(self.items)
+
+    def __repr__(self) -> str:
+        first_item_repr = repr(self.items[0]) if self.items else "empty"
+        items_repr = f"[{first_item_repr}, ...]" if len(self.items) > 1 else first_item_repr
+        slice_repr = f"{self.offset}:{self.offset + self.limit}" if self.limit >= 0 else f"{self.offset}:"
+        return f"<PaginatedResult ({slice_repr} of {self.total}) {items_repr}>"

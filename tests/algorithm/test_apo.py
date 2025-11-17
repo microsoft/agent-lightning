@@ -32,13 +32,13 @@ class DummyTraceMessagesAdapter(TraceToMessages):
         super().__init__()
         self.seen_spans: Sequence[Span] | None = None
 
-    def adapt(self, source: List[Span], /) -> List[Dict[str, Any]]:  # type: ignore[override]
+    def adapt(self, source: Sequence[Span], /) -> List[Dict[str, Any]]:  # type: ignore[override]
         self.seen_spans = list(source)
         return [dict(payload="converted")]
 
 
 class WrongAdapter(TraceAdapter[List[int]]):
-    def adapt(self, source: List[Span], /) -> List[int]:
+    def adapt(self, source: Sequence[Span], /) -> List[int]:
         return [len(source)]
 
 

@@ -8,6 +8,7 @@ import hashlib
 import logging
 import time
 import uuid
+import warnings
 from typing import (
     Any,
     Callable,
@@ -402,8 +403,21 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         See [`LightningStore.query_rollouts()`][agentlightning.LightningStore.query_rollouts] for semantics.
         """
         # Construct filters condition
-        resolved_status = status_in if status_in is not None else status
-        resolved_rollout_ids = rollout_id_in if rollout_id_in is not None else rollout_ids
+        if status_in is not None:
+            resolved_status = status_in
+        elif status is not None:
+            warnings.warn("status is deprecated, use status_in instead", DeprecationWarning, stacklevel=2)
+            resolved_status = status
+        else:
+            resolved_status = None
+
+        if rollout_id_in is not None:
+            resolved_rollout_ids = rollout_id_in
+        elif rollout_ids is not None:
+            warnings.warn("rollout_ids is deprecated, use rollout_id_in instead", DeprecationWarning, stacklevel=2)
+            resolved_rollout_ids = rollout_ids
+        else:
+            resolved_rollout_ids = None
 
         filters: FilterOptions = {}
         if filter_logic == "or":

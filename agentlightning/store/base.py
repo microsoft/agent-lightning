@@ -330,8 +330,9 @@ class LightningStore:
             rollout_ids: Deprecated field. Use `rollout_id_in` instead.
 
         Returns:
-            A list of matching rollouts (or [`AttemptedRollout`][agentlightning.AttemptedRollout]
+            A sequence of matching rollouts (or [`AttemptedRollout`][agentlightning.AttemptedRollout]
             when attempts exist). Ordering is deterministic when `sort_by` is set.
+            The return value is not guaranteed to be a list.
 
         Raises:
             NotImplementedError: Subclasses must implement the query.
@@ -361,7 +362,8 @@ class LightningStore:
             offset: Offset into the results.
 
         Returns:
-            Attempts. Returns an empty list when none exist.
+            Sequence of Attempts. Returns an empty sequence when none exist.
+            The return value is not guaranteed to be a list.
 
         Raises:
             NotImplementedError: Subclasses must implement the query.
@@ -426,6 +428,7 @@ class LightningStore:
         Returns:
             [`ResourcesUpdate`][agentlightning.ResourcesUpdate] objects.
             By default, resources are sorted in a deterministic but undefined order.
+            The return value is not guaranteed to be a list.
 
         Raises:
             NotImplementedError: Subclasses must implement retrieval.
@@ -562,6 +565,7 @@ class LightningStore:
 
         Returns:
             An ordered list of spans (possibly empty).
+            The return value is not guaranteed to be a list.
 
         Raises:
             NotImplementedError: Subclasses must implement the query.
@@ -709,7 +713,8 @@ class LightningStore:
             offset: Offset into the results.
 
         Returns:
-            Workers. Returns an empty list when none exist.
+            Sequence of Workers. Returns an empty sequence when none exist.
+            The return value is not guaranteed to be a list.
         """
         raise NotImplementedError()
 
