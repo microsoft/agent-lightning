@@ -198,7 +198,9 @@ class InMemoryLightningStore(CollectionBasedLightningStore[InMemoryLightningColl
 
     async def get_running_rollouts(self) -> List[AttemptedRollout]:
         """Accelerated version of `get_running_rollouts` for in-memory store. Used for healthcheck."""
-        rollouts = await self.collections.rollouts.query(filter={"rollout_id": {"within": self._running_rollout_ids}})
+        rollouts = await self.collections.rollouts.query(
+            filter={"rollout_id": {"within": list(self._running_rollout_ids)}}
+        )
         running_rollouts: List[AttemptedRollout] = []
         for rollout in rollouts.items:
             latest_attempt = await self.collections.attempts.get(
@@ -212,10 +214,15 @@ class InMemoryLightningStore(CollectionBasedLightningStore[InMemoryLightningColl
             running_rollouts.append(AttemptedRollout(**rollout.model_dump(), attempt=latest_attempt))
         return running_rollouts
 
-    async def query_spans(self, rollout_id: str, attempt_id: str | Literal["latest"] | None = None) -> List[Span]:
+    async def query_spans(
+        self,
+        rollout_id: str,
+        attempt_id: str | Literal["latest"] | None = None,
+        **kwargs: Any,
+    ) -> List[Span]:
         if rollout_id in self._evicted_rollout_span_sets:
             raise RuntimeError(f"Spans for rollout {rollout_id} have been evicted")
-        return await super().query_spans(rollout_id, attempt_id)
+        return await super().query_spans(rollout_id, attempt_id, **kwargs)
 
     async def _add_span_unlocked(self, span: Span) -> Span:
         """In-memory store needs to maintain the span data in memory, and evict spans when memory is low."""
