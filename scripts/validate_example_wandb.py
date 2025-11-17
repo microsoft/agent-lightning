@@ -24,7 +24,7 @@ else:
     print(f"::error::Run with name '{run_name}' not found in project '{project}'.")
     sys.exit(1)
 
-hist = run.history(keys=["val/reward"], pandas=True)
+hist = run.history(keys=["val/reward", "val/n_rollouts_w_reward", "val/n_rollouts_w_trace"], pandas=True)
 print("History:", hist)
 if hist.empty:
     print("::error::No history found for the run.")
