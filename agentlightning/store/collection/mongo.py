@@ -3,18 +3,23 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Type, TypeVar, cast
+from datetime import datetime
+from typing import Any, Dict, Generic, List, Mapping, Optional, Sequence, Type, TypeVar, cast
 
-from pydantic import BaseModel
+from pydantic import BaseModel, TypeAdapter
 from pymongo import AsyncMongoClient
 from pymongo.asynchronous.database import AsyncDatabase
-from pymongo.errors import DuplicateKeyError
+from pymongo.errors import CollectionInvalid, DuplicateKeyError
 
 from agentlightning.types import FilterOptions, PaginatedResult, SortOptions
 
-from .base import Collection, normalize_filter_options, resolve_sort_options
+from .base import Collection, KeyValue, Queue, normalize_filter_options, resolve_sort_options
 
 T_model = TypeVar("T_model", bound=BaseModel)
+
+T_generic = TypeVar("T_generic")
+K = TypeVar("K")
+V = TypeVar("V")
 
 
 def _field_ops_to_conditions(field: str, ops: Mapping[str, Any]) -> List[Dict[str, Any]]:
@@ -279,26 +284,244 @@ class MongoBasedCollection(Collection[T_model]):
                 raise ValueError(f"Item with primary key(s) {pk_filter} does not exist")
 
 
-if __name__ == "__main__":
+class MongoBasedQueue(Queue[T_generic], Generic[T_generic]):
+    """Mongo-based implementation of Queue backed by a MongoDB collection.
 
-    async def main():
-        from pymongo import AsyncMongoClient
+    Items are stored append-only; dequeue marks items as consumed instead of deleting them.
+    """
 
-        from agentlightning.types import Rollout
+    def __init__(
+        self,
+        db: AsyncDatabase[Mapping[str, Any]],
+        collection_name: str,
+        partition_id: str,
+        item_type: Type[T_generic],
+    ) -> None:
+        """
+        Args:
+            db: The MongoDB database.
+            collection_name: The name of the collection backing the queue.
+            partition_id: Partition identifier; allows multiple logical queues in one collection.
+            item_type: The Python type of queue items (primitive or BaseModel subclass).
+        """
+        self._db = db
+        self._collection = db[collection_name]
+        self._partition_id = partition_id
+        self._item_type = item_type
+        self._adapter: TypeAdapter[T_generic] = TypeAdapter(item_type)
 
-        client = AsyncMongoClient("mongodb://localhost:27017/?replicaSet=rs0")
-        db = client["test"]
-        collection = MongoBasedCollection(db, "test", "test-123", ["rollout_id"], Rollout)
-        await collection.ensure_collection(create_indexes=True)
-        import time
+    def item_type(self) -> Type[T_generic]:
+        return self._item_type
 
-        await collection.insert(
-            [Rollout(rollout_id="test-123", input="test-123", start_time=time.time(), status="running")]
+    async def ensure_collection(self) -> None:
+        """Ensure the backing collection exists.
+
+        If it already exists, this is a no-op.
+        """
+        existing = await self._db.list_collection_names()
+        if self._collection.name in existing:
+            # Assume it's already correctly configured.
+            return
+
+        try:
+            # Create a normal (non-capped) collection.
+            await self._db.create_collection(self._collection.name)
+        except CollectionInvalid as exc:
+            raise CollectionInvalid(f"Failed to create collection '{self._collection.name}'") from exc
+
+        # Index to speed up partition + consumed lookups.
+        await self._collection.create_index(
+            [("partition_id", 1), ("consumed", 1), ("_id", 1)],
+            name="queue_partition_consumed_id",
         )
 
-        result = await collection.query(filter={"status": {"exact": "running"}})
-        print(result)
+    async def has(self, item: T_generic) -> bool:
+        encoded = self._adapter.dump_python(item, mode="python")
+        doc = await self._collection.find_one(
+            {
+                "partition_id": self._partition_id,
+                "consumed": False,
+                "value": encoded,
+            }
+        )
+        return doc is not None
 
-    import asyncio
+    async def enqueue(self, items: Sequence[T_generic]) -> Sequence[T_generic]:
+        if not items:
+            return []
 
-    asyncio.run(main())
+        docs: Sequence[Mapping[str, Any]] = [
+            {
+                "partition_id": self._partition_id,
+                "value": self._adapter.dump_python(item, mode="python"),
+                "consumed": False,
+                "created_at": datetime.now(),
+            }
+            for item in items
+        ]
+
+        await self._collection.insert_many(list(docs))
+        return list(items)
+
+    async def dequeue(self, limit: int = 1) -> Sequence[T_generic]:
+        if limit <= 0:
+            return []
+
+        results: list[T_generic] = []
+
+        # Atomic claim loop using find_one_and_update
+        for _ in range(limit):
+            doc = await self._collection.find_one_and_update(
+                {
+                    "partition_id": self._partition_id,
+                    "consumed": False,
+                },
+                {"$set": {"consumed": True}},
+                sort=[("_id", 1)],  # FIFO using insertion order
+                return_document=True,
+            )
+            if doc is None:  # type: ignore
+                # No more items to dequeue
+                break
+
+            raw_value = doc["value"]
+            item = self._adapter.validate_python(raw_value)
+            results.append(item)
+
+        return results
+
+    async def peek(self, limit: int = 1) -> Sequence[T_generic]:
+        if limit <= 0:
+            return []
+
+        cursor = (
+            self._collection.find(
+                {
+                    "partition_id": self._partition_id,
+                    "consumed": False,
+                }
+            )
+            .sort("_id", 1)
+            .limit(limit)
+        )
+
+        items: list[T_generic] = []
+        async for doc in cursor:
+            raw_value = doc["value"]
+            items.append(self._adapter.validate_python(raw_value))
+
+        return items
+
+    async def size(self) -> int:
+        return await self._collection.count_documents(
+            {
+                "partition_id": self._partition_id,
+                "consumed": False,
+            }
+        )
+
+
+class MongoBasedKeyValue(KeyValue[K, V], Generic[K, V]):
+    """Mongo-based implementation of KeyValue."""
+
+    def __init__(
+        self,
+        db: AsyncDatabase[Mapping[str, Any]],
+        collection_name: str,
+        partition_id: str,
+        key_type: Type[K],
+        value_type: Type[V],
+    ) -> None:
+        """
+        Args:
+            db: The MongoDB database.
+            collection_name: The name of the collection backing the key-value store.
+            partition_id: Partition identifier; allows multiple logical maps in one collection.
+            key_type: The Python type of keys (primitive or BaseModel).
+            value_type: The Python type of values (primitive or BaseModel).
+        """
+        self._db = db
+        self._collection = db[collection_name]
+        self._partition_id = partition_id
+        self._key_type = key_type
+        self._value_type = value_type
+        self._key_adapter: TypeAdapter[K] = TypeAdapter(key_type)
+        self._value_adapter: TypeAdapter[V] = TypeAdapter(value_type)
+
+    async def ensure_collection(self, *, create_indexes: bool = True) -> None:
+        """Ensure the backing collection exists (and optionally its indexes)."""
+        existing = await self._db.list_collection_names()
+        if self._collection.name not in existing:
+            await self._db.create_collection(self._collection.name)
+
+        if create_indexes:
+            await self._collection.create_index(
+                [("partition_id", 1), ("key", 1)],
+                unique=True,
+                name="uniq_partition_key",
+            )
+
+    async def has(self, key: K) -> bool:
+        encoded_key = self._key_adapter.dump_python(key, mode="python")
+        doc = await self._collection.find_one(
+            {
+                "partition_id": self._partition_id,
+                "key": encoded_key,
+            }
+        )
+        return doc is not None
+
+    async def get(self, key: K, default: V | None = None) -> V | None:
+        encoded_key = self._key_adapter.dump_python(key, mode="python")
+        doc = await self._collection.find_one(
+            {
+                "partition_id": self._partition_id,
+                "key": encoded_key,
+            }
+        )
+        if doc is None:
+            return default
+
+        raw_value = doc["value"]
+        return self._value_adapter.validate_python(raw_value)
+
+    async def set(self, key: K, value: V) -> None:
+        encoded_key = self._key_adapter.dump_python(key, mode="python")
+        encoded_value = self._value_adapter.dump_python(value, mode="python")
+        try:
+            await self._collection.replace_one(
+                {
+                    "partition_id": self._partition_id,
+                    "key": encoded_key,
+                },
+                {
+                    "partition_id": self._partition_id,
+                    "key": encoded_key,
+                    "value": encoded_value,
+                },
+                upsert=True,
+            )
+        except DuplicateKeyError as exc:
+            # Very unlikely with replace_one+upsert, but normalize anyway.
+            raise ValueError("Duplicate key error while setting key-value item") from exc
+
+    async def pop(self, key: K, default: V | None = None) -> V | None:
+        encoded_key = self._key_adapter.dump_python(key, mode="python")
+        doc = await self._collection.find_one_and_delete(
+            {
+                "partition_id": self._partition_id,
+                "key": encoded_key,
+            }
+        )
+        if doc is None:  # type: ignore
+            return default
+
+        raw_value = doc["value"]
+        return self._value_adapter.validate_python(raw_value)
+
+    async def size(self) -> int:
+        return await self._collection.count_documents(
+            {
+                "partition_id": self._partition_id,
+            }
+        )

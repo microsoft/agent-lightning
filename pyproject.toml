@@ -287,6 +287,13 @@ exclude = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+  "openai: tests that require OpenAI API",
+  "gpu: tests that require GPU",
+  "agentops: tests that require AgentOps",
+  "llmproxy: tests that require LiteLLM",
+  "mongo: tests that require MongoDB",
+]
 
 [tool.black]
 line-length = 120

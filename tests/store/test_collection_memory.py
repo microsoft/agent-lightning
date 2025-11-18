@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Dict, Iterable, List, Literal, Mapping, Sequence, Tuple
+import time
+from typing import Any, Dict, Iterable, List, Literal, Mapping, Sequence, Tuple, cast
 
 import pytest
 from pydantic import BaseModel, Field
@@ -10,6 +11,7 @@ from pydantic import BaseModel, Field
 import agentlightning.store.collection.memory as memory_module
 from agentlightning.store.collection import DequeBasedQueue, DictBasedKeyValue, ListBasedCollection
 from agentlightning.store.collection.memory import _item_matches_filters  # pyright: ignore[reportPrivateUsage]
+from agentlightning.types import Rollout
 
 
 class SampleItem(BaseModel):
@@ -814,3 +816,44 @@ async def test_dict_key_value_does_not_mutate_input_mapping(dict_key_value_data:
     await key_value.set("gamma", 3)  # type: ignore[arg-type]
     await key_value.pop("alpha")  # type: ignore[arg-type]
     assert dict_key_value_data == {"alpha": 1, "beta": 2}
+
+
+@pytest.mark.mongo
+@pytest.mark.asyncio()
+async def test_mongo_based_sanity_check() -> None:
+    from pymongo import AsyncMongoClient
+    from pymongo.asynchronous.database import AsyncDatabase
+
+    from agentlightning.store.collection.mongo import MongoBasedCollection, MongoBasedKeyValue, MongoBasedQueue
+
+    client = AsyncMongoClient("mongodb://localhost:27017/?replicaSet=rs0")  # type: ignore
+    await client.drop_database("test-database")
+    db = cast(AsyncDatabase[Any], client["test-database"])  # type: ignore
+    collection = MongoBasedCollection(db, "test", "test-123", ["rollout_id"], Rollout)
+    await collection.ensure_collection(create_indexes=True)
+
+    start_time = time.time()
+    await collection.insert([Rollout(rollout_id="test-123", input="test-123", start_time=start_time, status="running")])
+
+    result = await collection.query(filter={"status": {"exact": "running"}})
+    assert result.items == [Rollout(rollout_id="test-123", input="test-123", start_time=start_time, status="running")]
+
+    # Queue demo: capped collection of rollout IDs (strings)
+    rollout_queue = MongoBasedQueue[str](db, "rollout_queue", "partition-1", str)
+    await rollout_queue.ensure_collection()
+
+    await rollout_queue.enqueue(["r1", "r2", "r3"])
+    assert await rollout_queue.size() == 3
+    assert await rollout_queue.peek(2) == ["r1", "r2"]
+    assert await rollout_queue.dequeue(2) == ["r1", "r2"]
+    assert await rollout_queue.size() == 1
+
+    # KeyValue demo: simple counter
+    span_kv = MongoBasedKeyValue[str, int](db, "span_sequence_ids", "partition-1", str, int)
+    await span_kv.ensure_collection()
+
+    await span_kv.set("span-123", 1)
+    assert await span_kv.has("span-123")
+    assert await span_kv.get("span-123") == 1
+    assert await span_kv.pop("span-123") == 1
+    assert await span_kv.has("span-123") == False
