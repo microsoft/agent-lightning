@@ -370,6 +370,7 @@ class LitAgentRunner(Runner[T_task]):
                         interval = self._heartbeat_interval + self._random_state.uniform(
                             -self._interval_jitter, self._interval_jitter
                         )
+                        interval = max(interval, 0.01)
                         await asyncio.wait_for(stop_event.wait(), timeout=interval)
 
             task = asyncio.create_task(heartbeat_loop(), name=f"{self.get_worker_id()}-heartbeat")
@@ -392,6 +393,7 @@ class LitAgentRunner(Runner[T_task]):
                     interval = self._heartbeat_interval + self._random_state.uniform(
                         -self._interval_jitter, self._interval_jitter
                     )
+                    interval = max(interval, 0.01)
                     stop_evt.wait(interval)
 
             thread = threading.Thread(target=thread_worker, name=f"{self.get_worker_id()}-heartbeat", daemon=True)
@@ -416,6 +418,7 @@ class LitAgentRunner(Runner[T_task]):
                 If set during the sleep period, the method returns immediately.
         """
         interval = self._poll_interval + self._random_state.uniform(-self._interval_jitter, self._interval_jitter)
+        interval = max(interval, 0.01)
         if event is None:
             await asyncio.sleep(interval)
             return
