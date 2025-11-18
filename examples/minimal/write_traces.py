@@ -15,7 +15,7 @@ agl store --port 45993 --log-level DEBUG
 import argparse
 import asyncio
 import time
-from typing import List
+from typing import Sequence
 
 from openai import AsyncOpenAI
 from rich.console import Console
@@ -112,7 +112,7 @@ async def send_traces_via_agentops(use_client: bool = False):
         await store.close()
 
 
-async def _verify_agentops_traces(spans: List[Span], use_client: bool = False):
+async def _verify_agentops_traces(spans: Sequence[Span], use_client: bool = False):
     """Expected traces to something like:
 
     ```python

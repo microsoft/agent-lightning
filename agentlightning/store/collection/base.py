@@ -6,23 +6,19 @@ from typing import (
     Any,
     AsyncContextManager,
     Generic,
-    Iterable,
-    Literal,
-    Mapping,
     Optional,
     Sequence,
     Type,
-    TypedDict,
     TypeVar,
-    Union,
 )
-
-from pydantic import BaseModel
 
 from agentlightning.types import (
     Attempt,
+    FilterOptions,
+    PaginatedResult,
     ResourcesUpdate,
     Rollout,
+    SortOptions,
     Span,
     Worker,
 )
@@ -30,68 +26,6 @@ from agentlightning.types import (
 T = TypeVar("T")  # Recommended to be a BaseModel
 K = TypeVar("K")
 V = TypeVar("V")
-
-
-class FilterField(TypedDict, total=False):
-    """An operator dict for a single field."""
-
-    exact: Any
-    within: Iterable[Any]
-    contains: str
-
-
-FilterOptions = Mapping[Union[str, Literal["_aggregate"]], Union[FilterField, Literal["and", "or"]]]
-
-"""A mapping of field name -> operator dict.
-
-Each operator dict can contain:
-
-- "exact": value for exact equality.
-- "within": iterable of allowed values.
-- "contains": substring to search for in string fields.
-
-Example:
-
-```json
-{
-    "_aggregate": "or",
-    "status": {"exact": "active"},
-    "id": {"within": [1, 2, 3]},
-    "name": {"contains": "foo"},
-}
-```
-
-The filter can also have a special field called "_aggregate" that can be used to specify the logic
-to combine the results of the filters:
-
-- "and": all conditions must match. This is the default value if not specified.
-- "or": at least one condition must match.
-
-All conditions within a field and between different fields are
-stored in a unified pool and combined using `_aggregate`.
-"""
-
-
-class SortOptions(TypedDict):
-    """Options for sorting the collection."""
-
-    name: str
-    """The name of the field to sort by."""
-    order: Literal["asc", "desc"]
-    """The order to sort by."""
-
-
-class PaginatedResult(BaseModel, Generic[T]):
-    """Result of a paginated query."""
-
-    items: Sequence[T]
-    """Items in the result."""
-    limit: int
-    """Limit of the result."""
-    offset: int
-    """Offset of the result."""
-    total: int
-    """Total number of items in the collection."""
 
 
 class Collection(Generic[T]):
@@ -123,10 +57,10 @@ class Collection(Generic[T]):
 
         Args:
             filter:
-                The filters to apply to the collection. See [`FilterOptions`][agentlightning.store.collection.FilterOptions].
+                The filters to apply to the collection. See [`FilterOptions`][agentlightning.FilterOptions].
 
             sort:
-                The options for sorting the collection. See [`SortOptions`][agentlightning.store.collection.SortOptions].
+                The options for sorting the collection. See [`SortOptions`][agentlightning.SortOptions].
                 The field must exist in the model. If field might contain null values, in which case the behavior is undefined
                 (i.e., depending on the implementation).
 

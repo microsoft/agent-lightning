@@ -99,7 +99,7 @@ async def find_best_prompt(store, prompts_to_test, task_input):
         await store.wait_for_rollouts([rollout.rollout_id])
 
         # 4. Query the completed rollout and its spans
-        completed_rollout = (await store.query_rollouts([rollout.rollout_id]))[0]
+        completed_rollout = await store.get_rollout_by_id(rollout.rollout_id)
         print(f"[Algo] Received Result: {completed_rollout.model_dump_json(indent=None)}")
 
         spans = await store.query_spans(rollout.rollout_id)

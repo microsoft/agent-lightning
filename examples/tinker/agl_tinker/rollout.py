@@ -40,7 +40,7 @@ T_task = TypeVar("T_task")
 WAIT_FOR_ROLLOUTS_INTERVAL = 5.0
 
 
-def reconstruct_transitions(spans: List[Span], adapter: TraceToTripletBase, rollout_id: str) -> Trajectory:
+def reconstruct_transitions(spans: Sequence[Span], adapter: TraceToTripletBase, rollout_id: str) -> Trajectory:
     """Convert Agent-lightning spans into a Tinker `Trajectory`.
 
     This function infers observations, actions, and rewards from the trace triplets emitted by Agent-lightning's

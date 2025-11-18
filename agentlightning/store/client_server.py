@@ -9,7 +9,21 @@ import threading
 import time
 import traceback
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Dict, Generic, List, Literal, Optional, Sequence, TypeVar, Union
+from typing import (
+    Any,
+    Awaitable,
+    Callable,
+    Dict,
+    List,
+    Literal,
+    Mapping,
+    Optional,
+    Sequence,
+    Tuple,
+    Type,
+    TypeVar,
+    Union,
+)
 
 import aiohttp
 from fastapi import APIRouter, Body, Depends, FastAPI, HTTPException
@@ -32,6 +46,7 @@ from agentlightning.types import (
     AttemptedRollout,
     AttemptStatus,
     NamedResources,
+    PaginatedResult,
     ResourcesUpdate,
     Rollout,
     RolloutConfig,
@@ -54,13 +69,7 @@ API_AGL_PREFIX = "/agl"
 API_V1_AGL_PREFIX = API_V1_PREFIX + API_AGL_PREFIX
 
 T = TypeVar("T")
-
-
-class PaginatedResponse(BaseModel, Generic[T]):
-    items: List[T]
-    limit: int
-    offset: int
-    total: int
+T_model = TypeVar("T_model", bound=BaseModel)
 
 
 class RolloutRequest(BaseModel):
@@ -128,7 +137,7 @@ class QueryAttemptsRequest(BaseModel):
     limit: int = -1
     offset: int = 0
     # Sorting
-    sort_by: Optional[str] = None
+    sort_by: Optional[str] = "sequence_id"
     sort_order: Literal["asc", "desc"] = "asc"
 
 
@@ -161,7 +170,7 @@ class QuerySpansRequest(BaseModel):
     limit: int = -1
     offset: int = 0
     # Sorting
-    sort_by: Optional[str] = None
+    sort_by: Optional[str] = "sequence_id"
     sort_order: Literal["asc", "desc"] = "asc"
 
 
@@ -176,98 +185,6 @@ class QueryWorkersRequest(BaseModel):
     sort_order: Literal["asc", "desc"] = "asc"
     # Filtering logic
     filter_logic: Literal["and", "or"] = "and"
-
-
-def _apply_filters_sort_paginate(
-    items: List[T],
-    filters: Dict[str, Any],
-    filter_logic: Literal["and", "or"],
-    sort_by: Optional[str],
-    sort_order: Literal["asc", "desc"],
-    limit: int,
-    offset: int,
-) -> PaginatedResponse[T]:
-    """Apply filtering, sorting, and pagination to a list of items."""
-    # Apply filters
-    filtered_items: List[T] = []
-    if not filters:
-        filtered_items = items
-    else:
-        for item in items:
-            matches: List[bool] = []
-            for key, value in filters.items():
-                if value is None:
-                    continue
-
-                # Handle _in suffix (list membership)
-                if key.endswith("_in"):
-                    field = key[:-3]
-                    item_value = getattr(item, field, None)
-                    matches.append(item_value in value if isinstance(value, list) else False)
-                # Handle _contains suffix (substring match)
-                elif key.endswith("_contains"):
-                    field = key[:-9]
-                    item_value = getattr(item, field, None)
-                    if item_value is not None and isinstance(item_value, str) and isinstance(value, str):
-                        matches.append(value in item_value)
-                    else:
-                        matches.append(False)
-                # Exact match
-                else:
-                    item_value = getattr(item, key, None)
-                    matches.append(item_value == value)
-
-            if matches:
-                if filter_logic == "and":
-                    if all(matches):
-                        filtered_items.append(item)
-                else:  # "or"
-                    if any(matches):
-                        filtered_items.append(item)
-
-    # Apply sorting
-
-    def _get_sort_value(item: T, sort_by: str) -> Any:
-        if sort_by.endswith("_time"):
-            value = getattr(item, sort_by, None)
-            if value is None:
-                value = float("inf")
-            return value
-        else:
-            # Other than _time, we assume the value must be a string
-            value = getattr(item, sort_by, None)
-            if value is None:
-                if sort_by not in item.__class__.model_fields:  # type: ignore
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"Failed to sort items by {sort_by}: {sort_by} is not a field of {item.__class__.__name__}",
-                    )
-                field_type = str(item.__class__.model_fields[sort_by].annotation)  # type: ignore
-                if "str" in field_type or "Literal" in field_type:
-                    return ""
-                if "int" in field_type:
-                    return 0
-                if "float" in field_type:
-                    return 0.0
-                raise HTTPException(
-                    status_code=400, detail=f"Failed to sort items by {sort_by}: {value} is not a string or number"
-                )
-            return value
-
-    if sort_by:
-        reverse = sort_order == "desc"
-        filtered_items.sort(key=lambda x: _get_sort_value(x, sort_by), reverse=reverse)
-
-    # Get total count before pagination
-    total = len(filtered_items)
-
-    # Apply pagination
-    if limit == -1:
-        paginated_items = filtered_items[offset:]
-    else:
-        paginated_items = filtered_items[offset : offset + limit]
-
-    return PaginatedResponse(items=paginated_items, limit=limit, offset=offset, total=total)
 
 
 class CachedStaticFiles(StaticFiles):
@@ -546,6 +463,48 @@ class LightningStoreServer(LightningStore):
 
         api = APIRouter(prefix=API_V1_PREFIX)
 
+        def _validate_paginated_request(
+            request: Union[
+                QueryRolloutsRequest,
+                QueryAttemptsRequest,
+                QueryResourcesRequest,
+                QueryWorkersRequest,
+                QuerySpansRequest,
+            ],
+            target_type: Type[T_model],
+        ) -> None:
+            """Raise an error early if the request is not a valid paginated request."""
+            if request.sort_by is not None and request.sort_by not in target_type.model_fields:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid sort_by: {request.sort_by}, allowed fields are: {', '.join(target_type.model_fields.keys())}",
+                )
+            if request.sort_order not in ["asc", "desc"]:
+                raise HTTPException(
+                    status_code=400, detail=f"Invalid sort_order: {request.sort_order}, allowed values are: asc, desc"
+                )
+            if request.limit == 0 or (request.limit < 0 and request.limit != -1):
+                raise HTTPException(status_code=400, detail="Limit must be greater than 0 or -1 for no limit")
+            if not request.offset >= 0:
+                raise HTTPException(status_code=400, detail="Offset must be greater than or equal to 0")
+            if hasattr(request, "filter_logic") and request.filter_logic not in ["and", "or"]:  # type: ignore
+                raise HTTPException(
+                    status_code=400, detail=f"Invalid filter_logic: {request.filter_logic}, allowed values are: and, or"  # type: ignore
+                )
+
+        def _build_paginated_response(items: Sequence[Any], *, limit: int, offset: int) -> PaginatedResult[Any]:
+            """FastAPI routes expect PaginatedResult payloads; wrap plain lists accordingly."""
+            if isinstance(items, PaginatedResult):
+                return items
+
+            # Assuming it's a list.
+            server_logger.warning(
+                "PaginatedResult expected; got a plain list. Converting to PaginatedResult. "
+                "Total items count will be inaccurate: %d",
+                len(items),
+            )
+            return PaginatedResult(items=items, limit=limit, offset=offset, total=len(items))
+
         @api.get(API_AGL_PREFIX + "/health")
         async def health():  # pyright: ignore[reportUnusedFunction]
             return {"status": "ok"}
@@ -577,29 +536,21 @@ class LightningStoreServer(LightningStore):
                 metadata=request.metadata,
             )
 
-        @api.get(API_AGL_PREFIX + "/rollouts", response_model=PaginatedResponse[Union[AttemptedRollout, Rollout]])
+        @api.get(API_AGL_PREFIX + "/rollouts", response_model=PaginatedResult[Union[AttemptedRollout, Rollout]])
         async def query_rollouts(params: QueryRolloutsRequest = Depends()):  # pyright: ignore[reportUnusedFunction]
+            _validate_paginated_request(params, Rollout)
             # Get all rollouts from the underlying store
-            all_rollouts = await self.query_rollouts()
-
-            # Build filter dict
-            filters: Dict[str, Any] = {}
-            if params.status_in:
-                filters["status_in"] = params.status_in
-            if params.rollout_id_in:
-                filters["rollout_id_in"] = params.rollout_id_in
-            if params.rollout_id_contains is not None:
-                filters["rollout_id_contains"] = params.rollout_id_contains
-
-            return _apply_filters_sort_paginate(
-                all_rollouts,
-                filters,
-                params.filter_logic,
-                params.sort_by,
-                params.sort_order,
-                params.limit,
-                params.offset,
+            results = await self.query_rollouts(
+                status_in=params.status_in,
+                rollout_id_in=params.rollout_id_in,
+                rollout_id_contains=params.rollout_id_contains,
+                filter_logic=params.filter_logic,
+                sort_by=params.sort_by,
+                sort_order=params.sort_order,
+                limit=params.limit,
+                offset=params.offset,
             )
+            return _build_paginated_response(results, limit=params.limit, offset=params.offset)
 
         @api.get(API_AGL_PREFIX + "/rollouts/{rollout_id}", response_model=Union[AttemptedRollout, Rollout])
         async def get_rollout_by_id(rollout_id: str):  # pyright: ignore[reportUnusedFunction]
@@ -649,25 +600,19 @@ class LightningStoreServer(LightningStore):
                 metadata=_get_mandatory_field_or_unset(request, "metadata"),
             )
 
-        @api.get(API_AGL_PREFIX + "/workers", response_model=PaginatedResponse[Worker])
+        @api.get(API_AGL_PREFIX + "/workers", response_model=PaginatedResult[Worker])
         async def query_workers(params: QueryWorkersRequest = Depends()):  # pyright: ignore[reportUnusedFunction]
-            all_workers = await self.query_workers()
-
-            filters: Dict[str, Any] = {}
-            if params.status_in:
-                filters["status_in"] = params.status_in
-            if params.worker_id_contains is not None:
-                filters["worker_id_contains"] = params.worker_id_contains
-
-            return _apply_filters_sort_paginate(
-                all_workers,
-                filters,
-                params.filter_logic,
-                params.sort_by,
-                params.sort_order,
-                params.limit,
-                params.offset,
+            _validate_paginated_request(params, Worker)
+            workers = await self.query_workers(
+                status_in=params.status_in,
+                worker_id_contains=params.worker_id_contains,
+                filter_logic=params.filter_logic,
+                sort_by=params.sort_by,
+                sort_order=params.sort_order,
+                limit=params.limit,
+                offset=params.offset,
             )
+            return _build_paginated_response(workers, limit=params.limit, offset=params.offset)
 
         @api.get(API_AGL_PREFIX + "/workers/{worker_id}", response_model=Optional[Worker])
         async def get_worker(worker_id: str):  # pyright: ignore[reportUnusedFunction]
@@ -682,48 +627,36 @@ class LightningStoreServer(LightningStore):
                 heartbeat_stats=_get_mandatory_field_or_unset(request, "heartbeat_stats"),
             )
 
-        @api.get(API_AGL_PREFIX + "/rollouts/{rollout_id}/attempts", response_model=PaginatedResponse[Attempt])
+        @api.get(API_AGL_PREFIX + "/rollouts/{rollout_id}/attempts", response_model=PaginatedResult[Attempt])
         async def query_attempts(  # pyright: ignore[reportUnusedFunction]
             rollout_id: str, params: QueryAttemptsRequest = Depends()
         ):
-            # Get all attempts for the rollout
-            all_attempts = await self.query_attempts(rollout_id)
-
-            return _apply_filters_sort_paginate(
-                all_attempts,
-                {},  # No filters for attempts
-                "and",
-                params.sort_by,
-                params.sort_order,
-                params.limit,
-                params.offset,
+            _validate_paginated_request(params, Attempt)
+            attempts = await self.query_attempts(
+                rollout_id,
+                sort_by=params.sort_by,
+                sort_order=params.sort_order,
+                limit=params.limit,
+                offset=params.offset,
             )
+            return _build_paginated_response(attempts, limit=params.limit, offset=params.offset)
 
         @api.get(API_AGL_PREFIX + "/rollouts/{rollout_id}/attempts/latest", response_model=Optional[Attempt])
         async def get_latest_attempt(rollout_id: str):  # pyright: ignore[reportUnusedFunction]
             return await self.get_latest_attempt(rollout_id)
 
-        @api.get(API_AGL_PREFIX + "/resources", response_model=PaginatedResponse[ResourcesUpdate])
+        @api.get(API_AGL_PREFIX + "/resources", response_model=PaginatedResult[ResourcesUpdate])
         async def query_resources(params: QueryResourcesRequest = Depends()):  # pyright: ignore[reportUnusedFunction]
-            # Get all resources
-            all_resources = await self.query_resources()
-
-            # Build filter dict
-            filters: Dict[str, Any] = {}
-            if params.resources_id is not None:
-                filters["resources_id"] = params.resources_id
-            if params.resources_id_contains is not None:
-                filters["resources_id_contains"] = params.resources_id_contains
-
-            return _apply_filters_sort_paginate(
-                all_resources,
-                filters,
-                "and",
-                params.sort_by,
-                params.sort_order,
-                params.limit,
-                params.offset,
+            _validate_paginated_request(params, ResourcesUpdate)
+            resources = await self.query_resources(
+                resources_id=params.resources_id,
+                resources_id_contains=params.resources_id_contains,
+                sort_by=params.sort_by,
+                sort_order=params.sort_order,
+                limit=params.limit,
+                offset=params.offset,
             )
+            return _build_paginated_response(resources, limit=params.limit, offset=params.offset)
 
         @api.post(API_AGL_PREFIX + "/resources", status_code=201, response_model=ResourcesUpdate)
         async def add_resources(resources: NamedResources):  # pyright: ignore[reportUnusedFunction]
@@ -747,33 +680,27 @@ class LightningStoreServer(LightningStore):
         async def add_span(span: Span):  # pyright: ignore[reportUnusedFunction]
             return await self.add_span(span)
 
-        @api.get(API_AGL_PREFIX + "/spans", response_model=PaginatedResponse[Span])
+        @api.get(API_AGL_PREFIX + "/spans", response_model=PaginatedResult[Span])
         async def query_spans(params: QuerySpansRequest = Depends()):  # pyright: ignore[reportUnusedFunction]
-            # Get all spans for the rollout/attempt
-            all_spans = await self.query_spans(params.rollout_id, params.attempt_id)
-
-            # Build filter dict
-            filters: Dict[str, Any] = {}
-            if params.trace_id is not None:
-                filters["trace_id"] = params.trace_id
-            if params.trace_id_contains is not None:
-                filters["trace_id_contains"] = params.trace_id_contains
-            if params.span_id is not None:
-                filters["span_id"] = params.span_id
-            if params.span_id_contains is not None:
-                filters["span_id_contains"] = params.span_id_contains
-            if params.parent_id is not None:
-                filters["parent_id"] = params.parent_id
-            if params.parent_id_contains is not None:
-                filters["parent_id_contains"] = params.parent_id_contains
-            if params.name is not None:
-                filters["name"] = params.name
-            if params.name_contains is not None:
-                filters["name_contains"] = params.name_contains
-
-            return _apply_filters_sort_paginate(
-                all_spans, filters, params.filter_logic, params.sort_by, params.sort_order, params.limit, params.offset
+            _validate_paginated_request(params, Span)
+            spans = await self.query_spans(
+                params.rollout_id,
+                params.attempt_id,
+                trace_id=params.trace_id,
+                trace_id_contains=params.trace_id_contains,
+                span_id=params.span_id,
+                span_id_contains=params.span_id_contains,
+                parent_id=params.parent_id,
+                parent_id_contains=params.parent_id_contains,
+                name=params.name,
+                name_contains=params.name_contains,
+                filter_logic=params.filter_logic,
+                sort_by=params.sort_by,
+                sort_order=params.sort_order,
+                limit=params.limit,
+                offset=params.offset,
             )
+            return _build_paginated_response(spans, limit=params.limit, offset=params.offset)
 
         @api.post(API_AGL_PREFIX + "/spans/next", response_model=NextSequenceIdResponse)
         async def get_next_span_sequence_id(request: NextSequenceIdRequest):  # pyright: ignore[reportUnusedFunction]
@@ -919,18 +846,73 @@ class LightningStoreServer(LightningStore):
         return await self._call_store_method("start_attempt", rollout_id)
 
     async def query_rollouts(
-        self, *, status: Optional[Sequence[RolloutStatus]] = None, rollout_ids: Optional[Sequence[str]] = None
-    ) -> List[Rollout]:
-        return await self._call_store_method("query_rollouts", status=status, rollout_ids=rollout_ids)
+        self,
+        *,
+        status_in: Optional[Sequence[RolloutStatus]] = None,
+        rollout_id_in: Optional[Sequence[str]] = None,
+        rollout_id_contains: Optional[str] = None,
+        filter_logic: Literal["and", "or"] = "and",
+        sort_by: Optional[str] = None,
+        sort_order: Literal["asc", "desc"] = "asc",
+        limit: int = -1,
+        offset: int = 0,
+        status: Optional[Sequence[RolloutStatus]] = None,
+        rollout_ids: Optional[Sequence[str]] = None,
+    ) -> PaginatedResult[Union[AttemptedRollout, Rollout]]:
+        return await self._call_store_method(
+            "query_rollouts",
+            status_in=status_in,
+            rollout_id_in=rollout_id_in,
+            rollout_id_contains=rollout_id_contains,
+            filter_logic=filter_logic,
+            sort_by=sort_by,
+            sort_order=sort_order,
+            limit=limit,
+            offset=offset,
+            status=status,
+            rollout_ids=rollout_ids,
+        )
 
-    async def query_attempts(self, rollout_id: str) -> List[Attempt]:
-        return await self._call_store_method("query_attempts", rollout_id)
+    async def query_attempts(
+        self,
+        rollout_id: str,
+        *,
+        sort_by: Optional[str] = "sequence_id",
+        sort_order: Literal["asc", "desc"] = "asc",
+        limit: int = -1,
+        offset: int = 0,
+    ) -> PaginatedResult[Attempt]:
+        return await self._call_store_method(
+            "query_attempts",
+            rollout_id,
+            sort_by=sort_by,
+            sort_order=sort_order,
+            limit=limit,
+            offset=offset,
+        )
 
     async def get_latest_attempt(self, rollout_id: str) -> Optional[Attempt]:
         return await self._call_store_method("get_latest_attempt", rollout_id)
 
-    async def query_resources(self) -> List[ResourcesUpdate]:
-        return await self._call_store_method("query_resources")
+    async def query_resources(
+        self,
+        *,
+        resources_id: Optional[str] = None,
+        resources_id_contains: Optional[str] = None,
+        sort_by: Optional[str] = None,
+        sort_order: Literal["asc", "desc"] = "asc",
+        limit: int = -1,
+        offset: int = 0,
+    ) -> PaginatedResult[ResourcesUpdate]:
+        return await self._call_store_method(
+            "query_resources",
+            resources_id=resources_id,
+            resources_id_contains=resources_id_contains,
+            sort_by=sort_by,
+            sort_order=sort_order,
+            limit=limit,
+            offset=offset,
+        )
 
     async def get_rollout_by_id(self, rollout_id: str) -> Optional[Rollout]:
         return await self._call_store_method("get_rollout_by_id", rollout_id)
@@ -975,8 +957,39 @@ class LightningStoreServer(LightningStore):
         self,
         rollout_id: str,
         attempt_id: str | Literal["latest"] | None = None,
-    ) -> List[Span]:
-        return await self._call_store_method("query_spans", rollout_id, attempt_id)
+        *,
+        trace_id: Optional[str] = None,
+        trace_id_contains: Optional[str] = None,
+        span_id: Optional[str] = None,
+        span_id_contains: Optional[str] = None,
+        parent_id: Optional[str] = None,
+        parent_id_contains: Optional[str] = None,
+        name: Optional[str] = None,
+        name_contains: Optional[str] = None,
+        filter_logic: Literal["and", "or"] = "and",
+        limit: int = -1,
+        offset: int = 0,
+        sort_by: Optional[str] = "sequence_id",
+        sort_order: Literal["asc", "desc"] = "asc",
+    ) -> PaginatedResult[Span]:
+        return await self._call_store_method(
+            "query_spans",
+            rollout_id,
+            attempt_id,
+            trace_id=trace_id,
+            trace_id_contains=trace_id_contains,
+            span_id=span_id,
+            span_id_contains=span_id_contains,
+            parent_id=parent_id,
+            parent_id_contains=parent_id_contains,
+            name=name,
+            name_contains=name_contains,
+            filter_logic=filter_logic,
+            limit=limit,
+            offset=offset,
+            sort_by=sort_by,
+            sort_order=sort_order,
+        )
 
     async def update_rollout(
         self,
@@ -1018,8 +1031,27 @@ class LightningStoreServer(LightningStore):
             metadata,
         )
 
-    async def query_workers(self) -> List[Worker]:
-        return await self._call_store_method("query_workers")
+    async def query_workers(
+        self,
+        *,
+        status_in: Optional[Sequence[WorkerStatus]] = None,
+        worker_id_contains: Optional[str] = None,
+        filter_logic: Literal["and", "or"] = "and",
+        sort_by: Optional[str] = None,
+        sort_order: Literal["asc", "desc"] = "asc",
+        limit: int = -1,
+        offset: int = 0,
+    ) -> PaginatedResult[Worker]:
+        return await self._call_store_method(
+            "query_workers",
+            status_in=status_in,
+            worker_id_contains=worker_id_contains,
+            filter_logic=filter_logic,
+            sort_by=sort_by,
+            sort_order=sort_order,
+            limit=limit,
+            offset=offset,
+        )
 
     async def get_worker_by_id(self, worker_id: str) -> Optional[Worker]:
         return await self._call_store_method("get_worker_by_id", worker_id)
@@ -1189,7 +1221,7 @@ class LightningStoreClient(LightningStore):
         path: str,
         *,
         json: Any | None = None,
-        params: Dict[str, Any] | None = None,
+        params: Mapping[str, Any] | Sequence[Tuple[str, Any]] | None = None,
     ) -> Any:
         """
         Make an HTTP request with:
@@ -1349,17 +1381,43 @@ class LightningStoreClient(LightningStore):
         return AttemptedRollout.model_validate(data)
 
     async def query_rollouts(
-        self, *, status: Optional[Sequence[RolloutStatus]] = None, rollout_ids: Optional[Sequence[str]] = None
-    ) -> List[Rollout]:
-        params: Dict[str, Any] = {}
-        if status is not None:
-            params["status_in"] = status
-        if rollout_ids is not None:
-            params["rollout_id_in"] = list(rollout_ids)
+        self,
+        *,
+        status_in: Optional[Sequence[RolloutStatus]] = None,
+        rollout_id_in: Optional[Sequence[str]] = None,
+        rollout_id_contains: Optional[str] = None,
+        filter_logic: Literal["and", "or"] = "and",
+        sort_by: Optional[str] = None,
+        sort_order: Literal["asc", "desc"] = "asc",
+        limit: int = -1,
+        offset: int = 0,
+        status: Optional[Sequence[RolloutStatus]] = None,
+        rollout_ids: Optional[Sequence[str]] = None,
+    ) -> PaginatedResult[Union[AttemptedRollout, Rollout]]:
+        params_list: List[Tuple[str, Any]] = []
 
-        data = await self._request_json("get", "/rollouts", params=params if params else None)
-        # Extract items from PaginatedResponse
-        return [
+        def _extend(key: str, values: Sequence[Any]) -> None:
+            for value in values:
+                params_list.append((key, value))
+
+        resolved_status = status_in if status_in is not None else status
+        resolved_rollout_ids = rollout_id_in if rollout_id_in is not None else rollout_ids
+
+        if resolved_status is not None:
+            _extend("status_in", resolved_status)
+        if resolved_rollout_ids is not None:
+            _extend("rollout_id_in", resolved_rollout_ids)
+        if rollout_id_contains is not None:
+            params_list.append(("rollout_id_contains", rollout_id_contains))
+        params_list.append(("filter_logic", filter_logic))
+        if sort_by is not None:
+            params_list.append(("sort_by", sort_by))
+            params_list.append(("sort_order", sort_order))
+        params_list.append(("limit", limit))
+        params_list.append(("offset", offset))
+
+        data = await self._request_json("get", "/rollouts", params=params_list or None)
+        items = [
             (
                 AttemptedRollout.model_validate(item)
                 if isinstance(item, dict) and "attempt" in item
@@ -1367,11 +1425,27 @@ class LightningStoreClient(LightningStore):
             )
             for item in data["items"]
         ]
+        return PaginatedResult(items=items, limit=data["limit"], offset=data["offset"], total=data["total"])
 
-    async def query_attempts(self, rollout_id: str) -> List[Attempt]:
-        data = await self._request_json("get", f"/rollouts/{rollout_id}/attempts")
-        # Extract items from PaginatedResponse
-        return [Attempt.model_validate(item) for item in data["items"]]
+    async def query_attempts(
+        self,
+        rollout_id: str,
+        *,
+        sort_by: Optional[str] = "sequence_id",
+        sort_order: Literal["asc", "desc"] = "asc",
+        limit: int = -1,
+        offset: int = 0,
+    ) -> PaginatedResult[Attempt]:
+        params: List[Tuple[str, Any]] = [
+            ("limit", limit),
+            ("offset", offset),
+        ]
+        if sort_by is not None:
+            params.append(("sort_by", sort_by))
+            params.append(("sort_order", sort_order))
+        data = await self._request_json("get", f"/rollouts/{rollout_id}/attempts", params=params)
+        items = [Attempt.model_validate(item) for item in data["items"]]
+        return PaginatedResult(items=items, limit=data["limit"], offset=data["offset"], total=data["total"])
 
     async def get_latest_attempt(self, rollout_id: str) -> Optional[Attempt]:
         """
@@ -1422,15 +1496,34 @@ class LightningStoreClient(LightningStore):
             )
             return None
 
-    async def query_resources(self) -> List[ResourcesUpdate]:
+    async def query_resources(
+        self,
+        *,
+        resources_id: Optional[str] = None,
+        resources_id_contains: Optional[str] = None,
+        sort_by: Optional[str] = None,
+        sort_order: Literal["asc", "desc"] = "asc",
+        limit: int = -1,
+        offset: int = 0,
+    ) -> PaginatedResult[ResourcesUpdate]:
         """
         List all resource snapshots stored on the server.
         """
-        data = await self._request_json("get", "/resources")
-        if not data:
-            return []
-        # Extract items from PaginatedResponse
-        return [ResourcesUpdate.model_validate(item) for item in data["items"]]
+        params: List[Tuple[str, Any]] = [
+            ("limit", limit),
+            ("offset", offset),
+        ]
+        if sort_by is not None:
+            params.append(("sort_by", sort_by))
+            params.append(("sort_order", sort_order))
+        if resources_id is not None:
+            params.append(("resources_id", resources_id))
+        if resources_id_contains is not None:
+            params.append(("resources_id_contains", resources_id_contains))
+
+        data = await self._request_json("get", "/resources", params=params)
+        items = [ResourcesUpdate.model_validate(item) for item in data["items"]]
+        return PaginatedResult(items=items, limit=data["limit"], offset=data["offset"], total=data["total"])
 
     async def add_resources(self, resources: NamedResources) -> ResourcesUpdate:
         data = await self._request_json("post", "/resources", json=TypeAdapter(NamedResources).dump_python(resources))
@@ -1540,13 +1633,49 @@ class LightningStoreClient(LightningStore):
         self,
         rollout_id: str,
         attempt_id: str | Literal["latest"] | None = None,
-    ) -> List[Span]:
-        params: Dict[str, str] = {"rollout_id": rollout_id}
+        *,
+        trace_id: Optional[str] = None,
+        trace_id_contains: Optional[str] = None,
+        span_id: Optional[str] = None,
+        span_id_contains: Optional[str] = None,
+        parent_id: Optional[str] = None,
+        parent_id_contains: Optional[str] = None,
+        name: Optional[str] = None,
+        name_contains: Optional[str] = None,
+        filter_logic: Literal["and", "or"] = "and",
+        limit: int = -1,
+        offset: int = 0,
+        sort_by: Optional[str] = "sequence_id",
+        sort_order: Literal["asc", "desc"] = "asc",
+    ) -> PaginatedResult[Span]:
+        params: List[Tuple[str, Any]] = [("rollout_id", rollout_id)]
         if attempt_id is not None:
-            params["attempt_id"] = attempt_id
+            params.append(("attempt_id", attempt_id))
+        if trace_id is not None:
+            params.append(("trace_id", trace_id))
+        if trace_id_contains is not None:
+            params.append(("trace_id_contains", trace_id_contains))
+        if span_id is not None:
+            params.append(("span_id", span_id))
+        if span_id_contains is not None:
+            params.append(("span_id_contains", span_id_contains))
+        if parent_id is not None:
+            params.append(("parent_id", parent_id))
+        if parent_id_contains is not None:
+            params.append(("parent_id_contains", parent_id_contains))
+        if name is not None:
+            params.append(("name", name))
+        if name_contains is not None:
+            params.append(("name_contains", name_contains))
+        params.append(("filter_logic", filter_logic))
+        if sort_by is not None:
+            params.append(("sort_by", sort_by))
+            params.append(("sort_order", sort_order))
+        params.append(("limit", limit))
+        params.append(("offset", offset))
         data = await self._request_json("get", "/spans", params=params)
-        # Extract items from PaginatedResponse
-        return [Span.model_validate(item) for item in data["items"]]
+        items = [Span.model_validate(item) for item in data["items"]]
+        return PaginatedResult(items=items, limit=data["limit"], offset=data["offset"], total=data["total"])
 
     async def update_rollout(
         self,
@@ -1601,10 +1730,34 @@ class LightningStoreClient(LightningStore):
         )
         return Attempt.model_validate(data)
 
-    async def query_workers(self) -> List[Worker]:
-        data = await self._request_json("get", "/workers")
-        items = data.get("items", [])
-        return [Worker.model_validate(item) for item in items]
+    async def query_workers(
+        self,
+        *,
+        status_in: Optional[Sequence[WorkerStatus]] = None,
+        worker_id_contains: Optional[str] = None,
+        filter_logic: Literal["and", "or"] = "and",
+        sort_by: Optional[str] = None,
+        sort_order: Literal["asc", "desc"] = "asc",
+        limit: int = -1,
+        offset: int = 0,
+    ) -> PaginatedResult[Worker]:
+        params: List[Tuple[str, Any]] = [
+            ("limit", limit),
+            ("offset", offset),
+        ]
+        if status_in is not None:
+            for value in status_in:
+                params.append(("status_in", value))
+        if worker_id_contains is not None:
+            params.append(("worker_id_contains", worker_id_contains))
+        params.append(("filter_logic", filter_logic))
+        if sort_by is not None:
+            params.append(("sort_by", sort_by))
+            params.append(("sort_order", sort_order))
+
+        data = await self._request_json("get", "/workers", params=params)
+        items = [Worker.model_validate(item) for item in data.get("items", [])]
+        return PaginatedResult(items=items, limit=data["limit"], offset=data["offset"], total=data["total"])
 
     async def get_worker_by_id(self, worker_id: str) -> Optional[Worker]:
         data = await self._request_json("get", f"/workers/{worker_id}")
