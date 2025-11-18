@@ -216,6 +216,7 @@ def main():
         default="",
         help="Connect to an external store instead of creating a new one in memory",
     )
+    parser.add_argument("--debug", action="store_true", help="Enable debug logging")
 
     args = parser.parse_args()
 
@@ -230,7 +231,7 @@ def main():
     if args.ci_fast:
         args.ci = True
 
-    agl.setup_logging("DEBUG")
+    agl.setup_logging("DEBUG" if args.debug else "INFO")
 
     train(
         train_file=args.train_file,
