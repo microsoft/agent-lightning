@@ -1717,7 +1717,7 @@ async def test_status_propagation_only_for_latest_attempt(inmemory_store: InMemo
     # Rollout status should NOT change since attempt1 is not the latest
     updated_rollout = await inmemory_store.get_rollout_by_id(rollout.rollout_id)
     assert updated_rollout is not None
-    assert updated_rollout.status == "queuing"  # Should remain unchanged
+    assert updated_rollout.status == "preparing"  # Should be status of attempt 2
 
     # Update attempt3 (latest) to succeeded
     await inmemory_store.update_attempt(
@@ -1748,7 +1748,7 @@ async def test_status_propagation_with_retry_for_latest_attempt(inmemory_store: 
 
     updated_rollout = await inmemory_store.get_rollout_by_id(rollout.rollout_id)
     assert updated_rollout is not None
-    assert updated_rollout.status == "queuing"  # Should remain unchanged
+    assert updated_rollout.status == "preparing"  # Should be status of attempt 2
 
     # Fail attempt2 (latest) - should trigger retry since sequence_id=2 < max_attempts=3
     await inmemory_store.update_attempt(
@@ -1786,7 +1786,7 @@ async def test_status_propagation_latest_changes_when_new_attempt_added(inmemory
 
     updated_rollout = await inmemory_store.get_rollout_by_id(rollout.rollout_id)
     assert updated_rollout is not None
-    assert updated_rollout.status == "succeeded"  # Should remain unchanged
+    assert updated_rollout.status == "preparing"  # Should be the status of attempt 2
 
     # Update attempt2 (now latest) to failed
     await inmemory_store.update_attempt(

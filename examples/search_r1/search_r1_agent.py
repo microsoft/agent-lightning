@@ -1,20 +1,26 @@
 # Copyright (c) Microsoft. All rights reserved.
 
+from __future__ import annotations
+
 import os
 import re
-from typing import Any, Dict, List, Optional, Tuple, TypedDict, cast
+import shutil
+import tempfile
+import time
+from typing import Any, Dict, List, Literal, Optional, Tuple, TypedDict, cast
+
 
 import requests
 from openai import OpenAI
 from qa_em import compute_score_em
 
-from agentlightning import LLM, LitAgent, NamedResources, Trainer, configure_logger, reward
+import agentlightning as agl
 
-configure_logger()
+agl.configure_logger()
 
-# Copied and adapted from https://github.com/PeterGriffinJin/Search-R1/blob/main/scripts/data_process/nq_search.py
+logger = agl.configure_logger(name=__name__)
+
 INSTRUCTION_FORMAT = """Answer the given question. You must conduct reasoning inside <think> and </think> first every time you get new information. After reasoning, if you find you lack some knowledge, you can call a search engine by <search> query </search> and it will return the top searched results between <information> and </information>. You can search as many times as your want. If you find no further external knowledge needed, you can directly provide the answer inside <answer> and </answer>, without detailed illustrations. For example, <answer> Beijing </answer>. Question: """
-
 
 class Document(TypedDict):
     contents: str
@@ -24,8 +30,7 @@ class RetrievalItem(TypedDict):
     document: Document
 
 
-@reward
-async def eval(prediction: str, ground_truth: List[str]) -> float:
+def eval(prediction: str, ground_truth: List[str]) -> float:
     reward_score = float(compute_score_em(prediction, ground_truth))
     print(f"pred: {prediction} | {type(ground_truth)} gold_answer: {ground_truth} | res: {reward_score}")
     return reward_score
@@ -93,75 +98,131 @@ def passages2string(retrieval_result: List[RetrievalItem]) -> str:
 def call_llm(
     llm_client: OpenAI,
     model_name: str,
-    content: str,
+    content: str = "",
+    messages: List[dict] = [],
     temperature: float = 1.0,
     max_tokens: int = 500,
 ) -> str:
+    if not len(messages):
+        messages=[{"role": "user", "content": content}]
+    print(messages)
     response = llm_client.chat.completions.create(
         model=model_name,
-        messages=[{"role": "user", "content": content}],
+        messages=messages,
         temperature=temperature,
         max_tokens=max_tokens,
     )
     return response.choices[0].message.content or ""
 
 
-class Searchr1Agent(LitAgent[Any]):
-    async def training_rollout_async(
+class SearchR1Agent(agl.LitAgent[Dict[str, Any]]):
+
+    def __init__(
         self,
-        task: Any,
-        resources: NamedResources,
-        rollout: Any,
-        temperature: float = 1.0,
-    ) -> Any:
+        val_temperature: Optional[float] = 0.0,
+        max_turns: int = 4,
+    ) -> None:
+        super().__init__()
+        self.val_temperature = val_temperature
+        self.data_dir = os.environ.get("VERL_SEARCHR1_DATA_DIR", "data")
+        self.max_turns = max_turns
+
+    def rollout(
+        self,
+        task: Dict[str, Any],
+        resources: agl.NamedResources,
+        rollout: agl.Rollout,
+    ) -> float | None:
         prompt = INSTRUCTION_FORMAT + task["question"]
         answer_list: List[str] = cast(List[str], task["golden_answers"])
-        llm: LLM = cast(LLM, resources.get("main_llm"))
+        rollout_id = rollout.rollout_id
+        logger.info(f"[Rollout {rollout_id}] Question: {task['question']}")
+        logger.info(f"[Rollout {rollout_id}] Ground Truth: {answer_list}")
+
+        start_time = time.time()
+        llm: agl.LLM = cast(agl.LLM, resources["main_llm"])
         client = OpenAI(
-            base_url=llm.endpoint,
+            base_url=llm.get_base_url(rollout_id, rollout.attempt.attempt_id),  # type: ignore
             api_key=os.environ.get("OPENAI_API_KEY", "token-abc123"),
         )
 
+        if rollout.mode == "train":
+            temperature = llm.sampling_parameters.get("temperature", 1.0)
+        else:
+            temperature = (
+                self.val_temperature
+                if self.val_temperature is not None
+                else 0.0
+            )
+
         turn_id = 0
         finished_flag = False
-        rollout_content: str = ""
+        hist_messages: List[Dict[str, Any]] = [{"role": "user", "content": prompt}]
 
-        while turn_id < 4 and not finished_flag:
-            turn_id += 1
-            turn_response = call_llm(
-                client, llm.model, prompt + rollout_content, temperature=temperature, max_tokens=500
-            )
-            valid_turn_response = postprocess_response(turn_response)
-            turn_env_feedback = execute_response(valid_turn_response)
-            if len(turn_env_feedback) == 0:
-                finished_flag = True
-            print(f"TURN ID {turn_id} | RESP: {turn_response} | ENV FEEDBACK: {turn_env_feedback}")
-            rollout_content += turn_response + turn_env_feedback
+        try:
+            while turn_id < self.max_turns and not finished_flag:
+                turn_id += 1
+                turn_response = call_llm(
+                    client, llm.model, messages=hist_messages, temperature=temperature, max_tokens=500
+                )
+                valid_turn_response = postprocess_response(turn_response)
+                hist_messages.append({"role": "assistant", "content": valid_turn_response})
+                turn_env_feedback = execute_response(valid_turn_response)
+                if len(turn_env_feedback) == 0:
+                    finished_flag = True
+                else:
+                    hist_messages.append({"role": "user", "content": turn_env_feedback})
+                logger.info(f"TURN ID {turn_id} | RESP: {turn_response} | ENV FEEDBACK: {turn_env_feedback}")
 
-        if not finished_flag:
-            turn_response = call_llm(
-                client, llm.model, prompt + rollout_content, temperature=temperature, max_tokens=500
-            )
-            rollout_content += turn_response
-            print(f"LAST TURN GENERATE | RESP: {turn_response}")
+            if not finished_flag:
+                turn_response = call_llm(
+                    client, llm.model, messages=hist_messages, temperature=temperature, max_tokens=500
+                )
+                hist_messages.append({"role": "assistant", "content": turn_response})
+                logger.info(f"LAST TURN GENERATE | RESP: {turn_response}")
 
-        reward_score = await eval(rollout_content, answer_list)  # reward is tracked with the decorator
-        print(
+            last_turn_response = [msg["content"] for msg in hist_messages if msg["role"] == "assistant"][-1]
+        except Exception as e:
+            logger.exception(f"[Rollout {rollout_id}] Error during rollout: {e}")
+            return None
+
+        end_time_rollout = time.time()
+        reward_score = eval(last_turn_response, answer_list)
+        logger.info("[Rollout %s] Reward: %s", rollout_id, reward_score)
+        end_time_eval = time.time()
+
+        logger.info("[Rollout %s] Time taken for rollout: %.2f seconds", rollout_id, end_time_rollout - start_time)
+        logger.info(
+            "[Rollout %s] Time taken for evaluation: %.2f seconds", rollout_id, end_time_eval - end_time_rollout
+        )
+        logger.info(
             "question: {} answer: {} ground_truth: {} reward: {}".format(
-                task["question"], rollout_content, answer_list, reward_score
+                task["question"], last_turn_response, answer_list, reward_score
             )
         )
         return reward_score
 
-    async def validation_rollout_async(
-        self,
-        task: Any,
-        resources: NamedResources,
-        rollout: Any,
-    ) -> Any:
-        # Use the same resources; set temperature to 0.0 for deterministic validation.
-        return await self.training_rollout_async(task, resources, rollout, temperature=0.0)
+
+def debug_search_r1_agent():
+    searchr1_dev_data_path = os.path.join(os.environ.get("VERL_SEARCHR1_DATA_DIR", "data"), "test.parquet")
+    if not os.path.exists(searchr1_dev_data_path):
+        raise FileNotFoundError(f"Search_R1 dev data file {searchr1_dev_data_path} does not exist.")
+    df = pd.read_parquet(searchr1_dev_data_path).head(10)  # type: ignore
+    df = cast(List[Dict[str, Any]], df.to_dict(orient="records"))  # type: ignore
+    print("Debug data:", df)
+
+    trainer = agl.Trainer(
+        n_workers=1,
+        initial_resources={
+            "main_llm": agl.LLM(
+                endpoint=os.environ["OPENAI_API_BASE"],
+                model="gpt-4.1-nano",
+                sampling_parameters={"temperature": 0.0},
+            )
+        },
+    )
+    trainer.dev(SearchR1Agent(), df)
 
 
 if __name__ == "__main__":
-    Trainer(n_workers=128).fit(Searchr1Agent(), "http://localhost:9999/")
+    debug_search_r1_agent()
