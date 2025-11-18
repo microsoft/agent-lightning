@@ -297,7 +297,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
 
             # Keep looking until we find a rollout that's still in queuing status
             # or the queue is empty
-            while self.collections.rollout_queue.size() > 0:
+            while (await self.collections.rollout_queue.size()) > 0:
                 dequeued = await self.collections.rollout_queue.dequeue(1)
                 if not dequeued:
                     break

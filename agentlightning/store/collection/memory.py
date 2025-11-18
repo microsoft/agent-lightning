@@ -280,12 +280,12 @@ class ListBasedCollection(Collection[T]):
         """Return the Pydantic model type of items stored in this collection."""
         return self._item_type
 
-    def size(self) -> int:
+    async def size(self) -> int:
         """Return the number of items stored in the collection."""
         return self._size
 
     def __repr__(self) -> str:
-        return f"<{self.__class__.__name__}[{self.item_type().__name__}] ({self.size()})>"
+        return f"<{self.__class__.__name__}[{self.item_type().__name__}] ({self._size})>"
 
     # -------------------------------------------------------------------------
     # Internal helpers
@@ -655,6 +655,9 @@ class DequeBasedQueue(Queue[T]):
     def item_type(self) -> Type[T]:
         return self._item_type
 
+    def __repr__(self) -> str:
+        return f"<{self.__class__.__name__}[{self.item_type().__name__}] ({len(self._items)})>"
+
     async def has(self, item: T) -> bool:
         if not isinstance(item, self._item_type):
             raise TypeError(f"Expected item of type {self._item_type.__name__}, got {type(item).__name__}")
@@ -686,7 +689,7 @@ class DequeBasedQueue(Queue[T]):
             result.append(item)
         return result
 
-    def size(self) -> int:
+    async def size(self) -> int:
         return len(self._items)
 
 
@@ -708,7 +711,7 @@ class DictBasedKeyValue(KeyValue[K, V]):
     async def pop(self, key: K, default: V | None = None) -> V | None:
         return self._values.pop(key, default)
 
-    def size(self) -> int:
+    async def size(self) -> int:
         return len(self._values)
 
 

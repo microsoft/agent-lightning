@@ -36,13 +36,13 @@ class Collection(Generic[T]):
         raise NotImplementedError()
 
     def __repr__(self) -> str:
-        return f"<{self.__class__.__name__}[{self.item_type().__name__}] ({self.size()})>"
+        return f"<{self.__class__.__name__}[{self.item_type().__name__}]>"
 
     def item_type(self) -> Type[T]:
         """Get the type of the items in the collection."""
         raise NotImplementedError()
 
-    def size(self) -> int:
+    async def size(self) -> int:
         """Get the number of items in the collection."""
         raise NotImplementedError()
 
@@ -132,7 +132,7 @@ class Queue(Generic[T]):
     """Behaves like a deque. Supporting appending items to the end and popping items from the front."""
 
     def __repr__(self) -> str:
-        return f"<{self.__class__.__name__}[{self.item_type().__name__}] ({self.size()})>"
+        return f"<{self.__class__.__name__}[{self.item_type().__name__}]>"
 
     def item_type(self) -> Type[T]:
         """Get the type of the items in the queue."""
@@ -177,7 +177,7 @@ class Queue(Generic[T]):
         """
         raise NotImplementedError()
 
-    def size(self) -> int:
+    async def size(self) -> int:
         """Get the number of items in the queue."""
         raise NotImplementedError()
 
@@ -186,7 +186,7 @@ class KeyValue(Generic[K, V]):
     """Behaves like a dictionary. Supporting addition, updating, and deletion of items."""
 
     def __repr__(self) -> str:
-        return f"<{self.__class__.__name__} ({self.size()})>"
+        return f"<{self.__class__.__name__}>"
 
     async def has(self, key: K) -> bool:
         """Check if the given key is in the dictionary."""
@@ -204,7 +204,7 @@ class KeyValue(Generic[K, V]):
         """Pop the value for the given key, or the default value if the key is not found."""
         raise NotImplementedError()
 
-    def size(self) -> int:
+    async def size(self) -> int:
         """Get the number of items in the dictionary."""
         raise NotImplementedError()
 

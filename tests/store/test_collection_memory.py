@@ -169,22 +169,24 @@ def test_list_collection_item_type(sample_collection: ListBasedCollection[Sample
     assert sample_collection.item_type() is SampleItem
 
 
-def test_list_collection_initial_size(
+@pytest.mark.asyncio()
+async def test_list_collection_initial_size(
     sample_collection: ListBasedCollection[SampleItem], sample_items: Sequence[SampleItem]
 ) -> None:
-    assert sample_collection.size() == len(sample_items)
+    assert (await sample_collection.size()) == len(sample_items)
 
 
-def test_list_collection_repr_contains_model_info(sample_collection: ListBasedCollection[SampleItem]) -> None:
+@pytest.mark.asyncio()
+async def test_list_collection_repr_contains_model_info(sample_collection: ListBasedCollection[SampleItem]) -> None:
     result = repr(sample_collection)
-    assert "ListBasedCollection" in result and "SampleItem" in result and str(sample_collection.size()) in result
+    assert "ListBasedCollection" in result and "SampleItem" in result and str(await sample_collection.size()) in result
 
 
 @pytest.mark.asyncio()
 async def test_list_collection_insert_adds_item(sample_collection: ListBasedCollection[SampleItem]) -> None:
     new_item = SampleItem(partition="omega", index=1, name="omega", status="new")
     await sample_collection.insert([new_item])
-    assert sample_collection.size() == 9
+    assert (await sample_collection.size()) == 9
     result = await sample_collection.get({"partition": {"exact": "omega"}, "index": {"exact": 1}})
     assert result == new_item
 
@@ -226,7 +228,7 @@ async def test_list_collection_update_missing_raises(sample_collection: ListBase
 async def test_list_collection_delete_existing(sample_collection: ListBasedCollection[SampleItem]) -> None:
     target = SampleItem(partition="alpha", index=1, name="ignored", status="new")
     await sample_collection.delete([target])
-    assert sample_collection.size() == 7
+    assert (await sample_collection.size()) == 7
     result = await sample_collection.get({"partition": {"exact": "alpha"}, "index": {"exact": 1}})
     assert result is None
 
@@ -242,7 +244,7 @@ async def test_list_collection_delete_missing_raises(sample_collection: ListBase
 async def test_list_collection_upsert_inserts_when_missing(sample_collection: ListBasedCollection[SampleItem]) -> None:
     created = SampleItem(partition="omega", index=4, name="new", status="queued")
     await sample_collection.upsert([created])
-    assert sample_collection.size() == 9
+    assert (await sample_collection.size()) == 9
     fetched = await sample_collection.get({"partition": {"exact": "omega"}, "index": {"exact": 4}})
     assert fetched == created
 
@@ -251,7 +253,7 @@ async def test_list_collection_upsert_inserts_when_missing(sample_collection: Li
 async def test_list_collection_upsert_updates_when_existing(sample_collection: ListBasedCollection[SampleItem]) -> None:
     replacement = SampleItem(partition="beta", index=2, name="replacement", status="done")
     await sample_collection.upsert([replacement])
-    assert sample_collection.size() == 8
+    assert (await sample_collection.size()) == 8
     fetched = await sample_collection.get({"partition": {"exact": "beta"}, "index": {"exact": 2}})
     assert fetched == replacement
 
@@ -264,7 +266,7 @@ async def test_list_collection_delete_multiple_items(sample_collection: ListBase
             SampleItem(partition="beta", index=1, name="", status=""),
         ]
     )
-    assert sample_collection.size() == 6
+    assert (await sample_collection.size()) == 6
 
 
 @pytest.mark.asyncio()
@@ -276,7 +278,7 @@ async def test_list_collection_insert_accepts_tuple_sequence(
         SampleItem(partition="tuple", index=2, name="b", status="pending"),
     )
     await sample_collection.insert(extra)
-    assert sample_collection.size() == 10
+    assert (await sample_collection.size()) == 10
     fetched = await sample_collection.query(filter={"partition": {"exact": "tuple"}})
     assert _sorted_pairs(fetched.items) == [("tuple", 1), ("tuple", 2)]
 
@@ -652,9 +654,9 @@ async def test_list_collection_bulk_delete_and_size() -> None:
     items = [SampleItem(partition="bulk", index=i, name=f"item-{i}", status="bulk") for i in range(40)]
     collection = _build_collection(items)
     await collection.delete(items[:20])
-    assert collection.size() == 20
+    assert (await collection.size()) == 20
     await collection.delete(items[20:])
-    assert collection.size() == 0
+    assert (await collection.size()) == 0
 
 
 @pytest.mark.asyncio()
@@ -682,8 +684,9 @@ def deque_queue() -> DequeBasedQueue[QueueItem]:
     return DequeBasedQueue(QueueItem, [QueueItem(idx=i) for i in range(3)])
 
 
-def test_deque_queue_initial_size(deque_queue: DequeBasedQueue[QueueItem]) -> None:
-    assert deque_queue.size() == 3
+@pytest.mark.asyncio()
+async def test_deque_queue_initial_size(deque_queue: DequeBasedQueue[QueueItem]) -> None:
+    assert (await deque_queue.size()) == 3
 
 
 def test_deque_queue_item_type(deque_queue: DequeBasedQueue[QueueItem]) -> None:
@@ -701,7 +704,7 @@ async def test_deque_queue_enqueue_appends_items(deque_queue: DequeBasedQueue[Qu
     items = [QueueItem(idx=3), QueueItem(idx=4)]
     returned = await deque_queue.enqueue(items)
     assert returned == items
-    assert deque_queue.size() == 5
+    assert (await deque_queue.size()) == 5
 
 
 @pytest.mark.asyncio()
@@ -718,7 +721,7 @@ async def test_deque_queue_enqueue_rejects_wrong_type(deque_queue: DequeBasedQue
 async def test_deque_queue_dequeue_respects_limit(deque_queue: DequeBasedQueue[QueueItem], limit: int) -> None:
     result = await deque_queue.dequeue(limit)
     assert len(result) == min(limit, 3)
-    assert deque_queue.size() == 3 - min(limit, 3)
+    assert (await deque_queue.size()) == 3 - min(limit, 3)
 
 
 @pytest.mark.asyncio()
@@ -730,14 +733,14 @@ async def test_deque_queue_dequeue_zero_returns_empty(deque_queue: DequeBasedQue
 async def test_deque_queue_dequeue_more_than_available(deque_queue: DequeBasedQueue[QueueItem]) -> None:
     result = await deque_queue.dequeue(10)
     assert len(result) == 3
-    assert deque_queue.size() == 0
+    assert (await deque_queue.size()) == 0
 
 
 @pytest.mark.asyncio()
 async def test_deque_queue_peek_preserves_items(deque_queue: DequeBasedQueue[QueueItem]) -> None:
     snapshot = await deque_queue.peek(2)
     assert [item.idx for item in snapshot] == [0, 1]
-    assert deque_queue.size() == 3
+    assert (await deque_queue.size()) == 3
 
 
 @pytest.mark.asyncio()
@@ -757,10 +760,10 @@ async def test_deque_queue_handles_large_volume() -> None:
     queue = DequeBasedQueue(QueueItem)
     items = [QueueItem(idx=i) for i in range(2000)]
     await queue.enqueue(items)
-    assert queue.size() == 2000
+    assert (await queue.size()) == 2000
     drained = await queue.dequeue(1500)
     assert len(drained) == 1500
-    assert queue.size() == 500
+    assert (await queue.size()) == 500
 
 
 @pytest.fixture()
@@ -775,7 +778,7 @@ def dict_key_value(dict_key_value_data: Dict[str, int]) -> DictBasedKeyValue[str
 
 @pytest.mark.asyncio()
 async def test_dict_key_value_initial_state(dict_key_value: DictBasedKeyValue[str, int]) -> None:
-    assert dict_key_value.size() == 2
+    assert await dict_key_value.size() == 2
     assert await dict_key_value.get("alpha") == 1
     assert await dict_key_value.get("missing") is None
 
@@ -789,20 +792,20 @@ async def test_dict_key_value_has_handles_presence(dict_key_value: DictBasedKeyV
 @pytest.mark.asyncio()
 async def test_dict_key_value_set_updates_and_expands(dict_key_value: DictBasedKeyValue[str, int]) -> None:
     await dict_key_value.set("gamma", 3)
-    assert dict_key_value.size() == 3
+    assert await dict_key_value.size() == 3
     await dict_key_value.set("alpha", 99)
     assert await dict_key_value.get("alpha") == 99
-    assert dict_key_value.size() == 3
+    assert await dict_key_value.size() == 3
 
 
 @pytest.mark.asyncio()
 async def test_dict_key_value_pop_returns_default(dict_key_value: DictBasedKeyValue[str, int]) -> None:
     result = await dict_key_value.pop("beta")
     assert result == 2
-    assert dict_key_value.size() == 1
+    assert await dict_key_value.size() == 1
     result = await dict_key_value.pop("missing", 42)
     assert result == 42
-    assert dict_key_value.size() == 1
+    assert await dict_key_value.size() == 1
 
 
 @pytest.mark.asyncio()
