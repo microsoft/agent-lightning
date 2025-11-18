@@ -65,6 +65,8 @@ class PythonServerLauncherArgs:
     """The timeout to wait for the thread to join."""
     process_join_timeout: float = 10.0
     """The timeout to wait for the process to join."""
+    timeout_keep_alive: float = 30.0
+    """The timeout to keep the connection alive."""
 
 
 @dataclass
@@ -796,6 +798,7 @@ class PythonServerLauncher:
             log_level=self.args.log_level,
             access_log=self.args.access_log,
             loop="asyncio",
+            timeout_keep_alive=self.args.timeout_keep_alive,
         )
         return uvicorn.Server(config)
 

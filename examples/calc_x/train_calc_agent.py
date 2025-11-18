@@ -30,6 +30,7 @@ AGL_MANAGED_STORE=0 AGL_CURRENT_ROLE=runner python train_calc_agent.py --externa
 
 import argparse
 import os
+import uuid
 from datetime import datetime
 from typing import Any, Dict, Optional, cast
 
@@ -146,20 +147,25 @@ def train(
     if ci or ci_fast:
         # Config the experiment name and project name so that they are available to CI
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-        EXPERIMENT_NAME = f"calc_x_{timestamp}"
+        random_suffix = uuid.uuid4().hex[:8]
+        EXPERIMENT_NAME = f"calc_x_{timestamp}_{random_suffix}"
 
         PROJECT_NAME = "AgentLightningCI"
 
-        # Simulate writing to $GITHUB_OUTPUT if it’s set
-        github_output = os.getenv("GITHUB_OUTPUT")
-        if github_output:
-            with open(github_output, "a") as f:
-                f.write(f"project_name={PROJECT_NAME}\n")
-                f.write(f"run_name={EXPERIMENT_NAME}\n")
+        # Skip this step if ROLE is runner
+        agl_current_role = os.getenv("AGL_CURRENT_ROLE")
 
-        print("Set environment variables:")
-        print(f"PROJECT_NAME={PROJECT_NAME}")
-        print(f"EXPERIMENT_NAME={EXPERIMENT_NAME}")
+        if agl_current_role != "runner":
+            # Simulate writing to $GITHUB_OUTPUT if it’s set
+            github_output = os.getenv("GITHUB_OUTPUT")
+            if github_output:
+                with open(github_output, "a") as f:
+                    f.write(f"project_name={PROJECT_NAME}\n")
+                    f.write(f"run_name={EXPERIMENT_NAME}\n")
+
+            print("Set environment variables:")
+            print(f"PROJECT_NAME={PROJECT_NAME}")
+            print(f"EXPERIMENT_NAME={EXPERIMENT_NAME}")
 
         # Keep it tiny/light without adding new knobs
         config["actor_rollout_ref"]["rollout"]["gpu_memory_utilization"] = 0.8
