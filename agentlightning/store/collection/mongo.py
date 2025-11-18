@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from datetime import datetime
 from typing import Any, Dict, Generic, List, Mapping, Optional, Sequence, Type, TypeVar, cast
@@ -21,22 +22,37 @@ T_generic = TypeVar("T_generic")
 K = TypeVar("K")
 V = TypeVar("V")
 
+logger = logging.getLogger(__name__)
+
 
 def _field_ops_to_conditions(field: str, ops: Mapping[str, Any]) -> List[Dict[str, Any]]:
     """Convert a FilterField (ops) into one or more Mongo conditions."""
     conditions: List[Dict[str, Any]] = []
 
-    if "exact" in ops:
-        conditions.append({field: ops["exact"]})
-
-    if "within" in ops and ops["within"] is not None:
-        conditions.append({field: {"$in": list(ops["within"])}})
-
-    if "contains" in ops and ops["contains"] is not None:
-        # Use case-insensitive substring match via regex.
-        value = str(ops["contains"])
-        pattern = f".*{re.escape(value)}.*"
-        conditions.append({field: {"$regex": pattern, "$options": "i"}})
+    for op_name, raw_value in ops.items():
+        if op_name == "exact":
+            if raw_value is None:
+                logger.debug(f"Skipping exact filter for field '{field}' with None value")
+                continue
+            conditions.append({field: raw_value})
+        elif op_name == "within":
+            if raw_value is None:
+                logger.debug(f"Skipping within filter for field '{field}' with None value")
+                continue
+            try:
+                iterable = list(raw_value)
+            except TypeError as exc:
+                raise ValueError(f"Invalid iterable for within filter for field '{field}': {raw_value!r}") from exc
+            conditions.append({field: {"$in": iterable}})
+        elif op_name == "contains":
+            if raw_value is None:
+                logger.debug(f"Skipping contains filter for field '{field}' with None value")
+                continue
+            value = str(raw_value)
+            pattern = f".*{re.escape(value)}.*"
+            conditions.append({field: {"$regex": pattern, "$options": "i"}})
+        else:
+            raise ValueError(f"Unsupported filter operator '{op_name}' for field '{field}'")
 
     return conditions
 
@@ -170,6 +186,33 @@ class MongoBasedCollection(Collection[T_model]):
         pk_filter.update({pk: data[pk] for pk in self._primary_keys})
         return pk_filter
 
+    def _ensure_item_type(self, item: T_model) -> None:
+        if not isinstance(item, self._item_type):
+            raise TypeError(f"Expected item of type {self._item_type.__name__}, got {type(item).__name__}")
+
+    def _inject_partition_filter(self, filter: Optional[FilterOptions]) -> Dict[str, Any]:
+        """Ensure every query is scoped to this collection's partition."""
+        combined: Dict[str, Any]
+        if filter is None:
+            combined = {}
+        else:
+            combined = dict(filter)
+
+        partition_must = {"partition_id": {"exact": self._partition_id}}
+        existing_must = combined.get("_must")
+        if existing_must is None:
+            combined["_must"] = partition_must
+            return combined
+
+        if isinstance(existing_must, Mapping):
+            combined["_must"] = [existing_must, partition_must]
+        elif isinstance(existing_must, Sequence) and not isinstance(existing_must, (str, bytes)):
+            combined["_must"] = [*existing_must, partition_must]
+        else:
+            raise TypeError("`_must` filters must be a mapping or sequence of mappings")
+
+        return combined
+
     async def query(
         self,
         filter: Optional[FilterOptions] = None,
@@ -177,37 +220,33 @@ class MongoBasedCollection(Collection[T_model]):
         limit: int = -1,
         offset: int = 0,
     ) -> PaginatedResult[T_model]:
-        # Always require partition_id via _must in FilterOptions
-        if filter is None:
-            combined: Dict[str, Any] = {
-                "_must": {
-                    "partition_id": {"exact": self._partition_id},
-                }
-            }
-        else:
-            combined = dict(filter)
-            existing_must = combined.get("_must")
-            partition_must = {"partition_id": {"exact": self._partition_id}}
-            if existing_must is None:
-                combined["_must"] = partition_must
-            else:
-                # Merge it with the existing must filters.
-                combined["_must"] = {**existing_must, **partition_must}
+        """Mongo-based implementation of Collection.query.
 
+        The handling of null-values in sorting is different from memory-based implementation.
+        In MongoDB, null values are treated as less than non-null values.
+        """
+        combined = self._inject_partition_filter(filter)
         mongo_filter = _build_mongo_filter(cast(FilterOptions, combined))
 
         total = await self._collection.count_documents(mongo_filter)
+
+        if limit == 0:
+            return PaginatedResult[T_model](items=[], limit=0, offset=offset, total=total)
 
         cursor = self._collection.find(mongo_filter)
 
         sort_name, sort_order = resolve_sort_options(sort)
         if sort_name is not None:
+            model_fields = getattr(self._item_type, "model_fields", {})
+            if sort_name not in model_fields:
+                raise ValueError(
+                    f"Failed to sort items by '{sort_name}': field does not exist on {self._item_type.__name__}"
+                )
             direction = 1 if sort_order == "asc" else -1
             cursor = cursor.sort(sort_name, direction)
 
         if offset > 0:
             cursor = cursor.skip(offset)
-
         if limit >= 0:
             cursor = cursor.limit(limit)
 
@@ -232,6 +271,7 @@ class MongoBasedCollection(Collection[T_model]):
 
         docs: List[Mapping[str, Any]] = []
         for item in items:
+            self._ensure_item_type(item)
             # Pre-check for existence to provide a clearer ValueError
             pk_filter = self._pk_filter(item)
             existing = await self._collection.find_one(pk_filter)
@@ -256,6 +296,7 @@ class MongoBasedCollection(Collection[T_model]):
             return
 
         for item in items:
+            self._ensure_item_type(item)
             pk_filter = self._pk_filter(item)
             doc = item.model_dump()
             doc["partition_id"] = self._partition_id
@@ -268,6 +309,7 @@ class MongoBasedCollection(Collection[T_model]):
             return
 
         for item in items:
+            self._ensure_item_type(item)
             pk_filter = self._pk_filter(item)
             doc = item.model_dump()
             doc["partition_id"] = self._partition_id
@@ -278,6 +320,7 @@ class MongoBasedCollection(Collection[T_model]):
             return
 
         for item in items:
+            self._ensure_item_type(item)
             pk_filter = self._pk_filter(item)
             result = await self._collection.delete_one(pk_filter)
             if result.deleted_count == 0:
@@ -350,17 +393,20 @@ class MongoBasedQueue(Queue[T_generic], Generic[T_generic]):
         if not items:
             return []
 
-        docs: Sequence[Mapping[str, Any]] = [
-            {
-                "partition_id": self._partition_id,
-                "value": self._adapter.dump_python(item, mode="python"),
-                "consumed": False,
-                "created_at": datetime.now(),
-            }
-            for item in items
-        ]
+        docs: List[Mapping[str, Any]] = []
+        for item in items:
+            if not isinstance(item, self._item_type):
+                raise TypeError(f"Expected item of type {self._item_type.__name__}, got {type(item).__name__}")
+            docs.append(
+                {
+                    "partition_id": self._partition_id,
+                    "value": self._adapter.dump_python(item, mode="python"),
+                    "consumed": False,
+                    "created_at": datetime.now(),
+                }
+            )
 
-        await self._collection.insert_many(list(docs))
+        await self._collection.insert_many(docs)
         return list(items)
 
     async def dequeue(self, limit: int = 1) -> Sequence[T_generic]:

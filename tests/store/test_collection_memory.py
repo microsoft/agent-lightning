@@ -3,134 +3,21 @@
 from __future__ import annotations
 
 import time
-from typing import Any, Dict, Iterable, List, Literal, Mapping, Sequence, Tuple, cast
+from typing import Dict, Iterable, List, Literal, Mapping, Sequence, Tuple, Union
 
 import pytest
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 import agentlightning.store.collection.memory as memory_module
 from agentlightning.store.collection import DequeBasedQueue, DictBasedKeyValue, ListBasedCollection
+from agentlightning.store.collection.base import Collection
 from agentlightning.store.collection.memory import _item_matches_filters  # pyright: ignore[reportPrivateUsage]
 from agentlightning.types import Rollout
-
-
-class SampleItem(BaseModel):
-    partition: str
-    index: int
-    name: str
-    status: str
-    tags: List[str] = Field(default_factory=list)
-    score: float | None = None
-    rank: int | None = None
-    updated_time: float | None = None
-    payload: Dict[str, int] = Field(default_factory=dict)
-    metadata: str | None = None
+from tests.store.conftest import QueueItem, SampleItem, temporary_mongo_database
 
 
 def _build_collection(items: Iterable[SampleItem] = ()) -> ListBasedCollection[SampleItem]:
     return ListBasedCollection(list(items), SampleItem, ("partition", "index"))
-
-
-@pytest.fixture()
-def sample_items() -> List[SampleItem]:
-    return [
-        SampleItem(
-            partition="alpha",
-            index=1,
-            name="urgent-phase-one",
-            status="new",
-            tags=["core", "urgent"],
-            score=10.5,
-            rank=3,
-            updated_time=12.0,
-            payload={"priority": 10},
-            metadata="alpha-start",
-        ),
-        SampleItem(
-            partition="alpha",
-            index=2,
-            name="phase-two",
-            status="running",
-            tags=["core"],
-            score=5.0,
-            rank=2,
-            updated_time=None,
-            payload={"priority": 5},
-            metadata=None,
-        ),
-        SampleItem(
-            partition="alpha",
-            index=3,
-            name="delayed-phase",
-            status="blocked",
-            tags=["delayed"],
-            score=None,
-            rank=5,
-            updated_time=15.1,
-            payload={"priority": 8},
-            metadata="delayed-phase",
-        ),
-        SampleItem(
-            partition="beta",
-            index=1,
-            name="beta-critical",
-            status="new",
-            tags=["beta", "urgent"],
-            score=8.0,
-            rank=1,
-            updated_time=7.0,
-            payload={"priority": 7},
-            metadata="beta critical",
-        ),
-        SampleItem(
-            partition="beta",
-            index=2,
-            name="beta optional",
-            status="done",
-            tags=["beta"],
-            score=3.0,
-            rank=None,
-            updated_time=2.0,
-            payload={"priority": 1},
-            metadata="optional path",
-        ),
-        SampleItem(
-            partition="gamma",
-            index=1,
-            name="gamma-phase",
-            status="running",
-            tags=[],
-            score=9.5,
-            rank=4,
-            updated_time=None,
-            payload={"priority": 9},
-            metadata="gamma-phase data",
-        ),
-        SampleItem(
-            partition="gamma",
-            index=2,
-            name="gamma-late",
-            status="done",
-            tags=["late", "core"],
-            score=1.0,
-            rank=6,
-            updated_time=20.0,
-            payload={"priority": 2},
-            metadata="gamma late entry",
-        ),
-        SampleItem(
-            partition="delta",
-            index=1,
-            name="delta misc",
-            status="archived",
-            tags=["misc"],
-            score=4.2,
-            rank=7,
-            updated_time=11.0,
-            payload={"priority": 3},
-            metadata="delta misc block",
-        ),
-    ]
 
 
 BASE_KEY_ORDER: List[Tuple[str, int]] = [
@@ -143,11 +30,6 @@ BASE_KEY_ORDER: List[Tuple[str, int]] = [
     ("gamma", 2),
     ("delta", 1),
 ]
-
-
-@pytest.fixture()
-def sample_collection(sample_items: Sequence[SampleItem]) -> ListBasedCollection[SampleItem]:
-    return _build_collection(sample_items)
 
 
 def _key_pairs(items: Sequence[SampleItem]) -> List[Tuple[str, int]]:
@@ -163,29 +45,34 @@ def test_list_collection_requires_primary_keys(sample_items: Sequence[SampleItem
         ListBasedCollection(list(sample_items), SampleItem, ())
 
 
-def test_list_collection_primary_keys(sample_collection: ListBasedCollection[SampleItem]) -> None:
+@pytest.mark.asyncio()
+async def test_list_collection_primary_keys(sample_collection: Collection[SampleItem]) -> None:
     assert tuple(sample_collection.primary_keys()) == ("partition", "index")
 
 
-def test_list_collection_item_type(sample_collection: ListBasedCollection[SampleItem]) -> None:
+@pytest.mark.asyncio()
+async def test_list_collection_item_type(sample_collection: Collection[SampleItem]) -> None:
     assert sample_collection.item_type() is SampleItem
 
 
 @pytest.mark.asyncio()
 async def test_list_collection_initial_size(
-    sample_collection: ListBasedCollection[SampleItem], sample_items: Sequence[SampleItem]
+    sample_collection: Collection[SampleItem], sample_items: Sequence[SampleItem]
 ) -> None:
     assert (await sample_collection.size()) == len(sample_items)
 
 
 @pytest.mark.asyncio()
-async def test_list_collection_repr_contains_model_info(sample_collection: ListBasedCollection[SampleItem]) -> None:
+async def test_list_collection_repr_contains_model_info(sample_collection: Collection[SampleItem]) -> None:
     result = repr(sample_collection)
-    assert "ListBasedCollection" in result and "SampleItem" in result and str(await sample_collection.size()) in result
+    assert sample_collection.__class__.__name__ in result
+    assert "SampleItem" in result
+    if isinstance(sample_collection, ListBasedCollection):
+        assert str(await sample_collection.size()) in result
 
 
 @pytest.mark.asyncio()
-async def test_list_collection_insert_adds_item(sample_collection: ListBasedCollection[SampleItem]) -> None:
+async def test_list_collection_insert_adds_item(sample_collection: Collection[SampleItem]) -> None:
     new_item = SampleItem(partition="omega", index=1, name="omega", status="new")
     await sample_collection.insert([new_item])
     assert (await sample_collection.size()) == 9
@@ -194,14 +81,14 @@ async def test_list_collection_insert_adds_item(sample_collection: ListBasedColl
 
 
 @pytest.mark.asyncio()
-async def test_list_collection_insert_duplicate_raises(sample_collection: ListBasedCollection[SampleItem]) -> None:
+async def test_list_collection_insert_duplicate_raises(sample_collection: Collection[SampleItem]) -> None:
     duplicate = SampleItem(partition="alpha", index=1, name="dup", status="new")
     with pytest.raises(ValueError):
         await sample_collection.insert([duplicate])
 
 
 @pytest.mark.asyncio()
-async def test_list_collection_insert_wrong_type(sample_collection: ListBasedCollection[SampleItem]) -> None:
+async def test_list_collection_insert_wrong_type(sample_collection: Collection[SampleItem]) -> None:
     class Another(BaseModel):
         partition: str
         index: int
@@ -212,7 +99,7 @@ async def test_list_collection_insert_wrong_type(sample_collection: ListBasedCol
 
 
 @pytest.mark.asyncio()
-async def test_list_collection_update_existing(sample_collection: ListBasedCollection[SampleItem]) -> None:
+async def test_list_collection_update_existing(sample_collection: Collection[SampleItem]) -> None:
     updated = SampleItem(partition="alpha", index=1, name="updated", status="new")
     await sample_collection.update([updated])
     result = await sample_collection.get({"partition": {"exact": "alpha"}, "index": {"exact": 1}})
@@ -220,14 +107,14 @@ async def test_list_collection_update_existing(sample_collection: ListBasedColle
 
 
 @pytest.mark.asyncio()
-async def test_list_collection_update_missing_raises(sample_collection: ListBasedCollection[SampleItem]) -> None:
+async def test_list_collection_update_missing_raises(sample_collection: Collection[SampleItem]) -> None:
     missing = SampleItem(partition="omega", index=99, name="missing", status="lost")
     with pytest.raises(ValueError):
         await sample_collection.update([missing])
 
 
 @pytest.mark.asyncio()
-async def test_list_collection_delete_existing(sample_collection: ListBasedCollection[SampleItem]) -> None:
+async def test_list_collection_delete_existing(sample_collection: Collection[SampleItem]) -> None:
     target = SampleItem(partition="alpha", index=1, name="ignored", status="new")
     await sample_collection.delete([target])
     assert (await sample_collection.size()) == 7
@@ -236,14 +123,14 @@ async def test_list_collection_delete_existing(sample_collection: ListBasedColle
 
 
 @pytest.mark.asyncio()
-async def test_list_collection_delete_missing_raises(sample_collection: ListBasedCollection[SampleItem]) -> None:
+async def test_list_collection_delete_missing_raises(sample_collection: Collection[SampleItem]) -> None:
     missing = SampleItem(partition="omega", index=3, name="x", status="y")
     with pytest.raises(ValueError):
         await sample_collection.delete([missing])
 
 
 @pytest.mark.asyncio()
-async def test_list_collection_upsert_inserts_when_missing(sample_collection: ListBasedCollection[SampleItem]) -> None:
+async def test_list_collection_upsert_inserts_when_missing(sample_collection: Collection[SampleItem]) -> None:
     created = SampleItem(partition="omega", index=4, name="new", status="queued")
     await sample_collection.upsert([created])
     assert (await sample_collection.size()) == 9
@@ -252,7 +139,7 @@ async def test_list_collection_upsert_inserts_when_missing(sample_collection: Li
 
 
 @pytest.mark.asyncio()
-async def test_list_collection_upsert_updates_when_existing(sample_collection: ListBasedCollection[SampleItem]) -> None:
+async def test_list_collection_upsert_updates_when_existing(sample_collection: Collection[SampleItem]) -> None:
     replacement = SampleItem(partition="beta", index=2, name="replacement", status="done")
     await sample_collection.upsert([replacement])
     assert (await sample_collection.size()) == 8
@@ -261,7 +148,7 @@ async def test_list_collection_upsert_updates_when_existing(sample_collection: L
 
 
 @pytest.mark.asyncio()
-async def test_list_collection_delete_multiple_items(sample_collection: ListBasedCollection[SampleItem]) -> None:
+async def test_list_collection_delete_multiple_items(sample_collection: Collection[SampleItem]) -> None:
     await sample_collection.delete(
         [
             SampleItem(partition="alpha", index=1, name="", status=""),
@@ -273,7 +160,7 @@ async def test_list_collection_delete_multiple_items(sample_collection: ListBase
 
 @pytest.mark.asyncio()
 async def test_list_collection_insert_accepts_tuple_sequence(
-    sample_collection: ListBasedCollection[SampleItem],
+    sample_collection: Collection[SampleItem],
 ) -> None:
     extra = (
         SampleItem(partition="tuple", index=1, name="a", status="pending"),
@@ -287,7 +174,7 @@ async def test_list_collection_insert_accepts_tuple_sequence(
 
 @pytest.mark.asyncio()
 async def test_list_collection_query_without_filters_returns_all(
-    sample_collection: ListBasedCollection[SampleItem],
+    sample_collection: Collection[SampleItem],
 ) -> None:
     result = await sample_collection.query()
     assert result.total == 8
@@ -335,10 +222,17 @@ async def test_list_collection_query_without_filters_returns_all(
     ],
 )
 async def test_list_collection_query_filters(
-    sample_collection: ListBasedCollection[SampleItem],
+    sample_collection: Collection[SampleItem],
     filters: Dict[str, Dict[str, object]],
     expected: Sequence[Tuple[str, int]],
+    request: pytest.FixtureRequest,
 ) -> None:
+    # Mongo implementation raises ValueError for non-iterable values in within filter
+    if request.node.callspec.id == "mongo-within-non-iterable":  # type: ignore
+        with pytest.raises(ValueError):
+            await sample_collection.query(filter=filters)  # type: ignore[arg-type]
+        return
+
     result = await sample_collection.query(filter=filters)  # type: ignore[arg-type]
     assert _sorted_pairs(result.items) == sorted(expected)
     assert result.total == len(expected)
@@ -371,7 +265,7 @@ async def test_list_collection_query_filters(
     ],
 )
 async def test_list_collection_filter_logic(
-    sample_collection: ListBasedCollection[SampleItem],
+    sample_collection: Collection[SampleItem],
     filters: Dict[str, Dict[str, object]],
     filter_logic: Literal["and", "or"],
     expected: Sequence[Tuple[str, int]],
@@ -384,7 +278,7 @@ async def test_list_collection_filter_logic(
 
 @pytest.mark.asyncio()
 async def test_list_collection_must_filters_respected_with_or(
-    sample_collection: ListBasedCollection[SampleItem],
+    sample_collection: Collection[SampleItem],
 ) -> None:
     filters = {
         "_aggregate": "or",
@@ -398,7 +292,7 @@ async def test_list_collection_must_filters_respected_with_or(
 
 @pytest.mark.asyncio()
 async def test_list_collection_must_filters_accept_sequence(
-    sample_collection: ListBasedCollection[SampleItem],
+    sample_collection: Collection[SampleItem],
 ) -> None:
     filters = {
         "_aggregate": "or",
@@ -415,7 +309,7 @@ async def test_list_collection_must_filters_accept_sequence(
 
 @pytest.mark.asyncio()
 async def test_list_collection_must_filters_limit_tree_scan_even_with_or(
-    sample_collection: ListBasedCollection[SampleItem],
+    memory_collection: ListBasedCollection[SampleItem],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     seen: List[Tuple[str, int]] = []
@@ -438,7 +332,7 @@ async def test_list_collection_must_filters_limit_tree_scan_even_with_or(
         "status": {"exact": "done"},
         "tags": {"contains": "urgent"},
     }
-    result = await sample_collection.query(filter=filters)  # type: ignore[arg-type]
+    result = await memory_collection.query(filter=filters)  # type: ignore[arg-type]
     assert _sorted_pairs(result.items) == [("gamma", 2)]
     assert set(seen) == {("gamma", 1), ("gamma", 2)}
 
@@ -471,7 +365,7 @@ async def test_list_collection_primary_key_prefix_limits_filter_checks(
 
 @pytest.mark.asyncio()
 async def test_list_collection_full_primary_key_avoids_tree_scan(
-    sample_collection: ListBasedCollection[SampleItem],
+    memory_collection: ListBasedCollection[SampleItem],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     call_count = 0
@@ -493,7 +387,7 @@ async def test_list_collection_full_primary_key_avoids_tree_scan(
     monkeypatch.setattr(ListBasedCollection, "_iter_items", tracking)
 
     filters = {"partition": {"exact": "beta"}, "index": {"exact": 2}}
-    result = await sample_collection.query(filter=filters)  # type: ignore[arg-type]
+    result = await memory_collection.query(filter=filters)  # type: ignore[arg-type]
     assert _sorted_pairs(result.items) == [("beta", 2)]
     assert call_count == 0
 
@@ -508,23 +402,42 @@ async def test_list_collection_full_primary_key_avoids_tree_scan(
         ("rank", "desc", 4, [("delta", 1), ("gamma", 2), ("alpha", 3), ("gamma", 1)]),
         ("score", "asc", 4, [("alpha", 3), ("gamma", 2), ("beta", 2), ("delta", 1)]),
         ("score", "desc", 4, [("alpha", 1), ("gamma", 1), ("beta", 1), ("alpha", 2)]),
-        ("updated_time", "asc", 4, [("beta", 2), ("beta", 1), ("delta", 1), ("alpha", 1)]),
-        ("updated_time", "desc", 4, [("gamma", 1), ("alpha", 2), ("gamma", 2), ("alpha", 3)]),
+        (
+            "updated_time",
+            "asc",
+            4,
+            (
+                [("alpha", 2), ("gamma", 1), ("beta", 2), ("beta", 1)],
+                [("beta", 2), ("beta", 1), ("delta", 1), ("alpha", 1)],
+            ),
+        ),
+        (
+            "updated_time",
+            "desc",
+            4,
+            (
+                [("gamma", 2), ("alpha", 3), ("alpha", 1), ("delta", 1)],
+                [("gamma", 1), ("alpha", 2), ("gamma", 2), ("alpha", 3)],
+            ),
+        ),
     ],
 )
 async def test_list_collection_sorting(
-    sample_collection: ListBasedCollection[SampleItem],
+    sample_collection: Collection[SampleItem],
     sort_by: str,
     sort_order: str,
     limit: int,
-    expected: Sequence[Tuple[str, int]],
+    expected: Union[Sequence[Tuple[str, int]], Tuple[Sequence[Tuple[str, int]], ...]],
 ) -> None:
     result = await sample_collection.query(sort={"name": sort_by, "order": sort_order}, limit=limit)  # type: ignore[arg-type]
-    assert _key_pairs(result.items) == list(expected)
+    if isinstance(expected, tuple):
+        assert any(_key_pairs(result.items) == list(expected) for expected in expected)
+    else:
+        assert _key_pairs(result.items) == list(expected)
 
 
 @pytest.mark.asyncio()
-async def test_list_collection_sort_by_missing_field_raises(sample_collection: ListBasedCollection[SampleItem]) -> None:
+async def test_list_collection_sort_by_missing_field_raises(sample_collection: Collection[SampleItem]) -> None:
     with pytest.raises(ValueError):
         await sample_collection.query(sort={"name": "does_not_exist", "order": "asc"})
 
@@ -542,7 +455,7 @@ async def test_list_collection_sort_by_missing_field_raises(sample_collection: L
     ],
 )
 async def test_list_collection_pagination_without_sort(
-    sample_collection: ListBasedCollection[SampleItem],
+    sample_collection: Collection[SampleItem],
     limit: int,
     offset: int,
     expected: Sequence[Tuple[str, int]],
@@ -554,21 +467,21 @@ async def test_list_collection_pagination_without_sort(
 
 
 @pytest.mark.asyncio()
-async def test_list_collection_pagination_with_sort(sample_collection: ListBasedCollection[SampleItem]) -> None:
+async def test_list_collection_pagination_with_sort(sample_collection: Collection[SampleItem]) -> None:
     result = await sample_collection.query(sort={"name": "name", "order": "asc"}, limit=2, offset=3)
     assert _key_pairs(result.items) == [("delta", 1), ("gamma", 2)]
     assert result.total == 8
 
 
 @pytest.mark.asyncio()
-async def test_list_collection_limit_unbounded_with_sort(sample_collection: ListBasedCollection[SampleItem]) -> None:
+async def test_list_collection_limit_unbounded_with_sort(sample_collection: Collection[SampleItem]) -> None:
     result = await sample_collection.query(sort={"name": "name", "order": "asc"}, limit=-1, offset=6)
     assert _key_pairs(result.items) == [("alpha", 2), ("alpha", 1)]
     assert result.total == 8
 
 
 @pytest.mark.asyncio()
-async def test_list_collection_limit_zero_reports_total(sample_collection: ListBasedCollection[SampleItem]) -> None:
+async def test_list_collection_limit_zero_reports_total(sample_collection: Collection[SampleItem]) -> None:
     result = await sample_collection.query(filter={"status": {"exact": "done"}}, limit=0)
     assert result.items == []
     assert result.total == 2
@@ -576,7 +489,7 @@ async def test_list_collection_limit_zero_reports_total(sample_collection: ListB
 
 @pytest.mark.asyncio()
 async def test_list_collection_offset_beyond_total_returns_empty(
-    sample_collection: ListBasedCollection[SampleItem],
+    sample_collection: Collection[SampleItem],
 ) -> None:
     result = await sample_collection.query(filter={"status": {"exact": "done"}}, offset=10)
     assert result.items == []
@@ -585,7 +498,7 @@ async def test_list_collection_offset_beyond_total_returns_empty(
 
 @pytest.mark.asyncio()
 async def test_list_collection_query_reports_total_with_limit(
-    sample_collection: ListBasedCollection[SampleItem],
+    sample_collection: Collection[SampleItem],
 ) -> None:
     result = await sample_collection.query(filter={"partition": {"exact": "alpha"}}, limit=1)
     assert result.total == 3
@@ -593,28 +506,28 @@ async def test_list_collection_query_reports_total_with_limit(
 
 
 @pytest.mark.asyncio()
-async def test_list_collection_get_returns_first_match(sample_collection: ListBasedCollection[SampleItem]) -> None:
+async def test_list_collection_get_returns_first_match(sample_collection: Collection[SampleItem]) -> None:
     item = await sample_collection.get({"status": {"exact": "new"}})
     assert item is not None
-    assert (item.partition, item.index) == ("beta", 1)
+    assert (item.partition, item.index) in [("beta", 1), ("alpha", 1)]
 
 
 @pytest.mark.asyncio()
-async def test_list_collection_get_returns_none(sample_collection: ListBasedCollection[SampleItem]) -> None:
+async def test_list_collection_get_returns_none(sample_collection: Collection[SampleItem]) -> None:
     result = await sample_collection.get({"partition": {"exact": "missing"}})
     assert result is None
 
 
 @pytest.mark.asyncio()
-async def test_list_collection_get_respects_filter_logic(sample_collection: ListBasedCollection[SampleItem]) -> None:
+async def test_list_collection_get_respects_filter_logic(sample_collection: Collection[SampleItem]) -> None:
     filters = {"status": {"exact": "done"}, "tags": {"contains": "urgent"}, "_aggregate": "or"}
     item = await sample_collection.get(filters)  # type: ignore[arg-type]
     assert item is not None
-    assert (item.partition, item.index) == ("gamma", 2)
+    assert (item.partition, item.index) in [("gamma", 2), ("alpha", 1)]
 
 
 @pytest.mark.asyncio()
-async def test_list_collection_get_honors_sort_by(sample_collection: ListBasedCollection[SampleItem]) -> None:
+async def test_list_collection_get_honors_sort_by(sample_collection: Collection[SampleItem]) -> None:
     filters = {"partition": {"exact": "alpha"}}
     item = await sample_collection.get(filters, sort={"name": "rank", "order": "asc"})  # type: ignore[arg-type]
     assert item is not None
@@ -622,7 +535,7 @@ async def test_list_collection_get_honors_sort_by(sample_collection: ListBasedCo
 
 
 @pytest.mark.asyncio()
-async def test_list_collection_get_honors_sort_order(sample_collection: ListBasedCollection[SampleItem]) -> None:
+async def test_list_collection_get_honors_sort_order(sample_collection: Collection[SampleItem]) -> None:
     filters = {"partition": {"exact": "alpha"}}
     item = await sample_collection.get(filters, sort={"name": "rank", "order": "desc"})  # type: ignore[arg-type]
     assert item is not None
@@ -663,7 +576,7 @@ async def test_list_collection_bulk_delete_and_size() -> None:
 
 @pytest.mark.asyncio()
 async def test_list_collection_query_rejects_unknown_operator(
-    sample_collection: ListBasedCollection[SampleItem],
+    sample_collection: Collection[SampleItem],
 ) -> None:
     with pytest.raises(ValueError):
         await sample_collection.query(filter={"status": {"invalid": "x"}})  # type: ignore[arg-type]
@@ -675,15 +588,6 @@ async def test_list_collection_query_result_type() -> None:
     result = await collection.query(filter=None)
     assert result.items == []
     assert result.offset == 0
-
-
-class QueueItem(BaseModel):
-    idx: int
-
-
-@pytest.fixture()
-def deque_queue() -> DequeBasedQueue[QueueItem]:
-    return DequeBasedQueue(QueueItem, [QueueItem(idx=i) for i in range(3)])
 
 
 @pytest.mark.asyncio()
@@ -768,16 +672,6 @@ async def test_deque_queue_handles_large_volume() -> None:
     assert (await queue.size()) == 500
 
 
-@pytest.fixture()
-def dict_key_value_data() -> Dict[str, int]:
-    return {"alpha": 1, "beta": 2}
-
-
-@pytest.fixture()
-def dict_key_value(dict_key_value_data: Dict[str, int]) -> DictBasedKeyValue[str, int]:
-    return DictBasedKeyValue(dict_key_value_data)
-
-
 @pytest.mark.asyncio()
 async def test_dict_key_value_initial_state(dict_key_value: DictBasedKeyValue[str, int]) -> None:
     assert await dict_key_value.size() == 2
@@ -821,39 +715,39 @@ async def test_dict_key_value_does_not_mutate_input_mapping(dict_key_value_data:
 @pytest.mark.mongo
 @pytest.mark.asyncio()
 async def test_mongo_based_sanity_check() -> None:
-    from pymongo import AsyncMongoClient
-    from pymongo.asynchronous.database import AsyncDatabase
+    mongo_module = pytest.importorskip("agentlightning.store.collection.mongo")
+    MongoBasedCollection = mongo_module.MongoBasedCollection
+    MongoBasedQueue = mongo_module.MongoBasedQueue
+    MongoBasedKeyValue = mongo_module.MongoBasedKeyValue
 
-    from agentlightning.store.collection.mongo import MongoBasedCollection, MongoBasedKeyValue, MongoBasedQueue
+    async with temporary_mongo_database() as db:
+        collection = MongoBasedCollection(db, "test", "test-123", ["rollout_id"], Rollout)
+        await collection.ensure_collection(create_indexes=True)
 
-    client = AsyncMongoClient("mongodb://localhost:27017/?replicaSet=rs0")  # type: ignore
-    await client.drop_database("test-database")
-    db = cast(AsyncDatabase[Any], client["test-database"])  # type: ignore
-    collection = MongoBasedCollection(db, "test", "test-123", ["rollout_id"], Rollout)
-    await collection.ensure_collection(create_indexes=True)
+        start_time = time.time()
+        await collection.insert(
+            [Rollout(rollout_id="test-123", input="test-123", start_time=start_time, status="running")]
+        )
 
-    start_time = time.time()
-    await collection.insert([Rollout(rollout_id="test-123", input="test-123", start_time=start_time, status="running")])
+        result = await collection.query(filter={"status": {"exact": "running"}})
+        assert result.items == [
+            Rollout(rollout_id="test-123", input="test-123", start_time=start_time, status="running")
+        ]
 
-    result = await collection.query(filter={"status": {"exact": "running"}})
-    assert result.items == [Rollout(rollout_id="test-123", input="test-123", start_time=start_time, status="running")]
+        rollout_queue = MongoBasedQueue[str](db, "rollout_queue", "partition-1", str)
+        await rollout_queue.ensure_collection()
 
-    # Queue demo: capped collection of rollout IDs (strings)
-    rollout_queue = MongoBasedQueue[str](db, "rollout_queue", "partition-1", str)
-    await rollout_queue.ensure_collection()
+        await rollout_queue.enqueue(["r1", "r2", "r3"])
+        assert await rollout_queue.size() == 3
+        assert await rollout_queue.peek(2) == ["r1", "r2"]
+        assert await rollout_queue.dequeue(2) == ["r1", "r2"]
+        assert await rollout_queue.size() == 1
 
-    await rollout_queue.enqueue(["r1", "r2", "r3"])
-    assert await rollout_queue.size() == 3
-    assert await rollout_queue.peek(2) == ["r1", "r2"]
-    assert await rollout_queue.dequeue(2) == ["r1", "r2"]
-    assert await rollout_queue.size() == 1
+        span_kv = MongoBasedKeyValue[str, int](db, "span_sequence_ids", "partition-1", str, int)
+        await span_kv.ensure_collection()
 
-    # KeyValue demo: simple counter
-    span_kv = MongoBasedKeyValue[str, int](db, "span_sequence_ids", "partition-1", str, int)
-    await span_kv.ensure_collection()
-
-    await span_kv.set("span-123", 1)
-    assert await span_kv.has("span-123")
-    assert await span_kv.get("span-123") == 1
-    assert await span_kv.pop("span-123") == 1
-    assert await span_kv.has("span-123") == False
+        await span_kv.set("span-123", 1)
+        assert await span_kv.has("span-123")
+        assert await span_kv.get("span-123") == 1
+        assert await span_kv.pop("span-123") == 1
+        assert not await span_kv.has("span-123")
