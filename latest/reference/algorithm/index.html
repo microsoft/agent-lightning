@@ -3699,7 +3699,7 @@ implementation raises <code>NotImplementedError</code> to make the requirement e
 
     <div class="doc doc-contents first">
             <p class="doc doc-class-bases">
-              Bases: <code><a class="autorefs autorefs-internal" title="            agentlightning.Adapter (agentlightning.adapter.base.Adapter)" href="#agentlightning.Adapter">Adapter</a>[<span title="typing.List">List</span>[<a class="autorefs autorefs-internal" title="            agentlightning.Span (agentlightning.types.Span)" href="../types/#agentlightning.Span">Span</a>], <span title="agentlightning.adapter.base.T_to">T_to</span>]</code>, <code><span title="typing.Generic">Generic</span>[<span title="agentlightning.adapter.base.T_to">T_to</span>]</code></p>
+              Bases: <code><a class="autorefs autorefs-internal" title="            agentlightning.Adapter (agentlightning.adapter.base.Adapter)" href="#agentlightning.Adapter">Adapter</a>[<span title="typing.Sequence">Sequence</span>[<a class="autorefs autorefs-internal" title="            agentlightning.Span (agentlightning.types.Span)" href="../types/#agentlightning.Span">Span</a>], <span title="agentlightning.adapter.base.T_to">T_to</span>]</code>, <code><span title="typing.Generic">Generic</span>[<span title="agentlightning.adapter.base.T_to">T_to</span>]</code></p>
 
 
 
@@ -3751,7 +3751,7 @@ for example reinforcement learning training data or observability metrics.</p>
 
     <div class="doc doc-contents first">
             <p class="doc doc-class-bases">
-              Bases: <code><a class="autorefs autorefs-internal" title="            agentlightning.Adapter (agentlightning.adapter.base.Adapter)" href="#agentlightning.Adapter">Adapter</a>[<span title="typing.List">List</span>[<span title="opentelemetry.sdk.trace.ReadableSpan">ReadableSpan</span>], <span title="agentlightning.adapter.base.T_to">T_to</span>]</code>, <code><span title="typing.Generic">Generic</span>[<span title="agentlightning.adapter.base.T_to">T_to</span>]</code></p>
+              Bases: <code><a class="autorefs autorefs-internal" title="            agentlightning.Adapter (agentlightning.adapter.base.Adapter)" href="#agentlightning.Adapter">Adapter</a>[<span title="typing.Sequence">Sequence</span>[<span title="opentelemetry.sdk.trace.ReadableSpan">ReadableSpan</span>], <span title="agentlightning.adapter.base.T_to">T_to</span>]</code>, <code><span title="typing.Generic">Generic</span>[<span title="agentlightning.adapter.base.T_to">T_to</span>]</code></p>
 
 
 
@@ -3950,7 +3950,7 @@ for rewards.</p>
     <ul>
         <li class="doc-section-item field-body">
             <b><code>source</code></b>
-              (<code><span title="typing.Union">Union</span>[<span title="typing.List">List</span>[<a class="autorefs autorefs-internal" title="            agentlightning.Span (agentlightning.types.Span)" href="../types/#agentlightning.Span">Span</a>], <span title="typing.List">List</span>[<span title="opentelemetry.sdk.trace.ReadableSpan">ReadableSpan</span>]]</code>)
+              (<code><span title="typing.Union">Union</span>[<span title="typing.Sequence">Sequence</span>[<a class="autorefs autorefs-internal" title="            agentlightning.Span (agentlightning.types.Span)" href="../types/#agentlightning.Span">Span</a>], <span title="typing.Sequence">Sequence</span>[<span title="opentelemetry.sdk.trace.ReadableSpan">ReadableSpan</span>]]</code>)
           –
           <div class="doc-md-description">
             <p>Agent Lightning spans or raw OpenTelemetry spans that form a trace.</p>
@@ -4130,7 +4130,7 @@ ordering.</p>
     <ul>
         <li class="doc-section-item field-body">
             <b><code>source</code></b>
-              (<code><span title="typing.List">List</span>[<a class="autorefs autorefs-internal" title="            agentlightning.Span (agentlightning.types.Span)" href="../types/#agentlightning.Span">Span</a>]</code>)
+              (<code><span title="typing.Sequence">Sequence</span>[<a class="autorefs autorefs-internal" title="            agentlightning.Span (agentlightning.types.Span)" href="../types/#agentlightning.Span">Span</a>]</code>)
           –
           <div class="doc-md-description">
             <p>Spans emitted by the LLM Proxy containing prompt, response, and reward data.</p>
@@ -4229,7 +4229,7 @@ children of the associated completion span.</p>
     <ul>
         <li class="doc-section-item field-body">
             <b><code>source</code></b>
-              (<code><span title="typing.List">List</span>[<a class="autorefs autorefs-internal" title="            agentlightning.Span (agentlightning.types.Span)" href="../types/#agentlightning.Span">Span</a>]</code>)
+              (<code><span title="typing.Sequence">Sequence</span>[<a class="autorefs autorefs-internal" title="            agentlightning.Span (agentlightning.types.Span)" href="../types/#agentlightning.Span">Span</a>]</code>)
           –
           <div class="doc-md-description">
             <p>Spans containing <code>gen_ai.*</code> attributes emitted by the tracing pipeline.</p>
@@ -4287,7 +4287,7 @@ children of the associated completion span.</p>
         </li>
         <li class="doc-section-item field-body">
             <b><code>all_spans</code></b>
-              (<code><span title="typing.List">List</span>[<a class="autorefs autorefs-internal" title="            agentlightning.Span (agentlightning.types.Span)" href="../types/#agentlightning.Span">Span</a>]</code>)
+              (<code><span title="typing.Sequence">Sequence</span>[<a class="autorefs autorefs-internal" title="            agentlightning.Span (agentlightning.types.Span)" href="../types/#agentlightning.Span">Span</a>]</code>)
           –
           <div class="doc-md-description">
             <p>The complete span list belonging to the trace.</p>
