@@ -23,7 +23,6 @@ from typing import (
     Type,
     TypeVar,
     Union,
-    cast,
 )
 
 from agentlightning.types import (
@@ -40,9 +39,12 @@ from agentlightning.types import (
 
 from .base import (
     Collection,
+    FilterMap,
     KeyValue,
     LightningCollections,
     Queue,
+    normalize_filter_options,
+    resolve_sort_options,
 )
 
 T = TypeVar("T")  # Recommended to be a BaseModel, not a dict
@@ -58,79 +60,7 @@ ListBasedCollectionItemType = Union[
     Dict[Any, T],  # leaf node dictionary
 ]
 
-FilterMap = Mapping[str, FilterField]
 MutationMode = Literal["insert", "update", "upsert", "delete"]
-
-
-def _merge_must_filters(target: Dict[str, FilterField], definition: Any) -> None:
-    """Normalize a `_must` filter group into the provided mapping.
-
-    Mainly for validation purposes.
-    """
-    if definition is None:
-        return
-
-    entries: List[Mapping[str, FilterField]] = []
-    if isinstance(definition, Mapping):
-        entries.append(cast(Mapping[str, FilterField], definition))
-    elif isinstance(definition, Sequence) and not isinstance(definition, (str, bytes)):
-        for entry in definition:  # type: ignore
-            if not isinstance(entry, Mapping):
-                raise TypeError("Each `_must` entry must be a mapping of field names to operators")
-            entries.append(cast(Mapping[str, FilterField], entry))
-    else:
-        raise TypeError("`_must` filters must be provided as a mapping or sequence of mappings")
-
-    for entry in entries:
-        for field_name, ops in entry.items():
-            existing = target.get(field_name, {})
-            merged_ops: Dict[str, Any] = dict(existing)
-            for op_name, expected in ops.items():
-                if op_name in merged_ops:
-                    raise ValueError(f"Duplicate operator '{op_name}' for field '{field_name}' in must filters")
-                merged_ops[op_name] = expected
-            target[field_name] = cast(FilterField, merged_ops)
-
-
-def _normalize_filter_options(
-    filter_options: Optional[FilterOptions],
-) -> Tuple[Optional[FilterMap], Optional[FilterMap], Literal["and", "or"]]:
-    """Convert FilterOptions to the internal structure and resolve aggregate logic."""
-    if not filter_options:
-        return None, None, "and"
-
-    aggregate = cast(Literal["and", "or"], filter_options.get("_aggregate", "and"))
-    if aggregate not in ("and", "or"):
-        raise ValueError(f"Unsupported filter aggregate '{aggregate}'")
-
-    # Extract normalized filters and must filters from the filter options.
-    normalized: Dict[str, FilterField] = {}
-    must_filters: Dict[str, FilterField] = {}
-    for field_name, ops in filter_options.items():
-        if field_name == "_aggregate":
-            continue
-        if field_name == "_must":
-            _merge_must_filters(must_filters, ops)
-            continue
-        normalized[field_name] = cast(FilterField, dict(ops))  # type: ignore
-
-    return (normalized or None, must_filters or None, aggregate)
-
-
-def _resolve_sort_options(sort: Optional[SortOptions]) -> Tuple[Optional[str], Literal["asc", "desc"]]:
-    """Extract sort field/order from the caller-provided SortOptions."""
-    if not sort:
-        return None, "asc"
-
-    sort_name = sort.get("name")
-    if not sort_name:
-        raise ValueError("Sort options must include a 'name' field")
-
-    sort_order = sort.get("order", "asc")
-    if sort_order not in ("asc", "desc"):
-        raise ValueError(f"Unsupported sort order '{sort_order}'")
-
-    return sort_name, sort_order
 
 
 def _item_matches_filters(
@@ -520,8 +450,8 @@ class ListBasedCollection(Collection[T]):
             limit: Max number of items to return. Use -1 for "no limit".
             offset: Number of items to skip from the start of the *matching* items.
         """
-        filters, must_filters, filter_logic = _normalize_filter_options(filter)
-        sort_by, sort_order = _resolve_sort_options(sort)
+        filters, must_filters, filter_logic = normalize_filter_options(filter)
+        sort_by, sort_order = resolve_sort_options(sort)
         items_iter: Iterable[T] = self._iter_matching_items(filters, must_filters, filter_logic)
 
         # No sorting: stream through items and apply pagination on the fly.
@@ -574,8 +504,8 @@ class ListBasedCollection(Collection[T]):
         sort: Optional[SortOptions] = None,
     ) -> Optional[T]:
         """Return the first (or best-sorted) item that matches the given filters, or None."""
-        filters, must_filters, filter_logic = _normalize_filter_options(filter)
-        sort_by, sort_order = _resolve_sort_options(sort)
+        filters, must_filters, filter_logic = normalize_filter_options(filter)
+        sort_by, sort_order = resolve_sort_options(sort)
         items_iter: Iterable[T] = self._iter_matching_items(filters, must_filters, filter_logic)
 
         if not sort_by:

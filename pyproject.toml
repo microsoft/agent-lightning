@@ -38,6 +38,11 @@ verl = [
   "vllm>=0.8.4", # Due to interface change of ExternalZeroMQDistributedExecutor
 ]
 
+# Store-related dependencies.
+mongo = [
+  "pymongo",
+]
+
 [project.scripts]
 agl = "agentlightning.cli:main"
 
