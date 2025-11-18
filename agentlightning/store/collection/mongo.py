@@ -10,11 +10,11 @@ from typing import Any, Dict, Generic, List, Mapping, Optional, Sequence, Type, 
 from pydantic import BaseModel, TypeAdapter
 from pymongo import AsyncMongoClient
 from pymongo.asynchronous.database import AsyncDatabase
-from pymongo.errors import CollectionInvalid, DuplicateKeyError
+from pymongo.errors import CollectionInvalid, DuplicateKeyError, OperationFailure
 
 from agentlightning.types import FilterOptions, PaginatedResult, SortOptions
 
-from .base import Collection, KeyValue, Queue, normalize_filter_options, resolve_sort_options
+from .base import Collection, KeyValue, LightningCollections, Queue, normalize_filter_options, resolve_sort_options
 
 T_model = TypeVar("T_model", bound=BaseModel)
 
@@ -109,6 +109,47 @@ def _build_mongo_filter(filter_options: Optional[FilterOptions]) -> Dict[str, An
     return {"$and": must_conditions}
 
 
+async def _ensure_collection(
+    db: AsyncDatabase[Mapping[str, Any]], collection_name: str, primary_keys: Optional[Sequence[str]] = None
+) -> bool:
+    """Ensure the backing MongoDB collection exists.
+
+    This method is idempotent and safe to call multiple times.
+    """
+    # Create collection if it doesn't exist yet
+    try:
+        await db.create_collection(collection_name)
+    except CollectionInvalid as exc:
+        # Thrown if collection already exists
+        logger.debug(f"Collection '{collection_name}' may have already existed. No need to create it: {exc!r}")
+    except OperationFailure as exc:
+        logger.debug(f"Failed to create collection '{collection_name}'. Probably already exists: {exc!r}")
+        # Some servers use OperationFailure w/ specific codes for "NamespaceExists"
+        if exc.code in (48, 68):  # 48: NamespaceExists, 68: already exists on older versions
+            pass
+        else:
+            raise
+
+    # Optionally create a unique index on primary keys (scoped by partition_id)
+    if primary_keys:
+        # Always include the partition field in the unique index.
+        keys = [("partition_id", 1)] + [(pk, 1) for pk in primary_keys]
+        try:
+            await db[collection_name].create_index(keys, name=f"uniq_partition_{'_'.join(primary_keys)}", unique=True)
+        except OperationFailure as exc:
+            logger.debug(f"Index for collection '{collection_name}' already exists. No need to create it: {exc!r}")
+            # Ignore "index already exists" type errors
+            if exc.code in (
+                68,
+                85,
+            ):  # IndexOptionsConflict, etc.
+                pass
+            else:
+                raise
+
+    return True
+
+
 class MongoBasedCollection(Collection[T_model]):
     """Mongo-based implementation of Collection.
 
@@ -131,6 +172,7 @@ class MongoBasedCollection(Collection[T_model]):
         self._db = db
         self._collection = db[collection_name]
         self._partition_id = partition_id
+        self._collection_created = False
 
         if not primary_keys:
             raise ValueError("primary_keys must be non-empty")
@@ -151,20 +193,9 @@ class MongoBasedCollection(Collection[T_model]):
                 key fields. If such an index already exists with the same
                 definition, MongoDB will treat this as a no-op.
         """
-        # Create collection if it doesn't exist yet
-        existing = await self._db.list_collection_names()
-        if self._collection.name not in existing:
-            await self._db.create_collection(self._collection.name)
-
-        # Optionally create a unique index on primary keys (scoped by partition_id)
-        if create_indexes and self._primary_keys:
-            # Always include the partition field in the unique index.
-            keys = [("partition_id", 1)] + [(pk, 1) for pk in self._primary_keys]
-            await self._collection.create_index(
-                keys,
-                unique=True,
-                name=f"uniq_partition_{'_'.join(self._primary_keys)}",
-            )
+        if self._collection_created:
+            return
+        self._collection_created = await _ensure_collection(self._db, self._collection.name, self._primary_keys)
 
     def primary_keys(self) -> Sequence[str]:
         """Return the primary key field names for this collection."""
@@ -174,6 +205,7 @@ class MongoBasedCollection(Collection[T_model]):
         return self._item_type
 
     async def size(self) -> int:
+        await self.ensure_collection()
         return await self._collection.count_documents({"partition_id": self._partition_id})
 
     def _pk_filter(self, item: T_model) -> Dict[str, Any]:
@@ -225,6 +257,8 @@ class MongoBasedCollection(Collection[T_model]):
         The handling of null-values in sorting is different from memory-based implementation.
         In MongoDB, null values are treated as less than non-null values.
         """
+        await self.ensure_collection()
+
         combined = self._inject_partition_filter(filter)
         mongo_filter = _build_mongo_filter(cast(FilterOptions, combined))
 
@@ -262,6 +296,7 @@ class MongoBasedCollection(Collection[T_model]):
         filter: Optional[FilterOptions] = None,
         sort: Optional[SortOptions] = None,
     ) -> Optional[T_model]:
+        await self.ensure_collection()
         result = await self.query(filter=filter, sort=sort, limit=1, offset=0)
         return result.items[0] if result.items else None
 
@@ -269,6 +304,7 @@ class MongoBasedCollection(Collection[T_model]):
         if not items:
             return
 
+        await self.ensure_collection()
         docs: List[Mapping[str, Any]] = []
         for item in items:
             self._ensure_item_type(item)
@@ -295,6 +331,7 @@ class MongoBasedCollection(Collection[T_model]):
         if not items:
             return
 
+        await self.ensure_collection()
         for item in items:
             self._ensure_item_type(item)
             pk_filter = self._pk_filter(item)
@@ -308,6 +345,7 @@ class MongoBasedCollection(Collection[T_model]):
         if not items:
             return
 
+        await self.ensure_collection()
         for item in items:
             self._ensure_item_type(item)
             pk_filter = self._pk_filter(item)
@@ -319,6 +357,7 @@ class MongoBasedCollection(Collection[T_model]):
         if not items:
             return
 
+        await self.ensure_collection()
         for item in items:
             self._ensure_item_type(item)
             pk_filter = self._pk_filter(item)
@@ -352,6 +391,7 @@ class MongoBasedQueue(Queue[T_generic], Generic[T_generic]):
         self._partition_id = partition_id
         self._item_type = item_type
         self._adapter: TypeAdapter[T_generic] = TypeAdapter(item_type)
+        self._collection_created = False
 
     def item_type(self) -> Type[T_generic]:
         return self._item_type
@@ -361,24 +401,14 @@ class MongoBasedQueue(Queue[T_generic], Generic[T_generic]):
 
         If it already exists, this is a no-op.
         """
-        existing = await self._db.list_collection_names()
-        if self._collection.name in existing:
-            # Assume it's already correctly configured.
+        if self._collection_created:
             return
-
-        try:
-            # Create a normal (non-capped) collection.
-            await self._db.create_collection(self._collection.name)
-        except CollectionInvalid as exc:
-            raise CollectionInvalid(f"Failed to create collection '{self._collection.name}'") from exc
-
-        # Index to speed up partition + consumed lookups.
-        await self._collection.create_index(
-            [("partition_id", 1), ("consumed", 1), ("_id", 1)],
-            name="queue_partition_consumed_id",
+        self._collection_created = await _ensure_collection(
+            self._db, self._collection.name, primary_keys=["consumed", "_id"]
         )
 
     async def has(self, item: T_generic) -> bool:
+        await self.ensure_collection()
         encoded = self._adapter.dump_python(item, mode="python")
         doc = await self._collection.find_one(
             {
@@ -393,6 +423,7 @@ class MongoBasedQueue(Queue[T_generic], Generic[T_generic]):
         if not items:
             return []
 
+        await self.ensure_collection()
         docs: List[Mapping[str, Any]] = []
         for item in items:
             if not isinstance(item, self._item_type):
@@ -413,6 +444,7 @@ class MongoBasedQueue(Queue[T_generic], Generic[T_generic]):
         if limit <= 0:
             return []
 
+        await self.ensure_collection()
         results: list[T_generic] = []
 
         # Atomic claim loop using find_one_and_update
@@ -440,6 +472,7 @@ class MongoBasedQueue(Queue[T_generic], Generic[T_generic]):
         if limit <= 0:
             return []
 
+        await self.ensure_collection()
         cursor = (
             self._collection.find(
                 {
@@ -459,6 +492,7 @@ class MongoBasedQueue(Queue[T_generic], Generic[T_generic]):
         return items
 
     async def size(self) -> int:
+        await self.ensure_collection()
         return await self._collection.count_documents(
             {
                 "partition_id": self._partition_id,
@@ -493,21 +527,16 @@ class MongoBasedKeyValue(KeyValue[K, V], Generic[K, V]):
         self._value_type = value_type
         self._key_adapter: TypeAdapter[K] = TypeAdapter(key_type)
         self._value_adapter: TypeAdapter[V] = TypeAdapter(value_type)
+        self._collection_created = False
 
     async def ensure_collection(self, *, create_indexes: bool = True) -> None:
         """Ensure the backing collection exists (and optionally its indexes)."""
-        existing = await self._db.list_collection_names()
-        if self._collection.name not in existing:
-            await self._db.create_collection(self._collection.name)
-
-        if create_indexes:
-            await self._collection.create_index(
-                [("partition_id", 1), ("key", 1)],
-                unique=True,
-                name="uniq_partition_key",
-            )
+        if self._collection_created:
+            return
+        self._collection_created = await _ensure_collection(self._db, self._collection.name, primary_keys=["key"])
 
     async def has(self, key: K) -> bool:
+        await self.ensure_collection()
         encoded_key = self._key_adapter.dump_python(key, mode="python")
         doc = await self._collection.find_one(
             {
@@ -518,6 +547,7 @@ class MongoBasedKeyValue(KeyValue[K, V], Generic[K, V]):
         return doc is not None
 
     async def get(self, key: K, default: V | None = None) -> V | None:
+        await self.ensure_collection()
         encoded_key = self._key_adapter.dump_python(key, mode="python")
         doc = await self._collection.find_one(
             {
@@ -532,6 +562,7 @@ class MongoBasedKeyValue(KeyValue[K, V], Generic[K, V]):
         return self._value_adapter.validate_python(raw_value)
 
     async def set(self, key: K, value: V) -> None:
+        await self.ensure_collection()
         encoded_key = self._key_adapter.dump_python(key, mode="python")
         encoded_value = self._value_adapter.dump_python(value, mode="python")
         try:
@@ -552,6 +583,7 @@ class MongoBasedKeyValue(KeyValue[K, V], Generic[K, V]):
             raise ValueError("Duplicate key error while setting key-value item") from exc
 
     async def pop(self, key: K, default: V | None = None) -> V | None:
+        await self.ensure_collection()
         encoded_key = self._key_adapter.dump_python(key, mode="python")
         doc = await self._collection.find_one_and_delete(
             {
@@ -566,8 +598,66 @@ class MongoBasedKeyValue(KeyValue[K, V], Generic[K, V]):
         return self._value_adapter.validate_python(raw_value)
 
     async def size(self) -> int:
+        await self.ensure_collection()
         return await self._collection.count_documents(
             {
                 "partition_id": self._partition_id,
             }
         )
+
+
+# class MongoLightningCollections(LightningCollections):
+#     """Mongo implementation of LightningCollections using MongoDB collections.
+
+#     Serves as the storage base for [`MongoLightningStore`][agentlightning.store.MongoLightningStore].
+#     """
+
+#     def __init__(self, db: AsyncDatabase[Mapping[str, Any]]):
+#         self._db = db
+#         self._rollouts = MongoBasedCollection(db, "rollouts", "rollout_id", ["rollout_id"], Rollout)
+#         self._attempts = MongoBasedCollection(db, "attempts", "attempt_id", ["rollout_id", "attempt_id"], Attempt)
+#         self._spans = MongoBasedCollection(db, "spans", "span_id", ["rollout_id", "attempt_id", "span_id"], Span)
+#         self._resources = MongoBasedCollection(db, "resources", "resources_id", ["resources_id"], ResourcesUpdate)
+#         self._workers = MongoBasedCollection(db, "workers", "worker_id", ["worker_id"], Worker)
+#         self._rollout_queue = MongoBasedQueue(db, "rollout_queue", "rollout_queue", str)
+#         self._span_sequence_ids = MongoBasedKeyValue(db, "span_sequence_ids", "span_sequence_ids", str, int)
+
+#     @property
+#     def rollouts(self) -> ListBasedCollection[Rollout]:
+#         return self._rollouts
+
+#     @property
+#     def attempts(self) -> ListBasedCollection[Attempt]:
+#         return self._attempts
+
+#     @property
+#     def spans(self) -> ListBasedCollection[Span]:
+#         return self._spans
+
+#     @property
+#     def resources(self) -> ListBasedCollection[ResourcesUpdate]:
+#         return self._resources
+
+#     @property
+#     def workers(self) -> ListBasedCollection[Worker]:
+#         return self._workers
+
+#     @property
+#     def rollout_queue(self) -> DequeBasedQueue[str]:
+#         return self._rollout_queue
+
+#     @property
+#     def span_sequence_ids(self) -> DictBasedKeyValue[str, int]:
+#         return self._span_sequence_ids
+
+#     @asynccontextmanager
+#     async def atomic(self, *args: Any, **kwargs: Any) -> AsyncGenerator[None, None]:
+#         async with self._lock:
+#             yield
+
+#     async def evict_spans_for_rollout(self, rollout_id: str) -> None:
+#         """Evict all spans for a given rollout ID.
+
+#         Uses private API for efficiency.
+#         """
+#         self._spans._items.pop(rollout_id, [])  # pyright: ignore[reportPrivateUsage]

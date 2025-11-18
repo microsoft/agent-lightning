@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 from typing import Dict, Iterable, List, Literal, Mapping, Sequence, Tuple, Union
+from uuid import uuid4
 
 import pytest
 from pydantic import BaseModel
@@ -751,3 +753,67 @@ async def test_mongo_based_sanity_check() -> None:
         assert await span_kv.get("span-123") == 1
         assert await span_kv.pop("span-123") == 1
         assert not await span_kv.has("span-123")
+
+
+@pytest.mark.mongo
+@pytest.mark.asyncio()
+async def test_mongo_ensure_collection_creates_partition_scoped_index() -> None:
+    from agentlightning.store.collection.mongo import MongoBasedCollection
+
+    async with temporary_mongo_database() as db:
+        collection_name = f"ensure-{uuid4().hex}"
+        collection = MongoBasedCollection(db, collection_name, "partition-ensure", ["name", "index"], SampleItem)
+        await collection.ensure_collection()
+
+        unique_index = None
+        async for index in await db[collection_name].list_indexes():  # type: ignore
+            if index["name"] == "uniq_partition_name_index" and index.get("unique"):  # type: ignore
+                unique_index = index  # type: ignore
+                break
+
+        assert unique_index is not None, "expected unique partition/index key"
+        key_pairs = list(unique_index["key"].items())  # type: ignore
+        assert key_pairs == [("partition_id", 1), ("name", 1), ("index", 1)]
+
+
+@pytest.mark.mongo
+@pytest.mark.asyncio()
+async def test_mongo_ensure_collection_survives_concurrent_calls() -> None:
+    from agentlightning.store.collection.mongo import MongoBasedCollection
+
+    async with temporary_mongo_database() as db:
+        collection_name = f"ensure-{uuid4().hex}"
+
+        async def ensure_once() -> None:
+            collection = MongoBasedCollection(db, collection_name, "partition-concurrent", ["index"], SampleItem)
+            await collection.ensure_collection()
+
+        await asyncio.gather(*(ensure_once() for _ in range(20)))
+
+        names = await db.list_collection_names()
+        assert names.count(collection_name) == 1
+
+        unique_indexes = []
+        async for index in await db[collection_name].list_indexes():  # type: ignore
+            if index["name"].startswith("uniq_partition_"):  # type: ignore
+                unique_indexes.append(index["name"])  # type: ignore
+        assert unique_indexes == ["uniq_partition_index"]
+
+
+@pytest.mark.mongo
+@pytest.mark.asyncio()
+async def test_mongo_ensure_collection_repeats_without_altering_indexes() -> None:
+    from agentlightning.store.collection.mongo import MongoBasedCollection
+
+    async with temporary_mongo_database() as db:
+        collection_name = f"ensure-{uuid4().hex}"
+        collection = MongoBasedCollection(db, collection_name, "partition-repeat", ["index"], SampleItem)
+        await collection.ensure_collection()
+        await collection.ensure_collection()
+
+        unique_indexes = []
+        async for index in await db[collection_name].list_indexes():  # type: ignore
+            if index["name"].startswith("uniq_partition_"):  # type: ignore
+                unique_indexes.append((index["name"], list(index["key"].items())))  # type: ignore
+
+        assert unique_indexes == [("uniq_partition_index", [("partition_id", 1), ("index", 1)])]

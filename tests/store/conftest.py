@@ -271,7 +271,6 @@ async def sample_collection(
                 ["partition", "index"],
                 SampleItem,
             )
-            await collection.ensure_collection()
             await collection.insert(sample_items)
             setattr(collection, "_test_backend", backend)
             yield collection
@@ -294,7 +293,6 @@ async def deque_queue(request: pytest.FixtureRequest) -> AsyncGenerator[Queue[Qu
 
         async with temporary_mongo_database() as db:
             queue = mongo_module.MongoBasedQueue[QueueItem](db, "queue-items", "partition-1", QueueItem)
-            await queue.ensure_collection()
             await queue.enqueue([QueueItem(idx=i) for i in range(3)])
             yield queue
 
@@ -323,7 +321,6 @@ async def dict_key_value(
 
         async with temporary_mongo_database() as db:
             key_value = mongo_module.MongoBasedKeyValue[str, int](db, "key-value-items", "partition-1", str, int)
-            await key_value.ensure_collection()
             for key, value in dict_key_value_data.items():
                 await key_value.set(key, value)
             yield key_value
