@@ -420,8 +420,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
             resolved_rollout_ids = None
 
         filters: FilterOptions = {}
-        if filter_logic == "or":
-            filters["_aggregate"] = "or"
+        filters["_aggregate"] = filter_logic
         if resolved_status is not None:
             filters["status"] = {"within": list(resolved_status)}
         if resolved_rollout_ids is not None:
@@ -433,7 +432,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
 
         async with self.collections.atomic():
             rollouts = await self.collections.rollouts.query(
-                filter=filters or None,
+                filter=filters if list(filters.keys()) != ["_aggregate"] else None,
                 sort=SortOptions(name=sort_by, order=sort_order) if sort_by else None,
                 limit=limit,
                 offset=offset,
@@ -1042,7 +1041,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
 
         async with self.collections.atomic():
             return await self.collections.workers.query(
-                filter=filters or None,
+                filter=filters if list(filters.keys()) != ["_aggregate"] else None,
                 sort={"name": sort_by, "order": sort_order} if sort_by else None,
                 limit=limit,
                 offset=offset,
