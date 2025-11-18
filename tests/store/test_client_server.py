@@ -18,7 +18,7 @@ from yarl import URL
 from agentlightning.store.base import UNSET, LightningStore
 from agentlightning.store.client_server import LightningStoreClient, LightningStoreServer
 from agentlightning.store.memory import InMemoryLightningStore
-from agentlightning.types import LLM, OtelResource, PromptTemplate, RolloutConfig, Span, TraceStatus
+from agentlightning.types import LLM, OtelResource, PaginatedResult, PromptTemplate, RolloutConfig, Span, TraceStatus
 from agentlightning.utils.server_launcher import LaunchMode, PythonServerLauncherArgs
 
 
@@ -216,8 +216,13 @@ async def test_query_resources_history(server_client: Tuple[LightningStoreServer
     """Server and client should return identical resource history ordering."""
     server, client = server_client
 
-    assert await server.query_resources() == []
-    assert await client.query_resources() == []
+    server_history_empty = await server.query_resources()
+    assert isinstance(server_history_empty, PaginatedResult)
+    assert len(server_history_empty) == 0
+
+    client_history_empty = await client.query_resources()
+    assert isinstance(client_history_empty, PaginatedResult)
+    assert len(client_history_empty) == 0
 
     first = await server.add_resources(
         cast(
@@ -246,6 +251,26 @@ async def test_query_resources_history(server_client: Tuple[LightningStoreServer
     expected_ids = [first.resources_id, second.resources_id]
     assert sorted([item.resources_id for item in server_history]) == sorted(expected_ids)
     assert sorted([item.resources_id for item in client_history]) == sorted(expected_ids)
+
+
+@pytest.mark.asyncio
+async def test_client_query_resources_filters_and_pagination(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient],
+) -> None:
+    _, client = server_client
+
+    alpha = PromptTemplate(resource_type="prompt_template", template="alpha", engine="jinja")
+    beta = PromptTemplate(resource_type="prompt_template", template="beta", engine="jinja")
+
+    await client.update_resources("manual-alpha", cast(Any, {"prompt": alpha}))
+    await client.update_resources("manual-beta", cast(Any, {"prompt": beta}))
+
+    contains_beta = await client.query_resources(resources_id_contains="beta")
+    assert [item.resources_id for item in contains_beta] == ["manual-beta"]
+
+    sorted_ids = sorted(["manual-alpha", "manual-beta"], reverse=True)
+    paged = await client.query_resources(sort_by="resources_id", sort_order="desc", limit=1, offset=1)
+    assert [item.resources_id for item in paged] == sorted_ids[1:2]
 
 
 @pytest.mark.asyncio
@@ -414,6 +439,27 @@ async def test_client_server_end_to_end(
 
 
 @pytest.mark.asyncio
+async def test_client_query_rollouts_filters_and_pagination(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient],
+) -> None:
+    _, client = server_client
+
+    rollouts = [await client.enqueue_rollout(input={"idx": idx}) for idx in range(3)]
+    await client.update_rollout(rollout_id=rollouts[0].rollout_id, status="failed")
+
+    failed = await client.query_rollouts(status_in=["failed"])
+    assert [rollout.rollout_id for rollout in failed] == [rollouts[0].rollout_id]
+
+    substring = rollouts[2].rollout_id[-4:]
+    contains = await client.query_rollouts(rollout_id_contains=substring)
+    assert any(rollout.rollout_id == rollouts[2].rollout_id for rollout in contains)
+
+    sorted_ids = sorted([rollout.rollout_id for rollout in rollouts], reverse=True)
+    paged = await client.query_rollouts(sort_by="rollout_id", sort_order="desc", limit=1, offset=1)
+    assert [rollout.rollout_id for rollout in paged] == sorted_ids[1:2]
+
+
+@pytest.mark.asyncio
 async def test_update_rollout_none_vs_unset(server_client: Tuple[LightningStoreServer, LightningStoreClient]) -> None:
     _, client = server_client
 
@@ -549,6 +595,37 @@ async def test_worker_status_transitions_via_attempts(
 
 
 @pytest.mark.asyncio
+async def test_client_query_workers_filters(server_client: Tuple[LightningStoreServer, LightningStoreClient]) -> None:
+    _, client = server_client
+
+    await client.update_worker("alpha-worker", heartbeat_stats={"cpu": 0.2})
+    await client.update_worker("beta-worker", heartbeat_stats={"cpu": 0.8})
+
+    busy_rollout = await client.start_rollout(input={"worker": "alpha"})
+    await client.update_attempt(
+        busy_rollout.rollout_id,
+        busy_rollout.attempt.attempt_id,
+        worker_id="alpha-worker",
+        status="running",
+    )
+
+    busy_workers = await client.query_workers(status_in=["busy"])
+    assert [worker.worker_id for worker in busy_workers] == ["alpha-worker"]
+
+    contains_beta = await client.query_workers(worker_id_contains="beta")
+    assert [worker.worker_id for worker in contains_beta] == ["beta-worker"]
+
+    or_filtered = await client.query_workers(
+        status_in=["busy"],
+        worker_id_contains="beta",
+        filter_logic="or",
+        sort_by="worker_id",
+        sort_order="asc",
+    )
+    assert [worker.worker_id for worker in or_filtered] == ["alpha-worker", "beta-worker"]
+
+
+@pytest.mark.asyncio
 async def test_get_worker_by_id(server_client: Tuple[LightningStoreServer, LightningStoreClient]) -> None:
     server, client = server_client
 
@@ -584,6 +661,46 @@ async def test_update_attempt_rejects_none_values(
         await client.update_attempt(attempted.rollout_id, attempted.attempt.attempt_id, **bad_payload)
 
     assert exc_info.value.status == 400
+
+
+@pytest.mark.asyncio
+async def test_client_query_spans_filters_and_pagination(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient],
+) -> None:
+    server, client = server_client
+
+    attempted = await server.start_rollout(input={"span": "filters"})
+    attempt_id = attempted.attempt.attempt_id
+
+    spans = [
+        _make_span(attempted.rollout_id, attempt_id, 1, "planner"),
+        _make_span(attempted.rollout_id, attempt_id, 2, "reward"),
+        _make_span(attempted.rollout_id, attempt_id, 3, "tool-call"),
+    ]
+    for span in spans:
+        await server.add_span(span)
+
+    planner = await client.query_spans(attempted.rollout_id, attempt_id=attempt_id, name_contains="plan")
+    assert [span.name for span in planner] == ["planner"]
+
+    or_filtered = await client.query_spans(
+        attempted.rollout_id,
+        attempt_id=attempt_id,
+        span_id=spans[0].span_id,
+        trace_id_contains=spans[2].trace_id[-4:],
+        filter_logic="or",
+    )
+    assert {span.span_id for span in or_filtered} == {spans[0].span_id, spans[2].span_id}
+
+    paged = await client.query_spans(
+        attempted.rollout_id,
+        attempt_id=attempt_id,
+        sort_by="sequence_id",
+        sort_order="desc",
+        limit=1,
+        offset=1,
+    )
+    assert [span.span_id for span in paged] == [spans[1].span_id]
 
 
 @pytest.mark.asyncio

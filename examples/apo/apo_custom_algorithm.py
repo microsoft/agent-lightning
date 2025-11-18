@@ -29,7 +29,7 @@ python apo_custom_algorithm_trainer.py
 
 import argparse
 import asyncio
-from typing import List, Optional
+from typing import Optional, Sequence
 
 from openai import AsyncOpenAI
 from rich.console import Console
@@ -117,7 +117,7 @@ async def apo_rollout(task: str, prompt_template: agl.PromptTemplate) -> float:
     return await llm_judge(task, text)
 
 
-async def log_llm_span(spans: List[agl.Span]) -> None:
+async def log_llm_span(spans: Sequence[agl.Span]) -> None:
     """Logs the LLM related spans that records prompts and responses."""
     for span in spans:
         if "chat.completion" in span.name:

@@ -205,7 +205,7 @@ await server.start()      # starts uvicorn in a daemon thread and waits for /hea
 # Client (same or different process)
 client = agl.LightningStoreClient("http://localhost:4747")
 
-print(await client.query_rollouts(status=["queuing"]))
+print(await client.query_rollouts(status_in=["queuing"]))
 
 await client.close()
 await server.stop()
