@@ -152,7 +152,7 @@ def train(
 
         PROJECT_NAME = "AgentLightningCI"
 
-        # Skip this step if ROLE is runner
+        # Skip this step if AGL_CURRENT_ROLE is runner
         agl_current_role = os.getenv("AGL_CURRENT_ROLE")
 
         if agl_current_role != "runner":
