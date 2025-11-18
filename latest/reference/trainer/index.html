@@ -3623,7 +3623,7 @@ but adapts them to multiple processes and the HTTP client/server boundary.</p>
 
 
 <h4 id="agentlightning.ClientServerExecutionStrategy.__init__" class="doc doc-heading">
-<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="fm">__init__</span><span class="p">(</span><span class="n">role</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">server_host</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">server_port</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">n_runners</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">graceful_timeout</span><span class="o">=</span><span class="mf">10.0</span><span class="p">,</span> <span class="n">terminate_timeout</span><span class="o">=</span><span class="mf">10.0</span><span class="p">,</span> <span class="n">main_process</span><span class="o">=</span><span class="s1">&#39;algorithm&#39;</span><span class="p">,</span> <span class="n">managed_store</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="fm">__init__</span><span class="p">(</span><span class="n">role</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">server_host</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">server_port</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">n_runners</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">graceful_timeout</span><span class="o">=</span><span class="mf">10.0</span><span class="p">,</span> <span class="n">terminate_timeout</span><span class="o">=</span><span class="mf">10.0</span><span class="p">,</span> <span class="n">main_process</span><span class="o">=</span><span class="s1">&#39;algorithm&#39;</span><span class="p">,</span> <span class="n">managed_store</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">allowed_exit_codes</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="o">-</span><span class="mi">15</span><span class="p">))</span></code>
 
 <a href="#agentlightning.ClientServerExecutionStrategy.__init__" class="headerlink" title="Permanent link">&para;</a></h4>
 
@@ -3724,6 +3724,18 @@ primarily intended for debugging.</p>
 LightningStore client/server wrappers automatically. When
 <code>False</code> the provided <code>store</code> is passed directly to the
 bundles, allowing callers to manage store wrappers manually.</p>
+          </div>
+        </li>
+        <li class="doc-section-item field-body">
+            <b><code>allowed_exit_codes</code></b>
+              (<code><span title="typing.Iterable">Iterable</span>[<span title="int">int</span>]</code>, default:
+                  <code>(0, -15)</code>
+)
+          –
+          <div class="doc-md-description">
+            <p>Allowed exit codes for subprocesses.
+By default, runner can exit gracefully with code 0 or terminated
+by SIGTERM (-15).</p>
           </div>
         </li>
     </ul>
