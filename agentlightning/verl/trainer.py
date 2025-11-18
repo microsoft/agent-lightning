@@ -245,7 +245,8 @@ class AgentLightningTrainer(RayPPOTrainer):
             # uid is used for algorithm like GRPO, should be aligned to data id
             batch.non_tensor_batch["uid"] = batch.non_tensor_batch["data_id_list"]
 
-            batch.batch["response_mask"] = compute_response_mask(batch)
+            if "response_mask" not in batch.batch:
+                batch.batch["response_mask"] = compute_response_mask(batch)
 
             # compute global_valid tokens
             batch.meta_info["global_token_num"] = torch.sum(batch.batch["attention_mask"], dim=-1).tolist()
@@ -427,6 +428,7 @@ class AgentLightningTrainer(RayPPOTrainer):
             store=self.store,
             llm_proxy=self.llm_proxy,
             adapter=self.adapter,
+            trace_aggregator=self.config.actor_rollout_ref.rollout.trace_aggregator,
         )
         self.agent_mode_daemon.start()
 
