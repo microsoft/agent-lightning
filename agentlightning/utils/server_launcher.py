@@ -15,7 +15,7 @@ import traceback
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from multiprocessing.process import BaseProcess
-from typing import Any, AsyncContextManager, AsyncIterator, Dict, Literal, Optional
+from typing import Any, AsyncContextManager, AsyncIterator, Dict, Literal, Optional, cast
 
 import aiohttp
 import requests
@@ -65,7 +65,7 @@ class PythonServerLauncherArgs:
     """The timeout to wait for the thread to join."""
     process_join_timeout: float = 10.0
     """The timeout to wait for the process to join."""
-    timeout_keep_alive: float = 30.0
+    timeout_keep_alive: int = 30
     """The timeout to keep the connection alive."""
 
 
@@ -652,7 +652,7 @@ class PythonServerLauncher:
 
     def __setstate__(self, state: Dict[str, Any]):
         self.app = state["app"]
-        self.args = state["args"]
+        self.args = cast(PythonServerLauncherArgs, state["args"])
         self.serve_context = state["serve_context"]
         self._host = state["_host"]
         self._port = state["_port"]
