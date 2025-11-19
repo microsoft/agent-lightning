@@ -34,9 +34,9 @@ class WeaveTracer(OtelTracer):
         super()._initialize_tracer_provider(worker_id)
         logger.info(f"[Worker {worker_id}] Setting up Weave tracer...")
 
-        if weave.get_client() is None: # type: ignore
+        if weave.get_client() is None:  # type: ignore
             try:
-                weave.init(project_name=self.project_name) # type: ignore
+                weave.init(project_name=self.project_name)  # type: ignore
                 logger.info(f"[Worker {worker_id}] Weave client initialized.")
             except Exception as e:
                 raise RuntimeError(f"Failed to initialize Weave for project '{self.project_name}': {e}")
@@ -119,7 +119,7 @@ class WeaveTracer(OtelTracer):
         arg_op: Optional[str],
         arg_inputs: Optional[dict[str, str]],
     ):
-        weave_client = weave.get_client() # type: ignore
+        weave_client = weave.get_client()  # type: ignore
         if not weave_client:
             raise RuntimeError("Weave client is not initialized. Call init_worker() first.")
 
