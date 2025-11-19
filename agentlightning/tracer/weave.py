@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import os
 from contextlib import asynccontextmanager, contextmanager
-from typing import TYPE_CHECKING, AsyncGenerator, Iterator, Optional
+from typing import AsyncGenerator, Iterator, Optional
 
 import opentelemetry.trace as trace_api
 import weave
@@ -15,9 +15,6 @@ from agentlightning.store.base import LightningStore
 from .otel import OtelTracer
 
 logger = logging.getLogger(__name__)
-
-if TYPE_CHECKING:
-    from weave.trace.weave_client import WeaveClient
 
 
 class WeaveTracer(OtelTracer):
@@ -30,7 +27,6 @@ class WeaveTracer(OtelTracer):
     def __init__(self, *, project_name: str | None = None, wandb_api_key: str | None = None):
         super().__init__()
         self.project_name = project_name or __name__
-        self._weaveclient: Optional[WeaveClient] = None
         if wandb_api_key:
             os.environ["WANDB_API_KEY"] = wandb_api_key
 
@@ -41,7 +37,6 @@ class WeaveTracer(OtelTracer):
         if weave.get_client() is None:
             try:
                 weave.init(project_name=self.project_name)
-                self._weaveclient = weave.get_client()
                 logger.info(f"[Worker {worker_id}] Weave client initialized.")
             except Exception as e:
                 raise RuntimeError(f"Failed to initialize Weave for project '{self.project_name}': {e}")
@@ -124,14 +119,15 @@ class WeaveTracer(OtelTracer):
         arg_op: Optional[str],
         arg_inputs: Optional[dict[str, str]],
     ):
-        if not self._weaveclient:
+        weave_client = weave.get_client()
+        if not weave_client:  # type: ignore
             raise RuntimeError("Weave client is not initialized. Call init_worker() first.")
 
-        trace_call = self._weaveclient.create_call(op=arg_op, inputs=arg_inputs)  # type: ignore
+        trace_call = weave_client.create_call(op=arg_op, inputs=arg_inputs)  # type: ignore
         try:
             yield
         except Exception as e:
-            self._weaveclient.finish_call(trace_call, exception=e)  # type: ignore
+            weave_client.finish_call(trace_call, exception=e)  # type: ignore
             logger.error(f"Trace failed for rollout_id={rollout_id}, attempt_id={attempt_id}, error={e}")
         finally:
-            self._weaveclient.finish_call(trace_call)  # type: ignore
+            weave_client.finish_call(trace_call)  # type: ignore
