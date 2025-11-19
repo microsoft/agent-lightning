@@ -1632,6 +1632,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#agentlightning.Tracer.init_worker" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;init_worker
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#agentlightning.Tracer.lifespan" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2390,6 +2401,17 @@
     <span class="md-ellipsis">
       
         <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;get_last_trace
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#agentlightning.Tracer.init_worker" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;init_worker
       
     </span>
   </a>
@@ -4212,8 +4234,49 @@ even in the case of exceptions.</p>
 <div class="doc doc-object doc-function">
 
 
+<h4 id="agentlightning.Tracer.init_worker" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">init_worker</span><span class="p">(</span><span class="n">worker_id</span><span class="p">,</span> <span class="n">store</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+
+<a href="#agentlightning.Tracer.init_worker" class="headerlink" title="Permanent link">&para;</a></h4>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Initialize the tracer for a worker.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <ul>
+        <li class="doc-section-item field-body">
+            <b><code>worker_id</code></b>
+              (<code><span title="int">int</span></code>)
+          –
+          <div class="doc-md-description">
+            <p>The ID of the worker.</p>
+          </div>
+        </li>
+        <li class="doc-section-item field-body">
+            <b><code>store</code></b>
+              (<code><span title="typing.Optional">Optional</span>[<a class="autorefs autorefs-internal" title="            agentlightning.LightningStore (agentlightning.store.base.LightningStore)" href="../store/#agentlightning.LightningStore">LightningStore</a>]</code>, default:
+                  <code>None</code>
+)
+          –
+          <div class="doc-md-description">
+            <p>The store to add the spans to. If it's provided, traces will be added to the store when tracing.</p>
+          </div>
+        </li>
+    </ul>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
 <h4 id="agentlightning.Tracer.lifespan" class="doc doc-heading">
-<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">lifespan</span><span class="p">()</span></code>
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">lifespan</span><span class="p">(</span><span class="n">store</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
 
 <a href="#agentlightning.Tracer.lifespan" class="headerlink" title="Permanent link">&para;</a></h4>
 
@@ -4223,6 +4286,21 @@ even in the case of exceptions.</p>
         <p>A context manager to manage the lifespan of the tracer.</p>
 <p>This can be used to set up and tear down any necessary resources
 for the tracer, useful for debugging purposes.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <ul>
+        <li class="doc-section-item field-body">
+            <b><code>store</code></b>
+              (<code><span title="typing.Optional">Optional</span>[<a class="autorefs autorefs-internal" title="            agentlightning.LightningStore (agentlightning.store.base.LightningStore)" href="../store/#agentlightning.LightningStore">LightningStore</a>]</code>, default:
+                  <code>None</code>
+)
+          –
+          <div class="doc-md-description">
+            <p>The store to add the spans to. If it's provided, traces will be added to the store when tracing.</p>
+          </div>
+        </li>
+    </ul>
 
 
     </div>
@@ -4245,7 +4323,6 @@ for the tracer, useful for debugging purposes.</p>
 for the enclosed code block. It must ensure that any spans generated
 within the <code>with</code> block are collected and made available via
 <a class="autorefs autorefs-internal" title="            get_last_trace()" href="#agentlightning.Tracer.get_last_trace"><code>get_last_trace</code></a>.</p>
-<p>If a store is provided, the spans will be added to the store when tracing.</p>
 
 
 <p><span class="doc-section-title">Parameters:</span></p>
@@ -4267,7 +4344,7 @@ within the <code>with</code> block are collected and made available via
 )
           –
           <div class="doc-md-description">
-            <p>The store to add the spans to.</p>
+            <p>The store to add the spans to. Deprecated in favor of passing store to init_worker().</p>
           </div>
         </li>
         <li class="doc-section-item field-body">
