@@ -799,8 +799,26 @@ class LightningStoreServer(LightningStore):
                 # wait_for_rollouts can block for a long time; avoid holding the lock
                 # so other requests can make progress while we wait.
                 return await getattr(self.store, method_name)(*args, **kwargs)
-            with self._lock:
+
+            # If it's already thread-safe, we can just call the method directly.
+            # Acquiring the threading lock directly would block the event loop if it's
+            # already held by another thread (for example, the HTTP server thread).
+            # Potential fix here are needed to make it work. For example:
+            # ```
+            # acquired = self._lock.acquire(blocking=False)
+            # if not acquired:
+            #     await asyncio.to_thread(self._lock.acquire)
+            # try:
+            #     return await getattr(self.store, method_name)(*args, **kwargs)
+            # finally:
+            #     self._lock.release()
+            # ```
+            # Or we can just bypass the lock for thread-safe stores.
+            if self.store is not None and self.store.capabilities.get("thread_safe", False):
                 return await getattr(self.store, method_name)(*args, **kwargs)
+            else:
+                with self._lock:
+                    return await getattr(self.store, method_name)(*args, **kwargs)
         if self._client is None:
             self._client = LightningStoreClient(self.endpoint)
         return await getattr(self._client, method_name)(*args, **kwargs)
@@ -1603,6 +1621,7 @@ class LightningStoreClient(LightningStore):
             attempt_id=attempt_id,
             sequence_id=sequence_id,
         )
+        print("created span", span)
         await self.add_span(span)
         return span
 
