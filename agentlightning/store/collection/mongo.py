@@ -420,7 +420,11 @@ class MongoBasedCollection(Collection[T_model]):
             cursor = cursor.limit(limit)
 
         items: List[T_model] = []
+        item_type_has_id = "_id" in self._item_type.model_fields
         async for raw in cursor:
+            # Remove _id from the raw document if the item type does not have it.
+            if not item_type_has_id:
+                raw.pop("_id", None)  # type: ignore
             # Convert Mongo document to Pydantic model
             items.append(self._item_type.model_validate(raw))  # type: ignore[arg-type]
 
