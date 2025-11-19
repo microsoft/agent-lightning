@@ -9,7 +9,6 @@ from collections import deque
 from contextlib import asynccontextmanager
 from typing import (
     Any,
-    AsyncGenerator,
     Deque,
     Dict,
     Iterable,
@@ -692,9 +691,10 @@ class InMemoryLightningCollections(LightningCollections):
         return self._span_sequence_ids
 
     @asynccontextmanager
-    async def atomic(self, *args: Any, **kwargs: Any) -> AsyncGenerator[None, None]:
+    async def atomic(self, *args: Any, **kwargs: Any):
+        """In-memory collections apply a lock outside. It doesn't need to manipulate the collections inside."""
         async with self._lock:
-            yield
+            yield self
 
     async def evict_spans_for_rollout(self, rollout_id: str) -> None:
         """Evict all spans for a given rollout ID.

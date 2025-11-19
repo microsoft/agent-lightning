@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import (
+    TYPE_CHECKING,
     Any,
     AsyncContextManager,
     Dict,
@@ -18,6 +19,9 @@ from typing import (
     TypeVar,
     cast,
 )
+
+if TYPE_CHECKING:
+    from typing_extensions import Self
 
 from agentlightning.types import (
     Attempt,
@@ -259,7 +263,7 @@ class LightningCollections:
         """Dictionary (counter) of span sequence IDs."""
         raise NotImplementedError()
 
-    def atomic(self, *args: Any, **kwargs: Any) -> AsyncContextManager[None]:
+    def atomic(self, *args: Any, **kwargs: Any) -> AsyncContextManager[Self]:
         """Perform a atomic operation on the collections.
 
         Subclass may use args and kwargs to support multiple levels of atomicity.

@@ -4,15 +4,27 @@ from __future__ import annotations
 
 import logging
 import re
+from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Any, Dict, Generic, List, Mapping, Optional, Sequence, Type, TypeVar, cast
 
 from pydantic import BaseModel, TypeAdapter
-from pymongo import AsyncMongoClient
+from pymongo import AsyncMongoClient, ReadPreference, WriteConcern
+from pymongo.asynchronous.client_session import AsyncClientSession
 from pymongo.asynchronous.database import AsyncDatabase
-from pymongo.errors import CollectionInvalid, DuplicateKeyError, OperationFailure
+from pymongo.errors import CollectionInvalid, DuplicateKeyError, OperationFailure, PyMongoError
+from pymongo.read_concern import ReadConcern
 
-from agentlightning.types import FilterOptions, PaginatedResult, SortOptions
+from agentlightning.types import (
+    Attempt,
+    FilterOptions,
+    PaginatedResult,
+    ResourcesUpdate,
+    Rollout,
+    SortOptions,
+    Span,
+    Worker,
+)
 
 from .base import Collection, KeyValue, LightningCollections, Queue, normalize_filter_options, resolve_sort_options
 
@@ -173,6 +185,7 @@ class MongoBasedCollection(Collection[T_model]):
         self._collection = db[collection_name]
         self._partition_id = partition_id
         self._collection_created = False
+        self._session: Optional[AsyncClientSession] = None
 
         if not primary_keys:
             raise ValueError("primary_keys must be non-empty")
@@ -197,6 +210,19 @@ class MongoBasedCollection(Collection[T_model]):
             return
         self._collection_created = await _ensure_collection(self._db, self._collection.name, self._primary_keys)
 
+    def with_session(self, session: AsyncClientSession) -> MongoBasedCollection[T_model]:
+        """Create a new collection with the same configuration but a new session."""
+        collection = MongoBasedCollection(
+            db=self._db,
+            collection_name=self._collection.name,
+            partition_id=self._partition_id,
+            primary_keys=self._primary_keys,
+            item_type=self._item_type,
+        )
+        collection._collection_created = self._collection_created
+        collection._session = session
+        return collection
+
     def primary_keys(self) -> Sequence[str]:
         """Return the primary key field names for this collection."""
         return self._primary_keys
@@ -206,7 +232,7 @@ class MongoBasedCollection(Collection[T_model]):
 
     async def size(self) -> int:
         await self.ensure_collection()
-        return await self._collection.count_documents({"partition_id": self._partition_id})
+        return await self._collection.count_documents({"partition_id": self._partition_id}, session=self._session)
 
     def _pk_filter(self, item: T_model) -> Dict[str, Any]:
         """Build a Mongo filter for the primary key(s) of a model instance."""
@@ -262,12 +288,12 @@ class MongoBasedCollection(Collection[T_model]):
         combined = self._inject_partition_filter(filter)
         mongo_filter = _build_mongo_filter(cast(FilterOptions, combined))
 
-        total = await self._collection.count_documents(mongo_filter)
+        total = await self._collection.count_documents(mongo_filter, session=self._session)
 
         if limit == 0:
             return PaginatedResult[T_model](items=[], limit=0, offset=offset, total=total)
 
-        cursor = self._collection.find(mongo_filter)
+        cursor = self._collection.find(mongo_filter, session=self._session)
 
         sort_name, sort_order = resolve_sort_options(sort)
         if sort_name is not None:
@@ -310,7 +336,7 @@ class MongoBasedCollection(Collection[T_model]):
             self._ensure_item_type(item)
             # Pre-check for existence to provide a clearer ValueError
             pk_filter = self._pk_filter(item)
-            existing = await self._collection.find_one(pk_filter)
+            existing = await self._collection.find_one(pk_filter, session=self._session)
             if existing is not None:
                 raise ValueError(f"Item with primary key(s) {pk_filter} already exists")
 
@@ -322,7 +348,7 @@ class MongoBasedCollection(Collection[T_model]):
             return
 
         try:
-            await self._collection.insert_many(docs)
+            await self._collection.insert_many(docs, session=self._session)
         except DuplicateKeyError as exc:
             # In case the DB enforces uniqueness via index, normalize to ValueError
             raise ValueError("Duplicate key error while inserting items") from exc
@@ -337,7 +363,7 @@ class MongoBasedCollection(Collection[T_model]):
             pk_filter = self._pk_filter(item)
             doc = item.model_dump()
             doc["partition_id"] = self._partition_id
-            result = await self._collection.replace_one(pk_filter, doc)
+            result = await self._collection.replace_one(pk_filter, doc, session=self._session)
             if result.matched_count == 0:
                 raise ValueError(f"Item with primary key(s) {pk_filter} does not exist")
 
@@ -351,7 +377,7 @@ class MongoBasedCollection(Collection[T_model]):
             pk_filter = self._pk_filter(item)
             doc = item.model_dump()
             doc["partition_id"] = self._partition_id
-            await self._collection.replace_one(pk_filter, doc, upsert=True)
+            await self._collection.replace_one(pk_filter, doc, upsert=True, session=self._session)
 
     async def delete(self, items: Sequence[T_model]) -> None:
         if not items:
@@ -361,7 +387,7 @@ class MongoBasedCollection(Collection[T_model]):
         for item in items:
             self._ensure_item_type(item)
             pk_filter = self._pk_filter(item)
-            result = await self._collection.delete_one(pk_filter)
+            result = await self._collection.delete_one(pk_filter, session=self._session)
             if result.deleted_count == 0:
                 raise ValueError(f"Item with primary key(s) {pk_filter} does not exist")
 
@@ -393,6 +419,8 @@ class MongoBasedQueue(Queue[T_generic], Generic[T_generic]):
         self._adapter: TypeAdapter[T_generic] = TypeAdapter(item_type)
         self._collection_created = False
 
+        self._session: Optional[AsyncClientSession] = None
+
     def item_type(self) -> Type[T_generic]:
         return self._item_type
 
@@ -407,6 +435,17 @@ class MongoBasedQueue(Queue[T_generic], Generic[T_generic]):
             self._db, self._collection.name, primary_keys=["consumed", "_id"]
         )
 
+    def with_session(self, session: AsyncClientSession) -> MongoBasedQueue[T_generic]:
+        queue = MongoBasedQueue(
+            db=self._db,
+            collection_name=self._collection.name,
+            partition_id=self._partition_id,
+            item_type=self._item_type,
+        )
+        queue._collection_created = self._collection_created
+        queue._session = session
+        return queue
+
     async def has(self, item: T_generic) -> bool:
         await self.ensure_collection()
         encoded = self._adapter.dump_python(item, mode="python")
@@ -415,7 +454,8 @@ class MongoBasedQueue(Queue[T_generic], Generic[T_generic]):
                 "partition_id": self._partition_id,
                 "consumed": False,
                 "value": encoded,
-            }
+            },
+            session=self._session,
         )
         return doc is not None
 
@@ -437,7 +477,7 @@ class MongoBasedQueue(Queue[T_generic], Generic[T_generic]):
                 }
             )
 
-        await self._collection.insert_many(docs)
+        await self._collection.insert_many(docs, session=self._session)
         return list(items)
 
     async def dequeue(self, limit: int = 1) -> Sequence[T_generic]:
@@ -457,6 +497,7 @@ class MongoBasedQueue(Queue[T_generic], Generic[T_generic]):
                 {"$set": {"consumed": True}},
                 sort=[("_id", 1)],  # FIFO using insertion order
                 return_document=True,
+                session=self._session,
             )
             if doc is None:  # type: ignore
                 # No more items to dequeue
@@ -478,7 +519,8 @@ class MongoBasedQueue(Queue[T_generic], Generic[T_generic]):
                 {
                     "partition_id": self._partition_id,
                     "consumed": False,
-                }
+                },
+                session=self._session,
             )
             .sort("_id", 1)
             .limit(limit)
@@ -497,7 +539,8 @@ class MongoBasedQueue(Queue[T_generic], Generic[T_generic]):
             {
                 "partition_id": self._partition_id,
                 "consumed": False,
-            }
+            },
+            session=self._session,
         )
 
 
@@ -529,11 +572,26 @@ class MongoBasedKeyValue(KeyValue[K, V], Generic[K, V]):
         self._value_adapter: TypeAdapter[V] = TypeAdapter(value_type)
         self._collection_created = False
 
+        self._session: Optional[AsyncClientSession] = None
+
     async def ensure_collection(self, *, create_indexes: bool = True) -> None:
         """Ensure the backing collection exists (and optionally its indexes)."""
         if self._collection_created:
             return
         self._collection_created = await _ensure_collection(self._db, self._collection.name, primary_keys=["key"])
+
+    def with_session(self, session: AsyncClientSession) -> MongoBasedKeyValue[K, V]:
+        key_value = MongoBasedKeyValue(
+            db=self._db,
+            collection_name=self._collection.name,
+            partition_id=self._partition_id,
+            key_type=self._key_type,
+            value_type=self._value_type,
+        )
+        key_value._collection_created = self._collection_created
+        key_value._session = session
+
+        return key_value
 
     async def has(self, key: K) -> bool:
         await self.ensure_collection()
@@ -542,7 +600,8 @@ class MongoBasedKeyValue(KeyValue[K, V], Generic[K, V]):
             {
                 "partition_id": self._partition_id,
                 "key": encoded_key,
-            }
+            },
+            session=self._session,
         )
         return doc is not None
 
@@ -553,7 +612,8 @@ class MongoBasedKeyValue(KeyValue[K, V], Generic[K, V]):
             {
                 "partition_id": self._partition_id,
                 "key": encoded_key,
-            }
+            },
+            session=self._session,
         )
         if doc is None:
             return default
@@ -577,6 +637,7 @@ class MongoBasedKeyValue(KeyValue[K, V], Generic[K, V]):
                     "value": encoded_value,
                 },
                 upsert=True,
+                session=self._session,
             )
         except DuplicateKeyError as exc:
             # Very unlikely with replace_one+upsert, but normalize anyway.
@@ -589,7 +650,8 @@ class MongoBasedKeyValue(KeyValue[K, V], Generic[K, V]):
             {
                 "partition_id": self._partition_id,
                 "key": encoded_key,
-            }
+            },
+            session=self._session,
         )
         if doc is None:  # type: ignore
             return default
@@ -602,62 +664,142 @@ class MongoBasedKeyValue(KeyValue[K, V], Generic[K, V]):
         return await self._collection.count_documents(
             {
                 "partition_id": self._partition_id,
-            }
+            },
+            session=self._session,
         )
 
 
-# class MongoLightningCollections(LightningCollections):
-#     """Mongo implementation of LightningCollections using MongoDB collections.
+class MongoLightningCollections(LightningCollections):
+    """Mongo implementation of LightningCollections using MongoDB collections.
 
-#     Serves as the storage base for [`MongoLightningStore`][agentlightning.store.MongoLightningStore].
-#     """
+    Serves as the storage base for [`MongoLightningStore`][agentlightning.store.MongoLightningStore].
+    """
 
-#     def __init__(self, db: AsyncDatabase[Mapping[str, Any]]):
-#         self._db = db
-#         self._rollouts = MongoBasedCollection(db, "rollouts", "rollout_id", ["rollout_id"], Rollout)
-#         self._attempts = MongoBasedCollection(db, "attempts", "attempt_id", ["rollout_id", "attempt_id"], Attempt)
-#         self._spans = MongoBasedCollection(db, "spans", "span_id", ["rollout_id", "attempt_id", "span_id"], Span)
-#         self._resources = MongoBasedCollection(db, "resources", "resources_id", ["resources_id"], ResourcesUpdate)
-#         self._workers = MongoBasedCollection(db, "workers", "worker_id", ["worker_id"], Worker)
-#         self._rollout_queue = MongoBasedQueue(db, "rollout_queue", "rollout_queue", str)
-#         self._span_sequence_ids = MongoBasedKeyValue(db, "span_sequence_ids", "span_sequence_ids", str, int)
+    def __init__(
+        self,
+        client: AsyncMongoClient[Mapping[str, Any]],
+        database_name: str,
+        partition_id: str,
+        rollouts: Optional[MongoBasedCollection[Rollout]] = None,
+        attempts: Optional[MongoBasedCollection[Attempt]] = None,
+        spans: Optional[MongoBasedCollection[Span]] = None,
+        resources: Optional[MongoBasedCollection[ResourcesUpdate]] = None,
+        workers: Optional[MongoBasedCollection[Worker]] = None,
+        rollout_queue: Optional[MongoBasedQueue[str]] = None,
+        span_sequence_ids: Optional[MongoBasedKeyValue[str, int]] = None,
+    ):
+        self._client = client
+        self._db = client[database_name]
+        self._partition_id = partition_id
+        self._rollouts = (
+            rollouts
+            if rollouts is not None
+            else MongoBasedCollection(self._db, "rollouts", self._partition_id, ["rollout_id"], Rollout)
+        )
+        self._attempts = (
+            attempts
+            if attempts is not None
+            else MongoBasedCollection(self._db, "attempts", self._partition_id, ["rollout_id", "attempt_id"], Attempt)
+        )
+        self._spans = (
+            spans
+            if spans is not None
+            else MongoBasedCollection(
+                self._db, "spans", self._partition_id, ["rollout_id", "attempt_id", "span_id"], Span
+            )
+        )
+        self._resources = (
+            resources
+            if resources is not None
+            else MongoBasedCollection(self._db, "resources", self._partition_id, ["resources_id"], ResourcesUpdate)
+        )
+        self._workers = (
+            workers
+            if workers is not None
+            else MongoBasedCollection(self._db, "workers", self._partition_id, ["worker_id"], Worker)
+        )
+        self._rollout_queue = (
+            rollout_queue
+            if rollout_queue is not None
+            else MongoBasedQueue(self._db, "rollout_queue", self._partition_id, str)
+        )
+        self._span_sequence_ids = (
+            span_sequence_ids
+            if span_sequence_ids is not None
+            else MongoBasedKeyValue(self._db, "span_sequence_ids", self._partition_id, str, int)
+        )
 
-#     @property
-#     def rollouts(self) -> ListBasedCollection[Rollout]:
-#         return self._rollouts
+    def with_session(self, session: AsyncClientSession) -> MongoLightningCollections:
+        return MongoLightningCollections(
+            client=self._client,
+            database_name=self._db.name,
+            partition_id=self._partition_id,
+            rollouts=self._rollouts.with_session(session),
+            attempts=self._attempts.with_session(session),
+            spans=self._spans.with_session(session),
+            resources=self._resources.with_session(session),
+            workers=self._workers.with_session(session),
+            rollout_queue=self._rollout_queue.with_session(session),
+            span_sequence_ids=self._span_sequence_ids.with_session(session),
+        )
 
-#     @property
-#     def attempts(self) -> ListBasedCollection[Attempt]:
-#         return self._attempts
+    @property
+    def rollouts(self) -> MongoBasedCollection[Rollout]:
+        return self._rollouts
 
-#     @property
-#     def spans(self) -> ListBasedCollection[Span]:
-#         return self._spans
+    @property
+    def attempts(self) -> MongoBasedCollection[Attempt]:
+        return self._attempts
 
-#     @property
-#     def resources(self) -> ListBasedCollection[ResourcesUpdate]:
-#         return self._resources
+    @property
+    def spans(self) -> MongoBasedCollection[Span]:
+        return self._spans
 
-#     @property
-#     def workers(self) -> ListBasedCollection[Worker]:
-#         return self._workers
+    @property
+    def resources(self) -> MongoBasedCollection[ResourcesUpdate]:
+        return self._resources
 
-#     @property
-#     def rollout_queue(self) -> DequeBasedQueue[str]:
-#         return self._rollout_queue
+    @property
+    def workers(self) -> MongoBasedCollection[Worker]:
+        return self._workers
 
-#     @property
-#     def span_sequence_ids(self) -> DictBasedKeyValue[str, int]:
-#         return self._span_sequence_ids
+    @property
+    def rollout_queue(self) -> MongoBasedQueue[str]:
+        return self._rollout_queue
 
-#     @asynccontextmanager
-#     async def atomic(self, *args: Any, **kwargs: Any) -> AsyncGenerator[None, None]:
-#         async with self._lock:
-#             yield
+    @property
+    def span_sequence_ids(self) -> MongoBasedKeyValue[str, int]:
+        return self._span_sequence_ids
 
-#     async def evict_spans_for_rollout(self, rollout_id: str) -> None:
-#         """Evict all spans for a given rollout ID.
-
-#         Uses private API for efficiency.
-#         """
-#         self._spans._items.pop(rollout_id, [])  # pyright: ignore[reportPrivateUsage]
+    @asynccontextmanager
+    async def atomic(self, *args: Any, **kwargs: Any):
+        """Perform a atomic operation on the collections."""
+        # First step: ensure all collections exist before going into the atomic block
+        await self._rollouts.ensure_collection()
+        await self._attempts.ensure_collection()
+        await self._spans.ensure_collection()
+        await self._resources.ensure_collection()
+        await self._workers.ensure_collection()
+        await self._rollout_queue.ensure_collection()
+        await self._span_sequence_ids.ensure_collection()
+        # One session for one transaction
+        async with self._client.start_session() as session:
+            collection_with_session = self.with_session(session)
+            try:
+                # Start the transaction now
+                await session.start_transaction(
+                    write_concern=WriteConcern("majority"),
+                    read_concern=ReadConcern("local"),
+                    read_preference=ReadPreference.PRIMARY,
+                )
+                yield collection_with_session
+                # Commit the transaction
+                await session.commit_transaction()
+            # Catch KeyboardInterrupt, CancelledError, etc. and cleanup.
+            except BaseException as exc:
+                if session.in_transaction:
+                    await session.abort_transaction()
+                if isinstance(exc, PyMongoError) and exc.has_error_label("TransientTransactionError"):
+                    # TODO: this should be retried
+                    raise RuntimeError("Transaction failed with transient error") from exc
+                raise

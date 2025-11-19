@@ -139,8 +139,8 @@ class InMemoryLightningStore(CollectionBasedLightningStore[InMemoryLightningColl
 
     async def wait_for_rollout(self, rollout_id: str, timeout: Optional[float] = None) -> Optional[Rollout]:
         """Wait for a specific rollout to complete with a timeout."""
-        async with self.collections.atomic():
-            rollout = await self.collections.rollouts.get({"rollout_id": {"exact": rollout_id}})
+        async with self.collections.atomic() as collections:
+            rollout = await collections.rollouts.get({"rollout_id": {"exact": rollout_id}})
             if rollout and is_finished(rollout):
                 return rollout
 
@@ -167,8 +167,8 @@ class InMemoryLightningStore(CollectionBasedLightningStore[InMemoryLightningColl
 
             # If event was set (not timeout), check if rollout is finished
             if result:
-                async with self.collections.atomic():
-                    rollout = await self.collections.rollouts.get({"rollout_id": {"exact": rollout_id}})
+                async with self.collections.atomic() as collections:
+                    rollout = await collections.rollouts.get({"rollout_id": {"exact": rollout_id}})
                     if rollout and is_finished(rollout):
                         return rollout
 
@@ -192,14 +192,12 @@ class InMemoryLightningStore(CollectionBasedLightningStore[InMemoryLightningColl
         if rollout.rollout_id not in self._start_time_by_rollout:
             self._start_time_by_rollout[rollout.rollout_id] = rollout.start_time
 
-    async def get_running_rollouts(self) -> List[AttemptedRollout]:
+    async def get_running_rollouts(self, collections: InMemoryLightningCollections) -> List[AttemptedRollout]:
         """Accelerated version of `get_running_rollouts` for in-memory store. Used for healthcheck."""
-        rollouts = await self.collections.rollouts.query(
-            filter={"rollout_id": {"within": list(self._running_rollout_ids)}}
-        )
+        rollouts = await collections.rollouts.query(filter={"rollout_id": {"within": list(self._running_rollout_ids)}})
         running_rollouts: List[AttemptedRollout] = []
         for rollout in rollouts.items:
-            latest_attempt = await self.collections.attempts.get(
+            latest_attempt = await collections.attempts.get(
                 filter={"rollout_id": {"exact": rollout.rollout_id}},
                 sort={"name": "sequence_id", "order": "desc"},
             )
@@ -220,12 +218,12 @@ class InMemoryLightningStore(CollectionBasedLightningStore[InMemoryLightningColl
             raise RuntimeError(f"Spans for rollout {rollout_id} have been evicted")
         return await super().query_spans(rollout_id, attempt_id, **kwargs)
 
-    async def _add_span_unlocked(self, span: Span) -> Span:
+    async def _add_span_unlocked(self, collections: InMemoryLightningCollections, span: Span) -> Span:
         """In-memory store needs to maintain the span data in memory, and evict spans when memory is low."""
 
-        await super()._add_span_unlocked(span)
+        await super()._add_span_unlocked(collections, span)
         self._account_span_size(span)
-        await self._maybe_evict_spans()
+        await self._maybe_evict_spans(collections)
 
         return span
 
@@ -269,7 +267,7 @@ class InMemoryLightningStore(CollectionBasedLightningStore[InMemoryLightningColl
         self._total_span_bytes += size
         return size
 
-    async def _maybe_evict_spans(self) -> None:
+    async def _maybe_evict_spans(self, collections: InMemoryLightningCollections) -> None:
         if self._total_span_bytes <= self._eviction_threshold_bytes:
             return
 
@@ -288,11 +286,11 @@ class InMemoryLightningStore(CollectionBasedLightningStore[InMemoryLightningColl
             if self._total_span_bytes <= self._safe_threshold_bytes:
                 break
             logger.debug(f"Evicting spans for rollout {rollout_id} to free up memory...")
-            await self._evict_spans_for_rollout(rollout_id)
+            await self._evict_spans_for_rollout(collections, rollout_id)
         logger.info(f"Freed up {memory_consumed_before - self._total_span_bytes} bytes of memory")
 
-    async def _evict_spans_for_rollout(self, rollout_id: str) -> None:
-        await self.collections.evict_spans_for_rollout(rollout_id)
+    async def _evict_spans_for_rollout(self, collections: InMemoryLightningCollections, rollout_id: str) -> None:
+        await collections.evict_spans_for_rollout(rollout_id)
         removed_bytes = self._span_bytes_by_rollout.pop(rollout_id, 0)
         if removed_bytes > 0:
             # There is something removed for real
