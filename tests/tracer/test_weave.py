@@ -1,10 +1,8 @@
 # Copyright (c) Microsoft. All rights reserved.
 
 import asyncio
-from unittest.mock import patch
 
 import pytest
-import weave
 from opentelemetry.sdk.trace import ReadableSpan
 
 from agentlightning.store.base import LightningStore
@@ -37,19 +35,12 @@ def _func_without_exception():
     pass
 
 
-def _mock_weave_init():
-    with patch("weave.init"):
-        weave.init(project_name="agentlightning.tracer.weave_test")
-
-
 @pytest.mark.skip(reason="Skipping this test temporarily")
 def test_weave_trace_workable_store_valid():
     asyncio.run(_test_weave_trace_workable_store_valid_async())
 
 
 async def _test_weave_trace_workable_store_valid_async():
-    _mock_weave_init()
-
     tracer = WeaveTracer()
     tracer.init()
     tracer.init_worker(0)
