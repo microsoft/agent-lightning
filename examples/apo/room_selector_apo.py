@@ -50,7 +50,11 @@ def main() -> None:
     trainer = Trainer(
         algorithm=algo,
         # Increase the number of runners to run more rollouts in parallel
-        n_runners=8,
+        strategy={  
+            "type": "shm",  
+            "n_runners": 8,  
+            "main_thread": "algorithm",  
+        },  
         # APO algorithm needs a baseline
         # Set it either here or in the algo
         initial_resources={
