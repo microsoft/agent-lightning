@@ -28,11 +28,23 @@
 
 ::: agentlightning.llm_proxy.AddReturnTokenIds
 
+::: agentlightning.llm_proxy.StreamConversionMiddleware
+
+::: agentlightning.llm_proxy.MessageInspectionMiddleware
+
+::: agentlightning.llm_proxy.RolloutAttemptMiddleware
+
 ::: agentlightning.store.base.UNSET
 
 ::: agentlightning.store.utils.propagate_status
 
 ::: agentlightning.tracer.agentops.LightningSpanProcessor
+
+::: agentlightning.utils.server_launcher.PythonServerLauncher
+
+::: agentlightning.utils.server_launcher.PythonServerLauncherArgs
+
+::: agentlightning.utils.server_launcher.LaunchMode
 
 ## Deprecated APIs
 

@@ -5,13 +5,13 @@ from aoai_finetune import AzureOpenAIFinetune
 from capital_agent import capital_agent
 from rich.console import Console
 
-from agentlightning import TraceToMessages, Trainer, configure_logger
+from agentlightning import TraceToMessages, Trainer, setup_logging
 
 console = Console()
 
 
 def main():
-    configure_logger()
+    setup_logging()
     finetune_algo = AzureOpenAIFinetune(
         base_deployment_name="gpt-4.1-mini",
         finetuned_deployment_name="gpt-4.1-mini-ft",

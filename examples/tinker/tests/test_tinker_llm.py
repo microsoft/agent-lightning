@@ -7,7 +7,6 @@ It should be included in CI in future if we decided to maintain this example.
 """
 
 import asyncio
-import logging
 from typing import cast
 
 import openai
@@ -24,12 +23,12 @@ from agentlightning import (
     LLMProxy,
     LlmProxyTraceToTriplet,
     TracerTraceToTriplet,
-    configure_logger,
     emit_reward,
+    setup_logging,
 )
+from agentlightning.store import LightningStoreThreaded
 
-configure_logger(name="agentlightning")
-configure_logger(name="agl_tinker", level=logging.INFO)
+setup_logging(apply_to=["agl_tinker"])
 
 
 async def test_tracer():
@@ -61,7 +60,7 @@ async def test_tracer():
 
         # init tracer before llm_proxy to avoid tracer provider being not active.
         console.print("Starting LLM proxy...")
-        llm_proxy.start()
+        await llm_proxy.start()
         console.print("LLM proxy started")
 
         # client = openai.OpenAI(
@@ -99,7 +98,7 @@ async def test_tracer():
         print(trajectory)
     finally:
         console.print("Stopping LLM proxy...")
-        llm_proxy.stop()
+        await llm_proxy.stop()
         console.print("LLM proxy stopped")
 
 
@@ -117,19 +116,20 @@ async def test_llm_proxy():
     )
     tinker_llm.rewrite_litellm_custom_providers()
 
-    store = InMemoryLightningStore()
+    store = LightningStoreThreaded(InMemoryLightningStore())
     rollout = await store.start_rollout("dummy", "train")
     llm_proxy = LLMProxy(
         port=4000,
         store=store,
         model_list=tinker_llm.as_model_list(),
         num_retries=0,
+        launch_mode="thread",
     )
 
     try:
         # init tracer before llm_proxy to avoid tracer provider being not active.
         console.print("Starting LLM proxy...")
-        llm_proxy.start()
+        await llm_proxy.start()
         console.print("LLM proxy started")
 
         client = openai.OpenAI(
@@ -157,7 +157,7 @@ async def test_llm_proxy():
         print(trajectory)
     finally:
         console.print("Stopping LLM proxy...")
-        llm_proxy.stop()
+        await llm_proxy.stop()
         console.print("LLM proxy stopped")
 
 

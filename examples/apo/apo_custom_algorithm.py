@@ -181,5 +181,5 @@ async def main():
 
 
 if __name__ == "__main__":
-    agl.configure_logger()
+    agl.setup_logging()
     asyncio.run(main())

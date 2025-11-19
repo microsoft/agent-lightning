@@ -49,6 +49,8 @@ __all__ = [
     "Attempt",
     "AttemptedRollout",
     "Hook",
+    "Worker",
+    "WorkerStatus",
 ]
 
 T_co = TypeVar("T_co", covariant=True)
@@ -198,6 +200,32 @@ class AttemptedRollout(Rollout):
         if self.attempt.rollout_id != self.rollout_id:
             raise ValueError("Inconsistent rollout_id between Rollout and Attempt")
         return self
+
+
+WorkerStatus = Literal["idle", "busy", "unknown"]
+
+
+class Worker(BaseModel):
+    """Worker information. This is actually the same as Runner info."""
+
+    worker_id: str
+    """The ID of the worker."""
+    status: WorkerStatus = "unknown"
+    """The status of the worker."""
+    heartbeat_stats: Optional[Dict[str, Any]] = None
+    """Statistics about the worker's heartbeat."""
+    last_heartbeat_time: Optional[float] = None
+    """The last time when the worker has reported the stats."""
+    last_dequeue_time: Optional[float] = None
+    """The last time when the worker has tried to dequeue a rollout."""
+    last_busy_time: Optional[float] = None
+    """The last time when the worker has started an attempt and became busy."""
+    last_idle_time: Optional[float] = None
+    """The last time when the worker has triggered the end of an attempt and became idle."""
+    current_rollout_id: Optional[str] = None
+    """The ID of the current rollout that the worker is processing."""
+    current_attempt_id: Optional[str] = None
+    """The ID of the current attempt that the worker is processing."""
 
 
 TaskInput = Any
