@@ -25,9 +25,15 @@ def main(argv: Iterable[str] | None = None) -> int:
         action="append",
         help="Allowed CORS origin. Repeat for multiple origins. Use '*' to allow all origins.",
     )
+    parser.add_argument(
+        "--log-level",
+        default="INFO",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        help="Configure the logging level for the store.",
+    )
     args = parser.parse_args(list(argv) if argv is not None else None)
 
-    setup_logging()
+    setup_logging(args.log_level)
 
     store = InMemoryLightningStore()
     server = LightningStoreServer(

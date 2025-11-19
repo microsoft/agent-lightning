@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import random
 import threading
 import time
 from contextlib import suppress
@@ -72,6 +73,7 @@ class LitAgentRunner(Runner[T_task]):
         max_rollouts: Optional[int] = None,
         poll_interval: float = 5.0,
         heartbeat_interval: float = 10.0,
+        interval_jitter: float = 0.1,
         heartbeat_launch_mode: Literal["asyncio", "thread"] = "asyncio",
     ) -> None:
         """Initialize the agent runner.
@@ -82,6 +84,9 @@ class LitAgentRunner(Runner[T_task]):
                 [`iter`][agentlightning.LitAgentRunner.iter].
             poll_interval: Seconds to wait between store polls when no work is available.
             heartbeat_interval: Seconds to wait between sending heartbeats to the store.
+            interval_jitter: Jitter factor for the poll interval. The actual interval will be between
+                poll_interval - interval_jitter and poll_interval + interval_jitter.
+                This is to avoid the overload caused by the synchronization of the runners.
             heartbeat_launch_mode: Launch mode for the heartbeat loop. Can be "asyncio" or "thread".
                 "asyncio" is the default and recommended mode. Use "thread" if you are experiencing blocking coroutines.
         """
@@ -90,7 +95,9 @@ class LitAgentRunner(Runner[T_task]):
         self._max_rollouts = max_rollouts
         self._poll_interval = poll_interval
         self._heartbeat_interval = heartbeat_interval
+        self._interval_jitter = interval_jitter
         self._heartbeat_launch_mode = heartbeat_launch_mode
+        self._random_state = random.Random()
 
         # Set later
         self._agent: Optional[LitAgent[T_task]] = None
@@ -131,7 +138,7 @@ class LitAgentRunner(Runner[T_task]):
         self._store = store
         self.worker_id = worker_id
 
-        self._tracer.init_worker(worker_id)
+        self._tracer.init_worker(worker_id, store)
 
     def teardown(self, *args: Any, **kwargs: Any) -> None:
         """Teardown the runner and clean up all resources.
@@ -279,8 +286,9 @@ class LitAgentRunner(Runner[T_task]):
         if isinstance(raw_result, float):
             # Preserve the existing spans before another span is emitted
             trace_spans = list(self._tracer.get_last_trace())
-            # This will emit another span to the tracer
-            reward_span = emit_reward(raw_result)
+            # This will NOT emit another span to the tracer
+            reward_span = emit_reward(raw_result, auto_export=False)
+            # We add it to the store manually
             await store.add_otel_span(rollout.rollout_id, rollout.attempt.attempt_id, reward_span)
             trace_spans.append(reward_span)
 
@@ -359,7 +367,11 @@ class LitAgentRunner(Runner[T_task]):
                 while not stop_event.is_set():
                     await self._emit_heartbeat(store)
                     with suppress(asyncio.TimeoutError):
-                        await asyncio.wait_for(stop_event.wait(), timeout=self._heartbeat_interval)
+                        interval = self._heartbeat_interval + self._random_state.uniform(
+                            -self._interval_jitter, self._interval_jitter
+                        )
+                        interval = max(interval, 0.01)
+                        await asyncio.wait_for(stop_event.wait(), timeout=interval)
 
             task = asyncio.create_task(heartbeat_loop(), name=f"{self.get_worker_id()}-heartbeat")
 
@@ -378,7 +390,11 @@ class LitAgentRunner(Runner[T_task]):
                 asyncio.set_event_loop(loop)
                 while not stop_evt.is_set():
                     loop.run_until_complete(self._emit_heartbeat(store))
-                    stop_evt.wait(self._heartbeat_interval)
+                    interval = self._heartbeat_interval + self._random_state.uniform(
+                        -self._interval_jitter, self._interval_jitter
+                    )
+                    interval = max(interval, 0.01)
+                    stop_evt.wait(interval)
 
             thread = threading.Thread(target=thread_worker, name=f"{self.get_worker_id()}-heartbeat", daemon=True)
             thread.start()
@@ -401,11 +417,13 @@ class LitAgentRunner(Runner[T_task]):
             event: Optional [`ExecutionEvent`][agentlightning.ExecutionEvent] object that can be used to interrupt the sleep.
                 If set during the sleep period, the method returns immediately.
         """
+        interval = self._poll_interval + self._random_state.uniform(-self._interval_jitter, self._interval_jitter)
+        interval = max(interval, 0.01)
         if event is None:
-            await asyncio.sleep(self._poll_interval)
+            await asyncio.sleep(interval)
             return
         current_time = time.time()
-        next_time = current_time + self._poll_interval
+        next_time = current_time + interval
         while time.time() < next_time:
             await asyncio.sleep(0.1)
             if event.is_set():
@@ -451,7 +469,7 @@ class LitAgentRunner(Runner[T_task]):
 
             start_time = time.time()
             async with self._tracer.trace_context(
-                name=rollout_id, store=store, rollout_id=rollout_id, attempt_id=next_rollout.attempt.attempt_id
+                name=rollout_id, rollout_id=rollout_id, attempt_id=next_rollout.attempt.attempt_id
             ):
                 await self._trigger_hooks(
                     hook_type="on_trace_start", agent=agent, runner=self, tracer=self._tracer, rollout=next_rollout

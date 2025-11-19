@@ -6,7 +6,7 @@ import json
 import logging
 import re
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple, Union, cast
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union, cast
 
 from opentelemetry.sdk.trace import ReadableSpan
 from pydantic import BaseModel
@@ -670,7 +670,7 @@ class TracerTraceToTriplet(TraceToTripletBase):
         trace_tree.visualize(filename, interested_span_match=interested_span_match)
         return trace_tree
 
-    def adapt(self, source: Union[List[Span], List[ReadableSpan]], /) -> List[Triplet]:  # type: ignore
+    def adapt(self, source: Union[Sequence[Span], Sequence[ReadableSpan]], /) -> List[Triplet]:  # type: ignore
         """Convert tracer spans into [`Triplet`][agentlightning.Triplet] trajectories.
 
         Args:
@@ -800,7 +800,7 @@ class LlmProxyTraceToTriplet(TraceToTripletBase):
         rid = attrs.get("gen_ai.response.id") or attrs.get("llm.hosted_vllm.id")
         return str(rid) if isinstance(rid, str) and rid else None
 
-    def adapt(self, source: List[Span], /) -> List[Triplet]:  # type: ignore
+    def adapt(self, source: Sequence[Span], /) -> List[Triplet]:  # type: ignore
         """Convert LLM Proxy spans into [`Triplet`][agentlightning.Triplet] trajectories.
 
         Args:
