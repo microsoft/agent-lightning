@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Dict, Iterable, List, Literal, Mapping, Sequence, Tuple, Union
+from typing import Any, Dict, Iterable, List, Literal, Mapping, Sequence, Tuple, Union
 from uuid import uuid4
 
 import pytest
@@ -720,8 +720,8 @@ async def test_mongo_based_sanity_check() -> None:
     from agentlightning.store.collection.mongo import MongoBasedCollection, MongoBasedKeyValue, MongoBasedQueue
 
     async with temporary_mongo_database() as db:
-        collection = MongoBasedCollection(db, "test", "test-123", ["rollout_id"], Rollout)
-        await collection.ensure_collection(create_indexes=True)
+        collection = MongoBasedCollection[Any](db.client, db.name, "test", "test-123", ["rollout_id"], Rollout)
+        await collection.ensure_collection()
 
         start_time = time.time()
         await collection.insert(
@@ -733,7 +733,7 @@ async def test_mongo_based_sanity_check() -> None:
             Rollout(rollout_id="test-123", input="test-123", start_time=start_time, status="running")
         ]
 
-        rollout_queue = MongoBasedQueue[str](db, "rollout_queue", "partition-1", str)
+        rollout_queue = MongoBasedQueue[str](db.client, db.name, "rollout_queue", "partition-1", str)
         await rollout_queue.ensure_collection()
 
         await rollout_queue.enqueue(["r1", "r2", "r3"])
@@ -742,7 +742,7 @@ async def test_mongo_based_sanity_check() -> None:
         assert await rollout_queue.dequeue(2) == ["r1", "r2"]
         assert await rollout_queue.size() == 1
 
-        span_kv = MongoBasedKeyValue[str, int](db, "span_sequence_ids", "partition-1", str, int)
+        span_kv = MongoBasedKeyValue[str, int](db.client, db.name, "span_sequence_ids", "partition-1", str, int)
         await span_kv.ensure_collection()
 
         await span_kv.set("span-123", 1)
@@ -759,7 +759,9 @@ async def test_mongo_ensure_collection_creates_partition_scoped_index() -> None:
 
     async with temporary_mongo_database() as db:
         collection_name = f"ensure-{uuid4().hex}"
-        collection = MongoBasedCollection(db, collection_name, "partition-ensure", ["name", "index"], SampleItem)
+        collection = MongoBasedCollection[Any](
+            db.client, db.name, collection_name, "partition-ensure", ["name", "index"], SampleItem
+        )
         await collection.ensure_collection()
 
         unique_index = None
@@ -782,7 +784,9 @@ async def test_mongo_ensure_collection_survives_concurrent_calls() -> None:
         collection_name = f"ensure-{uuid4().hex}"
 
         async def ensure_once() -> None:
-            collection = MongoBasedCollection(db, collection_name, "partition-concurrent", ["index"], SampleItem)
+            collection = MongoBasedCollection(
+                db.client, db.name, collection_name, "partition-concurrent", ["index"], SampleItem
+            )
             await collection.ensure_collection()
 
         await asyncio.gather(*(ensure_once() for _ in range(20)))
@@ -804,7 +808,9 @@ async def test_mongo_ensure_collection_repeats_without_altering_indexes() -> Non
 
     async with temporary_mongo_database() as db:
         collection_name = f"ensure-{uuid4().hex}"
-        collection = MongoBasedCollection(db, collection_name, "partition-repeat", ["index"], SampleItem)
+        collection = MongoBasedCollection(
+            db.client, db.name, collection_name, "partition-repeat", ["index"], SampleItem
+        )
         await collection.ensure_collection()
         await collection.ensure_collection()
 

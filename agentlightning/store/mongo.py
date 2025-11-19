@@ -13,10 +13,9 @@ from typing import (
 )
 
 from pymongo import AsyncMongoClient
-from pymongo.asynchronous.database import AsyncDatabase
 
 from .base import LightningStoreCapabilities
-from .collection.mongo import MongoLightningCollections
+from .collection.mongo import MongoClientPool, MongoLightningCollections
 from .collection_based import CollectionBasedLightningStore
 
 T_callable = TypeVar("T_callable", bound=Callable[..., Any])
@@ -43,32 +42,21 @@ class MongoLightningStore(CollectionBasedLightningStore[MongoLightningCollection
     def __init__(
         self,
         *,
-        client: AsyncMongoClient[Mapping[str, Any]] | str | None = None,
-        database: AsyncDatabase[Mapping[str, Any]] | str | None = None,
+        client: AsyncMongoClient[Mapping[str, Any]] | str,
+        database_name: str | None = None,
         partition_id: str | None = None,
     ) -> None:
         if isinstance(client, str):
             client = AsyncMongoClient(client)
-        if isinstance(database, str):
-            if client is None:
-                raise ValueError("You must provide a client when providing a database name")
-            database = client[database]
-        elif isinstance(database, AsyncDatabase):
-            if client is not None:
-                logger.warning("Ignoring client when database instance has been provided")
-        else:
-            if client is None:
-                raise ValueError("You must provide either a client or a database")
-            # database is None
+        if database_name is None:
             database_name = "agentlightning"
             logger.info("No database name provided, using default 'agentlightning'")
-            database = client[database_name]
 
         if partition_id is None:
             partition_id = _generate_partition_id()
             logger.info("No partition id provided, generated a new one: %s", partition_id)
 
-        super().__init__(collections=MongoLightningCollections(database, partition_id))
+        super().__init__(collections=MongoLightningCollections(MongoClientPool(client), database_name, partition_id))
 
     @property
     def capabilities(self) -> LightningStoreCapabilities:

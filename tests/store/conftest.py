@@ -19,6 +19,7 @@ from pytest import FixtureRequest
 from agentlightning.store.base import LightningStore
 from agentlightning.store.collection import DequeBasedQueue, DictBasedKeyValue, KeyValue, ListBasedCollection, Queue
 from agentlightning.store.collection.base import Collection
+from agentlightning.store.collection.mongo import MongoClientPool
 from agentlightning.store.memory import InMemoryLightningStore
 
 if TYPE_CHECKING:
@@ -54,7 +55,7 @@ async def mongo_store():
     from agentlightning.store.mongo import MongoLightningStore
 
     async with temporary_mongo_database() as db:
-        yield MongoLightningStore(database=db)
+        yield MongoLightningStore(client=db.client, database_name=db.name)
 
 
 @pytest.fixture(params=["inmemory_store", "mongo_store"])
@@ -266,7 +267,8 @@ async def sample_collection(
 
         async with temporary_mongo_database() as db:
             collection = mongo_module.MongoBasedCollection(
-                db,
+                MongoClientPool(db.client),
+                db.name,
                 "sample-items",
                 "partition-123",
                 ["partition", "index"],
@@ -293,7 +295,9 @@ async def deque_queue(request: pytest.FixtureRequest) -> AsyncGenerator[Queue[Qu
         import agentlightning.store.collection.mongo as mongo_module
 
         async with temporary_mongo_database() as db:
-            queue = mongo_module.MongoBasedQueue[QueueItem](db, "queue-items", "partition-1", QueueItem)
+            queue = mongo_module.MongoBasedQueue[QueueItem](
+                MongoClientPool(db.client), db.name, "queue-items", "partition-1", QueueItem
+            )
             await queue.enqueue([QueueItem(idx=i) for i in range(3)])
             yield queue
 
@@ -321,7 +325,9 @@ async def dict_key_value(
         import agentlightning.store.collection.mongo as mongo_module
 
         async with temporary_mongo_database() as db:
-            key_value = mongo_module.MongoBasedKeyValue[str, int](db, "key-value-items", "partition-1", str, int)
+            key_value = mongo_module.MongoBasedKeyValue[str, int](
+                MongoClientPool(db.client), db.name, "key-value-items", "partition-1", str, int
+            )
             for key, value in dict_key_value_data.items():
                 await key_value.set(key, value)
             yield key_value
