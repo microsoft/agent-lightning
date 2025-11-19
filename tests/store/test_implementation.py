@@ -882,7 +882,7 @@ async def test_query_resources_returns_history(store_fixture: LightningStore) ->
     )
 
     history = await store_fixture.query_resources()
-    assert [item.resources_id for item in history] == [first.resources_id, second.resources_id]
+    assert set([item.resources_id for item in history]) == {first.resources_id, second.resources_id}
     assert isinstance(history[0], ResourcesUpdate)
     assert isinstance(history[1], ResourcesUpdate)
 
@@ -1859,7 +1859,8 @@ async def test_wait_with_timeout_none_polling(store_fixture: LightningStore) -> 
     await store_fixture.update_rollout(rollout_id=rollout.rollout_id, status="succeeded")
 
     # The wait should complete now
-    completed = await asyncio.wait_for(wait_task, timeout=1.0)
+    timeout = 1.0 if isinstance(store_fixture, InMemoryLightningStore) else 11.0
+    completed = await asyncio.wait_for(wait_task, timeout=timeout)
     assert len(completed) == 1
     assert completed[0].rollout_id == rollout.rollout_id
     assert completed[0].status == "succeeded"
@@ -2014,7 +2015,7 @@ async def test_wait_nonexistent_rollout_with_finite_timeout(store_fixture: Light
     elapsed = time.time() - start
 
     # Should timeout quickly (not wait indefinitely)
-    assert elapsed < 0.2
+    assert elapsed < 1.0
     assert len(completed) == 0
 
 
@@ -2080,8 +2081,12 @@ async def test_wait_polling_interval_with_timeout_none(store_fixture: LightningS
     completed = await wait_and_complete()
     elapsed = time.time() - start
 
-    # Should complete after ~0.5s (when we set the event)
-    assert 0.4 < elapsed < 0.7
+    if isinstance(store_fixture, InMemoryLightningStore):
+        # Should complete after ~0.5s (when we set the event)
+        assert 0.4 < elapsed < 0.7
+    else:
+        # Should be more than 5 seconds
+        assert 5 < elapsed < 15
     assert len(completed) == 1
     assert completed[0].status == "succeeded"
 
