@@ -4,26 +4,20 @@ from __future__ import annotations
 
 import argparse
 import pathlib
-from typing import Any, Dict, List, Optional
+import tempfile
+import zipfile
+from typing import Any, Dict, List, Tuple
 
 import pandas as pd
 
+# Here we use the same dataset as that used in Spider SQL Spider (examples/spider)
+SPIDER_DATASET_URL = "https://drive.google.com/file/d/1oi9J1jZP9TyM35L85CL3qeGWl2jqlnL6/view"
 
 def _ensure_outdir(base: pathlib.Path) -> None:
     (base / "data").mkdir(parents=True, exist_ok=True)
 
 
-def _validate_records(records: List[Dict[str, Any]]) -> None:
-    """
-    Validate that records match the required schema for training.
-
-    Required fields (mirroring patterns from SQL agent docs):
-    - question: The user query/task instruction.
-    - app_id: The application/environment identifier.
-    - ground_truth: The expected action/output (analogous to a SQL query).
-    Optional fields:
-    - meta: Arbitrary metadata blob.
-    """
+def _validate_records(records: list[dict[str, Any]]) -> None:
     required = {"question", "app_id", "ground_truth"}
     for i, rec in enumerate(records):
         missing = required - set(rec.keys())
@@ -35,54 +29,119 @@ def _validate_records(records: List[Dict[str, Any]]) -> None:
             raise ValueError(f"Record {i} field 'ground_truth' must be a string")
 
 
-def _load_input(path: pathlib.Path) -> List[Dict[str, Any]]:
-    if path.suffix.lower() in {".jsonl", ".json"}:
+def _load_input(path: pathlib.Path) -> list[dict[str, Any]]:
+    suffix = path.suffix.lower()
+    if suffix in {".jsonl", ".json"}:
         try:
-            # Try JSONL
             df = pd.read_json(path, lines=True)
         except ValueError:
-            # Fallback to normal JSON
             df = pd.read_json(path)
-    elif path.suffix.lower() in {".csv"}:
+    elif suffix == ".csv":
         df = pd.read_csv(path)
-    elif path.suffix.lower() in {".parquet"}:
+    elif suffix == ".parquet":
         df = pd.read_parquet(path)
     else:
         raise ValueError(f"Unsupported input format: {path.suffix}")
     return df.to_dict("records")
 
 
-def _write_parquet(records: List[Dict[str, Any]], out_path: pathlib.Path) -> None:
+def _write_parquet(records: list[dict[str, Any]], out_path: pathlib.Path) -> None:
     df = pd.DataFrame.from_records(records)
     df.to_parquet(out_path, index=False)
     print(f"Wrote {len(df)} rows to {out_path}")
 
 
-def create_toy_dataset(n_train: int = 8, n_test: int = 2) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+def _split_dataframe(df: pd.DataFrame, ratio: float) -> tuple[pd.DataFrame, pd.DataFrame]:
+    if not 0.0 < ratio < 1.0:
+        raise ValueError("--sample-train-ratio must be between 0 and 1")
+    if len(df) < 2:
+        raise ValueError("Sample dataset must contain at least two rows to split.")
+    shuffled = df.sample(frac=1.0, random_state=42).reset_index(drop=True)
+    split_idx = max(1, int(len(shuffled) * ratio))
+    if split_idx >= len(shuffled):
+        split_idx = len(shuffled) - 1
+    train_df = shuffled.iloc[:split_idx].copy()
+    test_df = shuffled.iloc[split_idx:].copy()
+    if train_df.empty or test_df.empty:
+        raise ValueError("Failed to split dataset into non-empty train/test partitions.")
+    return train_df, test_df
+
+
+def _convert_to_adk_format(df: pd.DataFrame) -> pd.DataFrame:
+    """Convert Spider dataset format to ADK format.
+    
+    Spider columns: db_id, question, query
+    ADK columns: question, app_id, ground_truth
     """
-    Create a small toy dataset suitable for CI or local smoke tests.
-    """
-    train: list[dict[str, Any]] = []
-    test: list[dict[str, Any]] = []
-    for i in range(n_train):
-        train.append(
-            {
-                "question": f"Generate an ADK action for task {i}",
-                "app_id": "sample_calendar_app",
-                "ground_truth": f"create_event(title='Task {i}', date='2025-01-{(i%28)+1:02d}')",
-                "meta": {"priority": "normal", "split": "train"},
-            }
-        )
-    for j in range(n_test):
-        test.append(
-            {
-                "question": f"Generate an ADK action for validation {j}",
-                "app_id": "sample_calendar_app",
-                "ground_truth": f"create_event(title='Validation {j}', date='2025-02-{(j%28)+1:02d}')",
-                "meta": {"priority": "high", "split": "test"},
-            }
-        )
-    return train, test
+    if not all(col in df.columns for col in ["db_id", "question", "query"]):
+        raise ValueError("Spider dataset must contain columns: db_id, question, query")
+    
+    adk_df = pd.DataFrame({
+        "question": df["question"],
+        "app_id": df["db_id"],
+        "ground_truth": df["query"],
+    })
+    
+    if "meta" in df.columns:
+        adk_df["meta"] = df["meta"]
+    
+    return adk_df
+
+
+def _download_dataset(url: str) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Download Spider dataset zip, extract, and convert to ADK format."""
+    print(f"Downloading Spider dataset from {url}")
+    
+    try:
+        import gdown
+    except ImportError:
+        raise ImportError("gdown is required to download the Spider dataset. Install with: pip install gdown")
+    
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_path = pathlib.Path(tmpdir)
+        zip_path = tmp_path / "spider-data.zip"
+        
+        # Download using gdown (same method as examples/spider)
+        print("Downloading zip file...")
+        gdown.download(url, str(zip_path), fuzzy=True, quiet=False)
+        
+        print("Extracting zip file...")
+        extract_dir = tmp_path / "spider_data"
+        with zipfile.ZipFile(zip_path, "r") as zip_ref:
+            zip_ref.extractall(extract_dir)
+
+        data_dir = extract_dir
+        if (extract_dir / "train_spider.json").exists():
+            data_dir = extract_dir
+        else:
+            for subdir in ["spider", "data"]:
+                candidate = extract_dir / subdir
+                if candidate.exists() and (candidate / "train_spider.json").exists():
+                    data_dir = candidate
+                    break
+        
+        train_json = data_dir / "train_spider.json"
+        dev_json = data_dir / "dev.json"
+        
+        if not train_json.exists():
+            raise FileNotFoundError(f"train_spider.json not found in extracted archive")
+        if not dev_json.exists():
+            raise FileNotFoundError(f"dev.json not found in extracted archive")
+        
+        print(f"Loading {train_json}...")
+        train_df = pd.read_json(train_json)
+        print(f"Loaded {len(train_df)} training records")
+        
+        print(f"Loading {dev_json}...")
+        dev_df = pd.read_json(dev_json)
+        print(f"Loaded {len(dev_df)} validation records")
+
+        train_adk = _convert_to_adk_format(train_df)
+        test_adk = _convert_to_adk_format(dev_df)
+        
+        print(f"Converted to ADK format: {len(train_adk)} train, {len(test_adk)} test records")
+        
+        return train_adk.to_dict("records"), test_adk.to_dict("records")
 
 
 def main() -> None:
@@ -91,13 +150,13 @@ def main() -> None:
         "--train",
         type=str,
         default="",
-        help="Path to training data (jsonl/json/csv/parquet). If omitted with --generate-toy, a toy dataset is generated.",
+        help="Path to training data (jsonl/json/csv/parquet). Use --download if omitted.",
     )
     parser.add_argument(
         "--test",
         type=str,
         default="",
-        help="Path to test/validation data (jsonl/json/csv/parquet). If omitted with --generate-toy, a toy dataset is generated.",
+        help="Path to test/validation data (jsonl/json/csv/parquet). Use --download if omitted.",
     )
     parser.add_argument(
         "--outdir",
@@ -118,31 +177,31 @@ def main() -> None:
         help="Relative output path for test parquet under OUTDIR (default: data/test.parquet).",
     )
     parser.add_argument(
-        "--generate-toy",
+        "--download",
         action="store_true",
-        help="Generate a small toy dataset if --train/--test not provided.",
+        help="Download the Spider dataset (same as examples/spider) and convert to ADK format when --train/--test are not provided.",
     )
     args = parser.parse_args()
 
     outdir = pathlib.Path(args.outdir).resolve()
     _ensure_outdir(outdir)
 
-    train_records: Optional[List[Dict[str, Any]]] = None
-    test_records: Optional[List[Dict[str, Any]]] = None
+    train_records: List[Dict[str, Any]] | None = None
+    test_records: List[Dict[str, Any]] | None = None
 
     if args.train:
         train_records = _load_input(pathlib.Path(args.train))
     if args.test:
         test_records = _load_input(pathlib.Path(args.test))
 
-    if (train_records is None or test_records is None) and args.generate_toy:
-        toy_train, toy_test = create_toy_dataset()
-        train_records = train_records or toy_train
-        test_records = test_records or toy_test
+    if (train_records is None or test_records is None) and args.download:
+        spider_train, spider_test = _download_dataset(SPIDER_DATASET_URL)
+        train_records = train_records or spider_train
+        test_records = test_records or spider_test
 
     if train_records is None or test_records is None:
         raise SystemExit(
-            "No input provided. Pass --train and --test, or use --generate-toy to create a toy dataset."
+            "No input provided. Pass --train and --test, or use --download to fetch the Spider dataset."
         )
 
     _validate_records(train_records)

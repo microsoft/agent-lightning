@@ -1,8 +1,0 @@
-vendor/
-.venv/
-venv/
-env/
-ENV/
-__pycache__/
-*.py[cod]
-.DS_Store
