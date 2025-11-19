@@ -717,10 +717,7 @@ async def test_dict_key_value_does_not_mutate_input_mapping(dict_key_value_data:
 @pytest.mark.mongo
 @pytest.mark.asyncio()
 async def test_mongo_based_sanity_check() -> None:
-    mongo_module = pytest.importorskip("agentlightning.store.collection.mongo")
-    MongoBasedCollection = mongo_module.MongoBasedCollection
-    MongoBasedQueue = mongo_module.MongoBasedQueue
-    MongoBasedKeyValue = mongo_module.MongoBasedKeyValue
+    from agentlightning.store.collection.mongo import MongoBasedCollection, MongoBasedKeyValue, MongoBasedQueue
 
     async with temporary_mongo_database() as db:
         collection = MongoBasedCollection(db, "test", "test-123", ["rollout_id"], Rollout)

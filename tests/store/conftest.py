@@ -39,25 +39,27 @@ __all__ = [
 ]
 
 
+mongo_uri = os.getenv("AGL_TEST_MONGO_URI", "mongodb://localhost:27017/?replicaSet=rs0")
+
+
 @pytest.fixture
 def inmemory_store() -> InMemoryLightningStore:
     """Create a fresh InMemoryLightningStore instance."""
     return InMemoryLightningStore()
 
 
-@pytest.fixture
-def sql_store():
-    """Placeholder fixture for SQL store implementation. Returns None until SQL store is ready."""
-    return None
+@pytest_asyncio.fixture
+async def mongo_store():
+    """Fixture for MongoDB store implementation."""
+    from agentlightning.store.mongo import MongoLightningStore
+
+    async with temporary_mongo_database() as db:
+        yield MongoLightningStore(database=db)
 
 
-# Uncomment this when sql store is ready
-# @pytest.fixture(params=["inmemory_store", "sql_store"])
-@pytest.fixture(params=["inmemory_store"])
-def store_fixture(request: FixtureRequest) -> LightningStore:
-    """Parameterized fixture that provides different store implementations for testing.
-    Currently supports InMemoryLightningStore, with SQL store support planned.
-    """
+@pytest.fixture(params=["inmemory_store", "mongo_store"])
+def store_fixture(request: FixtureRequest) -> AsyncGenerator[LightningStore, None]:
+    """Parameterized fixture that provides different store implementations for testing."""
     return request.getfixturevalue(request.param)
 
 
@@ -117,13 +119,12 @@ class QueueItem(BaseModel):
 @asynccontextmanager
 async def temporary_mongo_database() -> AsyncGenerator[AsyncDatabase[Any], None]:
     """Yield a temporary MongoDB database for integration tests."""
-    from pymongo import AsyncMongoClient  # type: ignore
+    from pymongo import AsyncMongoClient
 
-    uri = os.getenv("AGL_TEST_MONGO_URI", "mongodb://localhost:27017/?replicaSet=rs0")
-    client = AsyncMongoClient(uri, serverSelectionTimeoutMS=5000)  # type: ignore
+    client = AsyncMongoClient[Any](mongo_uri, serverSelectionTimeoutMS=5000)
     try:
-        await client.admin.command("ping")  # type: ignore
-    except Exception as exc:  # pragma: no cover - depends on external service
+        await client.admin.command("ping")
+    except Exception as exc:  # depends on external service
         await client.close()
         pytest.skip(f"MongoDB not available: {exc}")
 

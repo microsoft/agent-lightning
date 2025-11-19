@@ -68,9 +68,6 @@ class InMemoryLightningStore(CollectionBasedLightningStore[InMemoryLightningColl
     In-memory implementation of LightningStore using Python data structures.
     Thread-safe and async-compatible but data is not persistent.
 
-    The methods in this class should generally not call each other,
-    especially those that are locked.
-
     Args:
         eviction_memory_threshold: The threshold for evicting spans in bytes.
             By default, it's 70% of the total VRAM available.

@@ -110,6 +110,9 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
     inherit from this class and override the methods if needed.
     Bring your own collection implementation by using a different `collections` argument.
 
+    The methods in this class should generally not call each other,
+    especially those that are locked.
+
     Args:
         collections: The collections to use for storage.
     """
@@ -702,10 +705,10 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         try:
             await collections.spans.insert([span])
         except ValueError as e:
-            if "Item already exists" in str(e):
+            if "already exists" in str(e):
                 # This is a duplicate span, we warn it
                 logger.error(
-                    f"Duplicate span added for rollout={span.rollout_id}, attempt={span.attempt_id}, span={span.span_id}. Skipping."
+                    f"Duplicated span added for rollout={span.rollout_id}, attempt={span.attempt_id}, span={span.span_id}. Skipping."
                 )
                 return span
             raise
@@ -760,10 +763,10 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         Returns the completed rollout, or None if timeout is reached.
         """
         # First check if already completed
-        async with self.collections.atomic() as collections:
-            rollout = await collections.rollouts.get({"rollout_id": {"exact": rollout_id}})
-            if rollout and is_finished(rollout):
-                return rollout
+        # Not locked on purpose.
+        rollout = await self.collections.rollouts.get({"rollout_id": {"exact": rollout_id}})
+        if rollout and is_finished(rollout):
+            return rollout
 
         # No timeout, return immediately
         if timeout is not None and timeout <= 0:
@@ -777,7 +780,8 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
             # Poll every 10 seconds by default
             rest_time = max(0.01, min(deadline - time.time(), 10.0)) if deadline is not None else 10.0
             await asyncio.sleep(rest_time)
-            rollout = await collections.rollouts.get({"rollout_id": {"exact": rollout_id}})
+            # Not locked on purpose.
+            rollout = await self.collections.rollouts.get({"rollout_id": {"exact": rollout_id}})
             # check if rollout is finished
             if rollout and is_finished(rollout):
                 return rollout

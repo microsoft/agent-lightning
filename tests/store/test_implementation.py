@@ -1197,7 +1197,7 @@ async def test_duplicate_span_id_error(
     await store_fixture.add_otel_span(rollout.rollout_id, attempt_id, mock_readable_span)
 
     await store_fixture.add_otel_span(rollout.rollout_id, attempt_id, mock_readable_span)
-    assert "Duplicate span added" in caplog.text
+    assert "Duplicated span added" in caplog.text
 
 
 @pytest.mark.asyncio
