@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
+import warnings
 from contextlib import asynccontextmanager
 from typing import Any, AsyncGenerator, Awaitable, List, Optional
 
@@ -92,7 +93,18 @@ class OtelTracer(Tracer):
         if not self._lightning_span_processor:
             raise RuntimeError("LightningSpanProcessor is not initialized. Call init_worker() first.")
 
-        if store is not None and rollout_id is not None and attempt_id is not None:
+        if store is not None:
+            warnings.warn(
+                "store is deprecated in favor of init_worker(). It will be removed in the future.",
+                DeprecationWarning,
+                stacklevel=3,
+            )
+        else:
+            store = self._store
+
+        if rollout_id is not None and attempt_id is not None:
+            if store is None:
+                raise ValueError("store is required to be initialized when rollout_id and attempt_id are provided")
             if store.capabilities.get("otlp_traces", False) is True:
                 logger.debug(f"Tracing to LightningStore rollout_id={rollout_id}, attempt_id={attempt_id}")
                 self._enable_native_otlp_exporter(store, rollout_id, attempt_id)
@@ -101,12 +113,12 @@ class OtelTracer(Tracer):
             ctx = self._lightning_span_processor.with_context(store=store, rollout_id=rollout_id, attempt_id=attempt_id)
             with ctx:
                 yield trace_api.get_tracer(__name__, tracer_provider=self._tracer_provider)
-        elif store is None and rollout_id is None and attempt_id is None:
+        elif rollout_id is None and attempt_id is None:
             self._disable_native_otlp_exporter()
             with self._lightning_span_processor:
                 yield trace_api.get_tracer(__name__, tracer_provider=self._tracer_provider)
         else:
-            raise ValueError("store, rollout_id, and attempt_id must be either all provided or all None")
+            raise ValueError("rollout_id and attempt_id must be either all provided or all None")
 
     def get_last_trace(self) -> List[ReadableSpan]:
         """
