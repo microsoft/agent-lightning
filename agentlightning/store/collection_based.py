@@ -337,7 +337,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
                     await collections.attempts.insert([attempt])
 
                     # Sync attempt status to rollout
-                    await self._update_rollout_unlocked(collections, rollout.rollout_id, status="preparing")
+                    rollout = await self._update_rollout_unlocked(collections, rollout.rollout_id, status="preparing")
 
                     return AttemptedRollout(**rollout.model_dump(), attempt=attempt)
 
@@ -385,7 +385,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
             await collections.attempts.insert([attempt])
 
             # Sync attempt status to rollout
-            await self._update_rollout_unlocked(collections, rollout_id, status="preparing")
+            rollout = await self._update_rollout_unlocked(collections, rollout_id, status="preparing")
 
             # Return the rollout with the new attempt attached.
             return AttemptedRollout(**rollout.model_dump(), attempt=attempt)
@@ -765,7 +765,12 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         # First check if already completed
         # Not locked on purpose.
         rollout = await self.collections.rollouts.get({"rollout_id": {"exact": rollout_id}})
-        if rollout and is_finished(rollout):
+        if rollout is None:
+            # Rollout does not exist, return immediately
+            return None
+
+        if is_finished(rollout):
+            # Rollout is already finished, return immediately
             return rollout
 
         # No timeout, return immediately
@@ -902,7 +907,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         See [`LightningStore.update_attempt()`][agentlightning.LightningStore.update_attempt] for semantics.
         """
         async with self.collections.atomic() as collections:
-            attempt = await self._update_attempt_unlocked(
+            return await self._update_attempt_unlocked(
                 collections=collections,
                 rollout_id=rollout_id,
                 attempt_id=attempt_id,
@@ -911,8 +916,6 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
                 last_heartbeat_time=last_heartbeat_time,
                 metadata=metadata,
             )
-
-        return attempt
 
     async def _update_rollout_unlocked(
         self,
