@@ -8,14 +8,29 @@ import re
 import threading
 from contextlib import asynccontextmanager
 from datetime import datetime
-from typing import Any, Dict, Generic, List, Mapping, Optional, Sequence, Tuple, Type, TypeVar, cast
+from typing import (
+    Any,
+    Awaitable,
+    Callable,
+    Dict,
+    Generic,
+    List,
+    Mapping,
+    Optional,
+    Self,
+    Sequence,
+    Tuple,
+    Type,
+    TypeVar,
+    cast,
+)
 
 from pydantic import BaseModel, TypeAdapter
 from pymongo import AsyncMongoClient, ReadPreference, WriteConcern
 from pymongo.asynchronous.client_session import AsyncClientSession
 from pymongo.asynchronous.collection import AsyncCollection
 from pymongo.asynchronous.database import AsyncDatabase
-from pymongo.errors import CollectionInvalid, DuplicateKeyError, OperationFailure, PyMongoError
+from pymongo.errors import CollectionInvalid, ConnectionFailure, DuplicateKeyError, OperationFailure, PyMongoError
 from pymongo.read_concern import ReadConcern
 
 from agentlightning.types import (
@@ -874,8 +889,8 @@ class MongoLightningCollections(LightningCollections):
             )
         )
 
-    def with_session(self, session: AsyncClientSession) -> MongoLightningCollections:
-        return MongoLightningCollections(
+    def with_session(self, session: AsyncClientSession) -> Self:
+        return self.__class__(
             client_pool=self._client_pool,
             database_name=self._database_name,
             partition_id=self._partition_id,
@@ -916,10 +931,8 @@ class MongoLightningCollections(LightningCollections):
     def span_sequence_ids(self) -> MongoBasedKeyValue[str, int]:
         return self._span_sequence_ids
 
-    @asynccontextmanager
-    async def atomic(self, *args: Any, **kwargs: Any):
-        """Perform a atomic operation on the collections."""
-        # First step: ensure all collections exist before going into the atomic block
+    async def _ensure_collections(self) -> None:
+        """Ensure all collections exist."""
         await self._rollouts.ensure_collection()
         await self._attempts.ensure_collection()
         await self._spans.ensure_collection()
@@ -927,6 +940,12 @@ class MongoLightningCollections(LightningCollections):
         await self._workers.ensure_collection()
         await self._rollout_queue.ensure_collection()
         await self._span_sequence_ids.ensure_collection()
+
+    @asynccontextmanager
+    async def atomic(self, *args: Any, **kwargs: Any):
+        """Perform a atomic operation on the collections."""
+        # First step: ensure all collections exist before going into the atomic block
+        await self._ensure_collections()
         # One session for one transaction
         client = await self._client_pool.get_client()
         async with client.start_session() as session:
@@ -946,6 +965,31 @@ class MongoLightningCollections(LightningCollections):
                 if session.in_transaction:
                     await session.abort_transaction()
                 if isinstance(exc, PyMongoError) and exc.has_error_label("TransientTransactionError"):
-                    # TODO: this should be retried
+                    # NOTE: Retry is via execute
                     raise RuntimeError("Transaction failed with transient error") from exc
                 raise
+
+    async def execute(self, callback: Callable[[Self], Awaitable[T_generic]]) -> T_generic:
+        """Execute the given callback within an atomic operation, and with retries on transient errors."""
+        await self._ensure_collections()
+        client = await self._client_pool.get_client()
+
+        async with client.start_session() as session:
+            collections = self.with_session(session)
+
+            async def _txn_callback(_session: AsyncClientSession) -> T_generic:
+                # The _session is always the same within one transaction,
+                # so we can use the same collections object.
+                return await callback(collections)
+
+            try:
+                # This will start a transaction, run transaction callback, and commit.
+                # It will also transparently retry on some transient errors.
+                return await session.with_transaction(
+                    _txn_callback,
+                    read_concern=ReadConcern("local"),
+                    write_concern=WriteConcern("majority"),
+                    read_preference=ReadPreference.PRIMARY,
+                )
+            except (ConnectionFailure, OperationFailure) as exc:
+                raise RuntimeError("Transaction failed with connection or operation error") from exc
