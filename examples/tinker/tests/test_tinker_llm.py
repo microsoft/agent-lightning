@@ -56,7 +56,7 @@ async def test_tracer():
     try:
         tracer = AgentOpsTracer()
         tracer.init()
-        tracer.init_worker(0)
+        tracer.init_worker(worker_id=0, store=store)
 
         # init tracer before llm_proxy to avoid tracer provider being not active.
         console.print("Starting LLM proxy...")
@@ -70,7 +70,7 @@ async def test_tracer():
         client = openai.OpenAI(base_url="http://localhost:4000/v1", api_key="dummy")
 
         async with tracer.trace_context(
-            name="test_llm", store=store, rollout_id=rollout.rollout_id, attempt_id=rollout.attempt.attempt_id
+            name="test_llm", rollout_id=rollout.rollout_id, attempt_id=rollout.attempt.attempt_id
         ):
             response = client.chat.completions.create(
                 model=model_name,

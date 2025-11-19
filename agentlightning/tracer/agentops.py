@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import warnings
 from contextlib import asynccontextmanager, contextmanager
 from typing import TYPE_CHECKING, Any, AsyncGenerator, Iterator, List, Optional
 
@@ -114,6 +115,14 @@ class AgentOpsTracer(OtelTracer):
         Yields:
             The OpenTelemetry tracer instance to collect spans.
         """
+        if store is not None:
+            warnings.warn(
+                "store is deprecated in favor of init_worker(). It will be removed in the future.",
+                DeprecationWarning,
+                stacklevel=3,
+            )
+        else:
+            store = self._store
         with self._trace_context_sync(name=name, store=store, rollout_id=rollout_id, attempt_id=attempt_id) as tracer:
             yield tracer
 
@@ -164,9 +173,10 @@ class AgentOpsTracer(OtelTracer):
         try:
             yield
         except Exception as e:
-            # TODO: I'm not sure whether this will catch errors in user code.
+            # This will catch errors in user code.
             status = StatusCode.ERROR  # type: ignore
             logger.error(f"Trace failed for rollout_id={rollout_id}, attempt_id={attempt_id}: {e}")
+            raise  # should reraise the error here so that runner can handle it
         finally:
             agentops.end_trace(trace, end_state=status)  # type: ignore
 
