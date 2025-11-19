@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import warnings
 from contextlib import asynccontextmanager, contextmanager
 from typing import TYPE_CHECKING, Any, AsyncGenerator, Iterator, List, Optional
 
@@ -114,6 +115,14 @@ class AgentOpsTracer(OtelTracer):
         Yields:
             The OpenTelemetry tracer instance to collect spans.
         """
+        if store is not None:
+            warnings.warn(
+                "store is deprecated in favor of init_worker(). It will be removed in the future.",
+                DeprecationWarning,
+                stacklevel=3,
+            )
+        else:
+            store = self._store
         with self._trace_context_sync(name=name, store=store, rollout_id=rollout_id, attempt_id=attempt_id) as tracer:
             yield tracer
 

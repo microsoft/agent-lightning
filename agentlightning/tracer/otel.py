@@ -42,8 +42,8 @@ class OtelTracer(Tracer):
         self._otlp_span_exporter: Optional[LightningStoreOTLPExporter] = None
         self._initialized: bool = False
 
-    def init_worker(self, worker_id: int):
-        super().init_worker(worker_id)
+    def init_worker(self, worker_id: int, store: Optional[LightningStore] = None):
+        super().init_worker(worker_id, store)
         self._initialize_tracer_provider(worker_id)
 
     def _initialize_tracer_provider(self, worker_id: int):
