@@ -93,7 +93,9 @@ torch-stable = [
   "torch>=2.8.0",
   "torchvision>=0.23.0",
   "transformers>=4.55.0",
-  "vllm>=0.10.2",
+  # vLLM 0.11.1 requires PyTorch 2.9.0, which is incompatible with flash-attn
+  # https://github.com/Dao-AILab/flash-attention/issues/1967
+  "vllm>=0.10.2,!=0.11.1",
   # LiteLLM can then be upgraded with new vLLM
   "litellm[proxy]>=1.78",
 ]
