@@ -17,33 +17,7 @@ from agentlightning.types import Rollout, RolloutRawResult
 
 logger = logging.getLogger(__name__)
 
-try:  # pragma: no cover - import guarded for optional dependency.
-    from google.genai import types as genai_types
-
-    from google.adk.agents.llm_agent import LlmAgent
-    from google.adk.apps.app import App
-    from google.adk.models.lite_llm import LiteLlm
-    from google.adk.runners import InMemoryRunner
-    from google.adk.utils.context_utils import Aclosing
-
-    _HAS_GOOGLE_ADK = True
-except ImportError:  # pragma: no cover
-    genai_types = None  # type: ignore[assignment]
-    LlmAgent = App = LiteLlm = InMemoryRunner = Aclosing = None  # type: ignore[assignment]
-    _HAS_GOOGLE_ADK = False
-
-
 class AdkTask(TypedDict):
-    """
-    One task item as produced by the dataset.
-
-    Required fields:
-    - question: The user instruction for the agent.
-    - app_id: The application/environment identifier.
-    - ground_truth: The expected action/output (string form) for reward computation.
-    Optional fields:
-    - meta: Arbitrary metadata.
-    """
     question: str
     app_id: str
     ground_truth: str
@@ -51,7 +25,6 @@ class AdkTask(TypedDict):
 
 
 class LitAdkAgent(LitAgent[AdkTask]):
-    """ADK-backed agent that produces observability-friendly rollouts."""
 
     def rollout(self, task: AdkTask, resources: NamedResources, rollout: Rollout) -> RolloutRawResult:  # type: ignore[override]
         """Synchronous entry point – forwards to ``rollout_async``."""
@@ -65,7 +38,7 @@ class LitAdkAgent(LitAgent[AdkTask]):
 
         try:
             return asyncio.run(self.rollout_async(task, resources, rollout))
-        except RuntimeError as exc:  # pragma: no cover - defensive path
+        except RuntimeError as exc:
             if "asyncio.run()" in str(exc):
                 raise RuntimeError(
                     "LitAdkAgent.rollout cannot be executed while an event loop "
@@ -81,7 +54,7 @@ class LitAdkAgent(LitAgent[AdkTask]):
     ) -> RolloutRawResult:
         """Runs a single rollout by delegating to ADK's orchestration runtime."""
 
-        if not _HAS_GOOGLE_ADK:  # pragma: no cover
+        if not _HAS_GOOGLE_ADK:
             raise RuntimeError(
                 "google-adk>=0.3.0 is required to run this example. "
                 "Install it with `pip install google-adk` or enable the "
@@ -127,7 +100,7 @@ class LitAdkAgent(LitAgent[AdkTask]):
 
             reward = self._compute_reward(last_response, truth)
             return reward
-        except Exception as exc:  # pragma: no cover - surfaced via training logs
+        except Exception as exc:
             logger.exception("ADK rollout failed: %s", exc)
             return 0.0
         finally:
@@ -189,7 +162,6 @@ class LitAdkAgent(LitAgent[AdkTask]):
 
         meta = task.get("meta")
         if isinstance(meta, Mapping):
-            # Recognise common fields that may contain additional guidance.
             for key in ("instruction", "goal", "context", "description"):
                 if meta.get(key):
                     return f"{base_instruction}\n\nAdditional context:\n{meta[key]}"
@@ -209,7 +181,7 @@ class LitAdkAgent(LitAgent[AdkTask]):
 
 
 # Minimal smoke-test entry point (manual run)
-if __name__ == "__main__":  # pragma: no cover - manual verification helper
+if __name__ == "__main__":
     import sys
 
     if not _HAS_GOOGLE_ADK:
