@@ -6,6 +6,8 @@ from typing import (
     TYPE_CHECKING,
     Any,
     AsyncContextManager,
+    Awaitable,
+    Callable,
     Dict,
     Generic,
     List,
@@ -273,6 +275,11 @@ class LightningCollections:
             **kwargs: Keyword arguments to pass to the operation.
         """
         raise NotImplementedError()
+
+    async def execute(self, callback: Callable[[Self], Awaitable[T]]) -> T:
+        """Execute the given callback within an atomic operation."""
+        async with self.atomic() as collections:
+            return await callback(collections)
 
 
 FilterMap = Mapping[str, FilterField]

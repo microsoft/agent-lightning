@@ -19,6 +19,7 @@ from typing import (
     Optional,
     Set,
     TypeVar,
+    Union,
     cast,
 )
 
@@ -26,7 +27,7 @@ from pydantic import BaseModel
 
 from agentlightning.types import AttemptedRollout, PaginatedResult, Rollout, Span
 
-from .base import LightningStoreCapabilities, is_finished, is_running
+from .base import UNSET, LightningStoreCapabilities, Unset, is_finished, is_running
 from .collection import InMemoryLightningCollections
 from .collection_based import CollectionBasedLightningStore
 
@@ -123,6 +124,9 @@ class InMemoryLightningStore(CollectionBasedLightningStore[InMemoryLightningColl
 
         # Running rollouts cache, including preparing and running rollouts
         self._running_rollout_ids: Set[str] = set()
+
+        # Caches the latest resources ID.
+        self._latest_resources_id: Union[str, None, Unset] = UNSET
 
     @property
     def capabilities(self) -> LightningStoreCapabilities:
@@ -223,6 +227,15 @@ class InMemoryLightningStore(CollectionBasedLightningStore[InMemoryLightningColl
         await self._maybe_evict_spans(collections)
 
         return span
+
+    async def _get_latest_resources_id(self, collections: InMemoryLightningCollections) -> Optional[str]:
+        if isinstance(self._latest_resources_id, Unset):
+            latest_resources = await collections.resources.get(sort={"name": "update_time", "order": "desc"})
+            if latest_resources:
+                self._latest_resources_id = latest_resources.resources_id
+            else:
+                self._latest_resources_id = None
+        return self._latest_resources_id
 
     @staticmethod
     def _resolve_memory_threshold(
