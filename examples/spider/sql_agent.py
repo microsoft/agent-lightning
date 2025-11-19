@@ -9,6 +9,7 @@ as well as https://langchain-ai.github.io/langgraph/tutorials/sql-agent/
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import shutil
@@ -29,9 +30,9 @@ from spider_eval.exec_eval import eval_exec_match
 
 import agentlightning as agl
 
-agl.configure_logger()
+agl.setup_logging(apply_to=[__name__])
 
-logger = agl.configure_logger(name=__name__)
+logger = logging.getLogger(__name__)
 
 
 WRITE_QUERY_PROMPT = ChatPromptTemplate(

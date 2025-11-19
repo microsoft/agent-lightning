@@ -1,10 +1,14 @@
 // Copyright (c) Microsoft. All rights reserved.
 
 import type { Meta, StoryObj } from '@storybook/react';
+import { waitFor, within } from '@testing-library/dom';
+import userEvent from '@testing-library/user-event';
 import { delay, http, HttpResponse } from 'msw';
 import { Provider } from 'react-redux';
+import { createMemoryRouter, MemoryRouter, RouterProvider } from 'react-router-dom';
 import { AppAlertBanner } from '@/components/AppAlertBanner';
 import { AppDrawerContainer } from '@/components/AppDrawer.component';
+import { AppLayout } from '@/layouts/AppLayout';
 import { createMockHandlers } from '@/utils/mock';
 import { STORY_BASE_URL, STORY_DATE_NOW_SECONDS } from '../../.storybook/constants';
 import { allModes } from '../../.storybook/modes';
@@ -231,73 +235,105 @@ const singleSpansByAttempt = Object.fromEntries(
   Object.entries(spansByAttempt).filter(([key]) => key.startsWith(`${singleRollout.rolloutId}:`)),
 ) as Record<string, Span[]>;
 
+const rolloutWithoutAttempt: Rollout = {
+  rolloutId: 'ro-traces-no-attempt',
+  input: { task: 'Legacy rollout without attempts' },
+  status: 'failed',
+  mode: 'train',
+  resourcesId: 'rs-traces-no-attempt',
+  startTime: now - 7200,
+  endTime: now - 7000,
+  attempt: null,
+  config: { retries: 0 },
+  metadata: { owner: 'casey' },
+};
+const noAttemptRollouts: Rollout[] = [rolloutWithoutAttempt];
+const noAttemptAttemptsByRollout: Record<string, Attempt[]> = {
+  [rolloutWithoutAttempt.rolloutId]: [],
+};
+const noAttemptSpansByAttempt: Record<string, Span[]> = {};
+
 const owners = ['ava', 'ben', 'carla', 'diego'] as const;
 
-const manyAttemptsByRollout: Record<string, Attempt[]> = {};
-const manySpansByAttempt: Record<string, Span[]> = {};
-
-const manyRollouts: Rollout[] = Array.from({ length: 24 }, (_, index) => {
-  const rolloutId = `ro-many-${String(index + 1).padStart(3, '0')}`;
-  const statusOptions = ['running', 'succeeded', 'failed'] as const;
-  const modeOptions = ['train', 'val', 'test'] as const;
-  const status = statusOptions[index % statusOptions.length];
-  const mode = modeOptions[index % modeOptions.length];
-  const startTime = now - (index + 1) * 420;
-  const endTime = status === 'running' ? null : startTime + 240;
-  const attemptId = `${rolloutId}-attempt`;
-  const attemptStatus: Attempt['status'] =
-    status === 'failed' ? 'failed' : status === 'succeeded' ? 'succeeded' : 'running';
-  const attempt: Attempt = {
-    rolloutId,
-    attemptId,
-    sequenceId: 1,
-    status: attemptStatus,
-    startTime,
-    endTime,
-    workerId: `worker-${String.fromCharCode(97 + (index % 26))}`,
-    lastHeartbeatTime: endTime ?? startTime + 180,
-    metadata: { region: index % 2 === 0 ? 'us-east-1' : 'eu-west-1' },
-  };
-  manyAttemptsByRollout[rolloutId] = [attempt];
-  manySpansByAttempt[`${rolloutId}:${attemptId}`] = [
-    {
+function createSyntheticRollouts(prefix: string, count: number) {
+  const attemptsByRollout: Record<string, Attempt[]> = {};
+  const spansByAttemptByRollout: Record<string, Span[]> = {};
+  const rollouts: Rollout[] = Array.from({ length: count }, (_, index) => {
+    const rolloutId = `ro-${prefix}-${String(index + 1).padStart(3, '0')}`;
+    const statusOptions = ['running', 'succeeded', 'failed'] as const;
+    const modeOptions = ['train', 'val', 'test'] as const;
+    const status = statusOptions[index % statusOptions.length];
+    const mode = modeOptions[index % modeOptions.length];
+    const startTime = now - (index + 1) * 420;
+    const endTime = status === 'running' ? null : startTime + 240;
+    const attemptId = `${rolloutId}-attempt`;
+    const attemptStatus: Attempt['status'] =
+      status === 'failed' ? 'failed' : status === 'succeeded' ? 'succeeded' : 'running';
+    const attempt: Attempt = {
       rolloutId,
       attemptId,
       sequenceId: 1,
-      traceId: `tr-many-${index + 1}`,
-      spanId: `sp-many-${index + 1}-root`,
-      parentId: null,
-      name: 'Synthetic root span',
-      status: {
-        status_code: status === 'failed' ? 'ERROR' : 'OK',
-        description: status === 'failed' ? 'Synthetic failure' : null,
-      },
-      attributes: {
-        'trace.sample': index + 1,
-        'duration_ms': 240,
-      },
+      status: attemptStatus,
       startTime,
-      endTime: endTime ?? startTime + 240,
-      events: [],
-      links: [],
-      context: {},
-      parent: null,
-      resource: {},
-    },
-  ];
-  return {
-    rolloutId,
-    input: { task: `Synthetic trace ${index + 1}` },
-    status,
-    mode,
-    resourcesId: `rs-many-${(index % 7) + 1}`,
-    startTime,
-    endTime,
-    attempt,
-    config: { retries: index % 3 },
-    metadata: { owner: owners[index % owners.length] },
-  };
-});
+      endTime,
+      workerId: `worker-${String.fromCharCode(97 + (index % 26))}`,
+      lastHeartbeatTime: endTime ?? startTime + 180,
+      metadata: { region: index % 2 === 0 ? 'us-east-1' : 'eu-west-1' },
+    };
+    attemptsByRollout[rolloutId] = [attempt];
+    spansByAttemptByRollout[`${rolloutId}:${attemptId}`] = [
+      {
+        rolloutId,
+        attemptId,
+        sequenceId: 1,
+        traceId: `tr-${prefix}-${index + 1}`,
+        spanId: `sp-${prefix}-${index + 1}-root`,
+        parentId: null,
+        name: `Synthetic root span ${prefix} ${index + 1}`,
+        status: {
+          status_code: status === 'failed' ? 'ERROR' : 'OK',
+          description: status === 'failed' ? 'Synthetic failure' : null,
+        },
+        attributes: {
+          'trace.sample': index + 1,
+          'duration_ms': 240,
+        },
+        startTime,
+        endTime: endTime ?? startTime + 240,
+        events: [],
+        links: [],
+        context: {},
+        parent: null,
+        resource: {},
+      },
+    ];
+    return {
+      rolloutId,
+      input: { task: `Synthetic trace ${index + 1}` },
+      status,
+      mode,
+      resourcesId: `rs-${prefix}-${(index % 7) + 1}`,
+      startTime,
+      endTime,
+      attempt,
+      config: { retries: index % 3 },
+      metadata: { owner: owners[index % owners.length] },
+    };
+  });
+  return { rollouts, attemptsByRollout, spansByAttempt: spansByAttemptByRollout };
+}
+
+const {
+  rollouts: manyRollouts,
+  attemptsByRollout: manyAttemptsByRollout,
+  spansByAttempt: manySpansByAttempt,
+} = createSyntheticRollouts('many', 24);
+
+const {
+  rollouts: vastRollouts,
+  attemptsByRollout: vastAttemptsByRollout,
+  spansByAttempt: vastSpansByAttempt,
+} = createSyntheticRollouts('vast', 160);
 
 function createHandlers(delayMs?: number) {
   return createMockHandlers(sampleRollouts, attemptsByRollout, spansByAttempt, delayMs);
@@ -325,11 +361,11 @@ function createRequestTimeoutHandlers() {
 
 const rolloutsAndAttemptsHandlers = createMockHandlers(sampleRollouts, attemptsByRollout);
 
-function renderTracesPage(
+function createStoryStore(
   preloadedTracesState?: Partial<TracesUiState>,
   configOverrides?: Partial<typeof initialConfigState>,
 ) {
-  const store = createAppStore({
+  return createAppStore({
     config: {
       ...initialConfigState,
       baseUrl: STORY_BASE_URL,
@@ -339,12 +375,60 @@ function renderTracesPage(
     resources: initialResourcesUiState,
     traces: { ...initialTracesUiState, ...preloadedTracesState },
   });
+}
+
+function renderTracesPage(
+  preloadedTracesState?: Partial<TracesUiState>,
+  configOverrides?: Partial<typeof initialConfigState>,
+) {
+  const store = createStoryStore(preloadedTracesState, configOverrides);
 
   return (
     <Provider store={store}>
-      <TracesPage />
-      <AppAlertBanner />
-      <AppDrawerContainer />
+      <MemoryRouter initialEntries={['/traces']}>
+        <TracesPage />
+        <AppAlertBanner />
+        <AppDrawerContainer />
+      </MemoryRouter>
+    </Provider>
+  );
+}
+
+function renderTracesPageWithAppLayout(
+  preloadedTracesState?: Partial<TracesUiState>,
+  configOverrides?: Partial<typeof initialConfigState>,
+  initialEntry: string = '/traces',
+) {
+  const store = createStoryStore(preloadedTracesState, configOverrides);
+  const router = createMemoryRouter(
+    [
+      {
+        path: '/',
+        element: (
+          <AppLayout
+            config={{
+              baseUrl: store.getState().config.baseUrl,
+              autoRefreshMs: store.getState().config.autoRefreshMs,
+            }}
+          />
+        ),
+        children: [
+          {
+            path: '/traces',
+            element: <TracesPage />,
+          },
+        ],
+      },
+    ],
+    { initialEntries: [initialEntry] },
+  );
+
+  return (
+    <Provider store={store}>
+      <>
+        <RouterProvider router={router} />
+        <AppDrawerContainer />
+      </>
     </Provider>
   );
 }
@@ -355,6 +439,66 @@ export const DefaultView: Story = {
     msw: {
       handlers: createHandlers(),
     },
+  },
+};
+
+export const WithSidebarLayout: Story = {
+  name: 'Within AppLayout',
+  render: () => renderTracesPageWithAppLayout(),
+  parameters: {
+    msw: {
+      handlers: createHandlers(),
+    },
+  },
+};
+
+export const QueryParams: Story = {
+  name: 'Loads From Query Params',
+  render: () =>
+    renderTracesPageWithAppLayout(undefined, undefined, '/traces?rolloutId=ro-traces-002&attemptId=at-traces-004'),
+  parameters: {
+    msw: {
+      handlers: createHandlers(),
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const rolloutInput = (await canvas.findByLabelText('Select rollout')) as HTMLInputElement;
+    await waitFor(() => {
+      if (rolloutInput.value !== 'ro-traces-002') {
+        throw new Error('Expected rollout select to use value from query string');
+      }
+    });
+    const attemptInput = (await canvas.findByLabelText('Select attempt')) as HTMLInputElement;
+    await waitFor(() => {
+      if (attemptInput.value.indexOf('at-traces-004') === -1) {
+        throw new Error('Expected attempt select to use value from query string');
+      }
+    });
+  },
+};
+
+export const MissingRolloutQuery: Story = {
+  name: 'Missing Rollout From Query Params',
+  render: () => renderTracesPageWithAppLayout(undefined, undefined, '/traces?rolloutId=ro-missing-999'),
+  parameters: {
+    msw: {
+      handlers: createMockHandlers(manyRollouts, manyAttemptsByRollout, manySpansByAttempt),
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const rolloutInput = (await canvas.findByLabelText('Select rollout')) as HTMLInputElement;
+    await waitFor(() => {
+      if (rolloutInput.value !== '') {
+        throw new Error('Expected rollout select to remain empty when the query rollout does not exist');
+      }
+    });
+    await waitFor(() => {
+      if (!canvas.getByText('Select a rollout and attempt to view traces.')) {
+        throw new Error('Expected empty selection message when rollout query param is invalid');
+      }
+    });
   },
 };
 
@@ -386,12 +530,91 @@ export const SingleResult: Story = {
   },
 };
 
+export const NoAttemptPlaceholder: Story = {
+  render: () => renderTracesPage(),
+  parameters: {
+    msw: {
+      handlers: createMockHandlers(noAttemptRollouts, noAttemptAttemptsByRollout, noAttemptSpansByAttempt),
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const attemptInput = (await canvas.findByLabelText('Select attempt')) as HTMLInputElement;
+    await waitFor(() => {
+      if (attemptInput.placeholder !== 'No Attempt') {
+        throw new Error('Expected attempt select placeholder to read "No Attempt" when no attempts are available');
+      }
+    });
+  },
+};
+
 export const ManyResults: Story = {
   render: () => renderTracesPage(),
   parameters: {
     msw: {
       handlers: createMockHandlers(manyRollouts, manyAttemptsByRollout, manySpansByAttempt),
     },
+  },
+};
+
+export const LargeDatasetSearch: Story = {
+  render: () => renderTracesPage(),
+  parameters: {
+    msw: {
+      handlers: createMockHandlers(vastRollouts, vastAttemptsByRollout, vastSpansByAttempt),
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const rolloutTrigger = (await canvas.findByLabelText('Select rollout')) as HTMLInputElement;
+    await userEvent.click(rolloutTrigger);
+    for (let i = 0; i < 'ro-vast-001'.length + 1; i++) {
+      await userEvent.type(rolloutTrigger, '{backspace}');
+    }
+    await userEvent.type(rolloutTrigger, 'ro-vast-150');
+
+    await waitFor(() => {
+      const option = within(document.body).queryByText('ro-vast-150');
+      if (!option) {
+        throw new Error('Expected remote rollout search to return IDs beyond the initial list');
+      }
+    });
+
+    const option = within(document.body).getByText('ro-vast-150');
+    await userEvent.click(option);
+
+    await waitFor(() => {
+      if (rolloutTrigger.value !== 'ro-vast-150') {
+        throw new Error('Expected rollout select to use the searched rollout ID');
+      }
+    });
+
+    await canvas.findByText('Synthetic root span vast 150');
+  },
+};
+
+export const Search: Story = {
+  render: () => renderTracesPage(),
+  parameters: {
+    msw: {
+      handlers: createHandlers(),
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await canvas.findByLabelText('Search spans');
+
+    const searchInput = canvas.getByLabelText('Search spans');
+    await userEvent.type(searchInput, 'Fetch');
+
+    await waitFor(() => {
+      if (!canvas.queryByText('Fetch resources')) {
+        throw new Error('Expected matching span to be displayed after searching');
+      }
+      if (canvas.queryByText('Initialize rollout')) {
+        throw new Error('Expected non-matching spans to be filtered out');
+      }
+    });
   },
 };
 

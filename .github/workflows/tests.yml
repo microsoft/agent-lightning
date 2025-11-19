@@ -155,6 +155,15 @@ jobs:
           name: dependencies-${{ matrix.python-version }}-${{ matrix.setup-script }}
           path: requirements-freeze.txt
           compression-level: 0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - name: Install JavaScript dependencies
+        run: cd dashboard && npm ci
+      - name: Build dashboard
+        run: cd dashboard && npm run build
+
       - name: Run tests
         run: |
           uv run pytest -v --durations=0 tests

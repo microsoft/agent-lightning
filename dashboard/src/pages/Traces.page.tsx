@@ -1,10 +1,12 @@
 // Copyright (c) Microsoft. All rights reserved.
 
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { skipToken } from '@reduxjs/toolkit/query';
 import { IconCheck, IconChevronDown, IconSearch } from '@tabler/icons-react';
 import type { DataTableSortStatus } from 'mantine-datatable';
+import { useSearchParams } from 'react-router-dom';
 import { Button, Group, Menu, Select, Skeleton, Stack, TextInput, Title } from '@mantine/core';
+import { useDebouncedValue } from '@mantine/hooks';
 import { TracesTable, type TracesTableRecord } from '@/components/TracesTable.component';
 import { selectAutoRefreshMs } from '@/features/config';
 import {
@@ -14,6 +16,7 @@ import {
   type GetRolloutsQueryArgs,
 } from '@/features/rollouts';
 import {
+  hydrateTracesStateFromQuery,
   resetTracesFilters,
   selectTracesAttemptId,
   selectTracesPage,
@@ -53,16 +56,38 @@ function getLatestAttempt(attempts: Attempt[]): Attempt | null {
   return [...attempts].sort((a, b) => a.sequenceId - b.sequenceId).at(-1) ?? null;
 }
 
-function findRollout(rollouts: Rollout[] | undefined, rolloutId: string | null): Rollout | null {
-  if (!rollouts || !rolloutId) {
-    return null;
+function mergeRolloutCache(cache: Record<string, Rollout>, items: Rollout[]): Record<string, Rollout> {
+  if (!items.length) {
+    return cache;
   }
-  return rollouts.find((rollout) => rollout.rolloutId === rolloutId) ?? null;
+  let changed = false;
+  const next = { ...cache };
+  for (const item of items) {
+    const existing = next[item.rolloutId];
+    if (!existing || existing !== item) {
+      next[item.rolloutId] = item;
+      changed = true;
+    }
+  }
+  return changed ? next : cache;
 }
 
 export function TracesPage() {
   const dispatch = useAppDispatch();
   const autoRefreshMs = useAppSelector(selectAutoRefreshMs);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const searchParamsKey = searchParams.toString();
+  const [hydratedSearchParamsKey, setHydratedSearchParamsKey] = useState<string | null>(null);
+  const [rolloutSearchValue, setRolloutSearchValue] = useState('');
+  const [debouncedRolloutSearchValue] = useDebouncedValue(rolloutSearchValue, 300);
+  const normalizedRolloutSearchValue = debouncedRolloutSearchValue.trim();
+  const rolloutSearchActive = normalizedRolloutSearchValue.length > 0;
+  const [rolloutLookup, setRolloutLookup] = useState<Record<string, Rollout>>({});
+  const hasRolloutQueryParam = searchParams.has('rolloutId');
+  const hasAttemptQueryParam = searchParams.has('attemptId');
+  const [initialHasRolloutQueryParam] = useState(hasRolloutQueryParam);
+  const rolloutIdFromQuery = hasRolloutQueryParam ? searchParams.get('rolloutId') || null : undefined;
+  const attemptIdFromQuery = hasAttemptQueryParam ? searchParams.get('attemptId') || null : undefined;
   const rolloutId = useAppSelector(selectTracesRolloutId);
   const attemptId = useAppSelector(selectTracesAttemptId);
   const searchTerm = useAppSelector(selectTracesSearchTerm);
@@ -72,7 +97,7 @@ export function TracesPage() {
   const viewMode = useAppSelector(selectTracesViewMode);
   const spansQueryArgs = useAppSelector(selectTracesQueryArgs);
 
-  const rolloutsQueryArgs = useMemo<GetRolloutsQueryArgs>(
+  const baseRolloutsQueryArgs = useMemo<GetRolloutsQueryArgs>(
     () => ({
       limit: 100,
       offset: 0,
@@ -88,13 +113,68 @@ export function TracesPage() {
     isFetching: rolloutsFetching,
     isError: rolloutsIsError,
     error: rolloutsError,
-  } = useGetRolloutsQuery(rolloutsQueryArgs, {
+  } = useGetRolloutsQuery(baseRolloutsQueryArgs, {
     pollingInterval: autoRefreshMs > 0 ? autoRefreshMs : undefined,
   });
 
-  const rolloutItems = rolloutsData?.items ?? [];
+  const baseRolloutItems = rolloutsData?.items ?? [];
 
-  const selectedRollout = useMemo(() => findRollout(rolloutItems, rolloutId), [rolloutItems, rolloutId]);
+  const rolloutSearchQueryArgs = useMemo<GetRolloutsQueryArgs | null>(() => {
+    if (!rolloutSearchActive) {
+      return null;
+    }
+    return {
+      limit: 20,
+      offset: 0,
+      sortBy: 'start_time',
+      sortOrder: 'desc',
+      rolloutIdContains: normalizedRolloutSearchValue,
+    };
+  }, [normalizedRolloutSearchValue, rolloutSearchActive]);
+
+  const { data: rolloutSearchData, isFetching: rolloutSearchFetching } = useGetRolloutsQuery(
+    rolloutSearchQueryArgs ?? skipToken,
+  );
+
+  const rolloutByIdQueryArgs = useMemo<GetRolloutsQueryArgs | null>(() => {
+    if (!rolloutId || rolloutLookup[rolloutId]) {
+      return null;
+    }
+    return {
+      limit: 20,
+      offset: 0,
+      sortBy: 'start_time',
+      sortOrder: 'desc',
+      rolloutIdContains: rolloutId,
+    };
+  }, [rolloutId, rolloutLookup]);
+
+  const { data: rolloutByIdData, isFetching: rolloutByIdFetching } = useGetRolloutsQuery(
+    rolloutByIdQueryArgs ?? skipToken,
+  );
+
+  const searchRolloutItems = rolloutSearchData?.items ?? [];
+  const rolloutByIdItems = rolloutByIdData?.items ?? [];
+
+  useEffect(() => {
+    if (baseRolloutItems.length > 0) {
+      setRolloutLookup((prev) => mergeRolloutCache(prev, baseRolloutItems));
+    }
+  }, [baseRolloutItems]);
+
+  useEffect(() => {
+    if (searchRolloutItems.length > 0) {
+      setRolloutLookup((prev) => mergeRolloutCache(prev, searchRolloutItems));
+    }
+  }, [searchRolloutItems]);
+
+  useEffect(() => {
+    if (rolloutByIdItems.length > 0) {
+      setRolloutLookup((prev) => mergeRolloutCache(prev, rolloutByIdItems));
+    }
+  }, [rolloutByIdItems]);
+
+  const selectedRollout = rolloutId ? (rolloutLookup[rolloutId] ?? null) : null;
 
   const attemptsQueryArgs =
     rolloutId !== null
@@ -125,21 +205,61 @@ export function TracesPage() {
     pollingInterval: autoRefreshMs > 0 ? autoRefreshMs : undefined,
   });
 
+  const shouldResolveRollout = rolloutId !== null && !rolloutLookup[rolloutId];
+
   useEffect(() => {
     if (!rolloutsData) {
       return;
     }
-    if (rolloutItems.length === 0) {
+
+    if (rolloutsData.total === 0) {
       if (rolloutId !== null) {
         dispatch(setTracesRolloutId(null));
       }
       return;
     }
-    const rolloutExists = rolloutId ? rolloutItems.some((rollout) => rollout.rolloutId === rolloutId) : false;
-    if (!rolloutExists) {
-      dispatch(setTracesRolloutId(rolloutItems[0].rolloutId));
+
+    if (rolloutId === null) {
+      if (!initialHasRolloutQueryParam && baseRolloutItems[0]) {
+        dispatch(setTracesRolloutId(baseRolloutItems[0].rolloutId));
+      }
+      return;
     }
-  }, [dispatch, rolloutsData, rolloutId, rolloutItems]);
+
+    if (!shouldResolveRollout) {
+      return;
+    }
+
+    if (rolloutSearchActive && normalizedRolloutSearchValue === rolloutId) {
+      return;
+    }
+
+    if (rolloutByIdQueryArgs) {
+      if (rolloutByIdFetching || !rolloutByIdData || rolloutsLoading) {
+        return;
+      }
+      if (rolloutByIdData.items.length === 0) {
+        dispatch(setTracesRolloutId(null));
+      }
+      return;
+    }
+
+    dispatch(setTracesRolloutId(null));
+  }, [
+    baseRolloutItems,
+    dispatch,
+    initialHasRolloutQueryParam,
+    normalizedRolloutSearchValue,
+    rolloutByIdData,
+    rolloutByIdFetching,
+    rolloutByIdQueryArgs,
+    rolloutId,
+    rolloutLookup,
+    rolloutSearchActive,
+    rolloutsData,
+    rolloutsLoading,
+    shouldResolveRollout,
+  ]);
 
   useEffect(() => {
     if (!rolloutId) {
@@ -160,20 +280,29 @@ export function TracesPage() {
       return;
     }
 
-    const fallbackAttemptId = selectedRollout?.attempt?.attemptId ?? null;
-    if (fallbackAttemptId !== attemptId) {
-      dispatch(setTracesAttemptId(fallbackAttemptId));
+    if (attemptId === null) {
+      const fallbackAttemptId = selectedRollout?.attempt?.attemptId ?? null;
+      if (fallbackAttemptId !== attemptId) {
+        dispatch(setTracesAttemptId(fallbackAttemptId));
+      }
     }
   }, [attemptsData, attemptId, dispatch, rolloutId, selectedRollout]);
 
-  const rolloutOptions = useMemo(
-    () =>
-      rolloutItems.map((rollout) => ({
-        value: rollout.rolloutId,
-        label: rollout.rolloutId,
-      })),
-    [rolloutItems],
-  );
+  const visibleRolloutItems = rolloutSearchActive ? searchRolloutItems : baseRolloutItems;
+  const rolloutSelectIsFetching =
+    (rolloutSearchActive ? rolloutSearchFetching : rolloutsFetching) ||
+    Boolean(rolloutByIdQueryArgs && rolloutByIdFetching);
+
+  const rolloutOptions = useMemo(() => {
+    const options = visibleRolloutItems.map((rollout) => ({
+      value: rollout.rolloutId,
+      label: rollout.rolloutId,
+    }));
+    if (rolloutId && !visibleRolloutItems.some((rollout) => rollout.rolloutId === rolloutId)) {
+      options.push({ value: rolloutId, label: rolloutId });
+    }
+    return options;
+  }, [rolloutId, visibleRolloutItems]);
 
   const attemptOptions = useMemo(() => {
     if (attemptsData && attemptsData.items.length > 0) {
@@ -196,11 +325,21 @@ export function TracesPage() {
     return [];
   }, [attemptsData, selectedRollout]);
 
+  const attemptPlaceholder = useMemo(() => {
+    if (!rolloutId) {
+      return 'Select Attempt';
+    }
+    if (attemptOptions.length === 0) {
+      return 'No Attempt';
+    }
+    return 'Latest Attempt';
+  }, [attemptOptions.length, rolloutId]);
+
   const rawSpansData = spansData as any as { items?: Span[]; total?: number } | undefined;
   const spans = rawSpansData?.items ?? [];
   const spansTotal = rawSpansData?.total ?? 0;
   const recordsPerPageOptions = [50, 100, 200, 500];
-  const isInitialLoading = rolloutsLoading && rolloutItems.length === 0;
+  const isInitialLoading = rolloutsLoading && baseRolloutItems.length === 0;
   const isFetching = spansFetching || rolloutsFetching || attemptsFetching;
 
   const selectionMessage = useMemo<string | undefined>(() => {
@@ -264,6 +403,52 @@ export function TracesPage() {
     [dispatch],
   );
 
+  useEffect(() => {
+    const payload: { rolloutId?: string | null; attemptId?: string | null } = {};
+    if (hasRolloutQueryParam) {
+      payload.rolloutId = rolloutIdFromQuery;
+    }
+    if (hasAttemptQueryParam) {
+      payload.attemptId = attemptIdFromQuery;
+    }
+    if (Object.keys(payload).length > 0) {
+      dispatch(hydrateTracesStateFromQuery(payload));
+    }
+    setHydratedSearchParamsKey((prev) => (prev === searchParamsKey ? prev : searchParamsKey));
+  }, [attemptIdFromQuery, dispatch, hasAttemptQueryParam, hasRolloutQueryParam, rolloutIdFromQuery, searchParamsKey]);
+
+  useEffect(() => {
+    if (hydratedSearchParamsKey !== searchParamsKey) {
+      return;
+    }
+    const next = new URLSearchParams(searchParams);
+    let changed = false;
+
+    if (rolloutId) {
+      if (next.get('rolloutId') !== rolloutId) {
+        next.set('rolloutId', rolloutId);
+        changed = true;
+      }
+    } else if (next.has('rolloutId')) {
+      next.delete('rolloutId');
+      changed = true;
+    }
+
+    if (rolloutId && attemptId) {
+      if (next.get('attemptId') !== attemptId) {
+        next.set('attemptId', attemptId);
+        changed = true;
+      }
+    } else if (next.has('attemptId')) {
+      next.delete('attemptId');
+      changed = true;
+    }
+
+    if (changed) {
+      setSearchParams(next, { replace: true });
+    }
+  }, [attemptId, hydratedSearchParamsKey, rolloutId, searchParams, searchParamsKey, setSearchParams]);
+
   const handleSearchTermChange = useCallback(
     (value: string) => {
       dispatch(setTracesSearchTerm(value));
@@ -309,10 +494,7 @@ export function TracesPage() {
 
   const handleShowRollout = useCallback(
     (record: TracesTableRecord) => {
-      if (rolloutItems.length === 0) {
-        return;
-      }
-      const rollout = rolloutItems.find((item) => item.rolloutId === record.rolloutId);
+      const rollout = rolloutLookup[record.rolloutId];
       if (!rollout) {
         return;
       }
@@ -330,13 +512,12 @@ export function TracesPage() {
         }),
       );
     },
-    [attemptsData, dispatch, rolloutItems],
+    [attemptsData, dispatch, rolloutLookup],
   );
 
   const handleShowSpanDetail = useCallback(
     (record: TracesTableRecord) => {
-      const rolloutForSpan =
-        rolloutItems.length > 0 ? (rolloutItems.find((item) => item.rolloutId === record.rolloutId) ?? null) : null;
+      const rolloutForSpan = rolloutLookup[record.rolloutId] ?? null;
       const attempts = attemptsData?.items ?? [];
       const attemptForSpan =
         attempts.find((attempt) => attempt.attemptId === record.attemptId) ?? rolloutForSpan?.attempt ?? null;
@@ -350,7 +531,7 @@ export function TracesPage() {
         }),
       );
     },
-    [attemptsData, dispatch, rolloutItems],
+    [attemptsData, dispatch, rolloutLookup],
   );
 
   const handleParentIdClick = useCallback(
@@ -382,14 +563,27 @@ export function TracesPage() {
                 if (value !== rolloutId) {
                   dispatch(setTracesRolloutId(value));
                 }
+                setRolloutSearchValue('');
               }}
               searchable
+              searchValue={rolloutSearchValue}
+              onSearchChange={(value) => {
+                setRolloutSearchValue(value ?? '');
+              }}
               placeholder='Select rollout'
               aria-label='Select rollout'
-              nothingFoundMessage={rolloutsFetching ? 'Loading...' : 'No rollouts'}
+              nothingFoundMessage={
+                rolloutSelectIsFetching ? 'Loading...' : rolloutSearchActive ? 'No matching rollouts' : 'No rollouts'
+              }
               comboboxProps={{ withinPortal: true }}
+              onDropdownOpen={() => {
+                setRolloutSearchValue('');
+              }}
+              onDropdownClose={() => {
+                setRolloutSearchValue('');
+              }}
               w={260}
-              disabled={rolloutOptions.length === 0}
+              disabled={rolloutOptions.length === 0 && !rolloutSelectIsFetching}
             />
             <Select
               data={attemptOptions}
@@ -400,7 +594,7 @@ export function TracesPage() {
                 }
               }}
               searchable
-              placeholder='Latest attempt'
+              placeholder={attemptPlaceholder}
               aria-label='Select attempt'
               nothingFoundMessage={attemptsFetching ? 'Loading...' : 'No attempts'}
               comboboxProps={{ withinPortal: true }}

@@ -18,7 +18,8 @@ from yarl import URL
 from agentlightning.store.base import UNSET, LightningStore
 from agentlightning.store.client_server import LightningStoreClient, LightningStoreServer
 from agentlightning.store.memory import InMemoryLightningStore
-from agentlightning.types import LLM, OtelResource, PromptTemplate, RolloutConfig, Span, TraceStatus
+from agentlightning.types import LLM, OtelResource, PaginatedResult, PromptTemplate, RolloutConfig, Span, TraceStatus
+from agentlightning.utils.server_launcher import LaunchMode, PythonServerLauncherArgs
 
 
 def _make_span(rollout_id: str, attempt_id: str, sequence_id: int, name: str) -> Span:
@@ -71,7 +72,15 @@ async def server_client(
 
 
 @pytest.mark.asyncio
-async def test_server_start_rejects_port_conflict() -> None:
+async def test_mp_server_does_not_work_with_inmemory_store() -> None:
+    store = InMemoryLightningStore()
+    with pytest.raises(ValueError, match="The store does not support zero-copy."):
+        LightningStoreServer(store, "127.0.0.1", pick_unused_port(), launch_mode="mp")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("launch_mode", ["asyncio", "thread"])
+async def test_server_start_rejects_port_conflict(caplog: pytest.LogCaptureFixture, launch_mode: LaunchMode) -> None:
     """Ensure startup fails loudly when the port is already owned by another store."""
     store_a = InMemoryLightningStore()
     port = pick_unused_port()
@@ -79,29 +88,57 @@ async def test_server_start_rejects_port_conflict() -> None:
     await server_a.start()
 
     store_b = InMemoryLightningStore()
-    server_b = LightningStoreServer(store_b, "127.0.0.1", port)
+    server_b = LightningStoreServer(store_b, "127.0.0.1", port, launch_mode=launch_mode)
 
-    with pytest.raises(RuntimeError, match="Another process may already be using this port"):
+    with pytest.raises(RuntimeError, match="did not start up within"):
         await server_b.start()
+    assert "address already in use" in caplog.text
 
     await server_a.stop()
 
 
 @pytest.mark.asyncio
-async def test_run_forever_rejects_port_conflict() -> None:
+@pytest.mark.parametrize("launch_mode", ["asyncio", "thread"])
+async def test_run_forever_rejects_port_conflict(caplog: pytest.LogCaptureFixture, launch_mode: LaunchMode) -> None:
     """Ensure run_forever also reports port conflicts with the friendly message."""
     store_a = InMemoryLightningStore()
     port = pick_unused_port()
-    server_a = LightningStoreServer(store_a, "127.0.0.1", port)
+    server_a = LightningStoreServer(store_a, "127.0.0.1", port, launch_mode=launch_mode)
     await server_a.start()
 
     store_b = InMemoryLightningStore()
-    server_b = LightningStoreServer(store_b, "127.0.0.1", port)
+    server_b = LightningStoreServer(store_b, "127.0.0.1", port, launch_mode=launch_mode)
 
-    with pytest.raises(RuntimeError, match="Another process may already be using this port"):
+    with pytest.raises(RuntimeError, match="did not start up within"):
         await server_b.run_forever()
+    assert "address already in use" in caplog.text
 
     await server_a.stop()
+
+
+@pytest.mark.asyncio
+async def test_server_accepts_custom_launcher_args(store_fixture: LightningStore) -> None:
+    """Ensure providing launcher_args works end-to-end and is propagated to the launcher."""
+    port = pick_unused_port()
+    launcher_args = PythonServerLauncherArgs(
+        host="127.0.0.1",
+        port=port,
+        launch_mode="asyncio",
+        healthcheck_url="/v1/agl/health",
+    )
+    server = LightningStoreServer(store_fixture, launcher_args=launcher_args)
+    assert server.launcher_args is launcher_args
+    assert server.server_launcher.args is launcher_args
+    assert server.server_launcher.health_url == f"http://127.0.0.1:{port}/v1/agl/health"
+
+    await server.start()
+    client = LightningStoreClient(server.endpoint)
+    try:
+        rollout = await client.start_rollout(input={"source": "launcher-args"})
+        assert rollout.rollout_id
+    finally:
+        await client.close()
+        await server.stop()
 
 
 @pytest.mark.asyncio
@@ -179,8 +216,13 @@ async def test_query_resources_history(server_client: Tuple[LightningStoreServer
     """Server and client should return identical resource history ordering."""
     server, client = server_client
 
-    assert await server.query_resources() == []
-    assert await client.query_resources() == []
+    server_history_empty = await server.query_resources()
+    assert isinstance(server_history_empty, PaginatedResult)
+    assert len(server_history_empty) == 0
+
+    client_history_empty = await client.query_resources()
+    assert isinstance(client_history_empty, PaginatedResult)
+    assert len(client_history_empty) == 0
 
     first = await server.add_resources(
         cast(
@@ -212,6 +254,26 @@ async def test_query_resources_history(server_client: Tuple[LightningStoreServer
 
 
 @pytest.mark.asyncio
+async def test_client_query_resources_filters_and_pagination(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient],
+) -> None:
+    _, client = server_client
+
+    alpha = PromptTemplate(resource_type="prompt_template", template="alpha", engine="jinja")
+    beta = PromptTemplate(resource_type="prompt_template", template="beta", engine="jinja")
+
+    await client.update_resources("manual-alpha", cast(Any, {"prompt": alpha}))
+    await client.update_resources("manual-beta", cast(Any, {"prompt": beta}))
+
+    contains_beta = await client.query_resources(resources_id_contains="beta")
+    assert [item.resources_id for item in contains_beta] == ["manual-beta"]
+
+    sorted_ids = sorted(["manual-alpha", "manual-beta"], reverse=True)
+    paged = await client.query_resources(sort_by="resources_id", sort_order="desc", limit=1, offset=1)
+    assert [item.resources_id for item in paged] == sorted_ids[1:2]
+
+
+@pytest.mark.asyncio
 async def test_client_server_end_to_end(
     server_client: Tuple[LightningStoreServer, LightningStoreClient], mock_readable_span: ReadableSpan
 ) -> None:
@@ -229,7 +291,13 @@ async def test_client_server_end_to_end(
     server_queue_config = RolloutConfig(unresponsive_seconds=4.2, max_attempts=2)
     queued_rollout = await server.enqueue_rollout(input={"origin": "server-queue"}, config=server_queue_config)
     assert queued_rollout.config.unresponsive_seconds == 4.2
-    dequeued = await server.dequeue_rollout()
+    server_worker_id = "server-worker"
+    dequeued = await server.dequeue_rollout(worker_id=server_worker_id)
+    server_worker_after_dequeue = await server.get_worker_by_id(server_worker_id)
+    assert server_worker_after_dequeue is not None
+    assert server_worker_after_dequeue.status == "idle"
+    assert server_worker_after_dequeue.last_dequeue_time is not None
+    dequeue_time = server_worker_after_dequeue.last_dequeue_time
     started_attempt = await server.start_attempt(queued_rollout.rollout_id)
 
     await server.query_rollouts()
@@ -260,10 +328,25 @@ async def test_client_server_end_to_end(
         queued_rollout.rollout_id,
         started_attempt.attempt.attempt_id,
         status="running",
-        worker_id="server-worker",
+        worker_id=server_worker_id,
         metadata={"phase": "warmup"},
     )
+    server_worker_busy = await server.get_worker_by_id(server_worker_id)
+    assert server_worker_busy is not None
+    assert server_worker_busy.status == "busy"
+    assert server_worker_busy.current_rollout_id == queued_rollout.rollout_id
+    assert server_worker_busy.current_attempt_id == started_attempt.attempt.attempt_id
+    assert server_worker_busy.last_busy_time is not None
+    assert server_worker_busy.last_busy_time >= dequeue_time
+
     await server.update_attempt(queued_rollout.rollout_id, "latest", status="succeeded")
+    server_worker_idle = await server.get_worker_by_id(server_worker_id)
+    assert server_worker_idle is not None
+    assert server_worker_idle.status == "idle"
+    assert server_worker_idle.current_rollout_id is None
+    assert server_worker_idle.current_attempt_id is None
+    assert server_worker_idle.last_idle_time is not None
+    assert server_worker_idle.last_idle_time >= server_worker_busy.last_busy_time
     completed = await server.wait_for_rollouts(rollout_ids=[queued_rollout.rollout_id], timeout=0.1)
     assert completed and completed[0].status in {"succeeded", "failed", "cancelled"}
 
@@ -285,19 +368,29 @@ async def test_client_server_end_to_end(
     client_queue_config = RolloutConfig(unresponsive_seconds=6.0)
     enqueued = await client.enqueue_rollout(input={"origin": "client-queue"}, config=client_queue_config)
     assert enqueued.config.unresponsive_seconds == 6.0
-    dequeued_client = await client.dequeue_rollout()
+    client_worker_id = "client-worker"
+    dequeued_client = await client.dequeue_rollout(worker_id=client_worker_id)
     assert dequeued_client is not None
+    client_worker_after_dequeue = await client.get_worker_by_id(client_worker_id)
+    assert client_worker_after_dequeue is not None
+    assert client_worker_after_dequeue.status == "idle"
+    assert client_worker_after_dequeue.last_dequeue_time is not None
+    client_dequeue_time = client_worker_after_dequeue.last_dequeue_time
     started_client_attempt = await client.start_attempt(dequeued_client.rollout_id)
 
     all_rollouts = await client.query_rollouts()
     assert any(r.rollout_id == enqueued.rollout_id for r in all_rollouts)
     assert await client.query_rollouts(rollout_ids=[enqueued.rollout_id])
+    # Test that attempt is present in the rollout
+    assert any(hasattr(r, "attempt") and r.attempt is not None for r in all_rollouts)  # type: ignore
     attempts = await client.query_attempts(dequeued_client.rollout_id)
     assert attempts
     assert await client.get_latest_attempt(dequeued_client.rollout_id) is not None
     stored_client_rollout = await client.get_rollout_by_id(dequeued_client.rollout_id)
     assert stored_client_rollout is not None
     assert stored_client_rollout.config.unresponsive_seconds == 6.0
+    # Test that attempt is present in the rollout
+    assert hasattr(stored_client_rollout, "attempt") and stored_client_rollout.attempt is not None  # type: ignore
 
     client_span = _make_span(dequeued_client.rollout_id, dequeued_client.attempt.attempt_id, 101, "client-span")
     stored_span = await client.add_span(client_span)
@@ -320,14 +413,50 @@ async def test_client_server_end_to_end(
     await client.update_attempt(
         dequeued_client.rollout_id,
         started_client_attempt.attempt.attempt_id,
-        worker_id="client-worker",
+        worker_id=client_worker_id,
         metadata={"info": "started"},
     )
+    client_worker_busy = await client.get_worker_by_id(client_worker_id)
+    assert client_worker_busy is not None
+    assert client_worker_busy.status == "busy"
+    assert client_worker_busy.current_rollout_id == dequeued_client.rollout_id
+    assert client_worker_busy.current_attempt_id == started_client_attempt.attempt.attempt_id
+    assert client_worker_busy.last_busy_time is not None
+    assert client_worker_busy.last_busy_time >= client_dequeue_time
+
     await client.update_attempt(dequeued_client.rollout_id, "latest", status="succeeded")
     await client.update_rollout(dequeued_client.rollout_id, status="succeeded")
+    client_worker_idle = await client.get_worker_by_id(client_worker_id)
+    assert client_worker_idle is not None
+    assert client_worker_idle.status == "idle"
+    assert client_worker_idle.current_rollout_id is None
+    assert client_worker_idle.current_attempt_id is None
+    assert client_worker_idle.last_idle_time is not None
+    assert client_worker_idle.last_idle_time >= client_worker_busy.last_busy_time
 
     wait_result = await client.wait_for_rollouts(rollout_ids=[dequeued_client.rollout_id], timeout=0.05)
     assert wait_result and wait_result[0].status == "succeeded"
+
+
+@pytest.mark.asyncio
+async def test_client_query_rollouts_filters_and_pagination(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient],
+) -> None:
+    _, client = server_client
+
+    rollouts = [await client.enqueue_rollout(input={"idx": idx}) for idx in range(3)]
+    await client.update_rollout(rollout_id=rollouts[0].rollout_id, status="failed")
+
+    failed = await client.query_rollouts(status_in=["failed"])
+    assert [rollout.rollout_id for rollout in failed] == [rollouts[0].rollout_id]
+
+    substring = rollouts[2].rollout_id[-4:]
+    contains = await client.query_rollouts(rollout_id_contains=substring)
+    assert any(rollout.rollout_id == rollouts[2].rollout_id for rollout in contains)
+
+    sorted_ids = sorted([rollout.rollout_id for rollout in rollouts], reverse=True)
+    paged = await client.query_rollouts(sort_by="rollout_id", sort_order="desc", limit=1, offset=1)
+    assert [rollout.rollout_id for rollout in paged] == sorted_ids[1:2]
 
 
 @pytest.mark.asyncio
@@ -412,6 +541,108 @@ async def test_update_attempt_none_vs_unset(server_client: Tuple[LightningStoreS
 
 
 @pytest.mark.asyncio
+async def test_update_worker_records_heartbeat(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient],
+) -> None:
+    _, client = server_client
+
+    first = await client.update_worker("runner-1", heartbeat_stats={"cpu": 0.4})
+    assert first.status == "unknown"
+    assert first.heartbeat_stats == {"cpu": 0.4}
+    assert first.last_heartbeat_time is not None
+
+    second = await client.update_worker("runner-1")
+    assert second.last_heartbeat_time is not None
+    assert second.last_heartbeat_time >= first.last_heartbeat_time
+    assert second.heartbeat_stats == {"cpu": 0.4}
+
+
+@pytest.mark.asyncio
+async def test_update_worker_rejects_none_stats(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient],
+) -> None:
+    _, client = server_client
+    with pytest.raises(ClientResponseError) as exc_info:
+        await client.update_worker("runner-err", heartbeat_stats=cast(Any, None))
+    assert exc_info.value.status == 400
+
+
+@pytest.mark.asyncio
+async def test_worker_status_transitions_via_attempts(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient],
+) -> None:
+    _, client = server_client
+
+    await client.enqueue_rollout(input={"payload": "worker"})
+    claimed = await client.dequeue_rollout(worker_id="runner-auto")
+    assert claimed is not None
+
+    await client.update_attempt(claimed.rollout_id, claimed.attempt.attempt_id, worker_id="runner-auto")
+    busy = await client.get_worker_by_id("runner-auto")
+    assert busy is not None
+    assert busy.status == "busy"
+    assert busy.current_rollout_id == claimed.rollout_id
+    assert busy.current_attempt_id == claimed.attempt.attempt_id
+    assert busy.last_dequeue_time is not None
+    assert busy.last_busy_time is not None
+
+    await client.update_attempt(claimed.rollout_id, claimed.attempt.attempt_id, status="succeeded")
+    idle = await client.get_worker_by_id("runner-auto")
+    assert idle is not None
+    assert idle.status == "idle"
+    assert idle.current_rollout_id is None
+    assert idle.current_attempt_id is None
+
+
+@pytest.mark.asyncio
+async def test_client_query_workers_filters(server_client: Tuple[LightningStoreServer, LightningStoreClient]) -> None:
+    _, client = server_client
+
+    await client.update_worker("alpha-worker", heartbeat_stats={"cpu": 0.2})
+    await client.update_worker("beta-worker", heartbeat_stats={"cpu": 0.8})
+
+    busy_rollout = await client.start_rollout(input={"worker": "alpha"})
+    await client.update_attempt(
+        busy_rollout.rollout_id,
+        busy_rollout.attempt.attempt_id,
+        worker_id="alpha-worker",
+        status="running",
+    )
+
+    busy_workers = await client.query_workers(status_in=["busy"])
+    assert [worker.worker_id for worker in busy_workers] == ["alpha-worker"]
+
+    contains_beta = await client.query_workers(worker_id_contains="beta")
+    assert [worker.worker_id for worker in contains_beta] == ["beta-worker"]
+
+    or_filtered = await client.query_workers(
+        status_in=["busy"],
+        worker_id_contains="beta",
+        filter_logic="or",
+        sort_by="worker_id",
+        sort_order="asc",
+    )
+    assert [worker.worker_id for worker in or_filtered] == ["alpha-worker", "beta-worker"]
+
+
+@pytest.mark.asyncio
+async def test_get_worker_by_id(server_client: Tuple[LightningStoreServer, LightningStoreClient]) -> None:
+    server, client = server_client
+
+    await server.update_worker("runner-lookup", heartbeat_stats={"cpu": 0.3})
+
+    server_worker = await server.get_worker_by_id("runner-lookup")
+    assert server_worker is not None
+    assert server_worker.worker_id == "runner-lookup"
+    assert await server.get_worker_by_id("missing") is None
+
+    client_worker = await client.get_worker_by_id("runner-lookup")
+    assert client_worker is not None
+    assert client_worker.worker_id == "runner-lookup"
+    assert await client.get_worker_by_id("missing") is None
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "bad_payload",
     [
@@ -430,6 +661,46 @@ async def test_update_attempt_rejects_none_values(
         await client.update_attempt(attempted.rollout_id, attempted.attempt.attempt_id, **bad_payload)
 
     assert exc_info.value.status == 400
+
+
+@pytest.mark.asyncio
+async def test_client_query_spans_filters_and_pagination(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient],
+) -> None:
+    server, client = server_client
+
+    attempted = await server.start_rollout(input={"span": "filters"})
+    attempt_id = attempted.attempt.attempt_id
+
+    spans = [
+        _make_span(attempted.rollout_id, attempt_id, 1, "planner"),
+        _make_span(attempted.rollout_id, attempt_id, 2, "reward"),
+        _make_span(attempted.rollout_id, attempt_id, 3, "tool-call"),
+    ]
+    for span in spans:
+        await server.add_span(span)
+
+    planner = await client.query_spans(attempted.rollout_id, attempt_id=attempt_id, name_contains="plan")
+    assert [span.name for span in planner] == ["planner"]
+
+    or_filtered = await client.query_spans(
+        attempted.rollout_id,
+        attempt_id=attempt_id,
+        span_id=spans[0].span_id,
+        trace_id_contains=spans[2].trace_id[-4:],
+        filter_logic="or",
+    )
+    assert {span.span_id for span in or_filtered} == {spans[0].span_id, spans[2].span_id}
+
+    paged = await client.query_spans(
+        attempted.rollout_id,
+        attempt_id=attempt_id,
+        sort_by="sequence_id",
+        sort_order="desc",
+        limit=1,
+        offset=1,
+    )
+    assert [span.span_id for span in paged] == [spans[1].span_id]
 
 
 @pytest.mark.asyncio
@@ -605,7 +876,7 @@ async def test_retry_on_400_application_error(
 
     # Force app-side exception so server returns 400 via exception handler.
     call_count = {"n": 0}
-    original = server.store.enqueue_rollout
+    original = server.store.enqueue_rollout  # type: ignore
 
     async def boom(*args: Any, **kwargs: Any) -> Any:
         call_count["n"] += 1
@@ -896,3 +1167,124 @@ async def test_get_next_span_sequence_id_returns_proper_int(
 
     # Verify monotonic increment
     assert seq_id_2 == seq_id_1 + 1
+
+
+@pytest.mark.asyncio
+async def test_empty_retry_delays_disable_retries(monkeypatch: MonkeyPatch) -> None:
+    """
+    When retry_delays is empty, the client should perform only the initial attempt
+    and not retry on transient network errors.
+    """
+    store = InMemoryLightningStore()
+    port = pick_unused_port()
+    server = LightningStoreServer(
+        store,
+        launcher_args=PythonServerLauncherArgs(
+            port=port,
+            host="127.0.0.1",
+            healthcheck_url=None,
+            launch_mode="thread",
+        ),
+    )
+    await server.start()
+
+    # retry_delays=() disables retries; health checks still enabled
+    client = LightningStoreClient(
+        server.endpoint,
+        retry_delays=(),
+        health_retry_delays=(0.01,),
+    )
+
+    try:
+        original_post = aiohttp.ClientSession.post
+        original_get = aiohttp.ClientSession.get
+
+        calls = {"post": 0, "health": 0}
+
+        def failing_post(self: aiohttp.ClientSession, url: Any, *args: Any, **kwargs: Any) -> MockResponse:
+            if str(url).endswith("/rollouts"):
+                calls["post"] += 1
+                # Always raise a transient error
+                raise ServerDisconnectedError("synthetic disconnect for empty retry_delays")
+            return MockResponse(original_post(self, url, *args, **kwargs))
+
+        def ok_health_get(self: aiohttp.ClientSession, url: Any, *args: Any, **kwargs: Any) -> MockResponse:
+            if str(url).endswith("/health"):
+                calls["health"] += 1
+            # delegate to the real get() and wrap in MockResponse so it stays an async CM
+            return MockResponse(original_get(self, url, *args, **kwargs))
+
+        monkeypatch.setattr(aiohttp.ClientSession, "post", failing_post, raising=True)
+        monkeypatch.setattr(aiohttp.ClientSession, "get", ok_health_get, raising=True)
+
+        with pytest.raises(ServerDisconnectedError):
+            await client.start_rollout(input={"origin": "empty-retry-delays"})
+
+        # Only the initial attempt should be made
+        assert calls["post"] == 1
+        # Health should be probed at least once
+        assert calls["health"] >= 1
+    finally:
+        await client.close()
+        await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_empty_health_retry_delays_skip_health_checks(monkeypatch: MonkeyPatch) -> None:
+    """
+    When health_retry_delays is empty, _wait_until_healthy should not perform any
+    /health probes, but retries governed by retry_delays should still occur.
+    """
+    store = InMemoryLightningStore()
+    port = pick_unused_port()
+    server = LightningStoreServer(
+        store,
+        launcher_args=PythonServerLauncherArgs(
+            port=port,
+            host="127.0.0.1",
+            healthcheck_url=None,
+            launch_mode="thread",
+        ),
+    )
+    await server.start()
+
+    # health_retry_delays=() disables health probes; still allow one retry
+    client = LightningStoreClient(
+        server.endpoint,
+        retry_delays=(0.01,),
+        health_retry_delays=(),
+    )
+
+    try:
+        original_post = aiohttp.ClientSession.post
+        original_get = aiohttp.ClientSession.get
+
+        calls = {"post": 0, "health": 0}
+
+        def flaky_post(self: aiohttp.ClientSession, url: Any, *args: Any, **kwargs: Any) -> MockResponse:
+            if str(url).endswith("/rollouts"):
+                calls["post"] += 1
+                # First call fails, second succeeds
+                if calls["post"] == 1:
+                    raise ServerDisconnectedError("synthetic disconnect for empty health_retry_delays")
+            return MockResponse(original_post(self, url, *args, **kwargs))
+
+        def counting_health_get(self: aiohttp.ClientSession, url: Any, *args: Any, **kwargs: Any) -> MockResponse:
+            if str(url).endswith("/health"):
+                calls["health"] += 1
+            return MockResponse(original_get(self, url, *args, **kwargs))
+
+        monkeypatch.setattr(aiohttp.ClientSession, "post", flaky_post, raising=True)
+        monkeypatch.setattr(aiohttp.ClientSession, "get", counting_health_get, raising=True)
+
+        # Should succeed after one retry, without ever calling /health
+        attempted = await client.start_rollout(input={"origin": "empty-health-delays"})
+        assert attempted.rollout_id
+
+        # One failure + one success
+        assert calls["post"] == 2
+        # No health checks should have been performed
+        assert calls["health"] == 0
+    finally:
+        await client.close()
+        await server.stop()

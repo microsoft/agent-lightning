@@ -5,8 +5,10 @@ import { waitFor, within } from '@testing-library/dom';
 import userEvent from '@testing-library/user-event';
 import { delay, http, HttpResponse } from 'msw';
 import { Provider } from 'react-redux';
+import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { AppAlertBanner } from '@/components/AppAlertBanner';
 import { AppDrawerContainer } from '@/components/AppDrawer.component';
+import { AppLayout } from '@/layouts/AppLayout';
 import { createMockHandlers } from '@/utils/mock';
 import { STORY_BASE_URL, STORY_DATE_NOW_SECONDS } from '../../.storybook/constants';
 import { allModes } from '../../.storybook/modes';
@@ -295,6 +297,105 @@ const sampleSpansByAttempt: Record<string, Span[]> = {
   ],
 };
 
+const overflowDrawerSpans: Span[] = Array.from({ length: 160 }, (_, index) => ({
+  rolloutId: 'ro-7fa3b6e2',
+  attemptId: 'at-9001',
+  sequenceId: index + 1,
+  traceId: `tr-overflow-${Math.floor(index / 5)}`,
+  spanId: `sp-overflow-${index + 1}`,
+  parentId: index === 0 ? null : `sp-overflow-${index}`,
+  name: `Overflow span ${index + 1}`,
+  status: { status_code: 'OK', description: null },
+  attributes: { step: `overflow-${index + 1}`, duration_ms: 20 + (index % 5) },
+  startTime: now - 1_200 - index * 20,
+  endTime: now - 1_180 - index * 20,
+  events: [],
+  links: [],
+  context: {},
+  parent: null,
+  resource: {},
+}));
+
+const overflowSpansByAttempt: Record<string, Span[]> = {
+  ...sampleSpansByAttempt,
+  'ro-7fa3b6e2:at-9001': overflowDrawerSpans,
+};
+
+const longJsonLogs = Array.from({ length: 200 }, (_, index) => ({
+  id: index + 1,
+  detail: `Log entry ${index + 1} ${'x'.repeat(32)}`,
+  timestamp: now - index * 2,
+}));
+
+const jsonOverflowAttempt: Attempt = {
+  rolloutId: 'ro-json-overflow',
+  attemptId: 'at-json-overflow',
+  sequenceId: 1,
+  status: 'succeeded',
+  startTime: now - 600,
+  endTime: now - 300,
+  workerId: 'worker-scroll',
+  lastHeartbeatTime: now - 300,
+  metadata: { notes: 'Completed with a very large JSON payload' },
+};
+
+const jsonOverflowAttemptEndTime = jsonOverflowAttempt.endTime ?? jsonOverflowAttempt.startTime + 1;
+
+const jsonOverflowRollout: Rollout = {
+  rolloutId: 'ro-json-overflow',
+  input: {
+    task: 'Render large JSON',
+    payload: longJsonLogs,
+    summary: 'This rollout includes many log lines to test scroll behavior.',
+  },
+  status: 'succeeded',
+  mode: 'train',
+  resourcesId: 'rs-json-overflow',
+  startTime: jsonOverflowAttempt.startTime,
+  endTime: jsonOverflowAttemptEndTime,
+  attempt: jsonOverflowAttempt,
+  config: {
+    retries: 0,
+    parameters: { max_steps: 200, batch: 5 },
+  },
+  metadata: {
+    owner: 'scroll-tester',
+    description: 'Synthetic rollout with oversized JSON payload for storybook validation.',
+    tags: Array.from({ length: 40 }, (_, index) => `tag-${index + 1}`),
+  },
+};
+
+const jsonOverflowSpans: Span[] = [
+  {
+    rolloutId: jsonOverflowRollout.rolloutId,
+    attemptId: jsonOverflowAttempt.attemptId,
+    sequenceId: 1,
+    traceId: 'tr-json-overflow',
+    spanId: 'sp-json-root',
+    parentId: null,
+    name: 'json-overflow-root',
+    status: { status_code: 'OK', description: null },
+    attributes: { detail: 'root span' },
+    startTime: jsonOverflowAttempt.startTime,
+    endTime: jsonOverflowAttemptEndTime,
+    events: [],
+    links: [],
+    context: {},
+    parent: null,
+    resource: {},
+  },
+];
+
+const jsonOverflowRollouts = [jsonOverflowRollout, ...sampleRollouts];
+const jsonOverflowAttemptsByRollout: Record<string, Attempt[]> = {
+  ...attemptsByRollout,
+  [jsonOverflowRollout.rolloutId]: [jsonOverflowAttempt],
+};
+const jsonOverflowSpansByAttempt: Record<string, Span[]> = {
+  ...sampleSpansByAttempt,
+  [`${jsonOverflowRollout.rolloutId}:${jsonOverflowAttempt.attemptId}`]: jsonOverflowSpans,
+};
+
 const longDurationRollouts: Rollout[] = [
   {
     rolloutId: 'ro-long-duration',
@@ -555,8 +656,12 @@ const autoExpandAttempts: Record<string, Attempt[]> = {
     },
   ],
 };
-function renderWithStore(uiOverrides?: Partial<RolloutsUiState>, configOverrides?: Partial<typeof initialConfigState>) {
-  const store = createAppStore({
+
+function createStoryStore(
+  uiOverrides?: Partial<RolloutsUiState>,
+  configOverrides?: Partial<typeof initialConfigState>,
+) {
+  return createAppStore({
     config: {
       ...initialConfigState,
       baseUrl: STORY_BASE_URL,
@@ -569,6 +674,10 @@ function renderWithStore(uiOverrides?: Partial<RolloutsUiState>, configOverrides
     },
     resources: initialResourcesUiState,
   });
+}
+
+function renderWithStore(uiOverrides?: Partial<RolloutsUiState>, configOverrides?: Partial<typeof initialConfigState>) {
+  const store = createStoryStore(uiOverrides, configOverrides);
 
   return (
     <Provider store={store}>
@@ -581,7 +690,51 @@ function renderWithStore(uiOverrides?: Partial<RolloutsUiState>, configOverrides
   );
 }
 
+function renderWithAppLayout(
+  uiOverrides?: Partial<RolloutsUiState>,
+  configOverrides?: Partial<typeof initialConfigState>,
+) {
+  const store = createStoryStore(uiOverrides, configOverrides);
+  const router = createMemoryRouter(
+    [
+      {
+        path: '/',
+        element: (
+          <AppLayout
+            config={{
+              baseUrl: store.getState().config.baseUrl,
+              autoRefreshMs: store.getState().config.autoRefreshMs,
+            }}
+          />
+        ),
+        children: [
+          {
+            path: '/rollouts',
+            element: <RolloutsPage />,
+          },
+        ],
+      },
+    ],
+    { initialEntries: ['/rollouts'] },
+  );
+
+  return (
+    <Provider store={store}>
+      <>
+        <RouterProvider router={router} />
+        <AppDrawerContainer />
+      </>
+    </Provider>
+  );
+}
+
 const defaultHandlers = createMockHandlers(sampleRollouts, attemptsByRollout, sampleSpansByAttempt);
+const overflowHandlers = createMockHandlers(sampleRollouts, attemptsByRollout, overflowSpansByAttempt);
+const jsonOverflowHandlers = createMockHandlers(
+  jsonOverflowRollouts,
+  jsonOverflowAttemptsByRollout,
+  jsonOverflowSpansByAttempt,
+);
 
 export const Default: Story = {
   render: () => renderWithStore(),
@@ -589,6 +742,40 @@ export const Default: Story = {
     msw: {
       handlers: defaultHandlers,
     },
+  },
+};
+
+export const WithSidebarLayout: Story = {
+  name: 'Within AppLayout',
+  render: () => renderWithAppLayout(),
+  parameters: {
+    msw: {
+      handlers: defaultHandlers,
+    },
+  },
+};
+
+export const WithSidebarStatusFilter: Story = {
+  name: 'Within AppLayout (Status Filter)',
+  render: () => renderWithAppLayout({ statusFilters: ['running'] }),
+  parameters: {
+    msw: {
+      handlers: defaultHandlers,
+    },
+  },
+  play: async () => {
+    await waitFor(() => {
+      const container = document.querySelector<HTMLElement>('[data-testid="rollouts-table-container"]');
+      const main = document.querySelector<HTMLElement>('.mantine-AppShell-main');
+      if (!container || !main) {
+        throw new Error('Unable to locate rollout table container or AppShell main region');
+      }
+      const containerRect = container.getBoundingClientRect();
+      const mainRect = main.getBoundingClientRect();
+      if (containerRect.right > mainRect.right + 1) {
+        throw new Error('Rollouts table extends beyond the AppShell content area');
+      }
+    });
   },
 };
 
@@ -721,7 +908,7 @@ export const AutoExpandedAttempt: Story = {
   },
 };
 
-export const RawJsonDrawer: Story = {
+export const Search: Story = {
   render: () => renderWithStore(),
   parameters: {
     msw: {
@@ -731,21 +918,99 @@ export const RawJsonDrawer: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await canvas.findByText('ro-7fa3b6e2');
-    const rolloutCell = canvas.getByText('ro-7fa3b6e2');
-    const rolloutRow = rolloutCell.closest('tr');
 
-    if (!rolloutRow) {
-      throw new Error('Unable to locate rollout row for raw JSON drawer');
+    const searchInput = canvas.getByPlaceholderText('Search by Rollout ID');
+    await userEvent.type(searchInput, 'ro-116eab45');
+
+    await waitFor(() => {
+      if (canvas.queryByText('ro-7fa3b6e2')) {
+        throw new Error('Expected search to filter out non-matching rollouts');
+      }
+      if (!canvas.queryByText('ro-116eab45')) {
+        throw new Error('Expected search to keep the matching rollout visible');
+      }
+    });
+  },
+};
+
+async function openSampleTracesDrawer(canvasElement: HTMLElement) {
+  const canvas = within(canvasElement);
+  await canvas.findByText('ro-7fa3b6e2');
+  const rolloutCell = canvas.getByText('ro-7fa3b6e2');
+  const rolloutRow = rolloutCell.closest('tr');
+
+  if (!rolloutRow) {
+    throw new Error('Unable to locate rollout row for traces drawer');
+  }
+
+  const rowScope = within(rolloutRow);
+  const traceButtons = rowScope.getAllByRole('button', { name: 'View traces' });
+  const tracesButton = traceButtons[0];
+  await userEvent.click(tracesButton);
+
+  return within(document.body).findByRole('dialog');
+}
+
+async function openRawJsonDrawer(canvasElement: HTMLElement, rolloutId = 'ro-7fa3b6e2') {
+  const canvas = within(canvasElement);
+  await canvas.findByText(rolloutId);
+  const rolloutCell = canvas.getByText(rolloutId);
+  const rolloutRow = rolloutCell.closest('tr');
+
+  if (!rolloutRow) {
+    throw new Error(`Unable to locate rollout row for ${rolloutId}`);
+  }
+
+  const rowScope = within(rolloutRow);
+  const rawButtons = rowScope.getAllByRole('button', { name: 'View raw JSON' });
+  const rawButton = rawButtons[0];
+  await userEvent.click(rawButton);
+
+  return within(document.body).findByRole('dialog');
+}
+
+export const RawJsonDrawer: Story = {
+  render: () => renderWithStore(),
+  parameters: {
+    msw: {
+      handlers: defaultHandlers,
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const drawer = await openRawJsonDrawer(canvasElement);
+    await waitFor(
+      async () => {
+        await within(drawer).findByText('Attempt');
+        await within(drawer).findByText(/worker-alpha/);
+      },
+      { timeout: 3_000 },
+    );
+  },
+};
+
+export const RawJsonDrawerScrollable: Story = {
+  name: 'Raw JSON Drawer Scrollable',
+  render: () => renderWithStore(),
+  parameters: {
+    msw: {
+      handlers: jsonOverflowHandlers,
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const drawer = await openRawJsonDrawer(canvasElement, 'ro-json-overflow');
+    const editorContainer = drawer.querySelector('[data-testid="json-editor-container"]') as HTMLElement | null;
+    if (!editorContainer) {
+      throw new Error('Unable to locate JSON editor container');
     }
-
-    const rowScope = within(rolloutRow);
-    const rawButtons = rowScope.getAllByRole('button', { name: 'View raw JSON' });
-    const rawButton = rawButtons[0];
-    await userEvent.click(rawButton);
-
-    const drawer = await within(document.body).findByRole('dialog');
-    await within(drawer).findByText('Attempt');
-    await within(drawer).findByText(/worker-alpha/);
+    await waitFor(() => {
+      const scrollable = editorContainer.querySelector('.monaco-scrollable-element') as HTMLElement | null;
+      if (!scrollable) {
+        throw new Error('Monaco editor not ready yet');
+      }
+      if (scrollable.scrollHeight <= scrollable.clientHeight) {
+        throw new Error('Expected JSON content to overflow and allow scrolling');
+      }
+    });
   },
 };
 
@@ -757,20 +1022,56 @@ export const TracesDrawer: Story = {
     },
   },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    await canvas.findByText('ro-7fa3b6e2');
-    const rolloutCell = canvas.getByText('ro-7fa3b6e2');
-    const rolloutRow = rolloutCell.closest('tr');
+    await openSampleTracesDrawer(canvasElement);
+  },
+};
 
-    if (!rolloutRow) {
-      throw new Error('Unable to locate rollout row for traces drawer');
+export const TracesDrawerLink: Story = {
+  name: 'Traces Drawer Link',
+  render: () => renderWithStore(),
+  parameters: {
+    msw: {
+      handlers: defaultHandlers,
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const drawer = await openSampleTracesDrawer(canvasElement);
+    const link = await within(drawer).findByText('View full traces');
+    const href = link.getAttribute('href');
+    if (!href) {
+      throw new Error('Expected traces drawer to render a link to the traces page');
     }
+    if (!href.includes('rolloutId=ro-7fa3b6e2')) {
+      throw new Error(`Link href ${href} is missing rolloutId query parameter`);
+    }
+    if (!href.includes('attemptId=at-9001')) {
+      throw new Error(`Link href ${href} is missing attemptId query parameter`);
+    }
+  },
+};
 
-    const rowScope = within(rolloutRow);
-    const traceButtons = rowScope.getAllByRole('button', { name: 'View traces' });
-    const tracesButton = traceButtons[0];
-    await userEvent.click(tracesButton);
-
-    await within(document.body).findByRole('dialog');
+export const TracesDrawerScrollableTable: Story = {
+  name: 'Traces Drawer Scrollable Table',
+  render: () => renderWithStore(),
+  parameters: {
+    msw: {
+      handlers: overflowHandlers,
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const drawer = await openSampleTracesDrawer(canvasElement);
+    const container = drawer.querySelector('[data-testid="traces-drawer-table-container"]') as HTMLElement | null;
+    if (!container) {
+      throw new Error('Unable to locate traces table container inside drawer');
+    }
+    const overflowStyle = window.getComputedStyle(container).overflowY;
+    if (overflowStyle !== 'auto' && overflowStyle !== 'scroll') {
+      throw new Error('Expected traces table container to allow vertical scrolling');
+    }
+    await waitFor(() => {
+      if (container.scrollHeight <= container.clientHeight) {
+        throw new Error('Expected traces table content to overflow and enable scrolling');
+      }
+    });
   },
 };

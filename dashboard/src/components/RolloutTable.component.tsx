@@ -24,7 +24,7 @@ import {
   Text,
   Tooltip,
 } from '@mantine/core';
-import { useElementSize } from '@mantine/hooks';
+import { useElementSize, useViewportSize } from '@mantine/hooks';
 import {
   type Attempt,
   type AttemptStatus,
@@ -33,6 +33,7 @@ import {
   type RolloutsSortState,
   type RolloutStatus,
 } from '@/features/rollouts';
+import { getLayoutAwareWidth } from '@/layouts/helper';
 import {
   clampToNow,
   formatDateTime,
@@ -78,14 +79,14 @@ const ROLLOUT_MODE_OPTIONS: RolloutMode[] = ['train', 'val', 'test'];
 const DEFAULT_RECORDS_PER_PAGE_OPTIONS = [50, 100, 200, 500];
 
 const COLUMN_VISIBILITY: Record<string, ColumnVisibilityConfig> = {
-  rolloutId: { fixedWidth: 10, priority: 0 },
+  rolloutId: { fixedWidth: 12.5, priority: 0 },
   actionsPlaceholder: { fixedWidth: 6.5, priority: 0 },
   inputText: { minWidth: 14, priority: 1 },
   statusValue: { fixedWidth: 10, priority: 1 },
   startTimestamp: { fixedWidth: 12, priority: 2 },
   durationSeconds: { fixedWidth: 10, priority: 2 },
   attemptId: { fixedWidth: 12, priority: 3 },
-  resourcesId: { fixedWidth: 8, priority: 3 },
+  resourcesId: { fixedWidth: 10, priority: 3 },
   mode: { fixedWidth: 8, priority: 3 },
   lastHeartbeatTimestamp: { fixedWidth: 10, priority: 3 },
   workerId: { fixedWidth: 10, priority: 3 },
@@ -293,7 +294,14 @@ function createRolloutColumns({
       accessor: 'inputText',
       title: 'Input',
       render: ({ inputText }) => (
-        <Text size='sm' ff='monospace' c='dimmed' lineClamp={1} style={{ width: '100%' }}>
+        <Text
+          size='sm'
+          ff='monospace'
+          c='dimmed'
+          lineClamp={1}
+          title={inputText}
+          style={{ width: '100%', wordBreak: 'break-all', overflow: 'hidden' }}
+        >
           {inputText}
         </Text>
       ),
@@ -533,6 +541,11 @@ export function RolloutTable({
 }: RolloutTableProps) {
   const [expandedRecordIds, setExpandedRecordIds] = useState<string[]>([]);
   const { ref: tableContainerRef, width: containerWidth } = useElementSize();
+  const { width: viewportWidth } = useViewportSize();
+
+  const layoutAwareContainerWidth = useMemo(() => {
+    return getLayoutAwareWidth(containerWidth, viewportWidth);
+  }, [containerWidth, viewportWidth]);
 
   const rolloutRecords = useMemo<RolloutTableRecord[]>(() => {
     if (!rollouts) {
@@ -566,8 +579,8 @@ export function RolloutTable({
   );
 
   const responsiveColumns = useMemo(
-    () => createResponsiveColumns(columns, containerWidth, COLUMN_VISIBILITY),
-    [columns, containerWidth],
+    () => createResponsiveColumns(columns, layoutAwareContainerWidth, COLUMN_VISIBILITY),
+    [columns, layoutAwareContainerWidth],
   );
 
   const totalPages = useMemo(
@@ -653,7 +666,7 @@ export function RolloutTable({
   );
 
   return (
-    <Box ref={tableContainerRef}>
+    <Box ref={tableContainerRef} data-testid='rollouts-table-container'>
       <DataTable<RolloutTableRecord>
         classNames={{ root: 'rollouts-table' }}
         withTableBorder

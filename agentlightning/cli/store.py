@@ -9,7 +9,7 @@ import asyncio
 import logging
 from typing import Iterable
 
-from agentlightning.logging import configure_logger
+from agentlightning import setup_logging
 from agentlightning.store.client_server import LightningStoreServer
 from agentlightning.store.memory import InMemoryLightningStore
 
@@ -25,9 +25,15 @@ def main(argv: Iterable[str] | None = None) -> int:
         action="append",
         help="Allowed CORS origin. Repeat for multiple origins. Use '*' to allow all origins.",
     )
+    parser.add_argument(
+        "--log-level",
+        default="INFO",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        help="Configure the logging level for the store.",
+    )
     args = parser.parse_args(list(argv) if argv is not None else None)
 
-    configure_logger()
+    setup_logging(args.log_level)
 
     store = InMemoryLightningStore()
     server = LightningStoreServer(
@@ -35,6 +41,7 @@ def main(argv: Iterable[str] | None = None) -> int:
         host="0.0.0.0",
         port=args.port,
         cors_allow_origins=args.cors_origins,
+        launch_mode="asyncio",
     )
     try:
         asyncio.run(server.run_forever())

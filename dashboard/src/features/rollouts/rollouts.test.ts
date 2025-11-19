@@ -53,6 +53,24 @@ describe('rollouts feature integration', () => {
     expect(data.items[0].status).toBeDefined();
   });
 
+  it('includes attempts directly on rollout payloads when they exist', async () => {
+    const store = createServerBackedStore();
+    const queryArgs = selectRolloutsQueryArgs(store.getState());
+
+    const subscription = store.dispatch(rolloutsApi.endpoints.getRollouts.initiate(queryArgs));
+    const data = await subscription.unwrap();
+    subscription.unsubscribe();
+
+    const rolloutWithAttempt = data.items.find((rollout) => rollout.rolloutId === 'ro-story-002');
+    expect(rolloutWithAttempt).toBeDefined();
+    expect(rolloutWithAttempt?.attempt).not.toBeNull();
+    expect(rolloutWithAttempt?.attempt?.attemptId).toBe('at-story-022');
+
+    const rolloutWithoutAttempt = data.items.find((rollout) => rollout.rolloutId === 'ro-story-004');
+    expect(rolloutWithoutAttempt).toBeDefined();
+    expect(rolloutWithoutAttempt?.attempt).toBeNull();
+  });
+
   it('retrieves attempts for a rollout from the Python server', async () => {
     const store = createServerBackedStore();
     const subscription = store.dispatch(

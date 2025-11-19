@@ -84,7 +84,9 @@ async def calc_agent(task: MathProblem, llm: agl.LLM) -> None:
         try:
             output_format = "Output the answer when you are ready. The answer should be surrounded by three sharps (`###`), in the form of ### ANSWER: <answer> ###."
             prompt = task["question"] + " " + output_format
-            result = await calc_agent.run(task=prompt)
+            # Sometimes MCP tools can timeout. In that case, the whole agent will block.
+            # We thus set a timeout of 5 minutes so that the agent will not block indefinitely.
+            result = await asyncio.wait_for(calc_agent.run(task=prompt), timeout=300.0)
             # evaluate
             last_message = cast(str, result.messages[-1].content)  # type: ignore
             answer = re.search(r"###\s*ANSWER:\s*(.+?)(\s*###|$)", last_message)
@@ -92,6 +94,9 @@ async def calc_agent(task: MathProblem, llm: agl.LLM) -> None:
                 answer = answer.group(1)
             else:
                 answer = last_message
+        except asyncio.TimeoutError as e:
+            print("Timeout occurred. Error:", str(e))
+            answer = "None"
         except Exception as e:
             print("Failure:", str(e))
             answer = "None"

@@ -8,10 +8,11 @@ import { useAppDispatch, useAppSelector } from '../store/hooks';
 
 const AUTO_REFRESH_OPTIONS = [
   { label: 'Off', value: '0' },
-  { label: 'Every 5 seconds', value: '5000' },
-  { label: 'Every 15 seconds', value: '15000' },
-  { label: 'Every 60 seconds', value: '60000' },
-  { label: 'Every 5 minutes', value: '300000' },
+  // TODO: Support real auto-refresh
+  { label: 'Every 5 seconds', value: '5000', disabled: true },
+  { label: 'Every 15 seconds', value: '15000', disabled: true },
+  { label: 'Every 60 seconds', value: '60000', disabled: true },
+  { label: 'Every 5 minutes', value: '300000', disabled: true },
 ];
 
 const THEME_OPTIONS = [

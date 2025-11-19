@@ -69,6 +69,34 @@ const tracesSlice = createSlice({
       state.page = initialTracesUiState.page;
       state.sort = initialTracesUiState.sort;
     },
+    hydrateTracesStateFromQuery(
+      state,
+      action: PayloadAction<{ rolloutId?: string | null; attemptId?: string | null }>,
+    ) {
+      const payload = action.payload;
+      if (Object.hasOwn(payload, 'rolloutId')) {
+        const nextRolloutId = payload.rolloutId ?? null;
+        if (state.rolloutId !== nextRolloutId) {
+          state.rolloutId = nextRolloutId;
+          state.page = 1;
+          state.attemptId = null;
+        } else if (nextRolloutId === null) {
+          state.attemptId = null;
+        }
+      }
+
+      if (Object.hasOwn(payload, 'attemptId')) {
+        if (state.rolloutId === null) {
+          state.attemptId = null;
+          return;
+        }
+        const nextAttemptId = payload.attemptId ?? null;
+        if (state.attemptId !== nextAttemptId) {
+          state.attemptId = nextAttemptId;
+          state.page = 1;
+        }
+      }
+    },
   },
 });
 
@@ -81,6 +109,7 @@ export const {
   setTracesSort,
   setTracesViewMode,
   resetTracesFilters,
+  hydrateTracesStateFromQuery,
 } = tracesSlice.actions;
 
 export const tracesReducer = tracesSlice.reducer;

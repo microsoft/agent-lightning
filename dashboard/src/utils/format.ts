@@ -27,6 +27,14 @@ export function formatDateTime(timestamp: number | null): string {
   return dayjs(timestamp * 1000).format('YYYY-MM-DD HH:mm:ss');
 }
 
+export function formatDateTimeWithMilliseconds(timestamp: number | null): string {
+  if (timestamp == null) {
+    return '—';
+  }
+
+  return dayjs(timestamp * 1000).format('YYYY-MM-DD HH:mm:ss.SSS');
+}
+
 export function formatDuration(seconds: number | null): string {
   if (seconds == null) {
     return '—';

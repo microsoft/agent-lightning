@@ -26,7 +26,19 @@
 
 ::: agentlightning.AttemptedRollout
 
+::: agentlightning.Worker
+
+::: agentlightning.WorkerStatus
+
 ::: agentlightning.Hook
+
+::: agentlightning.PaginatedResult
+
+::: agentlightning.FilterOptions
+
+::: agentlightning.SortOptions
+
+::: agentlightning.FilterField
 
 ## Resources
 

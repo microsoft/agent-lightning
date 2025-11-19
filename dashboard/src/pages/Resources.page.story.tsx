@@ -1,12 +1,17 @@
 // Copyright (c) Microsoft. All rights reserved.
 
 import type { Meta, StoryObj } from '@storybook/react';
+import { waitFor, within } from '@testing-library/dom';
+import userEvent from '@testing-library/user-event';
 import { delay, http, HttpResponse } from 'msw';
 import { Provider } from 'react-redux';
+import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { AppAlertBanner } from '@/components/AppAlertBanner';
+import { AppDrawerContainer } from '@/components/AppDrawer.component';
 import { initialConfigState } from '@/features/config/slice';
 import { initialResourcesUiState } from '@/features/resources/slice';
 import { initialRolloutsUiState } from '@/features/rollouts/slice';
+import { AppLayout } from '@/layouts/AppLayout';
 import { createAppStore } from '@/store';
 import type { Resources } from '@/types';
 import { createResourcesHandlers } from '@/utils/mock';
@@ -148,8 +153,8 @@ const sampleResources: Resources[] = [
 
 const defaultHandlers = createResourcesHandlers(sampleResources);
 
-function renderWithStore(configOverrides?: Partial<typeof initialConfigState>) {
-  const store = createAppStore({
+function createStoryStore(configOverrides?: Partial<typeof initialConfigState>) {
+  return createAppStore({
     config: {
       ...initialConfigState,
       baseUrl: STORY_BASE_URL,
@@ -159,11 +164,53 @@ function renderWithStore(configOverrides?: Partial<typeof initialConfigState>) {
     rollouts: initialRolloutsUiState,
     resources: initialResourcesUiState,
   });
+}
+
+function renderWithStore(configOverrides?: Partial<typeof initialConfigState>) {
+  const store = createStoryStore(configOverrides);
 
   return (
     <Provider store={store}>
-      <ResourcesPage />
-      <AppAlertBanner />
+      <>
+        <ResourcesPage />
+        <AppAlertBanner />
+        <AppDrawerContainer />
+      </>
+    </Provider>
+  );
+}
+
+function renderWithAppLayout(configOverrides?: Partial<typeof initialConfigState>) {
+  const store = createStoryStore(configOverrides);
+  const router = createMemoryRouter(
+    [
+      {
+        path: '/',
+        element: (
+          <AppLayout
+            config={{
+              baseUrl: store.getState().config.baseUrl,
+              autoRefreshMs: store.getState().config.autoRefreshMs,
+            }}
+          />
+        ),
+        children: [
+          {
+            path: '/resources',
+            element: <ResourcesPage />,
+          },
+        ],
+      },
+    ],
+    { initialEntries: ['/resources'] },
+  );
+
+  return (
+    <Provider store={store}>
+      <>
+        <RouterProvider router={router} />
+        <AppDrawerContainer />
+      </>
     </Provider>
   );
 }
@@ -174,6 +221,41 @@ export const Default: Story = {
     msw: {
       handlers: defaultHandlers,
     },
+  },
+};
+
+export const WithSidebarLayout: Story = {
+  name: 'Within AppLayout',
+  render: () => renderWithAppLayout(),
+  parameters: {
+    msw: {
+      handlers: defaultHandlers,
+    },
+  },
+};
+
+export const Search: Story = {
+  render: () => renderWithStore(),
+  parameters: {
+    msw: {
+      handlers: defaultHandlers,
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await canvas.findByText('rs-a1b2c3d4e5f6');
+
+    const searchInput = canvas.getByPlaceholderText('Search by Resources ID');
+    await userEvent.type(searchInput, 'rs-abcdef123456');
+
+    await waitFor(() => {
+      if (canvas.queryByText('rs-a1b2c3d4e5f6')) {
+        throw new Error('Expected search to filter out non-matching resources');
+      }
+      if (!canvas.queryByText('rs-abcdef123456')) {
+        throw new Error('Expected matching resource to remain visible');
+      }
+    });
   },
 };
 

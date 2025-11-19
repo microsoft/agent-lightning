@@ -8,27 +8,32 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import type { Attempt, Resources, Rollout, Span } from '@/types';
+import type { Attempt, Resources, Rollout, Span, Worker } from '@/types';
 import {
   buildAttemptsResponse,
   buildResourcesResponse,
   buildRolloutsResponse,
   buildSpansResponse,
+  buildWorkersResponse,
   createMockHandlers,
   createResourcesHandlers,
   createRolloutsHandlers,
   createSpansHandlers,
+  createWorkersHandlers,
   filterResourcesForParams,
   filterRolloutsForParams,
   filterSpansForParams,
+  filterWorkersForParams,
   getResourcesSortValue,
   getRolloutSortValue,
   getSpanSortValue,
+  getWorkerSortValue,
   parseNumberParam,
   sortAttemptsForParams,
   sortResourcesForParams,
   sortRolloutsForParams,
   sortSpansForParams,
+  sortWorkersForParams,
 } from './mock';
 
 const now = Math.floor(Date.now() / 1000);
@@ -216,6 +221,53 @@ const sampleResources: Resources[] = [
     createTime: now - 200,
     updateTime: now - 50,
     resources: { config: { learning_rate: 0.1 } },
+  },
+];
+
+const sampleWorkers: Worker[] = [
+  {
+    workerId: 'worker-alpha',
+    status: 'busy',
+    heartbeatStats: { queueDepth: 2 },
+    lastHeartbeatTime: now - 30,
+    lastDequeueTime: now - 300,
+    lastBusyTime: now - 60,
+    lastIdleTime: now - 600,
+    currentRolloutId: 'ro-001',
+    currentAttemptId: 'at-001',
+  },
+  {
+    workerId: 'worker-beta',
+    status: 'idle',
+    heartbeatStats: { queueDepth: 0 },
+    lastHeartbeatTime: now - 120,
+    lastDequeueTime: now - 1200,
+    lastBusyTime: now - 3600,
+    lastIdleTime: now - 180,
+    currentRolloutId: null,
+    currentAttemptId: null,
+  },
+  {
+    workerId: 'worker-gamma',
+    status: 'busy',
+    heartbeatStats: null,
+    lastHeartbeatTime: now - 10,
+    lastDequeueTime: now - 60,
+    lastBusyTime: now - 20,
+    lastIdleTime: now - 4000,
+    currentRolloutId: 'ro-003',
+    currentAttemptId: 'at-003',
+  },
+  {
+    workerId: 'worker-delta',
+    status: 'unknown',
+    heartbeatStats: { queueDepth: 0 },
+    lastHeartbeatTime: now - 5,
+    lastDequeueTime: now - 80,
+    lastBusyTime: null,
+    lastIdleTime: null,
+    currentRolloutId: null,
+    currentAttemptId: null,
   },
 ];
 
@@ -720,6 +772,115 @@ describe('buildResourcesResponse', () => {
 describe('createResourcesHandlers', () => {
   it('creates handler for resources endpoint', () => {
     const handlers = createResourcesHandlers(sampleResources);
+    expect(handlers).toHaveLength(1);
+    expect(handlers[0].info.header).toContain('GET');
+  });
+});
+
+describe('filterWorkersForParams', () => {
+  it('returns all workers without filters', () => {
+    const params = new URLSearchParams();
+    const result = filterWorkersForParams(sampleWorkers, params);
+    expect(result).toHaveLength(4);
+  });
+
+  it('filters by status and worker ID substring using AND logic', () => {
+    const params = new URLSearchParams('status_in=busy&worker_id_contains=gamma');
+    const result = filterWorkersForParams(sampleWorkers, params);
+    expect(result).toHaveLength(1);
+    expect(result[0].workerId).toBe('worker-gamma');
+  });
+
+  it('supports filter_logic=or', () => {
+    const params = new URLSearchParams('status_in=idle&worker_id_contains=gamma&filter_logic=or');
+    const result = filterWorkersForParams(sampleWorkers, params);
+    expect(result).toHaveLength(2);
+  });
+
+  it('filters by unknown status', () => {
+    const params = new URLSearchParams('status_in=unknown');
+    const result = filterWorkersForParams(sampleWorkers, params);
+    expect(result).toHaveLength(1);
+    expect(result[0].workerId).toBe('worker-delta');
+  });
+});
+
+describe('getWorkerSortValue', () => {
+  const worker = sampleWorkers[0];
+
+  it('returns worker_id', () => {
+    expect(getWorkerSortValue(worker, 'worker_id')).toBe('worker-alpha');
+  });
+
+  it('returns status', () => {
+    expect(getWorkerSortValue(worker, 'status')).toBe('busy');
+  });
+
+  it('returns timestamp fields', () => {
+    expect(getWorkerSortValue(worker, 'last_busy_time')).toBe(worker.lastBusyTime);
+    expect(getWorkerSortValue(worker, 'last_idle_time')).toBe(worker.lastIdleTime);
+    expect(getWorkerSortValue(worker, 'last_dequeue_time')).toBe(worker.lastDequeueTime);
+  });
+
+  it('returns rollout and attempt identifiers', () => {
+    expect(getWorkerSortValue(worker, 'current_rollout_id')).toBe(worker.currentRolloutId);
+    expect(getWorkerSortValue(worker, 'current_attempt_id')).toBe(worker.currentAttemptId);
+  });
+
+  it('falls back to last_heartbeat_time', () => {
+    expect(getWorkerSortValue(worker, 'unknown')).toBe(worker.lastHeartbeatTime);
+  });
+});
+
+describe('sortWorkersForParams', () => {
+  it('sorts by last heartbeat ascending by default', () => {
+    const result = sortWorkersForParams(sampleWorkers, null, 'asc');
+    expect(result.map((worker) => worker.workerId)).toEqual([
+      'worker-beta',
+      'worker-alpha',
+      'worker-gamma',
+      'worker-delta',
+    ]);
+  });
+
+  it('sorts descending by worker_id when requested', () => {
+    const result = sortWorkersForParams(sampleWorkers, 'worker_id', 'desc');
+    expect(result.map((worker) => worker.workerId)).toEqual([
+      'worker-gamma',
+      'worker-delta',
+      'worker-beta',
+      'worker-alpha',
+    ]);
+  });
+
+  it('sorts by current_rollout_id', () => {
+    const result = sortWorkersForParams(sampleWorkers, 'current_rollout_id', 'asc');
+    expect(result.map((worker) => worker.currentRolloutId)).toEqual([null, null, 'ro-001', 'ro-003']);
+  });
+});
+
+describe('buildWorkersResponse', () => {
+  it('applies filters before pagination', () => {
+    const request = new Request('http://localhost/v1/agl/workers?worker_id_contains=beta&limit=5');
+    const response = buildWorkersResponse(sampleWorkers, request);
+    expect(response.items).toHaveLength(1);
+    const items = response.items as Array<Record<string, unknown>>;
+    expect(items[0].worker_id).toBe('worker-beta');
+  });
+
+  it('applies sort and pagination parameters', () => {
+    const request = new Request('http://localhost/v1/agl/workers?sort_by=worker_id&limit=2&offset=1');
+    const response = buildWorkersResponse(sampleWorkers, request);
+    expect(response.items).toHaveLength(2);
+    const items = response.items as Array<Record<string, unknown>>;
+    expect(items[0].worker_id).toBe('worker-beta');
+    expect(response.total).toBe(4);
+  });
+});
+
+describe('createWorkersHandlers', () => {
+  it('creates handler for workers endpoint', () => {
+    const handlers = createWorkersHandlers(sampleWorkers);
     expect(handlers).toHaveLength(1);
     expect(handlers[0].info.header).toContain('GET');
   });

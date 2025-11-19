@@ -21,7 +21,16 @@ from portpicker import pick_unused_port
 
 from agentlightning.store.client_server import LightningStoreClient, LightningStoreServer
 from agentlightning.store.memory import InMemoryLightningStore
-from agentlightning.types import LLM, AttemptedRollout, OtelResource, Rollout, Span, TraceStatus
+from agentlightning.types import (
+    LLM,
+    AttemptedRollout,
+    OtelResource,
+    PaginatedResult,
+    PromptTemplate,
+    Rollout,
+    Span,
+    TraceStatus,
+)
 
 
 def _make_span(rollout_id: str, attempt_id: str, sequence_id: int, name: str) -> Span:
@@ -418,9 +427,7 @@ async def test_rollouts_sorting_by_unsupported_field(
     ) as resp:
         assert resp.status == 400
         data = await resp.json()
-        assert (
-            data["detail"] == "Failed to sort items by nonexistent_field: nonexistent_field is not a field of Rollout"
-        )
+        assert "Invalid sort_by: nonexistent_field, allowed fields are: " in data["detail"]
 
 
 # Attempts Pagination and Sorting Tests
@@ -966,7 +973,130 @@ async def test_spans_sorting_by_unsupported_field(
     ) as resp:
         assert resp.status == 400
         data = await resp.json()
-        assert data["detail"] == "Failed to sort items by invalid_field: invalid_field is not a field of Span"
+        assert "Invalid sort_by: invalid_field, allowed fields are: " in data["detail"]
+
+
+# LightningStoreClient._request_json pagination metadata tests
+
+
+@pytest.mark.asyncio
+async def test_request_json_rollouts_returns_pagination_metadata(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    server, client, _session, _api_endpoint = server_client
+
+    for idx in range(3):
+        await server.enqueue_rollout(input={"idx": idx})
+
+    params = [
+        ("sort_by", "rollout_id"),
+        ("sort_order", "asc"),
+        ("limit", 1),
+        ("offset", 1),
+    ]
+    data = await client._request_json("get", "/rollouts", params=params)  # pyright: ignore[reportPrivateUsage]
+    assert data["limit"] == 1
+    assert data["offset"] == 1
+    assert data["total"] == 3
+    assert len(data["items"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_request_json_attempts_returns_pagination_metadata(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    _server, client, _session, _api_endpoint = server_client
+
+    attempted = await client.start_rollout(input={"payload": "attempts"})
+    await client.start_attempt(attempted.rollout_id)
+    await client.start_attempt(attempted.rollout_id)
+
+    params = [
+        ("sort_by", "sequence_id"),
+        ("sort_order", "asc"),
+        ("limit", 1),
+        ("offset", 1),
+    ]
+    data = await client._request_json(  # pyright: ignore[reportPrivateUsage]
+        "get", f"/rollouts/{attempted.rollout_id}/attempts", params=params
+    )
+    assert data["limit"] == 1
+    assert data["offset"] == 1
+    assert data["total"] == 3
+    assert len(data["items"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_request_json_resources_returns_pagination_metadata(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    _server, client, _session, _api_endpoint = server_client
+
+    alpha = PromptTemplate(resource_type="prompt_template", template="alpha", engine="jinja")
+    beta = PromptTemplate(resource_type="prompt_template", template="beta", engine="jinja")
+
+    await client.update_resources("manual-alpha", {"prompt": alpha})
+    await client.update_resources("manual-beta", {"prompt": beta})
+
+    params = [
+        ("sort_by", "resources_id"),
+        ("sort_order", "asc"),
+        ("limit", 1),
+        ("offset", 1),
+    ]
+    data = await client._request_json("get", "/resources", params=params)  # pyright: ignore[reportPrivateUsage]
+    assert data["limit"] == 1
+    assert data["offset"] == 1
+    assert data["total"] == 2
+    assert len(data["items"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_request_json_workers_returns_pagination_metadata(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    _server, client, _session, _api_endpoint = server_client
+
+    for worker_id in ["worker-a", "worker-b", "worker-c"]:
+        await client.update_worker(worker_id, heartbeat_stats={"cpu": 0.1})
+
+    params = [
+        ("sort_by", "worker_id"),
+        ("sort_order", "asc"),
+        ("limit", 1),
+        ("offset", 1),
+    ]
+    data = await client._request_json("get", "/workers", params=params)  # pyright: ignore[reportPrivateUsage]
+    assert data["limit"] == 1
+    assert data["offset"] == 1
+    assert data["total"] == 3
+    assert len(data["items"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_request_json_spans_returns_pagination_metadata(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    server, client, _session, _api_endpoint = server_client
+
+    attempted = await server.start_rollout(input={"span": "meta"})
+    attempt_id = attempted.attempt.attempt_id
+    for idx in range(1, 4):
+        await server.add_span(_make_span(attempted.rollout_id, attempt_id, idx, f"span-{idx}"))
+
+    params = [
+        ("rollout_id", attempted.rollout_id),
+        ("attempt_id", attempt_id),
+        ("sort_by", "sequence_id"),
+        ("sort_order", "asc"),
+        ("limit", 1),
+        ("offset", 1),
+    ]
+    data = await client._request_json("get", "/spans", params=params)  # pyright: ignore[reportPrivateUsage]
+    assert data["limit"] == 1
+    assert data["offset"] == 1
+    assert data["total"] == 3
+    assert len(data["items"]) == 1
 
 
 # Client Compatibility Tests
@@ -983,9 +1113,10 @@ async def test_client_query_rollouts_extracts_items(
     for i in range(5):
         await server.enqueue_rollout(input={"index": i})
 
-    # Query via client (should extract items and return List[Rollout])
+    # Query via client (should return PaginatedResult that behaves like a sequence)
     rollouts = await client.query_rollouts()
-    assert isinstance(rollouts, list)
+    assert isinstance(rollouts, PaginatedResult)
+    assert rollouts.total == 5
     assert len(rollouts) == 5
     for rollout in rollouts:
         assert isinstance(rollout, Rollout)
@@ -1012,3 +1143,123 @@ async def test_client_query_with_filters(
     rollouts = await client.query_rollouts(rollout_ids=[r2.rollout_id])
     assert len(rollouts) == 1
     assert rollouts[0].rollout_id == r2.rollout_id
+
+
+@pytest.mark.asyncio
+async def test_workers_endpoint_supports_updates(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    _server, _client, session, api_endpoint = server_client
+
+    async with session.post(
+        f"{api_endpoint}/workers/worker-1",
+        json={"heartbeat_stats": {"cpu": 0.7}},
+    ) as resp:
+        assert resp.status == 200
+        created = await resp.json()
+        assert created["worker_id"] == "worker-1"
+        assert created["status"] == "unknown"
+        assert created["heartbeat_stats"] == {"cpu": 0.7}
+        first_heartbeat = created["last_heartbeat_time"]
+
+    async with session.get(f"{api_endpoint}/workers") as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        workers = data["items"]
+        assert len(workers) == 1
+        assert workers[0]["worker_id"] == "worker-1"
+
+    async with session.post(
+        f"{api_endpoint}/workers/worker-1",
+        json={"heartbeat_stats": {"cpu": 0.8}},
+    ) as resp:
+        assert resp.status == 200
+        updated = await resp.json()
+        assert updated["last_heartbeat_time"] >= first_heartbeat
+
+    async with session.get(f"{api_endpoint}/workers") as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        workers = data["items"]
+        assert workers[0]["status"] == "unknown"
+
+
+@pytest.mark.asyncio
+async def test_workers_endpoint_rejects_none_stats(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    _server, _client, session, api_endpoint = server_client
+
+    async with session.post(
+        f"{api_endpoint}/workers/worker-err",
+        json={"heartbeat_stats": None},
+    ) as resp:
+        assert resp.status == 400
+
+
+@pytest.mark.asyncio
+async def test_get_worker_by_id_restful(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    server, _client, session, api_endpoint = server_client
+
+    await server.update_worker("worker-fetch", heartbeat_stats={"cpu": 0.4})
+
+    async with session.get(f"{api_endpoint}/workers/worker-fetch") as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        assert data["worker_id"] == "worker-fetch"
+
+    async with session.get(f"{api_endpoint}/workers/missing") as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        assert data is None
+
+
+@pytest.mark.asyncio
+async def test_workers_endpoint_filter_and_sort(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    server, _client, session, api_endpoint = server_client
+
+    # Worker A: finishes an attempt and becomes idle.
+    await server.update_worker("worker-a", heartbeat_stats={"cpu": 0.1})
+    await server.enqueue_rollout(input={"worker": "a"})
+    claimed_a = await server.dequeue_rollout(worker_id="worker-a")
+    assert claimed_a is not None
+    await server.update_attempt(
+        claimed_a.rollout_id, claimed_a.attempt.attempt_id, worker_id="worker-a", status="succeeded"
+    )
+
+    # Worker B: currently busy on an attempt.
+    await server.update_worker("worker-b", heartbeat_stats={"cpu": 0.9})
+    await server.enqueue_rollout(input={"worker": "b"})
+    claimed_b = await server.dequeue_rollout(worker_id="worker-b")
+    assert claimed_b is not None
+    await server.update_attempt(claimed_b.rollout_id, claimed_b.attempt.attempt_id, worker_id="worker-b")
+
+    # Worker C: also busy.
+    await server.update_worker("worker-c", heartbeat_stats={"cpu": 0.2})
+    await server.enqueue_rollout(input={"worker": "c"})
+    claimed_c = await server.dequeue_rollout(worker_id="worker-c")
+    assert claimed_c is not None
+    await server.update_attempt(claimed_c.rollout_id, claimed_c.attempt.attempt_id, worker_id="worker-c")
+
+    async with session.get(
+        f"{api_endpoint}/workers",
+        params={"status_in": ["busy"], "worker_id_contains": "worker", "sort_by": "worker_id", "sort_order": "desc"},
+    ) as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        items = data["items"]
+        assert [w["worker_id"] for w in items] == ["worker-c", "worker-b"]
+
+    async with session.get(
+        f"{api_endpoint}/workers",
+        params={"limit": 1, "offset": 1, "sort_by": "worker_id", "sort_order": "asc"},
+    ) as resp:
+        assert resp.status == 200
+        data = await resp.json()
+        assert data["limit"] == 1
+        assert data["offset"] == 1
+        assert len(data["items"]) == 1
