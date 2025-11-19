@@ -5,18 +5,14 @@ from __future__ import annotations
 import logging
 import os
 from contextlib import asynccontextmanager, contextmanager
-from typing import TYPE_CHECKING, AsyncGenerator, Iterator, List, Optional
+from typing import TYPE_CHECKING, AsyncGenerator, Iterator, Optional
 
+import opentelemetry.trace as trace_api
 import weave
 
-# from weave.client import WeaveClient
-from opentelemetry import trace as otel_trace
-from opentelemetry.sdk.trace import ReadableSpan, TracerProvider
-
 from agentlightning.store.base import LightningStore
-from agentlightning.tracer.agentops import LightningSpanProcessor
 
-from .base import Tracer
+from .otel import OtelTracer
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +20,7 @@ if TYPE_CHECKING:
     from weave.trace.weave_client import WeaveClient
 
 
-class WeaveTracer(Tracer):
+class WeaveTracer(OtelTracer):
     """Tracer implementation using Weave for trace logging.
 
     This replaces AgentOpsTracer with a Weave-based manual trace context.
@@ -33,45 +29,25 @@ class WeaveTracer(Tracer):
 
     def __init__(self, *, project_name: str | None = None, wandb_api_key: str | None = None):
         super().__init__()
-        self._lightning_span_processor: Optional[LightningSpanProcessor] = None
         self.project_name = project_name or __name__
-        self._client: Optional[WeaveClient] = None
-        self._wandb_api_key = wandb_api_key or os.getenv("WANDB_API_KEY")
-        self.otel_trace: Optional[otel_trace.Tracer] = None
-        self._initialized = False
+        self._weaveclient: Optional[WeaveClient] = None
+        if wandb_api_key:
+            os.environ["WANDB_API_KEY"] = wandb_api_key
 
-    def init_worker(self, worker_id: int):
-        super().init_worker(worker_id)
-        if self._initialized:
-            logger.warning(f"[Worker {worker_id}] Weave client was already initialized.")
-            return
+    def _initialize_tracer_provider(self, worker_id: int):
+        super()._initialize_tracer_provider(worker_id)
+        logger.info(f"[Worker {worker_id}] Setting up Weave tracer...")
 
         if weave.get_client() is None:
             try:
                 weave.init(project_name=self.project_name)
+                self._weaveclient = weave.get_client()
+                logger.info(f"[Worker {worker_id}] Weave client initialized.")
             except Exception as e:
                 raise RuntimeError(f"Failed to initialize Weave for project '{self.project_name}': {e}")
 
-        self._client = weave.get_client()
-        if not self._client:
-            raise RuntimeError(f"Failed to initialize Weave client for project '{self.project_name}'")
-
-        self._lightning_span_processor = LightningSpanProcessor()
-        provider = TracerProvider()
-        provider.add_span_processor(self._lightning_span_processor)
-
-        otel_trace.set_tracer_provider(provider)
-        self._otel_tracer = otel_trace.get_tracer("agent-lightning.weave")
-
-        logger.info(f"[Worker {worker_id}] Setting up Weave tracer...")
-        self._initialized = True
-
     def teardown_worker(self, worker_id: int):
         super().teardown_worker(worker_id)
-        if self._lightning_span_processor is not None:
-            self._lightning_span_processor.shutdown()
-            self._lightning_span_processor = None
-        self._initialized = False
 
     @asynccontextmanager
     async def trace_context(
@@ -81,12 +57,21 @@ class WeaveTracer(Tracer):
         store: Optional[LightningStore] = None,
         rollout_id: Optional[str] = None,
         attempt_id: Optional[str] = None,
-    ) -> AsyncGenerator[LightningSpanProcessor, None]:
-        """Async version of the tracing context."""
-        with self._trace_context_sync(
-            name=name, store=store, rollout_id=rollout_id, attempt_id=attempt_id
-        ) as processor:
-            yield processor
+    ) -> AsyncGenerator[trace_api.Tracer, None]:
+        """
+        Starts a new tracing context. This should be used as a context manager.
+
+        Args:
+            name: Optional name for the tracing context.
+            store: Optional store to add the spans to.
+            rollout_id: Optional rollout ID to add the spans to.
+            attempt_id: Optional attempt ID to add the spans to.
+
+        Yields:
+            The OpenTelemetry tracer instance to collect spans.
+        """
+        with self._trace_context_sync(name=name, store=store, rollout_id=rollout_id, attempt_id=attempt_id) as tracer:
+            yield tracer
 
     @contextmanager
     def _trace_context_sync(
@@ -96,43 +81,57 @@ class WeaveTracer(Tracer):
         store: Optional[LightningStore] = None,
         rollout_id: Optional[str] = None,
         attempt_id: Optional[str] = None,
-    ) -> Iterator[LightningSpanProcessor]:
-        """Manual tracing context using Weave for synchronous execution."""
+    ) -> Iterator[trace_api.Tracer]:
+        """Implementation of `trace_context` for synchronous execution."""
         if not self._lightning_span_processor:
             raise RuntimeError("LightningSpanProcessor is not initialized. Call init_worker() first.")
-        if not self._client:
-            raise RuntimeError("Weave client is not initialized. Call init_worker() first.")
+
+        tracer_provider = self._get_tracer_provider()
+        tracer = trace_api.get_tracer(__name__, tracer_provider=tracer_provider)
 
         arg_op = name or "weave_trace"
-        arg_inputs = {"rollout_id": rollout_id or ""}
-        trace_call = self._client.create_call(op=arg_op, inputs=arg_inputs)  # type: ignore
+        arg_inputs: dict[str, str] | None = {"rollout_id": rollout_id or "", "attempt_id": attempt_id or ""}
 
+        all_provided = store is not None and rollout_id is not None and attempt_id is not None
+        all_none = store is None and rollout_id is None and attempt_id is None
+
+        if not (all_provided or all_none):
+            raise ValueError("store, rollout_id, and attempt_id must be either all provided or all None")
+
+        if all_provided and getattr(store, "capabilities", {}).get("otlp_traces", False):  # type: ignore
+            logger.info(f"Tracing to LightningStore rollout_id={rollout_id}, attempt_id={attempt_id}")
+            self._enable_native_otlp_exporter(store, rollout_id, attempt_id)  # type: ignore
+        else:
+            self._disable_native_otlp_exporter()
+
+        ctx = (
+            self._lightning_span_processor.with_context(store=store, rollout_id=rollout_id, attempt_id=attempt_id)  # type: ignore
+            if all_provided
+            else self._lightning_span_processor
+        )
+
+        with ctx:
+            with self._weave_trace_context(rollout_id or "", attempt_id or "", arg_op, arg_inputs):
+                # Since Weave does not natively support OTEL, tracing needs to be enabled manually.
+                with tracer.start_as_current_span(arg_op):
+                    yield tracer
+
+    @contextmanager
+    def _weave_trace_context(
+        self,
+        rollout_id: Optional[str],
+        attempt_id: Optional[str],
+        arg_op: Optional[str],
+        arg_inputs: Optional[dict[str, str]],
+    ):
+        if not self._weaveclient:
+            raise RuntimeError("Weave client is not initialized. Call init_worker() first.")
+
+        trace_call = self._weaveclient.create_call(op=arg_op, inputs=arg_inputs)  # type: ignore
         try:
-            with self._otel_tracer.start_as_current_span(arg_op):
-                if all(x is None for x in (store, rollout_id, attempt_id)):
-                    processor_ctx = self._lightning_span_processor
-                elif all(x is not None for x in (store, rollout_id, attempt_id)):
-                    processor_ctx = self._lightning_span_processor.with_context(
-                        store=store, rollout_id=rollout_id, attempt_id=attempt_id  # type: ignore
-                    )
-                else:
-                    raise ValueError("store, rollout_id, and attempt_id must be either all provided or all None")
-
-                with processor_ctx as processor:
-                    yield processor
+            yield
         except Exception as e:
-            self._client.fail_call(trace_call, exception=e)
+            self._weaveclient.finish_call(trace_call, exception=e)  # type: ignore
             logger.error(f"Trace failed for rollout_id={rollout_id}, attempt_id={attempt_id}, error={e}")
         finally:
-            self._client.finish_call(trace_call)  # type: ignore
-
-    def get_last_trace(self) -> List[ReadableSpan]:
-        """
-        Retrieves the raw list of captured spans from the most recent trace.
-
-        Returns:
-            A list of OpenTelemetry `ReadableSpan` objects.
-        """
-        if not self._lightning_span_processor:
-            raise RuntimeError("LightningSpanProcessor is not initialized. Call init_worker() first.")
-        return self._lightning_span_processor.spans()
+            self._weaveclient.finish_call(trace_call)  # type: ignore
