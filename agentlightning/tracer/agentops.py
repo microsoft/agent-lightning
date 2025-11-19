@@ -164,9 +164,10 @@ class AgentOpsTracer(OtelTracer):
         try:
             yield
         except Exception as e:
-            # TODO: I'm not sure whether this will catch errors in user code.
+            # This will catch errors in user code.
             status = StatusCode.ERROR  # type: ignore
             logger.error(f"Trace failed for rollout_id={rollout_id}, attempt_id={attempt_id}: {e}")
+            raise  # should reraise the error here so that runner can handle it
         finally:
             agentops.end_trace(trace, end_state=status)  # type: ignore
 
