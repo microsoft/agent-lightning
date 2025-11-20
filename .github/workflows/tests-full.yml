@@ -103,6 +103,7 @@ jobs:
           PYTEST_ADDOPTS: "--color=yes"
           OPENAI_BASE_URL: http://localhost:12306/
           OPENAI_API_KEY: dummy
+          AGL_TEST_MONGO_URI: mongodb://localhost:27017/?replicaSet=test-rs
 
   minimal-examples:
     if: >
