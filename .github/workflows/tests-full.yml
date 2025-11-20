@@ -17,3 +17,4 @@ jobs:
           set -ex
           id
           ./scripts/provision_vm_image.sh
+        shell: bash
