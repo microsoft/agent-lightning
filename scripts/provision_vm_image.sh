@@ -24,5 +24,21 @@ sudo apt -y update
 sudo apt -y install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 
 # Create the docker group if it does not exist
-sudo groupadd docker
-sudo usermod -aG docker $(whoami)
+echo "[INFO] Ensuring 'docker' group and membership..."
+
+# Create docker group only if it doesn't exist
+if getent group docker >/dev/null 2>&1; then
+  echo "[INFO] Group 'docker' already exists."
+else
+  echo "[INFO] Creating group 'docker'."
+  sudo groupadd docker
+fi
+
+# Add current user to docker group if not already a member
+if id -nG "$USER" | grep -qw docker; then
+  echo "[INFO] User '$USER' is already in 'docker' group."
+else
+  echo "[INFO] Adding '$USER' to 'docker' group."
+  sudo usermod -aG docker "$USER"
+  echo "[INFO] You must log out and log back in for this to take effect."
+fi
