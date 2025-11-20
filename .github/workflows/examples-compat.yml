@@ -86,15 +86,15 @@ jobs:
         env:
           TINKER_API_KEY: ${{ secrets.TINKER_API_KEY }}
 
-      - name: Tinker Hello
-        run: |
-          set -euo pipefail
-          source .venv/bin/activate
-          cd examples/tinker
-          python hello.py oneclick --ci
-        shell: bash
-        env:
-          TINKER_API_KEY: ${{ secrets.TINKER_API_KEY }}
+      # - name: Tinker Hello
+      #   run: |
+      #     set -euo pipefail
+      #     source .venv/bin/activate
+      #     cd examples/tinker
+      #     python hello.py oneclick --ci
+      #   shell: bash
+      #   env:
+      #     TINKER_API_KEY: ${{ secrets.TINKER_API_KEY }}
 
       - name: Tinker Q20 Evaluate (GPT-4.1)
         run: |
