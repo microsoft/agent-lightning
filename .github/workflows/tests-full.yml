@@ -15,8 +15,26 @@ jobs:
       - name: Debug
         run: |
           set -ex
+          cat /etc/group
           id
           ./scripts/provision_vm_image.sh
+        shell: bash
+      - name: Docker env debug
+        run: |
+          echo "== id =="
+          id
+          echo
+          echo "== docker group entry =="
+          getent group docker || echo "no docker group"
+          echo
+          echo "== docker.sock =="
+          ls -l /var/run/docker.sock || echo "no docker.sock"
+          echo
+          echo "== docker service =="
+          sudo systemctl status docker --no-pager || echo "docker service status failed"
+          echo
+          echo "== dockerd processes =="
+          ps aux | grep '[d]ockerd' || echo "no dockerd"
         shell: bash
       - name: Debug 2
         run: |
