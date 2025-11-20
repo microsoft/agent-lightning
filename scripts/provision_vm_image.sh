@@ -23,6 +23,8 @@ sudo apt -y update
 # Install the Docker packages
 sudo apt -y install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 
+cat /etc/group
+
 # Create the docker group if it does not exist
 echo "[INFO] Ensuring 'docker' group and membership..."
 
