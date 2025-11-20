@@ -113,7 +113,7 @@ Components: main
 Architectures: $(dpkg --print-architecture)
 Signed-by: /etc/apt/keyrings/microsoft.gpg" | sudo tee /etc/apt/sources.list.d/azure-cli.sources
 sudo apt-get update
-sudo apt-get install azure-cli
+sudo apt-get install -y azure-cli
 
 # Disable the periodical apt-get upgrade.
 # Sometimes, unattended upgrade blocks apt-get install
