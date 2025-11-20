@@ -169,6 +169,7 @@ jobs:
           source .venv/bin/activate
           cd examples/minimal
           python write_traces.py otel
+          sleep 5
 
       - name: Write Traces via AgentOps Tracer
         env:
@@ -179,6 +180,7 @@ jobs:
           source .venv/bin/activate
           cd examples/minimal
           python write_traces.py agentops
+          sleep 5
 
       - name: Write Traces via Otel Tracer with Client
         run: |
