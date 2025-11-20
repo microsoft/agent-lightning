@@ -46,8 +46,12 @@ class MongoLightningStore(CollectionBasedLightningStore[MongoLightningCollection
         database_name: str | None = None,
         partition_id: str | None = None,
     ) -> None:
+        self._auto_created_client = False
         if isinstance(client, str):
-            client = AsyncMongoClient(client)
+            self._client = AsyncMongoClient[Mapping[str, Any]](client)
+            self._auto_created_client = True
+        else:
+            self._client = client
         if database_name is None:
             database_name = "agentlightning"
             logger.info("No database name provided, using default 'agentlightning'")
@@ -56,7 +60,9 @@ class MongoLightningStore(CollectionBasedLightningStore[MongoLightningCollection
             partition_id = _generate_partition_id()
             logger.info("No partition id provided, generated a new one: %s", partition_id)
 
-        super().__init__(collections=MongoLightningCollections(MongoClientPool(client), database_name, partition_id))
+        self._client_pool = MongoClientPool(self._client)
+
+        super().__init__(collections=MongoLightningCollections(self._client_pool, database_name, partition_id))
 
     @property
     def capabilities(self) -> LightningStoreCapabilities:
@@ -67,3 +73,10 @@ class MongoLightningStore(CollectionBasedLightningStore[MongoLightningCollection
             zero_copy=True,
             otlp_traces=False,
         )
+
+    async def close(self) -> None:
+        """Close the store by closing the client pool."""
+        await self._client_pool.close()
+        # If I created the client, I should close it too.
+        if self._auto_created_client:
+            await self._client.close()

@@ -54,7 +54,11 @@ async def mongo_store():
     from agentlightning.store.mongo import MongoLightningStore
 
     async with temporary_mongo_database() as db:
-        yield MongoLightningStore(client=db.client, database_name=db.name)
+        db = MongoLightningStore(client=db.client, database_name=db.name)
+        try:
+            yield db
+        finally:
+            await db.close()
 
 
 @pytest.fixture(
@@ -270,17 +274,18 @@ async def sample_collection(
         from agentlightning.store.collection.mongo import MongoBasedCollection, MongoClientPool
 
         async with temporary_mongo_database() as db:
-            collection = MongoBasedCollection(
-                MongoClientPool(db.client),
-                db.name,
-                "sample-items",
-                "partition-123",
-                ["partition", "index"],
-                SampleItem,
-            )
-            await collection.insert(sample_items)
-            setattr(collection, "_test_backend", backend)
-            yield collection
+            async with MongoClientPool(db.client) as client_pool:
+                collection = MongoBasedCollection(
+                    client_pool,
+                    db.name,
+                    "sample-items",
+                    "partition-123",
+                    ["partition", "index"],
+                    SampleItem,
+                )
+                await collection.insert(sample_items)
+                setattr(collection, "_test_backend", backend)
+                yield collection
 
 
 @pytest_asyncio.fixture(
@@ -299,11 +304,16 @@ async def deque_queue(request: pytest.FixtureRequest) -> AsyncGenerator[Queue[Qu
         from agentlightning.store.collection.mongo import MongoBasedQueue, MongoClientPool
 
         async with temporary_mongo_database() as db:
-            queue = MongoBasedQueue[QueueItem](
-                MongoClientPool(db.client), db.name, "queue-items", "partition-1", QueueItem
-            )
-            await queue.enqueue([QueueItem(idx=i) for i in range(3)])
-            yield queue
+            async with MongoClientPool(db.client) as client_pool:
+                queue = MongoBasedQueue[QueueItem](
+                    client_pool,
+                    db.name,
+                    "queue-items",
+                    "partition-1",
+                    QueueItem,
+                )
+                await queue.enqueue([QueueItem(idx=i) for i in range(3)])
+                yield queue
 
 
 @pytest.fixture()
@@ -329,9 +339,15 @@ async def dict_key_value(
         from agentlightning.store.collection.mongo import MongoBasedKeyValue, MongoClientPool
 
         async with temporary_mongo_database() as db:
-            key_value = MongoBasedKeyValue[str, int](
-                MongoClientPool(db.client), db.name, "key-value-items", "partition-1", str, int
-            )
-            for key, value in dict_key_value_data.items():
-                await key_value.set(key, value)
-            yield key_value
+            async with MongoClientPool(db.client) as client_pool:
+                key_value = MongoBasedKeyValue[str, int](
+                    client_pool,
+                    db.name,
+                    "key-value-items",
+                    "partition-1",
+                    str,
+                    int,
+                )
+                for key, value in dict_key_value_data.items():
+                    await key_value.set(key, value)
+                yield key_value

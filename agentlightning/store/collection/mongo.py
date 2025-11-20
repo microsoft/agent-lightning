@@ -207,6 +207,8 @@ class MongoClientPool(Generic[T_mapping]):
     ```
     Cannot use AsyncMongoClient in different event loop. AsyncMongoClient uses low-level asyncio APIs that bind it to the event loop it was created on.
     ```
+
+    Use the client pool with a context manager to ensure all clients are closed when the context is exited.
     """
 
     def __init__(self, client: AsyncMongoClient[T_mapping]):
@@ -216,6 +218,28 @@ class MongoClientPool(Generic[T_mapping]):
         self._client_pool: Dict[int, AsyncMongoClient[T_mapping]] = {}
 
         self._collection_pool: Dict[Tuple[int, str, str], AsyncCollection[T_mapping]] = {}
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: Any) -> None:
+        await self.close()
+
+    async def close(self) -> None:
+        """Close all clients in the pool (except the base client)."""
+
+        with self._lock:
+            clients = list(self._client_pool.values())
+            self._client_pool.clear()
+
+        for client in clients:
+            try:
+                if client is not self._client_base:
+                    await client.close()
+                else:
+                    logger.debug("Skipping closing base client: %s", client)
+            except Exception:
+                logger.exception("Error closing MongoDB client: %s", client)
 
     async def get_client(self) -> AsyncMongoClient[T_mapping]:
         loop = asyncio.get_running_loop()
