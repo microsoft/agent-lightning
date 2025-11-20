@@ -28,7 +28,7 @@ jobs:
       github.event.action == 'ci-spider' ||
       github.event.action == 'ci-all'
     name: Spider (Python ${{ matrix.python-version }}, ${{ matrix.setup-script }})
-    runs-on: [self-hosted, 1ES.Pool=agl-runner-gpu-eastus2]
+    runs-on: [self-hosted, 1ES.Pool=agl-runner-gpu]
     timeout-minutes: 60
     strategy:
       matrix:

@@ -28,7 +28,7 @@ jobs:
       github.event.action == 'ci-compat' ||
       github.event.action == 'ci-all'
     name: Backward Compatibility (Python ${{ matrix.python-version }}, ${{ matrix.setup-script }})
-    runs-on: [self-hosted, 1ES.Pool=agl-runner-gpu-eastus2]
+    runs-on: [self-hosted, 1ES.Pool=agl-runner-gpu]
     timeout-minutes: 30
     strategy:
       matrix:
