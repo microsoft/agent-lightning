@@ -43,4 +43,7 @@ else
   echo "[INFO] Adding '$USER' to 'docker' group."
   sudo usermod -aG docker "$USER"
   echo "[INFO] You must log out and log back in for this to take effect."
+  newgrp docker
+  echo "[INFO] 'docker' group membership applied. Current groups:"
+  id
 fi

@@ -6,7 +6,7 @@ on:
 
 jobs:
   debug:
-    runs-on: [self-hosted, 1ES.Pool=agl-runner-gpu]
+    runs-on: [self-hosted, 1ES.Pool=agl-runner-gpu-eastus2]
     timeout-minutes: 30
     steps:
       - name: Check GPU status
@@ -16,29 +16,29 @@ jobs:
         run: |
           set -ex
           cat /etc/group
+          cat /etc/passwd
           id
-          ./scripts/provision_vm_image.sh
         shell: bash
-      - name: Docker env debug
-        run: |
-          newgrp docker
-          echo "== id =="
-          id
-          echo
-          echo "== docker group entry =="
-          getent group docker || echo "no docker group"
-          echo
-          echo "== docker.sock =="
-          ls -l /var/run/docker.sock || echo "no docker.sock"
-          echo
-          echo "== docker service =="
-          sudo systemctl status docker --no-pager || echo "docker service status failed"
-          echo
-          echo "== dockerd processes =="
-          ps aux | grep '[d]ockerd' || echo "no dockerd"
-        shell: bash
+      # - name: Docker env debug
+      #   run: |
+      #     newgrp docker
+      #     echo "== id =="
+      #     id
+      #     echo
+      #     echo "== docker group entry =="
+      #     getent group docker || echo "no docker group"
+      #     echo
+      #     echo "== docker.sock =="
+      #     ls -l /var/run/docker.sock || echo "no docker.sock"
+      #     echo
+      #     echo "== docker service =="
+      #     sudo systemctl status docker --no-pager || echo "docker service status failed"
+      #     echo
+      #     echo "== dockerd processes =="
+      #     ps aux | grep '[d]ockerd' || echo "no dockerd"
+      #   shell: bash
       - name: Debug 2
         run: |
-          newgrp docker
+          # newgrp docker
           docker run hello-world
         shell: bash
