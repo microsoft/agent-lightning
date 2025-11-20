@@ -24,6 +24,10 @@ from agentlightning.llm_proxy import LLMProxy, ModelConfig
 from agentlightning.store.base import LightningStore
 from agentlightning.types import EnqueueRolloutRequest, Rollout, RolloutConfig, Task
 
+from .multimodal_utils import compute_mrope_position_ids, get_image_grid_thw, is_mrope_model
+
+setup_logging()
+
 __all__ = [
     "AgentModeDaemon",
     "get_left_padded_ids_and_attention_mask",
@@ -144,6 +148,7 @@ class AgentModeDaemon:
         llm_proxy: LLMProxy | None = None,
         store: LightningStore | None = None,
         adapter: TraceToTripletBase | None = None,
+        processor: Any = None,
     ):
         self.mode = mode
         self.llm_timeout_seconds = llm_timeout_seconds
@@ -183,7 +188,12 @@ class AgentModeDaemon:
         self.mini_batch_size = mini_batch_size
         self.pad_token_id = pad_token_id
         self.tokenizer = tokenizer
+        self.processor = processor
         self.reward_fillna_value = reward_fillna_value
+        self.image_base_dir: Optional[str] = None  # Set via set_image_base_dir()
+
+        # Check if model requires multimodal position_ids (e.g., Qwen2-VL, GLM4V)
+        self._use_mrope = is_mrope_model(processor)
 
         # Internal State
         self.backend_llm_server_addresses: List[str] = []
@@ -705,7 +715,17 @@ class AgentModeDaemon:
         rollout_id_list: List[str] = []
         turn_index_list: List[int] = []
         is_drop_list: List[bool] = []
+        image_grid_thw_list: List[Optional[torch.Tensor]] = []  # For Qwen2-VL mrope
         n_trunc_sample_because_of_response = 0
+
+        # Pre-compute image_grid_thw for each rollout (only for first turn which has image)
+        rollout_to_image_grid_thw: Dict[str, Optional[torch.Tensor]] = {}
+        if self._use_mrope:
+            for rollout_id in finished_id_to_sample_info.keys():
+                original_sample = self._task_id_to_original_sample[rollout_id]
+                rollout_to_image_grid_thw[rollout_id] = get_image_grid_thw(
+                    self.processor, original_sample, image_base_dir=self.image_base_dir
+                )
 
         for rollout_id, sample_info in finished_id_to_sample_info.items():
             for turn_index, trace in enumerate(sample_info["trace_list"]):
@@ -741,6 +761,15 @@ class AgentModeDaemon:
                 rollout_id_list.append(rollout_id)
                 turn_index_list.append(turn_index)
 
+                # Store image_grid_thw for this triplet (only first turn has image)
+                if self._use_mrope:
+                    # Only the first turn contains the image in the prompt
+                    if turn_index == 0:
+                        image_grid_thw_list.append(rollout_to_image_grid_thw.get(rollout_id))
+                    else:
+                        # Subsequent turns don't have new images
+                        image_grid_thw_list.append(None)
+
         n_transition = len(input_ids_list)
         batch_input_ids = torch.LongTensor(input_ids_list).to(device)
         input_attention_mask = torch.LongTensor(input_attention_mask_list).to(device)
@@ -750,7 +779,25 @@ class AgentModeDaemon:
         # Concatenate prompts and responses to form the full sequence
         batch_seq = torch.cat([batch_input_ids, batch_response_ids], dim=-1)
         attention_mask = torch.cat([input_attention_mask, response_attention_mask], dim=-1)
-        position_ids = torch.clamp(torch.cumsum(attention_mask, dim=-1) - 1, min=0)
+
+        # Compute position_ids - use mrope for Qwen2-VL, standard 2D otherwise
+        if self._use_mrope:
+            # For Qwen2-VL: compute 4D position_ids (batch_size, 4, seq_length)
+            position_ids_list = []
+            for i in range(n_transition):
+                pos_ids = compute_mrope_position_ids(
+                    processor=self.processor,
+                    input_ids=batch_seq[i],
+                    attention_mask=attention_mask[i],
+                    image_grid_thw=image_grid_thw_list[i] if image_grid_thw_list else None,
+                )  # (4, seq_length)
+                position_ids_list.append(pos_ids)
+            # Stack to (batch_size, 4, seq_length)
+            position_ids = torch.stack(position_ids_list, dim=0)
+        else:
+            # Standard 2D position_ids (batch_size, seq_length)
+            position_ids = torch.clamp(torch.cumsum(attention_mask, dim=-1) - 1, min=0)
+
         is_drop_mask = torch.BoolTensor(is_drop_list).to(device)
         scores = torch.tensor(reward_list, dtype=torch.bfloat16).to(device)
 
@@ -758,7 +805,13 @@ class AgentModeDaemon:
         token_level_scores = torch.zeros_like(attention_mask, dtype=scores.dtype)
         # At the eos_mask_idx position of each sample, fill in the corresponding scores.
         # torch.arange(n_transition) generates [0,1,2,...,bsz-1] as indices for the batch dimension.
-        eos_mask_idx = torch.argmax(position_ids * attention_mask, dim=-1)  # (bsz,)
+        # For mrope (3D position_ids), use the first dimension (text position_ids) for eos calculation
+        if self._use_mrope:
+            # position_ids is (batch_size, 4, seq_length), use first dim for text positions
+            text_position_ids = position_ids[:, 0, :]  # (batch_size, seq_length)
+            eos_mask_idx = torch.argmax(text_position_ids * attention_mask, dim=-1)  # (bsz,)
+        else:
+            eos_mask_idx = torch.argmax(position_ids * attention_mask, dim=-1)  # (bsz,)
         token_level_scores[torch.arange(n_transition), eos_mask_idx] = scores
         # Only take the last response_length part of the sequence to get the token-level scores for the model's response part.
         token_level_scores = token_level_scores[:, -max_response_length:]
@@ -813,3 +866,4 @@ class AgentModeDaemon:
         else:
             final_reward = rollout.final_reward
         return final_reward
+
