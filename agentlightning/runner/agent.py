@@ -138,7 +138,7 @@ class LitAgentRunner(Runner[T_task]):
         self._store = store
         self.worker_id = worker_id
 
-        self._tracer.init_worker(worker_id)
+        self._tracer.init_worker(worker_id, store)
 
     def teardown(self, *args: Any, **kwargs: Any) -> None:
         """Teardown the runner and clean up all resources.
@@ -469,7 +469,7 @@ class LitAgentRunner(Runner[T_task]):
 
             start_time = time.time()
             async with self._tracer.trace_context(
-                name=rollout_id, store=store, rollout_id=rollout_id, attempt_id=next_rollout.attempt.attempt_id
+                name=rollout_id, rollout_id=rollout_id, attempt_id=next_rollout.attempt.attempt_id
             ):
                 await self._trigger_hooks(
                     hook_type="on_trace_start", agent=agent, runner=self, tracer=self._tracer, rollout=next_rollout
