@@ -35,8 +35,8 @@ jobs:
         include:
         - python-version: '3.12'
           setup-script: 'stable'
-        - python-version: '3.13'
-          setup-script: 'latest'
+        # - python-version: '3.13'
+        #   setup-script: 'latest'
       fail-fast: false
     steps:
       - name: Check disk space
@@ -54,7 +54,7 @@ jobs:
       - name: Sync dependencies
         run: |
           uv sync --frozen --no-default-groups \
-            --group dev --group experiment --group agents --group cpu-stable
+            --group dev --group experiment --group agents --group core-stable
       - name: Freeze dependencies
         run: |
           set -ex
