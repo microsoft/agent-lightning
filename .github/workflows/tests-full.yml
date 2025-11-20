@@ -18,3 +18,8 @@ jobs:
           id
           ./scripts/provision_vm_image.sh
         shell: bash
+      - name: Debug 2
+        run: |
+          newgrp docker
+          docker run hello-world
+        shell: bash
