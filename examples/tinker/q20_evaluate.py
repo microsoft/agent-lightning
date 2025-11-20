@@ -172,7 +172,7 @@ async def evaluate_q20(
         if ci:
             df_result = pd.read_json(output_path, lines=True)  # type: ignore
             print(df_result)
-            assert df_result["correct"].dropna() >= 5, "At least 5 evaluation results are required in CI mode."  # type: ignore
+            assert len(df_result["correct"].dropna()) >= 5, "At least 5 evaluation results are required in CI mode."  # type: ignore
             assert df_result["correct"].sum() > 0, "At least one correct evaluation result is required in CI mode."  # type: ignore
     finally:
         await llm_proxy.stop()
