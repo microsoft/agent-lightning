@@ -70,7 +70,7 @@ jobs:
 
       - name: Launch LiteLLM Proxy
         run: |
-          ./scripts/litellm_run.sh
+          ./scripts/litellm_run.sh 12358
         env:
           AZURE_API_BASE: ${{ secrets.AZURE_GROUP_SUBSCRIPTION_API_BASE }}
           AZURE_API_KEY: ${{ secrets.AZURE_GROUP_SUBSCRIPTION_API_KEY }}
@@ -105,7 +105,7 @@ jobs:
           python q20_evaluate.py --ci --model gpt-4.1 --output-file logs/q20_evaluate_gpt-4.1.jsonl
         shell: bash
         env:
-          OPENAI_BASE_URL: http://localhost:12306/
+          OPENAI_BASE_URL: http://localhost:12358/
           OPENAI_API_KEY: dummy
           CREWAI_DISABLE_TELEMETRY: true
           TINKER_API_KEY: ${{ secrets.TINKER_API_KEY }}
@@ -118,7 +118,7 @@ jobs:
           python q20_evaluate.py --ci --model Qwen/Qwen3-30B-A3B-Instruct-2507 --output-file logs/q20_evaluate_qwen3-30b-a3b.jsonl
         shell: bash
         env:
-          OPENAI_BASE_URL: http://localhost:12306/
+          OPENAI_BASE_URL: http://localhost:12358/
           OPENAI_API_KEY: dummy
           CREWAI_DISABLE_TELEMETRY: true
           TINKER_API_KEY: ${{ secrets.TINKER_API_KEY }}
@@ -131,7 +131,7 @@ jobs:
           python q20_train.py dryrun --model qwen4b
         shell: bash
         env:
-          OPENAI_BASE_URL: http://localhost:12306/
+          OPENAI_BASE_URL: http://localhost:12358/
           OPENAI_API_KEY: dummy
           CREWAI_DISABLE_TELEMETRY: true
           TINKER_API_KEY: ${{ secrets.TINKER_API_KEY }}
@@ -161,7 +161,7 @@ jobs:
           echo "q20_train.py has finished."
         shell: bash
         env:
-          OPENAI_BASE_URL: http://localhost:12306/
+          OPENAI_BASE_URL: http://localhost:12358/
           OPENAI_API_KEY: dummy
           CREWAI_DISABLE_TELEMETRY: true
           TINKER_API_KEY: ${{ secrets.TINKER_API_KEY }}
