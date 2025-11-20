@@ -58,7 +58,12 @@ async def mongo_store():
         yield MongoLightningStore(client=db.client, database_name=db.name)
 
 
-@pytest.fixture(params=["inmemory_store", "mongo_store"])
+@pytest.fixture(
+    params=[
+        "inmemory_store",
+        pytest.param("mongo_store", marks=pytest.mark.mongo),
+    ]
+)
 def store_fixture(request: FixtureRequest) -> AsyncGenerator[LightningStore, None]:
     """Parameterized fixture that provides different store implementations for testing."""
     return request.getfixturevalue(request.param)
@@ -127,7 +132,7 @@ async def temporary_mongo_database() -> AsyncGenerator[AsyncDatabase[Any], None]
         await client.admin.command("ping")
     except Exception as exc:  # depends on external service
         await client.close()
-        pytest.skip(f"MongoDB not available: {exc}")
+        raise RuntimeError(f"MongoDB not available: {exc}")
 
     db_name = f"agentlightning-test-{uuid4().hex}"
     db = client[db_name]  # type: ignore

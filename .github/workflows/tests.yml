@@ -166,7 +166,7 @@ jobs:
 
       - name: Run tests
         run: |
-          uv run pytest -v --durations=0 tests
+          uv run pytest -v --durations=0 tests -m "not mongo"
         env:
           PYTEST_ADDOPTS: "--color=yes"
 
