@@ -71,6 +71,7 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
         terminate_timeout: float = 10.0,
         main_process: Literal["algorithm", "runner"] = "algorithm",
         managed_store: bool | None = None,
+        allowed_exit_codes: Iterable[int] = (0, -15),
     ) -> None:
         """Configure the strategy.
 
@@ -94,6 +95,9 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
                 LightningStore client/server wrappers automatically. When
                 `False` the provided `store` is passed directly to the
                 bundles, allowing callers to manage store wrappers manually.
+            allowed_exit_codes: Allowed exit codes for subprocesses.
+                By default, runner can exit gracefully with code 0 or terminated
+                by SIGTERM (-15).
         """
         if role is None:
             role_env = os.getenv("AGL_CURRENT_ROLE")
@@ -133,6 +137,7 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
                 raise ValueError("main_process='runner' requires n_runners to be 1")
         self.main_process = main_process
         self.managed_store = resolve_managed_store_flag(managed_store)
+        self.allowed_exit_codes = tuple(allowed_exit_codes)
 
     async def _execute_algorithm(
         self, algorithm: AlgorithmBundle, store: LightningStore, stop_evt: ExecutionEvent
@@ -338,10 +343,10 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
 
     def _check_process_exitcodes(self, processes: Iterable[multiprocessing.Process]) -> None:
         """Raise an error if any managed process exited with a non-zero status."""
-        failed = [p for p in processes if p.exitcode not in (0, None)]
+        failed = [p for p in processes if p.exitcode not in self.allowed_exit_codes + (None,)]
         if failed:
             formatted = ", ".join(f"{p.name or p.pid} (exitcode={p.exitcode})" for p in failed)
-            raise RuntimeError(f"Subprocesses failed: {formatted}")
+            raise RuntimeError(f"Subprocesses failed with unexpected exit codes: {formatted}")
 
     def execute(self, algorithm: AlgorithmBundle, runner: RunnerBundle, store: LightningStore) -> None:
         logger.info(

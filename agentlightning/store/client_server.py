@@ -1149,6 +1149,7 @@ class LightningStoreClient(LightningStore):
         are excluded as they should not be transferred between processes.
         """
         return {
+            "server_address_root": self.server_address_root,
             "server_address": self.server_address,
             "_retry_delays": self._retry_delays,
             "_health_retry_delays": self._health_retry_delays,
@@ -1163,6 +1164,7 @@ class LightningStoreClient(LightningStore):
         Replicating `__init__` logic to create another client instance in the subprocess.
         """
         self.server_address = state["server_address"]
+        self.server_address_root = state["server_address_root"]
         self._sessions = {}
         self._lock = threading.Lock()
         self._retry_delays = state["_retry_delays"]

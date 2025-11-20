@@ -34,7 +34,7 @@ async def send_traces_via_otel(use_client: bool = False):
         store = LightningStoreClient("http://localhost:45993")
     rollout = await store.start_rollout(input={"origin": "write_traces_example"})
 
-    with tracer.lifespan():
+    with tracer.lifespan(store):
         # Initialize the capture of one single trace for one single rollout
         async with tracer.trace_context(
             "trace-manual", store=store, rollout_id=rollout.rollout_id, attempt_id=rollout.attempt.attempt_id
@@ -89,10 +89,10 @@ async def send_traces_via_agentops(use_client: bool = False):
 
     # Initialize the tracer lifespan
     # One lifespan can contain multiple traces
-    with tracer.lifespan():
+    with tracer.lifespan(store):
         # Initialize the capture of one single trace for one single rollout
         async with tracer.trace_context(
-            "trace-1", store=store, rollout_id=rollout.rollout_id, attempt_id=rollout.attempt.attempt_id
+            "trace-1", rollout_id=rollout.rollout_id, attempt_id=rollout.attempt.attempt_id
         ):
             openai_client = AsyncOpenAI()
             response = await openai_client.chat.completions.create(
