@@ -37,6 +37,7 @@ jobs:
           uv sync --frozen \
             --extra apo \
             --extra verl \
+            --extra mongo \
             --group dev \
             --group torch-cpu \
             --group torch-stable \

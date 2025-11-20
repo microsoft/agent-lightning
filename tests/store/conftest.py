@@ -19,7 +19,6 @@ from pytest import FixtureRequest
 from agentlightning.store.base import LightningStore
 from agentlightning.store.collection import DequeBasedQueue, DictBasedKeyValue, KeyValue, ListBasedCollection, Queue
 from agentlightning.store.collection.base import Collection
-from agentlightning.store.collection.mongo import MongoClientPool
 from agentlightning.store.memory import InMemoryLightningStore
 
 if TYPE_CHECKING:
@@ -268,10 +267,10 @@ async def sample_collection(
         yield collection
 
     else:
-        import agentlightning.store.collection.mongo as mongo_module
+        from agentlightning.store.collection.mongo import MongoBasedCollection, MongoClientPool
 
         async with temporary_mongo_database() as db:
-            collection = mongo_module.MongoBasedCollection(
+            collection = MongoBasedCollection(
                 MongoClientPool(db.client),
                 db.name,
                 "sample-items",
@@ -297,10 +296,10 @@ async def deque_queue(request: pytest.FixtureRequest) -> AsyncGenerator[Queue[Qu
         yield queue
 
     else:
-        import agentlightning.store.collection.mongo as mongo_module
+        from agentlightning.store.collection.mongo import MongoBasedQueue, MongoClientPool
 
         async with temporary_mongo_database() as db:
-            queue = mongo_module.MongoBasedQueue[QueueItem](
+            queue = MongoBasedQueue[QueueItem](
                 MongoClientPool(db.client), db.name, "queue-items", "partition-1", QueueItem
             )
             await queue.enqueue([QueueItem(idx=i) for i in range(3)])
@@ -327,10 +326,10 @@ async def dict_key_value(
         yield key_value
 
     else:
-        import agentlightning.store.collection.mongo as mongo_module
+        from agentlightning.store.collection.mongo import MongoBasedKeyValue, MongoClientPool
 
         async with temporary_mongo_database() as db:
-            key_value = mongo_module.MongoBasedKeyValue[str, int](
+            key_value = MongoBasedKeyValue[str, int](
                 MongoClientPool(db.client), db.name, "key-value-items", "partition-1", str, int
             )
             for key, value in dict_key_value_data.items():
