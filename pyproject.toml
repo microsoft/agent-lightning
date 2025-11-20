@@ -37,7 +37,9 @@ verl = [
   "verl>=0.5.0",
   "vllm>=0.8.4", # Due to interface change of ExternalZeroMQDistributedExecutor
 ]
-
+weave = [
+  "weave",
+]
 [project.scripts]
 agl = "agentlightning.cli:main"
 
