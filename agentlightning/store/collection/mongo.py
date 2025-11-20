@@ -9,6 +9,7 @@ import threading
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import (
+    TYPE_CHECKING,
     Any,
     Awaitable,
     Callable,
@@ -17,13 +18,15 @@ from typing import (
     List,
     Mapping,
     Optional,
-    Self,
     Sequence,
     Tuple,
     Type,
     TypeVar,
     cast,
 )
+
+if TYPE_CHECKING:
+    from typing import Self
 
 from pydantic import BaseModel, TypeAdapter
 from pymongo import AsyncMongoClient, ReadPreference, WriteConcern
