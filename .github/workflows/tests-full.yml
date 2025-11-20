@@ -87,6 +87,13 @@ jobs:
       - name: Build dashboard
         run: cd dashboard && npm run build
 
+      - name: Start MongoDB
+        uses: supercharge/mongodb-github-action@1.12.1
+        with:
+          mongodb-version: '8.2'
+          mongodb-replica-set: test-rs
+          mongodb-port: 27017
+
       - name: Launch LiteLLM Proxy
         run: |
           ./scripts/litellm_run.sh
