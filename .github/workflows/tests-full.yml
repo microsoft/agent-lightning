@@ -89,6 +89,13 @@ jobs:
           mongodb-replica-set: test-rs
           mongodb-port: 27017
 
+      - name: Check Mongo ulimit and FDs
+        run: |
+          docker ps
+          cid=$(docker ps --format '{{.ID}} {{.Image}}' | grep mongo | awk '{print $1}' | head -n1)
+          echo "Mongo container: $cid"
+          docker exec "$cid" sh -c 'ulimit -n && ls /proc/1/fd | wc -l'
+
       - name: Launch LiteLLM Proxy
         run: |
           ./scripts/litellm_run.sh
