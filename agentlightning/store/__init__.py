@@ -2,6 +2,7 @@
 
 from .base import LightningStore, LightningStoreCapabilities
 from .client_server import LightningStoreClient, LightningStoreServer
+from .collection_based import CollectionBasedLightningStore
 from .memory import InMemoryLightningStore
 from .threading import LightningStoreThreaded
 
@@ -11,5 +12,6 @@ __all__ = [
     "LightningStoreClient",
     "LightningStoreServer",
     "InMemoryLightningStore",
+    "CollectionBasedLightningStore",
     "LightningStoreThreaded",
 ]

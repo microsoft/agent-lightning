@@ -43,9 +43,7 @@ jobs:
       fail-fast: false
     steps:
       - name: Check GPU status
-        run: |
-          nvidia-smi
-          docker run --rm --runtime=nvidia --gpus all ubuntu nvidia-smi
+        run: nvidia-smi
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.pr_ref || (github.event.pull_request.number && format('refs/pull/{0}/merge', github.event.pull_request.number)) || github.ref }}

@@ -2,18 +2,23 @@
 
 import asyncio
 import logging
+import multiprocessing
 import random
 from typing import Any, List, cast
 
 import litellm
 import openai
+import opentelemetry.trace as trace_api
 import pytest
+from agentops.sdk.core import BatchSpanProcessor
 from litellm.llms.custom_llm import CustomLLM
 from litellm.types.utils import ModelResponse
 from litellm.utils import custom_llm_setup
 from opentelemetry.sdk.trace import ReadableSpan
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 
 from agentlightning.llm_proxy import LightningSpanExporter, LLMProxy
+from agentlightning.store import LightningStoreServer
 from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.store.threading import LightningStoreThreaded
 from agentlightning.types import Span
@@ -282,7 +287,6 @@ async def test_custom_llm_restarted_multiple_times(caplog: pytest.LogCaptureFixt
             assert response.choices[0].message.content == f"Hi! {restart_idx}"
 
             error_logs = [record.message for record in caplog.records if record.levelno >= logging.ERROR]
-            error_logs = [message for message in error_logs if "Task was destroyed but it is pending!" not in message]
             assert not error_logs, f"Found error logs: {error_logs}"
             assert not any("Cannot add callback" in record.message for record in caplog.records)
 
@@ -290,3 +294,87 @@ async def test_custom_llm_restarted_multiple_times(caplog: pytest.LogCaptureFixt
     finally:
         litellm.custom_provider_map = []
         custom_llm_setup()
+
+
+async def llm_proxy_span_exporter_loop(otlp_enabled: bool = False):
+    store = LightningStoreThreaded(InMemoryLightningStore())
+
+    if otlp_enabled:
+        store = LightningStoreServer(store, "127.0.0.1", get_free_port())
+        await store.start()
+
+    llm_instance = TestLLM(f"Hi! I'm a test LLM")
+    litellm.custom_provider_map = [{"provider": "test-llm", "custom_handler": llm_instance}]
+    custom_llm_setup()
+    proxy = LLMProxy(
+        launcher_args=PythonServerLauncherArgs(
+            launch_mode="thread",
+            healthcheck_url="/health",
+            port=get_free_port(),
+        ),
+        store=store,
+        model_list=[
+            {
+                "model_name": "gpt-4o-arbitrary",
+                "litellm_params": {
+                    "model": "test-llm/any-llm",
+                },
+            }
+        ],
+    )
+    await proxy.start()
+
+    rollout = await store.start_rollout(None)
+    resource = proxy.as_resource(rollout.rollout_id, rollout.attempt.attempt_id)
+
+    client = openai.AsyncOpenAI(
+        base_url=resource.endpoint,
+        api_key="token-abc123",
+        timeout=5,
+        max_retries=0,
+    )
+    response = await client.chat.completions.create(
+        model="gpt-4o-arbitrary",
+        messages=[{"role": "user", "content": "Hello world"}],
+        stream=False,
+    )
+    assert response.choices[0].message.content == "Hi! I'm a test LLM"
+
+    spans = await store.query_spans(rollout.rollout_id, rollout.attempt.attempt_id)
+    assert len(spans) > 0, "Should have captured spans"
+    for span in spans:
+        assert span.rollout_id == rollout.rollout_id, f"Span {span.name} has incorrect rollout_id"
+        assert span.attempt_id == rollout.attempt.attempt_id, f"Span {span.name} has incorrect attempt_id"
+        assert span.sequence_id == 1, f"Span {span.name} has incorrect sequence_id"
+
+    tracer_provider = trace_api.get_tracer_provider()
+
+    have_asserted_loop = False
+    for span_processor in tracer_provider._active_span_processor._span_processors:  # type: ignore
+        if isinstance(span_processor, (SimpleSpanProcessor, BatchSpanProcessor)):
+            if isinstance(span_processor.span_exporter, LightningSpanExporter):
+                if otlp_enabled:
+                    assert span_processor.span_exporter._loop is None  # type: ignore
+                else:
+                    assert span_processor.span_exporter._loop is not None  # type: ignore
+                have_asserted_loop = True
+                break
+    assert have_asserted_loop, f"LightningSpanExporter should be used with otlp_enabled={otlp_enabled}"
+
+    await proxy.stop()
+
+    if isinstance(store, LightningStoreServer):
+        await store.stop()
+
+
+def llm_proxy_span_exporter_loop_sync(otlp_enabled: bool = False):
+    asyncio.run(llm_proxy_span_exporter_loop(otlp_enabled))
+
+
+@pytest.mark.parametrize("otlp_enabled", [True, False])
+def test_llm_proxy_span_exporter_loop(otlp_enabled: bool):
+    context = multiprocessing.get_context("spawn")
+    process = context.Process(target=llm_proxy_span_exporter_loop_sync, args=(otlp_enabled,))
+    process.start()
+    process.join(timeout=30.0)
+    assert process.exitcode == 0

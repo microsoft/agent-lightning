@@ -137,6 +137,20 @@ def config_train_qwen() -> Dict[str, Any]:
     return config
 
 
+def config_train_npu() -> Dict[str, Any]:
+    """A configuration for training with NPU."""
+
+    config = deepcopy(RL_TRAINING_CONFIG)
+    del config["actor_rollout_ref"]["rollout"]["engine_kwargs"]["vllm"]["enable_auto_tool_choice"]
+    del config["actor_rollout_ref"]["rollout"]["engine_kwargs"]["vllm"]["tool_call_parser"]
+    del config["trainer"]["logger"][1]
+    config["actor_rollout_ref"]["actor"]["use_torch_compile"] = False
+    config["trainer"]["val_before_train"] = False
+    config["trainer"]["save_freq"] = 256
+    config["trainer"]["device"] = "npu"
+    return config
+
+
 def config_train_llama() -> Dict[str, Any]:
     """A configuration for training with LLaMA-3.2-1B-Instruct.
 
@@ -171,8 +185,8 @@ def main() -> None:
 
     parser.add_argument(
         "config",
-        choices=["fast", "qwen", "llama"],
-        help="Training configuration: 'fast' (CI testing), 'qwen' (Qwen-2.5-Coder-1.5B), 'llama' (LLaMA-3.2-3B)",
+        choices=["fast", "qwen", "llama", "npu"],
+        help="Training configuration: 'fast' (CI testing), 'qwen' (Qwen-2.5-Coder-1.5B), 'llama' (LLaMA-3.2-3B),'npu' (Train with NPU)",
     )
 
     parser.add_argument(
@@ -182,8 +196,12 @@ def main() -> None:
     args = parser.parse_args()
 
     # Get the appropriate configuration
-    config_functions = {"fast": config_train_fast, "qwen": config_train_qwen, "llama": config_train_llama}
-
+    config_functions = {
+        "fast": config_train_fast,
+        "qwen": config_train_qwen,
+        "llama": config_train_llama,
+        "npu": config_train_npu,
+    }
     config = config_functions[args.config]()
 
     # Set active agent - use provided value or default based on config choice
