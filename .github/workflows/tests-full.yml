@@ -14,4 +14,6 @@ jobs:
       - uses: actions/checkout@v4
       - name: Debug
         run: |
+          set -ex
           id
+          ./scripts/provision_vm_image.sh
