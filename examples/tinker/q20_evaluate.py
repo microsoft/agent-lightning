@@ -217,6 +217,11 @@ def main(argv: Optional[List[str]] = None) -> None:
         default=42,
         help="Random seed for shuffling the dataset. Use -1 to disable deterministic shuffling.",
     )
+    parser.add_argument(
+        "--ci",
+        action="store_true",
+        help="Run in CI mode (smaller dataset, smaller batch).",
+    )
 
     args = parser.parse_args(argv)
     asyncio.run(
@@ -227,6 +232,7 @@ def main(argv: Optional[List[str]] = None) -> None:
             output_file=args.output_file,
             dataset_path=args.dataset,
             seed=None if args.seed == -1 else args.seed,
+            ci=args.ci,
         )
     )
 
