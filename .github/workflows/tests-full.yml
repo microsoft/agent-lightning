@@ -105,6 +105,19 @@ jobs:
           OPENAI_API_KEY: dummy
           AGL_TEST_MONGO_URI: mongodb://localhost:27017/?replicaSet=test-rs
 
+      - name: Debug MongoDB Failure
+        if: failure()
+        run: |
+          echo "Listing all docker containers:"
+          docker ps -a
+          echo "--------------------------------"
+          echo "Logs from MongoDB container:"
+          # Grab logs from the container created by the supercharge action
+          docker logs $(docker ps -a -q --filter ancestor=mongo:8.2)
+          echo "--------------------------------"
+          echo "Checking for OOM Kills in dmesg:"
+          sudo dmesg | grep -i "kill" || echo "No OOM kills found in dmesg"
+
   minimal-examples:
     if: >
       github.event_name != 'repository_dispatch' ||
