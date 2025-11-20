@@ -137,10 +137,11 @@ async def evaluate_q20(
             if search
             else None
         )
+        n_samples = len(df) if not ci else 5
         sampled_df = (
-            df.sample(n=len(df), random_state=seed)  # type: ignore
+            df.sample(n=n_samples, random_state=seed)  # type: ignore
             if seed is not None
-            else df.sample(n=len(df))  # type: ignore
+            else df.sample(n=n_samples)  # type: ignore
         )
         for cnt, (index, row) in enumerate(sampled_df.iterrows()):  # type: ignore
             if search_tool:
@@ -171,8 +172,8 @@ async def evaluate_q20(
 
         if ci:
             df_result = pd.read_json(output_path, lines=True)  # type: ignore
-            print(df_result)
-            assert len(df_result["correct"].dropna()) >= 5, "At least 5 evaluation results are required in CI mode."  # type: ignore
+            print(f"Evaluation results:\n{df_result.to_dict(orient='records')}")  # type: ignore
+            assert len(df_result["correct"].dropna()) == n_samples, f"{n_samples} evaluation results are required in CI mode."  # type: ignore
             assert df_result["correct"].sum() > 0, "At least one correct evaluation result is required in CI mode."  # type: ignore
     finally:
         await llm_proxy.stop()
