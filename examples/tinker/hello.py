@@ -151,17 +151,28 @@ def spawn_runners(*, n_runners: int) -> None:
         runner.join()
 
 
-def oneclick():
+def oneclick(ci: bool = False):
     """Run integrated training with algorithm and runners in one process.
 
     This is the simplest way to run the example, as it handles spawning
     the store, algorithm, and runners automatically.
+
+    Args:
+        ci: Whether to run in CI mode. Fast verification.
     """
+    if ci:
+        # Use smaller batch size and group size for faster verification.
+        batch_size = 4
+        group_size = 2
+    else:
+        batch_size = 16
+        group_size = 4
+
     config = Config(
         learning_rate=1e-5,
         dataset_builder=AGLDatasetBuilder(
-            batch_size=16,
-            group_size=4,
+            batch_size=batch_size,
+            group_size=group_size,
             seed=42,
             n_epochs=1,
         ),
@@ -182,15 +193,28 @@ def oneclick():
         n_runners=8,
         port=_find_available_port(),
     )
-    trainer.fit(hello, train_dataset=[str(i) for i in range(1000)], val_dataset=[str(i) for i in range(1000, 1024)])
+
+    if ci:
+        # For faster verification, use a smaller dataset.
+        train_dataset = [str(i) for i in range(16)]
+        val_dataset = [str(i) for i in range(100, 108)]
+    else:
+        train_dataset = [str(i) for i in range(1000)]
+        val_dataset = [str(i) for i in range(1000, 1024)]
+    trainer.fit(hello, train_dataset=train_dataset, val_dataset=val_dataset)
 
 
 def main():
     """Entry point for the hello example script."""
     parser = argparse.ArgumentParser(description="Train a hello echo agent with Agent-lightning + Tinker.")
     parser.add_argument("mode", type=str, choices=["algo", "runner", "oneclick"])
+    parser.add_argument("--ci", action="store_true", help="Run in CI mode. Fast verification.")
 
     args = parser.parse_args()
+
+    if args.ci:
+        if args.mode != "oneclick":
+            raise ValueError("CI mode only supports oneclick mode.")
 
     agl.setup_logging()
     if args.mode == "algo":
@@ -198,7 +222,7 @@ def main():
     elif args.mode == "runner":
         spawn_runners(n_runners=8)
     elif args.mode == "oneclick":
-        oneclick()
+        oneclick(ci=args.ci)
 
 
 if __name__ == "__main__":

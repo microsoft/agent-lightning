@@ -57,6 +57,7 @@ async def evaluate_q20(
     output_file: str,
     dataset_path: str,
     seed: Optional[int] = 42,
+    ci: bool = False,
 ):
     """Evaluate a model on the 20 Questions game.
 
@@ -67,6 +68,7 @@ async def evaluate_q20(
         output_file: Where to append JSONL results.
         dataset_path: CSV file containing category and answer columns.
         seed: Optional random seed for shuffling the dataset; ``None`` disables deterministic shuffling.
+        ci: Whether to run in CI mode. Fast verification.
     """
 
     store = LightningStoreThreaded(InMemoryLightningStore())
@@ -140,7 +142,7 @@ async def evaluate_q20(
             if seed is not None
             else df.sample(n=len(df))  # type: ignore
         )
-        for index, row in sampled_df.iterrows():  # type: ignore
+        for cnt, (index, row) in enumerate(sampled_df.iterrows()):  # type: ignore
             if search_tool:
                 search_tool.num_called = 0
 
@@ -163,6 +165,15 @@ async def evaluate_q20(
                 }
             with output_path.open("a") as f:
                 f.write(json.dumps(result_json) + "\n")
+
+            if ci and cnt >= 4:
+                break
+
+        if ci:
+            df_result = pd.read_json(output_path, lines=True)  # type: ignore
+            print(df_result)
+            assert df_result["correct"].dropna() >= 5, "At least 5 evaluation results are required in CI mode."  # type: ignore
+            assert df_result["correct"].sum() > 0, "At least one correct evaluation result is required in CI mode."  # type: ignore
     finally:
         await llm_proxy.stop()
 
