@@ -31,6 +31,10 @@ dependencies = [
 apo = [
   "poml",
 ]
+phoenix = [
+  "arize-phoenix-client>=1.14.1", 
+  "arize-phoenix-otel>=0.11.0"
+]
 # It's not recommended to use agentlightning[verl] to install VERL and its dependencies.
 # though it's listed here for completeness.
 verl = [
