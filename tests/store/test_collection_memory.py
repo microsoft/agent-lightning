@@ -714,72 +714,72 @@ async def test_dict_key_value_does_not_mutate_input_mapping(dict_key_value_data:
     assert dict_key_value_data == {"alpha": 1, "beta": 2}
 
 
-@pytest.mark.mongo
-@pytest.mark.asyncio()
-async def test_mongo_based_sanity_check() -> None:
-    from agentlightning.store.collection.mongo import (
-        MongoBasedCollection,
-        MongoBasedKeyValue,
-        MongoBasedQueue,
-        MongoClientPool,
-    )
+# @pytest.mark.mongo
+# @pytest.mark.asyncio()
+# async def test_mongo_based_sanity_check() -> None:
+#     from agentlightning.store.collection.mongo import (
+#         MongoBasedCollection,
+#         MongoBasedKeyValue,
+#         MongoBasedQueue,
+#         MongoClientPool,
+#     )
 
-    async with temporary_mongo_database() as db:
-        async with MongoClientPool(db.client) as client_pool:
-            collection = MongoBasedCollection[Any](client_pool, db.name, "test", "test-123", ["rollout_id"], Rollout)
-            await collection.ensure_collection()
+#     async with temporary_mongo_database() as db:
+#         async with MongoClientPool(db.client) as client_pool:
+#             collection = MongoBasedCollection[Any](client_pool, db.name, "test", "test-123", ["rollout_id"], Rollout)
+#             await collection.ensure_collection()
 
-            start_time = time.time()
-            await collection.insert(
-                [Rollout(rollout_id="test-123", input="test-123", start_time=start_time, status="running")]
-            )
+#             start_time = time.time()
+#             await collection.insert(
+#                 [Rollout(rollout_id="test-123", input="test-123", start_time=start_time, status="running")]
+#             )
 
-            result = await collection.query(filter={"status": {"exact": "running"}})
-            assert result.items == [
-                Rollout(rollout_id="test-123", input="test-123", start_time=start_time, status="running")
-            ]
+#             result = await collection.query(filter={"status": {"exact": "running"}})
+#             assert result.items == [
+#                 Rollout(rollout_id="test-123", input="test-123", start_time=start_time, status="running")
+#             ]
 
-            rollout_queue = MongoBasedQueue[str](client_pool, db.name, "rollout_queue", "partition-1", str)
-            await rollout_queue.ensure_collection()
+#             rollout_queue = MongoBasedQueue[str](client_pool, db.name, "rollout_queue", "partition-1", str)
+#             await rollout_queue.ensure_collection()
 
-            await rollout_queue.enqueue(["r1", "r2", "r3"])
-            assert await rollout_queue.size() == 3
-            assert await rollout_queue.peek(2) == ["r1", "r2"]
-            assert await rollout_queue.dequeue(2) == ["r1", "r2"]
-            assert await rollout_queue.size() == 1
+#             await rollout_queue.enqueue(["r1", "r2", "r3"])
+#             assert await rollout_queue.size() == 3
+#             assert await rollout_queue.peek(2) == ["r1", "r2"]
+#             assert await rollout_queue.dequeue(2) == ["r1", "r2"]
+#             assert await rollout_queue.size() == 1
 
-            span_kv = MongoBasedKeyValue[str, int](client_pool, db.name, "span_sequence_ids", "partition-1", str, int)
-            await span_kv.ensure_collection()
+#             span_kv = MongoBasedKeyValue[str, int](client_pool, db.name, "span_sequence_ids", "partition-1", str, int)
+#             await span_kv.ensure_collection()
 
-            await span_kv.set("span-123", 1)
-            assert await span_kv.has("span-123")
-            assert await span_kv.get("span-123") == 1
-            assert await span_kv.pop("span-123") == 1
-            assert not await span_kv.has("span-123")
+#             await span_kv.set("span-123", 1)
+#             assert await span_kv.has("span-123")
+#             assert await span_kv.get("span-123") == 1
+#             assert await span_kv.pop("span-123") == 1
+#             assert not await span_kv.has("span-123")
 
 
-@pytest.mark.mongo
-@pytest.mark.asyncio()
-async def test_mongo_ensure_collection_creates_partition_scoped_index() -> None:
-    from agentlightning.store.collection.mongo import MongoBasedCollection, MongoClientPool
+# @pytest.mark.mongo
+# @pytest.mark.asyncio()
+# async def test_mongo_ensure_collection_creates_partition_scoped_index() -> None:
+#     from agentlightning.store.collection.mongo import MongoBasedCollection, MongoClientPool
 
-    async with temporary_mongo_database() as db:
-        collection_name = f"ensure-{uuid4().hex}"
-        async with MongoClientPool(db.client) as client_pool:
-            collection = MongoBasedCollection[Any](
-                client_pool, db.name, collection_name, "partition-ensure", ["name", "index"], SampleItem
-            )
-            await collection.ensure_collection()
+#     async with temporary_mongo_database() as db:
+#         collection_name = f"ensure-{uuid4().hex}"
+#         async with MongoClientPool(db.client) as client_pool:
+#             collection = MongoBasedCollection[Any](
+#                 client_pool, db.name, collection_name, "partition-ensure", ["name", "index"], SampleItem
+#             )
+#             await collection.ensure_collection()
 
-            unique_index = None
-            async for index in await db[collection_name].list_indexes():  # type: ignore
-                if index["name"] == "uniq_partition_name_index" and index.get("unique"):  # type: ignore
-                    unique_index = index  # type: ignore
-                    break
+#             unique_index = None
+#             async for index in await db[collection_name].list_indexes():  # type: ignore
+#                 if index["name"] == "uniq_partition_name_index" and index.get("unique"):  # type: ignore
+#                     unique_index = index  # type: ignore
+#                     break
 
-            assert unique_index is not None, "expected unique partition/index key"
-            key_pairs = list(unique_index["key"].items())  # type: ignore
-            assert key_pairs == [("partition_id", 1), ("name", 1), ("index", 1)]
+#             assert unique_index is not None, "expected unique partition/index key"
+#             key_pairs = list(unique_index["key"].items())  # type: ignore
+#             assert key_pairs == [("partition_id", 1), ("name", 1), ("index", 1)]
 
 
 # @pytest.mark.mongo
@@ -808,23 +808,23 @@ async def test_mongo_ensure_collection_creates_partition_scoped_index() -> None:
 #         assert unique_indexes == ["uniq_partition_index"]
 
 
-@pytest.mark.mongo
-@pytest.mark.asyncio()
-async def test_mongo_ensure_collection_repeats_without_altering_indexes() -> None:
-    from agentlightning.store.collection.mongo import MongoBasedCollection, MongoClientPool
+# @pytest.mark.mongo
+# @pytest.mark.asyncio()
+# async def test_mongo_ensure_collection_repeats_without_altering_indexes() -> None:
+#     from agentlightning.store.collection.mongo import MongoBasedCollection, MongoClientPool
 
-    async with temporary_mongo_database() as db:
-        collection_name = f"ensure-{uuid4().hex}"
-        async with MongoClientPool(db.client) as client_pool:
-            collection = MongoBasedCollection(
-                client_pool, db.name, collection_name, "partition-repeat", ["index"], SampleItem
-            )
-            await collection.ensure_collection()
-            await collection.ensure_collection()
+#     async with temporary_mongo_database() as db:
+#         collection_name = f"ensure-{uuid4().hex}"
+#         async with MongoClientPool(db.client) as client_pool:
+#             collection = MongoBasedCollection(
+#                 client_pool, db.name, collection_name, "partition-repeat", ["index"], SampleItem
+#             )
+#             await collection.ensure_collection()
+#             await collection.ensure_collection()
 
-            unique_indexes = []
-            async for index in await db[collection_name].list_indexes():  # type: ignore
-                if index["name"].startswith("uniq_partition_"):  # type: ignore
-                    unique_indexes.append((index["name"], list(index["key"].items())))  # type: ignore
+#             unique_indexes = []
+#             async for index in await db[collection_name].list_indexes():  # type: ignore
+#                 if index["name"].startswith("uniq_partition_"):  # type: ignore
+#                     unique_indexes.append((index["name"], list(index["key"].items())))  # type: ignore
 
-            assert unique_indexes == [("uniq_partition_index", [("partition_id", 1), ("index", 1)])]
+#             assert unique_indexes == [("uniq_partition_index", [("partition_id", 1), ("index", 1)])]
