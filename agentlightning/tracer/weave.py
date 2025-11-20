@@ -8,7 +8,6 @@ from contextlib import asynccontextmanager, contextmanager
 from typing import AsyncGenerator, Iterator, Optional
 
 import opentelemetry.trace as trace_api
-import weave
 
 from agentlightning.store.base import LightningStore
 
@@ -33,6 +32,11 @@ class WeaveTracer(OtelTracer):
     def _initialize_tracer_provider(self, worker_id: int):
         super()._initialize_tracer_provider(worker_id)
         logger.info(f"[Worker {worker_id}] Setting up Weave tracer...")
+
+        try:
+            import weave
+        except ImportError:
+            raise RuntimeError("Weave is not installed. Install it to use WeaveTracer.")
 
         if weave.get_client() is None:  # type: ignore
             try:
@@ -119,6 +123,11 @@ class WeaveTracer(OtelTracer):
         arg_op: Optional[str],
         arg_inputs: Optional[dict[str, str]],
     ):
+        try:
+            import weave
+        except ImportError:
+            raise RuntimeError("Weave is not installed. Install it to use WeaveTracer.")
+
         weave_client = weave.get_client()  # type: ignore
         if not weave_client:
             raise RuntimeError("Weave client is not initialized. Call init_worker() first.")
