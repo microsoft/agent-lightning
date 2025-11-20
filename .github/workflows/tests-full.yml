@@ -35,5 +35,6 @@ jobs:
       - name: Check disk space
         run: df -h
       - uses: actions/checkout@v4
+      - run: az login --identity
       - name: Check Azure status
         run: az account show
