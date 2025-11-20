@@ -2,43 +2,105 @@ name: GPU Test
 permissions:
   contents: read
 on:
+  schedule:
+    # Every day at 5 AM UTC+8
+    - cron: '0 21 * * *'
+
   workflow_dispatch:
 
+  repository_dispatch:
+    types: [ci-gpu, ci-all]
+
+run-name: >-
+  ${{ github.event_name == 'repository_dispatch'
+      && format(
+        'PR #{0} - Label {1} - {2}',
+        github.event.client_payload.pull_number,
+        github.event.client_payload.ci_label,
+        github.event.client_payload.correlation_id
+      )
+      || format('GPU Test - {0}', github.event_name) }}
+
 jobs:
-  debug:
+  tests-full:
+    if: >
+      github.event_name != 'repository_dispatch' ||
+      github.event.action == 'ci-gpu' ||
+      github.event.action == 'ci-all'
+    name: GPU Test with Python ${{ matrix.python-version }} (${{ matrix.setup-script }})
+
     runs-on: [self-hosted, 1ES.Pool=agl-runner-gpu-eastus2]
     timeout-minutes: 30
+    strategy:
+      matrix:
+        include:
+        - python-version: '3.10'
+          setup-script: 'legacy'
+        - python-version: '3.12'
+          setup-script: 'stable'
+        - python-version: '3.13'
+          setup-script: 'latest'
+      fail-fast: false
     steps:
       - name: Check GPU status
-        run: nvidia-smi
+        run: |
+          nvidia-smi
+          docker run --rm --runtime=nvidia --gpus all ubuntu nvidia-smi
       - uses: actions/checkout@v4
-      - name: Debug
+        with:
+          ref: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.pr_ref || (github.event.pull_request.number && format('refs/pull/{0}/merge', github.event.pull_request.number)) || github.ref }}
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          python-version: ${{ matrix.python-version }}
+      - name: Upgrade dependencies (latest)
+        run: uv lock --upgrade
+        if: matrix.setup-script == 'latest'
+      - name: Sync dependencies (latest)
+        run: uv sync --frozen --no-default-groups --extra apo --group dev --group agents --group torch-gpu-stable
+        if: matrix.setup-script == 'latest'
+      - name: Sync dependencies (stable & legacy)
+        run: uv sync --frozen --no-default-groups --extra apo --group dev --group agents --group torch-gpu-${{ matrix.setup-script }}
+        if: matrix.setup-script != 'latest'
+      - name: Freeze dependencies
         run: |
           set -ex
-          cat /etc/group
-          cat /etc/passwd
-          id
-        shell: bash
-      # - name: Docker env debug
-      #   run: |
-      #     newgrp docker
-      #     echo "== id =="
-      #     id
-      #     echo
-      #     echo "== docker group entry =="
-      #     getent group docker || echo "no docker group"
-      #     echo
-      #     echo "== docker.sock =="
-      #     ls -l /var/run/docker.sock || echo "no docker.sock"
-      #     echo
-      #     echo "== docker service =="
-      #     sudo systemctl status docker --no-pager || echo "docker service status failed"
-      #     echo
-      #     echo "== dockerd processes =="
-      #     ps aux | grep '[d]ockerd' || echo "no dockerd"
-      #   shell: bash
-      - name: Debug 2
+          uv pip freeze | tee requirements-freeze.txt
+          echo "UV_LOCKED=1" >> $GITHUB_ENV
+          echo "UV_NO_SYNC=1" >> $GITHUB_ENV
+      - name: Upload dependencies artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependencies-${{ matrix.python-version }}-${{ matrix.setup-script }}
+          path: requirements-freeze.txt
+          compression-level: 0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - name: Install JavaScript dependencies
+        run: cd dashboard && npm ci
+      - name: Build dashboard
+        run: cd dashboard && npm run build
+
+      - name: Start MongoDB
+        uses: supercharge/mongodb-github-action@1.12.1
+        with:
+          mongodb-version: latest
+          mongodb-replica-set: test-rs
+          mongodb-port: 27017
+
+      - name: Launch LiteLLM Proxy
         run: |
-          # newgrp docker
-          docker run hello-world
-        shell: bash
+          ./scripts/litellm_run.sh
+        env:
+          AZURE_API_BASE: ${{ secrets.AZURE_GROUP_SUBSCRIPTION_API_BASE }}
+          AZURE_API_KEY: ${{ secrets.AZURE_GROUP_SUBSCRIPTION_API_KEY }}
+
+      - name: Run tests
+        run: |
+          uv run pytest -v --durations=0 tests
+        env:
+          PYTEST_ADDOPTS: "--color=yes"
+          OPENAI_BASE_URL: http://localhost:12306/
+          OPENAI_API_KEY: dummy
