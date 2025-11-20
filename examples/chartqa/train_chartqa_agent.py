@@ -21,6 +21,7 @@ to train agents on the ChartQA dataset for visual reasoning about charts and gra
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 from copy import deepcopy
 from datetime import datetime
@@ -30,6 +31,11 @@ import pandas as pd
 from chartqa_agent import LitChartQAAgent
 
 import agentlightning as agl
+
+# Calculate absolute path to images directory (portable across environments)
+# Use realpath to resolve symlinks and match vLLM's path validation
+CHARTQA_EXAMPLES_DIR = os.path.dirname(os.path.abspath(__file__))
+CHARTQA_IMAGES_DIR = os.path.realpath(os.path.join(CHARTQA_EXAMPLES_DIR, "data", "images"))
 
 RL_TRAINING_CONFIG: Dict[str, Any] = {
     "algorithm": {
@@ -52,6 +58,11 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
             "name": "vllm",
             "gpu_memory_utilization": 0.6,
             "enable_prefix_caching": True,  # Cache vision tokens
+            "engine_kwargs": {
+                "vllm": {
+                    "allowed_local_media_path": CHARTQA_IMAGES_DIR,
+                }
+            },
         },
         "actor": {
             "ppo_mini_batch_size": 2,
@@ -146,6 +157,58 @@ def config_train_llama() -> Dict[str, Any]:
 
 def train(config: Dict[str, Any], active_agent: Optional[str]) -> None:
     """Train the ChartQA agent with the given configuration."""
+
+    # Initialize Ray debugpy on port 5679
+    try:
+        import debugpy
+        import ray
+
+        # Check if we're in a Ray worker
+        if ray.is_initialized():
+            # Only attach debugger if not already attached
+            if not debugpy.is_client_connected():
+                debugpy.listen(("0.0.0.0", 5679))
+                print(f"[DEBUG] Debugpy listening on port 5679 (Ray worker PID: {os.getpid()})")
+                print("[DEBUG] Waiting for debugger to attach...")
+                debugpy.wait_for_client()
+                print("[DEBUG] Debugger attached!")
+        else:
+            # For main process, optionally enable debugging
+            if os.getenv("ENABLE_DEBUG", "0") == "1":
+                debugpy.listen(("0.0.0.0", 5679))
+                print(f"[DEBUG] Debugpy listening on port 5679 (Main process PID: {os.getpid()})")
+                print("[DEBUG] Waiting for debugger to attach...")
+                debugpy.wait_for_client()
+                print("[DEBUG] Debugger attached!")
+    except ImportError:
+        print("[WARNING] debugpy not installed. Skipping debug setup.")
+    except Exception as e:
+        print(f"[WARNING] Failed to initialize debugpy: {e}")
+
+    # Setup timestamped file logging
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_dir = "logs"
+    log_file = os.path.join(log_dir, f"chartqa_training_{timestamp}.log")
+
+    # Create log directory
+    os.makedirs(log_dir, exist_ok=True)
+
+    # Configure logging with both console and file output
+    agl.setup_logging(level="DEBUG", apply_to=["agentlightning", __name__])
+
+    # Add file handler manually
+    file_handler = logging.FileHandler(log_file, encoding="utf-8")
+    file_handler.setLevel(logging.DEBUG)
+    formatter = logging.Formatter(
+        "%(asctime)s [%(levelname)s] (Process-%(process)d %(name)s)   %(message)s",
+        datefmt="%H:%M:%S"
+    )
+    file_handler.setFormatter(formatter)
+    logging.getLogger("agentlightning").addHandler(file_handler)
+    logging.getLogger(__name__).addHandler(file_handler)
+
+    logger = logging.getLogger(__name__)
+    logger.info(f"Training started - logs saved to {log_file}")
 
     agent = LitChartQAAgent()
     algorithm = agl.VERL(config)
