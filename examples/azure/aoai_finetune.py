@@ -376,10 +376,15 @@ class AzureOpenAIFinetune(Algorithm):
                 training_file=train_file_id,
                 model=base_model,
                 seed=self.seed,
-                hyperparameters={
-                    "batch_size": self.finetune_batch_size,
-                    "learning_rate_multiplier": self.finetune_learning_rate,
-                    "n_epochs": self.finetune_epochs,
+                method={
+                    "type": "supervised",
+                    "supervised": {
+                        "hyperparameters": {
+                            "batch_size": self.finetune_batch_size,
+                            "learning_rate_multiplier": self.finetune_learning_rate,
+                            "n_epochs": self.finetune_epochs,
+                        }
+                    },
                 },
                 # TODO: continuously adding suffix will make model names very long after a few iterations
                 # investigate if we can just specify the fine-tuned model name directly
