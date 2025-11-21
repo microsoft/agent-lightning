@@ -82,6 +82,10 @@ async def evaluate_q20(
 
     if model_name.startswith("Qwen/"):
         llm_proxy = create_llm_proxy(model_name, "qwen3", port, store, add_return_token_ids=False)
+    elif model_name.startswith("GPT-OSS"):
+        llm_proxy = create_llm_proxy(model_name, "gpt_oss_no_sysprompt", port, store, add_return_token_ids=False)
+    elif model_name.startswith("meta-llama"):
+        llm_proxy = create_llm_proxy(model_name, "llama3", port, store, add_return_token_ids=False)
     else:
         console.print(f"Assuming {model_name} is an OpenAI model.")
         llm_proxy = LLMProxy(
