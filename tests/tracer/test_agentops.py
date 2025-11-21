@@ -1,26 +1,84 @@
 # Copyright (c) Microsoft. All rights reserved.
 
+from __future__ import annotations
+
 import multiprocessing
 import sys
-from typing import Any, Callable, Coroutine, Optional, Union
+import threading
+import time
+from typing import Any, Callable, Coroutine, List, Optional, Union
 
 import agentops
 import pytest
+import uvicorn
 from agentops.sdk.core import TraceContext
+from fastapi import FastAPI, Request
+from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import (
+    ExportTraceServiceRequest,
+    ExportTraceServiceResponse,
+)
 from opentelemetry.sdk.trace import ReadableSpan
 from opentelemetry.trace.status import StatusCode
+from portpicker import pick_unused_port
 
 from agentlightning.store.base import LightningStore, LightningStoreCapabilities
 from agentlightning.tracer.agentops import AgentOpsTracer
 from agentlightning.types import Span
+from agentlightning.utils import otlp
+
+
+class MockLightningStoreService:
+    """A mock OTLP server to capture trace export requests for testing purposes."""
+
+    def __init__(self) -> None:
+        self.received: List[ExportTraceServiceRequest] = []
+
+    def start_service(self) -> int:
+        app = FastAPI()
+
+        @app.post("/v1/traces")
+        async def _export_traces(request: Request):  # type: ignore
+            async def capture(message: ExportTraceServiceRequest) -> None:
+                self.received.append(message)
+
+            return await otlp.handle_otlp_export(
+                request,
+                ExportTraceServiceRequest,
+                ExportTraceServiceResponse,
+                capture,
+                signal_name="traces",
+            )
+
+        port = pick_unused_port()
+        config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="error")
+        self.server = uvicorn.Server(config)
+        self.thread = threading.Thread(target=self.server.run, daemon=True)
+        self.thread.start()
+        timeout = time.time() + 5
+        while not getattr(self.server, "started", False):
+            if time.time() > timeout:
+                raise RuntimeError("OTLP test server failed to start")
+            if not self.thread.is_alive():
+                raise RuntimeError("OTLP test server thread exited before startup")
+            time.sleep(0.01)
+
+        return port
+
+    def stop_service(self) -> None:
+        self.server.should_exit = True
+        self.thread.join(timeout=5)
+
+    def get_traces(self) -> List[ExportTraceServiceRequest]:
+        return self.received
 
 
 class MockLightningStore(LightningStore):
     """A minimal stub-only LightningStore, only implements methods likely used in tests."""
 
-    def __init__(self) -> None:
+    def __init__(self, server_port: int) -> None:
         super().__init__()
         self.otlp_traces = False
+        self.server_port = server_port
 
     def enable_otlp_traces(self) -> None:
         self.otlp_traces = True
@@ -51,7 +109,7 @@ class MockLightningStore(LightningStore):
         )
 
     def otlp_traces_endpoint(self) -> str:
-        return "dump://"
+        return f"http://127.0.0.1:{self.server_port}/v1/traces"
 
 
 def _func_with_exception():
@@ -166,6 +224,9 @@ def _run_async(coro: Callable[[], Coroutine[Any, Any, Any]]) -> None:
 
 
 async def _test_agentops_trace_with_store_or_not_imp():
+    mock_service = MockLightningStoreService()
+    port = mock_service.start_service()
+
     tracer = AgentOpsTracer()
     tracer.init()
     tracer.init_worker(0)
@@ -177,7 +238,7 @@ async def _test_agentops_trace_with_store_or_not_imp():
         assert len(spans) > 0
 
         # Using AgentOpsTracer to trace a function with providing a store which disabled native otlp exporter, rollout_id, and attempt_id.
-        store = MockLightningStore()
+        store = MockLightningStore(port)
         async with tracer.trace_context(
             name="agentops_test", store=store, rollout_id="test_rollout_id", attempt_id="test_attempt_id"
         ):
@@ -192,7 +253,11 @@ async def _test_agentops_trace_with_store_or_not_imp():
         ):
             _func_without_exception()
         spans = tracer.get_last_trace()
+        dumped_spans = mock_service.get_traces()
         assert len(spans) > 0
+        assert len(dumped_spans) > 0
     finally:
         tracer.teardown_worker(0)
         tracer.teardown()
+
+        mock_service.stop_service()
