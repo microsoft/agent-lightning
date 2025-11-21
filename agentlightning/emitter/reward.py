@@ -129,12 +129,13 @@ def reward(fn: FnType) -> FnType:
         return wrapper  # type: ignore
 
 
-def emit_reward(reward: float, auto_export: bool = True) -> ReadableSpan:
+def emit_reward(reward: float, *, metadata: Dict[str, Any] | None = None, auto_export: bool = True) -> ReadableSpan:
     """Emit a reward value as an OpenTelemetry span.
 
     Args:
         reward: Numeric reward to record. Integers and booleans are converted to
             floating point numbers for consistency.
+        metadata: Optional additional metadata to attach to the span.
         auto_export: Whether to export the span automatically.
 
     Returns:

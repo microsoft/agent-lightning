@@ -12,6 +12,8 @@ logger = logging.getLogger(__name__)
 def emit_message(message: str) -> None:
     """Emit a textual message as an OpenTelemetry span.
 
+    Commonly used in send debugging and logging messages.
+
     Args:
         message: Human readable message to attach as a span attribute.
 
