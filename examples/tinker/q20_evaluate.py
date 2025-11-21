@@ -168,6 +168,10 @@ async def evaluate_q20(
                 )
                 result_json: dict[str, Any] = {"index": index, **flow.state.model_dump()}
             except Exception as e:
+                # If on CI, directly raise the exception
+                if ci:
+                    raise
+
                 result_json = {
                     "index": index,
                     "answer": row["answer"],

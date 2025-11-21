@@ -187,6 +187,8 @@ class TinkerLLM(CustomLLM):
                 if not self._validate_role(role):
                     assert False, "This should never happen"
                 content = parsed_response["content"]
+                if not content:
+                    raise ValueError("Parsed content is empty. Original response: " + str(response))
                 tool_calls = parsed_response.get("tool_calls", None)
                 if tool_calls:
                     tool_calls = [self._parse_tool_call(tool_call) for tool_call in tool_calls]
