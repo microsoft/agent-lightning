@@ -154,7 +154,7 @@ async def evaluate_q20(
             if seed is not None
             else df.sample(n=n_samples)  # type: ignore
         )
-        for cnt, (index, row) in enumerate(sampled_df.iterrows()):  # type: ignore
+        for index, row in sampled_df.iterrows():  # type: ignore
             if search_tool:
                 search_tool.num_called = 0
 
@@ -181,9 +181,6 @@ async def evaluate_q20(
                 }
             with output_path.open("a") as f:
                 f.write(json.dumps(result_json) + "\n")
-
-            if ci and cnt >= 4:
-                break
 
         if ci:
             df_result = pd.read_json(output_path, lines=True)  # type: ignore

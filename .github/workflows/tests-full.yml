@@ -49,7 +49,7 @@ jobs:
           ref: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.pr_ref || (github.event.pull_request.number && format('refs/pull/{0}/merge', github.event.pull_request.number)) || github.ref }}
       - uses: astral-sh/setup-uv@v7
         with:
-          enable-cache: false
+          enable-cache: true
           python-version: ${{ matrix.python-version }}
       - name: Upgrade dependencies (latest)
         run: uv lock --upgrade
