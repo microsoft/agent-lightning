@@ -1,6 +1,10 @@
+# Copyright (c) Microsoft. All rights reserved.
+
+"""Generating random test data for benchmarking."""
+
 import random
 import string
-from typing import Any, Callable, Dict, Optional, Tuple, Union
+from typing import Any, Callable, Dict, Optional, Tuple, Union, cast
 
 
 def random_string(length: int, *, alphabet: Optional[str] = None) -> str:
@@ -9,12 +13,12 @@ def random_string(length: int, *, alphabet: Optional[str] = None) -> str:
 
     Args:
         length: Length of the generated string.
-        alphabet: Optional character set to draw from. If None, uses [A-Za-z0-9.].
+        alphabet: Optional character set to draw from. If None, uses [A-Za-z0-9].
     """
     if length < 0:
         raise ValueError("String length cannot be negative.")
 
-    alphabet = alphabet or (string.ascii_letters + string.digits + ".")
+    alphabet = alphabet or (string.ascii_letters + string.digits)
     return "".join(random.choices(alphabet, k=length))
 
 
@@ -50,7 +54,7 @@ def default_value_factory(length: int) -> str:
     return random_string(length)
 
 
-def generate_structured_dict(
+def random_dict(
     *,
     depth: Union[int, Tuple[int, int]],
     breadth: Union[int, Tuple[int, int]],
@@ -103,14 +107,27 @@ def generate_structured_dict(
     return build(1)
 
 
+def flatten_dict(d: Dict[str, Any], prefix: str = "") -> Dict[str, Any]:
+    """Flatten a nested dictionary into a single level dictionary. Keys are joined by dots."""
+
+    result: Dict[str, Any] = {}
+    for key, value in d.items():
+        if isinstance(value, dict):
+            result.update(flatten_dict(cast(Dict[str, Any], value), f"{prefix}.{key}" if prefix else key))
+        else:
+            result[f"{prefix}.{key}" if prefix else key] = value
+    return result
+
+
 if __name__ == "__main__":
     # Example usage
     import json
 
-    structured_dict = generate_structured_dict(
-        depth=(2, 4),
-        breadth=(2, 5),
-        key_length=(3, 8),
-        value_length=(5, 15),
+    structured_dict = random_dict(
+        depth=(1, 3),
+        breadth=(2, 6),
+        key_length=(3, 20),
+        value_length=(5, 300),
     )
-    print(json.dumps(structured_dict, indent=2))
+
+    print(json.dumps(flatten_dict(structured_dict), indent=2))
