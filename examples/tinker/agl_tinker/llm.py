@@ -27,7 +27,8 @@ from tinker_cookbook.renderers import Message as TinkerMessage
 from tinker_cookbook.renderers import Renderer
 from tinker_cookbook.renderers import ToolCall as TinkerToolCall
 from tinker_cookbook.renderers import get_renderer
-from transformers import AutoTokenizer, PreTrainedTokenizer
+from tinker_cookbook.tokenizer_utils import get_tokenizer
+from transformers import PreTrainedTokenizer
 
 from agentlightning.llm_proxy import LLMProxy, ModelConfig
 from agentlightning.store import LightningStore
@@ -291,7 +292,8 @@ def create_llm_proxy(
     """
     service_client = tinker.ServiceClient()
     sampling_client = service_client.create_sampling_client(base_model=model_name)
-    tokenizer = cast(PreTrainedTokenizer, AutoTokenizer.from_pretrained(model_name))  # type: ignore
+
+    tokenizer = get_tokenizer(model_name)
     tinker_llm = TinkerLLM(
         model_name=model_name,
         sampling_client=sampling_client,
@@ -306,5 +308,13 @@ def create_llm_proxy(
         num_retries=2,
         # Must use thread mode here because otherwise the Tinker sampling client will hang.
         launch_mode="thread",
-        callbacks=["opentelemetry"] if add_return_token_ids else None,
+        # If not adding return token ids, we need to add the opentelemetry callback.
+        # Otherwise, we set it to default.
+        callbacks=["opentelemetry"] if not add_return_token_ids else None,
+        # Lengthened timeout
+        litellm_config={
+            "router_settings": {
+                "timeout": 300,
+            }
+        },
     )

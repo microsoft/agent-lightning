@@ -57,6 +57,7 @@ async def evaluate_q20(
     output_file: str,
     dataset_path: str,
     seed: Optional[int] = 42,
+    ci: bool = False,
 ):
     """Evaluate a model on the 20 Questions game.
 
@@ -67,6 +68,7 @@ async def evaluate_q20(
         output_file: Where to append JSONL results.
         dataset_path: CSV file containing category and answer columns.
         seed: Optional random seed for shuffling the dataset; ``None`` disables deterministic shuffling.
+        ci: Whether to run in CI mode. Fast verification.
     """
 
     store = LightningStoreThreaded(InMemoryLightningStore())
@@ -80,6 +82,10 @@ async def evaluate_q20(
 
     if model_name.startswith("Qwen/"):
         llm_proxy = create_llm_proxy(model_name, "qwen3", port, store, add_return_token_ids=False)
+    elif model_name.startswith("GPT-OSS"):
+        llm_proxy = create_llm_proxy(model_name, "gpt_oss_no_sysprompt", port, store, add_return_token_ids=False)
+    elif model_name.startswith("meta-llama"):
+        llm_proxy = create_llm_proxy(model_name, "llama3", port, store, add_return_token_ids=False)
     else:
         console.print(f"Assuming {model_name} is an OpenAI model.")
         llm_proxy = LLMProxy(
@@ -101,11 +107,17 @@ async def evaluate_q20(
     current_model_list = llm_proxy.model_list.copy()
     if not any(model["model_name"] == answerer_model_name for model in current_model_list):
         current_model_list.append(
-            {"model_name": answerer_model_name, "litellm_params": {"model": "openai/" + answerer_model_name}}
+            {
+                "model_name": answerer_model_name,
+                "litellm_params": {"model": "openai/" + answerer_model_name, "timeout": 180},
+            }
         )
     if not any(model["model_name"] == search_model_name for model in current_model_list):
         current_model_list.append(
-            {"model_name": search_model_name, "litellm_params": {"model": "openai/" + search_model_name}}
+            {
+                "model_name": search_model_name,
+                "litellm_params": {"model": "openai/" + search_model_name, "timeout": 180},
+            }
         )
     llm_proxy.update_model_list(current_model_list)
     console.print("Model list:", llm_proxy.model_list)
@@ -113,7 +125,7 @@ async def evaluate_q20(
     try:
         await llm_proxy.start()
         player_llm = CrewLLM(
-            model="openai/" + model_name, base_url=f"http://localhost:{port}/v1", api_key="dummy", timeout=60.0
+            model="openai/" + model_name, base_url=f"http://localhost:{port}/v1", api_key="dummy", timeout=180.0
         )
         answer_llm = CrewLLM(
             model="openai/" + answerer_model_name,
@@ -121,6 +133,7 @@ async def evaluate_q20(
             api_key="dummy",
             reasoning_effort="low",
             response_format=AnswererResponse,
+            timeout=180.0,
         )
         search_tool = (
             SearchTool(
@@ -129,18 +142,19 @@ async def evaluate_q20(
                     base_url=f"http://localhost:{port}/v1",
                     api_key="dummy",
                     reasoning_effort="none",
-                    timeout=60.0,
+                    timeout=180.0,
                 )
             )
             if search
             else None
         )
+        n_samples = len(df) if not ci else 5
         sampled_df = (
-            df.sample(n=len(df), random_state=seed)  # type: ignore
+            df.sample(n=n_samples, random_state=seed)  # type: ignore
             if seed is not None
-            else df.sample(n=len(df))  # type: ignore
+            else df.sample(n=n_samples)  # type: ignore
         )
-        for index, row in sampled_df.iterrows():  # type: ignore
+        for cnt, (index, row) in enumerate(sampled_df.iterrows()):  # type: ignore
             if search_tool:
                 search_tool.num_called = 0
 
@@ -163,6 +177,15 @@ async def evaluate_q20(
                 }
             with output_path.open("a") as f:
                 f.write(json.dumps(result_json) + "\n")
+
+            if ci and cnt >= 4:
+                break
+
+        if ci:
+            df_result = pd.read_json(output_path, lines=True)  # type: ignore
+            print(f"Evaluation results:\n{df_result.to_dict(orient='records')}")  # type: ignore
+            assert len(df_result["correct"].dropna()) == n_samples, f"{n_samples} evaluation results are required in CI mode."  # type: ignore
+            assert df_result["correct"].sum() > 0, "At least one correct evaluation result is required in CI mode."  # type: ignore
     finally:
         await llm_proxy.stop()
 
@@ -206,6 +229,11 @@ def main(argv: Optional[List[str]] = None) -> None:
         default=42,
         help="Random seed for shuffling the dataset. Use -1 to disable deterministic shuffling.",
     )
+    parser.add_argument(
+        "--ci",
+        action="store_true",
+        help="Run in CI mode (smaller dataset, smaller batch).",
+    )
 
     args = parser.parse_args(argv)
     asyncio.run(
@@ -216,6 +244,7 @@ def main(argv: Optional[List[str]] = None) -> None:
             output_file=args.output_file,
             dataset_path=args.dataset,
             seed=None if args.seed == -1 else args.seed,
+            ci=args.ci,
         )
     )
 
