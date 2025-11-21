@@ -853,7 +853,6 @@ class StreamConversionMiddleware(BaseHTTPMiddleware):
         )  # e.g., "stop", "length", "tool_calls", "content_filter"
 
         def sse_chunk(obj: Dict[str, Any]) -> str:
-            print("sse_chunk: ", obj)
             return f"data: {json.dumps(obj, ensure_ascii=False)}\n\n"
 
         # 1) initial chunk with the role
