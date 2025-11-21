@@ -107,11 +107,17 @@ async def evaluate_q20(
     current_model_list = llm_proxy.model_list.copy()
     if not any(model["model_name"] == answerer_model_name for model in current_model_list):
         current_model_list.append(
-            {"model_name": answerer_model_name, "litellm_params": {"model": "openai/" + answerer_model_name}}
+            {
+                "model_name": answerer_model_name,
+                "litellm_params": {"model": "openai/" + answerer_model_name, "timeout": 180},
+            }
         )
     if not any(model["model_name"] == search_model_name for model in current_model_list):
         current_model_list.append(
-            {"model_name": search_model_name, "litellm_params": {"model": "openai/" + search_model_name}}
+            {
+                "model_name": search_model_name,
+                "litellm_params": {"model": "openai/" + search_model_name, "timeout": 180},
+            }
         )
     llm_proxy.update_model_list(current_model_list)
     console.print("Model list:", llm_proxy.model_list)
@@ -119,7 +125,7 @@ async def evaluate_q20(
     try:
         await llm_proxy.start()
         player_llm = CrewLLM(
-            model="openai/" + model_name, base_url=f"http://localhost:{port}/v1", api_key="dummy", timeout=60.0
+            model="openai/" + model_name, base_url=f"http://localhost:{port}/v1", api_key="dummy", timeout=180.0
         )
         answer_llm = CrewLLM(
             model="openai/" + answerer_model_name,
@@ -127,6 +133,7 @@ async def evaluate_q20(
             api_key="dummy",
             reasoning_effort="low",
             response_format=AnswererResponse,
+            timeout=180.0,
         )
         search_tool = (
             SearchTool(
@@ -135,7 +142,7 @@ async def evaluate_q20(
                     base_url=f"http://localhost:{port}/v1",
                     api_key="dummy",
                     reasoning_effort="none",
-                    timeout=60.0,
+                    timeout=180.0,
                 )
             )
             if search

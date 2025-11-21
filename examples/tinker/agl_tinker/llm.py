@@ -311,4 +311,10 @@ def create_llm_proxy(
         # If not adding return token ids, we need to add the opentelemetry callback.
         # Otherwise, we set it to default.
         callbacks=["opentelemetry"] if not add_return_token_ids else None,
+        # Lengthened timeout
+        litellm_config={
+            "router_settings": {
+                "timeout": 300,
+            }
+        },
     )
