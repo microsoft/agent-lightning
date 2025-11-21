@@ -185,7 +185,8 @@ sql = [
   "nltk",
 ]
 crewai = [
-  "crewai[tools]>=1.2.0",
+  # https://github.com/crewAIInc/crewAI/issues/3959
+  "crewai[tools]==1.2.0",
 ]
 
 # Summarize into large installable groups.
