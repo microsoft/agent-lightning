@@ -187,8 +187,13 @@ class TinkerLLM(CustomLLM):
                 if not self._validate_role(role):
                     assert False, "This should never happen"
                 content = parsed_response["content"]
+                # NOTE(yuge): I thought about adding this to make it more robust to empty responses,
+                # but later I found it's a configuration error in my renderer. So I think it's better
+                # to just log a warning and go with the default path.
+                # if not content:
+                #     raise ValueError("Parsed content is empty. Original response: " + str(response))
                 if not content:
-                    raise ValueError("Parsed content is empty. Original response: " + str(response))
+                    logger.warning("Parsed content is empty. Original response: " + str(response))
                 tool_calls = parsed_response.get("tool_calls", None)
                 if tool_calls:
                     tool_calls = [self._parse_tool_call(tool_call) for tool_call in tool_calls]

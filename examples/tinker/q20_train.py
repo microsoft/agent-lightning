@@ -173,10 +173,10 @@ async def algo(search: bool, model: Literal["qwen4b", "qwen30b"], port: int, ci:
 
     if model == "qwen4b":
         model_name = "Qwen/Qwen3-4B-Instruct-2507"
-        renderer_name = "qwen3"
+        renderer_name = "qwen3_instruct"
     elif model == "qwen30b":
         model_name = "Qwen/Qwen3-30B-A3B-Instruct-2507"
-        renderer_name = "qwen3"
+        renderer_name = "qwen3_instruct"
     else:
         raise ValueError(f"Invalid model: {model}")
 
