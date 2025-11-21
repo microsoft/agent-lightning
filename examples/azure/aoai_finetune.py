@@ -391,7 +391,7 @@ class AzureOpenAIFinetune(Algorithm):
                 suffix=f"v{next_iteration:02d}",
                 # NOTE: https://learn.microsoft.com/en-us/azure/ai-foundry/openai/how-to/fine-tuning
                 # Other options are "GlobalStandard" and "Standard"
-                extra_body={"trainingType": "Developer"},
+                extra_body={"trainingType": "GlobalStandard"},
             )
             job_id = job.id
             self._log_info("Fine-tuning job %s created for base model %s.", job_id, base_model)
