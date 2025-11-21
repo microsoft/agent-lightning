@@ -306,5 +306,7 @@ def create_llm_proxy(
         num_retries=2,
         # Must use thread mode here because otherwise the Tinker sampling client will hang.
         launch_mode="thread",
-        callbacks=["opentelemetry"] if add_return_token_ids else None,
+        # If not adding return token ids, we need to add the opentelemetry callback.
+        # Otherwise, we set it to default.
+        callbacks=["opentelemetry"] if not add_return_token_ids else None,
     )
