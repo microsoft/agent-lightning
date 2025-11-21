@@ -1,0 +1,19 @@
+# This workflow is used to benchmark the performance of the project.
+# It's kept as a placeholder for now.
+
+name: Benchmark
+permissions:
+  contents: read
+on:
+  workflow_dispatch:
+
+jobs:
+  benchmark:
+    name: Benchmark
+    runs-on: [self-hosted, 1ES.Pool=agl-runner-gpu]
+    timeout-minutes: 60
+    steps:
+      - name: Check GPU status
+        run: nvidia-smi
+      - name: Check disk space
+        run: df -h
