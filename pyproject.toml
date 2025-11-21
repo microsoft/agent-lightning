@@ -38,6 +38,11 @@ verl = [
   "vllm>=0.8.4", # Due to interface change of ExternalZeroMQDistributedExecutor
 ]
 
+# Store-related dependencies.
+mongo = [
+  "pymongo",
+]
+
 [project.scripts]
 agl = "agentlightning.cli:main"
 
@@ -95,7 +100,8 @@ torch-stable = [
   "transformers>=4.55.0",
   # vLLM 0.11.1 requires PyTorch 2.9.0, which is incompatible with flash-attn
   # https://github.com/Dao-AILab/flash-attention/issues/1967
-  "vllm>=0.10.2,!=0.11.1",
+  # Similar issues with vLLM 0.11.2
+  "vllm>=0.10.2,!=0.11.1,!=0.11.2",
   # LiteLLM can then be upgraded with new vLLM
   "litellm[proxy]>=1.78",
 ]
@@ -284,6 +290,13 @@ exclude = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+  "openai: tests that require OpenAI API",
+  "gpu: tests that require GPU",
+  "agentops: tests that require AgentOps",
+  "llmproxy: tests that require LiteLLM",
+  "mongo: tests that require MongoDB",
+]
 
 [tool.black]
 line-length = 120
