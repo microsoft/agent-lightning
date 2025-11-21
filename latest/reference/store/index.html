@@ -2691,6 +2691,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#agentlightning.store.collection.LightningCollections.execute" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;execute
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2845,6 +2856,17 @@
   
     <nav class="md-nav" aria-label=" InMemoryLightningCollections">
       <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#agentlightning.store.collection.InMemoryLightningCollections.atomic" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;atomic
+      
+    </span>
+  </a>
+  
+</li>
         
           <li class="md-nav__item">
   <a href="#agentlightning.store.collection.InMemoryLightningCollections.evict_spans_for_rollout" class="md-nav__link">
@@ -4582,6 +4604,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#agentlightning.store.collection.LightningCollections.execute" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;execute
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -4736,6 +4769,17 @@
   
     <nav class="md-nav" aria-label=" InMemoryLightningCollections">
       <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#agentlightning.store.collection.InMemoryLightningCollections.atomic" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;atomic
+      
+    </span>
+  </a>
+  
+</li>
         
           <li class="md-nav__item">
   <a href="#agentlightning.store.collection.InMemoryLightningCollections.evict_spans_for_rollout" class="md-nav__link">
@@ -7471,8 +7515,6 @@ to avoid busy-waiting.</p>
 
         <p>In-memory implementation of LightningStore using Python data structures.
 Thread-safe and async-compatible but data is not persistent.</p>
-<p>The methods in this class should generally not call each other,
-especially those that are locked.</p>
 
 
 <p><span class="doc-section-title">Parameters:</span></p>
@@ -7559,7 +7601,7 @@ By default, it's a simple size estimator that uses sys.getsizeof.</p>
 
 
 <h4 id="agentlightning.InMemoryLightningStore.get_running_rollouts" class="doc doc-heading">
-<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">get_running_rollouts</span><span class="p">()</span></code>
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">get_running_rollouts</span><span class="p">(</span><span class="n">collections</span><span class="p">)</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-async"><code>async</code></small>
@@ -7650,6 +7692,8 @@ By default, it's a simple size estimator that uses sys.getsizeof.</p>
 <p>If the store implementation is to use the store's default behavior, it's recommended to
 inherit from this class and override the methods if needed.
 Bring your own collection implementation by using a different <code>collections</code> argument.</p>
+<p>The methods in this class should generally not call each other,
+especially those that are locked.</p>
 
 
 <p><span class="doc-section-title">Parameters:</span></p>
@@ -7712,7 +7756,7 @@ Bring your own collection implementation by using a different <code>collections<
 
 
 <h4 id="agentlightning.CollectionBasedLightningStore.add_otel_span" class="doc doc-heading">
-<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">add_otel_span</span><span class="p">(</span><span class="n">rollout_id</span><span class="p">,</span> <span class="n">attempt_id</span><span class="p">,</span> <span class="n">readable_span</span><span class="p">,</span> <span class="n">sequence_id</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">add_otel_span</span><span class="p">(</span><span class="n">collections</span><span class="p">,</span> <span class="n">rollout_id</span><span class="p">,</span> <span class="n">attempt_id</span><span class="p">,</span> <span class="n">readable_span</span><span class="p">,</span> <span class="n">sequence_id</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-async"><code>async</code></small>
@@ -7739,7 +7783,7 @@ Bring your own collection implementation by using a different <code>collections<
 
 
 <h4 id="agentlightning.CollectionBasedLightningStore.add_resources" class="doc doc-heading">
-<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">add_resources</span><span class="p">(</span><span class="n">resources</span><span class="p">)</span></code>
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">add_resources</span><span class="p">(</span><span class="n">collections</span><span class="p">,</span> <span class="n">resources</span><span class="p">)</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-async"><code>async</code></small>
@@ -7766,7 +7810,7 @@ Bring your own collection implementation by using a different <code>collections<
 
 
 <h4 id="agentlightning.CollectionBasedLightningStore.add_span" class="doc doc-heading">
-<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">add_span</span><span class="p">(</span><span class="n">span</span><span class="p">)</span></code>
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">add_span</span><span class="p">(</span><span class="n">collections</span><span class="p">,</span> <span class="n">span</span><span class="p">)</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-async"><code>async</code></small>
@@ -7793,7 +7837,7 @@ Bring your own collection implementation by using a different <code>collections<
 
 
 <h4 id="agentlightning.CollectionBasedLightningStore.dequeue_rollout" class="doc doc-heading">
-<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">dequeue_rollout</span><span class="p">(</span><span class="n">worker_id</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">dequeue_rollout</span><span class="p">(</span><span class="n">collections</span><span class="p">,</span> <span class="n">worker_id</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-async"><code>async</code></small>
@@ -7822,7 +7866,7 @@ Returns <code>None</code> if the queue is empty.</p>
 
 
 <h4 id="agentlightning.CollectionBasedLightningStore.enqueue_rollout" class="doc doc-heading">
-<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">enqueue_rollout</span><span class="p">(</span><span class="nb">input</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">resources_id</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">config</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">metadata</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">enqueue_rollout</span><span class="p">(</span><span class="n">collections</span><span class="p">,</span> <span class="nb">input</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">resources_id</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">config</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">metadata</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-async"><code>async</code></small>
@@ -7849,7 +7893,7 @@ Returns <code>None</code> if the queue is empty.</p>
 
 
 <h4 id="agentlightning.CollectionBasedLightningStore.get_latest_attempt" class="doc doc-heading">
-<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">get_latest_attempt</span><span class="p">(</span><span class="n">rollout_id</span><span class="p">)</span></code>
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">get_latest_attempt</span><span class="p">(</span><span class="n">collections</span><span class="p">,</span> <span class="n">rollout_id</span><span class="p">)</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-async"><code>async</code></small>
@@ -7876,7 +7920,7 @@ Returns <code>None</code> if the queue is empty.</p>
 
 
 <h4 id="agentlightning.CollectionBasedLightningStore.get_latest_resources" class="doc doc-heading">
-<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">get_latest_resources</span><span class="p">()</span></code>
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">get_latest_resources</span><span class="p">(</span><span class="n">collections</span><span class="p">)</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-async"><code>async</code></small>
@@ -7903,7 +7947,7 @@ Returns <code>None</code> if the queue is empty.</p>
 
 
 <h4 id="agentlightning.CollectionBasedLightningStore.get_next_span_sequence_id" class="doc doc-heading">
-<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">get_next_span_sequence_id</span><span class="p">(</span><span class="n">rollout_id</span><span class="p">,</span> <span class="n">attempt_id</span><span class="p">)</span></code>
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">get_next_span_sequence_id</span><span class="p">(</span><span class="n">collections</span><span class="p">,</span> <span class="n">rollout_id</span><span class="p">,</span> <span class="n">attempt_id</span><span class="p">)</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-async"><code>async</code></small>
@@ -7932,7 +7976,7 @@ The store will not issue the same sequence ID twice.</p>
 
 
 <h4 id="agentlightning.CollectionBasedLightningStore.get_resources_by_id" class="doc doc-heading">
-<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">get_resources_by_id</span><span class="p">(</span><span class="n">resources_id</span><span class="p">)</span></code>
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">get_resources_by_id</span><span class="p">(</span><span class="n">collections</span><span class="p">,</span> <span class="n">resources_id</span><span class="p">)</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-async"><code>async</code></small>
@@ -7959,7 +8003,7 @@ The store will not issue the same sequence ID twice.</p>
 
 
 <h4 id="agentlightning.CollectionBasedLightningStore.get_rollout_by_id" class="doc doc-heading">
-<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">get_rollout_by_id</span><span class="p">(</span><span class="n">rollout_id</span><span class="p">)</span></code>
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">get_rollout_by_id</span><span class="p">(</span><span class="n">collections</span><span class="p">,</span> <span class="n">rollout_id</span><span class="p">)</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-async"><code>async</code></small>
@@ -7987,7 +8031,7 @@ The store will not issue the same sequence ID twice.</p>
 
 
 <h4 id="agentlightning.CollectionBasedLightningStore.get_running_rollouts" class="doc doc-heading">
-<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">get_running_rollouts</span><span class="p">()</span></code>
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">get_running_rollouts</span><span class="p">(</span><span class="n">collections</span><span class="p">)</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-async"><code>async</code></small>
@@ -8035,7 +8079,7 @@ It should also be unlocked and let the caller hold the lock.</p>
 
 
 <h4 id="agentlightning.CollectionBasedLightningStore.query_attempts" class="doc doc-heading">
-<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">query_attempts</span><span class="p">(</span><span class="n">rollout_id</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">sort_by</span><span class="o">=</span><span class="s1">&#39;sequence_id&#39;</span><span class="p">,</span> <span class="n">sort_order</span><span class="o">=</span><span class="s1">&#39;asc&#39;</span><span class="p">,</span> <span class="n">limit</span><span class="o">=-</span><span class="mi">1</span><span class="p">,</span> <span class="n">offset</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span></code>
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">query_attempts</span><span class="p">(</span><span class="n">collections</span><span class="p">,</span> <span class="n">rollout_id</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">sort_by</span><span class="o">=</span><span class="s1">&#39;sequence_id&#39;</span><span class="p">,</span> <span class="n">sort_order</span><span class="o">=</span><span class="s1">&#39;asc&#39;</span><span class="p">,</span> <span class="n">limit</span><span class="o">=-</span><span class="mi">1</span><span class="p">,</span> <span class="n">offset</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-async"><code>async</code></small>
@@ -8057,7 +8101,7 @@ It should also be unlocked and let the caller hold the lock.</p>
 
 
 <h4 id="agentlightning.CollectionBasedLightningStore.query_resources" class="doc doc-heading">
-<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">query_resources</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">resources_id</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">resources_id_contains</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">sort_by</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">sort_order</span><span class="o">=</span><span class="s1">&#39;asc&#39;</span><span class="p">,</span> <span class="n">limit</span><span class="o">=-</span><span class="mi">1</span><span class="p">,</span> <span class="n">offset</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span></code>
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">query_resources</span><span class="p">(</span><span class="n">collections</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">resources_id</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">resources_id_contains</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">sort_by</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">sort_order</span><span class="o">=</span><span class="s1">&#39;asc&#39;</span><span class="p">,</span> <span class="n">limit</span><span class="o">=-</span><span class="mi">1</span><span class="p">,</span> <span class="n">offset</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-async"><code>async</code></small>
@@ -8079,7 +8123,7 @@ It should also be unlocked and let the caller hold the lock.</p>
 
 
 <h4 id="agentlightning.CollectionBasedLightningStore.query_rollouts" class="doc doc-heading">
-<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">query_rollouts</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">status_in</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">rollout_id_in</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">rollout_id_contains</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">filter_logic</span><span class="o">=</span><span class="s1">&#39;and&#39;</span><span class="p">,</span> <span class="n">sort_by</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">sort_order</span><span class="o">=</span><span class="s1">&#39;asc&#39;</span><span class="p">,</span> <span class="n">limit</span><span class="o">=-</span><span class="mi">1</span><span class="p">,</span> <span class="n">offset</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">status</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">rollout_ids</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">query_rollouts</span><span class="p">(</span><span class="n">collections</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">status_in</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">rollout_id_in</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">rollout_id_contains</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">filter_logic</span><span class="o">=</span><span class="s1">&#39;and&#39;</span><span class="p">,</span> <span class="n">sort_by</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">sort_order</span><span class="o">=</span><span class="s1">&#39;asc&#39;</span><span class="p">,</span> <span class="n">limit</span><span class="o">=-</span><span class="mi">1</span><span class="p">,</span> <span class="n">offset</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">status</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">rollout_ids</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-async"><code>async</code></small>
@@ -8106,7 +8150,7 @@ It should also be unlocked and let the caller hold the lock.</p>
 
 
 <h4 id="agentlightning.CollectionBasedLightningStore.query_spans" class="doc doc-heading">
-<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">query_spans</span><span class="p">(</span><span class="n">rollout_id</span><span class="p">,</span> <span class="n">attempt_id</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">trace_id</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">trace_id_contains</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">span_id</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">span_id_contains</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">parent_id</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">parent_id_contains</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">name_contains</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">filter_logic</span><span class="o">=</span><span class="s1">&#39;and&#39;</span><span class="p">,</span> <span class="n">limit</span><span class="o">=-</span><span class="mi">1</span><span class="p">,</span> <span class="n">offset</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">sort_by</span><span class="o">=</span><span class="s1">&#39;sequence_id&#39;</span><span class="p">,</span> <span class="n">sort_order</span><span class="o">=</span><span class="s1">&#39;asc&#39;</span><span class="p">)</span></code>
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">query_spans</span><span class="p">(</span><span class="n">collections</span><span class="p">,</span> <span class="n">rollout_id</span><span class="p">,</span> <span class="n">attempt_id</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">trace_id</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">trace_id_contains</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">span_id</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">span_id_contains</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">parent_id</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">parent_id_contains</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">name_contains</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">filter_logic</span><span class="o">=</span><span class="s1">&#39;and&#39;</span><span class="p">,</span> <span class="n">limit</span><span class="o">=-</span><span class="mi">1</span><span class="p">,</span> <span class="n">offset</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">sort_by</span><span class="o">=</span><span class="s1">&#39;sequence_id&#39;</span><span class="p">,</span> <span class="n">sort_order</span><span class="o">=</span><span class="s1">&#39;asc&#39;</span><span class="p">)</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-async"><code>async</code></small>
@@ -8134,7 +8178,7 @@ Returns an empty list if no spans are found.</p>
 
 
 <h4 id="agentlightning.CollectionBasedLightningStore.query_workers" class="doc doc-heading">
-<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">query_workers</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">status_in</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">worker_id_contains</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">filter_logic</span><span class="o">=</span><span class="s1">&#39;and&#39;</span><span class="p">,</span> <span class="n">sort_by</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">sort_order</span><span class="o">=</span><span class="s1">&#39;asc&#39;</span><span class="p">,</span> <span class="n">limit</span><span class="o">=-</span><span class="mi">1</span><span class="p">,</span> <span class="n">offset</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span></code>
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">query_workers</span><span class="p">(</span><span class="n">collections</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">status_in</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">worker_id_contains</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">filter_logic</span><span class="o">=</span><span class="s1">&#39;and&#39;</span><span class="p">,</span> <span class="n">sort_by</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">sort_order</span><span class="o">=</span><span class="s1">&#39;asc&#39;</span><span class="p">,</span> <span class="n">limit</span><span class="o">=-</span><span class="mi">1</span><span class="p">,</span> <span class="n">offset</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-async"><code>async</code></small>
@@ -8156,7 +8200,7 @@ Returns an empty list if no spans are found.</p>
 
 
 <h4 id="agentlightning.CollectionBasedLightningStore.start_attempt" class="doc doc-heading">
-<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">start_attempt</span><span class="p">(</span><span class="n">rollout_id</span><span class="p">)</span></code>
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">start_attempt</span><span class="p">(</span><span class="n">collections</span><span class="p">,</span> <span class="n">rollout_id</span><span class="p">)</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-async"><code>async</code></small>
@@ -8183,7 +8227,7 @@ Returns an empty list if no spans are found.</p>
 
 
 <h4 id="agentlightning.CollectionBasedLightningStore.start_rollout" class="doc doc-heading">
-<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">start_rollout</span><span class="p">(</span><span class="nb">input</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">resources_id</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">config</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">metadata</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">start_rollout</span><span class="p">(</span><span class="n">collections</span><span class="p">,</span> <span class="nb">input</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">resources_id</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">config</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">metadata</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-async"><code>async</code></small>
@@ -8210,7 +8254,7 @@ Returns an empty list if no spans are found.</p>
 
 
 <h4 id="agentlightning.CollectionBasedLightningStore.update_attempt" class="doc doc-heading">
-<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">update_attempt</span><span class="p">(</span><span class="n">rollout_id</span><span class="p">,</span> <span class="n">attempt_id</span><span class="p">,</span> <span class="n">status</span><span class="o">=</span><span class="n">UNSET</span><span class="p">,</span> <span class="n">worker_id</span><span class="o">=</span><span class="n">UNSET</span><span class="p">,</span> <span class="n">last_heartbeat_time</span><span class="o">=</span><span class="n">UNSET</span><span class="p">,</span> <span class="n">metadata</span><span class="o">=</span><span class="n">UNSET</span><span class="p">)</span></code>
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">update_attempt</span><span class="p">(</span><span class="n">collections</span><span class="p">,</span> <span class="n">rollout_id</span><span class="p">,</span> <span class="n">attempt_id</span><span class="p">,</span> <span class="n">status</span><span class="o">=</span><span class="n">UNSET</span><span class="p">,</span> <span class="n">worker_id</span><span class="o">=</span><span class="n">UNSET</span><span class="p">,</span> <span class="n">last_heartbeat_time</span><span class="o">=</span><span class="n">UNSET</span><span class="p">,</span> <span class="n">metadata</span><span class="o">=</span><span class="n">UNSET</span><span class="p">)</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-async"><code>async</code></small>
@@ -8237,7 +8281,7 @@ Returns an empty list if no spans are found.</p>
 
 
 <h4 id="agentlightning.CollectionBasedLightningStore.update_resources" class="doc doc-heading">
-<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">update_resources</span><span class="p">(</span><span class="n">resources_id</span><span class="p">,</span> <span class="n">resources</span><span class="p">)</span></code>
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">update_resources</span><span class="p">(</span><span class="n">collections</span><span class="p">,</span> <span class="n">resources_id</span><span class="p">,</span> <span class="n">resources</span><span class="p">)</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-async"><code>async</code></small>
@@ -8264,7 +8308,7 @@ Returns an empty list if no spans are found.</p>
 
 
 <h4 id="agentlightning.CollectionBasedLightningStore.update_rollout" class="doc doc-heading">
-<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">update_rollout</span><span class="p">(</span><span class="n">rollout_id</span><span class="p">,</span> <span class="nb">input</span><span class="o">=</span><span class="n">UNSET</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="n">UNSET</span><span class="p">,</span> <span class="n">resources_id</span><span class="o">=</span><span class="n">UNSET</span><span class="p">,</span> <span class="n">status</span><span class="o">=</span><span class="n">UNSET</span><span class="p">,</span> <span class="n">config</span><span class="o">=</span><span class="n">UNSET</span><span class="p">,</span> <span class="n">metadata</span><span class="o">=</span><span class="n">UNSET</span><span class="p">)</span></code>
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">update_rollout</span><span class="p">(</span><span class="n">collections</span><span class="p">,</span> <span class="n">rollout_id</span><span class="p">,</span> <span class="nb">input</span><span class="o">=</span><span class="n">UNSET</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="n">UNSET</span><span class="p">,</span> <span class="n">resources_id</span><span class="o">=</span><span class="n">UNSET</span><span class="p">,</span> <span class="n">status</span><span class="o">=</span><span class="n">UNSET</span><span class="p">,</span> <span class="n">config</span><span class="o">=</span><span class="n">UNSET</span><span class="p">,</span> <span class="n">metadata</span><span class="o">=</span><span class="n">UNSET</span><span class="p">)</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-async"><code>async</code></small>
@@ -8291,7 +8335,7 @@ Returns an empty list if no spans are found.</p>
 
 
 <h4 id="agentlightning.CollectionBasedLightningStore.update_worker" class="doc doc-heading">
-<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">update_worker</span><span class="p">(</span><span class="n">worker_id</span><span class="p">,</span> <span class="n">heartbeat_stats</span><span class="o">=</span><span class="n">UNSET</span><span class="p">)</span></code>
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">update_worker</span><span class="p">(</span><span class="n">collections</span><span class="p">,</span> <span class="n">worker_id</span><span class="p">,</span> <span class="n">heartbeat_stats</span><span class="o">=</span><span class="n">UNSET</span><span class="p">)</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-async"><code>async</code></small>
@@ -9591,6 +9635,10 @@ The field must exist in the model. If field might contain null values, in which 
 <h4 id="agentlightning.store.collection.Collection.size" class="doc doc-heading">
 <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">size</span><span class="p">()</span></code>
 
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-async"><code>async</code></small>
+  </span>
+
 <a href="#agentlightning.store.collection.Collection.size" class="headerlink" title="Permanent link">&para;</a></h4>
 
 
@@ -9914,6 +9962,10 @@ Otherwise, they will be inserted.</p>
 <h4 id="agentlightning.store.collection.Queue.size" class="doc doc-heading">
 <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">size</span><span class="p">()</span></code>
 
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-async"><code>async</code></small>
+  </span>
+
 <a href="#agentlightning.store.collection.Queue.size" class="headerlink" title="Permanent link">&para;</a></h4>
 
 
@@ -10067,6 +10119,10 @@ Otherwise, they will be inserted.</p>
 
 <h4 id="agentlightning.store.collection.KeyValue.size" class="doc doc-heading">
 <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">size</span><span class="p">()</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-async"><code>async</code></small>
+  </span>
 
 <a href="#agentlightning.store.collection.KeyValue.size" class="headerlink" title="Permanent link">&para;</a></h4>
 
@@ -10320,6 +10376,28 @@ to implement the store API.</p>
           </div>
         </li>
     </ul>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h4 id="agentlightning.store.collection.LightningCollections.execute" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">execute</span><span class="p">(</span><span class="n">callback</span><span class="p">)</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-async"><code>async</code></small>
+  </span>
+
+<a href="#agentlightning.store.collection.LightningCollections.execute" class="headerlink" title="Permanent link">&para;</a></h4>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Execute the given callback within an atomic operation.</p>
 
 
     </div>
@@ -10596,6 +10674,10 @@ to implement the store API.</p>
 <h4 id="agentlightning.store.collection.ListBasedCollection.size" class="doc doc-heading">
 <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">size</span><span class="p">()</span></code>
 
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-async"><code>async</code></small>
+  </span>
+
 <a href="#agentlightning.store.collection.ListBasedCollection.size" class="headerlink" title="Permanent link">&para;</a></h4>
 
 
@@ -10809,6 +10891,28 @@ to implement the store API.</p>
 
 
 
+
+<div class="doc doc-object doc-function">
+
+
+<h4 id="agentlightning.store.collection.InMemoryLightningCollections.atomic" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">atomic</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-async"><code>async</code></small>
+  </span>
+
+<a href="#agentlightning.store.collection.InMemoryLightningCollections.atomic" class="headerlink" title="Permanent link">&para;</a></h4>
+
+
+    <div class="doc doc-contents ">
+
+        <p>In-memory collections apply a lock outside. It doesn't need to manipulate the collections inside.</p>
+
+
+    </div>
+
+</div>
 
 <div class="doc doc-object doc-function">
 
