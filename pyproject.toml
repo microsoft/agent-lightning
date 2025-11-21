@@ -237,7 +237,7 @@ torch = [
   { index = "pytorch-cu128", group = "torch-cu128" },
   { index = "pytorch-cpu", group = "torch-cpu" },
 ]
-tinker_cookbook = { git = "https://github.com/thinking-machines-lab/tinker-cookbook", rev = "20e26a629797188aa8c6f34474b0d4757b20b90d" }
+tinker_cookbook = { git = "https://github.com/thinking-machines-lab/tinker-cookbook" }
 
 [[tool.uv.index]]
 name = "pypi"

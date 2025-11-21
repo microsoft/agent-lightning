@@ -35,8 +35,6 @@ jobs:
         include:
         - python-version: '3.12'
           setup-script: 'stable'
-        # - python-version: '3.13'
-        #   setup-script: 'latest'
       fail-fast: false
     steps:
       - name: Check disk space
