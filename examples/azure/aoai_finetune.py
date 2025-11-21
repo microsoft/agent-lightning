@@ -444,6 +444,13 @@ class AzureOpenAIFinetune(Algorithm):
 
         return LLM(endpoint=self.azure_openai_endpoint, model=deployment_name, api_key=self.azure_openai_api_key)
 
+    def cleanup_deployments(self) -> None:
+        """Delete all deployments created by this algorithm instance."""
+        for deployment_name in self._created_deployments:
+            self._log_info("Cleaning up deployment %s.", deployment_name)
+            self._delete_deployment(deployment_name)
+        self._created_deployments = []
+
     def _filter_training_data(self, data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Select the top-performing examples and strip reward metadata.
 
