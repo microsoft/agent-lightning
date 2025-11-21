@@ -82,12 +82,35 @@ jobs:
       - name: Build dashboard
         run: cd dashboard && npm run build
 
-      - name: Start MongoDB
-        uses: supercharge/mongodb-github-action@1.12.1
-        with:
-          mongodb-version: '8.2'
-          mongodb-replica-set: test-rs
-          mongodb-port: 27017
+      - name: Start MongoDB container
+        run: |
+          set -euo pipefail
+          cat /etc/security/limits.conf
+          docker run -d \
+            --name mongodb-test \
+            --ulimit nofile=65535:65535 \
+            -p 27017:27017 \
+            mongo:8.2 \
+            --replSet test-rs
+
+          # Wait for mongod to come up
+          for i in $(seq 1 30); do
+            if docker exec mongodb-test mongo --quiet --eval 'db.runCommand({ ping: 1 })' >/dev/null 2>&1; then
+              echo "Mongo is up"
+              break
+            fi
+            echo "Waiting for Mongo..."
+            sleep 2
+          done
+
+          # Init replica set (simple single-node)
+          docker exec mongodb-test mongo --quiet --eval '
+            rs.initiate({
+              _id: "test-rs",
+              members: [{ _id: 0, host: "localhost:27017" }]
+            })
+          '
+        shell: bash
 
       - name: Check Mongo ulimit and FDs
         run: |
