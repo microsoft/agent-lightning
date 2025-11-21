@@ -95,7 +95,7 @@ jobs:
 
           # Wait for mongod to come up
           for i in $(seq 1 30); do
-            if docker exec mongodb-test mongo --quiet --eval 'db.runCommand({ ping: 1 })' >/dev/null 2>&1; then
+            if docker exec mongodb-test mongosh --quiet --eval 'db.runCommand({ ping: 1 })' >/dev/null 2>&1; then
               echo "Mongo is up"
               break
             fi
@@ -104,7 +104,7 @@ jobs:
           done
 
           # Init replica set (simple single-node)
-          docker exec mongodb-test mongo --quiet --eval '
+          docker exec mongodb-test mongosh --quiet --eval '
             rs.initiate({
               _id: "test-rs",
               members: [{ _id: 0, host: "localhost:27017" }]

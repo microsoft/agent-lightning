@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 import time
-from contextlib import asynccontextmanager
 from itertools import count
 from typing import TYPE_CHECKING, Any, AsyncGenerator, Dict, List, Sequence
 from unittest.mock import Mock
@@ -22,6 +21,7 @@ from agentlightning.store.collection.base import Collection
 from agentlightning.store.memory import InMemoryLightningStore
 
 if TYPE_CHECKING:
+    from pymongo import AsyncMongoClient
     from pymongo.asynchronous.database import AsyncDatabase
 
 __all__ = [
@@ -29,7 +29,6 @@ __all__ = [
     "mock_readable_span",
     "sample_items",
     "sample_collection",
-    "memory_collection",
     "SampleItem",
     "QueueItem",
     "deque_queue",
@@ -49,16 +48,15 @@ def inmemory_store() -> InMemoryLightningStore:
 
 
 @pytest_asyncio.fixture
-async def mongo_store():
+async def mongo_store(temporary_mongo_database: AsyncDatabase[Any]):
     """Fixture for MongoDB store implementation."""
     from agentlightning.store.mongo import MongoLightningStore
 
-    async with temporary_mongo_database() as db:
-        db = MongoLightningStore(client=db.client, database_name=db.name)
-        try:
-            yield db
-        finally:
-            await db.close()
+    db = MongoLightningStore(client=temporary_mongo_database.client, database_name=temporary_mongo_database.name)
+    try:
+        yield db
+    finally:
+        await db.close()
 
 
 @pytest.fixture(
@@ -125,9 +123,8 @@ class QueueItem(BaseModel):
     idx: int
 
 
-@asynccontextmanager
-async def temporary_mongo_database() -> AsyncGenerator[AsyncDatabase[Any], None]:
-    """Yield a temporary MongoDB database for integration tests."""
+@pytest_asyncio.fixture
+async def mongo_client():
     from pymongo import AsyncMongoClient
 
     client = AsyncMongoClient[Any](mongo_uri, serverSelectionTimeoutMS=5000)
@@ -137,15 +134,24 @@ async def temporary_mongo_database() -> AsyncGenerator[AsyncDatabase[Any], None]
         await client.close()
         raise RuntimeError(f"MongoDB not available: {exc}")
 
+    try:
+        yield client
+    finally:
+        await client.close()
+
+
+@pytest_asyncio.fixture
+async def temporary_mongo_database(mongo_client: AsyncMongoClient[Any]):
+    """Yield a temporary MongoDB database for integration tests."""
     db_name = f"agentlightning-test-{uuid4().hex}"
-    db = client[db_name]  # type: ignore
+    db = mongo_client[db_name]  # type: ignore
     try:
         yield db
     finally:
-        try:
-            await client.drop_database(db_name)
-        finally:
-            await client.close()
+        await mongo_client.drop_database(db_name)
+
+
+### Collection fixtures ###
 
 
 @pytest.fixture()
@@ -250,70 +256,81 @@ def sample_items() -> List[SampleItem]:
     ]
 
 
+### Generic collection fixtures ###
+
+
 @pytest.fixture()
-def memory_collection(sample_items: Sequence[SampleItem]) -> ListBasedCollection[SampleItem]:
-    return ListBasedCollection(list(sample_items), SampleItem, ("partition", "index"))
+def sample_collection_memory(sample_items: Sequence[SampleItem]) -> ListBasedCollection[SampleItem]:
+    collection: Collection[SampleItem] = ListBasedCollection(list(sample_items), SampleItem, ("partition", "index"))
+    setattr(collection, "_test_backend", "memory")
+    return collection
 
 
-@pytest_asyncio.fixture(
-    params=[
-        "memory",
-        pytest.param("mongo", marks=pytest.mark.mongo),
-    ]
-)
-async def sample_collection(
-    request: pytest.FixtureRequest, sample_items: Sequence[SampleItem]
-) -> AsyncGenerator[Collection[SampleItem], None]:
-    backend = request.param
-    if backend == "memory":
-        collection: Collection[SampleItem] = ListBasedCollection(list(sample_items), SampleItem, ("partition", "index"))
-        setattr(collection, "_test_backend", backend)
+@pytest_asyncio.fixture
+async def sample_collection_mongo(temporary_mongo_database: AsyncDatabase[Any], sample_items: Sequence[SampleItem]):
+    from agentlightning.store.collection.mongo import MongoBasedCollection, MongoClientPool
+
+    async with MongoClientPool(temporary_mongo_database.client) as client_pool:
+        collection = MongoBasedCollection(
+            client_pool,
+            temporary_mongo_database.name,
+            "sample-items",
+            "partition-123",
+            ["partition", "index"],
+            SampleItem,
+        )
+        await collection.insert(sample_items)
+        setattr(collection, "_test_backend", "mongo")
         yield collection
 
-    else:
-        from agentlightning.store.collection.mongo import MongoBasedCollection, MongoClientPool
 
-        async with temporary_mongo_database() as db:
-            async with MongoClientPool(db.client) as client_pool:
-                collection = MongoBasedCollection(
-                    client_pool,
-                    db.name,
-                    "sample-items",
-                    "partition-123",
-                    ["partition", "index"],
-                    SampleItem,
-                )
-                await collection.insert(sample_items)
-                setattr(collection, "_test_backend", backend)
-                yield collection
-
-
-@pytest_asyncio.fixture(
+@pytest.fixture(
     params=[
         "memory",
         pytest.param("mongo", marks=pytest.mark.mongo),
     ]
 )
-async def deque_queue(request: pytest.FixtureRequest) -> AsyncGenerator[Queue[QueueItem], None]:
+def sample_collection(request: pytest.FixtureRequest):
     backend = request.param
-    if backend == "memory":
-        queue = DequeBasedQueue(QueueItem, [QueueItem(idx=i) for i in range(3)])
+    return request.getfixturevalue("sample_collection_" + backend)
+
+
+### Generic queue fixtures ###
+
+
+@pytest.fixture
+def deque_queue_memory() -> DequeBasedQueue[QueueItem]:
+    return DequeBasedQueue(QueueItem, [QueueItem(idx=i) for i in range(3)])
+
+
+@pytest_asyncio.fixture
+async def deque_queue_mongo(temporary_mongo_database: AsyncDatabase[Any]):
+    from agentlightning.store.collection.mongo import MongoBasedQueue, MongoClientPool
+
+    async with MongoClientPool(temporary_mongo_database.client) as client_pool:
+        queue = MongoBasedQueue[QueueItem](
+            client_pool,
+            temporary_mongo_database.name,
+            "queue-items",
+            "partition-1",
+            QueueItem,
+        )
+        await queue.enqueue([QueueItem(idx=i) for i in range(3)])
         yield queue
 
-    else:
-        from agentlightning.store.collection.mongo import MongoBasedQueue, MongoClientPool
 
-        async with temporary_mongo_database() as db:
-            async with MongoClientPool(db.client) as client_pool:
-                queue = MongoBasedQueue[QueueItem](
-                    client_pool,
-                    db.name,
-                    "queue-items",
-                    "partition-1",
-                    QueueItem,
-                )
-                await queue.enqueue([QueueItem(idx=i) for i in range(3)])
-                yield queue
+@pytest.fixture(
+    params=[
+        "memory",
+        pytest.param("mongo", marks=pytest.mark.mongo),
+    ]
+)
+def deque_queue(request: pytest.FixtureRequest) -> AsyncGenerator[Queue[QueueItem], None]:
+    backend = request.param
+    return request.getfixturevalue("deque_queue_" + backend)
+
+
+### Generic key-value fixtures ###
 
 
 @pytest.fixture()
@@ -321,33 +338,35 @@ def dict_key_value_data() -> Dict[str, int]:
     return {"alpha": 1, "beta": 2}
 
 
-@pytest_asyncio.fixture(
+@pytest.fixture()
+def dict_key_value_memory(dict_key_value_data: Dict[str, int]) -> DictBasedKeyValue[str, int]:
+    return DictBasedKeyValue(dict_key_value_data)
+
+
+@pytest_asyncio.fixture
+async def dict_key_value_mongo(temporary_mongo_database: AsyncDatabase[Any], dict_key_value_data: Dict[str, int]):
+    from agentlightning.store.collection.mongo import MongoBasedKeyValue, MongoClientPool
+
+    async with MongoClientPool(temporary_mongo_database.client) as client_pool:
+        key_value = MongoBasedKeyValue[str, int](
+            client_pool,
+            temporary_mongo_database.name,
+            "key-value-items",
+            "partition-1",
+            str,
+            int,
+        )
+        for key, value in dict_key_value_data.items():
+            await key_value.set(key, value)
+        yield key_value
+
+
+@pytest.fixture(
     params=[
         "memory",
         pytest.param("mongo", marks=pytest.mark.mongo),
     ]
 )
-async def dict_key_value(
-    request: pytest.FixtureRequest, dict_key_value_data: Dict[str, int]
-) -> AsyncGenerator[KeyValue[str, int], None]:
+def dict_key_value(request: pytest.FixtureRequest) -> AsyncGenerator[KeyValue[str, int], None]:
     backend = request.param
-    if backend == "memory":
-        key_value = DictBasedKeyValue(dict_key_value_data)
-        yield key_value
-
-    else:
-        from agentlightning.store.collection.mongo import MongoBasedKeyValue, MongoClientPool
-
-        async with temporary_mongo_database() as db:
-            async with MongoClientPool(db.client) as client_pool:
-                key_value = MongoBasedKeyValue[str, int](
-                    client_pool,
-                    db.name,
-                    "key-value-items",
-                    "partition-1",
-                    str,
-                    int,
-                )
-                for key, value in dict_key_value_data.items():
-                    await key_value.set(key, value)
-                yield key_value
+    return request.getfixturevalue("dict_key_value_" + backend)
