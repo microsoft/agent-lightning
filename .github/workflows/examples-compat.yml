@@ -3,42 +3,44 @@ permissions:
   contents: read
 on:
   schedule:
-    # Every day at 3 AM UTC+8
-    - cron: '0 19 * * *'
+    # Every day at 6 AM UTC+8
+    - cron: '0 22 * * *'
 
   workflow_dispatch:
 
   repository_dispatch:
-    types: [ci-tinker, ci-all]
+    types: [ci-compat, ci-all]
 
 run-name: >-
   ${{ github.event_name == 'repository_dispatch'
       && format(
-        'Tinker - PR #{0} - {1} - {2}',
+        'Backward Compatibility - PR #{0} - {1} - {2}',
         github.event.client_payload.pull_number,
         github.event.client_payload.ci_label,
         github.event.client_payload.correlation_id
       )
-      || format('Tinker - {0}', github.event_name) }}
+      || format('Backward Compatibility - {0}', github.event_name) }}
 
 jobs:
-  tinker:
+  backward-compatibility:
     if: >
       github.event_name != 'repository_dispatch' ||
-      github.event.action == 'ci-tinker' ||
+      github.event.action == 'ci-compat' ||
       github.event.action == 'ci-all'
-    name: Tinker (Python ${{ matrix.python-version }}, ${{ matrix.setup-script }})
-    runs-on: [self-hosted, 1ES.Pool=agl-runner-cpu]
-    timeout-minutes: 150
+    name: Backward Compatibility (Python ${{ matrix.python-version }}, ${{ matrix.setup-script }})
+    runs-on: [self-hosted, 1ES.Pool=agl-runner-gpu]
+    timeout-minutes: 30
     strategy:
       matrix:
         include:
+        - python-version: '3.10'
+          setup-script: 'legacy'
         - python-version: '3.12'
           setup-script: 'stable'
-        - python-version: '3.13'
-          setup-script: 'latest'
       fail-fast: false
     steps:
+      - name: Check GPU status
+        run: nvidia-smi
       - name: Check disk space
         run: df -h
       - uses: actions/checkout@v4
@@ -48,113 +50,102 @@ jobs:
         with:
           enable-cache: true
           python-version: ${{ matrix.python-version }}
-      - name: Upgrade dependencies (latest)
-        run: uv lock --upgrade
-        if: matrix.setup-script == 'latest'
       - name: Sync dependencies
         run: |
-          uv sync --frozen --no-default-groups \
-            --group dev --group experiment --group agents --group torch-cpu --group core-stable --group tinker
+          uv sync --frozen --no-default-groups --extra apo --extra verl \
+            --group dev --group experiment --group agents --group torch-gpu-${{ matrix.setup-script }}
+      - name: Override VERL (stable)
+        run: |
+          uv pip install verl==0.5.0 vllm==0.10.2
+        if: matrix.setup-script == 'stable'
       - name: Freeze dependencies
         run: |
-          set -euo pipefail
+          set -ex
           uv pip freeze | tee requirements-freeze.txt
           echo "UV_LOCKED=1" >> $GITHUB_ENV
           echo "UV_NO_SYNC=1" >> $GITHUB_ENV
       - name: Upload dependencies artifact
         uses: actions/upload-artifact@v4
         with:
-          name: dependencies-spider-${{ matrix.python-version }}-${{ matrix.setup-script }}
+          name: dependencies-backward-compatibility-${{ matrix.python-version }}-${{ matrix.setup-script }}
           path: requirements-freeze.txt
           compression-level: 0
 
-      - name: Tinker LLM sanity check
+      - name: Launch LiteLLM Proxy
         run: |
-          set -euo pipefail
-          source .venv/bin/activate
-          cd examples/tinker
-          # TODO: Currently only test the client tracer implementation.
-          python -m tests.test_tinker_llm
-        shell: bash
+          ./scripts/litellm_run.sh
         env:
-          TINKER_API_KEY: ${{ secrets.TINKER_API_KEY }}
-
-      - name: Tinker Hello
+          AZURE_API_BASE: ${{ secrets.AZURE_GROUP_SUBSCRIPTION_API_BASE }}
+          AZURE_API_KEY: ${{ secrets.AZURE_GROUP_SUBSCRIPTION_API_KEY }}
+      - name: Prepare Calc-X dataset
         run: |
-          set -euo pipefail
-          source .venv/bin/activate
-          cd examples/tinker
-          python hello.py oneclick --ci
-        shell: bash
-        env:
-          TINKER_API_KEY: ${{ secrets.TINKER_API_KEY }}
+          set -ex
+          cd examples/calc_x
+          uv run gdown --fuzzy https://drive.google.com/file/d/1FQMyKLLd6hP9dw9rfZn1EZOWNvKaDsqw/view
+          unzip calc-x-data.zip -d data
+          rm calc-x-data.zip
 
-      - name: Tinker Q20 Evaluate (GPT-4.1)
+      - name: APO example (legacy client-server style)
         run: |
-          set -euo pipefail
-          source .venv/bin/activate
-          cd examples/tinker
-          mkdir -p logs
-          python q20_evaluate.py --ci --model gpt-4.1 --output-file logs/q20_evaluate_gpt-4.1.jsonl
-        shell: bash
-        env:
-          OPENAI_BASE_URL: ${{ secrets.AZURE_OPENAI_ENDPOINT_SWEDEN }}
-          OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY_SWEDEN }}
-          CREWAI_DISABLE_TELEMETRY: true
-          TINKER_API_KEY: ${{ secrets.TINKER_API_KEY }}
-
-      - name: Tinker Q20 Evaluate (Qwen3-30B-A3B-Instruct-2507)
-        run: |
-          set -euo pipefail
-          source .venv/bin/activate
-          cd examples/tinker
-          python q20_evaluate.py --ci --model Qwen/Qwen3-30B-A3B-Instruct-2507 --output-file logs/q20_evaluate_qwen3-30b-a3b.jsonl
-        shell: bash
-        env:
-          OPENAI_BASE_URL: ${{ secrets.AZURE_OPENAI_ENDPOINT_SWEDEN }}
-          OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY_SWEDEN }}
-          CREWAI_DISABLE_TELEMETRY: true
-          TINKER_API_KEY: ${{ secrets.TINKER_API_KEY }}
-
-      - name: Tinker Q20 Training Dry Run
-        run: |
-          set -euo pipefail
-          source .venv/bin/activate
-          cd examples/tinker
-          python q20_train.py dryrun --model qwen4b
-        shell: bash
-        env:
-          OPENAI_BASE_URL: ${{ secrets.AZURE_OPENAI_ENDPOINT_SWEDEN }}
-          OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY_SWEDEN }}
-          CREWAI_DISABLE_TELEMETRY: true
-          TINKER_API_KEY: ${{ secrets.TINKER_API_KEY }}
-
-      - name: Tinker Q20 Training
-        run: |
-          set -euo pipefail
-          source .venv/bin/activate
-          cd examples/tinker
-          agl store --port 4747 &
-          sleep 5
-          python q20_train.py runner --n-runners 4 &
-          sleep 5
-          python q20_train.py algo --model qwen4b --ci
-          sleep 5
-
-          pkill -f agl && echo "SIGTERM sent to agl" || echo "No agl process found"
-          while pgrep -f agl; do
-            echo "Waiting for agl to finish..."
+          set -ex
+          cd examples/apo
+          uv run legacy_apo_client.py &
+          sleep 3  # Wait for the client to be up
+          uv run legacy_apo_server.py
+          pkill -f legacy_apo_client.py && echo "SIGTERM sent to legacy_apo_client.py" || echo "No legacy_apo_client.py process found"
+          while pgrep -f legacy_apo_client.py; do
+            echo "Waiting for legacy_apo_client.py to finish..."
             sleep 5
           done
-          pkill -f q20_train.py && echo "SIGTERM sent to q20_train.py" || echo "No q20_train.py process found"
-          while pgrep -f q20_train.py; do
-            echo "Waiting for q20_train.py to finish..."
+          echo "legacy_apo_client.py has finished."
+          sleep 10
+        env:
+          OPENAI_API_BASE: http://localhost:12306/
+          OPENAI_API_KEY: dummy
+
+      - name: Calc-X MCP sanity check
+        run: |
+          set -ex
+          cd examples/calc_x
+          uv run tests/test_mcp_calculator.py
+        env:
+          OPENAI_API_BASE: http://localhost:12306/
+          OPENAI_API_KEY: dummy
+      - name: Calc-X sanity check
+        run: |
+          set -ex
+          cd examples/calc_x
+          uv run legacy_calc_agent_debug.py
+        env:
+          OPENAI_BASE_URL: http://localhost:12306/
+          OPENAI_API_KEY: dummy
+
+      - name: Calc-X training (legacy client-server style)
+        run: |
+          set -ex
+          source .venv/bin/activate
+          cd examples/calc_x
+          ../../scripts/restart_ray.sh
+          sleep 5
+          PYTHONUNBUFFERED=1 python legacy_calc_agent.py &
+          bash legacy_train.sh
+          pkill -f legacy_calc_agent.py && echo "SIGTERM sent to legacy_calc_agent.py" || echo "No legacy_calc_agent.py process found"
+          while pgrep -f legacy_calc_agent.py; do
+            echo "Waiting for legacy_calc_agent.py to finish..."
             sleep 5
           done
-          echo "q20_train.py has finished."
+          echo "legacy_calc_agent.py has finished."
+          sleep 10
         shell: bash
         env:
-          OPENAI_BASE_URL: ${{ secrets.AZURE_OPENAI_ENDPOINT_SWEDEN }}
-          OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY_SWEDEN }}
-          CREWAI_DISABLE_TELEMETRY: true
-          TINKER_API_KEY: ${{ secrets.TINKER_API_KEY }}
+          WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
+          WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
+        id: calc_x_train
+
+      - name: Validate Calc-X training
+        run: |
+          set -ex
+          uv run scripts/validate_example_wandb.py ${{ steps.calc_x_train.outputs.project_name }} ${{ steps.calc_x_train.outputs.run_name }}
+        env:
+          WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
+          WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}

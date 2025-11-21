@@ -9,34 +9,40 @@ on:
   workflow_dispatch:
 
   repository_dispatch:
-    types: [ci-azure, ci-all]
+    types: [ci-spider, ci-all]
 
 run-name: >-
   ${{ github.event_name == 'repository_dispatch'
       && format(
-        'Azure - PR #{0} - {1} - {2}',
+        'Spider - PR #{0} - {1} - {2}',
         github.event.client_payload.pull_number,
         github.event.client_payload.ci_label,
         github.event.client_payload.correlation_id
       )
-      || format('Azure - {0}', github.event_name) }}
+      || format('Spider - {0}', github.event_name) }}
 
 jobs:
-  azure:
+  spider:
     if: >
       github.event_name != 'repository_dispatch' ||
-      github.event.action == 'ci-azure' ||
+      github.event.action == 'ci-spider' ||
       github.event.action == 'ci-all'
-    name: Azure (Python ${{ matrix.python-version }}, ${{ matrix.setup-script }})
-    runs-on: [self-hosted, 1ES.Pool=agl-runner-cpu]
-    timeout-minutes: 400
+    name: Spider (Python ${{ matrix.python-version }}, ${{ matrix.setup-script }})
+    runs-on: [self-hosted, 1ES.Pool=agl-runner-gpu]
+    timeout-minutes: 60
     strategy:
       matrix:
         include:
+        - python-version: '3.10'
+          setup-script: 'legacy'
         - python-version: '3.12'
           setup-script: 'stable'
+        - python-version: '3.13'
+          setup-script: 'latest'
       fail-fast: false
     steps:
+      - name: Check GPU status
+        run: nvidia-smi
       - name: Check disk space
         run: df -h
       - uses: actions/checkout@v4
@@ -49,10 +55,16 @@ jobs:
       - name: Upgrade dependencies (latest)
         run: uv lock --upgrade
         if: matrix.setup-script == 'latest'
-      - name: Sync dependencies
+      - name: Sync dependencies (latest)
         run: |
-          uv sync --frozen --no-default-groups \
-            --group dev --group experiment --group agents --group core-stable
+          uv sync --frozen --no-default-groups --extra verl \
+            --group dev --group experiment --group agents --group torch-gpu-stable
+        if: matrix.setup-script == 'latest'
+      - name: Sync dependencies (stable & legacy)
+        run: |
+          uv sync --frozen --no-default-groups --extra verl \
+            --group dev --group experiment --group agents --group torch-gpu-${{ matrix.setup-script }}
+        if: matrix.setup-script != 'latest'
       - name: Freeze dependencies
         run: |
           set -ex
@@ -66,33 +78,50 @@ jobs:
           path: requirements-freeze.txt
           compression-level: 0
 
-      - name: Azure Login
+      - name: Launch LiteLLM Proxy
         run: |
-          az login --identity
-        shell: bash
+          ./scripts/litellm_run.sh
+        env:
+          AZURE_API_BASE: ${{ secrets.AZURE_GROUP_SUBSCRIPTION_API_BASE }}
+          AZURE_API_KEY: ${{ secrets.AZURE_GROUP_SUBSCRIPTION_API_KEY }}
 
-      - name: Azure OpenAI Sanity Check
+      - name: Prepare Spider dataset
         run: |
+          set -ex
+          cd examples/spider
+          uv run gdown --fuzzy https://drive.google.com/file/d/1oi9J1jZP9TyM35L85CL3qeGWl2jqlnL6/view
+          unzip -q spider-data.zip -d data
+          rm spider-data.zip
+
+      - name: Spider sanity check
+        run: |
+          set -ex
+          cd examples/spider
+          uv run sql_agent.py
+        env:
+          OPENAI_API_BASE: http://localhost:12306/
+          OPENAI_API_KEY: dummy
+        if: success() || failure()
+
+      - name: Spider training
+        run: |
+          set -ex
           source .venv/bin/activate
-          cd examples/azure
-          python capital_agent.py
+          cd examples/spider
+          ../../scripts/restart_ray.sh
+          sleep 5
+          PYTHONUNBUFFERED=1 python train_sql_agent.py fast
+          sleep 10
         shell: bash
         env:
-          AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT_SWEDEN }}
-          AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY_SWEDEN }}
-        id: azure_openai_sanity_check
+          WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
+          WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
+        id: spider_train
 
-      - name: Azure OpenAI Supervised Fine-tuning
+      - name: Validate Spider training
         run: |
-          source .venv/bin/activate
-          cd examples/azure
-          python train_capital_agent.py --n-iterations 2 --cleanup
-        shell: bash
+          set -ex
+          uv run scripts/validate_example_wandb.py ${{ steps.spider_train.outputs.project_name }} ${{ steps.spider_train.outputs.run_name }} --reward-tolerance 5
         env:
-          AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT_SWEDEN }}
-          AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY_SWEDEN }}
-          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-          AZURE_OPENAI_API_VERSION: 2025-04-01-preview
-          AZURE_RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
-          AZURE_RESOURCE_NAME: ${{ secrets.AZURE_RESOURCE_NAME }}
-        id: azure_openai_finetune
+          WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
+          WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
