@@ -98,8 +98,8 @@ jobs:
           python q20_evaluate.py --ci --model gpt-4.1 --output-file logs/q20_evaluate_gpt-4.1.jsonl
         shell: bash
         env:
-          OPENAI_BASE_URL: ${{ secrets.AZURE_GROUP_SUBSCRIPTION_API_BASE }}
-          OPENAI_API_KEY: ${{ secrets.AZURE_GROUP_SUBSCRIPTION_API_KEY }}
+          OPENAI_BASE_URL: ${{ secrets.AZURE_OPENAI_ENDPOINT_SWEDEN }}
+          OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY_SWEDEN }}
           CREWAI_DISABLE_TELEMETRY: true
           TINKER_API_KEY: ${{ secrets.TINKER_API_KEY }}
 
@@ -111,8 +111,8 @@ jobs:
           python q20_evaluate.py --ci --model Qwen/Qwen3-30B-A3B-Instruct-2507 --output-file logs/q20_evaluate_qwen3-30b-a3b.jsonl
         shell: bash
         env:
-          OPENAI_BASE_URL: ${{ secrets.AZURE_GROUP_SUBSCRIPTION_API_BASE }}
-          OPENAI_API_KEY: ${{ secrets.AZURE_GROUP_SUBSCRIPTION_API_KEY }}
+          OPENAI_BASE_URL: ${{ secrets.AZURE_OPENAI_ENDPOINT_SWEDEN }}
+          OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY_SWEDEN }}
           CREWAI_DISABLE_TELEMETRY: true
           TINKER_API_KEY: ${{ secrets.TINKER_API_KEY }}
 
@@ -124,8 +124,8 @@ jobs:
           python q20_train.py dryrun --model qwen4b
         shell: bash
         env:
-          OPENAI_BASE_URL: ${{ secrets.AZURE_GROUP_SUBSCRIPTION_API_BASE }}
-          OPENAI_API_KEY: ${{ secrets.AZURE_GROUP_SUBSCRIPTION_API_KEY }}
+          OPENAI_BASE_URL: ${{ secrets.AZURE_OPENAI_ENDPOINT_SWEDEN }}
+          OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY_SWEDEN }}
           CREWAI_DISABLE_TELEMETRY: true
           TINKER_API_KEY: ${{ secrets.TINKER_API_KEY }}
 
@@ -154,7 +154,7 @@ jobs:
           echo "q20_train.py has finished."
         shell: bash
         env:
-          OPENAI_BASE_URL: ${{ secrets.AZURE_GROUP_SUBSCRIPTION_API_BASE }}
-          OPENAI_API_KEY: ${{ secrets.AZURE_GROUP_SUBSCRIPTION_API_KEY }}
+          OPENAI_BASE_URL: ${{ secrets.AZURE_OPENAI_ENDPOINT_SWEDEN }}
+          OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY_SWEDEN }}
           CREWAI_DISABLE_TELEMETRY: true
           TINKER_API_KEY: ${{ secrets.TINKER_API_KEY }}
