@@ -368,6 +368,7 @@ def main() -> None:
         default="qwen30b",
         help="Model variant to train.",
     )
+    algo_parser.add_argument("--ci", action="store_true", help="Run in CI mode (smaller dataset, smaller batch).")
     algo_parser.set_defaults(func=_run_algo)
 
     algo_verl_parser = subparsers.add_parser("verl", help="Launch the full training algorithm with VERL.")
@@ -378,7 +379,6 @@ def main() -> None:
         default="qwen3",
         help="Model variant to train.",
     )
-    algo_verl_parser.add_argument("--ci", action="store_true", help="Run in CI mode (smaller dataset, smaller batch).")
     algo_verl_parser.add_argument("--search", action="store_true", help="Enable search tool.")
     algo_verl_parser.set_defaults(func=_run_algo_verl)
 

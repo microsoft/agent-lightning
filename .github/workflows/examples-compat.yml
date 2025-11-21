@@ -136,7 +136,7 @@ jobs:
           cd examples/tinker
           agl store --port 4747 &
           sleep 5
-          python q20_train.py runner --n_runners 4 &
+          python q20_train.py runner --n-runners 4 &
           sleep 5
           python q20_train.py algo --model qwen4b --ci
           sleep 5
