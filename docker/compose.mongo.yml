@@ -14,6 +14,7 @@ services:
     command: ["mongod", "--bind_ip_all", "--replSet", "rs0"]
     volumes:
       - ../scripts/mongodb_init_rs.js:/docker-entrypoint-initdb.d/init-rs.js:ro
+      - ./data/mongo:/data/db
     healthcheck:
       test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
       interval: 10s

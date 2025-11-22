@@ -65,6 +65,7 @@ dev = [
   "mkdocs-git-authors-plugin",
   "mkdocs-macros-plugin",
   "mkdocs-autorefs",
+  "prometheus-client",
 ]
 experiment = [
   "random-word",

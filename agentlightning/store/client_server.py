@@ -776,8 +776,8 @@ class LightningStoreServer(LightningStore):
 
         @api.get("/prometheus")
         async def prometheus_metrics():  # pyright: ignore[reportUnusedFunction]
-            return JSONResponse(
-                content=generate_latest().decode("utf-8"),
+            return Response(
+                content=generate_latest(),
                 media_type=CONTENT_TYPE_LATEST,
             )
 

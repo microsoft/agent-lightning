@@ -25,7 +25,7 @@ services:
       - '--storage.tsdb.retention.time=1h'
     volumes:
       - ./prometheus.memory-store.yml:/etc/prometheus/prometheus.yml:ro
-      - ./prometheus-data:/prometheus
+      - ./data/prometheus:/prometheus
     depends_on:
       - app
       - node-exporter
