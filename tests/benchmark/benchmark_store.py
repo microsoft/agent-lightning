@@ -157,7 +157,7 @@ class AlgorithmBatch(agl.Algorithm):
                 await asyncio.sleep(5.0)
 
     async def algorithm_batch_with_completion_threshold(self, total_tasks: int, batch_size: int, remaining_tasks: int):
-        """Different from `algorithm_batch`, this algorithm will use query_rollouts to get rollouts status.
+        """Different from `algorithm_batch`, this algorithm will use query_rollouts to get rollouts' status.
         It will enqueue a new batch of new tasks when the number of running rollouts is less than the remaining tasks threshold.
         """
         store = self.get_store()
@@ -208,7 +208,7 @@ class AlgorithmBatch(agl.Algorithm):
     async def algorithm_batch_single(self, total_tasks: int, concurrency: int):
         """Different from `algorithm_batch`, this algorithm will use one async function to enqueue one rollout at a time.
         The function only cares about the rollout it's currently processing.
-        It waits for it with `get_rollout_by_id` and check the spans to ensure the rollout is successful.
+        It waits for the rollouts with `get_rollout_by_id` and check the spans to ensure the rollout is successful.
         The concurrency is managed via a asyncio semaphore.
         """
         store = self.get_store()

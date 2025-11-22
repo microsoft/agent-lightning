@@ -750,6 +750,7 @@ class LightningStoreServer(LightningStore):
             ["method", "path", "status_code"],
         )
 
+        # TODO: For multi-process scenarios, should use prometheus_client.multiprocess mode.
         HTTP_LATENCY = Histogram(
             "http_request_duration_seconds",
             "Latency of HTTP requests",
