@@ -8513,6 +8513,26 @@ which runs the server in a separate thread.</p>
 It's not allowed to set <code>host</code>, <code>port</code>, <code>launch_mode</code> together with <code>launcher_args</code>.</p>
           </div>
         </li>
+        <li class="doc-section-item field-body">
+            <b><code>n_workers</code></b>
+              (<code><span title="int">int</span></code>, default:
+                  <code>1</code>
+)
+          –
+          <div class="doc-md-description">
+            <p>The number of workers to run in the server. Only applicable for <code>mp</code> launch mode.</p>
+          </div>
+        </li>
+        <li class="doc-section-item field-body">
+            <b><code>prometheus</code></b>
+              (<code><span title="bool">bool</span></code>, default:
+                  <code>False</code>
+)
+          –
+          <div class="doc-md-description">
+            <p>Whether to enable Prometheus metrics.</p>
+          </div>
+        </li>
     </ul>
 
 
