@@ -65,7 +65,7 @@ def check_spans(spans: Sequence[agl.Span], task: str) -> None:
             if span.attributes.get("reward") is None:
                 raise ValueError("Reward is not set for a reward span")
             rew = float(span.attributes.get("reward"))  # type: ignore
-            if rew > 1 and rew < 2:
+            if rew >= 1 and rew <= 2:
                 last_reward_in_12 = True
             else:
                 last_reward_in_12 = False

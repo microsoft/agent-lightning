@@ -416,7 +416,7 @@ class LightningStoreServer(LightningStore):
         assert self.app is not None
         api = APIRouter(prefix=API_V1_PREFIX)
 
-        # The outest-layer of monitoring
+        # The outermost-layer of monitoring
         if self._prometheus:
             self._setup_prometheus(api=api, app=self.app)
 

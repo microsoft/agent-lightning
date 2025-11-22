@@ -41,8 +41,10 @@ def main(argv: Iterable[str] | None = None) -> int:
         "--n-workers",
         default=1,
         type=int,
-        help="Number of workers to run in the server. When it's greater than 1, the server will be run using `mp` launch mode."
-        "Only applicable for zero-copy stores such as MongoDB backend.",
+        help=(
+            "Number of workers to run in the server. When it's greater than 1, the server will be run using `mp` launch mode. "
+            "Only applicable for zero-copy stores such as MongoDB backend."
+        ),
     )
 
     parser.add_argument(
