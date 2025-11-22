@@ -855,6 +855,10 @@ class LightningStoreServer(LightningStore):
         - In the owner process: delegate to the in-process store.
         - In a different process: delegate to a HTTP client talking to the server.
         """
+        # If the store is zero-copy, we can just call the method directly.
+        if self.store is not None and self.store.capabilities.get("zero_copy", False):
+            return await getattr(self.store, method_name)(*args, **kwargs)
+
         if os.getpid() == self._owner_pid:
             if method_name == "wait_for_rollouts":
                 # wait_for_rollouts can block for a long time; avoid holding the lock

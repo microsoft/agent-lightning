@@ -82,18 +82,23 @@ jobs:
       - name: Build dashboard
         run: cd dashboard && npm run build
 
-      - name: Start MongoDB container
+      - name: Setup Docker environments
         run: |
           set -euo pipefail
 
           cd docker
-          docker compose -f docker/compose.mongo.yml up -d
+
+          # Setup data directories
+          ./setup.sh
+
+          # Start Dockers
+          docker compose -f compose.mongo.yml up -d
 
           SERVICE_NAME=mongo
           TIMEOUT=60   # seconds
           SLEEP=2
 
-          cid="$(docker compose ps -q "$SERVICE_NAME")"
+          cid="$(docker compose -f compose.mongo.yml ps -q "$SERVICE_NAME")"
           if [ -z "$cid" ]; then
             echo "Service $SERVICE_NAME is not running"
             exit 1

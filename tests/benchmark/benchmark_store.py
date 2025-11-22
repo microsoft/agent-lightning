@@ -246,8 +246,8 @@ def main() -> None:
     try:
         trainer = agl.Trainer(
             store=store,
-            algorithm=AlgorithmBatch(mode="batch", total_tasks=100, batch_size=10),
-            n_runners=4,
+            algorithm=AlgorithmBatch(mode="batch", total_tasks=1024, batch_size=128),
+            n_runners=32,
             strategy={
                 "type": "cs",
                 "managed_store": False,

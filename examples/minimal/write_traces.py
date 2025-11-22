@@ -102,6 +102,7 @@ async def send_traces_via_agentops(use_client: bool = False):
                     {"role": "user", "content": "Hello, what's your name?"},
                 ],
             )
+            console.print(response)
             assert response.choices[0].message.content is not None
             assert "chatgpt" in response.choices[0].message.content.lower()
 

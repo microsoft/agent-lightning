@@ -54,9 +54,9 @@ def main(argv: Iterable[str] | None = None) -> int:
         help="Backend to use for the store.",
     )
     parser.add_argument(
-        "--mongo-url",
+        "--mongo-uri",
         default="mongodb://localhost:27017/?replicaSet=rs0",
-        help="MongoDB URL to use for the store. Applicable only if --backend is 'mongo'.",
+        help="MongoDB URI to use for the store. Applicable only if --backend is 'mongo'.",
     )
 
     args = parser.parse_args(list(argv) if argv is not None else None)
@@ -68,7 +68,7 @@ def main(argv: Iterable[str] | None = None) -> int:
     elif args.backend == "mongo":
         from agentlightning.store.mongo import MongoLightningStore
 
-        store = MongoLightningStore(client=args.mongo_url)
+        store = MongoLightningStore(client=args.mongo_uri)
     else:
         raise ValueError(f"Invalid backend: {args.backend}")
 
