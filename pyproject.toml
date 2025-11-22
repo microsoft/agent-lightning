@@ -206,7 +206,7 @@ agents = [
 ]
 
 [tool.uv]
-required-version = ">=0.9.9"
+#required-version = ">=0.9.9"
 conflicts = [
   [
     { group = "core-legacy" },
@@ -222,7 +222,7 @@ conflicts = [
   ],
 ]
 environments = [
-  "sys_platform == 'linux'",
+  #"sys_platform == 'linux'",
 ]
 dependency-metadata = [
   # Patch the dependencies of instructor to unpin "openai".
