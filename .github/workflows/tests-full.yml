@@ -98,7 +98,7 @@ jobs:
           TIMEOUT=60   # seconds
           SLEEP=2
 
-          cid="$(docker compose ps -q "$SERVICE_NAME")"
+          cid="$(docker compose -f compose.mongo.yml ps -q "$SERVICE_NAME")"
           if [ -z "$cid" ]; then
             echo "Service $SERVICE_NAME is not running"
             exit 1
