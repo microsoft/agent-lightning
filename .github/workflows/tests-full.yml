@@ -82,13 +82,17 @@ jobs:
       - name: Build dashboard
         run: cd dashboard && npm run build
 
-      - name: Start MongoDB container
+      - name: Setup Docker environments
         run: |
           set -euo pipefail
 
           cd docker
+
+          # Setup data directories
           ./setup.sh
-          docker compose -f docker/compose.mongo.yml up -d
+
+          # Start Dockers
+          docker compose -f compose.mongo.yml up -d
 
           SERVICE_NAME=mongo
           TIMEOUT=60   # seconds
