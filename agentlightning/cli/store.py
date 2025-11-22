@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 def main(argv: Iterable[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run a LightningStore server")
+    parser.add_argument("--host", default="0.0.0.0", help="Host to bind the server to")
     parser.add_argument("--port", type=int, default=4747, help="Port to run the server on")
     parser.add_argument(
         "--cors-origin",
@@ -31,17 +32,60 @@ def main(argv: Iterable[str] | None = None) -> int:
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
         help="Configure the logging level for the store.",
     )
+    parser.add_argument(
+        "--prometheus",
+        action="store_true",
+        help="Enable Prometheus metrics.",
+    )
+    parser.add_argument(
+        "--n-workers",
+        default=1,
+        type=int,
+        help=(
+            "Number of workers to run in the server. When it's greater than 1, the server will be run using `mp` launch mode. "
+            "Only applicable for zero-copy stores such as MongoDB backend."
+        ),
+    )
+
+    parser.add_argument(
+        "--backend",
+        choices=["memory", "mongo"],
+        default="memory",
+        help="Backend to use for the store.",
+    )
+    parser.add_argument(
+        "--mongo-uri",
+        default="mongodb://localhost:27017/?replicaSet=rs0",
+        help="MongoDB URI to use for the store. Applicable only if --backend is 'mongo'.",
+    )
+
     args = parser.parse_args(list(argv) if argv is not None else None)
 
     setup_logging(args.log_level)
 
-    store = InMemoryLightningStore()
+    if args.backend == "memory":
+        store = InMemoryLightningStore()
+    elif args.backend == "mongo":
+        from agentlightning.store.mongo import MongoLightningStore
+
+        store = MongoLightningStore(client=args.mongo_uri)
+    else:
+        raise ValueError(f"Invalid backend: {args.backend}")
+
+    if args.n_workers > 1:
+        logger.info(f"Running the server using `mp` launch mode with {args.n_workers} workers.")
+        launch_mode = "mp"
+    else:
+        logger.info("Running the server using `asyncio` launch mode.")
+        launch_mode = "asyncio"
     server = LightningStoreServer(
         store,
-        host="0.0.0.0",
+        host=args.host,
         port=args.port,
         cors_allow_origins=args.cors_origins,
-        launch_mode="asyncio",
+        launch_mode=launch_mode,
+        prometheus=args.prometheus,
+        n_workers=args.n_workers,
     )
     try:
         asyncio.run(server.run_forever())

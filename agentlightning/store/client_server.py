@@ -219,6 +219,8 @@ class LightningStoreServer(LightningStore):
             which runs the server in a separate thread.
         launcher_args: The arguments to use for the server launcher.
             It's not allowed to set `host`, `port`, `launch_mode` together with `launcher_args`.
+        n_workers: The number of workers to run in the server. Only applicable for `mp` launch mode.
+        prometheus: Whether to enable Prometheus metrics.
     """
 
     def __init__(
@@ -229,6 +231,8 @@ class LightningStoreServer(LightningStore):
         cors_allow_origins: Sequence[str] | str | None = None,
         launch_mode: LaunchMode = "thread",
         launcher_args: PythonServerLauncherArgs | None = None,
+        n_workers: int = 1,
+        prometheus: bool = False,
     ):
         super().__init__()
         self.store = store
@@ -265,6 +269,7 @@ class LightningStoreServer(LightningStore):
             app=self.app,
             args=self.launcher_args,
         )
+        self._prometheus = prometheus
 
         self._lock: threading.Lock = threading.Lock()
         self._cors_allow_origins = self._normalize_cors_origins(cors_allow_origins)
@@ -309,6 +314,7 @@ class LightningStoreServer(LightningStore):
         return {
             "launcher_args": self.launcher_args,
             "server_launcher": self.server_launcher,
+            "_prometheus": self._prometheus,
             "_owner_pid": self._owner_pid,
         }
 
@@ -326,6 +332,7 @@ class LightningStoreServer(LightningStore):
         self.store = None
         self.launcher_args = state["launcher_args"]
         self.server_launcher = state["server_launcher"]
+        self._prometheus = state["_prometheus"]
         self._owner_pid = state["_owner_pid"]
         self._cors_allow_origins = state.get("_cors_allow_origins")
         self._client = None
@@ -407,6 +414,11 @@ class LightningStoreServer(LightningStore):
     def _setup_routes(self):
         """Set up FastAPI routes for all store operations."""
         assert self.app is not None
+        api = APIRouter(prefix=API_V1_PREFIX)
+
+        # The outermost-layer of monitoring
+        if self._prometheus:
+            self._setup_prometheus(api=api, app=self.app)
 
         @self.app.middleware("http")
         async def _app_exception_handler(  # pyright: ignore[reportUnusedFunction]
@@ -460,8 +472,6 @@ class LightningStoreServer(LightningStore):
                 f"{response.status_code} in {duration:.2f} ms"
             )
             return response
-
-        api = APIRouter(prefix=API_V1_PREFIX)
 
         def _validate_paginated_request(
             request: Union[
@@ -720,6 +730,58 @@ class LightningStoreServer(LightningStore):
         # Finally, mount the dashboard assets
         self._setup_dashboard()
 
+    def _setup_prometheus(self, api: APIRouter, app: FastAPI):
+        """Setup Prometheus metrics endpoints."""
+        try:
+            from prometheus_client import (
+                CONTENT_TYPE_LATEST,
+                Counter,
+                Histogram,
+                generate_latest,
+            )
+        except ImportError:
+            raise ImportError(
+                "Prometheus client is not installed. Please either install it or set prometheus to False."
+            )
+
+        HTTP_REQUESTS = Counter(
+            "http_requests_total",
+            "Total HTTP requests",
+            ["method", "path", "status_code"],
+        )
+
+        # TODO: For multi-process scenarios, should use prometheus_client.multiprocess mode.
+        HTTP_LATENCY = Histogram(
+            "http_request_duration_seconds",
+            "Latency of HTTP requests",
+            ["method", "path"],
+            buckets=[0.001, 0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10],
+        )
+
+        @app.middleware("http")
+        async def prometheus_http_middleware(  # pyright: ignore[reportUnusedFunction]
+            request: Request, call_next: Callable[[Request], Awaitable[Response]]
+        ) -> Response:
+            start = time.perf_counter()
+            response = await call_next(request)
+            elapsed = time.perf_counter() - start
+
+            path = request.url.path
+            method = request.method
+            status = response.status_code
+
+            HTTP_REQUESTS.labels(method, path, status).inc()
+            HTTP_LATENCY.labels(method, path).observe(elapsed)
+
+            return response
+
+        @api.get("/prometheus")
+        async def prometheus_metrics():  # pyright: ignore[reportUnusedFunction]
+            return Response(
+                content=generate_latest(),
+                media_type=CONTENT_TYPE_LATEST,
+            )
+
     def _setup_otlp(self, api: APIRouter):
         """Setup OTLP endpoints."""
 
@@ -794,6 +856,10 @@ class LightningStoreServer(LightningStore):
         - In the owner process: delegate to the in-process store.
         - In a different process: delegate to a HTTP client talking to the server.
         """
+        # If the store is zero-copy, we can just call the method directly.
+        if self.store is not None and self.store.capabilities.get("zero_copy", False):
+            return await getattr(self.store, method_name)(*args, **kwargs)
+
         if os.getpid() == self._owner_pid:
             if method_name == "wait_for_rollouts":
                 # wait_for_rollouts can block for a long time; avoid holding the lock

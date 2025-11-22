@@ -213,3 +213,6 @@ agentlightning/dashboard/**/*.css
 agentlightning/dashboard/**/*.js
 agentlightning/dashboard/**/*.html
 agentlightning/dashboard/**/*.svg
+
+# Docker data
+docker/data/

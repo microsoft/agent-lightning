@@ -1,0 +1,14 @@
+.venv
+**/.venv
+__pycache__
+.git
+.gitignore
+**/node_modules
+dist
+build
+.env
+docker
+.pytest_cache
+.vscode
+**/*.log
+examples/**/data

@@ -1,0 +1,23 @@
+# Docker-compose file to launch a MongoDB server for development.
+# It's used to test the MongoDB store implementation.
+
+services:
+
+  mongo:
+    image: mongo:latest
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+    ports:
+      - "27017:27017"
+    command: ["mongod", "--bind_ip_all", "--replSet", "rs0"]
+    volumes:
+      - ../scripts/mongodb_init_rs_host.js:/docker-entrypoint-initdb.d/init-rs.js:ro
+      - ./data/mongo-host:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
