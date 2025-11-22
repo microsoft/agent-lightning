@@ -1,0 +1,46 @@
+include:
+  - compose.mongo.yml
+
+services:
+
+  app:
+    extends:
+      file: compose.store.yml
+      service: app
+
+    command: agl store --host 0.0.0.0 --port 4747 --prometheus --backend mongo
+
+  mongodb-exporter:
+    image: bitnami/mongodb-exporter:latest
+    environment:
+      - MONGODB_URI=mongodb://mongo:27017
+    depends_on:
+      - mongo
+    ports:
+      - "9216:9216"
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    # In CI you might not have full /proc, but this is OK for container-level stats
+    pid: "host"
+    network_mode: "service:app" # share network with app for simplicity
+    command:
+      - '--path.rootfs=/host'
+    volumes:
+      - '/:/host:ro,rslave'
+
+  prometheus:
+    image: prom/prometheus:latest
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=1h'
+    volumes:
+      - ./prometheus.mongo-store.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus-data:/prometheus
+    depends_on:
+      - app
+      - mongodb-exporter
+      - node-exporter
+    ports:
+      - "9090:9090"
