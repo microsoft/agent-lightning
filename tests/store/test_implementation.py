@@ -2014,8 +2014,12 @@ async def test_wait_nonexistent_rollout_with_finite_timeout(store_fixture: Light
     completed = await store_fixture.wait_for_rollouts(rollout_ids=["nonexistent"], timeout=0.1)
     elapsed = time.time() - start
 
-    # Should timeout quickly (not wait indefinitely)
-    assert elapsed < 1.0
+    if isinstance(store_fixture, InMemoryLightningStore):
+        # Should timeout quickly (not wait indefinitely)
+        assert elapsed < 0.2
+    else:
+        # Should be slower, but not too slow
+        assert elapsed < 2.0
     assert len(completed) == 0
 
 

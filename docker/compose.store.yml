@@ -3,7 +3,7 @@ services:
   app:
     build:
       context: ../
-      dockerfile: docker/dev.Dockerfile
+      dockerfile: docker/Dockerfile.dev
 
     ports:
       - "4747:4747"
