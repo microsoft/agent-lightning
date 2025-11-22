@@ -87,6 +87,7 @@ jobs:
           set -euo pipefail
 
           cd docker
+          ./setup.sh
           docker compose -f docker/compose.mongo.yml up -d
 
           SERVICE_NAME=mongo
