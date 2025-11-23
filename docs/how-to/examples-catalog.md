@@ -1,5 +1,9 @@
 # Examples Catalog
 
+!!! tip "Wanted to Contribute?"
+
+    We welcome contributions to the examples catalog! Please refer to the [Contributing](../community/contributing.md) guide for more details.
+
 <div class="grid cards" markdown>
 
 -   :material-robot:{ .lg .middle } __APO room selector__
