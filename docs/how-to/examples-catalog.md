@@ -1,6 +1,6 @@
 # Examples Catalog
 
-!!! tip "Wanted to Contribute?"
+!!! tip "Want to Contribute?"
 
     We welcome contributions to the examples catalog! Please refer to the [Contributing](../community/contributing.md) guide for more details.
 
