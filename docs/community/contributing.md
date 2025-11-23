@@ -14,23 +14,53 @@ Start with trivial documentation improvements, such as fixing typos, clarifying 
 
 ### Bug Fixes
 
+Bug fixes are the fastest way to get familiar with the codebase:
+
+- Look through the ["good first issue"](https://github.com/microsoft/agent-lightning/labels/good%20first%20issue) and ["bug"](https://github.com/microsoft/agent-lightning/labels/bug) labels. Comment on the issue to claim it so we know you are working on it.
+- When you find an unreported bug, open an issue that includes repro steps, logs, and expected behavior before sending a pull request.
+- Focus on independent fixes that do not introduce breaking API changes. Larger refactors should go through an RFC or maintainer sync first.
+
 ### New Examples
 
 Due to limited resources, we have a high bar for new examples. We only accept examples that satisfy at least one of conditions of below. For the compactness of examples, we prefer two or more conditions met.
 
 - Illustrates how to use an agent framework that is significantly different from the examples we have already provided. For example, [LangChain](https://www.langchain.com/) and [LlamaIndex](https://www.llamaindex.ai/) is not considered as significantly different; but [LangChain](https://www.langchain.com/) is significantly different from [n8n](https://n8n.io/) because they have different orchestration paradigms, and also from [Vercel AI SDK](https://ai-sdk.dev/) because they are written in different programming languages.
 - Illustrates a strong performance on a benchmark dataset.
-- ...
+- Demonstrates a training or serving backend that is otherwise hard to reproduce (e.g., Tinker integration, MCP-based tools, proprietary deployment pipelines).
+- Ships with CI or self-test coverage that keeps the example runnable over time.
+- Includes a full walkthrough in the `examples/<name>/README.md` plus cross-links to the relevant `docs/how-to/*` article.
 
 ### Fresh Implementations of Core Modules
 
 This covers new implementations of components like [`Runner`][agentlightning.Runner], [`Tracer`][agentlightning.Tracer], [`Adapter`][agentlightning.Adapter], [`LightningStore`][agentlightning.LightningStore].
 
+Before starting, file an issue or proposal that explains:
+
+- Which interface you want to extend (e.g., a new `Tracer` that exports to another telemetry sink).
+- Why existing implementations are insufficient.
+- How you plan to test interoperability with the rest of the stack (unit tests, example updates, docs).
+
 ### New Algorithms
 
 This covers integrations of other algorithm backends. First check whether the algorithm you want to support is already supported in [Algorithm Zoo](../algorithm-zoo/index.md); or it's available as an example in [Examples Catalog](../how-to/examples-catalog.md).
 
-## Others?
+We especially welcome:
+
+- Connectors to reinforcement-learning frameworks (e.g., VERL, Tinker, bespoke schedulers) that can be toggled via `agl.Trainer`.
+- Prompt or policy optimization loops that expose clean configuration surfaces and include reproducible training/eval scripts.
+- Recipes that demonstrate migration paths from raw scripts to integrated Agent-lightning components.
+
+Open an issue with your design doc so we can help scope the work, point you to existing utilities, and avoid overlapping efforts.
+
+### Ecosystem Projects
+
+We are looking for projects that build on top of Agent-lightning. If you think your project can benefit the community, while not wanting to go through the review and discussion process of adding a new example or enhancement, please create a fork of Agent-lightning or a new project that uses Agent-lightning as a dependency. We will be happy to list your project in [Community Projects](../index.md) and [README]({{ src("README.md") }}).
+
+### Other Contribution Ideas
+
+- **Test cases.** Additions to `tests/` or other integration checks that make regressions easier to catch.
+- **Benchmarks.** Additions to `tests/benchmark` to perform pressure tests on Agent-lightning, particularly for large-scale training and rollouts.
+- **Issue triage.** Reproducing reported bugs, confirming whether they still happen on `main`, or suggesting short-term mitigations helps maintainers prioritize fixes.
 
 ## How to Contribute
 
