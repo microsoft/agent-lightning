@@ -130,7 +130,7 @@ uv run pre-commit install
 uv run pre-commit run --all-files --show-diff-on-failure --color=always
 ```
 
-Running locally keeps CI green and diffs manageable.
+Once installed, the hooks run automatically on every `git commit`. Running the pre-commit hooks locally keeps CI green and diffs manageable.
 
 ### 3. Branch From a Fresh `main`
 
