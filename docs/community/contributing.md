@@ -220,4 +220,4 @@ Before opening a PR, double-check the basics:
 4. Include screenshots or logs if they clarify behavior.
 5. Address review feedback promptly. Follow-up tweaks work best as focused commits; `git commit --fixup` is handy for reviewer-suggested edits.
 
-Thanks for contributing—every improvement strengthens the Agent Lightning community!
+Thanks for contributing! every improvement strengthens the Agent Lightning community!
