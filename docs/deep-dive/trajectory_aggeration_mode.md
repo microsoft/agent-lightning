@@ -1,56 +1,114 @@
-
-<!-- 标题： Adopting the Trajectory Aggregation Mode for 更快的training -->
 # Adopting the Trajectory Aggregation Mode for Faster Training
 
-## Introduction
-<!-- intro: 由于transition的模式比较慢，我们需要一个trajectory mode加快运行速度 -->
+## 1. Introduction
 
-The transition-based aggregation mode suffers from significant efficiency limitations. To accelerate training speed, we need to implement a trajectory-based aggregation mode that processes multiple turns as a single training sample.
+In the context of Multi-turn Agent Reinforcement Learning (RL), data collection relies on "rollouts" where an agent interacts with an environment over multiple sequential turns. The strategy used to process these rollouts into training samples is a critical architectural decision that fundamentally impacts both training efficiency and model performance.
 
-## Implementation Challenges of Trajectory Mode with Response Masking
+Currently, two primary strategies exist for aggregating these interaction traces: **Transition Aggregation** and **Trajectory Aggregation**.
 
-### 1. Special Token Mismatch
-<!-- 1. special token mismatch，我们无法从chat template中还原content，我们发现response中LLM生成的end token可能是<end_of_text>或者<eot_id>，但是在下一轮中作为prompt的message的一部分输入时可能会变 -->
-A fundamental challenge arises from the irreversibility of chat templates. We cannot accurately reconstruct the original content from tokenized sequences due to inconsistencies in special token handling. Specifically, the LLM may generate different end tokens (e.g., `<end_of_text>` or `<eot_id>`) during response generation. However, when these generated responses are incorporated into the next turn's prompt as part of the conversation history, the end tokens may be transformed or normalized differently by the chat template.
+### Transition Aggregation Mode
 
-### 2. Retokenization Inconsistencies
+**Configuration:** (default setting) `actor_rollout_ref.trace_aggregator.mode = transition`
 
-<!-- 2. retokenize的时候的问题：作为response生成的token和string一一对应，但是下一次的prompt会对上一次的string做一次retokenize，同样的string作为prompt和response的时候的token id可能不同 -->
-During response generation, each token corresponds one-to-one with the generated string. However, when this string is retokenized as part of the next turn's prompt, the same text sequence may produce different token IDs depending on its context (prompt vs. response).
+In the **Transition Aggregation Mode**, every individual response generated during a multi-turn session is treated as a distinct, independent training sample.
 
-This manifests in several ways:
+  * **Structure:** For a single session containing $N$ turns, this mode generates $N$ separate training samples.
+  * **Masking:** For any given sample, only the newly generated response (the current turn) is assigned a `response_mask=1` (active loss). The entire preceding conversation history is treated merely as frozen context (`response_mask=0`).
+  * **Characteristics:** While simple to implement, this results in a dataset with a high sample count where each sample duplicates the shared history prefix. This leads to significant computational redundancy and memory overhead.
 
-**a) Cross-turn boundary tokenization artifacts**
-<!-- 1. 如果不是message的话，prompt和response界限的问题。（一个图片的例子，如果response的结尾是感叹号，然后下一次agent的逻辑还是在这条message后面直接拼接\n\n，那么!\n\n可能会被retokenize成一个新的token，其中一半内容来自于上一个turn的response，一半来自下一个turn的prompt） -->
-When responses are not structured as separate messages, boundary ambiguities emerge. For example, if a response ends with an exclamation mark "!" and the agent logic appends "\n\n" directly afterward, the sequence "!\n\n" may be retokenized as a single token during the next turn. This creates a token that spans two turns—half from the previous response and half from the next prompt—making it impossible to correctly assign response masks.
+### Trajectory Aggregation Mode
 
-**b) Whitespace and escape character discrepancies**
-<!-- 2. 作为新的prompt，会出现多出来的空格、转义符等小的区别 -->
-When the same text is retokenized as a new prompt, minor differences appear, such as additional whitespace, escape characters, or formatting variations that alter the token sequence.
+**Configuration:** `actor_rollout_ref.trace_aggregator.mode = trajectory`
 
-**c) Reserved token recognition**
-<!-- 3. reserved token会被处理成special token，导致mismatch（response生成乱码了，乱码依次生成了<researved special token xx>这些分段的字符，多个token id;但是在retokenize的时候会被识别成一个researved special token，变成了一个token） -->
-When the model generates garbled output that accidentally forms a reserved special token character sequence (e.g., generating "`<reserved_token_xx>`" as separate text tokens across multiple token IDs), retokenization may recognize this as an actual special token, collapsing multiple tokens into a single special token ID. This creates a token count mismatch between generation and retokenization.
+**Trajectory Aggregation Mode** is a standard approach in broader landscape of LLM training. This method processes the entire multi-turn interaction session as a single, contiguous training sample to address the efficiency limitations of the transition-based approach
 
-### 3. Agent Post-processing Modifications
+  * **Structure:** A session with $N$ turns is condensed into one long-sequence sample.
+  * **Masking:** The sample utilizes an alternating mask pattern. User prompts and environment observations are masked (`response_mask=0`), while all agent responses within the sequence are active (`response_mask=1`).
+  * **Efficiency Gains:** By processing the full trajectory at once, we eliminate redundant computation on history prefixes and maximize GPU utilization through longer sequence lengths. This significantly accelerates training throughput.
 
-<!-- 3. agent中的后处理，例如truncated一些结果。例如有些agent需要在response结束之后通过正则表达式truncate一部分对后文没用的content，导致我们通过识别prefix没办法对应上（因为前一段的response少了一部分内容 -->
-Many agent implementations apply post-processing transformations to generated responses, such as regex-based truncation to remove unnecessary content before the next turn. This creates a mismatch where the previous turn's response in our stored rollout data differs from the actual prompt prefix used in the subsequent turn, preventing accurate prefix matching.
+**Scope:** This implementation applies specifically to **multi-turn message** scenarios, where the message history from previous turns is fed into the model as context for the subsequent turn.
+
+*(Figure 1: Comparison of data layout. Top: Transition mode creates $N$ samples with duplicated prefixes. Bottom: Trajectory mode creates 1 distinct sample with alternating masks.)*
+
+## 2. Trajectory Mode Implementation Logic
+
+The foundational implementation of **Agent Lightning** is designed around the *transition mode*. Consequently, adopting the Trajectory Mode requires a fundamental shift in how training data is constructed. The core logic involves three distinct steps:
+
+1.  **Trace Merging:** Consolidate the discrete interaction logs (traces) received from the environment into a continuous conversation history. This requires identifying the exact start and end positions of each agent response within the merged text via **Prefix Matching**.
+2.  **Response Masking:** Construct the final training trajectory by applying an alternating `response_mask` (assigning `response_mask=0` for prompts/observations and `response_mask=1` for agent responses).
+3.  **Training:** Feed the fully constructed, masked trajectory into the model for optimization.
+
+However, in the current implementation, **Step 1 (Trace Merging)** and **Step 2 (Response Masking)** present significant engineering challenges, leading to the issues detailed in Section 3.
+
+## 3. Implementation Challenges of Trajectory Aggregation Mode
+
+### 3.1 Trace Merging Failures
+
+The primary obstacle in implementing Trajectory Mode is the failure of Prefix Matching during the Trace Merging stage.
+
+Ideally, we would locate the agent's response within the full conversation by matching the token sequence generated during inference. In practice, the token IDs stored during the rollout (inference) often do not match the token IDs produced when the full history is re-tokenized for training.
+
+This mismatch occurs because the mapping from `String` to `Token IDs` is not bijective; it is context-dependent. The cycle of `ID (Generation) -> String (Detokenization) -> ID (Retokenization)` introduces drift, preventing exact prefix matching.
+
+*(Figure 2: The Retokenization Cycle. The original generated IDs, when converted to text and re-tokenized with new context, result in a different set of IDs, causing match failures.)*
+
+#### 3.1.1 Retokenization Drift Caused by Chat Templates
+
+The mechanism used by Chat Templates to demarcate individual turns introduces boundary artifacts, creating ambiguity in mask assignment.
+
+**Special Token Mismatch**
+Chat templates are often irreversible regarding special tokens.
+
+  * **Issue:** During inference, the LLM may explicitly generate an end-of-turn token like `<end_of_text>` or `<eot_id>`. However, when this content is fed back into the chat template for the next turn, the template might strip, normalize, or transform these special tokens into standard text or different control tokens.
+  * **Result:** We cannot accurately reconstruct the original special tokens used during generation, leading to length and content mismatches between the rollout log and the training data.
+
+**Cross-turn Boundary Tokenization Artifacts**
+When responses are concatenated with subsequent prompts, the tokenizer may merge tokens across the boundary.
+
+  * **Example:** If an agent response ends with an exclamation mark `!` and the template appends `\n\n` for the next turn, the sequence `!\n\n` might be tokenized as a single token.
+  * **The Dilemma:** This single token technically contains part of the *Response* (which should be masked as 1) and part of the *Template/Prompt* (which should be masked as 0). It is impossible to correctly assign a binary mask to this "hybrid" token.
 
 
-## Consequences
+#### 3.1.2 Contextual Tokenization Discrepancy and String Normalization Artifacts
 
-These challenges lead to two critical failures:
+**Sub-Word Split Variability**
 
-### 1. Data Processing Stage Failure
+Tokenization algorithms (like BPE) merge characters based on frequency and context. A text segment generated sequentially token-by-token can result in different IDs than the same text processed as a whole block.
 
-<!-- 1. 在数据处理阶段，prefix和新的prompt之间无法match，不是exactly the same，无法识别成同一个trajectory的多次call -->
-During data preparation, the stored response prefix cannot be matched with the new prompt—they are not exactly identical. This prevents the system from correctly identifying multiple calls as belonging to the same trajectory, breaking the trajectory aggregation logic.
+  * **The "HAVING" Example:** During generation, a model might output the word "HAVING" as two separate tokens: `H` (ID: 35) + `AVING` (ID: 482). However, when this text is detokenized into the string "HAVING" and then re-tokenized as part of a prompt, the tokenizer might prefer the split `HAV` (ID: 982) + `ING` (ID: 27).
+  * **Result:** Although the human-readable text is identical, the token ID sequences differ. The system cannot "find" the response `[35, 482]` inside the re-tokenized history `[..., 982, 27, ...]`, causing the masking logic to fail.
 
-### 2. Training Stage Failure
+**Whitespace and Escape Character Normalization Artifacts**
+Furthermore, minor artifacts often invisible in standard string views can cause drift.
 
-<!-- 2. 训练阶段，response mask可能加的位置不对，导致接头的地方的token加了错误的mask，例如同一个token不知道该作为prompt还是response部分 --> -->
-Response masks may be applied to incorrect token positions. At turn boundaries, tokens may receive incorrect mask values, causing ambiguity about whether a token should be treated as part of the prompt (mask=0) or response (mask=1). This corrupts the training signal and degrades model learning.
+  * **Issue:** During re-tokenization as a new prompt, additional whitespace, escape characters (e.g., `\n` vs `\\n`), or formatting variances may be introduced or normalized.
+  * **Impact:** These subtle changes shift the token boundaries, rendering the original stored indices invalid.
+
+#### 3.1.3 Agent Post-processing Modifications
+
+Many production agents employ post-processing logic to refine outputs before presenting them to the environment or user.
+
+  * **Issue:** An agent might generate a "Chain of Thought" followed by a final answer, but a regex post-processor might truncate the thought process to keep only the final answer for the next turn's history.
+  * **Result:** The stored rollout data (full generation including thoughts) no longer matches the prompt prefix used in the subsequent turn (truncated history). The prefix matcher looks for content that effectively no longer exists in the history, breaking the trajectory assembly.
+
+#### 3.1.4 Special Tokens Hallucination
+
+Occasionally, models may hallucinate or "spell out" special tokens rather than generating the single atomic ID.
+
+  * **Issue:** Due to model hallucination, a model might generate the string `<reserved_token_xx>` character-by-character (resulting in multiple token IDs). However, during re-tokenization, the tokenizer recognizes this string as a reserved keyword and collapses it into a single special token ID.
+  * **Result:** This creates a discrepancy in token counts (e.g., 10 tokens generated vs. 1 token re-tokenized), causing significant misalignment in the mask indices.
+
+### 3.2 Response Masking Failures
+
+If the prefix matching stage fails to perfectly align tokens, the errors propagate to the training stage, resulting in **Response Mask Misalignment**.
+
+  * **Mask Shift:** If the calculated start/end indices are offset even by a single token, the `response_mask` will be misapplied. It may incorrectly cover parts of the user prompt (forcing the model to learn to predict user inputs) or unmask parts of the valid response.
+  * **Off-Policy Training:** This misalignment creates a noisy, **off-policy** training signal. The model is penalized for "incorrectly" predicting tokens that were actually part of the immutable prompt, or it fails to receive feedback on its actual actions. This severely degrades learning stability and final performance.
+
+*(Figure 3: Mask Misalignment. The top row shows correct masking. The bottom row shows a shifted mask, where the model is inadvertently trained to predict the user prompt `User:`.)*
+
+<!-- todo: 画一张图说明off-policy -->
+
 
 
 
