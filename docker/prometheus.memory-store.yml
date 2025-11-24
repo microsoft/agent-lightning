@@ -8,10 +8,6 @@ scrape_configs:
       - targets: ["app:4747"]
     metrics_path: /v1/prometheus
 
-  - job_name: mongodb
-    static_configs:
-      - targets: ["mongodb-exporter:9216"]
-
   - job_name: node
     static_configs:
       - targets: ["node-exporter:9100"]
