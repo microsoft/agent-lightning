@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import threading
 import time
 import traceback
@@ -733,16 +734,22 @@ class LightningStoreServer(LightningStore):
     def _setup_prometheus(self, api: APIRouter, app: FastAPI):
         """Setup Prometheus metrics endpoints."""
         try:
+            from prometheus_client import make_asgi_app  # type: ignore
             from prometheus_client import (
-                CONTENT_TYPE_LATEST,
+                CollectorRegistry,
                 Counter,
                 Histogram,
-                generate_latest,
+                multiprocess,
             )
         except ImportError:
             raise ImportError(
                 "Prometheus client is not installed. Please either install it or set prometheus to False."
             )
+
+        # Multi-process mode: https://prometheus.github.io/client_python/multiprocess/
+        registry = CollectorRegistry()
+        if self.launcher_args.launch_mode == "mp" and self.launcher_args.n_workers > 1:
+            multiprocess.MultiProcessCollector(registry)
 
         HTTP_REQUESTS = Counter(
             "http_requests_total",
@@ -750,13 +757,28 @@ class LightningStoreServer(LightningStore):
             ["method", "path", "status_code"],
         )
 
-        # TODO: For multi-process scenarios, should use prometheus_client.multiprocess mode.
         HTTP_LATENCY = Histogram(
             "http_request_duration_seconds",
             "Latency of HTTP requests",
             ["method", "path"],
             buckets=[0.001, 0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10],
         )
+
+        def get_template_path(path: str) -> str:
+            # Handle "latest" keywords BEFORE generic IDs
+            if path.endswith("/attempts/latest") and "/rollouts/" in path:
+                return re.sub(r"rollouts/[^/]+/attempts/latest$", "rollouts/{rollout_id}/attempts/latest", path)
+            elif path.endswith("/resources/latest"):
+                return path
+
+            # Handle generic IDs
+            # (Order matters: longest paths first or lookaheads)
+            path = re.sub(r"/attempts/[^/]+$", "/attempts/{attempt_id}", path)
+            path = re.sub(r"/rollouts/[^/]+", "/rollouts/{rollout_id}", path)  # Handles root and middle
+            path = re.sub(r"/resources/[^/]+$", "/resources/{resources_id}", path)
+            path = re.sub(r"/workers/[^/]+$", "/workers/{worker_id}", path)
+
+            return path
 
         @app.middleware("http")
         async def prometheus_http_middleware(  # pyright: ignore[reportUnusedFunction]
@@ -766,7 +788,8 @@ class LightningStoreServer(LightningStore):
             response = await call_next(request)
             elapsed = time.perf_counter() - start
 
-            path = request.url.path
+            # Strip the ID-specific URL parts
+            path = get_template_path(request.url.path)
             method = request.method
             status = response.status_code
 
@@ -775,12 +798,9 @@ class LightningStoreServer(LightningStore):
 
             return response
 
-        @api.get("/prometheus")
-        async def prometheus_metrics():  # pyright: ignore[reportUnusedFunction]
-            return Response(
-                content=generate_latest(),
-                media_type=CONTENT_TYPE_LATEST,
-            )
+        metrics_app = make_asgi_app(registry=registry)  # type: ignore
+
+        api.mount("/prometheus", metrics_app)  # type: ignore
 
     def _setup_otlp(self, api: APIRouter):
         """Setup OTLP endpoints."""

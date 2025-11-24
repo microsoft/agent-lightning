@@ -15,7 +15,7 @@ from typing import (
 from pymongo import AsyncMongoClient
 
 from .base import LightningStoreCapabilities
-from .collection.mongo import MongoClientPool, MongoLightningCollections
+from .collection.mongo import MongoClientPool, MongoLightningCollections, MongoOperationPrometheusTracker
 from .collection_based import CollectionBasedLightningStore
 
 T_callable = TypeVar("T_callable", bound=Callable[..., Any])
@@ -45,7 +45,9 @@ class MongoLightningStore(CollectionBasedLightningStore[MongoLightningCollection
         client: AsyncMongoClient[Mapping[str, Any]] | str,
         database_name: str | None = None,
         partition_id: str | None = None,
+        prometheus: bool = False,
     ) -> None:
+        self._enable_prometheus = prometheus
         self._auto_created_client = False
         if isinstance(client, str):
             self._client = AsyncMongoClient[Mapping[str, Any]](client)
@@ -62,7 +64,14 @@ class MongoLightningStore(CollectionBasedLightningStore[MongoLightningCollection
 
         self._client_pool = MongoClientPool(self._client)
 
-        super().__init__(collections=MongoLightningCollections(self._client_pool, database_name, partition_id))
+        super().__init__(
+            collections=MongoLightningCollections(
+                self._client_pool,
+                database_name,
+                partition_id,
+                prometheus_tracker=MongoOperationPrometheusTracker(enabled=self._enable_prometheus),
+            )
+        )
 
     @property
     def capabilities(self) -> LightningStoreCapabilities:
