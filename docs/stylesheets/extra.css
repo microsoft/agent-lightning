@@ -66,7 +66,7 @@
   padding: 1em;
   font-weight: 500;
   position: relative;
-  z-index: 1000;
+  z-index: 3;
   border: 2px solid #FFD15D;
   border-radius: 0.25em;
   margin-bottom: 2em;
