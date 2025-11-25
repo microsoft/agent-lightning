@@ -2,9 +2,8 @@
 # It's used to test the MongoDB store implementation.
 
 services:
-
   mongo:
-    image: mongo:latest
+    image: mongo:8.2
     ulimits:
       nofile:
         soft: 65535

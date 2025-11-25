@@ -1,5 +1,4 @@
 services:
-
   app:
     extends:
       file: compose.store.yml
@@ -13,16 +12,16 @@ services:
     pid: "host"
     network_mode: "service:app" # share network with app for simplicity
     command:
-      - '--path.rootfs=/host'
+      - "--path.rootfs=/host"
     volumes:
-      - '/:/host:ro,rslave'
+      - "/:/host:ro,rslave"
 
   prometheus:
     image: prom/prometheus:latest
     command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-      - '--storage.tsdb.retention.time=1h'
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=1h"
     volumes:
       - ./prometheus.memory-store.yml:/etc/prometheus/prometheus.yml:ro
       - ./data/prometheus:/prometheus
