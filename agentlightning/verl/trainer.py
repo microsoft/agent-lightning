@@ -201,6 +201,7 @@ class AgentLightningTrainer(RayPPOTrainer):
 
     def _train_step(self, batch_dict: dict) -> dict:
         # Isolate in a separate method to automatically recycle the variables before validation.
+        breakpoint()
         batch: DataProto = DataProto.from_single_dict(batch_dict)
         metrics = {}
         timing_raw = {}
@@ -427,7 +428,21 @@ class AgentLightningTrainer(RayPPOTrainer):
             store=self.store,
             llm_proxy=self.llm_proxy,
             adapter=self.adapter,
+            processor=self.processor,  # For Qwen2-VL mrope position_ids
         )
+
+        # Set image base directory for multimodal models (resolve relative image paths)
+        # Priority: 1) config.data.image_base_dir  2) infer from train_files path
+        import os
+        if hasattr(self.config.data, "image_base_dir") and self.config.data.image_base_dir:
+            self.agent_mode_daemon.image_base_dir = self.config.data.image_base_dir
+        else:
+            train_files = self.config.data.train_files
+            if isinstance(train_files, (list, tuple)):
+                train_files = train_files[0]
+            if train_files and os.path.exists(train_files):
+                self.agent_mode_daemon.image_base_dir = os.path.dirname(os.path.abspath(train_files))
+
         self.agent_mode_daemon.start()
 
         # perform validation before training
