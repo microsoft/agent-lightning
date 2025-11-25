@@ -38,6 +38,7 @@ from calc_agent import MathProblem, calc_agent
 from datasets import Dataset as HuggingFaceDataset
 
 import agentlightning as agl
+from agentlightning.env_var import LightningEnvVar, resolve_bool_env_var, resolve_str_env_var
 
 
 def verl_default_config() -> Dict[str, Any]:
@@ -153,7 +154,7 @@ def train(
         PROJECT_NAME = "AgentLightningCI"
 
         # Skip this step if AGL_CURRENT_ROLE is runner
-        agl_current_role = os.getenv("AGL_CURRENT_ROLE")
+        agl_current_role = resolve_str_env_var(LightningEnvVar.AGL_CURRENT_ROLE, fallback="both")
 
         if agl_current_role != "runner":
             # Simulate writing to $GITHUB_OUTPUT if it’s set
@@ -222,7 +223,7 @@ def main():
 
     if args.external_store_address:
         print(f"Connecting to external store at: {args.external_store_address}")
-        if not os.getenv("AGL_MANAGED_STORE"):
+        if not resolve_bool_env_var(LightningEnvVar.AGL_MANAGED_STORE, fallback=True):
             raise ValueError(
                 "When using an external store, please set the environment variable AGL_MANAGED_STORE=0. "
                 "Otherwise the trainer will still try to manage the store lifecycle for you!"

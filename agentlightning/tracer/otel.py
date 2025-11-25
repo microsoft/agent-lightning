@@ -220,6 +220,21 @@ class LightningSpanProcessor(SpanProcessor):
         self._loop_thread: Optional[threading.Thread] = None
 
     @property
+    def store(self) -> Optional[LightningStore]:
+        """The store to submit the spans to."""
+        return self._store
+
+    @property
+    def rollout_id(self) -> Optional[str]:
+        """The rollout ID to submit the spans to."""
+        return self._rollout_id
+
+    @property
+    def attempt_id(self) -> Optional[str]:
+        """The attempt ID to submit the spans to."""
+        return self._attempt_id
+
+    @property
     def disable_store_submission(self) -> bool:
         """Whether to disable submitting spans to the store."""
         return self._disable_store_submission

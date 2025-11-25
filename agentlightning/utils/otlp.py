@@ -226,6 +226,27 @@ class LightningStoreOTLPExporter(OTLPSpanExporter):
     _rollout_id: Optional[str] = None
     _attempt_id: Optional[str] = None
 
+    @property
+    def endpoint(self) -> Optional[str]:
+        """The endpoint to submit the spans to."""
+        if hasattr(self, "_endpoint"):
+            return self._endpoint
+        return None
+
+    @property
+    def rollout_id(self) -> Optional[str]:
+        """The rollout ID to submit the spans to."""
+        if hasattr(self, "_rollout_id"):
+            return self._rollout_id
+        return None
+
+    @property
+    def attempt_id(self) -> Optional[str]:
+        """The attempt ID to submit the spans to."""
+        if hasattr(self, "_attempt_id"):
+            return self._attempt_id
+        return None
+
     def enable_store_otlp(self, endpoint: str, rollout_id: str, attempt_id: str) -> None:
         """Enable storing OTLP data to a specific LightningStore rollout/attempt."""
         self._rollout_id = rollout_id
