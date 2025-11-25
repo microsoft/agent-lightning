@@ -35,6 +35,7 @@ import agentlightning as agl
 # Calculate absolute path to images directory (portable across environments)
 # Use realpath to resolve symlinks and match vLLM's path validation
 CHARTQA_EXAMPLES_DIR = os.path.dirname(os.path.abspath(__file__))
+CHARTQA_DATA_DIR = os.path.realpath(os.path.join(CHARTQA_EXAMPLES_DIR, "data"))
 CHARTQA_IMAGES_DIR = os.path.realpath(os.path.join(CHARTQA_EXAMPLES_DIR, "data", "images"))
 
 RL_TRAINING_CONFIG: Dict[str, Any] = {
@@ -45,18 +46,19 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
     "data": {
         "train_files": "data/train_chartqa.parquet",
         "val_files": "data/test_chartqa.parquet",
-        "train_batch_size": 4,  # Smaller due to vision tokens
-        "max_prompt_length": 4096,  # Increased for vision tokens
-        "max_response_length": 1024,
+        "image_base_dir": CHARTQA_DATA_DIR,  # For resolving relative image paths in mrope
+        "train_batch_size": 1,  # Smaller due to vision tokens
+        "max_prompt_length": 2048,  # Increased for vision tokens
+        "max_response_length": 512,
         "truncation": "error",
     },
     "actor_rollout_ref": {
         "rollout": {
-            "tensor_model_parallel_size": 1,
+            "tensor_model_parallel_size": 2,
             "n": 4,
-            "log_prob_micro_batch_size_per_gpu": 2,
+            "log_prob_micro_batch_size_per_gpu": 1,
             "name": "vllm",
-            "gpu_memory_utilization": 0.6,
+            "gpu_memory_utilization": 0.5,
             "enable_prefix_caching": True,  # Cache vision tokens
             "engine_kwargs": {
                 "vllm": {
@@ -65,8 +67,8 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
             },
         },
         "actor": {
-            "ppo_mini_batch_size": 2,
-            "ppo_micro_batch_size_per_gpu": 2,
+            "ppo_mini_batch_size": 1,
+            "ppo_micro_batch_size_per_gpu": 1,
             "optim": {"lr": 1e-6},  # Lower LR for vision-language models
             "use_kl_loss": False,
             "kl_loss_coef": 0.0,
@@ -79,7 +81,7 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
             },
         },
         "ref": {
-            "log_prob_micro_batch_size_per_gpu": 2,
+            "log_prob_micro_batch_size_per_gpu": 1,
             "fsdp_config": {"param_offload": True},
         },
         "model": {
@@ -89,7 +91,7 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
         },
     },
     "trainer": {
-        "n_gpus_per_node": 1,
+        "n_gpus_per_node": 2,
         "val_before_train": True,
         "critic_warmup": 0,
         "logger": ["console", "wandb"],
@@ -126,9 +128,9 @@ def config_train_fast() -> Dict[str, Any]:
     config = deepcopy(RL_TRAINING_CONFIG)
     config["actor_rollout_ref"]["rollout"]["gpu_memory_utilization"] = 0.5
     config["actor_rollout_ref"]["model"]["path"] = "Qwen/Qwen2-VL-2B-Instruct"
-    config["data"]["train_batch_size"] = 2
-    config["trainer"]["total_epochs"] = 1
-    config["trainer"]["total_training_steps"] = 1
+    config["data"]["train_batch_size"] = 1
+    config["trainer"]["total_epochs"] = 2
+    config["trainer"]["total_training_steps"] = 2
     config["trainer"]["experiment_name"] = EXPERIMENT_NAME
     config["trainer"]["project_name"] = PROJECT_NAME
     config["trainer"]["test_freq"] = 1
@@ -212,8 +214,16 @@ def train(config: Dict[str, Any], active_agent: Optional[str]) -> None:
 
     agent = LitChartQAAgent()
     algorithm = agl.VERL(config)
-    trainer = agl.Trainer(n_runners=10, algorithm=algorithm, adapter={"agent_match": active_agent})
-    print("Adapter agent match acknowledged:", trainer.adapter.agent_match)  # type: ignore
+    trainer = agl.Trainer(
+        n_runners=10,
+        algorithm=algorithm,
+        adapter={
+            # Use LlmProxyTraceToTriplet for VERL training since LLM calls go through LLMProxy
+            # This adapter extracts token IDs from litellm_request/raw_gen_ai_request spans
+            "type": "agentlightning.adapter.triplet.LlmProxyTraceToTriplet",
+        },
+    )
+    print("Adapter type:", type(trainer.adapter).__name__)
 
     train_data = pd.read_parquet(config["data"]["train_files"]).to_dict(orient="records")  # type: ignore
     val_data = pd.read_parquet(config["data"]["val_files"]).to_dict(orient="records")  # type: ignore
