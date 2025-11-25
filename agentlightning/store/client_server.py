@@ -736,6 +736,7 @@ class LightningStoreServer(LightningStore):
         try:
             from prometheus_client import make_asgi_app  # type: ignore
             from prometheus_client import (
+                REGISTRY,
                 CollectorRegistry,
                 Counter,
                 Histogram,
@@ -747,9 +748,12 @@ class LightningStoreServer(LightningStore):
             )
 
         # Multi-process mode: https://prometheus.github.io/client_python/multiprocess/
-        registry = CollectorRegistry()
-        if self.launcher_args.launch_mode == "mp" and self.launcher_args.n_workers > 1:
+        is_multiprocess = self.launcher_args.launch_mode == "mp" and self.launcher_args.n_workers > 1
+        if is_multiprocess:
+            registry = CollectorRegistry()
             multiprocess.MultiProcessCollector(registry)
+        else:
+            registry = REGISTRY
 
         HTTP_REQUESTS = Counter(
             "http_requests_total",
@@ -800,7 +804,8 @@ class LightningStoreServer(LightningStore):
 
         metrics_app = make_asgi_app(registry=registry)  # type: ignore
 
-        api.mount("/prometheus", metrics_app)  # type: ignore
+        # This App would need to be accessed via /v1/prometheus/ (note the trailing slash)
+        app.mount(api.prefix + "/prometheus", metrics_app)  # pyright: ignore[reportUnknownArgumentType]
 
     def _setup_otlp(self, api: APIRouter):
         """Setup OTLP endpoints."""
@@ -864,6 +869,8 @@ class LightningStoreServer(LightningStore):
 
         @self.app.get("/{full_path:path}", include_in_schema=False)
         def spa_fallback(full_path: str):  # pyright: ignore[reportUnusedFunction]
+            if full_path.startswith("v1/"):
+                raise HTTPException(status_code=404, detail="Not Found")
             # Let the frontend router handle it
             return FileResponse(index_file)
 

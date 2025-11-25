@@ -1252,34 +1252,34 @@ class MongoLightningCollections(LightningCollections):
         await self._rollout_queue.ensure_collection()
         await self._span_sequence_ids.ensure_collection()
 
-    @_mongo_operation("atomic")
     @asynccontextmanager
     async def atomic(self, *args: Any, **kwargs: Any):
         """Perform a atomic operation on the collections."""
-        # First step: ensure all collections exist before going into the atomic block
-        await self._ensure_collections()
-        # One session for one transaction
-        client = await self._client_pool.get_client()
-        async with client.start_session() as session:
-            collection_with_session = self.with_session(session)
-            try:
-                # Start the transaction now
-                await session.start_transaction(
-                    write_concern=WriteConcern("majority"),
-                    read_concern=ReadConcern("local"),
-                    read_preference=ReadPreference.PRIMARY,
-                )
-                yield collection_with_session
-                # Commit the transaction
-                await session.commit_transaction()
-            # Catch KeyboardInterrupt, CancelledError, etc. and cleanup.
-            except BaseException as exc:
-                if session.in_transaction:
-                    await session.abort_transaction()
-                if isinstance(exc, PyMongoError) and exc.has_error_label("TransientTransactionError"):
-                    # NOTE: Retry is via execute
-                    raise RuntimeError("Transaction failed with transient error") from exc
-                raise
+        with self._prometheus_tracker.track("atomic", self._database_name, self._collection_name):
+            # First step: ensure all collections exist before going into the atomic block
+            await self._ensure_collections()
+            # One session for one transaction
+            client = await self._client_pool.get_client()
+            async with client.start_session() as session:
+                collection_with_session = self.with_session(session)
+                try:
+                    # Start the transaction now
+                    await session.start_transaction(
+                        write_concern=WriteConcern("majority"),
+                        read_concern=ReadConcern("local"),
+                        read_preference=ReadPreference.PRIMARY,
+                    )
+                    yield collection_with_session
+                    # Commit the transaction
+                    await session.commit_transaction()
+                # Catch KeyboardInterrupt, CancelledError, etc. and cleanup.
+                except BaseException as exc:
+                    if session.in_transaction:
+                        await session.abort_transaction()
+                    if isinstance(exc, PyMongoError) and exc.has_error_label("TransientTransactionError"):
+                        # NOTE: Retry is via execute
+                        raise RuntimeError("Transaction failed with transient error") from exc
+                    raise
 
     @_mongo_operation("execute")
     async def execute(self, callback: Callable[[Self], Awaitable[T_generic]]) -> T_generic:

@@ -110,7 +110,7 @@
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 27 },
       "targets": [
         {
-          "expr": "rate(mongodb_op_counters_total[1m])",
+          "expr": "rate(mongodb_ss_opcounters[1m])",
           "legendFormat": "{{type}}"
         }
       ]
@@ -121,7 +121,7 @@
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 27 },
       "targets": [
         {
-          "expr": "mongodb_connections{state='current'}",
+          "expr": "mongodb_ss_connections{conn_type='current'}",
           "legendFormat": "Current"
         }
       ]
