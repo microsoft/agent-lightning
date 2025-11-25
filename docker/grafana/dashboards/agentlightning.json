@@ -19,7 +19,7 @@
     {
       "title": "HTTP Requests / Sec",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 1 },
+      "gridPos": { "h": 10, "w": 8, "x": 0, "y": 1 },
       "targets": [
         {
           "expr": "sum by (method, path) (rate(http_requests_total[1m]))",
@@ -30,7 +30,7 @@
     {
       "title": "HTTP Latency (P95 & P99)",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 1 },
+      "gridPos": { "h": 10, "w": 8, "x": 8, "y": 1 },
       "targets": [
         {
           "expr": "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket[1m])))",
@@ -44,8 +44,20 @@
       "fieldConfig": { "defaults": { "unit": "s" } }
     },
     {
+      "title": "HTTP Latency P95 (by Path)",
+      "type": "timeseries",
+      "gridPos": { "h": 10, "w": 8, "x": 16, "y": 1 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, path) (rate(http_request_duration_seconds_bucket[1m])))",
+          "legendFormat": "{{path}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 11 },
       "id": 200,
       "panels": [],
       "title": "Internal MongoDB Operations (Application Side)",
@@ -54,7 +66,7 @@
     {
       "title": "Mongo Ops/Sec (by Operation)",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 10 },
+      "gridPos": { "h": 10, "w": 8, "x": 0, "y": 12 },
       "targets": [
         {
           "expr": "sum by (operation) (rate(mongo_operation_total[1m]))",
@@ -65,7 +77,7 @@
     {
       "title": "Mongo Latency P95 (by Operation)",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 10 },
+      "gridPos": { "h": 10, "w": 8, "x": 8, "y": 12 },
       "targets": [
         {
           "expr": "histogram_quantile(0.95, sum by (le, operation) (rate(mongo_operation_duration_seconds_bucket[5m])))",
@@ -77,7 +89,7 @@
     {
       "title": "Mongo Errors / Sec",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 10 },
+      "gridPos": { "h": 10, "w": 8, "x": 16, "y": 12 },
       "targets": [
         {
           "expr": "sum by (error_type, operation) (rate(mongo_operation_errors_total[1m]))",
@@ -88,17 +100,18 @@
     {
       "title": "Transaction Attempts (Retries)",
       "type": "heatmap",
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 18 },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 22 },
       "targets": [
         {
           "expr": "sum by (le) (rate(mongo_operation_num_attempts_bucket[5m]))",
           "format": "heatmap"
         }
-      ]
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops/s" } }
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 26 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 30 },
       "id": 300,
       "panels": [],
       "title": "MongoDB System Metrics (Exporter)",
@@ -107,7 +120,7 @@
     {
       "title": "Command Operations",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 27 },
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 31 },
       "targets": [
         {
           "expr": "rate(mongodb_ss_opcounters[1m])",
@@ -118,7 +131,7 @@
     {
       "title": "Active Connections",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 27 },
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 31 },
       "targets": [
         {
           "expr": "mongodb_ss_connections{conn_type='current'}",
