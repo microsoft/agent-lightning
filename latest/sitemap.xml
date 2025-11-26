@@ -2,122 +2,122 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
          <loc>https://microsoft.github.io/agent-lightning/latest/</loc>
-         <lastmod>2025-11-23</lastmod>
+         <lastmod>2025-11-26</lastmod>
     </url>
     <url>
          <loc>https://microsoft.github.io/agent-lightning/latest/changelog/</loc>
-         <lastmod>2025-11-23</lastmod>
+         <lastmod>2025-11-26</lastmod>
     </url>
     <url>
          <loc>https://microsoft.github.io/agent-lightning/latest/algorithm-zoo/</loc>
-         <lastmod>2025-11-23</lastmod>
+         <lastmod>2025-11-26</lastmod>
     </url>
     <url>
          <loc>https://microsoft.github.io/agent-lightning/latest/algorithm-zoo/apo/</loc>
-         <lastmod>2025-11-23</lastmod>
+         <lastmod>2025-11-26</lastmod>
     </url>
     <url>
          <loc>https://microsoft.github.io/agent-lightning/latest/algorithm-zoo/verl/</loc>
-         <lastmod>2025-11-23</lastmod>
+         <lastmod>2025-11-26</lastmod>
     </url>
     <url>
          <loc>https://microsoft.github.io/agent-lightning/latest/community/contributing/</loc>
-         <lastmod>2025-11-23</lastmod>
+         <lastmod>2025-11-26</lastmod>
     </url>
     <url>
          <loc>https://microsoft.github.io/agent-lightning/latest/community/maintainers/</loc>
-         <lastmod>2025-11-23</lastmod>
+         <lastmod>2025-11-26</lastmod>
     </url>
     <url>
          <loc>https://microsoft.github.io/agent-lightning/latest/deep-dive/birds-eye-view/</loc>
-         <lastmod>2025-11-23</lastmod>
+         <lastmod>2025-11-26</lastmod>
     </url>
     <url>
          <loc>https://microsoft.github.io/agent-lightning/latest/deep-dive/serving-llm/</loc>
-         <lastmod>2025-11-23</lastmod>
+         <lastmod>2025-11-26</lastmod>
     </url>
     <url>
          <loc>https://microsoft.github.io/agent-lightning/latest/deep-dive/store/</loc>
-         <lastmod>2025-11-23</lastmod>
+         <lastmod>2025-11-26</lastmod>
     </url>
     <url>
          <loc>https://microsoft.github.io/agent-lightning/latest/how-to/examples-catalog/</loc>
-         <lastmod>2025-11-23</lastmod>
+         <lastmod>2025-11-26</lastmod>
     </url>
     <url>
          <loc>https://microsoft.github.io/agent-lightning/latest/how-to/train-first-agent/</loc>
-         <lastmod>2025-11-23</lastmod>
+         <lastmod>2025-11-26</lastmod>
     </url>
     <url>
          <loc>https://microsoft.github.io/agent-lightning/latest/how-to/train-sql-agent/</loc>
-         <lastmod>2025-11-23</lastmod>
+         <lastmod>2025-11-26</lastmod>
     </url>
     <url>
          <loc>https://microsoft.github.io/agent-lightning/latest/how-to/unsloth-sft/</loc>
-         <lastmod>2025-11-23</lastmod>
+         <lastmod>2025-11-26</lastmod>
     </url>
     <url>
          <loc>https://microsoft.github.io/agent-lightning/latest/how-to/write-first-algorithm/</loc>
-         <lastmod>2025-11-23</lastmod>
+         <lastmod>2025-11-26</lastmod>
     </url>
     <url>
          <loc>https://microsoft.github.io/agent-lightning/latest/reference/agent/</loc>
-         <lastmod>2025-11-23</lastmod>
+         <lastmod>2025-11-26</lastmod>
     </url>
     <url>
          <loc>https://microsoft.github.io/agent-lightning/latest/reference/algorithm/</loc>
-         <lastmod>2025-11-23</lastmod>
+         <lastmod>2025-11-26</lastmod>
     </url>
     <url>
          <loc>https://microsoft.github.io/agent-lightning/latest/reference/cli/</loc>
-         <lastmod>2025-11-23</lastmod>
+         <lastmod>2025-11-26</lastmod>
     </url>
     <url>
          <loc>https://microsoft.github.io/agent-lightning/latest/reference/instrumentation/</loc>
-         <lastmod>2025-11-23</lastmod>
+         <lastmod>2025-11-26</lastmod>
     </url>
     <url>
          <loc>https://microsoft.github.io/agent-lightning/latest/reference/internal/</loc>
-         <lastmod>2025-11-23</lastmod>
+         <lastmod>2025-11-26</lastmod>
     </url>
     <url>
          <loc>https://microsoft.github.io/agent-lightning/latest/reference/restful/</loc>
-         <lastmod>2025-11-23</lastmod>
+         <lastmod>2025-11-26</lastmod>
     </url>
     <url>
          <loc>https://microsoft.github.io/agent-lightning/latest/reference/runner/</loc>
-         <lastmod>2025-11-23</lastmod>
+         <lastmod>2025-11-26</lastmod>
     </url>
     <url>
          <loc>https://microsoft.github.io/agent-lightning/latest/reference/store/</loc>
-         <lastmod>2025-11-23</lastmod>
+         <lastmod>2025-11-26</lastmod>
     </url>
     <url>
          <loc>https://microsoft.github.io/agent-lightning/latest/reference/trainer/</loc>
-         <lastmod>2025-11-23</lastmod>
+         <lastmod>2025-11-26</lastmod>
     </url>
     <url>
          <loc>https://microsoft.github.io/agent-lightning/latest/reference/types/</loc>
-         <lastmod>2025-11-23</lastmod>
+         <lastmod>2025-11-26</lastmod>
     </url>
     <url>
          <loc>https://microsoft.github.io/agent-lightning/latest/tutorials/debug/</loc>
-         <lastmod>2025-11-23</lastmod>
+         <lastmod>2025-11-26</lastmod>
     </url>
     <url>
          <loc>https://microsoft.github.io/agent-lightning/latest/tutorials/installation/</loc>
-         <lastmod>2025-11-23</lastmod>
+         <lastmod>2025-11-26</lastmod>
     </url>
     <url>
          <loc>https://microsoft.github.io/agent-lightning/latest/tutorials/parallelize/</loc>
-         <lastmod>2025-11-23</lastmod>
+         <lastmod>2025-11-26</lastmod>
     </url>
     <url>
          <loc>https://microsoft.github.io/agent-lightning/latest/tutorials/traces/</loc>
-         <lastmod>2025-11-23</lastmod>
+         <lastmod>2025-11-26</lastmod>
     </url>
     <url>
          <loc>https://microsoft.github.io/agent-lightning/latest/tutorials/write-agents/</loc>
-         <lastmod>2025-11-23</lastmod>
+         <lastmod>2025-11-26</lastmod>
     </url>
 </urlset>
