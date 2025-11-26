@@ -1,9 +1,10 @@
 from enum import Enum
 
-AGL_REWARD = "agentlightning.reward"
-"""Agent-lightning's standard span name for reward emissions.
+AGL_ANNOTATION = "agentlightning.reward"
+"""Agent-lightning's standard span name for annotations.
 
-One reward span could contain multiple reward values in its attributes.
+Annotations are minimal span units for rewards, tags, and metadatas.
+They are used to "annotate" a specific event or a part of rollout.
 """
 
 AGL_MESSAGE = "agentlightning.message"
@@ -28,13 +29,13 @@ Mostly used in adapter when needing to represent the root or intermediate operat
 class LightningResourceAttributes(Enum):
     """Resource attribute names used in Agent-lightning spans."""
 
-    AGL_ROLLOUT_ID = "agentlightning.rollout_id"
+    ROLLOUT_ID = "agentlightning.rollout_id"
     """Resource name for rollout ID in Agent-lightning spans."""
 
-    AGL_ATTEMPT_ID = "agentlightning.attempt_id"
+    ATTEMPT_ID = "agentlightning.attempt_id"
     """Resource name for attempt ID in Agent-lightning spans."""
 
-    AGL_SPAN_SEQUENCE_ID = "agentlightning.span_sequence_id"
+    SPAN_SEQUENCE_ID = "agentlightning.span_sequence_id"
     """Resource name for span sequence ID in Agent-lightning spans."""
 
 
@@ -57,7 +58,8 @@ class LightningSpanAttributes(Enum):
     REWARD_METADATA_PREFIX = "agentlightning.reward.metadata"
     """Attribute prefix for reward metadata in reward spans."""
 
-    REWARD_ASSOCIATED_GEN_AI_RESPONSE_ID = "agentlightning.reward.metadata.associated.gen_ai_response_id"
+    LINK_GEN_AI_RESPONSE_ID = "agentlightning.link.gen_ai_response_id"
+    """Link the current span to another span with the designated response ID."""
 
     MESSAGE_TEXT = "agentlightning.message.text"
     """Attribute name for message text in message spans."""
@@ -69,7 +71,10 @@ class LightningSpanAttributes(Enum):
     should also be qualified to use here.
     """
 
-    OBJECT_VALUE = "agentlightning.object.value"
+    OBJECT_LITERAL = "agentlightning.object.literal"
+    """Attribute name for object literal value in object spans (for str, int, bool, ...)."""
+
+    OBJECT_JSON = "agentlightning.object.json"
     """Attribute name for object serialized value (JSON) in object spans."""
 
 
