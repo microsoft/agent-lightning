@@ -44,13 +44,14 @@ async def test_tracer():
     )
     tinker_llm.rewrite_litellm_custom_providers()
 
-    store = InMemoryLightningStore()
+    store = LightningStoreThreaded(InMemoryLightningStore())
     rollout = await store.start_rollout("dummy", "train")
     llm_proxy = LLMProxy(
         port=4000,
         store=store,
         model_list=tinker_llm.as_model_list(),
         num_retries=0,
+        launch_mode="thread",
     )
 
     try:
@@ -96,6 +97,8 @@ async def test_tracer():
         adapter = TracerTraceToTriplet()
         trajectory = reconstruct_transitions(spans, adapter, rollout.rollout_id)
         print(trajectory)
+        assert len(trajectory.transitions) > 0
+        assert len(trajectory.transitions[0].ac.tokens) > 0
     finally:
         console.print("Stopping LLM proxy...")
         await llm_proxy.stop()
@@ -162,4 +165,4 @@ async def test_llm_proxy():
 
 
 if __name__ == "__main__":
-    asyncio.run(test_llm_proxy())
+    asyncio.run(test_tracer())

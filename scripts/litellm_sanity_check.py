@@ -8,7 +8,7 @@ import openai
 
 
 def main() -> None:
-    client = openai.OpenAI()
+    client = openai.OpenAI(timeout=30.0)
     models = client.models.list()
     print("Available models:", models)
 

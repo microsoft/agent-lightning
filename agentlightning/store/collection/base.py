@@ -3,17 +3,31 @@
 from __future__ import annotations
 
 from typing import (
+    TYPE_CHECKING,
     Any,
     AsyncContextManager,
+    Awaitable,
+    Callable,
+    Dict,
     Generic,
+    List,
+    Literal,
+    Mapping,
+    MutableMapping,
     Optional,
     Sequence,
+    Tuple,
     Type,
     TypeVar,
+    cast,
 )
+
+if TYPE_CHECKING:
+    from typing import Self
 
 from agentlightning.types import (
     Attempt,
+    FilterField,
     FilterOptions,
     PaginatedResult,
     ResourcesUpdate,
@@ -36,13 +50,13 @@ class Collection(Generic[T]):
         raise NotImplementedError()
 
     def __repr__(self) -> str:
-        return f"<{self.__class__.__name__}[{self.item_type().__name__}] ({self.size()})>"
+        return f"<{self.__class__.__name__}[{self.item_type().__name__}]>"
 
     def item_type(self) -> Type[T]:
         """Get the type of the items in the collection."""
         raise NotImplementedError()
 
-    def size(self) -> int:
+    async def size(self) -> int:
         """Get the number of items in the collection."""
         raise NotImplementedError()
 
@@ -132,7 +146,7 @@ class Queue(Generic[T]):
     """Behaves like a deque. Supporting appending items to the end and popping items from the front."""
 
     def __repr__(self) -> str:
-        return f"<{self.__class__.__name__}[{self.item_type().__name__}] ({self.size()})>"
+        return f"<{self.__class__.__name__}[{self.item_type().__name__}]>"
 
     def item_type(self) -> Type[T]:
         """Get the type of the items in the queue."""
@@ -177,7 +191,7 @@ class Queue(Generic[T]):
         """
         raise NotImplementedError()
 
-    def size(self) -> int:
+    async def size(self) -> int:
         """Get the number of items in the queue."""
         raise NotImplementedError()
 
@@ -186,7 +200,7 @@ class KeyValue(Generic[K, V]):
     """Behaves like a dictionary. Supporting addition, updating, and deletion of items."""
 
     def __repr__(self) -> str:
-        return f"<{self.__class__.__name__} ({self.size()})>"
+        return f"<{self.__class__.__name__}>"
 
     async def has(self, key: K) -> bool:
         """Check if the given key is in the dictionary."""
@@ -204,7 +218,7 @@ class KeyValue(Generic[K, V]):
         """Pop the value for the given key, or the default value if the key is not found."""
         raise NotImplementedError()
 
-    def size(self) -> int:
+    async def size(self) -> int:
         """Get the number of items in the dictionary."""
         raise NotImplementedError()
 
@@ -251,7 +265,7 @@ class LightningCollections:
         """Dictionary (counter) of span sequence IDs."""
         raise NotImplementedError()
 
-    def atomic(self, *args: Any, **kwargs: Any) -> AsyncContextManager[None]:
+    def atomic(self, *args: Any, **kwargs: Any) -> AsyncContextManager[Self]:
         """Perform a atomic operation on the collections.
 
         Subclass may use args and kwargs to support multiple levels of atomicity.
@@ -261,3 +275,82 @@ class LightningCollections:
             **kwargs: Keyword arguments to pass to the operation.
         """
         raise NotImplementedError()
+
+    async def execute(self, callback: Callable[[Self], Awaitable[T]]) -> T:
+        """Execute the given callback within an atomic operation."""
+        async with self.atomic() as collections:
+            return await callback(collections)
+
+
+FilterMap = Mapping[str, FilterField]
+
+
+def merge_must_filters(target: MutableMapping[str, FilterField], definition: Any) -> None:
+    """Normalize a `_must` filter group into the provided mapping.
+
+    Mainly for validation purposes.
+    """
+    if definition is None:
+        return
+
+    entries: List[Mapping[str, FilterField]] = []
+    if isinstance(definition, Mapping):
+        entries.append(cast(Mapping[str, FilterField], definition))
+    elif isinstance(definition, Sequence) and not isinstance(definition, (str, bytes)):
+        for entry in definition:  # type: ignore
+            if not isinstance(entry, Mapping):
+                raise TypeError("Each `_must` entry must be a mapping of field names to operators")
+            entries.append(cast(Mapping[str, FilterField], entry))
+    else:
+        raise TypeError("`_must` filters must be provided as a mapping or sequence of mappings")
+
+    for entry in entries:
+        for field_name, ops in entry.items():
+            existing = target.get(field_name, {})
+            merged_ops: Dict[str, Any] = dict(existing)
+            for op_name, expected in ops.items():
+                if op_name in merged_ops:
+                    raise ValueError(f"Duplicate operator '{op_name}' for field '{field_name}' in must filters")
+                merged_ops[op_name] = expected
+            target[field_name] = cast(FilterField, merged_ops)
+
+
+def normalize_filter_options(
+    filter_options: Optional[FilterOptions],
+) -> Tuple[Optional[FilterMap], Optional[FilterMap], Literal["and", "or"]]:
+    """Convert FilterOptions to the internal structure and resolve aggregate logic."""
+    if not filter_options:
+        return None, None, "and"
+
+    aggregate = cast(Literal["and", "or"], filter_options.get("_aggregate", "and"))
+    if aggregate not in ("and", "or"):
+        raise ValueError(f"Unsupported filter aggregate '{aggregate}'")
+
+    # Extract normalized filters and must filters from the filter options.
+    normalized: Dict[str, FilterField] = {}
+    must_filters: Dict[str, FilterField] = {}
+    for field_name, ops in filter_options.items():
+        if field_name == "_aggregate":
+            continue
+        if field_name == "_must":
+            merge_must_filters(must_filters, ops)
+            continue
+        normalized[field_name] = cast(FilterField, dict(ops))  # type: ignore
+
+    return (normalized or None, must_filters or None, aggregate)
+
+
+def resolve_sort_options(sort: Optional[SortOptions]) -> Tuple[Optional[str], Literal["asc", "desc"]]:
+    """Extract sort field/order from the caller-provided SortOptions."""
+    if not sort:
+        return None, "asc"
+
+    sort_name = sort.get("name")
+    if not sort_name:
+        raise ValueError("Sort options must include a 'name' field")
+
+    sort_order = sort.get("order", "asc")
+    if sort_order not in ("asc", "desc"):
+        raise ValueError(f"Unsupported sort order '{sort_order}'")
+
+    return sort_name, sort_order

@@ -19,6 +19,7 @@ import pytest
 import pytest_asyncio
 from portpicker import pick_unused_port
 
+from agentlightning.store import LightningStore
 from agentlightning.store.client_server import LightningStoreClient, LightningStoreServer
 from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.types import (
@@ -69,12 +70,11 @@ async def _run_server_with_cors(cors_origins: List[str] | str | None = None):
 
 
 @pytest_asyncio.fixture
-async def server_client() -> (
-    AsyncGenerator[Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str], None]
-):
-    store = InMemoryLightningStore()
+async def server_client(
+    store_fixture: LightningStore,
+) -> AsyncGenerator[Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str], None]:
     port = pick_unused_port()
-    server = LightningStoreServer(store, "127.0.0.1", port)
+    server = LightningStoreServer(store_fixture, "127.0.0.1", port)
     await server.start()
     client = LightningStoreClient(server.endpoint)
     session = aiohttp.ClientSession()
