@@ -28,10 +28,14 @@
       ]
     },
     {
-      "title": "HTTP Latency (P95 & P99)",
+      "title": "HTTP Latency (P50, P95, P99)",
       "type": "timeseries",
       "gridPos": { "h": 10, "w": 8, "x": 8, "y": 1 },
       "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(http_request_duration_seconds_bucket[1m])))",
+          "legendFormat": "P50"
+        },
         {
           "expr": "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket[1m])))",
           "legendFormat": "P95"
@@ -100,10 +104,22 @@
     {
       "title": "Transaction Attempts (Retries)",
       "type": "heatmap",
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 22 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 22 },
       "targets": [
         {
-          "expr": "sum by (le) (rate(mongo_operation_num_attempts_bucket[5m]))",
+          "expr": "sum by (le) (rate(mongo_operation_num_attempts_bucket{operation='execute__transaction'}[5m]))",
+          "format": "heatmap"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops/s" } }
+    },
+    {
+      "title": "Commit Attempts (Retries)",
+      "type": "heatmap",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 22 },
+      "targets": [
+        {
+          "expr": "sum by (le) (rate(mongo_operation_num_attempts_bucket{operation='execute__commit'}[5m]))",
           "format": "heatmap"
         }
       ],

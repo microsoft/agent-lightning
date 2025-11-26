@@ -114,10 +114,12 @@ class MongoOperationPrometheusTracker:
     def classify_error(exc: BaseException | None) -> str:
         if exc is None:
             return "Other"
+        if isinstance(exc, OperationFailure):
+            return f"OperationFailure-{exc.code}"
+        if isinstance(exc, PyMongoError):
+            return exc.__class__.__name__
         if isinstance(exc, DuplicateKeyError):
             return "DuplicateKeyError"
-        if isinstance(exc, OperationFailure):
-            return "OperationFailure"
         if isinstance(exc, ConnectionFailure):
             return "ConnectionFailure"
         return "Other"
@@ -1289,29 +1291,96 @@ class MongoLightningCollections(LightningCollections):
 
         async with client.start_session() as session:
             collections = self.with_session(session)
-            num_attempts = 0
-
-            async def _txn_callback(_session: AsyncClientSession) -> T_generic:
-                # The _session is always the same within one transaction,
-                # so we can use the same collections object.
-                nonlocal num_attempts
-                num_attempts += 1
-                return await callback(collections)
-
             with self._prometheus_tracker.track(
                 "execute__transaction", self._database_name, self._collection_name
             ) as tracker:
                 try:
-                    # This will start a transaction, run transaction callback, and commit.
-                    # It will also transparently retry on some transient errors.
-                    ret = await session.with_transaction(
-                        _txn_callback,
-                        read_concern=ReadConcern("local"),
-                        write_concern=WriteConcern("majority"),
-                        read_preference=ReadPreference.PRIMARY,
-                    )
-                    tracker.report_num_attempts(num_attempts)
-                    return ret
+                    return await self._with_transaction(session, collections, callback, tracker)
                 except (ConnectionFailure, OperationFailure) as exc:
+                    # Un-retryable errors.
                     tracker.report_error(exc)
                     raise RuntimeError("Transaction failed with connection or operation error") from exc
+
+    async def _with_transaction(
+        self,
+        session: AsyncClientSession,
+        collections: Self,
+        callback: Callable[[Self], Awaitable[T_generic]],
+        transaction_tracker: _MongoOperationContext | _DummyOperationContext,
+    ) -> T_generic:
+        # This will start a transaction, run transaction callback, and commit.
+        # It will also transparently retry on some transient errors.
+        # Expanded implementation of with_transaction from client_session
+        num_attempts = 0
+        read_concern = ReadConcern("local")
+        write_concern = WriteConcern("majority")
+        read_preference = ReadPreference.PRIMARY
+        transaction_retry_time_limit = 120
+        start_time = time.monotonic()
+
+        def _within_time_limit() -> bool:
+            return time.monotonic() - start_time < transaction_retry_time_limit
+
+        while True:
+            await session.start_transaction(read_concern, write_concern, read_preference)
+
+            with self._prometheus_tracker.track(
+                "execute__callback", self._database_name, self._collection_name
+            ) as callback_tracker:
+                try:
+                    num_attempts += 1
+                    transaction_tracker.report_num_attempts(num_attempts)
+                    # The _session is always the same within one transaction,
+                    # so we can use the same collections object.
+                    ret = await callback(collections)
+                # Catch KeyboardInterrupt, CancelledError, etc. and cleanup.
+                except BaseException as exc:
+                    callback_tracker.report_error(exc)
+                    if session.in_transaction:
+                        await session.abort_transaction()
+                    if (
+                        isinstance(exc, PyMongoError)
+                        and exc.has_error_label("TransientTransactionError")
+                        and _within_time_limit()
+                    ):
+                        # Retry the entire transaction.
+                        continue
+                    raise
+
+            if not session.in_transaction:
+                # Assume callback intentionally ended the transaction.
+                return ret
+
+            commit_num_attempts = 0
+
+            # Tracks the commit operation.
+            with self._prometheus_tracker.track(
+                "execute__commit", self._database_name, self._collection_name
+            ) as commit_tracker:
+                # Loop until the commit succeeds or we hit the time limit.
+                while True:
+                    # Tracks the commit attempt.
+                    with self._prometheus_tracker.track(
+                        "execute__commit_attempt", self._database_name, self._collection_name
+                    ) as commit_attempt_tracker:
+                        try:
+                            commit_num_attempts += 1
+                            commit_tracker.report_num_attempts(commit_num_attempts)
+                            await session.commit_transaction()
+                        except PyMongoError as exc:
+                            commit_attempt_tracker.report_error(exc)
+                            if (
+                                exc.has_error_label("UnknownTransactionCommitResult")
+                                and _within_time_limit()
+                                and not (isinstance(exc, OperationFailure) and exc.code == 50)  # max_time_expired_error
+                            ):
+                                # Retry the commit.
+                                continue
+
+                            if exc.has_error_label("TransientTransactionError") and _within_time_limit():
+                                # Retry the entire transaction.
+                                break
+                            raise
+
+                        # Commit succeeded.
+                        return ret
