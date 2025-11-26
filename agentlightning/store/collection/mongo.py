@@ -6,6 +6,7 @@ import asyncio
 import contextvars
 import functools
 import logging
+import random
 import re
 import threading
 import time
@@ -85,23 +86,23 @@ class MongoOperationPrometheusTracker:
             self._latency_metric = Histogram(
                 "mongo_operation_duration_seconds",
                 "Latency of MongoDB operations",
-                ["operation", "collection", "database"],
+                ["operation", "database", "collection"],
                 buckets=[0.001, 0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10],
             )
             self._total_metric = Counter(
                 "mongo_operation_total",
                 "Total MongoDB operations",
-                ["operation", "collection", "database", "status"],
+                ["operation", "database", "collection", "status"],
             )
             self._error_metric = Counter(
                 "mongo_operation_errors_total",
                 "Total MongoDB operations that failed",
-                ["operation", "collection", "database", "error_type"],
+                ["operation", "database", "collection", "error_type"],
             )
             self._num_attempts_metric = Histogram(
                 "mongo_operation_num_attempts",
                 "Number of attempts for MongoDB operations",
-                ["operation", "collection", "database"],
+                ["operation", "database", "collection"],
                 buckets=[1, 2, 3, 5, 7, 10, 15, 20],
             )
 
@@ -114,15 +115,22 @@ class MongoOperationPrometheusTracker:
     def classify_error(exc: BaseException | None) -> str:
         if exc is None:
             return "Other"
+        is_transient = isinstance(exc, PyMongoError) and exc.has_error_label("TransientTransactionError")
         if isinstance(exc, OperationFailure):
-            return f"OperationFailure-{exc.code}"
-        if isinstance(exc, PyMongoError):
-            return exc.__class__.__name__
+            if is_transient:
+                return f"OperationFailure-{exc.code}-Transient"
+            else:
+                return f"OperationFailure-{exc.code}"
         if isinstance(exc, DuplicateKeyError):
-            return "DuplicateKeyError"
+            return "DuplicateKeyError-Transient" if is_transient else "DuplicateKeyError"
+        if isinstance(exc, PyMongoError):
+            if is_transient:
+                return f"{exc.__class__.__name__}-Transient"
+            else:
+                return exc.__class__.__name__
         if isinstance(exc, ConnectionFailure):
-            return "ConnectionFailure"
-        return "Other"
+            return "ConnectionFailure-Transient" if is_transient else "ConnectionFailure"
+        return "Other-Transient" if is_transient else "Other"
 
     def observe(
         self,
@@ -1104,6 +1112,7 @@ class MongoLightningCollections(LightningCollections):
         self._prometheus_tracker = (
             prometheus_tracker if prometheus_tracker is not None else MongoOperationPrometheusTracker(enabled=False)
         )
+        self._collection_ensured = False
         self._rollouts = (
             rollouts
             if rollouts is not None
@@ -1201,7 +1210,7 @@ class MongoLightningCollections(LightningCollections):
         )
 
     def with_session(self, session: AsyncClientSession) -> Self:
-        return self.__class__(
+        instance = self.__class__(
             client_pool=self._client_pool,
             database_name=self._database_name,
             partition_id=self._partition_id,
@@ -1214,6 +1223,8 @@ class MongoLightningCollections(LightningCollections):
             span_sequence_ids=self._span_sequence_ids.with_session(session),
             prometheus_tracker=self._prometheus_tracker,
         )
+        instance._collection_ensured = self._collection_ensured
+        return instance
 
     @property
     def rollouts(self) -> MongoBasedCollection[Rollout]:
@@ -1246,6 +1257,8 @@ class MongoLightningCollections(LightningCollections):
     @_mongo_operation("ensure_collections")
     async def _ensure_collections(self) -> None:
         """Ensure all collections exist."""
+        if self._collection_ensured:
+            return
         await self._rollouts.ensure_collection()
         await self._attempts.ensure_collection()
         await self._spans.ensure_collection()
@@ -1253,13 +1266,15 @@ class MongoLightningCollections(LightningCollections):
         await self._workers.ensure_collection()
         await self._rollout_queue.ensure_collection()
         await self._span_sequence_ids.ensure_collection()
+        self._collection_ensured = True
 
     @asynccontextmanager
     async def atomic(self, *args: Any, **kwargs: Any):
         """Perform a atomic operation on the collections."""
         with self._prometheus_tracker.track("atomic", self._database_name, self._collection_name):
             # First step: ensure all collections exist before going into the atomic block
-            await self._ensure_collections()
+            if not self._collection_ensured:
+                await self._ensure_collections()
             # One session for one transaction
             client = await self._client_pool.get_client()
             async with client.start_session() as session:
@@ -1286,7 +1301,8 @@ class MongoLightningCollections(LightningCollections):
     @_mongo_operation("execute")
     async def execute(self, callback: Callable[[Self], Awaitable[T_generic]]) -> T_generic:
         """Execute the given callback within an atomic operation, and with retries on transient errors."""
-        await self._ensure_collections()
+        if not self._collection_ensured:
+            await self._ensure_collections()
         client = await self._client_pool.get_client()
 
         async with client.start_session() as session:
@@ -1321,6 +1337,10 @@ class MongoLightningCollections(LightningCollections):
         def _within_time_limit() -> bool:
             return time.monotonic() - start_time < transaction_retry_time_limit
 
+        async def _jitter_before_retry() -> None:
+            with self._prometheus_tracker.track("execute__jitter", self._database_name, self._collection_name):
+                await asyncio.sleep(random.uniform(0, 0.05))
+
         while True:
             await session.start_transaction(read_concern, write_concern, read_preference)
 
@@ -1344,6 +1364,7 @@ class MongoLightningCollections(LightningCollections):
                         and _within_time_limit()
                     ):
                         # Retry the entire transaction.
+                        await _jitter_before_retry()
                         continue
                     raise
 
@@ -1375,10 +1396,12 @@ class MongoLightningCollections(LightningCollections):
                                 and not (isinstance(exc, OperationFailure) and exc.code == 50)  # max_time_expired_error
                             ):
                                 # Retry the commit.
+                                await _jitter_before_retry()
                                 continue
 
                             if exc.has_error_label("TransientTransactionError") and _within_time_limit():
                                 # Retry the entire transaction.
+                                await _jitter_before_retry()
                                 break
                             raise
 

@@ -22,7 +22,7 @@
       "gridPos": { "h": 10, "w": 8, "x": 0, "y": 1 },
       "targets": [
         {
-          "expr": "sum by (method, path) (rate(http_requests_total[1m]))",
+          "expr": "sum by (method, path) (rate(http_requests_total{path!='/v1/prometheus/'}[1m]))",
           "legendFormat": "{{method}} {{path}}"
         }
       ]
@@ -33,15 +33,15 @@
       "gridPos": { "h": 10, "w": 8, "x": 8, "y": 1 },
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum by (le) (rate(http_request_duration_seconds_bucket[1m])))",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(http_request_duration_seconds_bucket{path!='/v1/prometheus/'}[1m])))",
           "legendFormat": "P50"
         },
         {
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket[1m])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{path!='/v1/prometheus/'}[1m])))",
           "legendFormat": "P95"
         },
         {
-          "expr": "histogram_quantile(0.99, sum by (le) (rate(http_request_duration_seconds_bucket[1m])))",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(http_request_duration_seconds_bucket{path!='/v1/prometheus/'}[1m])))",
           "legendFormat": "P99"
         }
       ],
@@ -53,8 +53,8 @@
       "gridPos": { "h": 10, "w": 8, "x": 16, "y": 1 },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum by (le, path) (rate(http_request_duration_seconds_bucket[1m])))",
-          "legendFormat": "{{path}}"
+          "expr": "histogram_quantile(0.95, sum by (le, method, path) (rate(http_request_duration_seconds_bucket{path!='/v1/prometheus/'}[1m])))",
+          "legendFormat": "{{method}} {{path}}"
         }
       ],
       "fieldConfig": { "defaults": { "unit": "s" } }
@@ -73,8 +73,8 @@
       "gridPos": { "h": 10, "w": 8, "x": 0, "y": 12 },
       "targets": [
         {
-          "expr": "sum by (operation) (rate(mongo_operation_total[1m]))",
-          "legendFormat": "{{operation}}"
+          "expr": "sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection'}[1m]))",
+          "legendFormat": "{{operation}} - {{ collection }}"
         }
       ]
     },
@@ -84,8 +84,8 @@
       "gridPos": { "h": 10, "w": 8, "x": 8, "y": 12 },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum by (le, operation) (rate(mongo_operation_duration_seconds_bucket[5m])))",
-          "legendFormat": "{{operation}}"
+          "expr": "histogram_quantile(0.95, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection'}[1m])))",
+          "legendFormat": "{{operation}} - {{ collection }}"
         }
       ],
       "fieldConfig": { "defaults": { "unit": "s" } }
@@ -96,8 +96,8 @@
       "gridPos": { "h": 10, "w": 8, "x": 16, "y": 12 },
       "targets": [
         {
-          "expr": "sum by (error_type, operation) (rate(mongo_operation_errors_total[1m]))",
-          "legendFormat": "{{operation}} - {{error_type}}"
+          "expr": "sum by (error_type, operation, collection) (rate(mongo_operation_errors_total{operation!='ensure_collection'}[1m]))",
+          "legendFormat": "{{operation}} - {{ collection }} - {{error_type}}"
         }
       ]
     },
@@ -107,7 +107,7 @@
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 22 },
       "targets": [
         {
-          "expr": "sum by (le) (rate(mongo_operation_num_attempts_bucket{operation='execute__transaction'}[5m]))",
+          "expr": "sum by (le) (rate(mongo_operation_num_attempts_bucket{operation='execute__transaction'}[1m]))",
           "format": "heatmap"
         }
       ],
@@ -119,7 +119,7 @@
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 22 },
       "targets": [
         {
-          "expr": "sum by (le) (rate(mongo_operation_num_attempts_bucket{operation='execute__commit'}[5m]))",
+          "expr": "sum by (le) (rate(mongo_operation_num_attempts_bucket{operation='execute__commit'}[1m]))",
           "format": "heatmap"
         }
       ],

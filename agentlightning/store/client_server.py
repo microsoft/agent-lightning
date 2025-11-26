@@ -774,6 +774,8 @@ class LightningStoreServer(LightningStore):
                 return re.sub(r"rollouts/[^/]+/attempts/latest$", "rollouts/{rollout_id}/attempts/latest", path)
             elif path.endswith("/resources/latest"):
                 return path
+            elif "enqueue" in path or "dequeue" in path:
+                return path
 
             # Handle generic IDs
             # (Order matters: longest paths first or lookaheads)
