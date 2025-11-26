@@ -21,7 +21,7 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
     },
     "data": {
         "train_files": "data/train.parquet",
-        "val_files": "data/test.parquet",
+        "val_files": "data/agent_test_50select.parquet",
         "train_batch_size": 512,
         "max_prompt_length": 6000,
         "max_response_length": 4096,
@@ -62,7 +62,7 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
             "fsdp_config": {"param_offload": True},
         },
         "model": {
-            "path": "Qwen/Qwen2.5-Coder-1.5B-Instruct",
+            "path": "/home/aiscuser/.cache/huggingface/hub/models--meta-llama--Llama-3.2-3B/snapshots/13afe5124825b4f3751f836b40dafda64c1ed062",
             "use_remove_padding": True,
             "enable_gradient_checkpointing": True,
         },
@@ -79,7 +79,7 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
         "save_freq":10,
         "total_epochs": 15,
         "total_training_steps": 300,
-        "default_local_dir": "checkpoints/searchr1_checkpoints/"
+        "default_local_dir": "/mnt/teamdrive/search_r1/searchr1_checkpoints/"
     },
 }
 
