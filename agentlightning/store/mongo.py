@@ -70,7 +70,8 @@ class MongoLightningStore(CollectionBasedLightningStore[MongoLightningCollection
                 database_name,
                 partition_id,
                 prometheus_tracker=MongoOperationPrometheusTracker(enabled=self._enable_prometheus),
-            )
+            ),
+            prometheus=self._enable_prometheus,
         )
 
     @property
