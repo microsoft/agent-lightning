@@ -80,7 +80,8 @@ _OPERATION_CONTEXT: contextvars.ContextVar["_MongoOperationContext | None"] = co
 )
 
 _LIGHTNING_STORE_PUBLIC_METHODS = frozenset(
-    name for name, value in LightningStore.__dict__.items() if not name.startswith("_") and callable(value)
+    [name for name, value in LightningStore.__dict__.items() if not name.startswith("_") and callable(value)]
+    + ["_healthcheck"]
 )
 
 _UNKNOWN_STORE_METHOD = "unknown"
