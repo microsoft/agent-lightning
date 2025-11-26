@@ -672,12 +672,6 @@ class MongoBasedCollection(Collection[T_model]):
         The handling of null-values in sorting is different from memory-based implementation.
         In MongoDB, null values are treated as less than non-null values.
         """
-        # if filter and self._collection_name == "rollouts" and "rollout_id" in filter:
-        #     print(filter)
-        if filter and list(filter.keys()) == ["rollout_id"] and "within" in filter["rollout_id"]:
-            import traceback
-
-            traceback.print_stack()
         await self.ensure_collection()
 
         combined = self._inject_partition_filter(filter)
