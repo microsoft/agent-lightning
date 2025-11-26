@@ -3,7 +3,7 @@
 """Utilities shared across emitter implementations."""
 
 import logging
-from typing import List, cast
+from typing import Any, Dict, List, Union, cast
 from warnings import filterwarnings
 
 import opentelemetry.trace as trace_api
@@ -149,3 +149,108 @@ def get_tracer(use_active_span_processor: bool = True) -> trace_api.Tracer:
                 {},
             ),
         )
+
+
+def flatten_attributes(nested_data: Union[Dict[str, Any], List[Any]]) -> Dict[str, Any]:
+    """Flatten a nested dictionary or list into a flat dictionary with dotted keys.
+
+    This function recursively traverses dictionaries and lists, producing a flat
+    key-value mapping where nested paths are represented via dot-separated keys.
+    Lists are indexed numerically.
+
+    Example:
+        >>> flatten_attributes({"a": {"b": 1, "c": [2, 3]}})
+        {"a.b": 1, "a.c.0": 2, "a.c.1": 3}
+
+    Args:
+        nested_data: A nested structure composed of dictionaries, lists, or
+            primitive values.
+
+    Returns:
+        A flat dictionary mapping dotted-string paths to primitive values.
+    """
+
+    flat: Dict[str, Any] = {}
+
+    def _walk(value: Any, prefix: str = "") -> None:
+        if isinstance(value, dict):
+            for k, v in cast(Dict[Any, Any], value).items():
+                if not isinstance(k, str):
+                    raise ValueError(
+                        f"Only string keys are supported in dictionaries, got '{k}' of type {type(k)} in {prefix}"
+                    )
+                new_prefix = f"{prefix}.{k}" if prefix else k
+                _walk(v, new_prefix)
+        elif isinstance(value, list):
+            for idx, item in enumerate(cast(List[Any], value)):
+                new_prefix = f"{prefix}.{idx}" if prefix else str(idx)
+                _walk(item, new_prefix)
+        else:
+            flat[prefix] = value
+
+    _walk(nested_data)
+    return flat
+
+
+def unflatten_attributes(flat_data: Dict[str, Any]) -> Union[Dict[str, Any], List[Any]]:
+    """Reconstruct a nested dictionary/list structure from a flat dictionary.
+
+    Keys are dot-separated paths. Segments that are digit strings will only
+    become list indices if *all* keys in that dict form a consecutive
+    0..n-1 range. Otherwise they remain dict keys.
+
+    Example:
+        >>> unflatten_attributes({"a.b": 1, "a.c.0": 2, "a.c.1": 3})
+        {"a": {"b": 1, "c": [2, 3]}}
+
+    Args:
+        flat_data: A dictionary whose keys are dot-separated paths and whose
+            values are primitive data elements.
+
+    Returns:
+        A nested dictionary (and lists where appropriate) corresponding to
+        the flattened structure.
+    """
+    # 1) Build a pure dict tree first (no lists yet)
+    root: Dict[str, Any] = {}
+
+    for flat_key, value in flat_data.items():
+        parts = flat_key.split(".")
+        curr: Dict[str, Any] = root
+
+        for part in parts[:-1]:
+            # Ensure intermediate node is a dict
+            if part not in curr or not isinstance(curr[part], dict):
+                curr[part] = {}
+            curr = curr[part]  # type: ignore[assignment]
+
+        curr[parts[-1]] = value
+
+    # 2) Recursively convert dicts-with-consecutive-numeric-keys into lists
+    def convert(node: Union[Dict[str, Any], List[Any]]) -> Union[Dict[str, Any], List[Any]]:
+        if isinstance(node, dict):
+            # First convert children
+            for k, v in list(node.items()):
+                node[k] = convert(v)
+
+            if not node:
+                # empty dict stays dict
+                return node
+
+            # Check if keys are all numeric strings
+            keys = list(node.keys())
+            if all(isinstance(k, str) and k.isdigit() for k in keys):  # pyright: ignore[reportUnnecessaryIsInstance]
+                indices = sorted(int(k) for k in keys)
+                # Must be exactly 0..n-1
+                if indices == list(range(len(indices))):
+                    return [node[str(i)] for i in range(len(indices))]
+
+            return node
+
+        if isinstance(node, list):  # pyright: ignore[reportUnnecessaryIsInstance]
+            return [convert(v) for v in node]
+
+        # Keep as is
+        return node
+
+    return convert(root)

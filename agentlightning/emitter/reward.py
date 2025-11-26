@@ -24,8 +24,10 @@ import agentops
 from agentops.sdk.decorators import operation
 from opentelemetry.sdk.trace import ReadableSpan
 
+from agentlightning.semconv import LightningSpanAttributes
 from agentlightning.types import SpanLike, SpanNames
 
+from .annotation import emit_annotation
 from .utils import get_tracer
 
 logger = logging.getLogger(__name__)
@@ -129,13 +131,20 @@ def reward(fn: FnType) -> FnType:
         return wrapper  # type: ignore
 
 
-def emit_reward(reward: float, *, metadata: Dict[str, Any] | None = None, auto_export: bool = True) -> ReadableSpan:
+def emit_reward(
+    reward: float | Dict[str, Any],
+    *,
+    primary_key: str | None = None,
+    attributes: Dict[str, Any] | None = None,
+    auto_export: bool = True,
+) -> ReadableSpan:
     """Emit a reward value as an OpenTelemetry span.
 
     Args:
         reward: Numeric reward to record. Integers and booleans are converted to
             floating point numbers for consistency.
-        metadata: Optional additional metadata to attach to the span.
+            Use a dictionary to represent a multi-dimensional reward.
+        attributes: Other optional span attributes.
         auto_export: Whether to export the span automatically.
 
     Returns:
@@ -146,13 +155,39 @@ def emit_reward(reward: float, *, metadata: Dict[str, Any] | None = None, auto_e
             resulting span is not a [`ReadableSpan`](https://opentelemetry.io/docs/concepts/signals/traces/) instance.
     """
     logger.debug(f"Emitting reward: {reward}")
-    if isinstance(reward, (int, bool)):
-        reward = float(reward)
-    if not isinstance(reward, float):
-        raise ValueError(f"Reward must be a number, got: {type(reward)}")
+    if isinstance(reward, dict):
+        reward_dict: Dict[str, float] = {}
+        for k, v in reward.items():
+            if isinstance(v, (int, bool)):
+                reward_dict[k] = float(v)
+            elif isinstance(v, float):
+                reward_dict[k] = v
+            else:
+                raise ValueError(f"Reward value must be a number, got: {type(v)} for key {k}")
+        if primary_key is None:
+            raise ValueError("When emitting a multi-dimensional reward as a dict, primary_key must be provided.")
+        if primary_key not in reward_dict:
+            raise ValueError(f"Primary key '{primary_key}' not found in reward dict keys: {list(reward_dict.keys())}")
+        reward_part: Dict[str, Any] = {
+            LightningSpanAttributes.REWARD_PREFIX.name + "." + k: v for k, v in reward_dict.items()
+        }
+        reward_part[LightningSpanAttributes.REWARD_PRIMARY_KEY.name] = primary_key
+        reward_part[LightningSpanAttributes.REWARD_PRIMARY_VALUE.name] = reward_dict[primary_key]
+
+    else:
+        if isinstance(reward, (int, bool)):
+            reward = float(reward)
+        elif not isinstance(reward, float):  # pyright: ignore[reportUnnecessaryIsInstance]
+            raise TypeError(f"Reward must be a number, got: {type(reward)}")
+        reward_part = {
+            LightningSpanAttributes.REWARD_PRIMARY_VALUE.name: reward,
+        }
 
     # TODO: This should use the tracer from current context by tracer
     tracer = get_tracer(use_active_span_processor=auto_export)
+
+    return emit_annotation({**reward_part, **attributes})
+
     span = tracer.start_span(SpanNames.REWARD.value, attributes={"reward": reward})
     # Do nothing; it's just a number
     with span:

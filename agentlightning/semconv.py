@@ -1,3 +1,11 @@
+# Copyright (c) Microsoft. All rights reserved.
+
+"""Semantic conventions for Agent-lightning spans.
+
+Conventions in this file are added on demand. We generally DO NOT add
+new semantic conventions unless it's absolutely needed for certain algorithms or scenarios.
+"""
+
 from enum import Enum
 
 AGL_ANNOTATION = "agentlightning.reward"
@@ -45,24 +53,21 @@ class LightningSpanAttributes(Enum):
     Exception types can't be found here because they are defined in OpenTelemetry's official semantic conventions.
     """
 
-    REWARD_VALUE = "agentlightning.reward.primary"
-    """Attribute name for primary reward value in reward spans."""
-
-    REWARD_PREFIX = "agentlightning.reward"
+    REWARD = "agentlightning.reward"
     """Attribute prefix for rewards-related data in reward spans.
 
-    It should be used as a prefix. For example, "agentlightning.reward.efficiency" can
-    be used to track a cost-sensitive metric.
+    It should be used as a prefix. For example, "agentlightning.reward.0.value" can
+    be used to track a specific metric. See [agentlightning.semconv.RewardAttributes].
     """
 
-    REWARD_METADATA_PREFIX = "agentlightning.reward.metadata"
-    """Attribute prefix for reward metadata in reward spans."""
+    LINK = "agentlightning.link"
+    """Attribute name for linking the current span to another span or other objects like requests/responses."""
 
-    LINK_GEN_AI_RESPONSE_ID = "agentlightning.link.gen_ai_response_id"
-    """Link the current span to another span with the designated response ID."""
+    MESSAGE_TEXT = "agentlightning.message"
+    """Attribute name for message text in message spans.
 
-    MESSAGE_TEXT = "agentlightning.message.text"
-    """Attribute name for message text in message spans."""
+    It should be a list, so the real attributes should look like `agentlightning.message.0`, `agentlightning.message.1`, etc.
+    """
 
     OBJECT_TYPE = "agentlightning.object.type"
     """Attribute name for object type (full qualified name) in object spans.
@@ -78,14 +83,52 @@ class LightningSpanAttributes(Enum):
     """Attribute name for object serialized value (JSON) in object spans."""
 
 
-class LightningRewardSourceValues(Enum):
-    """Enumerated values for where the reward comes from."""
+class RewardAttributes(Enum):
+    """Multi-dimensional reward attributes will look like:
 
-    HUMAN = "human"
-    """Reward provided by a human input (feedback)."""
+    ```json
+    {"agentlightning.reward.0.name": "efficiency", "agentlightning.reward.0.value": 0.75}
+    ```
 
-    ENVIRONMENT = "environment"
-    """Reward provided by the environment (simulator or real world)."""
+    The first reward in the reward list will automatically be the primary reward.
+    If the reward list has greater than 1, it shall be a multi-dimensional case.
+    """
 
-    MODEL = "model"
-    """Reward provided by another model (e.g., reward model)."""
+    REWARD_NAME = "name"
+    """Key for each dimension in multi-dimensional reward spans."""
+
+    REWARD_VALUE = "value"
+    """Value for each dimension in multi-dimensional reward spans."""
+
+
+class LinkAttributes(Enum):
+    """Standard link types used in Agent-lightning spans.
+
+    The link is more powerful than [OpenTelemetry link](https://opentelemetry.io/docs/specs/otel/trace/api/#link)
+    in that it supports linking to a queryset of spans.
+    It can even link to span object that hasn't been emitted yet.
+    """
+
+    KEY_MATCH = "key_match"
+    """Linking to spans with matching attribute keys (or `span_id`).
+
+    For example, it can be `gen_ai.response.id` if intended to be link to a chat completion response span.
+    Or it can be `span_id` to link to a specific span by its ID.
+    """
+
+    VALUE_MATCH = "value_match"
+    """Linking to spans with corresponding attribute values on those keys."""
+
+
+class ObjectAttributes(Enum):
+    """Standard object types used in Agent-lightning object spans."""
+
+    TYPE_STR = "str"
+    TYPE_INT = "int"
+    TYPE_BOOL = "bool"
+    TYPE_FLOAT = "float"
+    TYPE_LIST = "list"
+    TYPE_DICT = "dict"
+    TYPE_SET = "set"
+    TYPE_TUPLE = "tuple"
+    TYPE_BYTES = "bytes"
