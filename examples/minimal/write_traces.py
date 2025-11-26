@@ -21,6 +21,7 @@ from openai import AsyncOpenAI
 from rich.console import Console
 
 from agentlightning import AgentOpsTracer, LightningStoreClient, OtelTracer, Span, emit_reward, setup_logging
+from agentlightning.emitter.utils import get_tracer_provider
 from agentlightning.store import InMemoryLightningStore
 
 console = Console()
@@ -90,6 +91,9 @@ async def send_traces_via_agentops(use_client: bool = False):
     # Initialize the tracer lifespan
     # One lifespan can contain multiple traces
     with tracer.lifespan(store):
+        # Inspect current tracer provider
+        get_tracer_provider(inspect=True)
+
         # Initialize the capture of one single trace for one single rollout
         async with tracer.trace_context(
             "trace-1", rollout_id=rollout.rollout_id, attempt_id=rollout.attempt.attempt_id

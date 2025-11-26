@@ -25,7 +25,7 @@ def _full_qualified_name(obj: type) -> str:
     return f"{obj.__module__}.{obj.__qualname__}"
 
 
-def get_tracer_provider() -> TracerProviderImpl:
+def get_tracer_provider(inspect: bool = True) -> TracerProviderImpl:
     """Get the OpenTelemetry tracer provider configured for Agent Lightning."""
     if hasattr(trace_api, "_TRACER_PROVIDER") and trace_api._TRACER_PROVIDER is None:  # type: ignore[attr-defined]
         raise RuntimeError("Tracer is not initialized. Cannot emit a meaningful span.")
@@ -36,6 +36,9 @@ def get_tracer_provider() -> TracerProviderImpl:
             _full_qualified_name(type(tracer_provider)),
         )
         return cast(TracerProviderImpl, tracer_provider)
+
+    if not inspect:
+        return tracer_provider
 
     emitter_debug = resolve_bool_env_var(LightningEnvVar.AGL_EMITTER_DEBUG, fallback=None)
     logger_effective_level = logger.getEffectiveLevel()
@@ -56,14 +59,13 @@ def get_tracer_provider() -> TracerProviderImpl:
             if isinstance(processor, LightningSpanProcessor):
                 # The legacy case for tracers without OTLP support.
                 lsp_arguments: List[str] = []
-                if processor.disable_store_submission:
-                    lsp_arguments.append("disable_store_submission=True")
+                lsp_arguments.append(f"disable_store_submission={processor.disable_store_submission}")
                 if processor.store is not None:
-                    lsp_arguments.append(f"store={processor.store}")
+                    lsp_arguments.append(f"store={processor.store!r}")
                 if processor.rollout_id is not None:
-                    lsp_arguments.append(f"rollout_id={processor.rollout_id}")
+                    lsp_arguments.append(f"rollout_id={processor.rollout_id!r}")
                 if processor.attempt_id is not None:
-                    lsp_arguments.append(f"attempt_id={processor.attempt_id}")
+                    lsp_arguments.append(f"attempt_id={processor.attempt_id!r}")
                 processors.append(
                     f"{active_span_processor_cls} - {processor.__class__.__name__}({', '.join(lsp_arguments)})"
                 )
@@ -73,11 +75,11 @@ def get_tracer_provider() -> TracerProviderImpl:
                     # This should be the main path now.
                     otlp_arguments: List[str] = []
                     if processor.span_exporter.endpoint is not None:
-                        otlp_arguments.append(f"endpoint={processor.span_exporter.endpoint}")
+                        otlp_arguments.append(f"endpoint={processor.span_exporter.endpoint!r}")
                     if processor.span_exporter.rollout_id is not None:
-                        otlp_arguments.append(f"rollout_id={processor.span_exporter.rollout_id}")
+                        otlp_arguments.append(f"rollout_id={processor.span_exporter.rollout_id!r}")
                     if processor.span_exporter.attempt_id is not None:
-                        otlp_arguments.append(f"attempt_id={processor.span_exporter.attempt_id}")
+                        otlp_arguments.append(f"attempt_id={processor.span_exporter.attempt_id!r}")
                     processors.append(
                         f"{active_span_processor_cls} - {processor_cls} - "
                         f"{processor.span_exporter.__class__.__name__}({', '.join(otlp_arguments)})"
@@ -87,7 +89,7 @@ def get_tracer_provider() -> TracerProviderImpl:
                     endpoint = processor.span_exporter._endpoint  # pyright: ignore[reportPrivateUsage]
                     processors.append(
                         f"{active_span_processor_cls} - {processor_cls} - "
-                        f"{processor.span_exporter.__class__.__name__}(endpoint={endpoint})"
+                        f"{processor.span_exporter.__class__.__name__}(endpoint={endpoint!r})"
                     )
                 else:
                     # Other cases like Console Span Exporter.
@@ -97,7 +99,7 @@ def get_tracer_provider() -> TracerProviderImpl:
             else:
                 processors.append(f"{active_span_processor_cls} - {processor.__class__.__name__}")
 
-        logger.debug("Active span processors:")
+        logger.debug(f"Tracer provider: {tracer_provider!r}. Active span processors:")
         for processor in processors:
             logger.debug("  * " + processor)
 
