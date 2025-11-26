@@ -73,8 +73,8 @@
       "gridPos": { "h": 10, "w": 8, "x": 0, "y": 12 },
       "targets": [
         {
-          "expr": "sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection'}[1m]))",
-          "legendFormat": "{{operation}} - {{ collection }}"
+          "expr": "sum by (operation, collection, store_method) (rate(mongo_operation_total{operation!='ensure_collection'}[1m]))",
+          "legendFormat": "{{operation}} - {{collection}} - {{store_method}}"
         }
       ]
     },
@@ -84,8 +84,8 @@
       "gridPos": { "h": 10, "w": 8, "x": 8, "y": 12 },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection'}[1m])))",
-          "legendFormat": "{{operation}} - {{ collection }}"
+          "expr": "histogram_quantile(0.95, sum by (le, operation, store_method) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection'}[1m])))",
+          "legendFormat": "{{operation}} - {{store_method}}"
         }
       ],
       "fieldConfig": { "defaults": { "unit": "s" } }
@@ -96,8 +96,8 @@
       "gridPos": { "h": 10, "w": 8, "x": 16, "y": 12 },
       "targets": [
         {
-          "expr": "sum by (error_type, operation, collection) (rate(mongo_operation_errors_total{operation!='ensure_collection'}[1m]))",
-          "legendFormat": "{{operation}} - {{ collection }} - {{error_type}}"
+          "expr": "sum by (error_type, operation, store_method) (rate(mongo_operation_errors_total{operation!='ensure_collection'}[1m]))",
+          "legendFormat": "{{operation}} - {{store_method}} - {{error_type}}"
         }
       ]
     },

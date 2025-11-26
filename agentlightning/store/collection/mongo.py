@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import functools
+import inspect
 import logging
 import random
 import re
@@ -40,6 +41,7 @@ from pymongo.asynchronous.database import AsyncDatabase
 from pymongo.errors import CollectionInvalid, ConnectionFailure, DuplicateKeyError, OperationFailure, PyMongoError
 from pymongo.read_concern import ReadConcern
 
+from agentlightning.store.base import LightningStore
 from agentlightning.types import (
     Attempt,
     FilterOptions,
@@ -51,7 +53,14 @@ from agentlightning.types import (
     Worker,
 )
 
-from .base import Collection, KeyValue, LightningCollections, Queue, normalize_filter_options, resolve_sort_options
+from .base import (
+    Collection,
+    KeyValue,
+    LightningCollections,
+    Queue,
+    normalize_filter_options,
+    resolve_sort_options,
+)
 
 T_model = TypeVar("T_model", bound=BaseModel)
 
@@ -70,6 +79,35 @@ _OPERATION_CONTEXT: contextvars.ContextVar["_MongoOperationContext | None"] = co
     "_mongo_operation_context", default=None
 )
 
+_LIGHTNING_STORE_PUBLIC_METHODS = frozenset(
+    name for name, value in LightningStore.__dict__.items() if not name.startswith("_") and callable(value)
+)
+
+_UNKNOWN_STORE_METHOD = "unknown"
+
+
+def _nearest_lightning_store_method_from_stack() -> str:
+    """Stack introspection so that we capture the nearest public API method from the
+    call stack whenever metrics are recorded."""
+    method_name = _UNKNOWN_STORE_METHOD
+    frame = inspect.currentframe()
+    try:
+        if frame is None:
+            return method_name
+        frame = frame.f_back
+        while frame is not None:
+            func_name = frame.f_code.co_name
+            if func_name in _LIGHTNING_STORE_PUBLIC_METHODS:
+                self_obj = frame.f_locals.get("self")
+                if isinstance(self_obj, LightningStore):
+                    return func_name
+            frame = frame.f_back
+        return method_name
+    except Exception:
+        return method_name
+    finally:
+        del frame
+
 
 class MongoOperationPrometheusTracker:
     """A tracker for MongoDB operations metrics.
@@ -83,26 +121,27 @@ class MongoOperationPrometheusTracker:
         if enabled:
             from prometheus_client import Counter, Histogram
 
+            base_labels = ["operation", "database", "collection", "store_method"]
             self._latency_metric = Histogram(
                 "mongo_operation_duration_seconds",
                 "Latency of MongoDB operations",
-                ["operation", "database", "collection"],
+                base_labels,
                 buckets=[0.001, 0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10],
             )
             self._total_metric = Counter(
                 "mongo_operation_total",
                 "Total MongoDB operations",
-                ["operation", "database", "collection", "status"],
+                base_labels + ["status"],
             )
             self._error_metric = Counter(
                 "mongo_operation_errors_total",
                 "Total MongoDB operations that failed",
-                ["operation", "database", "collection", "error_type"],
+                base_labels + ["error_type"],
             )
             self._num_attempts_metric = Histogram(
                 "mongo_operation_num_attempts",
                 "Number of attempts for MongoDB operations",
-                ["operation", "database", "collection"],
+                base_labels,
                 buckets=[1, 2, 3, 5, 7, 10, 15, 20],
             )
 
@@ -146,12 +185,13 @@ class MongoOperationPrometheusTracker:
         if not self._enabled:
             return
 
-        self._total_metric.labels(operation, database, collection, status).inc()
-        self._latency_metric.labels(operation, database, collection).observe(elapsed)
+        store_method = _nearest_lightning_store_method_from_stack()
+        self._total_metric.labels(operation, database, collection, store_method, status).inc()
+        self._latency_metric.labels(operation, database, collection, store_method).observe(elapsed)
         if status == "error" and error_type:
-            self._error_metric.labels(operation, database, collection, error_type).inc()
+            self._error_metric.labels(operation, database, collection, store_method, error_type).inc()
         if num_attempts is not None:
-            self._num_attempts_metric.labels(operation, database, collection).observe(num_attempts)
+            self._num_attempts_metric.labels(operation, database, collection, store_method).observe(num_attempts)
 
 
 class _MongoOperationContext:
