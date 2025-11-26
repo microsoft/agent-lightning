@@ -364,7 +364,7 @@
       }
     },
     {
-      "title": "/add_span: Mongo Ops per Call (by Operation)",
+      "title": "add_span: Mongo Ops per Call (by Operation)",
       "type": "timeseries",
       "gridPos": {
         "h": 8,
@@ -385,7 +385,7 @@
       }
     },
     {
-      "title": "/add_span: Mongo Latency (P50)",
+      "title": "add_span: Mongo Latency (P50)",
       "type": "timeseries",
       "gridPos": {
         "h": 8,
@@ -406,7 +406,7 @@
       }
     },
     {
-      "title": "/add_span: Mongo Time per Call (P50)",
+      "title": "add_span: Mongo Time per Call (P50)",
       "type": "timeseries",
       "gridPos": {
         "h": 8,
@@ -620,7 +620,7 @@
       "type": "timeseries",
       "gridPos": {
         "h": 8,
-        "w": 12,
+        "w": 8,
         "x": 0,
         "y": 83
       },
@@ -641,13 +641,34 @@
       "type": "timeseries",
       "gridPos": {
         "h": 8,
-        "w": 12,
-        "x": 12,
+        "w": 8,
+        "x": 8,
         "y": 83
       },
       "targets": [
         {
           "expr": "histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='_healthcheck'}[1m])))",
+          "legendFormat": "{{operation}} - {{collection}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      }
+    },
+    {
+      "title": "healthcheck: Mongo Time per Call (P50)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 75
+      },
+      "targets": [
+        {
+          "expr": "(histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='_healthcheck'}[1m])))) * (sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='_healthcheck'}[1m])) / scalar(clamp_min(sum(rate(collection_store_total{method='_healthcheck'}[1m])), 1e-9)))",
           "legendFormat": "{{operation}} - {{collection}}"
         }
       ],

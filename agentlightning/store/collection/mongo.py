@@ -90,22 +90,20 @@ _UNKNOWN_STORE_METHOD = "unknown"
 def _nearest_lightning_store_method_from_stack() -> str:
     """Stack introspection so that we capture the nearest public API method from the
     call stack whenever metrics are recorded."""
-    method_name = _UNKNOWN_STORE_METHOD
     frame = inspect.currentframe()
     try:
         if frame is None:
-            return method_name
+            return _UNKNOWN_STORE_METHOD
         frame = frame.f_back
         while frame is not None:
-            func_name = frame.f_code.co_name
-            if func_name in _LIGHTNING_STORE_PUBLIC_METHODS:
-                self_obj = frame.f_locals.get("self")
-                if isinstance(self_obj, LightningStore):
-                    return func_name
+            self_obj = frame.f_locals.get("self")
+            method_name = frame.f_locals.get("method_name")
+            if method_name in _LIGHTNING_STORE_PUBLIC_METHODS and isinstance(self_obj, LightningStore):
+                return method_name
             frame = frame.f_back
-        return method_name
+        return _UNKNOWN_STORE_METHOD
     except Exception:
-        return method_name
+        return _UNKNOWN_STORE_METHOD
     finally:
         del frame
 
@@ -674,6 +672,12 @@ class MongoBasedCollection(Collection[T_model]):
         The handling of null-values in sorting is different from memory-based implementation.
         In MongoDB, null values are treated as less than non-null values.
         """
+        # if filter and self._collection_name == "rollouts" and "rollout_id" in filter:
+        #     print(filter)
+        if filter and list(filter.keys()) == ["rollout_id"] and "within" in filter["rollout_id"]:
+            import traceback
+
+            traceback.print_stack()
         await self.ensure_collection()
 
         combined = self._inject_partition_filter(filter)

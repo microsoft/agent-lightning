@@ -2,21 +2,28 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
+import time
 import uuid
 from typing import (
     Any,
     Callable,
+    Dict,
+    List,
     Mapping,
+    Optional,
     TypeVar,
 )
 
 from pymongo import AsyncMongoClient
 
-from .base import LightningStoreCapabilities
+from agentlightning.types import Rollout
+
+from .base import LightningStoreCapabilities, is_finished
 from .collection.mongo import MongoClientPool, MongoLightningCollections, MongoOperationPrometheusTracker
-from .collection_based import CollectionBasedLightningStore
+from .collection_based import CollectionBasedLightningStore, healthcheck_before, tracked
 
 T_callable = TypeVar("T_callable", bound=Callable[..., Any])
 
@@ -90,3 +97,38 @@ class MongoLightningStore(CollectionBasedLightningStore[MongoLightningCollection
         # If I created the client, I should close it too.
         if self._auto_created_client:
             await self._client.close()
+
+    @tracked("wait_for_rollouts")
+    @healthcheck_before
+    async def wait_for_rollouts(self, *, rollout_ids: List[str], timeout: Optional[float] = None) -> List[Rollout]:
+        """Wait for specified rollouts to complete with a timeout.
+
+        Concurrently wait for all rollouts to complete with a timeout.
+        """
+        start_time = time.time()
+        current_time = start_time
+        deadline = start_time + timeout if timeout is not None else None
+
+        finished_rollouts: Dict[str, Rollout] = {}
+        unfinished_rollout_ids = set(rollout_ids)
+
+        while deadline is None or current_time <= deadline:
+            # Query the rollouts that are not finished in a single query
+            rollouts = await self.collections.rollouts.query(
+                filter={"rollout_id": {"within": list(unfinished_rollout_ids)}}
+            )
+            for rollout in rollouts.items:
+                if is_finished(rollout):
+                    finished_rollouts[rollout.rollout_id] = rollout
+                    unfinished_rollout_ids.remove(rollout.rollout_id)
+
+            if not unfinished_rollout_ids:
+                break
+
+            # Poll every 10 seconds by default
+            rest_time = max(0.01, min(deadline - time.time(), 10.0)) if deadline is not None else 10.0
+            await asyncio.sleep(rest_time)
+            current_time = time.time()
+
+        # Reorder the rollouts to match the input order
+        return [finished_rollouts[rollout_id] for rollout_id in rollout_ids if rollout_id in finished_rollouts]

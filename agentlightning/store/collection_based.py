@@ -83,13 +83,15 @@ def _with_collections_execute(
     return wrapper
 
 
-def _with_prometheus_tracking(name: str):
+def tracked(method_name: str):
     """Decorator to track the execution of the decorated method with Prometheus."""
 
     def decorator(func: T_callable) -> T_callable:
 
         @functools.wraps(func)
         async def wrapper(self: CollectionBasedLightningStore[T_collections], *args: Any, **kwargs: Any) -> Any:
+            nonlocal method_name
+
             if not self._prometheus:  # pyright: ignore[reportPrivateUsage]
                 # Skip the tracking because tracking is not configured
                 return await func(self, *args, **kwargs)
@@ -97,21 +99,23 @@ def _with_prometheus_tracking(name: str):
             start_time = time.perf_counter()
             try:
                 ret = await func(self, *args, **kwargs)
-                self._total_metric.labels(name, "OK").inc()  # pyright: ignore[reportPrivateUsage]
+                self._total_metric.labels(method_name, "OK").inc()  # pyright: ignore[reportPrivateUsage]
                 return ret
             except Exception as exc:
-                self._total_metric.labels(name, exc.__class__.__name__).inc()  # pyright: ignore[reportPrivateUsage]
+                self._total_metric.labels(  # pyright: ignore[reportPrivateUsage]
+                    method_name, exc.__class__.__name__
+                ).inc()
                 raise
             finally:
                 elapsed = time.perf_counter() - start_time
-                self._latency_metric.labels(name).observe(elapsed)  # pyright: ignore[reportPrivateUsage]
+                self._latency_metric.labels(method_name).observe(elapsed)  # pyright: ignore[reportPrivateUsage]
 
         return cast(T_callable, wrapper)
 
     return decorator
 
 
-def _healthcheck_wrapper(func: T_callable) -> T_callable:
+def healthcheck_before(func: T_callable) -> T_callable:
     """
     Decorator to run the watchdog healthcheck **before** executing the decorated method.
     Only runs if the store has a watchdog configured.
@@ -192,7 +196,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
                 ["method", "error_type"],
             )
 
-    @_with_prometheus_tracking("_get_latest_resources_id")
+    @tracked("_get_latest_resources_id")
     async def _get_latest_resources_id(self, collections: T_collections) -> Optional[str]:
         """Get the latest resources ID from the collections. Returns `None` if no resources are found."""
         latest_resources = await collections.resources.get(sort={"name": "update_time", "order": "desc"})
@@ -200,7 +204,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
             return latest_resources.resources_id
         return None
 
-    @_with_prometheus_tracking("_get_or_create_worker")
+    @tracked("_get_or_create_worker")
     async def _get_or_create_worker(self, collections: T_collections, worker_id: str) -> Worker:
         """Create a worker if it doesn't exist.
 
@@ -212,7 +216,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
             await collections.workers.insert([worker])
         return worker
 
-    @_with_prometheus_tracking("_sync_worker_with_attempt")
+    @tracked("_sync_worker_with_attempt")
     async def _sync_worker_with_attempt(self, collections: T_collections, attempt: Attempt) -> None:
         worker_id = attempt.worker_id
         if not worker_id:
@@ -253,8 +257,8 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         """
         return LightningStoreCapabilities()
 
-    @_with_prometheus_tracking("start_rollout")
-    @_healthcheck_wrapper
+    @tracked("start_rollout")
+    @healthcheck_before
     @_with_collections_execute
     async def start_rollout(
         self,
@@ -307,8 +311,8 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         # Return a rollout with attempt attached.
         return AttemptedRollout(**rollout.model_dump(), attempt=attempt)
 
-    @_with_prometheus_tracking("enqueue_rollout")
-    @_healthcheck_wrapper
+    @tracked("enqueue_rollout")
+    @healthcheck_before
     @_with_collections_execute
     async def enqueue_rollout(
         self,
@@ -351,8 +355,8 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         # Return the rollout with no attempt attached.
         return rollout
 
-    @_with_prometheus_tracking("dequeue_rollout")
-    @_healthcheck_wrapper
+    @tracked("dequeue_rollout")
+    @healthcheck_before
     @_with_collections_execute
     async def dequeue_rollout(
         self, collections: T_collections, worker_id: Optional[str] = None
@@ -418,8 +422,8 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         # No valid rollouts found
         return None
 
-    @_with_prometheus_tracking("start_attempt")
-    @_healthcheck_wrapper
+    @tracked("start_attempt")
+    @healthcheck_before
     @_with_collections_execute
     async def start_attempt(self, collections: T_collections, rollout_id: str) -> AttemptedRollout:
         """Creates a new attempt for a given rollout ID and return the attempt details.
@@ -459,8 +463,8 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         # Return the rollout with the new attempt attached.
         return AttemptedRollout(**rollout.model_dump(), attempt=attempt)
 
-    @_with_prometheus_tracking("query_rollouts")
-    @_healthcheck_wrapper
+    @tracked("query_rollouts")
+    @healthcheck_before
     @_with_collections_execute
     async def query_rollouts(
         self,
@@ -534,8 +538,8 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         )
         return list(result.items)
 
-    @_with_prometheus_tracking("get_rollout_by_id")
-    @_healthcheck_wrapper
+    @tracked("get_rollout_by_id")
+    @healthcheck_before
     @_with_collections_execute
     async def get_rollout_by_id(
         self, collections: T_collections, rollout_id: str
@@ -551,7 +555,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
             return None
         return await self._rollout_to_attempted_rollout_unlocked(collections, rollout)
 
-    @_with_prometheus_tracking("_rollout_to_attempted_rollout")
+    @tracked("_rollout_to_attempted_rollout")
     async def _rollout_to_attempted_rollout_unlocked(
         self, collections: T_collections, rollout: Rollout
     ) -> Union[Rollout, AttemptedRollout]:
@@ -565,7 +569,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         else:
             return AttemptedRollout(**rollout.model_dump(), attempt=latest_attempt)
 
-    @_with_prometheus_tracking("_get_latest_attempt")
+    @tracked("_get_latest_attempt")
     async def _get_latest_attempt_unlocked(self, collections: T_collections, rollout_id: str) -> Optional[Attempt]:
         """The unlocked version of `get_latest_attempt`."""
         return await collections.attempts.get(
@@ -573,8 +577,8 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
             sort={"name": "sequence_id", "order": "desc"},
         )
 
-    @_with_prometheus_tracking("query_attempts")
-    @_healthcheck_wrapper
+    @tracked("query_attempts")
+    @healthcheck_before
     @_with_collections_execute
     async def query_attempts(
         self,
@@ -594,8 +598,8 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
             offset=offset,
         )
 
-    @_with_prometheus_tracking("get_latest_attempt")
-    @_healthcheck_wrapper
+    @tracked("get_latest_attempt")
+    @healthcheck_before
     @_with_collections_execute
     async def get_latest_attempt(self, collections: T_collections, rollout_id: str) -> Optional[Attempt]:
         """Retrieves the latest attempt for a given rollout ID.
@@ -604,8 +608,8 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         """
         return await self._get_latest_attempt_unlocked(collections, rollout_id)
 
-    @_with_prometheus_tracking("query_resources")
-    @_healthcheck_wrapper
+    @tracked("query_resources")
+    @healthcheck_before
     @_with_collections_execute
     async def query_resources(
         self,
@@ -634,8 +638,8 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
             offset=offset,
         )
 
-    @_with_prometheus_tracking("add_resources")
-    @_healthcheck_wrapper
+    @tracked("add_resources")
+    @healthcheck_before
     @_with_collections_execute
     async def add_resources(self, collections: T_collections, resources: NamedResources) -> ResourcesUpdate:
         """Stores a new version of named resources and sets it as the latest.
@@ -655,8 +659,8 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         self._latest_resources_id = resources_id
         return update
 
-    @_with_prometheus_tracking("update_resources")
-    @_healthcheck_wrapper
+    @tracked("update_resources")
+    @healthcheck_before
     @_with_collections_execute
     async def update_resources(
         self, collections: T_collections, resources_id: str, resources: NamedResources
@@ -689,8 +693,8 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         self._latest_resources_id = resources_id
         return update
 
-    @_with_prometheus_tracking("get_resources_by_id")
-    @_healthcheck_wrapper
+    @tracked("get_resources_by_id")
+    @healthcheck_before
     @_with_collections_execute
     async def get_resources_by_id(self, collections: T_collections, resources_id: str) -> Optional[ResourcesUpdate]:
         """Retrieves a specific version of named resources by its ID.
@@ -699,8 +703,8 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         """
         return await collections.resources.get({"resources_id": {"exact": resources_id}})
 
-    @_with_prometheus_tracking("get_latest_resources")
-    @_healthcheck_wrapper
+    @tracked("get_latest_resources")
+    @healthcheck_before
     @_with_collections_execute
     async def get_latest_resources(self, collections: T_collections) -> Optional[ResourcesUpdate]:
         """Retrieves the latest version of named resources.
@@ -712,7 +716,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
             return None
         return await collections.resources.get({"resources_id": {"exact": latest_id}})
 
-    @_with_prometheus_tracking("_issue_span_sequence_id")
+    @tracked("_issue_span_sequence_id")
     async def _issue_span_sequence_id_unlocked(self, collections: T_collections, rollout_id: str) -> int:
         """Issue a new span sequence ID for a given rollout."""
         sequence_id = await collections.span_sequence_ids.get(rollout_id)
@@ -723,7 +727,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         await collections.span_sequence_ids.set(rollout_id, sequence_id)
         return sequence_id
 
-    @_with_prometheus_tracking("_sync_span_sequence_id")
+    @tracked("_sync_span_sequence_id")
     async def _sync_span_sequence_id_unlocked(
         self, collections: T_collections, rollout_id: str, sequence_id: int
     ) -> None:
@@ -733,7 +737,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
             existing_sequence_id = 0
         await collections.span_sequence_ids.set(rollout_id, max(existing_sequence_id, sequence_id))
 
-    @_with_prometheus_tracking("get_next_span_sequence_id")
+    @tracked("get_next_span_sequence_id")
     @_with_collections_execute
     async def get_next_span_sequence_id(self, collections: T_collections, rollout_id: str, attempt_id: str) -> int:
         """Get the next span sequence ID for a given rollout and attempt.
@@ -744,7 +748,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         """
         return await self._issue_span_sequence_id_unlocked(collections, rollout_id)
 
-    @_with_prometheus_tracking("add_span")
+    @tracked("add_span")
     @_with_collections_execute
     async def add_span(self, collections: T_collections, span: Span) -> Span:
         """Persist a pre-converted span.
@@ -755,7 +759,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         await self._sync_span_sequence_id_unlocked(collections, span.rollout_id, span.sequence_id)
         return await self._add_span_unlocked(collections, span)
 
-    @_with_prometheus_tracking("add_otel_span")
+    @tracked("add_otel_span")
     @_with_collections_execute
     async def add_otel_span(
         self,
@@ -783,7 +787,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         await self._add_span_unlocked(collections, span)
         return span
 
-    @_with_prometheus_tracking("_add_span_unlocked")
+    @tracked("_add_span_unlocked")
     async def _add_span_unlocked(self, collections: T_collections, span: Span) -> Span:
         rollout = await collections.rollouts.get({"rollout_id": {"exact": span.rollout_id}})
         if not rollout:
@@ -832,8 +836,8 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
 
         return span
 
-    @_with_prometheus_tracking("wait_for_rollouts")
-    @_healthcheck_wrapper
+    @tracked("wait_for_rollouts")
+    @healthcheck_before
     async def wait_for_rollouts(self, *, rollout_ids: List[str], timeout: Optional[float] = None) -> List[Rollout]:
         """Wait for specified rollouts to complete with a timeout.
         Returns the completed rollouts, potentially incomplete if timeout is reached.
@@ -854,7 +858,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         # Filter out the exceptions
         return [rollout for rollout in rollouts if isinstance(rollout, Rollout)]
 
-    @_with_prometheus_tracking("wait_for_rollout")
+    @tracked("wait_for_rollout")
     async def wait_for_rollout(self, rollout_id: str, timeout: Optional[float] = None) -> Optional[Rollout]:
         """Wait for a specific rollout to complete with a timeout.
 
@@ -893,8 +897,8 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
 
         return None
 
-    @_with_prometheus_tracking("query_spans")
-    @_healthcheck_wrapper
+    @tracked("query_spans")
+    @healthcheck_before
     @_with_collections_execute
     async def query_spans(
         self,
@@ -967,8 +971,8 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
             offset=offset,
         )
 
-    @_with_prometheus_tracking("update_rollout")
-    @_healthcheck_wrapper
+    @tracked("update_rollout")
+    @healthcheck_before
     @_with_collections_execute
     async def update_rollout(
         self,
@@ -996,8 +1000,8 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
             metadata=metadata,
         )
 
-    @_with_prometheus_tracking("update_attempt")
-    @_healthcheck_wrapper
+    @tracked("update_attempt")
+    @healthcheck_before
     @_with_collections_execute
     async def update_attempt(
         self,
@@ -1023,7 +1027,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
             metadata=metadata,
         )
 
-    @_with_prometheus_tracking("_update_rollout_unlocked")
+    @tracked("_update_rollout_unlocked")
     async def _update_rollout_unlocked(
         self,
         collections: T_collections,
@@ -1074,7 +1078,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
 
         return rollout
 
-    @_with_prometheus_tracking("_update_attempt_unlocked")
+    @tracked("_update_attempt_unlocked")
     async def _update_attempt_unlocked(
         self,
         collections: T_collections,
@@ -1146,8 +1150,8 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
 
         return attempt
 
-    @_with_prometheus_tracking("query_workers")
-    @_healthcheck_wrapper
+    @tracked("query_workers")
+    @healthcheck_before
     @_with_collections_execute
     async def query_workers(
         self,
@@ -1176,14 +1180,14 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
             offset=offset,
         )
 
-    @_with_prometheus_tracking("get_worker_by_id")
-    @_healthcheck_wrapper
+    @tracked("get_worker_by_id")
+    @healthcheck_before
     @_with_collections_execute
     async def get_worker_by_id(self, collections: T_collections, worker_id: str) -> Optional[Worker]:
         return await collections.workers.get({"worker_id": {"exact": worker_id}})
 
-    @_with_prometheus_tracking("update_worker")
-    @_healthcheck_wrapper
+    @tracked("update_worker")
+    @healthcheck_before
     @_with_collections_execute
     async def update_worker(
         self,
@@ -1201,7 +1205,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         await collections.workers.update([worker])
         return worker
 
-    @_with_prometheus_tracking("on_rollout_update")
+    @tracked("on_rollout_update")
     async def on_rollout_update(self, rollout: Rollout) -> None:
         """Callback for subclasses to implement specific logic when a rollout changes.
 
@@ -1209,7 +1213,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         """
         pass
 
-    @_with_prometheus_tracking("get_running_rollouts")
+    @tracked("get_running_rollouts")
     async def get_running_rollouts(self, collections: T_collections) -> List[AttemptedRollout]:
         """Get all running rollouts.
 
@@ -1232,7 +1236,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
             running_rollouts.append(AttemptedRollout(**rollout.model_dump(), attempt=latest_attempt))
         return running_rollouts
 
-    @_with_prometheus_tracking("_healthcheck")
+    @tracked("_healthcheck")
     @_with_collections_execute
     async def _healthcheck(self, collections: T_collections) -> None:
         """Perform healthcheck against all running rollouts in the store."""
