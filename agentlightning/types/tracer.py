@@ -16,6 +16,8 @@ from opentelemetry.sdk.trace.id_generator import RandomIdGenerator
 from opentelemetry.trace.status import Status as OtelStatus
 from pydantic import BaseModel, ConfigDict
 
+from agentlightning.semconv import AGL_VIRTUAL
+
 __all__ = [
     "AttributeValue",
     "Attributes",
@@ -379,7 +381,7 @@ class Span(BaseModel):
                 is_remote=False,
                 trace_state={},
             ),
-            name=name or SpanNames.VIRTUAL.value,
+            name=name or AGL_VIRTUAL,
             resource=resource or OtelResource(attributes={}, schema_url=""),
             attributes=attributes,
             status=TraceStatus(status_code="OK"),

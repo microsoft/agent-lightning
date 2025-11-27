@@ -10,8 +10,8 @@ import pytest
 from agentlightning.emitter import emit_message
 from agentlightning.emitter import message as message_module
 from agentlightning.emitter.message import get_message_value
-from agentlightning.semconv import LightningSpanAttributes
-from agentlightning.types.tracer import SpanLike, SpanNames
+from agentlightning.semconv import AGL_MESSAGE, LightningSpanAttributes
+from agentlightning.types.tracer import SpanLike
 
 
 @dataclass
@@ -74,7 +74,7 @@ def test_emit_message_valid(monkeypatch: pytest.MonkeyPatch) -> None:
 
     emit_message("hello world")
 
-    assert tracer.last_name == SpanNames.MESSAGE.value
+    assert tracer.last_name == AGL_MESSAGE
     assert tracer.last_attributes == {LightningSpanAttributes.MESSAGE_BODY.value: "hello world"}
 
 

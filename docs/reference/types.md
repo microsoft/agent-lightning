@@ -76,7 +76,7 @@
 
 ::: agentlightning.Span
 
-::: agentlightning.SpanNames
+::: agentlightning.semconv
 
 ::: agentlightning.SpanAttributeNames
 

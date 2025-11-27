@@ -18,8 +18,8 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace import TracerProvider as TracerProviderImpl
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 
+from agentlightning.semconv import LightningResourceAttributes
 from agentlightning.store.base import LightningStore
-from agentlightning.types.tracer import SpanNames
 from agentlightning.utils.otlp import LightningStoreOTLPExporter
 
 from .base import Tracer
@@ -144,8 +144,8 @@ class OtelTracer(Tracer):
         tracer_provider._resource = tracer_provider._resource.merge(  # pyright: ignore[reportPrivateUsage]
             Resource.create(
                 {
-                    SpanNames.ROLLOUT_ID: rollout_id,
-                    SpanNames.ATTEMPT_ID: attempt_id,
+                    LightningResourceAttributes.ROLLOUT_ID.value: rollout_id,
+                    LightningResourceAttributes.ATTEMPT_ID.value: attempt_id,
                 }
             )
         )
@@ -182,8 +182,8 @@ class OtelTracer(Tracer):
         tracer_provider._resource = tracer_provider._resource.merge(  # pyright: ignore[reportPrivateUsage]
             Resource.create(
                 {
-                    SpanNames.ROLLOUT_ID: "",
-                    SpanNames.ATTEMPT_ID: "",
+                    LightningResourceAttributes.ROLLOUT_ID.value: "",
+                    LightningResourceAttributes.ATTEMPT_ID.value: "",
                 }
             )
         )  # reset resource

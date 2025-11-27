@@ -67,8 +67,7 @@ async def test_runner_integration_basic_rollout() -> None:
     assert rollouts and rollouts[0].status == "succeeded"
     attempts = await store.query_attempts(rollouts[0].rollout_id)
     spans = await store.query_spans(rollouts[0].rollout_id, attempts[-1].attempt_id)
-    print(store.__dict__)
-    assert any(span.attributes.get("reward") == 1.0 for span in spans)
+    assert any(span.attributes.get("agentlightning.reward.0.value") == 1.0 for span in spans)
 
 
 @pytest.mark.asyncio
@@ -230,7 +229,9 @@ async def test_runner_integration_with_spawned_litellm_proxy(server: RemoteOpenA
         last_spans = [span for span in spans if span.sequence_id == max(span.sequence_id for span in spans)]
         assert len(last_spans) == 1
         assert last_spans[0].name == "agentlightning.reward"
-        assert last_spans[0].attributes.get("reward") == 0.5
+        assert (
+            last_spans[0].attributes.get("agentlightning.reward.0.value") == 0.5
+        ), f"Expected reward to be 0.5, found {last_spans[0].attributes}"
     finally:
         teardown_runner(runner)
         await proxy.stop()

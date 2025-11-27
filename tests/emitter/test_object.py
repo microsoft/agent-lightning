@@ -12,8 +12,8 @@ import pytest
 from agentlightning.emitter import emit_object
 from agentlightning.emitter import object as object_module
 from agentlightning.emitter.object import encode_object, get_object_value
-from agentlightning.semconv import LightningSpanAttributes
-from agentlightning.types.tracer import SpanLike, SpanNames
+from agentlightning.semconv import AGL_OBJECT, LightningSpanAttributes
+from agentlightning.types.tracer import SpanLike
 
 
 @dataclass
@@ -155,7 +155,7 @@ def test_emit_object_serializes_payload(monkeypatch: pytest.MonkeyPatch) -> None
     payload = {"foo": "bar", "baz": [1, 2, 3]}
     emit_object(payload)
 
-    assert tracer.last_name == SpanNames.OBJECT.value
+    assert tracer.last_name == AGL_OBJECT
     assert tracer.last_attributes is not None
     assert json.loads(tracer.last_attributes[LightningSpanAttributes.OBJECT_JSON.value]) == payload
 

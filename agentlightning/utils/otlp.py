@@ -29,6 +29,7 @@ from opentelemetry.sdk.trace import ReadableSpan
 from opentelemetry.sdk.trace.export import SpanExportResult
 from opentelemetry.util.types import AttributeValue
 
+from agentlightning.semconv import LightningResourceAttributes
 from agentlightning.store.base import LightningStore
 from agentlightning.types.tracer import (
     Attributes,
@@ -37,7 +38,6 @@ from agentlightning.types.tracer import (
     OtelResource,
     Span,
     SpanContext,
-    SpanNames,
     TraceStatus,
     convert_timestamp,
 )
@@ -119,11 +119,11 @@ async def spans_from_proto(request: ExportTraceServiceRequest, store: LightningS
         # Resource-level attributes & IDs
         resource_attrs = _kv_list_to_dict(resource_spans.resource.attributes)
         # rollout_id, attempt_id from resource attributes when present.
-        rollout_id_resource = resource_attrs.get(SpanNames.ROLLOUT_ID)
-        attempt_id_resource = resource_attrs.get(SpanNames.ATTEMPT_ID)
+        rollout_id_resource = resource_attrs.get(LightningResourceAttributes.ROLLOUT_ID.value)
+        attempt_id_resource = resource_attrs.get(LightningResourceAttributes.ATTEMPT_ID.value)
         # If sequence id is provided, all the spans will share the same sequence ID.
         # unless otherwise overridden by span-level attributes.
-        sequence_id_resource = resource_attrs.get(SpanNames.SPAN_SEQUENCE_ID)
+        sequence_id_resource = resource_attrs.get(LightningResourceAttributes.SPAN_SEQUENCE_ID.value)
 
         otel_resource = _resource_from_proto(resource_spans.resource, getattr(resource_spans, "schema_url", ""))
 
@@ -154,9 +154,9 @@ async def spans_from_proto(request: ExportTraceServiceRequest, store: LightningS
 
                 # Try to get if span attributes contain something like rollout_id or attempt_id
                 # Override the resource-level attributes with the span-level attributes if present.
-                rollout_id_span = span_attrs.get(SpanNames.ROLLOUT_ID)
-                attempt_id_span = span_attrs.get(SpanNames.ATTEMPT_ID)
-                sequence_id_span = span_attrs.get(SpanNames.SPAN_SEQUENCE_ID)
+                rollout_id_span = span_attrs.get(LightningResourceAttributes.ROLLOUT_ID.value)
+                attempt_id_span = span_attrs.get(LightningResourceAttributes.ATTEMPT_ID.value)
+                sequence_id_span = span_attrs.get(LightningResourceAttributes.SPAN_SEQUENCE_ID.value)
 
                 # Normalize to regular strings and ints
                 rollout_id_raw = rollout_id_span if rollout_id_span is not None else rollout_id_resource
@@ -275,8 +275,8 @@ class LightningStoreOTLPExporter(OTLPSpanExporter):
                 span._resource = span._resource.merge(  # pyright: ignore[reportPrivateUsage]
                     Resource.create(
                         {
-                            SpanNames.ROLLOUT_ID: self._rollout_id,
-                            SpanNames.ATTEMPT_ID: self._attempt_id,
+                            LightningResourceAttributes.ROLLOUT_ID.value: self._rollout_id,
+                            LightningResourceAttributes.ATTEMPT_ID.value: self._attempt_id,
                         }
                     )
                 )

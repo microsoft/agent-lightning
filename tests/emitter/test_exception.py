@@ -9,7 +9,7 @@ from opentelemetry.semconv.attributes import exception_attributes
 
 from agentlightning.emitter import emit_exception
 from agentlightning.emitter import exception as exception_module
-from agentlightning.types.tracer import SpanNames
+from agentlightning.semconv import AGL_EXCEPTION
 
 
 class DummySpan:
@@ -59,7 +59,7 @@ def test_emit_exception_records_exception(monkeypatch: pytest.MonkeyPatch) -> No
         emit_exception(err)
         exc = err
 
-    assert tracer.last_name == SpanNames.EXCEPTION.value
+    assert tracer.last_name == AGL_EXCEPTION
     assert tracer.last_attributes is not None
     assert tracer.last_attributes[exception_attributes.EXCEPTION_TYPE] == "ValueError"
     assert tracer.last_attributes[exception_attributes.EXCEPTION_MESSAGE] == "boom"

@@ -23,8 +23,8 @@ from opentelemetry.sdk.trace import ReadableSpan
 from opentelemetry.sdk.trace.export import SpanExportResult
 from starlette.types import Message, Scope
 
+from agentlightning.semconv import LightningResourceAttributes
 from agentlightning.store import LightningStore
-from agentlightning.types.tracer import SpanNames
 from agentlightning.utils import otlp
 
 BASE_TIME_NANOS = 1_700_000_000_000_000_000
@@ -109,9 +109,13 @@ def _add_attribute(attrs: Iterable[KeyValue], key: str, value: object) -> None:
 def _build_span_request() -> ExportTraceServiceRequest:
     request = ExportTraceServiceRequest()
     resource_spans = request.resource_spans.add()
-    _add_attribute(resource_spans.resource.attributes, SpanNames.ROLLOUT_ID, "resource-rollout")
-    _add_attribute(resource_spans.resource.attributes, SpanNames.ATTEMPT_ID, "resource-attempt")
-    _add_attribute(resource_spans.resource.attributes, SpanNames.SPAN_SEQUENCE_ID, "5")
+    _add_attribute(resource_spans.resource.attributes, LightningResourceAttributes.ROLLOUT_ID.value, "resource-rollout")
+    _add_attribute(resource_spans.resource.attributes, LightningResourceAttributes.ATTEMPT_ID.value, "resource-attempt")
+    _add_attribute(
+        resource_spans.resource.attributes,
+        LightningResourceAttributes.SPAN_SEQUENCE_ID.value,
+        "5",
+    )
     resource_spans.schema_url = "https://example/schema"
 
     scope_spans = resource_spans.scope_spans.add()
@@ -126,9 +130,9 @@ def _build_span_request() -> ExportTraceServiceRequest:
     span.status.message = "boom"
 
     _add_attribute(span.attributes, "foo", "bar")
-    _add_attribute(span.attributes, SpanNames.ROLLOUT_ID, "span-rollout")
-    _add_attribute(span.attributes, SpanNames.ATTEMPT_ID, "span-attempt")
-    _add_attribute(span.attributes, SpanNames.SPAN_SEQUENCE_ID, "7")
+    _add_attribute(span.attributes, LightningResourceAttributes.ROLLOUT_ID.value, "span-rollout")
+    _add_attribute(span.attributes, LightningResourceAttributes.ATTEMPT_ID.value, "span-attempt")
+    _add_attribute(span.attributes, LightningResourceAttributes.SPAN_SEQUENCE_ID.value, "7")
 
     event = span.events.add()
     event.name = "event"
@@ -241,7 +245,7 @@ async def test_spans_from_proto_prefers_span_level_metadata() -> None:
     assert span.events[0].timestamp == pytest.approx(EVENT_TIME_SECONDS)  # type: ignore
     assert span.links[0].context.trace_id == "0404" * 8
     assert span.links[0].attributes == {"link-attr": True}
-    assert span.resource.attributes[SpanNames.ROLLOUT_ID] == "resource-rollout"
+    assert span.resource.attributes[LightningResourceAttributes.ROLLOUT_ID.value] == "resource-rollout"
     assert span.resource.schema_url == "https://example/schema"
     assert not store.sequence_calls
 
@@ -251,8 +255,8 @@ async def test_spans_from_proto_requests_sequence_ids_when_missing() -> None:
     store = _StubStore()
     request = ExportTraceServiceRequest()
     resource_spans = request.resource_spans.add()
-    _add_attribute(resource_spans.resource.attributes, SpanNames.ROLLOUT_ID, "r1")
-    _add_attribute(resource_spans.resource.attributes, SpanNames.ATTEMPT_ID, "a1")
+    _add_attribute(resource_spans.resource.attributes, LightningResourceAttributes.ROLLOUT_ID.value, "r1")
+    _add_attribute(resource_spans.resource.attributes, LightningResourceAttributes.ATTEMPT_ID.value, "a1")
 
     scope_span = resource_spans.scope_spans.add()
     span = scope_span.spans.add()
@@ -399,8 +403,8 @@ def test_lightning_store_otlp_exporter_overrides_resources(monkeypatch: pytest.M
     assert result == SpanExportResult.SUCCESS
     assert captured_spans
     attributes = captured_spans[0][0]._resource.attributes  # type: ignore[attr-defined]
-    assert attributes[SpanNames.ROLLOUT_ID] == "rollout"
-    assert attributes[SpanNames.ATTEMPT_ID] == "attempt"
+    assert attributes[LightningResourceAttributes.ROLLOUT_ID.value] == "rollout"
+    assert attributes[LightningResourceAttributes.ATTEMPT_ID.value] == "attempt"
 
     exporter.disable_store_otlp()
     assert exporter._rollout_id is None

@@ -10,8 +10,8 @@ import pytest
 reward_module = importlib.import_module("agentlightning.emitter.reward")
 from agentlightning.emitter.reward import emit_reward, get_rewards_from_span
 from agentlightning.reward import find_final_reward, find_reward_spans, get_reward_value, is_reward_span
-from agentlightning.semconv import LightningSpanAttributes, RewardPydanticModel
-from agentlightning.types import SpanLike, SpanNames
+from agentlightning.semconv import AGL_ANNOTATION, LightningSpanAttributes, RewardPydanticModel
+from agentlightning.types import SpanLike
 
 
 @dataclass
@@ -49,7 +49,7 @@ def test_get_reward_value_from_agentops_json_string() -> None:
 
 def test_get_reward_value_from_reward_span_attributes() -> None:
     span = make_span(
-        name=SpanNames.REWARD.value,
+        name=AGL_ANNOTATION,
         attributes={"reward": 0.75},
     )
 
@@ -79,7 +79,7 @@ def test_is_reward_span_false_when_no_reward() -> None:
 
 def test_find_reward_spans_filters_correctly() -> None:
     reward_span = make_span(
-        name=SpanNames.REWARD.value,
+        name=AGL_ANNOTATION,
         attributes={"reward": 2.0},
     )
     non_reward_span = make_span(name="other", attributes={})
@@ -92,7 +92,7 @@ def test_find_reward_spans_filters_correctly() -> None:
 def test_find_final_reward_returns_last_reward_value() -> None:
     spans = [
         make_span(name="first", attributes={}),
-        make_span(name=SpanNames.REWARD.value, attributes={"reward": 1.0}),
+        make_span(name=AGL_ANNOTATION, attributes={"reward": 1.0}),
         make_span(name="agentops", attributes={"agentops.task.output": {"type": "reward", "value": 5.5}}),
     ]
 

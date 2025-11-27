@@ -25,8 +25,8 @@ from agentops.sdk.decorators import operation
 from opentelemetry.sdk.trace import ReadableSpan
 from pydantic import TypeAdapter
 
-from agentlightning.semconv import LightningSpanAttributes, RewardPydanticModel
-from agentlightning.types import SpanLike, SpanNames
+from agentlightning.semconv import AGL_ANNOTATION, LightningSpanAttributes, RewardPydanticModel
+from agentlightning.types import SpanLike
 from agentlightning.utils.otel import filter_and_unflatten_attributes
 
 from .annotation import emit_annotation
@@ -237,7 +237,7 @@ def get_reward_value(span: SpanLike) -> Optional[float]:
             return cast(float, reward_value)
 
     # v0.2 emit reward format
-    if span.name == SpanNames.REWARD.value and span.attributes:
+    if span.name == AGL_ANNOTATION and span.attributes:
         reward_value = span.attributes.get("reward", None)
         if reward_value is None:
             return None
