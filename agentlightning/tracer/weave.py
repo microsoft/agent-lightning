@@ -17,8 +17,8 @@ from agentlightning.types.tracer import OtelResource, Span, SpanContext, TraceSt
 from .base import Tracer
 
 if TYPE_CHECKING:
-    from weave.trace.call import Call
     from weave.compat import wandb
+    from weave.trace.call import Call   
 
 logger = logging.getLogger(__name__)
 
