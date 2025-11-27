@@ -17,8 +17,9 @@ from agentlightning.types.tracer import OtelResource, Span, SpanContext, TraceSt
 from .base import Tracer
 
 if TYPE_CHECKING:
-    from weave.compat import wandb
     from weave.trace.call import Call
+else:
+    Call = Any  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -205,7 +206,7 @@ class WeaveTracer(Tracer):
         - Sets dummy WANDB_API_KEY if not provided
         """
         import weave
-        from weave.compat import wandb
+        from weave.compat import wandb # type: ignore
 
         _weave_tracer_entity_name = "weave_tracer_entity"
 
@@ -309,13 +310,13 @@ class WeaveTracer(Tracer):
         if self._loop_thread:
             self._loop_thread.join(timeout=5)
 
-    def _on_finish_handler(self, call: "Call", *args: Any, **kwargs: Any) -> None:
+    def _on_finish_handler(self, call: "Call", *args: Any, **kwargs: Any) -> None: # type: ignore
         """
         Handler called when a Weave Call finishes.
 
         Converts the call (including nested children) into spans and stores them in LightningStore.
         """
-        spans, self.sequence_id = self.convert_call_to_spans(call, self._rollout_id, self._attempt_id, self.sequence_id)
+        spans, self.sequence_id = self.convert_call_to_spans(call, self._rollout_id, self._attempt_id, self.sequence_id) # type: ignore
 
         if self._store and self._rollout_id and self._attempt_id:
             try:
@@ -330,7 +331,7 @@ class WeaveTracer(Tracer):
 
     def convert_call_to_spans(
         self,
-        call: "Call",
+        call: "Call", # type: ignore
         rollout_id: Optional[str] = None,
         attempt_id: Optional[str] = None,
         seq_start: int = 0,
@@ -421,10 +422,10 @@ class WeaveTracer(Tracer):
         spans.append(span)
         sequence_id += 1
 
-        children: List["Call"] = getattr(call, "_children", [])
+        children: List["Call"] = getattr(call, "_children", []) # type: ignore
         # Recursively process child calls
         for child in children:
-            child_spans, sequence_id = self.convert_call_to_spans(
+            child_spans, sequence_id = self.convert_call_to_spans( # type: ignore
                 child,
                 rollout_id=rollout_id,
                 attempt_id=attempt_id,
