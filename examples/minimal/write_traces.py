@@ -21,8 +21,8 @@ from openai import AsyncOpenAI
 from rich.console import Console
 
 from agentlightning import AgentOpsTracer, LightningStoreClient, OtelTracer, Span, emit_reward, setup_logging
-from agentlightning.emitter.utils import get_tracer_provider
 from agentlightning.store import InMemoryLightningStore
+from agentlightning.utils.otel import get_tracer_provider
 
 console = Console()
 

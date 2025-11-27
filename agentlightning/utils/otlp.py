@@ -1,8 +1,10 @@
 # Copyright (c) Microsoft. All rights reserved.
 
+from __future__ import annotations
+
 import gzip
 import logging
-from typing import Any, Awaitable, Callable, Dict, List, Optional, Sequence, Tuple, Type, TypeVar
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, List, Optional, Sequence, Tuple, Type, TypeVar
 
 from fastapi import Request, Response
 from google.protobuf import json_format
@@ -30,7 +32,6 @@ from opentelemetry.sdk.trace.export import SpanExportResult
 from opentelemetry.util.types import AttributeValue
 
 from agentlightning.semconv import LightningResourceAttributes
-from agentlightning.store.base import LightningStore
 from agentlightning.types.tracer import (
     Attributes,
     Event,
@@ -41,6 +42,9 @@ from agentlightning.types.tracer import (
     TraceStatus,
     convert_timestamp,
 )
+
+if TYPE_CHECKING:
+    from agentlightning.store import LightningStore
 
 PROTOBUF_CT = "application/x-protobuf"
 
