@@ -23,12 +23,13 @@ from typing import (
 import agentops
 from agentops.sdk.decorators import operation
 from opentelemetry.sdk.trace import ReadableSpan
+from pydantic import TypeAdapter
 
-from agentlightning.semconv import LightningSpanAttributes
+from agentlightning.semconv import LightningSpanAttributes, RewardPydanticModel
 from agentlightning.types import SpanLike, SpanNames
+from agentlightning.utils.otel import filter_and_unflatten_attributes
 
 from .annotation import emit_annotation
-from .utils import get_tracer
 
 logger = logging.getLogger(__name__)
 
@@ -36,18 +37,26 @@ __all__ = [
     "reward",
     "emit_reward",
     "get_reward_value",
+    "get_rewards_from_span",
     "is_reward_span",
     "find_reward_spans",
     "find_final_reward",
 ]
 
 
-class RewardSpanData(TypedDict):
+class RewardDimension(TypedDict):
+    """Type representing a single dimension in a multi-dimensional reward."""
+
+    name: str
+    value: float
+
+
+class _RewardSpanData(TypedDict):
     type: Literal["reward"]
     value: Optional[float]
 
 
-FnType = TypeVar("FnType", bound=Callable[..., Any])
+_FnType = TypeVar("_FnType", bound=Callable[..., Any])
 
 
 def _agentops_initialized() -> bool:
@@ -55,7 +64,7 @@ def _agentops_initialized() -> bool:
     return agentops.get_client().initialized
 
 
-def reward(fn: FnType) -> FnType:
+def reward(fn: _FnType) -> _FnType:
     """Decorate a reward function so its outputs are tracked as spans.
 
     The decorator integrates with AgentOps when it is available and falls back to
@@ -72,7 +81,7 @@ def reward(fn: FnType) -> FnType:
         Wrapped callable that preserves the original signature.
     """
 
-    def wrap_result(result: Optional[float]) -> RewardSpanData:
+    def wrap_result(result: Optional[float]) -> _RewardSpanData:
         """Normalize the reward value into the span payload format."""
         if result is None:
             return {"type": "reward", "value": None}
@@ -96,7 +105,7 @@ def reward(fn: FnType) -> FnType:
             result: Optional[float] = None
 
             @operation
-            async def agentops_reward_operation() -> RewardSpanData:
+            async def agentops_reward_operation() -> _RewardSpanData:
                 # The reward function we are interested in tracing
                 # It takes zero inputs and return a formatted dict
                 nonlocal result
@@ -120,7 +129,7 @@ def reward(fn: FnType) -> FnType:
             result: Optional[float] = None
 
             @operation
-            def agentops_reward_operation() -> RewardSpanData:
+            def agentops_reward_operation() -> _RewardSpanData:
                 nonlocal result
                 result = fn(*args, **kwargs)
                 return wrap_result(result)
@@ -136,7 +145,7 @@ def emit_reward(
     *,
     primary_key: str | None = None,
     attributes: Dict[str, Any] | None = None,
-    auto_export: bool = True,
+    propagate: bool = True,
 ) -> ReadableSpan:
     """Emit a reward value as an OpenTelemetry span.
 
@@ -145,7 +154,7 @@ def emit_reward(
             floating point numbers for consistency.
             Use a dictionary to represent a multi-dimensional reward.
         attributes: Other optional span attributes.
-        auto_export: Whether to export the span automatically.
+        propagate: Whether to propagate the span to exporters automatically.
 
     Returns:
         Readable span capturing the recorded reward.
@@ -155,6 +164,7 @@ def emit_reward(
             resulting span is not a [`ReadableSpan`](https://opentelemetry.io/docs/concepts/signals/traces/) instance.
     """
     logger.debug(f"Emitting reward: {reward}")
+    reward_dimensions: List[RewardDimension] = []
     if isinstance(reward, dict):
         reward_dict: Dict[str, float] = {}
         for k, v in reward.items():
@@ -168,33 +178,20 @@ def emit_reward(
             raise ValueError("When emitting a multi-dimensional reward as a dict, primary_key must be provided.")
         if primary_key not in reward_dict:
             raise ValueError(f"Primary key '{primary_key}' not found in reward dict keys: {list(reward_dict.keys())}")
-        reward_part: Dict[str, Any] = {
-            LightningSpanAttributes.REWARD_PREFIX.name + "." + k: v for k, v in reward_dict.items()
-        }
-        reward_part[LightningSpanAttributes.REWARD_PRIMARY_KEY.name] = primary_key
-        reward_part[LightningSpanAttributes.REWARD_PRIMARY_VALUE.name] = reward_dict[primary_key]
-
+        reward_dimensions.append(RewardDimension(name=primary_key, value=reward_dict[primary_key]))
+        for k, v in reward_dict.items():
+            if k != primary_key:
+                reward_dimensions.append(RewardDimension(name=k, value=v))
     else:
         if isinstance(reward, (int, bool)):
             reward = float(reward)
         elif not isinstance(reward, float):  # pyright: ignore[reportUnnecessaryIsInstance]
             raise TypeError(f"Reward must be a number, got: {type(reward)}")
-        reward_part = {
-            LightningSpanAttributes.REWARD_PRIMARY_VALUE.name: reward,
-        }
+        reward_dimensions.append(RewardDimension(name="primary", value=reward))
 
-    # TODO: This should use the tracer from current context by tracer
-    tracer = get_tracer(use_active_span_processor=auto_export)
-
-    return emit_annotation({**reward_part, **attributes})
-
-    span = tracer.start_span(SpanNames.REWARD.value, attributes={"reward": reward})
-    # Do nothing; it's just a number
-    with span:
-        pass
-    if not isinstance(span, ReadableSpan):
-        raise ValueError(f"Span is not a ReadableSpan: {span}")
-    return span
+    return emit_annotation(
+        {LightningSpanAttributes.REWARD.value: reward_dimensions, **(attributes or {})}, propagate=propagate
+    )
 
 
 def get_reward_value(span: SpanLike) -> Optional[float]:
@@ -204,8 +201,14 @@ def get_reward_value(span: SpanLike) -> Optional[float]:
         span: Span object produced by AgentOps or Agent Lightning emitters.
 
     Returns:
-        The reward encoded in the span or `None` when the span does not represent a reward.
+        The primary reward encoded in the span or `None` when the span does not represent a reward.
     """
+    # v0.3+ emit reward format
+    reward_list = get_rewards_from_span(span)
+    if reward_list:
+        # Reward list is ordered and the first element is the primary reward
+        return reward_list[0].value
+
     for key in [
         "agentops.task.output",  # newer versions of agentops
         "agentops.entity.output",
@@ -228,17 +231,43 @@ def get_reward_value(span: SpanLike) -> Optional[float]:
                 return None
             if not isinstance(reward_value, float):
                 logger.error(f"Reward is not a number, got: {type(reward_value)}. This may cause undefined behaviors.")
+            logger.warning(
+                f"Extracted reward {reward_value} from AgentOps. This format is deprecated, please migrate to using `emit_reward`."
+            )
             return cast(float, reward_value)
 
-    # Latest emit reward format
+    # v0.2 emit reward format
     if span.name == SpanNames.REWARD.value and span.attributes:
         reward_value = span.attributes.get("reward", None)
         if reward_value is None:
             return None
         if not isinstance(reward_value, float):
             logger.error(f"Reward is not a number, got: {type(reward_value)}. This may cause undefined behaviors.")
+        logger.warning(
+            f"Extracted reward {reward_value} from a legacy version of reward span. You might have inconsistent agent-lightning versions."
+        )
         return cast(float, reward_value)
+
     return None
+
+
+def get_rewards_from_span(span: SpanLike) -> List[RewardPydanticModel]:
+    """Extract the reward as a list from a span, if available.
+
+    Args:
+        span: Span object produced by AgentOps or Agent Lightning emitters.
+
+    Returns:
+        A list of reward dimensions encoded in the span or an empty list when the span does not represent a reward.
+    """
+    if span.attributes and any(key.startswith(LightningSpanAttributes.REWARD.value) for key in span.attributes):
+        reward_attr = filter_and_unflatten_attributes(
+            cast(Any, span.attributes or {}), LightningSpanAttributes.REWARD.value
+        )
+        recovered_rewards = TypeAdapter(List[RewardPydanticModel]).validate_python(reward_attr)
+        return recovered_rewards
+    else:
+        return []
 
 
 def is_reward_span(span: SpanLike) -> bool:

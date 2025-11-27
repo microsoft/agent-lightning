@@ -8,6 +8,8 @@ new semantic conventions unless it's absolutely needed for certain algorithms or
 
 from enum import Enum
 
+from pydantic import BaseModel
+
 AGL_ANNOTATION = "agentlightning.reward"
 """Agent-lightning's standard span name for annotations.
 
@@ -57,13 +59,13 @@ class LightningSpanAttributes(Enum):
     """Attribute prefix for rewards-related data in reward spans.
 
     It should be used as a prefix. For example, "agentlightning.reward.0.value" can
-    be used to track a specific metric. See [agentlightning.semconv.RewardAttributes].
+    be used to track a specific metric. See [RewardAttributes][agentlightning.semconv.RewardAttributes].
     """
 
     LINK = "agentlightning.link"
     """Attribute name for linking the current span to another span or other objects like requests/responses."""
 
-    MESSAGE_TEXT = "agentlightning.message"
+    MESSAGE_BODY = "agentlightning.message.body"
     """Attribute name for message text in message spans.
 
     It should be a list, so the real attributes should look like `agentlightning.message.0`, `agentlightning.message.1`, etc.
@@ -101,6 +103,16 @@ class RewardAttributes(Enum):
     """Value for each dimension in multi-dimensional reward spans."""
 
 
+class RewardPydanticModel(BaseModel):
+    """A stricter implementation of RewardAttributes used in otel helpers."""
+
+    name: str
+    """Name of the reward dimension."""
+
+    value: float
+    """Value of the reward dimension."""
+
+
 class LinkAttributes(Enum):
     """Standard link types used in Agent-lightning spans.
 
@@ -110,7 +122,9 @@ class LinkAttributes(Enum):
     """
 
     KEY_MATCH = "key_match"
-    """Linking to spans with matching attribute keys (or `span_id`).
+    """Linking to spans with matching attribute keys.
+
+    `trace_id` and `span_id` are reserved and will be used to link to specific spans directly.
 
     For example, it can be `gen_ai.response.id` if intended to be link to a chat completion response span.
     Or it can be `span_id` to link to a specific span by its ID.
@@ -120,15 +134,11 @@ class LinkAttributes(Enum):
     """Linking to spans with corresponding attribute values on those keys."""
 
 
-class ObjectAttributes(Enum):
-    """Standard object types used in Agent-lightning object spans."""
+class LinkPydanticModel(BaseModel):
+    """A stricter implementation of LinkAttributes used in otel helpers."""
 
-    TYPE_STR = "str"
-    TYPE_INT = "int"
-    TYPE_BOOL = "bool"
-    TYPE_FLOAT = "float"
-    TYPE_LIST = "list"
-    TYPE_DICT = "dict"
-    TYPE_SET = "set"
-    TYPE_TUPLE = "tuple"
-    TYPE_BYTES = "bytes"
+    key_match: str
+    """The attribute key to match on the target spans."""
+
+    value_match: str
+    """The attribute value to match on the target spans."""

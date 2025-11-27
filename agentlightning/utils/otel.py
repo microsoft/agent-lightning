@@ -1,21 +1,24 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-"""Utilities shared across emitter implementations."""
+"""Utilities shared for OpenTelemetry span (attributes) support."""
 
 import logging
-from typing import Any, Dict, List, Union, cast
+from typing import Any, Dict, List, Sequence, Union, cast
 from warnings import filterwarnings
 
 import opentelemetry.trace as trace_api
 from agentops.sdk.exporters import OTLPSpanExporter
-from opentelemetry.sdk.trace import SpanLimits, SynchronousMultiSpanProcessor, Tracer
+from opentelemetry.sdk.trace import ReadableSpan, SpanLimits, SynchronousMultiSpanProcessor, Tracer
 from opentelemetry.sdk.trace import TracerProvider as TracerProviderImpl
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, SimpleSpanProcessor
 from opentelemetry.sdk.util.instrumentation import InstrumentationInfo, InstrumentationScope
 from opentelemetry.trace import get_tracer_provider as otel_get_tracer_provider
+from pydantic import TypeAdapter
 
 from agentlightning.env_var import LightningEnvVar, resolve_bool_env_var
+from agentlightning.semconv import LightningSpanAttributes, LinkAttributes, LinkPydanticModel
 from agentlightning.tracer.otel import LightningSpanProcessor
+from agentlightning.types import SpanLike
 from agentlightning.utils.otlp import LightningStoreOTLPExporter
 
 logger = logging.getLogger(__name__)
@@ -149,6 +152,121 @@ def get_tracer(use_active_span_processor: bool = True) -> trace_api.Tracer:
                 {},
             ),
         )
+
+
+def make_link_attributes(links: Dict[str, str]) -> Dict[str, Any]:
+    """Convert a dictionary of links into flattened attributes for span linking.
+
+    Links example:
+
+    ```python
+    {
+        "gen_ai.response.id": "response-123",
+        "span_id": "abcd-efgh-ijkl",
+    }
+    ```
+    """
+    link_list: List[Dict[str, str]] = []
+    for key, value in links.items():
+        if not isinstance(value, str):  # pyright: ignore[reportUnnecessaryIsInstance]
+            raise ValueError(f"Link value must be a string, got {type(value)} for key '{key}'")
+        link_list.append({LinkAttributes.KEY_MATCH.value: key, LinkAttributes.VALUE_MATCH.value: value})
+    return flatten_attributes({LightningSpanAttributes.LINK.value: link_list})
+
+
+def query_linked_spans(spans: Sequence[SpanLike], links: List[LinkPydanticModel]) -> List[SpanLike]:
+    """Query spans that are linked by the given link attributes.
+
+    Args:
+        spans: A sequence of spans to search.
+        links: A list of link attributes to match.
+
+    Returns:
+        A list of spans that match the given link attributes.
+    """
+    matched_spans: List[SpanLike] = []
+
+    for span in spans:
+        span_attributes = span.attributes or {}
+        is_match = True
+        for link in links:
+            # trace_id and span_id must be full match.
+            if link.key_match == "trace_id":
+                if isinstance(span, ReadableSpan):
+                    trace_id = trace_api.format_trace_id(span.context.trace_id) if span.context else None
+                else:
+                    trace_id = span.trace_id
+                if trace_id != link.value_match:
+                    is_match = False
+                    break
+
+            elif link.key_match == "span_id":
+                if isinstance(span, ReadableSpan):
+                    span_id = trace_api.format_span_id(span.context.span_id) if span.context else None
+                else:
+                    span_id = span.span_id
+                if span_id != link.value_match:
+                    is_match = False
+                    break
+
+            else:
+                attribute = span_attributes.get(link.key_match)
+                # attributes must also be a full match currently.
+                if attribute != link.value_match:
+                    is_match = False
+                    break
+
+        if is_match:
+            matched_spans.append(span)
+
+    return matched_spans
+
+
+def extract_links_from_attributes(attributes: Dict[str, Any]) -> List[LinkPydanticModel]:
+    """Extract link attributes from flattened span attributes.
+
+    Args:
+        attributes: A dictionary of flattened span attributes.
+    """
+    maybe_link_list = filter_and_unflatten_attributes(attributes, LightningSpanAttributes.LINK.value)
+    return TypeAdapter(List[LinkPydanticModel]).validate_python(maybe_link_list)
+
+
+def filter_attributes(attributes: Dict[str, Any], prefix: str) -> Dict[str, Any]:
+    """Filter attributes that start with the given prefix.
+
+    The attribute must start with `prefix.` or be exactly `prefix` to be included.
+
+    Args:
+        attributes: A dictionary of span attributes.
+        prefix: The prefix to filter by.
+
+    Returns:
+        A dictionary of attributes that start with the given prefix.
+    """
+    return {k: v for k, v in attributes.items() if k.startswith(prefix + ".") or k == prefix}
+
+
+def filter_and_unflatten_attributes(attributes: Dict[str, Any], prefix: str) -> Union[Dict[str, Any], List[Any]]:
+    """Filter attributes that start with the given prefix and unflatten them.
+    The prefix will be removed during unflattening.
+
+    Args:
+        attributes: A dictionary of span attributes.
+        prefix: The prefix to filter by.
+
+    Returns:
+        A nested dictionary or list of attributes that start with the given prefix.
+    """
+    filtered_attributes = filter_attributes(attributes, prefix)
+    stripped_attributes: Dict[str, Any] = {}
+    for k, v in filtered_attributes.items():
+        if k == prefix:
+            raise ValueError(f"Cannot unflatten attribute with key exactly equal to prefix: {prefix}")
+        else:
+            stripped_key = k[len(prefix) + 1 :]  # +1 to remove the dot
+        stripped_attributes[stripped_key] = v
+    return unflatten_attributes(filtered_attributes)
 
 
 def flatten_attributes(nested_data: Union[Dict[str, Any], List[Any]]) -> Dict[str, Any]:

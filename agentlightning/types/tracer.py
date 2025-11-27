@@ -399,7 +399,7 @@ class Span(BaseModel):
 
 
 class SpanNames(str, Enum):
-    """Enumerated span names recognised by Agent-lightning. Deprecated."""
+    """Enumerated span names recognised by Agent-lightning. Deprecated in favor of [semconv][agentlightning.semconv]."""
 
     REWARD = "agentlightning.reward"
     """The name of the reward span."""
@@ -420,7 +420,7 @@ class SpanNames(str, Enum):
 
 
 class SpanAttributeNames(str, Enum):
-    """Canonical attribute names written by Agent Lightning emitters. Deprecated."""
+    """Canonical attribute names written by Agent Lightning emitters. Deprecated in favor of [semconv][agentlightning.semconv]."""
 
     MESSAGE = "message"
     """The name of the message attribute."""
