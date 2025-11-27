@@ -160,7 +160,7 @@ class MongoOperationPrometheusTracker:
                 "mongo_operation_num_attempts",
                 "Number of attempts for MongoDB operations",
                 base_labels,
-                buckets=[1, 2, 3, 5, 7, 10, 15, 20],
+                buckets=list(range(10)) + list(range(10, 100, 5)),
             )
 
     def track(self, operation: str, database: str, collection: str) -> _MongoOperationContext | _DummyOperationContext:

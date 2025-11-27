@@ -616,7 +616,7 @@
       }
     },
     {
-      "title": "healthcheck: Mongo Ops per Second",
+      "title": "healthcheck: Mongo Ops per Call (by Operation)",
       "type": "timeseries",
       "gridPos": {
         "h": 8,
@@ -626,7 +626,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='_healthcheck'}[1m]))",
+          "expr": "sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='_healthcheck'}[1m])) / scalar(clamp_min(sum(rate(collection_store_total{method='_healthcheck'}[1m])), 1e-9))",
           "legendFormat": "{{operation}} - {{collection}}"
         }
       ],
@@ -679,44 +679,89 @@
       }
     },
     {
-      "title": "Transaction Attempts (Retries)",
-      "type": "heatmap",
+      "title": "Transaction Attempts (P95/P99/P99.9/Max)",
+      "type": "timeseries",
       "gridPos": {
-        "h": 8,
-        "w": 12,
+        "h": 10,
+        "w": 8,
         "x": 0,
         "y": 91
       },
       "targets": [
         {
-          "expr": "sum by (le) (rate(mongo_operation_num_attempts_bucket{operation='execute__transaction'}[1m]))",
-          "format": "heatmap"
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(mongo_operation_num_attempts_bucket{operation='execute__transaction'}[1m])))",
+          "legendFormat": "P95"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(mongo_operation_num_attempts_bucket{operation='execute__transaction'}[1m])))",
+          "legendFormat": "P99"
+        },
+        {
+          "expr": "histogram_quantile(0.999, sum by (le) (rate(mongo_operation_num_attempts_bucket{operation='execute__transaction'}[1m])))",
+          "legendFormat": "P99.9"
+        },
+        {
+          "expr": "histogram_quantile(1.0, sum by (le) (rate(mongo_operation_num_attempts_bucket{operation='execute__transaction'}[1m])))",
+          "legendFormat": "Max"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "ops/s"
+          "unit": "none"
         }
       }
     },
     {
-      "title": "Commit Attempts (Retries)",
-      "type": "heatmap",
+      "title": "Commit Attempts (P95/P99/P99.9/Max)",
+      "type": "timeseries",
       "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
+        "h": 10,
+        "w": 8,
+        "x": 8,
         "y": 91
       },
       "targets": [
         {
-          "expr": "sum by (le) (rate(mongo_operation_num_attempts_bucket{operation='execute__commit'}[1m]))",
-          "format": "heatmap"
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(mongo_operation_num_attempts_bucket{operation='execute__commit'}[1m])))",
+          "legendFormat": "P95"
+        },
+        {
+          "expr": "histogram_quantile(0.999, sum by (le) (rate(mongo_operation_num_attempts_bucket{operation='execute__commit'}[1m])))",
+          "legendFormat": "P99.9"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(mongo_operation_num_attempts_bucket{operation='execute__commit'}[1m])))",
+          "legendFormat": "P99"
+        },
+        {
+          "expr": "histogram_quantile(1.0, sum by (le) (rate(mongo_operation_num_attempts_bucket{operation='execute__commit'}[1m])))",
+          "legendFormat": "Max"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "ops/s"
+          "unit": "none"
+        }
+      }
+    },
+    {
+      "title": "Transaction Attempts P99 (by Store Method)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 10,
+        "w": 8,
+        "x": 16,
+        "y": 91
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum by (le, store_method) (rate(mongo_operation_num_attempts_bucket{operation='execute__transaction'}[1m])))",
+          "legendFormat": "{{store_method}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none"
         }
       }
     },
@@ -726,7 +771,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 99
+        "y": 101
       },
       "id": 300,
       "panels": [],
@@ -740,7 +785,7 @@
         "h": 10,
         "w": 12,
         "x": 0,
-        "y": 100
+        "y": 102
       },
       "targets": [
         {
@@ -756,7 +801,7 @@
         "h": 10,
         "w": 12,
         "x": 12,
-        "y": 100
+        "y": 102
       },
       "targets": [
         {
