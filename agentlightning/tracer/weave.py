@@ -17,7 +17,7 @@ from agentlightning.types.tracer import OtelResource, Span, SpanContext, TraceSt
 from .base import Tracer
 
 if TYPE_CHECKING:
-    from weave.trace.call import Call
+    from weave.trace.call import Call  # type: ignore
 else:
     Call = Any  # type: ignore
 
@@ -353,16 +353,16 @@ class WeaveTracer(Tracer):
         spans: List[Span] = []
         sequence_id = seq_start
 
-        rollout_id = rollout_id or getattr(call, "inputs", {}).get("rollout_id", "")
-        attempt_id = attempt_id or getattr(call, "inputs", {}).get("attempt_id", "")
+        rollout_id = rollout_id or getattr(call, "inputs", {}).get("rollout_id", "")  # type: ignore
+        attempt_id = attempt_id or getattr(call, "inputs", {}).get("attempt_id", "")  # type: ignore
 
-        start_dt = getattr(call, "started_at", None)
+        start_dt = getattr(call, "started_at", None)  # type: ignore
         start_ts: Optional[float] = start_dt.timestamp() if start_dt else None
 
-        end_dt = getattr(call, "ended_at", None)
+        end_dt = getattr(call, "ended_at", None)  # type: ignore
         end_ts: Optional[float] = end_dt.timestamp() if end_dt else None
 
-        attributes = dict(getattr(call, "attributes", {}) or {})
+        attributes = dict(getattr(call, "attributes", {}) or {})  # type: ignore
         flat_attrs: Dict[str, Any] = {}
 
         # Flatten nested attribute dictionaries
@@ -377,9 +377,9 @@ class WeaveTracer(Tracer):
             else:
                 flat_attrs[k] = v
 
-        trace_id = str(getattr(call, "trace_id", None))
-        span_id = str(getattr(call, "id", None))
-        parent_id = str(getattr(call, "parent_id", None)) if getattr(call, "parent_id", None) else None
+        trace_id = str(getattr(call, "trace_id", None))  # type: ignore
+        span_id = str(getattr(call, "id", None))  # type: ignore
+        parent_id = str(getattr(call, "parent_id", None)) if getattr(call, "parent_id", None) else None  # type: ignore
 
         context = SpanContext(
             trace_id=trace_id,
@@ -407,7 +407,7 @@ class WeaveTracer(Tracer):
             trace_id=trace_id,
             span_id=span_id,
             parent_id=parent_id,
-            name=getattr(call, "func_name", "unknown"),
+            name=getattr(call, "func_name", "unknown"),  # type: ignore
             status=TraceStatus(status_code="OK"),
             attributes=flat_attrs,
             events=[],  # Weave calls do not generate events
@@ -424,9 +424,9 @@ class WeaveTracer(Tracer):
 
         children: List["Call"] = getattr(call, "_children", [])  # type: ignore
         # Recursively process child calls
-        for child in children:
+        for child in children:  # type: ignore
             child_spans, sequence_id = self.convert_call_to_spans(  # type: ignore
-                child,
+                child,  # type: ignore
                 rollout_id=rollout_id,
                 attempt_id=attempt_id,
                 seq_start=sequence_id,
