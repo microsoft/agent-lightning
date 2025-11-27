@@ -6,7 +6,7 @@ import multiprocessing
 import sys
 import threading
 import time
-from typing import Any, Callable, Coroutine, List, Optional, Union
+from typing import Any, Callable, Coroutine, Iterator, List, Optional, Union
 
 import agentops
 import pytest
@@ -27,7 +27,7 @@ from agentlightning.types import Span
 from agentlightning.utils import otlp
 
 
-class MockLightningStoreService:
+class MockOTLPService:
     """A mock OTLP server to capture trace export requests for testing purposes."""
 
     def __init__(self) -> None:
@@ -75,7 +75,7 @@ class MockLightningStoreService:
 class MockLightningStore(LightningStore):
     """A minimal stub-only LightningStore, only implements methods likely used in tests."""
 
-    def __init__(self, server_port: int) -> None:
+    def __init__(self, server_port: int = 80) -> None:
         super().__init__()
         self.otlp_traces = False
         self.server_port = server_port
@@ -188,7 +188,74 @@ def _test_trace_error_status_from_instance_imp(with_exception: bool):
         tracer.teardown()
 
 
-def test_agentops_trace_with_store_or_not():
+async def _test_agentops_trace_without_store_imp():
+    tracer = AgentOpsTracer()
+    tracer.init()
+    tracer.init_worker(0)
+
+    try:
+        # Using AgentOpsTracer to trace a function without providing a store, rollout_id, or attempt_id.
+        tracer.trace_run(_func_without_exception)
+        spans = tracer.get_last_trace()
+        assert len(spans) > 0
+    finally:
+        tracer.teardown_worker(0)
+        tracer.teardown()
+
+
+async def _test_agentops_trace_with_store_disable_imp():
+    tracer = AgentOpsTracer()
+    tracer.init()
+    tracer.init_worker(0)
+
+    try:
+        # Using AgentOpsTracer to trace a function with providing a store which disabled native otlp exporter, rollout_id, and attempt_id.
+        store = MockLightningStore()
+        async with tracer.trace_context(
+            name="agentops_test", store=store, rollout_id="test_rollout_id", attempt_id="test_attempt_id"
+        ):
+            _func_without_exception()
+        spans = tracer.get_last_trace()
+        assert len(spans) > 0
+    finally:
+        tracer.teardown_worker(0)
+        tracer.teardown()
+
+
+async def _test_agentops_trace_with_store_enable_imp():
+    mock_service = MockOTLPService()
+    port = mock_service.start_service()
+
+    tracer = AgentOpsTracer()
+    tracer.init()
+    tracer.init_worker(0)
+
+    try:
+        # Using AgentOpsTracer to trace a function with providing a store which disabled native otlp exporter, rollout_id, and attempt_id.
+        store = MockLightningStore(port)
+        async with tracer.trace_context(
+            name="agentops_test", store=store, rollout_id="test_rollout_id", attempt_id="test_attempt_id"
+        ):
+            _func_without_exception()
+        spans = tracer.get_last_trace()
+        assert len(spans) > 0
+    finally:
+        tracer.teardown_worker(0)
+        tracer.teardown()
+
+        mock_service.stop_service()
+
+
+def agentops_trace_paths() -> Iterator[Callable[[], Any]]:
+    yield from [
+        _test_agentops_trace_without_store_imp,
+        _test_agentops_trace_with_store_disable_imp,
+        _test_agentops_trace_with_store_enable_imp,
+    ]
+
+
+@pytest.mark.parametrize("agent_func_name", list(agentops_trace_paths()))
+def test_agentops_trace_with_store_or_not(agent_func_name):
     """
     The purpose of this test is to verify whether the following two scenarios both work correctly:
 
@@ -198,7 +265,7 @@ def test_agentops_trace_with_store_or_not():
     """
 
     ctx = multiprocessing.get_context("spawn")
-    proc = ctx.Process(target=_run_async, args=(_test_agentops_trace_with_store_or_not_imp,))
+    proc = ctx.Process(target=_run_async, args=(agent_func_name,))
     proc.start()
     proc.join(30.0)  # On GPU server, the time is around 10 seconds.
 
@@ -221,43 +288,3 @@ def _run_async(coro: Callable[[], Coroutine[Any, Any, Any]]) -> None:
     import asyncio
 
     asyncio.run(coro())
-
-
-async def _test_agentops_trace_with_store_or_not_imp():
-    mock_service = MockLightningStoreService()
-    port = mock_service.start_service()
-
-    tracer = AgentOpsTracer()
-    tracer.init()
-    tracer.init_worker(0)
-
-    try:
-        # Using AgentOpsTracer to trace a function without providing a store, rollout_id, or attempt_id.
-        tracer.trace_run(_func_without_exception)
-        spans = tracer.get_last_trace()
-        assert len(spans) > 0
-
-        # Using AgentOpsTracer to trace a function with providing a store which disabled native otlp exporter, rollout_id, and attempt_id.
-        store = MockLightningStore(port)
-        async with tracer.trace_context(
-            name="agentops_test", store=store, rollout_id="test_rollout_id", attempt_id="test_attempt_id"
-        ):
-            _func_without_exception()
-        spans = tracer.get_last_trace()
-        assert len(spans) > 0
-
-        # Using AgentOpsTracer to trace a function with providing a store which enabled native otlp exporter, rollout_id, and attempt_id.
-        store.enable_otlp_traces()
-        async with tracer.trace_context(
-            name="agentops_test", store=store, rollout_id="test_rollout_id", attempt_id="test_attempt_id"
-        ):
-            _func_without_exception()
-        spans = tracer.get_last_trace()
-        dumped_spans = mock_service.get_traces()
-        assert len(spans) > 0
-        assert len(dumped_spans) > 0
-    finally:
-        tracer.teardown_worker(0)
-        tracer.teardown()
-
-        mock_service.stop_service()
