@@ -154,6 +154,28 @@ def get_tracer(use_active_span_processor: bool = True) -> trace_api.Tracer:
         )
 
 
+def make_tag_attributes(tags: List[str]) -> Dict[str, Any]:
+    """Convert a list of tags into flattened attributes for span tagging.
+
+    There is no syntax enforced for tags, they are just strings. For example:
+
+    ```python
+    ["gen_ai.model:gpt-4", "reward.extrinsic"]
+    ```
+    """
+    return flatten_attributes({LightningSpanAttributes.TAG.value: tags})
+
+
+def extract_tags_from_attributes(attributes: Dict[str, Any]) -> List[str]:
+    """Extract tag attributes from flattened span attributes.
+
+    Args:
+        attributes: A dictionary of flattened span attributes.
+    """
+    maybe_tag_list = filter_and_unflatten_attributes(attributes, LightningSpanAttributes.TAG.value)
+    return TypeAdapter(List[str]).validate_python(maybe_tag_list)
+
+
 def make_link_attributes(links: Dict[str, str]) -> Dict[str, Any]:
     """Convert a dictionary of links into flattened attributes for span linking.
 

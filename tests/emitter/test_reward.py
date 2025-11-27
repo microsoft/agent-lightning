@@ -12,6 +12,7 @@ from agentlightning.emitter.reward import emit_reward, get_rewards_from_span
 from agentlightning.reward import find_final_reward, find_reward_spans, get_reward_value, is_reward_span
 from agentlightning.semconv import AGL_ANNOTATION, LightningSpanAttributes, RewardPydanticModel
 from agentlightning.types import SpanLike
+from agentlightning.utils.otel import make_link_attributes, make_tag_attributes
 
 
 @dataclass
@@ -27,6 +28,68 @@ class AttributeSpan:
 
 def make_span(name: str, attributes: Optional[Dict[str, Any]] = None) -> SpanLike:
     return cast(SpanLike, FakeSpan(name=name, attributes=attributes))
+
+
+def _capture_emit_annotation(monkeypatch: pytest.MonkeyPatch) -> tuple[Dict[str, Any], object]:
+    captured: Dict[str, Any] = {}
+    sentinel = object()
+
+    def fake_emit_annotation(payload: Dict[str, Any], *, propagate: bool) -> object:
+        captured["payload"] = payload
+        captured["propagate"] = propagate
+        return sentinel
+
+    monkeypatch.setattr(reward_module, "emit_annotation", fake_emit_annotation)
+    return captured, sentinel
+
+
+def test_emit_reward_example_scalar(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured, sentinel = _capture_emit_annotation(monkeypatch)
+
+    result = emit_reward(1.0)
+
+    assert result is sentinel
+    assert captured["propagate"] is True
+    dimensions = captured["payload"][LightningSpanAttributes.REWARD.value]
+    assert dimensions == [{"name": "primary", "value": 1.0}]
+
+
+def test_emit_reward_example_multi_dimensional(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured, _ = _capture_emit_annotation(monkeypatch)
+
+    emit_reward({"task_completion": 1.0, "efficiency": 0.8}, primary_key="task_completion")
+
+    dimensions = captured["payload"][LightningSpanAttributes.REWARD.value]
+    assert dimensions == [
+        {"name": "task_completion", "value": 1.0},
+        {"name": "efficiency", "value": 0.8},
+    ]
+
+
+def test_emit_reward_example_with_links(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured, _ = _capture_emit_annotation(monkeypatch)
+
+    link_attrs = make_link_attributes({"gen_ai.response.id": "response-123", "span_id": "abcd-efgh"})
+    emit_reward(0.5, attributes=link_attrs)
+
+    payload = captured["payload"]
+    assert payload[f"{LightningSpanAttributes.LINK.value}.0.key_match"] == "gen_ai.response.id"
+    assert payload[f"{LightningSpanAttributes.LINK.value}.0.value_match"] == "response-123"
+    reward_dimensions = payload[LightningSpanAttributes.REWARD.value]
+    assert reward_dimensions == [{"name": "primary", "value": 0.5}]
+
+
+def test_emit_reward_example_with_tags(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured, _ = _capture_emit_annotation(monkeypatch)
+
+    tag_attrs = make_tag_attributes(["fast", "reliable"])
+    emit_reward(0.7, attributes=tag_attrs)
+
+    payload = captured["payload"]
+    assert payload[f"{LightningSpanAttributes.TAG.value}.0"] == "fast"
+    assert payload[f"{LightningSpanAttributes.TAG.value}.1"] == "reliable"
+    reward_dimensions = payload[LightningSpanAttributes.REWARD.value]
+    assert reward_dimensions == [{"name": "primary", "value": 0.7}]
 
 
 def test_get_reward_value_from_agentops_dict() -> None:

@@ -10,18 +10,21 @@ import opentelemetry.trace as trace_api
 import pytest
 from opentelemetry.sdk.trace import ReadableSpan, SynchronousMultiSpanProcessor
 from opentelemetry.trace import TraceFlags
+from pydantic import ValidationError
 
 from agentlightning.semconv import LightningSpanAttributes, LinkPydanticModel
 from agentlightning.types.tracer import Span
 from agentlightning.utils import otel
 from agentlightning.utils.otel import (
     extract_links_from_attributes,
+    extract_tags_from_attributes,
     filter_and_unflatten_attributes,
     filter_attributes,
     flatten_attributes,
     get_tracer,
     get_tracer_provider,
     make_link_attributes,
+    make_tag_attributes,
     query_linked_spans,
     unflatten_attributes,
 )
@@ -309,6 +312,25 @@ def test_make_link_attributes_rejects_non_string_values() -> None:
     assert "Link value must be a string" in str(excinfo.value)
 
 
+def test_make_tag_attributes_and_extract_round_trip() -> None:
+    flattened = make_tag_attributes(["fast", "reliable"])
+    assert flattened == {
+        f"{LightningSpanAttributes.TAG.value}.0": "fast",
+        f"{LightningSpanAttributes.TAG.value}.1": "reliable",
+    }
+
+    assert extract_tags_from_attributes(flattened) == ["fast", "reliable"]
+
+
+def test_extract_tags_from_attributes_rejects_non_strings() -> None:
+    attributes = {
+        f"{LightningSpanAttributes.TAG.value}.0": 1,
+    }
+
+    with pytest.raises(ValidationError):
+        extract_tags_from_attributes(attributes)
+
+
 def test_filter_attributes_keeps_exact_matches_and_children() -> None:
     attributes = {
         "agentlightning.link": "root",
@@ -451,7 +473,7 @@ def test_get_tracer_delegates_to_active_span_processor(monkeypatch: pytest.Monke
     provider = DummyProvider()
 
     monkeypatch.setattr(trace_api, "_TRACER_PROVIDER", object(), raising=False)
-    monkeypatch.setattr(otel, "get_tracer_provider", lambda: provider)
+    monkeypatch.setattr(otel, "get_tracer_provider", lambda inspect=True: provider)
 
     tracer = get_tracer()
 
@@ -490,7 +512,7 @@ def test_get_tracer_without_active_span_processor_builds_isolated_tracer(monkeyp
             )
 
     monkeypatch.setattr(trace_api, "_TRACER_PROVIDER", object(), raising=False)
-    monkeypatch.setattr(otel, "get_tracer_provider", lambda: provider)
+    monkeypatch.setattr(otel, "get_tracer_provider", lambda inspect=True: provider)
     monkeypatch.setattr(otel, "Tracer", DummyTracer)
 
     tracer = get_tracer(use_active_span_processor=False)

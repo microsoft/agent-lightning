@@ -65,6 +65,9 @@ class LightningSpanAttributes(Enum):
     LINK = "agentlightning.link"
     """Attribute name for linking the current span to another span or other objects like requests/responses."""
 
+    TAG = "agentlightning.tag"
+    """Attribute name for tagging spans with customized strings."""
+
     MESSAGE_BODY = "agentlightning.message.body"
     """Attribute name for message text in message spans."""
 

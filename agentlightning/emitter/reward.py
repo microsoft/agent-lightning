@@ -149,6 +149,21 @@ def emit_reward(
 ) -> ReadableSpan:
     """Emit a reward value as an OpenTelemetry span.
 
+    Examples:
+        Emit a single-dimensional reward:
+        >>> emit_reward(1.0)
+
+        Emit multi-dimensional rewards:
+        >>> emit_reward({"task_completion": 1.0, "efficiency": 0.8}, primary_key="task_completion")
+
+        Emit a reward with additional attributes (for example linking to another response span):
+        >>> from agentlightning.utils.otel import make_link_attributes
+        >>> emit_reward(0.5, attributes=make_link_attributes({"gen_ai.response.id": "response-123"}))
+
+        Or adding tags onto the reward span:
+        >>> from agentlightning.utils.otel import make_tag_attributes
+        >>> emit_reward(0.7, attributes=make_tag_attributes(["fast", "reliable"]))
+
     Args:
         reward: Numeric reward to record. Integers and booleans are converted to
             floating point numbers for consistency.
