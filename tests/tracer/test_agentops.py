@@ -254,8 +254,8 @@ def agentops_trace_paths() -> Iterator[Callable[[], Any]]:
     ]
 
 
-@pytest.mark.parametrize("agent_func_name", list(agentops_trace_paths()))
-def test_agentops_trace_with_store_or_not(agent_func_name):
+@pytest.mark.parametrize("func_name", [f.__name__ for f in agentops_trace_paths()], ids=str)
+def test_agentops_trace_with_store_or_not(func_name: str):
     """
     The purpose of this test is to verify whether the following two scenarios both work correctly:
 
@@ -264,8 +264,10 @@ def test_agentops_trace_with_store_or_not(agent_func_name):
     3. Using AgentOpsTracer to trace a function with providing a store which enabled native otlp exporter, rollout_id, and attempt_id.
     """
 
+    func = {f.__name__: f for f in agentops_trace_paths()}[func_name]
+
     ctx = multiprocessing.get_context("spawn")
-    proc = ctx.Process(target=_run_async, args=(agent_func_name,))
+    proc = ctx.Process(target=_run_async, args=(func,))
     proc.start()
     proc.join(30.0)  # On GPU server, the time is around 10 seconds.
 
