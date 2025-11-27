@@ -287,7 +287,7 @@ class LitAgentRunner(Runner[T_task]):
             # Preserve the existing spans before another span is emitted
             trace_spans = list(self._tracer.get_last_trace())
             # This will NOT emit another span to the tracer
-            reward_span = emit_reward(raw_result, auto_export=False)
+            reward_span = emit_reward(raw_result, propagate=False)
             # We add it to the store manually
             await store.add_otel_span(rollout.rollout_id, rollout.attempt.attempt_id, reward_span)
             trace_spans.append(reward_span)

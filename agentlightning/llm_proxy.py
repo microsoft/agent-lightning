@@ -47,7 +47,8 @@ from opentelemetry.sdk.trace.export import SpanExporter, SpanExportResult
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import Scope
 
-from agentlightning.types import LLM, ProxyLLM, SpanNames
+from agentlightning.semconv import LightningResourceAttributes
+from agentlightning.types import LLM, ProxyLLM
 from agentlightning.utils.server_launcher import (
     LaunchMode,
     PythonServerLauncher,
@@ -396,9 +397,9 @@ class LightningSpanExporter(SpanExporter):
                     span._resource = span._resource.merge(  # pyright: ignore[reportPrivateUsage]
                         Resource.create(
                             {
-                                SpanNames.ROLLOUT_ID: rollout_id,
-                                SpanNames.ATTEMPT_ID: attempt_id,
-                                SpanNames.SPAN_SEQUENCE_ID: sequence_id_decimal,
+                                LightningResourceAttributes.ROLLOUT_ID.value: rollout_id,
+                                LightningResourceAttributes.ATTEMPT_ID.value: attempt_id,
+                                LightningResourceAttributes.SPAN_SEQUENCE_ID.value: sequence_id_decimal,
                             }
                         )
                     )

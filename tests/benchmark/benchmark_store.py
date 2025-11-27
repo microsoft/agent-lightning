@@ -7,7 +7,7 @@ import random
 from typing import Any, Dict, List, Literal, Optional, Sequence, Set, Tuple
 
 import agentlightning as agl
-from agentlightning.emitter.utils import get_tracer
+from agentlightning.utils.otel import get_tracer
 
 from .utils import flatten_dict, random_dict
 

@@ -17,10 +17,11 @@ from agentlightning.litagent import LitAgent
 from agentlightning.reward import emit_reward, find_final_reward
 from agentlightning.runner import LitAgentRunner
 from agentlightning.runner.base import Runner
+from agentlightning.semconv import AGL_ANNOTATION
 from agentlightning.store.base import UNSET, LightningStore, Unset
 from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.tracer.base import Tracer
-from agentlightning.types import LLM, Hook, NamedResources, PromptTemplate, Rollout, Span, SpanNames, Worker
+from agentlightning.types import LLM, Hook, NamedResources, PromptTemplate, Rollout, Span, Worker
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -259,7 +260,7 @@ async def test_step_emits_reward_for_float_result() -> None:
 
     rollout_id, attempt_id = await assert_single_attempt_succeeded(store)
     spans = await store.query_spans(rollout_id, attempt_id)
-    rewards = [span.attributes.get("reward") for span in spans if span.name == SpanNames.REWARD.value]
+    rewards = [span.attributes.get("agentlightning.reward.0.value") for span in spans if span.name == AGL_ANNOTATION]
     assert rewards == [0.75]
 
 
@@ -286,7 +287,7 @@ async def test_step_handles_non_llm_resource() -> None:
 
     rollout_id, attempt_id = await assert_single_attempt_succeeded(store)
     spans = await store.query_spans(rollout_id, attempt_id)
-    rewards = [span.attributes.get("reward") for span in spans if span.name == SpanNames.REWARD.value]
+    rewards = [span.attributes.get("agentlightning.reward.0.value") for span in spans if span.name == AGL_ANNOTATION]
     assert rewards == [0.1]
 
 
@@ -512,7 +513,9 @@ async def test_agent_emits_multiple_rewards() -> None:
 
     rollout_id, attempt_id = await assert_single_attempt_succeeded(store)
     spans = await store.query_spans(rollout_id, attempt_id)
-    reward_values = [span.attributes.get("reward") for span in spans if span.name == SpanNames.REWARD.value]
+    reward_values = [
+        span.attributes.get("agentlightning.reward.0.value") for span in spans if span.name == AGL_ANNOTATION
+    ]
     assert reward_values == [0.2, 0.6]
 
 

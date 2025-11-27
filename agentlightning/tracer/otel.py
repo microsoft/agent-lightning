@@ -18,8 +18,8 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace import TracerProvider as TracerProviderImpl
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 
+from agentlightning.semconv import LightningResourceAttributes
 from agentlightning.store.base import LightningStore
-from agentlightning.types.tracer import SpanNames
 from agentlightning.utils.otlp import LightningStoreOTLPExporter
 
 from .base import Tracer
@@ -144,8 +144,8 @@ class OtelTracer(Tracer):
         tracer_provider._resource = tracer_provider._resource.merge(  # pyright: ignore[reportPrivateUsage]
             Resource.create(
                 {
-                    SpanNames.ROLLOUT_ID: rollout_id,
-                    SpanNames.ATTEMPT_ID: attempt_id,
+                    LightningResourceAttributes.ROLLOUT_ID.value: rollout_id,
+                    LightningResourceAttributes.ATTEMPT_ID.value: attempt_id,
                 }
             )
         )
@@ -182,8 +182,8 @@ class OtelTracer(Tracer):
         tracer_provider._resource = tracer_provider._resource.merge(  # pyright: ignore[reportPrivateUsage]
             Resource.create(
                 {
-                    SpanNames.ROLLOUT_ID: "",
-                    SpanNames.ATTEMPT_ID: "",
+                    LightningResourceAttributes.ROLLOUT_ID.value: "",
+                    LightningResourceAttributes.ATTEMPT_ID.value: "",
                 }
             )
         )  # reset resource
@@ -218,6 +218,30 @@ class LightningSpanProcessor(SpanProcessor):
         self._loop_ready = threading.Event()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._loop_thread: Optional[threading.Thread] = None
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__name__}("
+            + f"disable_store_submission={self.disable_store_submission}, "
+            + f"store={self.store!r}, "
+            + f"rollout_id={self.rollout_id!r}, "
+            + f"attempt_id={self.attempt_id!r})"
+        )
+
+    @property
+    def store(self) -> Optional[LightningStore]:
+        """The store to submit the spans to."""
+        return self._store
+
+    @property
+    def rollout_id(self) -> Optional[str]:
+        """The rollout ID to submit the spans to."""
+        return self._rollout_id
+
+    @property
+    def attempt_id(self) -> Optional[str]:
+        """The attempt ID to submit the spans to."""
+        return self._attempt_id
 
     @property
     def disable_store_submission(self) -> bool:
