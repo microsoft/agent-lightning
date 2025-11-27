@@ -37,18 +37,16 @@ verl = [
   "verl>=0.5.0",
   "vllm>=0.8.4", # Due to interface change of ExternalZeroMQDistributedExecutor
 ]
-<<<<<<< HEAD
+
 weave = [
   "weave",
 ]
-=======
 
 # Store-related dependencies.
 mongo = [
   "pymongo",
 ]
 
->>>>>>> upstream/main
 [project.scripts]
 agl = "agentlightning.cli:main"
 
