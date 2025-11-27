@@ -88,7 +88,7 @@ def get_tracer_provider(inspect: bool = True) -> TracerProviderImpl:
                 processor_cls = processor.__class__.__name__
                 if isinstance(processor.span_exporter, LightningStoreOTLPExporter):
                     # This should be the main path now.
-                    processors.append(f"{active_span_processor_cls} - {processor_cls} - {processor!r}")
+                    processors.append(f"{active_span_processor_cls} - {processor_cls} - {processor.span_exporter!r}")
                 elif isinstance(processor.span_exporter, OTLPSpanExporter):
                     # You need to be careful if the code goes into this path.
                     endpoint = processor.span_exporter._endpoint  # pyright: ignore[reportPrivateUsage]
