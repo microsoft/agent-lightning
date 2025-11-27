@@ -1783,7 +1783,7 @@
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="October 19, 2025 15:08:10 UTC"><span class="timeago" datetime="2025-10-19T15:08:10+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="October 19, 2025 15:08:10 UTC">2025-10-19</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="November 27, 2025 17:22:42 UTC"><span class="timeago" datetime="2025-11-27T17:22:42+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="November 27, 2025 17:22:42 UTC">2025-11-27</span>
   </span>
 
     
@@ -1921,7 +1921,7 @@
 </ul>
 <div class="admonition important">
 <p class="admonition-title">Emitting the Final Reward</p>
-<p>When returning <code>None</code>, you must still ensure a final reward is logged. You can do this by using the <a class="autorefs autorefs-internal" title="            agentlightning.emit_reward(reward, auto_export=True)" href="../../reference/agent/#agentlightning.emit_reward"><code>emit_reward</code></a> function (covered in the <a class="autorefs autorefs-internal" title="Using the Emitter" href="#using-emitter">Emitter section</a> below) or by wrapping your reward calculation function with the <a class="autorefs autorefs-internal" title="            agentlightning.reward.reward(fn)" href="../../reference/agent/#agentlightning.reward.reward"><code>@reward</code></a> decorator.</p>
+<p>When returning <code>None</code>, you must still ensure a final reward is logged. You can do this by using the <a class="autorefs autorefs-internal" title="            agentlightning.emit_reward(reward, *, primary_key=None, attributes=None, propagate=True)" href="../../reference/agent/#agentlightning.emit_reward"><code>emit_reward</code></a> function (covered in the <a class="autorefs autorefs-internal" title="Using the Emitter" href="#using-emitter">Emitter section</a> below). Wrapping your reward calculation function with the <code>@reward</code> decorator is NOT the recommended approach any more.</p>
 </div>
 <ul>
 <li><strong><code>list[ReadableSpan]</code></strong> or <strong><code>list[Span]</code></strong>: For advanced use cases, you can manually construct and return a complete list of all spans for the rollout. This gives you full control over the trace data. You can return either a list of OpenTelemetry <code>ReadableSpan</code> objects or Agent-lightning's native <code>Span</code> objects.</li>
@@ -2011,10 +2011,10 @@
 <h3 id="emitting-rewards-messages-and-more">Emitting Rewards, Messages, and More<a class="headerlink" href="#emitting-rewards-messages-and-more" title="Permanent link">&para;</a></h3>
 <p>Here are the primary emitter functions:</p>
 <ul>
-<li><a class="autorefs autorefs-internal" title="            agentlightning.emit_reward(reward, auto_export=True)" href="../../reference/agent/#agentlightning.emit_reward"><code>emit_reward(value: float)</code></a>: Records an intermediate reward.</li>
-<li><a class="autorefs autorefs-internal" title="            agentlightning.emit_message(message)" href="../../reference/agent/#agentlightning.emit_message"><code>emit_message(message: str)</code></a>: Records a simple log message as a span.</li>
-<li><a class="autorefs autorefs-internal" title="            agentlightning.emit_exception(exception)" href="../../reference/agent/#agentlightning.emit_exception"><code>emit_exception(exception: BaseException)</code></a>: Records a Python exception, including its type, message, and stack trace.</li>
-<li><a class="autorefs autorefs-internal" title="            agentlightning.emit_object(object)" href="../../reference/agent/#agentlightning.emit_object"><code>emit_object(obj: Any)</code></a>: Records any JSON-serializable object, perfect for structured data.</li>
+<li><a class="autorefs autorefs-internal" title="            agentlightning.emit_reward(reward, *, primary_key=None, attributes=None, propagate=True)" href="../../reference/agent/#agentlightning.emit_reward"><code>emit_reward(value: float)</code></a>: Records an intermediate reward.</li>
+<li><a class="autorefs autorefs-internal" title="            agentlightning.emit_message(message, attributes=None, propagate=True)" href="../../reference/agent/#agentlightning.emit_message"><code>emit_message(message: str)</code></a>: Records a simple log message as a span.</li>
+<li><a class="autorefs autorefs-internal" title="            agentlightning.emit_exception(exception, attributes=None, propagate=True)" href="../../reference/agent/#agentlightning.emit_exception"><code>emit_exception(exception: BaseException)</code></a>: Records a Python exception, including its type, message, and stack trace.</li>
+<li><a class="autorefs autorefs-internal" title="            agentlightning.emit_object(object, attributes=None, propagate=True)" href="../../reference/agent/#agentlightning.emit_object"><code>emit_object(obj: Any)</code></a>: Records any JSON-serializable object, perfect for structured data.</li>
 </ul>
 <p>Let's see an example of an agent using these emitters to provide detailed feedback.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">agentlightning</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">agl</span>
