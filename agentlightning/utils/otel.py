@@ -23,20 +23,42 @@ from agentlightning.utils.otlp import LightningStoreOTLPExporter
 
 logger = logging.getLogger(__name__)
 
+__all__ = [
+    "full_qualified_name",
+    "get_tracer_provider",
+    "get_tracer",
+    "make_tag_attributes",
+    "extract_tags_from_attributes",
+    "make_link_attributes",
+    "query_linked_spans",
+    "extract_links_from_attributes",
+    "filter_attributes",
+    "filter_and_unflatten_attributes",
+    "flatten_attributes",
+    "unflatten_attributes",
+]
 
-def _full_qualified_name(obj: type) -> str:
+
+def full_qualified_name(obj: type) -> str:
+    if str(obj.__module__) == "builtins":
+        return obj.__qualname__
     return f"{obj.__module__}.{obj.__qualname__}"
 
 
 def get_tracer_provider(inspect: bool = True) -> TracerProviderImpl:
-    """Get the OpenTelemetry tracer provider configured for Agent Lightning."""
+    """Get the OpenTelemetry tracer provider configured for Agent Lightning.
+
+    Args:
+        inspect: Whether to inspect the tracer provider and log its configuration.
+            When it's on, make sure you also set the logger level to DEBUG to see the logs.
+    """
     if hasattr(trace_api, "_TRACER_PROVIDER") and trace_api._TRACER_PROVIDER is None:  # type: ignore[attr-defined]
         raise RuntimeError("Tracer is not initialized. Cannot emit a meaningful span.")
     tracer_provider = otel_get_tracer_provider()
     if not isinstance(tracer_provider, TracerProviderImpl):
         logger.error(
             "Tracer provider is expected to be an instance of opentelemetry.sdk.trace.TracerProvider, found: %s",
-            _full_qualified_name(type(tracer_provider)),
+            full_qualified_name(type(tracer_provider)),
         )
         return cast(TracerProviderImpl, tracer_provider)
 
@@ -299,6 +321,7 @@ def flatten_attributes(nested_data: Union[Dict[str, Any], List[Any]]) -> Dict[st
     Lists are indexed numerically.
 
     Example:
+
         >>> flatten_attributes({"a": {"b": 1, "c": [2, 3]}})
         {"a.b": 1, "a.c.0": 2, "a.c.1": 3}
 
@@ -340,6 +363,7 @@ def unflatten_attributes(flat_data: Dict[str, Any]) -> Union[Dict[str, Any], Lis
     0..n-1 range. Otherwise they remain dict keys.
 
     Example:
+
         >>> unflatten_attributes({"a.b": 1, "a.c.0": 2, "a.c.1": 3})
         {"a": {"b": 1, "c": [2, 3]}}
 

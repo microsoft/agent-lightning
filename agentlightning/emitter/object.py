@@ -7,7 +7,7 @@ from typing import Any, Dict, Optional
 
 from agentlightning.semconv import AGL_OBJECT, LightningSpanAttributes
 from agentlightning.types import SpanLike
-from agentlightning.utils.otel import get_tracer
+from agentlightning.utils.otel import full_qualified_name, get_tracer
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +66,7 @@ def encode_object(object: Any) -> Dict[str, Any]:
             raise RuntimeError(f"Object must be JSON serializable, got: {type(object)}.") from exc
 
         span_attributes = {
-            LightningSpanAttributes.OBJECT_TYPE.value: type(object).__name__,
+            LightningSpanAttributes.OBJECT_TYPE.value: full_qualified_name(type(object)),  # type: ignore
             LightningSpanAttributes.OBJECT_JSON.value: serialized,
         }
 
