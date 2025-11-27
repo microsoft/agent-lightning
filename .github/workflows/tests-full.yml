@@ -82,34 +82,50 @@ jobs:
       - name: Build dashboard
         run: cd dashboard && npm run build
 
-      - name: Start MongoDB container
+      - name: Setup Docker environments
         run: |
           set -euo pipefail
-          cat /etc/security/limits.conf
-          docker run -d \
-            --name mongodb-test \
-            --ulimit nofile=65535:65535 \
-            -p 27017:27017 \
-            mongo:8.2 \
-            --replSet test-rs
 
-          # Wait for mongod to come up
-          for i in $(seq 1 30); do
-            if docker exec mongodb-test mongosh --quiet --eval 'db.runCommand({ ping: 1 })' >/dev/null 2>&1; then
-              echo "Mongo is up"
-              break
+          cd docker
+
+          # Setup data directories
+          ./setup.sh
+
+          # Start Dockers
+          docker compose -f compose.mongo.yml up -d
+
+          SERVICE_NAME=mongo
+          TIMEOUT=60   # seconds
+          SLEEP=2
+
+          cid="$(docker compose -f compose.mongo.yml ps -q "$SERVICE_NAME")"
+          if [ -z "$cid" ]; then
+            echo "Service $SERVICE_NAME is not running"
+            exit 1
+          fi
+
+          echo "Waiting for $SERVICE_NAME to become healthy..."
+          end=$((SECONDS + TIMEOUT))
+
+          while [ "$SECONDS" -lt "$end" ]; do
+            status="$(docker inspect -f '{{.State.Health.Status}}' "$cid")"
+            echo "Current status: $status"
+
+            if [ "$status" = "healthy" ]; then
+              echo "$SERVICE_NAME is healthy ✅"
+              exit 0
+            elif [ "$status" = "unhealthy" ]; then
+              echo "$SERVICE_NAME is unhealthy ❌"
+              docker logs "$cid" || true
+              exit 1
             fi
-            echo "Waiting for Mongo..."
-            sleep 2
+
+            sleep "$SLEEP"
           done
 
-          # Init replica set (simple single-node)
-          docker exec mongodb-test mongosh --quiet --eval '
-            rs.initiate({
-              _id: "test-rs",
-              members: [{ _id: 0, host: "localhost:27017" }]
-            })
-          '
+          echo "Timed out waiting for $SERVICE_NAME to become healthy after ${TIMEOUT}s"
+          docker logs "$cid" || true
+          exit 1
         shell: bash
 
       - name: Launch LiteLLM Proxy
@@ -126,7 +142,7 @@ jobs:
           PYTEST_ADDOPTS: "--color=yes"
           OPENAI_BASE_URL: http://localhost:12306/
           OPENAI_API_KEY: dummy
-          AGL_TEST_MONGO_URI: mongodb://localhost:27017/?replicaSet=test-rs
+          AGL_TEST_MONGO_URI: mongodb://localhost:27017/?replicaSet=rs0
 
 
   minimal-examples:

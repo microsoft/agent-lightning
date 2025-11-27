@@ -376,14 +376,22 @@ class AzureOpenAIFinetune(Algorithm):
                 training_file=train_file_id,
                 model=base_model,
                 seed=self.seed,
-                hyperparameters={
-                    "batch_size": self.finetune_batch_size,
-                    "learning_rate_multiplier": self.finetune_learning_rate,
-                    "n_epochs": self.finetune_epochs,
+                method={
+                    "type": "supervised",
+                    "supervised": {
+                        "hyperparameters": {
+                            "batch_size": self.finetune_batch_size,
+                            "learning_rate_multiplier": self.finetune_learning_rate,
+                            "n_epochs": self.finetune_epochs,
+                        }
+                    },
                 },
                 # TODO: continuously adding suffix will make model names very long after a few iterations
                 # investigate if we can just specify the fine-tuned model name directly
                 suffix=f"v{next_iteration:02d}",
+                # NOTE: https://learn.microsoft.com/en-us/azure/ai-foundry/openai/how-to/fine-tuning
+                # Other options are "GlobalStandard" and "Standard"
+                extra_body={"trainingType": "GlobalStandard"},
             )
             job_id = job.id
             self._log_info("Fine-tuning job %s created for base model %s.", job_id, base_model)
@@ -443,6 +451,13 @@ class AzureOpenAIFinetune(Algorithm):
             raise RuntimeError("Azure deployment parameters missing; using fine-tuned model id directly.")
 
         return LLM(endpoint=self.azure_openai_endpoint, model=deployment_name, api_key=self.azure_openai_api_key)
+
+    def cleanup_deployments(self) -> None:
+        """Delete all deployments created by this algorithm instance."""
+        for deployment_name in self._created_deployments:
+            self._log_info("Cleaning up deployment %s.", deployment_name)
+            self._delete_deployment(deployment_name)
+        self._created_deployments = []
 
     def _filter_training_data(self, data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Select the top-performing examples and strip reward metadata.
