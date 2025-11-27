@@ -219,6 +219,15 @@ class LightningSpanProcessor(SpanProcessor):
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._loop_thread: Optional[threading.Thread] = None
 
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__name__}("
+            + f"disable_store_submission={self.disable_store_submission}, "
+            + f"store={self.store!r}, "
+            + f"rollout_id={self.rollout_id!r}, "
+            + f"attempt_id={self.attempt_id!r})"
+        )
+
     @property
     def store(self) -> Optional[LightningStore]:
         """The store to submit the spans to."""

@@ -230,6 +230,15 @@ class LightningStoreOTLPExporter(OTLPSpanExporter):
     _rollout_id: Optional[str] = None
     _attempt_id: Optional[str] = None
 
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__name__}("
+            + f"endpoint={self.endpoint!r}, "
+            + f"rollout_id={self.rollout_id!r}, "
+            + f"attempt_id={self.attempt_id!r}, "
+            + f"should_bypass={self.should_bypass()!r})"
+        )
+
     @property
     def endpoint(self) -> Optional[str]:
         """The endpoint to submit the spans to."""

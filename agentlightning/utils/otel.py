@@ -83,32 +83,12 @@ def get_tracer_provider(inspect: bool = True) -> TracerProviderImpl:
         for processor in active_span_processor._span_processors:  # pyright: ignore[reportPrivateUsage]
             if isinstance(processor, LightningSpanProcessor):
                 # The legacy case for tracers without OTLP support.
-                lsp_arguments: List[str] = []
-                lsp_arguments.append(f"disable_store_submission={processor.disable_store_submission}")
-                if processor.store is not None:
-                    lsp_arguments.append(f"store={processor.store!r}")
-                if processor.rollout_id is not None:
-                    lsp_arguments.append(f"rollout_id={processor.rollout_id!r}")
-                if processor.attempt_id is not None:
-                    lsp_arguments.append(f"attempt_id={processor.attempt_id!r}")
-                processors.append(
-                    f"{active_span_processor_cls} - {processor.__class__.__name__}({', '.join(lsp_arguments)})"
-                )
+                processors.append(f"{active_span_processor_cls} - {processor!r}")
             elif isinstance(processor, (SimpleSpanProcessor, BatchSpanProcessor)):
                 processor_cls = processor.__class__.__name__
                 if isinstance(processor.span_exporter, LightningStoreOTLPExporter):
                     # This should be the main path now.
-                    otlp_arguments: List[str] = []
-                    if processor.span_exporter.endpoint is not None:
-                        otlp_arguments.append(f"endpoint={processor.span_exporter.endpoint!r}")
-                    if processor.span_exporter.rollout_id is not None:
-                        otlp_arguments.append(f"rollout_id={processor.span_exporter.rollout_id!r}")
-                    if processor.span_exporter.attempt_id is not None:
-                        otlp_arguments.append(f"attempt_id={processor.span_exporter.attempt_id!r}")
-                    processors.append(
-                        f"{active_span_processor_cls} - {processor_cls} - "
-                        f"{processor.span_exporter.__class__.__name__}({', '.join(otlp_arguments)})"
-                    )
+                    processors.append(f"{active_span_processor_cls} - {processor_cls} - {processor!r}")
                 elif isinstance(processor.span_exporter, OTLPSpanExporter):
                     # You need to be careful if the code goes into this path.
                     endpoint = processor.span_exporter._endpoint  # pyright: ignore[reportPrivateUsage]
