@@ -228,7 +228,7 @@ async def test_runner_integration_with_spawned_litellm_proxy(server: RemoteOpenA
 
         last_spans = [span for span in spans if span.sequence_id == max(span.sequence_id for span in spans)]
         assert len(last_spans) == 1
-        assert last_spans[0].name == "agentlightning.reward"
+        assert last_spans[0].name == "agentlightning.annotation"
         assert (
             last_spans[0].attributes.get("agentlightning.reward.0.value") == 0.5
         ), f"Expected reward to be 0.5, found {last_spans[0].attributes}"

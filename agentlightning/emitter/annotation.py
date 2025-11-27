@@ -16,6 +16,8 @@ logger = logging.getLogger(__name__)
 def emit_annotation(annotation: Dict[str, Any], propagate: bool = True) -> ReadableSpan:
     """Emit a new annotation span.
 
+    This is the underlying implementation of [`emit_reward`][agentlightning.emit_reward].
+
     Annotation spans are used to annotate a specific event or a part of rollout.
     See [semconv][agentlightning.semconv] for conventional annotation keys in Agent-lightning.
 

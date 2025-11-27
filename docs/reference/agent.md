@@ -47,7 +47,3 @@
 ::: agentlightning.get_rewards_from_span
 
 ::: agentlightning.is_reward_span
-
-## Semantic Conventions
-
-::: agentlightning.semconv

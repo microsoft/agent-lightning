@@ -62,13 +62,13 @@ async def send_traces_via_otel(use_client: bool = False):
     assert "grpc-span-1" in span_names
     assert "grpc-span-2" in span_names
     assert "grpc-span-3" in span_names
-    assert "agentlightning.reward" in span_names
+    assert "agentlightning.annotation" in span_names
 
     last_span = traces[-1]
-    assert last_span.name == "agentlightning.reward"
-    # NOTE: Try not to rely on this attribute. It may change in the future.
+    assert last_span.name == "agentlightning.annotation"
+    # NOTE: Try not to rely on this attribute like this example do. It may change in the future.
     # Use utils from agentlightning.emitter to get the reward value.
-    assert last_span.attributes["reward"] == 1.0
+    assert last_span.attributes["agentlightning.reward.0.value"] == 1.0
 
     if use_client:
         # When using client, the resource should have rollout_id and attempt_id set

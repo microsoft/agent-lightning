@@ -110,7 +110,7 @@ You can also customize an [`Adapter`][agentlightning.Adapter] by extending the i
 
 ### Reading Rewards
 
-Rewards are recorded as dedicated spans named [`agentlightning.reward`][agentlightning.semconv.AGL_ANNOTATION]. Emitting a reward through [`emit_reward`][agentlightning.emit_reward] or the [`@reward` decorator][agentlightning.reward.reward] ensures the value is stored in the span’s `attributes`. To audit rewards, fetch spans from the store and use the helper utilities in [`agentlightning.emitter`](../reference/agent.md):
+Rewards are recorded as dedicated spans named [`agentlightning.annotation`][agentlightning.semconv.AGL_ANNOTATION]. Emitting a reward through [`emit_reward`][agentlightning.emit_reward] or [`emit_annotation`][agentlightning.emit_annotation] ensures the value is stored in the span’s `attributes`. To audit rewards, fetch spans from the store and use the helper utilities in [`agentlightning.emitter`](../reference/agent.md):
 
 ```python
 from agentlightning.emitter import find_final_reward

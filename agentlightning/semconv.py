@@ -10,7 +10,7 @@ from enum import Enum
 
 from pydantic import BaseModel
 
-AGL_ANNOTATION = "agentlightning.reward"
+AGL_ANNOTATION = "agentlightning.annotation"
 """Agent-lightning's standard span name for annotations.
 
 Annotations are minimal span units for rewards, tags, and metadatas.

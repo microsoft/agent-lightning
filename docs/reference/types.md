@@ -76,8 +76,10 @@
 
 ::: agentlightning.Span
 
-::: agentlightning.semconv
-
 ::: agentlightning.SpanAttributeNames
 
 ::: agentlightning.SpanLike
+
+## Semantic Conventions
+
+::: agentlightning.semconv
