@@ -266,7 +266,7 @@ def filter_and_unflatten_attributes(attributes: Dict[str, Any], prefix: str) -> 
         else:
             stripped_key = k[len(prefix) + 1 :]  # +1 to remove the dot
         stripped_attributes[stripped_key] = v
-    return unflatten_attributes(filtered_attributes)
+    return unflatten_attributes(stripped_attributes)
 
 
 def flatten_attributes(nested_data: Union[Dict[str, Any], List[Any]]) -> Dict[str, Any]:
