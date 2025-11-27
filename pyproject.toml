@@ -195,6 +195,9 @@ crewai = [
   # https://github.com/crewAIInc/crewAI/issues/3959
   "crewai[tools]>=1.2.0,!=1.2.1,!=1.3.0,!=1.4.0,!=1.4.1,!=1.5.0",
 ]
+swebench = [
+  "swebench",
+]
 
 # Summarize into large installable groups.
 agents = [
@@ -204,6 +207,7 @@ agents = [
   {include-group = "sql"},
   {include-group = "anthropic"},
   {include-group = "crewai"},
+  {include-group = "swebench"},
 ]
 
 [tool.uv]
