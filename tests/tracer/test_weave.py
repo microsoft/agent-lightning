@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import multiprocessing
-import pytest
 from typing import Any, Callable, Coroutine
+
+import pytest
 
 from agentlightning.store.base import LightningStore
 from agentlightning.tracer.weave import WeaveTracer
