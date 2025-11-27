@@ -125,7 +125,26 @@ class MongoOperationPrometheusTracker:
                 "mongo_operation_duration_seconds",
                 "Latency of MongoDB operations",
                 base_labels,
-                buckets=[0.001, 0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10],
+                buckets=[
+                    0.001,
+                    0.002,
+                    0.003,
+                    0.005,
+                    0.007,
+                    0.01,
+                    0.015,
+                    0.02,
+                    0.03,
+                    0.05,
+                    0.07,
+                    0.1,
+                    0.2,
+                    0.5,
+                    1,
+                    2,
+                    5,
+                    10,
+                ],
             )
             self._total_metric = Counter(
                 "mongo_operation_total",
@@ -1146,7 +1165,7 @@ class MongoLightningCollections(LightningCollections):
     ):
         self._client_pool = client_pool
         self._database_name = database_name
-        self._collection_name = "_transaction"  # Special collection name for tracking transactions
+        self._collection_name = "collections"  # Special collection name for tracking transactions
         self._partition_id = partition_id
         self._prometheus_tracker = (
             prometheus_tracker if prometheus_tracker is not None else MongoOperationPrometheusTracker(enabled=False)

@@ -83,14 +83,21 @@ def _with_collections_execute(
     return wrapper
 
 
-def tracked(method_name: str):
+def tracked(name: str):
     """Decorator to track the execution of the decorated method with Prometheus."""
+
+    _public_methods = frozenset([name for name in LightningStore.__dict__ if not name.startswith("_")])
 
     def decorator(func: T_callable) -> T_callable:
 
         @functools.wraps(func)
         async def wrapper(self: CollectionBasedLightningStore[T_collections], *args: Any, **kwargs: Any) -> Any:
-            nonlocal method_name
+            # For backtracking in Mongo-collection methods.
+            # Only track the public methods (+healthcheck)
+            if name in _public_methods or name == "_healthcheck":
+                method_name = name  # pyright: ignore[reportUnusedVariable]
+            else:
+                method_name = None  # pyright: ignore[reportUnusedVariable]
 
             if not self._prometheus:  # pyright: ignore[reportPrivateUsage]
                 # Skip the tracking because tracking is not configured
@@ -99,16 +106,14 @@ def tracked(method_name: str):
             start_time = time.perf_counter()
             try:
                 ret = await func(self, *args, **kwargs)
-                self._total_metric.labels(method_name, "OK").inc()  # pyright: ignore[reportPrivateUsage]
+                self._total_metric.labels(name, "OK").inc()  # pyright: ignore[reportPrivateUsage]
                 return ret
             except Exception as exc:
-                self._total_metric.labels(  # pyright: ignore[reportPrivateUsage]
-                    method_name, exc.__class__.__name__
-                ).inc()
+                self._total_metric.labels(name, exc.__class__.__name__).inc()  # pyright: ignore[reportPrivateUsage]
                 raise
             finally:
                 elapsed = time.perf_counter() - start_time
-                self._latency_metric.labels(method_name).observe(elapsed)  # pyright: ignore[reportPrivateUsage]
+                self._latency_metric.labels(name).observe(elapsed)  # pyright: ignore[reportPrivateUsage]
 
         return cast(T_callable, wrapper)
 
@@ -188,7 +193,26 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
                 "collection_store_latency_seconds",
                 "Latency of CollectionBasedLightningStore methods",
                 ["method"],
-                buckets=[0.001, 0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10],
+                buckets=[
+                    0.001,
+                    0.002,
+                    0.003,
+                    0.005,
+                    0.007,
+                    0.01,
+                    0.015,
+                    0.02,
+                    0.03,
+                    0.05,
+                    0.07,
+                    0.1,
+                    0.2,
+                    0.5,
+                    1,
+                    2,
+                    5,
+                    10,
+                ],
             )
             self._total_metric = Counter(
                 "collection_store_total",
