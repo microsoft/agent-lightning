@@ -22,6 +22,10 @@
   font-size: 1.15em;
 }
 
+.md-typeset h5, .md-typeset h6 {
+  font-size: 1em;
+}
+
 /* Increase spacing between API references */
 .doc-class, .doc-function, .doc-attribute {
   padding-bottom: 2em;
