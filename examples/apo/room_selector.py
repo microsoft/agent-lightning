@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import os
 import traceback
 from typing import List, Optional, Tuple, TypedDict, cast
 
@@ -100,7 +101,7 @@ def room_selection_grader(client: OpenAI, final_message: Optional[str], expected
         f"Bear in mind that the score can be partially correct (between 0 and 1)."
     )
     judge = client.chat.completions.parse(
-        model="gpt-4.1-mini",
+        model="deepseek-chat",  # 使用DeepSeek模型
         messages=[
             {"role": "user", "content": judge_prompt},
         ],
@@ -149,8 +150,13 @@ def room_selector(task: RoomSelectionTask, prompt_template: PromptTemplate) -> f
     It also should work with a very small model like gpt-4.1-nano.
     """
 
-    client = OpenAI()
-    model = "gpt-4.1-nano"
+    # 配置DeepSeek API（如果环境变量未设置，则使用默认值）
+    deepseek_api_key = os.environ.get("DEEPSEEK_API_KEY", "sk-69f51b344ddd4dadb29dde9972be6fa6")
+    client = OpenAI(
+        api_key=deepseek_api_key,
+        base_url="https://api.deepseek.com"
+    )
+    model = "deepseek-chat"  # DeepSeek的模型名称
 
     user_message = prompt_template.format(**task["task_input"])
 
