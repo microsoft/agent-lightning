@@ -18,6 +18,7 @@ from .base import Tracer
 
 if TYPE_CHECKING:
     from weave.trace.call import Call
+    from weave.compat import wandb
 
 logger = logging.getLogger(__name__)
 
