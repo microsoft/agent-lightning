@@ -229,7 +229,7 @@ class InMemoryLightningStore(CollectionBasedLightningStore[InMemoryLightningColl
         """In-memory store needs to maintain the span data in memory, and evict spans when memory is low."""
 
         await super()._add_span_unlocked(collections, span)
-        self._account_span_size(span)
+        await self._account_span_size(span)
         await self._maybe_evict_spans(collections)
 
         return span
@@ -275,7 +275,7 @@ class InMemoryLightningStore(CollectionBasedLightningStore[InMemoryLightningColl
         return resolved
 
     @tracked("_account_span_size")
-    def _account_span_size(self, span: Span) -> int:
+    async def _account_span_size(self, span: Span) -> int:
         if self._custom_span_size_estimator is not None:
             size = max(int(self._custom_span_size_estimator(span)), 0)
         else:

@@ -14,12 +14,14 @@ from typing import (
     List,
     Mapping,
     Optional,
+    Sequence,
     TypeVar,
+    Union,
 )
 
 from pymongo import AsyncMongoClient
 
-from agentlightning.types import Rollout
+from agentlightning.types import Attempt, AttemptedRollout, Rollout
 
 from .base import LightningStoreCapabilities, is_finished
 from .collection.mongo import MongoClientPool, MongoLightningCollections, MongoOperationPrometheusTracker
@@ -126,9 +128,34 @@ class MongoLightningStore(CollectionBasedLightningStore[MongoLightningCollection
                 break
 
             # Poll every 10 seconds by default
-            rest_time = max(0.01, min(deadline - time.time(), 10.0)) if deadline is not None else 10.0
+            # Minus 0.1 to make sure the time is still sufficient for another call
+            rest_time = max(0.01, min(deadline - time.time() - 0.1, 10.0)) if deadline is not None else 10.0
             await asyncio.sleep(rest_time)
             current_time = time.time()
 
         # Reorder the rollouts to match the input order
         return [finished_rollouts[rollout_id] for rollout_id in rollout_ids if rollout_id in finished_rollouts]
+
+    @tracked("_many_rollouts_to_attempted_rollouts_unlocked")
+    async def _many_rollouts_to_attempted_rollouts_unlocked(
+        self, collections: MongoLightningCollections, rollouts: Sequence[Rollout]
+    ) -> List[Union[Rollout, AttemptedRollout]]:
+        """Query the latest attempts for the rollouts, and attach them to the rollout objects."""
+        attempts = await collections.attempts.query(
+            filter={"rollout_id": {"within": [rollout.rollout_id for rollout in rollouts]}},
+            sort={"name": "sequence_id", "order": "desc"},
+        )
+        latest_attempts: Dict[str, Attempt] = {}
+        for attempt in attempts:
+            if attempt.rollout_id not in latest_attempts:
+                latest_attempts[attempt.rollout_id] = attempt
+            # Otherwise we ignore the attempt because there's already a newer attempt
+
+        return [
+            (
+                AttemptedRollout(**rollout.model_dump(), attempt=latest_attempts[rollout.rollout_id])
+                if rollout.rollout_id in latest_attempts
+                else rollout
+            )
+            for rollout in rollouts
+        ]

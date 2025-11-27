@@ -545,10 +545,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         )
 
         # Attach the latest attempt to the rollout objects
-        # TODO: Maybe we can use asyncio.gather here to speed up the process?
-        attempted_rollouts = [
-            await self._rollout_to_attempted_rollout_unlocked(collections, rollout) for rollout in rollouts.items
-        ]
+        attempted_rollouts = await self._many_rollouts_to_attempted_rollouts_unlocked(collections, rollouts.items)
 
         return PaginatedResult(
             items=attempted_rollouts, limit=rollouts.limit, offset=rollouts.offset, total=rollouts.total
@@ -592,6 +589,14 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
             return rollout
         else:
             return AttemptedRollout(**rollout.model_dump(), attempt=latest_attempt)
+
+    @tracked("_many_rollouts_to_attempted_rollouts_unlocked")
+    async def _many_rollouts_to_attempted_rollouts_unlocked(
+        self, collections: T_collections, rollouts: Sequence[Rollout]
+    ) -> List[Union[Rollout, AttemptedRollout]]:
+        """Query the latest attempts for the rollouts, and attach them to the rollout objects."""
+        # TODO: Maybe we can use asyncio.gather here to speed up the process?
+        return [await self._rollout_to_attempted_rollout_unlocked(collections, rollout) for rollout in rollouts]
 
     @tracked("_get_latest_attempt")
     async def _get_latest_attempt_unlocked(self, collections: T_collections, rollout_id: str) -> Optional[Attempt]:
@@ -819,10 +824,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         current_attempt = await collections.attempts.get(
             filter={"rollout_id": {"exact": span.rollout_id}, "attempt_id": {"exact": span.attempt_id}},
         )
-        latest_attempt = await collections.attempts.get(
-            filter={"rollout_id": {"exact": span.rollout_id}},
-            sort={"name": "sequence_id", "order": "desc"},
-        )
+        latest_attempt = await self._get_latest_attempt_unlocked(collections, span.rollout_id)
         if not current_attempt:
             raise ValueError(f"Attempt {span.attempt_id} not found for rollout {span.rollout_id}")
         if not latest_attempt:
@@ -955,10 +957,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         if attempt_id is None:
             resolved_attempt_id = None
         elif attempt_id == "latest":
-            latest_attempt = await collections.attempts.get(
-                filter={"rollout_id": {"exact": rollout_id}},
-                sort={"name": "sequence_id", "order": "desc"},
-            )
+            latest_attempt = await self._get_latest_attempt_unlocked(collections, rollout_id)
             if not latest_attempt:
                 logger.debug(f"No attempts found for rollout {rollout_id} when querying latest spans")
                 return PaginatedResult(items=[], limit=limit, offset=offset, total=0)
@@ -1118,10 +1117,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         if not rollout:
             raise ValueError(f"Rollout {rollout_id} not found")
 
-        latest_attempt = await collections.attempts.get(
-            {"rollout_id": {"exact": rollout_id}},
-            sort={"name": "sequence_id", "order": "desc"},
-        )
+        latest_attempt = await self._get_latest_attempt_unlocked(collections, rollout_id)
         if not latest_attempt:
             raise ValueError(f"No attempts found for rollout {rollout_id}")
 
@@ -1245,20 +1241,17 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         subclass can implement hacks to make it more efficient.
         It should also be unlocked and let the caller hold the lock.
         """
-        running_rollouts: List[AttemptedRollout] = []
-        rollouts = await collections.rollouts.query(filter={"status": {"within": ["preparing", "running"]}})
+        filtered_rollouts = await collections.rollouts.query(filter={"status": {"within": ["preparing", "running"]}})
+        running_rollouts = await self._many_rollouts_to_attempted_rollouts_unlocked(collections, filtered_rollouts)
 
-        for rollout in rollouts.items:
-            latest_attempt = await collections.attempts.get(
-                filter={"rollout_id": {"exact": rollout.rollout_id}},
-                sort={"name": "sequence_id", "order": "desc"},
-            )
-            if not latest_attempt:
-                # The rollout is running but has no attempts, this should not happen
+        running_attempted_rollouts: List[AttemptedRollout] = []
+        for rollout in running_rollouts:
+            if not isinstance(rollout, AttemptedRollout):
                 logger.error(f"Rollout {rollout.rollout_id} is running but has no attempts")
                 continue
-            running_rollouts.append(AttemptedRollout(**rollout.model_dump(), attempt=latest_attempt))
-        return running_rollouts
+            running_attempted_rollouts.append(rollout)
+
+        return running_attempted_rollouts
 
     @tracked("_healthcheck")
     @_with_collections_execute
