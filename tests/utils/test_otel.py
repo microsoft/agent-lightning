@@ -1,14 +1,12 @@
-# test_attributes_flattening.py
+# Copyright (c) Microsoft. All rights reserved.
+
+from __future__ import annotations
+
+from typing import Any, Dict, List
 
 import pytest
 
-# Adjust this import to wherever your functions live:
-# from your_module import flatten_attributes, unflatten_attributes
-from agentlightning.emitter.utils import flatten_attributes, unflatten_attributes
-
-# ---------
-# flatten_attributes tests
-# ---------
+from agentlightning.utils.otel import flatten_attributes, unflatten_attributes
 
 
 def test_flatten_simple_nested_dict_and_list():
@@ -22,12 +20,12 @@ def test_flatten_simple_nested_dict_and_list():
 
 
 def test_flatten_empty_dict():
-    data = {}
+    data: Dict[str, Any] = {}
     assert flatten_attributes(data) == {}
 
 
 def test_flatten_empty_list():
-    data = []
+    data: List[Any] = []
     # No elements -> no keys
     assert flatten_attributes(data) == {}
 
@@ -43,7 +41,7 @@ def test_flatten_root_list_of_primitives():
 
 
 def test_flatten_nested_lists_and_dicts():
-    data = {
+    data: Dict[str, Any] = {
         "users": [
             {"name": "Alice", "tags": ["admin", "staff"]},
             {"name": "Bob", "tags": []},
@@ -98,11 +96,6 @@ def test_flatten_root_primitive_is_allowed():
     data = 42
     result = flatten_attributes(data)  # type: ignore[arg-type]
     assert result == {"": 42}
-
-
-# ---------
-# unflatten_attributes tests
-# ---------
 
 
 def test_unflatten_simple_nested_dict():
@@ -167,7 +160,7 @@ def test_unflatten_root_list_from_numeric_keys():
 
 
 def test_unflatten_empty_flat_dict_returns_empty_dict():
-    flat = {}
+    flat: Dict[str, Any] = {}
     result = unflatten_attributes(flat)
     assert result == {}
 
@@ -215,11 +208,6 @@ def test_unflatten_conflicting_primitive_and_nested_path_prefers_nested():
     assert result == {"a": {"b": 2}}
 
 
-# ---------
-# Round-trip / property tests
-# ---------
-
-
 @pytest.mark.parametrize(
     "value",
     [
@@ -229,7 +217,7 @@ def test_unflatten_conflicting_primitive_and_nested_path_prefers_nested():
         [{"name": "Alice"}, {"name": "Bob", "scores": [10, 20]}],
     ],
 )
-def test_round_trip_flatten_then_unflatten_preserves_structure(value):
+def test_round_trip_flatten_then_unflatten_preserves_structure(value: Dict[str, Any] | List[Any]):
     flat = flatten_attributes(value)  # type: ignore[arg-type]
     reconstructed = unflatten_attributes(flat)
     assert reconstructed == value
@@ -246,7 +234,7 @@ def test_round_trip_flatten_then_unflatten_preserves_structure(value):
         },
     ],
 )
-def test_round_trip_unflatten_then_flatten_preserves_flat_structure(flat):
+def test_round_trip_unflatten_then_flatten_preserves_flat_structure(flat: Dict[str, Any]):
     nested = unflatten_attributes(flat)
     re_flat = flatten_attributes(nested)
     # Order of items in dict shouldn't matter
@@ -254,9 +242,10 @@ def test_round_trip_unflatten_then_flatten_preserves_flat_structure(flat):
 
 
 def test_round_trip_with_empty_list_information_loss_is_expected():
-    # This documents the corner case: empty list flattens to {},
-    # which unflattens back to {} (empty dict), losing the distinction.
-    data = []
+    """This documents the corner case: empty list flattens to {},
+    which unflattens back to {} (empty dict), losing the distinction.
+    """
+    data: List[Any] = []
     flat = flatten_attributes(data)
     assert flat == {}
     reconstructed = unflatten_attributes(flat)
