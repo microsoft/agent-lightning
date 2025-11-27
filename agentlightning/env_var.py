@@ -8,6 +8,13 @@ import os
 from enum import Enum
 from typing import overload
 
+__all__ = [
+    "LightningEnvVar",
+    "resolve_bool_env_var",
+    "resolve_int_env_var",
+    "resolve_str_env_var",
+]
+
 
 class LightningEnvVar(Enum):
     """Environment variables for Agent Lightning."""
@@ -59,7 +66,7 @@ def resolve_bool_env_var(
     Args:
         env_var: The environment variable to resolve.
         override: Optional override supplied by the caller.
-        default: Default value if the environment variable is not set.
+        fallback: Default value if the environment variable is not set.
     """
 
     if override is not None:

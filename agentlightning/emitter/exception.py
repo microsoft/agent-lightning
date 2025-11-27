@@ -27,11 +27,11 @@ def emit_exception(
 
     !!! note
 
-        The helper validates its input. Non-exception values are ignored to prevent
-        noisy telemetry and indicate programming mistakes via the logger.
+        The helper validates its input. If a non-exception value is provided,
+        a TypeError is raised to indicate a programming mistake.
     """
     if not isinstance(exception, BaseException):  # type: ignore
-        raise TypeError(f"Expected an BaseException instance, got: {type(exception)}.")
+        raise TypeError(f"Expected a BaseException instance, got: {type(exception)}.")
 
     tracer = get_tracer(use_active_span_processor=propagate)
     stacktrace = "".join(traceback.format_exception(type(exception), exception, exception.__traceback__))

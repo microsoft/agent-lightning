@@ -124,7 +124,7 @@ def get_tracer(use_active_span_processor: bool = True) -> trace_api.Tracer:
     if hasattr(trace_api, "_TRACER_PROVIDER") and trace_api._TRACER_PROVIDER is None:  # type: ignore[attr-defined]
         raise RuntimeError("Tracer is not initialized. Cannot emit a meaningful span.")
 
-    tracer_provider = get_tracer_provider()
+    tracer_provider = get_tracer_provider(inspect=True)  # inspection is on by default
 
     if use_active_span_processor:
         return tracer_provider.get_tracer("agentlightning")

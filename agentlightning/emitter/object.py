@@ -21,8 +21,7 @@ def emit_object(object: Any, attributes: Optional[Dict[str, Any]] = None, propag
         propagate: Whether to propagate the span to exporters automatically.
 
     !!! note
-        The payload must be JSON serializable. Non-serializable objects are ignored and
-        an error is logged to aid debugging.
+        The payload must be JSON serializable. Non-serializable objects will lead to a RuntimeError.
     """
     span_attributes = encode_object(object)
     if attributes:

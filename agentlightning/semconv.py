@@ -66,10 +66,7 @@ class LightningSpanAttributes(Enum):
     """Attribute name for linking the current span to another span or other objects like requests/responses."""
 
     MESSAGE_BODY = "agentlightning.message.body"
-    """Attribute name for message text in message spans.
-
-    It should be a list, so the real attributes should look like `agentlightning.message.0`, `agentlightning.message.1`, etc.
-    """
+    """Attribute name for message text in message spans."""
 
     OBJECT_TYPE = "agentlightning.object.type"
     """Attribute name for object type (full qualified name) in object spans.

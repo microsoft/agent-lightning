@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 def emit_message(message: str, attributes: Optional[Dict[str, Any]] = None, propagate: bool = True) -> None:
     """Emit a textual message as an OpenTelemetry span.
 
-    Commonly used in send debugging and logging messages.
+    Commonly used for sending debugging and logging messages.
 
     Args:
         message: Human readable message to attach as a span attribute.
@@ -24,9 +24,8 @@ def emit_message(message: str, attributes: Optional[Dict[str, Any]] = None, prop
         OpenTelemetry distinguishes between logs and spans. Emitting the message as a
         span keeps all Agent Lightning telemetry in a single data store for analysis.
     """
-    if not isinstance(message, (str, list)):  # type: ignore
-        raise TypeError(f"Message must be a string or list of strings, got: {type(message)}. Skip emit_message.")
-        return
+    if not isinstance(message, str):  # type: ignore
+        raise TypeError(f"Message must be a string or list of strings, got: {type(message)}.")
 
     tracer = get_tracer(use_active_span_processor=propagate)
     span_attributes = {LightningSpanAttributes.MESSAGE_BODY.value: message}
