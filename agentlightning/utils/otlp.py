@@ -29,7 +29,6 @@ from opentelemetry.sdk.trace import ReadableSpan
 from opentelemetry.sdk.trace.export import SpanExportResult
 from opentelemetry.util.types import AttributeValue
 
-from agentlightning.store.base import LightningStore
 from agentlightning.types.tracer import (
     Attributes,
     Event,
@@ -108,7 +107,10 @@ async def handle_otlp_export(
     )
 
 
-async def spans_from_proto(request: ExportTraceServiceRequest, store: LightningStore) -> List[Span]:
+async def spans_from_proto(
+    request: ExportTraceServiceRequest,
+    sequence_id_bulk_issuer: Callable[[Sequence[Tuple[str, str]]], Awaitable[Sequence[int]]],
+) -> List[Span]:
     """Parse an OTLP proto payload into List[Span].
 
     A store is needed here for generating a sequence ID for each span.
@@ -178,9 +180,13 @@ async def spans_from_proto(request: ExportTraceServiceRequest, store: LightningS
 
                 # Generate a new sequence ID if not provided
                 if sequence_id is None:
-                    current_sequence_id = await store.get_next_span_sequence_id(
-                        rollout_id=rollout_id, attempt_id=attempt_id
+                    current_sequence_id = -1
+                elif sequence_id < 0:
+                    logger.error(
+                        "Invalid sequence_id value in resource attributes: %r. Must be a positive integer. Regenerating one.",
+                        sequence_id,
                     )
+                    current_sequence_id = -1
                 else:
                     current_sequence_id = sequence_id
 
@@ -205,6 +211,14 @@ async def spans_from_proto(request: ExportTraceServiceRequest, store: LightningS
                 )
 
                 output_spans.append(span)
+
+    # Finalize the sequence IDs
+    bulk_issue_requests = [(span.rollout_id, span.attempt_id) for span in output_spans if span.sequence_id < 0]
+    bulk_sequence_ids = await sequence_id_bulk_issuer(bulk_issue_requests)
+    for span, sequence_id in zip(
+        [span for span in output_spans if span.sequence_id < 0], bulk_sequence_ids, strict=True
+    ):
+        span.sequence_id = sequence_id
 
     return output_spans
 

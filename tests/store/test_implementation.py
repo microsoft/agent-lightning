@@ -1098,18 +1098,114 @@ async def test_span_sequence_generation(store_fixture: LightningStore, mock_read
     assert seq_id == 1
 
     span1 = await store_fixture.add_otel_span(rollout.rollout_id, attempt_id, mock_readable_span)
-    assert span1.sequence_id == 2
+    assert span1 is not None and span1.sequence_id == 2
 
     # Next span gets sequence_id 3
     seq_id = await store_fixture.get_next_span_sequence_id(rollout.rollout_id, attempt_id)
     assert seq_id == 3
 
     span2 = await store_fixture.add_otel_span(rollout.rollout_id, attempt_id, mock_readable_span)
-    assert span2.sequence_id == 4
+    assert span2 is not None and span2.sequence_id == 4
 
     # Different attempt reuses the same rollout_id
     seq_id = await store_fixture.get_next_span_sequence_id(rollout.rollout_id, "attempt-does-not-exist")
     assert seq_id == 5
+
+
+@pytest.mark.asyncio
+async def test_get_many_span_sequence_ids_handles_mixed_batches(store_fixture: LightningStore) -> None:
+    """Bulk sequence allocation should work across mixed rollouts and attempts."""
+    first = await store_fixture.start_rollout(input={"origin": "bulk-seq"})
+    second = await store_fixture.start_rollout(input={"origin": "bulk-seq-2"})
+    await store_fixture.update_rollout(first.rollout_id, status="requeuing")
+    retried = await store_fixture.start_attempt(first.rollout_id)
+
+    sequence_pairs = [
+        (first.rollout_id, first.attempt.attempt_id),
+        (second.rollout_id, second.attempt.attempt_id),
+        (first.rollout_id, retried.attempt.attempt_id),
+        (first.rollout_id, first.attempt.attempt_id),
+    ]
+    sequence_ids = await store_fixture.get_many_span_sequence_ids(sequence_pairs)
+    assert sequence_ids == [1, 1, 2, 3]
+
+    next_first = await store_fixture.get_next_span_sequence_id(first.rollout_id, first.attempt.attempt_id)
+    next_second = await store_fixture.get_next_span_sequence_id(second.rollout_id, second.attempt.attempt_id)
+    assert next_first == 4
+    assert next_second == 2
+
+
+@pytest.mark.asyncio
+async def test_add_many_spans_handles_mixed_rollouts_and_attempts(store_fixture: LightningStore) -> None:
+    """Batch span insertion should handle mixed rollouts and skip duplicates."""
+    first = await store_fixture.start_rollout(input={"origin": "batch-spans"})
+    second = await store_fixture.start_rollout(input={"origin": "batch-spans-2"})
+    await store_fixture.update_rollout(first.rollout_id, status="requeuing")
+    retried = await store_fixture.start_attempt(first.rollout_id)
+
+    def _build_span(seed: int, rollout_id: str, attempt_id: str) -> Span:
+        trace_hex = f"{seed:032x}"
+        span_hex = f"{seed:016x}"
+        return Span(
+            rollout_id=rollout_id,
+            attempt_id=attempt_id,
+            sequence_id=seed,
+            trace_id=trace_hex,
+            span_id=span_hex,
+            parent_id=None,
+            name=f"batch-span-{seed}",
+            status=TraceStatus(status_code="OK"),
+            attributes={},
+            events=[],
+            links=[],
+            start_time=None,
+            end_time=None,
+            context=SpanContext(trace_id=trace_hex, span_id=span_hex, is_remote=False, trace_state={}),
+            parent=None,
+            resource=OtelResource(attributes={}, schema_url=""),
+        )
+
+    span_first = _build_span(1, first.rollout_id, first.attempt.attempt_id)
+    span_retry = _build_span(2, retried.rollout_id, retried.attempt.attempt_id)
+    span_second = _build_span(3, second.rollout_id, second.attempt.attempt_id)
+    duplicate_first = _build_span(1, first.rollout_id, first.attempt.attempt_id)
+
+    stored = await store_fixture.add_many_spans([span_first, span_retry, span_second, duplicate_first])
+    assert {span.span_id for span in stored} == {span_first.span_id, span_retry.span_id, span_second.span_id}
+
+    spans_first = await store_fixture.query_spans(first.rollout_id)
+    assert {span.span_id for span in spans_first} >= {span_first.span_id, span_retry.span_id}
+    spans_second = await store_fixture.query_spans(second.rollout_id)
+    assert {span.span_id for span in spans_second} >= {span_second.span_id}
+
+
+@pytest.mark.asyncio
+async def test_add_span_returns_none_on_duplicate(store_fixture: LightningStore) -> None:
+    """Duplicate span IDs should return None instead of raising."""
+    attempted = await store_fixture.start_rollout(input={"origin": "duplicate-span"})
+    attempt_id = attempted.attempt.attempt_id
+
+    span = Span(
+        rollout_id=attempted.rollout_id,
+        attempt_id=attempt_id,
+        sequence_id=1,
+        trace_id="0" * 32,
+        span_id="0" * 16,
+        parent_id=None,
+        name="dup-span",
+        status=TraceStatus(status_code="OK"),
+        attributes={},
+        events=[],
+        links=[],
+        start_time=None,
+        end_time=None,
+        context=SpanContext(trace_id="0" * 32, span_id="0" * 16, is_remote=False, trace_state={}),
+        parent=None,
+        resource=OtelResource(attributes={}, schema_url=""),
+    )
+
+    assert await store_fixture.add_span(span) is span
+    assert await store_fixture.add_span(span) is None
 
 
 @pytest.mark.asyncio
@@ -1196,7 +1292,8 @@ async def test_duplicate_span_id_error(
 
     await store_fixture.add_otel_span(rollout.rollout_id, attempt_id, mock_readable_span)
 
-    await store_fixture.add_otel_span(rollout.rollout_id, attempt_id, mock_readable_span)
+    duplicate = await store_fixture.add_otel_span(rollout.rollout_id, attempt_id, mock_readable_span)
+    assert duplicate is None
     assert "Duplicated span added" in caplog.text
 
 
@@ -1211,7 +1308,7 @@ async def test_span_with_explicit_sequence_id(store_fixture: LightningStore, moc
 
     # Add span with explicit sequence_id
     span = await store_fixture.add_otel_span(rollout.rollout_id, attempt_id, mock_readable_span, sequence_id=100)
-    assert span.sequence_id == 100
+    assert span is not None and span.sequence_id == 100
 
     next_seq = await store_fixture.get_next_span_sequence_id(rollout.rollout_id, attempt_id)
     assert next_seq == 101
@@ -2153,7 +2250,7 @@ async def test_concurrent_span_additions(store_fixture: LightningStore, mock_rea
     assert rollout is not None
 
     async def add_span(index: int) -> Span:
-        return await store_fixture.add_otel_span(rollout.rollout_id, rollout.attempt.attempt_id, mock_readable_span)
+        return await store_fixture.add_otel_span(rollout.rollout_id, rollout.attempt.attempt_id, mock_readable_span)  # type: ignore
 
     # Add 30 spans concurrently
     tasks = [add_span(i) for i in range(30)]
@@ -2754,7 +2851,7 @@ async def test_full_lifecycle_success(store_fixture: LightningStore, mock_readab
 
     # 3. Add span (transitions to running)
     span = await store_fixture.add_otel_span(rollout.rollout_id, attempt.attempt_id, mock_readable_span)
-    assert span.sequence_id == 1
+    assert span is not None and span.sequence_id == 1
 
     # Check status transitions
     rollouts = await store_fixture.query_rollouts(status=["running"])

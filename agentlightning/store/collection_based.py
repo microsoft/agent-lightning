@@ -9,6 +9,7 @@ import logging
 import time
 import uuid
 import warnings
+from collections import defaultdict
 from types import CoroutineType
 from typing import (
     Any,
@@ -20,6 +21,7 @@ from typing import (
     Optional,
     ParamSpec,
     Sequence,
+    Tuple,
     TypeVar,
     Union,
     cast,
@@ -745,16 +747,30 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
             return None
         return await collections.resources.get({"resources_id": {"exact": latest_id}})
 
-    @tracked("_issue_span_sequence_id")
-    async def _issue_span_sequence_id_unlocked(self, collections: T_collections, rollout_id: str) -> int:
+    @tracked("_issue_many_span_sequence_ids")
+    async def _issue_many_span_sequence_ids_unlocked(
+        self, collections: T_collections, rollout_ids: List[str]
+    ) -> List[int]:
         """Issue a new span sequence ID for a given rollout."""
-        sequence_id = await collections.span_sequence_ids.get(rollout_id)
-        if sequence_id is None:
-            sequence_id = 1
-        else:
-            sequence_id += 1
-        await collections.span_sequence_ids.set(rollout_id, sequence_id)
-        return sequence_id
+        # Cache the next sequence IDs for the rollouts (for both RW)
+        next_sequence_ids_cache: Dict[str, int] = {}
+        result: List[int] = []
+        for rollout_id in rollout_ids:
+            if rollout_id not in next_sequence_ids_cache:
+                retrieved_id = await collections.span_sequence_ids.get(rollout_id)
+                if retrieved_id is None:
+                    retrieved_id = 0
+                next_sequence_ids_cache[rollout_id] = retrieved_id
+
+            # Increment the sequence ID for the rollout
+            next_sequence_ids_cache[rollout_id] += 1
+            result.append(next_sequence_ids_cache[rollout_id])
+
+        # Propagate the cache to storage
+        for rollout_id, sequence_id in next_sequence_ids_cache.items():
+            await collections.span_sequence_ids.set(rollout_id, sequence_id)
+
+        return result
 
     @tracked("_sync_span_sequence_id")
     async def _sync_span_sequence_id_unlocked(
@@ -775,18 +791,50 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
 
         See [`LightningStore.get_next_span_sequence_id()`][agentlightning.LightningStore.get_next_span_sequence_id] for semantics.
         """
-        return await self._issue_span_sequence_id_unlocked(collections, rollout_id)
+        ret = await self._issue_many_span_sequence_ids_unlocked(collections, [rollout_id])
+        return ret[0]
+
+    @tracked("get_many_span_sequence_ids")
+    @_with_collections_execute
+    async def get_many_span_sequence_ids(
+        self, collections: T_collections, rollout_attempt_ids: Sequence[Tuple[str, str]]
+    ) -> Sequence[int]:
+        """Get the next span sequence IDs for a given list of rollout and attempt identifiers."""
+        return await self._issue_many_span_sequence_ids_unlocked(
+            collections, [rollout_id for rollout_id, _ in rollout_attempt_ids]
+        )
 
     @tracked("add_span")
     @_with_collections_execute
-    async def add_span(self, collections: T_collections, span: Span) -> Span:
+    async def add_span(self, collections: T_collections, span: Span) -> Optional[Span]:
         """Persist a pre-converted span.
 
         See [`LightningStore.add_span()`][agentlightning.LightningStore.add_span] for semantics.
         """
         # Update the sequence ID to be synced with latest input span
         await self._sync_span_sequence_id_unlocked(collections, span.rollout_id, span.sequence_id)
-        return await self._add_span_unlocked(collections, span)
+        ret = await self._add_many_spans_unlocked(collections, span.rollout_id, span.attempt_id, [span])
+        return ret[0] if len(ret) > 0 else None
+
+    @tracked("add_many_spans")
+    @_with_collections_execute
+    async def add_many_spans(self, collections: T_collections, spans: Sequence[Span]) -> Sequence[Span]:
+        """Persist a sequence of pre-converted spans.
+
+        See [`LightningStore.add_many_spans()`][agentlightning.LightningStore.add_many_spans] for semantics.
+        """
+        # Group spans by rollout and attempt
+        spans_by_rollout_attempt: Dict[Tuple[str, str], List[Span]] = defaultdict(list)
+        for span in spans:
+            spans_by_rollout_attempt[(span.rollout_id, span.attempt_id)].append(span)
+
+        # Bulk add spans for each rollout and attempt
+        successful_spans: List[Span] = []
+        for (rollout_id, attempt_id), spans in spans_by_rollout_attempt.items():
+            await self._sync_span_sequence_id_unlocked(collections, rollout_id, max(span.sequence_id for span in spans))
+            ret = await self._add_many_spans_unlocked(collections, rollout_id, attempt_id, spans)
+            successful_spans.extend(ret)
+        return successful_spans
 
     @tracked("add_otel_span")
     @_with_collections_execute
@@ -797,14 +845,14 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         attempt_id: str,
         readable_span: ReadableSpan,
         sequence_id: int | None = None,
-    ) -> Span:
+    ) -> Optional[Span]:
         """Add an opentelemetry span to the store.
 
         See [`LightningStore.add_otel_span()`][agentlightning.LightningStore.add_otel_span] for semantics.
         """
         if sequence_id is None:
             # Issue a new sequence ID for the rollout
-            sequence_id = await self._issue_span_sequence_id_unlocked(collections, rollout_id)
+            sequence_id = (await self._issue_many_span_sequence_ids_unlocked(collections, [rollout_id]))[0]
         else:
             # Comes from a provided sequence ID
             # Make sure our counter is strictly increasing
@@ -813,33 +861,55 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         span = Span.from_opentelemetry(
             readable_span, rollout_id=rollout_id, attempt_id=attempt_id, sequence_id=sequence_id
         )
-        await self._add_span_unlocked(collections, span)
-        return span
+        ret = await self._add_many_spans_unlocked(collections, rollout_id, attempt_id, [span])
+        return ret[0] if len(ret) > 0 else None
 
-    @tracked("_add_span_unlocked")
-    async def _add_span_unlocked(self, collections: T_collections, span: Span) -> Span:
-        rollout = await collections.rollouts.get({"rollout_id": {"exact": span.rollout_id}})
+    @tracked("_add_many_spans_unlocked")
+    async def _add_many_spans_unlocked(
+        self, collections: T_collections, rollout_id: str, attempt_id: str, spans: Sequence[Span]
+    ) -> Sequence[Span]:
+        """All spans must be for the same rollout and attempt."""
+        rollout = await collections.rollouts.get({"rollout_id": {"exact": rollout_id}})
         if not rollout:
-            raise ValueError(f"Rollout {span.rollout_id} not found")
+            raise ValueError(f"Rollout {rollout_id} not found")
         current_attempt = await collections.attempts.get(
-            filter={"rollout_id": {"exact": span.rollout_id}, "attempt_id": {"exact": span.attempt_id}},
+            filter={"rollout_id": {"exact": rollout_id}, "attempt_id": {"exact": attempt_id}},
         )
-        latest_attempt = await self._get_latest_attempt_unlocked(collections, span.rollout_id)
+        latest_attempt = await self._get_latest_attempt_unlocked(collections, rollout_id)
         if not current_attempt:
-            raise ValueError(f"Attempt {span.attempt_id} not found for rollout {span.rollout_id}")
+            raise ValueError(f"Attempt {attempt_id} not found for rollout {rollout_id}")
         if not latest_attempt:
-            raise ValueError(f"No attempts found for rollout {span.rollout_id}")
+            raise ValueError(f"No attempts found for rollout {rollout_id}")
 
+        async def _add_span_fallback(span: Span) -> bool:
+            try:
+                await collections.spans.insert([span])
+                return True
+            except ValueError as e:
+                if "already exists" in str(e) or "contains duplicate" in str(e):
+                    logger.error(
+                        f"Duplicated span added for rollout={span.rollout_id}, attempt={span.attempt_id}, span={span.span_id}. Skipping."
+                    )
+                    return False
+                raise
+
+        successful_spans: List[Span] = []
         try:
-            await collections.spans.insert([span])
+            await collections.spans.insert(spans)
+            successful_spans.extend(spans)
         except ValueError as e:
-            if "already exists" in str(e):
-                # This is a duplicate span, we warn it
-                logger.error(
-                    f"Duplicated span added for rollout={span.rollout_id}, attempt={span.attempt_id}, span={span.span_id}. Skipping."
-                )
-                return span
-            raise
+            if "already exists" in str(e) or "contains duplicate" in str(e):
+                # There is a duplicate span, we warn it
+                # We fallback to adding the spans one by one
+                for span in spans:
+                    if await _add_span_fallback(span):
+                        successful_spans.append(span)
+            else:
+                raise
+
+        if not successful_spans:
+            # No spans were added, skip the rest.
+            return []
 
         # Update attempt heartbeat and ensure persistence
         current_attempt.last_heartbeat_time = time.time()
@@ -860,7 +930,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
                 await collections.rollouts.update([rollout])
                 await self.on_rollout_update(rollout)
 
-        return span
+        return successful_spans
 
     @tracked("wait_for_rollouts")
     @healthcheck_before

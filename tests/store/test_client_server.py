@@ -704,6 +704,87 @@ async def test_client_query_spans_filters_and_pagination(
 
 
 @pytest.mark.asyncio
+async def test_server_get_many_span_sequence_ids_and_add_many_spans_mixed_batches(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient],
+) -> None:
+    server, _ = server_client
+
+    first = await server.start_rollout(input={"origin": "batch-server"})
+    second = await server.start_rollout(input={"origin": "batch-server-2"})
+    await server.update_rollout(first.rollout_id, status="requeuing")
+    retried = await server.start_attempt(first.rollout_id)
+
+    sequence_pairs = [
+        (first.rollout_id, first.attempt.attempt_id),
+        (second.rollout_id, second.attempt.attempt_id),
+        (first.rollout_id, retried.attempt.attempt_id),
+        (first.rollout_id, first.attempt.attempt_id),
+    ]
+    sequence_ids = await server.get_many_span_sequence_ids(sequence_pairs)
+    assert sequence_ids == [1, 1, 2, 3]
+
+    next_single = await server.get_next_span_sequence_id(first.rollout_id, first.attempt.attempt_id)
+    assert next_single == 4
+
+    batch_spans = [
+        _make_span(first.rollout_id, first.attempt.attempt_id, 10, "server-batch-1"),
+        _make_span(second.rollout_id, second.attempt.attempt_id, 11, "server-batch-2"),
+        _make_span(retried.rollout_id, retried.attempt.attempt_id, 12, "server-batch-retry"),
+    ]
+    stored_spans = await server.add_many_spans(batch_spans)
+    assert {span.name for span in stored_spans} == {
+        "server-batch-1",
+        "server-batch-2",
+        "server-batch-retry",
+    }
+
+    spans_first = await server.query_spans(first.rollout_id)
+    assert any(span.name == "server-batch-1" for span in spans_first)
+    assert any(span.name == "server-batch-retry" for span in spans_first)
+    spans_second = await server.query_spans(second.rollout_id)
+    assert any(span.name == "server-batch-2" for span in spans_second)
+
+
+@pytest.mark.asyncio
+async def test_client_handles_optional_span_results_and_batch_insert(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient],
+    mock_readable_span: ReadableSpan,
+) -> None:
+    _, client = server_client
+
+    first = await client.start_rollout(input={"origin": "client-span"})
+    second = await client.start_rollout(input={"origin": "client-span-2"})
+    first_attempt_id = first.attempt.attempt_id
+    second_attempt_id = second.attempt.attempt_id
+
+    base_span = _make_span(first.rollout_id, first_attempt_id, 1, "client-span-1")
+    stored = await client.add_span(base_span)
+    assert stored is not None
+    assert await client.add_span(base_span) is None
+
+    batch_spans = [
+        _make_span(first.rollout_id, first_attempt_id, 2, "client-span-2"),
+        _make_span(second.rollout_id, second_attempt_id, 1, "client-span-other"),
+        base_span,
+    ]
+    inserted = await client.add_many_spans(batch_spans)
+    assert [span.name for span in inserted] == ["client-span-2", "client-span-other"]
+
+    sequence_ids = await client.get_many_span_sequence_ids(
+        [
+            (first.rollout_id, first_attempt_id),
+            (second.rollout_id, second_attempt_id),
+            (first.rollout_id, "latest"),
+        ]
+    )
+    assert sequence_ids == [3, 2, 4]
+
+    with patch("agentlightning.store.client_server.Span.from_opentelemetry", autospec=True) as mocked_span_factory:
+        mocked_span_factory.return_value = base_span
+        assert await client.add_otel_span(first.rollout_id, first_attempt_id, mock_readable_span) is None
+
+
+@pytest.mark.asyncio
 async def test_concurrent_add_otel_span_sequence_ids_unique(
     server_client: Tuple[LightningStoreServer, LightningStoreClient], mock_readable_span: ReadableSpan
 ) -> None:

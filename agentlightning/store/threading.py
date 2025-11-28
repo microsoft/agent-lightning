@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import threading
-from typing import Any, Dict, List, Literal, Optional, Sequence
+from typing import Any, Dict, List, Literal, Optional, Sequence, Tuple
 
 from opentelemetry.sdk.trace import ReadableSpan
 
@@ -167,7 +167,11 @@ class LightningStoreThreaded(LightningStore):
         with self._lock:
             return await self.store.get_latest_resources()
 
-    async def add_span(self, span: Span) -> Span:
+    async def add_many_spans(self, spans: Sequence[Span]) -> Sequence[Span]:
+        with self._lock:
+            return await self.store.add_many_spans(spans)
+
+    async def add_span(self, span: Span) -> Optional[Span]:
         with self._lock:
             return await self.store.add_span(span)
 
@@ -177,7 +181,7 @@ class LightningStoreThreaded(LightningStore):
         attempt_id: str,
         readable_span: ReadableSpan,
         sequence_id: int | None = None,
-    ) -> Span:
+    ) -> Optional[Span]:
         with self._lock:
             return await self.store.add_otel_span(rollout_id, attempt_id, readable_span, sequence_id)
 
@@ -188,6 +192,10 @@ class LightningStoreThreaded(LightningStore):
     async def get_next_span_sequence_id(self, rollout_id: str, attempt_id: str) -> int:
         with self._lock:
             return await self.store.get_next_span_sequence_id(rollout_id, attempt_id)
+
+    async def get_many_span_sequence_ids(self, rollout_attempt_ids: Sequence[Tuple[str, str]]) -> Sequence[int]:
+        with self._lock:
+            return await self.store.get_many_span_sequence_ids(rollout_attempt_ids)
 
     async def query_spans(
         self,

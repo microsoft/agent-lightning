@@ -539,7 +539,19 @@ class ListBasedCollection(Collection[T]):
         Raises:
             ValueError: If any item with the same primary keys already exists.
         """
+        seen_keys: set[Tuple[Any, ...]] = set()
+        prepared: List[T] = []
         for item in items:
+            self._ensure_item_type(item)
+            key_values = self._extract_primary_key_values(item)
+            if key_values in seen_keys:
+                raise ValueError(
+                    f"Insert payload contains duplicate primary key(s): {self._render_key_values(key_values)}"
+                )
+            seen_keys.add(key_values)
+            prepared.append(item)
+
+        for item in prepared:
             self._mutate_single(item, mode="insert")
 
     async def update(self, items: Sequence[T]) -> None:

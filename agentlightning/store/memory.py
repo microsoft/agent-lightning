@@ -17,6 +17,7 @@ from typing import (
     Literal,
     Mapping,
     Optional,
+    Sequence,
     Set,
     TypeVar,
     Union,
@@ -224,15 +225,18 @@ class InMemoryLightningStore(CollectionBasedLightningStore[InMemoryLightningColl
             raise RuntimeError(f"Spans for rollout {rollout_id} have been evicted")
         return await super().query_spans(rollout_id, attempt_id, **kwargs)
 
-    @tracked("_add_span_inmemory")
-    async def _add_span_unlocked(self, collections: InMemoryLightningCollections, span: Span) -> Span:
+    @tracked("_add_many_spans_unlocked_inmemory")
+    async def _add_many_spans_unlocked(
+        self, collections: InMemoryLightningCollections, rollout_id: str, attempt_id: str, spans: Sequence[Span]
+    ) -> Sequence[Span]:
         """In-memory store needs to maintain the span data in memory, and evict spans when memory is low."""
 
-        await super()._add_span_unlocked(collections, span)
-        await self._account_span_size(span)
+        inserted = await super()._add_many_spans_unlocked(collections, rollout_id, attempt_id, spans)
+        for span in inserted:
+            await self._account_span_size(span)
         await self._maybe_evict_spans(collections)
 
-        return span
+        return inserted
 
     @tracked("_get_latest_resources_id")
     async def _get_latest_resources_id(self, collections: InMemoryLightningCollections) -> Optional[str]:

@@ -687,7 +687,7 @@ class LightningStoreServer(LightningStore):
         async def get_resources_by_id(resources_id: str):  # pyright: ignore[reportUnusedFunction]
             return await self.get_resources_by_id(resources_id)
 
-        @api.post(API_AGL_PREFIX + "/spans", status_code=201, response_model=Span)
+        @api.post(API_AGL_PREFIX + "/spans", status_code=201, response_model=Optional[Span])
         async def add_span(span: Span):  # pyright: ignore[reportUnusedFunction]
             return await self.add_span(span)
 
@@ -832,13 +832,14 @@ class LightningStoreServer(LightningStore):
         """Setup OTLP endpoints."""
 
         async def _trace_handler(request: PbExportTraceServiceRequest) -> None:
-            spans = await spans_from_proto(request, self)
+            spans = await spans_from_proto(request, self.get_many_span_sequence_ids)
             server_logger.debug(f"Received {len(spans)} OTLP spans: {', '.join([span.name for span in spans])}")
             for span in spans:
                 await self.add_span(span)
 
         # Reserved methods for OTEL traces
         # https://opentelemetry.io/docs/specs/otlp/#otlphttp-request
+        # This is currently the recommended path for Otel compatibility and bulk-insertion support.
         @api.post("/traces")
         async def otlp_traces(request: Request):  # pyright: ignore[reportUnusedFunction]
             return await handle_otlp_export(
@@ -1061,11 +1062,17 @@ class LightningStoreServer(LightningStore):
     async def get_latest_resources(self) -> Optional[ResourcesUpdate]:
         return await self._call_store_method("get_latest_resources")
 
-    async def add_span(self, span: Span) -> Span:
+    async def add_span(self, span: Span) -> Optional[Span]:
         return await self._call_store_method("add_span", span)
+
+    async def add_many_spans(self, spans: Sequence[Span]) -> Sequence[Span]:
+        return await self._call_store_method("add_many_spans", spans)
 
     async def get_next_span_sequence_id(self, rollout_id: str, attempt_id: str) -> int:
         return await self._call_store_method("get_next_span_sequence_id", rollout_id, attempt_id)
+
+    async def get_many_span_sequence_ids(self, rollout_attempt_ids: Sequence[Tuple[str, str]]) -> Sequence[int]:
+        return await self._call_store_method("get_many_span_sequence_ids", rollout_attempt_ids)
 
     async def add_otel_span(
         self,
@@ -1073,7 +1080,7 @@ class LightningStoreServer(LightningStore):
         attempt_id: str,
         readable_span: ReadableSpan,
         sequence_id: int | None = None,
-    ) -> Span:
+    ) -> Optional[Span]:
         return await self._call_store_method(
             "add_otel_span",
             rollout_id,
@@ -1618,7 +1625,9 @@ class LightningStoreClient(LightningStore):
         """
         try:
             data = await self._request_json("get", f"/rollouts/{rollout_id}")
-            if isinstance(data, dict) and "attempt" in data:
+            if data is None:
+                return None
+            elif isinstance(data, dict) and "attempt" in data:
                 return AttemptedRollout.model_validate(data)
             else:
                 return Rollout.model_validate(data)
@@ -1708,9 +1717,17 @@ class LightningStoreClient(LightningStore):
             client_logger.error(f"get_latest_resources failed after all retries: {e}", exc_info=True)
             return None
 
-    async def add_span(self, span: Span) -> Span:
+    async def add_span(self, span: Span) -> Optional[Span]:
         data = await self._request_json("post", "/spans", json=span.model_dump(mode="json"))
-        return Span.model_validate(data)
+        return Span.model_validate(data) if data is not None else None
+
+    async def add_many_spans(self, spans: Sequence[Span]) -> Sequence[Span]:
+        result: List[Span] = []
+        for span in spans:
+            ret = await self.add_span(span)
+            if ret is not None:
+                result.append(ret)
+        return result
 
     async def get_next_span_sequence_id(self, rollout_id: str, attempt_id: str) -> int:
         data = await self._request_json(
@@ -1721,13 +1738,19 @@ class LightningStoreClient(LightningStore):
         response = NextSequenceIdResponse.model_validate(data)
         return response.sequence_id
 
+    async def get_many_span_sequence_ids(self, rollout_attempt_ids: Sequence[Tuple[str, str]]) -> Sequence[int]:
+        return [
+            await self.get_next_span_sequence_id(rollout_id, attempt_id)
+            for rollout_id, attempt_id in rollout_attempt_ids
+        ]
+
     async def add_otel_span(
         self,
         rollout_id: str,
         attempt_id: str,
         readable_span: ReadableSpan,
         sequence_id: int | None = None,
-    ) -> Span:
+    ) -> Optional[Span]:
         # unchanged logic, now benefits from retries inside add_span/get_next_span_sequence_id
         if sequence_id is None:
             sequence_id = await self.get_next_span_sequence_id(rollout_id, attempt_id)
@@ -1737,9 +1760,7 @@ class LightningStoreClient(LightningStore):
             attempt_id=attempt_id,
             sequence_id=sequence_id,
         )
-        print("created span", span)
-        await self.add_span(span)
-        return span
+        return await self.add_span(span)
 
     async def wait_for_rollouts(self, *, rollout_ids: List[str], timeout: Optional[float] = None) -> List[Rollout]:
         """Wait for rollouts to complete.

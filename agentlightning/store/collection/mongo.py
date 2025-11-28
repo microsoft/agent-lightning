@@ -651,6 +651,9 @@ class MongoBasedCollection(Collection[T_model]):
         pk_filter.update({pk: data[pk] for pk in self._primary_keys})
         return pk_filter
 
+    def _render_pk_values(self, values: Sequence[Any]) -> str:
+        return ", ".join(f"{pk}={value!r}" for pk, value in zip(self._primary_keys, values))
+
     def _ensure_item_type(self, item: T_model) -> None:
         if not isinstance(item, self._item_type):
             raise TypeError(f"Expected item of type {self._item_type.__name__}, got {type(item).__name__}")
@@ -746,14 +749,18 @@ class MongoBasedCollection(Collection[T_model]):
 
         collection = await self.ensure_collection()
         docs: List[Mapping[str, Any]] = []
+        pk_conditions: List[Dict[str, Any]] = []
+        seen_primary_keys: set[Tuple[Any, ...]] = set()
         for item in items:
             self._ensure_item_type(item)
-            # Pre-check for existence to provide a clearer ValueError
             pk_filter = self._pk_filter(item)
-            with self._prometheus_tracker.track("insert__find_one", self._database_name, self._collection_name):
-                existing = await collection.find_one(pk_filter, session=self._session)
-            if existing is not None:
-                raise ValueError(f"Item with primary key(s) {pk_filter} already exists")
+            pk_values = tuple(pk_filter[pk] for pk in self._primary_keys)
+            if pk_values in seen_primary_keys:
+                raise ValueError(
+                    f"Insert payload contains duplicate primary key(s): {self._render_pk_values(pk_values)}"
+                )
+            seen_primary_keys.add(pk_values)
+            pk_conditions.append({pk: pk_filter[pk] for pk in self._primary_keys})
 
             doc = item.model_dump()
             doc["partition_id"] = self._partition_id
@@ -761,6 +768,17 @@ class MongoBasedCollection(Collection[T_model]):
 
         if not docs:
             return
+
+        if len(pk_conditions) == 1:
+            existing_filter: Dict[str, Any] = {"partition_id": self._partition_id, **pk_conditions[0]}
+        else:
+            existing_filter = {"partition_id": self._partition_id, "$or": pk_conditions}
+
+        with self._prometheus_tracker.track("insert__find_existing", self._database_name, self._collection_name):
+            existing = await collection.find_one(existing_filter, session=self._session)
+            if existing is not None:
+                existing_values = tuple(existing.get(pk) for pk in self._primary_keys)
+                raise ValueError(f"Item with primary key(s) {self._render_pk_values(existing_values)} already exists")
 
         with self._prometheus_tracker.track(
             "insert__insert_many", self._database_name, self._collection_name
