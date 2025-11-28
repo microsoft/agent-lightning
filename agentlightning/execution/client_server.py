@@ -9,10 +9,11 @@ import time
 from multiprocessing.context import BaseContext
 from typing import Callable, Iterable, Literal, cast
 
+from agentlightning.env_var import LightningEnvVar, resolve_bool_env_var, resolve_int_env_var, resolve_str_env_var
 from agentlightning.store.base import LightningStore
 from agentlightning.store.client_server import LightningStoreClient, LightningStoreServer
 
-from .base import AlgorithmBundle, ExecutionStrategy, RunnerBundle, resolve_managed_store_flag
+from .base import AlgorithmBundle, ExecutionStrategy, RunnerBundle
 from .events import ExecutionEvent, MultiprocessingEvent
 
 logger = logging.getLogger(__name__)
@@ -99,44 +100,28 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
                 By default, runner can exit gracefully with code 0 or terminated
                 by SIGTERM (-15).
         """
-        if role is None:
-            role_env = os.getenv("AGL_CURRENT_ROLE")
-            if role_env is None:
-                # Use both if not specified via env var or argument
-                role = "both"
-            elif role_env not in ("algorithm", "runner", "both"):
-                raise ValueError("role must be one of 'algorithm', 'runner', or 'both'")
-            else:
-                role = role_env
-
-        if server_host is None:
-            server_host = os.getenv("AGL_SERVER_HOST", "localhost")
-
-        if server_port is None:
-            server_port_env = os.getenv("AGL_SERVER_PORT")
-            if server_port_env is None:
-                server_port = 4747
-            else:
-                try:
-                    server_port = int(server_port_env)
-                except ValueError as exc:
-                    raise ValueError("AGL_SERVER_PORT must be an integer") from exc
-
-        self.role = role
+        resolved_role = resolve_str_env_var(LightningEnvVar.AGL_CURRENT_ROLE, override=role, fallback="both")
+        if resolved_role not in ("algorithm", "runner", "both"):
+            raise ValueError("role must be one of 'algorithm', 'runner', or 'both'")
+        self.role: Literal["algorithm", "runner", "both"] = resolved_role
         self.n_runners = n_runners
-        self.server_host = server_host
-        self.server_port = server_port
+        self.server_host = resolve_str_env_var(
+            LightningEnvVar.AGL_SERVER_HOST, override=server_host, fallback="localhost"
+        )
+        self.server_port = resolve_int_env_var(LightningEnvVar.AGL_SERVER_PORT, override=server_port, fallback=4747)
         self.graceful_timeout = graceful_timeout
         self.terminate_timeout = terminate_timeout
         if main_process not in ("algorithm", "runner"):
             raise ValueError("main_process must be 'algorithm' or 'runner'")
         if main_process == "runner":
-            if role != "both":
+            if self.role != "both":
                 raise ValueError("main_process='runner' is only supported when role='both'")
             if n_runners != 1:
                 raise ValueError("main_process='runner' requires n_runners to be 1")
         self.main_process = main_process
-        self.managed_store = resolve_managed_store_flag(managed_store)
+        self.managed_store = resolve_bool_env_var(
+            LightningEnvVar.AGL_MANAGED_STORE, override=managed_store, fallback=True
+        )
         self.allowed_exit_codes = tuple(allowed_exit_codes)
 
     async def _execute_algorithm(

@@ -11,7 +11,8 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple, Union, cast
 from opentelemetry.sdk.trace import ReadableSpan
 from pydantic import BaseModel
 
-from agentlightning.types import Span, SpanNames, Triplet
+from agentlightning.emitter.reward import get_reward_value
+from agentlightning.types import Span, Triplet
 
 from .base import TraceAdapter
 
@@ -313,24 +314,11 @@ class TraceTree:
         Returns:
             Dictionary containing reward metadata, or an empty dictionary when no reward is found.
         """
-        for key in [
-            "agentops.task.output",  # newer versions of agentops
-            "agentops.entity.output",
-        ]:
-            output = self.span.attributes.get(key)  # type: ignore
-            if output:
-                if isinstance(output, dict):
-                    return output
-                elif isinstance(output, str):
-                    try:
-                        return json.loads(output)
-                    except json.JSONDecodeError:
-                        return {}
-
-        # Latest emit reward format
-        if self.span.name == SpanNames.REWARD.value and self.span.attributes:
-            return {"type": "reward", "value": self.span.attributes.get("reward", None)}
-        return {}
+        reward_value = get_reward_value(self.span)
+        if reward_value is not None:
+            return {"type": "reward", "value": reward_value}
+        else:
+            return {}
 
     def is_reward_span(self) -> bool:
         """Return whether the span explicitly encodes a reward.
@@ -776,24 +764,7 @@ class LlmProxyTraceToTriplet(TraceToTripletBase):
 
     def _maybe_reward_value(self, span: Span) -> Optional[float]:
         """Parse reward from typical AgentOps payloads or explicit reward spans."""
-        attrs = span.attributes or {}
-
-        # AgentOps new/old keys
-        for k in ("agentops.task.output", "agentops.entity.output"):
-            v = attrs.get(k)
-            v = self._literal_eval_maybe(v)
-            if isinstance(v, dict) and cast(Dict[str, Any], v).get("type") == "reward":
-                rv = cast(Dict[str, Any], v).get("value", None)
-                if rv is None or isinstance(rv, (int, float)):
-                    return None if rv is None else float(rv)
-
-        # Explicit reward span
-        if span.name == SpanNames.REWARD.value:
-            rv = attrs.get("reward", None)
-            if rv is None or isinstance(rv, (int, float)):
-                return None if rv is None else float(rv)
-
-        return None
+        return get_reward_value(span)
 
     def _request_id_from_attrs(self, attrs: Dict[str, Any]) -> Optional[str]:
         # Prefer OpenAI-like id if present, else proxy raw id.
