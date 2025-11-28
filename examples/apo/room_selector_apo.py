@@ -3,7 +3,6 @@
 """This sample code demonstrates how to use an existing APO algorithm to tune the prompts."""
 
 import logging
-import os
 from typing import Tuple, cast
 
 from openai import AsyncOpenAI
@@ -70,7 +69,11 @@ def main() -> None:
     setup_apo_logger()
 
     # 初始化OpenAI异步客户端，用于APO算法中的LLM调用
-    openai_client = AsyncOpenAI()
+    # 配置为使用本地模型接口
+    openai_client = AsyncOpenAI(
+        base_url="http://127.0.0.1:30003/v1",
+        api_key=""
+    )
 
     # 创建APO（Asynchronous Prompt Optimization）算法实例
     # APO算法通过beam search和梯度优化来改进提示词模板
