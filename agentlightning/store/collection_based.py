@@ -211,6 +211,17 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
                 "Total MongoDB operations",
                 ["method", "error_type"],
             )
+            self._rollout_counter = Counter(
+                "collection_store_rollout_total",
+                "Total rollouts",
+                ["status", "mode"],
+            )
+            self._rollout_duration_metric = Histogram(
+                "collection_store_rollout_duration_seconds",
+                "Duration of rollouts",
+                ["status", "mode"],
+                buckets=LATENCY_BUCKETS,
+            )
 
     async def statistics(self) -> LightningStoreStatistics:
         """Return the statistics of the store."""
@@ -1158,6 +1169,10 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         # Rollout is only finished when it succeeded or fail with no more retries.
         if not isinstance(status, Unset) and is_finished(rollout):
             rollout.end_time = time.time()
+            self._rollout_counter.labels(rollout.status, rollout.mode).inc()
+            self._rollout_duration_metric.labels(rollout.status, rollout.mode).observe(
+                rollout.end_time - rollout.start_time
+            )
 
         # If requeuing, add back to queue.
         # Check whether the rollout is already in queue.

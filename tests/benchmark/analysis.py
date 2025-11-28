@@ -342,6 +342,16 @@ class StoreMethodStats:
 StatsSummary = Dict[str, Optional[float]]
 
 
+@dataclass
+class RolloutOutcomeStats:
+    status: str
+    rate: Optional[float]
+    p25: Optional[float]
+    p50: Optional[float]
+    p75: Optional[float]
+    max_latency: Optional[float]
+
+
 def gather_store_methods(
     client: PrometheusClient,
     window: str,
@@ -430,6 +440,63 @@ def gather_store_methods(
         or 0.0,
     }
     return rows, overall
+
+
+def gather_rollout_outcomes(
+    client: PrometheusClient,
+    window: str,
+    rate_window: str,
+) -> List[RolloutOutcomeStats]:
+    rate_map = vector_to_map(
+        safe_vector(client, f"sum by (status)(rate(collection_store_rollout_total[{rate_window}]))"),
+        ("status",),
+    )
+    p25_map = vector_to_map(
+        safe_vector(
+            client,
+            f"histogram_quantile(0.25, "
+            f"sum by (le, status)(rate(collection_store_rollout_duration_seconds_bucket[{window}])))",
+        ),
+        ("status",),
+    )
+    p50_map = vector_to_map(
+        safe_vector(
+            client,
+            f"histogram_quantile(0.50, "
+            f"sum by (le, status)(rate(collection_store_rollout_duration_seconds_bucket[{window}])))",
+        ),
+        ("status",),
+    )
+    p75_map = vector_to_map(
+        safe_vector(
+            client,
+            f"histogram_quantile(0.75, "
+            f"sum by (le, status)(rate(collection_store_rollout_duration_seconds_bucket[{window}])))",
+        ),
+        ("status",),
+    )
+    max_map = vector_to_map(
+        safe_vector(
+            client,
+            f"histogram_quantile(1.00, "
+            f"sum by (le, status)(rate(collection_store_rollout_duration_seconds_bucket[{window}])))",
+        ),
+        ("status",),
+    )
+    statuses = sorted({*rate_map.keys(), *p25_map.keys(), *p50_map.keys(), *p75_map.keys(), *max_map.keys()}, key=str)
+    stats: List[RolloutOutcomeStats] = []
+    for status in statuses:
+        stats.append(
+            RolloutOutcomeStats(
+                status=str(status or "-"),
+                rate=rate_map.get(status),
+                p25=p25_map.get(status),
+                p50=p50_map.get(status),
+                p75=p75_map.get(status),
+                max_latency=max_map.get(status),
+            )
+        )
+    return stats
 
 
 # ---------------------------------------------------------------------------
@@ -753,6 +820,22 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         f"P99={fmt_latency(store_overall['p99'])}"
     )
     lines.extend(section("CollectionBasedLightningStore", store_lines))
+
+    rollout_outcomes = gather_rollout_outcomes(client, window, rate_window)
+    rollout_rows = [
+        [
+            stat.status,
+            fmt_rate(stat.rate),
+            fmt_latency(stat.p25),
+            fmt_latency(stat.p50),
+            fmt_latency(stat.p75),
+            fmt_latency(stat.max_latency),
+        ]
+        for stat in rollout_outcomes
+    ]
+    lines.extend(
+        section("Rollout Outcomes", render_table(["Status", "Rate", "P25", "P50", "P75", "Max"], rollout_rows))
+    )
 
     # HTTP traffic
     http_paths, http_overall = gather_http_paths(client, window, rate_window, subquery_step)

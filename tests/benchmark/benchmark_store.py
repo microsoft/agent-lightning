@@ -10,10 +10,14 @@ import sys
 import threading
 from typing import Any, Dict, List, Literal, Optional, Sequence, Set, Tuple, cast
 
+from rich.console import Console
+
 import agentlightning as agl
 from agentlightning.utils.otel import get_tracer
 
 from .utils import flatten_dict, random_dict
+
+console = Console()
 
 MAX_RUNTIME_SECONDS = 45 * 60
 
@@ -78,25 +82,15 @@ def make_agent(max_rounds: int, sleep_seconds: float) -> agl.LitAgent[str]:
 
 def check_spans(spans: Sequence[agl.Span], task: str) -> None:
     """Check if the spans contain the task."""
-    found_task = False
-    last_reward_in_12 = None
-    for span in spans:
-        if span.attributes.get("task") == task:
-            found_task = True
-        if span.name == agl.SpanNames.REWARD.value:
-            if span.attributes.get("reward") is None:
-                raise ValueError("Reward is not set for a reward span")
-            rew = float(span.attributes.get("reward"))  # type: ignore
-            if rew >= 1 and rew <= 2:
-                last_reward_in_12 = True
-            else:
-                last_reward_in_12 = False
+    found_task = any(span.attributes.get("task") == task for span in spans)
+
+    final_reward = agl.find_final_reward(spans)
+    if final_reward is None:
+        raise ValueError("Final reward is not found")
+    if not (final_reward >= 1 and final_reward <= 2):
+        raise ValueError(f"Final reward {final_reward} is not in the range of 1 to 2")
     if not found_task:
         raise ValueError(f"Task {task} is not found in the spans")
-    if last_reward_in_12 is None:
-        raise ValueError("Last reward is not found")
-    elif not last_reward_in_12:
-        raise ValueError("Last reward is not in the range of 1 to 2")
 
 
 class AlgorithmBatch(agl.Algorithm):
@@ -144,6 +138,7 @@ class AlgorithmBatch(agl.Algorithm):
         submitted = 0
 
         while submitted < total_tasks:
+            print(f"Submitting batch {submitted} of {total_tasks}")
             batch_count = min(batch_size, total_tasks - submitted)
             batch_rollouts: List[Tuple[str, str]] = []
             await store.add_resources(
@@ -188,6 +183,7 @@ class AlgorithmBatch(agl.Algorithm):
         active_rollouts: Dict[str, str] = {}
 
         while completed < total_tasks:
+            console.print(f"Completed {completed} of {total_tasks} rollouts")
             if submitted < total_tasks and len(active_rollouts) < remaining_tasks:
                 batch_count = min(batch_size, total_tasks - submitted)
                 await store.add_resources(
@@ -239,6 +235,7 @@ class AlgorithmBatch(agl.Algorithm):
         async def handle_single(task_index: int) -> None:
             task_name = f"task-{task_index}"
             async with semaphore:
+                console.print(f"Submitting task {task_index} of {total_tasks}")
                 await store.add_resources(
                     {
                         "llm": agl.LLM(

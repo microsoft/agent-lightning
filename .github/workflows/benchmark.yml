@@ -65,7 +65,7 @@ jobs:
             args: >-
               --mode single
               --total-tasks 100000
-              --concurrency 4096
+              --concurrency 2048
               --n-runners 256
               --max-rounds 2
               --sleep-seconds 0.1

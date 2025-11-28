@@ -948,6 +948,75 @@
           "legendFormat": "Current"
         }
       ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 128
+      },
+      "id": 301,
+      "panels": [],
+      "title": "Rollout Outcomes",
+      "type": "row"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 0,
+        "y": 129
+      },
+      "id": 302,
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.25, sum by (le) (rate(collection_store_rollout_duration_seconds_bucket[1m])))",
+          "legendFormat": "P25"
+        },
+        {
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(collection_store_rollout_duration_seconds_bucket[1m])))",
+          "legendFormat": "P50"
+        },
+        {
+          "expr": "histogram_quantile(0.75, sum by (le) (rate(collection_store_rollout_duration_seconds_bucket[1m])))",
+          "legendFormat": "P75"
+        },
+        {
+          "expr": "histogram_quantile(1.0, sum by (le) (rate(collection_store_rollout_duration_seconds_bucket[1m])))",
+          "legendFormat": "Max"
+        }
+      ],
+      "title": "Rollout Duration (P25, P50, P75, P95)",
+      "type": "timeseries"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops/s"
+        }
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 12,
+        "y": 129
+      },
+      "id": 303,
+      "targets": [
+        {
+          "expr": "sum by (status) (rate(collection_store_rollout_total[1m]))",
+          "legendFormat": "{{status}}"
+        }
+      ],
+      "title": "Rollout Completion Rate (by Status)",
+      "type": "timeseries"
     }
   ],
   "schemaVersion": 36,
@@ -963,5 +1032,5 @@
     "to": "now"
   },
   "title": "Agent Lightning Metrics",
-  "version": 0
+  "version": 1
 }
