@@ -264,11 +264,6 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     )
     parser.add_argument("--concurrency", type=int, default=32, help="Maximum concurrent rollouts for single mode.")
     parser.add_argument("--n-runners", type=int, default=32, help="Number of runner processes to launch.")
-    parser.add_argument(
-        "--managed-store",
-        action="store_true",
-        help="Set Trainer strategy.managed_store to true (default: false).",
-    )
     parser.add_argument("--max-rounds", type=int, default=10, help="Maximum number of rounds for each rollout.")
     parser.add_argument("--sleep-seconds", type=float, default=1.0, help="Sleep seconds for each rollout.")
     args = parser.parse_args(argv)
@@ -307,7 +302,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
             n_runners=args.n_runners,
             strategy={
                 "type": "cs",
-                "managed_store": args.managed_store,
+                "managed_store": True,
             },
         )
         trainer.fit(make_agent(max_rounds=args.max_rounds, sleep_seconds=args.sleep_seconds))

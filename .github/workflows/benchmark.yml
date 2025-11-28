@@ -17,3 +17,56 @@ jobs:
         run: nvidia-smi
       - name: Check disk space
         run: df -h
+
+      - name: Minimal production scale
+        run: |
+          uv run python -m tests.benchmark.benchmark_store \
+            --mode batch \
+            --total-tasks 4096 \
+            --batch-size 64 \
+            --n-runners 32 \
+            --max-rounds 6 \
+            --sleep-seconds 0.5
+
+      - name: Large batch waves
+        run: |
+          uv run python -m tests.benchmark.benchmark_store \
+            --mode batch \
+            --total-tasks 100000 \
+            --batch-size 8192 \
+            --n-runners 256 \
+            --max-rounds 6 \
+            --sleep-seconds 0.1
+
+      - name: Long rollout queues
+        run: |
+          uv run python -m tests.benchmark.benchmark_store \
+            --mode batch_partial \
+            --total-tasks 100000 \
+            --batch-size 1024 \
+            --n-runners 256 \
+            --remaining-tasks 4096 \
+            --max-rounds 4 \
+            --sleep-seconds 0.1
+
+      - name: High-throughput concurrent requests
+        run: |
+          uv run python -m tests.benchmark.benchmark_store \
+            --mode single \
+            --total-tasks 100000 \
+            --concurrency 4096 \
+            --n-runners 256 \
+            --max-rounds 2 \
+            --sleep-seconds 0.1
+
+      - name: Heavy rollouts with deep traces
+        run: |
+          python benchmark_store.py \
+            --store-url http://localhost:4747 \
+            --mode batch_partial \
+            --total-tasks 10000 \
+            --batch-size 1024 \
+            --remaining-tasks 256 \
+            --n-runners 512 \
+            --max-rounds 20 \
+            --sleep-seconds 1.0
