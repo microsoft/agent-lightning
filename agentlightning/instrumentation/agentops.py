@@ -13,7 +13,8 @@ from agentops.sdk.exporters import AuthenticatedOTLPExporter
 from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.sdk.metrics.export import MetricExportResult
-from opentelemetry.sdk.trace.export import SpanExportResult
+
+from agentlightning.utils.otlp import LightningStoreOTLPExporter
 
 logger = logging.getLogger(__name__)
 
@@ -32,25 +33,27 @@ def enable_agentops_service(enabled: bool = True) -> None:
     """
     Enable or disable communication with the AgentOps service.
 
-    False (default): AgentOps exporters and clients will run in local mode
-    and will not attempt to communicate with the remote AgentOps service.
-    True: all exporters and clients will operate in normal mode and send data
-    to the AgentOps service as expected.
+    By default, AgentOps exporters and clients will run in local mode
+    and will NOT attempt to communicate with the remote AgentOps service.
+
+    Args:
+        enabled: If True, enable all AgentOps exporters and clients.
+            All exporters and clients will operate in normal mode and send data
+            to the [AgentOps service](https://www.agentops.ai).
     """
     global _agentops_service_enabled
     _agentops_service_enabled = enabled
-    logger.info(f"Switch set to {enabled} for exporters and clients.")
+    logger.info(f"AgentOps service enabled is set to {enabled}.")
 
 
 def _patch_exporters():
     import agentops.client.api
     import agentops.sdk.core
-    import opentelemetry.exporter.otlp.proto.http.metric_exporter
-    import opentelemetry.exporter.otlp.proto.http.trace_exporter
 
     agentops.sdk.core.AuthenticatedOTLPExporter = BypassableAuthenticatedOTLPExporter  # type: ignore
-    opentelemetry.exporter.otlp.proto.http.metric_exporter.OTLPMetricExporter = BypassableOTLPMetricExporter
-    opentelemetry.exporter.otlp.proto.http.trace_exporter.OTLPSpanExporter = BypassableOTLPSpanExporter
+    agentops.sdk.core.OTLPMetricExporter = BypassableOTLPMetricExporter
+    if hasattr(agentops.sdk.core, "OTLPSpanExporter"):
+        agentops.sdk.core.OTLPSpanExporter = BypassableOTLPSpanExporter  # type: ignore
     agentops.client.api.V3Client = BypassableV3Client
     agentops.client.api.V4Client = BypassableV4Client
 
@@ -58,12 +61,11 @@ def _patch_exporters():
 def _unpatch_exporters():
     import agentops.client.api
     import agentops.sdk.core
-    import opentelemetry.exporter.otlp.proto.http.metric_exporter
-    import opentelemetry.exporter.otlp.proto.http.trace_exporter
 
     agentops.sdk.core.AuthenticatedOTLPExporter = AuthenticatedOTLPExporter  # type: ignore
-    opentelemetry.exporter.otlp.proto.http.metric_exporter.OTLPMetricExporter = OTLPMetricExporter
-    opentelemetry.exporter.otlp.proto.http.trace_exporter.OTLPSpanExporter = OTLPSpanExporter
+    agentops.sdk.core.OTLPMetricExporter = OTLPMetricExporter
+    if hasattr(agentops.sdk.core, "OTLPSpanExporter"):
+        agentops.sdk.core.OTLPSpanExporter = OTLPSpanExporter  # type: ignore
     agentops.client.api.V3Client = V3Client
     agentops.client.api.V4Client = V4Client
 
@@ -243,18 +245,15 @@ def uninstrument_agentops():
         pass
 
 
-class BypassableAuthenticatedOTLPExporter(AuthenticatedOTLPExporter):
+class BypassableAuthenticatedOTLPExporter(LightningStoreOTLPExporter, AuthenticatedOTLPExporter):
     """
     AuthenticatedOTLPExporter with switchable service control.
+
     When `_agentops_service_enabled` is False, skip export and return success.
     """
 
-    def export(self, *args: Any, **kwargs: Any) -> SpanExportResult:
-        if _agentops_service_enabled:
-            return super().export(*args, **kwargs)
-        else:
-            logger.debug("SwitchableAuthenticatedOTLPExporter is switched off, skipping export.")
-            return SpanExportResult.SUCCESS
+    def should_bypass(self) -> bool:
+        return not _agentops_service_enabled
 
 
 class BypassableOTLPMetricExporter(OTLPMetricExporter):
@@ -271,18 +270,16 @@ class BypassableOTLPMetricExporter(OTLPMetricExporter):
             return MetricExportResult.SUCCESS
 
 
-class BypassableOTLPSpanExporter(OTLPSpanExporter):
+class BypassableOTLPSpanExporter(LightningStoreOTLPExporter):
     """
     OTLPSpanExporter with switchable service control.
     When `_agentops_service_enabled` is False, skip export and return success.
+
+    This is used instead of BypassableAuthenticatedOTLPExporter on legacy AgentOps versions.
     """
 
-    def export(self, *args: Any, **kwargs: Any) -> SpanExportResult:
-        if _agentops_service_enabled:
-            return super().export(*args, **kwargs)
-        else:
-            logger.debug("SwitchableOTLPSpanExporter is switched off, skipping export.")
-            return SpanExportResult.SUCCESS
+    def should_bypass(self) -> bool:
+        return not _agentops_service_enabled
 
 
 class BypassableV3Client(V3Client):

@@ -1,6 +1,6 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-from typing import Generic, List, TypeVar
+from typing import Generic, Sequence, TypeVar
 
 from opentelemetry.sdk.trace import ReadableSpan
 
@@ -66,7 +66,7 @@ class Adapter(Generic[T_from, T_to]):
         raise NotImplementedError("Adapter.adapt() is not implemented")
 
 
-class OtelTraceAdapter(Adapter[List[ReadableSpan], T_to], Generic[T_to]):
+class OtelTraceAdapter(Adapter[Sequence[ReadableSpan], T_to], Generic[T_to]):
     """Base class for adapters that convert OpenTelemetry trace spans into other formats.
 
     This specialization of [`Adapter`][agentlightning.Adapter] expects a list of
@@ -84,7 +84,7 @@ class OtelTraceAdapter(Adapter[List[ReadableSpan], T_to], Generic[T_to]):
     """
 
 
-class TraceAdapter(Adapter[List[Span], T_to], Generic[T_to]):
+class TraceAdapter(Adapter[Sequence[Span], T_to], Generic[T_to]):
     """Base class for adapters that convert trace spans into other formats.
 
     This class specializes [`Adapter`][agentlightning.Adapter] for working with

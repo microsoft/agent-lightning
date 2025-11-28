@@ -81,6 +81,7 @@ class Tinker(Algorithm):
                 port=config.llm_proxy_port,
                 model_list=[],
                 store=store,
+                launch_mode="thread",
             )
 
         await main_training_loop(config, store, adapter, llm_proxy)  # type: ignore

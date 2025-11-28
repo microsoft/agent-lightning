@@ -65,10 +65,14 @@ module.exports = async function badgeAggregation({ github, context, core, depend
       workflow_id: dep.workflow,
       branch: 'main', // Always check the main branch status no matter what
       status: 'completed', // only completed runs
-      per_page: 1, // latest only
+      per_page: 50, // retrieve latest 50 so we can filter
+      sort: 'created',
+      direction: 'desc',
     });
 
-    const run = runsData?.workflow_runs?.[0];
+    const filteredRuns = runsData?.workflow_runs?.filter(run => ['schedule', 'workflow_dispatch'].includes(run.event));
+
+    const run = filteredRuns?.[0];
     if (!run) {
       failures.push(`No completed run found for ${dep.label} on branch "${branch}"`);
       continue;
@@ -84,18 +88,22 @@ module.exports = async function badgeAggregation({ github, context, core, depend
 
     // Match each required variant to a job. We look for the variant in parentheses, e.g. "(latest)".
     for (const variant of dep.variants || []) {
-      const job = jobs.find(j => typeof j.name === 'string' && j.name.includes(variant));
+      const matchingJobs = jobs.filter(
+        j => typeof j.name === 'string' && j.name.includes(variant)
+      );
 
-      if (!job) {
+      if (matchingJobs.length === 0) {
         failures.push(`Missing job for ${dep.label} (variant: ${variant})`);
         continue;
       }
 
-      core.info(`[${dep.label}] ${job.name} => ${job.conclusion}`);
+      for (const job of matchingJobs) {
+        core.info(`[${dep.label}] ${job.name} => ${job.conclusion}`);
 
-      // Accept only a strict "success".
-      if (job.conclusion !== 'success') {
-        failures.push(`${dep.label} (${job.name}) concluded ${job.conclusion}`);
+        // Accept only a strict "success".
+        if (job.conclusion !== 'success') {
+          failures.push(`${dep.label} (${job.name}) concluded ${job.conclusion}`);
+        }
       }
     }
   }

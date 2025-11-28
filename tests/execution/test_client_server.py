@@ -1152,7 +1152,7 @@ def test_execute_both_main_algo_runner_ignores_stop(store: LightningStore) -> No
         await asyncio.sleep(0.1)
 
     # Should complete without hanging despite runners ignoring signals
-    with pytest.raises(RuntimeError, match="Subprocesses failed:"):
+    with pytest.raises(RuntimeError, match="Subprocesses failed"):
         strat.execute(algorithm=algo, runner=_runner_ignores_stop_forever, store=store)
 
 

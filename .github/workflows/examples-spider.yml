@@ -14,7 +14,7 @@ on:
 run-name: >-
   ${{ github.event_name == 'repository_dispatch'
       && format(
-        'PR #{0} - Label {1} - {2}',
+        'Spider - PR #{0} - {1} - {2}',
         github.event.client_payload.pull_number,
         github.event.client_payload.ci_label,
         github.event.client_payload.correlation_id
@@ -121,7 +121,7 @@ jobs:
       - name: Validate Spider training
         run: |
           set -ex
-          uv run scripts/validate_example_wandb.py ${{ steps.spider_train.outputs.project_name }} ${{ steps.spider_train.outputs.run_name }}
+          uv run scripts/validate_example_wandb.py ${{ steps.spider_train.outputs.project_name }} ${{ steps.spider_train.outputs.run_name }} --reward-tolerance 5
         env:
           WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
           WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}

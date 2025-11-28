@@ -17,7 +17,7 @@ from math_agent import GsmProblem, load_math_dataset, math_agent
 from rich.console import Console
 from sft_algorithm import sft_one_iter
 
-from agentlightning import Trainer, configure_logger
+from agentlightning import Trainer, setup_logging
 from agentlightning.adapter import TraceToTripletBase
 from agentlightning.algorithm import Algorithm
 from agentlightning.llm_proxy import LLMProxy
@@ -94,7 +94,7 @@ class UnslothSupervisedFinetuning(Algorithm):
 
 
 if __name__ == "__main__":
-    configure_logger()
+    setup_logging()
 
     algo = UnslothSupervisedFinetuning(
         max_iterations=2,

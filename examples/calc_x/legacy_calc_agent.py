@@ -19,9 +19,9 @@ from autogen_ext.models.openai import OpenAIChatCompletionClient
 from autogen_ext.tools.mcp import McpWorkbench, StdioServerParams
 from eval_utils import evaluate_v0_1
 
-from agentlightning import LLM, LitAgent, NamedResources, Trainer, configure_logger
+from agentlightning import LLM, LitAgent, NamedResources, Trainer, setup_logging
 
-configure_logger()
+setup_logging()
 
 calculator_mcp_server = StdioServerParams(command="uvx", args=["mcp-server-calculator"])
 

@@ -43,7 +43,7 @@ Example output (with a reward span captured):
 
 ```python
 [Rollout(rollout_id='ro-519769241af8', input='Explain why the sky appears blue using principles of light scattering in 100 words.', start_time=1760706315.6996238, ..., status='succeeded')]
-[Span(rollout_id='ro-519769241af8', attempt_id='at-a6b62caf', sequence_id=1, ..., name='agentlightning.reward', attributes={'reward': 0.95}, ...)]
+[Span(rollout_id='ro-519769241af8', attempt_id='at-a6b62caf', sequence_id=1, ..., name='agentlightning.annotation', attributes={'agentlightning.reward.0.value': 0.95}, ...)]
 ```
 
 Swap in an [`AgentOpsTracer`][agentlightning.AgentOpsTracer] instead of [`OtelTracer`][agentlightning.OtelTracer] to see the underlying LLM spans alongside reward information:
@@ -52,7 +52,7 @@ Swap in an [`AgentOpsTracer`][agentlightning.AgentOpsTracer] instead of [`OtelTr
 [
     Span(rollout_id='ro-519769241af8', attempt_id='at-a6b62caf', sequence_id=1, ..., name='openai.chat.completion', attributes={..., 'gen_ai.prompt.0.role': 'user', 'gen_ai.prompt.0.content': 'You are a helpful assistant. Explain why the sky appears blue using principles of light scattering in 100 words.', ...}),
     Span(rollout_id='ro-519769241af8', attempt_id='at-a6b62caf', sequence_id=2, ..., name='openai.chat.completion', attributes={..., 'gen_ai.prompt.0.role': 'user', 'gen_ai.prompt.0.content': 'Evaluate how well the output fulfills the task...', ...}),
-    Span(rollout_id='ro-519769241af8', attempt_id='at-a6b62caf', sequence_id=3, ..., name='agentlightning.reward', attributes={'reward': 0.95}, ...)
+    Span(rollout_id='ro-519769241af8', attempt_id='at-a6b62caf', sequence_id=3, ..., name='agentlightning.annotation', attributes={'agentlightning.reward.0.value': 0.95}, ...)
 ]
 ```
 
@@ -79,24 +79,43 @@ vllm serve Qwen/Qwen2.5-0.5B-Instruct --port 8080
 Then start the LLM proxy via the following script:
 
 ```python
+import asyncio
+import aiohttp
 import agentlightning as agl
 
-llm_proxy = agl.LLMProxy(
-    port=8081,
-    model_list=[
-        {
-            "model_name": "Qwen/Qwen2.5-0.5B-Instruct",
-            "litellm_params": {
-                "model": "hosted_vllm/Qwen/Qwen2.5-0.5B-Instruct",
-                "api_base": "http://localhost:8080/v1",
-            },
-        }
-    ],
-    store=agl.InMemoryLightningStore(),
-)
+async def serve_llm_proxy():
+    store = agl.InMemoryLightningStore()
+    store_server = agl.LightningStoreServer(store, "127.0.0.1", 8081)
+    await store_server.start()
 
-llm_proxy.start()
-time.sleep(1000000)
+    llm_proxy = agl.LLMProxy(
+        port=8082,
+        model_list=[
+            {
+                "model_name": "Qwen/Qwen2.5-0.5B-Instruct",
+                "litellm_params": {
+                    "model": "hosted_vllm/Qwen/Qwen2.5-0.5B-Instruct",
+                    "api_base": "http://localhost:8080/v1",
+                },
+            }
+        ],
+        store=store_server,
+    )
+
+    await llm_proxy.start()
+    await asyncio.sleep(1000000)
+```
+
+Test the served LLM proxy with a client like:
+
+```python
+async def test_llm_proxy():
+    async with aiohttp.ClientSession() as session:
+        async with session.post("http://localhost:8082/v1/chat/completions", json={
+            "model": "Qwen/Qwen2.5-0.5B-Instruct",
+            "messages": [{"role": "user", "content": "Hello, world!"}],
+        }) as response:
+            print(await response.json())
 ```
 
 You can now use the LLM proxy by specifying environment variables:
@@ -201,7 +220,7 @@ Just like [`Runner.run_context`][agentlightning.Runner.run_context], [`Trainer.d
 21:20:35 [Rollout ro-302fb202bd85 | Attempt 1] ID: at-f84ad21c. Status: succeeded. Worker: Worker-0
 21:20:35 [Rollout ro-302fb202bd85 | Attempt at-f84ad21c | Span 3a286a856af6bea8] #1 (openai.chat.completion) ... 1.95 seconds. Attribute keys: ['gen_ai.request.type', 'gen_ai.system', ...]
 21:20:35 [Rollout ro-302fb202bd85 | Attempt at-f84ad21c | Span e2f44b775e058dd6] #2 (openai.chat.completion) ... 1.24 seconds. Attribute keys: ['gen_ai.request.type', 'gen_ai.system', ...]
-21:20:35 [Rollout ro-302fb202bd85 | Attempt at-f84ad21c | Span 45ee3c94fa1070ec] #3 (agentlightning.reward) ... 0.00 seconds. Attribute keys: ['reward']
+21:20:35 [Rollout ro-302fb202bd85 | Attempt at-f84ad21c | Span 45ee3c94fa1070ec] #3 (agentlightning.annotation) ... 0.00 seconds. Attribute keys: ['agentlightning.reward.0.value']
 21:20:35 [Rollout ro-302fb202bd85] Adapted data: [Triplet(prompt={'token_ids': []}, response={'token_ids': []}, reward=None, metadata={'response_id': '...', 'agent_name': ''}), Triplet(prompt={'token_ids': []}, response={'token_ids': []}, reward=0.95, metadata={'response_id': '...', 'agent_name': ''})]
 21:20:35 Finished 1 rollouts.
 21:20:35 [Rollout ro-e65a3ffaa540] Status changed to preparing.
@@ -209,7 +228,7 @@ Just like [`Runner.run_context`][agentlightning.Runner.run_context], [`Trainer.d
 21:20:40 [Rollout ro-e65a3ffaa540 | Attempt 1] ID: at-eaefa5d4. Status: succeeded. Worker: Worker-0
 21:20:40 [Rollout ro-e65a3ffaa540 | Attempt at-eaefa5d4 | Span 901dd6acc0f50147] #1 (openai.chat.completion) ... 1.30 seconds. Attribute keys: ['gen_ai.request.type', 'gen_ai.system', ...]
 21:20:40 [Rollout ro-e65a3ffaa540 | Attempt at-eaefa5d4 | Span 52e0aa63e02be611] #2 (openai.chat.completion) ... 1.26 seconds. Attribute keys: ['gen_ai.request.type', 'gen_ai.system', ...]
-21:20:40 [Rollout ro-e65a3ffaa540 | Attempt at-eaefa5d4 | Span 6c452de193fbffd3] #3 (agentlightning.reward) ... 0.00 seconds. Attribute keys: ['reward']
+21:20:40 [Rollout ro-e65a3ffaa540 | Attempt at-eaefa5d4 | Span 6c452de193fbffd3] #3 (agentlightning.annotation) ... 0.00 seconds. Attribute keys: ['agentlightning.reward.0.value']
 21:20:40 [Rollout ro-e65a3ffaa540] Adapted data: [Triplet(prompt={'token_ids': []}, response={'token_ids': []}, reward=None, metadata={'response_id': '...', 'agent_name': ''}), Triplet(prompt={'token_ids': []}, response={'token_ids': []}, reward=1.0, metadata={'response_id': '...', 'agent_name': ''})]
 21:20:40 Finished 2 rollouts.
 ```

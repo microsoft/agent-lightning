@@ -14,7 +14,7 @@ on:
 run-name: >-
   ${{ github.event_name == 'repository_dispatch'
       && format(
-        'PR #{0} - Label {1} - {2}',
+        'Backward Compatibility - PR #{0} - {1} - {2}',
         github.event.client_payload.pull_number,
         github.event.client_payload.ci_label,
         github.event.client_payload.correlation_id
@@ -56,7 +56,7 @@ jobs:
             --group dev --group experiment --group agents --group torch-gpu-${{ matrix.setup-script }}
       - name: Override VERL (stable)
         run: |
-          uv pip install verl==0.5.0
+          uv pip install verl==0.5.0 vllm==0.10.2
         if: matrix.setup-script == 'stable'
       - name: Freeze dependencies
         run: |

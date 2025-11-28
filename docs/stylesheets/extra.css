@@ -22,6 +22,10 @@
   font-size: 1.15em;
 }
 
+.md-typeset h5, .md-typeset h6 {
+  font-size: 1em;
+}
+
 /* Increase spacing between API references */
 .doc-class, .doc-function, .doc-attribute {
   padding-bottom: 2em;
@@ -83,4 +87,25 @@
 canvas[data-chart] {
   width: 100%;
   display: block;
+}
+
+/* Grid behavior */
+.md-typeset .grid {
+  grid-template-columns: repeat(auto-fit, minmax(24rem, 1fr));
+}
+
+/* Make cards fill equal height and push footer link to bottom */
+.md-typeset .grid.cards > ul > li {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.md-typeset .grid.cards > ul > li > hr {
+  margin: 0.5em 0;
+}
+
+.md-typeset .grid.cards > ul > li > :last-child {
+  margin-top: auto; /* pushes the last element (Browse source) to bottom */
+  padding-top: 0.5em;
 }

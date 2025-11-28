@@ -15,10 +15,10 @@ from agentlightning import (
     LitAgent,
     NamedResources,
     Trainer,
-    configure_logger,
+    setup_logging,
 )
 
-configure_logger()
+setup_logging()
 
 agent_prompt = """You are an assistant who answers questions using Wikipedia retriever. Answer the question using only the retrieved passages. Verify your answer directly against the text.
 

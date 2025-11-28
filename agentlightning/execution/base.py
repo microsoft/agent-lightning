@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
 from typing import Protocol
 
 from agentlightning.store.base import LightningStore
@@ -11,47 +10,6 @@ from agentlightning.store.base import LightningStore
 from .events import ExecutionEvent
 
 logger = logging.getLogger(__name__)
-
-
-_TRUTHY_VALUES = {"1", "true", "yes", "on"}
-_FALSY_VALUES = {"0", "false", "no", "off"}
-
-
-def resolve_managed_store_flag(value: bool | None) -> bool:
-    """Determine whether execution helpers should wrap the provided store.
-
-    The helper first honours an explicit `value`. When `None` it falls back
-    to the `AGL_MANAGED_STORE` environment variable, accepting a variety
-    of truthy and falsy spellings. Missing environment configuration defaults to
-    `True` so that higher-level strategies create the appropriate client or
-    server wrappers automatically.
-
-    Args:
-        value: Optional override supplied by the caller.
-
-    Returns:
-        `True` when a managed store should be created around the provided
-        instance, otherwise `False`.
-
-    Raises:
-        ValueError: If `AGL_MANAGED_STORE` is set to an unsupported
-            value.
-    """
-
-    if value is not None:
-        return value
-
-    env_value = os.getenv("AGL_MANAGED_STORE")
-    if env_value is None:
-        return True
-
-    normalized = env_value.strip().lower()
-    if normalized in _TRUTHY_VALUES:
-        return True
-    if normalized in _FALSY_VALUES:
-        return False
-
-    raise ValueError("AGL_MANAGED_STORE must be one of 1, 0, true, false, yes, no, on, or off")
 
 
 class AlgorithmBundle(Protocol):

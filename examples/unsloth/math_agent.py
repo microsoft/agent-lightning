@@ -29,7 +29,7 @@ from openai import AsyncOpenAI
 from rich.console import Console
 from trl import SFTConfig, SFTTrainer  # type: ignore
 
-from agentlightning import Trainer, configure_logger
+from agentlightning import Trainer, setup_logging
 from agentlightning.litagent import rollout
 from agentlightning.types import LLM, Dataset
 
@@ -173,5 +173,5 @@ def math_agent_dry_run() -> None:
 
 
 if __name__ == "__main__":
-    configure_logger()
+    setup_logging()
     math_agent_dry_run()

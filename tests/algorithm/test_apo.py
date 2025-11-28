@@ -2,7 +2,7 @@
 
 # pyright: reportPrivateUsage=false
 
-from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple, cast
+from typing import Any, Dict, Iterator, List, Literal, Optional, Sequence, Tuple, cast
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -12,6 +12,7 @@ import agentlightning.algorithm.apo.apo as apo_module
 from agentlightning.adapter import TraceAdapter
 from agentlightning.adapter.messages import TraceToMessages
 from agentlightning.algorithm.apo.apo import APO, RolloutResultForAPO, VersionedPromptTemplate, batch_iter_over_dataset
+from agentlightning.semconv import AGL_ANNOTATION
 from agentlightning.types import (
     Dataset,
     NamedResources,
@@ -22,7 +23,6 @@ from agentlightning.types import (
     Rollout,
     Span,
     SpanContext,
-    SpanNames,
     TraceStatus,
 )
 
@@ -32,13 +32,13 @@ class DummyTraceMessagesAdapter(TraceToMessages):
         super().__init__()
         self.seen_spans: Sequence[Span] | None = None
 
-    def adapt(self, source: List[Span], /) -> List[Dict[str, Any]]:  # type: ignore[override]
+    def adapt(self, source: Sequence[Span], /) -> List[Dict[str, Any]]:  # type: ignore[override]
         self.seen_spans = list(source)
         return [dict(payload="converted")]
 
 
 class WrongAdapter(TraceAdapter[List[int]]):
-    def adapt(self, source: List[Span], /) -> List[int]:
+    def adapt(self, source: Sequence[Span], /) -> List[int]:
         return [len(source)]
 
 
@@ -79,7 +79,12 @@ class DummyStore:
             return self.wait_results_queue.pop(0)
         return []
 
-    async def query_spans(self, rollout_id: str) -> List[Span]:
+    async def query_spans(
+        self,
+        rollout_id: str,
+        attempt_id: str | Literal["latest"] | None = None,
+        **_: Any,
+    ) -> List[Span]:
         return list(self.query_spans_map.get(rollout_id, []))
 
 
@@ -115,7 +120,7 @@ def make_reward_span(rollout_id: str, attempt_id: str, reward: float, sequence_i
         trace_id=hex_id,
         span_id=span_hex,
         parent_id=None,
-        name=SpanNames.REWARD.value,
+        name=AGL_ANNOTATION,
         status=TraceStatus(status_code="OK"),
         attributes={"reward": reward},
         events=[],
@@ -419,7 +424,7 @@ async def test_get_rollout_results_adapts_spans() -> None:
     # Verify spans were serialized
     assert len(results[0]["spans"]) == 2
     assert results[0]["spans"][0]["rollout_id"] == "r-1"
-    assert results[0]["spans"][0]["name"] == SpanNames.REWARD.value
+    assert results[0]["spans"][0]["name"] == AGL_ANNOTATION
     assert results[0]["spans"][0]["attributes"]["reward"] == 1.0
     assert results[0]["spans"][1]["attributes"]["reward"] == 2.0
 

@@ -8,7 +8,7 @@ from typing import cast
 
 from apo_custom_algorithm import apo_rollout
 
-from agentlightning import Trainer, configure_logger
+from agentlightning import Trainer, setup_logging
 from agentlightning.litagent import LitAgent
 from agentlightning.runner import LitAgentRunner
 from agentlightning.store import InMemoryLightningStore
@@ -105,7 +105,7 @@ def debug_with_trainer():
 
 
 if __name__ == "__main__":
-    configure_logger()
+    setup_logging()
 
     parser = argparse.ArgumentParser(description="Debug APO with runner or trainer approach.")
     parser.add_argument(

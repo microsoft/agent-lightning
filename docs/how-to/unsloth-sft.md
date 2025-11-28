@@ -81,7 +81,7 @@ model_list = [
 ]
 llm_proxy.update_model_list(model_list)
 # If the proxy is not running, it will start automatically.
-llm_proxy.restart()
+await llm_proxy.restart()
 # Add the proxy as a resource to the store so that the runners can access it via URL.
 resource_update = await store.add_resources({"main_llm": llm_proxy.as_resource()})
 ```

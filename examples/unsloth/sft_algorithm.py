@@ -32,7 +32,7 @@ from math_agent import GsmProblem, load_math_dataset
 from rich.console import Console
 from unsloth_helper import unsloth_training
 
-from agentlightning import configure_logger
+from agentlightning import setup_logging
 from agentlightning.adapter import LlmProxyTraceToTriplet, TraceToTripletBase
 from agentlightning.llm_proxy import LLMProxy, ModelConfig
 from agentlightning.store import LightningStore, LightningStoreClient
@@ -185,7 +185,7 @@ async def sft_one_iter(
         llm_proxy.update_model_list(model_list)
         # Restart the LLM proxy after backend model list update
         # If LLM proxy has never been started, it will be started
-        llm_proxy.restart()
+        await llm_proxy.restart()
 
         # Put the LLM proxy address into the store as an address
         resources_update = await store.add_resources(
@@ -380,7 +380,7 @@ async def sft_algorithm(*, store: LightningStore) -> None:
 
 
 if __name__ == "__main__":
-    configure_logger()
+    setup_logging()
 
     store = LightningStoreClient("http://localhost:4747")
 

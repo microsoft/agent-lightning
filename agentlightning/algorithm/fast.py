@@ -143,7 +143,7 @@ class Baseline(FastAlgorithm):
         store = self.get_store()
 
         for index in train_indices + val_indices:
-            queuing_rollouts = await store.query_rollouts(status=["queuing", "requeuing"])
+            queuing_rollouts = await store.query_rollouts(status_in=["queuing", "requeuing"])
             if len(queuing_rollouts) <= 1:
                 # Only enqueue a new rollout when there is at most 1 rollout in the queue.
                 sample = dataset[index]
@@ -222,7 +222,7 @@ class Baseline(FastAlgorithm):
                     f"Processing index {index}. {len(train_indices)} train indices and {len(val_indices)} val indices in total."
                 )
                 while True:
-                    queuing_rollouts = await store.query_rollouts(status=["queuing", "requeuing"])
+                    queuing_rollouts = await store.query_rollouts(status_in=["queuing", "requeuing"])
                     if len(queuing_rollouts) <= self.max_queue_length:
                         # Only enqueue a new rollout when there is at most "max_queue_length" rollout in the queue.
                         sample = concatenated_dataset[index]

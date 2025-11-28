@@ -152,6 +152,18 @@ uv sync --frozen \
 
 Read more about Agent-lightning managed dependency groups [here]({{ src("pyproject.toml") }}).
 
+### Building the Dashboard
+
+The Agent-Lightning dashboard is built using [Vite](https://vite.dev/). To build the dashboard, run the following command:
+
+```bash
+cd dashboard
+npm ci
+npm run build
+```
+
+Some HTML and JavaScript assets will be generated in the `agentlightning/dashboard` directory.
+
 ### Activating Your Environment
 
 After syncing dependencies, `uv` automatically creates a virtual environment inside the `.venv/` directory.

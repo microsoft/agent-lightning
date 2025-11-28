@@ -1,0 +1,98 @@
+name: Examples - Azure
+permissions:
+  contents: read
+on:
+  schedule:
+    # Every day at 4 AM UTC+8
+    - cron: '0 20 * * *'
+
+  workflow_dispatch:
+
+  repository_dispatch:
+    types: [ci-azure, ci-all]
+
+run-name: >-
+  ${{ github.event_name == 'repository_dispatch'
+      && format(
+        'Azure - PR #{0} - {1} - {2}',
+        github.event.client_payload.pull_number,
+        github.event.client_payload.ci_label,
+        github.event.client_payload.correlation_id
+      )
+      || format('Azure - {0}', github.event_name) }}
+
+jobs:
+  azure:
+    if: >
+      github.event_name != 'repository_dispatch' ||
+      github.event.action == 'ci-azure' ||
+      github.event.action == 'ci-all'
+    name: Azure (Python ${{ matrix.python-version }}, ${{ matrix.setup-script }})
+    runs-on: [self-hosted, 1ES.Pool=agl-runner-cpu]
+    timeout-minutes: 400
+    strategy:
+      matrix:
+        include:
+        - python-version: '3.12'
+          setup-script: 'stable'
+      fail-fast: false
+    steps:
+      - name: Check disk space
+        run: df -h
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.pr_ref || (github.event.pull_request.number && format('refs/pull/{0}/merge', github.event.pull_request.number)) || github.ref }}
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          python-version: ${{ matrix.python-version }}
+      - name: Upgrade dependencies (latest)
+        run: uv lock --upgrade
+        if: matrix.setup-script == 'latest'
+      - name: Sync dependencies
+        run: |
+          uv sync --frozen --no-default-groups \
+            --group dev --group experiment --group agents --group core-stable
+      - name: Freeze dependencies
+        run: |
+          set -ex
+          uv pip freeze | tee requirements-freeze.txt
+          echo "UV_LOCKED=1" >> $GITHUB_ENV
+          echo "UV_NO_SYNC=1" >> $GITHUB_ENV
+      - name: Upload dependencies artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependencies-azure-${{ matrix.python-version }}-${{ matrix.setup-script }}
+          path: requirements-freeze.txt
+          compression-level: 0
+
+      - name: Azure Login
+        run: |
+          az login --identity
+        shell: bash
+
+      - name: Azure OpenAI Sanity Check
+        run: |
+          source .venv/bin/activate
+          cd examples/azure
+          python capital_agent.py
+        shell: bash
+        env:
+          AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT_SWEDEN }}
+          AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY_SWEDEN }}
+        id: azure_openai_sanity_check
+
+      - name: Azure OpenAI Supervised Fine-tuning
+        run: |
+          source .venv/bin/activate
+          cd examples/azure
+          python train_capital_agent.py --n-iterations 2 --cleanup
+        shell: bash
+        env:
+          AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT_SWEDEN }}
+          AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY_SWEDEN }}
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          AZURE_OPENAI_API_VERSION: 2025-04-01-preview
+          AZURE_RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
+          AZURE_RESOURCE_NAME: ${{ secrets.AZURE_RESOURCE_NAME }}
+        id: azure_openai_finetune

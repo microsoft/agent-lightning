@@ -11,8 +11,22 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import random
+import threading
 import time
-from typing import TYPE_CHECKING, Any, List, Literal, Optional, Sequence, TypeVar, cast
+from contextlib import suppress
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Awaitable,
+    Callable,
+    List,
+    Literal,
+    Optional,
+    Sequence,
+    TypeVar,
+    cast,
+)
 
 from opentelemetry.sdk.trace import ReadableSpan
 
@@ -30,6 +44,7 @@ from agentlightning.types import (
     RolloutRawResult,
     Span,
 )
+from agentlightning.utils.system_snapshot import system_snapshot
 
 if TYPE_CHECKING:
     from agentlightning.execution.events import ExecutionEvent
@@ -52,7 +67,15 @@ class LitAgentRunner(Runner[T_task]):
         worker_id: Identifier for the active worker process, if any.
     """
 
-    def __init__(self, tracer: Tracer, max_rollouts: Optional[int] = None, poll_interval: float = 5.0) -> None:
+    def __init__(
+        self,
+        tracer: Tracer,
+        max_rollouts: Optional[int] = None,
+        poll_interval: float = 5.0,
+        heartbeat_interval: float = 10.0,
+        interval_jitter: float = 0.1,
+        heartbeat_launch_mode: Literal["asyncio", "thread"] = "asyncio",
+    ) -> None:
         """Initialize the agent runner.
 
         Args:
@@ -60,11 +83,21 @@ class LitAgentRunner(Runner[T_task]):
             max_rollouts: Optional cap on iterations processed by
                 [`iter`][agentlightning.LitAgentRunner.iter].
             poll_interval: Seconds to wait between store polls when no work is available.
+            heartbeat_interval: Seconds to wait between sending heartbeats to the store.
+            interval_jitter: Jitter factor for the poll interval. The actual interval will be between
+                poll_interval - interval_jitter and poll_interval + interval_jitter.
+                This is to avoid the overload caused by the synchronization of the runners.
+            heartbeat_launch_mode: Launch mode for the heartbeat loop. Can be "asyncio" or "thread".
+                "asyncio" is the default and recommended mode. Use "thread" if you are experiencing blocking coroutines.
         """
         super().__init__()
         self._tracer = tracer
         self._max_rollouts = max_rollouts
         self._poll_interval = poll_interval
+        self._heartbeat_interval = heartbeat_interval
+        self._interval_jitter = interval_jitter
+        self._heartbeat_launch_mode = heartbeat_launch_mode
+        self._random_state = random.Random()
 
         # Set later
         self._agent: Optional[LitAgent[T_task]] = None
@@ -105,7 +138,7 @@ class LitAgentRunner(Runner[T_task]):
         self._store = store
         self.worker_id = worker_id
 
-        self._tracer.init_worker(worker_id)
+        self._tracer.init_worker(worker_id, store)
 
     def teardown(self, *args: Any, **kwargs: Any) -> None:
         """Teardown the runner and clean up all resources.
@@ -253,8 +286,9 @@ class LitAgentRunner(Runner[T_task]):
         if isinstance(raw_result, float):
             # Preserve the existing spans before another span is emitted
             trace_spans = list(self._tracer.get_last_trace())
-            # This will emit another span to the tracer
-            reward_span = emit_reward(raw_result)
+            # This will NOT emit another span to the tracer
+            reward_span = emit_reward(raw_result, propagate=False)
+            # We add it to the store manually
             await store.add_otel_span(rollout.rollout_id, rollout.attempt.attempt_id, reward_span)
             trace_spans.append(reward_span)
 
@@ -304,6 +338,75 @@ class LitAgentRunner(Runner[T_task]):
 
         return trace_spans
 
+    async def _emit_heartbeat(self, store: LightningStore) -> None:
+        """Send a heartbeat tick to the store."""
+        worker_id = self.get_worker_id()
+
+        try:
+            await store.update_worker(worker_id, system_snapshot())
+        except asyncio.CancelledError:
+            # bypass the exception
+            raise
+        except Exception:
+            logger.exception("%s Unable to update worker heartbeat.", self._log_prefix())
+
+    def _start_heartbeat_loop(self, store: LightningStore) -> Optional[Callable[[], Awaitable[None]]]:
+        """Start a background heartbeat loop and return an async stopper."""
+
+        if self._heartbeat_interval <= 0:
+            return None
+
+        if self.worker_id is None:
+            logger.warning("%s Cannot start heartbeat loop without worker_id.", self._log_prefix())
+            return None
+
+        if self._heartbeat_launch_mode == "asyncio":
+            stop_event = asyncio.Event()
+
+            async def heartbeat_loop() -> None:
+                while not stop_event.is_set():
+                    await self._emit_heartbeat(store)
+                    with suppress(asyncio.TimeoutError):
+                        interval = self._heartbeat_interval + self._random_state.uniform(
+                            -self._interval_jitter, self._interval_jitter
+                        )
+                        interval = max(interval, 0.01)
+                        await asyncio.wait_for(stop_event.wait(), timeout=interval)
+
+            task = asyncio.create_task(heartbeat_loop(), name=f"{self.get_worker_id()}-heartbeat")
+
+            async def stop() -> None:
+                stop_event.set()
+                with suppress(asyncio.CancelledError):
+                    await task
+
+            return stop
+
+        if self._heartbeat_launch_mode == "thread":
+            stop_evt = threading.Event()
+
+            def thread_worker() -> None:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                while not stop_evt.is_set():
+                    loop.run_until_complete(self._emit_heartbeat(store))
+                    interval = self._heartbeat_interval + self._random_state.uniform(
+                        -self._interval_jitter, self._interval_jitter
+                    )
+                    interval = max(interval, 0.01)
+                    stop_evt.wait(interval)
+
+            thread = threading.Thread(target=thread_worker, name=f"{self.get_worker_id()}-heartbeat", daemon=True)
+            thread.start()
+
+            async def stop() -> None:
+                stop_evt.set()
+                await asyncio.to_thread(thread.join)
+
+            return stop
+
+        raise ValueError(f"Unsupported heartbeat launch mode: {self._heartbeat_launch_mode}")
+
     async def _sleep_until_next_poll(self, event: Optional[ExecutionEvent] = None) -> None:
         """Sleep until the next poll interval, with optional event-based interruption.
 
@@ -314,11 +417,13 @@ class LitAgentRunner(Runner[T_task]):
             event: Optional [`ExecutionEvent`][agentlightning.ExecutionEvent] object that can be used to interrupt the sleep.
                 If set during the sleep period, the method returns immediately.
         """
+        interval = self._poll_interval + self._random_state.uniform(-self._interval_jitter, self._interval_jitter)
+        interval = max(interval, 0.01)
         if event is None:
-            await asyncio.sleep(self._poll_interval)
+            await asyncio.sleep(interval)
             return
         current_time = time.time()
-        next_time = current_time + self._poll_interval
+        next_time = current_time + interval
         while time.time() < next_time:
             await asyncio.sleep(0.1)
             if event.is_set():
@@ -364,7 +469,7 @@ class LitAgentRunner(Runner[T_task]):
 
             start_time = time.time()
             async with self._tracer.trace_context(
-                name=rollout_id, store=store, rollout_id=rollout_id, attempt_id=next_rollout.attempt.attempt_id
+                name=rollout_id, rollout_id=rollout_id, attempt_id=next_rollout.attempt.attempt_id
             ):
                 await self._trigger_hooks(
                     hook_type="on_trace_start", agent=agent, runner=self, tracer=self._tracer, rollout=next_rollout
@@ -450,39 +555,49 @@ class LitAgentRunner(Runner[T_task]):
         logger.info(f"{self._log_prefix()} Started async rollouts (max: {self._max_rollouts or 'unlimited'}).")
         store = self.get_store()
 
-        while not (event is not None and event.is_set()) and (
-            self._max_rollouts is None or num_tasks_processed < self._max_rollouts
-        ):
-            # Retrieve the next rollout
-            next_rollout: Optional[Rollout] = None
-            while not (event is not None and event.is_set()):
-                logger.debug(f"{self._log_prefix()} Try to poll for next rollout.")
-                next_rollout = await store.dequeue_rollout()
+        stop_heartbeat = self._start_heartbeat_loop(store)
+
+        try:
+            while not (event is not None and event.is_set()) and (
+                self._max_rollouts is None or num_tasks_processed < self._max_rollouts
+            ):
+                # Retrieve the next rollout
+                next_rollout: Optional[Rollout] = None
+                while not (event is not None and event.is_set()):
+                    logger.debug(f"{self._log_prefix()} Try to poll for next rollout.")
+                    next_rollout = await store.dequeue_rollout(worker_id=self.get_worker_id())
+                    if next_rollout is None:
+                        logger.debug(
+                            f"{self._log_prefix()} No rollout to poll. Waiting for {self._poll_interval} seconds."
+                        )
+                        await self._sleep_until_next_poll(event)
+                    else:
+                        break
+
                 if next_rollout is None:
-                    logger.debug(f"{self._log_prefix()} No rollout to poll. Waiting for {self._poll_interval} seconds.")
-                    await self._sleep_until_next_poll(event)
-                else:
-                    break
+                    return
 
-            if next_rollout is None:
-                return
+                try:
+                    # Claim the rollout but updating the current worker id
+                    await store.update_attempt(
+                        next_rollout.rollout_id, next_rollout.attempt.attempt_id, worker_id=self.get_worker_id()
+                    )
+                except Exception:
+                    # This exception could happen if the rollout is dequeued and the other end died for some reason
+                    logger.exception(f"{self._log_prefix()} Exception during update_attempt, giving up the rollout.")
+                    continue
 
-            try:
-                # Claim the rollout but updating the current worker id
-                await store.update_attempt(
-                    next_rollout.rollout_id, next_rollout.attempt.attempt_id, worker_id=self.get_worker_id()
-                )
-            except Exception:
-                # This exception could happen if the rollout is dequeued and the other end died for some reason
-                logger.exception(f"{self._log_prefix()} Exception during update_attempt, giving up the rollout.")
-                continue
+                # Execute the step
+                await self._step_impl(next_rollout)
 
-            # Execute the step
-            await self._step_impl(next_rollout)
-
-            num_tasks_processed += 1
-            if num_tasks_processed % 10 == 0 or num_tasks_processed == 1:
-                logger.info(f"{self._log_prefix()} Progress: {num_tasks_processed}/{self._max_rollouts or 'unlimited'}")
+                num_tasks_processed += 1
+                if num_tasks_processed % 10 == 0 or num_tasks_processed == 1:
+                    logger.info(
+                        f"{self._log_prefix()} Progress: {num_tasks_processed}/{self._max_rollouts or 'unlimited'}"
+                    )
+        finally:
+            if stop_heartbeat is not None:
+                await stop_heartbeat()
 
         logger.info(f"{self._log_prefix()} Finished async rollouts. Processed {num_tasks_processed} tasks.")
 
@@ -526,6 +641,12 @@ class LitAgentRunner(Runner[T_task]):
             resources_id = None
 
         attempted_rollout = await self.get_store().start_rollout(input=input, mode=mode, resources_id=resources_id)
+        # Register the attempt as running by the current worker
+        await self.get_store().update_attempt(
+            attempted_rollout.rollout_id,
+            attempted_rollout.attempt.attempt_id,
+            worker_id=self.get_worker_id(),
+        )
         rollout_id = await self._step_impl(attempted_rollout, raise_on_exception=True)
 
         completed_rollout = await store.get_rollout_by_id(rollout_id)

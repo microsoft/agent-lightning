@@ -2,7 +2,7 @@
 
 from aoai_finetune import AzureOpenAIFinetune
 
-from agentlightning import configure_logger
+from agentlightning import setup_logging
 
 finetune_algo = AzureOpenAIFinetune(
     base_deployment_name="gpt-4.1-mini",
@@ -12,7 +12,7 @@ finetune_algo = AzureOpenAIFinetune(
     data_filter_ratio=0.6,
 )
 
-configure_logger()
+setup_logging()
 
 
 def test_deployment():

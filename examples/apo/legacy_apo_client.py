@@ -12,7 +12,7 @@ from typing import Any
 import dotenv
 from openai import OpenAI
 
-from agentlightning import configure_logger
+from agentlightning import setup_logging
 from agentlightning.litagent import LitAgent
 from agentlightning.trainer import Trainer
 
@@ -40,7 +40,7 @@ class SimpleAgent(LitAgent[Any]):
 
 
 if __name__ == "__main__":
-    configure_logger()
+    setup_logging()
     dotenv.load_dotenv()
     agent = SimpleAgent()
     # Use 2 workers to simulate multiple clients

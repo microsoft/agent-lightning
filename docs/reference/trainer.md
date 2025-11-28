@@ -23,3 +23,11 @@
 ## CLI Builder
 
 ::: agentlightning.lightning_cli
+
+## Logging
+
+::: agentlightning.configure_logger
+
+::: agentlightning.setup_module_logging
+
+::: agentlightning.setup_logging

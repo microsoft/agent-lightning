@@ -1,12 +1,13 @@
 [project]
 name = "agentlightning"
-version = "0.2.2"
+version = "0.3.0"
 description = "Agent-lightning is the absolute trainer to light up AI agents."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
   "graphviz",
   "psutil",
+  "gpustat",
   "setproctitle",
   "flask",
   "agentops>=0.4.13",
@@ -22,6 +23,8 @@ dependencies = [
   "openai",
   "rich",
   "portpicker",
+  "gunicorn",
+  "uvicorn_worker",
 ]
 
 [project.optional-dependencies]
@@ -32,7 +35,12 @@ apo = [
 # though it's listed here for completeness.
 verl = [
   "verl>=0.5.0",
-  "vllm>=0.8.4,<0.11.0", # Due to interface change of ExternalZeroMQDistributedExecutor
+  "vllm>=0.8.4", # Due to interface change of ExternalZeroMQDistributedExecutor
+]
+
+# Store-related dependencies.
+mongo = [
+  "pymongo",
 ]
 
 [project.scripts]
@@ -57,6 +65,7 @@ dev = [
   "mkdocs-git-authors-plugin",
   "mkdocs-macros-plugin",
   "mkdocs-autorefs",
+  "prometheus-client",
 ]
 experiment = [
   "random-word",
@@ -89,8 +98,12 @@ torch-stable = [
   # This can work for both CPU and GPU.
   "torch>=2.8.0",
   "torchvision>=0.23.0",
-  "transformers>=4.55.0",
-  "vllm>=0.10.2",
+  # https://github.com/huggingface/transformers/issues/42369
+  "transformers>=4.55.0,!=4.57.2",
+  # vLLM 0.11.1 requires PyTorch 2.9.0, which is incompatible with flash-attn
+  # https://github.com/Dao-AILab/flash-attention/issues/1967
+  # Similar issues with vLLM 0.11.2
+  "vllm>=0.10.2,!=0.11.1,!=0.11.2",
   # LiteLLM can then be upgraded with new vLLM
   "litellm[proxy]>=1.78",
 ]
@@ -158,7 +171,7 @@ autogen = [
 ]
 openai-agents = [
   "openai-agents",
-  "openai<2.7.0",
+  "openai",
   # Compatibility issues with the latest version of OpenAI, temporarily fixed version
   # Issue: https://github.com/openai/openai-agents-python/issues/2038
   "mcp",
@@ -179,7 +192,11 @@ sql = [
   "nltk",
 ]
 crewai = [
-  "crewai[tools]>=1.2.0",
+  # https://github.com/crewAIInc/crewAI/issues/3959
+  "crewai[tools]>=1.2.0,!=1.2.1,!=1.3.0,!=1.4.0,!=1.4.1,!=1.5.0",
+]
+swebench = [
+  "swebench",
 ]
 
 # Summarize into large installable groups.
@@ -190,10 +207,11 @@ agents = [
   {include-group = "sql"},
   {include-group = "anthropic"},
   {include-group = "crewai"},
+  {include-group = "swebench"},
 ]
 
 [tool.uv]
-required-version = ">=0.9.5"
+required-version = ">=0.9.9"
 conflicts = [
   [
     { group = "core-legacy" },
@@ -230,7 +248,7 @@ torch = [
   { index = "pytorch-cu128", group = "torch-cu128" },
   { index = "pytorch-cpu", group = "torch-cpu" },
 ]
-tinker_cookbook = { git = "https://github.com/thinking-machines-lab/tinker-cookbook", rev = "72ba5e6a1f52c0887e2674615e318ce21a39cc2a" }
+tinker_cookbook = { git = "https://github.com/thinking-machines-lab/tinker-cookbook" }
 
 [[tool.uv.index]]
 name = "pypi"
@@ -258,7 +276,15 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["agentlightning"]
-include = ["agentlightning/**/*.yaml", "agentlightning/**/*.yml", "agentlightning/**/*.poml"]
+include = [
+  "agentlightning/**/*.yaml",
+  "agentlightning/**/*.yml",
+  "agentlightning/**/*.poml",
+  "agentlightning/**/*.html",
+  "agentlightning/**/*.js",
+  "agentlightning/**/*.css",
+  "agentlightning/**/*.svg",
+]
 
 [tool.hatch.build.targets.sdist]
 exclude = [
@@ -266,10 +292,18 @@ exclude = [
   "tests/**",
   "docs/**",
   "scripts/**",
+  "dashboard/**",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+  "openai: tests that require OpenAI API",
+  "gpu: tests that require GPU",
+  "agentops: tests that require AgentOps",
+  "llmproxy: tests that require LiteLLM",
+  "mongo: tests that require MongoDB",
+]
 
 [tool.black]
 line-length = 120

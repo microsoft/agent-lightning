@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, AsyncContextManager, Awaitable, Callable, ContextManager, List, Optional
 
 from opentelemetry.sdk.trace import ReadableSpan
@@ -51,6 +52,18 @@ class Tracer(ParallelWorkerBase):
     ```
     """
 
+    _store: Optional[LightningStore] = None
+
+    def init_worker(self, worker_id: int, store: Optional[LightningStore] = None) -> None:
+        """Initialize the tracer for a worker.
+
+        Args:
+            worker_id: The ID of the worker.
+            store: The store to add the spans to. If it's provided, traces will be added to the store when tracing.
+        """
+        super().init_worker(worker_id)
+        self._store = store
+
     def trace_context(
         self,
         name: Optional[str] = None,
@@ -67,11 +80,9 @@ class Tracer(ParallelWorkerBase):
         within the `with` block are collected and made available via
         [`get_last_trace`][agentlightning.Tracer.get_last_trace].
 
-        If a store is provided, the spans will be added to the store when tracing.
-
         Args:
             name: The name for the root span of this trace context.
-            store: The store to add the spans to.
+            store: The store to add the spans to. Deprecated in favor of passing store to init_worker().
             rollout_id: The rollout ID to add the spans to.
             attempt_id: The attempt ID to add the spans to.
         """
@@ -81,7 +92,6 @@ class Tracer(ParallelWorkerBase):
         self,
         name: Optional[str] = None,
         *,
-        store: Optional[LightningStore] = None,
         rollout_id: Optional[str] = None,
         attempt_id: Optional[str] = None,
     ) -> ContextManager[Any]:
@@ -138,3 +148,30 @@ class Tracer(ParallelWorkerBase):
         """
         logger.warning(f"{self.__class__.__name__} does not provide a LangChain callback handler.")
         return None
+
+    @contextmanager
+    def lifespan(self, store: Optional[LightningStore] = None):
+        """A context manager to manage the lifespan of the tracer.
+
+        This can be used to set up and tear down any necessary resources
+        for the tracer, useful for debugging purposes.
+
+        Args:
+            store: The store to add the spans to. If it's provided, traces will be added to the store when tracing.
+        """
+        has_init = False
+        has_init_worker = False
+        try:
+            self.init()
+            has_init = True
+
+            self.init_worker(0, store)
+            has_init_worker = True
+
+            yield
+
+        finally:
+            if has_init_worker:
+                self.teardown_worker(0)
+            if has_init:
+                self.teardown()

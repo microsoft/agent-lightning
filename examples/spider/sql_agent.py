@@ -9,6 +9,7 @@ as well as https://langchain-ai.github.io/langgraph/tutorials/sql-agent/
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import shutil
@@ -29,9 +30,9 @@ from spider_eval.exec_eval import eval_exec_match
 
 import agentlightning as agl
 
-agl.configure_logger()
+agl.setup_logging(apply_to=[__name__])
 
-logger = agl.configure_logger(name=__name__)
+logger = logging.getLogger(__name__)
 
 
 WRITE_QUERY_PROMPT = ChatPromptTemplate(
@@ -256,7 +257,7 @@ class SQLAgent:
 
         return result  # type: ignore
 
-    def truncate_execuion(self, execution: str) -> str:
+    def truncate_execution(self, execution: str) -> str:
         """Truncate the execution result to a reasonable length."""
         if len(execution) > self.execution_truncate:
             return execution[: self.execution_truncate] + "\n... (truncated)"
@@ -306,7 +307,7 @@ class SQLAgent:
                 "dialect": self.db.dialect,
                 "input": state["question"],
                 "query": state["query"],
-                "execution": self.truncate_execuion(state["execution"]),
+                "execution": self.truncate_execution(state["execution"]),
                 "table_info": self.get_table_info(),
             }
         )
@@ -326,7 +327,7 @@ class SQLAgent:
                 "dialect": self.db.dialect,
                 "input": state["question"],
                 "query": state["query"],
-                "execution": self.truncate_execuion(state["execution"]),
+                "execution": self.truncate_execution(state["execution"]),
                 "feedback": state["feedback"],
                 "table_info": self.get_table_info(),
             }

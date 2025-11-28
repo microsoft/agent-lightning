@@ -168,7 +168,7 @@ async def do_sync_training(
         t_start = time.time()
 
         llm_proxy.update_model_list(tinker_llm.as_model_list())
-        llm_proxy.restart()
+        await llm_proxy.restart()
 
         logger.info(f"[Batch {i_batch}] LiteLLM model list: {llm_proxy.model_list}")
         llm_resource = llm_proxy.as_resource()
@@ -221,7 +221,7 @@ async def do_sync_training(
         ml_logger.log_metrics(metrics, step=i_batch)
         logger.info(f"[Batch {i_batch}] Sampling and training completed")
 
-    llm_proxy.stop()
+    await llm_proxy.stop()
 
 
 @scope
@@ -343,6 +343,8 @@ async def main(config: Config) -> None:
         model_list=[],
         store=store,
         num_retries=config.llm_proxy_retry_attempts,
+        # Must use thread mode here because otherwise the Tinker sampling client will hang.
+        launch_mode="thread",
     )
 
     await main_training_loop(config, store, adapter, llm_proxy)

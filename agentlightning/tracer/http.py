@@ -19,6 +19,8 @@ from opentelemetry.trace.span import (
     TraceState,
 )
 
+from agentlightning.store import LightningStore
+
 from .base import Tracer
 
 logger = logging.getLogger(__name__)
@@ -68,14 +70,15 @@ class HttpTracer(Tracer):
         self.subprocess_mode = subprocess_mode
         self.subprocess_timeout = subprocess_timeout
 
-    def init_worker(self, worker_id: int) -> None:
+    def init_worker(self, worker_id: int, store: Optional[LightningStore] = None) -> None:
         """
         Initialize the tracer in a worker process.
 
         Args:
             worker_id: The ID of the worker process.
+            store: The store to add the spans to.
         """
-        super().init_worker(worker_id)
+        super().init_worker(worker_id, store)
         logger.info(f"[Worker {worker_id}] HttpTracer initialized.")
 
     @asynccontextmanager

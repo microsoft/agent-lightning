@@ -14,12 +14,12 @@ import requests
 from openai import OpenAI
 from qa_em import compute_score_em
 
-import agentlightning as agl
+from agentlightning import LLM, LitAgent, NamedResources, Rollout, Trainer, setup_logging, configure_logger
 
-agl.configure_logger()
+setup_logging()
+logger = configure_logger(name=__name__)
 
-logger = agl.configure_logger(name=__name__)
-
+# Copied and adapted from https://github.com/PeterGriffinJin/Search-R1/blob/main/scripts/data_process/nq_search.py
 INSTRUCTION_FORMAT = """Answer the given question. You must conduct reasoning inside <think> and </think> first every time you get new information. After reasoning, if you find you lack some knowledge, you can call a search engine by <search> query </search> and it will return the top searched results between <information> and </information>. You can search as many times as your want. If you find no further external knowledge needed, you can directly provide the answer inside <answer> and </answer>, without detailed illustrations. For example, <answer> Beijing </answer>. Question: """
 
 class Document(TypedDict):
@@ -115,7 +115,7 @@ def call_llm(
     return response.choices[0].message.content or ""
 
 
-class SearchR1Agent(agl.LitAgent[Dict[str, Any]]):
+class SearchR1Agent(LitAgent[Dict[str, Any]]):
 
     def __init__(
         self,
@@ -130,8 +130,8 @@ class SearchR1Agent(agl.LitAgent[Dict[str, Any]]):
     def rollout(
         self,
         task: Dict[str, Any],
-        resources: agl.NamedResources,
-        rollout: agl.Rollout,
+        resources: NamedResources,
+        rollout: Rollout,
     ) -> float | None:
         prompt = INSTRUCTION_FORMAT + task["question"]
         answer_list: List[str] = cast(List[str], task["golden_answers"])
@@ -140,7 +140,7 @@ class SearchR1Agent(agl.LitAgent[Dict[str, Any]]):
         logger.info(f"[Rollout {rollout_id}] Ground Truth: {answer_list}")
 
         start_time = time.time()
-        llm: agl.LLM = cast(agl.LLM, resources["main_llm"])
+        llm: LLM = cast(LLM, resources["main_llm"])
         client = OpenAI(
             base_url=llm.get_base_url(rollout_id, rollout.attempt.attempt_id),  # type: ignore
             api_key=os.environ.get("OPENAI_API_KEY", "token-abc123"),
@@ -211,10 +211,10 @@ def debug_search_r1_agent():
     df = cast(List[Dict[str, Any]], df.to_dict(orient="records"))  # type: ignore
     print("Debug data:", df)
 
-    trainer = agl.Trainer(
+    trainer = Trainer(
         n_workers=1,
         initial_resources={
-            "main_llm": agl.LLM(
+            "main_llm": LLM(
                 endpoint=os.environ["OPENAI_API_BASE"],
                 model="gpt-4.1-nano",
                 sampling_parameters={"temperature": 0.0},

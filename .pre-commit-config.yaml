@@ -24,3 +24,53 @@ repos:
         pass_filenames: false
         always_run: true
         args: ["."]
+
+  - repo: local
+    hooks:
+    - id: prettier
+      name: prettier (dashboard)
+      language: system
+      pass_filenames: false
+      always_run: true
+      entry: >
+        bash -c '
+          cd dashboard || exit 1
+          if [ -d node_modules ]; then
+            echo "✅ node_modules already exists"
+            npx prettier --cache --write "**/*.{ts,tsx,mjs,cjs}"
+          else
+            echo "⚠️ node_modules not found — npx is not reliable. Skipping."
+          fi
+        '
+
+    - id: eslint
+      name: eslint (dashboard)
+      language: system
+      pass_filenames: false
+      always_run: true
+      entry: >
+        bash -c '
+          cd dashboard || exit 1
+          if [ -d node_modules ]; then
+            echo "✅ node_modules already exists"
+            npx eslint --cache --fix .
+          else
+            echo "⚠️ node_modules not found — npx is not reliable. Skipping."
+          fi
+        '
+
+    - id: stylelint
+      name: stylelint (dashboard)
+      language: system
+      pass_filenames: false
+      always_run: true
+      entry: >
+        bash -c '
+          cd dashboard || exit 1
+          if [ -d node_modules ]; then
+            echo "✅ node_modules already exists"
+            npx stylelint --cache --fix "**/*.css"
+          else
+            echo "⚠️ node_modules not found — npx is not reliable. Skipping."
+          fi
+        '

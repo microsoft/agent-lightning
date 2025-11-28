@@ -18,9 +18,11 @@ from agentlightning.types import (
     RolloutStatus,
     Span,
     TaskInput,
+    Worker,
+    WorkerStatus,
 )
 
-from .base import UNSET, LightningStore, Unset
+from .base import UNSET, LightningStore, LightningStoreCapabilities, Unset
 
 
 class LightningStoreThreaded(LightningStore):
@@ -34,6 +36,16 @@ class LightningStoreThreaded(LightningStore):
         super().__init__()  # watchdog relies on the underlying store
         self.store = store
         self._lock = threading.Lock()
+
+    @property
+    def capabilities(self) -> LightningStoreCapabilities:
+        """Return the capabilities of the store."""
+        capabilities = self.store.capabilities
+        return {
+            **capabilities,
+            "async_safe": True,
+            "thread_safe": True,
+        }
 
     async def start_rollout(
         self,
@@ -57,9 +69,9 @@ class LightningStoreThreaded(LightningStore):
         with self._lock:
             return await self.store.enqueue_rollout(input, mode, resources_id, config, metadata)
 
-    async def dequeue_rollout(self) -> Optional[AttemptedRollout]:
+    async def dequeue_rollout(self, worker_id: Optional[str] = None) -> Optional[AttemptedRollout]:
         with self._lock:
-            return await self.store.dequeue_rollout()
+            return await self.store.dequeue_rollout(worker_id=worker_id)
 
     async def start_attempt(self, rollout_id: str) -> AttemptedRollout:
         with self._lock:
@@ -68,15 +80,48 @@ class LightningStoreThreaded(LightningStore):
     async def query_rollouts(
         self,
         *,
+        status_in: Optional[Sequence[RolloutStatus]] = None,
+        rollout_id_in: Optional[Sequence[str]] = None,
+        rollout_id_contains: Optional[str] = None,
+        filter_logic: Literal["and", "or"] = "and",
+        sort_by: Optional[str] = None,
+        sort_order: Literal["asc", "desc"] = "asc",
+        limit: int = -1,
+        offset: int = 0,
         status: Optional[Sequence[RolloutStatus]] = None,
         rollout_ids: Optional[Sequence[str]] = None,
-    ) -> List[Rollout]:
+    ) -> Sequence[Rollout]:
         with self._lock:
-            return await self.store.query_rollouts(status=status, rollout_ids=rollout_ids)
+            return await self.store.query_rollouts(
+                status_in=status_in,
+                rollout_id_in=rollout_id_in,
+                rollout_id_contains=rollout_id_contains,
+                filter_logic=filter_logic,
+                sort_by=sort_by,
+                sort_order=sort_order,
+                limit=limit,
+                offset=offset,
+                status=status,
+                rollout_ids=rollout_ids,
+            )
 
-    async def query_attempts(self, rollout_id: str) -> List[Attempt]:
+    async def query_attempts(
+        self,
+        rollout_id: str,
+        *,
+        sort_by: Optional[str] = "sequence_id",
+        sort_order: Literal["asc", "desc"] = "asc",
+        limit: int = -1,
+        offset: int = 0,
+    ) -> Sequence[Attempt]:
         with self._lock:
-            return await self.store.query_attempts(rollout_id)
+            return await self.store.query_attempts(
+                rollout_id,
+                sort_by=sort_by,
+                sort_order=sort_order,
+                limit=limit,
+                offset=offset,
+            )
 
     async def get_rollout_by_id(self, rollout_id: str) -> Optional[Rollout]:
         with self._lock:
@@ -85,6 +130,26 @@ class LightningStoreThreaded(LightningStore):
     async def get_latest_attempt(self, rollout_id: str) -> Optional[Attempt]:
         with self._lock:
             return await self.store.get_latest_attempt(rollout_id)
+
+    async def query_resources(
+        self,
+        *,
+        resources_id: Optional[str] = None,
+        resources_id_contains: Optional[str] = None,
+        sort_by: Optional[str] = None,
+        sort_order: Literal["asc", "desc"] = "asc",
+        limit: int = -1,
+        offset: int = 0,
+    ) -> Sequence[ResourcesUpdate]:
+        with self._lock:
+            return await self.store.query_resources(
+                resources_id=resources_id,
+                resources_id_contains=resources_id_contains,
+                sort_by=sort_by,
+                sort_order=sort_order,
+                limit=limit,
+                offset=offset,
+            )
 
     async def add_resources(self, resources: NamedResources) -> ResourcesUpdate:
         with self._lock:
@@ -128,9 +193,39 @@ class LightningStoreThreaded(LightningStore):
         self,
         rollout_id: str,
         attempt_id: str | Literal["latest"] | None = None,
-    ) -> List[Span]:
+        *,
+        trace_id: Optional[str] = None,
+        trace_id_contains: Optional[str] = None,
+        span_id: Optional[str] = None,
+        span_id_contains: Optional[str] = None,
+        parent_id: Optional[str] = None,
+        parent_id_contains: Optional[str] = None,
+        name: Optional[str] = None,
+        name_contains: Optional[str] = None,
+        filter_logic: Literal["and", "or"] = "and",
+        limit: int = -1,
+        offset: int = 0,
+        sort_by: Optional[str] = "sequence_id",
+        sort_order: Literal["asc", "desc"] = "asc",
+    ) -> Sequence[Span]:
         with self._lock:
-            return await self.store.query_spans(rollout_id, attempt_id)
+            return await self.store.query_spans(
+                rollout_id,
+                attempt_id,
+                trace_id=trace_id,
+                trace_id_contains=trace_id_contains,
+                span_id=span_id,
+                span_id_contains=span_id_contains,
+                parent_id=parent_id,
+                parent_id_contains=parent_id_contains,
+                name=name,
+                name_contains=name_contains,
+                filter_logic=filter_logic,
+                limit=limit,
+                offset=offset,
+                sort_by=sort_by,
+                sort_order=sort_order,
+            )
 
     async def update_rollout(
         self,
@@ -170,4 +265,40 @@ class LightningStoreThreaded(LightningStore):
                 worker_id=worker_id,
                 last_heartbeat_time=last_heartbeat_time,
                 metadata=metadata,
+            )
+
+    async def query_workers(
+        self,
+        *,
+        status_in: Optional[Sequence[WorkerStatus]] = None,
+        worker_id_contains: Optional[str] = None,
+        filter_logic: Literal["and", "or"] = "and",
+        sort_by: Optional[str] = None,
+        sort_order: Literal["asc", "desc"] = "asc",
+        limit: int = -1,
+        offset: int = 0,
+    ) -> Sequence[Worker]:
+        with self._lock:
+            return await self.store.query_workers(
+                status_in=status_in,
+                worker_id_contains=worker_id_contains,
+                sort_by=sort_by,
+                sort_order=sort_order,
+                limit=limit,
+                offset=offset,
+            )
+
+    async def get_worker_by_id(self, worker_id: str) -> Optional[Worker]:
+        with self._lock:
+            return await self.store.get_worker_by_id(worker_id)
+
+    async def update_worker(
+        self,
+        worker_id: str,
+        heartbeat_stats: Dict[str, Any] | Unset = UNSET,
+    ) -> Worker:
+        with self._lock:
+            return await self.store.update_worker(
+                worker_id=worker_id,
+                heartbeat_stats=heartbeat_stats,
             )

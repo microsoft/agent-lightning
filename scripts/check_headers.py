@@ -1,6 +1,6 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-"""Utility script to ensure Python files include the required copyright header."""
+"""Ensure tracked source files include the required copyright header."""
 
 from __future__ import annotations
 
@@ -8,12 +8,34 @@ import subprocess
 import sys
 from pathlib import Path
 
-REQUIRED_HEADER = "# Copyright (c) Microsoft. All rights reserved."
+HEADER_TEXT = "Copyright (c) Microsoft. All rights reserved."
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
+COMMENT_PREFIX_BY_SUFFIX: dict[str, str] = {
+    ".py": "#",
+    ".pyi": "#",
+    ".pyw": "#",
+    ".js": "//",
+    ".jsx": "//",
+    ".ts": "//",
+    ".tsx": "//",
+    ".mjs": "//",
+    ".mts": "//",
+    ".cjs": "//",
+    ".cts": "//",
+}
+REQUIRED_HEADER_BY_SUFFIX = {
+    suffix: f"{prefix} {HEADER_TEXT}" if not prefix.endswith(" ") else f"{prefix}{HEADER_TEXT}"
+    for suffix, prefix in COMMENT_PREFIX_BY_SUFFIX.items()
+}
 
-def iter_python_files() -> list[Path]:
-    """Return a list of tracked Python files respecting .gitignore rules."""
+
+def iter_source_files() -> list[Path]:
+    """Return tracked source files matching supported extensions."""
+    if not REQUIRED_HEADER_BY_SUFFIX:
+        return []
+
+    pathspecs = [f"*{suffix}" for suffix in sorted(REQUIRED_HEADER_BY_SUFFIX)]
     result = subprocess.run(
         [
             "git",
@@ -21,7 +43,8 @@ def iter_python_files() -> list[Path]:
             "--cached",
             "--others",
             "--exclude-standard",
-            "*.py",
+            "--",
+            *pathspecs,
         ],
         capture_output=True,
         text=True,
@@ -35,7 +58,14 @@ def main() -> int:
     missing_header: list[str] = []
     missing_blank_line: list[str] = []
 
-    for file_path in iter_python_files():
+    for file_path in iter_source_files():
+        expected_header = REQUIRED_HEADER_BY_SUFFIX.get(file_path.suffix.lower())
+        if expected_header is None:
+            continue
+
+        if not file_path.exists():
+            continue
+
         try:
             with file_path.open("r", encoding="utf-8") as file:
                 first_line = file.readline().rstrip("\r\n")
@@ -44,7 +74,7 @@ def main() -> int:
             print(f"Failed to read {file_path}: {exc}", file=sys.stderr)
             return 1
 
-        if first_line != REQUIRED_HEADER:
+        if first_line != expected_header:
             missing_header.append(str(file_path.relative_to(REPO_ROOT)))
             continue
 
@@ -53,16 +83,14 @@ def main() -> int:
             missing_blank_line.append(str(file_path.relative_to(REPO_ROOT)))
 
     if missing_header:
-        print("The following Python files are missing the required copyright header:")
+        print("The following files are missing the required copyright header:")
         for path in missing_header:
             print(f" - {path}")
-        print(
-            "Run the appropriate script or add the header manually:",
-            f"\n{REQUIRED_HEADER}",
-        )
+        header_examples = "\n".join(sorted(set(REQUIRED_HEADER_BY_SUFFIX.values())))
+        print(f"Run the appropriate script or add the header manually:\n{header_examples}")
 
     if missing_blank_line:
-        print("The following Python files are missing a blank line after the copyright header:")
+        print("The following files are missing a blank line after the copyright header:")
         for path in missing_blank_line:
             print(f" - {path}")
         print("Ensure there is an empty line separating the header from the rest of the file.")

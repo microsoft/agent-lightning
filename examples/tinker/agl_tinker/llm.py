@@ -27,7 +27,8 @@ from tinker_cookbook.renderers import Message as TinkerMessage
 from tinker_cookbook.renderers import Renderer
 from tinker_cookbook.renderers import ToolCall as TinkerToolCall
 from tinker_cookbook.renderers import get_renderer
-from transformers import AutoTokenizer, PreTrainedTokenizer
+from tinker_cookbook.tokenizer_utils import get_tokenizer
+from transformers import PreTrainedTokenizer
 
 from agentlightning.llm_proxy import LLMProxy, ModelConfig
 from agentlightning.store import LightningStore
@@ -186,6 +187,13 @@ class TinkerLLM(CustomLLM):
                 if not self._validate_role(role):
                     assert False, "This should never happen"
                 content = parsed_response["content"]
+                # NOTE(yuge): I thought about adding this to make it more robust to empty responses,
+                # but later I found it's a configuration error in my renderer. So I think it's better
+                # to just log a warning and go with the default path.
+                # if not content:
+                #     raise ValueError("Parsed content is empty. Original response: " + str(response))
+                if not content:
+                    logger.warning("Parsed content is empty. Original response: " + str(response))
                 tool_calls = parsed_response.get("tool_calls", None)
                 if tool_calls:
                     tool_calls = [self._parse_tool_call(tool_call) for tool_call in tool_calls]
@@ -271,7 +279,7 @@ def create_llm_proxy(
     renderer_name: str,
     port: int = 1899,
     store: Optional[LightningStore] = None,
-    _add_return_token_ids: bool = True,
+    add_return_token_ids: bool = True,
 ) -> LLMProxy:
     """Create an LLMProxy configured for a Tinker-based model.
 
@@ -284,13 +292,15 @@ def create_llm_proxy(
         renderer_name: Renderer type for prompt formatting (e.g., "qwen3", "qwen3_instruct").
         port: Port to expose the LiteLLM proxy. Defaults to 1899.
         store: Optional Lightning store for tracking usage. Defaults to None.
+        add_return_token_ids: Whether to add return token ids to the response. Defaults to True.
 
     Returns:
         Configured LLMProxy instance ready to serve the model.
     """
     service_client = tinker.ServiceClient()
     sampling_client = service_client.create_sampling_client(base_model=model_name)
-    tokenizer = cast(PreTrainedTokenizer, AutoTokenizer.from_pretrained(model_name))  # type: ignore
+
+    tokenizer = get_tokenizer(model_name)
     tinker_llm = TinkerLLM(
         model_name=model_name,
         sampling_client=sampling_client,
@@ -303,5 +313,15 @@ def create_llm_proxy(
         store=store,
         model_list=tinker_llm.as_model_list(),
         num_retries=2,
-        _add_return_token_ids=_add_return_token_ids,
+        # Must use thread mode here because otherwise the Tinker sampling client will hang.
+        launch_mode="thread",
+        # If not adding return token ids, we need to add the opentelemetry callback.
+        # Otherwise, we set it to default.
+        callbacks=["opentelemetry"] if not add_return_token_ids else None,
+        # Lengthened timeout
+        litellm_config={
+            "router_settings": {
+                "timeout": 300,
+            }
+        },
     )

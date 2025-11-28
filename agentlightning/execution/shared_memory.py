@@ -7,10 +7,11 @@ from contextlib import suppress
 from queue import SimpleQueue
 from typing import Any, Awaitable, Callable, List, Literal, Optional, Tuple
 
+from agentlightning.env_var import LightningEnvVar, resolve_bool_env_var
 from agentlightning.store.base import LightningStore
 from agentlightning.store.threading import LightningStoreThreaded
 
-from .base import AlgorithmBundle, ExecutionStrategy, RunnerBundle, resolve_managed_store_flag
+from .base import AlgorithmBundle, ExecutionStrategy, RunnerBundle
 from .events import ExecutionEvent, ThreadingEvent
 
 logger = logging.getLogger(__name__)
@@ -62,7 +63,9 @@ class SharedMemoryExecutionStrategy(ExecutionStrategy):
         self.join_timeout = join_timeout
         self.graceful_delay = graceful_delay
         self.poll_interval = poll_interval
-        self.managed_store = resolve_managed_store_flag(managed_store)
+        self.managed_store = resolve_bool_env_var(
+            LightningEnvVar.AGL_MANAGED_STORE, override=managed_store, fallback=True
+        )
 
     async def _run_until_completed_or_canceled(self, coro: Awaitable[Any], stop_evt: ExecutionEvent) -> Any:
         """Run `coro` until it finishes or a cooperative stop is requested.

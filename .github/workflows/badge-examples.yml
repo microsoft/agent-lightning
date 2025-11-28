@@ -7,6 +7,8 @@ on:
       - Examples - Spider
       - Examples - APO
       - Examples - Unsloth
+      - Examples - Tinker
+      - Examples - Azure
     types: [completed]
 
   workflow_dispatch:
@@ -31,5 +33,7 @@ jobs:
               { workflow: 'examples-spider.yml', label: 'examples-spider.stable', variants: ['stable'] },
               { workflow: 'examples-apo.yml', label: 'examples-apo.stable', variants: ['stable'] },
               { workflow: 'examples-unsloth.yml', label: 'examples-unsloth.stable', variants: ['stable'] },
+              { workflow: 'examples-tinker.yml', label: 'examples-tinker.stable', variants: ['stable'] },
+              { workflow: 'examples-azure.yml', label: 'examples-azure.stable', variants: ['stable'] },
             ];
             await badgeAggregation({ github, context, core, dependencies });

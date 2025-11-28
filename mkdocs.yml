@@ -49,6 +49,10 @@ markdown_extensions:
   - toc:
       permalink: true
   - attr_list
+  - md_in_html
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
 
 plugins:
   - search
@@ -98,6 +102,7 @@ nav:
     - Train the First Agent: how-to/train-first-agent.md
     - Write the First Algorithm: how-to/write-first-algorithm.md
   - How-To Recipes:
+    - Examples Catalog: how-to/examples-catalog.md
     - SFT with Unsloth: how-to/unsloth-sft.md
     - Train SQL Agent with RL: how-to/train-sql-agent.md
   - Learning More:

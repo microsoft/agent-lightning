@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
-from typing import TYPE_CHECKING, Any, Dict, Generator, Iterable, List, Optional, TypedDict, Union, cast
+from typing import TYPE_CHECKING, Any, Dict, Generator, Iterable, List, Optional, Sequence, TypedDict, Union, cast
 
 from pydantic import TypeAdapter
 
@@ -208,7 +208,7 @@ class TraceToMessages(TraceAdapter[List[OpenAIMessages]]):
         children of the associated completion span.
     """
 
-    def get_tool_calls(self, completion: Span, all_spans: List[Span], /) -> Iterable[Dict[str, Any]]:
+    def get_tool_calls(self, completion: Span, all_spans: Sequence[Span], /) -> Iterable[Dict[str, Any]]:
         """Yield tool call payloads for a completion span.
 
         Args:
@@ -231,7 +231,7 @@ class TraceToMessages(TraceAdapter[List[OpenAIMessages]]):
             if tool_call:
                 yield tool_call
 
-    def adapt(self, source: List[Span], /) -> List[OpenAIMessages]:
+    def adapt(self, source: Sequence[Span], /) -> List[OpenAIMessages]:
         """Transform trace spans into OpenAI chat payloads.
 
         Args:
