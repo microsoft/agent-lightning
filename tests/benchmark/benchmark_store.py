@@ -302,7 +302,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
             n_runners=args.n_runners,
             strategy={
                 "type": "cs",
-                "managed_store": True,
+                "managed_store": False,
             },
         )
         trainer.fit(make_agent(max_rounds=args.max_rounds, sleep_seconds=args.sleep_seconds))
