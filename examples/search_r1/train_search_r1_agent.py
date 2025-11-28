@@ -43,7 +43,7 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
             },
         },
         "actor": {
-            "ppo_mini_batch_size": 128,
+            "ppo_mini_batch_size": 256,
             "ppo_micro_batch_size_per_gpu": 4,
             "optim": {"lr": 1e-6, "lr_warmup_steps_ratio": 0.95},
             "use_kl_loss": True,
@@ -62,7 +62,7 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
             "fsdp_config": {"param_offload": True},
         },
         "model": {
-            "path": "/home/aiscuser/.cache/huggingface/hub/models--meta-llama--Llama-3.2-3B/snapshots/13afe5124825b4f3751f836b40dafda64c1ed062",
+            "path": "meta-llama/Llama-3.2-3B-Instruct",
             "use_remove_padding": True,
             "enable_gradient_checkpointing": True,
         },
@@ -72,14 +72,14 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
         "val_before_train": True,
         "critic_warmup": 0,
         "logger": ["console", "wandb"],
-        "project_name": "AgentLightning",
-        "experiment_name": "searchr1",
+        "project_name": "AgentLightning-SearchR1",
+        "experiment_name": "searchr1_minibatch256_runner32",
         "nnodes": 1,
         "test_freq": 10,
         "save_freq":10,
         "total_epochs": 15,
         "total_training_steps": 300,
-        "default_local_dir": "/mnt/teamdrive/search_r1/searchr1_checkpoints/"
+        "default_local_dir": "/mnt/teamdrive/search_r1/searchr1_checkpoints/searchr1_minibatch256_runner32/"
     },
 }
 
