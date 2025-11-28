@@ -61,6 +61,34 @@ def test_paginated_result_behaves_like_sequence() -> None:
     assert repr(result2) == "<PaginatedResult (1: of 5) ['a', ...]>"
 
 
+@pytest.mark.asyncio
+async def test_statistics_updates_counts(store_fixture: LightningStore, mock_readable_span: Mock) -> None:
+    """Statistics should reflect entity counts across the store."""
+    initial = await store_fixture.statistics()
+
+    rollout = await store_fixture.start_rollout(input={"origin": "stats"})
+    await store_fixture.add_otel_span(rollout.rollout_id, rollout.attempt.attempt_id, mock_readable_span)
+    await store_fixture.add_resources(
+        {
+            "stat_llm": LLM(
+                resource_type="llm",
+                endpoint="http://localhost:8000/v1",
+                model="stats-model",
+            )
+        }
+    )
+    await store_fixture.update_worker("stats-worker", heartbeat_stats={"cpu": 0.5})
+
+    updated = await store_fixture.statistics()
+    assert updated["name"] == store_fixture.__class__.__name__  # type: ignore
+    assert updated["total_rollouts"] == initial.get("total_rollouts", 0) + 1  # type: ignore
+    assert updated["total_attempts"] == initial.get("total_attempts", 0) + 1  # type: ignore
+    assert updated["total_spans"] == initial.get("total_spans", 0) + 1  # type: ignore
+    assert updated["total_resources"] == initial.get("total_resources", 0) + 1  # type: ignore
+    assert updated["total_workers"] == initial.get("total_workers", 0) + 1  # type: ignore
+    assert updated["uptime"] > initial.get("uptime", 0.0)  # type: ignore
+
+
 # Core CRUD Operations Tests
 
 

@@ -24,6 +24,7 @@ from typing import (
     Type,
     TypeVar,
     Union,
+    cast,
 )
 
 import aiohttp
@@ -60,7 +61,7 @@ from agentlightning.types import (
 from agentlightning.utils.otlp import handle_otlp_export, spans_from_proto
 from agentlightning.utils.server_launcher import LaunchMode, PythonServerLauncher, PythonServerLauncherArgs
 
-from .base import UNSET, LightningStore, LightningStoreCapabilities, Unset
+from .base import UNSET, LightningStore, LightningStoreCapabilities, LightningStoreStatistics, Unset
 
 server_logger = logging.getLogger("agentlightning.store.server")
 client_logger = logging.getLogger("agentlightning.store.client")
@@ -638,6 +639,10 @@ class LightningStoreServer(LightningStore):
                 heartbeat_stats=_get_mandatory_field_or_unset(request, "heartbeat_stats"),
             )
 
+        @api.get(API_AGL_PREFIX + "/statistics", response_model=LightningStoreStatistics)
+        async def get_statistics():  # pyright: ignore[reportUnusedFunction]
+            return await self.statistics()
+
         @api.get(API_AGL_PREFIX + "/rollouts/{rollout_id}/attempts", response_model=PaginatedResult[Attempt])
         async def query_attempts(  # pyright: ignore[reportUnusedFunction]
             rollout_id: str, params: QueryAttemptsRequest = Depends()
@@ -936,6 +941,9 @@ class LightningStoreServer(LightningStore):
         if self._client is None:
             self._client = LightningStoreClient(self.endpoint)
         return await getattr(self._client, method_name)(*args, **kwargs)
+
+    async def statistics(self) -> LightningStoreStatistics:
+        return await self._call_store_method("statistics")
 
     async def start_rollout(
         self,
@@ -1261,6 +1269,10 @@ class LightningStoreClient(LightningStore):
     def otlp_traces_endpoint(self) -> str:
         """Return the OTLP/HTTP traces endpoint of the store."""
         return f"{self.server_address_root}/v1/traces"
+
+    async def statistics(self) -> LightningStoreStatistics:
+        payload = await self._request_json("get", "/statistics")
+        return cast(LightningStoreStatistics, payload)
 
     def __getstate__(self):
         """

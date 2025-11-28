@@ -28,7 +28,7 @@ from pydantic import BaseModel
 
 from agentlightning.types import AttemptedRollout, PaginatedResult, Rollout, Span
 
-from .base import UNSET, LightningStoreCapabilities, Unset, is_finished, is_running
+from .base import UNSET, LightningStoreCapabilities, LightningStoreStatistics, Unset, is_finished, is_running
 from .collection import InMemoryLightningCollections
 from .collection_based import CollectionBasedLightningStore, tracked
 
@@ -139,6 +139,16 @@ class InMemoryLightningStore(CollectionBasedLightningStore[InMemoryLightningColl
             zero_copy=False,
             otlp_traces=False,
         )
+
+    async def statistics(self) -> LightningStoreStatistics:
+        """Return the statistics of the store."""
+        return {
+            **(await super().statistics()),
+            "total_span_bytes": self._total_span_bytes,
+            "eviction_threshold_bytes": self._eviction_threshold_bytes,
+            "safe_threshold_bytes": self._safe_threshold_bytes,
+            "memory_capacity_bytes": self._memory_capacity_bytes,
+        }
 
     @tracked("wait_for_rollout")
     async def wait_for_rollout(self, rollout_id: str, timeout: Optional[float] = None) -> Optional[Rollout]:

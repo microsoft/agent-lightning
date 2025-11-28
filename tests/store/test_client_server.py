@@ -142,6 +142,24 @@ async def test_server_accepts_custom_launcher_args(store_fixture: LightningStore
 
 
 @pytest.mark.asyncio
+async def test_server_client_statistics_match(server_client: Tuple[LightningStoreServer, LightningStoreClient]) -> None:
+    """Server and client should report identical statistics."""
+    server, client = server_client
+    await client.start_rollout(input={"source": "statistics"})
+
+    server_stats = await server.statistics()
+    client_stats = await client.statistics()
+
+    assert {k: v for k, v in server_stats.items() if k != "uptime"} == {
+        k: v for k, v in client_stats.items() if k != "uptime"
+    }
+    assert server_stats["uptime"] < client_stats["uptime"]  # type: ignore
+    expected_name = server.store.__class__.__name__ if server.store is not None else server_stats["name"]  # type: ignore
+    assert server_stats["name"] == expected_name  # type: ignore
+    assert server_stats["total_rollouts"] >= 1  # type: ignore
+
+
+@pytest.mark.asyncio
 async def test_add_resources_via_server(server_client: Tuple[LightningStoreServer, LightningStoreClient]) -> None:
     """Test that add_resources works correctly via server."""
     server, _ = server_client
@@ -394,7 +412,7 @@ async def test_client_server_end_to_end(
 
     client_span = _make_span(dequeued_client.rollout_id, dequeued_client.attempt.attempt_id, 101, "client-span")
     stored_span = await client.add_span(client_span)
-    assert stored_span.name == "client-span"
+    assert stored_span is not None and stored_span.name == "client-span"
     assert await client.get_next_span_sequence_id(dequeued_client.rollout_id, dequeued_client.attempt.attempt_id) == 102
 
     with patch("agentlightning.store.client_server.Span.from_opentelemetry", autospec=True) as mocked:
@@ -802,7 +820,7 @@ async def test_concurrent_add_otel_span_sequence_ids_unique(
         spans = await asyncio.gather(
             *[client.add_otel_span(rollout_id, attempt_id, mock_readable_span) for _ in range(20)]
         )
-    sequence_ids = [span.sequence_id for span in spans]
+    sequence_ids = [span.sequence_id for span in spans]  # type: ignore
     assert len(set(sequence_ids)) == 20
     assert set(sequence_ids) == set(range(1, 21))
 

@@ -365,3 +365,28 @@ def test_threaded_store_serializes_add_resources_calls() -> None:
     assert len(updates) == num_adds
     resource_ids = {update.resources_id for update in updates}
     assert len(resource_ids) == num_adds  # All IDs should be unique
+
+
+@pytest.mark.asyncio
+async def test_threaded_store_statistics_match_underlying(inmemory_store: InMemoryLightningStore) -> None:
+    """Threaded store should proxy statistics from wrapped store."""
+    rollout = await inmemory_store.start_rollout(input={"source": "threaded-stats"})
+    await inmemory_store.add_span(make_span(rollout.rollout_id, rollout.attempt.attempt_id))
+    await inmemory_store.add_resources(
+        {
+            "threaded_llm": LLM(
+                resource_type="llm",
+                endpoint="http://localhost:9000/v1",
+                model="threaded-model",
+            )
+        }
+    )
+    await inmemory_store.update_worker("threaded-worker", heartbeat_stats={"cpu": 0.1})
+
+    threaded_store = LightningStoreThreaded(inmemory_store)
+    threaded_stats = await threaded_store.statistics()
+    inmemory_stats = await inmemory_store.statistics()
+    assert {k: v for k, v in threaded_stats.items() if k != "uptime"} == {
+        k: v for k, v in inmemory_stats.items() if k != "uptime"
+    }
+    assert threaded_stats["uptime"] < inmemory_stats["uptime"]  # type: ignore

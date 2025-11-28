@@ -49,7 +49,15 @@ from agentlightning.types import (
     WorkerStatus,
 )
 
-from .base import UNSET, LightningStore, LightningStoreCapabilities, Unset, is_finished, is_queuing
+from .base import (
+    UNSET,
+    LightningStore,
+    LightningStoreCapabilities,
+    LightningStoreStatistics,
+    Unset,
+    is_finished,
+    is_queuing,
+)
 from .collection import FilterOptions, LightningCollections
 from .utils import healthcheck, propagate_status
 
@@ -187,6 +195,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         # rollouts and spans' storage
         self.collections = collections
         self._prometheus = prometheus
+        self._launch_time = time.time()
 
         if prometheus:
             from prometheus_client import Counter, Histogram
@@ -221,6 +230,19 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
                 "Total MongoDB operations",
                 ["method", "error_type"],
             )
+
+    async def statistics(self) -> LightningStoreStatistics:
+        """Return the statistics of the store."""
+        current_time = time.time()
+        return {
+            "name": self.__class__.__name__,
+            "total_rollouts": await self.collections.rollouts.size(),
+            "total_attempts": await self.collections.attempts.size(),
+            "total_spans": await self.collections.spans.size(),
+            "total_resources": await self.collections.resources.size(),
+            "total_workers": await self.collections.workers.size(),
+            "uptime": current_time - self._launch_time,
+        }
 
     @tracked("_get_latest_resources_id")
     async def _get_latest_resources_id(self, collections: T_collections) -> Optional[str]:

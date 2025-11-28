@@ -22,7 +22,7 @@ from agentlightning.types import (
     WorkerStatus,
 )
 
-from .base import UNSET, LightningStore, LightningStoreCapabilities, Unset
+from .base import UNSET, LightningStore, LightningStoreCapabilities, LightningStoreStatistics, Unset
 
 
 class LightningStoreThreaded(LightningStore):
@@ -46,6 +46,11 @@ class LightningStoreThreaded(LightningStore):
             "async_safe": True,
             "thread_safe": True,
         }
+
+    async def statistics(self) -> LightningStoreStatistics:
+        """Return the statistics of the store."""
+        with self._lock:
+            return await self.store.statistics()
 
     async def start_rollout(
         self,

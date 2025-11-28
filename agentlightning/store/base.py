@@ -70,6 +70,35 @@ class LightningStoreCapabilities(TypedDict, total=False):
     """Whether the store supports OTLP/HTTP traces."""
 
 
+class LightningStoreStatistics(TypedDict, total=False):
+    """Statistics of a LightningStore implementation."""
+
+    name: str
+    """Name of the store implementation."""
+    total_rollouts: int
+    """Total number of rollouts in the store."""
+    total_attempts: int
+    """Total number of attempts in the store."""
+    total_spans: int
+    """Total number of spans in the store."""
+    total_resources: int
+    """Total number of resources in the store."""
+    total_workers: int
+    """Total number of workers in the store."""
+    uptime: float
+    """Uptime of since the store has been started."""
+
+    # Memory-related statistics
+    total_span_bytes: int
+    """Total number of bytes of spans in the store."""
+    eviction_threshold_bytes: int
+    """Eviction threshold for spans in bytes."""
+    safe_threshold_bytes: int
+    """Safe threshold for spans in bytes."""
+    memory_capacity_bytes: int
+    """Memory capacity of the store in bytes."""
+
+
 class LightningStore:
     """Contract for the persistent control-plane that coordinates training rollouts.
 
@@ -101,6 +130,12 @@ class LightningStore:
             zero_copy=False,
             otlp_traces=False,
         )
+
+    async def statistics(self) -> LightningStoreStatistics:
+        """Return the statistics of the store."""
+        return {
+            "name": self.__class__.__name__,
+        }
 
     def otlp_traces_endpoint(self) -> str:
         """Return the OTLP/HTTP traces endpoint of the store.
