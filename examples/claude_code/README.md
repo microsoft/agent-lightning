@@ -1,15 +1,22 @@
-# Training ANY LLM to Claude Code
+# Training Claude Code with Agent-lightning
 
-This example wraps Claude Code as the agent to:
+This example demonstrates how to train a Claude Code agent with Agent-lightning. **The example is still under development.**
+
+It wraps Claude Code as the agent to:
+
 1. collect traces from agent execution on coding tasks;
 2. train a hosted LLM with the traces ***🔨 Under development***
 
 ## Requirements
-1. install [agentlightning](https://microsoft.github.io/agent-lightning/stable/tutorials/installation/)
-2. `(uv) pip install swebench` for evaluation
+
+1. Install agentlightning following [installation instructions](https://microsoft.github.io/agent-lightning/stable/tutorials/installation/);
+2. `(uv) pip install swebench` for evaluation.
 
 ## Dataset
-We provide a small dataset `swe_debug.jsonl` which is a subset of [SWE-bench](https://huggingface.co/datasets/SWE-bench/SWE-bench) for sanity check.
+
+We provide a small dataset `swebench_samples.jsonl` which is a subset of [SWE-bench](https://huggingface.co/datasets/SWE-bench/SWE-bench) for sanity check.
+
+The instruction to prepare the full dataset is still underway.
 
 ## Included Files
 
@@ -25,12 +32,16 @@ We provide a small dataset `swe_debug.jsonl` which is a subset of [SWE-bench](ht
 | `swebench_utils/`               | Utility module with helper functions for SWE-bench dataset containerized exeuction and evaluation |
 
 ## Trace collection
+
 We support running Claude Code via two ways:
-- Hosted LLM servers, supporting versatile customizations
-- Official Claude Code
+
+- Hosted LLM servers (i.e., vLLM), useful for fine-tuning the LLM;
+- Official Claude Code (i.e., via Anthropic API), useful for prompt tuning.
 
 ### From Hosted LLM server
+
 1. Prepare an OpenAI-compatible server:
+
 ```bash
 vllm serve Qwen/Qwen3-Coder-30B-A3B-Instruct \
     --max-model-len 131072 \
@@ -39,10 +50,9 @@ vllm serve Qwen/Qwen3-Coder-30B-A3B-Instruct \
 ```
 
 2. Sanity check:
-```bash
-cd examples/cc
 
-# Suppose the vllm server is running at localhost
+```bash
+# Suppose the vllm server is running at localhost:8000
 python cc_agent \
     --model_name_or_path Qwen/Qwen3-Coder-30B-A3B-Instruct \
     --server_address http://localhost:8000/v1 \
@@ -50,6 +60,7 @@ python cc_agent \
     --max_step 32 \
     --output_dir data_debug
 ```
+
 The above commands will generate a `data_debug` dir, which contains two targets: (1) a Huggingface Dataset named `dataset-<instance_id>` and (2) a trace file named `stream_<instance_id>.jsonl`, where `instance_id` is a unique key of the SWE-bench samples.
 The dataset showcases the versatile customization capability of agent-lightning. In particular, we support extracting **prompt/response ids**, **logprobs** from the vllm server.
 The trace file is the conversation logs for claude code to tackle the SWE-bench instance.

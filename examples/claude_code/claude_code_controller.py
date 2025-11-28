@@ -18,7 +18,7 @@ from typing import Any, Dict, Literal
 
 import dotenv
 from swebench_utils.docker_runtime import Runtime
-from swebench_utils.logger import logger
+from swebench_utils.logging import log_for_evaluation
 
 
 class ClaudeController:
@@ -52,7 +52,7 @@ Please do not commit your edits. We will do it later.
         container = Runtime.start_session(
             image,
             instance,
-            log_function=partial(logger, run_id=self.run_id, instance_id=instance["instance_id"]),
+            log_function=partial(log_for_evaluation, run_id=self.run_id, instance_id=instance["instance_id"]),
         )
         container.send_command("curl -fsSL https://claude.ai/install.sh | bash")
         container.send_command('alias claude="$HOME/.local/bin/claude"')
@@ -74,21 +74,10 @@ Please do not commit your edits. We will do it later.
         heredoc_cmd = "cat > /tmp/cc_prompt.txt <<'CC_PROMPT'\n" + prompt_text + "\nCC_PROMPT\n"
         self.container.send_command(heredoc_cmd)
 
-        # self.container.send_command("mkdir -p /testbed/.claude")
-        # with open("utils/settings.template.json") as f:
-        #     setting = f.read()
-        # setting_cmd = "cat > /testbed/.claude/settings.json <<'CC_SETTING'\n" + setting + "\nCC_SETTING\n"
-        # self.container.send_command(setting_cmd)
-
-        # with open("utils/handle_hook.template.sh") as f:
-        #     handler = f.read()
-        # handler_cmd = "cat > /tmp/handle_hook.sh <<'CC_HOOK'\n" + handler + "\nCC_HOOK\n"
-        # self.container.send_command(handler_cmd)
-        # self.container.send_command("chmod +x /tmp/handle_hook.sh")
-
         # run claude reading the prompt from the file to avoid shell interpolation issues
         claude_cmd = f'claude -p "$(cat /tmp/cc_prompt.txt)" --append-system-prompt "{self.system_prompt}" --max-turns {max_step} --dangerously-skip-permissions --output-format json --verbose'
         self.container.send_command(claude_cmd, timelimit * 60)
+        # NOTE: Debug hook outputs.
         # self.container.send_command("cat /tmp/hook.out")
         return
 

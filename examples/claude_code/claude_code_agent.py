@@ -3,30 +3,30 @@
 """Main module for the Claude Code Agent implementation.
 
 This module provides the core functionality for running Claude Code agent experiments
-on SWE-bench datasets. It includes the CodingAgent class that implements the agent logic,
+on SWE-bench datasets. It includes the ClaudeCodeAgent class that implements the agent logic,
 functions for loading datasets, and asynchronous execution functions for running experiments.
 
 Key components:
-- CodingAgent: Main agent implementation that handles rollout logic
+
+- ClaudeCodeAgent: Main agent implementation that handles rollout logic
 - Dataset loading utilities
 - Asynchronous execution functions for dry runs and full datasets
 """
 
 import asyncio
 import json
+import logging
 import os
-import platform
 import resource
-import time
+from argparse import ArgumentParser
 from typing import Any, Dict, List, Literal, Optional, cast
 
 from claude_code_controller import ClaudeController
-from custom_adapter import LlmProxyTraceToAugmentedTriplet
-from custom_callbacks import AddLogprobs
 from datasets import Dataset
-from swebench.harness.utils import load_swebench_dataset  # type: ignore
+from extended_adapter import ExtendedLlmProxyTraceToTriplet
+from swebench.harness.utils import load_swebench_dataset  # pyright: ignore[reportUnknownVariableType]
 from swebench_utils.evaluation import evaluate
-from swebench_utils.logger import logger
+from swebench_utils.logging import log_for_evaluation
 from transformers import AutoTokenizer
 
 from agentlightning import (
@@ -35,10 +35,13 @@ from agentlightning import (
     LitAgentRunner,
     OtelTracer,
     configure_logger,
+    setup_logging,
 )
 from agentlightning.litagent import LitAgent
 from agentlightning.llm_proxy import LLMProxy, ModelConfig
-from agentlightning.types import LLM, AttemptedRollout, NamedResources, ProxyLLM, Rollout, RolloutRawResult, Span
+from agentlightning.types import AttemptedRollout, NamedResources, ProxyLLM, Rollout, RolloutRawResult, Span
+
+logger = logging.getLogger("claude_code_agent")
 
 
 def load_dataset(path: str = "swe_debug.jsonl", epoch: int = 0, limit: Optional[int] = None) -> List[Dict[str, Any]]:
@@ -54,7 +57,12 @@ def load_dataset(path: str = "swe_debug.jsonl", epoch: int = 0, limit: Optional[
     return instances
 
 
-class CodingAgent(LitAgent[Dict[str, Any]]):
+class ClaudeCodeAgent(LitAgent[Dict[str, Any]]):
+    """Claude Code Agent implementation.
+
+    This agent is a wrapper of the Claude Code controller. It is used to run the Claude Code agent on SWE-bench datasets.
+    """
+
     def __init__(
         self,
         namespace: Literal["swebench", "starryzhang"] = "swebench",
@@ -87,25 +95,30 @@ class CodingAgent(LitAgent[Dict[str, Any]]):
         full_dataset = load_swebench_dataset(full_set, split)
         self.dataset = {each["instance_id"]: each for each in full_dataset}
 
-        # run instances locally
-        if platform.system() == "Linux":
-            resource.setrlimit(resource.RLIMIT_NOFILE, (open_file_limit, open_file_limit))
+        # Set the maximum number of open files to the specified limit.
+        resource.setrlimit(resource.RLIMIT_NOFILE, (open_file_limit, open_file_limit))
 
     async def rollout_async(
         self, task: Dict[str, Any], resources: NamedResources, rollout: Rollout
     ) -> RolloutRawResult:
+        if not isinstance(rollout, AttemptedRollout):
+            # Technically, rollout should be an AttemptedRollout here.
+            # but the API is not stabilized yet.
+            raise ValueError("Rollout is not an AttemptedRollout.")
+
         run_id = f"epoch_{task.get('epoch', 0)}"
         image = f"{self.namespace}/sweb.eval.x86_64.{task['instance_id'].lower()}".replace("__", "_1776_")
 
-        llm = cast(ProxyLLM, resources.get("llm"))
-        assert llm is not None, "LLM resource is required for rollout."
-
-        llm = self._strip_proxy_helper(llm, rollout)
+        llm = cast(ProxyLLM, resources["llm"])
 
         try:
             # 1. init container
             controller = ClaudeController(
-                image, task, run_id, llm.endpoint, llm.api_key or os.environ.get("ANTHROPIC_AUTH_TOKEN", "dummy")
+                image,
+                task,
+                run_id,
+                llm.get_base_url(rollout.rollout_id, rollout.attempt.attempt_id),
+                llm.api_key or os.environ.get("ANTHROPIC_AUTH_TOKEN", "dummy"),
             )
             # 2. execute task
             prediction = controller.run_instance(
@@ -113,7 +126,7 @@ class CodingAgent(LitAgent[Dict[str, Any]]):
             )
             del controller
         except Exception as e:
-            logger(run_id, task["instance_id"], f"Exception during rollout: {e}")
+            log_for_evaluation(run_id, task["instance_id"], f"Exception during rollout: {e}")
             return 0.0
 
         # 3. obtain rewards (evaluation result)
@@ -146,36 +159,6 @@ class CodingAgent(LitAgent[Dict[str, Any]]):
         if report[instance_id]["resolved"]:
             reward = 1.0
         return reward
-
-    def _strip_proxy_helper(self, proxy_llm: LLM, rollout: Rollout) -> LLM:
-        """Convert [`ProxyLLM`][agentlightning.ProxyLLM] instances into concrete LLMs.
-
-        It resolves ProxyLLM instances to their concrete LLM implementation
-        by attaching the attempted rollout context. This is only used when the function
-        signature accepts an `llm` parameter and strip_proxy is True.
-
-        Args:
-            proxy_llm: Candidate LLM resource.
-            rollout: Rollout metadata that provides rollout and attempt identifiers.
-
-        Returns:
-            [`LLM`][agentlightning.LLM] with rollout context baked into the endpoint.
-
-        Raises:
-            ValueError: If the rollout is not an
-                [`AttemptedRollout`][agentlightning.AttemptedRollout].
-        """
-
-        if not isinstance(proxy_llm, ProxyLLM):
-            # Not a ProxyLLM, nothing to strip here.
-            return proxy_llm
-
-        # Rollout is still a Rollout here because API is not stabilized yet.
-        # In practice, it must be an AttemptedRollout.
-        if not isinstance(rollout, AttemptedRollout):
-            raise ValueError("Rollout is not an AttemptedRollout.")
-
-        return proxy_llm.with_attempted_rollout(rollout)
 
 
 def flatten_messages(messages: List[Any]) -> List[Dict[str, str]]:
@@ -221,9 +204,9 @@ async def cc_agent_dry_run_sample(
 
     tracer = OtelTracer()
     runner = LitAgentRunner[Dict[str, Any]](tracer)
-    adapter = LlmProxyTraceToAugmentedTriplet()
+    adapter = ExtendedLlmProxyTraceToTriplet()
     store = LightningStoreServer(InMemoryLightningStore(), host="0.0.0.0", port=7654)
-    llm_proxy = LLMProxy(port=12358, store=store, callbacks=["return_token_ids", "opentelemetry", AddLogprobs])
+    llm_proxy = LLMProxy(port=12358, store=store, callbacks=["return_token_ids", "opentelemetry", "logprobs"])
 
     await store.start()
 
@@ -254,7 +237,7 @@ async def cc_agent_dry_run_sample(
         }
     )
 
-    with runner.run_context(agent=CodingAgent(max_step=max_step), store=store):
+    with runner.run_context(agent=ClaudeCodeAgent(max_step=max_step), store=store):
         rollout = await runner.step(
             dataset[0],
         )
@@ -338,7 +321,7 @@ async def gold_cc_agent_run_dataset(
     )
 
     for each in dataset:
-        with runner.run_context(agent=CodingAgent(max_step=max_step), store=store):
+        with runner.run_context(agent=ClaudeCodeAgent(max_step=max_step), store=store):
             rollout = await runner.step(each)
             spans = await store.query_spans(rollout.rollout_id)
 
@@ -350,7 +333,7 @@ async def gold_cc_agent_run_dataset(
                 for span in spans:
                     f.write(json.dumps(span.model_dump()) + "\n")
 
-        time.sleep(2 * 60)
+        await asyncio.sleep(2 * 60)  # sleep for 2 minutes
 
 
 if __name__ == "__main__":
@@ -379,6 +362,8 @@ if __name__ == "__main__":
 
     if args.output_dir is not None:
         os.makedirs(args.output_dir, exist_ok=True)
+
+    setup_logging(apply_to=[logger.name])
 
     if not args.official:
         asyncio.run(
