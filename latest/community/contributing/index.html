@@ -2089,7 +2089,7 @@
 <p>Bonus points for examples that:</p>
 <ul>
 <li>Ship CI or self-test coverage so we know they still work as the core evolves.  <strong>Otherwise, we would have to mark the example as unmaintained because we won't be able to test the examples manually before each release.</strong></li>
-<li>Include a <a href="https://github.com/microsoft/agent-lightning/tree/f0546ca6c567f3e60b970c4c06be4a3702c25d1b/docs/how-to/"><code>docs/how-to/</code></a> guide (or a detailed README if no how-to exists) without duplicating content in multiple places.</li>
+<li>Include a <a href="https://github.com/microsoft/agent-lightning/tree/ce80b09a4a0ef41712ba9602583beabb0bec7286/docs/how-to/"><code>docs/how-to/</code></a> guide (or a detailed README if no how-to exists) without duplicating content in multiple places.</li>
 <li>Favor simple, dependency-light code over heavy abstractions.</li>
 </ul>
 <div class="admonition warning">
@@ -2113,11 +2113,11 @@
 </ul>
 <p>Most brand-new algorithms ultimately land as “new examples,” so read that section too. Post an issue or design doc to scope the work, reuse existing utilities, and avoid duplicating efforts. Mature, battle-tested examples graduate into the <a href="../../algorithm-zoo/">Algorithm Zoo</a>.</p>
 <h3 id="ecosystem-projects">Ecosystem Projects<a class="headerlink" href="#ecosystem-projects" title="Permanent link">&para;</a></h3>
-<p>Have a project that builds on Agent-lightning but does not belong in the main repo? Fork it or depend on it externally, then let us know. We can showcase notable projects in <a href="../../">Community Projects</a> and the main <a href="https://github.com/microsoft/agent-lightning/tree/f0546ca6c567f3e60b970c4c06be4a3702c25d1b/README.md">README</a>.</p>
+<p>Have a project that builds on Agent-lightning but does not belong in the main repo? Fork it or depend on it externally, then let us know. We can showcase notable projects in <a href="../../">Community Projects</a> and the main <a href="https://github.com/microsoft/agent-lightning/tree/ce80b09a4a0ef41712ba9602583beabb0bec7286/README.md">README</a>.</p>
 <h3 id="other-contribution-ideas">Other Contribution Ideas<a class="headerlink" href="#other-contribution-ideas" title="Permanent link">&para;</a></h3>
 <ul>
-<li><strong>Tests.</strong> Add or improve cases in <a href="https://github.com/microsoft/agent-lightning/tree/f0546ca6c567f3e60b970c4c06be4a3702c25d1b/tests"><code>tests/</code></a> (unit, integration, or end-to-end).</li>
-<li><strong>Benchmarks.</strong> Expand <a href="https://github.com/microsoft/agent-lightning/tree/f0546ca6c567f3e60b970c4c06be4a3702c25d1b/tests/benchmark"><code>tests/benchmark</code></a> to stress large-scale training or rollouts.</li>
+<li><strong>Tests.</strong> Add or improve cases in <a href="https://github.com/microsoft/agent-lightning/tree/ce80b09a4a0ef41712ba9602583beabb0bec7286/tests"><code>tests/</code></a> (unit, integration, or end-to-end).</li>
+<li><strong>Benchmarks.</strong> Expand <a href="https://github.com/microsoft/agent-lightning/tree/ce80b09a4a0ef41712ba9602583beabb0bec7286/tests/benchmark"><code>tests/benchmark</code></a> to stress large-scale training or rollouts.</li>
 <li><strong>Issue triage.</strong> Reproduce bugs, confirm whether they reproduce on <code>main</code>, or suggest short-term mitigations so maintainers can prioritize.</li>
 </ul>
 <h2 id="contribution-workflow">Contribution Workflow<a class="headerlink" href="#contribution-workflow" title="Permanent link">&para;</a></h2>
@@ -2201,7 +2201,7 @@
 </tr>
 </tbody>
 </table>
-<p>Remember to register new docs in <a href="https://github.com/microsoft/agent-lightning/tree/f0546ca6c567f3e60b970c4c06be4a3702c25d1b/mkdocs.yml"><code>mkdocs.yml</code></a>, add examples to <a href="https://github.com/microsoft/agent-lightning/tree/f0546ca6c567f3e60b970c4c06be4a3702c25d1b/examples/README.md">examples/README</a>, and update the <a href="../../how-to/examples-catalog/">Examples Catalog</a>.</p>
+<p>Remember to register new docs in <a href="https://github.com/microsoft/agent-lightning/tree/ce80b09a4a0ef41712ba9602583beabb0bec7286/mkdocs.yml"><code>mkdocs.yml</code></a>, add examples to <a href="https://github.com/microsoft/agent-lightning/tree/ce80b09a4a0ef41712ba9602583beabb0bec7286/examples/README.md">examples/README</a>, and update the <a href="../../how-to/examples-catalog/">Examples Catalog</a>.</p>
 </div>
 <h3 id="4-test-and-validate">4. Test and Validate<a class="headerlink" href="#4-test-and-validate" title="Permanent link">&para;</a></h3>
 <p>Most contributions require automated checks. Prefix commands with <code>uv run</code> so they use the project environment.</p>
@@ -2218,7 +2218,7 @@
 <p>If you have touched code under <code>examples/</code>, you should run the example-specific smoke tests. Each directory includes a README with example-specific smoke tests—run those too.</p>
 <div class="admonition note">
 <p class="admonition-title">Build documentation when needed</p>
-<p>Keep API references under <a href="https://github.com/microsoft/agent-lightning/tree/f0546ca6c567f3e60b970c4c06be4a3702c25d1b/docs/reference/">docs/reference</a> up to date. Doc-only changes should still build cleanly:</p>
+<p>Keep API references under <a href="https://github.com/microsoft/agent-lightning/tree/ce80b09a4a0ef41712ba9602583beabb0bec7286/docs/reference/">docs/reference</a> up to date. Doc-only changes should still build cleanly:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>uv<span class="w"> </span>run<span class="w"> </span>mkdocs<span class="w"> </span>serve<span class="w"> </span>--strict<span class="w">   </span><span class="c1"># live reload</span>
 <a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>uv<span class="w"> </span>run<span class="w"> </span>mkdocs<span class="w"> </span>build<span class="w"> </span>--strict<span class="w">   </span><span class="c1"># CI-equivalent</span>
 </code></pre></div>
