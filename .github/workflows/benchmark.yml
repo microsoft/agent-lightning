@@ -6,29 +6,41 @@ on:
 
 jobs:
   benchmark:
-    name: ${{ matrix.scenario.display }} (${{ matrix.backend.id }})
+    name: Benchmark (${{ matrix.backend.id }}, ${{ matrix.scenario.display }})
     runs-on: [self-hosted, 1ES.Pool=agl-runner-cpu]
     timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
         backend:
-          - id: mongo
-            compose_file: compose.prometheus-mongo-store.yml
           - id: memory
             compose_file: compose.prometheus-memory-store.yml
+          - id: mongo
+            compose_file: compose.prometheus-mongo-store.yml
         scenario:
           - id: minimal-production
             display: Minimal production scale
+            store_workers: 4
             args: >-
               --mode batch
               --total-tasks 4096
-              --batch-size 64
+              --batch-size 256
               --n-runners 32
               --max-rounds 6
               --sleep-seconds 0.5
+          - id: medium-production
+            display: Medium production scale
+            store_workers: 16
+            args: >-
+              --mode batch
+              --total-tasks 10000
+              --batch-size 1000
+              --n-runners 100
+              --max-rounds 10
+              --sleep-seconds 0.1
           - id: large-batch
             display: Large batch waves
+            store_workers: 32
             args: >-
               --mode batch
               --total-tasks 100000
@@ -38,6 +50,7 @@ jobs:
               --sleep-seconds 0.1
           - id: long-queues
             display: Long rollout queues
+            store_workers: 32
             args: >-
               --mode batch_partial
               --total-tasks 100000
@@ -48,6 +61,7 @@ jobs:
               --sleep-seconds 0.1
           - id: high-concurrency
             display: High-throughput concurrent requests
+            store_workers: 32
             args: >-
               --mode single
               --total-tasks 100000
@@ -57,6 +71,7 @@ jobs:
               --sleep-seconds 0.1
           - id: heavy-traces
             display: Heavy rollouts with deep traces
+            store_workers: 64
             args: >-
               --mode batch_partial
               --total-tasks 10000
@@ -73,6 +88,7 @@ jobs:
       BACKEND_ID: ${{ matrix.backend.id }}
       ARTIFACT_DIR: artifacts/${{ matrix.scenario.id }}-${{ matrix.backend.id }}
       COMPOSE_FILE: ${{ matrix.backend.compose_file }}
+      AGL_STORE_N_WORKERS: ${{ matrix.scenario.store_workers }}
     steps:
       - uses: actions/checkout@v4
 

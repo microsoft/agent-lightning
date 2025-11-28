@@ -30,7 +30,7 @@ services:
           agl store --host 0.0.0.0 --port 4747 \
             --prometheus --backend mongo \
             --mongo-uri mongodb://mongo:27017/?replicaSet=rs0 \
-            --n-workers 4
+            --n-workers ${AGL_STORE_N_WORKERS:-32}
     environment:
       - PROMETHEUS_MULTIPROC_DIR=/tmp/prometheus
 

@@ -4,13 +4,31 @@
 
 import argparse
 import asyncio
+import os
 import random
+import sys
+import threading
 from typing import Any, Dict, List, Literal, Optional, Sequence, Set, Tuple, cast
 
 import agentlightning as agl
 from agentlightning.emitter.utils import get_tracer
 
 from .utils import flatten_dict, random_dict
+
+MAX_RUNTIME_SECONDS = 45 * 60
+
+
+def _abort_due_to_timeout() -> None:
+    sys.stderr.write(f"[benchmark] Exiting after exceeding the {MAX_RUNTIME_SECONDS // 60} minute timeout.\n")
+    sys.stderr.flush()
+    os._exit(1)
+
+
+def _start_timeout_guard(timeout_seconds: float) -> threading.Timer:
+    timer = threading.Timer(timeout_seconds, _abort_due_to_timeout)
+    timer.daemon = True
+    timer.start()
+    return timer
 
 
 def generate_attributes() -> Dict[str, Any]:
@@ -289,6 +307,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
 def main(argv: Optional[Sequence[str]] = None) -> None:
     args = parse_args(argv)
     store = agl.LightningStoreClient(args.store_url)
+    timeout_guard = _start_timeout_guard(MAX_RUNTIME_SECONDS)
     try:
         trainer = agl.Trainer(
             store=store,
@@ -307,6 +326,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         )
         trainer.fit(make_agent(max_rounds=args.max_rounds, sleep_seconds=args.sleep_seconds))
     finally:
+        timeout_guard.cancel()
         asyncio.run(store.close())
 
 
