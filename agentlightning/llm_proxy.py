@@ -1160,6 +1160,9 @@ class LLMProxy:
         if _global_llm_proxy is not None:
             logger.warning("A global LLMProxy is already set. Overwriting it with the new instance.")
 
+        # Patch for LiteLLM v1.80.6+: https://github.com/BerriAI/litellm/issues/17243
+        os.environ["USE_OTEL_LITELLM_REQUEST_SPAN"] = "true"
+
         # Set the global LLMProxy reference for middleware/exporter access.
         set_active_llm_proxy(self)
 
