@@ -14,9 +14,10 @@ import requests
 from openai import OpenAI
 from qa_em import compute_score_em
 
-from agentlightning import LLM, LitAgent, NamedResources, Rollout, Trainer, reward, setup_logging
+from agentlightning import LLM, LitAgent, NamedResources, Rollout, Trainer, setup_logging, configure_logger
 
 setup_logging()
+logger = configure_logger(name=__name__)
 
 INSTRUCTION_FORMAT = """Answer the given question. You must conduct reasoning inside <think> and </think> first every time you get new information. After reasoning, if you find you lack some knowledge, you can call a search engine by <search> query </search> and it will return the top searched results between <information> and </information>. You can search as many times as your want. If you find no further external knowledge needed, you can directly provide the answer inside <answer> and </answer>, without detailed illustrations. For example, <answer> Beijing </answer>. Question: """
 
