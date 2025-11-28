@@ -42,6 +42,7 @@ from pymongo.errors import CollectionInvalid, ConnectionFailure, DuplicateKeyErr
 from pymongo.read_concern import ReadConcern
 
 from agentlightning.store.base import LightningStore
+from agentlightning.store.utils import LATENCY_BUCKETS
 from agentlightning.types import (
     Attempt,
     FilterOptions,
@@ -125,26 +126,7 @@ class MongoOperationPrometheusTracker:
                 "mongo_operation_duration_seconds",
                 "Latency of MongoDB operations",
                 base_labels,
-                buckets=[
-                    0.001,
-                    0.002,
-                    0.003,
-                    0.005,
-                    0.007,
-                    0.01,
-                    0.015,
-                    0.02,
-                    0.03,
-                    0.05,
-                    0.07,
-                    0.1,
-                    0.2,
-                    0.5,
-                    1,
-                    2,
-                    5,
-                    10,
-                ],
+                buckets=LATENCY_BUCKETS,
             )
             self._total_metric = Counter(
                 "mongo_operation_total",

@@ -59,7 +59,7 @@ from .base import (
     is_queuing,
 )
 from .collection import FilterOptions, LightningCollections
-from .utils import healthcheck, propagate_status
+from .utils import LATENCY_BUCKETS, healthcheck, propagate_status
 
 T_callable = TypeVar("T_callable", bound=Callable[..., Any])
 T_model = TypeVar("T_model", bound=BaseModel)
@@ -204,26 +204,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
                 "collection_store_latency_seconds",
                 "Latency of CollectionBasedLightningStore methods",
                 ["method"],
-                buckets=[
-                    0.001,
-                    0.002,
-                    0.003,
-                    0.005,
-                    0.007,
-                    0.01,
-                    0.015,
-                    0.02,
-                    0.03,
-                    0.05,
-                    0.07,
-                    0.1,
-                    0.2,
-                    0.5,
-                    1,
-                    2,
-                    5,
-                    10,
-                ],
+                buckets=LATENCY_BUCKETS,
             )
             self._total_metric = Counter(
                 "collection_store_total",

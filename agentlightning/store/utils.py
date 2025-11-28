@@ -9,6 +9,37 @@ UpdateRolloutStatus = Callable[[str, RolloutStatus], Awaitable[Rollout]]
 UpdateAttemptStatus = Callable[[str, str, AttemptStatus], Awaitable[Attempt]]
 
 
+LATENCY_BUCKETS = [
+    0.000001,
+    0.000002,
+    0.000005,
+    0.00001,
+    0.00002,
+    0.00005,
+    0.0001,
+    0.0002,
+    0.0005,
+    0.001,
+    0.002,
+    0.003,
+    0.005,
+    0.007,
+    0.01,
+    0.015,
+    0.02,
+    0.03,
+    0.05,
+    0.07,
+    0.1,
+    0.2,
+    0.5,
+    1.0,
+    2.0,
+    5.0,
+    10.0,
+]
+
+
 async def propagate_status(
     update_rollout_status: UpdateRolloutStatus,  # this should be unlocked
     attempt: Attempt,
