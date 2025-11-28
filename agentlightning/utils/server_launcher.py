@@ -6,6 +6,7 @@ import asyncio
 import inspect
 import logging
 import multiprocessing
+import os
 import queue
 import signal
 import socket
@@ -938,6 +939,11 @@ class PythonServerLauncher:
                     self.args.process_join_timeout / 2
                 ),  # Allow half the timeout for graceful shutdown
             }
+            if "PROMETHEUS_MULTIPROC_DIR" in os.environ:
+                from prometheus_client import multiprocess
+
+                options["child_exit"] = lambda server, worker: multiprocess.mark_process_dead(worker.pid)  # type: ignore
+
             self._gunicorn_app = GunicornApp(self.app, options)
 
             self._proc = ctx.Process(
