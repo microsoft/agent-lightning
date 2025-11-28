@@ -105,6 +105,11 @@ class PrometheusClient:
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Summarize benchmark metrics from Prometheus.")
     parser.add_argument("--prom-url", default="http://localhost:9090", help="Base URL for the Prometheus API.")
+    parser.add_argument(
+        "--store-url",
+        default="http://localhost:4747/v1/agl",
+        help="Base URL for the Lightning Store API (without the /statistics suffix).",
+    )
     parser.add_argument("--timeout", type=float, default=10.0, help="HTTP timeout in seconds.")
     parser.add_argument("--start", type=str, help="ISO timestamp (e.g. 2024-05-01T12:00:00Z).")
     parser.add_argument("--end", type=str, help="ISO timestamp (default: now).")
@@ -226,6 +231,24 @@ def safe_scalar(client: PrometheusClient, expr: str) -> Optional[float]:
         return None
 
 
+def fetch_store_statistics(store_url: str, timeout: float) -> Optional[Dict[str, Any]]:
+    store_url = store_url.rstrip("/")
+    stats_url = f"{store_url}/statistics"
+    req = request.Request(stats_url)
+    try:
+        with request.urlopen(req, timeout=timeout) as resp:
+            loaded = json.loads(resp.read().decode())
+            if isinstance(loaded, Mapping):
+                return dict(cast(Mapping[str, Any], loaded))
+            return None
+    except error.URLError as exc:
+        print(f"[warn] Failed to fetch store statistics: {exc} (url={stats_url})")
+        return None
+    except json.JSONDecodeError as exc:
+        print(f"[warn] Failed to decode store statistics: {exc} (url={stats_url})")
+        return None
+
+
 # ---------------------------------------------------------------------------
 # Part 1 – high level throughput
 # ---------------------------------------------------------------------------
@@ -236,6 +259,48 @@ class CollectionThroughput:
     name: str
     count: Optional[float]
     per_sec: Optional[float]
+
+
+STORE_TOTAL_FIELDS = {
+    "rollouts": "total_rollouts",
+    "spans": "total_spans",
+    "attempts": "total_attempts",
+    "resources": "total_resources",
+    "workers": "total_workers",
+}
+STORE_TOTAL_COLLECTIONS = tuple(STORE_TOTAL_FIELDS.keys())
+
+
+def _coerce_int(value: Any) -> Optional[int]:
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        if math.isnan(value):
+            return None
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            try:
+                return int(float(value))
+            except ValueError:
+                return None
+    return None
+
+
+def extract_store_totals(stats: Optional[Mapping[str, Any]]) -> Dict[str, Optional[int]]:
+    totals: Dict[str, Optional[int]] = {}
+    if not stats:
+        return totals
+    for display_name, field_name in STORE_TOTAL_FIELDS.items():
+        if field_name in stats:
+            totals[display_name] = _coerce_int(stats.get(field_name))
+        else:
+            totals[display_name] = None
+    return totals
 
 
 def gather_collection_throughput(
@@ -544,7 +609,7 @@ def gather_diagnostics(client: PrometheusClient, window: str) -> Dict[str, Any]:
 
 def render_table(headers: Sequence[str], rows: Sequence[Sequence[str]]) -> List[str]:
     if not rows:
-        return ["(no data)"]
+        return [f"(no data for {headers})"]
     widths = [len(h) for h in headers]
     rendered: List[List[str]] = []
     for row in rows:
@@ -622,25 +687,44 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     subquery_step = compute_subquery_step(duration_seconds)
 
     client = PrometheusClient(args.prom_url, timeout=args.timeout, default_time=end)
+    store_stats = fetch_store_statistics(args.store_url, timeout=args.timeout)
+    store_totals = extract_store_totals(store_stats)
     lines: List[str] = [
         f"Agent Lightning benchmark report",
         f"Range: {start.isoformat()} — {end.isoformat()} ({duration_seconds:.0f}s window)",
         f"Prometheus: {args.prom_url}",
+        f"Store: {args.store_url}",
         "",
     ]
 
     # Throughput
     throughput_rows = gather_collection_throughput(
-        client, collections=["rollouts", "spans", "attempts"], duration_seconds=duration_seconds
+        client, collections=STORE_TOTAL_COLLECTIONS, duration_seconds=duration_seconds
     )
     rows: List[List[str]] = []
     for item in throughput_rows:
-        if item.count is None:
+        store_total = store_totals.get(item.name)
+        if store_total is not None:
+            count_value: Optional[int] = store_total
+        elif item.count is not None:
+            count_value = int(item.count)
+        else:
+            count_value = None
+        if count_value is None:
             count_str = "-"
         else:
-            count_str = f"{int(item.count):,}"
-        rows.append([item.name, count_str, fmt_rate(item.per_sec)])
-    lines.extend(section("Rollout / Attempt / Span Throughput", render_table(["Collection", "Count", "Per Sec"], rows)))
+            count_str = f"{count_value:,}"
+        if count_value is not None and duration_seconds > 0:
+            per_sec_value = float(count_value) / duration_seconds
+        else:
+            per_sec_value = item.per_sec
+        rows.append([item.name, count_str, fmt_rate(per_sec_value)])
+    lines.extend(
+        section(
+            "Rollout / Attempt / Span / Resource / Worker Throughput",
+            render_table(["Collection", "Count", "Per Sec"], rows),
+        )
+    )
 
     # Store internals
     store_stats, store_overall = gather_store_methods(client, window, rate_window, subquery_step)

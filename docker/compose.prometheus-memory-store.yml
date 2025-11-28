@@ -10,7 +10,6 @@ services:
     image: prom/node-exporter:latest
     # In CI you might not have full /proc, but this is OK for container-level stats
     pid: "host"
-    network_mode: "service:app" # share network with app for simplicity
     command:
       - "--path.rootfs=/host"
     volumes:
@@ -30,3 +29,25 @@ services:
       - node-exporter
     ports:
       - "9090:9090"
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "9091:3000"
+    depends_on:
+      - prometheus
+    volumes:
+      - ./data/grafana:/var/lib/grafana
+      # 1. Mount the Datasource Config
+      - ./grafana/datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml
+      # 2. Mount the Dashboard Provider Config
+      - ./grafana/dashboard-provider.yml:/etc/grafana/provisioning/dashboards/provider.yml
+      # 3. Mount the folder containing the actual JSON files
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+
+    environment:
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_AUTH_DISABLE_LOGIN_FORM=true
+      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/var/lib/grafana/dashboards/agentlightning.json
