@@ -640,7 +640,7 @@ class LightningStoreServer(LightningStore):
                 heartbeat_stats=_get_mandatory_field_or_unset(request, "heartbeat_stats"),
             )
 
-        @api.get(API_AGL_PREFIX + "/statistics", response_model=LightningStoreStatistics)
+        @api.get(API_AGL_PREFIX + "/statistics", response_model=Dict[str, Any])
         async def get_statistics():  # pyright: ignore[reportUnusedFunction]
             return await self.statistics()
 
