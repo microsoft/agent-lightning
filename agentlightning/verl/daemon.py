@@ -429,7 +429,7 @@ class AgentModeDaemon:
                 raise RuntimeError("Internal loop is not running.")
             future = asyncio.run_coroutine_threadsafe(coro, self._internal_loop)
         try:
-            future.result(timeout=180)  # Wait for completion with a timeout
+            future.result(timeout=3600)  # Wait for completion with a timeout
         except Exception as e:
             print(f"Failed to set up data on server: {e}")
             raise
