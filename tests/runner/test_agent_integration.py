@@ -1,11 +1,8 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-import asyncio
-import multiprocessing
 import os
-import time
-from multiprocessing.synchronize import Event as MpEvent
-from typing import Any, Dict, Optional, cast
+from contextlib import asynccontextmanager
+from typing import Any, AsyncGenerator, Dict, Optional, cast
 
 import openai
 import pytest
@@ -70,8 +67,7 @@ async def test_runner_integration_basic_rollout() -> None:
     assert rollouts and rollouts[0].status == "succeeded"
     attempts = await store.query_attempts(rollouts[0].rollout_id)
     spans = await store.query_spans(rollouts[0].rollout_id, attempts[-1].attempt_id)
-    print(store.__dict__)
-    assert any(span.attributes.get("reward") == 1.0 for span in spans)
+    assert any(span.attributes.get("agentlightning.reward.0.value") == 1.0 for span in spans)
 
 
 @pytest.mark.asyncio
@@ -157,6 +153,17 @@ def server():
         yield server
 
 
+class LLMProxyWithClearedTracerProvider(LLMProxy):
+    """LLMProxy that clears the tracer provider before serving."""
+
+    @asynccontextmanager
+    async def _serve_context(self) -> AsyncGenerator[None, None]:
+        # This will be run inside the LLM proxy's own process
+        clear_tracer_provider()
+        async with super()._serve_context():
+            yield
+
+
 @pytest.mark.asyncio
 async def test_runner_integration_with_spawned_litellm_proxy(server: RemoteOpenAIServer) -> None:
     torch = pytest.importorskip("torch")
@@ -185,7 +192,7 @@ async def test_runner_integration_with_spawned_litellm_proxy(server: RemoteOpenA
     await server_store.start()
     client_store = LightningStoreClient(server_store.endpoint)
 
-    proxy = LLMProxy(
+    proxy = LLMProxyWithClearedTracerProvider(
         port=get_free_port(),
         model_list=[
             {
@@ -199,16 +206,7 @@ async def test_runner_integration_with_spawned_litellm_proxy(server: RemoteOpenA
         store=client_store,
     )
 
-    def run_proxy_server(proxy: LLMProxy, event: MpEvent):
-        clear_tracer_provider()  # clear once more before the proxy starts
-        proxy.start()
-        event.set()
-        time.sleep(3600)  # Keep the server running
-
-    event = multiprocessing.Event()
-    process = multiprocessing.Process(target=run_proxy_server, args=(proxy, event))
-    process.start()
-    event.wait(timeout=30)
+    await proxy.start()
 
     try:
         await runner.step("Say hello to Agent Lightning", resources={"llm": proxy.as_resource()})
@@ -230,13 +228,12 @@ async def test_runner_integration_with_spawned_litellm_proxy(server: RemoteOpenA
 
         last_spans = [span for span in spans if span.sequence_id == max(span.sequence_id for span in spans)]
         assert len(last_spans) == 1
-        assert last_spans[0].name == "agentlightning.reward"
-        assert last_spans[0].attributes.get("reward") == 0.5
+        assert last_spans[0].name == "agentlightning.annotation"
+        assert (
+            last_spans[0].attributes.get("agentlightning.reward.0.value") == 0.5
+        ), f"Expected reward to be 0.5, found {last_spans[0].attributes}"
     finally:
         teardown_runner(runner)
-        process.terminate()
+        await proxy.stop()
         await client_store.close()
         await server_store.stop()
-        await asyncio.to_thread(process.join, timeout=1)
-        if process.is_alive():
-            process.kill()

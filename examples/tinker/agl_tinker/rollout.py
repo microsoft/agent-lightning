@@ -40,7 +40,7 @@ T_task = TypeVar("T_task")
 WAIT_FOR_ROLLOUTS_INTERVAL = 5.0
 
 
-def reconstruct_transitions(spans: List[Span], adapter: TraceToTripletBase, rollout_id: str) -> Trajectory:
+def reconstruct_transitions(spans: Sequence[Span], adapter: TraceToTripletBase, rollout_id: str) -> Trajectory:
     """Convert Agent-lightning spans into a Tinker `Trajectory`.
 
     This function infers observations, actions, and rewards from the trace triplets emitted by Agent-lightning's
@@ -242,13 +242,13 @@ async def do_group_of_group_rollouts(
 
     # 4) Await all groups, but still allow interleaving via the shared semaphore.
     trajectory_groups: List[TrajectoryGroup] = []
-    for group_idx, (builder, tasks) in enumerate(zip(env_group_builders_P, per_group_tasks)):
+    for group_idx, (builder, group_envs, tasks) in enumerate(zip(env_group_builders_P, groups_envs, per_group_tasks)):
         rollouts_and_trajectories_G = await asyncio.gather(*tasks)
         rollouts_G, trajectories_G = cast(
             Tuple[List[Rollout], List[Trajectory]], zip(*rollouts_and_trajectories_G, strict=True)
         )
         # Compute rewards/metrics for this group.
-        rewards_and_metrics_G = await builder.compute_group_rewards(trajectories_G)
+        rewards_and_metrics_G = await builder.compute_group_rewards(trajectories_G, group_envs)
         rewards_G, metrics_G = zip(*rewards_and_metrics_G, strict=True)
 
         # Attach AGL-specific metrics for error handling.

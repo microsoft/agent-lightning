@@ -15,17 +15,20 @@ There are some specific TODOs for each test function.
 import ast
 import asyncio
 import json
-from typing import Any, cast
+from typing import Any, Dict, List, Sequence, Type, Union, cast
 
 import anthropic
 import openai
 import pytest
+from litellm.integrations.custom_logger import CustomLogger
+from portpicker import pick_unused_port
 
+from agentlightning import LlmProxyTraceToTriplet
 from agentlightning.llm_proxy import LLMProxy, _reset_litellm_logging_worker  # pyright: ignore[reportPrivateUsage]
+from agentlightning.store import LightningStore, LightningStoreServer, LightningStoreThreaded
 from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.types import LLM, Span
 
-from ..common.network import get_free_port
 from ..common.tracer import clear_tracer_provider
 from ..common.vllm import VLLM_VERSION, RemoteOpenAIServer
 
@@ -49,7 +52,7 @@ def qwen25_model():
             "--tool-call-parser",
             "hermes",
             "--port",
-            str(get_free_port()),
+            str(pick_unused_port()),
         ],
     ) as server:
         yield server
@@ -66,11 +69,17 @@ def test_qwen25_model_sanity(qwen25_model: RemoteOpenAIServer):
 
 
 @pytest.mark.asyncio
-async def test_basic_integration(qwen25_model: RemoteOpenAIServer):
+@pytest.mark.parametrize("otlp_enabled", [True, False])
+async def test_basic_integration(qwen25_model: RemoteOpenAIServer, otlp_enabled: bool):
     clear_tracer_provider()
-    store = InMemoryLightningStore()
+    inmemory_store = InMemoryLightningStore()
+    if otlp_enabled:
+        store = LightningStoreServer(store=inmemory_store, host="127.0.0.1", port=pick_unused_port())
+        await store.start()
+    else:
+        store = LightningStoreThreaded(inmemory_store)
     proxy = LLMProxy(
-        port=get_free_port(),
+        port=pick_unused_port(),
         model_list=[
             {
                 "model_name": "gpt-4o-arbitrary",
@@ -81,15 +90,14 @@ async def test_basic_integration(qwen25_model: RemoteOpenAIServer):
             }
         ],
         store=store,
+        launch_mode="thread" if not otlp_enabled else "mp",
     )
 
     rollout = await store.start_rollout(None)
 
-    proxy.start()
+    await proxy.start()
 
     resource = proxy.as_resource(rollout.rollout_id, rollout.attempt.attempt_id)
-
-    import openai
 
     client = openai.OpenAI(base_url=resource.endpoint, api_key="token-abc123")
     response = client.chat.completions.create(
@@ -100,9 +108,12 @@ async def test_basic_integration(qwen25_model: RemoteOpenAIServer):
     assert response.choices[0].message.content is not None
     assert "hello, world" in response.choices[0].message.content.lower()
 
-    proxy.stop()
+    await proxy.stop()
 
     spans = await store.query_spans(rollout.rollout_id, rollout.attempt.attempt_id)
+
+    if isinstance(store, LightningStoreServer):
+        await store.stop()
 
     # Verify all spans have correct rollout_id, attempt_id, and sequence_id
     assert len(spans) > 0, "Should have captured spans"
@@ -110,6 +121,15 @@ async def test_basic_integration(qwen25_model: RemoteOpenAIServer):
         assert span.rollout_id == rollout.rollout_id, f"Span {span.name} has incorrect rollout_id"
         assert span.attempt_id == rollout.attempt.attempt_id, f"Span {span.name} has incorrect attempt_id"
         assert span.sequence_id == 1, f"Span {span.name} has incorrect sequence_id"
+
+        # Verify start time and end time
+        # TODO: Remove this when this PR is merged: https://github.com/BerriAI/litellm/pull/16558
+        print(f">>> Span: {span.name}")
+        print(f">>> Start time: {span.start_time}")
+        print(f">>> End time: {span.end_time}")
+        print(f">>> Attributes: {span.attributes.keys()}")
+        assert span.start_time is not None, f"Span {span.name} has no start time"
+        assert span.end_time is not None, f"Span {span.name} has no end time"
 
     # Find the raw_gen_ai_request span and verify token IDs
     raw_gen_ai_spans = [s for s in spans if s.name == "raw_gen_ai_request"]
@@ -168,12 +188,25 @@ async def test_basic_integration(qwen25_model: RemoteOpenAIServer):
     assert "gen_ai.completion.0.finish_reason" in litellm_span.attributes, "gen_ai.completion.0.finish_reason not found"
 
 
-def _make_proxy_and_store(qwen25_model: RemoteOpenAIServer, *, retries: int = 0):
+async def _make_proxy_and_store(
+    qwen25_model: RemoteOpenAIServer,
+    *,
+    retries: int = 0,
+    gunicorn: bool = False,
+    callbacks: List[Union[Type[CustomLogger], str]] | None = None,
+    otlp_enabled: bool = False,
+):
     clear_tracer_provider()
     _reset_litellm_logging_worker()  # type: ignore
     store = InMemoryLightningStore()
+    if otlp_enabled:
+        store = LightningStoreServer(store=store, host="127.0.0.1", port=pick_unused_port())
+        # When the server is forked into subprocess, it automatically becomes a client of the store
+        await store.start()
+    else:
+        # Backward compatibility with legacy thread + non-otlp mode
+        store = LightningStoreThreaded(store)
     proxy = LLMProxy(
-        port=get_free_port(),
         model_list=[
             {
                 "model_name": "gpt-4o-arbitrary",
@@ -183,14 +216,18 @@ def _make_proxy_and_store(qwen25_model: RemoteOpenAIServer, *, retries: int = 0)
                 },
             }
         ],
+        launch_mode="thread" if not otlp_enabled else "mp",
+        port=pick_unused_port(),
+        num_workers=4 if gunicorn else 1,
         store=store,
         num_retries=retries,
+        callbacks=callbacks,
     )
-    proxy.start()
+    await proxy.start()
     return proxy, store
 
 
-async def _new_resource(proxy: LLMProxy, store: InMemoryLightningStore):
+async def _new_resource(proxy: LLMProxy, store: LightningStore):
     rollout = await store.start_rollout(None)
     return proxy.as_resource(rollout.rollout_id, rollout.attempt.attempt_id), rollout
 
@@ -203,7 +240,7 @@ def _get_async_client_for_resource(resource: LLM):
     return openai.AsyncOpenAI(base_url=resource.endpoint, api_key="token-abc123", timeout=120, max_retries=0)
 
 
-def _find_span(spans: list[Span], name: str):
+def _find_span(spans: Sequence[Span], name: str):
     return [s for s in spans if s.name == name]
 
 
@@ -212,8 +249,9 @@ def _attr(s: Span, key: str, default: Any = None):  # type: ignore
 
 
 @pytest.mark.asyncio
-async def test_multiple_requests_one_attempt(qwen25_model: RemoteOpenAIServer):
-    proxy, store = _make_proxy_and_store(qwen25_model)
+@pytest.mark.parametrize("otlp_enabled", [True, False])
+async def test_multiple_requests_one_attempt(qwen25_model: RemoteOpenAIServer, otlp_enabled: bool):
+    proxy, store = await _make_proxy_and_store(qwen25_model, otlp_enabled=otlp_enabled)
     try:
         resource, rollout = await _new_resource(proxy, store)
         client = _get_client_for_resource(resource)
@@ -234,12 +272,15 @@ async def test_multiple_requests_one_attempt(qwen25_model: RemoteOpenAIServer):
         assert len(_find_span(spans, "raw_gen_ai_request")) == 3
         # TODO: Check response contents and token ids for the 3 requests respectively
     finally:
-        proxy.stop()
+        await proxy.stop()
+        if isinstance(store, LightningStoreServer):
+            await store.stop()
 
 
 @pytest.mark.asyncio
-async def test_ten_concurrent_requests(qwen25_model: RemoteOpenAIServer):
-    proxy, store = _make_proxy_and_store(qwen25_model)
+@pytest.mark.parametrize("mode", ["gunicorn", "thread", "uvicorn"])
+async def test_ten_concurrent_requests(qwen25_model: RemoteOpenAIServer, mode: str):
+    proxy, store = await _make_proxy_and_store(qwen25_model, gunicorn=mode == "gunicorn", otlp_enabled=mode != "thread")
     try:
         resource, rollout = await _new_resource(proxy, store)
         aclient = _get_async_client_for_resource(resource)
@@ -254,19 +295,23 @@ async def test_ten_concurrent_requests(qwen25_model: RemoteOpenAIServer):
 
         outs = await asyncio.gather(*[_one(i) for i in range(10)])
         assert len([o for o in outs if o]) == 10
+        await asyncio.sleep(1.0)  # Allow some extra time for the spans to be recorded
 
         spans = await store.query_spans(rollout.rollout_id, rollout.attempt.attempt_id)
         assert len(_find_span(spans, "raw_gen_ai_request")) == 10
         assert {s.sequence_id for s in spans} == {1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
         # TODO: Check whether the sequence ids get mixed up or not
     finally:
-        proxy.stop()
+        await proxy.stop()
+        if isinstance(store, LightningStoreServer):
+            await store.stop()
 
 
 @pytest.mark.asyncio
-async def test_anthropic_client_compat(qwen25_model: RemoteOpenAIServer):
+@pytest.mark.parametrize("otlp_enabled", [True, False])
+async def test_anthropic_client_compat(qwen25_model: RemoteOpenAIServer, otlp_enabled: bool):
     # litellm proxy accepts Anthropic schema and forwards to OpenAI backend
-    proxy, store = _make_proxy_and_store(qwen25_model)
+    proxy, store = await _make_proxy_and_store(qwen25_model, otlp_enabled=otlp_enabled)
     try:
         resource, rollout = await _new_resource(proxy, store)
 
@@ -283,12 +328,15 @@ async def test_anthropic_client_compat(qwen25_model: RemoteOpenAIServer):
         spans = await store.query_spans(rollout.rollout_id, rollout.attempt.attempt_id)
         assert len(spans) > 0
     finally:
-        proxy.stop()
+        await proxy.stop()
+        if isinstance(store, LightningStoreServer):
+            await store.stop()
 
 
 @pytest.mark.asyncio
-async def test_tool_call_roundtrip(qwen25_model: RemoteOpenAIServer):
-    proxy, store = _make_proxy_and_store(qwen25_model)
+@pytest.mark.parametrize("otlp_enabled", [True, False])
+async def test_tool_call_roundtrip(qwen25_model: RemoteOpenAIServer, otlp_enabled: bool):
+    proxy, store = await _make_proxy_and_store(qwen25_model, otlp_enabled=otlp_enabled)
     try:
         resource, rollout = await _new_resource(proxy, store)
         client = _get_client_for_resource(resource)
@@ -351,13 +399,15 @@ async def test_tool_call_roundtrip(qwen25_model: RemoteOpenAIServer):
 
         # TODO: Check response contents and token ids for the 2 requests respectively
     finally:
-        proxy.stop()
+        await proxy.stop()
+        if isinstance(store, LightningStoreServer):
+            await store.stop()
 
 
-@pytest.mark.skip(reason="Streaming is not supported yet")
 @pytest.mark.asyncio
-async def test_streaming_chunks(qwen25_model: RemoteOpenAIServer):
-    proxy, store = _make_proxy_and_store(qwen25_model)
+@pytest.mark.parametrize("otlp_enabled", [True, False])
+async def test_streaming_chunks(qwen25_model: RemoteOpenAIServer, otlp_enabled: bool):
+    proxy, store = await _make_proxy_and_store(qwen25_model, otlp_enabled=otlp_enabled)
     try:
         resource, rollout = await _new_resource(proxy, store)
         client = _get_client_for_resource(resource)
@@ -369,14 +419,154 @@ async def test_streaming_chunks(qwen25_model: RemoteOpenAIServer):
         )
         collected: list[str] = []
         for evt in stream:
+            print(f">>> Event: {evt}")
             for c in evt.choices:
                 if c.delta and getattr(c.delta, "content", None):
                     assert isinstance(c.delta.content, str)
                     collected.append(c.delta.content)
-        assert "apple" in "".join(collected).lower()
+        # Sometimes the model responds with "hello" instead of "apple"
+        assert "apple" in "".join(collected).lower() or "hello" in "".join(collected).lower()
 
         spans = await store.query_spans(rollout.rollout_id, rollout.attempt.attempt_id)
         assert len(spans) > 0
-        # TODO: didn't test the token ids in streaming chunks here
+        for span in spans:
+            print(f">>> Span {span.name}: {span.attributes}")
+            if span.name == "raw_gen_ai_request":
+                assert "llm.hosted_vllm.prompt_token_ids" in span.attributes
+                assert "llm.hosted_vllm.choices" in span.attributes
+            if span.name == "litellm_request":
+                assert "gen_ai.completion.0.content" in span.attributes
     finally:
-        proxy.stop()
+        await proxy.stop()
+        if isinstance(store, LightningStoreServer):
+            await store.stop()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("otlp_enabled", [True, False])
+async def test_anthropic_token_ids(qwen25_model: RemoteOpenAIServer, otlp_enabled: bool):
+    proxy, store = await _make_proxy_and_store(qwen25_model, otlp_enabled=otlp_enabled)
+    try:
+        resource, rollout = await _new_resource(proxy, store)
+        adapter = LlmProxyTraceToTriplet()
+        client = anthropic.Anthropic(base_url=resource.endpoint, api_key="token-abc123", timeout=120)
+
+        # non-stream
+        response = client.messages.create(
+            model="gpt-4o-arbitrary",
+            max_tokens=64,
+            messages=[{"role": "user", "content": "Say the word: banana"}],
+        )
+
+        txt = "".join([b.text for b in response.content if b.type == "text"])
+        assert "banana" in txt.lower(), f"Response does not contain 'banana': {txt}"
+
+        spans = await store.query_spans(rollout.rollout_id, rollout.attempt.attempt_id)
+        for i, span in enumerate(spans):
+            print(f">>> Span {i}: {span.name}, attributes: {span.attributes}")
+        assert len(spans) > 0
+
+        triplets = adapter.adapt(spans)
+        for i, triplet in enumerate(triplets):
+            print(f">>> Triplet {i}: {triplet}")
+        assert len(triplets) == 1
+        assert triplets[0].prompt["token_ids"]
+        assert triplets[0].response["token_ids"]
+
+        # stream
+        response = client.messages.create(
+            model="gpt-4o-arbitrary",
+            max_tokens=64,
+            messages=[{"role": "user", "content": "Say the word: banana"}],
+            stream=True,
+        )
+        chunk_number: int = 0
+        for chunk in response:
+            print(f">>> Chunk: {chunk}")
+            chunk_number += 1
+        assert chunk_number >= 1
+        spans = await store.query_spans(rollout.rollout_id, rollout.attempt.attempt_id)
+        for i, span in enumerate(spans):
+            print(f">>> Span {i}: {span.name}, attributes: {span.attributes}")
+            if span.name == "raw_gen_ai_request":
+                assert "llm.hosted_vllm.prompt_token_ids" in span.attributes
+                assert "llm.hosted_vllm.choices" in span.attributes
+            if span.name == "litellm_request":
+                assert "gen_ai.completion.0.content" in span.attributes
+        assert len(spans) > 0
+        triplets = adapter.adapt(spans)
+        for i, triplet in enumerate(triplets):
+            print(f">>> Triplet {i}: {triplet}")
+            assert triplet.prompt["token_ids"]
+            assert triplet.response["token_ids"]
+        assert len(triplets) == 2
+    finally:
+        await proxy.stop()
+        if isinstance(store, LightningStoreServer):
+            await store.stop()
+
+
+class LogprobsCallback(CustomLogger):
+
+    async def async_pre_call_hook(self, data: Dict[str, Any], **kwargs: Any) -> Dict[str, Any]:  # type: ignore
+        return {**data, "logprobs": 1}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("otlp_enabled", [True, False])
+async def test_anthropic_logprobs(qwen25_model: RemoteOpenAIServer, otlp_enabled: bool):
+    proxy, store = await _make_proxy_and_store(
+        qwen25_model, callbacks=[LogprobsCallback, "return_token_ids", "opentelemetry"], otlp_enabled=otlp_enabled
+    )
+    try:
+        resource, rollout = await _new_resource(proxy, store)
+        client = anthropic.Anthropic(base_url=resource.endpoint, api_key="token-abc123", timeout=120)
+        adapter = LlmProxyTraceToTriplet()
+
+        # test streaming case only
+        response = client.messages.create(
+            model="gpt-4o-arbitrary",
+            max_tokens=64,
+            messages=[{"role": "user", "content": "Say the word: banana"}],
+            stream=True,
+        )
+
+        chunk_number: int = 0
+        for chunk in response:
+            print(f">>> Chunk: {chunk}")
+            chunk_number += 1
+        assert chunk_number >= 1
+
+        spans = await store.query_spans(rollout.rollout_id, rollout.attempt.attempt_id)
+        for i, span in enumerate(spans):
+            print(f">>> Span {i}: {span.name}, attributes: {span.attributes}")
+            if span.name == "raw_gen_ai_request":
+                assert "llm.hosted_vllm.prompt_token_ids" in span.attributes
+                assert "llm.hosted_vllm.choices" in span.attributes
+                choices: list[dict[str, Any]] = ast.literal_eval(span.attributes["llm.hosted_vllm.choices"])  # type: ignore
+
+                # Check for token IDs and logprobs in the first choice
+                assert len(choices) > 0
+                if VLLM_VERSION >= (0, 10, 2):
+                    assert "token_ids" in choices[0]
+                    assert choices[0]["token_ids"]
+                assert "logprobs" in choices[0]
+                assert "content" in choices[0]["logprobs"]
+                assert len(choices[0]["logprobs"]["content"]) > 0
+                assert isinstance(choices[0]["logprobs"]["content"][0], dict)
+                assert "token" in choices[0]["logprobs"]["content"][0]
+                assert "logprob" in choices[0]["logprobs"]["content"][0]
+                assert isinstance(choices[0]["logprobs"]["content"][0]["logprob"], float)
+
+        assert len(spans) > 0
+
+        triplets = adapter.adapt(spans)
+        for i, triplet in enumerate(triplets):
+            print(f">>> Triplet {i}: {triplet}")
+            assert triplet.prompt["token_ids"]
+            assert triplet.response["token_ids"]
+            # TODO: Check logprobs
+    finally:
+        await proxy.stop()
+        if isinstance(store, LightningStoreServer):
+            await store.stop()

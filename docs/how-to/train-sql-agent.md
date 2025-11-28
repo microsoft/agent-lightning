@@ -321,6 +321,44 @@ For the LLaMA profile, export an `HF_TOKEN` before running so VERL can download 
     env RAY_DEBUG=legacy HYDRA_FULL_ERROR=1 VLLM_USE_V1=1 ray start --head --dashboard-host=0.0.0.0
     ```
 
+!!! note "Launching Training with NPUs"
+
+    The example also supports running with **Huawei Ascend NPUs**. This feature is contributed by [Teams from Huawei](https://github.com/microsoft/agent-lightning/pull/272). To use it, resort to the function `config_train_npu` in the script.
+
+    **Hardware Supported:** Atlas 200T A2 Box16, Atlas 900 A2 PODc, Atlas 800T A3. At least **a single 40GB NPU** is required to run the **Qwen2.5-Coder-1.5B-Instruct** model.
+
+    **Environment Setup:** Python 3.11.13, CANN 8.2.RC1, torch 2.7.1+cpu, torch_npu 2.7.1.dev20250724. For basic environment preparation, please refer to this [document](https://gitcode.com/Ascend/pytorch).
+
+    Before installing dependencies, configure the following pip mirrors:
+
+    ```bash
+    pip config set global.index-url http://repo.huaweicloud.com/repository/pypi/simple
+    pip config set global.extra-index-url "https://download.pytorch.org/whl/cpu/ https://mirrors.huaweicloud.com/ascend/repos/pypi"
+    ```
+
+    Then install vLLM, vLLM-Ascend and VERL:
+
+    ```bash
+    pip install vllm==0.10.0 --trusted-host repo.huaweicloud.com
+    pip install vllm-Ascend==0.10.0rc1 --trusted-host repo.huaweicloud.com
+    pip install verl==0.5.0
+    ```
+
+    To ensure the VERL framework runs correctly on NPU, add the following lines to `verl/utils/vllm_utils.py`:
+
+    ```python
+    from vllm_ascend.patch import platform
+    from vllm_ascend.patch import worker
+    ```
+
+    See the following reference for more details: [https://github.com/vllm-project/vllm-ascend/issues/1776](https://github.com/vllm-project/vllm-ascend/issues/1776).
+
+    After the above dependencies have been installed, from [`examples/spider`]({{ src("examples/spider") }}) run the following script command:
+
+    ```bash
+    python train_sql_agent.py npu
+    ```
+
 ### Debugging the Agent without VERL
 
 [`sql_agent.py`]({{ src("examples/spider/sql_agent.py") }}) also provides a `debug_sql_agent()` helper to run the LangGraph workflow directly against a local or hosted OpenAI-compatible endpoint before using VERL.

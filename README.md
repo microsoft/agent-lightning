@@ -4,7 +4,7 @@
 
 # Agent Lightning⚡
 
-[![Test](https://github.com/microsoft/agent-lightning/actions/workflows/tests-full.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/tests-full.yml)
+[![Unit Tests](https://github.com/microsoft/agent-lightning/actions/workflows/badge-unit.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/badge-unit.yml)
 [![Documentation](https://img.shields.io/badge/GitHub%20Pages-Documentation-blue)](https://microsoft.github.io/agent-lightning/)
 [![PyPI version](https://badge.fury.io/py/agentlightning.svg)](https://badge.fury.io/py/agentlightning)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -32,6 +32,12 @@ Read more on our [documentation website](https://microsoft.github.io/agent-light
 
 ```bash
 pip install agentlightning
+```
+
+For the latest nightly build (cutting-edge features), you can install from Test PyPI:
+
+```bash
+pip install --upgrade --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ agentlightning
 ```
 
 Please refer to our [installation guide](https://microsoft.github.io/agent-lightning/stable/tutorials/installation/) for more details.
@@ -69,10 +75,11 @@ No rewrites, no lock-in, just a clear path from first rollout to steady improvem
 | Workflow | Status |
 |----------|--------|
 | CPU Tests | [![tests workflow status](https://github.com/microsoft/agent-lightning/actions/workflows/tests.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/tests.yml) |
-| GPU Tests | [![tests-full workflow status](https://github.com/microsoft/agent-lightning/actions/workflows/tests-full.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/tests-full.yml) |
+| Full Tests | [![tests summary workflow status](https://github.com/microsoft/agent-lightning/actions/workflows/badge-unit.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/badge-unit.yml) |
+| UI Tests | [![UI Tests](https://github.com/microsoft/agent-lightning/actions/workflows/dashboard.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/dashboard.yml) |
 | Examples Integration | [![examples summary workflow status](https://github.com/microsoft/agent-lightning/actions/workflows/badge-examples.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/badge-examples.yml) |
 | Latest Dependency Compatibility | [![latest summary workflow status](https://github.com/microsoft/agent-lightning/actions/workflows/badge-latest.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/badge-latest.yml) |
-| Legacy Examples Compatibility | [![examples compatibility workflow status](https://github.com/microsoft/agent-lightning/actions/workflows/examples-compat.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/examples-compat.yml) |
+| Legacy Examples Compatibility | [![compat summary workflow status](https://github.com/microsoft/agent-lightning/actions/workflows/badge-compat.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/badge-compat.yml) |
 
 ## ⚡ Citation
 
@@ -92,7 +99,7 @@ If you find Agent Lightning useful in your research or projects, please cite our
 
 ## ⚡ Contributing
 
-This project welcomes contributions and suggestions. Start by reading the [Contributing Guide](docs/community/contributing.md) for environment setup, branching conventions, and pull request expectations. Most contributions require you to agree to a Contributor License Agreement (CLA) declaring that you have the right to, and actually do, grant us the rights to use your contribution. For details, visit https://cla.opensource.microsoft.com.
+This project welcomes contributions and suggestions. Start by reading the [Contributing Guide](docs/community/contributing.md) for recommended contribution points, environment setup, branching conventions, and pull request expectations. Most contributions require you to agree to a Contributor License Agreement (CLA) declaring that you have the right to, and actually do, grant us the rights to use your contribution. For details, visit https://cla.opensource.microsoft.com.
 
 When you submit a pull request, a CLA bot will automatically determine whether you need to provide a CLA and decorate the PR appropriately (e.g., status check, comment). Simply follow the instructions provided by the bot. You will only need to do this once across all repos using our CLA.
 

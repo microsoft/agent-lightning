@@ -1,9 +1,10 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-from typing import Any, Dict, List, Literal, Optional, Sequence
+from typing import Any, Dict, List, Literal, Optional
 
 from opentelemetry.sdk.trace import ReadableSpan
 
+from agentlightning.store import LightningStoreCapabilities
 from agentlightning.store.base import UNSET, LightningStore
 from agentlightning.types import (
     Attempt,
@@ -16,6 +17,7 @@ from agentlightning.types import (
     RolloutStatus,
     Span,
     TaskInput,
+    Worker,
 )
 
 
@@ -24,6 +26,14 @@ class DummyLightningStore(LightningStore):
         super().__init__()
         self.calls: List[tuple[str, tuple[Any, ...], Dict[str, Any]]] = []
         self.return_values = return_values
+
+    @property
+    def capabilities(self) -> LightningStoreCapabilities:
+        return LightningStoreCapabilities(
+            async_safe=True,
+            thread_safe=False,
+            zero_copy=False,
+        )
 
     async def start_rollout(
         self,
@@ -47,22 +57,20 @@ class DummyLightningStore(LightningStore):
         self.calls.append(("enqueue_rollout", (input, mode, resources_id, config, metadata), {}))
         return self.return_values["enqueue_rollout"]
 
-    async def dequeue_rollout(self) -> Optional[AttemptedRollout]:
-        self.calls.append(("dequeue_rollout", (), {}))
+    async def dequeue_rollout(self, worker_id: Optional[str] = None) -> Optional[AttemptedRollout]:
+        self.calls.append(("dequeue_rollout", (worker_id,), {}))
         return self.return_values["dequeue_rollout"]
 
     async def start_attempt(self, rollout_id: str) -> AttemptedRollout:
         self.calls.append(("start_attempt", (rollout_id,), {}))
         return self.return_values["start_attempt"]
 
-    async def query_rollouts(
-        self, *, status: Optional[Sequence[RolloutStatus]] = None, rollout_ids: Optional[Sequence[str]] = None
-    ) -> List[Rollout]:
-        self.calls.append(("query_rollouts", (), {"status": status, "rollout_ids": rollout_ids}))
+    async def query_rollouts(self, *args: Any, **kwargs: Any) -> List[Rollout]:
+        self.calls.append(("query_rollouts", args, kwargs))
         return self.return_values["query_rollouts"]
 
-    async def query_attempts(self, rollout_id: str) -> List[Attempt]:
-        self.calls.append(("query_attempts", (rollout_id,), {}))
+    async def query_attempts(self, *args: Any, **kwargs: Any) -> List[Attempt]:
+        self.calls.append(("query_attempts", args, kwargs))
         return self.return_values["query_attempts"]
 
     async def get_rollout_by_id(self, rollout_id: str) -> Optional[Rollout]:
@@ -89,6 +97,10 @@ class DummyLightningStore(LightningStore):
         self.calls.append(("get_latest_resources", (), {}))
         return self.return_values["get_latest_resources"]
 
+    async def query_resources(self, *args: Any, **kwargs: Any) -> List[ResourcesUpdate]:
+        self.calls.append(("query_resources", args, kwargs))
+        return self.return_values["query_resources"]
+
     async def add_span(self, span: Span) -> Span:
         self.calls.append(("add_span", (span,), {}))
         return self.return_values["add_span"]
@@ -111,12 +123,8 @@ class DummyLightningStore(LightningStore):
         self.calls.append(("get_next_span_sequence_id", (rollout_id, attempt_id), {}))
         return self.return_values["get_next_span_sequence_id"]
 
-    async def query_spans(
-        self,
-        rollout_id: str,
-        attempt_id: str | Literal["latest"] | None = None,
-    ) -> List[Span]:
-        self.calls.append(("query_spans", (rollout_id, attempt_id), {}))
+    async def query_spans(self, *args: Any, **kwargs: Any) -> List[Span]:
+        self.calls.append(("query_spans", args, kwargs))
         return self.return_values["query_spans"]
 
     async def update_rollout(
@@ -156,6 +164,31 @@ class DummyLightningStore(LightningStore):
         )
         return self.return_values["update_attempt"]
 
+    async def query_workers(self, *args: Any, **kwargs: Any) -> List[Worker]:
+        self.calls.append(("query_workers", args, kwargs))
+        return self.return_values["query_workers"]
+
+    async def get_worker_by_id(self, worker_id: str) -> Optional[Worker]:
+        self.calls.append(("get_worker_by_id", (worker_id,), {}))
+        return self.return_values["get_worker_by_id"]
+
+    async def update_worker(
+        self,
+        worker_id: str,
+        heartbeat_stats: Dict[str, Any] | Any = UNSET,
+    ) -> Worker:
+        self.calls.append(
+            (
+                "update_worker",
+                (
+                    worker_id,
+                    heartbeat_stats,
+                ),
+                {},
+            )
+        )
+        return self.return_values["update_worker"]
+
 
 def minimal_dummy_store() -> DummyLightningStore:
     # Provide minimal return values
@@ -180,5 +213,8 @@ def minimal_dummy_store() -> DummyLightningStore:
             "query_spans": [],
             "update_rollout": None,
             "update_attempt": None,
+            "query_workers": [],
+            "get_worker_by_id": None,
+            "update_worker": Worker(worker_id="worker-0"),
         }
     )

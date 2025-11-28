@@ -16,6 +16,8 @@ from opentelemetry.sdk.trace.id_generator import RandomIdGenerator
 from opentelemetry.trace.status import Status as OtelStatus
 from pydantic import BaseModel, ConfigDict
 
+from agentlightning.semconv import AGL_VIRTUAL
+
 __all__ = [
     "AttributeValue",
     "Attributes",
@@ -379,7 +381,7 @@ class Span(BaseModel):
                 is_remote=False,
                 trace_state={},
             ),
-            name=name or SpanNames.VIRTUAL.value,
+            name=name or AGL_VIRTUAL,
             resource=resource or OtelResource(attributes={}, schema_url=""),
             attributes=attributes,
             status=TraceStatus(status_code="OK"),
@@ -399,7 +401,7 @@ class Span(BaseModel):
 
 
 class SpanNames(str, Enum):
-    """Enumerated span names recognised by Agent-lightning."""
+    """Enumerated span names recognised by Agent-lightning. Deprecated in favor of [semconv][agentlightning.semconv]."""
 
     REWARD = "agentlightning.reward"
     """The name of the reward span."""
@@ -411,10 +413,16 @@ class SpanNames(str, Enum):
     """The name of the exception span."""
     VIRTUAL = "agentlightning.virtual"
     """The name of the virtual span. It represents derived spans without concrete operations."""
+    ROLLOUT_ID = "agentlightning.rollout_id"
+    """The name of the rollout ID."""
+    ATTEMPT_ID = "agentlightning.attempt_id"
+    """The name of the attempt ID."""
+    SPAN_SEQUENCE_ID = "agentlightning.span_sequence_id"
+    """The name of the span sequence ID."""
 
 
 class SpanAttributeNames(str, Enum):
-    """Canonical attribute names written by Agent Lightning emitters."""
+    """Canonical attribute names written by Agent Lightning emitters. Deprecated in favor of [semconv][agentlightning.semconv]."""
 
     MESSAGE = "message"
     """The name of the message attribute."""

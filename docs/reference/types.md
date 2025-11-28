@@ -26,7 +26,19 @@
 
 ::: agentlightning.AttemptedRollout
 
+::: agentlightning.Worker
+
+::: agentlightning.WorkerStatus
+
 ::: agentlightning.Hook
+
+::: agentlightning.PaginatedResult
+
+::: agentlightning.FilterOptions
+
+::: agentlightning.SortOptions
+
+::: agentlightning.FilterField
 
 ## Resources
 
@@ -64,8 +76,20 @@
 
 ::: agentlightning.Span
 
-::: agentlightning.SpanNames
-
 ::: agentlightning.SpanAttributeNames
 
 ::: agentlightning.SpanLike
+
+## Semantic Conventions
+
+::: agentlightning.semconv
+
+## Environment Variables
+
+::: agentlightning.LightningEnvVar
+
+::: agentlightning.resolve_bool_env_var
+
+::: agentlightning.resolve_int_env_var
+
+::: agentlightning.resolve_str_env_var
