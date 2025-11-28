@@ -67,6 +67,19 @@
       }
     },
     {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 10
+      },
+      "id": 150,
+      "panels": [],
+      "title": "CollectionBasedLightningStore Metrics",
+      "type": "row"
+    },
+    {
       "title": "Collection Store Ops / Sec (by Method)",
       "type": "timeseries",
       "gridPos": {
@@ -664,11 +677,137 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 75
+        "y": 83
       },
       "targets": [
         {
           "expr": "(histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='_healthcheck'}[1m])))) * (sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='_healthcheck'}[1m])) / scalar(clamp_min(sum(rate(collection_store_total{method='_healthcheck'}[1m])), 1e-9)))",
+          "legendFormat": "{{operation}} - {{collection}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      }
+    },
+    {
+      "title": "add_many_spans: Mongo Ops per Call (by Operation)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 91
+      },
+      "targets": [
+        {
+          "expr": "sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='add_many_spans'}[1m])) / scalar(clamp_min(sum(rate(collection_store_total{method='add_many_spans'}[1m])), 1e-9))",
+          "legendFormat": "{{operation}} - {{collection}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none"
+        }
+      }
+    },
+    {
+      "title": "add_many_spans: Mongo Latency (P50)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 91
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='add_many_spans'}[1m])))",
+          "legendFormat": "{{operation}} - {{collection}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      }
+    },
+    {
+      "title": "add_many_spans: Mongo Time per Call (P50)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 91
+      },
+      "targets": [
+        {
+          "expr": "(histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='add_many_spans'}[1m])))) * (sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='add_many_spans'}[1m])) / scalar(clamp_min(sum(rate(collection_store_total{method='add_many_spans'}[1m])), 1e-9)))",
+          "legendFormat": "{{operation}} - {{collection}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      }
+    },
+    {
+      "title": "add_otel_span: Mongo Ops per Call (by Operation)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 99
+      },
+      "targets": [
+        {
+          "expr": "sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='add_otel_span'}[1m])) / scalar(clamp_min(sum(rate(collection_store_total{method='add_otel_span'}[1m])), 1e-9))",
+          "legendFormat": "{{operation}} - {{collection}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none"
+        }
+      }
+    },
+    {
+      "title": "add_otel_span: Mongo Latency (P50)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 99
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='add_otel_span'}[1m])))",
+          "legendFormat": "{{operation}} - {{collection}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      }
+    },
+    {
+      "title": "add_otel_span: Mongo Time per Call (P50)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 99
+      },
+      "targets": [
+        {
+          "expr": "(histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='add_otel_span'}[1m])))) * (sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='add_otel_span'}[1m])) / scalar(clamp_min(sum(rate(collection_store_total{method='add_otel_span'}[1m])), 1e-9)))",
           "legendFormat": "{{operation}} - {{collection}}"
         }
       ],
@@ -685,7 +824,7 @@
         "h": 10,
         "w": 8,
         "x": 0,
-        "y": 91
+        "y": 107
       },
       "targets": [
         {
@@ -718,7 +857,7 @@
         "h": 10,
         "w": 8,
         "x": 8,
-        "y": 91
+        "y": 107
       },
       "targets": [
         {
@@ -751,7 +890,7 @@
         "h": 10,
         "w": 8,
         "x": 16,
-        "y": 91
+        "y": 107
       },
       "targets": [
         {
@@ -771,7 +910,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 101
+        "y": 117
       },
       "id": 300,
       "panels": [],
@@ -785,7 +924,7 @@
         "h": 10,
         "w": 12,
         "x": 0,
-        "y": 102
+        "y": 118
       },
       "targets": [
         {
@@ -801,7 +940,7 @@
         "h": 10,
         "w": 12,
         "x": 12,
-        "y": 102
+        "y": 118
       },
       "targets": [
         {

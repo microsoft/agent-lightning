@@ -834,8 +834,7 @@ class LightningStoreServer(LightningStore):
         async def _trace_handler(request: PbExportTraceServiceRequest) -> None:
             spans = await spans_from_proto(request, self.get_many_span_sequence_ids)
             server_logger.debug(f"Received {len(spans)} OTLP spans: {', '.join([span.name for span in spans])}")
-            for span in spans:
-                await self.add_span(span)
+            await self.add_many_spans(spans)
 
         # Reserved methods for OTEL traces
         # https://opentelemetry.io/docs/specs/otlp/#otlphttp-request
