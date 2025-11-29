@@ -1,0 +1,187 @@
+name: Benchmark
+permissions:
+  contents: read
+on:
+  workflow_dispatch:
+
+jobs:
+  benchmark:
+    name: Benchmark (${{ matrix.backend.id }}, ${{ matrix.scenario.display }})
+    runs-on: [self-hosted, 1ES.Pool=agl-runner-cpu]
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        backend:
+          - id: memory
+            compose_file: compose.prometheus-memory-store.yml
+          - id: mongo
+            compose_file: compose.prometheus-mongo-store.yml
+        scenario:
+          - id: minimal-production
+            display: Minimal production scale
+            store_workers: 4
+            args: >-
+              --mode batch
+              --total-tasks 4096
+              --batch-size 256
+              --n-runners 32
+              --max-rounds 6
+              --sleep-seconds 0.5
+          - id: medium-production
+            display: Medium production scale
+            store_workers: 16
+            args: >-
+              --mode batch
+              --total-tasks 10000
+              --batch-size 1000
+              --n-runners 100
+              --max-rounds 10
+              --sleep-seconds 0.1
+          - id: large-batch
+            display: Large batch waves
+            store_workers: 32
+            args: >-
+              --mode batch
+              --total-tasks 100000
+              --batch-size 8192
+              --n-runners 256
+              --max-rounds 6
+              --sleep-seconds 0.1
+          - id: long-queues
+            display: Long rollout queues
+            store_workers: 32
+            args: >-
+              --mode batch_partial
+              --total-tasks 100000
+              --batch-size 1024
+              --n-runners 256
+              --remaining-tasks 4096
+              --max-rounds 4
+              --sleep-seconds 0.1
+          - id: high-concurrency
+            display: High-throughput concurrent requests
+            store_workers: 32
+            args: >-
+              --mode single
+              --total-tasks 100000
+              --concurrency 2048
+              --n-runners 256
+              --max-rounds 2
+              --sleep-seconds 0.1
+          - id: heavy-traces
+            display: Heavy rollouts with deep traces
+            store_workers: 64
+            args: >-
+              --mode batch_partial
+              --total-tasks 10000
+              --batch-size 1024
+              --remaining-tasks 256
+              --n-runners 512
+              --max-rounds 20
+              --sleep-seconds 1.0
+    env:
+      STORE_URL: http://localhost:4747
+      STORE_API_URL: http://localhost:4747/v1/agl
+      PROM_URL: http://localhost:9090
+      SCENARIO_ID: ${{ matrix.scenario.id }}
+      BACKEND_ID: ${{ matrix.backend.id }}
+      ARTIFACT_DIR: artifacts/${{ matrix.scenario.id }}-${{ matrix.backend.id }}
+      COMPOSE_FILE: ${{ matrix.backend.compose_file }}
+      AGL_STORE_N_WORKERS: ${{ matrix.scenario.store_workers }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          python-version: '3.12'
+
+      - name: Sync dependencies
+        run: uv sync --frozen --extra mongo --group core-stable --group dev
+
+      - name: Check disk space
+        run: df -h
+
+      - name: Reset benchmark data directories
+        run: |
+          set -euo pipefail
+          cd docker
+          rm -rf data
+          bash setup.sh
+
+      - name: Launch ${{ matrix.backend.id }} Prometheus stack
+        run: |
+          set -euo pipefail
+          cd docker
+          docker compose -f "$COMPOSE_FILE" down -v || true
+          docker compose -f "$COMPOSE_FILE" up -d --quiet-pull
+
+      - name: Wait for store readiness
+        run: |
+          set -euo pipefail
+          for attempt in {1..60}; do
+            if curl -fsS "$STORE_API_URL/health" >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Store did not become ready in time" >&2
+          exit 1
+
+      - name: Prepare artifact directory
+        run: mkdir -p "$ARTIFACT_DIR"
+
+      - name: Record benchmark start
+        run: echo "BENCHMARK_START=$(date -u +%FT%TZ)" >> "$GITHUB_ENV"
+
+      - name: Run ${{ matrix.scenario.display }} workload
+        run: |
+          set -euo pipefail
+          uv run --locked --no-sync python -m tests.benchmark.benchmark_store \
+            --store-url "$STORE_URL" \
+            ${{ matrix.scenario.args }}
+
+      - name: Record benchmark end
+        if: ${{ always() }}
+        run: echo "BENCHMARK_END=$(date -u +%FT%TZ)" >> "$GITHUB_ENV"
+
+      - name: Run benchmark analysis
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$ARTIFACT_DIR"
+          if [ -z "${BENCHMARK_START:-}" ] || [ -z "${BENCHMARK_END:-}" ]; then
+            echo "Analysis skipped: benchmark window not recorded." > "$ARTIFACT_DIR/analysis.txt"
+            exit 1
+          fi
+          uv run --locked --no-sync python -m tests.benchmark.analysis \
+            --prom-url "$PROM_URL" \
+            --store-url "$STORE_API_URL" \
+            --start "$BENCHMARK_START" \
+            --end "$BENCHMARK_END" \
+            | tee "$ARTIFACT_DIR/analysis.txt"
+
+      - name: Stop ${{ matrix.backend.id }} Prometheus stack
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          cd docker
+          docker compose -f "$COMPOSE_FILE" down -v || true
+
+      - name: Archive Prometheus metrics
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$ARTIFACT_DIR"
+          if [ -d docker/data/prometheus ]; then
+            tar -C docker/data -czf "$ARTIFACT_DIR/prometheus-${SCENARIO_ID}-${BACKEND_ID}.tar.gz" prometheus
+          fi
+
+      - name: Upload benchmark artifacts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-${{ matrix.scenario.id }}-${{ matrix.backend.id }}
+          path: ${{ env.ARTIFACT_DIR }}
+          if-no-files-found: error

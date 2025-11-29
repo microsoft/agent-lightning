@@ -24,7 +24,7 @@ dotenv run python llm_proxy.py openai gpt-4.1-mini
 import argparse
 import asyncio
 import os
-from typing import List, no_type_check
+from typing import Sequence, no_type_check
 
 import aiohttp
 from portpicker import pick_unused_port
@@ -189,7 +189,7 @@ def _verify_response_body(response_body: dict, model_name: str):
         assert "chatgpt" in response_body["choices"][0]["message"]["content"].lower()
 
 
-def _verify_span(spans: List[agl.Span]):
+def _verify_span(spans: Sequence[agl.Span]):
     """Only a few spans are checked here.
 
     `raw_gen_ai_request` span:

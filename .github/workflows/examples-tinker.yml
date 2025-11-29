@@ -1,0 +1,160 @@
+name: Examples - Tinker
+permissions:
+  contents: read
+on:
+  schedule:
+    # Every day at 3 AM UTC+8
+    - cron: '0 19 * * *'
+
+  workflow_dispatch:
+
+  repository_dispatch:
+    types: [ci-tinker, ci-all]
+
+run-name: >-
+  ${{ github.event_name == 'repository_dispatch'
+      && format(
+        'Tinker - PR #{0} - {1} - {2}',
+        github.event.client_payload.pull_number,
+        github.event.client_payload.ci_label,
+        github.event.client_payload.correlation_id
+      )
+      || format('Tinker - {0}', github.event_name) }}
+
+jobs:
+  tinker:
+    if: >
+      github.event_name != 'repository_dispatch' ||
+      github.event.action == 'ci-tinker' ||
+      github.event.action == 'ci-all'
+    name: Tinker (Python ${{ matrix.python-version }}, ${{ matrix.setup-script }})
+    runs-on: [self-hosted, 1ES.Pool=agl-runner-cpu]
+    timeout-minutes: 150
+    strategy:
+      matrix:
+        include:
+        - python-version: '3.12'
+          setup-script: 'stable'
+        - python-version: '3.13'
+          setup-script: 'latest'
+      fail-fast: false
+    steps:
+      - name: Check disk space
+        run: df -h
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.pr_ref || (github.event.pull_request.number && format('refs/pull/{0}/merge', github.event.pull_request.number)) || github.ref }}
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          python-version: ${{ matrix.python-version }}
+      - name: Upgrade dependencies (latest)
+        run: uv lock --upgrade
+        if: matrix.setup-script == 'latest'
+      - name: Sync dependencies
+        run: |
+          uv sync --frozen --no-default-groups \
+            --group dev --group experiment --group agents --group torch-cpu --group core-stable --group tinker
+      - name: Freeze dependencies
+        run: |
+          set -euo pipefail
+          uv pip freeze | tee requirements-freeze.txt
+          echo "UV_LOCKED=1" >> $GITHUB_ENV
+          echo "UV_NO_SYNC=1" >> $GITHUB_ENV
+      - name: Upload dependencies artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependencies-tinker-${{ matrix.python-version }}-${{ matrix.setup-script }}
+          path: requirements-freeze.txt
+          compression-level: 0
+
+      - name: Tinker LLM sanity check
+        run: |
+          set -euo pipefail
+          source .venv/bin/activate
+          cd examples/tinker
+          # TODO: Currently only test the client tracer implementation.
+          python -m tests.test_tinker_llm
+        shell: bash
+        env:
+          TINKER_API_KEY: ${{ secrets.TINKER_API_KEY }}
+
+      - name: Tinker Hello
+        run: |
+          set -euo pipefail
+          source .venv/bin/activate
+          cd examples/tinker
+          python hello.py oneclick --ci
+        shell: bash
+        env:
+          TINKER_API_KEY: ${{ secrets.TINKER_API_KEY }}
+
+      - name: Tinker Q20 Evaluate (GPT-4.1)
+        run: |
+          set -euo pipefail
+          source .venv/bin/activate
+          cd examples/tinker
+          mkdir -p logs
+          python q20_evaluate.py --ci --model gpt-4.1 --output-file logs/q20_evaluate_gpt-4.1.jsonl
+        shell: bash
+        env:
+          OPENAI_BASE_URL: ${{ secrets.AZURE_OPENAI_ENDPOINT_SWEDEN }}
+          OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY_SWEDEN }}
+          CREWAI_DISABLE_TELEMETRY: true
+          TINKER_API_KEY: ${{ secrets.TINKER_API_KEY }}
+
+      - name: Tinker Q20 Evaluate (Qwen3-30B-A3B-Instruct-2507)
+        run: |
+          set -euo pipefail
+          source .venv/bin/activate
+          cd examples/tinker
+          python q20_evaluate.py --ci --model Qwen/Qwen3-30B-A3B-Instruct-2507 --output-file logs/q20_evaluate_qwen3-30b-a3b.jsonl
+        shell: bash
+        env:
+          OPENAI_BASE_URL: ${{ secrets.AZURE_OPENAI_ENDPOINT_SWEDEN }}
+          OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY_SWEDEN }}
+          CREWAI_DISABLE_TELEMETRY: true
+          TINKER_API_KEY: ${{ secrets.TINKER_API_KEY }}
+
+      - name: Tinker Q20 Training Dry Run
+        run: |
+          set -euo pipefail
+          source .venv/bin/activate
+          cd examples/tinker
+          python q20_train.py dryrun --model qwen4b
+        shell: bash
+        env:
+          OPENAI_BASE_URL: ${{ secrets.AZURE_OPENAI_ENDPOINT_SWEDEN }}
+          OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY_SWEDEN }}
+          CREWAI_DISABLE_TELEMETRY: true
+          TINKER_API_KEY: ${{ secrets.TINKER_API_KEY }}
+
+      - name: Tinker Q20 Training
+        run: |
+          set -euo pipefail
+          source .venv/bin/activate
+          cd examples/tinker
+          agl store --port 4747 &
+          sleep 5
+          python q20_train.py runner --n-runners 4 &
+          sleep 5
+          python q20_train.py algo --model qwen4b --ci
+          sleep 5
+
+          pkill -f agl && echo "SIGTERM sent to agl" || echo "No agl process found"
+          while pgrep -f agl; do
+            echo "Waiting for agl to finish..."
+            sleep 5
+          done
+          pkill -f q20_train.py && echo "SIGTERM sent to q20_train.py" || echo "No q20_train.py process found"
+          while pgrep -f q20_train.py; do
+            echo "Waiting for q20_train.py to finish..."
+            sleep 5
+          done
+          echo "q20_train.py has finished."
+        shell: bash
+        env:
+          OPENAI_BASE_URL: ${{ secrets.AZURE_OPENAI_ENDPOINT_SWEDEN }}
+          OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY_SWEDEN }}
+          CREWAI_DISABLE_TELEMETRY: true
+          TINKER_API_KEY: ${{ secrets.TINKER_API_KEY }}

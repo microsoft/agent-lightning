@@ -1,0 +1,25 @@
+services:
+  app:
+    build:
+      context: ../
+      dockerfile: docker/Dockerfile.dev
+
+    ports:
+      - "4747:4747"
+
+    command: agl store --host 0.0.0.0 --port 4747
+
+    develop:
+      watch:
+        # Sync the working directory with the `/app` directory in the container
+        - action: sync
+          path: ..
+          target: /app
+          # Exclude the project virtual environment — it could be for a
+          # different platform in the container
+          ignore:
+            - .venv/
+
+        # Rebuild the image if dependencies change by checking uv.lock
+        - action: rebuild
+          path: ../uv.lock

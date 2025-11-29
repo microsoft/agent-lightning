@@ -1,0 +1,53 @@
+services:
+  app:
+    extends:
+      file: compose.store.yml
+      service: app
+
+    command: agl store --host 0.0.0.0 --port 4747 --prometheus --backend memory
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    # In CI you might not have full /proc, but this is OK for container-level stats
+    pid: "host"
+    command:
+      - "--path.rootfs=/host"
+    volumes:
+      - "/:/host:ro,rslave"
+
+  prometheus:
+    image: prom/prometheus:latest
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=1h"
+    volumes:
+      - ./prometheus.memory-store.yml:/etc/prometheus/prometheus.yml:ro
+      - ./data/prometheus:/prometheus
+    depends_on:
+      - app
+      - node-exporter
+    ports:
+      - "9090:9090"
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "9091:3000"
+    depends_on:
+      - prometheus
+    volumes:
+      - ./data/grafana:/var/lib/grafana
+      # 1. Mount the Datasource Config
+      - ./grafana/datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml
+      # 2. Mount the Dashboard Provider Config
+      - ./grafana/dashboard-provider.yml:/etc/grafana/provisioning/dashboards/provider.yml
+      # 3. Mount the folder containing the actual JSON files
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+
+    environment:
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_AUTH_DISABLE_LOGIN_FORM=true
+      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/var/lib/grafana/dashboards/agentlightning.json

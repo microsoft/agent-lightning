@@ -15,13 +15,14 @@ agl store --port 45993 --log-level DEBUG
 import argparse
 import asyncio
 import time
-from typing import List
+from typing import Sequence
 
 from openai import AsyncOpenAI
 from rich.console import Console
 
 from agentlightning import AgentOpsTracer, LightningStoreClient, OtelTracer, Span, emit_reward, setup_logging
 from agentlightning.store import InMemoryLightningStore
+from agentlightning.utils.otel import get_tracer_provider
 
 console = Console()
 
@@ -34,7 +35,7 @@ async def send_traces_via_otel(use_client: bool = False):
         store = LightningStoreClient("http://localhost:45993")
     rollout = await store.start_rollout(input={"origin": "write_traces_example"})
 
-    with tracer.lifespan():
+    with tracer.lifespan(store):
         # Initialize the capture of one single trace for one single rollout
         async with tracer.trace_context(
             "trace-manual", store=store, rollout_id=rollout.rollout_id, attempt_id=rollout.attempt.attempt_id
@@ -61,13 +62,13 @@ async def send_traces_via_otel(use_client: bool = False):
     assert "grpc-span-1" in span_names
     assert "grpc-span-2" in span_names
     assert "grpc-span-3" in span_names
-    assert "agentlightning.reward" in span_names
+    assert "agentlightning.annotation" in span_names
 
     last_span = traces[-1]
-    assert last_span.name == "agentlightning.reward"
-    # NOTE: Try not to rely on this attribute. It may change in the future.
+    assert last_span.name == "agentlightning.annotation"
+    # NOTE: Try not to rely on this attribute like this example do. It may change in the future.
     # Use utils from agentlightning.emitter to get the reward value.
-    assert last_span.attributes["reward"] == 1.0
+    assert last_span.attributes["agentlightning.reward.0.value"] == 1.0
 
     if use_client:
         # When using client, the resource should have rollout_id and attempt_id set
@@ -89,10 +90,13 @@ async def send_traces_via_agentops(use_client: bool = False):
 
     # Initialize the tracer lifespan
     # One lifespan can contain multiple traces
-    with tracer.lifespan():
+    with tracer.lifespan(store):
+        # Inspect current tracer provider
+        get_tracer_provider(inspect=True)
+
         # Initialize the capture of one single trace for one single rollout
         async with tracer.trace_context(
-            "trace-1", store=store, rollout_id=rollout.rollout_id, attempt_id=rollout.attempt.attempt_id
+            "trace-1", rollout_id=rollout.rollout_id, attempt_id=rollout.attempt.attempt_id
         ):
             openai_client = AsyncOpenAI()
             response = await openai_client.chat.completions.create(
@@ -102,6 +106,7 @@ async def send_traces_via_agentops(use_client: bool = False):
                     {"role": "user", "content": "Hello, what's your name?"},
                 ],
             )
+            console.print(response)
             assert response.choices[0].message.content is not None
             assert "chatgpt" in response.choices[0].message.content.lower()
 
@@ -112,7 +117,7 @@ async def send_traces_via_agentops(use_client: bool = False):
         await store.close()
 
 
-async def _verify_agentops_traces(spans: List[Span], use_client: bool = False):
+async def _verify_agentops_traces(spans: Sequence[Span], use_client: bool = False):
     """Expected traces to something like:
 
     ```python

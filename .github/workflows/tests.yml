@@ -37,6 +37,7 @@ jobs:
           uv sync --frozen \
             --extra apo \
             --extra verl \
+            --extra mongo \
             --group dev \
             --group torch-cpu \
             --group torch-stable \
@@ -166,7 +167,7 @@ jobs:
 
       - name: Run tests
         run: |
-          uv run pytest -v --durations=0 tests
+          uv run pytest -v --durations=0 tests -m "not mongo"
         env:
           PYTEST_ADDOPTS: "--color=yes"
 

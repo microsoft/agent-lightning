@@ -239,6 +239,14 @@ jobs:
           WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
         id: calc_x_train_local_model
 
+      - name: Validate training with local model
+        run: |
+          set -ex
+          uv run scripts/validate_example_wandb.py ${{ steps.calc_x_train_local_model.outputs.project_name }} ${{ steps.calc_x_train_local_model.outputs.run_name }}
+        env:
+          WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
+          WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
+
       - name: Training with LLM Proxy
         run: |
           set -ex
@@ -253,6 +261,14 @@ jobs:
           WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
           WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
         id: calc_x_train_llm_proxy
+
+      - name: Validate training with LLM Proxy
+        run: |
+          set -ex
+          uv run scripts/validate_example_wandb.py ${{ steps.calc_x_train_llm_proxy.outputs.project_name }} ${{ steps.calc_x_train_llm_proxy.outputs.run_name }}
+        env:
+          WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
+          WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
 
       - name: Training with external store
         run: |
@@ -284,6 +300,14 @@ jobs:
           WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
         id: calc_x_train_external_store
 
+      - name: Validate training with external store
+        run: |
+          set -ex
+          uv run scripts/validate_example_wandb.py ${{ steps.calc_x_train_external_store.outputs.project_name }} ${{ steps.calc_x_train_external_store.outputs.run_name }}
+        env:
+          WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
+          WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
+
       - name: Training with role-based environment variables
         run: |
           set -euo pipefail
@@ -302,6 +326,15 @@ jobs:
           done
           echo "train_calc_agent.py has finished."
         shell: bash
+        env:
+          WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
+          WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
+        id: calc_x_train_role_based_env_var
+
+      - name: Validate training with role-based environment variables
+        run: |
+          set -ex
+          uv run scripts/validate_example_wandb.py ${{ steps.calc_x_train_role_based_env_var.outputs.project_name }} ${{ steps.calc_x_train_role_based_env_var.outputs.run_name }}
         env:
           WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
           WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}

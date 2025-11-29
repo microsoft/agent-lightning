@@ -128,13 +128,19 @@ async def q20_agent(task: Q20Task, llm: agl.LLM, rollout: agl.Rollout) -> None:
         # agl.emit_reward(0.0)
 
 
-def dry_run():
+def dry_run(model: Literal["qwen4b", "qwen30b"]):
     """Run a quick dry-run test of the 20 Questions training setup.
 
     Uses in-memory store and processes 4 sample tasks to verify the setup works.
     """
     store = agl.LightningStoreThreaded(agl.InMemoryLightningStore())
-    llm_proxy = create_llm_proxy("Qwen/Qwen3-30B-A3B-Instruct-2507", "qwen3_instruct", store=store)
+    if model == "qwen4b":
+        model_name = "Qwen/Qwen3-4B-Instruct-2507"
+    elif model == "qwen30b":
+        model_name = "Qwen/Qwen3-30B-A3B-Instruct-2507"
+    else:
+        raise ValueError(f"Invalid model: {model}")
+    llm_proxy = create_llm_proxy(model_name, "qwen3_instruct", store=store)
     trainer = agl.Trainer(
         n_runners=2,
         initial_resources={"llm": llm_proxy.as_resource()},
@@ -150,7 +156,7 @@ def dry_run():
         asyncio.run(llm_proxy.stop())
 
 
-async def algo(search: bool, model: Literal["qwen4b", "qwen30b"], port: int):
+async def algo(search: bool, model: Literal["qwen4b", "qwen30b"], port: int, ci: bool = False):
     """Run the training algorithm for 20 Questions.
 
     Args:
@@ -167,10 +173,10 @@ async def algo(search: bool, model: Literal["qwen4b", "qwen30b"], port: int):
 
     if model == "qwen4b":
         model_name = "Qwen/Qwen3-4B-Instruct-2507"
-        renderer_name = "qwen3"
+        renderer_name = "qwen3_instruct"
     elif model == "qwen30b":
         model_name = "Qwen/Qwen3-30B-A3B-Instruct-2507"
-        renderer_name = "qwen3"
+        renderer_name = "qwen3_instruct"
     else:
         raise ValueError(f"Invalid model: {model}")
 
@@ -178,16 +184,27 @@ async def algo(search: bool, model: Literal["qwen4b", "qwen30b"], port: int):
 
     llm_proxy_port = _find_available_port()
 
+    if ci:
+        train_dataset = cast(agl.Dataset[Q20Task], train_dataset[:2])  # type: ignore
+        test_dataset = cast(agl.Dataset[Q20Task], test_dataset[:2])  # type: ignore
+        group_size = 2
+        batch_size = 2
+        n_epochs = 1
+    else:
+        group_size = 16
+        batch_size = 16
+        n_epochs = 10
+
     config = Config(
         learning_rate=1e-4,
         dataset_builder=AGLDatasetBuilder(
             train_dataset=train_dataset,
             val_dataset=test_dataset,
-            batch_size=16,
+            batch_size=batch_size,
             shuffle=True,
-            group_size=16,
+            group_size=group_size,
             seed=17,
-            n_epochs=10,
+            n_epochs=n_epochs,
         ),
         lora_rank=16,
         renderer_name=renderer_name,
@@ -315,12 +332,12 @@ def runner(port: int = 4747, n_runners: int = 2):
     trainer.fit(q20_agent)
 
 
-def _run_dryrun(_args: argparse.Namespace) -> None:
-    dry_run()
+def _run_dryrun(args: argparse.Namespace) -> None:
+    dry_run(model=args.model)
 
 
 def _run_algo(args: argparse.Namespace) -> None:
-    asyncio.run(algo(search=args.search, model=args.model, port=args.port))
+    asyncio.run(algo(search=args.search, model=args.model, port=args.port, ci=args.ci))
 
 
 def _run_runner(args: argparse.Namespace) -> None:
@@ -337,6 +354,9 @@ def main() -> None:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     dryrun_parser = subparsers.add_parser("dryrun", help="Run the in-memory dry run.")
+    dryrun_parser.add_argument(
+        "--model", choices=("qwen4b", "qwen30b"), default="qwen30b", help="Model variant to train."
+    )
     dryrun_parser.set_defaults(func=_run_dryrun)
 
     algo_parser = subparsers.add_parser("algo", help="Launch the full training algorithm.")
@@ -348,6 +368,7 @@ def main() -> None:
         default="qwen30b",
         help="Model variant to train.",
     )
+    algo_parser.add_argument("--ci", action="store_true", help="Run in CI mode (smaller dataset, smaller batch).")
     algo_parser.set_defaults(func=_run_algo)
 
     algo_verl_parser = subparsers.add_parser("verl", help="Launch the full training algorithm with VERL.")

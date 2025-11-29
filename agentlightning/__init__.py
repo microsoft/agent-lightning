@@ -1,12 +1,13 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-__version__ = "0.2.2"
+__version__ = "0.3.0"
 
 from .adapter import *
 from .algorithm import *
 from .client import AgentLightningClient, DevTaskLoader  # deprecated  # type: ignore
 from .config import *
 from .emitter import *
+from .env_var import *
 from .execution import *
 from .litagent import *
 from .llm_proxy import *

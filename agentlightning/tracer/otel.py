@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
+import warnings
 from contextlib import asynccontextmanager
 from typing import Any, AsyncGenerator, Awaitable, List, Optional
 
@@ -17,8 +18,8 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace import TracerProvider as TracerProviderImpl
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 
+from agentlightning.semconv import LightningResourceAttributes
 from agentlightning.store.base import LightningStore
-from agentlightning.types.tracer import SpanNames
 from agentlightning.utils.otlp import LightningStoreOTLPExporter
 
 from .base import Tracer
@@ -42,8 +43,8 @@ class OtelTracer(Tracer):
         self._otlp_span_exporter: Optional[LightningStoreOTLPExporter] = None
         self._initialized: bool = False
 
-    def init_worker(self, worker_id: int):
-        super().init_worker(worker_id)
+    def init_worker(self, worker_id: int, store: Optional[LightningStore] = None):
+        super().init_worker(worker_id, store)
         self._initialize_tracer_provider(worker_id)
 
     def _initialize_tracer_provider(self, worker_id: int):
@@ -92,7 +93,18 @@ class OtelTracer(Tracer):
         if not self._lightning_span_processor:
             raise RuntimeError("LightningSpanProcessor is not initialized. Call init_worker() first.")
 
-        if store is not None and rollout_id is not None and attempt_id is not None:
+        if store is not None:
+            warnings.warn(
+                "store is deprecated in favor of init_worker(). It will be removed in the future.",
+                DeprecationWarning,
+                stacklevel=3,
+            )
+        else:
+            store = self._store
+
+        if rollout_id is not None and attempt_id is not None:
+            if store is None:
+                raise ValueError("store is required to be initialized when rollout_id and attempt_id are provided")
             if store.capabilities.get("otlp_traces", False) is True:
                 logger.debug(f"Tracing to LightningStore rollout_id={rollout_id}, attempt_id={attempt_id}")
                 self._enable_native_otlp_exporter(store, rollout_id, attempt_id)
@@ -101,12 +113,12 @@ class OtelTracer(Tracer):
             ctx = self._lightning_span_processor.with_context(store=store, rollout_id=rollout_id, attempt_id=attempt_id)
             with ctx:
                 yield trace_api.get_tracer(__name__, tracer_provider=self._tracer_provider)
-        elif store is None and rollout_id is None and attempt_id is None:
+        elif rollout_id is None and attempt_id is None:
             self._disable_native_otlp_exporter()
             with self._lightning_span_processor:
                 yield trace_api.get_tracer(__name__, tracer_provider=self._tracer_provider)
         else:
-            raise ValueError("store, rollout_id, and attempt_id must be either all provided or all None")
+            raise ValueError("rollout_id and attempt_id must be either all provided or all None")
 
     def get_last_trace(self) -> List[ReadableSpan]:
         """
@@ -132,8 +144,8 @@ class OtelTracer(Tracer):
         tracer_provider._resource = tracer_provider._resource.merge(  # pyright: ignore[reportPrivateUsage]
             Resource.create(
                 {
-                    SpanNames.ROLLOUT_ID: rollout_id,
-                    SpanNames.ATTEMPT_ID: attempt_id,
+                    LightningResourceAttributes.ROLLOUT_ID.value: rollout_id,
+                    LightningResourceAttributes.ATTEMPT_ID.value: attempt_id,
                 }
             )
         )
@@ -170,8 +182,8 @@ class OtelTracer(Tracer):
         tracer_provider._resource = tracer_provider._resource.merge(  # pyright: ignore[reportPrivateUsage]
             Resource.create(
                 {
-                    SpanNames.ROLLOUT_ID: "",
-                    SpanNames.ATTEMPT_ID: "",
+                    LightningResourceAttributes.ROLLOUT_ID.value: "",
+                    LightningResourceAttributes.ATTEMPT_ID.value: "",
                 }
             )
         )  # reset resource
@@ -206,6 +218,30 @@ class LightningSpanProcessor(SpanProcessor):
         self._loop_ready = threading.Event()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._loop_thread: Optional[threading.Thread] = None
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__name__}("
+            + f"disable_store_submission={self.disable_store_submission}, "
+            + f"store={self.store!r}, "
+            + f"rollout_id={self.rollout_id!r}, "
+            + f"attempt_id={self.attempt_id!r})"
+        )
+
+    @property
+    def store(self) -> Optional[LightningStore]:
+        """The store to submit the spans to."""
+        return self._store
+
+    @property
+    def rollout_id(self) -> Optional[str]:
+        """The rollout ID to submit the spans to."""
+        return self._rollout_id
+
+    @property
+    def attempt_id(self) -> Optional[str]:
+        """The attempt ID to submit the spans to."""
+        return self._attempt_id
 
     @property
     def disable_store_submission(self) -> bool:

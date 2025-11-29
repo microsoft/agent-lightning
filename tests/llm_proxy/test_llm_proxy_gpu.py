@@ -15,7 +15,7 @@ There are some specific TODOs for each test function.
 import ast
 import asyncio
 import json
-from typing import Any, Dict, List, Type, Union, cast
+from typing import Any, Dict, List, Sequence, Type, Union, cast
 
 import anthropic
 import openai
@@ -127,6 +127,7 @@ async def test_basic_integration(qwen25_model: RemoteOpenAIServer, otlp_enabled:
         print(f">>> Span: {span.name}")
         print(f">>> Start time: {span.start_time}")
         print(f">>> End time: {span.end_time}")
+        print(f">>> Attributes: {span.attributes.keys()}")
         assert span.start_time is not None, f"Span {span.name} has no start time"
         assert span.end_time is not None, f"Span {span.name} has no end time"
 
@@ -239,7 +240,7 @@ def _get_async_client_for_resource(resource: LLM):
     return openai.AsyncOpenAI(base_url=resource.endpoint, api_key="token-abc123", timeout=120, max_retries=0)
 
 
-def _find_span(spans: list[Span], name: str):
+def _find_span(spans: Sequence[Span], name: str):
     return [s for s in spans if s.name == name]
 
 

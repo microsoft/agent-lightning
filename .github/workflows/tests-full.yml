@@ -47,6 +47,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.pr_ref || (github.event.pull_request.number && format('refs/pull/{0}/merge', github.event.pull_request.number)) || github.ref }}
+
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
@@ -55,10 +56,10 @@ jobs:
         run: uv lock --upgrade
         if: matrix.setup-script == 'latest'
       - name: Sync dependencies (latest)
-        run: uv sync --frozen --no-default-groups --extra apo --group dev --group agents --group torch-gpu-stable
+        run: uv sync --frozen --no-default-groups --extra apo --extra mongo --group dev --group agents --group torch-gpu-stable
         if: matrix.setup-script == 'latest'
       - name: Sync dependencies (stable & legacy)
-        run: uv sync --frozen --no-default-groups --extra apo --group dev --group agents --group torch-gpu-${{ matrix.setup-script }}
+        run: uv sync --frozen --no-default-groups --extra apo --extra mongo --group dev --group agents --group torch-gpu-${{ matrix.setup-script }}
         if: matrix.setup-script != 'latest'
       - name: Freeze dependencies
         run: |
@@ -81,6 +82,52 @@ jobs:
       - name: Build dashboard
         run: cd dashboard && npm run build
 
+      - name: Setup Docker environments
+        run: |
+          set -euo pipefail
+
+          cd docker
+
+          # Setup data directories
+          ./setup.sh
+
+          # Start Dockers
+          docker compose -f compose.mongo.yml up -d
+
+          SERVICE_NAME=mongo
+          TIMEOUT=60   # seconds
+          SLEEP=2
+
+          cid="$(docker compose -f compose.mongo.yml ps -q "$SERVICE_NAME")"
+          if [ -z "$cid" ]; then
+            echo "Service $SERVICE_NAME is not running"
+            exit 1
+          fi
+
+          echo "Waiting for $SERVICE_NAME to become healthy..."
+          end=$((SECONDS + TIMEOUT))
+
+          while [ "$SECONDS" -lt "$end" ]; do
+            status="$(docker inspect -f '{{.State.Health.Status}}' "$cid")"
+            echo "Current status: $status"
+
+            if [ "$status" = "healthy" ]; then
+              echo "$SERVICE_NAME is healthy ✅"
+              exit 0
+            elif [ "$status" = "unhealthy" ]; then
+              echo "$SERVICE_NAME is unhealthy ❌"
+              docker logs "$cid" || true
+              exit 1
+            fi
+
+            sleep "$SLEEP"
+          done
+
+          echo "Timed out waiting for $SERVICE_NAME to become healthy after ${TIMEOUT}s"
+          docker logs "$cid" || true
+          exit 1
+        shell: bash
+
       - name: Launch LiteLLM Proxy
         run: |
           ./scripts/litellm_run.sh
@@ -95,6 +142,8 @@ jobs:
           PYTEST_ADDOPTS: "--color=yes"
           OPENAI_BASE_URL: http://localhost:12306/
           OPENAI_API_KEY: dummy
+          AGL_TEST_MONGO_URI: mongodb://localhost:27017/?replicaSet=rs0
+
 
   minimal-examples:
     if: >
@@ -160,6 +209,7 @@ jobs:
           source .venv/bin/activate
           cd examples/minimal
           python write_traces.py otel
+          sleep 5
 
       - name: Write Traces via AgentOps Tracer
         env:
@@ -170,6 +220,7 @@ jobs:
           source .venv/bin/activate
           cd examples/minimal
           python write_traces.py agentops
+          sleep 5
 
       - name: Write Traces via Otel Tracer with Client
         run: |
