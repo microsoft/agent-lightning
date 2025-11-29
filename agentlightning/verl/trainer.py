@@ -217,9 +217,12 @@ class AgentLightningTrainer(RayPPOTrainer):
                     gen_batch.non_tensor_batch, self.async_rollout_manager.server_addresses
                 )
                 self.agent_mode_daemon.run_until_all_finished()
+            with _timer("gen_postprocess", timing_raw):
                 batch, agent_metrics = self.agent_mode_daemon.get_train_data_batch(
                     max_prompt_length=self.config.data.max_prompt_length,
-                    max_response_length=self.config.data.max_response_length,
+                    max_response_length=self.config.actor_rollout_ref.rollout.trace_aggregator.trajectory_max_length \
+                        if self.config.actor_rollout_ref.rollout.trace_aggregator.mode == "trajectory" else \
+                            self.config.data.max_response_length,
                     device=gen_batch.batch["fake_ids"].device,
                 )
                 metrics.update(agent_metrics)
@@ -245,7 +248,8 @@ class AgentLightningTrainer(RayPPOTrainer):
             # uid is used for algorithm like GRPO, should be aligned to data id
             batch.non_tensor_batch["uid"] = batch.non_tensor_batch["data_id_list"]
 
-            batch.batch["response_mask"] = compute_response_mask(batch)
+            if "response_mask" not in batch.batch:
+                batch.batch["response_mask"] = compute_response_mask(batch)
 
             # compute global_valid tokens
             batch.meta_info["global_token_num"] = torch.sum(batch.batch["attention_mask"], dim=-1).tolist()
@@ -427,6 +431,7 @@ class AgentLightningTrainer(RayPPOTrainer):
             store=self.store,
             llm_proxy=self.llm_proxy,
             adapter=self.adapter,
+            trace_aggregator=self.config.actor_rollout_ref.rollout.trace_aggregator,
         )
         self.agent_mode_daemon.start()
 
