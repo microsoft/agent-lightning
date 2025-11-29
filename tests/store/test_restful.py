@@ -12,7 +12,7 @@ Test categories:
 
 import asyncio
 import contextlib
-from typing import AsyncGenerator, List, Tuple
+from typing import Any, AsyncGenerator, Dict, List, Tuple
 
 import aiohttp
 import pytest
@@ -67,6 +67,77 @@ async def _run_server_with_cors(cors_origins: List[str] | str | None = None):
     finally:
         await session.close()
         await server.stop()
+
+
+async def _request_rollouts_page(
+    session: aiohttp.ClientSession, api_endpoint: str, method: str, payload: Dict[str, Any]
+) -> Dict[str, Any]:
+    """Send either GET or POST /search request for rollouts and return parsed payload."""
+
+    if method == "get":
+        async with session.get(f"{api_endpoint}/rollouts", params=payload) as resp:
+            assert resp.status == 200
+            return await resp.json()
+    async with session.post(f"{api_endpoint}/rollouts/search", json=payload) as resp:
+        assert resp.status == 200
+        return await resp.json()
+
+
+async def _request_attempts_page(
+    session: aiohttp.ClientSession,
+    api_endpoint: str,
+    rollout_id: str,
+    method: str,
+    payload: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Send either GET or POST /search request for attempts and return parsed payload."""
+
+    base = f"{api_endpoint}/rollouts/{rollout_id}/attempts"
+    if method == "get":
+        async with session.get(base, params=payload) as resp:
+            assert resp.status == 200
+            return await resp.json()
+    async with session.post(f"{base}/search", json=payload) as resp:
+        assert resp.status == 200
+        return await resp.json()
+
+
+async def _request_spans_page(
+    session: aiohttp.ClientSession,
+    api_endpoint: str,
+    rollout_id: str,
+    method: str,
+    payload: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Send either GET or POST /search request for spans and return parsed payload."""
+
+    base_params = {"rollout_id": rollout_id}
+    base_params.update(payload)
+    if method == "get":
+        async with session.get(f"{api_endpoint}/spans", params=base_params) as resp:
+            assert resp.status == 200
+            return await resp.json()
+    async with session.post(f"{api_endpoint}/spans/search", json=base_params) as resp:
+        assert resp.status == 200
+        return await resp.json()
+
+
+async def _request_workers_page(
+    session: aiohttp.ClientSession,
+    api_endpoint: str,
+    method: str,
+    payload: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Send either GET or POST /search request for workers and return parsed payload."""
+
+    base = f"{api_endpoint}/workers"
+    if method == "get":
+        async with session.get(base, params=payload) as resp:
+            assert resp.status == 200
+            return await resp.json()
+    async with session.post(f"{base}/search", json=payload) as resp:
+        assert resp.status == 200
+        return await resp.json()
 
 
 @pytest_asyncio.fixture
@@ -205,6 +276,24 @@ async def test_rollouts_pagination_disabled(
         assert data["total"] == 15
         assert data["limit"] == -1
         assert len(data["items"]) == 15
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method", ["get", "post"])
+async def test_rollouts_search_supports_get_and_post(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str], method: str
+) -> None:
+    """Ensure both GET and POST /search endpoints behave the same for rollouts."""
+
+    server, _client, session, api_endpoint = server_client
+    for i in range(3):
+        await server.enqueue_rollout(input={"index": i})
+
+    data = await _request_rollouts_page(session, api_endpoint, method, {"limit": 2, "offset": 0})
+    assert data["total"] == 3
+    assert data["limit"] == 2
+    assert data["offset"] == 0
+    assert len(data["items"]) == 2
 
 
 @pytest.mark.asyncio
@@ -482,6 +571,22 @@ async def test_attempts_pagination_basic(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("method", ["get", "post"])
+async def test_attempts_search_supports_get_and_post(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str], method: str
+) -> None:
+    server, _client, session, api_endpoint = server_client
+
+    rollout = await server.enqueue_rollout(input={"test": "attempt-search"})
+    await server.start_attempt(rollout.rollout_id)
+
+    data = await _request_attempts_page(session, api_endpoint, rollout.rollout_id, method, {"limit": 1, "offset": 0})
+    assert data["total"] == 1
+    assert data["limit"] == 1
+    assert len(data["items"]) == 1
+
+
+@pytest.mark.asyncio
 async def test_attempts_sorting(
     server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
 ) -> None:
@@ -744,6 +849,30 @@ async def test_spans_pagination_basic(
         data = await resp.json()
         assert data["total"] == 10
         assert len(data["items"]) == 10
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method", ["get", "post"])
+async def test_spans_search_supports_get_and_post(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str], method: str
+) -> None:
+    server, _client, session, api_endpoint = server_client
+
+    attempted = await server.start_rollout(input={"test": "span-search"})
+    attempt_id = attempted.attempt.attempt_id
+    for seq in range(3):
+        await server.add_span(_make_span(attempted.rollout_id, attempt_id, seq + 1, f"span-{seq}"))
+
+    data = await _request_spans_page(
+        session,
+        api_endpoint,
+        attempted.rollout_id,
+        method,
+        {"attempt_id": attempt_id, "limit": 2, "offset": 0},
+    )
+    assert data["total"] == 3
+    assert data["limit"] == 2
+    assert len(data["items"]) == 2
 
 
 @pytest.mark.asyncio
@@ -1116,6 +1245,50 @@ async def test_request_json_spans_returns_pagination_metadata(
     assert len(data["items"]) == 1
 
 
+# Update semantics tests
+
+
+@pytest.mark.asyncio
+async def test_update_rollout_distinguishes_unset_fields(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    server, _client, session, api_endpoint = server_client
+    rollout = await server.enqueue_rollout(input={"id": "unset-check"})
+
+    async with session.post(
+        f"{api_endpoint}/rollouts/{rollout.rollout_id}",
+        json={"metadata": {"foo": "bar"}},
+    ) as resp:
+        assert resp.status == 200
+
+    async with session.post(
+        f"{api_endpoint}/rollouts/{rollout.rollout_id}",
+        json={"status": None},
+    ) as resp:
+        assert resp.status == 400
+
+
+@pytest.mark.asyncio
+async def test_update_attempt_distinguishes_unset_fields(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    server, _client, session, api_endpoint = server_client
+    attempted = await server.start_rollout(input={"id": "attempt-unset"})
+    attempt_id = attempted.attempt.attempt_id
+
+    async with session.post(
+        f"{api_endpoint}/rollouts/{attempted.rollout_id}/attempts/{attempt_id}",
+        json={"status": "running"},
+    ) as resp:
+        assert resp.status == 200
+
+    async with session.post(
+        f"{api_endpoint}/rollouts/{attempted.rollout_id}/attempts/{attempt_id}",
+        json={"worker_id": None},
+    ) as resp:
+        assert resp.status == 400
+
+
 # Client Compatibility Tests
 
 
@@ -1160,6 +1333,27 @@ async def test_client_query_with_filters(
     rollouts = await client.query_rollouts(rollout_ids=[r2.rollout_id])
     assert len(rollouts) == 1
     assert rollouts[0].rollout_id == r2.rollout_id
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method", ["get", "post"])
+async def test_workers_search_supports_get_and_post(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str], method: str
+) -> None:
+    server, _client, session, api_endpoint = server_client
+
+    await server.update_worker("worker-1", heartbeat_stats={"cpu": 0.5})
+    await server.update_worker("worker-2", heartbeat_stats={"cpu": 0.7})
+
+    data = await _request_workers_page(
+        session,
+        api_endpoint,
+        method,
+        {"limit": 1, "offset": 0, "sort_by": "worker_id", "sort_order": "asc"},
+    )
+    assert data["total"] == 2
+    assert data["limit"] == 1
+    assert len(data["items"]) == 1
 
 
 @pytest.mark.asyncio
