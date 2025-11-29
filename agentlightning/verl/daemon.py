@@ -814,7 +814,8 @@ class AgentModeDaemon:
 
         elif self.trace_aggregator.mode == "trajectory":
             response_mask_list: List[List[int]] = []
-            unmerged_count = 0  # only for debug
+            unmerged_count: int = 0  # only for debug
+            response_per_turn_list: List[int] = []  # only for debug
 
             for rollout_id, sample_info in finished_id_to_sample_info.items():
                 merged_trace_idx: List[List[int]] = []
@@ -826,6 +827,7 @@ class AgentModeDaemon:
                     turn_ids.append(
                         {"nxt_turn": trace["prompt_ids"][:] + trace["response_ids"][:], "cur": current_context[:]}
                     )
+                    response_per_turn_list.append(len(trace["response_ids"]))
                     if fuzzy_startswith(
                         trace["prompt_ids"] + trace["response_ids"],
                         current_context,
@@ -961,13 +963,18 @@ class AgentModeDaemon:
             "training/n_truncated_triplets": n_trunc_sample_because_of_response,
             "training/n_triplets": n_transition,
             # log data, only for debug testing
-            **({"training/n_unmerged_turns": unmerged_count} if self.trace_aggregator.mode == "trajectory" else {}),
+            **({
+                "training/n_unmerged_turns": unmerged_count,
+                "training/avg_response_by_turn": np.mean(response_per_turn_list) if response_per_turn_list else 0,
+                "training/max_response_by_turn": np.max(response_per_turn_list) if response_per_turn_list else 0,
+                "training/min_response_by_turn": np.min(response_per_turn_list) if response_per_turn_list else 0,
+            } if self.trace_aggregator.mode == "trajectory" else {}),
         }
 
         # Add non-tensor data for advantage calculation and logging
         data_proto.non_tensor_batch["data_id_list"] = np.array(data_id_list)  # type: ignore
         data_proto.non_tensor_batch["rollout_id_list"] = np.array(rollout_id_list)  # type: ignore
-        data_proto.non_tensor_batch["turn_index_list"] = np.array(turn_index_list)  # type: ignore
+        # data_proto.non_tensor_batch["turn_index_list"] = np.array(turn_index_list)  # type: ignore
 
         return data_proto, data_metrics
 

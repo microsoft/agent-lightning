@@ -21,8 +21,8 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
     },
     "data": {
         "train_files": "data/train.parquet",
-        "val_files": "data/agent_test_50select.parquet",
-        "train_batch_size": 512,
+        "val_files": "data/test.parquet",
+        "train_batch_size": 2,
         "max_prompt_length": 6000,
         "max_response_length": 4096,
         "truncation": "error",
@@ -30,8 +30,8 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
     "actor_rollout_ref": {
         "rollout": {
             "tensor_model_parallel_size": 1,
-            "n": 5,
-            "log_prob_micro_batch_size_per_gpu": 4,
+            "n": 1,
+            "log_prob_micro_batch_size_per_gpu": 1,
             "multi_turn": {"format": "hermes"},
             "name": "vllm",
             "gpu_memory_utilization": 0.5,
@@ -43,14 +43,12 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
             },
             "trace_aggregator": {
                 "mode": "trajectory",
-                "special_token_tolerance": 0,
-                "string_tolerance": 0,
                 "trajectory_max_length": 34384,
             }
         },
         "actor": {
-            "ppo_mini_batch_size": 256,
-            "ppo_micro_batch_size_per_gpu": 4,
+            "ppo_mini_batch_size": 1,
+            "ppo_micro_batch_size_per_gpu": 1,
             "optim": {"lr": 1e-6, "lr_warmup_steps_ratio": 0.95},
             "use_kl_loss": True,
             "kl_loss_type": "low_var_kl",
@@ -74,18 +72,18 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
         },
     },
     "trainer": {
-        "n_gpus_per_node": 8,
-        "val_before_train": True,
+        "n_gpus_per_node": 1,
+        "val_before_train": False,
         "critic_warmup": 0,
         "logger": ["console", "wandb"],
         "project_name": "AgentLightning-SearchR1",
-        "experiment_name": "searchr1_minibatch256_runner32",
+        "experiment_name": "searchr1_test",
         "nnodes": 1,
         "test_freq": 10,
         "save_freq":10,
         "total_epochs": 15,
         "total_training_steps": 300,
-        "default_local_dir": "/mnt/teamdrive/search_r1/searchr1_checkpoints/searchr1_minibatch256_runner32/"
+        "default_local_dir": "./test/"
     },
 }
 
