@@ -4,7 +4,7 @@ import asyncio
 import logging
 from contextlib import suppress
 from dataclasses import dataclass
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Sequence
 
 import pytest
 
@@ -24,7 +24,7 @@ LOGGER_NAME = "agentlightning.algorithm.fast"
 
 
 class _AdapterStub(TraceAdapter[Dict[str, Any]]):
-    def adapt(self, source: List[Span], /) -> Dict[str, Any]:
+    def adapt(self, source: Sequence[Span], /) -> Dict[str, Any]:
         return {
             "count": len(source),
             "attempt_ids": sorted({span.attempt_id for span in source}),

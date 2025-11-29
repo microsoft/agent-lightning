@@ -7,7 +7,6 @@ It should be included in CI in future if we decided to maintain this example.
 """
 
 import asyncio
-import logging
 from typing import cast
 
 import openai
@@ -24,12 +23,12 @@ from agentlightning import (
     LLMProxy,
     LlmProxyTraceToTriplet,
     TracerTraceToTriplet,
-    configure_logger,
     emit_reward,
+    setup_logging,
 )
+from agentlightning.store import LightningStoreThreaded
 
-configure_logger(name="agentlightning")
-configure_logger(name="agl_tinker", level=logging.INFO)
+setup_logging(apply_to=["agl_tinker"])
 
 
 async def test_tracer():
@@ -45,23 +44,24 @@ async def test_tracer():
     )
     tinker_llm.rewrite_litellm_custom_providers()
 
-    store = InMemoryLightningStore()
+    store = LightningStoreThreaded(InMemoryLightningStore())
     rollout = await store.start_rollout("dummy", "train")
     llm_proxy = LLMProxy(
         port=4000,
         store=store,
         model_list=tinker_llm.as_model_list(),
         num_retries=0,
+        launch_mode="thread",
     )
 
     try:
         tracer = AgentOpsTracer()
         tracer.init()
-        tracer.init_worker(0)
+        tracer.init_worker(worker_id=0, store=store)
 
         # init tracer before llm_proxy to avoid tracer provider being not active.
         console.print("Starting LLM proxy...")
-        llm_proxy.start()
+        await llm_proxy.start()
         console.print("LLM proxy started")
 
         # client = openai.OpenAI(
@@ -71,7 +71,7 @@ async def test_tracer():
         client = openai.OpenAI(base_url="http://localhost:4000/v1", api_key="dummy")
 
         async with tracer.trace_context(
-            name="test_llm", store=store, rollout_id=rollout.rollout_id, attempt_id=rollout.attempt.attempt_id
+            name="test_llm", rollout_id=rollout.rollout_id, attempt_id=rollout.attempt.attempt_id
         ):
             response = client.chat.completions.create(
                 model=model_name,
@@ -97,9 +97,11 @@ async def test_tracer():
         adapter = TracerTraceToTriplet()
         trajectory = reconstruct_transitions(spans, adapter, rollout.rollout_id)
         print(trajectory)
+        assert len(trajectory.transitions) > 0
+        assert len(trajectory.transitions[0].ac.tokens) > 0
     finally:
         console.print("Stopping LLM proxy...")
-        llm_proxy.stop()
+        await llm_proxy.stop()
         console.print("LLM proxy stopped")
 
 
@@ -117,19 +119,20 @@ async def test_llm_proxy():
     )
     tinker_llm.rewrite_litellm_custom_providers()
 
-    store = InMemoryLightningStore()
+    store = LightningStoreThreaded(InMemoryLightningStore())
     rollout = await store.start_rollout("dummy", "train")
     llm_proxy = LLMProxy(
         port=4000,
         store=store,
         model_list=tinker_llm.as_model_list(),
         num_retries=0,
+        launch_mode="thread",
     )
 
     try:
         # init tracer before llm_proxy to avoid tracer provider being not active.
         console.print("Starting LLM proxy...")
-        llm_proxy.start()
+        await llm_proxy.start()
         console.print("LLM proxy started")
 
         client = openai.OpenAI(
@@ -157,9 +160,9 @@ async def test_llm_proxy():
         print(trajectory)
     finally:
         console.print("Stopping LLM proxy...")
-        llm_proxy.stop()
+        await llm_proxy.stop()
         console.print("LLM proxy stopped")
 
 
 if __name__ == "__main__":
-    asyncio.run(test_llm_proxy())
+    asyncio.run(test_tracer())

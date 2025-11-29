@@ -72,6 +72,15 @@ Each attempt begins in **preparing**, created either when a rollout is dequeued 
 
 This simple model allows the system to distinguish between normal termination, abnormal stalling, and recoverable interruption without additional state flags.
 
+## Worker Telemetry
+
+Workers track runner-level activity timestamps (`last_heartbeat_time`, `last_dequeue_time`, `last_busy_time`, `last_idle_time`) plus their current rollout assignment. Those fields are now derived automatically:
+
+- [`dequeue_rollout(worker_id=...)`][agentlightning.LightningStore.dequeue_rollout] records which worker polled the queue and refreshes `last_dequeue_time`.
+- [`update_attempt(..., worker_id=...)`][agentlightning.LightningStore.update_attempt] drives the worker status machine. Assigning an attempt marks the worker **busy** and stamps `last_busy_time`; finishing with `status in {"succeeded","failed"}` switches to **idle**, while watchdog transitions such as `timeout`/`unresponsive` make the worker **unknown** and clear `current_rollout_id` / `current_attempt_id`.
+- [`update_worker(...)`][agentlightning.LightningStore.update_worker] is reserved for heartbeats. It snapshots optional `heartbeat_stats` and always updates `last_heartbeat_time`.
+
+Because every transition flows through these APIs, worker status is derived automatically from rollout execution and heartbeats. Note, however, that calling `update_worker` with a new `worker_id` will create a new worker record with status "unknown" if one does not exist. Thus, while manual status changes are not allowed, new worker records can be created externally via heartbeats.
 
 ## Rollout Transition Map
 
@@ -143,6 +152,13 @@ Programmatically this is encapsulated by [`Span.from_opentelemetry(readable_span
 
     [`add_span`][agentlightning.LightningStore.add_span] or [`add_otel_span`][agentlightning.LightningStore.add_otel_span] both appends a span *and* acts as a heartbeat that can revive `unresponsive` → `running`.
 
+## OTLP Compatibility
+
+Some of the LightningStore implementations support exporting traces via the [OTLP/HTTP specification](https://opentelemetry.io/docs/specs/otlp/). For example, [`LightningStoreServer`][agentlightning.LightningStoreServer] exposes `/v1/traces` endpoint, it implements the binary Protobuf variant defined by the spec, including the required `Content-Type: application/x-protobuf`, optional `Content-Encoding: gzip`, and status responses encoded as `google.rpc.Status`. Agent-lightning helps parsing `ExportTraceServiceRequest` messages, validate identifiers, normalize resource metadata, and allocate sequence
+numbers so store implementations only need to persist [`Span`][agentlightning.Span] objects in order.
+
+Because the interface speaks standard OTLP, any OpenTelemetry-compatible SDK or collector can emit spans directly to a LightningStore OTLP endpoint without custom shims. The server responds according to the OTLP contract (status code, encoding, and error payloads), which keeps Agent-lightning interoperable with existing observability tooling. This compatibility serves as a strong complement to the OpenTelemetry conversion discussed above.
+
 ## Store Implementations
 
 Currently, the only out-of-the-box implementation is [`InMemoryLightningStore`][agentlightning.InMemoryLightningStore]:
@@ -152,6 +168,8 @@ Currently, the only out-of-the-box implementation is [`InMemoryLightningStore`][
 - Includes a best-effort span eviction policy once memory crosses a configured watermark; querying evicted spans raises a clear error so callers can fall back.
 
 For production you will likely want persistence. We’re actively building a SQLite-backed store that keeps the same API surface while adding durability, crash recovery, and better historical span queries. If you need something sooner, implement your own store by subclassing [`LightningStore`][agentlightning.LightningStore] and providing concrete storage for the small set of abstract methods (`enqueue_rollout`, `dequeue_rollout`, `update_attempt`, `add_span`, etc.). This document plus the tests in `tests/store/` illustrate the expected behavior.
+
+Different store implementations may have different capabilities. For example, [`InMemoryLightningStore`][agentlightning.InMemoryLightningStore] does not support exporting traces via OTLP. Try to distinguish the capabilities of a store implementation by checking the [`capabilities`][agentlightning.LightningStore.capabilities] property.
 
 ## Thread Safety
 
@@ -187,7 +205,7 @@ await server.start()      # starts uvicorn in a daemon thread and waits for /hea
 # Client (same or different process)
 client = agl.LightningStoreClient("http://localhost:4747")
 
-print(await client.query_rollouts(status=["queuing"]))
+print(await client.query_rollouts(status_in=["queuing"]))
 
 await client.close()
 await server.stop()

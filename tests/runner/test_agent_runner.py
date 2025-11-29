@@ -3,7 +3,7 @@
 import asyncio
 import random
 from contextlib import asynccontextmanager
-from typing import Any, AsyncGenerator, Dict, List, Optional, Sequence, cast
+from typing import Any, AsyncGenerator, Dict, List, Literal, Optional, Sequence, Tuple, cast
 
 import pytest
 from opentelemetry import trace as trace_api
@@ -17,10 +17,11 @@ from agentlightning.litagent import LitAgent
 from agentlightning.reward import emit_reward, find_final_reward
 from agentlightning.runner import LitAgentRunner
 from agentlightning.runner.base import Runner
-from agentlightning.store.base import LightningStore
+from agentlightning.semconv import AGL_ANNOTATION
+from agentlightning.store.base import UNSET, LightningStore, Unset
 from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.tracer.base import Tracer
-from agentlightning.types import LLM, Hook, NamedResources, PromptTemplate, Rollout, Span, SpanNames
+from agentlightning.types import LLM, Hook, NamedResources, PromptTemplate, Rollout, Span, Worker
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -112,6 +113,49 @@ class DummyTracer(Tracer):
         span = create_readable_span(name, attributes)
         self._last_trace.append(span)
         return span
+
+
+class RecordingStore(InMemoryLightningStore):
+    """In-memory store that records worker heartbeat updates for inspection in tests."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.worker_updates: List[Tuple[str, Optional[Dict[str, Any]]]] = []
+
+    async def update_worker(
+        self,
+        worker_id: str,
+        heartbeat_stats: Dict[str, Any] | Unset = UNSET,
+    ) -> Worker:
+        payload = None if isinstance(heartbeat_stats, Unset) else heartbeat_stats
+        self.worker_updates.append((worker_id, payload))
+        return await super().update_worker(worker_id, heartbeat_stats=heartbeat_stats)
+
+
+class HeartbeatAgent(LitAgent[Dict[str, Any]]):
+    """Minimal agent used for heartbeat-only runner tests."""
+
+    def validation_rollout(self, task: Dict[str, Any], resources: Dict[str, Any], rollout: Any) -> float:
+        return 0.0
+
+
+async def setup_heartbeat_runner(
+    *,
+    heartbeat_interval: float = 0.05,
+    heartbeat_launch_mode: Literal["asyncio", "thread"] = "asyncio",
+) -> tuple[LitAgentRunner[Any], RecordingStore]:
+    """Create a runner wired to a RecordingStore for heartbeat tests."""
+
+    store = RecordingStore()
+    runner = LitAgentRunner[Any](
+        tracer=DummyTracer(),
+        heartbeat_interval=heartbeat_interval,
+        heartbeat_launch_mode=heartbeat_launch_mode,
+    )
+    agent = HeartbeatAgent()
+    runner.init(agent)
+    runner.init_worker(worker_id=0, store=store)
+    return runner, store
 
 
 async def setup_runner(
@@ -216,7 +260,7 @@ async def test_step_emits_reward_for_float_result() -> None:
 
     rollout_id, attempt_id = await assert_single_attempt_succeeded(store)
     spans = await store.query_spans(rollout_id, attempt_id)
-    rewards = [span.attributes.get("reward") for span in spans if span.name == SpanNames.REWARD.value]
+    rewards = [span.attributes.get("agentlightning.reward.0.value") for span in spans if span.name == AGL_ANNOTATION]
     assert rewards == [0.75]
 
 
@@ -243,7 +287,7 @@ async def test_step_handles_non_llm_resource() -> None:
 
     rollout_id, attempt_id = await assert_single_attempt_succeeded(store)
     spans = await store.query_spans(rollout_id, attempt_id)
-    rewards = [span.attributes.get("reward") for span in spans if span.name == SpanNames.REWARD.value]
+    rewards = [span.attributes.get("agentlightning.reward.0.value") for span in spans if span.name == AGL_ANNOTATION]
     assert rewards == [0.1]
 
 
@@ -469,7 +513,9 @@ async def test_agent_emits_multiple_rewards() -> None:
 
     rollout_id, attempt_id = await assert_single_attempt_succeeded(store)
     spans = await store.query_spans(rollout_id, attempt_id)
-    reward_values = [span.attributes.get("reward") for span in spans if span.name == SpanNames.REWARD.value]
+    reward_values = [
+        span.attributes.get("agentlightning.reward.0.value") for span in spans if span.name == AGL_ANNOTATION
+    ]
     assert reward_values == [0.2, 0.6]
 
 
@@ -658,3 +704,46 @@ async def test_step_with_custom_resources_returns_rollout() -> None:
 
     # Verify the rollout has the correct resources_id
     assert result.resources_id is not None
+
+
+@pytest.mark.asyncio
+async def test_emit_heartbeat_updates_worker_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
+    snapshot = {"cpu_pct": 42.0, "mem_pct": 10.5}
+    monkeypatch.setattr("agentlightning.runner.agent.system_snapshot", lambda: snapshot)
+
+    runner, store = await setup_heartbeat_runner(heartbeat_interval=0.1)
+    worker_label = runner.get_worker_id()
+    try:
+        await runner._emit_heartbeat(store)  # pyright: ignore[reportPrivateUsage]
+    finally:
+        teardown_runner(runner)
+
+    assert store.worker_updates == [(worker_label, snapshot)]
+    worker = await store.get_worker_by_id(worker_label)
+    assert worker is not None
+    assert worker.heartbeat_stats == snapshot
+    assert worker.last_heartbeat_time is not None
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_loop_runs_until_stopped(monkeypatch: pytest.MonkeyPatch) -> None:
+    snapshot = {"timestamp": 1234567890}
+    monkeypatch.setattr("agentlightning.runner.agent.system_snapshot", lambda: snapshot)
+
+    runner, store = await setup_heartbeat_runner(heartbeat_interval=0.05)
+    stop_heartbeat = runner._start_heartbeat_loop(store)  # pyright: ignore[reportPrivateUsage]
+    assert stop_heartbeat is not None
+
+    try:
+        await asyncio.sleep(0.12)
+    finally:
+        await stop_heartbeat()
+
+    update_count = len(store.worker_updates)
+    assert update_count >= 1
+    assert all(stats == snapshot for _, stats in store.worker_updates if stats is not None)
+
+    await asyncio.sleep(0.06)
+    assert len(store.worker_updates) == update_count
+
+    teardown_runner(runner)

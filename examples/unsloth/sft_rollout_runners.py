@@ -17,7 +17,7 @@ import multiprocessing
 from math_agent import GsmProblem, math_agent
 from rich.console import Console
 
-from agentlightning import configure_logger
+from agentlightning import setup_logging
 from agentlightning.runner import LitAgentRunner
 from agentlightning.store import LightningStore, LightningStoreClient
 from agentlightning.tracer import OtelTracer
@@ -67,6 +67,6 @@ def spawn_runners(*, store: LightningStore, n_runners: int) -> None:
 
 
 if __name__ == "__main__":
-    configure_logger()
+    setup_logging()
     store = LightningStoreClient("http://localhost:4747")
     spawn_runners(store=store, n_runners=4)
