@@ -68,7 +68,7 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
             "fsdp_config": {"param_offload": True},
         },
         "model": {
-            "path": "meta-llama/Llama-3.2-3B-Instruct",
+            "path": "~/Llama-3.2-3B",
             "use_remove_padding": True,
             "enable_gradient_checkpointing": True,
         },
@@ -79,13 +79,13 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
         "critic_warmup": 0,
         "logger": ["console", "wandb"],
         "project_name": "AgentLightning-SearchR1",
-        "experiment_name": "searchr1_minibatch256_runner32",
+        "experiment_name": "searchr1_minibatch256_runner32_trajectory",
         "nnodes": 1,
         "test_freq": 10,
         "save_freq":10,
         "total_epochs": 15,
         "total_training_steps": 300,
-        "default_local_dir": "/mnt/teamdrive/search_r1/searchr1_checkpoints/searchr1_minibatch256_runner32/"
+        "default_local_dir": "/mnt/teamdrive/search_r1/searchr1_checkpoints/searchr1_minibatch256_runner32_trajectory/"
     },
 }
 
