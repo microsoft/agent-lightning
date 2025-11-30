@@ -242,7 +242,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         }
 
     @tracked("_get_latest_resources_id")
-    async def _get_latest_resources_id(self, collections: T_collections) -> Optional[str]:
+    async def _get_latest_resources_id_unlocked(self, collections: T_collections) -> Optional[str]:
         """Get the latest resources ID from the collections. Returns `None` if no resources are found."""
         latest_resources = await collections.resources.get(sort={"name": "update_time", "order": "desc"})
         if latest_resources:
@@ -250,7 +250,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         return None
 
     @tracked("_get_or_create_worker")
-    async def _get_or_create_worker(self, collections: T_collections, worker_id: str) -> Worker:
+    async def _get_or_create_worker_unlocked(self, collections: T_collections, worker_id: str) -> Worker:
         """Create a worker if it doesn't exist.
 
         This is different from upsert because we don't want to update the worker if it already exists.
@@ -262,12 +262,12 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         return worker
 
     @tracked("_sync_worker_with_attempt")
-    async def _sync_worker_with_attempt(self, collections: T_collections, attempt: Attempt) -> None:
+    async def _sync_worker_with_attempt_unlocked(self, collections: T_collections, attempt: Attempt) -> None:
         worker_id = attempt.worker_id
         if not worker_id:
             return
 
-        worker = await self._get_or_create_worker(collections, worker_id)
+        worker = await self._get_or_create_worker_unlocked(collections, worker_id)
         now = time.time()
 
         if attempt.status in ("succeeded", "failed"):
@@ -324,7 +324,9 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         rollout_config = config.model_copy(deep=True) if config is not None else RolloutConfig()
         rollout_metadata = dict(metadata) if metadata is not None else {}
 
-        resources_id = resources_id if resources_id is not None else await self._get_latest_resources_id(collections)
+        resources_id = (
+            resources_id if resources_id is not None else await self._get_latest_resources_id_unlocked(collections)
+        )
 
         rollout = Rollout(
             rollout_id=rollout_id,
@@ -378,7 +380,9 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         rollout_config = config.model_copy(deep=True) if config is not None else RolloutConfig()
         rollout_metadata = dict(metadata) if metadata is not None else {}
 
-        resources_id = resources_id if resources_id is not None else await self._get_latest_resources_id(collections)
+        resources_id = (
+            resources_id if resources_id is not None else await self._get_latest_resources_id_unlocked(collections)
+        )
 
         rollout = Rollout(
             rollout_id=rollout_id,
@@ -414,7 +418,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         See [`LightningStore.dequeue_rollout()`][agentlightning.LightningStore.dequeue_rollout] for semantics.
         """
         if worker_id is not None:
-            worker = await self._get_or_create_worker(collections, worker_id)
+            worker = await self._get_or_create_worker_unlocked(collections, worker_id)
             worker.last_dequeue_time = time.time()
             worker.status = "idle"
             await collections.workers.update([worker])
@@ -761,7 +765,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
 
         See [`LightningStore.get_latest_resources()`][agentlightning.LightningStore.get_latest_resources] for semantics.
         """
-        latest_id = await self._get_latest_resources_id(collections)
+        latest_id = await self._get_latest_resources_id_unlocked(collections)
         if latest_id is None:
             return None
         return await collections.resources.get({"resources_id": {"exact": latest_id}})
@@ -1243,7 +1247,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
             attempt.metadata = metadata
 
         if worker_sync_required and attempt.worker_id:
-            await self._sync_worker_with_attempt(collections, attempt)
+            await self._sync_worker_with_attempt_unlocked(collections, attempt)
 
         # Re-validate the attempt to ensure legality
         Attempt.model_validate(attempt.model_dump())
@@ -1310,7 +1314,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         heartbeat_stats: Dict[str, Any] | Unset = UNSET,
     ) -> Worker:
         """Create or update a worker entry."""
-        worker = await self._get_or_create_worker(collections, worker_id)
+        worker = await self._get_or_create_worker_unlocked(collections, worker_id)
         if not isinstance(heartbeat_stats, Unset):
             worker.heartbeat_stats = dict(heartbeat_stats)
         worker.last_heartbeat_time = time.time()
