@@ -199,7 +199,28 @@ class AgentLightningTrainer(RayPPOTrainer):
         self.async_rollout_manager.sleep()
         return test_metrics
 
+    # 新版 _train_step 方法，支持 PPO 和 RAFT 算法（通过 config.algorithm.use_raft 控制）
     def _train_step(self, batch_dict: dict) -> dict:
+        """Training step that supports both PPO and RAFT algorithms.
+        
+        If algorithm.use_raft is True, uses RAFT training (only keeps positive samples with reward=1).
+        Otherwise, falls back to the original PPO training logic.
+        """
+        # Check if RAFT mode is enabled
+        use_raft = self.config.algorithm.get("use_raft", False)
+        
+        if use_raft:
+            return self._train_step_raft(batch_dict)
+        else:
+            return self._train_step_ppo(batch_dict)
+
+    # 原来的 _train_step 方法重命名为 _train_step_ppo，作为备份
+    def _train_step_ppo(self, batch_dict: dict) -> dict:
+        """Original PPO training step (backup of the original _train_step method).
+        
+        This method implements the standard PPO training logic with advantage estimation.
+        Kept as backup for reference and potential fallback.
+        """
         # Isolate in a separate method to automatically recycle the variables before validation.
         batch: DataProto = DataProto.from_single_dict(batch_dict)
         metrics = {}
@@ -217,6 +238,8 @@ class AgentLightningTrainer(RayPPOTrainer):
                     gen_batch.non_tensor_batch, self.async_rollout_manager.server_addresses
                 )
                 self.agent_mode_daemon.run_until_all_finished()
+
+                # 获取数据
                 batch, agent_metrics = self.agent_mode_daemon.get_train_data_batch(
                     max_prompt_length=self.config.data.max_prompt_length,
                     max_response_length=self.config.data.max_response_length,
@@ -383,6 +406,173 @@ class AgentLightningTrainer(RayPPOTrainer):
         metrics.update(compute_data_metrics(batch=batch, use_critic=self.use_critic, suffix="_after_processing"))
         metrics.update(compute_timing_metrics(batch=batch, timing_raw=timing_raw))
         # TODO: implement actual tflpo and theoretical tflpo
+        n_gpus = self.resource_pool_manager.get_n_gpus()
+        metrics.update(compute_throughout_metrics(batch=batch, timing_raw=timing_raw, n_gpus=n_gpus))
+
+        return metrics
+
+
+    def _train_step_raft(self, batch_dict: dict) -> dict:
+        """RAFT (Reward rAnked FineTuning) training step.
+        
+        RAFT algorithm:
+        1. Data collection logic remains the same (rollout)
+        2. Compute rewards for all samples
+        3. Filter to keep only positive samples (reward >= 1)
+        4. Use supervised fine-tuning on positive samples only
+        
+        Args:
+            batch_dict: Input batch dictionary
+            
+        Returns:
+            Dictionary of training metrics
+        """
+        batch: DataProto = DataProto.from_single_dict(batch_dict)
+        metrics = {}
+        timing_raw = {}
+
+        with _timer("step", timing_raw):
+
+            # When agent mode is enabled, we read the batch as it is.
+            gen_batch = batch
+
+            # generate a batch (data collection logic unchanged)
+            with _timer("gen", timing_raw):
+                self.async_rollout_manager.wake_up()
+                server_addresses = self.async_rollout_manager.server_addresses
+                print(f"[DEBUG Trainer] server_addresses (training): {server_addresses}")
+                
+                self.agent_mode_daemon.set_up_data_and_server(
+                    gen_batch.non_tensor_batch, server_addresses
+                )
+                self.agent_mode_daemon.run_until_all_finished()
+
+                batch, agent_metrics = self.agent_mode_daemon.get_train_data_batch(
+                    max_prompt_length=self.config.data.max_prompt_length,
+                    max_response_length=self.config.data.max_response_length,
+                    device=gen_batch.batch["fake_ids"].device,
+                )
+                metrics.update(agent_metrics)
+                self.agent_mode_daemon.clear_data_and_server()
+                self.async_rollout_manager.sleep()
+
+            # uid is used for grouping, should be aligned to data id
+            batch.non_tensor_batch["uid"] = batch.non_tensor_batch["data_id_list"]
+
+            batch.batch["response_mask"] = compute_response_mask(batch)
+
+            # compute global_valid tokens
+            batch.meta_info["global_token_num"] = torch.sum(batch.batch["attention_mask"], dim=-1).tolist()
+
+            with _timer("reward", timing_raw):
+                # compute reward model score
+                if self.use_rm:
+                    reward_tensor = self.rm_wg.compute_rm_score(batch)
+                    batch = batch.union(reward_tensor)
+
+                reward_extra_infos_dict = {}
+
+            # Compute sequence-level rewards (sum of token-level scores)
+            # For RAFT, we need to identify positive samples (reward >= 1)
+            sequence_rewards = batch.batch["token_level_scores"].sum(dim=-1)  # (batch_size,)
+            
+            # RAFT: Filter to keep only positive samples (reward >= 1)
+            # Get the reward threshold from config, default to 1.0
+            raft_reward_threshold = self.config.algorithm.get("raft_reward_threshold", 1.0)
+            # ⭐️ filter positive samples
+            positive_mask = sequence_rewards >= raft_reward_threshold
+            
+            # Log statistics before filtering
+            n_total = len(batch)
+            n_positive = positive_mask.sum().item()
+            n_negative = n_total - n_positive
+            metrics["raft/n_total_samples"] = n_total
+            metrics["raft/n_positive_samples"] = n_positive
+            metrics["raft/n_negative_samples"] = n_negative
+            metrics["raft/positive_ratio"] = n_positive / n_total if n_total > 0 else 0.0
+            metrics["raft/reward_mean"] = sequence_rewards.mean().item()
+            metrics["raft/reward_max"] = sequence_rewards.max().item()
+            metrics["raft/reward_min"] = sequence_rewards.min().item()
+            
+            if n_positive == 0:
+                print(f"[WARNING RAFT] No positive samples found (threshold={raft_reward_threshold}). Skipping this batch.")
+                # Return empty metrics but don't crash
+                return metrics
+            
+            # Filter batch to keep only positive samples
+            positive_indices = positive_mask.nonzero(as_tuple=True)[0]
+            batch = batch[positive_indices]
+            
+            print(f"[RAFT] Kept {n_positive}/{n_total} positive samples (threshold={raft_reward_threshold})")
+
+            # Drop samples with too long prompts (same as PPO)
+            keep_indices = (~batch.batch["is_drop_mask"]).nonzero(as_tuple=True)[0]
+            metrics["training/n_triplets_prompt_too_long"] = (
+                batch.batch["is_drop_mask"].shape[0] - keep_indices.shape[0]
+            )
+            batch = batch[keep_indices]
+            
+            if len(batch) == 0:
+                print("[WARNING RAFT] No samples remaining after filtering. Skipping this batch.")
+                return metrics
+
+            # Round to minibatch size
+            mini_batch_size = self.config.actor_rollout_ref.actor.ppo_mini_batch_size
+            n_transition = len(batch)
+            random_indices = list(range(n_transition))
+            random.shuffle(random_indices)
+            batch.reorder(torch.tensor(random_indices).type(torch.int32))
+            n_remained_transition = n_transition // mini_batch_size * mini_batch_size
+            batch = batch[list(range(n_remained_transition))]
+            metrics["training/n_triplets_dropped_remainder"] = n_transition - n_remained_transition
+
+            # Balance batch if enabled
+            if self.config.trainer.balance_batch:
+                self._balance_batch(batch, metrics=metrics)
+
+            # ⭐️ For RAFT, we use supervised fine-tuning (no advantage computation needed)
+            # Pad for distributed training
+            batch, pad_size = pad_dataproto_to_divisor(batch, self.actor_rollout_wg.world_size)
+
+            # RAFT: Use standard language model loss (supervised learning)
+            # Update actor with supervised fine-tuning loss
+            with _timer("update_actor", timing_raw):
+                batch.meta_info["multi_turn"] = self.config.actor_rollout_ref.rollout.multi_turn.enable
+                # For RAFT, we use standard supervised learning, so we set use_policy_gradient=False
+                # and the actor will compute standard cross-entropy loss
+                actor_output = self.actor_rollout_wg.update_actor(batch)
+                actor_output_metrics = reduce_metrics(actor_output.meta_info["metrics"])
+                metrics.update(actor_output_metrics)
+                metrics["raft/loss_type"] = "supervised_finetuning"
+
+            # Unpad after training
+            batch = unpad_dataproto(batch, pad_size=pad_size)
+
+            # Log rollout generations if enabled
+            rollout_data_dir = self.config.trainer.get("rollout_data_dir", None)
+            if rollout_data_dir:
+                with _timer("dump_rollout_generations", timing_raw):
+                    print(batch.batch.keys())
+                    inputs = self.tokenizer.batch_decode(batch.batch["prompts"], skip_special_tokens=True)
+                    outputs = self.tokenizer.batch_decode(batch.batch["responses"], skip_special_tokens=True)
+                    scores = batch.batch["token_level_scores"].sum(-1).cpu().tolist()
+                    self._dump_generations(
+                        inputs=inputs,
+                        outputs=outputs,
+                        scores=scores,
+                        reward_extra_infos_dict=reward_extra_infos_dict,
+                        dump_path=rollout_data_dir,
+                    )
+
+        # compute training metrics
+        # For RAFT, we don't have advantages/returns, so we compute simplified metrics
+        sequence_rewards_after = batch.batch["token_level_scores"].sum(-1)
+        metrics.update({
+            "raft/reward_after_filtering_mean": sequence_rewards_after.mean().item(),
+            "raft/reward_after_filtering_max": sequence_rewards_after.max().item(),
+            "raft/reward_after_filtering_min": sequence_rewards_after.min().item(),
+        })
+        metrics.update(compute_timing_metrics(batch=batch, timing_raw=timing_raw))
         n_gpus = self.resource_pool_manager.get_n_gpus()
         metrics.update(compute_throughout_metrics(batch=batch, timing_raw=timing_raw, n_gpus=n_gpus))
 

@@ -45,6 +45,9 @@ def verl_default_config() -> Dict[str, Any]:
         "algorithm": {
             "adv_estimator": "grpo",
             "use_kl_in_reward": False,
+            # To enable RAFT training, set “"use_raft": True” and optionally adjust raft_reward_threshold
+            # "use_raft": True,  # Set to True to enable RAFT (Reward rAnked FineTuning)
+            # "raft_reward_threshold": 1.0,  # Only samples with reward >= this threshold are kept
         },
         "data": {
             "train_batch_size": 32,
@@ -85,7 +88,7 @@ def verl_default_config() -> Dict[str, Any]:
                 "fsdp_config": {"param_offload": True},
             },
             "model": {
-                "path": "Qwen/Qwen2.5-1.5B-Instruct",
+                "path": "/data/aj/llm_model/Qwen2.5-1.5B-Instruct",
                 "use_remove_padding": True,
                 "enable_gradient_checkpointing": True,
             },
@@ -209,7 +212,7 @@ def main():
     parser.add_argument(
         "--ci-fast", action="store_true", help="Limit the training loop to a single step (implies --ci)"
     )
-    parser.add_argument("--n-runners", type=int, default=10, help="Number of runners for Trainer")
+    parser.add_argument("--n-runners", type=int, default=2, help="Number of runners for Trainer")
     parser.add_argument(
         "--external-store-address",
         type=str,

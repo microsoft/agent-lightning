@@ -59,6 +59,7 @@ def autogen_assistant_agent(
         model_client=model_client,
         workbench=workbench,
         reflect_on_tool_use=True,
+        model_client_stream=True
     )
     return calc_agent
 
