@@ -3,16 +3,18 @@
 """Train an SQL agent on the Spider dataset using Agent-lightning.
 
 This module provides a training script for SQL agents using different model configurations.
-The script supports three different training configurations:
+The script supports multiple training configurations:
 
 1. 'fast' - A lightweight configuration optimized for CI testing with reduced epochs
-2. 'qwen' - Standard configuration using Qwen-2.5-Coder-1.5B-Instruct model
+2. 'qwen' - Standard configuration using Qwen-2.5-Coder-1.5B-Instruct model with GRPO
 3. 'llama' - Configuration using LLaMA-3.2-1B-Instruct model with JSON formatting
+4. 'raft' - RAFT (Reward rAnked FineTuning) algorithm configuration
 
 Usage:
     python train_sql_agent.py fast    # Fast training for CI/testing
-    python train_sql_agent.py qwen    # Standard Qwen model training
+    python train_sql_agent.py qwen    # Standard Qwen model training with GRPO
     python train_sql_agent.py llama   # LLaMA model training
+    python train_sql_agent.py raft    # RAFT algorithm training
 
 The script uses reinforcement learning with VERL framework
 to train agents on the Spider dataset for text-to-SQL generation tasks.
@@ -37,8 +39,8 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
         "use_kl_in_reward": False,
     },
     "data": {
-        "train_files": "data/train_spider.parquet",
-        "val_files": "data/test_dev_500.parquet",
+        "train_files": "data/spider/train_spider.parquet",
+        "val_files": "data/spider/test_dev_500.parquet",
         "train_batch_size": 32,
         "max_prompt_length": 4096,
         "max_response_length": 2048,
@@ -164,6 +166,20 @@ def config_train_llama() -> Dict[str, Any]:
     return config
 
 
+def config_train_raft() -> Dict[str, Any]:
+    """A configuration for training with RAFT (Reward rAnked FineTuning) algorithm.
+    
+    RAFT filters to keep only positive samples (reward >= threshold) and uses
+    supervised fine-tuning instead of policy gradient methods.
+    """
+
+    config = deepcopy(RL_TRAINING_CONFIG)
+    # Enable RAFT algorithm
+    config["algorithm"]["use_raft"] = True
+    config["algorithm"]["raft_reward_threshold"] = 1.0
+    return config
+
+
 def train(config: Dict[str, Any], active_agent: Optional[str]) -> None:
     """Train the SQL agent with the given configuration."""
 
@@ -185,8 +201,8 @@ def main() -> None:
 
     parser.add_argument(
         "config",
-        choices=["fast", "qwen", "llama", "npu"],
-        help="Training configuration: 'fast' (CI testing), 'qwen' (Qwen-2.5-Coder-1.5B), 'llama' (LLaMA-3.2-3B),'npu' (Train with NPU)",
+        choices=["fast", "qwen", "llama", "npu", "raft"],
+        help="Training configuration: 'fast' (CI testing), 'qwen' (Qwen-2.5-Coder-1.5B), 'llama' (LLaMA-3.2-3B), 'npu' (Train with NPU), 'raft' (RAFT algorithm)",
     )
 
     parser.add_argument(
@@ -201,6 +217,7 @@ def main() -> None:
         "qwen": config_train_qwen,
         "llama": config_train_llama,
         "npu": config_train_npu,
+        "raft": config_train_raft,
     }
     config = config_functions[args.config]()
 
