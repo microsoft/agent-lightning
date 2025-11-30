@@ -189,11 +189,16 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
 
     Args:
         collections: The collections to use for storage.
+        consistent_snapshot: Make sure read operations are atomic. If set to true,
+            all read operations like `query_rollouts` will have better consistency.
+            It may use an isolated snapshot that supports repeatable reads.
+        prometheus: Enable Prometheus tracking.
     """
 
-    def __init__(self, collections: T_collections, prometheus: bool = False):
+    def __init__(self, collections: T_collections, *, consistent_snapshot: bool = False, prometheus: bool = False):
         # rollouts and spans' storage
         self.collections = collections
+        self._consistent_snapshot = consistent_snapshot
         self._prometheus = prometheus
         self._launch_time = time.time()
 

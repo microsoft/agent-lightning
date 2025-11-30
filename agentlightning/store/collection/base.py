@@ -122,11 +122,23 @@ class Collection(Generic[T]):
         """
         raise NotImplementedError()
 
-    async def upsert(self, items: Sequence[T]) -> None:
+    async def upsert(self, items: Sequence[T], update_fields: Sequence[str] | None = None) -> None:
         """Upsert the given items into the collection.
 
         If the items with the same primary keys already exist, they will be updated.
         Otherwise, they will be inserted.
+
+        The operation has three semantics configurable via `update_fields`:
+
+        - `update_or_insert` via `collection.upsert(items, update_fields=["status", "updated_at"])`.
+          If the item with the same primary keys already exists, only the specified fields will be updated.
+          Otherwise, the item will be inserted.
+        - `get_or_insert` via `collection.upsert(items, update_fields=[])`.
+          If the item with the same primary keys already exists, the item will be left unchanged.
+          Otherwise, the item will be inserted.
+        - `replace_ish` via `collection.upsert(items)`.
+          If the item with the same primary keys already exists, all fields from the item will be set.
+          Otherwise, the item will be inserted.
         """
         raise NotImplementedError()
 

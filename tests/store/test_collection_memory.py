@@ -167,6 +167,63 @@ async def test_list_collection_upsert_updates_when_existing(sample_collection: C
 
 
 @pytest.mark.asyncio()
+async def test_list_collection_upsert_get_or_insert_semantics(sample_collection: Collection[SampleItem]) -> None:
+    filters = {"partition": {"exact": "beta"}, "index": {"exact": 2}}
+    original = await sample_collection.get(filters)
+    assert original is not None
+
+    replacement = SampleItem(
+        partition="beta",
+        index=2,
+        name="replacement",
+        status="queued",
+        tags=["patched"],
+        score=999,
+        rank=999,
+        updated_time=99.0,
+        payload={"priority": 99},
+        metadata="replacement",
+    )
+
+    await sample_collection.upsert([replacement], update_fields=[])
+
+    fetched = await sample_collection.get(filters)
+    assert fetched == original
+    assert fetched.name == original.name
+    assert fetched.status == original.status
+
+
+@pytest.mark.asyncio()
+async def test_list_collection_upsert_updates_selected_fields(sample_collection: Collection[SampleItem]) -> None:
+    filters = {"partition": {"exact": "beta"}, "index": {"exact": 1}}
+    original = await sample_collection.get(filters)
+    assert original is not None
+
+    incoming = SampleItem(
+        partition="beta",
+        index=1,
+        name="beta-incoming",
+        status="in-progress",
+        tags=["different"],
+        score=-1.0,
+        rank=42,
+        updated_time=123.45,
+        payload={"priority": -1},
+        metadata="incoming",
+    )
+
+    await sample_collection.upsert([incoming], update_fields=["status", "updated_time"])
+
+    fetched = await sample_collection.get(filters)
+    assert fetched is not None
+    assert fetched.status == incoming.status
+    assert fetched.updated_time == incoming.updated_time
+    # Ensure unspecified fields (e.g. name/tags) remain the same as the original document.
+    assert fetched.name == original.name
+    assert fetched.tags == original.tags
+
+
+@pytest.mark.asyncio()
 async def test_list_collection_delete_multiple_items(sample_collection: Collection[SampleItem]) -> None:
     await sample_collection.delete(
         [

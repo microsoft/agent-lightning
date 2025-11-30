@@ -14,6 +14,7 @@ from agentlightning.types import (
     ResourcesUpdate,
     Rollout,
     RolloutConfig,
+    RolloutMode,
     RolloutStatus,
     Span,
     TaskInput,
@@ -99,6 +100,19 @@ class LightningStoreStatistics(TypedDict, total=False):
     """Memory capacity of the store in bytes."""
 
 
+class _EnqueueRolloutRequestRequired(TypedDict):
+    input: TaskInput
+
+
+class EnqueueRolloutRequest(_EnqueueRolloutRequestRequired, total=False):
+    """Payload describing a rollout to be queued via `enqueue_rollout`."""
+
+    mode: Optional[RolloutMode]
+    resources_id: Optional[str]
+    config: Optional[RolloutConfig]
+    metadata: Optional[Dict[str, Any]]
+
+
 class LightningStore:
     """Contract for the persistent control-plane that coordinates training rollouts.
 
@@ -156,7 +170,7 @@ class LightningStore:
     async def start_rollout(
         self,
         input: TaskInput,
-        mode: Literal["train", "val", "test"] | None = None,
+        mode: RolloutMode | None = None,
         resources_id: str | None = None,
         config: RolloutConfig | None = None,
         metadata: Dict[str, Any] | None = None,
@@ -227,6 +241,22 @@ class LightningStore:
         """
         raise NotImplementedError()
 
+    async def enqueue_many_rollouts(self, inputs: Sequence[EnqueueRolloutRequest]) -> Sequence[Rollout]:
+        """Persist multiple rollouts in `queuing` state.
+
+        The implementation can delegate to [`enqueue_rollout()`][agentlightning.LightningStore.enqueue_rollout]
+        per request and preserves the input ordering. Subclasses can override to provide
+        more efficient bulk enqueue semantics.
+
+        Args:
+            requests: Rollout submission payloads mirroring [`enqueue_rollout()`][agentlightning.LightningStore.enqueue_rollout]'s
+                parameters. Each entry requires `input` and can optionally include other fields.
+
+        Returns:
+            Rollouts enqueued in the same order as `requests`.
+        """
+        raise NotImplementedError()
+
     async def dequeue_rollout(self, worker_id: Optional[str] = None) -> Optional[AttemptedRollout]:
         """Claim the oldest queued rollout and transition it to `preparing`.
 
@@ -248,6 +278,29 @@ class LightningStore:
 
         Raises:
             NotImplementedError: Subclasses must implement queue retrieval.
+        """
+        raise NotImplementedError()
+
+    async def dequeue_many_rollouts(
+        self,
+        *,
+        limit: int = 1,
+        worker_id: Optional[str] = None,
+    ) -> Sequence[AttemptedRollout]:
+        """Claim up to `limit` queued rollouts without blocking.
+
+        The implementation can repeatedly invokes
+        [`dequeue_rollout()`][agentlightning.LightningStore.dequeue_rollout] until reaching
+        the requested limit or the queue is empty. Subclasses can override it to fetch
+        multiple rollouts atomically.
+
+        Args:
+            limit: Maximum number of rollouts to claim. Non-positive values return an empty list.
+            worker_id: Optional worker identifier passed through to each dequeue call.
+
+        Returns:
+            Attempted rollouts claimed in FIFO order. May contain fewer than `limit` entries
+            when the queue is exhausted.
         """
         raise NotImplementedError()
 

@@ -789,7 +789,7 @@ class MongoBasedCollection(Collection[T_model]):
                 raise ValueError(f"Item with primary key(s) {pk_filter} does not exist")
 
     @_mongo_operation("upsert")
-    async def upsert(self, items: Sequence[T_model]) -> None:
+    async def upsert(self, items: Sequence[T_model], update_fields: Sequence[str] | None = None) -> None:
         if not items:
             return
 
@@ -797,10 +797,32 @@ class MongoBasedCollection(Collection[T_model]):
         for item in items:
             self._ensure_item_type(item)
             pk_filter = self._pk_filter(item)
-            doc = item.model_dump()
-            doc["partition_id"] = self._partition_id
-            with self._prometheus_tracker.track("upsert__replace_one", self._database_name, self._collection_name):
-                await collection.replace_one(pk_filter, doc, upsert=True, session=self._session)
+            # Full document for new inserts
+            insert_doc = item.model_dump()
+            insert_doc["partition_id"] = self._partition_id
+
+            if update_fields is None:
+                update_fields = list(insert_doc.keys())
+
+            # Determine what to update when the doc already exists
+            update_doc = {field: insert_doc[field] for field in update_fields if field in insert_doc}
+
+            set_on_insert = {k: v for k, v in insert_doc.items() if k not in update_doc}
+            update_spec: Dict[str, Dict[str, Any]] = {"$setOnInsert": set_on_insert}
+            if update_doc:
+                update_spec["$set"] = update_doc
+
+            with self._prometheus_tracker.track(
+                "upsert__update_one",
+                self._database_name,
+                self._collection_name,
+            ):
+                await collection.update_one(
+                    pk_filter,
+                    update_spec,
+                    upsert=True,
+                    session=self._session,
+                )
 
     @_mongo_operation("delete")
     async def delete(self, items: Sequence[T_model]) -> None:

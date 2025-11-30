@@ -24,6 +24,8 @@ from typing import (
     Union,
 )
 
+from pydantic import BaseModel
+
 from agentlightning.types import (
     Attempt,
     FilterField,
@@ -282,7 +284,7 @@ class ListBasedCollection(Collection[T]):
         # We should always return inside the loop.
         raise RuntimeError("Unreachable")
 
-    def _mutate_single(self, item: T, mode: MutationMode) -> None:
+    def _mutate_single(self, item: T, mode: MutationMode, update_fields: Sequence[str] | None = None) -> None:
         """Core mutation logic shared by insert, update, upsert, and delete."""
         self._ensure_item_type(item)
         key_values = self._extract_primary_key_values(item)
@@ -299,7 +301,32 @@ class ListBasedCollection(Collection[T]):
             else:  # upsert
                 if not exists:
                     self._size += 1
-                parent[final_key] = item
+                    parent[final_key] = item
+
+                elif update_fields is None:
+                    # update_or_insert: update all fields
+                    parent[final_key] = item
+                    return
+
+                else:
+                    if not issubclass(self._item_type, BaseModel):
+                        raise TypeError(
+                            f"When using update_fields, the item type must be a Pydantic BaseModel, got {self._item_type.__name__}"
+                        )
+
+                    # Try to fetch the existing item
+                    existing = parent[final_key]
+                    if not isinstance(existing, self._item_type):
+                        raise ValueError(
+                            f"Internal structure corrupted: expected {self._item_type.__name__}, got {type(existing)!r}"
+                        )
+
+                    if not isinstance(item, self._item_type):
+                        raise TypeError(
+                            f"When using update_fields, the item type must be a Pydantic BaseModel, got {type(item).__name__}"
+                        )
+
+                    parent[final_key] = parent[final_key].model_copy(update=item.model_dump(include=set(update_fields)))
 
         elif mode in ("update", "delete"):
             # For update/delete we must not create missing paths.
@@ -563,10 +590,10 @@ class ListBasedCollection(Collection[T]):
         for item in items:
             self._mutate_single(item, mode="update")
 
-    async def upsert(self, items: Sequence[T]) -> None:
+    async def upsert(self, items: Sequence[T], update_fields: Sequence[str] | None = None) -> None:
         """Upsert the given items (insert if missing, otherwise update)."""
         for item in items:
-            self._mutate_single(item, mode="upsert")
+            self._mutate_single(item, mode="upsert", update_fields=update_fields)
 
     async def delete(self, items: Sequence[T]) -> None:
         """Delete the given items.
