@@ -6,6 +6,7 @@ with latest Agent-lightning API (v0.2+)."""
 import asyncio
 import os
 import re
+import traceback
 from typing import TypedDict, cast
 
 from autogen_agentchat.agents import AssistantAgent
@@ -96,9 +97,12 @@ async def calc_agent(task: MathProblem, llm: agl.LLM) -> None:
                 answer = last_message
         except asyncio.TimeoutError as e:
             print("Timeout occurred. Error:", str(e))
+            traceback.print_exc()
             answer = "None"
         except Exception as e:
             print("Failure:", str(e))
+            print("Full traceback:")
+            traceback.print_exc()
             answer = "None"
         reward = await evaluate(answer, str(task["result"]))
         agl.emit_reward(reward)  # Emit reward for tracing
@@ -122,8 +126,10 @@ async def debug():
     store = agl.InMemoryLightningStore()
 
     # This is what needs to be tuned (i.e., LLM)
+    # Use environment variable OPENAI_MODEL if set, otherwise use the same model as test_mcp_calculator.py
+    model = os.environ.get("OPENAI_MODEL", "/data/aj/llm_model/Qwen2.5-1.5B-Instruct")
     resource = agl.LLM(
-        endpoint=os.environ["OPENAI_BASE_URL"], model="gpt-4.1-nano", sampling_parameters={"temperature": 1.0}
+        endpoint=os.environ["OPENAI_BASE_URL"], model=model, sampling_parameters={"temperature": 1.0}
     )
 
     made_up_task: MathProblem = {
