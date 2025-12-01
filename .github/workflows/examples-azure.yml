@@ -9,34 +9,38 @@ on:
   workflow_dispatch:
 
   repository_dispatch:
-    types: [ci-azure, ci-all]
+    types: [ci-claude-code, ci-all]
 
 run-name: >-
   ${{ github.event_name == 'repository_dispatch'
       && format(
-        'Azure - PR #{0} - {1} - {2}',
+        'Claude Code - PR #{0} - {1} - {2}',
         github.event.client_payload.pull_number,
         github.event.client_payload.ci_label,
         github.event.client_payload.correlation_id
       )
-      || format('Azure - {0}', github.event_name) }}
+      || format('Claude Code - {0}', github.event_name) }}
 
 jobs:
-  azure:
+  claude-code:
     if: >
       github.event_name != 'repository_dispatch' ||
-      github.event.action == 'ci-azure' ||
+      github.event.action == 'ci-claude-code' ||
       github.event.action == 'ci-all'
-    name: Azure (Python ${{ matrix.python-version }}, ${{ matrix.setup-script }})
-    runs-on: [self-hosted, 1ES.Pool=agl-runner-cpu]
-    timeout-minutes: 400
+    name: Claude Code (Python ${{ matrix.python-version }}, ${{ matrix.setup-script }})
+    runs-on: [self-hosted, 1ES.Pool=agl-runner-gpu]
+    timeout-minutes: 120
     strategy:
       matrix:
         include:
         - python-version: '3.12'
           setup-script: 'stable'
+        - python-version: '3.13'
+          setup-script: 'latest'
       fail-fast: false
     steps:
+      - name: Check GPU status
+        run: nvidia-smi
       - name: Check disk space
         run: df -h
       - uses: actions/checkout@v4
@@ -62,37 +66,26 @@ jobs:
       - name: Upload dependencies artifact
         uses: actions/upload-artifact@v4
         with:
-          name: dependencies-azure-${{ matrix.python-version }}-${{ matrix.setup-script }}
+          name: dependencies-claude-code-${{ matrix.python-version }}-${{ matrix.setup-script }}
           path: requirements-freeze.txt
           compression-level: 0
 
-      - name: Azure Login
-        run: |
-          az login --identity
-        shell: bash
-
-      - name: Azure OpenAI Sanity Check
+      - name: Claude Code sanity check with OpenAI models
         run: |
           source .venv/bin/activate
-          cd examples/azure
-          python capital_agent.py
+          cd examples/claude_code
+          python claude_code_agent.py openai --backend-model-high gpt-5.1-codex-mini --backend-model-low gpt-4.1-mini --debug
         shell: bash
         env:
-          AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT_SWEDEN }}
-          AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY_SWEDEN }}
-        id: azure_openai_sanity_check
+          OPENAI_BASE_URL: ${{ secrets.AZURE_OPENAI_ENDPOINT_SWEDEN }}
+          OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY_SWEDEN }}
 
-      - name: Azure OpenAI Supervised Fine-tuning
-        run: |
-          source .venv/bin/activate
-          cd examples/azure
-          python train_capital_agent.py --n-iterations 2 --cleanup
-        shell: bash
-        env:
-          AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT_SWEDEN }}
-          AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY_SWEDEN }}
-          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-          AZURE_OPENAI_API_VERSION: 2025-04-01-preview
-          AZURE_RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
-          AZURE_RESOURCE_NAME: ${{ secrets.AZURE_RESOURCE_NAME }}
-        id: azure_openai_finetune
+      - name: Upload sanity check artifacts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: claude-code-sanity-check-${{ matrix.setup-script }}
+          path: |
+            examples/claude_code/data/
+            examples/claude_code/logs/
+          if-no-files-found: error
