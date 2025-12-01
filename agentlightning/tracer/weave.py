@@ -6,11 +6,10 @@ import asyncio
 import logging
 import os
 import threading
-from contextlib import asynccontextmanager, contextmanager
-from typing import TYPE_CHECKING, Any, AsyncGenerator, Awaitable, Dict, Generator, List, Optional, cast
+from contextlib import contextmanager
+from typing import TYPE_CHECKING, Any, Awaitable, Generator, List, Optional
 
-import requests
-
+from agentlightning.instrumentation import instrument_all, uninstrument_all
 from agentlightning.store.base import LightningStore
 from agentlightning.types.tracer import OtelResource, Span, SpanContext, TraceStatus
 
@@ -46,7 +45,7 @@ class WeaveTracer(Tracer):
     """
 
     def __init__(
-        self, *, project_name: str | None = None, wandb_api_key: str | None = None, pass_weave_service: bool = True
+        self, *, project_name: str | None = None, wandb_api_key: str | None = None, instrument_managed: bool = True
     ):
         """
         Initialize a WeaveTracer instance.
@@ -60,7 +59,7 @@ class WeaveTracer(Tracer):
         self.project_name = project_name or __name__
         self.sequence_id = 0
         self._store: Optional[LightningStore] = None
-        self.pass_weave_service = pass_weave_service
+        self.instrument_managed = instrument_managed
 
         if wandb_api_key:
             os.environ["WANDB_API_KEY"] = wandb_api_key
@@ -73,6 +72,12 @@ class WeaveTracer(Tracer):
         self._loop_ready = threading.Event()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._loop_thread: Optional[threading.Thread] = None
+
+    def instrument(self, worker_id: int):
+        instrument_all()
+
+    def uninstrument(self, worker_id: int):
+        uninstrument_all()
 
     def init_worker(self, worker_id: int, store: Optional[LightningStore] = None):
         """
@@ -92,8 +97,8 @@ class WeaveTracer(Tracer):
             raise RuntimeError("Weave is not installed. Install it to use WeaveTracer.")
 
         # Optionally patch network calls to bypass real Weave/W&B endpoints
-        if self.pass_weave_service:
-            self.bypass_weave_service()
+        if self.instrument_managed:
+            self.instrument(worker_id)
 
         # Initialize the Weave client if not already initialized
         if weave.get_client() is None:  # type: ignore
@@ -113,34 +118,12 @@ class WeaveTracer(Tracer):
         super().teardown_worker(worker_id)
         self.shutdown()
 
-    @asynccontextmanager
-    async def trace_context(
-        self,
-        name: Optional[str] = None,
-        *,
-        store: Optional[LightningStore] = None,
-        rollout_id: Optional[str] = None,
-        attempt_id: Optional[str] = None,
-    ) -> AsyncGenerator[Any, None]:
-        """
-        Create an asynchronous tracing context using Weave.
-
-        This context manager can be used with `async with` blocks to collect spans.
-
-        Args:
-            name: Optional name for the tracing context; defaults to the project name.
-            store: Optional LightningStore to store spans.
-            rollout_id: Optional rollout ID for trace context.
-            attempt_id: Optional attempt ID for trace context.
-
-        Yields:
-            The Weave tracer instance for span collection.
-        """
-        with self._trace_context_sync(name=name, store=store, rollout_id=rollout_id, attempt_id=attempt_id):
-            yield
+        if self.instrument_managed:
+            self.uninstrument(worker_id)
+            logger.info(f"[Worker {worker_id}] Instrumentation removed.")
 
     @contextmanager
-    def _trace_context_sync(
+    def trace_context(
         self,
         name: Optional[str] = None,
         *,
@@ -195,69 +178,6 @@ class WeaveTracer(Tracer):
         finally:
             # Finish trace even if no exception
             weave_client.finish_call(trace_call, op=self)  # type: ignore
-
-    def bypass_weave_service(self):
-        """
-        Patch the Weave/W&B integration to bypass actual network calls for testing.
-
-        - Mocks HTTP POST/GET requests
-        - Patches wandb.Api methods
-        - Silences Weave logging
-        - Sets dummy WANDB_API_KEY if not provided
-        """
-        import weave
-        from weave.compat import wandb  # type: ignore
-
-        _weave_tracer_entity_name = "weave_tracer_entity"
-
-        def default_entity_name_getter(_self) -> str:  # type: ignore
-            return _weave_tracer_entity_name
-
-        def upsert_project_getter(
-            _self, project: str, description: Optional[str] = None, entity: Optional[str] = None  # type: ignore
-        ) -> dict[str, Any]:
-            return {
-                "upsertModel": {
-                    "model": {
-                        "name": project,
-                        "description": description or "",
-                        "entity": entity or _weave_tracer_entity_name,
-                    }
-                },
-                "project": "weave_tracer_project",
-            }
-
-        # Mock network requests to avoid real HTTP calls
-        def post(url: str, *args: Any, **kwargs: Any) -> requests.Response:
-            response = requests.Response()
-            response.status_code = 200
-            response._content = b'{"digest": "mocked_digest"}'
-            return response
-
-        def get(url: str, *args: Any, **kwargs: Any) -> requests.Response:
-            response = requests.Response()
-            response.status_code = 200
-            response._content = b'{"min_required_weave_python_version": "0.52.14"}'
-            return response
-
-        # Patch API methods and HTTP requests
-        wandb.Api.default_entity_name = default_entity_name_getter  # type: ignore
-        wandb.Api.upsert_project = upsert_project_getter  # type: ignore
-        weave.utils.http_requests.session.post = post  # type: ignore
-        weave.utils.http_requests.session.get = get  # type: ignore
-
-        # Silence Weave logging
-        for name in logging.root.manager.loggerDict:
-            if name.startswith("weave"):
-                logging.getLogger(name).disabled = True
-
-        # Set dummy API key if missing
-        if not os.environ.get("WANDB_API_KEY"):
-            os.environ["WANDB_API_KEY"] = "dumped_api_key_for_weave_tracer"
-
-        # if needed in future tests, enable this and replace WF_TRACE_SERVER_URL to local server
-        # full_url = f"http://127.0.0.1:{_port}"
-        # os.environ["WF_TRACE_SERVER_URL"] = full_url
 
     def _ensure_loop(self) -> None:
         """
@@ -348,13 +268,11 @@ class WeaveTracer(Tracer):
         Returns:
             Tuple of (list_of_spans, next_sequence_id).
         """
-        from collections.abc import Sequence
-
         spans: List[Span] = []
         sequence_id = seq_start
 
-        rollout_id = rollout_id or getattr(call, "inputs", {}).get("rollout_id", "")  # type: ignore
-        attempt_id = attempt_id or getattr(call, "inputs", {}).get("attempt_id", "")  # type: ignore
+        rollout_id = rollout_id or ""  # type: ignore
+        attempt_id = attempt_id or ""  # type: ignore
 
         start_dt = getattr(call, "started_at", None)  # type: ignore
         start_ts: Optional[float] = start_dt.timestamp() if start_dt else None
@@ -362,24 +280,55 @@ class WeaveTracer(Tracer):
         end_dt = getattr(call, "ended_at", None)  # type: ignore
         end_ts: Optional[float] = end_dt.timestamp() if end_dt else None
 
-        attributes = dict(getattr(call, "attributes", {}) or {})  # type: ignore
-        flat_attrs: Dict[str, Any] = {}
-
-        # Flatten nested attribute dictionaries
-        for k, v in attributes.items():
-            if isinstance(v, dict):
-                for sub_k, sub_v in v.items():  # type: ignore
-                    sub_v = cast(Any, sub_v)
-                    if isinstance(sub_v, (str, bool, int, float)) or isinstance(sub_v, Sequence):
-                        flat_attrs[f"{k}.{sub_k}"] = sub_v
-                    else:
-                        flat_attrs[f"{k}.{sub_k}"] = str(sub_v)
-            else:
-                flat_attrs[k] = v
-
         trace_id = str(getattr(call, "trace_id", None))  # type: ignore
         span_id = str(getattr(call, "id", None))  # type: ignore
         parent_id = str(getattr(call, "parent_id", None)) if getattr(call, "parent_id", None) else None  # type: ignore
+
+        def sanitize(inputs: dict, output: dict) -> dict:
+            stack = [(inputs or {}, "input"), (output or {}, "output")]
+            attributes = {}
+
+            while stack:
+                value, key = stack.pop()
+
+                if isinstance(value, dict):
+                    for k, v in value.items():
+                        stack.append((v, f"{key}.{k}"))
+                elif isinstance(value, (list, tuple)):
+                    for i, v in enumerate(value):
+                        stack.append((v, f"{key}.{i}"))
+                else:
+                    if value is None:
+                        attributes[key] = "None"
+                    elif isinstance(value, (str, int, float, bool)):
+                        attributes[key] = value
+                    else:
+                        try:
+                            attributes[key] = str(value)
+                        except Exception:
+                            attributes[key] = "None"
+
+            return attributes
+
+        inputs = getattr(call, "inputs", {})  # type: ignore
+        output = getattr(call, "output", {})  # type: ignore
+        attributes = sanitize(inputs, output)
+
+        def is_success(summary: dict) -> bool:
+            if not summary:
+                return False
+
+            status_counts = summary.get("status_counts", {})
+            if not status_counts:
+                return False
+
+            success_count = status_counts.get("success", 0)
+            error_count = status_counts.get("error", 0)
+
+            return success_count > 0 and error_count == 0
+
+        summary = getattr(call, "summary", {})  # type: ignore
+        status_code = "OK" if is_success(summary) else "ERROR"
 
         context = SpanContext(
             trace_id=trace_id,
@@ -408,8 +357,8 @@ class WeaveTracer(Tracer):
             span_id=span_id,
             parent_id=parent_id,
             name=getattr(call, "func_name", "unknown"),  # type: ignore
-            status=TraceStatus(status_code="OK"),
-            attributes=flat_attrs,
+            status=TraceStatus(status_code=status_code),
+            attributes=attributes,
             events=[],  # Weave calls do not generate events
             links=[],  # Weave calls do not generate links
             start_time=start_ts,

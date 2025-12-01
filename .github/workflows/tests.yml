@@ -38,6 +38,7 @@ jobs:
             --extra apo \
             --extra verl \
             --extra mongo \
+            --extra weave \
             --group dev \
             --group torch-cpu \
             --group torch-stable \
