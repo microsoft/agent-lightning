@@ -291,7 +291,12 @@ class Runtime:
         self.logger(text=logged_output)
 
     def send_command(self, command: str, timeout: float = 20 * 60) -> CommandResult:
-        claude_code_logger.info("Docker runtime receiving command: %s", command)
+        # Redact sensitive API keys from the command before logging
+        redacted_command = command
+        for sensitive_var in ["ANTHROPIC_AUTH_TOKEN", "API_KEY", "SECRET_KEY"]:
+            pattern = rf"(export .*?{re.escape(sensitive_var)}.*?=)[^\s]+"
+            redacted_command = re.sub(pattern, rf"\1****REDACTED****", redacted_command)
+        claude_code_logger.info("Docker runtime receiving command: %s", redacted_command)
         # Normalize newline semantics for interactive shells
         if not command.endswith("\n"):
             command += "\n"
