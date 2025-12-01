@@ -191,7 +191,7 @@ class Runtime:
         ).replace('"', r"\"")
         ps1 = CMD_OUTPUT_PS1_BEGIN + json_str + CMD_OUTPUT_PS1_END + "\n"
         self.send_command(f'export PROMPT_COMMAND=\'export PS1="{ps1}"\'; export PS2=""')
-        self.send_command("apt update && apt install -y git")
+        self.send_command("apt update -qq && apt install -y -qq git")
         self.stopped = False
 
     def _stream_output(self):
@@ -211,6 +211,7 @@ class Runtime:
     def _start_output_thread(self):
         self.output_thread = threading.Thread(target=self._stream_output, daemon=True)
         self.output_thread.start()
+        # TODO: kill the thread if main thread is stopped
 
     def _clear_initial_prompt(self):
         time.sleep(0.5)
@@ -278,7 +279,7 @@ class Runtime:
         raise TypeError(f"Don't know how to write to {type(self.sock).__name__}")
 
     def send_command(self, command: str, timeout: float = 20 * 60) -> CommandResult:
-        claude_code_logger.info(f"Receiving command: {command}")
+        claude_code_logger.info("Docker runtime receiving command: %s", command)
         # Normalize newline semantics for interactive shells
         if not command.endswith("\n"):
             command += "\n"
@@ -292,10 +293,8 @@ class Runtime:
         # TODO: Check exit code of the command
         if metadata is not None:
             result = CommandResult(output=output, metadata=metadata)
-            claude_code_logger.info(f"Command finished with metadata: {metadata}")
-            claude_code_logger.info(
-                f"Command output: {output[:100]} (truncated to 100 characters, total length: {len(output)})"
-            )
+            claude_code_logger.debug("Docker runtime command finished with metadata: %s", metadata)
+            claude_code_logger.debug("Docker runtime command output:\n%s", output)
             self.logger(text=result.output)
             return result
 
@@ -308,10 +307,8 @@ class Runtime:
         output = output + kill_output + "\n**Exited due to timeout**\n"
         if kill_metadata is not None:
             kill_metadata.exit_code = TIMEOUT_EXIT_CODE
-            claude_code_logger.info(f"Command timed out: {command}")
-            claude_code_logger.info(
-                f"Command output: {output[:100]} (truncated to 100 characters, total length: {len(output)})"
-            )
+            claude_code_logger.debug("Docker runtime command timed out: %s", command)
+            claude_code_logger.debug("Docker runtime command output:\n%s", output)
             return CommandResult(output=output, metadata=kill_metadata)
 
         fallback_metadata = CmdOutputMetadata(
@@ -319,10 +316,8 @@ class Runtime:
         )
 
         result = CommandResult(output=output, metadata=fallback_metadata)
-        claude_code_logger.info(f"Command finished with fallback metadata: {fallback_metadata}")
-        claude_code_logger.info(
-            f"Command output: {output[:100]} (truncated to 100 characters, total length: {len(output)})"
-        )
+        claude_code_logger.debug("Docker runtime command finished with fallback metadata: %s", fallback_metadata)
+        claude_code_logger.debug("Docker runtime command output:\n%s", output)
         self.logger(text=result.output)
         return result
 

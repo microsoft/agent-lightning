@@ -151,7 +151,7 @@ class ClaudeController:
             f"""
 if ! command -v python3 &> /dev/null; then
     echo "Python is not installed. Installing Python 3.12..."
-    sudo apt-get update && sudo apt-get install -y python3.12
+    sudo apt-get update -qq && sudo apt-get install -y -qq python3.12
 else
     echo "Python is already installed."
 fi

@@ -36,6 +36,7 @@ from agentlightning import (
     LitAgentRunner,
     OtelTracer,
     setup_logging,
+    setup_module_logging,
 )
 from agentlightning.litagent import LitAgent
 from agentlightning.llm_proxy import LLMProxy, ModelConfig
@@ -432,13 +433,18 @@ if __name__ == "__main__":
     parser.add_argument("--output-dir", type=str, default="data", help="Directory to save output logs.")
     parser.add_argument("--limit", type=int, default=None, help="Limit the number of instances to run (for debugging).")
     parser.add_argument("--cooldown-seconds", type=float, default=2.0, help="Cooldown seconds between instances.")
+    parser.add_argument("--debug", action="store_true", help="Enable debug loggings.")
 
     args = parser.parse_args()
 
     if args.output_dir is not None:
         os.makedirs(args.output_dir, exist_ok=True)
 
-    setup_logging(apply_to=[logger.name])
+    if args.debug:
+        setup_logging()
+        setup_module_logging("DEBUG", name="claude_code_agent")
+    else:
+        setup_logging(apply_to=[logger.name])
 
     # Map backend_type to the appropriate args
     backend_mode = cast(Literal["vllm", "anthropic", "openai"], args.backend_type)
