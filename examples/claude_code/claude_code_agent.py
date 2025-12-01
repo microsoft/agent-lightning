@@ -44,7 +44,9 @@ from agentlightning.types import AttemptedRollout, NamedResources, ProxyLLM, Rol
 logger = logging.getLogger("claude_code_agent")
 
 
-def load_dataset(path: str = "swe_debug.jsonl", epoch: int = 0, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+def load_dataset(
+    path: str = "swebench_samples.jsonl", epoch: int = 0, limit: Optional[int] = None
+) -> List[Dict[str, Any]]:
     instances: List[Dict[str, Any]] = []
     with open(path) as f:
         for line in f:
@@ -60,7 +62,8 @@ def load_dataset(path: str = "swe_debug.jsonl", epoch: int = 0, limit: Optional[
 class ClaudeCodeAgent(LitAgent[Dict[str, Any]]):
     """Claude Code Agent implementation.
 
-    This agent is a wrapper of the Claude Code controller. It is used to run the Claude Code agent on SWE-bench datasets.
+    This agent is a wrapper of the Claude Code controller,
+    and it should be used to run the Claude Code agent on SWE-bench datasets.
     """
 
     def __init__(
@@ -68,7 +71,7 @@ class ClaudeCodeAgent(LitAgent[Dict[str, Any]]):
         namespace: Literal["swebench", "starryzhang"] = "swebench",
         full_set: Literal["princeton-nlp/SWE-bench", "SWE-bench-Live/SWE-bench-Live"] = "princeton-nlp/SWE-bench",
         split: str = "test",
-        max_step: int = 5,
+        max_turns: int = 5,
         run_method: Literal["python", "cli"] = "cli",
         open_file_limit: int = 4096,
         cache_level: str = "env",  # ["none", "base", "env", "instance"]
@@ -82,7 +85,7 @@ class ClaudeCodeAgent(LitAgent[Dict[str, Any]]):
         self.namespace = namespace
         self.full_set = full_set
         self.split = split
-        self.max_step = max_step
+        self.max_turns = max_turns
         self.run_method = run_method
 
         self.cache_level = cache_level
@@ -122,7 +125,7 @@ class ClaudeCodeAgent(LitAgent[Dict[str, Any]]):
             )
             # 2. execute task
             prediction = controller.run_instance(
-                task, max_step=self.max_step, run_method=cast(Literal["python", "cli"], self.run_method)
+                task, max_turns=self.max_turns, run_method=cast(Literal["python", "cli"], self.run_method)
             )
             del controller
         except Exception as e:
@@ -182,181 +185,215 @@ def flatten_messages(messages: List[Any]) -> List[Dict[str, str]]:
     return flattened
 
 
-async def cc_agent_dry_run_sample(
-    model_path: str,
-    server_address: str,
+async def dry_run_claude_code(
+    *,
     dataset_path: str,
-    sonnet_name: str,
-    haiku_name: str,
-    max_step: int,
+    haiku_frontend_name: str,
+    haiku_backend_name: str,
+    sonnet_frontend_name: str,
+    sonnet_backend_name: str,
+    backend_type: Literal["vllm", "anthropic"],
+    api_base_url: Optional[str],
     output_dir: Optional[str],
+    max_turns: int,
+    limit: Optional[int],
+    cooldown_seconds: float,
 ) -> None:
-    """Run a dry run of the cc agent on a single sample.
+    """Executes a dry run of the Claude Code agent on a dataset.
 
-    This is a simple test function that runs the math agent on the first 4 problems
-    using a single worker. Useful for testing the setup and configuration.
+    This function handles both 'official' runs (interacting with Anthropic APIs)
+    and 'hosted' runs (interacting with vLLM or compatible servers). It manages
+    initialization of the Lightning Store, LLM Proxy, and the execution loop.
+
+    If running in 'vllm' mode, it will also attempt to extract triplets using
+    the provided backend name as the tokenizer path and save a HuggingFace Dataset.
+
+    Args:
+        dataset_path: Path to the JSONL dataset file.
+        haiku_frontend_name: The model name used in the code to request the 'fast' model.
+        haiku_backend_name: The actual model name/path on the backend.
+        sonnet_frontend_name: The model name used in the code to request the 'strong' model.
+        sonnet_backend_name: The actual model name/path on the backend.
+        backend_type: The type of backend to configure ("vllm" or "anthropic").
+        api_base_url: Base URL for the API. Required for "vllm"; defaults to "https://api.anthropic.com/v1" for "anthropic".
+        output_dir: Directory to save logs, spans, and datasets.
+        max_turns: Maximum number of steps the agent can take per instance.
+        limit: Optional limit on the number of instances to process.
     """
-    dataset = load_dataset(dataset_path, limit=4)
-    # from_pretrained has partially unknown typing in some stubs; cast via Any to satisfy type-checkers.
-    tokenizer: AutoTokenizer = AutoTokenizer.from_pretrained(model_path)  # type: ignore
+    dataset = load_dataset(dataset_path, limit=limit)
 
-    logging = configure_logger(name="Claude Code Agent")
+    # Configure Logging
+    configure_logger(name="Claude Code Agent")
 
-    tracer = OtelTracer()
-    runner = LitAgentRunner[Dict[str, Any]](tracer)
-    adapter = ExtendedLlmProxyTraceToTriplet()
-    store = LightningStoreServer(InMemoryLightningStore(), host="0.0.0.0", port=7654)
-    llm_proxy = LLMProxy(port=12358, store=store, callbacks=["return_token_ids", "opentelemetry", "logprobs"])
-
-    await store.start()
-
-    llm_proxy.update_model_list(
-        [
-            ModelConfig(
-                model_name=f"{sonnet_name}",
-                litellm_params={
-                    "model": f"hosted_vllm/{model_path}",
-                    "api_base": server_address,
-                },
-            ),
-            ModelConfig(
-                model_name=f"{haiku_name}",
-                litellm_params={
-                    "model": f"hosted_vllm/{model_path}",
-                    "api_base": server_address,
-                },
-            ),
-        ]
-    )
-    await llm_proxy.restart()
-
-    # Put the LLM proxy address into the store as an address
-    await store.add_resources(
-        {
-            "llm": llm_proxy.as_resource(model="local"),
-        }
-    )
-
-    with runner.run_context(agent=ClaudeCodeAgent(max_step=max_step), store=store):
-        rollout = await runner.step(
-            dataset[0],
-        )
-
-        spans = await store.query_spans(rollout.rollout_id)
-        triplets = adapter.adapt(cast(List[Span], spans))
-        logging.info(f"dump {len(spans)} spans, extract {len(triplets)} triplets")
-        if output_dir is not None:
-            with open(os.path.join(output_dir, f"stream_{dataset[0]['instance_id']}.json"), "w") as f:
-                for span in spans:
-                    f.write(json.dumps(span.model_dump()) + "\n")
-
-            all_triplets: List[Dict[str, Any]] = []
-            recent_reward: Optional[float] = None
-            for triplet in reversed(triplets):
-                if triplet.reward is not None:
-                    recent_reward = triplet.reward
-
-                prompt = tokenizer.decode(triplet.prompt["token_ids"])  # type: ignore
-                all_triplets.append(
-                    {
-                        "repo": rollout.input["repo"],
-                        "instance_id": rollout.input["instance_id"],
-                        "turn": triplet.metadata["sequence_id"],
-                        "prompt_ids": triplet.prompt["token_ids"],
-                        "gold_completion_ids": triplet.response["token_ids"],
-                        "logprobs": triplet.response["logprobs"],
-                        "reward": recent_reward,
-                        "prompt": prompt,
-                        "messages": flatten_messages(triplet.metadata["messages"]),
-                    }
-                )
-
-            ds = Dataset.from_list(all_triplets)  # type: ignore
-            ds.save_to_disk(os.path.join(output_dir, f"dataset-{dataset[0]['instance_id']}"))  # type: ignore
-            logging.info(f"Saved dataset with {len(ds)} samples to dataset-{dataset[0]['instance_id']}")
-
-
-async def gold_cc_agent_run_dataset(
-    sonnet_name: str,
-    haiku_name: str,
-    max_step: int,
-    dataset_path: str,
-    output_dir: Optional[str],
-):
-    """Run a dry run of the cc agent on a single sample.
-
-    This is a simple test function that runs the math agent on the first 4 problems
-    using a single worker. Useful for testing the setup and configuration.
-    """
-    dataset = load_dataset(dataset_path)
-
-    logging = configure_logger(name="Claude Code Agent")
-
+    # Initialize Infrastructure
     tracer = OtelTracer()
     runner = LitAgentRunner[Dict[str, Any]](tracer)
     store = LightningStoreServer(InMemoryLightningStore(), host="0.0.0.0", port=7654)
-    llm_proxy = LLMProxy(port=12358, store=store)
 
-    await store.start()
+    # Enable callbacks for training data extraction if using vLLM
+    callbacks = ["return_token_ids", "opentelemetry", "logprobs"] if backend_type == "vllm" else []
+    llm_proxy = LLMProxy(port=12358, store=store, callbacks=callbacks)
 
-    llm_proxy.update_model_list(
-        [
+    # Configure Models based on backend type
+    model_configs = []
+    if backend_type == "vllm":
+        if not api_base_url:
+            raise ValueError("api_base_url is required for vllm backend")
+
+        model_configs = [
             ModelConfig(
-                model_name=f"{sonnet_name}",
-                litellm_params={"model": f"anthropic/{sonnet_name}", "api_key": "os.environ/ANTHROPIC_API_KEY"},
+                model_name=sonnet_frontend_name,
+                litellm_params={
+                    "model": f"hosted_vllm/{sonnet_backend_name}",
+                    "api_base": api_base_url,
+                },
             ),
             ModelConfig(
-                model_name=f"{haiku_name}",
-                litellm_params={"model": f"anthropic/{haiku_name}", "api_key": "os.environ/ANTHROPIC_API_KEY"},
+                model_name=haiku_frontend_name,
+                litellm_params={
+                    "model": f"hosted_vllm/{haiku_backend_name}",
+                    "api_base": api_base_url,
+                },
             ),
         ]
-    )
-    await llm_proxy.restart()
+    elif backend_type == "anthropic":
+        model_configs = [
+            ModelConfig(
+                model_name=sonnet_frontend_name,
+                litellm_params={
+                    "model": f"anthropic/{sonnet_backend_name}",
+                    "api_key": "os.environ/ANTHROPIC_API_KEY",
+                },
+            ),
+            ModelConfig(
+                model_name=haiku_frontend_name,
+                litellm_params={
+                    "model": f"anthropic/{haiku_backend_name}",
+                    "api_key": "os.environ/ANTHROPIC_API_KEY",
+                },
+            ),
+        ]
 
-    # Put the LLM proxy address into the store as an address
-    await store.add_resources(
-        {
-            "llm": llm_proxy.as_resource(model="local"),
-        }
-    )
+    llm_proxy.update_model_list(model_configs)
+    await llm_proxy.start()
 
-    for each in dataset:
-        with runner.run_context(agent=ClaudeCodeAgent(max_step=max_step), store=store):
-            rollout = await runner.step(each)
+    # Add the LLM proxy as a resource to the store
+    await store.add_resources({"llm": llm_proxy.as_resource(model="local")})
+
+    # Prepare for triplet extraction if vllm
+    adapter = ExtendedLlmProxyTraceToTriplet() if backend_type == "vllm" else None
+    tokenizer = None
+    if backend_type == "vllm":
+        try:
+            tokenizer = AutoTokenizer.from_pretrained(sonnet_backend_name)  # type: ignore
+        except Exception as e:
+            logger.warning(f"Could not load tokenizer for {sonnet_backend_name}: {e}")
+
+    # Execution Loop
+    for instance in dataset:
+        instance_id = instance["instance_id"]
+        logger.info(f"Starting rollout for {instance_id}")
+
+        with runner.run_context(agent=ClaudeCodeAgent(max_turns=max_turns), store=store):
+            rollout = await runner.step(instance)
             spans = await store.query_spans(rollout.rollout_id)
 
         if output_dir is None:
-            logging.info(f"instance {each['instance_id']} generate {len(spans)} spans")
-        else:
-            logging.info(f"instance {each['instance_id']} dump {len(spans)} spans to {output_dir}")
-            with open(os.path.join(output_dir, f"{each['instance_id']}.json"), "w") as f:
-                for span in spans:
-                    f.write(json.dumps(span.model_dump()) + "\n")
+            logger.info(f"Generated {len(spans)} spans for {instance_id}")
+            continue
 
-        await asyncio.sleep(2 * 60)  # sleep for 2 minutes
+        # 1. Dump raw spans (Common for both types)
+        raw_path = os.path.join(output_dir, f"stream_{instance_id}.json")
+        with open(raw_path, "w") as f:
+            for span in spans:
+                f.write(json.dumps(span.model_dump()) + "\n")
+        logger.info(f"Dumped {len(spans)} spans to {raw_path}")
+
+        # 2. Extract Triplets and Save Dataset (vLLM specific)
+        if backend_type == "vllm" and adapter is not None and tokenizer is not None:
+            try:
+                triplets = adapter.adapt(cast(List[Span], spans))
+                logger.info(f"Extracted {len(triplets)} triplets for {instance_id}")
+
+                all_triplets: List[Dict[str, Any]] = []
+                recent_reward: Optional[float] = None
+
+                # Process in reverse to propagate rewards if necessary/logic dictates
+                for triplet in reversed(triplets):
+                    if triplet.reward is not None:
+                        recent_reward = triplet.reward
+
+                    prompt_text = tokenizer.decode(triplet.prompt["token_ids"])  # type: ignore
+                    all_triplets.append(
+                        {
+                            "repo": instance.get("repo", ""),
+                            "instance_id": instance_id,
+                            "turn": triplet.metadata["sequence_id"],
+                            "prompt_ids": triplet.prompt["token_ids"],
+                            "gold_completion_ids": triplet.response["token_ids"],
+                            "logprobs": triplet.response["logprobs"],
+                            "reward": recent_reward,
+                            "prompt": prompt_text,
+                            "messages": flatten_messages(triplet.metadata["messages"]),
+                        }
+                    )
+
+                if all_triplets:
+                    ds = Dataset.from_list(all_triplets)  # type: ignore
+                    save_path = os.path.join(output_dir, f"dataset-{instance_id}")
+                    ds.save_to_disk(save_path)  # type: ignore
+                    logger.info(f"Saved HuggingFace dataset to {save_path}")
+
+            except Exception as e:
+                logger.error(f"Failed to extract triplets for {instance_id}: {e}")
+
+        # Basic sleep to allow resource cleanup or rate limit cooling
+        await asyncio.sleep(cooldown_seconds)
 
 
 if __name__ == "__main__":
-    from argparse import ArgumentParser
+    parser = ArgumentParser(description="Run Claude Code Agent experiments.")
 
-    parser = ArgumentParser()
-    # extract spans from official Claude Code
-    parser.add_argument("--official", action="store_true", help="Whether to run official claude code.")
-
-    # extract spans from hosted LLM server via litellm proxy
+    # Backend Selection
     parser.add_argument(
-        "--model_name_or_path", type=str, default="Qwen/Qwen3-Coder-30B-A3B-Instruct", help="Model name or path."
+        "--backend_type",
+        type=str,
+        choices=["vllm", "anthropic"],
+        default="vllm",
+        help="Backend type: 'vllm' for hosted models, 'anthropic' for official API.",
     )
-    parser.add_argument("--server_address", type=str, default="http://localhost:8000/v1", help="LLM server address.")
 
-    # common setup
+    # Model Configuration
     parser.add_argument(
-        "--sonnet_name", type=str, default="claude-sonnet-4-5-20250929", help="Name of the sonnet model."
+        "--model-name",
+        type=str,
+        default="Qwen/Qwen3-Coder-30B-A3B-Instruct",
+        help="Backend model path/name (used as tokenizer source and vllm model name).",
     )
-    parser.add_argument("--haiku_name", type=str, default="claude-haiku-4-5-20251001", help="Name of the haiku model.")
-    parser.add_argument("--dataset_path", type=str, default="swe_debug.jsonl", help="Path to the dataset.")
-    parser.add_argument("--max_step", type=int, default=5, help="Maximum steps per instance.")
-    parser.add_argument("--output_dir", type=str, default="data", help="Directory to save output logs.")
+    parser.add_argument(
+        "--base-url", type=str, default="http://localhost:8000/v1", help="LLM server address (required for vllm)."
+    )
+
+    # Frontend/Agent Configuration
+    parser.add_argument(
+        "--sonnet-name",
+        type=str,
+        default="claude-sonnet-4-5-20250929",
+        help="The frontend model name used by the agent logic.",
+    )
+    parser.add_argument(
+        "--haiku-name",
+        type=str,
+        default="claude-haiku-4-5-20251001",
+        help="The frontend haiku model name used by the agent logic.",
+    )
+
+    # Execution Configuration
+    parser.add_argument("--dataset-path", type=str, default="swebench_samples.jsonl", help="Path to the dataset.")
+    parser.add_argument("--max-turns", type=int, default=5, help="Maximum turns per instance.")
+    parser.add_argument("--output-dir", type=str, default="data", help="Directory to save output logs.")
+    parser.add_argument("--limit", type=int, default=None, help="Limit the number of instances to run (for debugging).")
+    parser.add_argument("--cooldown-seconds", type=float, default=2.0, help="Cooldown seconds between instances.")
 
     args = parser.parse_args()
 
@@ -365,25 +402,29 @@ if __name__ == "__main__":
 
     setup_logging(apply_to=[logger.name])
 
-    if not args.official:
-        asyncio.run(
-            cc_agent_dry_run_sample(
-                model_path=args.model_name_or_path,
-                server_address=args.server_address,
-                dataset_path=args.dataset_path,
-                sonnet_name=args.sonnet_name,
-                haiku_name=args.haiku_name,
-                max_step=args.max_step,
-                output_dir=args.output_dir,
-            )
+    # Map backend_type to the appropriate args
+    backend_mode = cast(Literal["vllm", "anthropic"], args.backend_type)
+
+    # If using anthropic, the backend name usually matches the frontend or is specific API string.
+    # If using vLLM, the backend name is the model path (e.g., Qwen/...).
+    # We use args.model_name for backend name in vLLM mode.
+    # For anthropic mode, we usually default to the sonnet_name provided, or explicit strings.
+
+    sonnet_backend = args.model_name if backend_mode == "vllm" else args.sonnet_name
+    haiku_backend = args.model_name if backend_mode == "vllm" else args.haiku_name
+
+    asyncio.run(
+        dry_run_claude_code(
+            dataset_path=args.dataset_path,
+            haiku_frontend_name=args.haiku_name,
+            haiku_backend_name=haiku_backend,
+            sonnet_frontend_name=args.sonnet_name,
+            sonnet_backend_name=sonnet_backend,
+            backend_type=backend_mode,
+            api_base_url=args.server_address if backend_mode == "vllm" else None,
+            output_dir=args.output_dir,
+            max_turns=args.max_turns,
+            limit=args.limit,
+            cooldown_seconds=args.cooldown_seconds,
         )
-    else:
-        asyncio.run(
-            gold_cc_agent_run_dataset(
-                sonnet_name=args.sonnet_name,
-                haiku_name=args.haiku_name,
-                dataset_path=args.dataset_path,
-                output_dir=args.output_dir,
-                max_step=args.max_step,
-            )
-        )
+    )

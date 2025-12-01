@@ -1072,8 +1072,8 @@ class LLMProxy:
         num_workers: int = 1,
         launch_mode: LaunchMode = "mp",
         launcher_args: PythonServerLauncherArgs | None = None,
-        middlewares: List[Union[Type[BaseHTTPMiddleware], str]] | None = None,
-        callbacks: List[Union[Type[CustomLogger], str]] | None = None,
+        middlewares: Sequence[Union[Type[BaseHTTPMiddleware], str]] | None = None,
+        callbacks: Sequence[Union[Type[CustomLogger], str]] | None = None,
     ):
         self.store = store
 

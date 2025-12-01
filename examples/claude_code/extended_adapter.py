@@ -86,9 +86,6 @@ class ExtendedLlmProxyTraceToTriplet(LlmProxyTraceToTriplet):
 
             if s.name == "raw_gen_ai_request":
                 prompt_ids, resp_ids, logprobs = self._extract_tokens_from_raw(attrs)
-                # elif s.name == "litellm_request":
-                #     # Some proxies never include token ids here. Ignore unless present.
-                #     prompt_ids, resp_ids = self._extract_tokens_from_openai(attrs)
 
                 if len(prompt_ids) == 0 or len(resp_ids) == 0:
                     logger.warning(
