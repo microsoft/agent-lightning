@@ -320,12 +320,14 @@ async def dry_run_claude_code(
 
     # Configure Models based on backend type
     model_configs: List[ModelConfig] = []
-    if backend_type == "vllm" and not api_base_url:
-        raise ValueError("api_base_url is required for vllm backend")
     model_params: Dict[str, Any] = {}
 
     if backend_type == "vllm":
         model_namespace = "hosted_vllm"
+        if api_base_url:
+            model_params["api_base"] = api_base_url
+        else:
+            raise ValueError("api_base_url is required for vllm backend")
     elif backend_type == "anthropic":
         model_namespace = "anthropic"
         model_params["api_key"] = "os.environ/ANTHROPIC_API_KEY"
@@ -357,6 +359,8 @@ async def dry_run_claude_code(
             ),
         ]
     )
+
+    logger.info(f"Updating model list: {model_configs}")
 
     llm_proxy.update_model_list(model_configs)
     await llm_proxy.start()

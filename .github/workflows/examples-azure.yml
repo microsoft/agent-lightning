@@ -86,7 +86,7 @@ jobs:
             --port 45993 &
 
           VLLM_READY=0
-          for i in {1..60}; do
+          for i in {1..100}; do
             if curl -sSf http://localhost:45993/v1/models > /dev/null 2>&1; then
               echo "vLLM server is ready!"
               VLLM_READY=1
@@ -111,7 +111,7 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: claude-code-sanity-check-${{ matrix.setup-script }}
+          name: claude-code-sanity-check-vllm-${{ matrix.setup-script }}
           path: |
             examples/claude_code/data/
             examples/claude_code/logs/
@@ -144,7 +144,7 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: claude-code-sanity-check-${{ matrix.setup-script }}
+          name: claude-code-sanity-check-openai-${{ matrix.setup-script }}
           path: |
             examples/claude_code/data/
             examples/claude_code/logs/
