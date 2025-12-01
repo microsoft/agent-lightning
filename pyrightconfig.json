@@ -2,7 +2,7 @@
   // Paths to check
   "include": ["agentlightning", "tests", "examples"],
   "exclude": [
-    "**/data", 
+    "**/data",
     "**/assets",
     "agentlightning/tracer/weave.py"
   ],
