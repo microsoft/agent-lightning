@@ -4,7 +4,7 @@ permissions:
 on:
   schedule:
     # Every day at 4 AM UTC+8
-    - cron: '0 20 * * *'
+    - cron: "0 20 * * *"
 
   workflow_dispatch:
 
@@ -29,14 +29,14 @@ jobs:
       github.event.action == 'ci-all'
     name: Claude Code (Python ${{ matrix.python-version }}, ${{ matrix.setup-script }})
     runs-on: [self-hosted, 1ES.Pool=agl-runner-gpu]
-    timeout-minutes: 120
+    timeout-minutes: 60
     strategy:
       matrix:
         include:
-        - python-version: '3.12'
-          setup-script: 'stable'
-        - python-version: '3.13'
-          setup-script: 'latest'
+          - python-version: "3.12"
+            setup-script: "stable"
+          - python-version: "3.13"
+            setup-script: "latest"
       fail-fast: false
     steps:
       - name: Check GPU status
@@ -70,6 +70,51 @@ jobs:
           path: requirements-freeze.txt
           compression-level: 0
 
+      - name: Launch vLLM server
+        run: |
+          set -euo pipefail
+          vllm serve Qwen/Qwen3-Coder-30B-A3B-Instruct \
+            --max-model-len 131072 \
+            --enable-auto-tool-choice \
+            --tool-call-parser qwen3_coder \
+            --port 45993 &
+          for i in {1..60}; do
+            if curl -sSf http://localhost:45993/v1/models > /dev/null 2>&1; then
+              break
+            fi
+            sleep 5
+          done
+
+      - name: Claude Code sanity check with vLLM models
+        run: |
+          source .venv/bin/activate
+          cd examples/claude_code
+          python claude_code_agent.py vllm --backend-model-high Qwen/Qwen3-Coder-30B-A3B-Instruct --backend-model-low Qwen/Qwen3-Coder-30B-A3B-Instruct --base-url http://localhost:45993/v1 --debug
+        shell: bash
+
+      - name: Upload sanity check artifacts for vLLM
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: claude-code-sanity-check-${{ matrix.setup-script }}
+          path: |
+            examples/claude_code/data/
+            examples/claude_code/logs/
+          if-no-files-found: error
+
+      - name: Cleanup vLLM
+        run: |
+          set -euo pipefail
+          pkill -f vllm
+          for i in {1..60}; do
+            if ! pgrep -f vllm; then
+              break
+            fi
+            sleep 5
+          done
+          rm -rf examples/claude_code/data/
+          rm -rf examples/claude_code/logs/
+
       - name: Claude Code sanity check with OpenAI models
         run: |
           source .venv/bin/activate
@@ -80,7 +125,7 @@ jobs:
           OPENAI_BASE_URL: ${{ secrets.AZURE_OPENAI_ENDPOINT_SWEDEN }}
           OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY_SWEDEN }}
 
-      - name: Upload sanity check artifacts
+      - name: Upload sanity check artifacts for OpenAI
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
