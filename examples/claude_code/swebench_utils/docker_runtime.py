@@ -278,6 +278,18 @@ class Runtime:
 
         raise TypeError(f"Don't know how to write to {type(self.sock).__name__}")
 
+    def _log_command_result(self, result: CommandResult) -> None:
+        claude_code_logger.debug("Docker runtime command finished with metadata: %s", result.metadata)
+        if len(result.output) > 2048:
+            logged_output = result.output[:1024] + "\n(... stripped due to length ...)\n" + result.output[-1024:]
+        else:
+            logged_output = result.output
+        claude_code_logger.debug(
+            "Docker runtime command finished with output (length = %d):\n%s", len(result.output), logged_output
+        )
+        # Output to the evaluation logger simultaneously
+        self.logger(text=logged_output)
+
     def send_command(self, command: str, timeout: float = 20 * 60) -> CommandResult:
         claude_code_logger.info("Docker runtime receiving command: %s", command)
         # Normalize newline semantics for interactive shells
@@ -290,11 +302,10 @@ class Runtime:
         self._send_bytes(command.encode())
 
         output, metadata = self._read_raw_output(timeout=timeout)
-        # TODO: Check exit code of the command
+        # TODO: Check exit code of the command (claude code download fail will not be caught by this)
         if metadata is not None:
             result = CommandResult(output=output, metadata=metadata)
-            claude_code_logger.debug("Docker runtime command finished with metadata: %s", metadata)
-            claude_code_logger.debug("Docker runtime command output:\n%s", output)
+            self._log_command_result(result)
             self.logger(text=result.output)
             return result
 
@@ -307,18 +318,15 @@ class Runtime:
         output = output + kill_output + "\n**Exited due to timeout**\n"
         if kill_metadata is not None:
             kill_metadata.exit_code = TIMEOUT_EXIT_CODE
-            claude_code_logger.debug("Docker runtime command timed out: %s", command)
-            claude_code_logger.debug("Docker runtime command output:\n%s", output)
-            return CommandResult(output=output, metadata=kill_metadata)
+            result = CommandResult(output=output, metadata=kill_metadata)
+            self._log_command_result(result)
+            return result
 
         fallback_metadata = CmdOutputMetadata(
             exit_code=TIMEOUT_EXIT_CODE,
         )
-
         result = CommandResult(output=output, metadata=fallback_metadata)
-        claude_code_logger.debug("Docker runtime command finished with fallback metadata: %s", fallback_metadata)
-        claude_code_logger.debug("Docker runtime command output:\n%s", output)
-        self.logger(text=result.output)
+        self._log_command_result(result)
         return result
 
     def cleanup(self) -> None:

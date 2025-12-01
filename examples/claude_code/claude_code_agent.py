@@ -19,7 +19,7 @@ import logging
 import os
 import resource
 from argparse import ArgumentParser
-from typing import Any, Dict, List, Literal, Optional, cast
+from typing import Any, Dict, List, Literal, Optional, Sequence, cast
 
 from claude_code_controller import ClaudeController
 from datasets import Dataset
@@ -183,6 +183,12 @@ class ClaudeCodeAgent(LitAgent[SWEbenchInstance]):
         return reward
 
 
+def sanity_check_spans(spans: Sequence[Span]) -> None:
+    assert len(spans) > 1, f"At least two spans are expected for a valid rollout. Found {len(spans)} spans."
+    assert any(span.name == "raw_gen_ai_request" for span in spans), "raw_gen_ai_request span not found"
+    assert any(span.name == "agentlightning.annotation" for span in spans), "agentlightning.annotation span not found"
+
+
 async def run_instance_async(
     instance: SWEbenchInstance,
     agent: ClaudeCodeAgent,
@@ -199,11 +205,13 @@ async def run_instance_async(
     """
 
     instance_id = instance["instance_id"]
-    logger.info(f"Starting rollout for {instance_id}")
+    logger.info(f"Starting to run instance: {instance_id}")
 
     # Run the agent and query the traced spans.
     with runner.run_context(agent=agent, store=store):
         rollout = await runner.step(instance)
+
+    logger.info(f"Finished running instance: {instance_id}")
 
     spans = await store.query_spans(rollout.rollout_id)
 
@@ -255,6 +263,12 @@ async def run_instance_async(
 
         except Exception as e:
             logger.error(f"Failed to extract triplets for {instance_id}: {e}")
+
+    logger.info(f"Finished extracting spans and traces for instance: {instance_id}")
+
+    # Quickly sanity check the spans
+    sanity_check_spans(spans)
+    logger.info(f"Sanity check passed for instance: {instance_id}")
 
 
 async def dry_run_claude_code(
