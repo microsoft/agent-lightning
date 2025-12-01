@@ -8,8 +8,8 @@ functions for loading datasets, and asynchronous execution functions for running
 
 Key components:
 
-- ClaudeCodeAgent: Main agent implementation that handles rollout logic
 - Dataset loading utilities
+- ClaudeCodeAgent: Main agent implementation that handles rollout logic
 - Asynchronous execution functions for dry runs and full datasets
 """
 
@@ -24,30 +24,29 @@ from typing import Any, Dict, List, Literal, Optional, cast
 from claude_code_controller import ClaudeController
 from datasets import Dataset
 from extended_adapter import ExtendedLlmProxyTraceToTriplet
+from swebench.harness.constants import SWEbenchInstance
 from swebench.harness.utils import load_swebench_dataset  # pyright: ignore[reportUnknownVariableType]
 from swebench_utils.evaluation import evaluate
 from swebench_utils.logging import log_for_evaluation
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, PreTrainedTokenizerBase
 
 from agentlightning import (
     InMemoryLightningStore,
     LightningStoreServer,
     LitAgentRunner,
     OtelTracer,
-    configure_logger,
     setup_logging,
 )
 from agentlightning.litagent import LitAgent
 from agentlightning.llm_proxy import LLMProxy, ModelConfig
+from agentlightning.store import LightningStore
 from agentlightning.types import AttemptedRollout, NamedResources, ProxyLLM, Rollout, RolloutRawResult, Span
 
 logger = logging.getLogger("claude_code_agent")
 
 
-def load_dataset(
-    path: str = "swebench_samples.jsonl", epoch: int = 0, limit: Optional[int] = None
-) -> List[Dict[str, Any]]:
-    instances: List[Dict[str, Any]] = []
+def _load_dataset(path: str, epoch: int = 0, limit: Optional[int] = None) -> List[SWEbenchInstance]:
+    instances: List[SWEbenchInstance] = []
     with open(path) as f:
         for line in f:
             instance = json.loads(line)
@@ -59,7 +58,28 @@ def load_dataset(
     return instances
 
 
-class ClaudeCodeAgent(LitAgent[Dict[str, Any]]):
+def _flatten_messages(messages: List[Any]) -> List[Dict[str, str]]:
+    flattened: List[Dict[str, str]] = []
+    for msg in messages:
+        if msg["role"] in ["system", "user"] and isinstance(msg["content"], list):
+            msg_content: List[str] = []
+            for content in msg["content"]:
+                msg_content.append(content["text"])
+
+            msg["content"] = "".join(msg_content)
+        elif msg["role"] == "assistant" and "tool_calls" in msg:
+            # NOTE:
+            # Tool calls are list of dict, though in most case only one tool call is made per call
+            # We serialize it as json string here to avoid nested structure
+            msg["tool_calls"] = json.dumps(msg["tool_calls"])
+
+        for k in msg:
+            assert isinstance(msg[k], str), f"\n>>> {msg}"
+        flattened.append(msg)
+    return flattened
+
+
+class ClaudeCodeAgent(LitAgent[SWEbenchInstance]):
     """Claude Code Agent implementation.
 
     This agent is a wrapper of the Claude Code controller,
@@ -69,8 +89,6 @@ class ClaudeCodeAgent(LitAgent[Dict[str, Any]]):
     def __init__(
         self,
         namespace: Literal["swebench", "starryzhang"] = "swebench",
-        full_set: Literal["princeton-nlp/SWE-bench", "SWE-bench-Live/SWE-bench-Live"] = "princeton-nlp/SWE-bench",
-        split: str = "test",
         max_turns: int = 5,
         run_method: Literal["python", "cli"] = "cli",
         open_file_limit: int = 4096,
@@ -80,11 +98,10 @@ class ClaudeCodeAgent(LitAgent[Dict[str, Any]]):
         timeout: int = 1_800,  # in sec
         instance_image_tag: str = "latest",
         rewrite_reports: bool = False,
+        swebench_full_dataset: Optional[List[SWEbenchInstance]] = None,
     ) -> None:
         super().__init__()
         self.namespace = namespace
-        self.full_set = full_set
-        self.split = split
         self.max_turns = max_turns
         self.run_method = run_method
 
@@ -95,14 +112,15 @@ class ClaudeCodeAgent(LitAgent[Dict[str, Any]]):
         self.instance_image_tag = instance_image_tag
         self.rewrite_reports = rewrite_reports
 
-        full_dataset = load_swebench_dataset(full_set, split)
-        self.dataset = {each["instance_id"]: each for each in full_dataset}
+        self.swebench_full_dataset = (
+            {each["instance_id"]: each for each in swebench_full_dataset} if swebench_full_dataset is not None else {}
+        )
 
         # Set the maximum number of open files to the specified limit.
         resource.setrlimit(resource.RLIMIT_NOFILE, (open_file_limit, open_file_limit))
 
     async def rollout_async(
-        self, task: Dict[str, Any], resources: NamedResources, rollout: Rollout
+        self, task: SWEbenchInstance, resources: NamedResources, rollout: Rollout
     ) -> RolloutRawResult:
         if not isinstance(rollout, AttemptedRollout):
             # Technically, rollout should be an AttemptedRollout here.
@@ -141,8 +159,8 @@ class ClaudeCodeAgent(LitAgent[Dict[str, Any]]):
         instance_id = prediction["instance_id"]
 
         result = evaluate(
-            prediction,
-            self.dataset[instance_id],
+            cast(Any, prediction),
+            self.swebench_full_dataset[instance_id],
             self.cache_level,
             self.clean,
             self.force_rebuild,
@@ -164,25 +182,78 @@ class ClaudeCodeAgent(LitAgent[Dict[str, Any]]):
         return reward
 
 
-def flatten_messages(messages: List[Any]) -> List[Dict[str, str]]:
-    flattened: List[Dict[str, str]] = []
-    for msg in messages:
-        if msg["role"] in ["system", "user"] and isinstance(msg["content"], list):
-            msg_content: List[str] = []
-            for content in msg["content"]:
-                msg_content.append(content["text"])
+async def run_instance_async(
+    instance: SWEbenchInstance,
+    agent: ClaudeCodeAgent,
+    runner: LitAgentRunner[SWEbenchInstance],
+    store: LightningStore,
+    output_dir: Optional[str],
+    adapter: Optional[ExtendedLlmProxyTraceToTriplet],
+    tokenizer: Optional[PreTrainedTokenizerBase],
+) -> RolloutRawResult:
+    """Runs the agent on a specific SWE-bench instance.
 
-            msg["content"] = "".join(msg_content)
-        elif msg["role"] == "assistant" and "tool_calls" in msg:
-            # NOTE:
-            # Tool calls are list of dict, though in most case only one tool call is made per call
-            # We serialize it as json string here to avoid nested structure
-            msg["tool_calls"] = json.dumps(msg["tool_calls"])
+    Running on specific SWE-bench instance and queries the traced spans.
+    It then extracts the triplets and saves the dataset.
+    """
 
-        for k in msg:
-            assert isinstance(msg[k], str), f"\n>>> {msg}"
-        flattened.append(msg)
-    return flattened
+    instance_id = instance["instance_id"]
+    logger.info(f"Starting rollout for {instance_id}")
+
+    # Run the agent and query the traced spans.
+    with runner.run_context(agent=agent, store=store):
+        rollout = await runner.step(instance)
+
+    spans = await store.query_spans(rollout.rollout_id)
+
+    if output_dir is None:
+        logger.info(f"Generated {len(spans)} spans for {instance_id}")
+        return
+
+    # 1. Dump raw spans (Common for both types)
+    raw_path = os.path.join(output_dir, f"stream_{instance_id}.json")
+    with open(raw_path, "w") as f:
+        for span in spans:
+            f.write(json.dumps(span.model_dump()) + "\n")
+    logger.info(f"Dumped {len(spans)} spans to {raw_path}")
+
+    # 2. Extract Triplets and Save Dataset (vLLM specific)
+    if adapter is not None and tokenizer is not None:
+        try:
+            triplets = adapter.adapt(cast(List[Span], spans))
+            logger.info(f"Extracted {len(triplets)} triplets for {instance_id}")
+
+            all_triplets: List[Dict[str, Any]] = []
+            recent_reward: Optional[float] = None
+
+            # Process in reverse to propagate rewards if necessary/logic dictates
+            for triplet in reversed(triplets):
+                if triplet.reward is not None:
+                    recent_reward = triplet.reward
+
+                prompt_text = tokenizer.decode(triplet.prompt["token_ids"])  # type: ignore
+                all_triplets.append(
+                    {
+                        "repo": instance.get("repo", ""),
+                        "instance_id": instance_id,
+                        "turn": triplet.metadata["sequence_id"],
+                        "prompt_ids": triplet.prompt["token_ids"],
+                        "gold_completion_ids": triplet.response["token_ids"],
+                        "logprobs": triplet.response["logprobs"],
+                        "reward": recent_reward,
+                        "prompt": prompt_text,
+                        "messages": _flatten_messages(triplet.metadata["messages"]),
+                    }
+                )
+
+            if all_triplets:
+                ds = Dataset.from_list(all_triplets)  # type: ignore
+                save_path = os.path.join(output_dir, f"dataset-{instance_id}")
+                ds.save_to_disk(save_path)  # type: ignore
+                logger.info(f"Saved HuggingFace dataset to {save_path}")
+
+        except Exception as e:
+            logger.error(f"Failed to extract triplets for {instance_id}: {e}")
 
 
 async def dry_run_claude_code(
@@ -192,7 +263,7 @@ async def dry_run_claude_code(
     haiku_backend_name: str,
     sonnet_frontend_name: str,
     sonnet_backend_name: str,
-    backend_type: Literal["vllm", "anthropic"],
+    backend_type: Literal["vllm", "anthropic", "openai"],
     api_base_url: Optional[str],
     output_dir: Optional[str],
     max_turns: int,
@@ -214,141 +285,103 @@ async def dry_run_claude_code(
         haiku_backend_name: The actual model name/path on the backend.
         sonnet_frontend_name: The model name used in the code to request the 'strong' model.
         sonnet_backend_name: The actual model name/path on the backend.
-        backend_type: The type of backend to configure ("vllm" or "anthropic").
-        api_base_url: Base URL for the API. Required for "vllm"; defaults to "https://api.anthropic.com/v1" for "anthropic".
+        backend_type: The type of backend to configure ("vllm", "anthropic" or "openai").
+        api_base_url: Base URL for the API. Required for "vllm" or "openai".
         output_dir: Directory to save logs, spans, and datasets.
         max_turns: Maximum number of steps the agent can take per instance.
         limit: Optional limit on the number of instances to process.
     """
-    dataset = load_dataset(dataset_path, limit=limit)
-
-    # Configure Logging
-    configure_logger(name="Claude Code Agent")
+    dataset = _load_dataset(dataset_path, limit=limit)
 
     # Initialize Infrastructure
     tracer = OtelTracer()
-    runner = LitAgentRunner[Dict[str, Any]](tracer)
+    runner = LitAgentRunner[SWEbenchInstance](tracer)
     store = LightningStoreServer(InMemoryLightningStore(), host="0.0.0.0", port=7654)
+    await store.start()
 
     # Enable callbacks for training data extraction if using vLLM
-    callbacks = ["return_token_ids", "opentelemetry", "logprobs"] if backend_type == "vllm" else []
+    callbacks = ["return_token_ids", "opentelemetry", "logprobs"] if backend_type == "vllm" else ["opentelemetry"]
     llm_proxy = LLMProxy(port=12358, store=store, callbacks=callbacks)
 
     # Configure Models based on backend type
-    model_configs = []
-    if backend_type == "vllm":
-        if not api_base_url:
-            raise ValueError("api_base_url is required for vllm backend")
+    model_configs: List[ModelConfig] = []
+    if backend_type == "vllm" and not api_base_url:
+        raise ValueError("api_base_url is required for vllm backend")
+    model_params: Dict[str, Any] = {}
 
-        model_configs = [
-            ModelConfig(
-                model_name=sonnet_frontend_name,
-                litellm_params={
-                    "model": f"hosted_vllm/{sonnet_backend_name}",
-                    "api_base": api_base_url,
-                },
-            ),
-            ModelConfig(
-                model_name=haiku_frontend_name,
-                litellm_params={
-                    "model": f"hosted_vllm/{haiku_backend_name}",
-                    "api_base": api_base_url,
-                },
-            ),
-        ]
+    if backend_type == "vllm":
+        model_namespace = "hosted_vllm"
     elif backend_type == "anthropic":
-        model_configs = [
+        model_namespace = "anthropic"
+        model_params["api_key"] = "os.environ/ANTHROPIC_API_KEY"
+        if api_base_url:
+            model_params["api_base"] = api_base_url
+    elif backend_type == "openai":
+        model_namespace = "openai"
+        model_params["api_key"] = "os.environ/OPENAI_API_KEY"
+        if api_base_url:
+            # Users can still override this via environment variables,
+            # even if they don't pass it in as an argument.
+            model_params["api_base"] = api_base_url
+
+    model_configs.extend(
+        [
             ModelConfig(
                 model_name=sonnet_frontend_name,
                 litellm_params={
-                    "model": f"anthropic/{sonnet_backend_name}",
-                    "api_key": "os.environ/ANTHROPIC_API_KEY",
+                    "model": f"{model_namespace}/{sonnet_backend_name}",
+                    **model_params,
                 },
             ),
             ModelConfig(
                 model_name=haiku_frontend_name,
                 litellm_params={
-                    "model": f"anthropic/{haiku_backend_name}",
-                    "api_key": "os.environ/ANTHROPIC_API_KEY",
+                    "model": f"{model_namespace}/{haiku_backend_name}",
+                    **model_params,
                 },
             ),
         ]
+    )
 
     llm_proxy.update_model_list(model_configs)
     await llm_proxy.start()
 
-    # Add the LLM proxy as a resource to the store
-    await store.add_resources({"llm": llm_proxy.as_resource(model="local")})
+    try:
+        # Add the LLM proxy as a resource to the store
+        await store.add_resources({"llm": llm_proxy.as_resource(model="local")})
 
-    # Prepare for triplet extraction if vllm
-    adapter = ExtendedLlmProxyTraceToTriplet() if backend_type == "vllm" else None
-    tokenizer = None
-    if backend_type == "vllm":
-        try:
-            tokenizer = AutoTokenizer.from_pretrained(sonnet_backend_name)  # type: ignore
-        except Exception as e:
-            logger.warning(f"Could not load tokenizer for {sonnet_backend_name}: {e}")
-
-    # Execution Loop
-    for instance in dataset:
-        instance_id = instance["instance_id"]
-        logger.info(f"Starting rollout for {instance_id}")
-
-        with runner.run_context(agent=ClaudeCodeAgent(max_turns=max_turns), store=store):
-            rollout = await runner.step(instance)
-            spans = await store.query_spans(rollout.rollout_id)
-
-        if output_dir is None:
-            logger.info(f"Generated {len(spans)} spans for {instance_id}")
-            continue
-
-        # 1. Dump raw spans (Common for both types)
-        raw_path = os.path.join(output_dir, f"stream_{instance_id}.json")
-        with open(raw_path, "w") as f:
-            for span in spans:
-                f.write(json.dumps(span.model_dump()) + "\n")
-        logger.info(f"Dumped {len(spans)} spans to {raw_path}")
-
-        # 2. Extract Triplets and Save Dataset (vLLM specific)
-        if backend_type == "vllm" and adapter is not None and tokenizer is not None:
+        # Prepare for triplet extraction if vllm
+        adapter = ExtendedLlmProxyTraceToTriplet() if backend_type == "vllm" else None
+        tokenizer = None
+        if backend_type == "vllm":
             try:
-                triplets = adapter.adapt(cast(List[Span], spans))
-                logger.info(f"Extracted {len(triplets)} triplets for {instance_id}")
-
-                all_triplets: List[Dict[str, Any]] = []
-                recent_reward: Optional[float] = None
-
-                # Process in reverse to propagate rewards if necessary/logic dictates
-                for triplet in reversed(triplets):
-                    if triplet.reward is not None:
-                        recent_reward = triplet.reward
-
-                    prompt_text = tokenizer.decode(triplet.prompt["token_ids"])  # type: ignore
-                    all_triplets.append(
-                        {
-                            "repo": instance.get("repo", ""),
-                            "instance_id": instance_id,
-                            "turn": triplet.metadata["sequence_id"],
-                            "prompt_ids": triplet.prompt["token_ids"],
-                            "gold_completion_ids": triplet.response["token_ids"],
-                            "logprobs": triplet.response["logprobs"],
-                            "reward": recent_reward,
-                            "prompt": prompt_text,
-                            "messages": flatten_messages(triplet.metadata["messages"]),
-                        }
-                    )
-
-                if all_triplets:
-                    ds = Dataset.from_list(all_triplets)  # type: ignore
-                    save_path = os.path.join(output_dir, f"dataset-{instance_id}")
-                    ds.save_to_disk(save_path)  # type: ignore
-                    logger.info(f"Saved HuggingFace dataset to {save_path}")
-
+                tokenizer = AutoTokenizer.from_pretrained(sonnet_backend_name)  # type: ignore
             except Exception as e:
-                logger.error(f"Failed to extract triplets for {instance_id}: {e}")
+                logger.warning(f"Could not load tokenizer for {sonnet_backend_name}: {e}")
 
-        # Basic sleep to allow resource cleanup or rate limit cooling
-        await asyncio.sleep(cooldown_seconds)
+        # Load full swebench dataset. Mainly for evaluation purposes.
+        swebench_full_dataset = load_swebench_dataset("princeton-nlp/SWE-bench", split="test")
+
+        # Initialize Claude Code Agent
+        claude_code_agent = ClaudeCodeAgent(swebench_full_dataset=swebench_full_dataset, max_turns=max_turns)
+
+        # Execution Loop
+        for instance in dataset:
+            await run_instance_async(
+                instance,
+                claude_code_agent,
+                runner,
+                store,
+                output_dir,
+                adapter,
+                cast(PreTrainedTokenizerBase, tokenizer),
+            )
+            # Basic sleep to allow resource cleanup or rate limit cooling
+            await asyncio.sleep(cooldown_seconds)
+
+    finally:
+        await llm_proxy.stop()
+        await store.stop()
 
 
 if __name__ == "__main__":
@@ -356,19 +389,24 @@ if __name__ == "__main__":
 
     # Backend Selection
     parser.add_argument(
-        "--backend_type",
+        "backend_type",
         type=str,
-        choices=["vllm", "anthropic"],
-        default="vllm",
-        help="Backend type: 'vllm' for hosted models, 'anthropic' for official API.",
+        choices=["vllm", "anthropic", "openai"],
+        help="Backend type: 'vllm' for hosted models, 'anthropic' for official API, 'openai' for OpenAI API.",
     )
 
     # Model Configuration
     parser.add_argument(
-        "--model-name",
+        "--backend-model-high",
         type=str,
-        default="Qwen/Qwen3-Coder-30B-A3B-Instruct",
-        help="Backend model path/name (used as tokenizer source and vllm model name).",
+        default=None,
+        help="Backend model path/name for expensive model usages (used as vLLM model name / OpenAI model name).",
+    )
+    parser.add_argument(
+        "--backend-model-low",
+        type=str,
+        default=None,
+        help="Backend model path/name for low-price model usages (used as vLLM model name / OpenAI model name).",
     )
     parser.add_argument(
         "--base-url", type=str, default="http://localhost:8000/v1", help="LLM server address (required for vllm)."
@@ -376,16 +414,16 @@ if __name__ == "__main__":
 
     # Frontend/Agent Configuration
     parser.add_argument(
-        "--sonnet-name",
+        "--frontend-model-high",
         type=str,
         default="claude-sonnet-4-5-20250929",
-        help="The frontend model name used by the agent logic.",
+        help="The frontend high-price model name provided to Claude Code.",
     )
     parser.add_argument(
-        "--haiku-name",
+        "--frontend-model-low",
         type=str,
         default="claude-haiku-4-5-20251001",
-        help="The frontend haiku model name used by the agent logic.",
+        help="The frontend low-price model name provided to Claude Code.",
     )
 
     # Execution Configuration
@@ -403,23 +441,33 @@ if __name__ == "__main__":
     setup_logging(apply_to=[logger.name])
 
     # Map backend_type to the appropriate args
-    backend_mode = cast(Literal["vllm", "anthropic"], args.backend_type)
+    backend_mode = cast(Literal["vllm", "anthropic", "openai"], args.backend_type)
 
     # If using anthropic, the backend name usually matches the frontend or is specific API string.
-    # If using vLLM, the backend name is the model path (e.g., Qwen/...).
-    # We use args.model_name for backend name in vLLM mode.
-    # For anthropic mode, we usually default to the sonnet_name provided, or explicit strings.
+    # Otherwise, the backend name is the model name/path (e.g., Qwen/...) and must be provided.
+    if args.backend_model_high is None:
+        if args.backend_type == "anthropic":
+            backend_model_high = args.frontend_model_high
+        else:
+            raise ValueError("--backend-model-high is required for non-anthropic backends")
+    else:
+        backend_model_high = args.backend_model_high
 
-    sonnet_backend = args.model_name if backend_mode == "vllm" else args.sonnet_name
-    haiku_backend = args.model_name if backend_mode == "vllm" else args.haiku_name
+    if args.backend_model_low is None:
+        if args.backend_type == "anthropic":
+            backend_model_low = args.frontend_model_low
+        else:
+            raise ValueError("--backend-model-low is required for non-anthropic backends")
+    else:
+        backend_model_low = args.backend_model_low
 
     asyncio.run(
         dry_run_claude_code(
             dataset_path=args.dataset_path,
-            haiku_frontend_name=args.haiku_name,
-            haiku_backend_name=haiku_backend,
-            sonnet_frontend_name=args.sonnet_name,
-            sonnet_backend_name=sonnet_backend,
+            haiku_frontend_name=args.frontend_model_low,
+            haiku_backend_name=backend_model_low,
+            sonnet_frontend_name=args.frontend_model_high,
+            sonnet_backend_name=backend_model_high,
             backend_type=backend_mode,
             api_base_url=args.server_address if backend_mode == "vllm" else None,
             output_dir=args.output_dir,

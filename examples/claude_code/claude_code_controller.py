@@ -9,9 +9,10 @@ patch application for SWE-bench evaluation tasks.
 
 import logging
 from functools import partial
-from typing import Any, Dict, Literal
+from typing import Literal, TypedDict
 
 import dotenv
+from swebench.harness.constants import SWEbenchInstance
 from swebench_utils.docker_runtime import Runtime
 from swebench_utils.logging import log_for_evaluation
 
@@ -36,6 +37,12 @@ Please do not commit your edits. We will do it later.
 logger = logging.getLogger("claude_code_agent")
 
 
+class RunInstanceResult(TypedDict):
+    instance_id: str
+    model_patch: str
+    model_name_or_path: str
+
+
 class ClaudeController:
     """Manages the execution of Claude Code within a Docker runtime.
 
@@ -47,7 +54,7 @@ class ClaudeController:
         container: The active Docker runtime session.
     """
 
-    def __init__(self, image: str, instance: Dict[str, Any], run_id: str, endpoint: str, api_key: str) -> None:
+    def __init__(self, image: str, instance: SWEbenchInstance, run_id: str, endpoint: str, api_key: str) -> None:
         """Initialize the ClaudeController.
 
         Args:
@@ -64,7 +71,7 @@ class ClaudeController:
         self.api_key = api_key
         self.container: Runtime = self.init_container(self.image, self.instance)
 
-    def init_container(self, image: str, instance: Dict[str, Any]) -> Runtime:
+    def init_container(self, image: str, instance: SWEbenchInstance) -> Runtime:
         """Initializes the Docker container and sets up the Claude Code environment.
 
         This method starts the container session, installs the Claude CLI,
@@ -94,7 +101,7 @@ class ClaudeController:
 
         return container
 
-    def _run_cli(self, instance: Dict[str, Any], max_turns: int, time_limit: int) -> None:
+    def _run_cli(self, instance: SWEbenchInstance, max_turns: int, time_limit: int) -> None:
         """Executes Claude Code using the Command Line Interface.
 
         Constructs a safe heredoc for the prompt to avoid shell interpolation issues
@@ -125,7 +132,7 @@ class ClaudeController:
         self.container.send_command(claude_cmd, time_limit * 60)
         logger.info(f"Claude Code CLI command completed")
 
-    def _run_python_sdk(self, instance: Dict[str, Any], max_turns: int, time_limit: int) -> None:
+    def _run_python_sdk(self, instance: SWEbenchInstance, max_turns: int, time_limit: int) -> None:
         """Executes Claude Code using the Python SDK wrapper.
 
         Installs the Python SDK if necessary, hydrates a template script with the
@@ -171,11 +178,11 @@ fi
 
     def run_instance(
         self,
-        instance: Dict[str, Any],
+        instance: SWEbenchInstance,
         max_turns: int = 40,
         time_limit: int = 30,
         run_method: Literal["python", "cli"] = "python",
-    ) -> Dict[str, Any]:
+    ) -> RunInstanceResult:
         """Runs the agent on a specific SWE-bench instance.
 
         This method orchestrates the agent execution via the specified method (CLI or Python),
