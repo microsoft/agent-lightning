@@ -294,7 +294,7 @@ class Runtime:
         # Redact sensitive API keys from the command before logging
         redacted_command = command
         for sensitive_var in ["ANTHROPIC_AUTH_TOKEN", "API_KEY", "SECRET_KEY"]:
-            pattern = rf"(export .*?{re.escape(sensitive_var)}.*?=)[^\s]+"
+            pattern = rf"(export (.*?){re.escape(sensitive_var)}(.*?)=)[^\s]+"
             redacted_command = re.sub(pattern, rf"\1****REDACTED****", redacted_command)
         claude_code_logger.info("Docker runtime receiving command: %s", redacted_command)
         # Normalize newline semantics for interactive shells
