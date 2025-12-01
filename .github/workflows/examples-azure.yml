@@ -70,6 +70,11 @@ jobs:
           path: requirements-freeze.txt
           compression-level: 0
 
+      - name: Download model
+        run: |
+          source .venv/bin/activate
+          python -c "from transformers import AutoModelForCausalLM; AutoModelForCausalLM.from_pretrained('Qwen/Qwen3-Coder-30B-A3B-Instruct')"
+
       - name: Launch vLLM server
         run: |
           set -euo pipefail
@@ -79,12 +84,21 @@ jobs:
             --enable-auto-tool-choice \
             --tool-call-parser qwen3_coder \
             --port 45993 &
+
+          VLLM_READY=0
           for i in {1..60}; do
             if curl -sSf http://localhost:45993/v1/models > /dev/null 2>&1; then
+              echo "vLLM server is ready!"
+              VLLM_READY=1
               break
             fi
+            echo "Waiting for vLLM server to be ready... (${i})"
             sleep 5
           done
+          if [[ "$VLLM_READY" != "1" ]]; then
+            echo "vLLM server failed to start!"
+            exit 1
+          fi
 
       - name: Claude Code sanity check with vLLM models
         run: |

@@ -489,7 +489,7 @@ if __name__ == "__main__":
             sonnet_frontend_name=args.frontend_model_high,
             sonnet_backend_name=backend_model_high,
             backend_type=backend_mode,
-            api_base_url=args.server_address if backend_mode == "vllm" else None,
+            api_base_url=args.base_url if backend_mode == "vllm" else None,
             output_dir=args.output_dir,
             max_turns=args.max_turns,
             limit=args.limit,
