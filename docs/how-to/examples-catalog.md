@@ -30,6 +30,14 @@
 
     [:octicons-repo-24: Browse source]({{ src("examples/calc_x") }})
 
+-   :material-code-braces:{ .lg .middle } __Claude Code SWE-bench__
+
+    ---
+
+    Instrumented driver that runs Anthropic's Claude Code workflow on SWE-bench instances while streaming traces through Agent-lightning—supports hosted vLLM, official Anthropic, or any OpenAI-compatible backend and emits datasets for downstream tuning.
+
+    [:octicons-repo-24: Browse source]({{ src("examples/claude_code") }})
+
 -   :material-view-grid:{ .lg .middle } __Minimal building blocks__
 
     ---
