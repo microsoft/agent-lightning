@@ -137,6 +137,23 @@ async def test_cors_allows_wildcard_origin() -> None:
                 assert allow_credentials == "true"
 
 
+@pytest.mark.asyncio
+async def test_statistics_endpoint_returns_counts(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    """The statistics endpoint should expose store-level metrics."""
+    server, client, session, api_endpoint = server_client
+    await client.start_rollout(input={"source": "stats-endpoint"})
+
+    async with session.get(f"{api_endpoint}/statistics") as resp:
+        assert resp.status == 200
+        payload = await resp.json()
+
+    expected_name = server.store.__class__.__name__ if server.store is not None else payload["name"]
+    assert payload["name"] == expected_name
+    assert payload["total_rollouts"] >= 1
+
+
 # Rollouts Pagination, Sorting, and Filtering Tests
 
 

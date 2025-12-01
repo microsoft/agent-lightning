@@ -64,11 +64,11 @@ def main(argv: Iterable[str] | None = None) -> int:
     setup_logging(args.log_level)
 
     if args.backend == "memory":
-        store = InMemoryLightningStore()
+        store = InMemoryLightningStore(prometheus=args.prometheus)
     elif args.backend == "mongo":
         from agentlightning.store.mongo import MongoLightningStore
 
-        store = MongoLightningStore(client=args.mongo_uri)
+        store = MongoLightningStore(client=args.mongo_uri, prometheus=args.prometheus)
     else:
         raise ValueError(f"Invalid backend: {args.backend}")
 

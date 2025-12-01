@@ -22,6 +22,8 @@
 
 ## Emitter
 
+::: agentlightning.emit_annotation
+
 ::: agentlightning.emit_reward
 
 ::: agentlightning.emit_message
@@ -30,7 +32,11 @@
 
 ::: agentlightning.emit_exception
 
-## Reward Helpers
+## Emitter Helpers
+
+::: agentlightning.get_message_value
+
+::: agentlightning.get_object_value
 
 ::: agentlightning.find_final_reward
 
@@ -38,8 +44,6 @@
 
 ::: agentlightning.get_reward_value
 
+::: agentlightning.get_rewards_from_span
+
 ::: agentlightning.is_reward_span
-
-## Legacy Emitter Decorators
-
-::: agentlightning.reward.reward

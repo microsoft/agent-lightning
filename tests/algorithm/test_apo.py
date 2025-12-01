@@ -12,6 +12,7 @@ import agentlightning.algorithm.apo.apo as apo_module
 from agentlightning.adapter import TraceAdapter
 from agentlightning.adapter.messages import TraceToMessages
 from agentlightning.algorithm.apo.apo import APO, RolloutResultForAPO, VersionedPromptTemplate, batch_iter_over_dataset
+from agentlightning.semconv import AGL_ANNOTATION
 from agentlightning.types import (
     Dataset,
     NamedResources,
@@ -22,7 +23,6 @@ from agentlightning.types import (
     Rollout,
     Span,
     SpanContext,
-    SpanNames,
     TraceStatus,
 )
 
@@ -120,7 +120,7 @@ def make_reward_span(rollout_id: str, attempt_id: str, reward: float, sequence_i
         trace_id=hex_id,
         span_id=span_hex,
         parent_id=None,
-        name=SpanNames.REWARD.value,
+        name=AGL_ANNOTATION,
         status=TraceStatus(status_code="OK"),
         attributes={"reward": reward},
         events=[],
@@ -424,7 +424,7 @@ async def test_get_rollout_results_adapts_spans() -> None:
     # Verify spans were serialized
     assert len(results[0]["spans"]) == 2
     assert results[0]["spans"][0]["rollout_id"] == "r-1"
-    assert results[0]["spans"][0]["name"] == SpanNames.REWARD.value
+    assert results[0]["spans"][0]["name"] == AGL_ANNOTATION
     assert results[0]["spans"][0]["attributes"]["reward"] == 1.0
     assert results[0]["spans"][1]["attributes"]["reward"] == 2.0
 

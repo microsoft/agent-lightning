@@ -1,5 +1,7 @@
 # Copyright (c) Microsoft. All rights reserved.
 
+from __future__ import annotations
+
 import gzip
 import logging
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Sequence, Tuple, Type, TypeVar
@@ -29,7 +31,7 @@ from opentelemetry.sdk.trace import ReadableSpan
 from opentelemetry.sdk.trace.export import SpanExportResult
 from opentelemetry.util.types import AttributeValue
 
-from agentlightning.store.base import LightningStore
+from agentlightning.semconv import LightningResourceAttributes
 from agentlightning.types.tracer import (
     Attributes,
     Event,
@@ -37,7 +39,6 @@ from agentlightning.types.tracer import (
     OtelResource,
     Span,
     SpanContext,
-    SpanNames,
     TraceStatus,
     convert_timestamp,
 )
@@ -108,7 +109,10 @@ async def handle_otlp_export(
     )
 
 
-async def spans_from_proto(request: ExportTraceServiceRequest, store: LightningStore) -> List[Span]:
+async def spans_from_proto(
+    request: ExportTraceServiceRequest,
+    sequence_id_bulk_issuer: Callable[[Sequence[Tuple[str, str]]], Awaitable[Sequence[int]]],
+) -> List[Span]:
     """Parse an OTLP proto payload into List[Span].
 
     A store is needed here for generating a sequence ID for each span.
@@ -119,11 +123,11 @@ async def spans_from_proto(request: ExportTraceServiceRequest, store: LightningS
         # Resource-level attributes & IDs
         resource_attrs = _kv_list_to_dict(resource_spans.resource.attributes)
         # rollout_id, attempt_id from resource attributes when present.
-        rollout_id_resource = resource_attrs.get(SpanNames.ROLLOUT_ID)
-        attempt_id_resource = resource_attrs.get(SpanNames.ATTEMPT_ID)
+        rollout_id_resource = resource_attrs.get(LightningResourceAttributes.ROLLOUT_ID.value)
+        attempt_id_resource = resource_attrs.get(LightningResourceAttributes.ATTEMPT_ID.value)
         # If sequence id is provided, all the spans will share the same sequence ID.
         # unless otherwise overridden by span-level attributes.
-        sequence_id_resource = resource_attrs.get(SpanNames.SPAN_SEQUENCE_ID)
+        sequence_id_resource = resource_attrs.get(LightningResourceAttributes.SPAN_SEQUENCE_ID.value)
 
         otel_resource = _resource_from_proto(resource_spans.resource, getattr(resource_spans, "schema_url", ""))
 
@@ -154,9 +158,9 @@ async def spans_from_proto(request: ExportTraceServiceRequest, store: LightningS
 
                 # Try to get if span attributes contain something like rollout_id or attempt_id
                 # Override the resource-level attributes with the span-level attributes if present.
-                rollout_id_span = span_attrs.get(SpanNames.ROLLOUT_ID)
-                attempt_id_span = span_attrs.get(SpanNames.ATTEMPT_ID)
-                sequence_id_span = span_attrs.get(SpanNames.SPAN_SEQUENCE_ID)
+                rollout_id_span = span_attrs.get(LightningResourceAttributes.ROLLOUT_ID.value)
+                attempt_id_span = span_attrs.get(LightningResourceAttributes.ATTEMPT_ID.value)
+                sequence_id_span = span_attrs.get(LightningResourceAttributes.SPAN_SEQUENCE_ID.value)
 
                 # Normalize to regular strings and ints
                 rollout_id_raw = rollout_id_span if rollout_id_span is not None else rollout_id_resource
@@ -178,9 +182,13 @@ async def spans_from_proto(request: ExportTraceServiceRequest, store: LightningS
 
                 # Generate a new sequence ID if not provided
                 if sequence_id is None:
-                    current_sequence_id = await store.get_next_span_sequence_id(
-                        rollout_id=rollout_id, attempt_id=attempt_id
+                    current_sequence_id = -1
+                elif sequence_id < 0:
+                    logger.error(
+                        "Invalid sequence_id value in resource attributes: %r. Must be a positive integer. Regenerating one.",
+                        sequence_id,
                     )
+                    current_sequence_id = -1
                 else:
                     current_sequence_id = sequence_id
 
@@ -206,6 +214,14 @@ async def spans_from_proto(request: ExportTraceServiceRequest, store: LightningS
 
                 output_spans.append(span)
 
+    # Finalize the sequence IDs
+    bulk_issue_requests = [(span.rollout_id, span.attempt_id) for span in output_spans if span.sequence_id < 0]
+    bulk_sequence_ids = await sequence_id_bulk_issuer(bulk_issue_requests)
+    for span, sequence_id in zip(
+        [span for span in output_spans if span.sequence_id < 0], bulk_sequence_ids, strict=True
+    ):
+        span.sequence_id = sequence_id
+
     return output_spans
 
 
@@ -225,6 +241,36 @@ class LightningStoreOTLPExporter(OTLPSpanExporter):
     _default_endpoint: Optional[str] = None
     _rollout_id: Optional[str] = None
     _attempt_id: Optional[str] = None
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__name__}("
+            + f"endpoint={self.endpoint!r}, "
+            + f"rollout_id={self.rollout_id!r}, "
+            + f"attempt_id={self.attempt_id!r}, "
+            + f"should_bypass={self.should_bypass()!r})"
+        )
+
+    @property
+    def endpoint(self) -> Optional[str]:
+        """The endpoint to submit the spans to."""
+        if hasattr(self, "_endpoint"):
+            return self._endpoint
+        return None
+
+    @property
+    def rollout_id(self) -> Optional[str]:
+        """The rollout ID to submit the spans to."""
+        if hasattr(self, "_rollout_id"):
+            return self._rollout_id
+        return None
+
+    @property
+    def attempt_id(self) -> Optional[str]:
+        """The attempt ID to submit the spans to."""
+        if hasattr(self, "_attempt_id"):
+            return self._attempt_id
+        return None
 
     def enable_store_otlp(self, endpoint: str, rollout_id: str, attempt_id: str) -> None:
         """Enable storing OTLP data to a specific LightningStore rollout/attempt."""
@@ -254,8 +300,8 @@ class LightningStoreOTLPExporter(OTLPSpanExporter):
                 span._resource = span._resource.merge(  # pyright: ignore[reportPrivateUsage]
                     Resource.create(
                         {
-                            SpanNames.ROLLOUT_ID: self._rollout_id,
-                            SpanNames.ATTEMPT_ID: self._attempt_id,
+                            LightningResourceAttributes.ROLLOUT_ID.value: self._rollout_id,
+                            LightningResourceAttributes.ATTEMPT_ID.value: self._attempt_id,
                         }
                     )
                 )
