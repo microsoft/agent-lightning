@@ -1,16 +1,54 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-"""Main module for the Claude Code Agent implementation.
+"""Instrumented driver for running Claude Code on SWE-bench with Agent-lightning.
 
-This module provides the core functionality for running Claude Code agent experiments
-on SWE-bench datasets. It includes the ClaudeCodeAgent class that implements the agent logic,
-functions for loading datasets, and asynchronous execution functions for running experiments.
+This script wires together the Lightning Store, LLM proxy, and Claude Code controller so
+that every SWE-bench instance is executed inside the official Claude container while
+capturing full Agent-lightning traces. It supports three backend modes:
 
-Key components:
+- `vllm`: wrap an OpenAI-compatible endpoint (e.g., vLLM) for hosted OSS models while
+  collecting prompt/response token ids and logprobs.
+- `anthropic`: call the official Claude Code API via `ANTHROPIC_API_KEY` for prompt
+  tuning. Backend model defaults to the provided frontend names.
+- `openai`: route through any OpenAI-compatible provider using `OPENAI_API_KEY`.
 
-- Dataset loading utilities
-- ClaudeCodeAgent: Main agent implementation that handles rollout logic
-- Asynchronous execution functions for dry runs and full datasets
+Typical usage: hosted vLLM (requires model paths and --base-url)
+
+```bash
+# Run vLLM in background
+vllm serve Qwen/Qwen3-Coder-30B-A3B-Instruct \
+  --max-model-len 131072 \
+  --enable-auto-tool-choice \
+  --tool-call-parser qwen3_coder \
+  --port 45993 &
+
+python claude_code_agent.py vllm \
+  --backend-model-high Qwen/Qwen3-Coder-30B-A3B-Instruct \
+  --backend-model-low Qwen/Qwen3-Coder-30B-A3B-Instruct \
+  --base-url http://localhost:45993/v1 \
+  --dataset-path swebench_samples.jsonl \
+```
+
+Official Claude Code via Anthropic:
+
+```bash
+export ANTHROPIC_API_KEY=sk-...
+python claude_code_agent.py anthropic \
+  --dataset-path swebench_samples.jsonl \
+  --output-dir data_anthropic
+```
+
+Any OpenAI-compatible backend:
+
+```bash
+export OPENAI_API_KEY=sk-...
+python claude_code_agent.py openai \
+  --backend-model-high gpt-5.1-codex-mini \
+  --backend-model-low gpt-4.1-mini \
+  --dataset-path swebench_samples.jsonl
+```
+
+Use `--debug` to enable debug loggings.
 """
 
 import asyncio

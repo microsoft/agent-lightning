@@ -1,5 +1,7 @@
 # Supervised Fine-tuning with Azure OpenAI
 
+[![azure CI status](https://github.com/microsoft/agent-lightning/actions/workflows/examples-azure.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/examples-azure.yml)
+
 This example walks through an end-to-end supervised fine-tuning loop on Azure OpenAI. The trainer runs a toy capital-lookup agent, collects traces with rewards, submits fine-tuning jobs using those traces, and deploys every successful checkpoint as a new Azure OpenAI deployment.
 
 **NOTE: The example is tested and compatible with Agent-lightning v0.2.x, but it's not yet maintained on CI due to the difficulty of maintaining a logged-in status in the testing environment.**

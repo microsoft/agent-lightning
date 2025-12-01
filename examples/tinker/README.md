@@ -1,8 +1,8 @@
 # Tinker + Agent-lightning Integration
 
-This example shows how to use [Tinker's reinforcement-learning infrastructure](https://tinker-docs.thinkingmachines.ai/) as a fine-tuning backend for agents written against Agent-lightning. You author the agent exactly the way you would for deployment, while the bridge code reconstructs Tinker-compatible trajectories from Agent-lightning traces.
+[![tinker CI status](https://github.com/microsoft/agent-lightning/actions/workflows/examples-tinker.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/examples-tinker.yml)
 
-**NOTE: The example is tested and compatible with Agent-lightning v0.2.x, but it's not yet maintained on CI due to the cost of running the Tinker training service.**
+This example shows how to use [Tinker's reinforcement-learning infrastructure](https://tinker-docs.thinkingmachines.ai/) as a fine-tuning backend for agents written against Agent-lightning. You author the agent exactly the way you would for deployment, while the bridge code reconstructs Tinker-compatible trajectories from Agent-lightning traces.
 
 ## How this differs from the original Tinker Cookbook RL recipe
 
