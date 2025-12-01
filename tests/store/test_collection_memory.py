@@ -4,7 +4,20 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Literal, Mapping, Sequence, Tuple, Union
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Awaitable,
+    Callable,
+    Dict,
+    Iterable,
+    List,
+    Literal,
+    Mapping,
+    Sequence,
+    Tuple,
+    Union,
+)
 from uuid import uuid4
 
 import pytest
@@ -19,6 +32,8 @@ from tests.store.conftest import QueueItem, SampleItem
 
 if TYPE_CHECKING:
     from pymongo.asynchronous.database import AsyncDatabase
+
+    from agentlightning.store.collection.mongo import MongoLightningCollections
 
 
 def _build_collection(items: Iterable[SampleItem] = ()) -> ListBasedCollection[SampleItem]:
@@ -168,7 +183,7 @@ async def test_list_collection_upsert_updates_when_existing(sample_collection: C
 
 @pytest.mark.asyncio()
 async def test_list_collection_upsert_get_or_insert_semantics(sample_collection: Collection[SampleItem]) -> None:
-    filters = {"partition": {"exact": "beta"}, "index": {"exact": 2}}
+    filters: Mapping[str, Any] = {"partition": {"exact": "beta"}, "index": {"exact": 2}}
     original = await sample_collection.get(filters)
     assert original is not None
 
@@ -188,14 +203,14 @@ async def test_list_collection_upsert_get_or_insert_semantics(sample_collection:
     await sample_collection.upsert([replacement], update_fields=[])
 
     fetched = await sample_collection.get(filters)
-    assert fetched == original
+    assert fetched == original and fetched is not None
     assert fetched.name == original.name
     assert fetched.status == original.status
 
 
 @pytest.mark.asyncio()
 async def test_list_collection_upsert_updates_selected_fields(sample_collection: Collection[SampleItem]) -> None:
-    filters = {"partition": {"exact": "beta"}, "index": {"exact": 1}}
+    filters: Mapping[str, Any] = {"partition": {"exact": "beta"}, "index": {"exact": 1}}
     original = await sample_collection.get(filters)
     assert original is not None
 
@@ -792,6 +807,55 @@ async def test_dict_key_value_does_not_mutate_input_mapping(dict_key_value_data:
     assert dict_key_value_data == {"alpha": 1, "beta": 2}
 
 
+@pytest.mark.asyncio()
+async def test_inmemory_atomic_read_only_skips_lock() -> None:
+    collections = memory_module.InMemoryLightningCollections()
+
+    class FailingLock:
+        async def __aenter__(self) -> None:
+            raise AssertionError("read-only atomic block should not acquire the lock")
+
+        async def __aexit__(self, *args: Any, **kwargs: Any) -> None:
+            return None
+
+    collections._lock = FailingLock()  # type: ignore[attr-defined]
+
+    async with collections.atomic(mode="r", snapshot=False):
+        # Should complete without touching the failing lock.
+        assert collections.rollouts is not None
+
+
+@pytest.mark.asyncio()
+async def test_inmemory_atomic_snapshot_or_write_acquires_lock() -> None:
+    collections = memory_module.InMemoryLightningCollections()
+
+    class RecordingLock:
+        def __init__(self) -> None:
+            self.enter_count = 0
+            self.exit_count = 0
+
+        async def __aenter__(self) -> None:
+            self.enter_count += 1
+
+        async def __aexit__(self, *args: Any, **kwargs: Any) -> None:
+            self.exit_count += 1
+
+    lock = RecordingLock()
+    collections._lock = lock  # type: ignore[attr-defined]
+
+    async with collections.atomic(mode="rw", snapshot=False):
+        assert collections.attempts is not None
+
+    assert (lock.enter_count, lock.exit_count) == (1, 1)
+
+    lock.enter_count = lock.exit_count = 0
+
+    async with collections.atomic(mode="r", snapshot=True):
+        assert collections.spans is not None
+
+    assert (lock.enter_count, lock.exit_count) == (1, 1)
+
+
 @pytest.mark.mongo
 @pytest.mark.asyncio()
 async def test_mongo_based_sanity_check(temporary_mongo_database: AsyncDatabase[Any]) -> None:
@@ -948,3 +1012,110 @@ async def test_mongo_ensure_collection_repeats_without_altering_indexes(
                 unique_indexes.append((index["name"], list(index["key"].items())))  # type: ignore
 
         assert unique_indexes == [("uniq_partition_index", [("partition_id", 1), ("index", 1)])]
+
+
+async def _with_mongo_collections(
+    db: AsyncDatabase[Any],
+    callback: Callable[[MongoLightningCollections], Awaitable[Any]],
+) -> Any:
+    from agentlightning.store.collection.mongo import MongoClientPool, MongoLightningCollections
+
+    async with MongoClientPool(db.client) as client_pool:
+        collections = MongoLightningCollections(
+            client_pool=client_pool,
+            database_name=db.name,
+            partition_id=f"partition-{uuid4().hex}",
+        )
+        return await callback(collections)
+
+
+async def _initialize_counter(collections: MongoLightningCollections, key: str) -> None:
+    async def _init(coll: MongoLightningCollections) -> None:
+        await coll.span_sequence_ids.set(key, 0)
+
+    await collections.execute(_init, commit=False)
+
+
+async def _read_counter(collections: MongoLightningCollections, key: str) -> int:
+    async def _read(coll: MongoLightningCollections) -> int:
+        value = await coll.span_sequence_ids.get(key)
+        assert value is not None
+        return value
+
+    return await collections.execute(_read, commit=False)
+
+
+async def _contention_run(
+    collections: MongoLightningCollections,
+    *,
+    key: str,
+    commit: bool,
+    concurrency: int,
+) -> int:
+    read_lock = asyncio.Lock()
+    ready = asyncio.Event()
+    readers_seen = 0
+
+    async def _barrier() -> None:
+        nonlocal readers_seen
+        async with read_lock:
+            readers_seen += 1
+            if readers_seen == concurrency:
+                ready.set()
+        await ready.wait()
+
+    async def worker(_: int) -> None:
+        first_attempt = True
+
+        async def callback(coll: MongoLightningCollections) -> None:
+            nonlocal first_attempt
+            value = await coll.span_sequence_ids.get(key)
+            assert value is not None
+            if first_attempt:
+                await _barrier()
+                first_attempt = False
+            await asyncio.sleep(0)
+            await coll.span_sequence_ids.set(key, value + 1)
+
+        await collections.execute(callback, commit=commit, snapshot=True, mode="rw")
+
+    await asyncio.gather(*(worker(i) for i in range(concurrency)))
+    return await _read_counter(collections, key)
+
+
+@pytest.mark.mongo
+@pytest.mark.asyncio()
+async def test_mongo_execute_without_commit_allows_lost_updates(
+    temporary_mongo_database: AsyncDatabase[Any],
+) -> None:
+    async def scenario(collections: MongoLightningCollections) -> None:
+        counter_key = f"counter-{uuid4().hex}"
+        await _initialize_counter(collections, counter_key)
+        final_value = await _contention_run(
+            collections,
+            key=counter_key,
+            commit=False,
+            concurrency=6,
+        )
+        assert final_value == 1
+
+    await _with_mongo_collections(temporary_mongo_database, scenario)
+
+
+@pytest.mark.mongo
+@pytest.mark.asyncio()
+async def test_mongo_execute_with_commit_retries_until_success(
+    temporary_mongo_database: AsyncDatabase[Any],
+) -> None:
+    async def scenario(collections: MongoLightningCollections) -> None:
+        counter_key = f"counter-{uuid4().hex}"
+        await _initialize_counter(collections, counter_key)
+        final_value = await _contention_run(
+            collections,
+            key=counter_key,
+            commit=True,
+            concurrency=6,
+        )
+        assert final_value == 6
+
+    await _with_mongo_collections(temporary_mongo_database, scenario)

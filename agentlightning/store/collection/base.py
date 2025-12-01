@@ -41,6 +41,9 @@ T = TypeVar("T")  # Recommended to be a BaseModel
 K = TypeVar("K")
 V = TypeVar("V")
 
+AtomicMode = Literal["r", "w", "rw"]
+"""What is expected within the atomic context. Can be "read", "write", or "read-write"."""
+
 
 class Collection(Generic[T]):
     """Behaves like a list of items. Supporting addition, updating, and deletion of items."""
@@ -277,20 +280,38 @@ class LightningCollections:
         """Dictionary (counter) of span sequence IDs."""
         raise NotImplementedError()
 
-    def atomic(self, *args: Any, **kwargs: Any) -> AsyncContextManager[Self]:
+    def atomic(
+        self, *, mode: AtomicMode = "rw", snapshot: bool = False, commit: bool = False, **kwargs: Any
+    ) -> AsyncContextManager[Self]:
         """Perform a atomic operation on the collections.
 
         Subclass may use args and kwargs to support multiple levels of atomicity.
+        The arguments can be seen as tags. They only imply the behavior of the operation, not the implementation.
 
         Args:
-            *args: Arguments to pass to the operation.
+            mode: The mode of atomicity. See [`AtomicMode`][agentlightning.store.collection.AtomicMode].
+            snapshot: Enable read snapshot for repeatable reads. Data consistency is guaranteed. The real behavior is implementation-dependent.
+            commit: Enable commitment for write operations. Unsuccessful operations will be rolled back depending on the implementation.
+                Recommend to use [`execute()`][agentlightning.store.collection.Collection.execute] for this level to enable automatic retries.
+                Remember that the real behavior is implementation-dependent.
             **kwargs: Keyword arguments to pass to the operation.
         """
         raise NotImplementedError()
 
-    async def execute(self, callback: Callable[[Self], Awaitable[T]]) -> T:
-        """Execute the given callback within an atomic operation."""
-        async with self.atomic() as collections:
+    async def execute(
+        self,
+        callback: Callable[[Self], Awaitable[T]],
+        *,
+        mode: AtomicMode = "rw",
+        snapshot: bool = False,
+        commit: bool = False,
+        **kwargs: Any,
+    ) -> T:
+        """Execute the given callback within an atomic operation. Retry on transient errors is implied.
+
+        See [`atomic()`][agentlightning.store.collection.Collection.atomic] for more details.
+        """
+        async with self.atomic(mode=mode, snapshot=snapshot, commit=commit, **kwargs) as collections:
             return await callback(collections)
 
 

@@ -55,6 +55,7 @@ from agentlightning.types import (
 )
 
 from .base import (
+    AtomicMode,
     Collection,
     KeyValue,
     LightningCollections,
@@ -1349,41 +1350,42 @@ class MongoLightningCollections(LightningCollections):
         self._collection_ensured = True
 
     @asynccontextmanager
-    async def atomic(self, *args: Any, **kwargs: Any):
+    async def atomic(
+        self, mode: AtomicMode = "rw", snapshot: bool = False, commit: bool = False, *args: Any, **kwargs: Any
+    ):
         """Perform a atomic operation on the collections."""
+        if commit:
+            raise ValueError("Commit should be used with execute() instead.")
         with self._prometheus_tracker.track("atomic", self._database_name, self._collection_name):
             # First step: ensure all collections exist before going into the atomic block
             if not self._collection_ensured:
                 await self._ensure_collections()
-            # One session for one transaction
-            client = await self._client_pool.get_client()
-            async with client.start_session() as session:
-                collection_with_session = self.with_session(session)
-                try:
-                    # Start the transaction now
-                    await session.start_transaction(
-                        write_concern=WriteConcern("majority"),
-                        read_concern=ReadConcern("local"),
-                        read_preference=ReadPreference.PRIMARY,
-                    )
-                    yield collection_with_session
-                    # Commit the transaction
-                    await session.commit_transaction()
-                # Catch KeyboardInterrupt, CancelledError, etc. and cleanup.
-                except BaseException as exc:
-                    if session.in_transaction:
-                        await session.abort_transaction()
-                    if isinstance(exc, PyMongoError) and exc.has_error_label("TransientTransactionError"):
-                        # NOTE: Retry is via execute
-                        raise RuntimeError("Transaction failed with transient error") from exc
-                    raise
+            # Execute directly without commit
+            yield self
 
     @_mongo_operation("execute")
-    async def execute(self, callback: Callable[[Self], Awaitable[T_generic]]) -> T_generic:
+    async def execute(
+        self,
+        callback: Callable[[Self], Awaitable[T_generic]],
+        *,
+        mode: AtomicMode = "rw",
+        snapshot: bool = False,
+        commit: bool = False,
+        **kwargs: Any,
+    ) -> T_generic:
         """Execute the given callback within an atomic operation, and with retries on transient errors."""
         if not self._collection_ensured:
             await self._ensure_collections()
         client = await self._client_pool.get_client()
+
+        # If commit is not turned on, just execute the callback directly.
+        if not commit:
+            return await callback(self)
+
+        # If snapshot is enabled, use snapshot read concern.
+        read_concern = ReadConcern("snapshot") if snapshot else ReadConcern("local")
+        # If mode is "r", write_concern is not needed.
+        write_concern = WriteConcern("majority") if mode != "r" else None
 
         async with client.start_session() as session:
             collections = self.with_session(session)
@@ -1391,7 +1393,9 @@ class MongoLightningCollections(LightningCollections):
                 "execute__transaction", self._database_name, self._collection_name
             ) as tracker:
                 try:
-                    return await self._with_transaction(session, collections, callback, tracker)
+                    return await self._with_transaction(
+                        session, collections, callback, read_concern, write_concern, tracker
+                    )
                 except (ConnectionFailure, OperationFailure) as exc:
                     # Un-retryable errors.
                     tracker.report_error(exc)
@@ -1402,14 +1406,14 @@ class MongoLightningCollections(LightningCollections):
         session: AsyncClientSession,
         collections: Self,
         callback: Callable[[Self], Awaitable[T_generic]],
+        read_concern: ReadConcern,
+        write_concern: Optional[WriteConcern],
         transaction_tracker: _MongoOperationContext | _DummyOperationContext,
     ) -> T_generic:
         # This will start a transaction, run transaction callback, and commit.
         # It will also transparently retry on some transient errors.
         # Expanded implementation of with_transaction from client_session
         num_attempts = 0
-        read_concern = ReadConcern("local")
-        write_concern = WriteConcern("majority")
         read_preference = ReadPreference.PRIMARY
         transaction_retry_time_limit = 120
         start_time = time.monotonic()

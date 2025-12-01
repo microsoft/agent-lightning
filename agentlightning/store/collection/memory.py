@@ -39,6 +39,7 @@ from agentlightning.types import (
 )
 
 from .base import (
+    AtomicMode,
     Collection,
     FilterMap,
     KeyValue,
@@ -730,8 +731,16 @@ class InMemoryLightningCollections(LightningCollections):
         return self._span_sequence_ids
 
     @asynccontextmanager
-    async def atomic(self, *args: Any, **kwargs: Any):
-        """In-memory collections apply a lock outside. It doesn't need to manipulate the collections inside."""
+    async def atomic(self, *, mode: AtomicMode = "rw", snapshot: bool = False, **kwargs: Any):
+        """In-memory collections apply a lock outside. It doesn't need to manipulate the collections inside.
+
+        Skip the locking if mode is "r" and snapshot is False.
+
+        This collection implementation does NOT support rollback / commit.
+        """
+        if mode == "r" and not snapshot:
+            yield self
+            return
         async with self._lock:
             yield self
 
