@@ -56,7 +56,7 @@ jobs:
       - name: Sync dependencies
         run: |
           uv sync --frozen --no-default-groups \
-            --group dev --group experiment --group agents --group core-stable
+            --group dev --group experiment --group agents --group torch-gpu-stable
       - name: Freeze dependencies
         run: |
           set -ex
