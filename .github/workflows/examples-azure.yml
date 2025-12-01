@@ -73,6 +73,7 @@ jobs:
       - name: Launch vLLM server
         run: |
           set -euo pipefail
+          source .venv/bin/activate
           vllm serve Qwen/Qwen3-Coder-30B-A3B-Instruct \
             --max-model-len 131072 \
             --enable-auto-tool-choice \
