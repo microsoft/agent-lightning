@@ -4529,7 +4529,7 @@ It is NOT recommended because it often causes hanging requests. Only use it if y
         </li>
         <li class="doc-section-item field-body">
             <b><code>middlewares</code></b>
-              (<code><span title="typing.List">List</span>[<span title="typing.Union">Union</span>[<span title="typing.Type">Type</span>[<span title="starlette.middleware.base.BaseHTTPMiddleware">BaseHTTPMiddleware</span>], <span title="str">str</span>]] | None</code>, default:
+              (<code><span title="typing.Sequence">Sequence</span>[<span title="typing.Union">Union</span>[<span title="typing.Type">Type</span>[<span title="starlette.middleware.base.BaseHTTPMiddleware">BaseHTTPMiddleware</span>], <span title="str">str</span>]] | None</code>, default:
                   <code>None</code>
 )
           –
@@ -4542,14 +4542,14 @@ Middlewares are the <strong>first layer</strong> of request processing. They are
         </li>
         <li class="doc-section-item field-body">
             <b><code>callbacks</code></b>
-              (<code><span title="typing.List">List</span>[<span title="typing.Union">Union</span>[<span title="typing.Type">Type</span>[<span title="litellm.integrations.custom_logger.CustomLogger">CustomLogger</span>], <span title="str">str</span>]] | None</code>, default:
+              (<code><span title="typing.Sequence">Sequence</span>[<span title="typing.Union">Union</span>[<span title="typing.Type">Type</span>[<span title="litellm.integrations.custom_logger.CustomLogger">CustomLogger</span>], <span title="str">str</span>]] | None</code>, default:
                   <code>None</code>
 )
           –
           <div class="doc-md-description">
             <p>List of LiteLLM callback classes or strings to register. You can specify the class aliases or classes that have been imported.
 If not provided, the default callbacks (AddReturnTokenIds and LightningOpenTelemetry) will be used.
-Available callback aliases are: "return_token_ids", "opentelemetry".</p>
+Available callback aliases are: "return_token_ids", "opentelemetry", "logprobs".</p>
           </div>
         </li>
     </ul>
