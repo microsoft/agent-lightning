@@ -311,7 +311,6 @@ class Runtime:
         if metadata is not None:
             result = CommandResult(output=output, metadata=metadata)
             self._log_command_result(result)
-            self.logger(text=result.output)
             return result
 
         # handle timeout

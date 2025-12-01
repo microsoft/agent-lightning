@@ -197,7 +197,7 @@ async def run_instance_async(
     output_dir: Optional[str],
     adapter: Optional[ExtendedLlmProxyTraceToTriplet],
     tokenizer: Optional[PreTrainedTokenizerBase],
-) -> RolloutRawResult:
+) -> None:
     """Runs the agent on a specific SWE-bench instance.
 
     Running on specific SWE-bench instance and queries the traced spans.
