@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, cast
 
-from agents import Agent, Runner 
+from agents import Agent, Runner
 from agents.extensions.models.litellm_model import LitellmModel
 from agents.mcp import MCPServerSse
 from agents.model_settings import ModelSettings
@@ -35,16 +35,12 @@ class RAGAgent(agl.LitAgent[Dict[str, Any]]):
 
     # (task, resources, rollout)
     async def training_rollout_async(
-        self, 
-        task: Dict[str, Any], 
-        resources: agl.NamedResources, 
-        rollout: agl.Rollout
+        self, task: Dict[str, Any], resources: agl.NamedResources, rollout: agl.Rollout
     ) -> float | None:
         # llm resources
         llm = cast(agl.LLM, resources["main_llm"])
-        
+
         logger.info(f"Training with model: {llm.model} on endpoint: {llm.endpoint}")
-        
 
         async with MCPServerSse(
             name="wiki_retriever_mcp",
@@ -62,10 +58,10 @@ class RAGAgent(agl.LitAgent[Dict[str, Any]]):
             )
             result = await Runner.run(agent, task["question"])
             answer = result.final_output
-            
+
             # reward
             reward = compute_scores(answer, str(task["answer"]))
-            
+
             logger.info(
                 "question:{} answer: {} ground_truth: {} reward: {}".format(
                     task["question"], answer, task["answer"], reward
@@ -75,13 +71,10 @@ class RAGAgent(agl.LitAgent[Dict[str, Any]]):
 
     # (task, resources, rollout)
     async def validation_rollout_async(
-        self, 
-        task: Dict[str, Any], 
-        resources: agl.NamedResources, 
-        rollout: agl.Rollout
+        self, task: Dict[str, Any], resources: agl.NamedResources, rollout: agl.Rollout
     ) -> float | None:
         llm = cast(agl.LLM, resources["main_llm"])
-        
+
         # set temperature
         val_resources = {
             "main_llm": agl.LLM(
@@ -90,7 +83,7 @@ class RAGAgent(agl.LitAgent[Dict[str, Any]]):
                 sampling_parameters={"temperature": 0.7},
             )
         }
-        
+
         # reuse training rollout for validation
         return await self.training_rollout_async(task, val_resources, rollout)
 
@@ -98,5 +91,5 @@ class RAGAgent(agl.LitAgent[Dict[str, Any]]):
 if __name__ == "__main__":
 
     trainer = agl.Trainer(n_workers=2)
-    
+
     print("Agent initialized. Please use 'agl.Trainer(...).fit(...)' with a dataset to start training.")

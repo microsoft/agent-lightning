@@ -29,7 +29,7 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
     "data": {
         # Fill in the path to your previously converted parquet file here
         "train_files": "examples/rag/dataset_tiny.parquet",
-        "val_files": "examples/rag/dataset_tiny.parquet", 
+        "val_files": "examples/rag/dataset_tiny.parquet",
         "train_batch_size": 16,  # Default configuration for multi-GPU
         "max_prompt_length": 4096,
         "max_response_length": 1024,
@@ -38,11 +38,11 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
     "actor_rollout_ref": {
         "rollout": {
             "tensor_model_parallel_size": 1,
-            "n": 4, # Generate 4 responses per sampling
+            "n": 4,  # Generate 4 responses per sampling
             "log_prob_micro_batch_size_per_gpu": 4,
-            "multi_turn": {"format": "hermes"}, # Ensure using template format matching the model
+            "multi_turn": {"format": "hermes"},  # Ensure using template format matching the model
             "name": "vllm",
-            "gpu_memory_utilization": 0.6, # vLLM GPU memory utilization
+            "gpu_memory_utilization": 0.6,  # vLLM GPU memory utilization
             "engine_kwargs": {
                 "vllm": {
                     "enable_auto_tool_choice": True,
@@ -69,7 +69,7 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
             "fsdp_config": {"param_offload": True},
         },
         "model": {
-            "path": "Qwen/Qwen2.5-1.5B-Instruct", # Default model
+            "path": "Qwen/Qwen2.5-1.5B-Instruct",  # Default model
             "use_remove_padding": True,
             "enable_gradient_checkpointing": True,
         },
@@ -81,7 +81,7 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
         "logger": [
             "console",
             # "wandb"
-            ], # Remove wandb for easier local debugging, add back when needed
+        ],  # Remove wandb for easier local debugging, add back when needed
         "project_name": "AgentLightning",
         "experiment_name": "rag_agent",
         "nnodes": 1,
@@ -97,13 +97,13 @@ def config_train_fast() -> Dict[str, Any]:
     EXPERIMENT_NAME = f"rag_fast_{timestamp}"
 
     config = deepcopy(RL_TRAINING_CONFIG)
-    
+
     # Minimal parameters to ensure storage works
     config["actor_rollout_ref"]["rollout"]["gpu_memory_utilization"] = 0.4
     config["data"]["train_batch_size"] = 2
     config["actor_rollout_ref"]["actor"]["ppo_mini_batch_size"] = 2
     config["actor_rollout_ref"]["actor"]["ppo_micro_batch_size_per_gpu"] = 1
-    
+
     config["trainer"]["total_epochs"] = 1
     config["trainer"]["experiment_name"] = EXPERIMENT_NAME
     config["trainer"]["test_freq"] = 1
@@ -112,22 +112,22 @@ def config_train_fast() -> Dict[str, Any]:
 
 def config_train_single_gpu() -> Dict[str, Any]:
     """Single GPU training optimized configuration (optimized for 24GB GPU memory)"""
-    
+
     config = deepcopy(RL_TRAINING_CONFIG)
-    
+
     # 1. Reduce vLLM memory usage to leave space for training
     config["actor_rollout_ref"]["rollout"]["gpu_memory_utilization"] = 0.4
-    
+
     # 2. Reduce Batch Size to prevent OOM
-    config["data"]["train_batch_size"] = 4 
+    config["data"]["train_batch_size"] = 4
     config["actor_rollout_ref"]["actor"]["ppo_mini_batch_size"] = 4
     config["actor_rollout_ref"]["actor"]["ppo_micro_batch_size_per_gpu"] = 1
     config["actor_rollout_ref"]["rollout"]["log_prob_micro_batch_size_per_gpu"] = 2
-    
+
     # 3. Ensure Offload is enabled
     config["actor_rollout_ref"]["actor"]["fsdp_config"]["param_offload"] = True
     config["actor_rollout_ref"]["actor"]["fsdp_config"]["optimizer_offload"] = True
-    
+
     return config
 
 
@@ -136,10 +136,10 @@ def train(config: Dict[str, Any], active_agent: Optional[str]) -> None:
 
     # 1. Instantiate your Agent
     agent = RAGAgent()
-    
+
     # 2. Initialize algorithm (VERL)
     algorithm = agl.VERL(config)
-    
+
     # 3. Initialize Trainer
     # n_runners=4 means 4 concurrent rollout runners (can be reduced if insufficient memory, or managed internally by VERL)
     trainer = agl.Trainer(n_runners=4, algorithm=algorithm, adapter={"agent_match": active_agent})
@@ -148,15 +148,13 @@ def train(config: Dict[str, Any], active_agent: Optional[str]) -> None:
     # 4. Load data
     train_data = pd.read_parquet(config["data"]["train_files"]).to_dict(orient="records")
     val_data = pd.read_parquet(config["data"]["val_files"]).to_dict(orient="records")
-    
+
     # 5. Start training
     trainer.fit(agent, train_dataset=train_data, val_dataset=val_data)
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Train a RAG agent using different configurations"
-    )
+    parser = argparse.ArgumentParser(description="Train a RAG agent using different configurations")
 
     parser.add_argument(
         "config",
@@ -166,9 +164,7 @@ def main() -> None:
         help="Training configuration name",
     )
 
-    parser.add_argument(
-        "--active-agent", type=str, help="Override the active agent name"
-    )
+    parser.add_argument("--active-agent", type=str, help="Override the active agent name")
 
     args = parser.parse_args()
 
@@ -177,7 +173,7 @@ def main() -> None:
         "single_gpu": config_train_single_gpu,
     }
     config = config_functions[args.config]()
-    
+
     # Print key information for confirmation
     print(f"Starting training with '{args.config}' configuration...")
     print(f"Model: {config['actor_rollout_ref']['model']['path']}")

@@ -1,15 +1,17 @@
 import json
 import os
-import agentlightning as agl
+
 import pandas as pd
 from rag_agent import RAGAgent  # Make sure to import your previously defined RAGAgent class
+
+import agentlightning as agl
 
 # 1. loading dataset
 dataset_path = "dataset_tiny.parquet"
 data = []
 if os.path.exists(dataset_path):
     df = pd.read_parquet(dataset_path)
-    data = df.to_dict('records')
+    data = df.to_dict("records")
 else:
     print(f"Warning: {dataset_path} not found. Using dummy data.")
     data = [{"question": "What is the capital of France?", "answer": "Paris"}]
@@ -19,9 +21,9 @@ else:
 # For example: python -m vllm.entrypoints.openai.api_server --model Qwen/Qwen2.5-1.5B-Instruct --port 8000
 resources = {
     "main_llm": agl.LLM(
-        endpoint="http://localhost:8000/v1", # Replace with your actual vLLM address
+        endpoint="http://localhost:8000/v1",  # Replace with your actual vLLM address
         model="Qwen/Qwen2.5-1.5B-Instruct",  # Replace with your actual loaded model name
-        sampling_parameters={"temperature": 0.0}
+        sampling_parameters={"temperature": 0.0},
     )
 }
 
