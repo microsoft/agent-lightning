@@ -1333,6 +1333,39 @@ async def test_running_attempt_updates_heartbeat(
 
 
 @pytest.mark.asyncio
+async def test_healthcheck_marks_unresponsive_via_public_api(
+    store_fixture: LightningStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Healthcheck should mark attempts unresponsive when no heartbeat is observed."""
+
+    class TimeStub:
+        def __init__(self, value: float):
+            self.value = value
+
+        def __call__(self) -> float:
+            return self.value
+
+    time_stub = TimeStub(1000.0)
+    monkeypatch.setattr("agentlightning.store.collection_based.time.time", time_stub)
+
+    rollout = await store_fixture.enqueue_rollout(
+        input={"test": "healthcheck-unresponsive"},
+        config=RolloutConfig(unresponsive_seconds=1.0),
+    )
+    dequeued = await store_fixture.dequeue_rollout()
+    assert dequeued is not None
+    attempt_id = dequeued.attempt.attempt_id
+
+    # Advance time beyond the unresponsive threshold and trigger healthcheck through a public call.
+    time_stub.value = 1005.0
+    await store_fixture.get_rollout_by_id(rollout.rollout_id)
+
+    attempt_after = (await store_fixture.query_attempts(rollout.rollout_id))[0]
+    assert attempt_after.attempt_id == attempt_id
+    assert attempt_after.status == "unresponsive"
+
+
+@pytest.mark.asyncio
 async def test_duplicate_span_id_error(
     store_fixture: LightningStore, mock_readable_span: Mock, caplog: pytest.LogCaptureFixture
 ) -> None:
