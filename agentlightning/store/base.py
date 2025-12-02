@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Literal, Optional, Sequence, TypedDict
+from typing import Any, Dict, List, Literal, Optional, Sequence, Tuple, TypedDict
 
 from opentelemetry.sdk.trace import ReadableSpan
 
@@ -70,6 +70,35 @@ class LightningStoreCapabilities(TypedDict, total=False):
     """Whether the store supports OTLP/HTTP traces."""
 
 
+class LightningStoreStatistics(TypedDict, total=False):
+    """Statistics of a LightningStore implementation."""
+
+    name: str
+    """Name of the store implementation."""
+    total_rollouts: int
+    """Total number of rollouts in the store."""
+    total_attempts: int
+    """Total number of attempts in the store."""
+    total_spans: int
+    """Total number of spans in the store."""
+    total_resources: int
+    """Total number of resources in the store."""
+    total_workers: int
+    """Total number of workers in the store."""
+    uptime: float
+    """Uptime of since the store has been started."""
+
+    # Memory-related statistics
+    total_span_bytes: int
+    """Total number of bytes of spans in the store."""
+    eviction_threshold_bytes: int
+    """Eviction threshold for spans in bytes."""
+    safe_threshold_bytes: int
+    """Safe threshold for spans in bytes."""
+    memory_capacity_bytes: int
+    """Memory capacity of the store in bytes."""
+
+
 class LightningStore:
     """Contract for the persistent control-plane that coordinates training rollouts.
 
@@ -101,6 +130,12 @@ class LightningStore:
             zero_copy=False,
             otlp_traces=False,
         )
+
+    async def statistics(self) -> LightningStoreStatistics:
+        """Return the statistics of the store."""
+        return {
+            "name": self.__class__.__name__,
+        }
 
     def otlp_traces_endpoint(self) -> str:
         """Return the OTLP/HTTP traces endpoint of the store.
@@ -237,7 +272,15 @@ class LightningStore:
         """
         raise NotImplementedError()
 
-    async def add_span(self, span: Span) -> Span:
+    async def add_many_spans(self, spans: Sequence[Span]) -> Sequence[Span]:
+        """Persist a sequence of pre-constructed spans emitted during rollout execution.
+
+        Implementations can simply delegate to [`add_span()`][agentlightning.LightningStore.add_span] for each span.
+        However, if the store supports bulk insertion, it can implement this method to improve performance.
+        """
+        raise NotImplementedError()
+
+    async def add_span(self, span: Span) -> Optional[Span]:
         """Persist a pre-constructed span emitted during rollout execution.
 
         The provided [`Span`][agentlightning.Span] must already contain the `rollout_id`,
@@ -254,6 +297,7 @@ class LightningStore:
 
         Returns:
             The stored span record (implementations may return a copy).
+            Return `None` if the span was not added due to a duplicate.
 
         Raises:
             NotImplementedError: Subclasses must implement span persistence.
@@ -267,7 +311,7 @@ class LightningStore:
         attempt_id: str,
         readable_span: ReadableSpan,
         sequence_id: int | None = None,
-    ) -> Span:
+    ) -> Optional[Span]:
         """Convert and persist an OpenTelemetry span for a particular attempt.
 
         Implementations must transform the `readable_span` into a [`Span`][agentlightning.Span]
@@ -284,7 +328,7 @@ class LightningStore:
                 automatically.
 
         Returns:
-            The stored span record.
+            The stored span record. Return `None` if the span was not added due to a duplicate.
 
         Raises:
             NotImplementedError: Subclasses must implement span persistence.
@@ -482,6 +526,20 @@ class LightningStore:
         Raises:
             NotImplementedError: Subclasses must provide the allocator.
             ValueError: Implementations must raise when the rollout or attempt does not exist.
+        """
+        raise NotImplementedError()
+
+    async def get_many_span_sequence_ids(self, rollout_attempt_ids: Sequence[Tuple[str, str]]) -> Sequence[int]:
+        """Bulk allocate the next strictly increasing sequence number used to order spans.
+
+        Implementations may delegate to [`get_next_span_sequence_id()`][agentlightning.LightningStore.get_next_span_sequence_id]
+        for each rollout and attempt.
+
+        Args:
+            rollout_attempt_ids: List of tuples of rollout and attempt identifiers.
+
+        Returns:
+            List of sequence numbers.
         """
         raise NotImplementedError()
 

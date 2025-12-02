@@ -20,6 +20,7 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 
 from agentlightning.semconv import LightningResourceAttributes
 from agentlightning.store.base import LightningStore
+from agentlightning.utils.otel import get_tracer_provider
 from agentlightning.utils.otlp import LightningStoreOTLPExporter
 
 from .base import Tracer
@@ -51,7 +52,16 @@ class OtelTracer(Tracer):
         logger.info(f"[Worker {worker_id}] Setting up OpenTelemetry tracer...")
 
         if self._initialized:
-            logger.error("Tracer provider is already initialized. OpenTelemetry may not work as expected.")
+            logger.info(f"[Worker {worker_id}] Tracer provider is already initialized. Skipping initialization.")
+            return
+
+        try:
+            get_tracer_provider()
+            logger.error(
+                f"[Worker {worker_id}] Tracer provider is already initialized but not by OtelTracer. OpenTelemetry may not work as expected."
+            )
+        except RuntimeError:
+            logger.debug(f"[Worker {worker_id}] Tracer provider is not initialized by OtelTracer. Initializing it now.")
 
         self._tracer_provider = TracerProvider()
         trace_api.set_tracer_provider(self._tracer_provider)
@@ -66,8 +76,7 @@ class OtelTracer(Tracer):
 
     def teardown_worker(self, worker_id: int):
         super().teardown_worker(worker_id)
-        logger.info(f"[Worker {worker_id}] Tearing down OpenTelemetry tracer...")
-        self._tracer_provider = None
+        logger.info(f"[Worker {worker_id}] Tearing down OpenTelemetry tracer does NOT remove the tracer provider.")
 
     @asynccontextmanager
     async def trace_context(

@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import gzip
 from types import SimpleNamespace
-from typing import Any, Dict, Iterable, List, Optional, cast
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, cast
 
 import pytest
 from fastapi import Request
@@ -24,7 +24,6 @@ from opentelemetry.sdk.trace.export import SpanExportResult
 from starlette.types import Message, Scope
 
 from agentlightning.semconv import LightningResourceAttributes
-from agentlightning.store import LightningStore
 from agentlightning.utils import otlp
 
 BASE_TIME_NANOS = 1_700_000_000_000_000_000
@@ -34,16 +33,18 @@ EXTRA_EVENT_TIME_OFFSET = 4_000_000_000
 EXTRA_EVENT_TIME_SECONDS = (BASE_TIME_NANOS + EXTRA_EVENT_TIME_OFFSET) / 1_000_000_000
 
 
-class _StubStore(LightningStore):
+class _StubStore:
     def __init__(self) -> None:
         self.sequence_calls: List[tuple[str, str]] = []
         self.next_value = 1
 
-    async def get_next_span_sequence_id(self, rollout_id: str, attempt_id: str) -> int:
-        self.sequence_calls.append((rollout_id, attempt_id))
-        value = self.next_value
-        self.next_value += 1
-        return value
+    async def get_many_span_sequence_ids(self, rollout_attempt_ids: Sequence[Tuple[str, str]]) -> Sequence[int]:
+        self.sequence_calls.extend(rollout_attempt_ids)
+        allocations: List[int] = []
+        for _ in rollout_attempt_ids:
+            allocations.append(self.next_value)
+            self.next_value += 1
+        return allocations
 
 
 def _make_request(
@@ -234,7 +235,7 @@ async def test_spans_from_proto_prefers_span_level_metadata() -> None:
     store = _StubStore()
     request = _build_span_request()
 
-    spans = await otlp.spans_from_proto(request, store)
+    spans = await otlp.spans_from_proto(request, store.get_many_span_sequence_ids)
 
     assert len(spans) == 1
     span = spans[0]
@@ -264,11 +265,50 @@ async def test_spans_from_proto_requests_sequence_ids_when_missing() -> None:
     span.span_id = b""
     span.name = "needs-seq"
 
-    spans = await otlp.spans_from_proto(request, store)
+    spans = await otlp.spans_from_proto(request, store.get_many_span_sequence_ids)
 
     assert len(spans) == 1
     assert spans[0].sequence_id == 1
     assert store.sequence_calls == [("r1", "a1")]
+
+
+@pytest.mark.asyncio
+async def test_spans_from_proto_bulk_issues_for_mixed_rollouts() -> None:
+    store = _StubStore()
+    request = ExportTraceServiceRequest()
+
+    resource_first = request.resource_spans.add()
+    _add_attribute(resource_first.resource.attributes, LightningResourceAttributes.ROLLOUT_ID.value, "r1")
+    _add_attribute(resource_first.resource.attributes, LightningResourceAttributes.ATTEMPT_ID.value, "a-default")
+
+    scope_first = resource_first.scope_spans.add()
+    span_missing = scope_first.spans.add()
+    span_missing.trace_id = bytes.fromhex("11" * 16)
+    span_missing.span_id = bytes.fromhex("22" * 8)
+    span_missing.name = "missing-seq"
+    _add_attribute(span_missing.attributes, LightningResourceAttributes.ATTEMPT_ID.value, "a1")
+
+    span_negative = scope_first.spans.add()
+    span_negative.trace_id = bytes.fromhex("33" * 16)
+    span_negative.span_id = bytes.fromhex("44" * 8)
+    span_negative.name = "negative-seq"
+    _add_attribute(span_negative.attributes, LightningResourceAttributes.ATTEMPT_ID.value, "a2")
+    _add_attribute(span_negative.attributes, LightningResourceAttributes.SPAN_SEQUENCE_ID.value, "-5")
+
+    resource_second = request.resource_spans.add()
+    _add_attribute(resource_second.resource.attributes, LightningResourceAttributes.ROLLOUT_ID.value, "r2")
+    _add_attribute(resource_second.resource.attributes, LightningResourceAttributes.ATTEMPT_ID.value, "b1")
+
+    scope_second = resource_second.scope_spans.add()
+    span_second = scope_second.spans.add()
+    span_second.trace_id = bytes.fromhex("55" * 16)
+    span_second.span_id = bytes.fromhex("66" * 8)
+    span_second.name = "other-rollout"
+
+    spans = await otlp.spans_from_proto(request, store.get_many_span_sequence_ids)
+    assert [span.name for span in spans] == ["missing-seq", "negative-seq", "other-rollout"]
+    assert [span.sequence_id for span in spans] == [1, 2, 3]
+    assert store.sequence_calls == [("r1", "a1"), ("r1", "a2"), ("r2", "b1")]
 
 
 @pytest.mark.asyncio
@@ -277,7 +317,7 @@ async def test_spans_from_proto_skips_spans_without_ids() -> None:
     request = ExportTraceServiceRequest()
     request.resource_spans.add()  # missing rollout and attempt
 
-    spans = await otlp.spans_from_proto(request, store)
+    spans = await otlp.spans_from_proto(request, store.get_many_span_sequence_ids)
 
     assert spans == []
     assert store.sequence_calls == []

@@ -1,5 +1,4 @@
 services:
-
   app:
     build:
       context: ../

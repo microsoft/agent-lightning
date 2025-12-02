@@ -17,6 +17,7 @@ from typing import (
     Literal,
     Mapping,
     Optional,
+    Sequence,
     Set,
     TypeVar,
     Union,
@@ -27,9 +28,9 @@ from pydantic import BaseModel
 
 from agentlightning.types import AttemptedRollout, PaginatedResult, Rollout, Span
 
-from .base import UNSET, LightningStoreCapabilities, Unset, is_finished, is_running
+from .base import UNSET, LightningStoreCapabilities, LightningStoreStatistics, Unset, is_finished, is_running
 from .collection import InMemoryLightningCollections
-from .collection_based import CollectionBasedLightningStore
+from .collection_based import CollectionBasedLightningStore, tracked
 
 T_callable = TypeVar("T_callable", bound=Callable[..., Any])
 
@@ -84,8 +85,9 @@ class InMemoryLightningStore(CollectionBasedLightningStore[InMemoryLightningColl
         eviction_memory_threshold: float | int | None = None,
         safe_memory_threshold: float | int | None = None,
         span_size_estimator: Callable[[Span], int] | None = None,
+        prometheus: bool = False,
     ):
-        super().__init__(collections=InMemoryLightningCollections())
+        super().__init__(collections=InMemoryLightningCollections(), prometheus=prometheus)
 
         self._start_time_by_rollout: Dict[str, float] = {}
         self._span_bytes_by_rollout: Dict[str, int] = Counter()
@@ -138,6 +140,17 @@ class InMemoryLightningStore(CollectionBasedLightningStore[InMemoryLightningColl
             otlp_traces=False,
         )
 
+    async def statistics(self) -> LightningStoreStatistics:
+        """Return the statistics of the store."""
+        return {
+            **(await super().statistics()),
+            "total_span_bytes": self._total_span_bytes,
+            "eviction_threshold_bytes": self._eviction_threshold_bytes,
+            "safe_threshold_bytes": self._safe_threshold_bytes,
+            "memory_capacity_bytes": self._memory_capacity_bytes,
+        }
+
+    @tracked("wait_for_rollout")
     async def wait_for_rollout(self, rollout_id: str, timeout: Optional[float] = None) -> Optional[Rollout]:
         """Wait for a specific rollout to complete with a timeout."""
         async with self.collections.atomic() as collections:
@@ -175,6 +188,7 @@ class InMemoryLightningStore(CollectionBasedLightningStore[InMemoryLightningColl
 
         return None
 
+    @tracked("on_rollout_update")
     async def on_rollout_update(self, rollout: Rollout) -> None:
         """Update the running rollout ids set when the rollout updates."""
         if is_running(rollout):
@@ -193,6 +207,7 @@ class InMemoryLightningStore(CollectionBasedLightningStore[InMemoryLightningColl
         if rollout.rollout_id not in self._start_time_by_rollout:
             self._start_time_by_rollout[rollout.rollout_id] = rollout.start_time
 
+    @tracked("get_running_rollouts")
     async def get_running_rollouts(self, collections: InMemoryLightningCollections) -> List[AttemptedRollout]:
         """Accelerated version of `get_running_rollouts` for in-memory store. Used for healthcheck."""
         rollouts = await collections.rollouts.query(filter={"rollout_id": {"within": list(self._running_rollout_ids)}})
@@ -209,6 +224,7 @@ class InMemoryLightningStore(CollectionBasedLightningStore[InMemoryLightningColl
             running_rollouts.append(AttemptedRollout(**rollout.model_dump(), attempt=latest_attempt))
         return running_rollouts
 
+    @tracked("query_spans_inmemory")  # Since this method calls super, we need to track it separately
     async def query_spans(
         self,
         rollout_id: str,
@@ -219,15 +235,20 @@ class InMemoryLightningStore(CollectionBasedLightningStore[InMemoryLightningColl
             raise RuntimeError(f"Spans for rollout {rollout_id} have been evicted")
         return await super().query_spans(rollout_id, attempt_id, **kwargs)
 
-    async def _add_span_unlocked(self, collections: InMemoryLightningCollections, span: Span) -> Span:
+    @tracked("_add_many_spans_unlocked_inmemory")
+    async def _add_many_spans_unlocked(
+        self, collections: InMemoryLightningCollections, rollout_id: str, attempt_id: str, spans: Sequence[Span]
+    ) -> Sequence[Span]:
         """In-memory store needs to maintain the span data in memory, and evict spans when memory is low."""
 
-        await super()._add_span_unlocked(collections, span)
-        self._account_span_size(span)
+        inserted = await super()._add_many_spans_unlocked(collections, rollout_id, attempt_id, spans)
+        for span in inserted:
+            await self._account_span_size(span)
         await self._maybe_evict_spans(collections)
 
-        return span
+        return inserted
 
+    @tracked("_get_latest_resources_id")
     async def _get_latest_resources_id(self, collections: InMemoryLightningCollections) -> Optional[str]:
         if isinstance(self._latest_resources_id, Unset):
             latest_resources = await collections.resources.get(sort={"name": "update_time", "order": "desc"})
@@ -267,7 +288,8 @@ class InMemoryLightningStore(CollectionBasedLightningStore[InMemoryLightningColl
 
         return resolved
 
-    def _account_span_size(self, span: Span) -> int:
+    @tracked("_account_span_size")
+    async def _account_span_size(self, span: Span) -> int:
         if self._custom_span_size_estimator is not None:
             size = max(int(self._custom_span_size_estimator(span)), 0)
         else:
@@ -277,6 +299,7 @@ class InMemoryLightningStore(CollectionBasedLightningStore[InMemoryLightningColl
         self._total_span_bytes += size
         return size
 
+    @tracked("_maybe_evict_spans")
     async def _maybe_evict_spans(self, collections: InMemoryLightningCollections) -> None:
         if self._total_span_bytes <= self._eviction_threshold_bytes:
             return
@@ -299,6 +322,7 @@ class InMemoryLightningStore(CollectionBasedLightningStore[InMemoryLightningColl
             await self._evict_spans_for_rollout(collections, rollout_id)
         logger.info(f"Freed up {memory_consumed_before - self._total_span_bytes} bytes of memory")
 
+    @tracked("_evict_spans_for_rollout")
     async def _evict_spans_for_rollout(self, collections: InMemoryLightningCollections, rollout_id: str) -> None:
         await collections.evict_spans_for_rollout(rollout_id)
         removed_bytes = self._span_bytes_by_rollout.pop(rollout_id, 0)

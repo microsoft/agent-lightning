@@ -2,16 +2,10 @@
 
 """Custom adapter module for converting LLM proxy traces to augmented trajectories.
 
-This module provides the LlmProxyTraceToAugmentedTriplet adapter that converts
-LLM proxy spans into augmented trajectories for analysis and evaluation. It extends
-the base LlmProxyTraceToTriplet to include additional metadata like chat messages,
+This module provides an augmented LlmProxyTraceToTriplet adapter that converts
+LLM proxy spans into augmented trajectories for analysis and evaluation.
+It extends the base LlmProxyTraceToTriplet to include additional metadata like chat messages,
 log probabilities, and sequence IDs.
-
-Key features:
-- Conversion of LLM proxy spans to triplet format
-- Augmentation with chat messages history
-- Log probability extraction
-- Sequence ID tracking for conversation turns
 """
 
 import logging
@@ -23,13 +17,11 @@ from agentlightning.types import Span, Triplet
 logger = logging.getLogger(__name__)
 
 
-class LlmProxyTraceToAugmentedTriplet(LlmProxyTraceToTriplet):
-    """Convert LLM Proxy spans into augmented trajectories
-
-    !!! warning
-        Only support `raw_gen_ai_request` spans for now.
+class ExtendedLlmProxyTraceToTriplet(LlmProxyTraceToTriplet):
+    """Convert LLM Proxy spans into trajectories with logprobs and customized metadata.
 
     Augmented fields include:
+
     - chat messages history from [`llm.hosted_vllm.messages`], saved to `Triplet.metadata['messages']`
     - logprobs from [`llm.hosted_vllm.choices`], saved to `Triplet.response['logprobs']`
     - sequence_id from [`Span.sequence_id`] to locate the order of the span (conversation turn), saved to `Triplet.metadata['sequence_id']`
@@ -94,9 +86,6 @@ class LlmProxyTraceToAugmentedTriplet(LlmProxyTraceToTriplet):
 
             if s.name == "raw_gen_ai_request":
                 prompt_ids, resp_ids, logprobs = self._extract_tokens_from_raw(attrs)
-                # elif s.name == "litellm_request":
-                #     # Some proxies never include token ids here. Ignore unless present.
-                #     prompt_ids, resp_ids = self._extract_tokens_from_openai(attrs)
 
                 if len(prompt_ids) == 0 or len(resp_ids) == 0:
                     logger.warning(

@@ -4,20 +4,22 @@
 
 This module provides a simple logging utility function that writes evaluation
 results and logs to timestamped files organized by run ID and instance ID.
-It supports structured logging for tracking the progress and outcomes of
-SWE-bench evaluation experiments.
-
-Key features:
-- Timestamped logging with datetime formatting
-- Run-specific directory organization
-- Simple text-based logging for evaluation outputs
 """
 
 import datetime
 import os
 
 
-def logger(run_id: str, instance_id: str, text: str) -> None:
+def log_for_evaluation(run_id: str, instance_id: str, text: str) -> None:
+    """Log a message for evaluation purposes of SWE-Bench.
+
+    The format follows the SWE-Bench evaluation framework.
+
+    Args:
+        run_id: The run ID of the evaluation.
+        instance_id: The instance ID of the evaluation.
+        text: The text to log.
+    """
     os.makedirs(f"./logs/{run_id}", exist_ok=True)
     current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with open(f"./logs/{run_id}/{instance_id}", mode="a") as f:
