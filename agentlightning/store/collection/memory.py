@@ -785,7 +785,8 @@ class InMemoryLightningCollections(LightningCollections):
             labels = list(self._lock.keys())
         managers = [self._lock[label] for label in labels]
         async with AsyncExitStack() as stack:
-            await asyncio.gather(*[stack.enter_async_context(manager) for manager in managers])
+            for manager in managers:
+                await stack.enter_async_context(manager)
             yield self
 
     async def evict_spans_for_rollout(self, rollout_id: str) -> None:
