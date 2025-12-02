@@ -46,6 +46,7 @@ try:
 except ImportError:
     pass
 
+
 def instrument_all():
     """Instrument all the instrumentation libraries."""
     if AGENTOPS_INSTALLED:
