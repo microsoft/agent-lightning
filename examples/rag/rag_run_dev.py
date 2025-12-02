@@ -11,8 +11,8 @@ import agentlightning as agl
 # 1. loading dataset
 dataset_path = "dataset_tiny.parquet"
 if os.path.exists(dataset_path):
-    df: pd.DataFrame = pd.read_parquet(dataset_path)
-    data: List[Dict[str, Any]] = df.to_dict(orient="records")
+    df: pd.DataFrame = pd.read_parquet(dataset_path)  # type: ignore
+    data: List[Dict[str, Any]] = df.to_dict(orient="records")  # type: ignore
 else:
     print(f"Warning: {dataset_path} not found. Using dummy data.")
     data: List[Dict[str, Any]] = [{"question": "What is the capital of France?", "answer": "Paris"}]

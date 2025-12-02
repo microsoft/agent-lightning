@@ -144,10 +144,10 @@ def train(config: Dict[str, Any], active_agent: Optional[str]) -> None:
     trainer = agl.Trainer(n_runners=4, algorithm=algorithm, adapter={"agent_match": active_agent})
 
     # 4. Load data
-    train_df: pd.DataFrame = pd.read_parquet(config["data"]["train_files"])
-    val_df: pd.DataFrame = pd.read_parquet(config["data"]["val_files"])
-    train_data: List[Dict[str, Any]] = train_df.to_dict(orient="records")
-    val_data: List[Dict[str, Any]] = val_df.to_dict(orient="records")
+    train_df: pd.DataFrame = pd.read_parquet(config["data"]["train_files"])  # type: ignore
+    val_df: pd.DataFrame = pd.read_parquet(config["data"]["val_files"])  # type: ignore
+    train_data: List[Dict[str, Any]] = train_df.to_dict(orient="records")  # type: ignore
+    val_data: List[Dict[str, Any]] = val_df.to_dict(orient="records")  # type: ignore
 
     # 5. Start training
     trainer.fit(agent, train_dataset=train_data, val_dataset=val_data)
