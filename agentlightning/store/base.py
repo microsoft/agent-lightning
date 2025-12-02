@@ -249,11 +249,11 @@ class LightningStore:
         more efficient bulk enqueue semantics.
 
         Args:
-            requests: Rollout submission payloads mirroring [`enqueue_rollout()`][agentlightning.LightningStore.enqueue_rollout]'s
+            inputs: Rollout submission payloads mirroring [`enqueue_rollout()`][agentlightning.LightningStore.enqueue_rollout]'s
                 parameters. Each entry requires `input` and can optionally include other fields.
 
         Returns:
-            Rollouts enqueued in the same order as `requests`.
+            Rollouts enqueued in the same order as `inputs`.
         """
         raise NotImplementedError()
 
