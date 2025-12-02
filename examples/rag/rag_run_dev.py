@@ -1,6 +1,5 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-import json
 import os
 
 import pandas as pd
@@ -13,10 +12,10 @@ dataset_path = "dataset_tiny.parquet"
 data = []
 if os.path.exists(dataset_path):
     df = pd.read_parquet(dataset_path)
-    data = df.to_dict("records")
+    data: list[dict[str, str]] = df.to_dict("records")
 else:
     print(f"Warning: {dataset_path} not found. Using dummy data.")
-    data = [{"question": "What is the capital of France?", "answer": "Paris"}]
+    data: list[dict[str, str]] = [{"question": "What is the capital of France?", "answer": "Paris"}]
 
 # 2. configuring resources (LLM)
 # Note: You need to start a local service compatible with the OpenAI API (such as vLLM)

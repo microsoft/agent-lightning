@@ -145,8 +145,8 @@ def train(config: Dict[str, Any], active_agent: Optional[str]) -> None:
     print("Adapter agent match acknowledged:", trainer.adapter.agent_match)
 
     # 4. Load data
-    train_data = pd.read_parquet(config["data"]["train_files"]).to_dict(orient="records")
-    val_data = pd.read_parquet(config["data"]["val_files"]).to_dict(orient="records")
+    train_data: list[dict[str, str]] = pd.read_parquet(config["data"]["train_files"]).to_dict(orient="records")
+    val_data: list[dict[str, str]] = pd.read_parquet(config["data"]["val_files"]).to_dict(orient="records")
 
     # 5. Start training
     trainer.fit(agent, train_dataset=train_data, val_dataset=val_data)
