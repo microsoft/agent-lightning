@@ -1,7 +1,7 @@
 # Copyright (c) Microsoft. All rights reserved.
 
 import time
-from typing import Awaitable, Callable, Dict, List, Optional, Tuple, cast
+from typing import Awaitable, Callable, Dict, List, Tuple
 
 from agentlightning.types import Attempt, AttemptedRollout, AttemptStatus, Rollout, RolloutConfig, RolloutStatus
 

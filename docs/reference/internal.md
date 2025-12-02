@@ -44,7 +44,9 @@
 
 ::: agentlightning.store.base.UNSET
 
-::: agentlightning.store.utils.propagate_status
+::: agentlightning.store.utils.rollout_status_from_attempt
+
+::: agentlightning.store.utils.scan_unhealthy_rollouts
 
 ## Tracing and OpenTelemetry
 
