@@ -2000,10 +2000,21 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#agentlightning.store.utils.propagate_status" class="md-nav__link">
+  <a href="#agentlightning.store.utils.rollout_status_from_attempt" class="md-nav__link">
     <span class="md-ellipsis">
       
-        <code class="doc-symbol doc-symbol-toc doc-symbol-function"></code>&nbsp;propagate_status
+        <code class="doc-symbol doc-symbol-toc doc-symbol-function"></code>&nbsp;rollout_status_from_attempt
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#agentlightning.store.utils.scan_unhealthy_rollouts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <code class="doc-symbol doc-symbol-toc doc-symbol-function"></code>&nbsp;scan_unhealthy_rollouts
       
     </span>
   </a>
@@ -3865,10 +3876,21 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#agentlightning.store.utils.propagate_status" class="md-nav__link">
+  <a href="#agentlightning.store.utils.rollout_status_from_attempt" class="md-nav__link">
     <span class="md-ellipsis">
       
-        <code class="doc-symbol doc-symbol-toc doc-symbol-function"></code>&nbsp;propagate_status
+        <code class="doc-symbol doc-symbol-toc doc-symbol-function"></code>&nbsp;rollout_status_from_attempt
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#agentlightning.store.utils.scan_unhealthy_rollouts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <code class="doc-symbol doc-symbol-toc doc-symbol-function"></code>&nbsp;scan_unhealthy_rollouts
       
     </span>
   </a>
@@ -5017,7 +5039,7 @@
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="November 27, 2025 17:22:42 UTC"><span class="timeago" datetime="2025-11-27T17:22:42+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="November 27, 2025 17:22:42 UTC">2025-11-27</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="December 2, 2025 17:10:38 UTC"><span class="timeago" datetime="2025-12-02T17:10:38+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="December 2, 2025 17:10:38 UTC">2025-12-02</span>
   </span>
 
     
@@ -7211,22 +7233,92 @@ and injects x-rollout-id, x-attempt-id, x-sequence-id headers.</p>
 <div class="doc doc-object doc-function">
 
 
-<h3 id="agentlightning.store.utils.propagate_status" class="doc doc-heading">
-<code class="doc-symbol doc-symbol-heading doc-symbol-function"></code>            <code class="highlight language-python"><span class="n">agentlightning</span><span class="o">.</span><span class="n">store</span><span class="o">.</span><span class="n">utils</span><span class="o">.</span><span class="n">propagate_status</span><span class="p">(</span><span class="n">update_rollout_status</span><span class="p">,</span> <span class="n">attempt</span><span class="p">,</span> <span class="n">config</span><span class="p">)</span></code>
+<h3 id="agentlightning.store.utils.rollout_status_from_attempt" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-function"></code>            <code class="highlight language-python"><span class="n">agentlightning</span><span class="o">.</span><span class="n">store</span><span class="o">.</span><span class="n">utils</span><span class="o">.</span><span class="n">rollout_status_from_attempt</span><span class="p">(</span><span class="n">attempt</span><span class="p">,</span> <span class="n">config</span><span class="p">)</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-async"><code>async</code></small>
   </span>
 
-<a href="#agentlightning.store.utils.propagate_status" class="headerlink" title="Permanent link">&para;</a></h3>
+<a href="#agentlightning.store.utils.rollout_status_from_attempt" class="headerlink" title="Permanent link">&para;</a></h3>
 
 
     <div class="doc doc-contents first">
 
         <p>Propagate the status of an attempt to the rollout.</p>
-<p>The rollout should be made sure in a state to be outdated.
-Requeue the rollout if it should be retried.</p>
+
+
+<p><span class="doc-section-title">Returns:</span></p>
+    <ul>
+        <li class="doc-section-item field-body">
+              <code><a class="autorefs autorefs-internal" title="            agentlightning.RolloutStatus = Literal['queuing', 'preparing', 'running', 'failed', 'succeeded', 'cancelled', 'requeuing']
+
+  
+      module-attribute
+   (agentlightning.types.RolloutStatus)" href="../types/#agentlightning.RolloutStatus">RolloutStatus</a></code>
+          –
+          <div class="doc-md-description">
+            <p>The status of the rollout from the perspective of the attempt.</p>
+          </div>
+        </li>
+    </ul>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="agentlightning.store.utils.scan_unhealthy_rollouts" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-function"></code>            <code class="highlight language-python"><span class="n">agentlightning</span><span class="o">.</span><span class="n">store</span><span class="o">.</span><span class="n">utils</span><span class="o">.</span><span class="n">scan_unhealthy_rollouts</span><span class="p">(</span><span class="n">rollouts</span><span class="p">)</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-async"><code>async</code></small>
+  </span>
+
+<a href="#agentlightning.store.utils.scan_unhealthy_rollouts" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents first">
+
+        <p>Perform health check on all running rollouts in the store.</p>
+<p>This method should be called periodically to:</p>
+<ol>
+<li>Check for unresponsive attempts (no heartbeat or spans for a while)</li>
+<li>Check for timed-out rollouts (running too long since start_time)</li>
+</ol>
 <p>This operation is completely unlocked. The caller is responsible for locking the store.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <ul>
+        <li class="doc-section-item field-body">
+            <b><code>rollouts</code></b>
+              (<code><span title="typing.List">List</span>[<a class="autorefs autorefs-internal" title="            agentlightning.AttemptedRollout (agentlightning.types.AttemptedRollout)" href="../types/#agentlightning.AttemptedRollout">AttemptedRollout</a>]</code>)
+          –
+          <div class="doc-md-description">
+            <p>The list of running rollouts to check.</p>
+          </div>
+        </li>
+    </ul>
+
+
+<p><span class="doc-section-title">Returns:</span></p>
+    <ul>
+        <li class="doc-section-item field-body">
+              <code><span title="typing.Dict">Dict</span>[<span title="typing.Tuple">Tuple</span>[<span title="str">str</span>, <span title="str">str</span>], <a class="autorefs autorefs-internal" title="            agentlightning.AttemptStatus = Literal['preparing', 'running', 'failed', 'succeeded', 'unresponsive', 'timeout']
+
+  
+      module-attribute
+   (agentlightning.types.AttemptStatus)" href="../types/#agentlightning.AttemptStatus">AttemptStatus</a>]</code>
+          –
+          <div class="doc-md-description">
+            <p>A dictionary of updates to the rollouts.</p>
+          </div>
+        </li>
+    </ul>
 
 
     </div>

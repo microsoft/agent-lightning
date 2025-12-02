@@ -1893,7 +1893,7 @@
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="November 18, 2025 02:54:55 UTC"><span class="timeago" datetime="2025-11-18T02:54:55+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="November 18, 2025 02:54:55 UTC">2025-11-18</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="December 2, 2025 17:10:38 UTC"><span class="timeago" datetime="2025-12-02T17:10:38+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="December 2, 2025 17:10:38 UTC">2025-12-02</span>
   </span>
 
     
@@ -2111,7 +2111,7 @@ unresponsive --&gt; running: &lt;b&gt;Runner calls&lt;/b&gt;&lt;br&gt;add_[otel_
 <tr>
 <td><code>running</code></td>
 <td><code>preparing/queuing/requeuing</code> → <code>running</code></td>
-<td>First <code>add_[otel_]span()</code> flips the attempt to <code>running</code>; rollout follows via <code>propagate_status</code>.</td>
+<td>First <code>add_[otel_]span()</code> flips the attempt to <code>running</code>; rollout follows via <code>rollout_status_from_attempt</code>.</td>
 </tr>
 <tr>
 <td><code>succeeded</code></td>
@@ -2137,7 +2137,7 @@ unresponsive --&gt; running: &lt;b&gt;Runner calls&lt;/b&gt;&lt;br&gt;add_[otel_
 </table>
 <div class="admonition note">
 <p class="admonition-title">Why aggregation?</p>
-<p>In code, we use <code>propagate_status()</code> which actively updates the rollout based on the latest attempt. Reading the table above is usually easier than reverse-engineering the propagation logic in the code: think of the rollout’s transitions as <em>callbacks</em> on attempt state changes, plus queue/cancel paths.</p>
+<p>In code, we use <code>rollout_status_from_attempt()</code> which actively updates the rollout based on the latest attempt. Reading the table above is usually easier than reverse-engineering the propagation logic in the code: think of the rollout’s transitions as <em>callbacks</em> on attempt state changes, plus queue/cancel paths.</p>
 </div>
 <h2 id="spans">Spans<a class="headerlink" href="#spans" title="Permanent link">&para;</a></h2>
 <p>Every traceable operation in a rollout is stored as a <a class="autorefs autorefs-internal" title="            agentlightning.Span" href="../../reference/types/#agentlightning.Span">Span</a>. Spans not only capture fine-grained instrumentation but also act as periodic heartbeats that demonstrate liveness. The first span marks activation; each subsequent one both extends the trace and refreshes the attempt’s <a class="autorefs autorefs-internal" title="            last_heartbeat_time = None
