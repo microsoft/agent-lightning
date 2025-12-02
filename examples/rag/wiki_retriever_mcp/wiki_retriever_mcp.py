@@ -8,15 +8,14 @@ import faiss
 from fastmcp import FastMCP
 from sentence_transformers import SentenceTransformer
 
-# index = faiss.read_index("/mnt/input/agent_lightning/nq_hnsw_faiss_n32e40.index")
-index = faiss.read_index("nq_hnsw_faiss_n32e40.index")
+index = faiss.read_index("index_hnsw_faiss_n32e40_tiny.index")
 print("Index loaded successfully.")
 
 model = SentenceTransformer("BAAI/bge-large-en-v1.5")
 print("Model loaded successfully.")
 
 # with open('/mnt/input/agent_lightning/nq_list.pkl', 'rb') as f:
-with open("nq_list.pkl", "rb") as f:
+with open("chunks_candidate_tiny.pkl", "rb") as f:
     chunks = pickle.load(f)
 print("Chunks loaded successfully.")
 
@@ -37,7 +36,7 @@ def retrieve(query: str) -> list:
     Returns:
         list: A list of dictionaries containing the retrieved chunks and their metadata.
     """
-    top_k = 4  # Number of top results to return
+    top_k = 1  # Number of top results to return
     embedding = model.encode([query], normalize_embeddings=True)
     D, I = index.search(embedding, top_k)
 
