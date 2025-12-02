@@ -175,6 +175,24 @@ class AddReturnTokenIds(CustomLogger):
         return {**data, "return_token_ids": True}
 
 
+class AddLogprobs(CustomLogger):
+    """LiteLLM logger hook to request logprobs from vLLM.
+
+    This mutates the outgoing request payload to include `logprobs=1`
+    for backends that support logprobs return (e.g., vLLM).
+    """
+
+    async def async_pre_call_hook(self, *args: Any, **kwargs: Any) -> Optional[Union[Exception, str, Dict[str, Any]]]:
+        """Async pre-call hook to adjust request payload."""
+        try:
+            data = _get_pre_call_data(args, kwargs)
+        except Exception as e:
+            return e
+
+        # Ensure logprobs are requested from the backend when supported.
+        return {**data, "logprobs": 1}
+
+
 class LightningSpanExporter(SpanExporter):
     """Buffered OTEL span exporter with subtree flushing and training-store sink.
 
@@ -981,6 +999,7 @@ _MIDDLEWARE_REGISTRY: Dict[str, Type[BaseHTTPMiddleware]] = {
 
 _CALLBACK_REGISTRY = {
     "return_token_ids": AddReturnTokenIds,
+    "logprobs": AddLogprobs,
     "opentelemetry": LightningOpenTelemetry,
 }
 
@@ -1039,7 +1058,7 @@ class LLMProxy:
             Middlewares are the **first layer** of request processing. They are applied to all requests before the LiteLLM proxy.
         callbacks: List of LiteLLM callback classes or strings to register. You can specify the class aliases or classes that have been imported.
             If not provided, the default callbacks (AddReturnTokenIds and LightningOpenTelemetry) will be used.
-            Available callback aliases are: "return_token_ids", "opentelemetry".
+            Available callback aliases are: "return_token_ids", "opentelemetry", "logprobs".
     """
 
     def __init__(
@@ -1053,8 +1072,8 @@ class LLMProxy:
         num_workers: int = 1,
         launch_mode: LaunchMode = "mp",
         launcher_args: PythonServerLauncherArgs | None = None,
-        middlewares: List[Union[Type[BaseHTTPMiddleware], str]] | None = None,
-        callbacks: List[Union[Type[CustomLogger], str]] | None = None,
+        middlewares: Sequence[Union[Type[BaseHTTPMiddleware], str]] | None = None,
+        callbacks: Sequence[Union[Type[CustomLogger], str]] | None = None,
     ):
         self.store = store
 

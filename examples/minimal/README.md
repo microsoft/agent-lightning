@@ -1,5 +1,7 @@
 # Minimal Component Showcase
 
+[![minimal CI status](https://github.com/microsoft/agent-lightning/actions/workflows/badge-unit.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/badge-unit.yml)
+
 `examples/minimal` provides bite-sized programs that demonstrate how individual Agent-lightning building blocks behave in isolation.
 
 Each module have been documented with its own CLI usage in the module-level docstring. Use this directory as a reference when wiring the same pieces into a larger system.

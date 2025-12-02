@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import threading
 import time
 import traceback
@@ -23,6 +24,7 @@ from typing import (
     Type,
     TypeVar,
     Union,
+    cast,
 )
 
 import aiohttp
@@ -59,7 +61,8 @@ from agentlightning.types import (
 from agentlightning.utils.otlp import handle_otlp_export, spans_from_proto
 from agentlightning.utils.server_launcher import LaunchMode, PythonServerLauncher, PythonServerLauncherArgs
 
-from .base import UNSET, LightningStore, LightningStoreCapabilities, Unset
+from .base import UNSET, LightningStore, LightningStoreCapabilities, LightningStoreStatistics, Unset
+from .utils import LATENCY_BUCKETS
 
 server_logger = logging.getLogger("agentlightning.store.server")
 client_logger = logging.getLogger("agentlightning.store.client")
@@ -637,6 +640,10 @@ class LightningStoreServer(LightningStore):
                 heartbeat_stats=_get_mandatory_field_or_unset(request, "heartbeat_stats"),
             )
 
+        @api.get(API_AGL_PREFIX + "/statistics", response_model=Dict[str, Any])
+        async def get_statistics():  # pyright: ignore[reportUnusedFunction]
+            return await self.statistics()
+
         @api.get(API_AGL_PREFIX + "/rollouts/{rollout_id}/attempts", response_model=PaginatedResult[Attempt])
         async def query_attempts(  # pyright: ignore[reportUnusedFunction]
             rollout_id: str, params: QueryAttemptsRequest = Depends()
@@ -686,7 +693,7 @@ class LightningStoreServer(LightningStore):
         async def get_resources_by_id(resources_id: str):  # pyright: ignore[reportUnusedFunction]
             return await self.get_resources_by_id(resources_id)
 
-        @api.post(API_AGL_PREFIX + "/spans", status_code=201, response_model=Span)
+        @api.post(API_AGL_PREFIX + "/spans", status_code=201, response_model=Optional[Span])
         async def add_span(span: Span):  # pyright: ignore[reportUnusedFunction]
             return await self.add_span(span)
 
@@ -733,16 +740,26 @@ class LightningStoreServer(LightningStore):
     def _setup_prometheus(self, api: APIRouter, app: FastAPI):
         """Setup Prometheus metrics endpoints."""
         try:
+            from prometheus_client import make_asgi_app  # type: ignore
             from prometheus_client import (
-                CONTENT_TYPE_LATEST,
+                REGISTRY,
+                CollectorRegistry,
                 Counter,
                 Histogram,
-                generate_latest,
+                multiprocess,
             )
         except ImportError:
             raise ImportError(
                 "Prometheus client is not installed. Please either install it or set prometheus to False."
             )
+
+        # Multi-process mode: https://prometheus.github.io/client_python/multiprocess/
+        is_multiprocess = self.launcher_args.launch_mode == "mp" and self.launcher_args.n_workers > 1
+        if is_multiprocess:
+            registry = CollectorRegistry()
+            multiprocess.MultiProcessCollector(registry)
+        else:
+            registry = REGISTRY
 
         HTTP_REQUESTS = Counter(
             "http_requests_total",
@@ -750,13 +767,30 @@ class LightningStoreServer(LightningStore):
             ["method", "path", "status_code"],
         )
 
-        # TODO: For multi-process scenarios, should use prometheus_client.multiprocess mode.
         HTTP_LATENCY = Histogram(
             "http_request_duration_seconds",
             "Latency of HTTP requests",
             ["method", "path"],
-            buckets=[0.001, 0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10],
+            buckets=LATENCY_BUCKETS,
         )
+
+        def get_template_path(path: str) -> str:
+            # Handle "latest" keywords BEFORE generic IDs
+            if path.endswith("/attempts/latest") and "/rollouts/" in path:
+                return re.sub(r"rollouts/[^/]+/attempts/latest$", "rollouts/{rollout_id}/attempts/latest", path)
+            elif path.endswith("/resources/latest"):
+                return path
+            elif "enqueue" in path or "dequeue" in path:
+                return path
+
+            # Handle generic IDs
+            # (Order matters: longest paths first or lookaheads)
+            path = re.sub(r"/attempts/[^/]+$", "/attempts/{attempt_id}", path)
+            path = re.sub(r"/rollouts/[^/]+", "/rollouts/{rollout_id}", path)  # Handles root and middle
+            path = re.sub(r"/resources/[^/]+$", "/resources/{resources_id}", path)
+            path = re.sub(r"/workers/[^/]+$", "/workers/{worker_id}", path)
+
+            return path
 
         @app.middleware("http")
         async def prometheus_http_middleware(  # pyright: ignore[reportUnusedFunction]
@@ -766,7 +800,8 @@ class LightningStoreServer(LightningStore):
             response = await call_next(request)
             elapsed = time.perf_counter() - start
 
-            path = request.url.path
+            # Strip the ID-specific URL parts
+            path = get_template_path(request.url.path)
             method = request.method
             status = response.status_code
 
@@ -775,24 +810,22 @@ class LightningStoreServer(LightningStore):
 
             return response
 
-        @api.get("/prometheus")
-        async def prometheus_metrics():  # pyright: ignore[reportUnusedFunction]
-            return Response(
-                content=generate_latest(),
-                media_type=CONTENT_TYPE_LATEST,
-            )
+        metrics_app = make_asgi_app(registry=registry)  # type: ignore
+
+        # This App would need to be accessed via /v1/prometheus/ (note the trailing slash)
+        app.mount(api.prefix + "/prometheus", metrics_app)  # pyright: ignore[reportUnknownArgumentType]
 
     def _setup_otlp(self, api: APIRouter):
         """Setup OTLP endpoints."""
 
         async def _trace_handler(request: PbExportTraceServiceRequest) -> None:
-            spans = await spans_from_proto(request, self)
+            spans = await spans_from_proto(request, self.get_many_span_sequence_ids)
             server_logger.debug(f"Received {len(spans)} OTLP spans: {', '.join([span.name for span in spans])}")
-            for span in spans:
-                await self.add_span(span)
+            await self.add_many_spans(spans)
 
         # Reserved methods for OTEL traces
         # https://opentelemetry.io/docs/specs/otlp/#otlphttp-request
+        # This is currently the recommended path for Otel compatibility and bulk-insertion support.
         @api.post("/traces")
         async def otlp_traces(request: Request):  # pyright: ignore[reportUnusedFunction]
             return await handle_otlp_export(
@@ -844,6 +877,8 @@ class LightningStoreServer(LightningStore):
 
         @self.app.get("/{full_path:path}", include_in_schema=False)
         def spa_fallback(full_path: str):  # pyright: ignore[reportUnusedFunction]
+            if full_path.startswith("v1/"):
+                raise HTTPException(status_code=404, detail="Not Found")
             # Let the frontend router handle it
             return FileResponse(index_file)
 
@@ -888,6 +923,9 @@ class LightningStoreServer(LightningStore):
         if self._client is None:
             self._client = LightningStoreClient(self.endpoint)
         return await getattr(self._client, method_name)(*args, **kwargs)
+
+    async def statistics(self) -> LightningStoreStatistics:
+        return await self._call_store_method("statistics")
 
     async def start_rollout(
         self,
@@ -1013,11 +1051,17 @@ class LightningStoreServer(LightningStore):
     async def get_latest_resources(self) -> Optional[ResourcesUpdate]:
         return await self._call_store_method("get_latest_resources")
 
-    async def add_span(self, span: Span) -> Span:
+    async def add_span(self, span: Span) -> Optional[Span]:
         return await self._call_store_method("add_span", span)
+
+    async def add_many_spans(self, spans: Sequence[Span]) -> Sequence[Span]:
+        return await self._call_store_method("add_many_spans", spans)
 
     async def get_next_span_sequence_id(self, rollout_id: str, attempt_id: str) -> int:
         return await self._call_store_method("get_next_span_sequence_id", rollout_id, attempt_id)
+
+    async def get_many_span_sequence_ids(self, rollout_attempt_ids: Sequence[Tuple[str, str]]) -> Sequence[int]:
+        return await self._call_store_method("get_many_span_sequence_ids", rollout_attempt_ids)
 
     async def add_otel_span(
         self,
@@ -1025,7 +1069,7 @@ class LightningStoreServer(LightningStore):
         attempt_id: str,
         readable_span: ReadableSpan,
         sequence_id: int | None = None,
-    ) -> Span:
+    ) -> Optional[Span]:
         return await self._call_store_method(
             "add_otel_span",
             rollout_id,
@@ -1207,6 +1251,10 @@ class LightningStoreClient(LightningStore):
     def otlp_traces_endpoint(self) -> str:
         """Return the OTLP/HTTP traces endpoint of the store."""
         return f"{self.server_address_root}/v1/traces"
+
+    async def statistics(self) -> LightningStoreStatistics:
+        payload = await self._request_json("get", "/statistics")
+        return cast(LightningStoreStatistics, payload)
 
     def __getstate__(self):
         """
@@ -1570,7 +1618,9 @@ class LightningStoreClient(LightningStore):
         """
         try:
             data = await self._request_json("get", f"/rollouts/{rollout_id}")
-            if isinstance(data, dict) and "attempt" in data:
+            if data is None:
+                return None
+            elif isinstance(data, dict) and "attempt" in data:
                 return AttemptedRollout.model_validate(data)
             else:
                 return Rollout.model_validate(data)
@@ -1660,9 +1710,17 @@ class LightningStoreClient(LightningStore):
             client_logger.error(f"get_latest_resources failed after all retries: {e}", exc_info=True)
             return None
 
-    async def add_span(self, span: Span) -> Span:
+    async def add_span(self, span: Span) -> Optional[Span]:
         data = await self._request_json("post", "/spans", json=span.model_dump(mode="json"))
-        return Span.model_validate(data)
+        return Span.model_validate(data) if data is not None else None
+
+    async def add_many_spans(self, spans: Sequence[Span]) -> Sequence[Span]:
+        result: List[Span] = []
+        for span in spans:
+            ret = await self.add_span(span)
+            if ret is not None:
+                result.append(ret)
+        return result
 
     async def get_next_span_sequence_id(self, rollout_id: str, attempt_id: str) -> int:
         data = await self._request_json(
@@ -1673,13 +1731,19 @@ class LightningStoreClient(LightningStore):
         response = NextSequenceIdResponse.model_validate(data)
         return response.sequence_id
 
+    async def get_many_span_sequence_ids(self, rollout_attempt_ids: Sequence[Tuple[str, str]]) -> Sequence[int]:
+        return [
+            await self.get_next_span_sequence_id(rollout_id, attempt_id)
+            for rollout_id, attempt_id in rollout_attempt_ids
+        ]
+
     async def add_otel_span(
         self,
         rollout_id: str,
         attempt_id: str,
         readable_span: ReadableSpan,
         sequence_id: int | None = None,
-    ) -> Span:
+    ) -> Optional[Span]:
         # unchanged logic, now benefits from retries inside add_span/get_next_span_sequence_id
         if sequence_id is None:
             sequence_id = await self.get_next_span_sequence_id(rollout_id, attempt_id)
@@ -1689,9 +1753,7 @@ class LightningStoreClient(LightningStore):
             attempt_id=attempt_id,
             sequence_id=sequence_id,
         )
-        print("created span", span)
-        await self.add_span(span)
-        return span
+        return await self.add_span(span)
 
     async def wait_for_rollouts(self, *, rollout_ids: List[str], timeout: Optional[float] = None) -> List[Rollout]:
         """Wait for rollouts to complete.

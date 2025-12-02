@@ -1,0 +1,1036 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "gnetId": null,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 100,
+      "panels": [],
+      "title": "HTTP Server Metrics (FastAPI)",
+      "type": "row"
+    },
+    {
+      "title": "HTTP Requests / Sec",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 10,
+        "w": 8,
+        "x": 0,
+        "y": 1
+      },
+      "targets": [
+        {
+          "expr": "sum by (method, path) (rate(http_requests_total{path!='/v1/prometheus/'}[1m]))",
+          "legendFormat": "{{method}} {{path}}"
+        }
+      ]
+    },
+    {
+      "title": "HTTP Latency (P50, P95, P99)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 10,
+        "w": 8,
+        "x": 8,
+        "y": 1
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(http_request_duration_seconds_bucket{path!='/v1/prometheus/'}[1m])))",
+          "legendFormat": "P50"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{path!='/v1/prometheus/'}[1m])))",
+          "legendFormat": "P95"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(http_request_duration_seconds_bucket{path!='/v1/prometheus/'}[1m])))",
+          "legendFormat": "P99"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      }
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 10
+      },
+      "id": 150,
+      "panels": [],
+      "title": "CollectionBasedLightningStore Metrics",
+      "type": "row"
+    },
+    {
+      "title": "Collection Store Ops / Sec (by Method)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 10,
+        "w": 8,
+        "x": 0,
+        "y": 11
+      },
+      "targets": [
+        {
+          "expr": "sum by (method) (rate(collection_store_total[1m]))",
+          "legendFormat": "{{method}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops/s"
+        }
+      }
+    },
+    {
+      "title": "Collection Store Latency (P50, P95, P99)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 10,
+        "w": 8,
+        "x": 8,
+        "y": 11
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(collection_store_latency_seconds_bucket[1m])))",
+          "legendFormat": "P50"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(collection_store_latency_seconds_bucket[1m])))",
+          "legendFormat": "P95"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(collection_store_latency_seconds_bucket[1m])))",
+          "legendFormat": "P99"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      }
+    },
+    {
+      "title": "Collection Store Errors / Sec (by Method & Error)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 10,
+        "w": 8,
+        "x": 16,
+        "y": 11
+      },
+      "targets": [
+        {
+          "expr": "sum by (method, error_type) (rate(collection_store_total{error_type!='OK'}[1m]))",
+          "legendFormat": "{{method}} - {{error_type}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops/s"
+        }
+      }
+    },
+    {
+      "title": "Collection Store Latency P50 (by Method)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 10,
+        "w": 8,
+        "x": 0,
+        "y": 21
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le, method) (rate(collection_store_latency_seconds_bucket[1m])))",
+          "legendFormat": "{{method}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      }
+    },
+    {
+      "title": "Collection Store Latency P95 (by Method)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 10,
+        "w": 8,
+        "x": 8,
+        "y": 21
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, method) (rate(collection_store_latency_seconds_bucket[1m])))",
+          "legendFormat": "{{method}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      }
+    },
+    {
+      "title": "Collection Store P50 Latency x Rate (by Method)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 10,
+        "w": 8,
+        "x": 16,
+        "y": 21
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le, method) (rate(collection_store_latency_seconds_bucket[1m]))) * sum by (method) (rate(collection_store_total[1m]))",
+          "legendFormat": "{{method}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      }
+    },
+    {
+      "title": "HTTP Latency P95 (by Path)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 10,
+        "w": 8,
+        "x": 16,
+        "y": 1
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, method, path) (rate(http_request_duration_seconds_bucket{path!='/v1/prometheus/'}[1m])))",
+          "legendFormat": "{{method}} {{path}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      }
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 31
+      },
+      "id": 200,
+      "panels": [],
+      "title": "Internal MongoDB Operations (Application Side)",
+      "type": "row"
+    },
+    {
+      "title": "Mongo Ops/Sec (by Operation)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 10,
+        "w": 8,
+        "x": 0,
+        "y": 32
+      },
+      "targets": [
+        {
+          "expr": "sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection'}[1m]))",
+          "legendFormat": "{{operation}} - {{collection}}"
+        }
+      ]
+    },
+    {
+      "title": "Mongo Latency P95 (by Operation)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 10,
+        "w": 8,
+        "x": 8,
+        "y": 32
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, operation) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection'}[1m])))",
+          "legendFormat": "{{operation}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      }
+    },
+    {
+      "title": "Mongo Errors / Sec",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 10,
+        "w": 8,
+        "x": 16,
+        "y": 32
+      },
+      "targets": [
+        {
+          "expr": "sum by (error_type, operation) (rate(mongo_operation_errors_total{operation!='ensure_collection'}[1m]))",
+          "legendFormat": "{{operation}} - {{error_type}}"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 42
+      },
+      "id": 210,
+      "panels": [],
+      "title": "Hot Store Methods Breakdown",
+      "type": "row"
+    },
+    {
+      "title": "wait_for_rollouts: Mongo Ops per Call (by Operation)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 43
+      },
+      "targets": [
+        {
+          "expr": "sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='wait_for_rollouts'}[1m])) / scalar(clamp_min(sum(rate(collection_store_total{method='wait_for_rollouts'}[1m])), 1e-9))",
+          "legendFormat": "{{operation}} - {{collection}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none"
+        }
+      }
+    },
+    {
+      "title": "wait_for_rollouts: Mongo Latency (P50)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 43
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='wait_for_rollouts'}[1m])))",
+          "legendFormat": "{{operation}} - {{collection}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      }
+    },
+    {
+      "title": "wait_for_rollouts: Mongo Time per Call (P50)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 43
+      },
+      "targets": [
+        {
+          "expr": "(histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='wait_for_rollouts'}[1m])))) * (sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='wait_for_rollouts'}[1m])) / scalar(clamp_min(sum(rate(collection_store_total{method='wait_for_rollouts'}[1m])), 1e-9)))",
+          "legendFormat": "{{operation}} - {{collection}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      }
+    },
+    {
+      "title": "add_span: Mongo Ops per Call (by Operation)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 51
+      },
+      "targets": [
+        {
+          "expr": "sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='add_span'}[1m])) / scalar(clamp_min(sum(rate(collection_store_total{method='add_span'}[1m])), 1e-9))",
+          "legendFormat": "{{operation}} - {{collection}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none"
+        }
+      }
+    },
+    {
+      "title": "add_span: Mongo Latency (P50)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 51
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='add_span'}[1m])))",
+          "legendFormat": "{{operation}} - {{collection}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      }
+    },
+    {
+      "title": "add_span: Mongo Time per Call (P50)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 51
+      },
+      "targets": [
+        {
+          "expr": "(histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='add_span'}[1m])))) * (sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='add_span'}[1m])) / scalar(clamp_min(sum(rate(collection_store_total{method='add_span'}[1m])), 1e-9)))",
+          "legendFormat": "{{operation}} - {{collection}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      }
+    },
+    {
+      "title": "dequeue_rollout: Mongo Ops per Call (by Operation)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 59
+      },
+      "targets": [
+        {
+          "expr": "sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='dequeue_rollout'}[1m])) / scalar(clamp_min(sum(rate(collection_store_total{method='dequeue_rollout'}[1m])), 1e-9))",
+          "legendFormat": "{{operation}} - {{collection}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none"
+        }
+      }
+    },
+    {
+      "title": "dequeue_rollout: Mongo Latency (P50)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 59
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='dequeue_rollout'}[1m])))",
+          "legendFormat": "{{operation}} - {{collection}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      }
+    },
+    {
+      "title": "dequeue_rollout: Mongo Time per Call (P50)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 59
+      },
+      "targets": [
+        {
+          "expr": "(histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='dequeue_rollout'}[1m])))) * (sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='dequeue_rollout'}[1m])) / scalar(clamp_min(sum(rate(collection_store_total{method='dequeue_rollout'}[1m])), 1e-9)))",
+          "legendFormat": "{{operation}} - {{collection}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      }
+    },
+    {
+      "title": "update_attempt: Mongo Ops per Call (by Operation)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 67
+      },
+      "targets": [
+        {
+          "expr": "sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='update_attempt'}[1m])) / scalar(clamp_min(sum(rate(collection_store_total{method='update_attempt'}[1m])), 1e-9))",
+          "legendFormat": "{{operation}} - {{collection}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none"
+        }
+      }
+    },
+    {
+      "title": "update_attempt: Mongo Latency (P50)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 67
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='update_attempt'}[1m])))",
+          "legendFormat": "{{operation}} - {{collection}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      }
+    },
+    {
+      "title": "update_attempt: Mongo Time per Call (P50)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 67
+      },
+      "targets": [
+        {
+          "expr": "(histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='update_attempt'}[1m])))) * (sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='update_attempt'}[1m])) / scalar(clamp_min(sum(rate(collection_store_total{method='update_attempt'}[1m])), 1e-9)))",
+          "legendFormat": "{{operation}} - {{collection}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      }
+    },
+    {
+      "title": "update_worker: Mongo Ops per Call (by Operation)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 75
+      },
+      "targets": [
+        {
+          "expr": "sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='update_worker'}[1m])) / scalar(clamp_min(sum(rate(collection_store_total{method='update_worker'}[1m])), 1e-9))",
+          "legendFormat": "{{operation}} - {{collection}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none"
+        }
+      }
+    },
+    {
+      "title": "update_worker: Mongo Latency (P50)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 75
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='update_worker'}[1m])))",
+          "legendFormat": "{{operation}} - {{collection}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      }
+    },
+    {
+      "title": "update_worker: Mongo Time per Call (P50)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 75
+      },
+      "targets": [
+        {
+          "expr": "(histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='update_worker'}[1m])))) * (sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='update_worker'}[1m])) / scalar(clamp_min(sum(rate(collection_store_total{method='update_worker'}[1m])), 1e-9)))",
+          "legendFormat": "{{operation}} - {{collection}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      }
+    },
+    {
+      "title": "healthcheck: Mongo Ops per Call (by Operation)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 83
+      },
+      "targets": [
+        {
+          "expr": "sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='_healthcheck'}[1m])) / scalar(clamp_min(sum(rate(collection_store_total{method='_healthcheck'}[1m])), 1e-9))",
+          "legendFormat": "{{operation}} - {{collection}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none"
+        }
+      }
+    },
+    {
+      "title": "healthcheck: Mongo Latency (P50)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 83
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='_healthcheck'}[1m])))",
+          "legendFormat": "{{operation}} - {{collection}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      }
+    },
+    {
+      "title": "healthcheck: Mongo Time per Call (P50)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 83
+      },
+      "targets": [
+        {
+          "expr": "(histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='_healthcheck'}[1m])))) * (sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='_healthcheck'}[1m])) / scalar(clamp_min(sum(rate(collection_store_total{method='_healthcheck'}[1m])), 1e-9)))",
+          "legendFormat": "{{operation}} - {{collection}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      }
+    },
+    {
+      "title": "add_many_spans: Mongo Ops per Call (by Operation)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 91
+      },
+      "targets": [
+        {
+          "expr": "sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='add_many_spans'}[1m])) / scalar(clamp_min(sum(rate(collection_store_total{method='add_many_spans'}[1m])), 1e-9))",
+          "legendFormat": "{{operation}} - {{collection}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none"
+        }
+      }
+    },
+    {
+      "title": "add_many_spans: Mongo Latency (P50)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 91
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='add_many_spans'}[1m])))",
+          "legendFormat": "{{operation}} - {{collection}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      }
+    },
+    {
+      "title": "add_many_spans: Mongo Time per Call (P50)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 91
+      },
+      "targets": [
+        {
+          "expr": "(histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='add_many_spans'}[1m])))) * (sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='add_many_spans'}[1m])) / scalar(clamp_min(sum(rate(collection_store_total{method='add_many_spans'}[1m])), 1e-9)))",
+          "legendFormat": "{{operation}} - {{collection}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      }
+    },
+    {
+      "title": "add_otel_span: Mongo Ops per Call (by Operation)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 99
+      },
+      "targets": [
+        {
+          "expr": "sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='add_otel_span'}[1m])) / scalar(clamp_min(sum(rate(collection_store_total{method='add_otel_span'}[1m])), 1e-9))",
+          "legendFormat": "{{operation}} - {{collection}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none"
+        }
+      }
+    },
+    {
+      "title": "add_otel_span: Mongo Latency (P50)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 99
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='add_otel_span'}[1m])))",
+          "legendFormat": "{{operation}} - {{collection}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      }
+    },
+    {
+      "title": "add_otel_span: Mongo Time per Call (P50)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 99
+      },
+      "targets": [
+        {
+          "expr": "(histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='add_otel_span'}[1m])))) * (sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='add_otel_span'}[1m])) / scalar(clamp_min(sum(rate(collection_store_total{method='add_otel_span'}[1m])), 1e-9)))",
+          "legendFormat": "{{operation}} - {{collection}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      }
+    },
+    {
+      "title": "Transaction Attempts (P95/P99/P99.9/Max)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 10,
+        "w": 8,
+        "x": 0,
+        "y": 107
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(mongo_operation_num_attempts_bucket{operation='execute__transaction'}[1m])))",
+          "legendFormat": "P95"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(mongo_operation_num_attempts_bucket{operation='execute__transaction'}[1m])))",
+          "legendFormat": "P99"
+        },
+        {
+          "expr": "histogram_quantile(0.999, sum by (le) (rate(mongo_operation_num_attempts_bucket{operation='execute__transaction'}[1m])))",
+          "legendFormat": "P99.9"
+        },
+        {
+          "expr": "histogram_quantile(1.0, sum by (le) (rate(mongo_operation_num_attempts_bucket{operation='execute__transaction'}[1m])))",
+          "legendFormat": "Max"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none"
+        }
+      }
+    },
+    {
+      "title": "Commit Attempts (P95/P99/P99.9/Max)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 10,
+        "w": 8,
+        "x": 8,
+        "y": 107
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(mongo_operation_num_attempts_bucket{operation='execute__commit'}[1m])))",
+          "legendFormat": "P95"
+        },
+        {
+          "expr": "histogram_quantile(0.999, sum by (le) (rate(mongo_operation_num_attempts_bucket{operation='execute__commit'}[1m])))",
+          "legendFormat": "P99.9"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(mongo_operation_num_attempts_bucket{operation='execute__commit'}[1m])))",
+          "legendFormat": "P99"
+        },
+        {
+          "expr": "histogram_quantile(1.0, sum by (le) (rate(mongo_operation_num_attempts_bucket{operation='execute__commit'}[1m])))",
+          "legendFormat": "Max"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none"
+        }
+      }
+    },
+    {
+      "title": "Transaction Attempts P99 (by Store Method)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 10,
+        "w": 8,
+        "x": 16,
+        "y": 107
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum by (le, store_method) (rate(mongo_operation_num_attempts_bucket{operation='execute__transaction'}[1m])))",
+          "legendFormat": "{{store_method}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none"
+        }
+      }
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 117
+      },
+      "id": 300,
+      "panels": [],
+      "title": "MongoDB System Metrics (Exporter)",
+      "type": "row"
+    },
+    {
+      "title": "Command Operations",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 0,
+        "y": 118
+      },
+      "targets": [
+        {
+          "expr": "rate(mongodb_ss_opcounters[1m])",
+          "legendFormat": "{{type}}"
+        }
+      ]
+    },
+    {
+      "title": "Active Connections",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 12,
+        "y": 118
+      },
+      "targets": [
+        {
+          "expr": "mongodb_ss_connections{conn_type='current'}",
+          "legendFormat": "Current"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 128
+      },
+      "id": 301,
+      "panels": [],
+      "title": "Rollout Outcomes",
+      "type": "row"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 0,
+        "y": 129
+      },
+      "id": 302,
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.25, sum by (le) (rate(collection_store_rollout_duration_seconds_bucket[1m])))",
+          "legendFormat": "P25"
+        },
+        {
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(collection_store_rollout_duration_seconds_bucket[1m])))",
+          "legendFormat": "P50"
+        },
+        {
+          "expr": "histogram_quantile(0.75, sum by (le) (rate(collection_store_rollout_duration_seconds_bucket[1m])))",
+          "legendFormat": "P75"
+        },
+        {
+          "expr": "histogram_quantile(1.0, sum by (le) (rate(collection_store_rollout_duration_seconds_bucket[1m])))",
+          "legendFormat": "Max"
+        }
+      ],
+      "title": "Rollout Duration (P25, P50, P75, P95)",
+      "type": "timeseries"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops/s"
+        }
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 12,
+        "y": 129
+      },
+      "id": 303,
+      "targets": [
+        {
+          "expr": "sum by (status) (rate(collection_store_rollout_total[1m]))",
+          "legendFormat": "{{status}}"
+        }
+      ],
+      "title": "Rollout Completion Rate (by Status)",
+      "type": "timeseries"
+    }
+  ],
+  "schemaVersion": 36,
+  "style": "dark",
+  "tags": [
+    "agentlightning"
+  ],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-10m",
+    "to": "now"
+  },
+  "title": "Agent Lightning Metrics",
+  "version": 1
+}

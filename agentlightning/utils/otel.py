@@ -17,7 +17,6 @@ from pydantic import TypeAdapter
 
 from agentlightning.env_var import LightningEnvVar, resolve_bool_env_var
 from agentlightning.semconv import LightningSpanAttributes, LinkAttributes, LinkPydanticModel
-from agentlightning.tracer.otel import LightningSpanProcessor
 from agentlightning.types import SpanLike
 from agentlightning.utils.otlp import LightningStoreOTLPExporter
 
@@ -52,6 +51,8 @@ def get_tracer_provider(inspect: bool = True) -> TracerProviderImpl:
         inspect: Whether to inspect the tracer provider and log its configuration.
             When it's on, make sure you also set the logger level to DEBUG to see the logs.
     """
+    from agentlightning.tracer.otel import LightningSpanProcessor
+
     if hasattr(trace_api, "_TRACER_PROVIDER") and trace_api._TRACER_PROVIDER is None:  # type: ignore[attr-defined]
         raise RuntimeError("Tracer is not initialized. Cannot emit a meaningful span.")
     tracer_provider = otel_get_tracer_provider()

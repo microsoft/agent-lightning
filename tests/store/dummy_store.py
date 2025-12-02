@@ -1,6 +1,6 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Sequence, Tuple
 
 from opentelemetry.sdk.trace import ReadableSpan
 
@@ -101,9 +101,13 @@ class DummyLightningStore(LightningStore):
         self.calls.append(("query_resources", args, kwargs))
         return self.return_values["query_resources"]
 
-    async def add_span(self, span: Span) -> Span:
+    async def add_span(self, span: Span) -> Optional[Span]:
         self.calls.append(("add_span", (span,), {}))
         return self.return_values["add_span"]
+
+    async def add_many_spans(self, spans: Sequence[Span]) -> List[Span]:
+        self.calls.append(("add_many_spans", (spans,), {}))
+        return self.return_values["add_many_spans"]
 
     async def add_otel_span(
         self,
@@ -111,7 +115,7 @@ class DummyLightningStore(LightningStore):
         attempt_id: str,
         readable_span: ReadableSpan,
         sequence_id: Optional[int] = None,
-    ) -> Span:
+    ) -> Optional[Span]:
         self.calls.append(("add_otel_span", (rollout_id, attempt_id, readable_span, sequence_id), {}))
         return self.return_values["add_otel_span"]
 
@@ -122,6 +126,10 @@ class DummyLightningStore(LightningStore):
     async def get_next_span_sequence_id(self, rollout_id: str, attempt_id: str) -> int:
         self.calls.append(("get_next_span_sequence_id", (rollout_id, attempt_id), {}))
         return self.return_values["get_next_span_sequence_id"]
+
+    async def get_many_span_sequence_ids(self, rollout_attempt_ids: Sequence[Tuple[str, str]]) -> List[int]:
+        self.calls.append(("get_many_span_sequence_ids", (rollout_attempt_ids,), {}))
+        return self.return_values["get_many_span_sequence_ids"]
 
     async def query_spans(self, *args: Any, **kwargs: Any) -> List[Span]:
         self.calls.append(("query_spans", args, kwargs))
@@ -206,10 +214,13 @@ def minimal_dummy_store() -> DummyLightningStore:
             "update_resources": None,
             "get_resources_by_id": None,
             "get_latest_resources": None,
+            "query_resources": [],
             "add_span": None,
+            "add_many_spans": [],
             "add_otel_span": None,
             "wait_for_rollouts": [],
             "get_next_span_sequence_id": 0,
+            "get_many_span_sequence_ids": [],
             "query_spans": [],
             "update_rollout": None,
             "update_attempt": None,
