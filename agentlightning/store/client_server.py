@@ -1602,7 +1602,10 @@ class LightningStoreClient(LightningStore):
         resolved_status = status_in if status_in is not None else status
         resolved_rollout_ids = rollout_id_in if rollout_id_in is not None else rollout_ids
 
-        payload: Dict[str, Any] = {}
+        payload: Dict[str, Any] = {
+            "limit": limit,
+            "offset": offset,
+        }
         if resolved_status is not None:
             payload["status_in"] = resolved_status
         if resolved_rollout_ids is not None:
@@ -1613,8 +1616,6 @@ class LightningStoreClient(LightningStore):
         if sort_by is not None:
             payload["sort_by"] = sort_by
             payload["sort_order"] = sort_order
-        payload["limit"] = limit
-        payload["offset"] = offset
 
         data = await self._request_json("post", "/rollouts/search", json=payload)
         items = [
@@ -1863,7 +1864,7 @@ class LightningStoreClient(LightningStore):
         sort_by: Optional[str] = "sequence_id",
         sort_order: Literal["asc", "desc"] = "asc",
     ) -> PaginatedResult[Span]:
-        payload: Dict[str, Any] = {"rollout_id": rollout_id}
+        payload: Dict[str, Any] = {"rollout_id": rollout_id, "limit": limit, "offset": offset}
         if attempt_id is not None:
             payload["attempt_id"] = attempt_id
         if trace_id is not None:
@@ -1886,8 +1887,6 @@ class LightningStoreClient(LightningStore):
         if sort_by is not None:
             payload["sort_by"] = sort_by
             payload["sort_order"] = sort_order
-        payload["limit"] = limit
-        payload["offset"] = offset
         data = await self._request_json("post", "/spans/search", json=payload)
         items = [Span.model_validate(item) for item in data["items"]]
         return PaginatedResult(items=items, limit=data["limit"], offset=data["offset"], total=data["total"])

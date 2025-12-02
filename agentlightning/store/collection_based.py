@@ -5,7 +5,7 @@
 To developers, please check whether the implementation is correct by checking the following:
 
 1. Whether all `_unlocked_*` methods are guarded by some `atomic()` or `execute()` context.
-2. Whether all `atomic()` or `execute()` contexts are labeled (label="...") correctly.
+2. Whether all `atomic()` or `execute()` contexts are labeled (labels="...") correctly.
 3. `_unlocked_update_attempt_and_rollout` should be accompanied by `_post_update_rollout`, `_unlocked_sync_worker_with_attempt`.
 4. `_post_add_spans` should be called after the spans are inserted into the store.
 5. `_unlocked_update_rollout_only` should be accompanied by `_post_update_rollout`.
@@ -265,7 +265,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
 
     @tracked("_get_latest_resources")
     async def _get_latest_resources(self) -> Optional[ResourcesUpdate]:
-        """Get the latest resources ID from the collections. Returns `None` if no resources are found."""
+        """Get the latest resources from the collections. Returns `None` if no resources are found."""
         async with self.collections.atomic(mode="r", snapshot=self._read_snapshot, labels=["resources"]) as collections:
             return await collections.resources.get(sort={"name": "update_time", "order": "desc"})
 
