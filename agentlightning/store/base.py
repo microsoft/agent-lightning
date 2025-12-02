@@ -772,7 +772,8 @@ class LightningStore:
 
         When `attempt_id` is `"latest"` the update must target the attempt with the highest
         `sequence_id`; otherwise it must target the specific attempt. Implementations should
-        propagate status changes to the rollout (for example via [`propagate_status()`][agentlightning.store.utils.propagate_status])
+        propagate status changes to the rollout (for example
+        via [`rollout_status_from_attempt()`][agentlightning.store.utils.rollout_status_from_attempt])
         once the latest attempt transitions to a terminal state.
 
         Similar to [`update_rollout()`][agentlightning.LightningStore.update_rollout],
