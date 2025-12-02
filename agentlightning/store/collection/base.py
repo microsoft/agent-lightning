@@ -315,7 +315,7 @@ class LightningCollections:
             mode: The mode of atomicity. See [`AtomicMode`][agentlightning.store.collection.AtomicMode].
             snapshot: Enable read snapshot for repeatable reads. Data consistency is guaranteed. The real behavior is implementation-dependent.
             commit: Enable commitment for write operations. Unsuccessful operations will be rolled back depending on the implementation.
-                Recommend to use [`execute()`][agentlightning.store.collection.Collection.execute] for this level to enable automatic retries.
+                Recommend to use [`execute()`][agentlightning.store.collection.LightningCollections.execute] for this level to enable automatic retries.
                 Remember that the real behavior is implementation-dependent.
             labels: Labels to add to the atomic operation (commonly used as lock names or collection names).
             **kwargs: Keyword arguments to pass to the operation.
@@ -334,7 +334,7 @@ class LightningCollections:
     ) -> T:
         """Execute the given callback within an atomic operation. Retry on transient errors is implied.
 
-        See [`atomic()`][agentlightning.store.collection.Collection.atomic] for more details.
+        See [`atomic()`][agentlightning.store.collection.LightningCollections.atomic] for more details.
         """
         async with self.atomic(mode=mode, snapshot=snapshot, commit=commit, labels=labels, **kwargs) as collections:
             return await callback(collections)
