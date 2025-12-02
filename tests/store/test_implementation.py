@@ -1256,6 +1256,35 @@ async def test_span_updates_attempt_status(store_fixture: LightningStore, mock_r
 
 
 @pytest.mark.asyncio
+async def test_spans_promote_preparing_attempt_with_heartbeat(
+    store_fixture: LightningStore, mock_readable_span: Mock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Spans should set heartbeat time and promote preparing attempts/rollouts to running."""
+    rollout = await store_fixture.enqueue_rollout(input={"test": "preparing-heartbeat"})
+    dequeued = await store_fixture.dequeue_rollout()
+    assert dequeued is not None
+
+    attempts_before = await store_fixture.query_attempts(rollout.rollout_id)
+    assert attempts_before
+    attempt_id = attempts_before[0].attempt_id
+    assert attempts_before[0].status == "preparing"
+    assert attempts_before[0].last_heartbeat_time is None
+
+    heartbeat_time = 1234.5
+    monkeypatch.setattr("agentlightning.store.collection_based.time.time", lambda: heartbeat_time)
+
+    await store_fixture.add_otel_span(rollout.rollout_id, attempt_id, mock_readable_span)
+
+    attempt_after = (await store_fixture.query_attempts(rollout.rollout_id))[0]
+    assert attempt_after.status == "running"
+    assert attempt_after.last_heartbeat_time == heartbeat_time
+
+    rollout_after = await store_fixture.get_rollout_by_id(rollout.rollout_id)
+    assert rollout_after is not None
+    assert rollout_after.status == "running"
+
+
+@pytest.mark.asyncio
 async def test_unresponsive_attempt_recovers_after_span(
     store_fixture: LightningStore, mock_readable_span: Mock
 ) -> None:
