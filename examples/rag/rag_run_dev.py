@@ -1,6 +1,7 @@
 # Copyright (c) Microsoft. All rights reserved.
 
 import os
+import typing as t
 
 import pandas as pd
 from rag_agent import RAGAgent  # Make sure to import your previously defined RAGAgent class
@@ -12,10 +13,10 @@ dataset_path = "dataset_tiny.parquet"
 data = []
 if os.path.exists(dataset_path):
     df = pd.read_parquet(dataset_path)
-    data: list[dict[str, str]] = df.to_dict("records")
+    data: t.List[t.Dict[str, t.Any]] = df.to_dict(orient="records")
 else:
     print(f"Warning: {dataset_path} not found. Using dummy data.")
-    data: list[dict[str, str]] = [{"question": "What is the capital of France?", "answer": "Paris"}]
+    data: t.List[t.Dict[str, str]] = [{"question": "What is the capital of France?", "answer": "Paris"}]
 
 # 2. configuring resources (LLM)
 # Note: You need to start a local service compatible with the OpenAI API (such as vLLM)

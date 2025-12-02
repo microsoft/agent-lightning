@@ -10,6 +10,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import typing as t
 from copy import deepcopy
 from datetime import datetime
 from typing import Any, Dict, Optional
@@ -142,11 +143,10 @@ def train(config: Dict[str, Any], active_agent: Optional[str]) -> None:
     # 3. Initialize Trainer
     # n_runners=4 means 4 concurrent rollout runners (can be reduced if insufficient memory, or managed internally by VERL)
     trainer = agl.Trainer(n_runners=4, algorithm=algorithm, adapter={"agent_match": active_agent})
-    print("Adapter agent match acknowledged:", trainer.adapter.agent_match)
 
     # 4. Load data
-    train_data: list[dict[str, str]] = pd.read_parquet(config["data"]["train_files"]).to_dict(orient="records")
-    val_data: list[dict[str, str]] = pd.read_parquet(config["data"]["val_files"]).to_dict(orient="records")
+    train_data: t.List[t.Dict[str, t.Any]] = pd.read_parquet(config["data"]["train_files"]).to_dict(orient="records")
+    val_data: t.List[t.Dict[str, t.Any]] = pd.read_parquet(config["data"]["val_files"]).to_dict(orient="records")
 
     # 5. Start training
     trainer.fit(agent, train_dataset=train_data, val_dataset=val_data)
