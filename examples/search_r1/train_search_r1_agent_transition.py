@@ -42,10 +42,7 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
                 }
             },
             "trace_aggregator": {
-                "mode": "trajectory",
-                "special_token_tolerance": 0,
-                "string_tolerance": 0,
-                "trajectory_max_length": 34384,
+                "mode": "transition",
             }
         },
         "actor": {
@@ -79,13 +76,13 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
         "critic_warmup": 0,
         "logger": ["console", "wandb"],
         "project_name": "AgentLightning-SearchR1",
-        "experiment_name": "searchr1_minibatch256_runner32_trajectory",
+        "experiment_name": "searchr1_minibatch256_runner32_transition_synced",
         "nnodes": 1,
         "test_freq": 10,
         "save_freq":10,
         "total_epochs": 15,
         "total_training_steps": 300,
-        "default_local_dir": "/mnt/teamdrive/search_r1/searchr1_checkpoints/searchr1_minibatch256_runner32_trajectory/"
+        "default_local_dir": "/mnt/teamdrive/search_r1/searchr1_checkpoints/searchr1_minibatch256_runner32_transition_synced/"
     },
 }
 

@@ -31,6 +31,71 @@ __all__ = [
 ]
 
 
+def logged_startswith(full_ids, prefix_ids, tokenizer):
+    template_mismatch, retoken_mismatch, others_mismatch = False, False, False
+    if full_ids[:len(prefix_ids)] == prefix_ids:
+        merge = True
+        return template_mismatch, retoken_mismatch, others_mismatch, merge
+    else:
+        merge = False
+
+    def _special_token_sequence(ids):
+        return [id for id in ids if id in tokenizer.all_special_ids]
+    
+    def _none_special_token_sequence(ids):
+        return [id for id in ids if id not in tokenizer.all_special_ids]
+
+    # First, handle special tokens
+    full_special_ids = _special_token_sequence(full_ids)
+    prefix_special_ids = _special_token_sequence(prefix_ids)
+    diff_count = sum(1 for a, b in zip(full_special_ids, prefix_special_ids) if a != b)
+    if diff_count > 0:
+        template_mismatch = True
+
+    # Next, handle string content
+    full_content_ids = _none_special_token_sequence(full_ids)
+    prefix_content_ids = _none_special_token_sequence(prefix_ids)
+    full_string = tokenizer.decode(full_ids, skip_special_tokens=True)
+    prefix_string = tokenizer.decode(prefix_ids, skip_special_tokens=True)
+    if full_content_ids[:len(prefix_content_ids)] != prefix_content_ids and full_string.startswith(prefix_string):
+        retoken_mismatch = True
+    elif full_content_ids[:len(prefix_content_ids)] != prefix_content_ids and not full_string.startswith(prefix_string):
+        others_mismatch = True
+    elif full_content_ids[:len(prefix_content_ids)] == prefix_content_ids:
+        # case 1: fully match; case 2: special token mismatch only
+        # case 1: template_mismatch == False, retoken_mismatch == False, others_mismatch == False, merge == True
+        # case 2: template_mismatch == True, retoken_mismatch == False, others_mismatch == False, merge == False
+        if (not template_mismatch and not retoken_mismatch and not others_mismatch and merge) \
+            or (template_mismatch and not retoken_mismatch and not others_mismatch and not merge):
+            with open("bad_case_jiahang.log", "a+") as f:
+                print("-" * 20, file=f)
+                print("full_ids:", file=f)
+                print(full_ids, file=f)
+                print("prefix_ids:", file=f)
+                print(prefix_ids, file=f)
+                print(f"template_mismatch: {template_mismatch}, retoken_mismatch: {retoken_mismatch}, others_mismatch: {others_mismatch}, merge: {merge}", file=f)
+    return template_mismatch, retoken_mismatch, others_mismatch, merge
+
+
+# log data, only for debug testing
+def log_mismatch_detail(template_mismatch, retoken_mismatch, others_mismatch, full_ids, prefix_ids):
+    if template_mismatch:
+        with open("template_mismatch.log", "a+") as f:
+            print("-" * 20, file=f)
+            print(full_ids, file=f)
+            print(prefix_ids, file=f)
+    if retoken_mismatch:
+        with open("retoken_mismatch.log", "a+") as f:
+            print("-" * 20, file=f)
+            print(full_ids, file=f)
+            print(prefix_ids, file=f)
+    if others_mismatch:
+        with open("others_mismatch.log", "a+") as f:
+            print("-" * 20, file=f)
+            print(full_ids, file=f)
+            print(prefix_ids, file=f)
+
+
 def fuzzy_startswith(full_ids, prefix_ids, tokenizer, special_token_tolerance=0, string_tolerance=0):
     def _special_token_sequence(ids):
         return [id for id in ids if id in tokenizer.all_special_ids]
@@ -815,6 +880,7 @@ class AgentModeDaemon:
         elif self.trace_aggregator.mode == "trajectory":
             response_mask_list: List[List[int]] = []
             unmerged_count: int = 0  # only for debug
+            template_mismatch_count, retoken_mismatch_count, others_mismatch_count = 0, 0, 0
             response_per_turn_list: List[int] = []  # only for debug
 
             for rollout_id, sample_info in finished_id_to_sample_info.items():
@@ -828,33 +894,30 @@ class AgentModeDaemon:
                         {"nxt_turn": trace["prompt_ids"][:] + trace["response_ids"][:], "cur": current_context[:]}
                     )
                     response_per_turn_list.append(len(trace["response_ids"]))
-                    if fuzzy_startswith(
+                    template_mismatch, retoken_mismatch, others_mismatch, merged = logged_startswith(
                         trace["prompt_ids"] + trace["response_ids"],
                         current_context,
                         self.tokenizer,
-                        special_token_tolerance=self.trace_aggregator.special_token_tolerance,
-                        string_tolerance=self.trace_aggregator.string_tolerance,
-                    ):
+                    )
+                    template_mismatch_count += int(template_mismatch)
+                    retoken_mismatch_count += int(retoken_mismatch)
+                    others_mismatch_count += int(others_mismatch)
+                    if merged:
                         current_context = trace["prompt_ids"] + trace["response_ids"]
                         current_merged_trace_idx.append(turn_index)
                     else:
+                        log_mismatch_detail(  # log data, only for debug testing
+                            template_mismatch,
+                            retoken_mismatch,
+                            others_mismatch,
+                            trace["prompt_ids"] + trace["response_ids"],
+                            current_context,
+                        )
                         merged_trace_idx.append(current_merged_trace_idx)
                         current_merged_trace_idx = [turn_index]
                         current_context = trace["prompt_ids"] + trace["response_ids"]
                 if current_merged_trace_idx not in merged_trace_idx:
                     merged_trace_idx.append(current_merged_trace_idx)
-
-                # log data, only for debug testing
-                if len(merged_trace_idx) > 1:
-                    unmerged_count += 1
-                    for turn_index, d in enumerate(turn_ids):
-                        with open("bad_case_jiahang.log", "a+") as f:
-                            print("-" * 20, file=f)
-                            print(merged_trace_idx, file=f)
-                            print("~" * 20, file=f)
-                            print(turn_index, file=f)
-                            print(d["nxt_turn"], file=f)
-                            print(d["cur"], file=f)
 
                 for current_merged_trace_idx in merged_trace_idx:
                     prompt_ids = sample_info["trace_list"][current_merged_trace_idx[0]]["prompt_ids"]
@@ -871,8 +934,8 @@ class AgentModeDaemon:
                     final_sample = sample_info["trace_list"][current_merged_trace_idx[-1]]
                     response_ids = final_sample["prompt_ids"][prompt_length:] + final_sample["response_ids"]
                     if len(response_ids) != len(accum_response_ids):  # only for debug testing
-                        with open("bad_case_jiahang.log", "a+") as f:
-                            print("-" * 10 + "response_ids NUM NOT MATCH" + "-" * 10, file=f)
+                        with open("response_ids_num_mismatch.log", "a+") as f:
+                            print("-" * 20, file=f)
                             print(response_ids, file=f)
                             print(accum_response_ids, file=f)
 
@@ -968,6 +1031,9 @@ class AgentModeDaemon:
                 "training/avg_response_by_turn": np.mean(response_per_turn_list) if response_per_turn_list else 0,
                 "training/max_response_by_turn": np.max(response_per_turn_list) if response_per_turn_list else 0,
                 "training/min_response_by_turn": np.min(response_per_turn_list) if response_per_turn_list else 0,
+                "training/template_mismatch_triplets": template_mismatch_count,
+                "training/retoken_mismatch_triplets": retoken_mismatch_count,
+                "training/others_mismatch_triplets": others_mismatch_count,
             } if self.trace_aggregator.mode == "trajectory" else {}),
         }
 
