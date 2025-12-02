@@ -6,7 +6,7 @@ import asyncio
 import logging
 import weakref
 from collections import deque
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from typing import (
     Any,
     Deque,
@@ -285,7 +285,7 @@ class ListBasedCollection(Collection[T]):
         # We should always return inside the loop.
         raise RuntimeError("Unreachable")
 
-    def _mutate_single(self, item: T, mode: MutationMode, update_fields: Sequence[str] | None = None) -> None:
+    def _mutate_single(self, item: T, mode: MutationMode, update_fields: Sequence[str] | None = None) -> Optional[T]:
         """Core mutation logic shared by insert, update, upsert, and delete."""
         self._ensure_item_type(item)
         key_values = self._extract_primary_key_values(item)
@@ -307,7 +307,6 @@ class ListBasedCollection(Collection[T]):
                 elif update_fields is None:
                     # update_or_insert: update all fields
                     parent[final_key] = item
-                    return
 
                 else:
                     if not issubclass(self._item_type, BaseModel):
@@ -327,7 +326,11 @@ class ListBasedCollection(Collection[T]):
                             f"When using update_fields, the item type must be a Pydantic BaseModel, got {type(item).__name__}"
                         )
 
-                    parent[final_key] = parent[final_key].model_copy(update=item.model_dump(include=set(update_fields)))
+                    parent[final_key] = parent[final_key].model_copy(
+                        update={field: getattr(item, field) for field in update_fields}
+                    )
+
+            return parent[final_key]
 
         elif mode in ("update", "delete"):
             # For update/delete we must not create missing paths.
@@ -342,7 +345,22 @@ class ListBasedCollection(Collection[T]):
                 raise ValueError(f"Item does not exist with primary key(s): {self._render_key_values(key_values)}")
 
             if mode == "update":
-                parent[final_key] = item
+                if update_fields is None:
+                    # replace the entire item
+                    parent[final_key] = item
+                else:
+                    if not issubclass(self._item_type, BaseModel):
+                        raise TypeError(
+                            f"When using update_fields, the item type must be a Pydantic BaseModel, got {self._item_type.__name__}"
+                        )
+                    if not isinstance(item, self._item_type):
+                        raise TypeError(
+                            f"When using update_fields, the item type must be a Pydantic BaseModel, got {type(item).__name__}"
+                        )
+                    parent[final_key] = parent[final_key].model_copy(
+                        update={field: getattr(item, field) for field in update_fields}
+                    )
+                return parent[final_key]
             else:  # delete
                 del parent[final_key]
                 self._size -= 1
@@ -582,19 +600,29 @@ class ListBasedCollection(Collection[T]):
         for item in prepared:
             self._mutate_single(item, mode="insert")
 
-    async def update(self, items: Sequence[T]) -> None:
+    async def update(self, items: Sequence[T], update_fields: Sequence[str] | None = None) -> Sequence[T]:
         """Update the given items.
 
         Raises:
             ValueError: If any item with the given primary keys does not exist.
         """
+        updated_items: List[T] = []
         for item in items:
-            self._mutate_single(item, mode="update")
+            updated = self._mutate_single(item, mode="update", update_fields=update_fields)
+            if updated is None:
+                raise RuntimeError(f"_mutate_single returned None for item {item}. This should never happen.")
+            updated_items.append(updated)
+        return updated_items
 
-    async def upsert(self, items: Sequence[T], update_fields: Sequence[str] | None = None) -> None:
+    async def upsert(self, items: Sequence[T], update_fields: Sequence[str] | None = None) -> Sequence[T]:
         """Upsert the given items (insert if missing, otherwise update)."""
+        upserted_items: List[T] = []
         for item in items:
-            self._mutate_single(item, mode="upsert", update_fields=update_fields)
+            upserted = self._mutate_single(item, mode="upsert", update_fields=update_fields)
+            if upserted is None:
+                raise RuntimeError(f"_mutate_single returned None for item {item}. This should never happen.")
+            upserted_items.append(upserted)
+        return upserted_items
 
     async def delete(self, items: Sequence[T]) -> None:
         """Delete the given items.
@@ -691,7 +719,15 @@ class InMemoryLightningCollections(LightningCollections):
     """
 
     def __init__(self):
-        self._lock = _LoopAwareAsyncLock()
+        self._lock = {
+            "rollouts": _LoopAwareAsyncLock(),
+            "attempts": _LoopAwareAsyncLock(),
+            "spans": _LoopAwareAsyncLock(),
+            "resources": _LoopAwareAsyncLock(),
+            "workers": _LoopAwareAsyncLock(),
+            "rollout_queue": _LoopAwareAsyncLock(),
+            "span_sequence_ids": _LoopAwareAsyncLock(),
+        }
         self._rollouts = ListBasedCollection(items=[], item_type=Rollout, primary_keys=["rollout_id"])
         self._attempts = ListBasedCollection(items=[], item_type=Attempt, primary_keys=["rollout_id", "attempt_id"])
         self._spans = ListBasedCollection(
@@ -731,7 +767,9 @@ class InMemoryLightningCollections(LightningCollections):
         return self._span_sequence_ids
 
     @asynccontextmanager
-    async def atomic(self, *, mode: AtomicMode = "rw", snapshot: bool = False, **kwargs: Any):
+    async def atomic(
+        self, *, mode: AtomicMode = "rw", snapshot: bool = False, labels: Optional[Sequence[str]] = None, **kwargs: Any
+    ):
         """In-memory collections apply a lock outside. It doesn't need to manipulate the collections inside.
 
         Skip the locking if mode is "r" and snapshot is False.
@@ -741,7 +779,12 @@ class InMemoryLightningCollections(LightningCollections):
         if mode == "r" and not snapshot:
             yield self
             return
-        async with self._lock:
+        if not labels:
+            # If no labels are provided, use all locks.
+            labels = list(self._lock.keys())
+        managers = [self._lock[label] for label in labels]
+        async with AsyncExitStack() as stack:
+            _locks = [await stack.enter_async_context(manager) for manager in managers]
             yield self
 
     async def evict_spans_for_rollout(self, rollout_id: str) -> None:

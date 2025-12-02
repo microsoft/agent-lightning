@@ -44,6 +44,12 @@ V = TypeVar("V")
 AtomicMode = Literal["r", "w", "rw"]
 """What is expected within the atomic context. Can be "read", "write", or "read-write"."""
 
+AtomicLabels = Literal["rollouts", "attempts", "spans", "resources", "workers", "rollout_queue", "span_sequence_ids"]
+"""Labels for atomic operations.
+
+These labels are used to identify the collections that are affected by the atomic operation.
+"""
+
 
 class Collection(Generic[T]):
     """Behaves like a list of items. Supporting addition, updating, and deletion of items."""
@@ -117,15 +123,23 @@ class Collection(Generic[T]):
         """
         raise NotImplementedError()
 
-    async def update(self, items: Sequence[T]) -> None:
+    async def update(self, items: Sequence[T], update_fields: Sequence[str] | None = None) -> Sequence[T]:
         """Update the given items in the collection.
+
+        Args:
+            items: The items to update in the collection.
+            update_fields: The fields to update. If not provided, all fields in the type will be updated.
+                Only applicable if the item type is a Pydantic BaseModel.
 
         Raises:
             ValueError: If an item with the primary keys does not exist.
+
+        Returns:
+            The items that were updated.
         """
         raise NotImplementedError()
 
-    async def upsert(self, items: Sequence[T], update_fields: Sequence[str] | None = None) -> None:
+    async def upsert(self, items: Sequence[T], update_fields: Sequence[str] | None = None) -> Sequence[T]:
         """Upsert the given items into the collection.
 
         If the items with the same primary keys already exist, they will be updated.
@@ -142,6 +156,9 @@ class Collection(Generic[T]):
         - `replace_ish` via `collection.upsert(items)`.
           If the item with the same primary keys already exists, all fields from the item will be set.
           Otherwise, the item will be inserted.
+
+        Returns:
+            The items that were upserted.
         """
         raise NotImplementedError()
 
@@ -281,7 +298,13 @@ class LightningCollections:
         raise NotImplementedError()
 
     def atomic(
-        self, *, mode: AtomicMode = "rw", snapshot: bool = False, commit: bool = False, **kwargs: Any
+        self,
+        *,
+        mode: AtomicMode = "rw",
+        snapshot: bool = False,
+        commit: bool = False,
+        labels: Optional[Sequence[AtomicLabels]] = None,
+        **kwargs: Any,
     ) -> AsyncContextManager[Self]:
         """Perform a atomic operation on the collections.
 
@@ -294,6 +317,7 @@ class LightningCollections:
             commit: Enable commitment for write operations. Unsuccessful operations will be rolled back depending on the implementation.
                 Recommend to use [`execute()`][agentlightning.store.collection.Collection.execute] for this level to enable automatic retries.
                 Remember that the real behavior is implementation-dependent.
+            labels: Labels to add to the atomic operation (commonly used as lock names or collection names).
             **kwargs: Keyword arguments to pass to the operation.
         """
         raise NotImplementedError()
@@ -305,13 +329,14 @@ class LightningCollections:
         mode: AtomicMode = "rw",
         snapshot: bool = False,
         commit: bool = False,
+        labels: Optional[Sequence[AtomicLabels]] = None,
         **kwargs: Any,
     ) -> T:
         """Execute the given callback within an atomic operation. Retry on transient errors is implied.
 
         See [`atomic()`][agentlightning.store.collection.Collection.atomic] for more details.
         """
-        async with self.atomic(mode=mode, snapshot=snapshot, commit=commit, **kwargs) as collections:
+        async with self.atomic(mode=mode, snapshot=snapshot, commit=commit, labels=labels, **kwargs) as collections:
             return await callback(collections)
 
 
