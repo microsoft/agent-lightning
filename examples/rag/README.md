@@ -17,7 +17,6 @@ gdown --fuzzy "https://drive.google.com/file/d/1Pq4Ag8zVoN8gUtLu0LcBfY35Dm5zL0hq
     -O dataset_tiny.parquet
 
 # chunks_candidate_tiny.pkl
-cd ./wiki_retriever_mcp
 gdown --fuzzy "https://drive.google.com/file/d/1REXCpRLbeZu1KfWWKhIGEQe_WNHUOBkS/view?usp=drive_link" \
     -O chunks_candidate_tiny.pkl
 
@@ -28,7 +27,7 @@ gdown --fuzzy "https://drive.google.com/file/d/1f6P-h_8KSRhe5pqDHWbRQWvUhTygfZ-c
 3. Start the MCP server
 Open a terminal and run:
 ```
-cd examples/rag/wiki_retriever_mcp
+cd examples/rag
 python wiki_retriever_mcp.py
 ```
 
