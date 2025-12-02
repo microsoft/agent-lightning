@@ -1,7 +1,7 @@
 # Copyright (c) Microsoft. All rights reserved.
 
 import os
-import typing as t
+from typing import Any, Dict, List
 
 import pandas as pd
 from rag_agent import RAGAgent  # Make sure to import your previously defined RAGAgent class
@@ -10,13 +10,12 @@ import agentlightning as agl
 
 # 1. loading dataset
 dataset_path = "dataset_tiny.parquet"
-data = []
 if os.path.exists(dataset_path):
-    df = pd.read_parquet(dataset_path)
-    data: t.List[t.Dict[str, t.Any]] = df.to_dict(orient="records")
+    df: pd.DataFrame = pd.read_parquet(dataset_path)
+    data: List[Dict[str, Any]] = df.to_dict(orient="records")
 else:
     print(f"Warning: {dataset_path} not found. Using dummy data.")
-    data: t.List[t.Dict[str, str]] = [{"question": "What is the capital of France?", "answer": "Paris"}]
+    data: List[Dict[str, Any]] = [{"question": "What is the capital of France?", "answer": "Paris"}]
 
 # 2. configuring resources (LLM)
 # Note: You need to start a local service compatible with the OpenAI API (such as vLLM)
