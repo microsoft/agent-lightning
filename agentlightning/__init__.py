@@ -33,13 +33,15 @@ def wrap_message(content: str) -> str:
     return content
 
 
-def add_message(message1: str | List[Dict[str, Any]], message2: str | Dict[str, Any]) -> str | List[Dict[str, Any]]:
+def add_message_list(message1: List[Dict[str, Any]], message2: Dict[str, Any]) -> List[Dict[str, Any]]:
+
+    new_message: List[Dict[str, Any]] = []
+    for msg in message1:
+        new_message.append({"role": msg["role"], "content": wrap_message(msg["content"])})
+    new_message.append({"role": message2["role"], "content": wrap_message(message2["content"])})
+    return new_message
+
+
+def add_message(message1: str , message2: str) -> str:
     
-    if isinstance(message1, list):
-        new_message = []
-        for msg in message1:
-            new_message.append({"role": msg["role"], "content": wrap_message(msg["content"])})
-        new_message.append({"role": message2["role"], "content": wrap_message(message2["content"])})
-        return new_message
-    else:
-        return wrap_message(message1) + wrap_message(message2)
+    return wrap_message(message1) + wrap_message(message2)
