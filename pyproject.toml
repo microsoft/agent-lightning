@@ -182,10 +182,13 @@ anthropic = [
   "anthropic",
 ]
 langchain = [
-  "langgraph<1.0",
-  "langchain[openai]<1.0",
+  "langgraph",
+  "langchain>=1.0.0",
+  "langchain-openai",
   "langchain-community",
-  "langchain-text-splitters<1.0",
+  "langchain-text-splitters",
+  "langsmith>=0.3.45",
+  "langchain-classic>=1.0.0",
 ]
 sql = [
   "sqlparse",
@@ -257,6 +260,7 @@ torch = [
   { index = "pytorch-cpu", group = "torch-cpu" },
 ]
 tinker_cookbook = { git = "https://github.com/thinking-machines-lab/tinker-cookbook" }
+verl = {git = "https://github.com/Acture/verl.git"}
 
 [[tool.uv.index]]
 name = "pypi"

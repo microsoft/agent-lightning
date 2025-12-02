@@ -127,6 +127,7 @@ def config_train_fast() -> Dict[str, Any]:
     config["trainer"]["experiment_name"] = EXPERIMENT_NAME
     config["trainer"]["project_name"] = PROJECT_NAME
     config["trainer"]["test_freq"] = 1
+
     return config
 
 
