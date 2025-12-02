@@ -29,6 +29,7 @@ from agentlightning.store.base import UNSET, LightningStore
 from agentlightning.store.memory import InMemoryLightningStore, estimate_model_size
 from agentlightning.types import (
     LLM,
+    Attempt,
     AttemptedRollout,
     Event,
     Link,
@@ -1333,10 +1334,34 @@ async def test_running_attempt_updates_heartbeat(
 
 
 @pytest.mark.asyncio
-async def test_healthcheck_marks_unresponsive_via_public_api(
+async def test_span_post_add_preserves_concurrent_updates(
+    store_fixture: LightningStore, mock_readable_span: Mock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Concurrent attempt updates should not be clobbered when spans record heartbeats."""
+    rollout = await store_fixture.enqueue_rollout(input={"test": "span-concurrency"})
+    dequeued = await store_fixture.dequeue_rollout()
+    assert dequeued is not None
+    attempt_id = dequeued.attempt.attempt_id
+
+    original_post = store_fixture._post_add_spans  # type: ignore
+
+    async def patched_post(spans: List[Span], rollout_id: str, mutated_attempt_id: str) -> None:
+        await store_fixture.update_attempt(rollout_id, mutated_attempt_id, metadata={"concurrent": True})
+        await original_post(spans, rollout_id, mutated_attempt_id)
+
+    monkeypatch.setattr(store_fixture, "_post_add_spans", patched_post)
+
+    await store_fixture.add_otel_span(rollout.rollout_id, attempt_id, mock_readable_span)
+
+    attempt_after = (await store_fixture.query_attempts(rollout.rollout_id))[0]
+    assert attempt_after.metadata == {"concurrent": True}
+
+
+@pytest.mark.asyncio
+async def test_healthcheck_marks_unresponsive_and_updates_worker(
     store_fixture: LightningStore, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Healthcheck should mark attempts unresponsive when no heartbeat is observed."""
+    """Healthcheck should mark attempts unresponsive and sync worker state via the helper."""
 
     class TimeStub:
         def __init__(self, value: float):
@@ -1345,24 +1370,38 @@ async def test_healthcheck_marks_unresponsive_via_public_api(
         def __call__(self) -> float:
             return self.value
 
-    time_stub = TimeStub(1000.0)
+    time_stub = TimeStub(100.0)
     monkeypatch.setattr("agentlightning.store.collection_based.time.time", time_stub)
 
     rollout = await store_fixture.enqueue_rollout(
-        input={"test": "healthcheck-unresponsive"},
+        input={"test": "healthcheck-worker"},
         config=RolloutConfig(unresponsive_seconds=1.0),
     )
-    dequeued = await store_fixture.dequeue_rollout()
+    dequeued = await store_fixture.dequeue_rollout(worker_id="worker-sync")
     assert dequeued is not None
     attempt_id = dequeued.attempt.attempt_id
+    await store_fixture.update_attempt(rollout.rollout_id, attempt_id, worker_id="worker-sync")
 
-    # Advance time beyond the unresponsive threshold and trigger healthcheck through a public call.
-    time_stub.value = 1005.0
+    original_sync = store_fixture._sync_workers_with_attempts  # type: ignore
+    sync_calls: List[str] = []
+
+    async def tracking_sync(attempts: Sequence[Attempt]) -> None:
+        for attempt in attempts:
+            sync_calls.append(attempt.attempt_id)
+        await original_sync(attempts)
+
+    monkeypatch.setattr(store_fixture, "_sync_workers_with_attempts", tracking_sync)
+
+    time_stub.value = 105.0
     await store_fixture.get_rollout_by_id(rollout.rollout_id)
 
+    worker = await store_fixture.get_worker_by_id("worker-sync")
+    assert worker is not None
+    assert worker.status == "unknown"
+
     attempt_after = (await store_fixture.query_attempts(rollout.rollout_id))[0]
-    assert attempt_after.attempt_id == attempt_id
     assert attempt_after.status == "unresponsive"
+    assert sync_calls == [attempt_after.attempt_id]
 
 
 @pytest.mark.asyncio

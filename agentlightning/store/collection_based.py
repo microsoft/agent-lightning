@@ -320,11 +320,12 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         """
         return LightningStoreCapabilities()
 
-    @tracked("_sync_worker_with_attempt")
+    @tracked("_sync_workers_with_attempts")
     @_with_collections_execute(labels=["workers", "attempts"])
-    async def _sync_worker_with_attempt(self, collections: T_collections, attempt: Attempt) -> None:
-        """Update the worker's status. Locked version of `_unlocked_sync_worker_with_attempt`."""
-        await self._unlocked_sync_worker_with_attempt(collections, attempt)
+    async def _sync_workers_with_attempts(self, collections: T_collections, attempts: Sequence[Attempt]) -> None:
+        """Update the worker's status. Locked bulk version of `_unlocked_sync_workers_with_attempts`."""
+        for attempt in attempts:
+            await self._unlocked_sync_worker_with_attempt(collections, attempt)
 
     @tracked("start_rollout")
     @healthcheck_before
@@ -990,25 +991,41 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
             # No spans were added, skip the rest.
             return []
 
-        await self._post_add_spans(successful_spans, rollout, current_attempt)
+        await self._post_add_spans(successful_spans, rollout_id, attempt_id)
 
         return successful_spans
 
     @tracked("_post_add_spans")
-    async def _post_add_spans(self, spans: Sequence[Span], rollout: Rollout, attempt: Attempt) -> None:
-        """Update the attempt's metric and attempt/rollout status when receiving spans.
+    async def _post_add_spans(self, spans: Sequence[Span], rollout_id: str, attempt_id: str) -> None:
+        """Update attempt heartbeat and rollout status after spans are inserted.
 
-        This method is called after the spans are inserted into the store. It should not be locked.
+        Args:
+            spans: Newly inserted spans.
+            rollout_id: Identifier for the rollout receiving the spans.
+            attempt_id: Identifier for the attempt receiving the spans.
+
+        Note:
+            The method refetches the attempt/rollout inside the transactional callback to
+            avoid clobbering fields that might have changed after the spans were queued.
         """
         if not spans:
             return
 
         async def _update_rollout_attempt(collections: T_collections) -> Optional[Tuple[Rollout, Sequence[str]]]:
+            attempt = await collections.attempts.get(
+                {"rollout_id": {"exact": rollout_id}, "attempt_id": {"exact": attempt_id}}
+            )
+            if attempt is None:
+                return None
+            rollout = await collections.rollouts.get({"rollout_id": {"exact": rollout_id}})
+            if rollout is None:
+                return None
+
             # Update attempt heartbeat and ensure persistence
             attempt.last_heartbeat_time = time.time()
             if attempt.status in ["preparing", "unresponsive"]:
                 attempt.status = "running"
-            await collections.attempts.update([attempt])
+            await collections.attempts.update([attempt], update_fields=["last_heartbeat_time", "status"])
 
             # If the status has already timed out or failed, do not change it (but heartbeat is still recorded)
 
@@ -1240,13 +1257,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         if rollout_update:
             await self._post_update_rollout([rollout_update])
         if worker_sync_required:
-            await self.collections.execute(
-                lambda collections: self._unlocked_sync_worker_with_attempt(collections, attempt),
-                mode="rw",
-                snapshot=self._read_snapshot,
-                commit=True,
-                labels=["workers", "attempts"],
-            )
+            await self._sync_workers_with_attempts([attempt])
         return attempt
 
     @tracked("_unlocked_update_rollout_only")
@@ -1489,11 +1500,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
 
         # Sync worker status
         if attempts_sync_required:
-            async with self.collections.atomic(
-                mode="rw", snapshot=self._read_snapshot, labels=["workers", "attempts"], commit=True
-            ) as collections:
-                for attempt in attempts_sync_required:
-                    await self._unlocked_sync_worker_with_attempt(collections, attempt)
+            await self._sync_workers_with_attempts(attempts_sync_required)
 
     @tracked("_find_and_update_unhealthy_rollouts")
     @_with_collections_execute(labels=["rollouts", "attempts"])

@@ -27,9 +27,7 @@ from typing import (
 
 from pydantic import BaseModel
 
-from agentlightning.types import AttemptedRollout, PaginatedResult, Rollout, Span
-from agentlightning.types.core import Attempt
-from agentlightning.types.resources import NamedResources, ResourcesUpdate
+from agentlightning.types import AttemptedRollout, NamedResources, PaginatedResult, ResourcesUpdate, Rollout, Span
 
 from .base import UNSET, LightningStoreCapabilities, LightningStoreStatistics, Unset, is_finished, is_running
 from .collection import InMemoryLightningCollections
@@ -268,18 +266,16 @@ class InMemoryLightningStore(CollectionBasedLightningStore[InMemoryLightningColl
         return await super().query_spans(rollout_id, attempt_id, **kwargs)
 
     @tracked("_post_add_spans")
-    async def _post_add_spans(self, spans: Sequence[Span], rollout: Rollout, attempt: Attempt) -> None:
+    async def _post_add_spans(self, spans: Sequence[Span], rollout_id: str, attempt_id: str) -> None:
         """In-memory store needs to maintain the span data in memory, and evict spans when memory is low."""
 
-        inserted = await super()._post_add_spans(spans, rollout, attempt)
+        await super()._post_add_spans(spans, rollout_id, attempt_id)
         async with self.collections.atomic(
             mode="rw", snapshot=self._read_snapshot, labels=["rollouts", "spans"]
         ) as collections:
             for span in spans:
                 await self._account_span_size(span)
             await self._maybe_evict_spans(collections)
-
-        return inserted
 
     @tracked("_get_latest_resources_inmemory")
     async def _get_latest_resources(self) -> Optional[ResourcesUpdate]:
