@@ -20,7 +20,7 @@ else:
 # 2. configuring resources (LLM)
 # Note: You need to start a local service compatible with the OpenAI API (such as vLLM)
 # For example: python -m vllm.entrypoints.openai.api_server --model Qwen/Qwen2.5-1.5B-Instruct --port 8000
-resources = {
+resources: dict[str, agl.ResourceUnion] = {
     "main_llm": agl.LLM(
         endpoint="http://localhost:8000/v1",  # Replace with your actual vLLM address
         model="Qwen/Qwen2.5-1.5B-Instruct",  # Replace with your actual loaded model name
