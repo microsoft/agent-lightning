@@ -85,13 +85,18 @@ class InMemoryLightningStore(CollectionBasedLightningStore[InMemoryLightningColl
     def __init__(
         self,
         *,
+        thread_safe: bool = False,
         eviction_memory_threshold: float | int | None = None,
         safe_memory_threshold: float | int | None = None,
         span_size_estimator: Callable[[Span], int] | None = None,
         prometheus: bool = False,
     ):
-        super().__init__(collections=InMemoryLightningCollections(), prometheus=prometheus)
+        super().__init__(
+            collections=InMemoryLightningCollections(lock_type="thread" if thread_safe else "asyncio"),
+            prometheus=prometheus,
+        )
 
+        self._thread_safe = thread_safe
         self._start_time_by_rollout: Dict[str, float] = {}
         self._span_bytes_by_rollout: Dict[str, int] = Counter()
         self._total_span_bytes: int = 0
@@ -137,7 +142,7 @@ class InMemoryLightningStore(CollectionBasedLightningStore[InMemoryLightningColl
     def capabilities(self) -> LightningStoreCapabilities:
         """Return the capabilities of the store."""
         return LightningStoreCapabilities(
-            thread_safe=False,
+            thread_safe=self._thread_safe,
             async_safe=True,
             zero_copy=False,
             otlp_traces=False,

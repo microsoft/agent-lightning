@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 import weakref
 from collections import deque
 from contextlib import AsyncExitStack, asynccontextmanager
@@ -718,15 +719,15 @@ class InMemoryLightningCollections(LightningCollections):
     Serves as the storage base for [`InMemoryLightningStore`][agentlightning.InMemoryLightningStore].
     """
 
-    def __init__(self):
+    def __init__(self, lock_type: Literal["thread", "asyncio"]):
         self._lock = {
-            "rollouts": _LoopAwareAsyncLock(),
-            "attempts": _LoopAwareAsyncLock(),
-            "spans": _LoopAwareAsyncLock(),
-            "resources": _LoopAwareAsyncLock(),
-            "workers": _LoopAwareAsyncLock(),
-            "rollout_queue": _LoopAwareAsyncLock(),
-            "span_sequence_ids": _LoopAwareAsyncLock(),
+            "rollouts": _LoopAwareAsyncLock() if lock_type == "asyncio" else _ThreadSafeAsyncLock(),
+            "attempts": _LoopAwareAsyncLock() if lock_type == "asyncio" else _ThreadSafeAsyncLock(),
+            "spans": _LoopAwareAsyncLock() if lock_type == "asyncio" else _ThreadSafeAsyncLock(),
+            "resources": _LoopAwareAsyncLock() if lock_type == "asyncio" else _ThreadSafeAsyncLock(),
+            "workers": _LoopAwareAsyncLock() if lock_type == "asyncio" else _ThreadSafeAsyncLock(),
+            "rollout_queue": _LoopAwareAsyncLock() if lock_type == "asyncio" else _ThreadSafeAsyncLock(),
+            "span_sequence_ids": _LoopAwareAsyncLock() if lock_type == "asyncio" else _ThreadSafeAsyncLock(),
         }
         self._rollouts = ListBasedCollection(items=[], item_type=Rollout, primary_keys=["rollout_id"])
         self._attempts = ListBasedCollection(items=[], item_type=Attempt, primary_keys=["rollout_id", "attempt_id"])
@@ -833,3 +834,27 @@ class _LoopAwareAsyncLock:
         if lock is None or not lock.locked():
             raise RuntimeError("Lock released without being acquired")
         lock.release()
+
+
+class _ThreadSafeAsyncLock:
+    """A threading.Lock that can be used in both async and sync contexts."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+
+    def __enter__(self):
+        self._lock.acquire()
+        return self
+
+    def __exit__(self, *args: Any, **kwargs: Any):
+        self._lock.release()
+
+    async def __aenter__(self):
+        # We run the blocking .acquire() in a thread pool so we don't block the event loop
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, self._lock.acquire)
+        return self
+
+    async def __aexit__(self, *args: Any, **kwargs: Any):
+        # .release() is non-blocking, so we can call it directly
+        self._lock.release()

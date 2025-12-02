@@ -2329,7 +2329,7 @@ async def test_concurrent_resource_updates(store_fixture: LightningStore) -> Non
 @pytest.mark.asyncio
 async def test_update_nonexistent_rollout(store_fixture: LightningStore) -> None:
     """Test updating non-existent rollout raises error."""
-    with pytest.raises(ValueError, match=r"Item does not exist.*rollout_id="):
+    with pytest.raises(ValueError, match=r"Item.*does not exist"):
         await store_fixture.update_rollout(rollout_id="nonexistent", status="failed")
 
 

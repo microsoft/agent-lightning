@@ -34,7 +34,7 @@ if TYPE_CHECKING:
     from typing import Self
 
 from pydantic import BaseModel, TypeAdapter
-from pymongo import AsyncMongoClient, ReadPreference, WriteConcern
+from pymongo import AsyncMongoClient, ReadPreference, ReturnDocument, WriteConcern
 from pymongo.asynchronous.client_session import AsyncClientSession
 from pymongo.asynchronous.collection import AsyncCollection
 from pymongo.asynchronous.database import AsyncDatabase
@@ -774,56 +774,104 @@ class MongoBasedCollection(Collection[T_model]):
                 raise ValueError("Duplicate key error while inserting items") from exc
 
     @_mongo_operation("update")
-    async def update(self, items: Sequence[T_model]) -> None:
+    async def update(self, items: Sequence[T_model], update_fields: Sequence[str] | None = None) -> List[T_model]:
         if not items:
-            return
+            return []
 
+        updated_items: List[T_model] = []
         collection = await self.ensure_collection()
+
         for item in items:
             self._ensure_item_type(item)
             pk_filter = self._pk_filter(item)
             doc = item.model_dump()
             doc["partition_id"] = self._partition_id
-            with self._prometheus_tracker.track("update__replace_one", self._database_name, self._collection_name):
-                result = await collection.replace_one(pk_filter, doc, session=self._session)
-            if result.matched_count == 0:
+
+            updated_doc = None
+
+            # Branch 1: Full Replace
+            if update_fields is None:
+                with self._prometheus_tracker.track(
+                    "update__find_one_and_replace", self._database_name, self._collection_name
+                ):
+                    updated_doc = await collection.find_one_and_replace(
+                        filter=pk_filter,
+                        replacement=doc,
+                        session=self._session,
+                        return_document=ReturnDocument.AFTER,  # Returns the new version
+                    )
+
+            # Branch 2: Partial Update
+            else:
+                update_doc = {field: doc[field] for field in update_fields if field in doc}
+                with self._prometheus_tracker.track(
+                    "update__find_one_and_update", self._database_name, self._collection_name
+                ):
+                    updated_doc = await collection.find_one_and_update(
+                        filter=pk_filter,
+                        update={"$set": update_doc},
+                        session=self._session,
+                        return_document=ReturnDocument.AFTER,  # Returns the new version
+                    )
+
+            # Validation and Reconstruction
+            if updated_doc is None:  # type: ignore
                 raise ValueError(f"Item with primary key(s) {pk_filter} does not exist")
 
-    @_mongo_operation("upsert")
-    async def upsert(self, items: Sequence[T_model], update_fields: Sequence[str] | None = None) -> None:
-        if not items:
-            return
+            # Re-instantiate the model from the raw MongoDB dictionary.
+            new_item = self._item_type.model_validate(updated_doc)  # type: ignore[arg-type]
+            updated_items.append(new_item)
 
+        return updated_items
+
+    @_mongo_operation("upsert")
+    async def upsert(self, items: Sequence[T_model], update_fields: Sequence[str] | None = None) -> List[T_model]:
+        if not items:
+            return []
+
+        upserted_items: List[T_model] = []
         collection = await self.ensure_collection()
+
         for item in items:
             self._ensure_item_type(item)
             pk_filter = self._pk_filter(item)
-            # Full document for new inserts
+
             insert_doc = item.model_dump()
             insert_doc["partition_id"] = self._partition_id
 
-            if update_fields is None:
-                update_fields = list(insert_doc.keys())
+            # If update_fields is None, we update ALL fields (standard upsert behavior).
+            # Otherwise, we only update specific fields, but insert the full doc if it's new.
+            target_fields = update_fields if update_fields is not None else list(insert_doc.keys())
 
-            # Determine what to update when the doc already exists
-            update_doc = {field: insert_doc[field] for field in update_fields if field in insert_doc}
+            # 1. $set: Fields that should be overwritten if the document exists
+            update_subset = {field: insert_doc[field] for field in target_fields if field in insert_doc}
 
-            set_on_insert = {k: v for k, v in insert_doc.items() if k not in update_doc}
-            update_spec: Dict[str, Dict[str, Any]] = {"$setOnInsert": set_on_insert}
-            if update_doc:
-                update_spec["$set"] = update_doc
+            # 2. $setOnInsert: Fields that are only set if we are creating a NEW document
+            # (Everything in the model that isn't in the update_subset)
+            set_on_insert = {k: v for k, v in insert_doc.items() if k not in update_subset}
+
+            update_spec: Dict[str, Dict[str, Any]] = {}
+            if set_on_insert:
+                update_spec["$setOnInsert"] = set_on_insert
+            if update_subset:
+                update_spec["$set"] = update_subset
 
             with self._prometheus_tracker.track(
-                "upsert__update_one",
-                self._database_name,
-                self._collection_name,
+                "upsert__find_one_and_update", self._database_name, self._collection_name
             ):
-                await collection.update_one(
-                    pk_filter,
-                    update_spec,
+                result_doc = await collection.find_one_and_update(
+                    filter=pk_filter,
+                    update=update_spec,
                     upsert=True,
                     session=self._session,
+                    return_document=ReturnDocument.AFTER,
                 )
+
+            # Because upsert=True, result_doc is guaranteed to be not None
+            new_item = self._item_type.model_validate(result_doc)  # type: ignore[arg-type]
+            upserted_items.append(new_item)
+
+        return upserted_items
 
     @_mongo_operation("delete")
     async def delete(self, items: Sequence[T_model]) -> None:

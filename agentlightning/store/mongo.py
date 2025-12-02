@@ -115,10 +115,13 @@ class MongoLightningStore(CollectionBasedLightningStore[MongoLightningCollection
         unfinished_rollout_ids = set(rollout_ids)
 
         while deadline is None or current_time <= deadline:
-            # Query the rollouts that are not finished in a single query
-            rollouts = await self.collections.rollouts.query(
-                filter={"rollout_id": {"within": list(unfinished_rollout_ids)}}
-            )
+            async with self.collections.atomic(
+                mode="r", snapshot=self._read_snapshot, labels=["rollouts"]
+            ) as collections:
+                # Query the rollouts that are not finished in a single query
+                rollouts = await collections.rollouts.query(
+                    filter={"rollout_id": {"within": list(unfinished_rollout_ids)}}
+                )
             for rollout in rollouts.items:
                 if is_finished(rollout):
                     finished_rollouts[rollout.rollout_id] = rollout
@@ -136,15 +139,16 @@ class MongoLightningStore(CollectionBasedLightningStore[MongoLightningCollection
         # Reorder the rollouts to match the input order
         return [finished_rollouts[rollout_id] for rollout_id in rollout_ids if rollout_id in finished_rollouts]
 
-    @tracked("_many_rollouts_to_attempted_rollouts_unlocked")
-    async def _many_rollouts_to_attempted_rollouts_unlocked(
+    @tracked("_unlocked_many_rollouts_to_attempted_rollouts")
+    async def _unlocked_many_rollouts_to_attempted_rollouts(
         self, collections: MongoLightningCollections, rollouts: Sequence[Rollout]
     ) -> List[Union[Rollout, AttemptedRollout]]:
         """Query the latest attempts for the rollouts, and attach them to the rollout objects."""
-        attempts = await collections.attempts.query(
-            filter={"rollout_id": {"within": [rollout.rollout_id for rollout in rollouts]}},
-            sort={"name": "sequence_id", "order": "desc"},
-        )
+        async with collections.atomic(mode="r", snapshot=self._read_snapshot, labels=["attempts"]) as collections:
+            attempts = await collections.attempts.query(
+                filter={"rollout_id": {"within": [rollout.rollout_id for rollout in rollouts]}},
+                sort={"name": "sequence_id", "order": "desc"},
+            )
         latest_attempts: Dict[str, Attempt] = {}
         for attempt in attempts:
             if attempt.rollout_id not in latest_attempts:

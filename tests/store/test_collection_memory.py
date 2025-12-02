@@ -809,7 +809,7 @@ async def test_dict_key_value_does_not_mutate_input_mapping(dict_key_value_data:
 
 @pytest.mark.asyncio()
 async def test_inmemory_atomic_read_only_skips_lock() -> None:
-    collections = memory_module.InMemoryLightningCollections()
+    collections = memory_module.InMemoryLightningCollections(lock_type="asyncio")
 
     class FailingLock:
         async def __aenter__(self) -> None:
@@ -827,7 +827,7 @@ async def test_inmemory_atomic_read_only_skips_lock() -> None:
 
 @pytest.mark.asyncio()
 async def test_inmemory_atomic_snapshot_or_write_acquires_lock() -> None:
-    collections = memory_module.InMemoryLightningCollections()
+    collections = memory_module.InMemoryLightningCollections(lock_type="asyncio")
 
     class RecordingLock:
         def __init__(self) -> None:
