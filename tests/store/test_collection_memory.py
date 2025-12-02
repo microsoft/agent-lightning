@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 import time
 from typing import (
     TYPE_CHECKING,
@@ -27,6 +28,8 @@ import agentlightning.store.collection.memory as memory_module
 from agentlightning.store.collection import DequeBasedQueue, DictBasedKeyValue, ListBasedCollection
 from agentlightning.store.collection.base import Collection
 from agentlightning.store.collection.memory import _item_matches_filters  # pyright: ignore[reportPrivateUsage]
+from agentlightning.store.collection.memory import _LoopAwareAsyncLock  # pyright: ignore[reportPrivateUsage]
+from agentlightning.store.collection.memory import _ThreadSafeAsyncLock  # pyright: ignore[reportPrivateUsage]
 from agentlightning.types import Rollout
 from tests.store.conftest import QueueItem, SampleItem
 
@@ -236,6 +239,69 @@ async def test_list_collection_upsert_updates_selected_fields(sample_collection:
     # Ensure unspecified fields (e.g. name/tags) remain the same as the original document.
     assert fetched.name == original.name
     assert fetched.tags == original.tags
+
+
+@pytest.mark.asyncio()
+async def test_list_collection_update_returns_mutated_items(sample_collection: Collection[SampleItem]) -> None:
+    replacements = [
+        SampleItem(partition="alpha", index=1, name="alpha-new", status="patched"),
+        SampleItem(partition="delta", index=1, name="delta-new", status="patched"),
+    ]
+
+    returned = await sample_collection.update(replacements)
+    assert list(returned) == replacements
+
+    for expected in replacements:
+        fetched = await sample_collection.get(
+            {"partition": {"exact": expected.partition}, "index": {"exact": expected.index}}
+        )
+        assert fetched == expected
+
+    original_beta = await sample_collection.get({"partition": {"exact": "beta"}, "index": {"exact": 1}})
+    assert original_beta is not None
+
+    partial_payload = SampleItem(
+        partition="beta", index=1, name="ignored", status="partial", metadata="updated-metadata"
+    )
+    partial_returned = await sample_collection.update([partial_payload], update_fields=["status", "metadata"])
+    assert len(partial_returned) == 1
+
+    fetched_partial = await sample_collection.get({"partition": {"exact": "beta"}, "index": {"exact": 1}})
+    assert fetched_partial == partial_returned[0]
+    assert fetched_partial is not None
+    assert fetched_partial.status == partial_payload.status
+    assert fetched_partial.metadata == partial_payload.metadata
+    assert fetched_partial.name == original_beta.name
+
+
+@pytest.mark.asyncio()
+async def test_list_collection_upsert_returns_mutated_items(sample_collection: Collection[SampleItem]) -> None:
+    new_item = SampleItem(partition="omega", index=99, name="omega-new", status="queued")
+    inserted = await sample_collection.upsert([new_item])
+    assert list(inserted) == [new_item]
+
+    fetched_new = await sample_collection.get({"partition": {"exact": "omega"}, "index": {"exact": 99}})
+    assert fetched_new == new_item
+
+    original_existing = await sample_collection.get({"partition": {"exact": "beta"}, "index": {"exact": 2}})
+    assert original_existing is not None
+
+    incoming = SampleItem(
+        partition="beta",
+        index=2,
+        name="beta-incoming-new-name",
+        status="processing",
+        tags=["beta", "patched"],
+    )
+    updated = await sample_collection.upsert([incoming], update_fields=["status", "tags"])
+    assert len(updated) == 1
+
+    fetched_existing = await sample_collection.get({"partition": {"exact": "beta"}, "index": {"exact": 2}})
+    assert fetched_existing == updated[0]
+    assert fetched_existing is not None
+    assert fetched_existing.status == incoming.status
+    assert fetched_existing.tags == incoming.tags
+    assert fetched_existing.name == original_existing.name
 
 
 @pytest.mark.asyncio()
@@ -799,6 +865,139 @@ async def test_dict_key_value_pop_returns_default(dict_key_value: DictBasedKeyVa
     assert await dict_key_value.size() == 1
 
 
+def test_thread_safe_async_lock_blocks_threads() -> None:
+    lock = _ThreadSafeAsyncLock()
+    allow_second = threading.Event()
+    second_has_lock = threading.Event()
+    release_first = threading.Event()
+
+    def first() -> None:
+        with lock:
+            allow_second.set()
+            release_first.wait()
+
+    def second() -> None:
+        allow_second.wait()
+        with lock:
+            second_has_lock.set()
+
+    t1 = threading.Thread(target=first)
+    t2 = threading.Thread(target=second)
+    t1.start()
+    t2.start()
+
+    assert allow_second.wait(timeout=1)
+    assert not second_has_lock.wait(0.05)
+
+    release_first.set()
+    t1.join(timeout=1)
+    t2.join(timeout=1)
+
+    assert second_has_lock.is_set()
+
+
+@pytest.mark.asyncio()
+async def test_thread_safe_async_lock_serializes_async_tasks() -> None:
+    lock = _ThreadSafeAsyncLock()
+    first_entered = asyncio.Event()
+    release_first = asyncio.Event()
+    second_acquired = asyncio.Event()
+
+    async def first() -> None:
+        async with lock:
+            first_entered.set()
+            await release_first.wait()
+
+    async def second() -> None:
+        await first_entered.wait()
+        async with lock:
+            second_acquired.set()
+
+    task1 = asyncio.create_task(first())
+    task2 = asyncio.create_task(second())
+
+    await first_entered.wait()
+    await asyncio.sleep(0)
+    assert not second_acquired.is_set()
+
+    release_first.set()
+    await asyncio.gather(task1, task2)
+
+    assert second_acquired.is_set()
+
+
+@pytest.mark.asyncio()
+async def test_loop_aware_async_lock_serializes_tasks() -> None:
+    lock = _LoopAwareAsyncLock()
+    first_entered = asyncio.Event()
+    release_first = asyncio.Event()
+    second_acquired = asyncio.Event()
+
+    async def first() -> None:
+        async with lock:
+            first_entered.set()
+            await release_first.wait()
+
+    async def second() -> None:
+        await first_entered.wait()
+        async with lock:
+            second_acquired.set()
+
+    task1 = asyncio.create_task(first())
+    task2 = asyncio.create_task(second())
+
+    await first_entered.wait()
+    await asyncio.sleep(0)
+    assert not second_acquired.is_set()
+
+    release_first.set()
+    await asyncio.gather(task1, task2)
+
+    assert second_acquired.is_set()
+
+
+@pytest.mark.asyncio()
+async def test_loop_aware_async_lock_reuses_loop_specific_lock() -> None:
+    lock = _LoopAwareAsyncLock()
+    first_lock: asyncio.Lock | None = None
+
+    async with lock as acquired:
+        first_lock = acquired
+        assert first_lock.locked()
+
+    assert first_lock is not None and not first_lock.locked()
+
+    async with lock as acquired_again:
+        assert acquired_again is first_lock
+
+
+@pytest.mark.asyncio()
+async def test_loop_aware_async_lock_distinguishes_event_loops() -> None:
+    lock = _LoopAwareAsyncLock()
+    main_loop_lock: asyncio.Lock | None = None
+
+    async with lock as acquired:
+        main_loop_lock = acquired
+
+    locks_from_threads: List[asyncio.Lock] = []
+
+    def _worker() -> None:
+        async def runner() -> None:
+            async with lock as acquired:
+                locks_from_threads.append(acquired)
+
+        asyncio.run(runner())
+
+    worker = threading.Thread(target=_worker)
+    worker.start()
+    worker.join(timeout=2)
+
+    assert worker.is_alive() is False
+    assert main_loop_lock is not None
+    assert locks_from_threads
+    assert locks_from_threads[0] is not main_loop_lock
+
+
 @pytest.mark.asyncio()
 async def test_dict_key_value_does_not_mutate_input_mapping(dict_key_value_data: Dict[str, int]) -> None:
     key_value = DictBasedKeyValue(dict_key_value_data)
@@ -818,7 +1017,7 @@ async def test_inmemory_atomic_read_only_skips_lock() -> None:
         async def __aexit__(self, *args: Any, **kwargs: Any) -> None:
             return None
 
-    collections._lock = FailingLock()  # type: ignore[attr-defined]
+    collections._lock = {"default": FailingLock()}  # type: ignore[attr-defined]
 
     async with collections.atomic(mode="r", snapshot=False):
         # Should complete without touching the failing lock.
@@ -841,7 +1040,7 @@ async def test_inmemory_atomic_snapshot_or_write_acquires_lock() -> None:
             self.exit_count += 1
 
     lock = RecordingLock()
-    collections._lock = lock  # type: ignore[attr-defined]
+    collections._lock = {"default": lock}  # type: ignore[attr-defined]
 
     async with collections.atomic(mode="rw", snapshot=False):
         assert collections.attempts is not None
