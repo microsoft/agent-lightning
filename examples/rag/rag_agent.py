@@ -76,7 +76,7 @@ class RAGAgent(agl.LitAgent[Dict[str, Any]]):
         llm = cast(agl.LLM, resources["main_llm"])
 
         # set temperature
-        val_resources = {
+        val_resources: agl.NamedResources = {
             "main_llm": agl.LLM(
                 endpoint=llm.endpoint,
                 model=llm.model,

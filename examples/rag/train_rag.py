@@ -3,14 +3,13 @@
 """Train a RAG agent using Agent-lightning.
 
 Usage:
-    python train_rag_agent.py fast        # Fast training for CI/testing
-    python train_rag_agent.py single_gpu  # Optimized for Single GPU (1.5B/7B models)
+    python train_rag.py fast        # Fast training for CI/testing
+    python train_rag.py single_gpu  # Optimized for Single GPU (1.5B/7B models)
 """
 
 from __future__ import annotations
 
 import argparse
-import os
 from copy import deepcopy
 from datetime import datetime
 from typing import Any, Dict, Optional

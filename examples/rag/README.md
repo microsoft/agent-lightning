@@ -47,7 +47,7 @@ python examples/rag/train_rag.py
 | `train_rag.py` | Initiates the GRPO training process |
 | `rag_run_dev.py` | Development run test |
 | `utils.py` | Scoring utilities for exact match, F1 score, and response parsing |
-| `wiki_retriever_mcp/` | Setup scripts and MCP server (`wiki_retriever_install.sh`, `wiki_retriever_mcp.py`) for Wikipedia retrieval |
+| `wiki_retriever_mcp/` | MCP server (`wiki_retriever_mcp.py`) for Wikipedia retrieval |
 
 ## How to Prepare the Retrieval Corpus Yourself
 
