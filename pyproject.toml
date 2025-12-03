@@ -192,9 +192,9 @@ sql = [
   "nltk",
 ]
 rag = [
-  "fastmcp==2.13.1",
-  "faiss-cpu==1.11.0",
-  "sentence-transformers==4.1.0",
+  "fastmcp>=2.13.1",
+  "faiss-cpu>=1.11.0",
+  "sentence-transformers>=4.1.0",
 ]
 crewai = [
   # https://github.com/crewAIInc/crewAI/issues/3959
