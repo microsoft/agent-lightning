@@ -72,7 +72,7 @@ class LitAgentRunner(Runner[T_task]):
         tracer: Tracer,
         max_rollouts: Optional[int] = None,
         poll_interval: float = 5.0,
-        heartbeat_interval: float = 10.0,
+        heartbeat_interval: float = 0.0,
         interval_jitter: float = 0.5,
         heartbeat_launch_mode: Literal["asyncio", "thread"] = "asyncio",
     ) -> None:
