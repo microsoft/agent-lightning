@@ -853,6 +853,9 @@ class _ThreadSafeAsyncLock:
     async def __aenter__(self):
         # We run the blocking .acquire() in a thread pool so we don't block the event loop
         loop = asyncio.get_running_loop()
+        # NOTE: If this fails to acquire, it will block the executor thread that
+        # is running it. That thread will not auto-terminate when asyncio is cancelled.
+        # Therefore, zombie thread is possible if the lock is held for a long time.
         await loop.run_in_executor(None, self._lock.acquire)
         return self
 

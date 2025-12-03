@@ -64,7 +64,9 @@ def main(argv: Iterable[str] | None = None) -> int:
     setup_logging(args.log_level)
 
     if args.backend == "memory":
-        store = InMemoryLightningStore(prometheus=args.prometheus)
+        store = InMemoryLightningStore(
+            prometheus=args.prometheus, thread_safe=True
+        )  # Using thread_safe store for server
     elif args.backend == "mongo":
         from agentlightning.store.mongo import MongoLightningStore
 
