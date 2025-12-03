@@ -1,31 +1,56 @@
 # RAG Agent Example
 
-This example demonstrates training a Retrieval-Augmented Generation (RAG) agent using Agent-Lightning with Wikipedia retrieval capabilities. The agent answers multi-hop questions from the MuSiQue dataset by retrieving and reasoning over Wikipedia passages. **It's tested and compatible with Agent-lightning v0.1.x**.
+This example demonstrates training a Retrieval-Augmented Generation (RAG) agent using Agent-Lightning with retrieval capabilities. The agent answers multi-hop questions from a tiny MuSiQue dataset by retrieving and reasoning over Wikipedia passages.
 
 ## Overview
 
-This example originally runs on a single node with four GPUs, each requiring at least 40GB of memory.
+This example can run on a single GPU for demonstration purposes.
 
-1. Prepare the RAG dataset in the wiki_retriever_mcp folder. Wiki chunks (`nq_list.pkl`) and Faiss index (`nq_hnsw_faiss_n32e40.index`) are required. (Full wiki dump files are huge, additional information will be provided later)
-2. Prepare the training data in the `data` folder. Download from [here](https://drive.google.com/drive/folders/1hEqOY4EbplUB5ew-8UPFhV_5QU2j7WCN?usp=drive_link). `musique_train.parquet` and `musique_dev_128.parquet` are required.
-3. Set up the environment for wiki retriever MCP: `bash wiki_retriever_install.sh`. This will install the required packages and set up the environment for the wiki retriever MCP.
-4. Start the wiki retriever MCP: `python wiki_retriever_mcp.py`. This will start the wiki retriever MCP server.
-5. Start Ray: `bash ../../scripts/restart_ray.sh`. To use Wandb, you need to set the WANDB_API_KEY environment variable before starting Ray.
-6. Run the agent: `python rag_agent.py`. This automatically launches 12 agent workers by default.
-7. In another terminal, launch the training server: `bash train.sh`.
+1. Set up the environment following the documentation. It is recommended to activate the virtual environment with `source .venv/bin/activate`.
+2. Prepare the tiny dataset.
+```
+pip install gdown
+
+# tiny training dataset
+cd examples/rag
+gdown --fuzzy "https://drive.google.com/file/d/1Pq4Ag8zVoN8gUtLu0LcBfY35Dm5zL0hq/view?usp=drive_link" \
+    -O dataset_tiny.parquet
+
+# chunks_candidate_tiny.pkl
+gdown --fuzzy "https://drive.google.com/file/d/1REXCpRLbeZu1KfWWKhIGEQe_WNHUOBkS/view?usp=drive_link" \
+    -O chunks_candidate_tiny.pkl
+
+# index_hnsw_faiss_n32e40_tiny.index
+gdown --fuzzy "https://drive.google.com/file/d/1f6P-h_8KSRhe5pqDHWbRQWvUhTygfZ-c/view?usp=drive_link" \
+    -O index_hnsw_faiss_n32e40_tiny.index
+```
+3. Start the MCP server
+Open a terminal and run:
+```
+cd examples/rag
+python wiki_retriever_mcp.py
+```
+
+4. Start training
+Open another terminal and run:
+```
+python examples/rag/train_rag.py
+```
+
 
 ## Included Files
 
 | File/Directory | Description |
 |----------------|-------------|
-| `rag_agent.py` | Entry point for running the Agent-Lightning RAG training pipeline |
-| `train.sh` | Starts the GRPO training server that updates the agent |
-| `utils.py` | Scoring utilities for exact match, F1, and response parsing |
-| `wiki_retriever_mcp/` | Setup scripts and MCP server (`wiki_retriever_install.sh`, `wiki_retriever_mcp.py`) for Wikipedia retrieval |
+| `rag_agent.py` | AgentLightning agent example using the OpenAI Agents SDK |
+| `train_rag.py` | Initiates the GRPO training process |
+| `rag_run_dev.py` | Development run test |
+| `utils.py` | Scoring utilities for exact match, F1 score, and response parsing |
+| `wiki_retriever_mcp/` | MCP server (`wiki_retriever_mcp.py`) for Wikipedia retrieval |
 
-## Preparing the Retrieval Corpus
+## How to Prepare the Retrieval Corpus Yourself
 
-To enable semantic retrieval with this mcp server, we need two files:
+To enable semantic retrieval with this MCP server, you need two files:
 
 1. **FAISS index file** (`.index`)
 2. **Chunk list file** (`.pkl`)
@@ -34,22 +59,22 @@ These two files work together: the FAISS index stores the vector embeddings and 
 
 ---
 
-### Step 1. Collecting Text Chunks
+### Step 1: Collecting Text Chunks
 
-You first need a collection of text passages (chunks). For example, you can download a Wikipedia-based dataset such as `wiki18_100w.zip` in the [FlashRAG_dataset](https://huggingface.co/datasets/FlashRAG) or use other pre-split corpora.
+First, you need a collection of text passages (chunks). For example, you can download a Wikipedia-based dataset such as `wiki18_100w.zip` from the [FlashRAG_dataset](https://huggingface.co/datasets/FlashRAG) or use other pre-split corpora.
 
 ---
 
-### Step 2. Creating the FAISS Index (`nq_hnsw_faiss_n32e40.index`)
+### Step 2: Creating the FAISS Index (`nq_hnsw_faiss_n32e40.index`)
 
 - Use a sentence embedding model (e.g., `BAAI/bge-large-en-v1.5`) to encode each chunk into a vector.
 - Build a FAISS index from these vectors.
 - In this example, we use an **HNSW index** (Hierarchical Navigable Small World graph), which supports efficient approximate nearest-neighbor search.
-- The index only stores embeddings and integer IDs (no raw text).
+- The index stores only embeddings and integer IDs (no raw text).
 
 ---
 
-### Step 3. Creating the Chunk List (`nq_list.pkl`)
+### Step 3: Creating the Chunk List (`nq_list.pkl`)
 
 - Store the raw text chunks in a Python list.
 - Save this list with `pickle`.
@@ -80,8 +105,9 @@ You first need a collection of text passages (chunks). For example, you can down
 
 ---
 
-### Step 4. Code Example: Building Index and Chunk List
-Warning: The following example only demonstrates a small-scale workflow. In practice, if the dataset is large, you should encode the text in batches and incrementally add them to the index.
+### Step 4: Code Example - Building Index and Chunk List
+
+**Warning:** The following example demonstrates a small-scale workflow only. In practice, for large datasets, you should encode the text in batches and incrementally add them to the index.
 
 ```python
 import faiss
@@ -117,8 +143,3 @@ with open("nq_list.pkl", "wb") as f:
 
 print("Index and chunk list saved successfully.")
 ```
-
-
-## Evaluation
-
-Results are coming soon.
