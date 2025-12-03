@@ -78,14 +78,14 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
         "val_before_train": True,
         "critic_warmup": 0,
         "logger": ["console", "wandb"],
-        "project_name": "AgentLightning-SearchR1",
-        "experiment_name": "searchr1_minibatch256_runner32_trajectory",
+        "project_name": "AgentLightning-SearchR1-Base",
+        "experiment_name": "searchr1_minibatch256_runner32_trajectory_synced",
         "nnodes": 1,
         "test_freq": 10,
         "save_freq":10,
         "total_epochs": 15,
         "total_training_steps": 300,
-        "default_local_dir": "/mnt/teamdrive/search_r1/searchr1_checkpoints/searchr1_minibatch256_runner32_trajectory/"
+        "default_local_dir": "/mnt/teamdrive/search_r1/searchr1_checkpoints/Llama-3.2-3B/searchr1_minibatch256_runner32_trajectory_synced/"
     },
 }
 

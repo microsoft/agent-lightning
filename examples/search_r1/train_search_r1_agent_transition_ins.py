@@ -65,7 +65,7 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
             "fsdp_config": {"param_offload": True},
         },
         "model": {
-            "path": "/home/aiscuser/Llama-3.2-3B",
+            "path": "meta-llama/Llama-3.2-3B-Instruct",
             "use_remove_padding": True,
             "enable_gradient_checkpointing": True,
         },
@@ -75,14 +75,14 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
         "val_before_train": True,
         "critic_warmup": 0,
         "logger": ["console", "wandb"],
-        "project_name": "AgentLightning-SearchR1-Base",
+        "project_name": "AgentLightning-SearchR1",
         "experiment_name": "searchr1_minibatch256_runner32_transition_synced",
         "nnodes": 1,
         "test_freq": 10,
         "save_freq":10,
         "total_epochs": 15,
         "total_training_steps": 300,
-        "default_local_dir": "/mnt/teamdrive/search_r1/searchr1_checkpoints/Llama-3.2-3B/searchr1_minibatch256_runner32_transition_synced/"
+        "default_local_dir": "/mnt/teamdrive/search_r1/searchr1_checkpoints/Llama-3.2-3B-Instruct/searchr1_minibatch256_runner32_transition_synced/"
     },
 }
 
@@ -133,7 +133,7 @@ def config_train_llama() -> Dict[str, Any]:
     config = deepcopy(RL_TRAINING_CONFIG)
     config["actor_rollout_ref"]["rollout"]["multi_turn"]["format"] = "llama3_json"
     config["actor_rollout_ref"]["rollout"]["engine_kwargs"]["vllm"]["tool_call_parser"] = "llama3_json"
-    config["actor_rollout_ref"]["model"]["path"] = "/home/aiscuser/Llama-3.2-3B"
+    config["actor_rollout_ref"]["model"]["path"] = "meta-llama/Llama-3.2-3B-Instruct"
     return config
 
 
