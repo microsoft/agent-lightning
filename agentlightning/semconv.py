@@ -89,6 +89,12 @@ class LightningSpanAttributes(Enum):
     OBJECT_JSON = "agentlightning.object.json"
     """Attribute name for object serialized value (JSON) in object spans."""
 
+    OPERATION_INPUT = "agentlightning.operation.input"
+    """Attribute name for operation input in operation spans."""
+
+    OPERATION_OUTPUT = "agentlightning.operation.output"
+    """Attribute name for operation output in operation spans."""
+
 
 class RewardAttributes(Enum):
     """Multi-dimensional reward attributes will look like:

@@ -7,14 +7,16 @@ import functools
 import inspect
 import json
 import logging
-from typing import Any, Callable, Dict, Optional, TypeVar, Tuple, Union, cast
+from typing import Any, Callable, Dict, Optional, Tuple, TypeVar, Union, cast
 
 from opentelemetry import trace
 from opentelemetry.trace import Status, StatusCode
 
+from agentlightning.semconv import LightningSpanAttributes
 from agentlightning.utils.otel import get_tracer
 
 _FnType = TypeVar("_FnType", bound=Callable[..., Any])
+
 logger = logging.getLogger(__name__)
 
 
@@ -102,10 +104,10 @@ class OperationContext:
                 bound = sig.bind(*args, **kwargs)
                 bound.apply_defaults()
                 for k, v in bound.arguments.items():
-                    span.set_attribute(f"input.{k}", _safe_json_dump(v))
+                    span.set_attribute(f"{LightningSpanAttributes.OPERATION_INPUT.value}.{k}", _safe_json_dump(v))
             except Exception:
-                span.set_attribute("input.args", _safe_json_dump(args))
-                span.set_attribute("input.kwargs", _safe_json_dump(kwargs))
+                span.set_attribute(f"{LightningSpanAttributes.OPERATION_INPUT.value}.args", _safe_json_dump(args))
+                span.set_attribute(f"{LightningSpanAttributes.OPERATION_INPUT.value}.kwargs", _safe_json_dump(kwargs))
 
         if asyncio.iscoroutinefunction(fn) or inspect.iscoroutinefunction(fn):
 
@@ -124,12 +126,12 @@ class OperationContext:
                     _record_auto_inputs(span, args, kwargs)
                     try:
                         result = await fn(*args, **kwargs)
-                        span.set_attribute("output", _safe_json_dump(result))
+                        span.set_attribute(LightningSpanAttributes.OPERATION_OUTPUT.value, _safe_json_dump(result))
                         return result
                     except Exception as e:
                         span.record_exception(e)
                         span.set_status(Status(StatusCode.ERROR, str(e)))
-                        raise e
+                        raise
 
             return cast(_FnType, async_wrapper)
 
@@ -146,12 +148,12 @@ class OperationContext:
                     _record_auto_inputs(span, args, kwargs)
                     try:
                         result = fn(*args, **kwargs)
-                        span.set_attribute("output", _safe_json_dump(result))
+                        span.set_attribute(LightningSpanAttributes.OPERATION_OUTPUT.value, _safe_json_dump(result))
                         return result
                     except Exception as e:
                         span.record_exception(e)
                         span.set_status(Status(StatusCode.ERROR, str(e)))
-                        raise e
+                        raise
 
             return cast(_FnType, sync_wrapper)
 
