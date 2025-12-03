@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, cast
+from typing import Any, Dict, List, cast
 
+import pandas as pd
 from agents import Agent, Runner
 from agents.extensions.models.litellm_model import LitellmModel
 from agents.mcp import MCPServerSse
@@ -13,8 +14,7 @@ from metric_utils import compute_scores
 
 import agentlightning as agl
 
-agl.setup_logging()
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("rag_agent")
 
 agent_prompt = """You are an assistant who answers questions using Wikipedia retriever. Answer the question using only the retrieved passages. Verify your answer directly against the text.
 
@@ -29,11 +29,12 @@ Repeat as needed. When done, wrap your final, concise answer in <answer> tags.""
 
 
 class RAGAgent(agl.LitAgent[Dict[str, Any]]):
-    def __init__(self, trained_agents: str | None = None) -> None:
-        super().__init__(trained_agents=trained_agents)
+    """RAGAgent is an agent that relies on a MCP-based retriever to answer questions."""
+
+    def __init__(self) -> None:
+        super().__init__()
         self.mcp_server_url = "http://127.0.0.1:8099/sse"
 
-    # (task, resources, rollout)
     async def training_rollout_async(
         self, task: Dict[str, Any], resources: agl.NamedResources, rollout: agl.Rollout
     ) -> float | None:
@@ -63,16 +64,18 @@ class RAGAgent(agl.LitAgent[Dict[str, Any]]):
             reward = compute_scores(answer, str(task["answer"]))
 
             logger.info(
-                "question:{} answer: {} ground_truth: {} reward: {}".format(
-                    task["question"], answer, task["answer"], reward
-                )
+                "Question: %s\nAnswer: %s\nGround truth: %s\nReward: %s",
+                task["question"],
+                answer,
+                task["answer"],
+                reward,
             )
             return reward
 
-    # (task, resources, rollout)
     async def validation_rollout_async(
         self, task: Dict[str, Any], resources: agl.NamedResources, rollout: agl.Rollout
     ) -> float | None:
+        """Validation rollout will share the same logic as the training rollout."""
         llm = cast(agl.LLM, resources["main_llm"])
 
         # set temperature
@@ -88,8 +91,33 @@ class RAGAgent(agl.LitAgent[Dict[str, Any]]):
         return await self.training_rollout_async(task, val_resources, rollout)
 
 
+def debug():
+    """Debug the RAGAgent."""
+
+    agl.setup_logging("DEBUG", apply_to=[logger.name])
+
+    # 1. loading dataset
+    dataset_path = "dataset_tiny.parquet"
+    df: pd.DataFrame = pd.read_parquet(dataset_path)  # type: ignore
+    data: List[Dict[str, Any]] = df.to_dict(orient="records")  # type: ignore
+    # NOTE: The following dummy data can also be used if you don't have the dataset.
+    # data: List[Dict[str, Any]] = [{"question": "What is the capital of France?", "answer": "Paris"}]
+
+    # 2. configuring resources (LLM)
+    # Note: You need to start a local service compatible with the OpenAI API (such as vLLM)
+    # For example: python -m vllm.entrypoints.openai.api_server --model Qwen/Qwen2.5-1.5B-Instruct --port 8000
+    resources: dict[str, agl.ResourceUnion] = {
+        "main_llm": agl.LLM(
+            endpoint="http://localhost:8000/v1",  # Replace with your actual vLLM address
+            model="Qwen/Qwen2.5-1.5B-Instruct",  # Replace with your actual loaded model name
+            sampling_parameters={"temperature": 0.0},
+        )
+    }
+
+    # 3. run agent
+    trainer = agl.Trainer(initial_resources=resources)
+    trainer.dev(RAGAgent(), train_dataset=data)  # type: ignore
+
+
 if __name__ == "__main__":
-
-    trainer = agl.Trainer(n_workers=2)
-
-    print("Agent initialized. Please use 'agl.Trainer(...).fit(...)' with a dataset to start training.")
+    debug()
