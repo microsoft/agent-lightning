@@ -496,12 +496,12 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
 
     @tracked("enqueue_many_rollouts")
     @healthcheck_before
-    async def enqueue_many_rollouts(self, inputs: Sequence[EnqueueRolloutRequest]) -> Sequence[Rollout]:
+    async def enqueue_many_rollouts(self, rollouts: Sequence[EnqueueRolloutRequest]) -> Sequence[Rollout]:
         """Adds many rollouts in a batch."""
         prepared_rollouts: List[Rollout] = []
         latest_resources = await self._get_latest_resources()
 
-        for request in inputs:
+        for request in rollouts:
             resources_id = request.resources_id
             if resources_id is None:
                 resources_id = latest_resources.resources_id if latest_resources is not None else None

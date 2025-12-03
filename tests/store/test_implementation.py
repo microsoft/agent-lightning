@@ -31,6 +31,7 @@ from agentlightning.types import (
     LLM,
     Attempt,
     AttemptedRollout,
+    EnqueueRolloutRequest,
     Event,
     Link,
     OtelResource,
@@ -673,6 +674,49 @@ async def test_requeue_mechanism(store_fixture: LightningStore) -> None:
     assert latest_attempt is not None
     assert latest_attempt.status == "preparing"
     assert latest_attempt.sequence_id == 2
+
+
+@pytest.mark.asyncio
+async def test_enqueue_many_rollouts_preserves_order(store_fixture: LightningStore) -> None:
+    """enqueue_many_rollouts should enqueue tasks in the provided order with matching metadata."""
+
+    requests = [
+        EnqueueRolloutRequest(input={"idx": 0}, metadata={"batch": "a"}),
+        EnqueueRolloutRequest(input={"idx": 1}, mode="train"),
+        EnqueueRolloutRequest(input={"idx": 2}, config=RolloutConfig(timeout_seconds=3.5)),
+    ]
+
+    rollouts = await store_fixture.enqueue_many_rollouts(requests)
+
+    assert [rollout.input["idx"] for rollout in rollouts] == [0, 1, 2]
+    assert all(rollout.status == "queuing" for rollout in rollouts)
+    assert rollouts[0].metadata == {"batch": "a"}
+    assert rollouts[1].mode == "train"
+    assert rollouts[2].config.timeout_seconds == 3.5
+
+    for expected_idx in range(3):
+        dequeued = await store_fixture.dequeue_rollout()
+        assert dequeued is not None
+        assert dequeued.input["idx"] == expected_idx
+
+
+@pytest.mark.asyncio
+async def test_dequeue_many_rollouts_with_limit(store_fixture: LightningStore) -> None:
+    """dequeue_many_rollouts should honor limit and propagate worker IDs to attempts."""
+
+    requests = [EnqueueRolloutRequest(input={"idx": idx}) for idx in range(4)]
+    await store_fixture.enqueue_many_rollouts(requests)
+
+    first_batch = await store_fixture.dequeue_many_rollouts(limit=2, worker_id="bulk-worker")
+    assert len(first_batch) == 2
+    assert [attempt.input["idx"] for attempt in first_batch] == [0, 1]
+    assert all(attempt.attempt.worker_id == "bulk-worker" for attempt in first_batch)
+
+    second_batch = await store_fixture.dequeue_many_rollouts(limit=5, worker_id="bulk-worker")
+    assert len(second_batch) == 2
+    assert [attempt.input["idx"] for attempt in second_batch] == [2, 3]
+
+    assert await store_fixture.dequeue_many_rollouts(limit=1) == []
 
 
 @pytest.mark.asyncio

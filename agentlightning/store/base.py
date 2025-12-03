@@ -231,7 +231,7 @@ class LightningStore:
         """
         raise NotImplementedError()
 
-    async def enqueue_many_rollouts(self, inputs: Sequence[EnqueueRolloutRequest]) -> Sequence[Rollout]:
+    async def enqueue_many_rollouts(self, rollouts: Sequence[EnqueueRolloutRequest]) -> Sequence[Rollout]:
         """Persist multiple rollouts in `queuing` state.
 
         The implementation can delegate to [`enqueue_rollout()`][agentlightning.LightningStore.enqueue_rollout]
@@ -239,11 +239,11 @@ class LightningStore:
         more efficient bulk enqueue semantics.
 
         Args:
-            inputs: Rollout submission payloads mirroring [`enqueue_rollout()`][agentlightning.LightningStore.enqueue_rollout]'s
+            rollouts: Rollout submission payloads mirroring [`enqueue_rollout()`][agentlightning.LightningStore.enqueue_rollout]'s
                 parameters. Each entry requires `input` and can optionally include other fields.
 
         Returns:
-            Rollouts enqueued in the same order as `inputs`.
+            Rollouts enqueued in the same order as `rollouts`.
         """
         raise NotImplementedError()
 

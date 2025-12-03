@@ -10,6 +10,7 @@ from agentlightning.types import (
     Attempt,
     AttemptedRollout,
     AttemptStatus,
+    EnqueueRolloutRequest,
     NamedResources,
     ResourcesUpdate,
     Rollout,
@@ -58,9 +59,22 @@ class DummyLightningStore(LightningStore):
         self.calls.append(("enqueue_rollout", (input, mode, resources_id, config, metadata), {}))
         return self.return_values["enqueue_rollout"]
 
+    async def enqueue_many_rollouts(self, inputs: Sequence[EnqueueRolloutRequest]) -> Sequence[Rollout]:
+        self.calls.append(("enqueue_many_rollouts", (inputs,), {}))
+        return self.return_values["enqueue_many_rollouts"]
+
     async def dequeue_rollout(self, worker_id: Optional[str] = None) -> Optional[AttemptedRollout]:
         self.calls.append(("dequeue_rollout", (worker_id,), {}))
         return self.return_values["dequeue_rollout"]
+
+    async def dequeue_many_rollouts(
+        self,
+        *,
+        limit: int = 1,
+        worker_id: Optional[str] = None,
+    ) -> Sequence[AttemptedRollout]:
+        self.calls.append(("dequeue_many_rollouts", (), {"limit": limit, "worker_id": worker_id}))
+        return self.return_values["dequeue_many_rollouts"]
 
     async def start_attempt(self, rollout_id: str, worker_id: Optional[str] = None) -> AttemptedRollout:
         self.calls.append(("start_attempt", (rollout_id, worker_id), {}))

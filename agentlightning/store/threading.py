@@ -11,6 +11,7 @@ from agentlightning.types import (
     Attempt,
     AttemptedRollout,
     AttemptStatus,
+    EnqueueRolloutRequest,
     NamedResources,
     ResourcesUpdate,
     Rollout,
@@ -82,9 +83,22 @@ class LightningStoreThreaded(LightningStore):
         with self._lock:
             return await self.store.enqueue_rollout(input, mode, resources_id, config, metadata)
 
+    async def enqueue_many_rollouts(self, inputs: Sequence[EnqueueRolloutRequest]) -> Sequence[Rollout]:
+        with self._lock:
+            return await self.store.enqueue_many_rollouts(inputs)
+
     async def dequeue_rollout(self, worker_id: Optional[str] = None) -> Optional[AttemptedRollout]:
         with self._lock:
             return await self.store.dequeue_rollout(worker_id=worker_id)
+
+    async def dequeue_many_rollouts(
+        self,
+        *,
+        limit: int = 1,
+        worker_id: Optional[str] = None,
+    ) -> Sequence[AttemptedRollout]:
+        with self._lock:
+            return await self.store.dequeue_many_rollouts(limit=limit, worker_id=worker_id)
 
     async def start_attempt(self, rollout_id: str, worker_id: Optional[str] = None) -> AttemptedRollout:
         with self._lock:
