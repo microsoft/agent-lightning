@@ -29,6 +29,11 @@ AGL_EXCEPTION = "agentlightning.exception"
 Used by the exception emitter to record exception details.
 """
 
+AGL_OPERATION = "agentlightning.operation"
+"""Agent-lightning's standard span name for functions.
+Wrap function or code-blocks as operations.
+"""
+
 AGL_VIRTUAL = "agentlightning.virtual"
 """Agent-lightning's standard span name for virtual operations.
 
