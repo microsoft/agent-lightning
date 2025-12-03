@@ -15,7 +15,7 @@ from captioners.debugging import (
 )
 from envs import make_env_manager
 
-from agentlightning import LLM, LitAgent, NamedResources, Rollout, configure_logger, emit_message, emit_reward
+from agentlightning import LLM, LitAgent, NamedResources, Rollout, configure_logger, emit_object, emit_reward
 
 logger = configure_logger(name=__name__, level=logging.ERROR)
 
@@ -98,13 +98,6 @@ class SimulationAgent(LitAgent):
             obs, pure_env_obs, infos = self.env.reset()
             episode_reward, done = 0.0, False
 
-            pattern_type_list = ["call", "reward"]
-            if self.config.log_pure_env_obs:
-                pattern_type_list.insert(1, "message")
-            if format_penalty != 0.0:
-                pattern_type_list.append("reward")
-            emit_message("_".join(pattern_type_list))
-
             while not done:
                 try:
                     instructed_obs = self._get_instructed_obs(obs)
@@ -122,7 +115,7 @@ class SimulationAgent(LitAgent):
                     break
 
                 if self.config.log_pure_env_obs:
-                    emit_message(pure_env_obs)
+                    emit_object(pure_env_obs)
 
                 obs, pure_env_obs, executed_action, is_valid, step_reward, terminated, truncated, info = self.env.step(
                     output, use_reasoning=self.config.captioner.type == "cot"
