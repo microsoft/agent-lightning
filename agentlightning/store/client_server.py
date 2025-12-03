@@ -81,9 +81,14 @@ class RolloutRequest(BaseModel):
     resources_id: Optional[str] = None
     config: Optional[RolloutConfig] = None
     metadata: Optional[Dict[str, Any]] = None
+    worker_id: Optional[str] = None
 
 
 class DequeueRolloutRequest(BaseModel):
+    worker_id: Optional[str] = None
+
+
+class StartAttemptRequest(BaseModel):
     worker_id: Optional[str] = None
 
 
@@ -547,6 +552,7 @@ class LightningStoreServer(LightningStore):
                 resources_id=request.resources_id,
                 config=request.config,
                 metadata=request.metadata,
+                worker_id=request.worker_id,
             )
 
         @api.get(API_AGL_PREFIX + "/rollouts", response_model=PaginatedResult[Union[AttemptedRollout, Rollout]])
@@ -615,8 +621,11 @@ class LightningStoreServer(LightningStore):
             )
 
         @api.post(API_AGL_PREFIX + "/rollouts/{rollout_id}/attempts", status_code=201, response_model=AttemptedRollout)
-        async def start_attempt(rollout_id: str):  # pyright: ignore[reportUnusedFunction]
-            return await self.start_attempt(rollout_id)
+        async def start_attempt(  # pyright: ignore[reportUnusedFunction]
+            rollout_id: str, request: StartAttemptRequest | None = Body(None)
+        ):
+            worker_id = request.worker_id if request else None
+            return await self.start_attempt(rollout_id, worker_id=worker_id)
 
         @api.post(API_AGL_PREFIX + "/rollouts/{rollout_id}/attempts/search", response_model=PaginatedResult[Attempt])
         async def search_attempts(  # pyright: ignore[reportUnusedFunction]
@@ -1007,6 +1016,7 @@ class LightningStoreServer(LightningStore):
         resources_id: str | None = None,
         config: RolloutConfig | None = None,
         metadata: Dict[str, Any] | None = None,
+        worker_id: Optional[str] = None,
     ) -> AttemptedRollout:
         return await self._call_store_method(
             "start_rollout",
@@ -1015,6 +1025,7 @@ class LightningStoreServer(LightningStore):
             resources_id,
             config,
             metadata,
+            worker_id,
         )
 
     async def enqueue_rollout(
@@ -1037,8 +1048,8 @@ class LightningStoreServer(LightningStore):
     async def dequeue_rollout(self, worker_id: Optional[str] = None) -> Optional[AttemptedRollout]:
         return await self._call_store_method("dequeue_rollout", worker_id)
 
-    async def start_attempt(self, rollout_id: str) -> AttemptedRollout:
-        return await self._call_store_method("start_attempt", rollout_id)
+    async def start_attempt(self, rollout_id: str, worker_id: Optional[str] = None) -> AttemptedRollout:
+        return await self._call_store_method("start_attempt", rollout_id, worker_id)
 
     async def query_rollouts(
         self,
@@ -1512,6 +1523,7 @@ class LightningStoreClient(LightningStore):
         resources_id: str | None = None,
         config: RolloutConfig | None = None,
         metadata: Dict[str, Any] | None = None,
+        worker_id: Optional[str] = None,
     ) -> AttemptedRollout:
         data = await self._request_json(
             "post",
@@ -1522,6 +1534,7 @@ class LightningStoreClient(LightningStore):
                 resources_id=resources_id,
                 config=config,
                 metadata=metadata,
+                worker_id=worker_id,
             ).model_dump(exclude_none=False),
         )
         return AttemptedRollout.model_validate(data)
@@ -1578,10 +1591,12 @@ class LightningStoreClient(LightningStore):
             # Else ignore the exception because the server is not ready yet
             return None
 
-    async def start_attempt(self, rollout_id: str) -> AttemptedRollout:
+    async def start_attempt(self, rollout_id: str, worker_id: Optional[str] = None) -> AttemptedRollout:
+        payload = {"worker_id": worker_id} if worker_id is not None else None
         data = await self._request_json(
             "post",
             f"/rollouts/{rollout_id}/attempts",
+            json=payload,
         )
         return AttemptedRollout.model_validate(data)
 

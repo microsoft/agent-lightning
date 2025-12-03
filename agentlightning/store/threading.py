@@ -59,9 +59,17 @@ class LightningStoreThreaded(LightningStore):
         resources_id: str | None = None,
         config: RolloutConfig | None = None,
         metadata: Dict[str, Any] | None = None,
+        worker_id: Optional[str] = None,
     ) -> AttemptedRollout:
         with self._lock:
-            return await self.store.start_rollout(input, mode, resources_id, config, metadata)
+            return await self.store.start_rollout(
+                input,
+                mode,
+                resources_id,
+                config,
+                metadata,
+                worker_id,
+            )
 
     async def enqueue_rollout(
         self,
@@ -78,9 +86,9 @@ class LightningStoreThreaded(LightningStore):
         with self._lock:
             return await self.store.dequeue_rollout(worker_id=worker_id)
 
-    async def start_attempt(self, rollout_id: str) -> AttemptedRollout:
+    async def start_attempt(self, rollout_id: str, worker_id: Optional[str] = None) -> AttemptedRollout:
         with self._lock:
-            return await self.store.start_attempt(rollout_id)
+            return await self.store.start_attempt(rollout_id, worker_id)
 
     async def query_rollouts(
         self,

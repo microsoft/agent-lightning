@@ -719,6 +719,49 @@ async def test_update_and_query_workers(store_fixture: LightningStore) -> None:
 
 
 @pytest.mark.asyncio
+async def test_start_rollout_assigns_worker(store_fixture: LightningStore) -> None:
+    """start_rollout should immediately associate attempts with the provided worker."""
+    attempted = await store_fixture.start_rollout(input={"task": "direct"}, worker_id="worker-direct")
+
+    assert attempted.attempt.worker_id == "worker-direct"
+    worker = await store_fixture.get_worker_by_id("worker-direct")
+    assert worker is not None
+    assert worker.status == "busy"
+    assert worker.current_rollout_id == attempted.rollout_id
+    assert worker.current_attempt_id == attempted.attempt.attempt_id
+
+
+@pytest.mark.asyncio
+async def test_dequeue_rollout_assigns_worker(store_fixture: LightningStore) -> None:
+    """dequeue_rollout should stamp attempts and worker telemetry with worker_id."""
+    await store_fixture.enqueue_rollout(input={"task": "queued"})
+    dequeued = await store_fixture.dequeue_rollout(worker_id="worker-dequeue")
+
+    assert dequeued is not None
+    assert dequeued.attempt.worker_id == "worker-dequeue"
+    worker = await store_fixture.get_worker_by_id("worker-dequeue")
+    assert worker is not None
+    assert worker.status == "busy"
+    assert worker.current_rollout_id == dequeued.rollout_id
+    assert worker.current_attempt_id == dequeued.attempt.attempt_id
+
+
+@pytest.mark.asyncio
+async def test_start_attempt_assigns_worker(store_fixture: LightningStore) -> None:
+    """Manual retries should also update worker state when worker_id is provided."""
+    initial = await store_fixture.start_rollout(input={"task": "retry-seed"})
+    retry = await store_fixture.start_attempt(initial.rollout_id, worker_id="worker-retry")
+
+    assert retry.attempt.sequence_id == 2
+    assert retry.attempt.worker_id == "worker-retry"
+    worker = await store_fixture.get_worker_by_id("worker-retry")
+    assert worker is not None
+    assert worker.status == "busy"
+    assert worker.current_rollout_id == retry.rollout_id
+    assert worker.current_attempt_id == retry.attempt.attempt_id
+
+
+@pytest.mark.asyncio
 async def test_query_workers_supports_filters(store_fixture: LightningStore) -> None:
     """Worker queries should support filtering, sorting, and pagination."""
     await store_fixture.update_worker("alpha-worker", heartbeat_stats={"cpu": 0.2})

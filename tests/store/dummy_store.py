@@ -42,8 +42,9 @@ class DummyLightningStore(LightningStore):
         resources_id: Optional[str] = None,
         config: Optional[RolloutConfig] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        worker_id: Optional[str] = None,
     ) -> AttemptedRollout:
-        self.calls.append(("start_rollout", (input, mode, resources_id, config, metadata), {}))
+        self.calls.append(("start_rollout", (input, mode, resources_id, config, metadata, worker_id), {}))
         return self.return_values["start_rollout"]
 
     async def enqueue_rollout(
@@ -61,8 +62,8 @@ class DummyLightningStore(LightningStore):
         self.calls.append(("dequeue_rollout", (worker_id,), {}))
         return self.return_values["dequeue_rollout"]
 
-    async def start_attempt(self, rollout_id: str) -> AttemptedRollout:
-        self.calls.append(("start_attempt", (rollout_id,), {}))
+    async def start_attempt(self, rollout_id: str, worker_id: Optional[str] = None) -> AttemptedRollout:
+        self.calls.append(("start_attempt", (rollout_id, worker_id), {}))
         return self.return_values["start_attempt"]
 
     async def query_rollouts(self, *args: Any, **kwargs: Any) -> List[Rollout]:

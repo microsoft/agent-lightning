@@ -160,6 +160,38 @@ async def test_server_client_statistics_match(server_client: Tuple[LightningStor
 
 
 @pytest.mark.asyncio
+async def test_client_start_rollout_propagates_worker_id(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient],
+) -> None:
+    server, client = server_client
+    attempt = await client.start_rollout(input={"source": "remote-worker"}, worker_id="client-worker-start")
+
+    assert attempt.attempt.worker_id == "client-worker-start"
+    worker = await server.get_worker_by_id("client-worker-start")
+    assert worker is not None
+    assert worker.status == "busy"
+    assert worker.current_rollout_id == attempt.rollout_id
+    assert worker.current_attempt_id == attempt.attempt.attempt_id
+
+
+@pytest.mark.asyncio
+async def test_client_start_attempt_propagates_worker_id(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient],
+) -> None:
+    server, client = server_client
+    initial = await client.start_rollout(input={"source": "retry-worker"})
+    retry = await client.start_attempt(initial.rollout_id, worker_id="client-worker-retry")
+
+    assert retry.attempt.sequence_id == 2
+    assert retry.attempt.worker_id == "client-worker-retry"
+    worker = await server.get_worker_by_id("client-worker-retry")
+    assert worker is not None
+    assert worker.status == "busy"
+    assert worker.current_rollout_id == retry.rollout_id
+    assert worker.current_attempt_id == retry.attempt.attempt_id
+
+
+@pytest.mark.asyncio
 async def test_add_resources_via_server(server_client: Tuple[LightningStoreServer, LightningStoreClient]) -> None:
     """Test that add_resources works correctly via server."""
     server, _ = server_client

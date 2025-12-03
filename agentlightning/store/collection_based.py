@@ -336,6 +336,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         resources_id: str | None = None,
         config: RolloutConfig | None = None,
         metadata: Dict[str, Any] | None = None,
+        worker_id: str | None = None,
     ) -> AttemptedRollout:
         """Notify the store that I'm about to run a rollout.
 
@@ -370,6 +371,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
             sequence_id=1,
             start_time=current_time,
             status="preparing",
+            worker_id=worker_id,
         )
 
         async def _insert_rollout_and_attempt(collections: T_collections) -> None:
@@ -386,6 +388,9 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         # Notify the subclass that the rollout status has changed.
         all_fields = list(rollout.__class__.model_fields.keys())
         await self._post_update_rollout([(rollout, all_fields)])
+
+        if worker_id is not None:
+            await self._sync_workers_with_attempts([attempt])
 
         # Return a rollout with attempt attached.
         return AttemptedRollout(**rollout.model_dump(), attempt=attempt)
@@ -446,7 +451,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
     @tracked("_post_dequeue_rollout")
     @_with_collections_execute(labels=["rollouts", "attempts"])
     async def _post_dequeue_rollout(
-        self, collections: T_collections, rollout_id: str
+        self, collections: T_collections, rollout_id: str, worker_id: Optional[str]
     ) -> Optional[Tuple[AttemptedRollout, Sequence[str]]]:
         """Post-dequeue logic for the rollout. Returns the rollout and the update fields (for post-update logic)."""
         rollout = await collections.rollouts.get({"rollout_id": {"exact": rollout_id}})
@@ -471,6 +476,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
                 sequence_id=sequence_id,
                 start_time=current_time,
                 status="preparing",
+                worker_id=worker_id,
             )
 
             await collections.attempts.insert([attempt])
@@ -514,10 +520,12 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
                 break
             rollout_id = dequeued[0]
 
-            post_dequeue_result = await self._post_dequeue_rollout(rollout_id)
+            post_dequeue_result = await self._post_dequeue_rollout(rollout_id, worker_id)
             if post_dequeue_result is not None:
                 attempted_rollout, update_fields = post_dequeue_result
                 await self._post_update_rollout([(attempted_rollout, update_fields)])
+                if worker_id is not None:
+                    await self._sync_workers_with_attempts([attempted_rollout.attempt])
                 return attempted_rollout
 
             # else continue the loop
@@ -527,7 +535,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
 
     @tracked("start_attempt")
     @healthcheck_before
-    async def start_attempt(self, rollout_id: str) -> AttemptedRollout:
+    async def start_attempt(self, rollout_id: str, worker_id: Optional[str] = None) -> AttemptedRollout:
         """Creates a new attempt for a given rollout ID and return the attempt details.
 
         See [`LightningStore.start_attempt()`][agentlightning.LightningStore.start_attempt] for semantics.
@@ -556,6 +564,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
                 sequence_id=sequence_id,
                 start_time=current_time,
                 status="preparing",
+                worker_id=worker_id,
             )
 
             # Add attempt to storage
@@ -571,6 +580,9 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
             _create_attempt, mode="rw", snapshot=self._read_snapshot, commit=True, labels=["rollouts", "attempts"]
         )
         await self._post_update_rollout([(rollout, update_fields)])
+
+        if worker_id is not None:
+            await self._sync_workers_with_attempts([attempt])
 
         # Return the rollout with the new attempt attached.
         return AttemptedRollout(**rollout.model_dump(), attempt=attempt)
