@@ -604,9 +604,9 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
             # else continue the loop
 
         # No valid rollouts found
-        if worker_id is not None:
-            # Mark the current worker as idle
-            await self._dequeue_mark_worker_idle(worker_id)
+        # if worker_id is not None:
+        #     # Mark the current worker as idle
+        #     await self._dequeue_mark_worker_idle(worker_id)
         return None
 
     @tracked("dequeue_many_rollouts")
