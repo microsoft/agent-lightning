@@ -16,7 +16,6 @@ import shutil
 import tempfile
 import time
 from typing import Any, Dict, List, Literal, Optional, cast
-
 import pandas as pd
 import termcolor
 from langchain.chat_models import init_chat_model
@@ -34,14 +33,13 @@ agl.setup_logging(apply_to=[__name__])
 
 logger = logging.getLogger(__name__)
 
-
 WRITE_QUERY_PROMPT = ChatPromptTemplate(
     [
         (
             "system",
             """
 You are an agent designed to interact with a SQL database.
-     Given an input question, create a syntactically correct {dialect} query to run to help find the answer.
+	 Given an input question, create a syntactically correct {dialect} query to run to help find the answer.
 
 Pay attention to use only the column names that you can see in the schema description.
 Be careful to not query for columns that do not exist.
@@ -64,7 +62,6 @@ GENERATED QUERY
         ("user", "Question: {input}"),
     ]
 )
-
 
 CHECK_QUERY_PROMPT = ChatPromptTemplate(
     [
@@ -116,7 +113,6 @@ Execution result:
         ),
     ]
 )
-
 
 REWRITE_QUERY_PROMPT = ChatPromptTemplate(
     [

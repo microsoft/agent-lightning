@@ -50,9 +50,9 @@ from autogen_agentchat.teams import RoundRobinGroupChat
 from autogen_ext.models.openai import OpenAIChatCompletionClient
 from autogen_ext.tools.mcp import McpWorkbench, StdioServerParams
 from fastapi import FastAPI
-from langchain import hub
-from langchain.agents import AgentExecutor, create_react_agent, tool
+from langchain.agents import create_agent
 from langchain.chat_models import init_chat_model
+from langchain.tools import tool
 from langchain_community.agent_toolkits import SQLDatabaseToolkit
 from langchain_community.utilities import SQLDatabase
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
@@ -61,6 +61,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START, MessagesState, StateGraph
 from langgraph.prebuilt import ToolNode
+from langsmith import Client as LangsmithClient
 from openai import AsyncOpenAI, OpenAI
 from opentelemetry.sdk.trace import ReadableSpan
 from pydantic import BaseModel, Field
@@ -85,7 +86,6 @@ if USE_OPENAI:
     assert (
         REAL_OPENAI_BASE_URL is not None and REAL_OPENAI_API_KEY is not None
     ), "OPENAI_BASE_URL and OPENAI_API_KEY must be set when USE_OPENAI is true"
-
 
 _langchain_callback_handler = None
 
@@ -133,7 +133,7 @@ class MockOpenAICompatibleServer:
             # Flatten messages to a string for comparison
             if not msgs:
                 return ""
-            return "\n".join(f"{m.get('role','')}:{m.get('content','')}" for m in msgs)
+            return "\n".join(f"{m.get('role', '')}:{m.get('content', '')}" for m in msgs)
 
         req_msgs = request_dict.get("messages", [])
         req_tools = request_dict.get("tools", "")
@@ -301,12 +301,14 @@ def agent_langchain_tooluse() -> None:
         disable_streaming=True,
     )
     tools = [multiply]
-    agent = create_react_agent(llm, tools, hub.pull("hwchase17/react"))
-    agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=False)
-    result = agent_executor.invoke(
-        {"input": "what is 42 * 12"},
-        {"callbacks": [_langchain_callback_handler]} if _langchain_callback_handler else None,
+    hub = LangsmithClient()
+    prompt_tmp: PromptTemplate = hub.pull_prompt("hwchase17/react")
+
+    prompt = prompt_tmp.format_prompt(
+        tools=[multiply.description], tool_names=multiply.name, input="what is 42 * 12", agent_scratchpad=""
     )
+    agent = create_agent(llm, tools)
+    result = agent.invoke(input=prompt)
     assert "504" in result["output"]
 
 
@@ -526,7 +528,6 @@ async def openai_agents_sdk_mcp_tool_use() -> None:
 
 
 async def openai_agents_sdk_handoff_tool_output_type_and_reward() -> None:
-
     class MathOutput(BaseModel):
         answer: int
 
@@ -918,4 +919,4 @@ def _debug_with_agentops():
 if __name__ == "__main__":
     # run_with_agentops_tracer()
     run_with_http_tracer()
-    # _debug_with_agentops()
+# _debug_with_agentops()
