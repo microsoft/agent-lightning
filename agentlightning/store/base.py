@@ -174,6 +174,7 @@ class LightningStore:
         resources_id: str | None = None,
         config: RolloutConfig | None = None,
         metadata: Dict[str, Any] | None = None,
+        worker_id: str | None = None,
     ) -> AttemptedRollout:
         """Register a rollout and immediately create its first attempt.
 
@@ -196,6 +197,7 @@ class LightningStore:
             resources_id: Concrete resource snapshot to execute against; defaults to the latest stored snapshot.
             config: Rollout retry/timeout policy. Should default to a fresh [`RolloutConfig`][agentlightning.RolloutConfig].
             metadata: Free-form metadata persisted verbatim with the rollout.
+            worker_id: Optional worker identifier to associate the new attempt with.
 
         Returns:
             The fully-populated [`AttemptedRollout`][agentlightning.AttemptedRollout] including
@@ -273,6 +275,9 @@ class LightningStore:
         * Optionally refresh the caller's [`Worker`][agentlightning.Worker] telemetry
           (e.g., `last_dequeue_time`) when `worker_id` is provided.
 
+        Args:
+            worker_id: Optional worker identifier to associate the claimed attempt with.
+
         Returns:
             The next attempt to execute, or `None` when no eligible rollouts are queued.
 
@@ -304,7 +309,7 @@ class LightningStore:
         """
         raise NotImplementedError()
 
-    async def start_attempt(self, rollout_id: str) -> AttemptedRollout:
+    async def start_attempt(self, rollout_id: str, worker_id: Optional[str] = None) -> AttemptedRollout:
         """Create a manual retry attempt for an existing rollout.
 
         This is typically invoked by runners that wish to retry outside of the
@@ -315,6 +320,7 @@ class LightningStore:
 
         Args:
             rollout_id: Unique identifier of the rollout receiving a new attempt.
+            worker_id: Optional worker identifier to associate the new attempt with.
 
         Returns:
             The rollout paired with its newly-created attempt.
