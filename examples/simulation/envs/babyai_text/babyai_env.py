@@ -3,8 +3,7 @@ from typing import Optional
 
 import gymnasium as gym
 import minigrid
-
-from envs.babyai_text import BabyAITextCleanLangWrapper, BabyAILLMAgentsWrapper
+from envs.babyai_text import BabyAILLMAgentsWrapper, BabyAITextCleanLangWrapper
 
 minigrid.register_minigrid_envs()
 

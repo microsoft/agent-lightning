@@ -1,7 +1,8 @@
 from captioners.debugging import print_step
 
+
 class EnvironmentManager:
-    
+
     def __init__(self, env_name, config, env_fn, prompt_builder):
         self.config = config
         self.env = env_fn()  # Initialize the environment
@@ -45,7 +46,7 @@ class EnvironmentManager:
         module = __import__(module_name, fromlist=["get_instruction_prompt"])
         get_prompt = getattr(module, "get_instruction_prompt")
         return get_prompt(**kwargs)
-        
+
     def get_single_obs_template(self):
         if self.env_name == "scienceworld":
             from envs.scienceworld import get_single_obs_template
@@ -78,14 +79,14 @@ class EnvironmentManager:
         # print_step(reasoning, executed_action, env_obs, reward, terminated)
 
         self.image = env_obs.get("image", None)
-            
+
         self.prompt_builder.update_step_count()
         self.prompt_builder.update_reasoning(reasoning)
         self.prompt_builder.update_action(executed_action)
         self.prompt_builder.update_observation(env_obs)
         if hasattr(self.env, "available_actions_hint"):
             self.prompt_builder.update_admissible_actions(self.env.available_actions_hint)
-            
+
         info["metrics"] = metrics
 
         if self.obs_type == "chat":
@@ -94,7 +95,7 @@ class EnvironmentManager:
             obs = self.prompt_builder.get_single_prompt()
 
         pure_env_obs = self.prompt_builder.get_pure_env_obs(env_obs)
-        
+
         return obs, pure_env_obs, executed_action, is_valid, reward, terminated, truncated, info
 
     def reset(self):
@@ -113,11 +114,11 @@ class EnvironmentManager:
             self.prompt_builder.update_single_obs_template(template_wo_his, template)
         else:
             raise ValueError(f"Unsupported obs_type: {self.obs_type}")
-        
+
         self.prompt_builder.update_observation(env_obs)
         if hasattr(self.env, "available_actions"):
             self.prompt_builder.update_admissible_actions(self.env.available_actions_hint)
-            
+
         if self.obs_type == "chat":
             obs = self.prompt_builder.get_chat_prompt()
         elif self.obs_type == "single":

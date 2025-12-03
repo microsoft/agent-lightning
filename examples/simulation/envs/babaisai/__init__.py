@@ -12,9 +12,11 @@ ACTIONS = {
     "left": "take one step to the left",
 }
 
+
 def get_available_action_description():
     available_action_desc = ",\n".join(f"{action}: {description}" for action, description in ACTIONS.items())
     return available_action_desc
+
 
 def get_instruction_prompt():
     available_action_desc = get_available_action_description()

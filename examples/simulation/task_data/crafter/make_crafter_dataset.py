@@ -1,11 +1,10 @@
-import pandas as pd
 import random
+
+import pandas as pd
 
 N = 100
 
-supported_tasks = [
-    "default"
-]
+supported_tasks = ["default"]
 
 gym_env_ids = [random.choice(supported_tasks) for _ in range(N)]
 

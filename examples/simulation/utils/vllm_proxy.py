@@ -1,7 +1,9 @@
-import time
-import httpx
 import subprocess
+import time
 from contextlib import contextmanager
+
+import httpx
+
 
 @contextmanager
 def vllm_server(

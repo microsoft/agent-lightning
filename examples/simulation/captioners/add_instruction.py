@@ -78,7 +78,7 @@ def _get_instruction(type: str, env_name: str = None, config_type: int = 0):
         raise ValueError(f"Unknown instruction type: {type}")
 
 
-def add_chat_instruction(prompt, type: str, sep: str="\n\n", env_name: str=None, config_type: int = 0):
+def add_chat_instruction(prompt, type: str, sep: str = "\n\n", env_name: str = None, config_type: int = 0):
     """
     Add the selected instruction text to the last message in a chat prompt (list version).
 
@@ -100,11 +100,11 @@ def add_chat_instruction(prompt, type: str, sep: str="\n\n", env_name: str=None,
         new_prompt = copy.deepcopy(prompt)
         instruction = _get_instruction(type, env_name, config_type)
         new_prompt[-1].content += sep + instruction
-    
+
         return new_prompt
 
 
-def add_single_instruction(prompt, type: str, sep: str="\n\n", env_name: str = None, config_type: int = 0):
+def add_single_instruction(prompt, type: str, sep: str = "\n\n", env_name: str = None, config_type: int = 0):
     """
     Add the selected instruction text to a single prompt (string or list version).
 
@@ -130,10 +130,12 @@ def add_single_instruction(prompt, type: str, sep: str="\n\n", env_name: str = N
     else:
         raise TypeError("Prompt must be a string or a list of strings")
 
+
 def add_chat_tips(prompt, tips):
     new_prompt = copy.deepcopy(prompt)
     new_prompt[-1].content += f"\n\n<tip> {tips}\n</tip>\n\n"
     return new_prompt
+
 
 def add_chat_all_tips(prompt, tip_list):
     new_prompt = copy.deepcopy(prompt)
@@ -148,6 +150,7 @@ def add_chat_all_tips(prompt, tip_list):
                 item.content += f"\n\n<tip> {tip}\n</tip>\n\n"
 
     return new_prompt
+
 
 def add_single_tips(prompt, tips):
     if isinstance(prompt, str):

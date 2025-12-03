@@ -1,14 +1,14 @@
-import re
 import json
-from abc import ABC
 import logging
+import re
+from abc import ABC
 from typing import Tuple
 
-from captioners.extract_actions import extract_reasoning, extract_pure_action
-
+from captioners.extract_actions import extract_pure_action, extract_reasoning
 from webshop.web_agent_site.envs import WebAgentTextEnv
 
 logger = logging.getLogger("agent_frame")
+
 
 class WebShopEnv(ABC):
     def __init__(
@@ -24,7 +24,7 @@ class WebShopEnv(ABC):
             "text": textworld_obsv,
             "image": None,
         }
-        
+
     def extract_action(self, llm_output, use_reasoning):
         if use_reasoning:
             reasoning, reasoning_valid = extract_reasoning(llm_output)
@@ -37,18 +37,18 @@ class WebShopEnv(ABC):
 
         action_valid = action_valid and action in self.available_actions
         is_valid = action_valid and (not use_reasoning or reasoning_valid)
-        
+
         metrics = {
             "behavior/valid_action_ratio": is_valid * 1.0,
         }
-        
+
         return reasoning, action, is_valid, metrics
-    
+
     def step(self, action: str, is_valid):
         observation, reward, done, info = self.env.step(action=action)
 
         return observation, self.state
-    
+
     def reset(self):
         self.env.reset(self.session_id)
         obs = self.env.observation

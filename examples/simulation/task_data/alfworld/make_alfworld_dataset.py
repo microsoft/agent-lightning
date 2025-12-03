@@ -1,9 +1,9 @@
-import os
 import json
+import os
 import random
 
-from tqdm import tqdm
 import pandas as pd
+from tqdm import tqdm
 
 # Set ALFWORLD data path
 os.environ["ALFWORLD_DATA"] = "examples/simulation/envs/alfworld/alfworld_source"
@@ -24,25 +24,26 @@ task_types = [
     "pick_two_obj_and_place",
 ]
 
+
 def collect_valid_game_files(data_path, split_name, sample_size=None):
     game_files = []
 
     print(f"\nProcessing {split_name} split...")
     for root, dirs, files in tqdm(list(os.walk(data_path, topdown=False))):
-        if 'traj_data.json' in files:
-            json_path = os.path.join(root, 'traj_data.json')
+        if "traj_data.json" in files:
+            json_path = os.path.join(root, "traj_data.json")
             game_file_path = os.path.join(root, "game.tw-pddl")
 
-            if 'movable' in root or 'Sliced' in root:
+            if "movable" in root or "Sliced" in root:
                 print("Movable & slice trajs not supported %s" % (root))
                 continue
 
             # Get goal description
-            with open(json_path, 'r') as f:
+            with open(json_path, "r") as f:
                 traj_data = json.load(f)
 
             # Check for any task_type constraints
-            if not traj_data['task_type'] in task_types:
+            if not traj_data["task_type"] in task_types:
                 print("Skipping task type")
                 continue
 
@@ -51,15 +52,15 @@ def collect_valid_game_files(data_path, split_name, sample_size=None):
                 print(f"Skipping missing game! {game_file_path}")
                 continue
 
-            with open(game_file_path, 'r') as f:
+            with open(game_file_path, "r") as f:
                 gamedata = json.load(f)
 
             # Check if previously checked if solvable
-            if 'solvable' not in gamedata:
+            if "solvable" not in gamedata:
                 print(f"-> Skipping missing solvable key! {game_file_path}")
                 continue
 
-            if not gamedata['solvable']:
+            if not gamedata["solvable"]:
                 print("Skipping known %s, unsolvable game!" % game_file_path)
                 continue
 
@@ -75,6 +76,7 @@ def collect_valid_game_files(data_path, split_name, sample_size=None):
     parquet_path = os.path.join(output_dir, f"{split_name}.parquet")
     df.to_parquet(parquet_path, engine="pyarrow", index=False)
     print(f"✅ Saved {split_name}.parquet with {len(df)} entries at {parquet_path}")
+
 
 # Process both splits
 collect_valid_game_files(train_data_path, "train")

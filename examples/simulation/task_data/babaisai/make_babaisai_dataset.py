@@ -1,5 +1,6 @@
-import pandas as pd
 import random
+
+import pandas as pd
 
 # Define all supported tasks
 supported_tasks = [
@@ -42,21 +43,23 @@ supported_tasks = [
     "env/two_room-break_stop-make_win-distr_obj",
     "env/two_room-make_you",
     "env/two_room-make_you-make_win",
-    "env/two_room-make_wall_win"
+    "env/two_room-make_wall_win",
 ]
+
 
 # Function to create balanced dataset
 def make_balanced_dataset(total_size, tasks):
     if total_size % len(tasks) != 0:
         raise ValueError(f"total_size={total_size} not divisible by number of tasks={len(tasks)}")
-    
+
     per_task = total_size // len(tasks)
     gym_env_ids = []
     for task in tasks:
         gym_env_ids.extend([task] * per_task)
-    
+
     random.shuffle(gym_env_ids)
     return pd.DataFrame(gym_env_ids, columns=["gym_env_id"])
+
 
 # Save train dataset
 train_data_size = 400  # Must be divisible by len(supported_tasks), which is 40

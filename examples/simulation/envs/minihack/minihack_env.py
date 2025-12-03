@@ -2,10 +2,9 @@ from typing import Optional
 
 import gym
 import minihack  # NOQA: F401
-
+from envs.minihack.llm_agents_wrapper import MiniHackLLMAgentsWrapper
 from envs.nle import AutoMore, NLELanguageWrapper
 from envs.wrappers import GymV21CompatibilityV0, NLETimeLimit
-from envs.minihack.llm_agents_wrapper import MiniHackLLMAgentsWrapper
 
 MINIHACK_ENVS = []
 for env_spec in gym.envs.registry.all():

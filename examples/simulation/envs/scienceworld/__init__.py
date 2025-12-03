@@ -1,13 +1,26 @@
-from envs.scienceworld.examples import example_prompts
 import re
 
+from envs.scienceworld.examples import example_prompts
+
+
 def get_available_action_description():
-    all_possible_actions = ['open OBJ', 'go OBJ', 'focus on OBJ', 'move OBJ to OBJ', 'connect OBJ to OBJ', 'pour OBJ in OBJ', 'mix OBJ', 'pickup OBJ']
-    available_action_desc = ', '.join(all_possible_actions)
+    all_possible_actions = [
+        "open OBJ",
+        "go OBJ",
+        "focus on OBJ",
+        "move OBJ to OBJ",
+        "connect OBJ to OBJ",
+        "pour OBJ in OBJ",
+        "mix OBJ",
+        "pickup OBJ",
+    ]
+    available_action_desc = ", ".join(all_possible_actions)
     return available_action_desc
+
 
 def get_instruction_prompt(env, mission):
     import json
+
     with open("examples/simulation/task_data/scienceworld/split_sets/taskname2id.json", "r") as f:
         taskname2id = json.load(f)
     available_action_desc = get_available_action_description()
@@ -22,8 +35,8 @@ def get_instruction_prompt(env, mission):
     pattern = r"focus on\s+(\b\w+\b(\s+\b\w+\b)*)"
     matches = re.findall(pattern, env.env.taskdescription())
     to_focus = [match[0].replace("the ", " ").strip() for match in matches]
-    focus_items = ', '.join(to_focus)
-    
+    focus_items = ", ".join(to_focus)
+
     instruction_prompt = f"""
 You have done a few science experiments successfully and below are the action history of your experiments with similar tasks.
 Here is 2 examples:
@@ -37,7 +50,7 @@ All your possible action formats are:
 {available_action_desc}
 If you enter an unfamiliar room for the first time, you can use the action 'look around' to discover the objects in it.
 
-Items in your inventory: 
+Items in your inventory:
 {inventory}
 
 Important! You can only use FOCUS actions on these items: {focus_items}.
@@ -46,7 +59,8 @@ Also, please FOCUS more directly, try not to focus on the container.
 """.strip()
 
     return instruction_prompt
-    
+
+
 def get_single_obs_template(mission):
     template_wo_his = f"""
 You are an expert agent operating in the ScienceWorld environment, which is a text-based virtual environment centered around accomplishing tasks from the elementary science curriculum.

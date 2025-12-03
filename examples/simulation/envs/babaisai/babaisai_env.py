@@ -2,9 +2,7 @@ from pathlib import Path
 from typing import Optional
 
 from baba import make
-
-from envs.babaisai import BabaIsAIWrapper
-from envs.babaisai import BabaIsAILLMAgentsWrapper
+from envs.babaisai import BabaIsAILLMAgentsWrapper, BabaIsAIWrapper
 from envs.wrappers import GymV21CompatibilityV0
 
 

@@ -9,6 +9,6 @@ def gather_chats(obs):
             role = "user"
         else:
             role = "assistant"
-        chat_list.append(f"{role}: {content}" )
+        chat_list.append(f"{role}: {content}")
     text = " ".join(chat_list)
     return text

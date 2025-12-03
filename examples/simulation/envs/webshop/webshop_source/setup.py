@@ -1,10 +1,10 @@
-from setuptools import setup, find_packages
+from setuptools import find_packages, setup
 
 setup(
-    name='webshop',
-    version='0.1',
-    packages=find_packages('src'),
-    package_dir={'': 'src'},
+    name="webshop",
+    version="0.1",
+    packages=find_packages("src"),
+    package_dir={"": "src"},
     install_requires=[
         "beautifulsoup4==4.11.1",
         "cleantext==1.1.4",
@@ -23,10 +23,10 @@ setup(
         "thefuzz==0.20.0",
         "werkzeug==2.3.8",
     ],
-    author='Your Name',
-    author_email='youremail@example.com',
-    description='webshop pip package version',
-    license='MIT',
-    keywords='sample setuptools development',
-    url='https://github.com/yourusername/mypackage'
+    author="Your Name",
+    author_email="youremail@example.com",
+    description="webshop pip package version",
+    license="MIT",
+    keywords="sample setuptools development",
+    url="https://github.com/yourusername/mypackage",
 )

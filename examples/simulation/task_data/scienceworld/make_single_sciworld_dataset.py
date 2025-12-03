@@ -1,22 +1,42 @@
-import os
 import json
+import os
+
 import pandas as pd
 from scienceworld import ScienceWorldEnv
 
 total_task_list = [
-    'boil', 'change-the-state-of-matter-of', 'chemistry-mix',
-    'chemistry-mix-paint-secondary-color', 'chemistry-mix-paint-tertiary-color',
-    'find-animal', 'find-living-thing', 'find-non-living-thing', 'find-plant',
-    'freeze', 'grow-fruit', 'grow-plant', 'identify-life-stages-1',
-    'identify-life-stages-2', 'inclined-plane-determine-angle',
-    'inclined-plane-friction-named-surfaces', 'inclined-plane-friction-unnamed-surfaces',
-    'lifespan-longest-lived', 'lifespan-longest-lived-then-shortest-lived',
-    'lifespan-shortest-lived', 'measure-melting-point-known-substance',
-    'measure-melting-point-unknown-substance', 'melt',
-    'mendelian-genetics-known-plant', 'mendelian-genetics-unknown-plant',
-    'power-component', 'power-component-renewable-vs-nonrenewable-energy',
-    'test-conductivity', 'test-conductivity-of-unknown-substances', 'use-thermometer'
+    "boil",
+    "change-the-state-of-matter-of",
+    "chemistry-mix",
+    "chemistry-mix-paint-secondary-color",
+    "chemistry-mix-paint-tertiary-color",
+    "find-animal",
+    "find-living-thing",
+    "find-non-living-thing",
+    "find-plant",
+    "freeze",
+    "grow-fruit",
+    "grow-plant",
+    "identify-life-stages-1",
+    "identify-life-stages-2",
+    "inclined-plane-determine-angle",
+    "inclined-plane-friction-named-surfaces",
+    "inclined-plane-friction-unnamed-surfaces",
+    "lifespan-longest-lived",
+    "lifespan-longest-lived-then-shortest-lived",
+    "lifespan-shortest-lived",
+    "measure-melting-point-known-substance",
+    "measure-melting-point-unknown-substance",
+    "melt",
+    "mendelian-genetics-known-plant",
+    "mendelian-genetics-unknown-plant",
+    "power-component",
+    "power-component-renewable-vs-nonrenewable-energy",
+    "test-conductivity",
+    "test-conductivity-of-unknown-substances",
+    "use-thermometer",
 ]
+
 
 def build_simplification_str(args):
     simplifications = list()
@@ -32,29 +52,32 @@ def build_simplification_str(args):
         simplifications.append("noElectricalAction")
     return args["simplifications_preset"] or ",".join(simplifications)
 
+
 def parse_args():
     from types import SimpleNamespace
+
     args = SimpleNamespace(
         jar_path=None,
-        task_num=0, # 7
+        task_num=0,  # 7
         var_num=0,
         env_step_limit=100,
         num_episodes=5,
         seed=None,
-        output_path_prefix='save-histories',
+        output_path_prefix="save-histories",
         max_episode_per_file=1000,
-        simplifications_preset='easy',
+        simplifications_preset="easy",
         teleport=False,
         self_watering_plants=False,
         open_containers=True,
         open_doors=True,
-        no_electrical=False
+        no_electrical=False,
     )
     params = vars(args)
     return params
 
+
 env_args = parse_args()
-env = ScienceWorldEnv("", serverPath=env_args['jar_path'], envStepLimit=env_args['env_step_limit'])
+env = ScienceWorldEnv("", serverPath=env_args["jar_path"], envStepLimit=env_args["env_step_limit"])
 results = []
 
 for taskidx, task_name in enumerate(total_task_list):
@@ -67,23 +90,16 @@ for taskidx, task_name in enumerate(total_task_list):
         print(f"⚠️ Failed to load {task_name}: {e}")
         continue
 
-    task_entry = {
-        "task": task_name,
-        "count": len(train_list),
-        "variations": []
-    }
+    task_entry = {"task": task_name, "count": len(train_list), "variations": []}
 
     for var in train_list:
         try:
             env.load(task_name, var, build_simplification_str(env_args))
             obs, info = env.reset()
-            task_desp = info['taskDesc']
+            task_desp = info["taskDesc"]
             print(f"[Variation {var}] {task_desp}")
 
-            task_entry["variations"].append({
-                "variation": var,
-                "description": task_desp
-            })
+            task_entry["variations"].append({"variation": var, "description": task_desp})
 
         except Exception as e:
             print(f"  ⚠️ Variation {var} failed: {e}")

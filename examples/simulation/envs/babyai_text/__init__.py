@@ -10,13 +10,17 @@ ACTIONS = {
     "toggle": "manipulate the object one step in front of you",
 }
 
+
 def get_available_action_description():
     available_action_desc = ",\n".join(f"{action}: {description}" for action, description in ACTIONS.items())
     return available_action_desc
 
-def get_instruction_prompt(mission="BabyAI-MixedTrainLocal-v0",):
+
+def get_instruction_prompt(
+    mission="BabyAI-MixedTrainLocal-v0",
+):
     available_action_desc = get_available_action_description()
-    
+
     instruction_prompt = f"""
 You are an agent playing a simple navigation game. Your goal is to {mission}. The following are the possible actions you can take in the game, followed by a short description of each action:
 

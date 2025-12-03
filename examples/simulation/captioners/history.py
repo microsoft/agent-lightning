@@ -1,7 +1,8 @@
 from collections import deque
-from typing import List, Optional, Any
+from typing import Any, List, Optional
 
-from autogen_core.models import SystemMessage, UserMessage, AssistantMessage
+from autogen_core.models import AssistantMessage, SystemMessage, UserMessage
+
 
 class HistoryPromptBuilder:
     """Builds a prompt with a history of observations, actions, and reasoning.
@@ -35,7 +36,7 @@ class HistoryPromptBuilder:
 
     def update_instruction_prompt(self, instruction: str):
         self.instruction = instruction
-        
+
     def update_single_obs_template(self, single_obs_template_wo_his: str, single_obs_template: str):
         self.single_obs_template_wo_his = single_obs_template_wo_his
         self.single_obs_template = single_obs_template
@@ -82,7 +83,7 @@ class HistoryPromptBuilder:
             List[Message]: A list of messages constructed from the event history.
         """
         if self.max_history != -1:
-            events = self._events[-(self.max_history * 2 + 1):]
+            events = self._events[-(self.max_history * 2 + 1) :]
         else:
             events = self._events
 
@@ -116,7 +117,7 @@ class HistoryPromptBuilder:
 
     def get_single_prompt(self):
         if self.max_history != -1:
-            events = self._events[-(self.max_history * 2 + 1):]
+            events = self._events[-(self.max_history * 2 + 1) :]
         else:
             events = self._events
 
@@ -124,9 +125,7 @@ class HistoryPromptBuilder:
 
         if len(events) == 1:
             template = self.single_obs_template_wo_his
-            kwargs = {
-                "current_observation": current_obs
-            }
+            kwargs = {"current_observation": current_obs}
             if "{admissible_actions}" in template:
                 kwargs["admissible_actions"] = self.admissible_actions
             single_prompt = template.format(**kwargs)
@@ -135,15 +134,17 @@ class HistoryPromptBuilder:
             history = ""
             obs_count = 0
             for idx, event in enumerate(events):
-                if events[idx]["type"] == "observation" and idx != len(events)-1:
-                    next_event = events[idx+1]
+                if events[idx]["type"] == "observation" and idx != len(events) - 1:
+                    next_event = events[idx + 1]
                     history += f"[Observation {max(self.step_count-self.max_history+obs_count, 1)}: '{event['text']}', "
-                    history += f"Action {max(self.step_count-self.max_history+obs_count, 1)}: '{next_event['action']}']\n "
+                    history += (
+                        f"Action {max(self.step_count-self.max_history+obs_count, 1)}: '{next_event['action']}']\n "
+                    )
                     obs_count += 1
-                
+
             kwargs = {
-                "step_count": self.step_count-1,
-                "history_length": min(self.step_count-1, self.max_history),
+                "step_count": self.step_count - 1,
+                "history_length": min(self.step_count - 1, self.max_history),
                 "history": history,
                 "current_step": self.step_count,
                 "current_observation": current_obs,

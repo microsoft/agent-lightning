@@ -46,10 +46,12 @@ def get_available_actions(env):
         available_actions[action_key] = ACTIONS[action_key]
     return available_actions
 
+
 def get_available_action_description(env):
     available_actions = get_available_actions(env)
     available_action_desc = ",\n".join(f"{action}: {description}" for action, description in available_actions.items())
     return available_action_desc
+
 
 def get_instruction_prompt(env, mission):
     available_action_desc = get_available_action_description(env)

@@ -1,5 +1,6 @@
 import subprocess
 
+
 def run_cmd(cmd):
     """Execute a shell command and print its output"""
     print(f"👉 Running: {cmd}")
@@ -10,13 +11,9 @@ def run_cmd(cmd):
         print(result.stderr)
     return result
 
+
 def kill_process_on_port(port):
-    result = subprocess.run(
-        f"sudo lsof -t -i :{port}", 
-        shell=True, 
-        capture_output=True, 
-        text=True
-    )
+    result = subprocess.run(f"sudo lsof -t -i :{port}", shell=True, capture_output=True, text=True)
     pids = result.stdout.strip().split("\n")
     for pid in pids:
         if pid:
