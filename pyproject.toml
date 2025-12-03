@@ -66,6 +66,7 @@ dev = [
   "mkdocs-macros-plugin",
   "mkdocs-autorefs",
   "prometheus-client",
+  "pandas-stubs",
 ]
 experiment = [
   "random-word",
@@ -183,12 +184,10 @@ anthropic = [
 ]
 langchain = [
   "langgraph",
-  "langchain>=1.0.0",
-  "langchain-openai",
+  "langchain[openai]>=1.0.0",
   "langchain-community",
   "langchain-text-splitters",
-  "langsmith>=0.3.45",
-  "langchain-classic>=1.0.0",
+  "langsmith",
 ]
 sql = [
   "sqlparse",
@@ -233,6 +232,14 @@ conflicts = [
     { group = "torch-stable" },
     { group = "torch-legacy" },
   ],
+  [
+    {group = "torch-gpu-legacy"},
+    {group = "langchain"},
+  ],
+  [
+    {group = "torch-legacy"},
+    {group = "langchain"},
+  ]
 ]
 environments = [
   "sys_platform == 'linux'",
