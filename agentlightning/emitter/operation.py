@@ -1,107 +1,188 @@
 # Copyright (c) Microsoft. All rights reserved.
 
+"""Helpers for emitting operation spans."""
+
 import asyncio
 import functools
 import inspect
-from typing import Any, Callable, Dict, Optional, TypeVar, cast
+import json
+import logging
+from typing import Any, Callable, Dict, Optional, TypeVar, Tuple, Union, cast
 
 from opentelemetry import trace
 from opentelemetry.trace import Status, StatusCode
 
-from agentlightning.utils.otel import flatten_attributes, get_tracer
+from agentlightning.utils.otel import get_tracer
 
 _FnType = TypeVar("_FnType", bound=Callable[..., Any])
+logger = logging.getLogger(__name__)
 
-def operation(fn: Optional[_FnType] = None, **decorator_attrs: Any) -> Any:
+
+def _safe_json_dump(obj: Any) -> str:
+    """Serialize object to JSON, falling back to string representation if needed."""
+    try:
+        return json.dumps(obj, default=str, ensure_ascii=False)
+    except Exception:
+        return str(obj)
+
+
+class OperationContext:
     """
-    Decorate a function to wrap its execution in an OpenTelemetry span.
+    A context manager and decorator for tracing operations.
 
-    This creates a "long" span that measures duration.
-    - Inputs are recorded as span attributes at the start.
-    - Outputs are recorded as span attributes at the end.
-    - Exceptions are recorded as events and span status is set to Error.
-
-    Usage:
-        @operation
-        def my_func(x): ...
-
-        @operation(category="core", crucial=True)
-        async def my_async_func(x): ...
+    Acts as the controller for the OTel span, allowing dynamic setting of
+    inputs/outputs when used in a 'with' block, or automatic inference
+    when used as a decorator.
     """
-    
-    # Handle usage as @operation(key="val")
-    if fn is None:
-        return functools.partial(operation, **decorator_attrs)
 
-    sig = inspect.signature(fn)
+    def __init__(self, name: str, attributes: Dict[str, Any]):
+        self.name = name
+        self.initial_attributes = attributes
+        self.tracer = get_tracer()
+        self.span: Optional[trace.Span] = None
+        self._ctx_token = None
 
-    def _get_sanitized_attributes(args: tuple, kwargs: dict) -> Dict[str, Any]:
+    def __enter__(self):
+        # 1. Start the span with initial attributes (JSON serialized)
+        sanitized_attrs = {
+            k: _safe_json_dump(v) if not isinstance(v, (str, int, float, bool)) else v
+            for k, v in self.initial_attributes.items()
+        }
+
+        self.span = self.tracer.start_span(self.name, attributes=sanitized_attrs)
+        self._ctx_token = trace.use_span(self.span, end_on_exit=True)
+        self._ctx_token.__enter__()
+        return self
+
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any):
+        # 1. Record Exception if present
+        if exc_val and self.span:
+            self.span.record_exception(exc_val)
+            self.span.set_status(Status(StatusCode.ERROR, str(exc_val)))
+
+        # 2. Close span
+        if self._ctx_token:
+            self._ctx_token.__exit__(exc_type, exc_val, exc_tb)
+
+    def set_input(self, *args: Any, **kwargs: Any) -> None:
         """
-        Binds arguments, merges with decorator attributes, and flattens
-        everything into OTel-compatible primitives.
+        Manually record inputs in the span attributes.
+        Used inside 'with operation(...) as op'.
         """
-        raw_attributes = {**decorator_attrs}
+        if not self.span:
+            return
 
-        # 1. Bind Arguments to Parameter Names
-        try:
-            bound_args = sig.bind(*args, **kwargs)
-            bound_args.apply_defaults()
-            for name, value in bound_args.arguments.items():
-                raw_attributes[f"input.{name}"] = value
-        except Exception:
-            # Fallback if binding fails
-            raw_attributes["input.args"] = str(args)
-            raw_attributes["input.kwargs"] = str(kwargs)
+        if args:
+            self.span.set_attribute("input.args", _safe_json_dump(args))
+        if kwargs:
+            for k, v in kwargs.items():
+                self.span.set_attribute(f"input.{k}", _safe_json_dump(v))
 
-        # 2. Flatten and Sanitize (converts nested dicts to dot.notation and objs to str)
-        # using the existing utility from your project
-        return flatten_attributes(raw_attributes)
+    def set_output(self, output: Any) -> None:
+        """
+        Manually record output in the span attributes.
+        Used inside 'with operation(...) as op'.
+        """
+        if not self.span:
+            return
+        self.span.set_attribute("output", _safe_json_dump(output))
 
-    def _record_output(span: trace.Span, result: Any):
-        """Helper to safely record the output."""
-        # We manually sanitize here because flatten_attributes might be heavy 
-        # for just a single value, and we need to handle None/Types carefully.
-        if result is None:
-            return 
-        
-        if isinstance(result, (str, int, float, bool)):
-            span.set_attribute("output", result)
+    def __call__(self, fn: _FnType) -> _FnType:
+        """Decorator implementation (@operation)."""
+        # If the class is called, it means it's being used as a decorator
+        # We override the name with the function name if it was default
+        if self.name == "operation":
+            self.name = fn.__name__
+
+        sig = inspect.signature(fn)
+
+        def _record_auto_inputs(span: trace.Span, args: Tuple[Any, ...], kwargs: Dict[str, Any]):
+            """Bind arguments to signature and log them."""
+            try:
+                bound = sig.bind(*args, **kwargs)
+                bound.apply_defaults()
+                for k, v in bound.arguments.items():
+                    span.set_attribute(f"input.{k}", _safe_json_dump(v))
+            except Exception:
+                span.set_attribute("input.args", _safe_json_dump(args))
+                span.set_attribute("input.kwargs", _safe_json_dump(kwargs))
+
+        if asyncio.iscoroutinefunction(fn) or inspect.iscoroutinefunction(fn):
+
+            @functools.wraps(fn)
+            async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
+                # Reuse __enter__ logic via 'with self' would share state incorrectly
+                # across concurrent calls. We must create a new span per call.
+                # So we manually reimplement the span logic for the wrapper here.
+
+                sanitized_attrs = {
+                    k: _safe_json_dump(v) if not isinstance(v, (str, int, float, bool)) else v
+                    for k, v in self.initial_attributes.items()
+                }
+
+                with self.tracer.start_as_current_span(self.name, attributes=sanitized_attrs) as span:
+                    _record_auto_inputs(span, args, kwargs)
+                    try:
+                        result = await fn(*args, **kwargs)
+                        span.set_attribute("output", _safe_json_dump(result))
+                        return result
+                    except Exception as e:
+                        span.record_exception(e)
+                        span.set_status(Status(StatusCode.ERROR, str(e)))
+                        raise e
+
+            return cast(_FnType, async_wrapper)
+
         else:
-            span.set_attribute("output", str(result))
 
-    # --- Async Wrapper ---
-    if asyncio.iscoroutinefunction(fn) or inspect.iscoroutinefunction(fn):
-        @functools.wraps(fn)
-        async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
-            tracer = get_tracer() 
-            attributes = _get_sanitized_attributes(args, kwargs)
-            
-            # Start the span
-            with tracer.start_as_current_span(fn.__name__, attributes=attributes) as span:
-                try:
-                    result = await fn(*args, **kwargs)
-                    _record_output(span, result)
-                    return result
-                except Exception as e:
-                    span.record_exception(e)
-                    span.set_status(Status(StatusCode.ERROR, str(e)))
-                    raise e
-        return cast(_FnType, async_wrapper)
+            @functools.wraps(fn)
+            def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
+                sanitized_attrs = {
+                    k: _safe_json_dump(v) if not isinstance(v, (str, int, float, bool)) else v
+                    for k, v in self.initial_attributes.items()
+                }
 
-    # --- Sync Wrapper ---
-    else:
-        @functools.wraps(fn)
-        def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
-            tracer = get_tracer()
-            attributes = _get_sanitized_attributes(args, kwargs)
+                with self.tracer.start_as_current_span(self.name, attributes=sanitized_attrs) as span:
+                    _record_auto_inputs(span, args, kwargs)
+                    try:
+                        result = fn(*args, **kwargs)
+                        span.set_attribute("output", _safe_json_dump(result))
+                        return result
+                    except Exception as e:
+                        span.record_exception(e)
+                        span.set_status(Status(StatusCode.ERROR, str(e)))
+                        raise e
 
-            with tracer.start_as_current_span(fn.__name__, attributes=attributes) as span:
-                try:
-                    result = fn(*args, **kwargs)
-                    _record_output(span, result)
-                    return result
-                except Exception as e:
-                    span.record_exception(e)
-                    span.set_status(Status(StatusCode.ERROR, str(e)))
-                    raise e
-        return cast(_FnType, sync_wrapper)
+            return cast(_FnType, sync_wrapper)
+
+
+def operation(
+    fn_or_name: Optional[Union[_FnType, str]] = None, **additional_attributes: Any
+) -> Union[_FnType, OperationContext]:
+    """
+    Entry point for tracking operations.
+
+    Usage 1: Decorator
+        @operation
+        def func(): ...
+
+        @operation(category="compute")
+        def func(): ...
+
+    Usage 2: Context Manager
+        with operation(name="complex_step", user_id=123) as op:
+            op.set_input(data=data)
+            # ... do work ...
+            op.set_output(result)
+    """
+
+    # Case 1: Used as @operation (bare decorator)
+    if callable(fn_or_name):
+        func = fn_or_name
+        # Create context with default name, then immediately wrap the function
+        return OperationContext("operation", additional_attributes)(func)
+
+    # Case 2: Used as @operation(...) or with operation(...)
+    # fn_or_name is likely a string name, or None
+    name = fn_or_name if isinstance(fn_or_name, str) else "operation"
+    return OperationContext(name, additional_attributes)
