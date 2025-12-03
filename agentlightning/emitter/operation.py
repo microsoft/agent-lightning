@@ -7,12 +7,24 @@ import functools
 import inspect
 import json
 import logging
-from typing import Any, Callable, Dict, Optional, Tuple, TypeVar, Union, cast
+from types import TracebackType
+from typing import (
+    Any,
+    Callable,
+    ContextManager,
+    Dict,
+    Optional,
+    Tuple,
+    Type,
+    TypeVar,
+    Union,
+    cast,
+)
 
 from opentelemetry import trace
 from opentelemetry.trace import Status, StatusCode
 
-from agentlightning.semconv import LightningSpanAttributes
+from agentlightning.semconv import AGL_OPERATION, LightningSpanAttributes
 from agentlightning.utils.otel import get_tracer
 
 _FnType = TypeVar("_FnType", bound=Callable[..., Any])
@@ -21,7 +33,15 @@ logger = logging.getLogger(__name__)
 
 
 def _safe_json_dump(obj: Any) -> str:
-    """Serialize object to JSON, falling back to string representation if needed."""
+    """Serialize an object to JSON, falling back to ``str(obj)`` if needed.
+
+    Args:
+        obj: Object to be serialized.
+
+    Returns:
+        The JSON-encoded string representation of the object, or its string
+        representation if JSON encoding fails.
+    """
     try:
         return json.dumps(obj, default=str, ensure_ascii=False)
     except Exception:
@@ -29,22 +49,43 @@ def _safe_json_dump(obj: Any) -> str:
 
 
 class OperationContext:
-    """
-    A context manager and decorator for tracing operations.
+    """Context manager and decorator for tracing operations.
 
-    Acts as the controller for the OTel span, allowing dynamic setting of
-    inputs/outputs when used in a 'with' block, or automatic inference
-    when used as a decorator.
+    This class manages an OpenTelemetry span for a logical unit of work. It can
+    be used either:
+
+    * As a decorator, in which case inputs and outputs are inferred
+      automatically from the wrapped function's signature.
+    * As a context manager, in which case inputs and outputs can be recorded
+      explicitly via :meth:`set_input` and :meth:`set_output`.
+
+    Attributes:
+        name: Human-readable span name.
+        initial_attributes: Attributes applied when the span is created.
+        tracer: OpenTelemetry tracer used to create spans.
+        span: The currently active span, if any.
     """
 
-    def __init__(self, name: str, attributes: Dict[str, Any]):
-        self.name = name
-        self.initial_attributes = attributes
-        self.tracer = get_tracer()
+    def __init__(self, name: str, attributes: Dict[str, Any]) -> None:
+        """Initialize a new operation context.
+
+        Args:
+            name: Human-readable name of the span.
+            attributes: Initial attributes attached to the span. Values are
+                JSON-serialized where necessary.
+        """
+        self.name: str = name
+        self.initial_attributes: Dict[str, Any] = attributes
+        self.tracer: trace.Tracer = get_tracer()
         self.span: Optional[trace.Span] = None
-        self._ctx_token = None
+        self._ctx_token: Optional[ContextManager[Any]] = None
 
-    def __enter__(self):
+    def __enter__(self) -> "OperationContext":
+        """Enter the context manager and start a new span.
+
+        Returns:
+            The current :class:`OperationContext` instance with an active span.
+        """
         # 1. Start the span with initial attributes (JSON serialized)
         sanitized_attrs = {
             k: _safe_json_dump(v) if not isinstance(v, (str, int, float, bool)) else v
@@ -56,7 +97,22 @@ class OperationContext:
         self._ctx_token.__enter__()
         return self
 
-    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any):
+    def __exit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
+    ) -> None:
+        """Exit the context manager and finish the span.
+
+        Any exception raised inside the context is recorded on the span and the
+        span status is set to error.
+
+        Args:
+            exc_type: Exception type, if an exception occurred.
+            exc_val: Exception instance, if an exception occurred.
+            exc_tb: Traceback object, if an exception occurred.
+        """
         # 1. Record Exception if present
         if exc_val and self.span:
             self.span.record_exception(exc_val)
@@ -67,9 +123,16 @@ class OperationContext:
             self._ctx_token.__exit__(exc_type, exc_val, exc_tb)
 
     def set_input(self, *args: Any, **kwargs: Any) -> None:
-        """
-        Manually record inputs in the span attributes.
-        Used inside 'with operation(...) as op'.
+        """Record input arguments on the current span.
+
+        Positional arguments are stored under the ``input.args`` attribute,
+        and keyword arguments are stored under ``input.<name>`` attributes.
+
+        This is intended for use inside a ``with operation(...) as op`` block.
+
+        Args:
+            *args: Positional arguments to record.
+            **kwargs: Keyword arguments to record.
         """
         if not self.span:
             return
@@ -81,16 +144,31 @@ class OperationContext:
                 self.span.set_attribute(f"input.{k}", _safe_json_dump(v))
 
     def set_output(self, output: Any) -> None:
-        """
-        Manually record output in the span attributes.
-        Used inside 'with operation(...) as op'.
+        """Record the output value on the current span.
+
+        This is intended for use inside a ``with operation(...) as op`` block.
+
+        Args:
+            output: The output value to record.
         """
         if not self.span:
             return
         self.span.set_attribute("output", _safe_json_dump(output))
 
     def __call__(self, fn: _FnType) -> _FnType:
-        """Decorator implementation (@operation)."""
+        """Wrap a callable so its execution is traced in a span.
+
+        When used as a decorator, a new span is created for each call to
+        the wrapped function. The bound arguments are recorded as input
+        attributes, the return value is recorded as an output attribute,
+        and any exception is recorded and marks the span as an error.
+
+        Args:
+            fn: The function or coroutine function to wrap.
+
+        Returns:
+            The wrapped callable.
+        """
         # If the class is called, it means it's being used as a decorator
         # We override the name with the function name if it was default
         if self.name == "operation":
@@ -98,21 +176,37 @@ class OperationContext:
 
         sig = inspect.signature(fn)
 
-        def _record_auto_inputs(span: trace.Span, args: Tuple[Any, ...], kwargs: Dict[str, Any]):
-            """Bind arguments to signature and log them."""
+        def _record_auto_inputs(span: trace.Span, args: Tuple[Any, ...], kwargs: Dict[str, Any]) -> None:
+            """Bind arguments to signature and log them on the span.
+
+            Args:
+                span: Span on which to record attributes.
+                args: Positional arguments passed to the wrapped callable.
+                kwargs: Keyword arguments passed to the wrapped callable.
+            """
             try:
                 bound = sig.bind(*args, **kwargs)
                 bound.apply_defaults()
                 for k, v in bound.arguments.items():
-                    span.set_attribute(f"{LightningSpanAttributes.OPERATION_INPUT.value}.{k}", _safe_json_dump(v))
+                    span.set_attribute(
+                        f"{LightningSpanAttributes.OPERATION_INPUT.value}.{k}",
+                        _safe_json_dump(v),
+                    )
             except Exception:
-                span.set_attribute(f"{LightningSpanAttributes.OPERATION_INPUT.value}.args", _safe_json_dump(args))
-                span.set_attribute(f"{LightningSpanAttributes.OPERATION_INPUT.value}.kwargs", _safe_json_dump(kwargs))
+                span.set_attribute(
+                    f"{LightningSpanAttributes.OPERATION_INPUT.value}.args",
+                    _safe_json_dump(args),
+                )
+                span.set_attribute(
+                    f"{LightningSpanAttributes.OPERATION_INPUT.value}.kwargs",
+                    _safe_json_dump(kwargs),
+                )
 
         if asyncio.iscoroutinefunction(fn) or inspect.iscoroutinefunction(fn):
 
             @functools.wraps(fn)
             async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
+                """Async wrapper that traces the wrapped coroutine."""
                 # Reuse __enter__ logic via 'with self' would share state incorrectly
                 # across concurrent calls. We must create a new span per call.
                 # So we manually reimplement the span logic for the wrapper here.
@@ -126,7 +220,10 @@ class OperationContext:
                     _record_auto_inputs(span, args, kwargs)
                     try:
                         result = await fn(*args, **kwargs)
-                        span.set_attribute(LightningSpanAttributes.OPERATION_OUTPUT.value, _safe_json_dump(result))
+                        span.set_attribute(
+                            LightningSpanAttributes.OPERATION_OUTPUT.value,
+                            _safe_json_dump(result),
+                        )
                         return result
                     except Exception as e:
                         span.record_exception(e)
@@ -139,6 +236,7 @@ class OperationContext:
 
             @functools.wraps(fn)
             def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
+                """Sync wrapper that traces the wrapped callable."""
                 sanitized_attrs = {
                     k: _safe_json_dump(v) if not isinstance(v, (str, int, float, bool)) else v
                     for k, v in self.initial_attributes.items()
@@ -148,7 +246,10 @@ class OperationContext:
                     _record_auto_inputs(span, args, kwargs)
                     try:
                         result = fn(*args, **kwargs)
-                        span.set_attribute(LightningSpanAttributes.OPERATION_OUTPUT.value, _safe_json_dump(result))
+                        span.set_attribute(
+                            LightningSpanAttributes.OPERATION_OUTPUT.value,
+                            _safe_json_dump(result),
+                        )
                         return result
                     except Exception as e:
                         span.record_exception(e)
@@ -159,30 +260,50 @@ class OperationContext:
 
 
 def operation(
-    fn_or_name: Optional[Union[_FnType, str]] = None, **additional_attributes: Any
+    fn_or_name: Optional[Union[_FnType, str]] = None,
+    **additional_attributes: Any,
 ) -> Union[_FnType, OperationContext]:
+    """Entry point for tracking operations.
+
+    This helper can be used either as a decorator or as a context manager.
+
+    Usage as a decorator:
+
+    ```python
+    @operation
+    def func(...):
+        ...
+
+    @operation(category="compute")
+    def func(...):
+        ...
+    ```
+
+    Usage as a context manager:
+
+    ```python
+    with operation(name="complex_step", user_id=123) as op:
+        op.set_input(data=data)
+        # ... do work ...
+        op.set_output(result)
+    ```
+
+    Args:
+        fn_or_name: When used as `@operation`, this is the wrapped function.
+            When used as `@operation("name", ...)` or
+            `with operation("name", ...)`, this is the span name.
+        **additional_attributes: Additional span attributes to attach at
+            creation time.
+
+    Returns:
+        Either a wrapped callable (when used as a decorator) or an
+        [`OperationContext`][agentlightning.emitter.operation.OperationContext] (when used as a context manager factory).
     """
-    Entry point for tracking operations.
-
-    Usage 1: Decorator
-        @operation
-        def func(): ...
-
-        @operation(category="compute")
-        def func(): ...
-
-    Usage 2: Context Manager
-        with operation(name="complex_step", user_id=123) as op:
-            op.set_input(data=data)
-            # ... do work ...
-            op.set_output(result)
-    """
-
     # Case 1: Used as @operation (bare decorator)
     if callable(fn_or_name):
         func = fn_or_name
         # Create context with default name, then immediately wrap the function
-        return OperationContext("operation", additional_attributes)(func)
+        return OperationContext(AGL_OPERATION, additional_attributes)(func)
 
     # Case 2: Used as @operation(...) or with operation(...)
     # fn_or_name is likely a string name, or None
