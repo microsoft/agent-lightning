@@ -213,7 +213,6 @@ agents = [
   {include-group = "anthropic"},
   {include-group = "crewai"},
   {include-group = "swebench"},
-  {include-group = "rag"},
 ]
 
 [tool.uv]
