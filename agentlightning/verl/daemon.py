@@ -22,7 +22,7 @@ from agentlightning import LLM, AgentLightningServer, NamedResources, RolloutLeg
 from agentlightning.adapter.triplet import TracerTraceToTriplet, TraceToTripletBase
 from agentlightning.llm_proxy import LLMProxy, ModelConfig
 from agentlightning.store.base import LightningStore
-from agentlightning.types import Rollout, RolloutConfig, Task
+from agentlightning.types import EnqueueRolloutRequest, Rollout, RolloutConfig, Task
 
 __all__ = [
     "AgentModeDaemon",
@@ -383,36 +383,38 @@ class AgentModeDaemon:
             original_sample["data_id"] = data_id
 
             # For training, each sample is rolled out multiple times
-            for _ in range(rollouts_per_sample):
-                task_metadata = {"data_id": data_id, "is_train": is_train}
-
-                # Data ID is different from Rollout ID, as one data can have multiple rollouts.
-                if self.mode == "v0":
+            # Data ID is different from Rollout ID, as one data can have multiple rollouts.
+            if self.mode == "v0":
+                for _ in range(rollouts_per_sample):
+                    task_metadata = {"data_id": data_id, "is_train": is_train}
                     rollout_id = await self.server.queue_task(
                         sample=_to_native(original_sample),
                         mode="train" if is_train else "val",
                         resources_id=resources_id,
                         metadata=task_metadata,
                     )
-                else:
-                    rollout = await self.store.enqueue_rollout(
+
+                    # Store original sample data to reconstruct batch information later
+                    self._task_id_to_original_sample[rollout_id] = original_sample
+                    self._total_tasks_queued += 1
+            else:
+                # Enqueue all the tasks in a batch.
+                all_tasks = [
+                    EnqueueRolloutRequest(
                         input=_to_native(original_sample),
                         mode="train" if is_train else "val",
                         resources_id=resources_id,
-                        metadata=task_metadata,
-                    )
-                    await self.store.update_rollout(
-                        rollout_id=rollout.rollout_id,
                         config=RolloutConfig(
                             unresponsive_seconds=self.llm_timeout_seconds,
                             timeout_seconds=self.llm_timeout_seconds,
                         ),
+                        metadata={"data_id": data_id, "is_train": is_train},
                     )
-                    rollout_id = rollout.rollout_id
-
-                # Store original sample data to reconstruct batch information later
-                self._task_id_to_original_sample[rollout_id] = original_sample
-                self._total_tasks_queued += 1
+                    for _ in range(rollouts_per_sample)
+                ]
+                rollouts = await self.store.enqueue_many_rollouts(all_tasks)
+                self._task_id_to_original_sample.update({rollout.rollout_id: rollout.input for rollout in rollouts})
+                self._total_tasks_queued += len(rollouts)
 
     def set_up_data_and_server(self, data: Dict[str, Any], server_addresses: List[str], is_train: bool = True):
         """Synchronous wrapper for setting up data and server resources."""
