@@ -19,6 +19,7 @@ from typing import (
     TypeVar,
     Union,
     cast,
+    overload,
 )
 
 from opentelemetry import trace
@@ -169,10 +170,7 @@ class OperationContext:
         Returns:
             The wrapped callable.
         """
-        # If the class is called, it means it's being used as a decorator
-        # We override the name with the function name if it was default
-        if self.name == "operation":
-            self.name = fn.__name__
+        function_name = fn.__name__
 
         sig = inspect.signature(fn)
 
@@ -217,6 +215,7 @@ class OperationContext:
                 }
 
                 with self.tracer.start_as_current_span(self.name, attributes=sanitized_attrs) as span:
+                    span.set_attribute(LightningSpanAttributes.OPERATION_NAME.value, function_name)
                     _record_auto_inputs(span, args, kwargs)
                     try:
                         result = await fn(*args, **kwargs)
@@ -243,6 +242,7 @@ class OperationContext:
                 }
 
                 with self.tracer.start_as_current_span(self.name, attributes=sanitized_attrs) as span:
+                    span.set_attribute(LightningSpanAttributes.OPERATION_NAME.value, function_name)
                     _record_auto_inputs(span, args, kwargs)
                     try:
                         result = fn(*args, **kwargs)
@@ -259,13 +259,23 @@ class OperationContext:
             return cast(_FnType, sync_wrapper)
 
 
+@overload
+def operation(fn: _FnType, **additional_attributes: Any) -> _FnType: ...
+
+
+@overload
+def operation(**additional_attributes: Any) -> OperationContext: ...
+
+
 def operation(
-    fn_or_name: Optional[Union[_FnType, str]] = None,
+    fn: Optional[_FnType] = None,
     **additional_attributes: Any,
 ) -> Union[_FnType, OperationContext]:
     """Entry point for tracking operations.
 
     This helper can be used either as a decorator or as a context manager.
+    The span name is fixed to [`AGL_OPERATION`][agentlightning.semconv.AGL_OPERATION];
+    custom span names are not supported. Any keyword arguments are recorded as span attributes.
 
     Usage as a decorator:
 
@@ -282,30 +292,31 @@ def operation(
     Usage as a context manager:
 
     ```python
-    with operation(name="complex_step", user_id=123) as op:
+    with operation(user_id=123) as op:
         op.set_input(data=data)
         # ... do work ...
         op.set_output(result)
     ```
 
     Args:
-        fn_or_name: When used as `@operation`, this is the wrapped function.
-            When used as `@operation("name", ...)` or
-            `with operation("name", ...)`, this is the span name.
+        fn: When used as `@operation`, this is the wrapped function.
+            When used as `operation(**attrs)`, this should be omitted (or
+            left as `None`) and only keyword attributes are provided.
         **additional_attributes: Additional span attributes to attach at
             creation time.
 
     Returns:
         Either a wrapped callable (when used as a decorator) or an
-        [`OperationContext`][agentlightning.emitter.operation.OperationContext] (when used as a context manager factory).
+        [`OperationContext`][agentlightning.emitter.operation.OperationContext]
+        (when used as a context manager factory).
     """
-    # Case 1: Used as @operation (bare decorator)
-    if callable(fn_or_name):
-        func = fn_or_name
-        # Create context with default name, then immediately wrap the function
-        return OperationContext(AGL_OPERATION, additional_attributes)(func)
+    # Case 1: Used as @operation (bare decorator or with attributes)
+    if callable(fn):
+        # Create context with fixed name, then immediately wrap the function
+        return OperationContext(AGL_OPERATION, additional_attributes)(fn)
 
-    # Case 2: Used as @operation(...) or with operation(...)
-    # fn_or_name is likely a string name, or None
-    name = fn_or_name if isinstance(fn_or_name, str) else "operation"
-    return OperationContext(name, additional_attributes)
+    # Case 2: Used as operation(...) / with operation(...)
+    # Custom span names are intentionally not supported; use AGL_OPERATION.
+    if fn is not None:
+        raise ValueError("Custom span names are intentionally not supported when used as a context manager.")
+    return OperationContext(AGL_OPERATION, additional_attributes)

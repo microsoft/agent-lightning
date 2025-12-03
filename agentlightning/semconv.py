@@ -89,6 +89,9 @@ class LightningSpanAttributes(Enum):
     OBJECT_JSON = "agentlightning.object.json"
     """Attribute name for object serialized value (JSON) in object spans."""
 
+    OPERATION_NAME = "agentlightning.operation.name"
+    """Attribute name for operation name in operation spans, normally the function name."""
+
     OPERATION_INPUT = "agentlightning.operation.input"
     """Attribute name for operation input in operation spans."""
 
