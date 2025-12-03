@@ -284,7 +284,11 @@ class Trainer(TrainerLegacy):
         )
 
     def _make_store(self, store: ComponentSpec[LightningStore], strategy: ExecutionStrategy) -> LightningStore:
-        """Resolve the store implementation backing rollouts, attempts, spans, and resources."""
+        """Resolve the store implementation backing rollouts, attempts, spans, and resources.
+
+        By default, it's always a in-memory store. If using a client/server execution strategy,
+        the in-memory store will be initialized in a thread-safe manner.
+        """
         is_client_server = isinstance(strategy, ClientServerExecutionStrategy)
         default_store_factory = lambda: InMemoryLightningStore(thread_safe=is_client_server)
         return build_component(
