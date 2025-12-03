@@ -68,7 +68,7 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
             "fsdp_config": {"param_offload": True},
         },
         "model": {
-            "path": "~/Llama-3.2-3B",
+            "path": "/home/aiscuser/Llama-3.2-3B",
             "use_remove_padding": True,
             "enable_gradient_checkpointing": True,
         },
@@ -136,7 +136,7 @@ def config_train_llama() -> Dict[str, Any]:
     config = deepcopy(RL_TRAINING_CONFIG)
     config["actor_rollout_ref"]["rollout"]["multi_turn"]["format"] = "llama3_json"
     config["actor_rollout_ref"]["rollout"]["engine_kwargs"]["vllm"]["tool_call_parser"] = "llama3_json"
-    config["actor_rollout_ref"]["model"]["path"] = "~/Llama-3.2-3B"
+    config["actor_rollout_ref"]["model"]["path"] = "/home/aiscuser/Llama-3.2-3B"
     return config
 
 

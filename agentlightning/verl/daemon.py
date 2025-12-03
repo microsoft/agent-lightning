@@ -65,8 +65,8 @@ def logged_startswith(full_ids, prefix_ids, tokenizer):
         # case 1: fully match; case 2: special token mismatch only
         # case 1: template_mismatch == False, retoken_mismatch == False, others_mismatch == False, merge == True
         # case 2: template_mismatch == True, retoken_mismatch == False, others_mismatch == False, merge == False
-        if (not template_mismatch and not retoken_mismatch and not others_mismatch and merge) \
-            or (template_mismatch and not retoken_mismatch and not others_mismatch and not merge):
+        if not ((not template_mismatch and not retoken_mismatch and not others_mismatch and merge) \
+            or (template_mismatch and not retoken_mismatch and not others_mismatch and not merge)):
             with open("bad_case_jiahang.log", "a+") as f:
                 print("-" * 20, file=f)
                 print("full_ids:", file=f)
@@ -918,6 +918,10 @@ class AgentModeDaemon:
                         current_context = trace["prompt_ids"] + trace["response_ids"]
                 if current_merged_trace_idx not in merged_trace_idx:
                     merged_trace_idx.append(current_merged_trace_idx)
+
+                # log data, only for debug testing
+                if len(merged_trace_idx) > 1:
+                    unmerged_count += 1
 
                 for current_merged_trace_idx in merged_trace_idx:
                     prompt_ids = sample_info["trace_list"][current_merged_trace_idx[0]]["prompt_ids"]
