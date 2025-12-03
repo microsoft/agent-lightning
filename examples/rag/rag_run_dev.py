@@ -29,5 +29,5 @@ resources: dict[str, agl.ResourceUnion] = {
 }
 
 # 3. run Agent
-trainer = agl.Trainer(dev=True, initial_resources=resources)
+trainer = agl.Trainer(initial_resources=resources)
 trainer.dev(RAGAgent(), train_dataset=data)

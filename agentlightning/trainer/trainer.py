@@ -152,6 +152,13 @@ class Trainer(TrainerLegacy):
         # super().__init__() will call TrainerLegacy's initialization, which is not intended.
         self.worker_id: Optional[int] = None
 
+        if dev:
+            logger.warning(
+                "Trainer(dev=True) is deprecated and will be removed in future versions. "
+                "Please use Trainer.dev(...) instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
         self._dev = dev
         self.daemon = daemon
         self._client: AgentLightningClient | None = None  # Will be initialized in fit or fit_v0

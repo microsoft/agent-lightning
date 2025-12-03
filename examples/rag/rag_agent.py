@@ -9,7 +9,7 @@ from agents import Agent, Runner
 from agents.extensions.models.litellm_model import LitellmModel
 from agents.mcp import MCPServerSse
 from agents.model_settings import ModelSettings
-from utils import compute_scores
+from metric_utils import compute_scores
 
 import agentlightning as agl
 
