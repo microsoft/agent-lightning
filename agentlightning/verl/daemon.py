@@ -9,7 +9,7 @@ import time
 import uuid
 from collections import defaultdict
 from collections.abc import Mapping
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional, Tuple, cast
 
 import numpy as np
 import requests
@@ -377,16 +377,21 @@ class AgentModeDaemon:
         num_samples = len(data[keys[0]])
         rollouts_per_sample = self.train_rollout_n if is_train else 1
 
+        enqueue_rollout_requests: List[EnqueueRolloutRequest] = []
+        data_id_to_original_sample: Dict[str, Dict[str, Any]] = {}
+
         for i in range(num_samples):
             data_id = str(uuid.uuid4())
             original_sample = {key: data[key][i] for key in keys}
             original_sample["data_id"] = data_id
+            data_id_to_original_sample[data_id] = original_sample
 
             # For training, each sample is rolled out multiple times
             # Data ID is different from Rollout ID, as one data can have multiple rollouts.
-            if self.mode == "v0":
-                for _ in range(rollouts_per_sample):
-                    task_metadata = {"data_id": data_id, "is_train": is_train}
+            for _ in range(rollouts_per_sample):
+                task_metadata = {"data_id": data_id, "is_train": is_train}
+                if self.mode == "v0":
+                    # Queue immediately
                     rollout_id = await self.server.queue_task(
                         sample=_to_native(original_sample),
                         mode="train" if is_train else "val",
@@ -397,24 +402,32 @@ class AgentModeDaemon:
                     # Store original sample data to reconstruct batch information later
                     self._task_id_to_original_sample[rollout_id] = original_sample
                     self._total_tasks_queued += 1
-            else:
-                # Enqueue all the tasks in a batch.
-                all_tasks = [
-                    EnqueueRolloutRequest(
-                        input=_to_native(original_sample),
-                        mode="train" if is_train else "val",
-                        resources_id=resources_id,
-                        config=RolloutConfig(
-                            unresponsive_seconds=self.llm_timeout_seconds,
-                            timeout_seconds=self.llm_timeout_seconds,
-                        ),
-                        metadata={"data_id": data_id, "is_train": is_train},
+                else:
+                    # Collect tasks to enqueue in batch and queue them later
+                    enqueue_rollout_requests.append(
+                        EnqueueRolloutRequest(
+                            input=_to_native(original_sample),
+                            mode="train" if is_train else "val",
+                            resources_id=resources_id,
+                            config=RolloutConfig(
+                                unresponsive_seconds=self.llm_timeout_seconds,
+                                timeout_seconds=self.llm_timeout_seconds,
+                            ),
+                            metadata=task_metadata,
+                        )
                     )
-                    for _ in range(rollouts_per_sample)
-                ]
-                rollouts = await self.store.enqueue_many_rollouts(all_tasks)
-                self._task_id_to_original_sample.update({rollout.rollout_id: rollout.input for rollout in rollouts})
-                self._total_tasks_queued += len(rollouts)
+
+        if self.mode == "v1":
+            # Enqueue all the tasks in a single batch
+            rollouts = await self.store.enqueue_many_rollouts(enqueue_rollout_requests)
+            self._task_id_to_original_sample.update(
+                {
+                    # Recover the original data and store it for later use.
+                    rollout.rollout_id: data_id_to_original_sample[cast(Dict[str, Any], rollout.metadata)["data_id"]]
+                    for rollout in rollouts
+                }
+            )
+            self._total_tasks_queued += len(rollouts)
 
     def set_up_data_and_server(self, data: Dict[str, Any], server_addresses: List[str], is_train: bool = True):
         """Synchronous wrapper for setting up data and server resources."""

@@ -1607,17 +1607,7 @@ class LightningStoreClient(LightningStore):
     async def enqueue_many_rollouts(self, rollouts: Sequence[EnqueueRolloutRequest]) -> Sequence[Rollout]:
         if not rollouts:
             return []
-        rollout_requests = [
-            EnqueueRolloutRequest(
-                input=item.input,
-                mode=item.mode,
-                resources_id=item.resources_id,
-                config=item.config,
-                metadata=item.metadata,
-            )
-            for item in rollouts
-        ]
-        request_body = EnqueueManyRolloutsRequest(rollouts=rollout_requests).model_dump(exclude_none=False)
+        request_body = EnqueueManyRolloutsRequest(rollouts=list(rollouts)).model_dump(exclude_none=False)
         data = await self._request_json(
             "post",
             "/queues/rollouts/enqueue",
