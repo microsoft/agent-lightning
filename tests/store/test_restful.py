@@ -225,6 +225,52 @@ async def test_statistics_endpoint_returns_counts(
     assert payload["total_rollouts"] >= 1
 
 
+@pytest.mark.asyncio
+async def test_rest_start_rollout_propagates_worker_id(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    server, _client, session, api_endpoint = server_client
+    payload = {"input": {"source": "rest-worker"}, "worker_id": "rest-start-worker"}
+
+    async with session.post(f"{api_endpoint}/rollouts", json=payload) as resp:
+        assert resp.status == 201
+        data = await resp.json()
+
+    assert data["attempt"]["worker_id"] == "rest-start-worker"
+    worker = await server.get_worker_by_id("rest-start-worker")
+    assert worker is not None
+    assert worker.status == "busy"
+    assert worker.current_rollout_id == data["rollout_id"]
+    assert worker.current_attempt_id == data["attempt"]["attempt_id"]
+
+
+@pytest.mark.asyncio
+async def test_rest_start_attempt_propagates_worker_id(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    server, _client, session, api_endpoint = server_client
+
+    async with session.post(f"{api_endpoint}/rollouts", json={"input": {"source": "rest-retry"}}) as resp:
+        assert resp.status == 201
+        base_rollout = await resp.json()
+
+    attempt_worker = "rest-attempt-worker"
+    async with session.post(
+        f"{api_endpoint}/rollouts/{base_rollout['rollout_id']}/attempts",
+        json={"worker_id": attempt_worker},
+    ) as resp:
+        assert resp.status == 201
+        retry_payload = await resp.json()
+
+    assert retry_payload["attempt"]["sequence_id"] == 2
+    assert retry_payload["attempt"]["worker_id"] == attempt_worker
+    worker = await server.get_worker_by_id(attempt_worker)
+    assert worker is not None
+    assert worker.status == "busy"
+    assert worker.current_rollout_id == retry_payload["rollout_id"]
+    assert worker.current_attempt_id == retry_payload["attempt"]["attempt_id"]
+
+
 # Rollouts Pagination, Sorting, and Filtering Tests
 
 
