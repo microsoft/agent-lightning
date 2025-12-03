@@ -310,6 +310,47 @@ async def test_client_dequeue_many_rollouts_skips_network_for_non_positive_limit
 
 
 @pytest.mark.asyncio
+async def test_client_concurrent_enqueue_many_rollouts(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient],
+) -> None:
+    _, client = server_client
+
+    async def enqueue_batch(batch_idx: int) -> list[str]:
+        requests = [EnqueueRolloutRequest(input={"batch": batch_idx, "idx": item}) for item in range(3)]
+        rollouts = await client.enqueue_many_rollouts(requests)
+        return [rollout.rollout_id for rollout in rollouts]
+
+    batches = await asyncio.gather(*(enqueue_batch(batch_idx) for batch_idx in range(5)))
+    all_ids = {rollout_id for batch in batches for rollout_id in batch}
+    assert len(all_ids) == 15
+
+    queried = await client.query_rollouts(limit=-1)
+    assert isinstance(queried, PaginatedResult)
+    assert queried.total >= 15
+
+
+@pytest.mark.asyncio
+async def test_client_concurrent_dequeue_many_rollouts(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient],
+) -> None:
+    server, client = server_client
+    requests = [EnqueueRolloutRequest(input={"idx": idx}) for idx in range(6)]
+    # Seed queue from the server to avoid races with background processing
+    await asyncio.gather(*(server.enqueue_rollout(**req.model_dump()) for req in requests))
+
+    async def consume(limit: int, worker: str):
+        return await client.dequeue_many_rollouts(limit=limit, worker_id=worker)
+
+    batches = await asyncio.gather(
+        consume(3, "worker-a"),
+        consume(3, "worker-b"),
+    )
+    claimed_ids = {attempt.rollout_id for batch in batches for attempt in batch}
+    assert len(claimed_ids) == 6
+    assert await client.dequeue_many_rollouts(limit=1) == []
+
+
+@pytest.mark.asyncio
 async def test_add_resources_via_server(server_client: Tuple[LightningStoreServer, LightningStoreClient]) -> None:
     """Test that add_resources works correctly via server."""
     server, _ = server_client
