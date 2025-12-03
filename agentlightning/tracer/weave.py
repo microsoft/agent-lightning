@@ -6,8 +6,8 @@ import asyncio
 import logging
 import os
 import threading
-from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any, Awaitable, Generator, List, Optional
+from contextlib import asynccontextmanager
+from typing import TYPE_CHECKING, Any, AsyncContextManager, List, Optional
 
 from agentlightning.instrumentation import instrument_all, uninstrument_all
 from agentlightning.store.base import LightningStore
@@ -64,10 +64,6 @@ class WeaveTracer(Tracer):
         if wandb_api_key:
             os.environ["WANDB_API_KEY"] = wandb_api_key
 
-        # Attributes observed by Weave SDK for op inputs
-        self._tracing_enabled = True
-        self.postprocess_output = None
-
         # Private asyncio loop running in a daemon thread
         self._loop_ready = threading.Event()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
@@ -122,15 +118,15 @@ class WeaveTracer(Tracer):
             self.uninstrument(worker_id)
             logger.info(f"[Worker {worker_id}] Instrumentation removed.")
 
-    @contextmanager
-    def trace_context(
+    @asynccontextmanager
+    async def trace_context(
         self,
         name: Optional[str] = None,
         *,
         store: Optional[LightningStore] = None,
         rollout_id: Optional[str] = None,
         attempt_id: Optional[str] = None,
-    ) -> Generator[Any, None, None]:
+    ) -> AsyncContextManager[Any]:
         """
         Synchronous implementation of the tracing context.
 
@@ -170,57 +166,15 @@ class WeaveTracer(Tracer):
         trace_call.started_at = datetime.datetime.now(tz=datetime.timezone.utc)
 
         try:
-            yield
+            yield trace_call
         except Exception as e:
             # Finish trace and log any exception
-            weave_client.finish_call(trace_call, exception=e, op=self)  # type: ignore
+            weave_client.finish_call(trace_call, exception=e)  # type: ignore
             logger.error(f"Trace failed for rollout_id={rollout_id}, attempt_id={attempt_id}, error={e}")
         finally:
             # Finish trace even if no exception
-            weave_client.finish_call(trace_call, op=self)  # type: ignore
-
-    def _ensure_loop(self) -> None:
-        """
-        Ensure that the dedicated asyncio event loop is running in a background daemon thread.
-        """
-        if self._loop_thread is None or self._loop is None:
-            self._loop_ready.clear()
-            self._loop_thread = threading.Thread(target=self._loop_runner, name="otel-loop", daemon=True)
-            self._loop_thread.start()
-            self._loop_ready.wait()  # Wait until the loop is ready
-
-    def _await_in_loop(self, coro: Awaitable[Any], timeout: Optional[float] = None) -> Any:
-        """
-        Submit a coroutine to the dedicated loop and wait synchronously for the result.
-
-        Args:
-            coro: Coroutine to execute.
-            timeout: Optional timeout in seconds.
-
-        Returns:
-            Result of the coroutine execution.
-        """
-        self._ensure_loop()
-        if self._loop is None:
-            raise RuntimeError("Loop is not initialized. This should not happen.")
-
-        if threading.current_thread() is self._loop_thread:
-            self._loop.call_soon_threadsafe(asyncio.create_task, coro)  # type: ignore
-            return None
-
-        fut = asyncio.run_coroutine_threadsafe(coro, self._loop)  # type: ignore
-        return fut.result(timeout=timeout)  # type: ignore
-
-    def _loop_runner(self):
-        """
-        Target function for the background thread running the dedicated asyncio loop.
-        """
-        loop = asyncio.new_event_loop()
-        self._loop = loop
-        asyncio.set_event_loop(loop)
-        self._loop_ready.set()
-        loop.run_forever()
-        loop.close()
+            weave_client.finish_call(trace_call)  # type: ignore
+            await self._on_finish_handler(trace_call)
 
     def shutdown(self) -> None:
         """Stop and clean up the dedicated asyncio loop and thread."""
@@ -230,7 +184,7 @@ class WeaveTracer(Tracer):
         if self._loop_thread:
             self._loop_thread.join(timeout=5)
 
-    def _on_finish_handler(self, call: "Call", *args: Any, **kwargs: Any) -> None:  # type: ignore
+    async def _on_finish_handler(self, call: "Call", *args: Any, **kwargs: Any) -> None:  # type: ignore
         """
         Handler called when a Weave Call finishes.
 
@@ -241,11 +195,7 @@ class WeaveTracer(Tracer):
         if self._store and self._rollout_id and self._attempt_id:
             try:
                 for span in spans:
-                    self._ensure_loop()
-                    self._await_in_loop(
-                        self._store.add_span(span),
-                        timeout=60.0,
-                    )
+                    await self._store.add_span(span)
             except Exception as e:
                 logger.exception(f"Error adding span to store: {e}")
 

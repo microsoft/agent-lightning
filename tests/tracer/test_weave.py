@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime
 import multiprocessing
 from types import SimpleNamespace
+from typing import Any, Callable, Coroutine
 
 import pytest
 
@@ -36,7 +37,7 @@ def _func_without_exception():
 @pytest.mark.skip(reason="Skipping this test temporarily")
 def test_weave_trace_workable_store_valid():
     ctx = multiprocessing.get_context("spawn")
-    proc = ctx.Process(target=_test_weave_trace_workable_store_valid_async)
+    proc = ctx.Process(target=_run_async, args=(_test_weave_trace_workable_store_valid_async,))
     proc.start()
     proc.join(30.0)  # On GPU server, the time is around 10 seconds.
 
@@ -49,7 +50,14 @@ def test_weave_trace_workable_store_valid():
         assert False, "Child process hung. Check test output for details."
 
 
-def _test_weave_trace_workable_store_valid_async():
+def _run_async(coro: Callable[[], Coroutine[Any, Any, Any]]) -> None:
+    """Small wrapper: run async function inside multiprocessing target."""
+    import asyncio
+
+    asyncio.run(coro())
+
+
+async def _test_weave_trace_workable_store_valid_async():
     tracer = WeaveTracer()
     tracer.init()
     tracer.init_worker(0)
@@ -58,7 +66,7 @@ def _test_weave_trace_workable_store_valid_async():
 
     try:
         # Case where store, rollout_id, and attempt_id are all non-none.
-        with tracer.trace_context(
+        async with tracer.trace_context(
             name="weave_test", store=store, rollout_id="test_rollout_id", attempt_id="test_attempt_id"
         ):
             _func_without_exception()
