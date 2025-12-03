@@ -1404,7 +1404,7 @@ class MongoLightningCollections(LightningCollections):
         """Perform a atomic operation on the collections."""
         if commit:
             raise ValueError("Commit should be used with execute() instead.")
-        with self._prometheus_tracker.track("atomic", self._database_name, self._collection_name):
+        with self._prometheus_tracker.track(f"atomic__{mode}", self._database_name, self._collection_name):
             # First step: ensure all collections exist before going into the atomic block
             if not self._collection_ensured:
                 await self._ensure_collections()

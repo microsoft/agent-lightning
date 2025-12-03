@@ -10,6 +10,7 @@ from agentlightning.types import (
     Attempt,
     AttemptedRollout,
     AttemptStatus,
+    EnqueueRolloutRequest,
     NamedResources,
     ResourcesUpdate,
     Rollout,
@@ -98,19 +99,6 @@ class LightningStoreStatistics(TypedDict, total=False):
     """Safe threshold for spans in bytes."""
     memory_capacity_bytes: int
     """Memory capacity of the store in bytes."""
-
-
-class _EnqueueRolloutRequestRequired(TypedDict):
-    input: TaskInput
-
-
-class EnqueueRolloutRequest(_EnqueueRolloutRequestRequired, total=False):
-    """Payload describing a rollout to be queued via `enqueue_rollout`."""
-
-    mode: Optional[RolloutMode]
-    resources_id: Optional[str]
-    config: Optional[RolloutConfig]
-    metadata: Optional[Dict[str, Any]]
 
 
 class LightningStore:
