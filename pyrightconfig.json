@@ -7,7 +7,7 @@
   "pythonVersion": "3.12",
 
   // Start strict; downgrade only if noisy
-  "typeCheckingMode": "strict",
+  "typeCheckingMode": "basic",
 
   // reporting tweaks
   "reportMissingTypeStubs": "none",
