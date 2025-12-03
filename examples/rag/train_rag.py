@@ -26,9 +26,6 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
         "use_kl_in_reward": False,
     },
     "data": {
-        # Fill in the path to your previously converted parquet file here
-        "train_files": "examples/rag/dataset_tiny.parquet",
-        "val_files": "examples/rag/dataset_tiny.parquet",
         "train_batch_size": 16,  # Default configuration for multi-GPU
         "max_prompt_length": 4096,
         "max_response_length": 1024,
@@ -144,8 +141,9 @@ def train(config: Dict[str, Any], active_agent: Optional[str]) -> None:
     trainer = agl.Trainer(n_runners=4, algorithm=algorithm, adapter={"agent_match": active_agent})
 
     # 4. Load data
-    train_df: pd.DataFrame = pd.read_parquet(config["data"]["train_files"])  # type: ignore
-    val_df: pd.DataFrame = pd.read_parquet(config["data"]["val_files"])  # type: ignore
+    # Fill in the path to your previously converted parquet file here
+    train_df: pd.DataFrame = pd.read_parquet("dataset_tiny.parquet")  # type: ignore
+    val_df: pd.DataFrame = pd.read_parquet("dataset_tiny.parquet")  # type: ignore
     train_data: List[Dict[str, Any]] = train_df.to_dict(orient="records")  # type: ignore
     val_data: List[Dict[str, Any]] = val_df.to_dict(orient="records")  # type: ignore
 
