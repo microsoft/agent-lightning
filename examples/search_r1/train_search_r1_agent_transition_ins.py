@@ -159,6 +159,12 @@ def main() -> None:
         choices=["fast", "qwen", "llama"],
         help="Training configuration: 'fast' (CI testing), 'qwen' (Qwen-2.5-Coder-1.5B), 'llama' (LLaMA-3.2-3B-Instruct)",
     )
+    parser.add_argument(
+        "--external-store-address",
+        type=str,
+        default="",
+        help="Connect to an external store instead of creating a new one in memory",
+    )
 
     args = parser.parse_args()
 
@@ -166,6 +172,7 @@ def main() -> None:
     config_functions = {"fast": config_train_fast, "qwen": config_train_qwen, "llama": config_train_llama}
 
     config = config_functions[args.config]()
+    config["external_store_address"]=args.external_store_address
 
     print(f"Starting training with '{args.config}' configuration...")
 
