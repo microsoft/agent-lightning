@@ -58,12 +58,12 @@ jobs:
       - name: Sync dependencies (latest)
         run: |
           uv sync --frozen --no-default-groups --extra verl \
-            --group dev --group experiment --group agents --group torch-gpu-stable
+            --group dev --group experiment --group agents --group rag --group torch-gpu-stable
         if: matrix.setup-script == 'latest'
       - name: Sync dependencies (stable & legacy)
         run: |
           uv sync --frozen --no-default-groups --extra verl \
-            --group dev --group experiment --group agents --group torch-gpu-${{ matrix.setup-script }}
+            --group dev --group experiment --group agents --group rag --group torch-gpu-${{ matrix.setup-script }}
         if: matrix.setup-script != 'latest'
       - name: Freeze dependencies
         run: |
