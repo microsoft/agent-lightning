@@ -521,13 +521,31 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
 
         return prepared_rollouts
 
+    @tracked("_unlocked_query_rollouts_by_rollout_ids")
+    async def _unlocked_query_rollouts_by_rollout_ids(
+        self, collections: T_collections, rollout_ids: Sequence[str]
+    ) -> List[Rollout]:
+        """Query rollouts by rollout IDs."""
+        if len(rollout_ids) == 0:
+            return []
+        elif len(rollout_ids) == 1:
+            # Performance optimization: use exact filter for single rollout.
+            rollout = await collections.rollouts.get({"rollout_id": {"exact": rollout_ids[0]}})
+            return [rollout] if rollout is not None else []
+        else:
+            result = await collections.rollouts.query({"rollout_id": {"within": rollout_ids}})
+            # Preserve the order of rollout_ids.
+            result_dict = {rollout.rollout_id: rollout for rollout in result}
+            return [result_dict[rollout_id] for rollout_id in rollout_ids if rollout_id in result_dict]
+
     @tracked("_post_dequeue_rollouts")
     @_with_collections_execute(labels=["rollouts", "attempts"])
     async def _post_dequeue_rollouts(
         self, collections: T_collections, rollout_ids: Sequence[str], worker_id: Optional[str]
     ) -> Sequence[Tuple[AttemptedRollout, Sequence[str]]]:
         """Post-dequeue logic for the rollout. Returns the rollout and the update fields (for post-update logic)."""
-        rollouts = await collections.rollouts.query({"rollout_id": {"within": rollout_ids}})
+        rollouts = await self._unlocked_query_rollouts_by_rollout_ids(collections, rollout_ids)
+
         if not rollouts:
             logger.warning(f"No rollout found for rollout IDs: {rollout_ids}, skipping dequeuing")
             return []
