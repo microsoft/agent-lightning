@@ -40,7 +40,7 @@ def _validate_labels(
 
     Args:
         kind: Metric kind for error messages ("counter" or "histogram").
-        name: Metric name.
+        metric_name: Metric name.
         labels: Provided label dictionary.
         expected_names: Expected label names as a tuple.
 
@@ -628,7 +628,7 @@ class PrometheusMetricsBackend(MetricsBackend):
         """Initializes PrometheusMetricsBackend.
 
         Raises:
-            RuntimeError: If prometheus_client is not installed.
+            ImportError: If prometheus_client is not installed.
         """
         try:
             import prometheus_client  # type: ignore
@@ -867,7 +867,7 @@ def shutdown_metrics():
         return
     try:
         pid = os.getpid()
-        multiprocess.mark_process_dead(pid, path)  # type: ignore
+        multiprocess.mark_process_dead(pid, path.name)  # type: ignore
         logger.debug("Marked Prometheus metrics for process %d as dead", pid)
     except Exception as e:
         logger.error("Error during metrics cleanup: %s", str(e))
