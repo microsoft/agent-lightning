@@ -50,9 +50,10 @@ from autogen_agentchat.teams import RoundRobinGroupChat
 from autogen_ext.models.openai import OpenAIChatCompletionClient
 from autogen_ext.tools.mcp import McpWorkbench, StdioServerParams
 from fastapi import FastAPI
-from langchain import hub
-from langchain.agents import AgentExecutor, create_react_agent, tool
-from langchain.chat_models import init_chat_model
+from langchain_classic import hub
+from langchain_classic.agents import AgentExecutor, create_react_agent
+from langchain_classic.chat_models import init_chat_model
+from langchain_core.tools import tool
 from langchain_community.agent_toolkits import SQLDatabaseToolkit
 from langchain_community.utilities import SQLDatabase
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
@@ -60,7 +61,6 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START, MessagesState, StateGraph
-from langgraph.prebuilt import ToolNode
 from openai import AsyncOpenAI, OpenAI
 from opentelemetry.sdk.trace import ReadableSpan
 from pydantic import BaseModel, Field
@@ -321,10 +321,25 @@ def agent_langgraph() -> None:
         return next(t for t in tools if t.name == name)
 
     get_schema_tool = next(tool for tool in tools if tool.name == "sql_db_schema")
-    get_schema_node = ToolNode([get_schema_tool], name="get_schema")
-
     run_query_tool = next(tool for tool in tools if tool.name == "sql_db_query")
-    run_query_node = ToolNode([run_query_tool], name="run_query")
+
+    def get_schema(state: MessagesState):
+        """Execute the get_schema tool based on the last message's tool calls."""
+        last_message = state["messages"][-1]
+        tool_messages = []
+        for tool_call in getattr(last_message, "tool_calls", []):
+            result = get_schema_tool.invoke(tool_call)
+            tool_messages.append(result)
+        return {"messages": tool_messages}
+
+    def run_query(state: MessagesState):
+        """Execute the run_query tool based on the last message's tool calls."""
+        last_message = state["messages"][-1]
+        tool_messages = []
+        for tool_call in getattr(last_message, "tool_calls", []):
+            result = run_query_tool.invoke(tool_call)
+            tool_messages.append(result)
+        return {"messages": tool_messages}
 
     def list_tables(state: MessagesState):
         tool_call = {
@@ -381,10 +396,10 @@ def agent_langgraph() -> None:
     builder = StateGraph(MessagesState)
     builder.add_node(list_tables)
     builder.add_node(call_get_schema)
-    builder.add_node(get_schema_node, "get_schema")
+    builder.add_node(get_schema)
     builder.add_node(generate_query)
     builder.add_node(check_query)
-    builder.add_node(run_query_node, "run_query")
+    builder.add_node(run_query)
     builder.add_edge(START, "list_tables")
     builder.add_edge("list_tables", "call_get_schema")
     builder.add_edge("call_get_schema", "get_schema")
