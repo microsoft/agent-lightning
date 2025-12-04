@@ -263,6 +263,7 @@ jobs:
           mkdir -p "$ARTIFACT_DIR"
           uv run --locked --no-sync python -m tests.benchmark.micro_benchmark \
             --store-url "$STORE_URL" \
+            --summary-file "$ARTIFACT_DIR/summary-${MODE_ID}.txt" \
             "${{ matrix.mode.cli }}" | tee "$ARTIFACT_DIR/micro-${MODE_ID}.txt"
 
       - name: Record micro benchmark end
@@ -284,6 +285,18 @@ jobs:
             --start "$BENCHMARK_START" \
             --end "$BENCHMARK_END" \
             | tee "$ARTIFACT_DIR/analysis-${MODE_ID}.txt"
+
+      - name: Show micro benchmark summary
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          summary_file="$ARTIFACT_DIR/summary-${MODE_ID}.txt"
+          if [ -f "$summary_file" ]; then
+            echo "Micro benchmark summary ($MODE_ID/$BACKEND_ID):"
+            cat "$summary_file"
+          else
+            echo "Summary file not found: $summary_file"
+          fi
 
       - name: Stop ${{ matrix.backend.id }} Prometheus stack
         if: ${{ always() }}
