@@ -1458,6 +1458,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#agentlightning.operation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <code class="doc-symbol doc-symbol-toc doc-symbol-function"></code>&nbsp;operation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#agentlightning.emit_annotation" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2345,6 +2356,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#agentlightning.operation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <code class="doc-symbol doc-symbol-toc doc-symbol-function"></code>&nbsp;operation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#agentlightning.emit_annotation" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2557,7 +2579,7 @@
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="November 27, 2025 17:22:42 UTC"><span class="timeago" datetime="2025-11-27T17:22:42+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="November 27, 2025 17:22:42 UTC">2025-11-27</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="December 4, 2025 07:16:29 UTC"><span class="timeago" datetime="2025-12-04T07:16:29+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="December 4, 2025 07:16:29 UTC">2025-12-04</span>
   </span>
 
     
@@ -3594,6 +3616,122 @@ implementation delegates to
 
 </div><h2 id="emitter">Emitter<a class="headerlink" href="#emitter" title="Permanent link">&para;</a></h2>
 
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="agentlightning.operation" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-function"></code>            <code class="highlight language-python"><span class="n">agentlightning</span><span class="o">.</span><span class="n">operation</span><span class="p">(</span><span class="n">fn</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">propagate</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="o">**</span><span class="n">additional_attributes</span><span class="p">)</span></code>
+
+<a href="#agentlightning.operation" class="headerlink" title="Permanent link">&para;</a></h3>
+          <div class="doc-overloads">
+<div class="doc-signature highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">operation</span><span class="p">(</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="n">fn</span><span class="p">:</span> <span class="n">_FnType</span><span class="p">,</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="o">*</span><span class="p">,</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="n">propagate</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    <span class="o">**</span><span class="n">additional_attributes</span><span class="p">:</span> <span class="n">Any</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">_FnType</span>
+</code></pre></div><div class="doc-signature highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">operation</span><span class="p">(</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="o">*</span><span class="p">,</span> <span class="n">propagate</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span> <span class="o">**</span><span class="n">additional_attributes</span><span class="p">:</span> <span class="n">Any</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">OperationContext</span>
+</code></pre></div>          </div>
+
+
+    <div class="doc doc-contents first">
+
+        <p>Entry point for tracking operations.</p>
+<p>This helper can be used either as a decorator or as a context manager.
+The span name is fixed to <a class="autorefs autorefs-internal" title="            AGL_OPERATION = 'agentlightning.operation'
+
+  
+      module-attribute
+  " href="../types/#agentlightning.semconv.AGL_OPERATION"><code>AGL_OPERATION</code></a>;
+custom span names are not supported. Any keyword arguments are recorded as span attributes.</p>
+<p>Usage as a decorator:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nd">@operation</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="k">def</span><span class="w"> </span><span class="nf">func</span><span class="p">(</span><span class="o">...</span><span class="p">):</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="o">...</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="nd">@operation</span><span class="p">(</span><span class="n">category</span><span class="o">=</span><span class="s2">&quot;compute&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="k">def</span><span class="w"> </span><span class="nf">func</span><span class="p">(</span><span class="o">...</span><span class="p">):</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    <span class="o">...</span>
+</code></pre></div>
+<p>Usage as a context manager:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="k">with</span> <span class="n">operation</span><span class="p">(</span><span class="n">user_id</span><span class="o">=</span><span class="mi">123</span><span class="p">)</span> <span class="k">as</span> <span class="n">op</span><span class="p">:</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>    <span class="n">op</span><span class="o">.</span><span class="n">set_input</span><span class="p">(</span><span class="n">data</span><span class="o">=</span><span class="n">data</span><span class="p">)</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>    <span class="c1"># ... do work ...</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>    <span class="n">op</span><span class="o">.</span><span class="n">set_output</span><span class="p">(</span><span class="n">result</span><span class="p">)</span>
+</code></pre></div>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <ul>
+        <li class="doc-section-item field-body">
+            <b><code>fn</code></b>
+              (<code><span title="typing.Optional">Optional</span>[<span title="agentlightning.emitter.annotation._FnType">_FnType</span>]</code>, default:
+                  <code>None</code>
+)
+          –
+          <div class="doc-md-description">
+            <p>When used as <code>@operation</code>, this is the wrapped function.
+When used as <code>operation(**attrs)</code>, this should be omitted (or
+left as <code>None</code>) and only keyword attributes are provided.</p>
+          </div>
+        </li>
+        <li class="doc-section-item field-body">
+            <b><code>propagate</code></b>
+              (<code><span title="bool">bool</span></code>, default:
+                  <code>True</code>
+)
+          –
+          <div class="doc-md-description">
+            <p>Whether spans should use the active span processor. When False,
+spans will stay local and not be exported.</p>
+          </div>
+        </li>
+        <li class="doc-section-item field-body">
+            <b><code>**additional_attributes</code></b>
+              (<code><span title="typing.Any">Any</span></code>, default:
+                  <code>{}</code>
+)
+          –
+          <div class="doc-md-description">
+            <p>Additional span attributes to attach at
+creation time.</p>
+          </div>
+        </li>
+    </ul>
+
+
+<p><span class="doc-section-title">Returns:</span></p>
+    <ul>
+        <li class="doc-section-item field-body">
+              <code><span title="typing.Union">Union</span>[<span title="agentlightning.emitter.annotation._FnType">_FnType</span>, <a class="autorefs autorefs-internal" title="            agentlightning.emitter.annotation.OperationContext" href="../internal/#agentlightning.emitter.annotation.OperationContext">OperationContext</a>]</code>
+          –
+          <div class="doc-md-description">
+            <p>Either a wrapped callable (when used as a decorator) or an</p>
+          </div>
+        </li>
+        <li class="doc-section-item field-body">
+              <code><span title="typing.Union">Union</span>[<span title="agentlightning.emitter.annotation._FnType">_FnType</span>, <a class="autorefs autorefs-internal" title="            agentlightning.emitter.annotation.OperationContext" href="../internal/#agentlightning.emitter.annotation.OperationContext">OperationContext</a>]</code>
+          –
+          <div class="doc-md-description">
+            <p><a class="autorefs autorefs-internal" title="            agentlightning.emitter.annotation.OperationContext" href="../internal/#agentlightning.emitter.annotation.OperationContext"><code>OperationContext</code></a></p>
+          </div>
+        </li>
+        <li class="doc-section-item field-body">
+              <code><span title="typing.Union">Union</span>[<span title="agentlightning.emitter.annotation._FnType">_FnType</span>, <a class="autorefs autorefs-internal" title="            agentlightning.emitter.annotation.OperationContext" href="../internal/#agentlightning.emitter.annotation.OperationContext">OperationContext</a>]</code>
+          –
+          <div class="doc-md-description">
+            <p>(when used as a context manager factory).</p>
+          </div>
+        </li>
+    </ul>
+
+
+    </div>
+
+</div>
 
 <div class="doc doc-object doc-function">
 

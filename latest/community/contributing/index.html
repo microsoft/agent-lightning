@@ -2015,7 +2015,7 @@
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="November 23, 2025 16:17:16 UTC"><span class="timeago" datetime="2025-11-23T16:17:16+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="November 23, 2025 16:17:16 UTC">2025-11-23</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="December 4, 2025 07:16:29 UTC"><span class="timeago" datetime="2025-12-04T07:16:29+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="December 4, 2025 07:16:29 UTC">2025-12-04</span>
   </span>
 
     
@@ -2074,7 +2074,7 @@
 <h3 id="bug-fixes">Bug Fixes<a class="headerlink" href="#bug-fixes" title="Permanent link">&para;</a></h3>
 <p>Bug fixes are the fastest way to get familiar with the codebase. To get started, you can:</p>
 <ul>
-<li>Browse the <a href="https://github.com/microsoft/agent-lightning/labels/good%20first%20issue">"good first issue"</a> and <a href="https://github.com/microsoft/agent-lightning/labels/bug">"bug"</a> labels; drop a comment before you start so we can mark it as taken.</li>
+<li>Browse the <a href="https://github.com/microsoft/agent-lightning/labels/help%20wanted">"help wanted"</a> and <a href="https://github.com/microsoft/agent-lightning/labels/bug">"bug"</a> labels; drop a comment before you start so we can mark it as taken.</li>
 <li>For fresh bugs, open an issue with reproduction steps, logs, and expected behavior before submitting a fix.</li>
 <li>Keep each pull request focused, ideally avoiding breaking API changes. Larger refactors should be discussed via RFC or maintainer sync.</li>
 </ul>
@@ -2089,7 +2089,7 @@
 <p>Bonus points for examples that:</p>
 <ul>
 <li>Ship CI or self-test coverage so we know they still work as the core evolves.  <strong>Otherwise, we would have to mark the example as unmaintained because we won't be able to test the examples manually before each release.</strong></li>
-<li>Include a <a href="https://github.com/microsoft/agent-lightning/tree/21892cc6d3424ede5fd388248321443f7bd3339e/docs/how-to/"><code>docs/how-to/</code></a> guide (or a detailed README if no how-to exists) without duplicating content in multiple places.</li>
+<li>Include a <a href="https://github.com/microsoft/agent-lightning/tree/56e5c7ce62511c7a02351ccb023887010110d156/docs/how-to/"><code>docs/how-to/</code></a> guide (or a detailed README if no how-to exists) without duplicating content in multiple places.</li>
 <li>Favor simple, dependency-light code over heavy abstractions.</li>
 </ul>
 <div class="admonition warning">
@@ -2113,11 +2113,11 @@
 </ul>
 <p>Most brand-new algorithms ultimately land as “new examples,” so read that section too. Post an issue or design doc to scope the work, reuse existing utilities, and avoid duplicating efforts. Mature, battle-tested examples graduate into the <a href="../../algorithm-zoo/">Algorithm Zoo</a>.</p>
 <h3 id="ecosystem-projects">Ecosystem Projects<a class="headerlink" href="#ecosystem-projects" title="Permanent link">&para;</a></h3>
-<p>Have a project that builds on Agent-lightning but does not belong in the main repo? Fork it or depend on it externally, then let us know. We can showcase notable projects in <a href="../../">Community Projects</a> and the main <a href="https://github.com/microsoft/agent-lightning/tree/21892cc6d3424ede5fd388248321443f7bd3339e/README.md">README</a>.</p>
+<p>Have a project that builds on Agent-lightning but does not belong in the main repo? Fork it or depend on it externally, then let us know. We can showcase notable projects in <a href="../../">Community Projects</a> and the main <a href="https://github.com/microsoft/agent-lightning/tree/56e5c7ce62511c7a02351ccb023887010110d156/README.md">README</a>.</p>
 <h3 id="other-contribution-ideas">Other Contribution Ideas<a class="headerlink" href="#other-contribution-ideas" title="Permanent link">&para;</a></h3>
 <ul>
-<li><strong>Tests.</strong> Add or improve cases in <a href="https://github.com/microsoft/agent-lightning/tree/21892cc6d3424ede5fd388248321443f7bd3339e/tests"><code>tests/</code></a> (unit, integration, or end-to-end).</li>
-<li><strong>Benchmarks.</strong> Expand <a href="https://github.com/microsoft/agent-lightning/tree/21892cc6d3424ede5fd388248321443f7bd3339e/tests/benchmark"><code>tests/benchmark</code></a> to stress large-scale training or rollouts.</li>
+<li><strong>Tests.</strong> Add or improve cases in <a href="https://github.com/microsoft/agent-lightning/tree/56e5c7ce62511c7a02351ccb023887010110d156/tests"><code>tests/</code></a> (unit, integration, or end-to-end).</li>
+<li><strong>Benchmarks.</strong> Expand <a href="https://github.com/microsoft/agent-lightning/tree/56e5c7ce62511c7a02351ccb023887010110d156/tests/benchmark"><code>tests/benchmark</code></a> to stress large-scale training or rollouts.</li>
 <li><strong>Issue triage.</strong> Reproduce bugs, confirm whether they reproduce on <code>main</code>, or suggest short-term mitigations so maintainers can prioritize.</li>
 </ul>
 <h2 id="contribution-workflow">Contribution Workflow<a class="headerlink" href="#contribution-workflow" title="Permanent link">&para;</a></h2>
@@ -2201,7 +2201,7 @@
 </tr>
 </tbody>
 </table>
-<p>Remember to register new docs in <a href="https://github.com/microsoft/agent-lightning/tree/21892cc6d3424ede5fd388248321443f7bd3339e/mkdocs.yml"><code>mkdocs.yml</code></a>, add examples to <a href="https://github.com/microsoft/agent-lightning/tree/21892cc6d3424ede5fd388248321443f7bd3339e/examples/README.md">examples/README</a>, and update the <a href="../../how-to/examples-catalog/">Examples Catalog</a>.</p>
+<p>Remember to register new docs in <a href="https://github.com/microsoft/agent-lightning/tree/56e5c7ce62511c7a02351ccb023887010110d156/mkdocs.yml"><code>mkdocs.yml</code></a>, add examples to <a href="https://github.com/microsoft/agent-lightning/tree/56e5c7ce62511c7a02351ccb023887010110d156/examples/README.md">examples/README</a>, and update the <a href="../../how-to/examples-catalog/">Examples Catalog</a>.</p>
 </div>
 <h3 id="4-test-and-validate">4. Test and Validate<a class="headerlink" href="#4-test-and-validate" title="Permanent link">&para;</a></h3>
 <p>Most contributions require automated checks. Prefix commands with <code>uv run</code> so they use the project environment.</p>
@@ -2218,7 +2218,7 @@
 <p>If you have touched code under <code>examples/</code>, you should run the example-specific smoke tests. Each directory includes a README with example-specific smoke tests—run those too.</p>
 <div class="admonition note">
 <p class="admonition-title">Build documentation when needed</p>
-<p>Keep API references under <a href="https://github.com/microsoft/agent-lightning/tree/21892cc6d3424ede5fd388248321443f7bd3339e/docs/reference/">docs/reference</a> up to date. Doc-only changes should still build cleanly:</p>
+<p>Keep API references under <a href="https://github.com/microsoft/agent-lightning/tree/56e5c7ce62511c7a02351ccb023887010110d156/docs/reference/">docs/reference</a> up to date. Doc-only changes should still build cleanly:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>uv<span class="w"> </span>run<span class="w"> </span>mkdocs<span class="w"> </span>serve<span class="w"> </span>--strict<span class="w">   </span><span class="c1"># live reload</span>
 <a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>uv<span class="w"> </span>run<span class="w"> </span>mkdocs<span class="w"> </span>build<span class="w"> </span>--strict<span class="w">   </span><span class="c1"># CI-equivalent</span>
 </code></pre></div>

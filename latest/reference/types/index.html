@@ -3134,6 +3134,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#agentlightning.semconv.AGL_OPERATION" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <code class="doc-symbol doc-symbol-toc doc-symbol-attribute"></code>&nbsp;AGL_OPERATION
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#agentlightning.semconv.AGL_VIRTUAL" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3255,6 +3266,39 @@
     <span class="md-ellipsis">
       
         <code class="doc-symbol doc-symbol-toc doc-symbol-attribute"></code>&nbsp;OBJECT_TYPE
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#agentlightning.semconv.LightningSpanAttributes.OPERATION_INPUT" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <code class="doc-symbol doc-symbol-toc doc-symbol-attribute"></code>&nbsp;OPERATION_INPUT
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#agentlightning.semconv.LightningSpanAttributes.OPERATION_NAME" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <code class="doc-symbol doc-symbol-toc doc-symbol-attribute"></code>&nbsp;OPERATION_NAME
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#agentlightning.semconv.LightningSpanAttributes.OPERATION_OUTPUT" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <code class="doc-symbol doc-symbol-toc doc-symbol-attribute"></code>&nbsp;OPERATION_OUTPUT
       
     </span>
   </a>
@@ -5594,6 +5638,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#agentlightning.semconv.AGL_OPERATION" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <code class="doc-symbol doc-symbol-toc doc-symbol-attribute"></code>&nbsp;AGL_OPERATION
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#agentlightning.semconv.AGL_VIRTUAL" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -5715,6 +5770,39 @@
     <span class="md-ellipsis">
       
         <code class="doc-symbol doc-symbol-toc doc-symbol-attribute"></code>&nbsp;OBJECT_TYPE
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#agentlightning.semconv.LightningSpanAttributes.OPERATION_INPUT" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <code class="doc-symbol doc-symbol-toc doc-symbol-attribute"></code>&nbsp;OPERATION_INPUT
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#agentlightning.semconv.LightningSpanAttributes.OPERATION_NAME" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <code class="doc-symbol doc-symbol-toc doc-symbol-attribute"></code>&nbsp;OPERATION_NAME
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#agentlightning.semconv.LightningSpanAttributes.OPERATION_OUTPUT" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <code class="doc-symbol doc-symbol-toc doc-symbol-attribute"></code>&nbsp;OPERATION_OUTPUT
       
     </span>
   </a>
@@ -10433,6 +10521,29 @@ They are used to "annotate" a specific event or a part of rollout.</p>
 
 
 
+<h4 id="agentlightning.semconv.AGL_OPERATION" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-attribute"></code>            <code class="highlight language-python"><span class="n">AGL_OPERATION</span> <span class="o">=</span> <span class="s1">&#39;agentlightning.operation&#39;</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-module-attribute"><code>module-attribute</code></small>
+  </span>
+
+<a href="#agentlightning.semconv.AGL_OPERATION" class="headerlink" title="Permanent link">&para;</a></h4>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Agent-lightning's standard span name for functions.
+Wrap function or code-blocks as operations.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
 <h4 id="agentlightning.semconv.AGL_VIRTUAL" class="doc doc-heading">
 <code class="doc-symbol doc-symbol-heading doc-symbol-attribute"></code>            <code class="highlight language-python"><span class="n">AGL_VIRTUAL</span> <span class="o">=</span> <span class="s1">&#39;agentlightning.virtual&#39;</span></code>
 
@@ -10721,6 +10832,75 @@ They are used to "annotate" a specific event or a part of rollout.</p>
         <p>Attribute name for object type (full qualified name) in object spans.</p>
 <p>I think builtin types like str, int, bool, list, dict are self-explanatory and
 should also be qualified to use here.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h5 id="agentlightning.semconv.LightningSpanAttributes.OPERATION_INPUT" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-attribute"></code>            <code class="highlight language-python"><span class="n">OPERATION_INPUT</span> <span class="o">=</span> <span class="s1">&#39;agentlightning.operation.input&#39;</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-class-attribute"><code>class-attribute</code></small>
+      <small class="doc doc-label doc-label-instance-attribute"><code>instance-attribute</code></small>
+  </span>
+
+<a href="#agentlightning.semconv.LightningSpanAttributes.OPERATION_INPUT" class="headerlink" title="Permanent link">&para;</a></h5>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Attribute name for operation input in operation spans.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h5 id="agentlightning.semconv.LightningSpanAttributes.OPERATION_NAME" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-attribute"></code>            <code class="highlight language-python"><span class="n">OPERATION_NAME</span> <span class="o">=</span> <span class="s1">&#39;agentlightning.operation.name&#39;</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-class-attribute"><code>class-attribute</code></small>
+      <small class="doc doc-label doc-label-instance-attribute"><code>instance-attribute</code></small>
+  </span>
+
+<a href="#agentlightning.semconv.LightningSpanAttributes.OPERATION_NAME" class="headerlink" title="Permanent link">&para;</a></h5>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Attribute name for operation name in operation spans, normally the function name.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h5 id="agentlightning.semconv.LightningSpanAttributes.OPERATION_OUTPUT" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-attribute"></code>            <code class="highlight language-python"><span class="n">OPERATION_OUTPUT</span> <span class="o">=</span> <span class="s1">&#39;agentlightning.operation.output&#39;</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-class-attribute"><code>class-attribute</code></small>
+      <small class="doc doc-label doc-label-instance-attribute"><code>instance-attribute</code></small>
+  </span>
+
+<a href="#agentlightning.semconv.LightningSpanAttributes.OPERATION_OUTPUT" class="headerlink" title="Permanent link">&para;</a></h5>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Attribute name for operation output in operation spans.</p>
 
     </div>
 

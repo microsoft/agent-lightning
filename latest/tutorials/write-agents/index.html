@@ -756,6 +756,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#linking-to-other-spans" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Linking to Other Spans
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1719,6 +1730,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#linking-to-other-spans" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Linking to Other Spans
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1783,7 +1805,7 @@
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="November 27, 2025 17:22:42 UTC"><span class="timeago" datetime="2025-11-27T17:22:42+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="November 27, 2025 17:22:42 UTC">2025-11-27</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="December 4, 2025 07:16:29 UTC"><span class="timeago" datetime="2025-12-04T07:16:29+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="December 4, 2025 07:16:29 UTC">2025-12-04</span>
   </span>
 
     
@@ -2007,6 +2029,7 @@
 <p><a href="" id="using-emitter"></a></p>
 <p>While returning a single float for the final reward is sufficient for many algorithms, some advanced scenarios require richer feedback. For instance, an algorithm might learn more effectively if it receives intermediate rewards throughout a multi-step task.</p>
 <p>Agent-lightning provides an <strong>emitter</strong> module that allows you to record custom spans from within your agent's logic. Like many common operations (like LLM calls) that are automatically instrumented by <a class="autorefs autorefs-internal" title="            agentlightning.Tracer" href="../../reference/runner/#agentlightning.Tracer">Tracer</a>, the emitter will also send a <a class="autorefs autorefs-internal" title="            agentlightning.Span" href="../../reference/types/#agentlightning.Span">Span</a> that records an Agent-lightning-specific operation. Then algorithms can query and read those spans later. See <a href="../traces/">Working with Traces</a> for more details.</p>
+<p>For multi-step routines (function calls, tools, or adapters) you can wrap code with <a class="autorefs autorefs-internal" title="            agentlightning.operation(fn=None, *, propagate=True, **additional_attributes)" href="../../reference/agent/#agentlightning.operation"><code>operation</code></a>, either as a decorator or a context manager,to capture inputs, outputs, and metadata on a dedicated <code>"agentlightning.operation"</code> span. This makes it easier to correlate downstream annotations (like rewards or messages) with the higher-level work that produced them.</p>
 <p>You can find the emitter functions from <a href="../../reference/agent/">agentlightning.emitter</a>.</p>
 <h3 id="emitting-rewards-messages-and-more">Emitting Rewards, Messages, and More<a class="headerlink" href="#emitting-rewards-messages-and-more" title="Permanent link">&para;</a></h3>
 <p>Here are the primary emitter functions:</p>
@@ -2014,9 +2037,9 @@
 <li><a class="autorefs autorefs-internal" title="            agentlightning.emit_reward(reward, *, primary_key=None, attributes=None, propagate=True)" href="../../reference/agent/#agentlightning.emit_reward"><code>emit_reward(value: float)</code></a>: Records an intermediate reward.</li>
 <li><a class="autorefs autorefs-internal" title="            agentlightning.emit_message(message, attributes=None, propagate=True)" href="../../reference/agent/#agentlightning.emit_message"><code>emit_message(message: str)</code></a>: Records a simple log message as a span.</li>
 <li><a class="autorefs autorefs-internal" title="            agentlightning.emit_exception(exception, attributes=None, propagate=True)" href="../../reference/agent/#agentlightning.emit_exception"><code>emit_exception(exception: BaseException)</code></a>: Records a Python exception, including its type, message, and stack trace.</li>
-<li><a class="autorefs autorefs-internal" title="            agentlightning.emit_object(object, attributes=None, propagate=True)" href="../../reference/agent/#agentlightning.emit_object"><code>emit_object(obj: Any)</code></a>: Records any JSON-serializable object, perfect for structured data.</li>
+<li><a class="autorefs autorefs-internal" title="            agentlightning.emit_object(object, attributes=None, propagate=True)" href="../../reference/agent/#agentlightning.emit_object"><code>emit_object(obj: Any)</code></a>: Records any JSON-serializable object, perfect for structured data.
+Let's see an example of an agent using these emitters to provide detailed feedback.</li>
 </ul>
-<p>Let's see an example of an agent using these emitters to provide detailed feedback.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">agentlightning</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">agl</span>
 <a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>
 <a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="nd">@agl</span><span class="o">.</span><span class="n">rollout</span>
@@ -2047,6 +2070,48 @@
 <a id="__codelineno-5-28" name="__codelineno-5-28" href="#__codelineno-5-28"></a>        <span class="k">return</span> <span class="mf">0.0</span>
 </code></pre></div>
 <p>By using the emitter, you create a rich, detailed trace of your agent's execution. This data can be invaluable for debugging and is essential for advanced algorithms that can learn from more than just a single final score.</p>
+<h3 id="linking-to-other-spans">Linking to Other Spans<a class="headerlink" href="#linking-to-other-spans" title="Permanent link">&para;</a></h3>
+<p>Sometimes a span should explicitly point back to another span that produced the input it is working on (for example, linking a reward annotation to the <code>"agentlightning.operation"</code> span that generated a response). Agent-lightning encodes these relationships through flattened link attributes. The helper <a class="autorefs autorefs-internal" title="            agentlightning.utils.otel.make_link_attributes(links)" href="../../reference/internal/#agentlightning.utils.otel.make_link_attributes"><code>make_link_attributes</code></a> converts a dictionary of keys—such as <code>trace_id</code>, <code>span_id</code>, or any custom attribute—into the <code>"agentlightning.link.*"</code> fields expected by the backend. Later on, <a class="autorefs autorefs-internal" title="            agentlightning.utils.otel.query_linked_spans(spans, links)" href="../../reference/internal/#agentlightning.utils.otel.query_linked_spans"><code>query_linked_spans</code></a> can be used to recover the original span(s) from those link descriptors.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">opentelemetry.trace</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">trace_api</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">agentlightning</span><span class="w"> </span><span class="kn">import</span> <span class="n">emit_annotation</span><span class="p">,</span> <span class="n">operation</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">agentlightning.utils.otel</span><span class="w"> </span><span class="kn">import</span> <span class="n">make_link_attributes</span><span class="p">,</span> <span class="n">make_tag_attributes</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="k">with</span> <span class="n">operation</span><span class="p">(</span><span class="n">conversation_id</span><span class="o">=</span><span class="s2">&quot;chat-42&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">op</span><span class="p">:</span>
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>    <span class="c1"># ... perform the work ...</span>
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>    <span class="n">span_ctx</span> <span class="o">=</span> <span class="n">op</span><span class="o">.</span><span class="n">span</span><span class="o">.</span><span class="n">get_span_context</span><span class="p">()</span>
+<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>    <span class="n">link_attrs</span> <span class="o">=</span> <span class="n">make_link_attributes</span><span class="p">({</span>
+<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a>        <span class="s2">&quot;conversation_id&quot;</span><span class="p">:</span> <span class="s2">&quot;chat-42&quot;</span><span class="p">,</span>
+<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a>    <span class="p">})</span>
+<a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a>
+<a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a>    <span class="n">emit_annotation</span><span class="p">(</span>
+<a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a>        <span class="p">{</span>
+<a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a>            <span class="o">**</span><span class="n">link_attrs</span><span class="p">,</span>
+<a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a>            <span class="o">**</span><span class="n">make_tag_attributes</span><span class="p">([</span><span class="s2">&quot;reward&quot;</span><span class="p">,</span> <span class="s2">&quot;good&quot;</span><span class="p">]),</span>
+<a id="__codelineno-6-16" name="__codelineno-6-16" href="#__codelineno-6-16"></a>        <span class="p">}</span>
+<a id="__codelineno-6-17" name="__codelineno-6-17" href="#__codelineno-6-17"></a>    <span class="p">)</span>
+</code></pre></div>
+<p>When analyzing in adapters, pass the extracted link models to <a class="autorefs autorefs-internal" title="            agentlightning.utils.otel.query_linked_spans(spans, links)" href="../../reference/internal/#agentlightning.utils.otel.query_linked_spans"><code>query_linked_spans</code></a> to retrieve the matching span(s):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">agentlightning.utils.otel</span><span class="w"> </span><span class="kn">import</span> <span class="n">extract_links_from_attributes</span><span class="p">,</span> <span class="n">query_linked_spans</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="n">annotation_span</span> <span class="o">=</span> <span class="o">...</span>  <span class="c1"># Span from your trace store</span>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="n">operation_spans</span> <span class="o">=</span> <span class="p">[</span><span class="o">...</span><span class="p">]</span>  <span class="c1"># list of spans you want to search</span>
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>
+<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="n">link_models</span> <span class="o">=</span> <span class="n">extract_links_from_attributes</span><span class="p">(</span><span class="n">annotation_span</span><span class="o">.</span><span class="n">attributes</span><span class="p">)</span>
+<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="n">matches</span> <span class="o">=</span> <span class="n">query_linked_spans</span><span class="p">(</span><span class="n">operation_spans</span><span class="p">,</span> <span class="n">link_models</span><span class="p">)</span>
+<a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="k">assert</span> <span class="n">matches</span>  <span class="c1"># Contains the original operation span</span>
+</code></pre></div>
+<div class="admonition tip">
+<p class="admonition-title">Correlating Rewards with LLM Requests</p>
+<p><a href="../traces/">Tracer</a> instruments each request/response as its own span. You can link to the <a href="https://opentelemetry.io/docs/specs/semconv/gen-ai/gen-ai-events/"><code>gen_ai.response.id</code></a> attribute, which comes from the LLM response ID.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">agentlightning</span><span class="w"> </span><span class="kn">import</span> <span class="n">emit_reward</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">agentlightning.utils.otel</span><span class="w"> </span><span class="kn">import</span> <span class="n">make_link_attributes</span>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="n">result</span> <span class="o">=</span> <span class="n">call_llm</span><span class="p">(</span><span class="n">prompt</span><span class="p">)</span>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="n">reward_links</span> <span class="o">=</span> <span class="n">make_link_attributes</span><span class="p">({</span><span class="s2">&quot;gen_ai.response.id&quot;</span><span class="p">:</span> <span class="n">result</span><span class="o">.</span><span class="n">id</span><span class="p">})</span>
+<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="n">emit_reward</span><span class="p">(</span><span class="mf">0.9</span><span class="p">,</span> <span class="n">attributes</span><span class="o">=</span><span class="n">reward_links</span><span class="p">)</span>
+</code></pre></div>
+<p>Later, use the same <code>gen_ai.response.id</code> key inside <code>query_linked_spans</code> to find the reward(s) that reference that specific LLM request span.</p>
+</div>
 
 <!-- Was this page helpful? -->
 
