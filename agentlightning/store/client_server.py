@@ -473,7 +473,9 @@ class LightningStoreServer(LightningStore):
             request: Request, call_next: Callable[[Request], Awaitable[Response]]
         ):
             # If not API request, just pass through
-            if not request.url.path.startswith(API_V1_AGL_PREFIX):
+            if not request.url.path.startswith(API_V1_AGL_PREFIX) and not request.url.path.startswith(
+                API_V1_PREFIX + "/traces"
+            ):
                 return await call_next(request)
 
             start = time.perf_counter()

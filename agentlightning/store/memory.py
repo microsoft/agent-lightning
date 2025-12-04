@@ -90,7 +90,9 @@ class InMemoryLightningStore(CollectionBasedLightningStore[InMemoryLightningColl
         prometheus: bool = False,
     ):
         super().__init__(
-            collections=InMemoryLightningCollections(lock_type="thread" if thread_safe else "asyncio"),
+            collections=InMemoryLightningCollections(
+                lock_type="thread" if thread_safe else "asyncio", prometheus=prometheus
+            ),
             prometheus=prometheus,
         )
 

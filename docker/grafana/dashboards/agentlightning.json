@@ -1017,6 +1017,63 @@
       ],
       "title": "Rollout Completion Rate (by Status)",
       "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 140
+      },
+      "id": 304,
+      "panels": [],
+      "title": "In-memory Collection Locks",
+      "type": "row"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops/s"
+        }
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 0,
+        "y": 141
+      },
+      "id": 305,
+      "targets": [
+        {
+          "expr": "sum by (collection) (rate(memory_collection_lock_rate_total[1m]))",
+          "legendFormat": "{{collection}}"
+        }
+      ],
+      "title": "Memory Lock Rate (by Collection)",
+      "type": "timeseries"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 12,
+        "y": 141
+      },
+      "id": 306,
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le, collection) (rate(memory_collection_lock_latency_seconds_bucket[1m])))",
+          "legendFormat": "P50 {{collection}}"
+        }
+      ],
+      "title": "Memory Lock Latency (P50)",
+      "type": "timeseries"
     }
   ],
   "schemaVersion": 36,

@@ -635,6 +635,27 @@ def gather_diagnostics(client: PrometheusClient, window: str) -> Dict[str, Any]:
         ),
         ("operation",),
     )
+    diagnostics["mongo_latency_p50"] = vector_to_map(
+        safe_vector(
+            client,
+            f"histogram_quantile(0.50, sum by (le, operation)(rate(mongo_operation_duration_seconds_bucket{{operation!='ensure_collection'}}[{window}])))",
+        ),
+        ("operation",),
+    )
+    diagnostics["mongo_latency_p95"] = vector_to_map(
+        safe_vector(
+            client,
+            f"histogram_quantile(0.95, sum by (le, operation)(rate(mongo_operation_duration_seconds_bucket{{operation!='ensure_collection'}}[{window}])))",
+        ),
+        ("operation",),
+    )
+    diagnostics["mongo_latency_p99"] = vector_to_map(
+        safe_vector(
+            client,
+            f"histogram_quantile(0.99, sum by (le, operation)(rate(mongo_operation_duration_seconds_bucket{{operation!='ensure_collection'}}[{window}])))",
+        ),
+        ("operation",),
+    )
     opcounters_samples = safe_vector(client, f"sum by (legacy_op_type)(rate(mongodb_ss_opcounters[{window}]))")
     mongo_opcounters: Dict[str, float] = {}
     if opcounters_samples:
@@ -651,6 +672,31 @@ def gather_diagnostics(client: PrometheusClient, window: str) -> Dict[str, Any]:
                 mongo_opcounters[str(label or "-")] = value
     diagnostics["mongo_opcounters"] = mongo_opcounters
     diagnostics["mongo_connections"] = safe_scalar(client, "avg(mongodb_ss_connections{conn_type='current'})")
+    diagnostics["memory_lock_rate"] = vector_to_map(
+        safe_vector(client, f"sum by (collection)(rate(memory_collection_lock_rate_total[{window}]))"),
+        ("collection",),
+    )
+    diagnostics["memory_lock_p50"] = vector_to_map(
+        safe_vector(
+            client,
+            f"histogram_quantile(0.50, sum by (le, collection)(rate(memory_collection_lock_latency_seconds_bucket[{window}])))",
+        ),
+        ("collection",),
+    )
+    diagnostics["memory_lock_p95"] = vector_to_map(
+        safe_vector(
+            client,
+            f"histogram_quantile(0.95, sum by (le, collection)(rate(memory_collection_lock_latency_seconds_bucket[{window}])))",
+        ),
+        ("collection",),
+    )
+    diagnostics["memory_lock_p99"] = vector_to_map(
+        safe_vector(
+            client,
+            f"histogram_quantile(0.99, sum by (le, collection)(rate(memory_collection_lock_latency_seconds_bucket[{window}])))",
+        ),
+        ("collection",),
+    )
     diagnostics["cpu_usage"] = safe_scalar(client, f"1 - avg(rate(node_cpu_seconds_total{{mode='idle'}}[{window}]))")
     diagnostics["memory_total"] = safe_scalar(client, "avg(node_memory_MemTotal_bytes)")
     diagnostics["memory_available"] = safe_scalar(client, "avg(node_memory_MemAvailable_bytes)")
@@ -870,11 +916,29 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     diagnostics_blocks: List[List[str]] = []
 
     mongo_ops = cast(Dict[str, float], diag.get("mongo_ops", {}))
+    mongo_latency_p50 = cast(Dict[str, float], diag.get("mongo_latency_p50", {}))
+    mongo_latency_p95 = cast(Dict[str, float], diag.get("mongo_latency_p95", {}))
+    mongo_latency_p99 = cast(Dict[str, float], diag.get("mongo_latency_p99", {}))
+    mongo_op_keys = sorted(
+        {
+            *mongo_ops.keys(),
+            *mongo_latency_p50.keys(),
+            *mongo_latency_p95.keys(),
+            *mongo_latency_p99.keys(),
+        },
+        key=lambda item: str(item),
+    )
     mongo_ops_rows = [
-        [operation or "-", fmt_rate(rate)]
-        for operation, rate in sorted(mongo_ops.items(), key=lambda item: str(item[0]))
+        [
+            op or "-",
+            fmt_rate(mongo_ops.get(op)),
+            fmt_latency(mongo_latency_p50.get(op)),
+            fmt_latency(mongo_latency_p95.get(op)),
+            fmt_latency(mongo_latency_p99.get(op)),
+        ]
+        for op in mongo_op_keys
     ]
-    diagnostics_blocks.append(render_table(["Mongo Operation", "Ops/s"], mongo_ops_rows))
+    diagnostics_blocks.append(render_table(["Mongo Operation", "Ops/s", "P50", "P95", "P99"], mongo_ops_rows))
 
     mongo_opcounters = cast(Dict[str, float], diag.get("mongo_opcounters", {}))
     mongo_opcounters_rows = [
@@ -882,6 +946,31 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         for op_type, rate in sorted(mongo_opcounters.items(), key=lambda item: str(item[0]))
     ]
     diagnostics_blocks.append(render_table(["MongoDB Opcounter", "Ops/s"], mongo_opcounters_rows))
+
+    memory_lock_rate = cast(Dict[str, float], diag.get("memory_lock_rate", {}))
+    memory_lock_p50 = cast(Dict[str, float], diag.get("memory_lock_p50", {}))
+    memory_lock_p95 = cast(Dict[str, float], diag.get("memory_lock_p95", {}))
+    memory_lock_p99 = cast(Dict[str, float], diag.get("memory_lock_p99", {}))
+    memory_collections = sorted(
+        {
+            *memory_lock_rate.keys(),
+            *memory_lock_p50.keys(),
+            *memory_lock_p95.keys(),
+            *memory_lock_p99.keys(),
+        },
+        key=lambda item: str(item),
+    )
+    memory_lock_rows = [
+        [
+            collection or "-",
+            fmt_rate(memory_lock_rate.get(collection)),
+            fmt_latency(memory_lock_p50.get(collection)),
+            fmt_latency(memory_lock_p95.get(collection)),
+            fmt_latency(memory_lock_p99.get(collection)),
+        ]
+        for collection in memory_collections
+    ]
+    diagnostics_blocks.append(render_table(["Memory Collection", "Locks/s", "P50", "P95", "P99"], memory_lock_rows))
 
     mongo_misc_rows: List[List[str]] = []
     if diag.get("mongo_connections") is not None:
