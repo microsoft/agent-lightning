@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import multiprocessing
+import os
 import signal
 import socket
 import sys
@@ -17,6 +18,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import pytest
 
+from agentlightning.execution import client_server as cs_mod
 from agentlightning.execution.client_server import ClientServerExecutionStrategy
 from agentlightning.execution.events import ExecutionEvent
 from agentlightning.store.base import LightningStore
@@ -392,6 +394,11 @@ async def _kbint_in_runner(store: LightningStore, worker_id: int, event: Executi
     _ = (store, worker_id)
     event.set()
     raise KeyboardInterrupt()
+
+
+async def _cancel_in_runner(store: LightningStore, worker_id: int, event: ExecutionEvent) -> None:
+    _ = (store, worker_id, event)
+    raise asyncio.CancelledError()
 
 
 async def _timeout_error_in_runner(store: LightningStore, worker_id: int, event: ExecutionEvent) -> None:
@@ -1236,3 +1243,78 @@ def test_execute_main_runner_store_state_isolated_in_subprocess(store: DummyLigh
     assert (
         len(store.calls) == initial_call_count
     ), "Store state should not be modified in main process when main_process='runner'"
+
+
+# kh
+def test_run_with_sigint_child_runner_exits_cleanly_on_sigint() -> None:
+    """
+    When _run_with_sigint, delivering SIGINT to that process should lead to a graceful shutdown:
+    No exception escapes _run_with_sigint.
+    """
+    port: int = _free_port()
+    strat = ClientServerExecutionStrategy(
+        role="runner",
+        n_runners=1,
+        server_host="127.0.0.1",
+        server_port=port,
+        graceful_timeout=0.05,
+        terminate_timeout=0.05,
+    )
+
+    ctx = get_context()
+
+    def target() -> None:
+        dummy_store = DummyLightningStore({})
+        stop_evt: ExecutionEvent = DummyEvt()
+
+        strat._run_with_sigint(  # pyright: ignore[reportPrivateUsage]
+            kind="runner",
+            runner=_noop_runner,
+            worker_id=0,
+            store=dummy_store,
+            stop_evt=stop_evt,
+            is_main_process=False,
+        )
+
+    p: Process = ctx.Process(target=target, name="runner-sigint-child")
+    p.start()
+    try:
+        assert p.pid is not None
+        os.kill(p.pid, signal.SIGINT)
+        p.join(timeout=5.0)
+        assert not p.is_alive()
+        assert p.exitcode == 0
+    finally:
+        if p.is_alive():
+            p.terminate()
+        p.join()
+
+
+def test_run_with_sigint_propagates_non_sigint_cancelled_error() -> None:
+    """
+    A runner that raises asyncio.CancelledError should cause CancelledError to propagate:
+    - the asyncio.CancelledError is not swallowed,
+    - the caller of _run_with_sigint observes the exception.
+    """
+    port: int = _free_port()
+    strat = ClientServerExecutionStrategy(
+        role="runner",
+        n_runners=1,
+        server_host="127.0.0.1",
+        server_port=port,
+        graceful_timeout=0.05,
+        terminate_timeout=0.05,
+    )
+
+    dummy_store = DummyLightningStore({})
+    stop_evt: ExecutionEvent = DummyEvt()
+
+    with pytest.raises(asyncio.CancelledError):
+        strat._run_with_sigint(  # pyright: ignore[reportPrivateUsage]
+            kind="runner",
+            runner=_cancel_in_runner,
+            worker_id=0,
+            store=dummy_store,
+            stop_evt=stop_evt,
+            is_main_process=True,
+        )
