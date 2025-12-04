@@ -683,6 +683,49 @@ class TracerTraceToTriplet(TraceToTripletBase):
         )
         return trajectory
 
+    def adapt_group(self, span_groups: Dict[str, Dict[str, Span]], /) -> List[Triplet]:
+        def get_token_ids(span, key: str) -> list:
+            return span.attributes.get(key, []) if span else []
+
+        def get_reward_0(span) -> float:
+            if span is None:
+                return 0.0
+            return float(span.attributes.get("agentlightning.reward.0.value", 0.0))
+
+        def get_reward_1(span):
+            if span is None:
+                return None
+            val = span.attributes.get("agentlightning.reward.1.value")
+            return float(val) if val is not None else None
+
+        def get_message(span) -> str:
+            if span is None:
+                return None
+            return span.attributes.get("agentlightning.object.literal")
+
+        triplets: List[Triplet] = []
+
+        for key, value in span_groups.items():
+            call_span = value.get("call_span")
+            object_span = value.get("object_span")
+            annotation_span = value.get("annotation_span")
+
+            request_id = value.get("request_id")
+
+            triplets.append(
+                Triplet(
+                    prompt={"token_ids": get_token_ids(call_span, "prompt_token_ids")},
+                    response={"token_ids": get_token_ids(call_span, "response_token_ids")},
+                    reward=get_reward_0(annotation_span),
+                    metadata=dict(
+                        response_id=request_id,
+                        intrinsic_reward=get_reward_1(annotation_span),
+                        message=get_message(object_span),
+                    ),
+                )
+            )
+        return triplets
+
 
 class LlmProxyTraceToTriplet(TraceToTripletBase):
     """Convert telemetry emitted by the LLM Proxy into triplet trajectories.

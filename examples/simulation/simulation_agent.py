@@ -15,7 +15,8 @@ from captioners.debugging import (
 )
 from envs import make_env_manager
 
-from agentlightning import LLM, LitAgent, NamedResources, Rollout, configure_logger, emit_object, emit_reward
+from agentlightning import LLM, LitAgent, NamedResources, Rollout, configure_logger, emit_object, emit_reward, operation
+from agentlightning.utils.otel import make_link_attributes
 
 logger = configure_logger(name=__name__, level=logging.ERROR)
 
@@ -98,15 +99,14 @@ class SimulationAgent(LitAgent):
             obs, pure_env_obs, infos = self.env.reset()
             episode_reward, done = 0.0, False
 
+            step_count = 0
             while not done:
                 try:
                     instructed_obs = self._get_instructed_obs(obs)
-                    # print obs
-                    if self.config.debugging:
-                        self._print_llm_input(instructed_obs)
 
                     # Main agent step
-                    result = await self.agent._model_client.create(instructed_obs)
+                    with operation(step_count=step_count):
+                        result = await self.agent._model_client.create(instructed_obs)
                     output = result.content
                     logger.info(f"[LLM output]: {output}")
 
@@ -115,7 +115,7 @@ class SimulationAgent(LitAgent):
                     break
 
                 if self.config.log_pure_env_obs:
-                    emit_object(pure_env_obs)
+                    emit_object(pure_env_obs, attributes=make_link_attributes({"step_count": str(step_count)}))
 
                 obs, pure_env_obs, executed_action, is_valid, step_reward, terminated, truncated, info = self.env.step(
                     output, use_reasoning=self.config.captioner.type == "cot"
@@ -123,13 +123,23 @@ class SimulationAgent(LitAgent):
 
                 if rollout.mode == "train":
                     step_reward *= reward_scale
-                emit_reward(step_reward)
 
                 if format_penalty != 0.0:
-                    emit_reward(0.0 if is_valid else -1.0 * format_penalty)
+                    emit_reward(
+                        {
+                            "extrinsic_reward": step_reward,
+                            "intrinsic_reward": 0.0 if is_valid else -1.0 * format_penalty,
+                        },
+                        primary_key="extrinsic_reward",
+                        attributes=make_link_attributes({"step_count": str(step_count)}),
+                    )
+                else:
+                    emit_reward(step_reward, attributes=make_link_attributes({"step_count": str(step_count)}))
 
                 episode_reward += float(step_reward)
                 done = np.logical_or(terminated, truncated)
+
+                step_count += 1
 
             return episode_reward
 

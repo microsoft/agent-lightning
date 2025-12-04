@@ -448,6 +448,66 @@ class AgentModeDaemon:
         elif any(not r.prompt.get("token_ids", []) for r in rollout.triplets):
             print(f"Warning: Rollout {rollout.rollout_id} contains empty prompt: {rollout.triplets}")
 
+    def _extract_span_groups(self, spans):
+        def resolve_step_count(span, next_span, spans, index):
+            """
+            Determine step_count for a given span using next_span or fallback search.
+            """
+            # CASE A: If next_span exists and parent_id matches
+            if next_span and span.parent_id == next_span.span_id:
+                return next_span.attributes.get("step_count")
+
+            # CASE B: Fallback — search forward for agentlightning.operation
+            for s in spans[index + 1 :]:
+                if s.name == "agentlightning.operation" and span.parent_id == s.span_id:
+                    return s.attributes.get("step_count")
+
+            return None
+
+        def extract_step_count_from_links(span):
+            """
+            Extract step_count from agentlightning.link.* attributes.
+            """
+            key = span.attributes.get("agentlightning.link.0.key_match")
+            if key == "step_count":
+                return span.attributes.get("agentlightning.link.0.value_match")
+            return None
+
+        span_groups = {}
+
+        for i, span in enumerate(spans):
+            next_span = spans[i + 1] if i + 1 < len(spans) else None
+            step_count = None
+
+            if span.name == "openai.chat.completion":
+                step_count = resolve_step_count(span, next_span, spans, i)
+                if step_count is None:
+                    continue
+
+                step_count = str(step_count)
+                span_groups.setdefault(step_count, {})
+                span_groups[step_count]["call_span"] = span
+
+            elif span.name == "agentlightning.object":
+                step_count = extract_step_count_from_links(span)
+                if step_count is None:
+                    continue
+
+                step_count = str(step_count)
+                span_groups.setdefault(step_count, {})
+                span_groups[step_count]["object_span"] = span
+
+            elif span.name == "agentlightning.annotation":
+                step_count = extract_step_count_from_links(span)
+                if step_count is None:
+                    continue
+
+                step_count = str(step_count)
+                span_groups.setdefault(step_count, {})
+                span_groups[step_count]["annotation_span"] = span
+
+        return span_groups
+
     async def _validate_data_v1(self, rollout: Rollout) -> RolloutLegacy:
         """Convert Rollout to RolloutLegacy and validate.
 
@@ -457,13 +517,15 @@ class AgentModeDaemon:
         """
         # Query spans for this rollout (latest attempt)
         spans = await self.store.query_spans(rollout.rollout_id, attempt_id="latest")
+        span_groups = self._extract_span_groups(spans)
 
         # Convert spans to triplets using the adapter
         if not spans:
             # No triplets found, will emit a warning later.
             triplets = []
         else:
-            triplets = self.adapter.adapt(spans)
+            # triplets = self.adapter.adapt(spans)
+            triplets = self.adapter.adapt_group(span_groups)
 
         # Extract final reward from triplets
         final_reward: Optional[float] = None

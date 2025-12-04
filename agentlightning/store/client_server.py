@@ -565,6 +565,24 @@ class LightningStoreServer(LightningStore):
             )
             return _build_paginated_response(results, limit=params.limit, offset=params.offset)
 
+        @api.post(API_AGL_PREFIX + "/rollouts/search", response_model=PaginatedResult[Union[AttemptedRollout, Rollout]])
+        async def search_rollouts(request: QueryRolloutsRequest):  # pyright: ignore[reportUnusedFunction]
+            _validate_paginated_request(request, Rollout)
+            status_in = request.status_in if "status_in" in request.model_fields_set else None
+            rollout_id_in = request.rollout_id_in if "rollout_id_in" in request.model_fields_set else None
+            # Get all rollouts from the underlying store
+            results = await self.query_rollouts(
+                status_in=status_in,
+                rollout_id_in=rollout_id_in,
+                rollout_id_contains=request.rollout_id_contains,
+                filter_logic=request.filter_logic,
+                sort_by=request.sort_by,
+                sort_order=request.sort_order,
+                limit=request.limit,
+                offset=request.offset,
+            )
+            return _build_paginated_response(results, limit=request.limit, offset=request.offset)
+
         @api.get(API_AGL_PREFIX + "/rollouts/{rollout_id}", response_model=Union[AttemptedRollout, Rollout])
         async def get_rollout_by_id(rollout_id: str):  # pyright: ignore[reportUnusedFunction]
             return await self.get_rollout_by_id(rollout_id)
@@ -600,6 +618,20 @@ class LightningStoreServer(LightningStore):
         async def start_attempt(rollout_id: str):  # pyright: ignore[reportUnusedFunction]
             return await self.start_attempt(rollout_id)
 
+        @api.post(API_AGL_PREFIX + "/rollouts/{rollout_id}/attempts/search", response_model=PaginatedResult[Attempt])
+        async def search_attempts(  # pyright: ignore[reportUnusedFunction]
+            rollout_id: str, request: QueryAttemptsRequest
+        ):
+            _validate_paginated_request(request, Attempt)
+            attempts = await self.query_attempts(
+                rollout_id,
+                sort_by=request.sort_by,
+                sort_order=request.sort_order,
+                limit=request.limit,
+                offset=request.offset,
+            )
+            return _build_paginated_response(attempts, limit=request.limit, offset=request.offset)
+
         @api.post(API_AGL_PREFIX + "/rollouts/{rollout_id}/attempts/{attempt_id}", response_model=Attempt)
         async def update_attempt(  # pyright: ignore[reportUnusedFunction]
             rollout_id: str, attempt_id: str, request: UpdateAttemptRequest = Body(...)
@@ -626,6 +658,21 @@ class LightningStoreServer(LightningStore):
                 offset=params.offset,
             )
             return _build_paginated_response(workers, limit=params.limit, offset=params.offset)
+
+        @api.post(API_AGL_PREFIX + "/workers/search", response_model=PaginatedResult[Worker])
+        async def search_workers(request: QueryWorkersRequest):  # pyright: ignore[reportUnusedFunction]
+            _validate_paginated_request(request, Worker)
+            status_in = request.status_in if "status_in" in request.model_fields_set else None
+            workers = await self.query_workers(
+                status_in=status_in,
+                worker_id_contains=request.worker_id_contains,
+                filter_logic=request.filter_logic,
+                sort_by=request.sort_by,
+                sort_order=request.sort_order,
+                limit=request.limit,
+                offset=request.offset,
+            )
+            return _build_paginated_response(workers, limit=request.limit, offset=request.offset)
 
         @api.get(API_AGL_PREFIX + "/workers/{worker_id}", response_model=Optional[Worker])
         async def get_worker(worker_id: str):  # pyright: ignore[reportUnusedFunction]
@@ -719,6 +766,28 @@ class LightningStoreServer(LightningStore):
             )
             return _build_paginated_response(spans, limit=params.limit, offset=params.offset)
 
+        @api.post(API_AGL_PREFIX + "/spans/search", response_model=PaginatedResult[Span])
+        async def search_spans(request: QuerySpansRequest):  # pyright: ignore[reportUnusedFunction]
+            _validate_paginated_request(request, Span)
+            spans = await self.query_spans(
+                request.rollout_id,
+                request.attempt_id,
+                trace_id=request.trace_id,
+                trace_id_contains=request.trace_id_contains,
+                span_id=request.span_id,
+                span_id_contains=request.span_id_contains,
+                parent_id=request.parent_id,
+                parent_id_contains=request.parent_id_contains,
+                name=request.name,
+                name_contains=request.name_contains,
+                filter_logic=request.filter_logic,
+                sort_by=request.sort_by,
+                sort_order=request.sort_order,
+                limit=request.limit,
+                offset=request.offset,
+            )
+            return _build_paginated_response(spans, limit=request.limit, offset=request.offset)
+
         @api.post(API_AGL_PREFIX + "/spans/next", response_model=NextSequenceIdResponse)
         async def get_next_span_sequence_id(request: NextSequenceIdRequest):  # pyright: ignore[reportUnusedFunction]
             sequence_id = await self.get_next_span_sequence_id(request.rollout_id, request.attempt_id)
@@ -778,9 +847,13 @@ class LightningStoreServer(LightningStore):
             # Handle "latest" keywords BEFORE generic IDs
             if path.endswith("/attempts/latest") and "/rollouts/" in path:
                 return re.sub(r"rollouts/[^/]+/attempts/latest$", "rollouts/{rollout_id}/attempts/latest", path)
-            elif path.endswith("/resources/latest"):
+            if path.endswith("/attempts/search") and "/rollouts/" in path:
+                return re.sub(r"rollouts/[^/]+/attempts/search$", "rollouts/{rollout_id}/attempts/search", path)
+            if path.endswith("/resources/latest"):
                 return path
-            elif "enqueue" in path or "dequeue" in path:
+            if path.endswith("/search"):
+                return path
+            if "enqueue" in path or "dequeue" in path:
                 return path
 
             # Handle generic IDs
@@ -1526,29 +1599,25 @@ class LightningStoreClient(LightningStore):
         status: Optional[Sequence[RolloutStatus]] = None,
         rollout_ids: Optional[Sequence[str]] = None,
     ) -> PaginatedResult[Union[AttemptedRollout, Rollout]]:
-        params_list: List[Tuple[str, Any]] = []
-
-        def _extend(key: str, values: Sequence[Any]) -> None:
-            for value in values:
-                params_list.append((key, value))
-
         resolved_status = status_in if status_in is not None else status
         resolved_rollout_ids = rollout_id_in if rollout_id_in is not None else rollout_ids
 
+        payload: Dict[str, Any] = {
+            "limit": limit,
+            "offset": offset,
+        }
         if resolved_status is not None:
-            _extend("status_in", resolved_status)
+            payload["status_in"] = resolved_status
         if resolved_rollout_ids is not None:
-            _extend("rollout_id_in", resolved_rollout_ids)
+            payload["rollout_id_in"] = resolved_rollout_ids
         if rollout_id_contains is not None:
-            params_list.append(("rollout_id_contains", rollout_id_contains))
-        params_list.append(("filter_logic", filter_logic))
+            payload["rollout_id_contains"] = rollout_id_contains
+        payload["filter_logic"] = filter_logic
         if sort_by is not None:
-            params_list.append(("sort_by", sort_by))
-            params_list.append(("sort_order", sort_order))
-        params_list.append(("limit", limit))
-        params_list.append(("offset", offset))
+            payload["sort_by"] = sort_by
+            payload["sort_order"] = sort_order
 
-        data = await self._request_json("get", "/rollouts", params=params_list or None)
+        data = await self._request_json("post", "/rollouts/search", json=payload)
         items = [
             (
                 AttemptedRollout.model_validate(item)
@@ -1568,14 +1637,14 @@ class LightningStoreClient(LightningStore):
         limit: int = -1,
         offset: int = 0,
     ) -> PaginatedResult[Attempt]:
-        params: List[Tuple[str, Any]] = [
-            ("limit", limit),
-            ("offset", offset),
-        ]
+        payload: Dict[str, Any] = {
+            "limit": limit,
+            "offset": offset,
+        }
         if sort_by is not None:
-            params.append(("sort_by", sort_by))
-            params.append(("sort_order", sort_order))
-        data = await self._request_json("get", f"/rollouts/{rollout_id}/attempts", params=params)
+            payload["sort_by"] = sort_by
+            payload["sort_order"] = sort_order
+        data = await self._request_json("post", f"/rollouts/{rollout_id}/attempts/search", json=payload)
         items = [Attempt.model_validate(item) for item in data["items"]]
         return PaginatedResult(items=items, limit=data["limit"], offset=data["offset"], total=data["total"])
 
@@ -1795,32 +1864,30 @@ class LightningStoreClient(LightningStore):
         sort_by: Optional[str] = "sequence_id",
         sort_order: Literal["asc", "desc"] = "asc",
     ) -> PaginatedResult[Span]:
-        params: List[Tuple[str, Any]] = [("rollout_id", rollout_id)]
+        payload: Dict[str, Any] = {"rollout_id": rollout_id, "limit": limit, "offset": offset}
         if attempt_id is not None:
-            params.append(("attempt_id", attempt_id))
+            payload["attempt_id"] = attempt_id
         if trace_id is not None:
-            params.append(("trace_id", trace_id))
+            payload["trace_id"] = trace_id
         if trace_id_contains is not None:
-            params.append(("trace_id_contains", trace_id_contains))
+            payload["trace_id_contains"] = trace_id_contains
         if span_id is not None:
-            params.append(("span_id", span_id))
+            payload["span_id"] = span_id
         if span_id_contains is not None:
-            params.append(("span_id_contains", span_id_contains))
+            payload["span_id_contains"] = span_id_contains
         if parent_id is not None:
-            params.append(("parent_id", parent_id))
+            payload["parent_id"] = parent_id
         if parent_id_contains is not None:
-            params.append(("parent_id_contains", parent_id_contains))
+            payload["parent_id_contains"] = parent_id_contains
         if name is not None:
-            params.append(("name", name))
+            payload["name"] = name
         if name_contains is not None:
-            params.append(("name_contains", name_contains))
-        params.append(("filter_logic", filter_logic))
+            payload["name_contains"] = name_contains
+        payload["filter_logic"] = filter_logic
         if sort_by is not None:
-            params.append(("sort_by", sort_by))
-            params.append(("sort_order", sort_order))
-        params.append(("limit", limit))
-        params.append(("offset", offset))
-        data = await self._request_json("get", "/spans", params=params)
+            payload["sort_by"] = sort_by
+            payload["sort_order"] = sort_order
+        data = await self._request_json("post", "/spans/search", json=payload)
         items = [Span.model_validate(item) for item in data["items"]]
         return PaginatedResult(items=items, limit=data["limit"], offset=data["offset"], total=data["total"])
 
@@ -1888,21 +1955,17 @@ class LightningStoreClient(LightningStore):
         limit: int = -1,
         offset: int = 0,
     ) -> PaginatedResult[Worker]:
-        params: List[Tuple[str, Any]] = [
-            ("limit", limit),
-            ("offset", offset),
-        ]
+        payload: Dict[str, Any] = {}
         if status_in is not None:
-            for value in status_in:
-                params.append(("status_in", value))
+            payload["status_in"] = status_in
         if worker_id_contains is not None:
-            params.append(("worker_id_contains", worker_id_contains))
-        params.append(("filter_logic", filter_logic))
+            payload["worker_id_contains"] = worker_id_contains
+        payload["filter_logic"] = filter_logic
         if sort_by is not None:
-            params.append(("sort_by", sort_by))
-            params.append(("sort_order", sort_order))
+            payload["sort_by"] = sort_by
+            payload["sort_order"] = sort_order
 
-        data = await self._request_json("get", "/workers", params=params)
+        data = await self._request_json("post", "/workers/search", json=payload)
         items = [Worker.model_validate(item) for item in data.get("items", [])]
         return PaginatedResult(items=items, limit=data["limit"], offset=data["offset"], total=data["total"])
 

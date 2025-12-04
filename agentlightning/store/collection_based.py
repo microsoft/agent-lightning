@@ -1,5 +1,16 @@
 # Copyright (c) Microsoft. All rights reserved.
 
+"""Collection-based LightningStore implementation.
+
+To developers, please check whether the implementation is correct by checking the following:
+
+1. Whether all `_unlocked_*` methods are guarded by some `atomic()` or `execute()` context.
+2. Whether all `atomic()` or `execute()` contexts are labeled (labels="...") correctly.
+3. `_unlocked_update_attempt_and_rollout` should be accompanied by `_post_update_rollout`, `_unlocked_sync_worker_with_attempt`.
+4. `_post_add_spans` should be called after the spans are inserted into the store.
+5. `_unlocked_update_rollout_only` should be accompanied by `_post_update_rollout`.
+"""
+
 from __future__ import annotations
 
 import asyncio
@@ -59,7 +70,8 @@ from .base import (
     is_queuing,
 )
 from .collection import FilterOptions, LightningCollections
-from .utils import LATENCY_BUCKETS, healthcheck, propagate_status
+from .collection.base import AtomicLabels
+from .utils import LATENCY_BUCKETS, rollout_status_from_attempt, scan_unhealthy_rollouts
 
 T_callable = TypeVar("T_callable", bound=Callable[..., Any])
 T_model = TypeVar("T_model", bound=BaseModel)
@@ -74,23 +86,33 @@ SelfT = TypeVar("SelfT", bound="CollectionBasedLightningStore[Any]")
 logger = logging.getLogger(__name__)
 
 
-def _with_collections_execute(
-    func: Callable[Concatenate[SelfT, T_collections, P], CoroutineType[Any, Any, R]],
-) -> Callable[Concatenate[SelfT, P], CoroutineType[Any, Any, R]]:
+def _with_collections_execute(labels: Sequence[AtomicLabels]):
     """Hands over the function execution to the collections.execute method.
-    Used to enable atomic locks and automatic retries.
+    Used to enable committing and automatic retries.
 
     The wrapped function should accept an extra locked collection as its first argument.
     """
 
-    @functools.wraps(func)
-    async def wrapper(self: SelfT, *args: P.args, **kwargs: P.kwargs) -> R:
-        async def callback(collections: T_collections) -> R:
-            return await func(self, collections, *args, **kwargs)
+    def decorator(
+        func: Callable[Concatenate[SelfT, T_collections, P], CoroutineType[Any, Any, R]],
+    ) -> Callable[Concatenate[SelfT, P], CoroutineType[Any, Any, R]]:
 
-        return await self.collections.execute(callback)
+        @functools.wraps(func)
+        async def wrapper(self: SelfT, *args: P.args, **kwargs: P.kwargs) -> R:
+            async def callback(collections: T_collections) -> R:
+                return await func(self, collections, *args, **kwargs)
 
-    return wrapper
+            return await self.collections.execute(
+                callback,
+                mode="rw",  # Read-write all enabled.
+                snapshot=self._read_snapshot,  # pyright: ignore[reportPrivateUsage]
+                commit=True,  # Enable committing.
+                labels=labels,
+            )
+
+        return wrapper
+
+    return decorator
 
 
 def tracked(name: str):
@@ -149,7 +171,7 @@ def healthcheck_before(func: T_callable) -> T_callable:
         self._healthcheck_running = True  # type: ignore
         try:
             # The following methods should live inside one lock.
-            await self._healthcheck()  # pyright: ignore[reportPrivateUsage]
+            await self._scan_for_unhealthy_rollouts()  # pyright: ignore[reportPrivateUsage]
         finally:
             # Always clear the flag, even if healthcheck fails
             self._healthcheck_running = False  # type: ignore
@@ -189,11 +211,16 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
 
     Args:
         collections: The collections to use for storage.
+        read_snapshot: Make sure read operations are atomic. If set to true,
+            all read operations like `query_rollouts` will have better consistency.
+            It may use an isolated snapshot that supports repeatable reads.
+        prometheus: Enable Prometheus tracking.
     """
 
-    def __init__(self, collections: T_collections, prometheus: bool = False):
+    def __init__(self, collections: T_collections, *, read_snapshot: bool = False, prometheus: bool = False):
         # rollouts and spans' storage
         self.collections = collections
+        self._read_snapshot = read_snapshot
         self._prometheus = prometheus
         self._launch_time = time.time()
 
@@ -236,33 +263,29 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
             "uptime": current_time - self._launch_time,
         }
 
-    @tracked("_get_latest_resources_id")
-    async def _get_latest_resources_id(self, collections: T_collections) -> Optional[str]:
-        """Get the latest resources ID from the collections. Returns `None` if no resources are found."""
-        latest_resources = await collections.resources.get(sort={"name": "update_time", "order": "desc"})
-        if latest_resources:
-            return latest_resources.resources_id
-        return None
+    @tracked("_get_latest_resources")
+    async def _get_latest_resources(self) -> Optional[ResourcesUpdate]:
+        """Get the latest resources from the collections. Returns `None` if no resources are found."""
+        async with self.collections.atomic(mode="r", snapshot=self._read_snapshot, labels=["resources"]) as collections:
+            return await collections.resources.get(sort={"name": "update_time", "order": "desc"})
 
-    @tracked("_get_or_create_worker")
-    async def _get_or_create_worker(self, collections: T_collections, worker_id: str) -> Worker:
-        """Create a worker if it doesn't exist.
+    @tracked("_update_or_insert_worker")
+    async def _update_or_insert_worker(self, worker: Worker, update_fields: Sequence[str] | None = None) -> Worker:
+        """Create a worker if it doesn't exist. Update its `update_fields` if it already exists."""
+        async with self.collections.atomic(mode="rw", snapshot=self._read_snapshot, labels=["workers"]) as collections:
+            updated_workers = await collections.workers.upsert([worker], update_fields=update_fields)
+            return updated_workers[0]
 
-        This is different from upsert because we don't want to update the worker if it already exists.
-        """
-        worker = await collections.workers.get({"worker_id": {"exact": worker_id}})
-        if worker is None:
-            worker = Worker(worker_id=worker_id)
-            await collections.workers.insert([worker])
-        return worker
-
-    @tracked("_sync_worker_with_attempt")
-    async def _sync_worker_with_attempt(self, collections: T_collections, attempt: Attempt) -> None:
+    @tracked("_unlocked_sync_worker_with_attempt")
+    async def _unlocked_sync_worker_with_attempt(self, collections: T_collections, attempt: Attempt) -> None:
+        """Update the worker's status. This can be done in a separate session."""
         worker_id = attempt.worker_id
         if not worker_id:
             return
 
-        worker = await self._get_or_create_worker(collections, worker_id)
+        worker = await collections.workers.get({"worker_id": {"exact": worker_id}})
+        if not worker:
+            worker = Worker(worker_id=worker_id)
         now = time.time()
 
         if attempt.status in ("succeeded", "failed"):
@@ -287,7 +310,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
 
         # Validate the schema to make sure it's valid.
         Worker.model_validate(worker.model_dump())
-        await collections.workers.update([worker])
+        await collections.workers.upsert([worker])
 
     @property
     def capabilities(self) -> LightningStoreCapabilities:
@@ -297,12 +320,17 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         """
         return LightningStoreCapabilities()
 
+    @tracked("_sync_workers_with_attempts")
+    @_with_collections_execute(labels=["workers", "attempts"])
+    async def _sync_workers_with_attempts(self, collections: T_collections, attempts: Sequence[Attempt]) -> None:
+        """Update the worker's status. Locked bulk version of `_unlocked_sync_workers_with_attempts`."""
+        for attempt in attempts:
+            await self._unlocked_sync_worker_with_attempt(collections, attempt)
+
     @tracked("start_rollout")
     @healthcheck_before
-    @_with_collections_execute
     async def start_rollout(
         self,
-        collections: T_collections,
         input: TaskInput,
         mode: Literal["train", "val", "test"] | None = None,
         resources_id: str | None = None,
@@ -319,7 +347,9 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         rollout_config = config.model_copy(deep=True) if config is not None else RolloutConfig()
         rollout_metadata = dict(metadata) if metadata is not None else {}
 
-        resources_id = resources_id if resources_id is not None else await self._get_latest_resources_id(collections)
+        if resources_id is None:
+            latest_resources = await self._get_latest_resources()
+            resources_id = latest_resources.resources_id if latest_resources is not None else None
 
         rollout = Rollout(
             rollout_id=rollout_id,
@@ -342,21 +372,28 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
             status="preparing",
         )
 
-        await collections.attempts.insert([attempt])
-        await collections.rollouts.insert([rollout])
+        async def _insert_rollout_and_attempt(collections: T_collections) -> None:
+            await collections.attempts.insert([attempt])
+            await collections.rollouts.insert([rollout])
 
+        await self.collections.execute(
+            _insert_rollout_and_attempt,
+            mode="rw",
+            snapshot=self._read_snapshot,
+            commit=True,
+            labels=["rollouts", "attempts"],
+        )
         # Notify the subclass that the rollout status has changed.
-        await self.on_rollout_update(rollout)
+        all_fields = list(rollout.__class__.model_fields.keys())
+        await self._post_update_rollout([(rollout, all_fields)])
 
         # Return a rollout with attempt attached.
         return AttemptedRollout(**rollout.model_dump(), attempt=attempt)
 
     @tracked("enqueue_rollout")
     @healthcheck_before
-    @_with_collections_execute
     async def enqueue_rollout(
         self,
-        collections: T_collections,
         input: TaskInput,
         mode: Literal["train", "val", "test"] | None = None,
         resources_id: str | None = None,
@@ -373,7 +410,9 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         rollout_config = config.model_copy(deep=True) if config is not None else RolloutConfig()
         rollout_metadata = dict(metadata) if metadata is not None else {}
 
-        resources_id = resources_id if resources_id is not None else await self._get_latest_resources_id(collections)
+        if resources_id is None:
+            latest_resources = await self._get_latest_resources()
+            resources_id = latest_resources.resources_id if latest_resources is not None else None
 
         rollout = Rollout(
             rollout_id=rollout_id,
@@ -386,21 +425,73 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
             metadata=rollout_metadata,
         )
 
-        await collections.rollouts.insert([rollout])
-        await collections.rollout_queue.enqueue([rollout.rollout_id])  # add it to the end of the queue
+        async def _insert_rollout_and_enqueue(collections: T_collections) -> None:
+            await collections.rollouts.insert([rollout])
+            await collections.rollout_queue.enqueue([rollout.rollout_id])  # add it to the end of the queue
 
+        await self.collections.execute(
+            _insert_rollout_and_enqueue,
+            mode="rw",
+            snapshot=self._read_snapshot,
+            commit=True,
+            labels=["rollouts", "rollout_queue"],
+        )
         # Notify the subclass that the rollout status has changed.
-        await self.on_rollout_update(rollout)
+        all_fields = list(rollout.__class__.model_fields.keys())
+        await self._post_update_rollout([(rollout, all_fields)])
 
         # Return the rollout with no attempt attached.
         return rollout
 
+    @tracked("_post_dequeue_rollout")
+    @_with_collections_execute(labels=["rollouts", "attempts"])
+    async def _post_dequeue_rollout(
+        self, collections: T_collections, rollout_id: str
+    ) -> Optional[Tuple[AttemptedRollout, Sequence[str]]]:
+        """Post-dequeue logic for the rollout. Returns the rollout and the update fields (for post-update logic)."""
+        rollout = await collections.rollouts.get({"rollout_id": {"exact": rollout_id}})
+        if not rollout:
+            logger.warning(f"Rollout {rollout_id} not found, skipping dequeuing")
+            return None
+
+        # Check if rollout is still in a queuing state
+        # (it might have been updated to a different status while in queue)
+        if is_queuing(rollout):
+            # Create a new attempt (could be first attempt or retry)
+            attempt_id = _generate_attempt_id()
+            current_time = time.time()
+
+            # Get existing attempts to determine sequence number
+            existing_attempts = await self._unlocked_query_attempts_for_rollout(collections, rollout.rollout_id)
+            sequence_id = len(existing_attempts) + 1
+
+            attempt = Attempt(
+                rollout_id=rollout.rollout_id,
+                attempt_id=attempt_id,
+                sequence_id=sequence_id,
+                start_time=current_time,
+                status="preparing",
+            )
+
+            await collections.attempts.insert([attempt])
+
+            # Sync attempt status to rollout
+            rollout, update_fields = await self._unlocked_update_rollout_only(
+                collections, rollout.rollout_id, status="preparing"
+            )
+            return AttemptedRollout(**rollout.model_dump(), attempt=attempt), update_fields
+
+        else:
+            # If not in queuing state, skip this rollout and continue
+            # (it was updated externally and should not be processed)
+            logger.warning(
+                f"Rollout {rollout.rollout_id} is not in queuing state: {rollout.status}, skipping dequeuing"
+            )
+            return None
+
     @tracked("dequeue_rollout")
     @healthcheck_before
-    @_with_collections_execute
-    async def dequeue_rollout(
-        self, collections: T_collections, worker_id: Optional[str] = None
-    ) -> Optional[AttemptedRollout]:
+    async def dequeue_rollout(self, worker_id: Optional[str] = None) -> Optional[AttemptedRollout]:
         """Retrieves the next task from the queue without blocking.
         Returns `None` if the queue is empty.
 
@@ -409,106 +500,85 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         See [`LightningStore.dequeue_rollout()`][agentlightning.LightningStore.dequeue_rollout] for semantics.
         """
         if worker_id is not None:
-            worker = await self._get_or_create_worker(collections, worker_id)
-            worker.last_dequeue_time = time.time()
-            worker.status = "idle"
-            await collections.workers.update([worker])
+            new_worker = Worker(worker_id=worker_id, status="idle", last_dequeue_time=time.time())
+            await self._update_or_insert_worker(new_worker, update_fields=["status", "last_dequeue_time"])
 
         # Keep looking until we find a rollout that's still in queuing status
         # or the queue is empty
-        while (await collections.rollout_queue.size()) > 0:
-            dequeued = await collections.rollout_queue.dequeue(1)
+        while True:
+            async with self.collections.atomic(
+                mode="rw", snapshot=self._read_snapshot, labels=["rollout_queue"]
+            ) as collections:
+                dequeued = await collections.rollout_queue.dequeue(1)
             if not dequeued:
                 break
             rollout_id = dequeued[0]
 
-            rollout = await collections.rollouts.get({"rollout_id": {"exact": rollout_id}})
-            if not rollout:
-                logger.warning(f"Rollout {rollout_id} not found, skipping dequeuing")
-                continue
+            post_dequeue_result = await self._post_dequeue_rollout(rollout_id)
+            if post_dequeue_result is not None:
+                attempted_rollout, update_fields = post_dequeue_result
+                await self._post_update_rollout([(attempted_rollout, update_fields)])
+                return attempted_rollout
 
-            # Check if rollout is still in a queuing state
-            # (it might have been updated to a different status while in queue)
-            if is_queuing(rollout):
-                # Create a new attempt (could be first attempt or retry)
-                attempt_id = _generate_attempt_id()
-                current_time = time.time()
-
-                # Get existing attempts to determine sequence number
-                existing_attempts = await self._query_attempts_for_rollout_unlocked(collections, rollout.rollout_id)
-                sequence_id = len(existing_attempts) + 1
-
-                attempt = Attempt(
-                    rollout_id=rollout.rollout_id,
-                    attempt_id=attempt_id,
-                    sequence_id=sequence_id,
-                    start_time=current_time,
-                    status="preparing",
-                )
-
-                await collections.attempts.insert([attempt])
-
-                # Sync attempt status to rollout
-                rollout = await self._update_rollout_unlocked(collections, rollout.rollout_id, status="preparing")
-
-                return AttemptedRollout(**rollout.model_dump(), attempt=attempt)
-
-            # If not in queuing state, skip this rollout and continue
-            # (it was updated externally and should not be processed)
-            logger.warning(
-                f"Rollout {rollout.rollout_id} is not in queuing state: {rollout.status}, skipping dequeuing"
-            )
+            # else continue the loop
 
         # No valid rollouts found
         return None
 
     @tracked("start_attempt")
     @healthcheck_before
-    @_with_collections_execute
-    async def start_attempt(self, collections: T_collections, rollout_id: str) -> AttemptedRollout:
+    async def start_attempt(self, rollout_id: str) -> AttemptedRollout:
         """Creates a new attempt for a given rollout ID and return the attempt details.
 
         See [`LightningStore.start_attempt()`][agentlightning.LightningStore.start_attempt] for semantics.
         """
-        # Get the rollout
-        rollout = await collections.rollouts.get({"rollout_id": {"exact": rollout_id}})
-        if not rollout:
-            raise ValueError(f"Rollout {rollout_id} not found")
 
-        # Get existing attempts to determine sequence number
-        existing_attempts = await self._query_attempts_for_rollout_unlocked(collections, rollout_id)
-        sequence_id = len(existing_attempts) + 1
+        async def _create_attempt(collections: T_collections):
+            # Get the rollout
+            rollout = await collections.rollouts.get({"rollout_id": {"exact": rollout_id}})
+            if not rollout:
+                raise ValueError(f"Rollout {rollout_id} not found")
 
-        # We don't care whether the max attempts have reached or not
-        # This attempt is from user trigger
+            # Get existing attempts to determine sequence number
+            existing_attempts = await self._unlocked_query_attempts_for_rollout(collections, rollout_id)
+            sequence_id = len(existing_attempts) + 1
 
-        # Create new attempt
-        attempt_id = _generate_attempt_id()
-        current_time = time.time()
+            # We don't care whether the max attempts have reached or not
+            # This attempt is from user trigger
 
-        attempt = Attempt(
-            rollout_id=rollout_id,
-            attempt_id=attempt_id,
-            sequence_id=sequence_id,
-            start_time=current_time,
-            status="preparing",
+            # Create new attempt
+            attempt_id = _generate_attempt_id()
+            current_time = time.time()
+
+            attempt = Attempt(
+                rollout_id=rollout_id,
+                attempt_id=attempt_id,
+                sequence_id=sequence_id,
+                start_time=current_time,
+                status="preparing",
+            )
+
+            # Add attempt to storage
+            await collections.attempts.insert([attempt])
+
+            # Sync attempt status to rollout
+            rollout, update_fields = await self._unlocked_update_rollout_only(
+                collections, rollout_id, status="preparing"
+            )
+            return attempt, rollout, update_fields
+
+        attempt, rollout, update_fields = await self.collections.execute(
+            _create_attempt, mode="rw", snapshot=self._read_snapshot, commit=True, labels=["rollouts", "attempts"]
         )
-
-        # Add attempt to storage
-        await collections.attempts.insert([attempt])
-
-        # Sync attempt status to rollout
-        rollout = await self._update_rollout_unlocked(collections, rollout_id, status="preparing")
+        await self._post_update_rollout([(rollout, update_fields)])
 
         # Return the rollout with the new attempt attached.
         return AttemptedRollout(**rollout.model_dump(), attempt=attempt)
 
     @tracked("query_rollouts")
     @healthcheck_before
-    @_with_collections_execute
     async def query_rollouts(
         self,
-        collections: T_collections,
         *,
         status_in: Optional[Sequence[RolloutStatus]] = None,
         rollout_id_in: Optional[Sequence[str]] = None,
@@ -553,21 +623,25 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
             rollout_id_field = cast(FilterField, filters.setdefault("rollout_id", {}))
             rollout_id_field["contains"] = rollout_id_contains
 
-        rollouts = await collections.rollouts.query(
-            filter=filters if list(filters.keys()) != ["_aggregate"] else None,
-            sort=SortOptions(name=sort_by, order=sort_order) if sort_by else None,
-            limit=limit,
-            offset=offset,
-        )
+        async with self.collections.atomic(
+            mode="r", snapshot=self._read_snapshot, labels=["rollouts", "attempts"]
+        ) as collections:
+            rollouts = await collections.rollouts.query(
+                filter=filters if list(filters.keys()) != ["_aggregate"] else None,
+                sort=SortOptions(name=sort_by, order=sort_order) if sort_by else None,
+                limit=limit,
+                offset=offset,
+            )
 
-        # Attach the latest attempt to the rollout objects
-        attempted_rollouts = await self._many_rollouts_to_attempted_rollouts_unlocked(collections, rollouts.items)
+            # Attach the latest attempt to the rollout objects
+            attempted_rollouts = await self._unlocked_many_rollouts_to_attempted_rollouts(collections, rollouts.items)
 
         return PaginatedResult(
             items=attempted_rollouts, limit=rollouts.limit, offset=rollouts.offset, total=rollouts.total
         )
 
-    async def _query_attempts_for_rollout_unlocked(self, collections: T_collections, rollout_id: str) -> List[Attempt]:
+    @tracked("_unlocked_query_attempts_for_rollout")
+    async def _unlocked_query_attempts_for_rollout(self, collections: T_collections, rollout_id: str) -> List[Attempt]:
         """The unlocked version of `query_attempts_for_rollout`."""
         result = await collections.attempts.query(
             filter={"rollout_id": {"exact": rollout_id}},
@@ -577,45 +651,45 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
 
     @tracked("get_rollout_by_id")
     @healthcheck_before
-    @_with_collections_execute
-    async def get_rollout_by_id(
-        self, collections: T_collections, rollout_id: str
-    ) -> Optional[Union[Rollout, AttemptedRollout]]:
+    async def get_rollout_by_id(self, rollout_id: str) -> Optional[Union[Rollout, AttemptedRollout]]:
         """Retrieves a specific rollout by its ID.
 
         See [`LightningStore.get_rollout_by_id()`][agentlightning.LightningStore.get_rollout_by_id] for semantics.
 
         If the rollout has been attempted, the latest attempt will also be returned.
         """
-        rollout = await collections.rollouts.get({"rollout_id": {"exact": rollout_id}})
-        if rollout is None:
-            return None
-        return await self._rollout_to_attempted_rollout_unlocked(collections, rollout)
+        async with self.collections.atomic(
+            mode="r", snapshot=self._read_snapshot, labels=["rollouts", "attempts"]
+        ) as collections:
+            rollout = await collections.rollouts.get({"rollout_id": {"exact": rollout_id}})
+            if rollout is None:
+                return None
+            return await self._unlocked_rollout_to_attempted_rollout(collections, rollout)
 
-    @tracked("_rollout_to_attempted_rollout")
-    async def _rollout_to_attempted_rollout_unlocked(
+    @tracked("_unlocked_rollout_to_attempted_rollout")
+    async def _unlocked_rollout_to_attempted_rollout(
         self, collections: T_collections, rollout: Rollout
     ) -> Union[Rollout, AttemptedRollout]:
         """Query the latest attempt for the rollout, and attach it to the rollout object.
 
         If the rollout has no attempts, return the rollout object itself.
         """
-        latest_attempt = await self._get_latest_attempt_unlocked(collections, rollout.rollout_id)
+        latest_attempt = await self._unlocked_get_latest_attempt(collections, rollout.rollout_id)
         if latest_attempt is None:
             return rollout
         else:
             return AttemptedRollout(**rollout.model_dump(), attempt=latest_attempt)
 
-    @tracked("_many_rollouts_to_attempted_rollouts_unlocked")
-    async def _many_rollouts_to_attempted_rollouts_unlocked(
+    @tracked("_unlocked_many_rollouts_to_attempted_rollouts")
+    async def _unlocked_many_rollouts_to_attempted_rollouts(
         self, collections: T_collections, rollouts: Sequence[Rollout]
     ) -> List[Union[Rollout, AttemptedRollout]]:
         """Query the latest attempts for the rollouts, and attach them to the rollout objects."""
         # TODO: Maybe we can use asyncio.gather here to speed up the process?
-        return [await self._rollout_to_attempted_rollout_unlocked(collections, rollout) for rollout in rollouts]
+        return [await self._unlocked_rollout_to_attempted_rollout(collections, rollout) for rollout in rollouts]
 
-    @tracked("_get_latest_attempt")
-    async def _get_latest_attempt_unlocked(self, collections: T_collections, rollout_id: str) -> Optional[Attempt]:
+    @tracked("_unlocked_get_latest_attempt")
+    async def _unlocked_get_latest_attempt(self, collections: T_collections, rollout_id: str) -> Optional[Attempt]:
         """The unlocked version of `get_latest_attempt`."""
         return await collections.attempts.get(
             filter={"rollout_id": {"exact": rollout_id}},
@@ -624,10 +698,8 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
 
     @tracked("query_attempts")
     @healthcheck_before
-    @_with_collections_execute
     async def query_attempts(
         self,
-        collections: T_collections,
         rollout_id: str,
         *,
         sort_by: Optional[str] = "sequence_id",
@@ -636,29 +708,27 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         offset: int = 0,
     ) -> PaginatedResult[Attempt]:
         """Retrieve attempts for a rollout with optional ordering/pagination."""
-        return await collections.attempts.query(
-            filter={"rollout_id": {"exact": rollout_id}},
-            sort={"name": sort_by, "order": sort_order} if sort_by else None,
-            limit=limit,
-            offset=offset,
-        )
+        async with self.collections.atomic(mode="r", snapshot=self._read_snapshot, labels=["attempts"]) as collections:
+            return await collections.attempts.query(
+                filter={"rollout_id": {"exact": rollout_id}},
+                sort={"name": sort_by, "order": sort_order} if sort_by else None,
+                limit=limit,
+                offset=offset,
+            )
 
     @tracked("get_latest_attempt")
     @healthcheck_before
-    @_with_collections_execute
-    async def get_latest_attempt(self, collections: T_collections, rollout_id: str) -> Optional[Attempt]:
+    async def get_latest_attempt(self, rollout_id: str) -> Optional[Attempt]:
         """Retrieves the latest attempt for a given rollout ID.
 
         See [`LightningStore.get_latest_attempt()`][agentlightning.LightningStore.get_latest_attempt] for semantics.
         """
-        return await self._get_latest_attempt_unlocked(collections, rollout_id)
+        async with self.collections.atomic(mode="r", snapshot=self._read_snapshot, labels=["attempts"]) as collections:
+            return await self._unlocked_get_latest_attempt(collections, rollout_id)
 
     @tracked("query_resources")
-    @healthcheck_before
-    @_with_collections_execute
     async def query_resources(
         self,
-        collections: T_collections,
         *,
         resources_id: Optional[str] = None,
         resources_id_contains: Optional[str] = None,
@@ -676,17 +746,16 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
             resources_id_field = cast(FilterField, filters.setdefault("resources_id", {}))
             resources_id_field["contains"] = resources_id_contains
 
-        return await collections.resources.query(
-            filter=filters or None,
-            sort={"name": sort_by, "order": sort_order} if sort_by else None,
-            limit=limit,
-            offset=offset,
-        )
+        async with self.collections.atomic(mode="r", snapshot=self._read_snapshot, labels=["resources"]) as collections:
+            return await collections.resources.query(
+                filter=filters or None,
+                sort={"name": sort_by, "order": sort_order} if sort_by else None,
+                limit=limit,
+                offset=offset,
+            )
 
     @tracked("add_resources")
-    @healthcheck_before
-    @_with_collections_execute
-    async def add_resources(self, collections: T_collections, resources: NamedResources) -> ResourcesUpdate:
+    async def add_resources(self, resources: NamedResources) -> ResourcesUpdate:
         """Stores a new version of named resources and sets it as the latest.
 
         See [`LightningStore.add_resources()`][agentlightning.LightningStore.add_resources] for semantics.
@@ -700,13 +769,13 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
             update_time=current_time,
             version=1,
         )
-        await collections.resources.insert([update])
-        self._latest_resources_id = resources_id
+        async with self.collections.atomic(mode="w", snapshot=self._read_snapshot, labels=["resources"]) as collections:
+            await collections.resources.insert([update])
         return update
 
     @tracked("update_resources")
     @healthcheck_before
-    @_with_collections_execute
+    @_with_collections_execute(labels=["resources"])
     async def update_resources(
         self, collections: T_collections, resources_id: str, resources: NamedResources
     ) -> ResourcesUpdate:
@@ -735,36 +804,28 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
                 }
             )
             await collections.resources.update([update])
-        self._latest_resources_id = resources_id
         return update
 
     @tracked("get_resources_by_id")
-    @healthcheck_before
-    @_with_collections_execute
-    async def get_resources_by_id(self, collections: T_collections, resources_id: str) -> Optional[ResourcesUpdate]:
+    async def get_resources_by_id(self, resources_id: str) -> Optional[ResourcesUpdate]:
         """Retrieves a specific version of named resources by its ID.
 
         See [`LightningStore.get_resources_by_id()`][agentlightning.LightningStore.get_resources_by_id] for semantics.
         """
-        return await collections.resources.get({"resources_id": {"exact": resources_id}})
+        async with self.collections.atomic(mode="r", snapshot=self._read_snapshot, labels=["resources"]) as collections:
+            return await collections.resources.get({"resources_id": {"exact": resources_id}})
 
     @tracked("get_latest_resources")
-    @healthcheck_before
-    @_with_collections_execute
-    async def get_latest_resources(self, collections: T_collections) -> Optional[ResourcesUpdate]:
+    async def get_latest_resources(self) -> Optional[ResourcesUpdate]:
         """Retrieves the latest version of named resources.
 
         See [`LightningStore.get_latest_resources()`][agentlightning.LightningStore.get_latest_resources] for semantics.
         """
-        latest_id = await self._get_latest_resources_id(collections)
-        if latest_id is None:
-            return None
-        return await collections.resources.get({"resources_id": {"exact": latest_id}})
+        return await self._get_latest_resources()
 
     @tracked("_issue_many_span_sequence_ids")
-    async def _issue_many_span_sequence_ids_unlocked(
-        self, collections: T_collections, rollout_ids: List[str]
-    ) -> List[int]:
+    @_with_collections_execute(labels=["span_sequence_ids"])
+    async def _issue_many_span_sequence_ids(self, collections: T_collections, rollout_ids: List[str]) -> List[int]:
         """Issue a new span sequence ID for a given rollout."""
         # Cache the next sequence IDs for the rollouts (for both RW)
         next_sequence_ids_cache: Dict[str, int] = {}
@@ -787,9 +848,8 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         return result
 
     @tracked("_sync_span_sequence_id")
-    async def _sync_span_sequence_id_unlocked(
-        self, collections: T_collections, rollout_id: str, sequence_id: int
-    ) -> None:
+    @_with_collections_execute(labels=["span_sequence_ids"])
+    async def _sync_span_sequence_id(self, collections: T_collections, rollout_id: str, sequence_id: int) -> None:
         """Sync the span sequence ID for a given rollout from the input span sequence ID."""
         existing_sequence_id = await collections.span_sequence_ids.get(rollout_id)
         if existing_sequence_id is None:
@@ -797,42 +857,34 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         await collections.span_sequence_ids.set(rollout_id, max(existing_sequence_id, sequence_id))
 
     @tracked("get_next_span_sequence_id")
-    @_with_collections_execute
-    async def get_next_span_sequence_id(self, collections: T_collections, rollout_id: str, attempt_id: str) -> int:
+    async def get_next_span_sequence_id(self, rollout_id: str, attempt_id: str) -> int:
         """Get the next span sequence ID for a given rollout and attempt.
         The number is strictly increasing for each rollout.
         The store will not issue the same sequence ID twice.
 
         See [`LightningStore.get_next_span_sequence_id()`][agentlightning.LightningStore.get_next_span_sequence_id] for semantics.
         """
-        ret = await self._issue_many_span_sequence_ids_unlocked(collections, [rollout_id])
+        ret = await self._issue_many_span_sequence_ids([rollout_id])
         return ret[0]
 
     @tracked("get_many_span_sequence_ids")
-    @_with_collections_execute
-    async def get_many_span_sequence_ids(
-        self, collections: T_collections, rollout_attempt_ids: Sequence[Tuple[str, str]]
-    ) -> Sequence[int]:
+    async def get_many_span_sequence_ids(self, rollout_attempt_ids: Sequence[Tuple[str, str]]) -> Sequence[int]:
         """Get the next span sequence IDs for a given list of rollout and attempt identifiers."""
-        return await self._issue_many_span_sequence_ids_unlocked(
-            collections, [rollout_id for rollout_id, _ in rollout_attempt_ids]
-        )
+        return await self._issue_many_span_sequence_ids([rollout_id for rollout_id, _ in rollout_attempt_ids])
 
     @tracked("add_span")
-    @_with_collections_execute
-    async def add_span(self, collections: T_collections, span: Span) -> Optional[Span]:
+    async def add_span(self, span: Span) -> Optional[Span]:
         """Persist a pre-converted span.
 
         See [`LightningStore.add_span()`][agentlightning.LightningStore.add_span] for semantics.
         """
         # Update the sequence ID to be synced with latest input span
-        await self._sync_span_sequence_id_unlocked(collections, span.rollout_id, span.sequence_id)
-        ret = await self._add_many_spans_unlocked(collections, span.rollout_id, span.attempt_id, [span])
-        return ret[0] if len(ret) > 0 else None
+        await self._sync_span_sequence_id(span.rollout_id, span.sequence_id)
+        successful_spans = await self._add_many_spans_helper(span.rollout_id, span.attempt_id, [span])
+        return successful_spans[0] if len(successful_spans) > 0 else None
 
     @tracked("add_many_spans")
-    @_with_collections_execute
-    async def add_many_spans(self, collections: T_collections, spans: Sequence[Span]) -> Sequence[Span]:
+    async def add_many_spans(self, spans: Sequence[Span]) -> Sequence[Span]:
         """Persist a sequence of pre-converted spans.
 
         See [`LightningStore.add_many_spans()`][agentlightning.LightningStore.add_many_spans] for semantics.
@@ -845,16 +897,14 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         # Bulk add spans for each rollout and attempt
         successful_spans: List[Span] = []
         for (rollout_id, attempt_id), spans in spans_by_rollout_attempt.items():
-            await self._sync_span_sequence_id_unlocked(collections, rollout_id, max(span.sequence_id for span in spans))
-            ret = await self._add_many_spans_unlocked(collections, rollout_id, attempt_id, spans)
+            await self._sync_span_sequence_id(rollout_id, max(span.sequence_id for span in spans))
+            ret = await self._add_many_spans_helper(rollout_id, attempt_id, spans)
             successful_spans.extend(ret)
         return successful_spans
 
     @tracked("add_otel_span")
-    @_with_collections_execute
     async def add_otel_span(
         self,
-        collections: T_collections,
         rollout_id: str,
         attempt_id: str,
         readable_span: ReadableSpan,
@@ -866,34 +916,41 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         """
         if sequence_id is None:
             # Issue a new sequence ID for the rollout
-            sequence_id = (await self._issue_many_span_sequence_ids_unlocked(collections, [rollout_id]))[0]
+            sequence_id = (await self._issue_many_span_sequence_ids([rollout_id]))[0]
         else:
             # Comes from a provided sequence ID
             # Make sure our counter is strictly increasing
-            await self._sync_span_sequence_id_unlocked(collections, rollout_id, sequence_id)
+            await self._sync_span_sequence_id(rollout_id, sequence_id)
 
         span = Span.from_opentelemetry(
             readable_span, rollout_id=rollout_id, attempt_id=attempt_id, sequence_id=sequence_id
         )
-        ret = await self._add_many_spans_unlocked(collections, rollout_id, attempt_id, [span])
+        ret = await self._add_many_spans_helper(rollout_id, attempt_id, [span])
         return ret[0] if len(ret) > 0 else None
 
-    @tracked("_add_many_spans_unlocked")
-    async def _add_many_spans_unlocked(
-        self, collections: T_collections, rollout_id: str, attempt_id: str, spans: Sequence[Span]
-    ) -> Sequence[Span]:
-        """All spans must be for the same rollout and attempt."""
-        rollout = await collections.rollouts.get({"rollout_id": {"exact": rollout_id}})
-        if not rollout:
-            raise ValueError(f"Rollout {rollout_id} not found")
-        current_attempt = await collections.attempts.get(
-            filter={"rollout_id": {"exact": rollout_id}, "attempt_id": {"exact": attempt_id}},
-        )
-        latest_attempt = await self._get_latest_attempt_unlocked(collections, rollout_id)
-        if not current_attempt:
-            raise ValueError(f"Attempt {attempt_id} not found for rollout {rollout_id}")
-        if not latest_attempt:
-            raise ValueError(f"No attempts found for rollout {rollout_id}")
+    @tracked("_add_many_spans_helper")
+    async def _add_many_spans_helper(self, rollout_id: str, attempt_id: str, spans: Sequence[Span]) -> Sequence[Span]:
+        """Add many spans to the store. All spans must be for the same rollout and attempt.
+
+        This method is divided into three parts:
+
+        1. Verify the rollout and attempt exist;
+        2. Insert the spans in bulk; if insert fails, fallback to inserting one by one;
+        3. Update rollout and attempt status if necessary.
+        """
+
+        async with self.collections.atomic(
+            mode="r", snapshot=self._read_snapshot, labels=["rollouts", "attempts"]
+        ) as collections:
+            rollout = await collections.rollouts.get({"rollout_id": {"exact": rollout_id}})
+            if not rollout:
+                raise ValueError(f"Rollout {rollout_id} not found")
+            current_attempt = await collections.attempts.get(
+                filter={"rollout_id": {"exact": rollout_id}, "attempt_id": {"exact": attempt_id}},
+            )
+
+            if not current_attempt:
+                raise ValueError(f"Attempt {attempt_id} not found for rollout {rollout_id}")
 
         async def _add_span_fallback(span: Span) -> bool:
             try:
@@ -909,15 +966,24 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
 
         successful_spans: List[Span] = []
         try:
-            await collections.spans.insert(spans)
+            # This is not guarded by commit=True.
+            async with self.collections.atomic(
+                mode="w", snapshot=self._read_snapshot, commit=False, labels=["spans"]
+            ) as collections:
+                await collections.spans.insert(spans)
             successful_spans.extend(spans)
         except ValueError as e:
             if "already exists" in str(e) or "contains duplicate" in str(e):
                 # There is a duplicate span, we warn it
                 # We fallback to adding the spans one by one
-                for span in spans:
-                    if await _add_span_fallback(span):
-                        successful_spans.append(span)
+                async def _add_many_spans_fallback(collections: T_collections):
+                    for span in spans:
+                        if await _add_span_fallback(span):
+                            successful_spans.append(span)
+
+                await self.collections.execute(
+                    _add_many_spans_fallback, mode="w", snapshot=self._read_snapshot, commit=True, labels=["spans"]
+                )
             else:
                 raise
 
@@ -925,26 +991,70 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
             # No spans were added, skip the rest.
             return []
 
-        # Update attempt heartbeat and ensure persistence
-        current_attempt.last_heartbeat_time = time.time()
-        if current_attempt.status in ["preparing", "unresponsive"]:
-            current_attempt.status = "running"
-        await collections.attempts.update([current_attempt])
-
-        # If the status has already timed out or failed, do not change it (but heartbeat is still recorded)
-
-        # Update rollout status if it's the latest attempt
-        if current_attempt.attempt_id == latest_attempt.attempt_id:
-            if rollout.status == "preparing":
-                rollout.status = "running"
-                await collections.rollouts.update([rollout])
-                await self.on_rollout_update(rollout)
-            elif rollout.status in ["queuing", "requeuing"]:
-                rollout.status = "running"
-                await collections.rollouts.update([rollout])
-                await self.on_rollout_update(rollout)
+        await self._post_add_spans(successful_spans, rollout_id, attempt_id)
 
         return successful_spans
+
+    @tracked("_post_add_spans")
+    async def _post_add_spans(self, spans: Sequence[Span], rollout_id: str, attempt_id: str) -> None:
+        """Update attempt heartbeat and rollout status after spans are inserted.
+
+        Args:
+            spans: Newly inserted spans.
+            rollout_id: Identifier for the rollout receiving the spans.
+            attempt_id: Identifier for the attempt receiving the spans.
+
+        Note:
+            The method refetches the attempt/rollout inside the transactional callback to
+            avoid clobbering fields that might have changed after the spans were queued.
+        """
+        if not spans:
+            return
+
+        async def _update_rollout_attempt(collections: T_collections) -> Optional[Tuple[Rollout, Sequence[str]]]:
+            attempt = await collections.attempts.get(
+                {"rollout_id": {"exact": rollout_id}, "attempt_id": {"exact": attempt_id}}
+            )
+            if attempt is None:
+                return None
+            rollout = await collections.rollouts.get({"rollout_id": {"exact": rollout_id}})
+            if rollout is None:
+                return None
+
+            # Update attempt heartbeat and ensure persistence
+            attempt.last_heartbeat_time = time.time()
+            if attempt.status in ["preparing", "unresponsive"]:
+                attempt.status = "running"
+            await collections.attempts.update([attempt], update_fields=["last_heartbeat_time", "status"])
+
+            # If the status has already timed out or failed, do not change it (but heartbeat is still recorded)
+
+            # Update rollout status if it's the latest attempt
+            rollout_updated: bool = False
+            updated_fields: List[str] = []
+            latest_attempt = await self._unlocked_get_latest_attempt(collections, rollout.rollout_id)
+            if latest_attempt is not None and attempt.attempt_id == latest_attempt.attempt_id:
+                if rollout.status == "preparing":
+                    rollout.status = "running"
+                    await collections.rollouts.update([rollout], update_fields=["status"])
+                    rollout_updated = True
+                    updated_fields = ["status"]
+                elif rollout.status in ["queuing", "requeuing"]:
+                    rollout.status = "running"
+                    await collections.rollouts.update([rollout], update_fields=["status"])
+                    rollout_updated = True
+                    updated_fields = ["status"]
+            return (rollout, updated_fields) if rollout_updated else None
+
+        rollout_update = await self.collections.execute(
+            _update_rollout_attempt,
+            mode="rw",
+            snapshot=self._read_snapshot,
+            commit=True,
+            labels=["rollouts", "attempts"],
+        )
+        if rollout_update is not None:
+            await self._post_update_rollout([rollout_update])
 
     @tracked("wait_for_rollouts")
     @healthcheck_before
@@ -977,8 +1087,9 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         Returns the completed rollout, or None if timeout is reached.
         """
         # First check if already completed
-        # Not locked on purpose.
-        rollout = await self.collections.rollouts.get({"rollout_id": {"exact": rollout_id}})
+        async with self.collections.atomic(mode="r", snapshot=self._read_snapshot, labels=["rollouts"]) as collections:
+            rollout = await collections.rollouts.get({"rollout_id": {"exact": rollout_id}})
+
         if rollout is None:
             # Rollout does not exist, return immediately
             return None
@@ -999,20 +1110,20 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
             # Poll every 10 seconds by default
             rest_time = max(0.01, min(deadline - time.time(), 10.0)) if deadline is not None else 10.0
             await asyncio.sleep(rest_time)
-            # Not locked on purpose.
-            rollout = await self.collections.rollouts.get({"rollout_id": {"exact": rollout_id}})
-            # check if rollout is finished
-            if rollout and is_finished(rollout):
-                return rollout
+            async with self.collections.atomic(
+                mode="r", snapshot=self._read_snapshot, labels=["rollouts"]
+            ) as collections:
+                rollout = await collections.rollouts.get({"rollout_id": {"exact": rollout_id}})
+                # check if rollout is finished
+                if rollout and is_finished(rollout):
+                    return rollout
 
         return None
 
     @tracked("query_spans")
-    @healthcheck_before
-    @_with_collections_execute
+    @healthcheck_before  # latest can point to a different attempt
     async def query_spans(
         self,
-        collections: T_collections,
         rollout_id: str,
         attempt_id: str | Literal["latest"] | None = None,
         *,
@@ -1041,7 +1152,10 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         if attempt_id is None:
             resolved_attempt_id = None
         elif attempt_id == "latest":
-            latest_attempt = await self._get_latest_attempt_unlocked(collections, rollout_id)
+            async with self.collections.atomic(
+                mode="r", snapshot=self._read_snapshot, labels=["attempts"]
+            ) as collections:
+                latest_attempt = await self._unlocked_get_latest_attempt(collections, rollout_id)
             if not latest_attempt:
                 logger.debug(f"No attempts found for rollout {rollout_id} when querying latest spans")
                 return PaginatedResult(items=[], limit=limit, offset=offset, total=0)
@@ -1071,19 +1185,18 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         _resolve_filter_field("parent_id", parent_id, parent_id_contains)
         _resolve_filter_field("name", name, name_contains)
 
-        return await collections.spans.query(
-            filter=filter_options,
-            sort={"name": sort_by, "order": sort_order} if sort_by else None,
-            limit=limit,
-            offset=offset,
-        )
+        async with self.collections.atomic(mode="r", snapshot=self._read_snapshot, labels=["spans"]) as collections:
+            return await collections.spans.query(
+                filter=filter_options,
+                sort={"name": sort_by, "order": sort_order} if sort_by else None,
+                limit=limit,
+                offset=offset,
+            )
 
     @tracked("update_rollout")
     @healthcheck_before
-    @_with_collections_execute
     async def update_rollout(
         self,
-        collections: T_collections,
         rollout_id: str,
         input: TaskInput | Unset = UNSET,
         mode: Optional[Literal["train", "val", "test"]] | Unset = UNSET,
@@ -1096,23 +1209,25 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
 
         See [`LightningStore.update_rollout()`][agentlightning.LightningStore.update_rollout] for semantics.
         """
-        return await self._update_rollout_unlocked(
-            collections=collections,
-            rollout_id=rollout_id,
-            input=input,
-            mode=mode,
-            resources_id=resources_id,
-            status=status,
-            config=config,
-            metadata=metadata,
-        )
+        async with self.collections.atomic(mode="w", snapshot=self._read_snapshot, labels=["rollouts"]) as collections:
+            rollout, update_fields = await self._unlocked_update_rollout_only(
+                collections=collections,
+                rollout_id=rollout_id,
+                input=input,
+                mode=mode,
+                resources_id=resources_id,
+                status=status,
+                config=config,
+                metadata=metadata,
+            )
+
+        await self._post_update_rollout([(rollout, update_fields)])
+        return rollout
 
     @tracked("update_attempt")
     @healthcheck_before
-    @_with_collections_execute
     async def update_attempt(
         self,
-        collections: T_collections,
         rollout_id: str,
         attempt_id: str | Literal["latest"],
         status: AttemptStatus | Unset = UNSET,
@@ -1124,18 +1239,29 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
 
         See [`LightningStore.update_attempt()`][agentlightning.LightningStore.update_attempt] for semantics.
         """
-        return await self._update_attempt_unlocked(
-            collections=collections,
-            rollout_id=rollout_id,
-            attempt_id=attempt_id,
-            status=status,
-            worker_id=worker_id,
-            last_heartbeat_time=last_heartbeat_time,
-            metadata=metadata,
+        attempt, rollout_update, worker_sync_required = await self.collections.execute(
+            lambda collections: self._unlocked_update_attempt_and_rollout(
+                collections=collections,
+                rollout_id=rollout_id,
+                attempt_id=attempt_id,
+                status=status,
+                worker_id=worker_id,
+                last_heartbeat_time=last_heartbeat_time,
+                metadata=metadata,
+            ),
+            mode="rw",
+            snapshot=self._read_snapshot,
+            commit=True,
+            labels=["rollouts", "attempts"],
         )
+        if rollout_update:
+            await self._post_update_rollout([rollout_update])
+        if worker_sync_required:
+            await self._sync_workers_with_attempts([attempt])
+        return attempt
 
-    @tracked("_update_rollout_unlocked")
-    async def _update_rollout_unlocked(
+    @tracked("_unlocked_update_rollout_only")
+    async def _unlocked_update_rollout_only(
         self,
         collections: T_collections,
         rollout_id: str,
@@ -1145,53 +1271,86 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         status: RolloutStatus | Unset = UNSET,
         config: RolloutConfig | Unset = UNSET,
         metadata: Optional[Dict[str, Any]] | Unset = UNSET,
-    ) -> Rollout:
-        # No lock inside this one.
-        rollout = await collections.rollouts.get({"rollout_id": {"exact": rollout_id}})
-        if not rollout:
-            raise ValueError(f"Rollout {rollout_id} not found")
+    ) -> Tuple[Rollout, Sequence[str]]:
+        """Update the rollout status and related metadata only.
 
+        Not updating related attempts or workers.
+
+        There is only one update operation call inside; so commit is not strictly required.
+        """
+        rollout_construct_params: Dict[str, Any] = {"rollout_id": rollout_id}
         # Update fields if they are not UNSET
         if not isinstance(input, Unset):
-            rollout.input = input
+            rollout_construct_params["input"] = input
         if not isinstance(mode, Unset):
-            rollout.mode = mode
+            rollout_construct_params["mode"] = mode
         if not isinstance(resources_id, Unset):
-            rollout.resources_id = resources_id
+            rollout_construct_params["resources_id"] = resources_id
         if not isinstance(status, Unset):
-            rollout.status = status
+            rollout_construct_params["status"] = status
         if not isinstance(config, Unset):
-            rollout.config = config
+            rollout_construct_params["config"] = config
         if not isinstance(metadata, Unset):
-            rollout.metadata = metadata
+            rollout_construct_params["metadata"] = metadata
 
         # Set end time for finished rollouts
         # Rollout is only finished when it succeeded or fail with no more retries.
-        if not isinstance(status, Unset) and is_finished(rollout):
-            rollout.end_time = time.time()
-            if self._prometheus:
-                self._rollout_counter.labels(rollout.status, rollout.mode).inc()
-                self._rollout_duration_metric.labels(rollout.status, rollout.mode).observe(
-                    rollout.end_time - rollout.start_time
-                )
+        if not isinstance(status, Unset) and status in ["failed", "succeeded", "cancelled"]:
+            rollout_construct_params["end_time"] = time.time()
+
+        update_fields = list(rollout_construct_params.keys())
+
+        # Set required fields for validation purposes.
+        rollout_construct_params.setdefault("input", None)
+        rollout_construct_params.setdefault("start_time", 0.0)
+        rollout_obj = Rollout.model_validate(rollout_construct_params)
+
+        rollouts_updated = await collections.rollouts.update([rollout_obj], update_fields=update_fields)
+        return rollouts_updated[0], update_fields
+
+    @tracked("_post_update_rollout")
+    async def _post_update_rollout(self, rollouts: Sequence[Tuple[Rollout, Sequence[str]]]) -> None:
+        """Post-update logic for the rollout.
+
+        This method has locks inside, so it should be called with the lock held.
+
+        Args:
+            rollouts: A sequence of tuples, each containing a rollout and the fields that were updated.
+        """
+        for rollout, updated_fields in rollouts:
+            # Sometimes "end_time" is set but it's not really updated.
+            if "end_time" in updated_fields and is_finished(rollout):
+                if self._prometheus:
+                    self._rollout_counter.labels(rollout.status, rollout.mode).inc()
+                    self._rollout_duration_metric.labels(rollout.status, rollout.mode).observe(
+                        cast(float, rollout.end_time) - rollout.start_time
+                    )
 
         # If requeuing, add back to queue.
         # Check whether the rollout is already in queue.
-        elif is_queuing(rollout) and not await collections.rollout_queue.has(rollout.rollout_id):
-            await collections.rollout_queue.enqueue([rollout.rollout_id])
+        candidate_requeue_rollouts: List[str] = []
+        async with self.collections.atomic(
+            mode="r", snapshot=self._read_snapshot, labels=["rollout_queue"]
+        ) as collections:
+            for rollout, updated_fields in rollouts:
+                # I think it's okay that the rollout_queue reports stale data;
+                # the queue can have duplicated rollouts; the dequeue operation will handle it.
+                if (
+                    "status" in updated_fields
+                    and is_queuing(rollout)
+                    and not await collections.rollout_queue.has(rollout.rollout_id)
+                ):
+                    candidate_requeue_rollouts.append(rollout.rollout_id)
 
-        # We also don't need to remove non-queuing rollouts from the queue, for similar reasons.
+        async with self.collections.atomic(
+            mode="w", snapshot=self._read_snapshot, labels=["rollout_queue"]
+        ) as collections:
+            await collections.rollout_queue.enqueue(candidate_requeue_rollouts)
 
-        # Re-validate the rollout to ensure legality
-        Rollout.model_validate(rollout.model_dump())
+        # NOTE: We also don't need to remove non-queuing rollouts from the queue.
 
-        await collections.rollouts.update([rollout])
-        await self.on_rollout_update(rollout)
-
-        return rollout
-
-    @tracked("_update_attempt_unlocked")
-    async def _update_attempt_unlocked(
+    @tracked("_unlocked_update_attempt_and_rollout")
+    async def _unlocked_update_attempt_and_rollout(
         self,
         collections: T_collections,
         rollout_id: str,
@@ -1200,13 +1359,22 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         worker_id: str | Unset = UNSET,
         last_heartbeat_time: float | Unset = UNSET,
         metadata: Optional[Dict[str, Any]] | Unset = UNSET,
-    ) -> Attempt:
+    ) -> Tuple[Attempt, Optional[Tuple[Rollout, Sequence[str]]], bool]:
+        """Update an attempt.
+
+        The attempt status is propagated to the rollout if the attempt is the latest attempt.
+
+        Returns:
+            - The updated attempt
+            - The updated rollout (or none if unchanged); post-rollout-update is not invoked yet
+            - Whether the worker needs to be synced
+        """
         # No lock, but with status propagation.
         rollout = await collections.rollouts.get({"rollout_id": {"exact": rollout_id}})
         if not rollout:
             raise ValueError(f"Rollout {rollout_id} not found")
 
-        latest_attempt = await self._get_latest_attempt_unlocked(collections, rollout_id)
+        latest_attempt = await self._unlocked_get_latest_attempt(collections, rollout_id)
         if not latest_attempt:
             raise ValueError(f"No attempts found for rollout {rollout_id}")
 
@@ -1237,34 +1405,27 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         if not isinstance(metadata, Unset):
             attempt.metadata = metadata
 
-        if worker_sync_required and attempt.worker_id:
-            await self._sync_worker_with_attempt(collections, attempt)
-
         # Re-validate the attempt to ensure legality
         Attempt.model_validate(attempt.model_dump())
         # Update the attempt in storage
         await collections.attempts.update([attempt])
 
+        rollout_update: Optional[Tuple[Rollout, Sequence[str]]] = None
         if attempt.attempt_id == latest_attempt.attempt_id:
-
-            async def _update_status(rollout_id: str, status: RolloutStatus) -> Rollout:
-                return await self._update_rollout_unlocked(collections, rollout_id, status=status)
-
             # Propagate the status to the rollout
-            await propagate_status(
-                _update_status,
-                attempt,
-                rollout.config,
-            )
+            rollout_status = await rollout_status_from_attempt(attempt, rollout.config)
+            if rollout_status != rollout.status:
+                updated_rollout, update_fields = await self._unlocked_update_rollout_only(
+                    collections, rollout_id, status=rollout_status
+                )
+                rollout_update = (updated_rollout, update_fields)
 
-        return attempt
+        return attempt, rollout_update, worker_sync_required
 
     @tracked("query_workers")
     @healthcheck_before
-    @_with_collections_execute
     async def query_workers(
         self,
-        collections: T_collections,
         *,
         status_in: Optional[Sequence[WorkerStatus]] = None,
         worker_id_contains: Optional[str] = None,
@@ -1282,48 +1443,35 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
             filters["worker_id"] = {"contains": worker_id_contains}
         filters["_aggregate"] = filter_logic
 
-        return await collections.workers.query(
-            filter=filters if list(filters.keys()) != ["_aggregate"] else None,
-            sort={"name": sort_by, "order": sort_order} if sort_by else None,
-            limit=limit,
-            offset=offset,
-        )
+        async with self.collections.atomic(mode="r", snapshot=self._read_snapshot, labels=["workers"]) as collections:
+            return await collections.workers.query(
+                filter=filters if list(filters.keys()) != ["_aggregate"] else None,
+                sort={"name": sort_by, "order": sort_order} if sort_by else None,
+                limit=limit,
+                offset=offset,
+            )
 
     @tracked("get_worker_by_id")
-    @healthcheck_before
-    @_with_collections_execute
-    async def get_worker_by_id(self, collections: T_collections, worker_id: str) -> Optional[Worker]:
-        return await collections.workers.get({"worker_id": {"exact": worker_id}})
+    async def get_worker_by_id(self, worker_id: str) -> Optional[Worker]:
+        async with self.collections.atomic(mode="r", snapshot=self._read_snapshot, labels=["workers"]) as collections:
+            return await collections.workers.get({"worker_id": {"exact": worker_id}})
 
     @tracked("update_worker")
-    @healthcheck_before
-    @_with_collections_execute
     async def update_worker(
         self,
-        collections: T_collections,
         worker_id: str,
         heartbeat_stats: Dict[str, Any] | Unset = UNSET,
     ) -> Worker:
         """Create or update a worker entry."""
-        worker = await self._get_or_create_worker(collections, worker_id)
+        update_fields = ["last_heartbeat_time"]
+        new_worker = Worker(worker_id=worker_id, last_heartbeat_time=time.time())
         if not isinstance(heartbeat_stats, Unset):
-            worker.heartbeat_stats = dict(heartbeat_stats)
-        worker.last_heartbeat_time = time.time()
+            update_fields.append("heartbeat_stats")
+            new_worker.heartbeat_stats = dict(heartbeat_stats)
+        return await self._update_or_insert_worker(new_worker, update_fields=update_fields)
 
-        Worker.model_validate(worker.model_dump())
-        await collections.workers.update([worker])
-        return worker
-
-    @tracked("on_rollout_update")
-    async def on_rollout_update(self, rollout: Rollout) -> None:
-        """Callback for subclasses to implement specific logic when a rollout changes.
-
-        Subclass should not lock this method with `collections.atomic()` because the caller will already hold the lock.
-        """
-        pass
-
-    @tracked("get_running_rollouts")
-    async def get_running_rollouts(self, collections: T_collections) -> List[AttemptedRollout]:
+    @tracked("_unlocked_get_running_rollouts")
+    async def _unlocked_get_running_rollouts(self, collections: T_collections) -> List[AttemptedRollout]:
         """Get all running rollouts.
 
         As this is invoked very frequently (probably at every requests),
@@ -1331,7 +1479,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         It should also be unlocked and let the caller hold the lock.
         """
         filtered_rollouts = await collections.rollouts.query(filter={"status": {"within": ["preparing", "running"]}})
-        running_rollouts = await self._many_rollouts_to_attempted_rollouts_unlocked(collections, filtered_rollouts)
+        running_rollouts = await self._unlocked_many_rollouts_to_attempted_rollouts(collections, filtered_rollouts)
 
         running_attempted_rollouts: List[AttemptedRollout] = []
         for rollout in running_rollouts:
@@ -1342,20 +1490,43 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
 
         return running_attempted_rollouts
 
-    @tracked("_healthcheck")
-    @_with_collections_execute
-    async def _healthcheck(self, collections: T_collections) -> None:
+    @tracked("_scan_for_unhealthy_rollouts")
+    async def _scan_for_unhealthy_rollouts(self) -> None:
         """Perform healthcheck against all running rollouts in the store."""
-        running_rollouts = await self.get_running_rollouts(collections)
+        rollouts, attempts_sync_required = await self._find_and_update_unhealthy_rollouts()
 
-        async def _update_attempt_status(rollout_id: str, attempt_id: str, status: AttemptStatus) -> Attempt:
-            return await self._update_attempt_unlocked(collections, rollout_id, attempt_id, status=status)
+        if rollouts:
+            await self._post_update_rollout(rollouts)
 
-        async def _update_rollout_status(rollout_id: str, status: RolloutStatus) -> Rollout:
-            return await self._update_rollout_unlocked(collections, rollout_id, status=status)
+        # Sync worker status
+        if attempts_sync_required:
+            await self._sync_workers_with_attempts(attempts_sync_required)
 
-        await healthcheck(
-            running_rollouts,
-            _update_rollout_status,
-            _update_attempt_status,
-        )
+    @tracked("_find_and_update_unhealthy_rollouts")
+    @_with_collections_execute(labels=["rollouts", "attempts"])
+    async def _find_and_update_unhealthy_rollouts(
+        self, collections: T_collections
+    ) -> Tuple[List[Tuple[Rollout, Sequence[str]]], List[Attempt]]:
+        """Batch update the status of unhealthy attempts.
+
+        Returns:
+            - The list of rollouts that have been updated
+            - The list of attempts that need worker-sync
+        """
+        running_rollouts = await self._unlocked_get_running_rollouts(collections)
+
+        candidate_updates = await scan_unhealthy_rollouts(running_rollouts)
+        if not candidate_updates:
+            return [], []
+
+        rollouts: List[Tuple[Rollout, Sequence[str]]] = []
+        attempts: List[Attempt] = []
+        for (rollout_id, attempt_id), status in candidate_updates.items():
+            attempt, rollout_update, worker_sync_required = await self._unlocked_update_attempt_and_rollout(
+                collections, rollout_id, attempt_id, status=status
+            )
+            if rollout_update:
+                rollouts.append(rollout_update)
+            if worker_sync_required:
+                attempts.append(attempt)
+        return rollouts, attempts

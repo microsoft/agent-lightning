@@ -34,7 +34,7 @@ if TYPE_CHECKING:
     from typing import Self
 
 from pydantic import BaseModel, TypeAdapter
-from pymongo import AsyncMongoClient, ReadPreference, WriteConcern
+from pymongo import AsyncMongoClient, ReadPreference, ReturnDocument, WriteConcern
 from pymongo.asynchronous.client_session import AsyncClientSession
 from pymongo.asynchronous.collection import AsyncCollection
 from pymongo.asynchronous.database import AsyncDatabase
@@ -55,6 +55,7 @@ from agentlightning.types import (
 )
 
 from .base import (
+    AtomicMode,
     Collection,
     KeyValue,
     LightningCollections,
@@ -773,34 +774,104 @@ class MongoBasedCollection(Collection[T_model]):
                 raise ValueError("Duplicate key error while inserting items") from exc
 
     @_mongo_operation("update")
-    async def update(self, items: Sequence[T_model]) -> None:
+    async def update(self, items: Sequence[T_model], update_fields: Sequence[str] | None = None) -> List[T_model]:
         if not items:
-            return
+            return []
 
+        updated_items: List[T_model] = []
         collection = await self.ensure_collection()
+
         for item in items:
             self._ensure_item_type(item)
             pk_filter = self._pk_filter(item)
             doc = item.model_dump()
             doc["partition_id"] = self._partition_id
-            with self._prometheus_tracker.track("update__replace_one", self._database_name, self._collection_name):
-                result = await collection.replace_one(pk_filter, doc, session=self._session)
-            if result.matched_count == 0:
+
+            updated_doc = None
+
+            # Branch 1: Full Replace
+            if update_fields is None:
+                with self._prometheus_tracker.track(
+                    "update__find_one_and_replace", self._database_name, self._collection_name
+                ):
+                    updated_doc = await collection.find_one_and_replace(
+                        filter=pk_filter,
+                        replacement=doc,
+                        session=self._session,
+                        return_document=ReturnDocument.AFTER,  # Returns the new version
+                    )
+
+            # Branch 2: Partial Update
+            else:
+                update_doc = {field: doc[field] for field in update_fields if field in doc}
+                with self._prometheus_tracker.track(
+                    "update__find_one_and_update", self._database_name, self._collection_name
+                ):
+                    updated_doc = await collection.find_one_and_update(
+                        filter=pk_filter,
+                        update={"$set": update_doc},
+                        session=self._session,
+                        return_document=ReturnDocument.AFTER,  # Returns the new version
+                    )
+
+            # Validation and Reconstruction
+            if updated_doc is None:  # type: ignore
                 raise ValueError(f"Item with primary key(s) {pk_filter} does not exist")
 
-    @_mongo_operation("upsert")
-    async def upsert(self, items: Sequence[T_model]) -> None:
-        if not items:
-            return
+            # Re-instantiate the model from the raw MongoDB dictionary.
+            new_item = self._item_type.model_validate(updated_doc)  # type: ignore[arg-type]
+            updated_items.append(new_item)
 
+        return updated_items
+
+    @_mongo_operation("upsert")
+    async def upsert(self, items: Sequence[T_model], update_fields: Sequence[str] | None = None) -> List[T_model]:
+        if not items:
+            return []
+
+        upserted_items: List[T_model] = []
         collection = await self.ensure_collection()
+
         for item in items:
             self._ensure_item_type(item)
             pk_filter = self._pk_filter(item)
-            doc = item.model_dump()
-            doc["partition_id"] = self._partition_id
-            with self._prometheus_tracker.track("upsert__replace_one", self._database_name, self._collection_name):
-                await collection.replace_one(pk_filter, doc, upsert=True, session=self._session)
+
+            insert_doc = item.model_dump()
+            insert_doc["partition_id"] = self._partition_id
+
+            # If update_fields is None, we update ALL fields (standard upsert behavior).
+            # Otherwise, we only update specific fields, but insert the full doc if it's new.
+            target_fields = update_fields if update_fields is not None else list(insert_doc.keys())
+
+            # 1. $set: Fields that should be overwritten if the document exists
+            update_subset = {field: insert_doc[field] for field in target_fields if field in insert_doc}
+
+            # 2. $setOnInsert: Fields that are only set if we are creating a NEW document
+            # (Everything in the model that isn't in the update_subset)
+            set_on_insert = {k: v for k, v in insert_doc.items() if k not in update_subset}
+
+            update_spec: Dict[str, Dict[str, Any]] = {}
+            if set_on_insert:
+                update_spec["$setOnInsert"] = set_on_insert
+            if update_subset:
+                update_spec["$set"] = update_subset
+
+            with self._prometheus_tracker.track(
+                "upsert__find_one_and_update", self._database_name, self._collection_name
+            ):
+                result_doc = await collection.find_one_and_update(
+                    filter=pk_filter,
+                    update=update_spec,
+                    upsert=True,
+                    session=self._session,
+                    return_document=ReturnDocument.AFTER,
+                )
+
+            # Because upsert=True, result_doc is guaranteed to be not None
+            new_item = self._item_type.model_validate(result_doc)  # type: ignore[arg-type]
+            upserted_items.append(new_item)
+
+        return upserted_items
 
     @_mongo_operation("delete")
     async def delete(self, items: Sequence[T_model]) -> None:
@@ -1327,41 +1398,42 @@ class MongoLightningCollections(LightningCollections):
         self._collection_ensured = True
 
     @asynccontextmanager
-    async def atomic(self, *args: Any, **kwargs: Any):
+    async def atomic(
+        self, mode: AtomicMode = "rw", snapshot: bool = False, commit: bool = False, *args: Any, **kwargs: Any
+    ):
         """Perform a atomic operation on the collections."""
+        if commit:
+            raise ValueError("Commit should be used with execute() instead.")
         with self._prometheus_tracker.track("atomic", self._database_name, self._collection_name):
             # First step: ensure all collections exist before going into the atomic block
             if not self._collection_ensured:
                 await self._ensure_collections()
-            # One session for one transaction
-            client = await self._client_pool.get_client()
-            async with client.start_session() as session:
-                collection_with_session = self.with_session(session)
-                try:
-                    # Start the transaction now
-                    await session.start_transaction(
-                        write_concern=WriteConcern("majority"),
-                        read_concern=ReadConcern("local"),
-                        read_preference=ReadPreference.PRIMARY,
-                    )
-                    yield collection_with_session
-                    # Commit the transaction
-                    await session.commit_transaction()
-                # Catch KeyboardInterrupt, CancelledError, etc. and cleanup.
-                except BaseException as exc:
-                    if session.in_transaction:
-                        await session.abort_transaction()
-                    if isinstance(exc, PyMongoError) and exc.has_error_label("TransientTransactionError"):
-                        # NOTE: Retry is via execute
-                        raise RuntimeError("Transaction failed with transient error") from exc
-                    raise
+            # Execute directly without commit
+            yield self
 
     @_mongo_operation("execute")
-    async def execute(self, callback: Callable[[Self], Awaitable[T_generic]]) -> T_generic:
+    async def execute(
+        self,
+        callback: Callable[[Self], Awaitable[T_generic]],
+        *,
+        mode: AtomicMode = "rw",
+        snapshot: bool = False,
+        commit: bool = False,
+        **kwargs: Any,
+    ) -> T_generic:
         """Execute the given callback within an atomic operation, and with retries on transient errors."""
         if not self._collection_ensured:
             await self._ensure_collections()
         client = await self._client_pool.get_client()
+
+        # If commit is not turned on, just execute the callback directly.
+        if not commit:
+            return await callback(self)
+
+        # If snapshot is enabled, use snapshot read concern.
+        read_concern = ReadConcern("snapshot") if snapshot else ReadConcern("local")
+        # If mode is "r", write_concern is not needed.
+        write_concern = WriteConcern("majority") if mode != "r" else None
 
         async with client.start_session() as session:
             collections = self.with_session(session)
@@ -1369,7 +1441,9 @@ class MongoLightningCollections(LightningCollections):
                 "execute__transaction", self._database_name, self._collection_name
             ) as tracker:
                 try:
-                    return await self._with_transaction(session, collections, callback, tracker)
+                    return await self._with_transaction(
+                        session, collections, callback, read_concern, write_concern, tracker
+                    )
                 except (ConnectionFailure, OperationFailure) as exc:
                     # Un-retryable errors.
                     tracker.report_error(exc)
@@ -1380,14 +1454,14 @@ class MongoLightningCollections(LightningCollections):
         session: AsyncClientSession,
         collections: Self,
         callback: Callable[[Self], Awaitable[T_generic]],
+        read_concern: ReadConcern,
+        write_concern: Optional[WriteConcern],
         transaction_tracker: _MongoOperationContext | _DummyOperationContext,
     ) -> T_generic:
         # This will start a transaction, run transaction callback, and commit.
         # It will also transparently retry on some transient errors.
         # Expanded implementation of with_transaction from client_session
         num_attempts = 0
-        read_concern = ReadConcern("local")
-        write_concern = WriteConcern("majority")
         read_preference = ReadPreference.PRIMARY
         transaction_retry_time_limit = 120
         start_time = time.monotonic()

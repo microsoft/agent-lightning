@@ -7,7 +7,6 @@ from omegaconf import OmegaConf
 
 from agentlightning import Trainer
 from agentlightning.algorithm.verl import VERL
-from examples.simulation.empo2_agent import reset_memory
 from examples.simulation.utils import kill_process_on_port, run_cmd
 
 

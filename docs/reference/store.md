@@ -20,6 +20,10 @@
 
 ## Collections and Collection Implementations
 
+::: agentlightning.store.collection.AtomicMode
+
+::: agentlightning.store.collection.AtomicLabels
+
 ::: agentlightning.store.collection.Collection
 
 ::: agentlightning.store.collection.Queue
