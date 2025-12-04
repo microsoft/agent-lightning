@@ -349,7 +349,7 @@ def operation(
 
     Returns:
         Either a wrapped callable (when used as a decorator) or an
-        [`OperationContext`][agentlightning.emitter.operation.OperationContext]
+        [`OperationContext`][agentlightning.emitter.annotation.OperationContext]
         (when used as a context manager factory).
     """
     # Case 1: Used as @operation (bare decorator or with attributes)
