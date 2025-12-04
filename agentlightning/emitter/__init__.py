@@ -4,6 +4,7 @@ from .annotation import emit_annotation
 from .exception import emit_exception
 from .message import emit_message, get_message_value
 from .object import emit_object, get_object_value
+from .operation import operation
 from .reward import (
     emit_reward,
     find_final_reward,
@@ -16,6 +17,7 @@ from .reward import (
 
 __all__ = [
     "reward",
+    "operation",
     "emit_reward",
     "get_reward_value",
     "get_rewards_from_span",
