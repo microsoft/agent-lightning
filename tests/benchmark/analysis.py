@@ -516,6 +516,19 @@ class HttpPathStats:
     p99: Optional[float]
 
 
+@dataclass
+class HttpPathStatusStats:
+    method: str
+    path: str
+    status_code: str
+    qps_mean: float
+    qps_max: Optional[float]
+    qps_min: Optional[float]
+    p50: Optional[float]
+    p95: Optional[float]
+    p99: Optional[float]
+
+
 def gather_http_paths(
     client: PrometheusClient,
     window: str,
@@ -619,6 +632,75 @@ def gather_http_paths(
         or 0.0,
     }
     return path_stats, overall
+
+
+def gather_http_paths_with_status(
+    client: PrometheusClient,
+    window: str,
+    rate_window: str,
+    subquery_step: str,
+) -> List[HttpPathStatusStats]:
+    qps_expr = f"sum by (method, path, status_code)(rate(http_requests_total[{rate_window}]))"
+
+    def fetch_status_metric(expr: str) -> Dict[Tuple[str, str, str], Optional[float]]:
+        samples = safe_vector(client, expr)
+        typed: Dict[Tuple[str, str, str], Optional[float]] = {}
+        if not samples:
+            return typed
+        for sample in samples:
+            metric_obj = sample.get("metric", {})
+            metric_map: Mapping[str, Any]
+            if isinstance(metric_obj, Mapping):
+                metric_map = cast(Mapping[str, Any], metric_obj)
+            else:
+                metric_map = {}
+            method_raw = metric_map.get("method")
+            path_raw = metric_map.get("path")
+            status_raw = metric_map.get("status_code")
+            key = (
+                _normalize_label(method_raw),
+                _normalize_label(path_raw),
+                _normalize_label(status_raw),
+            )
+            typed[key] = _sample_value(sample)
+        return typed
+
+    def _normalize_label(value: Any) -> str:
+        if value is None:
+            return "-"
+        text = str(value)
+        return text if text else "-"
+
+    qps_mean_norm = fetch_status_metric(f"avg_over_time(({qps_expr})[{window}:{subquery_step}])")
+    qps_max_norm = fetch_status_metric(f"max_over_time(({qps_expr})[{window}:{subquery_step}])")
+    qps_min_norm = fetch_status_metric(f"min_over_time(({qps_expr})[{window}:{subquery_step}])")
+    p50_norm = fetch_status_metric(
+        f"histogram_quantile(0.50, sum by (le, method, path, status_code)(rate(http_request_duration_seconds_bucket[{window}])))"
+    )
+    p95_norm = fetch_status_metric(
+        f"histogram_quantile(0.95, sum by (le, method, path, status_code)(rate(http_request_duration_seconds_bucket[{window}])))"
+    )
+    p99_norm = fetch_status_metric(
+        f"histogram_quantile(0.99, sum by (le, method, path, status_code)(rate(http_request_duration_seconds_bucket[{window}])))"
+    )
+
+    stats: List[HttpPathStatusStats] = []
+    for key in sorted(qps_mean_norm.keys()):
+        method_label, path_label, status_label = key
+        stats.append(
+            HttpPathStatusStats(
+                method_label,
+                path_label,
+                status_label,
+                qps_mean_norm.get(key, 0.0) or 0.0,
+                qps_max_norm.get(key),
+                qps_min_norm.get(key),
+                p50_norm.get(key),
+                p95_norm.get(key),
+                p99_norm.get(key),
+            )
+        )
+    return stats
 
 
 # ---------------------------------------------------------------------------
@@ -910,6 +992,32 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         f"P99={fmt_latency(http_overall['p99'])}"
     )
     lines.extend(section("HTTP Endpoints", http_lines))
+
+    http_status_stats = gather_http_paths_with_status(client, window, rate_window, subquery_step)
+    http_status_rows: List[List[str]] = []
+    for stat in http_status_stats:
+        http_status_rows.append(
+            [
+                stat.method,
+                stat.path,
+                stat.status_code,
+                fmt_rate(stat.qps_mean),
+                fmt_rate(stat.qps_max),
+                fmt_rate(stat.qps_min),
+                fmt_latency(stat.p50),
+                fmt_latency(stat.p95),
+                fmt_latency(stat.p99),
+            ]
+        )
+    lines.extend(
+        section(
+            "HTTP Endpoints (by Status)",
+            render_table(
+                ["Method", "Path", "Status Code", "Mean Req/s", "Max Req/s", "Min Req/s", "P50", "P95", "P99"],
+                http_status_rows,
+            ),
+        )
+    )
 
     # Diagnostics
     diag = gather_diagnostics(client, window)

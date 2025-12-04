@@ -1074,6 +1074,58 @@
       ],
       "title": "Memory Lock Latency (P50)",
       "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 151
+      },
+      "id": 307,
+      "panels": [],
+      "title": "HTTP Status Insights",
+      "type": "row"
+    },
+    {
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 0,
+        "y": 152
+      },
+      "id": 308,
+      "targets": [
+        {
+          "expr": "sum by (method, path, status_code) (rate(http_requests_total{path!='/v1/prometheus/'}[1m]))",
+          "legendFormat": "{{method}} {{path}} {{status_code}}"
+        }
+      ],
+      "title": "HTTP Requests / Sec (by Path & Status)",
+      "type": "timeseries"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 12,
+        "y": 152
+      },
+      "id": 309,
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, method, path, status_code) (rate(http_request_duration_seconds_bucket{path!='/v1/prometheus/'}[1m])))",
+          "legendFormat": "{{method}} {{path}} {{status_code}}"
+        }
+      ],
+      "title": "HTTP Latency P95 (by Path & Status)",
+      "type": "timeseries"
     }
   ],
   "schemaVersion": 36,

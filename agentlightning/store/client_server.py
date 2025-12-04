@@ -876,7 +876,7 @@ class LightningStoreServer(LightningStore):
         HTTP_LATENCY = Histogram(
             "http_request_duration_seconds",
             "Latency of HTTP requests",
-            ["method", "path"],
+            ["method", "path", "status_code"],
             buckets=LATENCY_BUCKETS,
         )
 
@@ -907,18 +907,29 @@ class LightningStoreServer(LightningStore):
             request: Request, call_next: Callable[[Request], Awaitable[Response]]
         ) -> Response:
             start = time.perf_counter()
-            response = await call_next(request)
-            elapsed = time.perf_counter() - start
+            status = 500  # Default to 500 if things crash hard
 
-            # Strip the ID-specific URL parts
-            path = get_template_path(request.url.path)
-            method = request.method
-            status = response.status_code
+            try:
+                response = await call_next(request)
+                status = response.status_code
+                return response
+            except asyncio.CancelledError:
+                # Client disconnected (Timeout)
+                status = 499  # Standard Nginx code for "Client Closed Request"
+                raise  # Re-raise to let Uvicorn handle the cleanup
+            except Exception:
+                status = 500
+                raise
+            finally:
+                # This block executes NO MATTER WHAT happens above
+                elapsed = time.perf_counter() - start
 
-            HTTP_REQUESTS.labels(method, path, status).inc()
-            HTTP_LATENCY.labels(method, path).observe(elapsed)
+                # Strip the ID-specific URL parts
+                path = get_template_path(request.url.path)
+                method = request.method
 
-            return response
+                HTTP_REQUESTS.labels(method, path, status).inc()
+                HTTP_LATENCY.labels(method, path).observe(elapsed)
 
         metrics_app = make_asgi_app(registry=registry)  # type: ignore
 
