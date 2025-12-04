@@ -929,7 +929,7 @@ class LightningStoreServer(LightningStore):
                 method = request.method
 
                 HTTP_REQUESTS.labels(method, path, status).inc()
-                HTTP_LATENCY.labels(method, path).observe(elapsed)
+                HTTP_LATENCY.labels(method, path, status).observe(elapsed)
 
         metrics_app = make_asgi_app(registry=registry)  # type: ignore
 
