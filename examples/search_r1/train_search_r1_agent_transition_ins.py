@@ -137,11 +137,15 @@ def config_train_llama() -> Dict[str, Any]:
     return config
 
 
-def train(config: Dict[str, Any]) -> None:
+def train(config: Dict[str, Any], external_store_address: str = "") -> None:
 
     agent = SearchR1Agent()
     algorithm = agl.VERL(config)
-    trainer = agl.Trainer(n_runners=32, algorithm=algorithm)
+    if external_store_address:
+        store: Optional[agl.LightningStore] = agl.LightningStoreClient(external_store_address)
+    else:
+        store = None
+    trainer = agl.Trainer(n_runners=32, algorithm=algorithm, store=store)
 
     train_data = pd.read_parquet(config["data"]["train_files"]).to_dict(orient="records")  # type: ignore
     val_data = pd.read_parquet(config["data"]["val_files"]).to_dict(orient="records")  # type: ignore
@@ -172,11 +176,10 @@ def main() -> None:
     config_functions = {"fast": config_train_fast, "qwen": config_train_qwen, "llama": config_train_llama}
 
     config = config_functions[args.config]()
-    config["external_store_address"]=args.external_store_address
 
     print(f"Starting training with '{args.config}' configuration...")
 
-    train(config)
+    train(config, external_store_address=args.external_store_address)
 
 
 if __name__ == "__main__":
