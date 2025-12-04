@@ -177,6 +177,9 @@ jobs:
           if [ -d docker/data/prometheus ]; then
             tar -C docker/data -czf "$ARTIFACT_DIR/prometheus-${SCENARIO_ID}-${BACKEND_ID}.tar.gz" prometheus
           fi
+          if docker compose -f "$COMPOSE_FILE" ps --format '{{.Name}}' >/dev/null 2>&1; then
+            docker compose -f "$COMPOSE_FILE" logs > "$ARTIFACT_DIR/docker-${SCENARIO_ID}-${BACKEND_ID}.log" || true
+          fi
 
       - name: Upload benchmark artifacts
         if: ${{ always() }}
@@ -312,6 +315,9 @@ jobs:
           mkdir -p "$ARTIFACT_DIR"
           if [ -d docker/data/prometheus ]; then
             tar -C docker/data -czf "$ARTIFACT_DIR/prometheus-micro-${MODE_ID}-${BACKEND_ID}.tar.gz" prometheus
+          fi
+          if docker compose -f "$COMPOSE_FILE" ps --format '{{.Name}}' >/dev/null 2>&1; then
+            docker compose -f "$COMPOSE_FILE" logs > "$ARTIFACT_DIR/docker-micro-${MODE_ID}-${BACKEND_ID}.log" || true
           fi
 
       - name: Upload micro benchmark artifacts

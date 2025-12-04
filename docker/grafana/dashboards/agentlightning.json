@@ -1070,9 +1070,17 @@
         {
           "expr": "histogram_quantile(0.50, sum by (le, collection) (rate(memory_collection_lock_latency_seconds_bucket[1m])))",
           "legendFormat": "P50 {{collection}}"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, collection) (rate(memory_collection_lock_latency_seconds_bucket[1m])))",
+          "legendFormat": "P95 {{collection}}"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le, collection) (rate(memory_collection_lock_latency_seconds_bucket[1m])))",
+          "legendFormat": "P99 {{collection}}"
         }
       ],
-      "title": "Memory Lock Latency (P50)",
+      "title": "Memory Lock Latency (P50, P95, P99)",
       "type": "timeseries"
     },
     {

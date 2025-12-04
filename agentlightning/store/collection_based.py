@@ -1070,31 +1070,11 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         ret = await self._add_many_spans_helper(rollout_id, attempt_id, [span])
         return ret[0] if len(ret) > 0 else None
 
-    @tracked("_add_many_spans_helper")
-    async def _add_many_spans_helper(self, rollout_id: str, attempt_id: str, spans: Sequence[Span]) -> Sequence[Span]:
-        """Add many spans to the store. All spans must be for the same rollout and attempt.
+    @tracked("_insert_spans_with_fallback")
+    async def _insert_spans_with_fallback(self, spans: Sequence[Span]) -> Sequence[Span]:
+        """Insert spans into the store. If the insert fails, fallback to inserting one by one."""
 
-        This method is divided into three parts:
-
-        1. Verify the rollout and attempt exist;
-        2. Insert the spans in bulk; if insert fails, fallback to inserting one by one;
-        3. Update rollout and attempt status if necessary.
-        """
-
-        async with self.collections.atomic(
-            mode="r", snapshot=self._read_snapshot, labels=["rollouts", "attempts"]
-        ) as collections:
-            rollout = await collections.rollouts.get({"rollout_id": {"exact": rollout_id}})
-            if not rollout:
-                raise ValueError(f"Rollout {rollout_id} not found")
-            current_attempt = await collections.attempts.get(
-                filter={"rollout_id": {"exact": rollout_id}, "attempt_id": {"exact": attempt_id}},
-            )
-
-            if not current_attempt:
-                raise ValueError(f"Attempt {attempt_id} not found for rollout {rollout_id}")
-
-        async def _add_span_fallback(span: Span) -> bool:
+        async def _add_span_fallback(collections: T_collections, span: Span) -> bool:
             try:
                 await collections.spans.insert([span])
                 return True
@@ -1120,7 +1100,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
                 # We fallback to adding the spans one by one
                 async def _add_many_spans_fallback(collections: T_collections):
                     for span in spans:
-                        if await _add_span_fallback(span):
+                        if await _add_span_fallback(collections, span):
                             successful_spans.append(span)
 
                 await self.collections.execute(
@@ -1129,11 +1109,35 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
             else:
                 raise
 
-        if not successful_spans:
-            # No spans were added, skip the rest.
-            return []
+        return successful_spans
 
-        await self._post_add_spans(successful_spans, rollout_id, attempt_id)
+    @tracked("_add_many_spans_helper")
+    async def _add_many_spans_helper(self, rollout_id: str, attempt_id: str, spans: Sequence[Span]) -> Sequence[Span]:
+        """Add many spans to the store. All spans must be for the same rollout and attempt.
+
+        This method is divided into three parts:
+
+        1. Verify the rollout and attempt exist;
+        2. Insert the spans in bulk; if insert fails, fallback to inserting one by one;
+        3. Update rollout and attempt status if necessary.
+        """
+
+        async with self.collections.atomic(
+            mode="r", snapshot=self._read_snapshot, labels=["rollouts", "attempts"]
+        ) as collections:
+            rollout = await collections.rollouts.get({"rollout_id": {"exact": rollout_id}})
+            if not rollout:
+                raise ValueError(f"Rollout {rollout_id} not found")
+            current_attempt = await collections.attempts.get(
+                filter={"rollout_id": {"exact": rollout_id}, "attempt_id": {"exact": attempt_id}},
+            )
+
+            if not current_attempt:
+                raise ValueError(f"Attempt {attempt_id} not found for rollout {rollout_id}")
+
+        successful_spans = await self._insert_spans_with_fallback(spans)
+        if successful_spans:
+            await self._post_add_spans(successful_spans, rollout_id, attempt_id)
 
         return successful_spans
 
