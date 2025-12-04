@@ -31,7 +31,7 @@ __all__ = [
 ]
 
 
-def logged_startswith(full_ids, prefix_ids, tokenizer):
+def strict_startswith_with_log(full_ids, prefix_ids, tokenizer):
     template_mismatch, retoken_mismatch, others_mismatch = False, False, False
     if full_ids[:len(prefix_ids)] == prefix_ids:
         merge = True
@@ -67,7 +67,7 @@ def logged_startswith(full_ids, prefix_ids, tokenizer):
         # case 2: template_mismatch == True, retoken_mismatch == False, others_mismatch == False, merge == False
         if not ((not template_mismatch and not retoken_mismatch and not others_mismatch and merge) \
             or (template_mismatch and not retoken_mismatch and not others_mismatch and not merge)):
-            with open("bad_case_jiahang.log", "a+") as f:
+            with open("mismatch_log/bad_case_unexpected.log", "a+") as f:
                 print("-" * 20, file=f)
                 print("full_ids:", file=f)
                 print(full_ids, file=f)
@@ -80,23 +80,23 @@ def logged_startswith(full_ids, prefix_ids, tokenizer):
 # log data, only for debug testing
 def log_mismatch_detail(template_mismatch, retoken_mismatch, others_mismatch, full_ids, prefix_ids):
     if template_mismatch:
-        with open("template_mismatch.log", "a+") as f:
+        with open("mismatch_log/template_mismatch.log", "a+") as f:
             print("-" * 20, file=f)
             print(full_ids, file=f)
             print(prefix_ids, file=f)
     if retoken_mismatch:
-        with open("retoken_mismatch.log", "a+") as f:
+        with open("mismatch_log/retoken_mismatch.log", "a+") as f:
             print("-" * 20, file=f)
             print(full_ids, file=f)
             print(prefix_ids, file=f)
     if others_mismatch:
-        with open("others_mismatch.log", "a+") as f:
+        with open("mismatch_log/others_mismatch.log", "a+") as f:
             print("-" * 20, file=f)
             print(full_ids, file=f)
             print(prefix_ids, file=f)
 
 
-def fuzzy_startswith(full_ids, prefix_ids, tokenizer, special_token_tolerance=0, string_tolerance=0):
+def tolerant_startswith(full_ids, prefix_ids, tokenizer, special_token_tolerance=0, string_tolerance=0):
     def _special_token_sequence(ids):
         return [id for id in ids if id in tokenizer.all_special_ids]
 
@@ -876,8 +876,7 @@ class AgentModeDaemon:
                     data_id_list.append(sample_info["data_id"])
                     rollout_id_list.append(rollout_id)
                     turn_index_list.append(turn_index)
-
-        elif self.trace_aggregator.mode == "trajectory":
+        elif self.trace_aggregator.mode.startswith("trajectory"):
             response_mask_list: List[List[int]] = []
             unmerged_count: int = 0  # only for debug
             template_mismatch_count, retoken_mismatch_count, others_mismatch_count = 0, 0, 0
@@ -894,25 +893,37 @@ class AgentModeDaemon:
                         {"nxt_turn": trace["prompt_ids"][:] + trace["response_ids"][:], "cur": current_context[:]}
                     )
                     response_per_turn_list.append(len(trace["response_ids"]))
-                    template_mismatch, retoken_mismatch, others_mismatch, merged = logged_startswith(
-                        trace["prompt_ids"] + trace["response_ids"],
-                        current_context,
-                        self.tokenizer,
-                    )
-                    template_mismatch_count += int(template_mismatch)
-                    retoken_mismatch_count += int(retoken_mismatch)
-                    others_mismatch_count += int(others_mismatch)
+                    if self.trace_aggregator.mode == "trajectory-strict":
+                        template_mismatch, retoken_mismatch, others_mismatch, merged = strict_startswith_with_log(
+                            trace["prompt_ids"] + trace["response_ids"],
+                            current_context,
+                            self.tokenizer,
+                        )
+                        template_mismatch_count += int(template_mismatch)
+                        retoken_mismatch_count += int(retoken_mismatch)
+                        others_mismatch_count += int(others_mismatch)
+                        if not merged:
+                            log_mismatch_detail(  # log data, only for debug testing
+                                template_mismatch,
+                                retoken_mismatch,
+                                others_mismatch,
+                                trace["prompt_ids"] + trace["response_ids"],
+                                current_context,
+                            )
+                    elif self.trace_aggregator.mode == "trajectory-tolerant":
+                        merged = tolerant_startswith(
+                            trace["prompt_ids"] + trace["response_ids"],
+                            current_context,
+                            self.tokenizer,
+                            special_token_tolerance=self.trace_aggregator.special_token_tolerance,
+                            string_tolerance=self.trace_aggregator.string_tolerance,
+                        )
+                    else:
+                        raise ValueError(f"Unknown trace_aggregator mode: {self.trace_aggregator.mode}")
                     if merged:
                         current_context = trace["prompt_ids"] + trace["response_ids"]
                         current_merged_trace_idx.append(turn_index)
                     else:
-                        log_mismatch_detail(  # log data, only for debug testing
-                            template_mismatch,
-                            retoken_mismatch,
-                            others_mismatch,
-                            trace["prompt_ids"] + trace["response_ids"],
-                            current_context,
-                        )
                         merged_trace_idx.append(current_merged_trace_idx)
                         current_merged_trace_idx = [turn_index]
                         current_context = trace["prompt_ids"] + trace["response_ids"]
@@ -938,7 +949,7 @@ class AgentModeDaemon:
                     final_sample = sample_info["trace_list"][current_merged_trace_idx[-1]]
                     response_ids = final_sample["prompt_ids"][prompt_length:] + final_sample["response_ids"]
                     if len(response_ids) != len(accum_response_ids):  # only for debug testing
-                        with open("response_ids_num_mismatch.log", "a+") as f:
+                        with open("mismatch_log/response_ids_num_mismatch.log", "a+") as f:
                             print("-" * 20, file=f)
                             print(response_ids, file=f)
                             print(accum_response_ids, file=f)
@@ -987,7 +998,7 @@ class AgentModeDaemon:
         batch_response_ids = torch.LongTensor(response_ids_list).to(device)
         response_attention_mask = torch.LongTensor(response_attention_mask_list).to(device)
         response_mask = (
-            torch.LongTensor(response_mask_list).to(device) if self.trace_aggregator.mode == "trajectory" else None
+            torch.LongTensor(response_mask_list).to(device) if self.trace_aggregator.mode.startswith("trajectory") else None
         )
 
         # Concatenate prompts and responses to form the full sequence
@@ -1016,7 +1027,7 @@ class AgentModeDaemon:
                 "position_ids": position_ids,
                 "is_drop_mask": is_drop_mask,
                 "token_level_scores": token_level_scores.contiguous(),
-                **({"response_mask": response_mask} if self.trace_aggregator.mode == "trajectory" else {}),
+                **({"response_mask": response_mask} if self.trace_aggregator.mode.startswith("trajectory") else {}),
             },
             batch_size=n_transition,
         )
@@ -1038,7 +1049,7 @@ class AgentModeDaemon:
                 "training/template_mismatch_triplets": template_mismatch_count,
                 "training/retoken_mismatch_triplets": retoken_mismatch_count,
                 "training/others_mismatch_triplets": others_mismatch_count,
-            } if self.trace_aggregator.mode == "trajectory" else {}),
+            } if self.trace_aggregator.mode.startswith("trajectory") else {}),
         }
 
         # Add non-tensor data for advantage calculation and logging

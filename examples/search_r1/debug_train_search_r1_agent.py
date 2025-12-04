@@ -42,7 +42,7 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
                 }
             },
             "trace_aggregator": {
-                "mode": "trajectory",
+                "mode": "trajectory-strict",
                 "trajectory_max_length": 34384,
             }
         },

@@ -157,15 +157,17 @@ def compute_data_metrics(batch: DataProto, use_critic: bool = True, suffix: str 
 
 
 def log_step_for_mismatch_detail(step: int) -> None:
-    with open("template_mismatch.log", "a+") as f:
+    import os
+    os.makedirs("mismatch_log", exist_ok=True)
+    with open("mismatch_log/template_mismatch.log", "a+") as f:
         print("-" * 10 + f" Step {step}" + "-" * 10, file=f)
-    with open("retoken_mismatch.log", "a+") as f:
+    with open("mismatch_log/retoken_mismatch.log", "a+") as f:
         print("-" * 10 + f" Step {step}" + "-" * 10, file=f)
-    with open("others_mismatch.log", "a+") as f:
+    with open("mismatch_log/others_mismatch.log", "a+") as f:
         print("-" * 10 + f" Step {step}" + "-" * 10, file=f)
-    with open("response_ids_num_mismatch.log", "a+") as f:
+    with open("mismatch_log/response_ids_num_mismatch.log", "a+") as f:
         print("-" * 10 + f" Step {step}" + "-" * 10, file=f)
-    with open("bad_case_jiahang.log", "a+") as f:
+    with open("mismatch_log/bad_case_unexpected.log", "a+") as f:
         print("-" * 10 + f" Step {step}" + "-" * 10, file=f)
 
 
@@ -234,7 +236,7 @@ class AgentLightningTrainer(RayPPOTrainer):
                 batch, agent_metrics = self.agent_mode_daemon.get_train_data_batch(
                     max_prompt_length=self.config.data.max_prompt_length,
                     max_response_length=self.config.actor_rollout_ref.rollout.trace_aggregator.trajectory_max_length \
-                        if self.config.actor_rollout_ref.rollout.trace_aggregator.mode == "trajectory" else \
+                        if self.config.actor_rollout_ref.rollout.trace_aggregator.mode.startswith("trajectory") else \
                             self.config.data.max_response_length,
                     device=gen_batch.batch["fake_ids"].device,
                 )

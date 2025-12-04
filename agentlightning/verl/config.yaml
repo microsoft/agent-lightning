@@ -20,7 +20,7 @@ actor_rollout_ref:
         path: pkg://agentlightning.verl.async_server
         name: PatchedvLLMServer
     trace_aggregator:
-      mode: transition # transition or trajectory
-      special_token_tolerance: 10 # only supported in trajectory mode, suggest to set as n_turns
-      string_tolerance: 20 # only supported in trajectory mode, suggest to set as n_turns * 2
-      trajectory_max_length: 8192 # only supported in trajectory mode, suggest to set as n_turns * (max_response_length + max_prompt_length)
+      mode: transition # transition, trajectory-strict, or trajectory-tolerant
+      special_token_tolerance: 10 # only supported in trajectory-tolerant mode, suggest to set as n_turns
+      string_tolerance: 20 # only supported in trajectory-tolerant mode, suggest to set as n_turns * 2
+      trajectory_max_length: 8192 # supported in two trajectory modes, suggest to set as n_turns * (max_response_length + max_prompt_length)
