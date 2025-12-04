@@ -127,6 +127,7 @@ jobs:
             sleep 1
           done
           echo "Store did not become ready in time" >&2
+          docker compose -f "$COMPOSE_FILE" logs app
           exit 1
 
       - name: Prepare artifact directory
@@ -178,7 +179,7 @@ jobs:
             tar -C docker/data -czf "$ARTIFACT_DIR/prometheus-${SCENARIO_ID}-${BACKEND_ID}.tar.gz" prometheus
           fi
           if docker compose -f "$COMPOSE_FILE" ps --format '{{.Name}}' >/dev/null 2>&1; then
-            docker compose -f "$COMPOSE_FILE" logs > "$ARTIFACT_DIR/docker-${SCENARIO_ID}-${BACKEND_ID}.log" || true
+            docker compose -f "$COMPOSE_FILE" logs app > "$ARTIFACT_DIR/docker-${SCENARIO_ID}-${BACKEND_ID}.log" || true
           fi
 
       - name: Upload benchmark artifacts
@@ -208,6 +209,9 @@ jobs:
           - id: dequeue-empty
             display: Dequeue empty throughput
             cli: dequeue-empty
+          - id: rollout
+            display: Rollout + span throughput
+            cli: rollout
     env:
       STORE_URL: http://localhost:4747
       STORE_API_URL: http://localhost:4747/v1/agl
@@ -252,6 +256,7 @@ jobs:
             sleep 1
           done
           echo "Store did not become ready in time" >&2
+          docker compose -f "$COMPOSE_FILE" logs app
           exit 1
 
       - name: Prepare artifact directory
@@ -317,7 +322,7 @@ jobs:
             tar -C docker/data -czf "$ARTIFACT_DIR/prometheus-micro-${MODE_ID}-${BACKEND_ID}.tar.gz" prometheus
           fi
           if docker compose -f "$COMPOSE_FILE" ps --format '{{.Name}}' >/dev/null 2>&1; then
-            docker compose -f "$COMPOSE_FILE" logs > "$ARTIFACT_DIR/docker-micro-${MODE_ID}-${BACKEND_ID}.log" || true
+            docker compose -f "$COMPOSE_FILE" logs app > "$ARTIFACT_DIR/docker-micro-${MODE_ID}-${BACKEND_ID}.log" || true
           fi
 
       - name: Upload micro benchmark artifacts
