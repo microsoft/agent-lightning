@@ -211,7 +211,7 @@ While returning a single float for the final reward is sufficient for many algor
 
 Agent-lightning provides an **emitter** module that allows you to record custom spans from within your agent's logic. Like many common operations (like LLM calls) that are automatically instrumented by [Tracer][agentlightning.Tracer], the emitter will also send a [Span][agentlightning.Span] that records an Agent-lightning-specific operation. Then algorithms can query and read those spans later. See [Working with Traces](./traces.md) for more details.
 
-For multi-step routines (function calls, tools, or adapters) you can wrap code with [`operation`][agentlightning.operation],either as a decorator or a context manager,to capture inputs, outputs, and metadata on a dedicated `"agentlightning.operation"` span. This makes it easier to correlate downstream annotations (like rewards or messages) with the higher-level work that produced them.
+For multi-step routines (function calls, tools, or adapters) you can wrap code with [`operation`][agentlightning.operation], either as a decorator or a context manager,to capture inputs, outputs, and metadata on a dedicated `"agentlightning.operation"` span. This makes it easier to correlate downstream annotations (like rewards or messages) with the higher-level work that produced them.
 
 You can find the emitter functions from [agentlightning.emitter](../reference/agent.md).
 
@@ -265,7 +265,7 @@ Sometimes a span should explicitly point back to another span that produced the 
 ```python
 import opentelemetry.trace as trace_api
 from agentlightning import emit_annotation, operation
-from agentlightning.utils.otel import make_link_attributes
+from agentlightning.utils.otel import make_link_attributes, make_tag_attributes
 
 with operation(conversation_id="chat-42") as op:
     # ... perform the work ...
@@ -297,7 +297,7 @@ assert matches  # Contains the original operation span
 
 !!! tip "Correlating Rewards with LLM Requests"
 
-    [Tracer](./traces.md) instrument each request/response as its own span. You can link to the [`gen_ai.response.id`](https://opentelemetry.io/docs/specs/semconv/gen-ai/gen-ai-events/) attribute, which comes from the LLM response ID.
+    [Tracer](./traces.md) instruments each request/response as its own span. You can link to the [`gen_ai.response.id`](https://opentelemetry.io/docs/specs/semconv/gen-ai/gen-ai-events/) attribute, which comes from the LLM response ID.
 
     ```python
     from agentlightning import emit_reward

@@ -15,11 +15,10 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanE
 from opentelemetry.trace import Status, StatusCode
 
 import agentlightning.emitter.annotation as annotation_module
-import agentlightning.emitter.operation as operation_module
-from agentlightning.emitter.annotation import emit_annotation
-from agentlightning.emitter.operation import _safe_json_dump  # pyright: ignore[reportPrivateUsage]
-from agentlightning.emitter.operation import (
+from agentlightning.emitter.annotation import _safe_json_dump  # pyright: ignore[reportPrivateUsage]
+from agentlightning.emitter.annotation import (
     OperationContext,
+    emit_annotation,
     operation,
 )
 from agentlightning.semconv import AGL_ANNOTATION, AGL_OPERATION, LightningSpanAttributes
@@ -126,8 +125,8 @@ def test_operation_context_records_inputs_and_outputs(monkeypatch: pytest.Monkey
     tracer = DummyTracer(start_span_instance=span)
     use_span = DummyUseSpan()
 
-    monkeypatch.setattr(operation_module, "get_tracer", lambda use_active_span_processor=True: tracer)
-    monkeypatch.setattr(operation_module.trace, "use_span", use_span)
+    monkeypatch.setattr(annotation_module, "get_tracer", lambda use_active_span_processor=True: tracer)
+    monkeypatch.setattr(annotation_module.trace, "use_span", use_span)
 
     ctx = OperationContext("custom-span", {"meta": {"foo": 1}, "count": 2})
 
@@ -152,8 +151,8 @@ def test_operation_context_set_input_supports_multiple_values(monkeypatch: pytes
     tracer = DummyTracer(start_span_instance=span)
     use_span = DummyUseSpan()
 
-    monkeypatch.setattr(operation_module, "get_tracer", lambda use_active_span_processor=True: tracer)
-    monkeypatch.setattr(operation_module.trace, "use_span", use_span)
+    monkeypatch.setattr(annotation_module, "get_tracer", lambda use_active_span_processor=True: tracer)
+    monkeypatch.setattr(annotation_module.trace, "use_span", use_span)
 
     ctx = OperationContext("ctx", {})
 
@@ -174,8 +173,8 @@ def test_operation_context_records_non_serializable_output(monkeypatch: pytest.M
     tracer = DummyTracer(start_span_instance=span)
     use_span = DummyUseSpan()
 
-    monkeypatch.setattr(operation_module, "get_tracer", lambda use_active_span_processor=True: tracer)
-    monkeypatch.setattr(operation_module.trace, "use_span", use_span)
+    monkeypatch.setattr(annotation_module, "get_tracer", lambda use_active_span_processor=True: tracer)
+    monkeypatch.setattr(annotation_module.trace, "use_span", use_span)
 
     ctx = OperationContext("ctx", {})
 
@@ -190,8 +189,8 @@ def test_operation_context_records_exceptions(monkeypatch: pytest.MonkeyPatch) -
     tracer = DummyTracer(start_span_instance=span)
     use_span = DummyUseSpan()
 
-    monkeypatch.setattr(operation_module, "get_tracer", lambda use_active_span_processor=True: tracer)
-    monkeypatch.setattr(operation_module.trace, "use_span", use_span)
+    monkeypatch.setattr(annotation_module, "get_tracer", lambda use_active_span_processor=True: tracer)
+    monkeypatch.setattr(annotation_module.trace, "use_span", use_span)
 
     ctx = OperationContext("custom-span", {})
 
@@ -211,8 +210,8 @@ def test_operation_factory_context_records_inputs_and_outputs(monkeypatch: pytes
     tracer = DummyTracer(start_span_instance=span)
     use_span = DummyUseSpan()
 
-    monkeypatch.setattr(operation_module, "get_tracer", lambda use_active_span_processor=True: tracer)
-    monkeypatch.setattr(operation_module.trace, "use_span", use_span)
+    monkeypatch.setattr(annotation_module, "get_tracer", lambda use_active_span_processor=True: tracer)
+    monkeypatch.setattr(annotation_module.trace, "use_span", use_span)
 
     with operation(tags=["one", "two"]) as ctx:
         ctx.set_input("alpha", meta={"score": 0.5})
@@ -231,8 +230,8 @@ def test_operation_factory_uses_standard_span_name(monkeypatch: pytest.MonkeyPat
     tracer = DummyTracer(start_span_instance=span)
     use_span = DummyUseSpan()
 
-    monkeypatch.setattr(operation_module, "get_tracer", lambda use_active_span_processor=True: tracer)
-    monkeypatch.setattr(operation_module.trace, "use_span", use_span)
+    monkeypatch.setattr(annotation_module, "get_tracer", lambda use_active_span_processor=True: tracer)
+    monkeypatch.setattr(annotation_module.trace, "use_span", use_span)
 
     with operation(user={"id": 5}) as ctx:
         ctx.set_output("done")
@@ -250,7 +249,7 @@ def test_operation_rejects_custom_span_names() -> None:
 
 def test_operation_decorator_sync_records_span_attributes(monkeypatch: pytest.MonkeyPatch) -> None:
     tracer = DummyTracer()
-    monkeypatch.setattr(operation_module, "get_tracer", lambda use_active_span_processor=True: tracer)
+    monkeypatch.setattr(annotation_module, "get_tracer", lambda use_active_span_processor=True: tracer)
 
     @operation(category={"kind": "combine"})
     def combine(data: Dict[str, int], *, meta: Dict[str, str]) -> Dict[str, Any]:
@@ -273,7 +272,7 @@ def test_operation_decorator_sync_records_span_attributes(monkeypatch: pytest.Mo
 
 def test_operation_decorator_handles_complex_signature(monkeypatch: pytest.MonkeyPatch) -> None:
     tracer = DummyTracer()
-    monkeypatch.setattr(operation_module, "get_tracer", lambda use_active_span_processor=True: tracer)
+    monkeypatch.setattr(annotation_module, "get_tracer", lambda use_active_span_processor=True: tracer)
 
     @operation()
     def complicated(
@@ -306,7 +305,7 @@ def test_operation_decorator_handles_complex_signature(monkeypatch: pytest.Monke
 
 def test_operation_decorator_records_exceptions(monkeypatch: pytest.MonkeyPatch) -> None:
     tracer = DummyTracer()
-    monkeypatch.setattr(operation_module, "get_tracer", lambda use_active_span_processor=True: tracer)
+    monkeypatch.setattr(annotation_module, "get_tracer", lambda use_active_span_processor=True: tracer)
 
     @operation()
     def fail(value: int) -> int:
@@ -325,7 +324,7 @@ def test_operation_decorator_records_exceptions(monkeypatch: pytest.MonkeyPatch)
 @pytest.mark.asyncio()
 async def test_operation_async_wrapper_records_attributes(monkeypatch: pytest.MonkeyPatch) -> None:
     tracer = DummyTracer()
-    monkeypatch.setattr(operation_module, "get_tracer", lambda use_active_span_processor=True: tracer)
+    monkeypatch.setattr(annotation_module, "get_tracer", lambda use_active_span_processor=True: tracer)
 
     @operation()
     async def echo(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -346,7 +345,7 @@ def test_operation_span_can_be_resolved_via_annotation_links(monkeypatch: pytest
     provider.add_span_processor(SimpleSpanProcessor(exporter))
     tracer = provider.get_tracer(__name__)
 
-    monkeypatch.setattr(operation_module, "get_tracer", lambda use_active_span_processor=True: tracer)
+    monkeypatch.setattr(annotation_module, "get_tracer", lambda use_active_span_processor=True: tracer)
     monkeypatch.setattr(annotation_module, "get_tracer", lambda use_active_span_processor=True: tracer)
 
     @operation(conversation_id="conv-1")
@@ -382,8 +381,8 @@ def test_operation_honors_propagate_flag(monkeypatch: pytest.MonkeyPatch) -> Non
         flags.append(use_active_span_processor)
         return tracer
 
-    monkeypatch.setattr(operation_module, "get_tracer", fake_get_tracer)
-    monkeypatch.setattr(operation_module.trace, "use_span", use_span)
+    monkeypatch.setattr(annotation_module, "get_tracer", fake_get_tracer)
+    monkeypatch.setattr(annotation_module.trace, "use_span", use_span)
 
     @operation(propagate=False)
     def decorated(value: int) -> int:
