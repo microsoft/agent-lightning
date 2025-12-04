@@ -13,6 +13,7 @@ It provides:
 
 from __future__ import annotations
 
+import logging
 import os
 import tempfile
 import threading
@@ -26,10 +27,12 @@ if TYPE_CHECKING:
 LabelDict = Dict[str, str]
 LabelKey = Tuple[Tuple[str, str], ...]  # normalized, sorted (key, value) pairs
 
+logger = logging.getLogger(__name__)
+
 
 def _validate_labels(
     kind: str,
-    name: str,
+    metric_name: str,
     labels: LabelDict,
     expected_names: Tuple[str, ...],
 ) -> LabelKey:
@@ -49,10 +52,10 @@ def _validate_labels(
     """
 
     label_items: List[Tuple[str, str]] = []
-    for name in expected_names:
-        if name not in labels:
-            raise ValueError(f"Label '{name}' is required for {kind.capitalize()} '{name}'.")
-        label_items.append((name, labels[name]))
+    for label_name in expected_names:
+        if label_name not in labels:
+            raise ValueError(f"Label '{label_name}' is required for {kind.capitalize()} '{metric_name}'.")
+        label_items.append((label_name, labels[label_name]))
 
     return tuple(label_items)
 
@@ -60,13 +63,11 @@ def _validate_labels(
 def _normalize_label_names(label_names: Optional[Sequence[str]]) -> Tuple[str, ...]:
     """Normalizes label names into a canonical tuple.
 
-    Not sorted. Order is the insertion order.
-
     Args:
         label_names: Iterable of label names or None.
 
     Returns:
-        A tuple of label names.
+        A tuple of label names sorted alphabetically.
     """
     if not label_names:
         return ()
@@ -343,7 +344,7 @@ class ConsoleMetricsBackend(MetricsBackend):
             if should_log:
                 counter_snaps, hist_snaps = self._snapshot_locked(now)
             else:
-                counter_snaps = hist_snaps = None
+                counter_snaps = hist_snaps = []
 
         if should_log and (counter_snaps or hist_snaps):
             self._log_snapshot(counter_snaps, hist_snaps)
@@ -382,12 +383,10 @@ class ConsoleMetricsBackend(MetricsBackend):
             if should_log:
                 counter_snaps, hist_snaps = self._snapshot_locked(now)
             else:
-                counter_snaps = hist_snaps = None
+                counter_snaps = hist_snaps = []
 
         if should_log and (counter_snaps or hist_snaps):
             self._log_snapshot(counter_snaps, hist_snaps)
-
-    # Helpers --------------------------------------------------------------
 
     def _prune_events(
         self,
@@ -504,8 +503,8 @@ class ConsoleMetricsBackend(MetricsBackend):
         return dict(items[: self.group_level])
 
     def _log(self, message: str) -> None:
-        """Logs a message to stdout."""
-        print(message)
+        """Logs a message via the module logger."""
+        logger.info(message)
 
     def _log_snapshot(
         self,
@@ -543,11 +542,8 @@ class ConsoleMetricsBackend(MetricsBackend):
         duration = max(last_ts - first_ts, 1e-9)
         rate = total / duration
 
-        window_description = f"last {self.window_seconds:.1f}s" if self.window_seconds is not None else "all time"
-
-        self._log(
-            f"[metrics][counter] {name}{labels} " f"total={total:.2f} rate={rate:.4f}/s " f"({window_description})"
-        )
+        label_str = _format_label_string(labels)
+        self._log(f"{name}{label_str}={rate:.2f}/s")
 
     def _log_histogram(
         self,
@@ -578,32 +574,27 @@ class ConsoleMetricsBackend(MetricsBackend):
         p95 = percentile(95.0)
         p99 = percentile(99.0)
 
-        bucket_str = ""
-        if buckets:
-            counts = [0] * (len(buckets) + 1)
-            for v in sorted_vals:
-                placed = False
-                for i, b in enumerate(buckets):
-                    if v <= b:
-                        counts[i] += 1
-                        placed = True
-                        break
-                if not placed:
-                    counts[-1] += 1
+        label_str = _format_label_string(labels)
+        formatted = ",".join([_format_duration(p50), _format_duration(p95), _format_duration(p99)])
+        self._log(f"{name}{label_str}={formatted}")
 
-            parts = []
-            for b, c in zip(buckets, counts[:-1]):
-                parts.append(f"<= {b}: {c}")
-            parts.append(f"> {buckets[-1]}: {counts[-1]}")
-            bucket_str = " | buckets: " + ", ".join(parts)
 
-        window_description = f"last {self.window_seconds:.1f}s" if self.window_seconds is not None else "all time"
+def _format_label_string(labels: LabelDict) -> str:
+    if not labels:
+        return "{}"
+    ordered = ",".join(f"{key}={value}" for key, value in sorted(labels.items()))
+    return f"{{{ordered}}}"
 
-        self._log(
-            f"[metrics][histogram] {name}{labels} "
-            f"P50={p50:.4f} P95={p95:.4f} P99={p99:.4f} "
-            f"({window_description}){bucket_str}"
-        )
+
+def _format_duration(value: float) -> str:
+    abs_value = abs(value)
+    if abs_value >= 1.0:
+        return f"{value:.2f}s"
+    if abs_value >= 1e-3:
+        return f"{value * 1_000:.2f}ms"
+    if abs_value >= 1e-6:
+        return f"{value * 1_000_000:.2f}µs"
+    return f"{value * 1_000_000_000:.2f}ns"
 
 
 class PrometheusMetricsBackend(MetricsBackend):
@@ -664,7 +655,7 @@ class PrometheusMetricsBackend(MetricsBackend):
             prom_counter = PromCounter(
                 name,
                 f"Counter {name}",
-                labelnames=label_tuple or None,
+                labelnames=label_tuple,
             )
             self._prom_counters[name] = prom_counter
 
@@ -704,14 +695,14 @@ class PrometheusMetricsBackend(MetricsBackend):
                 prom_hist = PromHistogram(
                     name,
                     f"Histogram {name}",
-                    labelnames=label_tuple or None,
+                    labelnames=label_tuple,
                     buckets=bucket_tuple,
                 )
             else:
                 prom_hist = PromHistogram(
                     name,
                     f"Histogram {name}",
-                    labelnames=label_tuple or None,
+                    labelnames=label_tuple,
                 )
 
             self._prom_histograms[name] = prom_hist
