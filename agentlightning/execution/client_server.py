@@ -277,8 +277,14 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
         def _runner_sync(runner: RunnerBundle, worker_id: int, store: LightningStore, stop_evt: ExecutionEvent) -> None:
             # Runners are executed in child processes; each process owns its own
             # event loop to keep the asyncio scheduler isolated.
-            asyncio.run(self._execute_runner(runner, worker_id, store, stop_evt))
-
+            self._run_with_sigint(
+                kind="runner",
+                runner=runner,
+                worker_id=worker_id,
+                store=store,
+                stop_evt=stop_evt,
+                is_main_process=False,
+            )
         for i in range(self.n_runners):
             process = cast(
                 multiprocessing.Process,
@@ -422,11 +428,24 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
         try:
             if self.role == "algorithm":
                 logger.info("Running algorithm solely...")
-                asyncio.run(self._execute_algorithm(algorithm, store, stop_evt))
+                self._run_with_sigint(
+                    kind="algorithm",
+                    algorithm=algorithm,
+                    store=store,
+                    stop_evt=stop_evt,
+                    is_main_process=True,
+                )
             elif self.role == "runner":
                 if self.n_runners == 1:
                     logger.info("Running runner solely...")
-                    asyncio.run(self._execute_runner(runner, 0, store, stop_evt))
+                    self._run_with_sigint(
+                        kind="runner",
+                        runner=runner,
+                        worker_id=0,
+                        store=store,
+                        stop_evt=stop_evt,
+                        is_main_process=True,
+                    )
                 else:
                     logger.info("Spawning runner processes...")
                     processes = self._spawn_runners(runner, store, stop_evt, ctx=ctx)
@@ -440,7 +459,13 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
                     processes = self._spawn_runners(runner, store, stop_evt, ctx=ctx)
                     try:
                         logger.info("Running algorithm...")
-                        asyncio.run(self._execute_algorithm(algorithm, store, stop_evt))
+                        self._run_with_sigint(
+                            kind="algorithm",
+                            algorithm=algorithm,
+                            store=store,
+                            stop_evt=stop_evt,
+                            is_main_process=True,
+                        )
                     finally:
                         # Always request the runner side to unwind once the
                         # algorithm/server portion finishes (successfully or not).
@@ -458,7 +483,14 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
                     # the background process spawned above (the provided
                     # store must therefore be picklable when using spawn).
                     logger.info("Running runner...")
-                    asyncio.run(self._execute_runner(runner, 0, store, stop_evt))
+                    self._run_with_sigint(
+                        kind="runner",
+                        runner=runner,
+                        worker_id=0,
+                        store=store,
+                        stop_evt=stop_evt,
+                        is_main_process=True,
+                    )
 
                     # Wait for the algorithm process to finish.
                     algorithm_process.join()
