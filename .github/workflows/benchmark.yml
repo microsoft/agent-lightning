@@ -254,6 +254,9 @@ jobs:
       - name: Prepare artifact directory
         run: mkdir -p "$ARTIFACT_DIR"
 
+      - name: Record micro benchmark start
+        run: echo "BENCHMARK_START=$(date -u +%FT%TZ)" >> "$GITHUB_ENV"
+
       - name: Run ${{ matrix.mode.display }}
         run: |
           set -euo pipefail
@@ -261,6 +264,26 @@ jobs:
           uv run --locked --no-sync python -m tests.benchmark.micro_benchmark \
             --store-url "$STORE_URL" \
             "${{ matrix.mode.cli }}" | tee "$ARTIFACT_DIR/micro-${MODE_ID}.txt"
+
+      - name: Record micro benchmark end
+        if: ${{ always() }}
+        run: echo "BENCHMARK_END=$(date -u +%FT%TZ)" >> "$GITHUB_ENV"
+
+      - name: Run micro benchmark analysis
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$ARTIFACT_DIR"
+          if [ -z "${BENCHMARK_START:-}" ] || [ -z "${BENCHMARK_END:-}" ]; then
+            echo "Analysis skipped: benchmark window not recorded." > "$ARTIFACT_DIR/analysis-${MODE_ID}.txt"
+            exit 1
+          fi
+          uv run --locked --no-sync python -m tests.benchmark.analysis \
+            --prom-url "$PROM_URL" \
+            --store-url "$STORE_API_URL" \
+            --start "$BENCHMARK_START" \
+            --end "$BENCHMARK_END" \
+            | tee "$ARTIFACT_DIR/analysis-${MODE_ID}.txt"
 
       - name: Stop ${{ matrix.backend.id }} Prometheus stack
         if: ${{ always() }}
