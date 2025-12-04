@@ -664,6 +664,14 @@ class MongoBasedCollection(Collection[T_model]):
 
         return combined
 
+    def _model_validate_item(self, raw: Mapping[str, Any]) -> T_model:
+        item_type_has_id = "_id" in self._item_type.model_fields
+        # Remove _id from the raw document if the item type does not have it.
+        if not item_type_has_id:
+            raw = {k: v for k, v in raw.items() if k != "_id"}
+        # Convert Mongo document to Pydantic model
+        return self._item_type.model_validate(raw)  # type: ignore[arg-type]
+
     @_mongo_operation("query")
     async def query(
         self,
@@ -677,12 +685,11 @@ class MongoBasedCollection(Collection[T_model]):
         The handling of null-values in sorting is different from memory-based implementation.
         In MongoDB, null values are treated as less than non-null values.
         """
-        await self.ensure_collection()
+        collection = await self.ensure_collection()
 
         combined = self._inject_partition_filter(filter)
         mongo_filter = _build_mongo_filter(cast(FilterOptions, combined))
 
-        collection = await self.ensure_collection()
         total = await collection.count_documents(mongo_filter, session=self._session)
 
         if limit == 0:
@@ -706,13 +713,8 @@ class MongoBasedCollection(Collection[T_model]):
             cursor = cursor.limit(limit)
 
         items: List[T_model] = []
-        item_type_has_id = "_id" in self._item_type.model_fields
         async for raw in cursor:
-            # Remove _id from the raw document if the item type does not have it.
-            if not item_type_has_id:
-                raw.pop("_id", None)  # type: ignore
-            # Convert Mongo document to Pydantic model
-            items.append(self._item_type.model_validate(raw))  # type: ignore[arg-type]
+            items.append(self._model_validate_item(raw))
 
         return PaginatedResult[T_model](items=items, limit=limit, offset=offset, total=total)
 
@@ -722,8 +724,28 @@ class MongoBasedCollection(Collection[T_model]):
         filter: Optional[FilterOptions] = None,
         sort: Optional[SortOptions] = None,
     ) -> Optional[T_model]:
-        result = await self.query(filter=filter, sort=sort, limit=1, offset=0)
-        return result.items[0] if result.items else None
+        collection = await self.ensure_collection()
+
+        combined = self._inject_partition_filter(filter)
+        mongo_filter = _build_mongo_filter(cast(FilterOptions, combined))
+
+        sort_name, sort_order = resolve_sort_options(sort)
+        mongo_sort: Optional[List[Tuple[str, int]]] = None
+        if sort_name is not None:
+            model_fields = getattr(self._item_type, "model_fields", {})
+            if sort_name not in model_fields:
+                raise ValueError(
+                    f"Failed to sort items by '{sort_name}': field does not exist on {self._item_type.__name__}"
+                )
+            direction = 1 if sort_order == "asc" else -1
+            mongo_sort = [(sort_name, direction)]
+
+        raw = await collection.find_one(mongo_filter, sort=mongo_sort, session=self._session)
+
+        if raw is None:
+            return None
+
+        return self._model_validate_item(raw)
 
     @_mongo_operation("insert")
     async def insert(self, items: Sequence[T_model]) -> None:
@@ -819,7 +841,7 @@ class MongoBasedCollection(Collection[T_model]):
                 raise ValueError(f"Item with primary key(s) {pk_filter} does not exist")
 
             # Re-instantiate the model from the raw MongoDB dictionary.
-            new_item = self._item_type.model_validate(updated_doc)  # type: ignore[arg-type]
+            new_item = self._model_validate_item(updated_doc)
             updated_items.append(new_item)
 
         return updated_items
@@ -868,7 +890,7 @@ class MongoBasedCollection(Collection[T_model]):
                 )
 
             # Because upsert=True, result_doc is guaranteed to be not None
-            new_item = self._item_type.model_validate(result_doc)  # type: ignore[arg-type]
+            new_item = self._model_validate_item(result_doc)
             upserted_items.append(new_item)
 
         return upserted_items

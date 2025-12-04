@@ -286,38 +286,39 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         if not worker_id:
             return
 
-        worker = await collections.workers.get({"worker_id": {"exact": worker_id}})
-        if not worker:
-            worker = Worker(worker_id=worker_id)
+        worker = Worker(worker_id=worker_id)
+        update_fields: List[str] = []
         now = time.time()
 
         # This is called from dequeue_rollout
         if dequeue:
             worker.last_dequeue_time = now
+            update_fields.append("last_dequeue_time")
 
+        # NOTE: We don't check the status change anymore, in sake of performance.
+        # Instead, we always update the last_idle_time regardless of whether the attempt status has changed.
         if attempt.status in ("succeeded", "failed"):
-            if worker.status != "idle":
-                worker.last_idle_time = now
+            worker.last_idle_time = now
             worker.status = "idle"
             worker.current_rollout_id = None
             worker.current_attempt_id = None
+            update_fields.extend(["last_idle_time", "status", "current_rollout_id", "current_attempt_id"])
         elif attempt.status in ("timeout", "unresponsive"):
-            if worker.status != "unknown":
-                worker.last_idle_time = now
+            worker.last_idle_time = now
             worker.status = "unknown"
             worker.current_rollout_id = None
             worker.current_attempt_id = None
+            update_fields.extend(["last_idle_time", "status", "current_rollout_id", "current_attempt_id"])
         else:
-            transitioned = worker.status != "busy" or worker.current_attempt_id != attempt.attempt_id
-            if transitioned:
-                worker.last_busy_time = now
+            worker.last_busy_time = now
             worker.status = "busy"
             worker.current_rollout_id = attempt.rollout_id
             worker.current_attempt_id = attempt.attempt_id
+            update_fields.extend(["last_busy_time", "status", "current_rollout_id", "current_attempt_id"])
 
         # Validate the schema to make sure it's valid.
         Worker.model_validate(worker.model_dump())
-        await collections.workers.upsert([worker])
+        await collections.workers.upsert([worker], update_fields=update_fields)
 
     @property
     def capabilities(self) -> LightningStoreCapabilities:
@@ -328,16 +329,14 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         return LightningStoreCapabilities()
 
     @tracked("_sync_workers_with_attempts")
-    @_with_collections_execute(labels=["workers", "attempts"])
-    async def _sync_workers_with_attempts(
-        self, collections: T_collections, attempts: Sequence[Attempt], dequeue: bool = False
-    ) -> None:
+    async def _sync_workers_with_attempts(self, attempts: Sequence[Attempt], dequeue: bool = False) -> None:
         """Update the worker's status. Locked bulk version of `_unlocked_sync_workers_with_attempts`.
 
         Use `dequeue = True` if `last_dequeue_time` should be updated.
         """
-        for attempt in attempts:
-            await self._unlocked_sync_worker_with_attempt(collections, attempt, dequeue)
+        async with self.collections.atomic(mode="w", snapshot=self._read_snapshot, labels=["workers"]) as collections:
+            for attempt in attempts:
+                await self._unlocked_sync_worker_with_attempt(collections, attempt, dequeue)
 
     @tracked("_dequeue_mark_worker_idle")
     async def _dequeue_mark_worker_idle(self, worker_id: str) -> None:

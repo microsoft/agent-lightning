@@ -763,6 +763,27 @@ async def test_update_and_query_workers(store_fixture: LightningStore) -> None:
 
 
 @pytest.mark.asyncio
+async def test_worker_sync_preserves_existing_fields(store_fixture: LightningStore) -> None:
+    """Worker heartbeats should survive status syncs triggered by attempts."""
+    worker_id = "worker-sync-preserve"
+    initial = await store_fixture.update_worker(worker_id, heartbeat_stats={"cpu": 0.42})
+    assert initial.last_heartbeat_time is not None
+
+    attempted = await store_fixture.start_rollout(input={"task": "preserve"}, worker_id=worker_id)
+
+    busy = await store_fixture.get_worker_by_id(worker_id)
+    assert busy is not None
+    assert busy.heartbeat_stats == {"cpu": 0.42}
+    assert busy.last_heartbeat_time == initial.last_heartbeat_time
+
+    await store_fixture.update_attempt(attempted.rollout_id, attempted.attempt.attempt_id, status="succeeded")
+    idle = await store_fixture.get_worker_by_id(worker_id)
+    assert idle is not None
+    assert idle.heartbeat_stats == {"cpu": 0.42}
+    assert idle.last_heartbeat_time == initial.last_heartbeat_time
+
+
+@pytest.mark.asyncio
 async def test_start_rollout_assigns_worker(store_fixture: LightningStore) -> None:
     """start_rollout should immediately associate attempts with the provided worker."""
     attempted = await store_fixture.start_rollout(input={"task": "direct"}, worker_id="worker-direct")

@@ -377,7 +377,7 @@
       }
     },
     {
-      "title": "add_span: Mongo Ops per Call (by Operation)",
+      "title": "add_many_spans: Mongo Ops per Call (by Operation)",
       "type": "timeseries",
       "gridPos": {
         "h": 8,
@@ -387,7 +387,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='add_span'}[1m])) / scalar(clamp_min(sum(rate(collection_store_total{method='add_span'}[1m])), 1e-9))",
+          "expr": "sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='add_many_spans'}[1m])) / scalar(clamp_min(sum(rate(collection_store_total{method='add_many_spans'}[1m])), 1e-9))",
           "legendFormat": "{{operation}} - {{collection}}"
         }
       ],
@@ -398,7 +398,7 @@
       }
     },
     {
-      "title": "add_span: Mongo Latency (P50)",
+      "title": "add_many_spans: Mongo Latency (P50)",
       "type": "timeseries",
       "gridPos": {
         "h": 8,
@@ -408,7 +408,7 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='add_span'}[1m])))",
+          "expr": "histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='add_many_spans'}[1m])))",
           "legendFormat": "{{operation}} - {{collection}}"
         }
       ],
@@ -419,7 +419,7 @@
       }
     },
     {
-      "title": "add_span: Mongo Time per Call (P50)",
+      "title": "add_many_spans: Mongo Time per Call (P50)",
       "type": "timeseries",
       "gridPos": {
         "h": 8,
@@ -429,7 +429,7 @@
       },
       "targets": [
         {
-          "expr": "(histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='add_span'}[1m])))) * (sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='add_span'}[1m])) / scalar(clamp_min(sum(rate(collection_store_total{method='add_span'}[1m])), 1e-9)))",
+          "expr": "(histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='add_many_spans'}[1m])))) * (sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='add_many_spans'}[1m])) / scalar(clamp_min(sum(rate(collection_store_total{method='add_span'}[1m])), 1e-9)))",
           "legendFormat": "{{operation}} - {{collection}}"
         }
       ],
