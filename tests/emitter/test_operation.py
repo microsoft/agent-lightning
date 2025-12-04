@@ -14,8 +14,8 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from opentelemetry.trace import Status, StatusCode
 
-from agentlightning.emitter import annotation as annotation_module
-from agentlightning.emitter import operation as operation_module
+import agentlightning.emitter.annotation as annotation_module
+import agentlightning.emitter.operation as operation_module
 from agentlightning.emitter.annotation import emit_annotation
 from agentlightning.emitter.operation import _safe_json_dump  # pyright: ignore[reportPrivateUsage]
 from agentlightning.emitter.operation import (
