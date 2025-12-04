@@ -160,13 +160,14 @@ def simulate_dequeue_empty_and_update_workers(store_url: str) -> BenchmarkSummar
 def _rollout_flow_task(args: tuple[str, int, int]) -> bool:
     store_url, task_id, spans_per_attempt = args
     store = agl.LightningStoreClient(store_url)
-    console.print(f"Starting rollout for task {task_id} with {spans_per_attempt} spans")
 
     async def _async_task() -> None:
+        console.print(f"Starting rollout for task {task_id} with {spans_per_attempt} spans")
         attempted = await store.start_rollout(input={"task": task_id})
         rollout_id = attempted.rollout_id
         attempt_id = attempted.attempt.attempt_id
         for seq in range(1, spans_per_attempt + 1):
+            console.print(f"Adding span {seq} for task {task_id} with {spans_per_attempt} spans")
             span = _make_span(
                 rollout_id,
                 attempt_id,
@@ -174,6 +175,7 @@ def _rollout_flow_task(args: tuple[str, int, int]) -> bool:
                 f"micro-span-{seq}",
             )
             await store.add_span(span)
+        console.print(f"Updating attempt {attempt_id} for task {task_id} with {spans_per_attempt} spans")
         await store.update_attempt(rollout_id, attempt_id, status="succeeded")
 
     try:

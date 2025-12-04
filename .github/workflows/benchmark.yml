@@ -256,7 +256,7 @@ jobs:
             sleep 1
           done
           echo "Store did not become ready in time" >&2
-          docker compose -f "$COMPOSE_FILE" logs app
+          cd docker && docker compose -f "$COMPOSE_FILE" logs app
           exit 1
 
       - name: Prepare artifact directory
