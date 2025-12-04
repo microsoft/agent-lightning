@@ -343,11 +343,13 @@ class ConsoleMetricsBackend(MetricsBackend):
             should_log = self._should_log_locked(now)
             if should_log:
                 counter_snaps, hist_snaps = self._snapshot_locked(now)
+                snapshot_time = now
             else:
                 counter_snaps = hist_snaps = []
+                snapshot_time = now
 
         if should_log and (counter_snaps or hist_snaps):
-            self._log_snapshot(counter_snaps, hist_snaps)
+            self._log_snapshot(counter_snaps, hist_snaps, snapshot_time)
 
     def observe_histogram(
         self,
@@ -382,11 +384,13 @@ class ConsoleMetricsBackend(MetricsBackend):
             should_log = self._should_log_locked(now)
             if should_log:
                 counter_snaps, hist_snaps = self._snapshot_locked(now)
+                snapshot_time = now
             else:
                 counter_snaps = hist_snaps = []
+                snapshot_time = now
 
         if should_log and (counter_snaps or hist_snaps):
-            self._log_snapshot(counter_snaps, hist_snaps)
+            self._log_snapshot(counter_snaps, hist_snaps, snapshot_time)
 
     def _prune_events(
         self,
@@ -510,6 +514,7 @@ class ConsoleMetricsBackend(MetricsBackend):
         self,
         counter_snaps: List[Tuple[str, LabelDict, List[float], List[float]]],
         hist_snaps: List[Tuple[str, LabelDict, List[float], Tuple[float, ...]]],
+        snapshot_time: float,
     ) -> None:
         """Logs all metrics from a snapshot.
 
@@ -519,11 +524,11 @@ class ConsoleMetricsBackend(MetricsBackend):
         """
         for name, labels, timestamps, amounts in counter_snaps:
             truncated_labels = self._truncate_labels_for_logging(labels)
-            self._log_counter(name, truncated_labels, timestamps, amounts)
+            self._log_counter(name, truncated_labels, timestamps, amounts, snapshot_time)
 
         for name, labels, values, buckets in hist_snaps:
             truncated_labels = self._truncate_labels_for_logging(labels)
-            self._log_histogram(name, truncated_labels, values, buckets)
+            self._log_histogram(name, truncated_labels, values, buckets, snapshot_time)
 
     def _log_counter(
         self,
@@ -531,15 +536,18 @@ class ConsoleMetricsBackend(MetricsBackend):
         labels: LabelDict,
         timestamps: List[float],
         amounts: List[float],
+        snapshot_time: float,
     ) -> None:
         """Computes and logs counter statistics for a single group."""
         if not timestamps:
             return
 
         total = sum(amounts)
-        first_ts = timestamps[0]
-        last_ts = timestamps[-1]
-        duration = max(last_ts - first_ts, 1e-9)
+        window_start = timestamps[0]
+        if self.window_seconds is not None:
+            window_start = max(window_start, snapshot_time - self.window_seconds)
+        min_duration = self.log_interval_seconds if self.log_interval_seconds > 0 else 1e-3
+        duration = max(snapshot_time - window_start, min_duration)
         rate = total / duration
 
         label_str = _format_label_string(labels)
@@ -551,6 +559,7 @@ class ConsoleMetricsBackend(MetricsBackend):
         labels: LabelDict,
         values: List[float],
         buckets: Tuple[float, ...],
+        snapshot_time: float,
     ) -> None:
         """Computes and logs histogram statistics for a single group."""
         if not values:

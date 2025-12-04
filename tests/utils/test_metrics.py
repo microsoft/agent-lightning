@@ -43,9 +43,10 @@ def test_console_backend_logs_counters_with_sorted_labels() -> None:
         {"group2": "b", "group1": "a"},
         timestamps=[0.0, 1.0],
         amounts=[1.0, 1.0],
+        snapshot_time=2.0,
     )
 
-    assert logged == ["rate{group1=a,group2=b}=2.00/s"]
+    assert logged == ["rate{group1=a,group2=b}=0.40/s"]
 
 
 def test_console_backend_logs_histograms_with_human_units() -> None:
@@ -58,6 +59,7 @@ def test_console_backend_logs_histograms_with_human_units() -> None:
         {"group2": "b", "group1": "a"},
         values=[0.00395, 0.0168, 3.5],
         buckets=(0.5,),
+        snapshot_time=1.0,
     )
 
     assert len(logged) == 1
@@ -75,9 +77,9 @@ def test_console_backend_respects_group_level_limit():
     logged: List[str] = []
     backend._log = logged.append  # type: ignore[assignment]
 
-    backend._log_counter("metric", truncated, [0.0, 2.0], [1.0, 1.0])
+    backend._log_counter("metric", truncated, [0.0, 2.0], [1.0, 1.0], snapshot_time=3.0)
 
-    assert logged == ["metric{group1=a,group2=b}=1.00/s"]
+    assert logged == ["metric{group1=a,group2=b}=0.40/s"]
 
 
 def test_console_backend_log_uses_logger(caplog: pytest.LogCaptureFixture) -> None:
@@ -229,3 +231,94 @@ def test_prometheus_backend_binds_stubbed_prometheus(monkeypatch: pytest.MonkeyP
     histogram_instance = stub.histogram_instances[0]
     assert counter_instance.children[(("method", "GET"),)].value == 2.0
     assert histogram_instance.children[(("method", "GET"),)].values == [0.1]
+
+
+def test_console_backend_sliding_window_rate_and_eviction(monkeypatch: pytest.MonkeyPatch) -> None:
+    backend = ConsoleMetricsBackend(window_seconds=5.0, log_interval_seconds=0.0)
+    backend.register_counter("requests", ["group", "path"])
+
+    logged: List[str] = []
+    backend._log = logged.append  # type: ignore[assignment]
+
+    times = iter([0.0, 1.0, 6.0])
+    monkeypatch.setattr(metrics_module.time, "time", lambda: next(times))
+
+    labels = {"group": "api", "path": "/list"}
+    backend.inc_counter("requests", labels=labels)
+    backend.inc_counter("requests", labels=labels)
+    backend.inc_counter("requests", labels=labels)
+
+    final_logs = [line for line in logged if line.startswith("requests")]
+    assert len(final_logs) == 3
+
+    latest = final_logs[-1]
+    assert latest.startswith("requests{group=api,path=/list}=")
+    rate_str = latest.rsplit("=", 1)[1].rstrip("/s")
+    rate = float(rate_str)
+    assert abs(rate - 0.40) < 1e-2
+
+
+def _duration_to_seconds(payload: str) -> float:
+    if payload.endswith("ms"):
+        return float(payload[:-2]) / 1_000
+    if payload.endswith("µs"):
+        return float(payload[:-2]) / 1_000_000
+    if payload.endswith("ns"):
+        return float(payload[:-2]) / 1_000_000_000
+    if payload.endswith("s"):
+        return float(payload[:-1])
+    raise AssertionError(f"Unknown duration format: {payload}")
+
+
+def test_console_backend_histogram_quantiles_and_group_depth(monkeypatch: pytest.MonkeyPatch) -> None:
+    backend = ConsoleMetricsBackend(window_seconds=10.0, log_interval_seconds=0.0, group_level=2)
+    backend.register_histogram("latency", ["service", "endpoint", "status"])
+
+    logged: List[str] = []
+    backend._log = logged.append  # type: ignore[assignment]
+
+    times = iter([0.0, 1.0, 2.0, 3.0])
+    monkeypatch.setattr(metrics_module.time, "time", lambda: next(times))
+
+    svc_a_labels = {"service": "svcA", "endpoint": "/search", "status": "200"}
+    svc_b_labels = {"service": "svcB", "endpoint": "/chat", "status": "500"}
+
+    backend.observe_histogram("latency", value=0.01, labels=svc_a_labels)
+    backend.observe_histogram("latency", value=0.02, labels=svc_a_labels)
+    backend.observe_histogram("latency", value=0.03, labels=svc_a_labels)
+    backend.observe_histogram("latency", value=2.0, labels=svc_b_labels)
+
+    svc_a_logs = [line for line in logged if "svcA" in line]
+    assert svc_a_logs, "expected log entries for service A"
+    latest = svc_a_logs[-1]
+    assert latest.startswith("latency{endpoint=/search,service=svcA}")
+    assert "status" not in latest
+
+    payload = latest.rsplit("=", 1)[1]
+    p50_str, p95_str, p99_str = payload.split(",", 2)
+    p50 = _duration_to_seconds(p50_str)
+    p95 = _duration_to_seconds(p95_str)
+    p99 = _duration_to_seconds(p99_str)
+
+    assert abs(p50 - 0.02) < 1e-3
+    assert abs(p95 - 0.029) < 5e-3
+    assert abs(p99 - 0.0298) < 5e-3
+
+
+def test_console_backend_logs_all_metric_groups(monkeypatch: pytest.MonkeyPatch) -> None:
+    backend = ConsoleMetricsBackend(window_seconds=None, log_interval_seconds=0.0)
+    backend.register_counter("requests", ["group"])
+    backend.register_counter("errors", ["group"])
+
+    logged: List[str] = []
+    backend._log = logged.append  # type: ignore[assignment]
+
+    times = iter([0.0, 1.0])
+    monkeypatch.setattr(metrics_module.time, "time", lambda: next(times))
+
+    backend.inc_counter("requests", labels={"group": "api"})
+    backend.inc_counter("errors", labels={"group": "api"})
+
+    latest_batch = logged[-2:]
+    assert any("requests{group=api}" in line for line in latest_batch)
+    assert any("errors{group=api}" in line for line in latest_batch)
