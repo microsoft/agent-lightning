@@ -13,10 +13,15 @@ It provides:
 
 from __future__ import annotations
 
+import os
+import tempfile
 import threading
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Tuple
+
+if TYPE_CHECKING:
+    from prometheus_client import CollectorRegistry
 
 LabelDict = Dict[str, str]
 LabelKey = Tuple[Tuple[str, str], ...]  # normalized, sorted (key, value) pairs
@@ -808,3 +813,53 @@ class MultiMetricsBackend(MetricsBackend):
         """Records a histogram observation in all underlying backends."""
         for backend in self._backends:
             backend.observe_histogram(name, value=value, labels=labels)
+
+
+_prometheus_multiproc_dir: tempfile.TemporaryDirectory[str] | None = None
+
+
+def setup_multiprocess_prometheus():
+    """Set up prometheus multiprocessing directory if not already configured."""
+
+    global _prometheus_multiproc_dir
+
+    if "PROMETHEUS_MULTIPROC_DIR" not in os.environ:
+        # Make TemporaryDirectory for prometheus multiprocessing
+        # Note: global TemporaryDirectory will be automatically
+        # cleaned up upon exit.
+        _prometheus_multiproc_dir = tempfile.TemporaryDirectory()
+        os.environ["PROMETHEUS_MULTIPROC_DIR"] = _prometheus_multiproc_dir.name
+        logger.debug("Created PROMETHEUS_MULTIPROC_DIR at %s", _prometheus_multiproc_dir.name)
+    else:
+        logger.warning(
+            "Found PROMETHEUS_MULTIPROC_DIR was set by user. " "This directory must be wiped between multiple runs."
+        )
+
+
+def get_prometheus_registry() -> CollectorRegistry:
+    """Get the appropriate prometheus registry based on multiprocessing configuration."""
+    from prometheus_client import REGISTRY, CollectorRegistry, multiprocess
+
+    if os.getenv("PROMETHEUS_MULTIPROC_DIR") is not None:
+        logger.debug("Using multiprocess registry for prometheus metrics")
+        registry = CollectorRegistry()
+        multiprocess.MultiProcessCollector(registry)
+        return registry
+
+    return REGISTRY
+
+
+def shutdown_metrics():
+    """Shutdown prometheus metrics."""
+
+    from prometheus_client import multiprocess
+
+    path = _prometheus_multiproc_dir
+    if path is None:
+        return
+    try:
+        pid = os.getpid()
+        multiprocess.mark_process_dead(pid, path)  # type: ignore
+        logger.debug("Marked Prometheus metrics for process %d as dead", pid)
+    except Exception as e:
+        logger.error("Error during metrics cleanup: %s", str(e))
