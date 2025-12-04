@@ -522,13 +522,21 @@ class ConsoleMetricsBackend(MetricsBackend):
             counter_snaps: Counter snapshot list.
             hist_snaps: Histogram snapshot list.
         """
+        entries: List[str] = []
         for name, labels, timestamps, amounts in counter_snaps:
             truncated_labels = self._truncate_labels_for_logging(labels)
-            self._log_counter(name, truncated_labels, timestamps, amounts, snapshot_time)
+            line = self._log_counter(name, truncated_labels, timestamps, amounts, snapshot_time)
+            if line:
+                entries.append(line)
 
         for name, labels, values, buckets in hist_snaps:
             truncated_labels = self._truncate_labels_for_logging(labels)
-            self._log_histogram(name, truncated_labels, values, buckets, snapshot_time)
+            line = self._log_histogram(name, truncated_labels, values, buckets, snapshot_time)
+            if line:
+                entries.append(line)
+
+        if entries:
+            self._log("  ".join(entries))
 
     def _log_counter(
         self,
@@ -537,10 +545,10 @@ class ConsoleMetricsBackend(MetricsBackend):
         timestamps: List[float],
         amounts: List[float],
         snapshot_time: float,
-    ) -> None:
-        """Computes and logs counter statistics for a single group."""
+    ) -> Optional[str]:
+        """Computes counter stats and returns formatted line."""
         if not timestamps:
-            return
+            return None
 
         total = sum(amounts)
         window_start = timestamps[0]
@@ -551,7 +559,7 @@ class ConsoleMetricsBackend(MetricsBackend):
         rate = total / duration
 
         label_str = _format_label_string(labels)
-        self._log(f"{name}{label_str}={rate:.2f}/s")
+        return f"{name}{label_str}={rate:.2f}/s"
 
     def _log_histogram(
         self,
@@ -560,10 +568,10 @@ class ConsoleMetricsBackend(MetricsBackend):
         values: List[float],
         buckets: Tuple[float, ...],
         snapshot_time: float,
-    ) -> None:
-        """Computes and logs histogram statistics for a single group."""
+    ) -> Optional[str]:
+        """Computes histogram stats and returns formatted line."""
         if not values:
-            return
+            return None
 
         sorted_vals = sorted(values)
         n = len(sorted_vals)
@@ -585,7 +593,7 @@ class ConsoleMetricsBackend(MetricsBackend):
 
         label_str = _format_label_string(labels)
         formatted = ",".join([_format_duration(p50), _format_duration(p95), _format_duration(p99)])
-        self._log(f"{name}{label_str}={formatted}")
+        return f"{name}{label_str}={formatted}"
 
 
 def _format_label_string(labels: LabelDict) -> str:

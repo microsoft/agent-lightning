@@ -35,10 +35,7 @@ def test_normalize_label_names_is_sorted() -> None:
 
 def test_console_backend_logs_counters_with_sorted_labels() -> None:
     backend = ConsoleMetricsBackend()
-    logged: List[str] = []
-    backend._log = logged.append  # type: ignore[assignment]
-
-    backend._log_counter(
+    line = backend._log_counter(
         "rate",
         {"group2": "b", "group1": "a"},
         timestamps=[0.0, 1.0],
@@ -46,15 +43,12 @@ def test_console_backend_logs_counters_with_sorted_labels() -> None:
         snapshot_time=2.0,
     )
 
-    assert logged == ["rate{group1=a,group2=b}=0.40/s"]
+    assert line == "rate{group1=a,group2=b}=0.40/s"
 
 
 def test_console_backend_logs_histograms_with_human_units() -> None:
     backend = ConsoleMetricsBackend()
-    logged: List[str] = []
-    backend._log = logged.append  # type: ignore[assignment]
-
-    backend._log_histogram(
+    line = backend._log_histogram(
         "latency",
         {"group2": "b", "group1": "a"},
         values=[0.00395, 0.0168, 3.5],
@@ -62,9 +56,8 @@ def test_console_backend_logs_histograms_with_human_units() -> None:
         snapshot_time=1.0,
     )
 
-    assert len(logged) == 1
-    assert logged[0].startswith("latency{group1=a,group2=b}=")
-    payload = logged[0].rsplit("=", 1)[1]
+    assert line is not None and line.startswith("latency{group1=a,group2=b}=")
+    payload = line.rsplit("=", 1)[1]
     p50, p95, p99 = payload.split(",", 2)
     assert p50.endswith("ms")
     assert p95.endswith("s")
@@ -74,12 +67,9 @@ def test_console_backend_logs_histograms_with_human_units() -> None:
 def test_console_backend_respects_group_level_limit():
     backend = ConsoleMetricsBackend(group_level=2)
     truncated = backend._truncate_labels_for_logging({"group3": "c", "group1": "a", "group2": "b"})
-    logged: List[str] = []
-    backend._log = logged.append  # type: ignore[assignment]
+    line = backend._log_counter("metric", truncated, [0.0, 2.0], [1.0, 1.0], snapshot_time=3.0)
 
-    backend._log_counter("metric", truncated, [0.0, 2.0], [1.0, 1.0], snapshot_time=3.0)
-
-    assert logged == ["metric{group1=a,group2=b}=0.40/s"]
+    assert line == "metric{group1=a,group2=b}=0.40/s"
 
 
 def test_console_backend_log_uses_logger(caplog: pytest.LogCaptureFixture) -> None:
@@ -233,6 +223,13 @@ def test_prometheus_backend_binds_stubbed_prometheus(monkeypatch: pytest.MonkeyP
     assert histogram_instance.children[(("method", "GET"),)].values == [0.1]
 
 
+def _split_segments(log_lines: Sequence[str]) -> List[str]:
+    segments: List[str] = []
+    for line in log_lines:
+        segments.extend(part.strip() for part in line.split("  "))
+    return [seg for seg in segments if seg]
+
+
 def test_console_backend_sliding_window_rate_and_eviction(monkeypatch: pytest.MonkeyPatch) -> None:
     backend = ConsoleMetricsBackend(window_seconds=5.0, log_interval_seconds=0.0)
     backend.register_counter("requests", ["group", "path"])
@@ -248,11 +245,10 @@ def test_console_backend_sliding_window_rate_and_eviction(monkeypatch: pytest.Mo
     backend.inc_counter("requests", labels=labels)
     backend.inc_counter("requests", labels=labels)
 
-    final_logs = [line for line in logged if line.startswith("requests")]
-    assert len(final_logs) == 3
+    segments = [seg for seg in _split_segments(logged) if seg.startswith("requests{group=api,path=/list}")]
+    assert len(segments) == 3
 
-    latest = final_logs[-1]
-    assert latest.startswith("requests{group=api,path=/list}=")
+    latest = segments[-1]
     rate_str = latest.rsplit("=", 1)[1].rstrip("/s")
     rate = float(rate_str)
     assert abs(rate - 0.40) < 1e-2
@@ -288,10 +284,11 @@ def test_console_backend_histogram_quantiles_and_group_depth(monkeypatch: pytest
     backend.observe_histogram("latency", value=0.03, labels=svc_a_labels)
     backend.observe_histogram("latency", value=2.0, labels=svc_b_labels)
 
-    svc_a_logs = [line for line in logged if "svcA" in line]
-    assert svc_a_logs, "expected log entries for service A"
-    latest = svc_a_logs[-1]
-    assert latest.startswith("latency{endpoint=/search,service=svcA}")
+    svc_a_segments = [
+        seg for seg in _split_segments(logged) if seg.startswith("latency{endpoint=/search,service=svcA}")
+    ]
+    assert svc_a_segments, "expected log entries for service A"
+    latest = svc_a_segments[-1]
     assert "status" not in latest
 
     payload = latest.rsplit("=", 1)[1]
@@ -319,6 +316,25 @@ def test_console_backend_logs_all_metric_groups(monkeypatch: pytest.MonkeyPatch)
     backend.inc_counter("requests", labels={"group": "api"})
     backend.inc_counter("errors", labels={"group": "api"})
 
-    latest_batch = logged[-2:]
-    assert any("requests{group=api}" in line for line in latest_batch)
-    assert any("errors{group=api}" in line for line in latest_batch)
+    assert logged, "expected log output"
+    last_line = logged[-1]
+    assert "requests{group=api}" in last_line
+    assert "errors{group=api}" in last_line
+
+
+def test_console_backend_snapshot_logs_single_line() -> None:
+    backend = ConsoleMetricsBackend()
+    logged: List[str] = []
+    backend._log = logged.append  # type: ignore[assignment]
+
+    backend._log_snapshot(
+        [
+            ("counter", {"g": "1"}, [0.0, 1.0], [1.0, 1.0]),
+        ],
+        [
+            ("latency", {"g": "1"}, [0.1, 0.2], (0.5,)),
+        ],
+        snapshot_time=1.5,
+    )
+
+    assert logged and "counter{g=1}" in logged[0] and "latency{g=1}" in logged[0]
