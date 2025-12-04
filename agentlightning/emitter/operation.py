@@ -67,17 +67,19 @@ class OperationContext:
         span: The currently active span, if any.
     """
 
-    def __init__(self, name: str, attributes: Dict[str, Any]) -> None:
+    def __init__(self, name: str, attributes: Dict[str, Any], *, propagate: bool = True) -> None:
         """Initialize a new operation context.
 
         Args:
             name: Human-readable name of the span.
             attributes: Initial attributes attached to the span. Values are
                 JSON-serialized where necessary.
+            propagate: Whether the span should be sent to active exporters.
         """
         self.name: str = name
         self.initial_attributes: Dict[str, Any] = attributes
-        self.tracer: trace.Tracer = get_tracer()
+        self.propagate: bool = propagate
+        self.tracer: trace.Tracer = get_tracer(use_active_span_processor=propagate)
         self.span: Optional[trace.Span] = None
         self._ctx_token: Optional[ContextManager[Any]] = None
 
@@ -260,15 +262,17 @@ class OperationContext:
 
 
 @overload
-def operation(fn: _FnType, **additional_attributes: Any) -> _FnType: ...
+def operation(fn: _FnType, *, propagate: bool = True, **additional_attributes: Any) -> _FnType: ...
 
 
 @overload
-def operation(**additional_attributes: Any) -> OperationContext: ...
+def operation(*, propagate: bool = True, **additional_attributes: Any) -> OperationContext: ...
 
 
 def operation(
     fn: Optional[_FnType] = None,
+    *,
+    propagate: bool = True,
     **additional_attributes: Any,
 ) -> Union[_FnType, OperationContext]:
     """Entry point for tracking operations.
@@ -302,6 +306,8 @@ def operation(
         fn: When used as `@operation`, this is the wrapped function.
             When used as `operation(**attrs)`, this should be omitted (or
             left as `None`) and only keyword attributes are provided.
+        propagate: Whether spans should use the active span processor. When False,
+            spans will stay local and not be exported.
         **additional_attributes: Additional span attributes to attach at
             creation time.
 
@@ -313,10 +319,10 @@ def operation(
     # Case 1: Used as @operation (bare decorator or with attributes)
     if callable(fn):
         # Create context with fixed name, then immediately wrap the function
-        return OperationContext(AGL_OPERATION, additional_attributes)(fn)
+        return OperationContext(AGL_OPERATION, additional_attributes, propagate=propagate)(fn)
 
     # Case 2: Used as operation(...) / with operation(...)
     # Custom span names are intentionally not supported; use AGL_OPERATION.
     if fn is not None:
         raise ValueError("Custom span names are intentionally not supported when used as a context manager.")
-    return OperationContext(AGL_OPERATION, additional_attributes)
+    return OperationContext(AGL_OPERATION, additional_attributes, propagate=propagate)
