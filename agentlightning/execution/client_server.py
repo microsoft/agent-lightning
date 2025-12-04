@@ -145,6 +145,10 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
                 logger.debug("Algorithm bundle starting against endpoint %s", wrapper_store.endpoint)
             await algorithm(wrapper_store, stop_evt)
             logger.debug("Algorithm bundle completed successfully")
+        except asyncio.CancelledError:
+            logger.debug("Algorithm coming into CancelledError")
+            stop_evt.set()
+            raise
         except KeyboardInterrupt:
             logger.warning("Algorithm received KeyboardInterrupt; signaling stop event")
             stop_evt.set()
@@ -181,6 +185,10 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
                 logger.debug("Runner %s executing with provided store", worker_id)
             await runner(client_store, worker_id, stop_evt)
             logger.debug("Runner %s completed successfully", worker_id)
+        except asyncio.CancelledError:
+            logger.debug("Runner %s coming into CancelledError", worker_id)
+            stop_evt.set()
+            raise
         except KeyboardInterrupt:
             logger.warning("Runner %s received KeyboardInterrupt; signaling stop event", worker_id)
             stop_evt.set()
@@ -285,6 +293,7 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
                 stop_evt=stop_evt,
                 is_main_process=False,
             )
+
         for i in range(self.n_runners):
             process = cast(
                 multiprocessing.Process,
