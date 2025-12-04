@@ -185,3 +185,103 @@ jobs:
           name: benchmark-${{ matrix.scenario.id }}-${{ matrix.backend.id }}
           path: ${{ env.ARTIFACT_DIR }}
           if-no-files-found: error
+
+  micro-benchmark:
+    name: Micro-benchmark (${{ matrix.backend.id }}, ${{ matrix.mode.display }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        backend:
+          - id: memory
+            compose_file: compose.prometheus-memory-store.yml
+          - id: mongo
+            compose_file: compose.prometheus-mongo-store.yml
+        mode:
+          - id: worker
+            display: Update worker throughput
+            cli: worker
+          - id: dequeue-empty
+            display: Dequeue empty throughput
+            cli: dequeue-empty
+    env:
+      STORE_URL: http://localhost:4747
+      STORE_API_URL: http://localhost:4747/v1/agl
+      PROM_URL: http://localhost:9090
+      BACKEND_ID: ${{ matrix.backend.id }}
+      MODE_ID: ${{ matrix.mode.id }}
+      ARTIFACT_DIR: artifacts/micro-${{ matrix.mode.id }}-${{ matrix.backend.id }}
+      COMPOSE_FILE: ${{ matrix.backend.compose_file }}
+      AGL_STORE_N_WORKERS: 8
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          python-version: '3.12'
+
+      - name: Sync dependencies
+        run: uv sync --frozen --extra mongo --group core-stable --group dev
+
+      - name: Reset benchmark data directories
+        run: |
+          set -euo pipefail
+          cd docker
+          rm -rf data
+          bash setup.sh
+
+      - name: Launch ${{ matrix.backend.id }} Prometheus stack
+        run: |
+          set -euo pipefail
+          cd docker
+          docker compose -f "$COMPOSE_FILE" down -v || true
+          docker compose -f "$COMPOSE_FILE" up -d --quiet-pull
+
+      - name: Wait for store readiness
+        run: |
+          set -euo pipefail
+          for attempt in {1..60}; do
+            if curl -fsS "$STORE_API_URL/health" >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Store did not become ready in time" >&2
+          exit 1
+
+      - name: Prepare artifact directory
+        run: mkdir -p "$ARTIFACT_DIR"
+
+      - name: Run ${{ matrix.mode.display }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$ARTIFACT_DIR"
+          uv run --locked --no-sync python -m tests.benchmark.micro_benchmark \
+            --store-url "$STORE_URL" \
+            "${{ matrix.mode.cli }}" | tee "$ARTIFACT_DIR/micro-${MODE_ID}.txt"
+
+      - name: Stop ${{ matrix.backend.id }} Prometheus stack
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          cd docker
+          docker compose -f "$COMPOSE_FILE" down -v || true
+
+      - name: Archive Prometheus metrics
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$ARTIFACT_DIR"
+          if [ -d docker/data/prometheus ]; then
+            tar -C docker/data -czf "$ARTIFACT_DIR/prometheus-micro-${MODE_ID}-${BACKEND_ID}.tar.gz" prometheus
+          fi
+
+      - name: Upload micro benchmark artifacts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: micro-benchmark-${{ matrix.mode.id }}-${{ matrix.backend.id }}
+          path: ${{ env.ARTIFACT_DIR }}
+          if-no-files-found: error
