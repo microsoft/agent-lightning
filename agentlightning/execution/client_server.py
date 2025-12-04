@@ -18,6 +18,8 @@ from .events import ExecutionEvent, MultiprocessingEvent
 
 logger = logging.getLogger(__name__)
 
+SIGINT_SEEN: bool = False
+
 
 class ClientServerExecutionStrategy(ExecutionStrategy):
     """Run algorithm and runner bundles as separate processes over HTTP.
@@ -195,6 +197,71 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
                     logger.exception("Error closing LightningStore client for runner %s", worker_id)
                 else:
                     logger.debug("Runner %s closed LightningStore client", worker_id)
+
+    def _run_with_sigint(
+        self,
+        kind: Literal["runner", "algorithm"],
+        *,
+        runner: RunnerBundle | None = None,
+        algorithm: AlgorithmBundle | None = None,
+        worker_id: int = 0,
+        store: LightningStore,
+        stop_evt: ExecutionEvent,
+        is_main_process: bool,
+    ) -> None:
+        """Run `_execute_runner` or `_execute_algorithm` in a fresh event loop with a SIGINT handler."""
+
+        if kind == "runner":
+            if is_main_process:
+                log_prefix = "Main runner process"
+            else:
+                log_prefix = f"Runner process {worker_id}"
+        else:  # kind == "algorithm"
+            log_prefix = "Algorithm process"
+
+        if kind == "runner":
+            assert runner is not None
+            make_coro = lambda: self._execute_runner(runner, worker_id, store, stop_evt)
+        else:
+            assert algorithm is not None
+            make_coro = lambda: self._execute_algorithm(algorithm, store, stop_evt)
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        # Explicitly create the main task so the SIGINT handler can do cancel()
+        main_task: asyncio.Task[None] = loop.create_task(make_coro())
+
+        def _sigint_handler(signum: int, frame: object | None) -> None:
+            global SIGINT_SEEN
+            SIGINT_SEEN = True
+            logger.debug("%s received SIGINT; cancelling main task", log_prefix)
+            # Turn SIGINT into cancellation of the main "_execute_*" task so
+            # the runner/algorithm receives asyncio.CancelledError.
+            main_task.cancel()
+
+        signal.signal(signal.SIGINT, _sigint_handler)
+
+        try:
+            loop.run_until_complete(main_task)
+        except asyncio.CancelledError:
+            global SIGINT_SEEN
+            if SIGINT_SEEN and not is_main_process:
+                logger.debug("%s cancelled due to SIGINT; treating as graceful shutdown", log_prefix)
+            elif SIGINT_SEEN and is_main_process:  # Raise KeyboardInterrupt if is_main_process
+                logger.debug("%s cancelled due to SIGINT on main process; raising KeyboardInterrupt", log_prefix)
+                raise KeyboardInterrupt
+            else:  # not SIGINT_SEEN
+                logger.warning(
+                    "%s received unexpected asyncio.CancelledError without SIGINT; treating as crash", log_prefix
+                )
+                raise
+        finally:
+            try:
+                loop.run_until_complete(loop.shutdown_asyncgens())
+            except Exception:
+                logger.exception("Error during shutdown_asyncgens for %s", log_prefix)
+            loop.close()
 
     def _spawn_runners(
         self,
