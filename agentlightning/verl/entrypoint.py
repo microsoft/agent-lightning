@@ -39,36 +39,40 @@ def run_ppo(
     llm_proxy: LLMProxy | None,
     adapter: TraceAdapter[Any] | None,
 ) -> None:
+    import os
+    # Build environment variables for Ray workers
+    env_vars = {
+        "TOKENIZERS_PARALLELISM": "true",
+        "NCCL_DEBUG": "WARN",
+        "VLLM_LOGGING_LEVEL": "WARN",
+    }
+
+    # Pass debug environment variables to Ray workers if set
+    if os.environ.get("DEBUG_RAY_WORKER"):
+        env_vars["DEBUG_RAY_WORKER"] = os.environ.get("DEBUG_RAY_WORKER", "")
+        env_vars["DEBUG_RAY_WORKER_PORT"] = os.environ.get("DEBUG_RAY_WORKER_PORT", "5679")
+
+    # Print Ray log directory for debugging
+    import tempfile
+    ray_temp = os.path.join(tempfile.gettempdir(), "ray")
+    print(f"Ray initialized. Log directory: {ray_temp}/session_latest/logs/")
+    print(f"Use ray.get_runtime_context() for debugging.")
+
     if not ray.is_initialized():
         # this is for local ray cluster
-        import os
-
         try:
             # verl >= 0.6.0
             num_cpus = config.ray_kwargs.ray_init.num_cpus
         except AttributeError:
             # verl < 0.6.0
             num_cpus = config.ray_init.num_cpus
-
-        # Build environment variables for Ray workers
-        env_vars = {
-            "TOKENIZERS_PARALLELISM": "true",
-            "NCCL_DEBUG": "WARN",
-            "VLLM_LOGGING_LEVEL": "WARN",
-        }
-
-        # Pass debug environment variables to Ray workers if set
-        if os.environ.get("DEBUG_RAY_WORKER"):
-            env_vars["DEBUG_RAY_WORKER"] = os.environ.get("DEBUG_RAY_WORKER", "")
-            env_vars["DEBUG_RAY_WORKER_PORT"] = os.environ.get("DEBUG_RAY_WORKER_PORT", "5679")
-
         ray.init(
-            runtime_env={"env_vars": env_vars},
+            runtime_env={
+                # "env_vars": {"TOKENIZERS_PARALLELISM": "true", "NCCL_DEBUG": "WARN", "VLLM_LOGGING_LEVEL": "WARN"}
+                "env_vars": env_vars
+            },
             num_cpus=num_cpus,
-            include_dashboard=False,  # Disable dashboard to avoid dependency issues
-            logging_level="INFO",
         )
-        print(f"Ray initialized. Use ray.get_runtime_context() for debugging.")
 
     runner = TaskRunner.remote()
     ray.get(
@@ -94,8 +98,8 @@ class TaskRunner:
         llm_proxy: LLMProxy | None,
         adapter: TraceAdapter | None,
     ):
-        # Enable remote debugging in Ray worker if DEBUG_RAY_WORKER env var is set
         import os
+        print(f"[Ray Worker] DEBUG_RAY_WORKER={os.environ.get('DEBUG_RAY_WORKER')}")
         if os.environ.get("DEBUG_RAY_WORKER"):
             try:
                 import debugpy
@@ -240,7 +244,6 @@ class TaskRunner:
             adapter=adapter,
         )
         trainer.init_workers()
-        breakpoint()
         trainer.fit()
 
 

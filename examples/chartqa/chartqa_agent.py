@@ -275,8 +275,9 @@ class ChartQAAgent:
                 openai_api_base=endpoint,
                 openai_api_key=os.environ.get("OPENAI_API_KEY", "token-abc123"),
                 temperature=verl_replacement["temperature"],
-                max_retries=0,
+                max_retries=2,  # Retry on failure
                 max_tokens=1024,
+                timeout=300,  # 5 minute timeout per request
             )
         else:
             self.model_name: str = os.environ.get("MODEL", "Qwen/Qwen2-VL-2B-Instruct")
@@ -617,12 +618,16 @@ class LitChartQAAgent(agl.LitAgent[Dict[str, Any]]):
         try:
             # Run agent
             handler = self.tracer.get_langchain_handler()
+            print(f"[DEBUG] question: {question}, image_path: {image_path}")
             result = agent.invoke(  # type: ignore
                 {"question": question, "image_path": image_path},  # type: ignore
                 {"callbacks": [handler] if handler else [], "recursion_limit": 100},
             )
         except Exception as e:
-            logger.exception(f"[Rollout {rollout_id}] Error during agent invocation: {e}")
+            import traceback
+            error_msg = f"[Rollout {rollout_id}] Error during agent invocation: {e}\n{traceback.format_exc()}"
+            logger.exception(error_msg)
+            print(error_msg)  # Also print to stdout for Ray worker logs
             return None
 
         predicted_answer = result["answer"]
@@ -633,6 +638,12 @@ class LitChartQAAgent(agl.LitAgent[Dict[str, Any]]):
         # Evaluate
         reward = evaluate_answer(predicted_answer, ground_truth, raise_on_error=False)
         logger.info(f"[Rollout {rollout_id}] Reward: {reward}")
+
+        # Emit reward span - it will be auto-written to store via LightningSpanProcessor
+        # since we're inside trace_context()
+        # if reward is not None:
+        #     from agentlightning import emit_reward
+        #     emit_reward(reward)
 
         end_time_eval = time.time()
 
@@ -673,96 +684,98 @@ def create_llm_proxy_for_chartqa(vllm_endpoint: str, port: int = 8081) -> agl.LL
     return llm_proxy
 
 
-class TokenIdInspectorHook(agl.Hook):
-    """Hook to inspect and verify token IDs are being captured.
+# class TokenIdInspectorHook(agl.Hook):
+#     """Hook to inspect and verify token IDs are being captured.
 
-    This hook provides detailed diagnostics for token ID capture in both
-    text-only and multimodal (image + text) requests.
-    """
+#     This hook provides detailed diagnostics for token ID capture in both
+#     text-only and multimodal (image + text) requests.
+#     """
 
-    def __init__(self, verbose: bool = True):
-        """Initialize the hook.
+#     def __init__(self, verbose: bool = True):
+#         """Initialize the hook.
 
-        Args:
-            verbose: If True, print detailed diagnostics for each span
-        """
-        self.verbose = verbose
-        self.total_spans_checked = 0
-        self.spans_with_token_ids = 0
+#         Args:
+#             verbose: If True, print detailed diagnostics for each span
+#         """
+#         self.verbose = verbose
+#         self.total_spans_checked = 0
+#         self.spans_with_token_ids = 0
 
-    async def on_trace_end(self, *, agent, runner, tracer, rollout):
-        """Print token ID information after each rollout."""
-        trace = tracer.get_last_trace()
-        print(f"\n{'='*70}")
-        print(f"Token ID Inspection for Rollout {rollout.rollout_id}")
-        print(f"{'='*70}")
+#     async def on_trace_end(self, *, agent, runner, tracer, rollout):
+#         """Print token ID information after each rollout."""
+#         trace = tracer.get_last_trace()
+#         print(f"\n{'='*70}")
+#         print(f"Token ID Inspection for Rollout {rollout.rollout_id}")
+#         print(f"{'='*70}")
 
-        found_token_ids = False
-        for span in trace:
-            if "chat.completion" in span.name:
-                self.total_spans_checked += 1
-                attrs = span.attributes
-                prompt_ids = attrs.get("prompt_token_ids", [])
-                response_ids = attrs.get("response_token_ids", [])
+#         found_token_ids = False
+#         for span in trace:
+#             if "chat.completion" in span.name:
+#                 self.total_spans_checked += 1
+#                 attrs = span.attributes
+#                 prompt_ids = attrs.get("prompt_token_ids", [])
+#                 response_ids = attrs.get("response_token_ids", [])
 
-                print(f"\n[Span #{span.sequence_id}] {span.name}")
+#                 print(f"\n[Span #{span.sequence_id}] {span.name}")
 
-                # Check prompt token IDs
-                if prompt_ids:
-                    print(f"  ✅ Prompt token IDs: {len(prompt_ids)} tokens")
-                    if self.verbose:
-                        print(f"     First 10: {prompt_ids[:10]}")
-                        print(f"     Last 10:  {prompt_ids[-10:]}")
+#                 # Check prompt token IDs
+#                 if prompt_ids:
+#                     print(f"  ✅ Prompt token IDs: {len(prompt_ids)} tokens")
+#                     if self.verbose:
+#                         print(f"     First 10: {prompt_ids[:10]}")
+#                         print(f"     Last 10:  {prompt_ids[-10:]}")
 
-                    # Heuristic to detect multimodal input (Qwen2-VL specific)
-                    # Multimodal requests typically have many more prompt tokens
-                    if len(prompt_ids) > 100:
-                        print(f"  📊 Likely multimodal input (large token count)")
-                    found_token_ids = True
-                else:
-                    print(f"  ❌ NO prompt_token_ids")
-                    if self.verbose:
-                        print(f"     Available attributes: {list(attrs.keys())}")
+#                     # Heuristic to detect multimodal input (Qwen2-VL specific)
+#                     # Multimodal requests typically have many more prompt tokens
+#                     if len(prompt_ids) > 100:
+#                         print(f"  📊 Likely multimodal input (large token count)")
+#                     found_token_ids = True
+#                 else:
+#                     print(f"  ❌ NO prompt_token_ids")
+#                     if self.verbose:
+#                         print(f"     Available attributes: {list(attrs.keys())}")
 
-                # Check response token IDs
-                if response_ids:
-                    print(f"  ✅ Response token IDs: {len(response_ids)} tokens")
-                    if self.verbose:
-                        print(f"     First 10: {response_ids[:10]}")
-                        print(f"     Last 10:  {response_ids[-10:]}")
-                    found_token_ids = True
-                else:
-                    print(f"  ❌ NO response_token_ids")
+#                 # Check response token IDs
+#                 if response_ids:
+#                     print(f"  ✅ Response token IDs: {len(response_ids)} tokens")
+#                     if self.verbose:
+#                         print(f"     First 10: {response_ids[:10]}")
+#                         print(f"     Last 10:  {response_ids[-10:]}")
+#                     found_token_ids = True
+#                 else:
+#                     print(f"  ❌ NO response_token_ids")
 
-                # Track successful captures
-                if prompt_ids and response_ids:
-                    self.spans_with_token_ids += 1
+#                 # Track successful captures
+#                 if prompt_ids and response_ids:
+#                     self.spans_with_token_ids += 1
 
-                # Additional diagnostics if verbose
-                if self.verbose:
-                    # Check for usage stats
-                    if "gen_ai.usage.prompt_tokens" in attrs:
-                        print(f"  📊 Usage - Prompt: {attrs['gen_ai.usage.prompt_tokens']} tokens")
-                    if "gen_ai.usage.completion_tokens" in attrs:
-                        print(f"  📊 Usage - Completion: {attrs['gen_ai.usage.completion_tokens']} tokens")
+#                 # Additional diagnostics if verbose
+#                 if self.verbose:
+#                     # Check for usage stats
+#                     if "gen_ai.usage.prompt_tokens" in attrs:
+#                         print(f"  📊 Usage - Prompt: {attrs['gen_ai.usage.prompt_tokens']} tokens")
+#                     if "gen_ai.usage.completion_tokens" in attrs:
+#                         print(f"  📊 Usage - Completion: {attrs['gen_ai.usage.completion_tokens']} tokens")
 
-        # Summary
-        print(f"\n{'='*70}")
-        if found_token_ids:
-            print(f"✅ Token IDs are being captured successfully!")
-            print(f"   Spans with complete token IDs: {self.spans_with_token_ids}/{self.total_spans_checked}")
-        else:
-            print(f"⚠️  No token IDs found in any spans")
-            print(f"\n🔍 Troubleshooting tips:")
-            print(f"   1. Ensure LLMProxy is running and callbacks=['return_token_ids'] is set")
-            print(f"   2. Check that vLLM supports return_token_ids for your model")
-            print(f"   3. Verify Agent's LLM endpoint points to LLMProxy (not vLLM directly)")
-        print(f"{'='*70}\n")
+#         # Summary
+#         print(f"\n{'='*70}")
+#         if found_token_ids:
+#             print(f"✅ Token IDs are being captured successfully!")
+#             print(f"   Spans with complete token IDs: {self.spans_with_token_ids}/{self.total_spans_checked}")
+#         else:
+#             print(f"⚠️  No token IDs found in any spans")
+#             print(f"\n🔍 Troubleshooting tips:")
+#             print(f"   1. Ensure LLMProxy is running and callbacks=['return_token_ids'] is set")
+#             print(f"   2. Check that vLLM supports return_token_ids for your model")
+#             print(f"   3. Verify Agent's LLM endpoint points to LLMProxy (not vLLM directly)")
+#         print(f"{'='*70}\n")
 
 
 def debug_chartqa_agent():
     """Debug function to test agent with sample data and token ID capture."""
     import asyncio
+    import nest_asyncio
+    nest_asyncio.apply()  # Allow nested event loops (trainer may create its own)
 
     chartqa_dir = os.environ.get("CHARTQA_DATA_DIR", "data")
     test_data_path = os.path.join(chartqa_dir, "test_chartqa.parquet")
@@ -770,51 +783,53 @@ def debug_chartqa_agent():
     if not os.path.exists(test_data_path):
         raise FileNotFoundError(f"Test data file {test_data_path} does not exist. Please run prepare_data.py first.")
 
-    df = pd.read_parquet(test_data_path).head(1)  # type: ignore
+    df = pd.read_parquet(test_data_path).head(3)  # type: ignore
     test_data = cast(List[Dict[str, Any]], df.to_dict(orient="records"))  # type: ignore
     print("Debug data:", test_data[0])
 
-    # Create LLMProxy for token ID capture
     vllm_endpoint = os.environ.get("OPENAI_API_BASE", "http://localhost:8088/v1")
-    llm_proxy = create_llm_proxy_for_chartqa(vllm_endpoint, port=8081)
+
+    # Create SHARED store for both LLMProxy and Trainer
+    store = agl.LightningStoreThreaded(agl.InMemoryLightningStore())
+
+    llm_proxy = agl.LLMProxy(
+        port=8089,
+        store=store,  # Use shared store
+        model_list=[{
+            "model_name": "Qwen/Qwen2-VL-2B-Instruct",
+            "litellm_params": {
+                "model": "hosted_vllm/Qwen/Qwen2-VL-2B-Instruct",
+                "api_base": vllm_endpoint,
+            },
+        }],
+        callbacks=["return_token_ids"],  # Remove "opentelemetry" to avoid otlp_traces issue
+        launch_mode="thread",
+    )
 
     try:
-        # Start LLMProxy (using asyncio.run for sync context)
+        # Start LLMProxy
         logger.info("Starting LLMProxy...")
         asyncio.run(llm_proxy.start())
 
         # Wait for LLMProxy to be ready
         logger.info("Waiting for LLMProxy to be ready...")
-        time.sleep(3)
+        # time.sleep(2)
 
-        # Verify LLMProxy is responsive
-        import requests
-        try:
-            # Use /v1/models endpoint which LiteLLM actually supports
-            resp = requests.get("http://localhost:8081/v1/models", timeout=5)
-            if resp.status_code == 200:
-                logger.info(f"✅ LLMProxy is ready (found {len(resp.json().get('data', []))} models)")
-            else:
-                logger.warning(f"LLMProxy responded with status {resp.status_code}")
-        except Exception as e:
-            logger.warning(f"⚠️  LLMProxy health check failed: {e}")
-            logger.info("This is often normal - LLMProxy may still work correctly")
-
-        # Configure trainer to use LLMProxy
         trainer = agl.Trainer(
             n_workers=1,
-            llm_proxy=llm_proxy,  # Pass LLMProxy for token ID capture
+            store=store,  # CRITICAL: Pass same store to trainer
+            llm_proxy=llm_proxy,
+            strategy={"name": "shm", "main_thread":"algorithm", "managed_store": False},
             initial_resources={
                 "main_llm": agl.LLM(
-                    endpoint="http://localhost:8081/v1",  # Point to LLMProxy, not vLLM directly
+                    endpoint="http://localhost:8089/v1",
                     model="Qwen/Qwen2-VL-2B-Instruct",
                     sampling_parameters={"temperature": 0.0},
                 )
             },
-            hooks=[TokenIdInspectorHook()],  # Add token ID inspection hook
         )
 
-        logger.info("Starting trainer.dev() with LLMProxy and token ID inspection...")
+        logger.info("Starting trainer.dev()...")
         trainer.dev(LitChartQAAgent(), test_data)
 
     except KeyboardInterrupt:
@@ -823,7 +838,6 @@ def debug_chartqa_agent():
         logger.error(f"Error during debug session: {e}", exc_info=True)
         raise
     finally:
-        # Graceful shutdown (using asyncio.run for sync context)
         logger.info("Shutting down LLMProxy...")
         try:
             asyncio.run(llm_proxy.stop())

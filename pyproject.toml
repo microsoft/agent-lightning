@@ -35,6 +35,8 @@ apo = [
 multimodal = [
   "Pillow",
   "requests",
+  "transformers",
+  "nest_asyncio",
 ]
 # It's not recommended to use agentlightning[verl] to install VERL and its dependencies.
 # though it's listed here for completeness.

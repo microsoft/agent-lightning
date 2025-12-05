@@ -23,10 +23,11 @@ from agentlightning.adapter.triplet import TracerTraceToTriplet, TraceToTripletB
 from agentlightning.llm_proxy import LLMProxy, ModelConfig
 from agentlightning.store.base import LightningStore
 from agentlightning.types import EnqueueRolloutRequest, Rollout, RolloutConfig, Task
-
-from .multimodal_utils import compute_mrope_position_ids, get_image_grid_thw, is_mrope_model
-
-setup_logging()
+from agentlightning.verl.multimodal_utils import (
+    compute_mrope_position_ids,
+    get_image_grid_thw,
+    is_mrope_model,
+)
 
 __all__ = [
     "AgentModeDaemon",
@@ -866,4 +867,3 @@ class AgentModeDaemon:
         else:
             final_reward = rollout.final_reward
         return final_reward
-

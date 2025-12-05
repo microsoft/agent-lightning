@@ -462,35 +462,44 @@ class LitAgentRunner(Runner[T_task]):
         agent = self.get_agent()
 
         rollout_id = next_rollout.rollout_id
+        print(f"{self._log_prefix(rollout_id)} [DEBUG] Starting _step_impl", flush=True)
 
         resources_id = next_rollout.resources_id
         resources_update = None
         if resources_id:
+            print(f"{self._log_prefix(rollout_id)} [DEBUG] Fetching resources by id: {resources_id}", flush=True)
             resources_update = await store.get_resources_by_id(resources_id)
         else:
             logger.debug(f"{self._log_prefix(rollout_id)} No 'resources_id'. Fetching latest resources.")
+            print(f"{self._log_prefix(rollout_id)} [DEBUG] Fetching latest resources", flush=True)
             resources_update = await store.get_latest_resources()
         if not resources_update:
+            print(f"{self._log_prefix(rollout_id)} [DEBUG] Resources fetch FAILED! resources_update is None", flush=True)
             if raise_on_exception:
                 raise RuntimeError(f"{self._log_prefix(rollout_id)} Failed to fetch resources")
             else:
                 logger.error(f"{self._log_prefix(rollout_id)} Failed to fetch resources. Skipping.")
                 return rollout_id
+        print(f"{self._log_prefix(rollout_id)} [DEBUG] Resources fetched successfully", flush=True)
 
         trace_spans: List[ReadableSpan] | List[Span] = []
         has_exception: bool = False
 
         try:
+            print(f"{self._log_prefix(rollout_id)} [DEBUG] Triggering on_rollout_start hooks", flush=True)
             await self._trigger_hooks(hook_type="on_rollout_start", agent=agent, runner=self, rollout=next_rollout)
 
             start_time = time.time()
+            print(f"{self._log_prefix(rollout_id)} [DEBUG] Entering trace_context", flush=True)
             async with self._tracer.trace_context(
                 name=rollout_id, rollout_id=rollout_id, attempt_id=next_rollout.attempt.attempt_id
             ):
+                print(f"{self._log_prefix(rollout_id)} [DEBUG] Inside trace_context, triggering on_trace_start", flush=True)
                 await self._trigger_hooks(
                     hook_type="on_trace_start", agent=agent, runner=self, tracer=self._tracer, rollout=next_rollout
                 )
 
+                print(f"{self._log_prefix(rollout_id)} [DEBUG] Calling agent rollout method", flush=True)
                 # NOTE: This is the most costly step in the whole function
                 # If the rollout method becomes unresponsive or timeouts, there is nothing we can do within the runner.
                 # We might need some mechanisms in execution strategy to restart the runner. But that's a future work.
@@ -524,8 +533,10 @@ class LitAgentRunner(Runner[T_task]):
                 f"Final reward: {last_reward}"
             )
 
-        except Exception:
-            logger.exception(f"{self._log_prefix(rollout_id)} Exception during rollout.")
+        except Exception as e:
+            print(f"{self._log_prefix(rollout_id)} [DEBUG] Exception during rollout: {type(e).__name__}: {e}", flush=True)
+            import traceback
+            traceback.print_exc()
             has_exception = True
 
             if raise_on_exception:
@@ -580,8 +591,9 @@ class LitAgentRunner(Runner[T_task]):
                 # Retrieve the next rollout
                 next_rollout: Optional[Rollout] = None
                 while not (event is not None and event.is_set()):
-                    logger.debug(f"{self._log_prefix()} Try to poll for next rollout.")
+                    print(f"{self._log_prefix()} [DEBUG] Calling dequeue_rollout...", flush=True)
                     next_rollout = await store.dequeue_rollout(worker_id=self.get_worker_id())
+                    print(f"{self._log_prefix()} [DEBUG] dequeue_rollout returned: {next_rollout.rollout_id if next_rollout else None}", flush=True)
                     if next_rollout is None:
                         logger.debug(
                             f"{self._log_prefix()} No rollout to poll. Waiting for {self._poll_interval} seconds."
