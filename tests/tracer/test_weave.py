@@ -5,7 +5,7 @@ from __future__ import annotations
 import datetime
 import multiprocessing
 from types import SimpleNamespace
-from typing import Any, Callable, Coroutine
+from typing import Any, Callable, Coroutine, Sequence
 
 import pytest
 
@@ -21,9 +21,9 @@ class MockLightningStore(LightningStore):
         super().__init__()
         self.spans: list[Span] = []
 
-    async def add_span(self, span: Span) -> Span:
-        self.spans.append(span)
-        return span
+    async def add_many_spans(self, spans: Sequence[Span]) -> Sequence[Span]:
+        self.spans.extend(spans)
+        return spans
 
     def get_traces(self) -> list[Span]:
         return self.spans

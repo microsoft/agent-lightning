@@ -77,11 +77,6 @@ def instrument_all():
     else:
         warnings.warn("Agentops-langchain integration is not installed. It's therefore not instrumented.")
 
-    if WEAVE_INSTALLED:
-        from .weave import instrument_weave
-
-        instrument_weave()
-
 
 def uninstrument_all():
     """Uninstrument all the instrumentation libraries."""
@@ -125,6 +120,15 @@ def uninstrument_all():
     else:
         warnings.warn("Agentops-langchain integration is not installed. It's therefore not uninstrumented.")
 
+
+def instrument_weave():
+    if WEAVE_INSTALLED:
+        from .weave import instrument_weave
+
+        instrument_weave()
+
+
+def uninstrument_weave():
     if WEAVE_INSTALLED:
         try:
             from .weave import uninstrument_weave

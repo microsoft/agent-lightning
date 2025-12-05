@@ -9,7 +9,7 @@ import threading
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any, AsyncContextManager, List, Optional
 
-from agentlightning.instrumentation import instrument_all, uninstrument_all
+from agentlightning.instrumentation import instrument_weave, uninstrument_weave
 from agentlightning.store.base import LightningStore
 from agentlightning.types.tracer import OtelResource, Span, SpanContext, TraceStatus
 
@@ -70,10 +70,10 @@ class WeaveTracer(Tracer):
         self._loop_thread: Optional[threading.Thread] = None
 
     def instrument(self, worker_id: int):
-        instrument_all()
+        instrument_weave()
 
     def uninstrument(self, worker_id: int):
-        uninstrument_all()
+        uninstrument_weave()
 
     def init_worker(self, worker_id: int, store: Optional[LightningStore] = None):
         """
@@ -194,8 +194,7 @@ class WeaveTracer(Tracer):
 
         if self._store and self._rollout_id and self._attempt_id:
             try:
-                for span in spans:
-                    await self._store.add_span(span)
+                await self._store.add_many_spans(spans)
             except Exception as e:
                 logger.exception(f"Error adding span to store: {e}")
 
