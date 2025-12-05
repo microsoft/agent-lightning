@@ -153,8 +153,13 @@ def format_window(seconds: float) -> str:
     return f"{seconds}s"
 
 
-def compute_rate_window(duration_seconds: float) -> str:
-    return format_window(min(duration_seconds, 60.0))
+def clamp_window_seconds(duration_seconds: float) -> int:
+    return max(int(duration_seconds), 1)
+
+
+def compute_peak_window(duration_seconds: float) -> str:
+    peak_seconds = max(min(int(duration_seconds), 60), 1)
+    return f"{peak_seconds}s"
 
 
 def compute_subquery_step(duration_seconds: float) -> str:
@@ -355,20 +360,19 @@ class RolloutOutcomeStats:
 def gather_store_methods(
     client: PrometheusClient,
     window: str,
-    rate_window: str,
+    window_seconds: int,
+    peak_window: str,
     subquery_step: str,
 ) -> Tuple[List[StoreMethodStats], StatsSummary]:
-    ops_expr = f"sum by (method)(rate(collection_store_total[{rate_window}]))"
-    ops_mean = vector_to_map(
-        safe_vector(client, f"avg_over_time(({ops_expr})[{window}:{subquery_step}])"),
-        ("method",),
-    )
+    mean_expr = f"(sum by (method)(increase(collection_store_total[{window}]))) / {window_seconds}"
+    ops_mean = vector_to_map(safe_vector(client, mean_expr), ("method",))
+    peak_expr = f"sum by (method)(irate(collection_store_total[{peak_window}]))"
     ops_max = vector_to_map(
-        safe_vector(client, f"max_over_time(({ops_expr})[{window}:{subquery_step}])"),
+        safe_vector(client, f"max_over_time(({peak_expr})[{window}:{subquery_step}])"),
         ("method",),
     )
     ops_min = vector_to_map(
-        safe_vector(client, f"min_over_time(({ops_expr})[{window}:{subquery_step}])"),
+        safe_vector(client, f"min_over_time(({peak_expr})[{window}:{subquery_step}])"),
         ("method",),
     )
     p50 = vector_to_map(
@@ -412,16 +416,16 @@ def gather_store_methods(
     overall: StatsSummary = {
         "ops_mean": safe_scalar(
             client,
-            f"avg_over_time((sum(rate(collection_store_total[{rate_window}])))[{window}:{subquery_step}])",
+            f"(sum(increase(collection_store_total[{window}]))) / {window_seconds}",
         )
         or 0.0,
         "ops_max": safe_scalar(
             client,
-            f"max_over_time((sum(rate(collection_store_total[{rate_window}])))[{window}:{subquery_step}])",
+            f"max_over_time(((sum(irate(collection_store_total[{peak_window}]))))[{window}:{subquery_step}])",
         ),
         "ops_min": safe_scalar(
             client,
-            f"min_over_time((sum(rate(collection_store_total[{rate_window}])))[{window}:{subquery_step}])",
+            f"min_over_time(((sum(irate(collection_store_total[{peak_window}]))))[{window}:{subquery_step}])",
         ),
         "p50": safe_scalar(
             client,
@@ -445,17 +449,20 @@ def gather_store_methods(
 def gather_rollout_outcomes(
     client: PrometheusClient,
     window: str,
-    rate_window: str,
+    window_seconds: int,
 ) -> List[RolloutOutcomeStats]:
     rate_map = vector_to_map(
-        safe_vector(client, f"sum by (status)(rate(collection_store_rollout_total[{rate_window}]))"),
+        safe_vector(
+            client,
+            f"(sum by (status)(increase(collection_store_rollout_total[{window}]))) / {window_seconds}",
+        ),
         ("status",),
     )
     p25_map = vector_to_map(
         safe_vector(
             client,
             f"histogram_quantile(0.25, "
-            f"sum by (le, status)(rate(collection_store_rollout_duration_seconds_bucket[{window}])))",
+            f"sum by (le, status)(increase(collection_store_rollout_duration_seconds_bucket[{window}])))",
         ),
         ("status",),
     )
@@ -463,7 +470,7 @@ def gather_rollout_outcomes(
         safe_vector(
             client,
             f"histogram_quantile(0.50, "
-            f"sum by (le, status)(rate(collection_store_rollout_duration_seconds_bucket[{window}])))",
+            f"sum by (le, status)(increase(collection_store_rollout_duration_seconds_bucket[{window}])))",
         ),
         ("status",),
     )
@@ -471,7 +478,7 @@ def gather_rollout_outcomes(
         safe_vector(
             client,
             f"histogram_quantile(0.75, "
-            f"sum by (le, status)(rate(collection_store_rollout_duration_seconds_bucket[{window}])))",
+            f"sum by (le, status)(increase(collection_store_rollout_duration_seconds_bucket[{window}])))",
         ),
         ("status",),
     )
@@ -479,7 +486,7 @@ def gather_rollout_outcomes(
         safe_vector(
             client,
             f"histogram_quantile(1.00, "
-            f"sum by (le, status)(rate(collection_store_rollout_duration_seconds_bucket[{window}])))",
+            f"sum by (le, status)(increase(collection_store_rollout_duration_seconds_bucket[{window}])))",
         ),
         ("status",),
     )
@@ -532,40 +539,42 @@ class HttpPathStatusStats:
 def gather_http_paths(
     client: PrometheusClient,
     window: str,
-    rate_window: str,
+    window_seconds: int,
+    peak_window: str,
     subquery_step: str,
 ) -> Tuple[List[HttpPathStats], StatsSummary]:
-    qps_expr = f"sum by (method, path)(rate(http_requests_total[{rate_window}]))"
+    mean_expr = f"(sum by (method, path)(increase(http_requests_total[{window}]))) / {window_seconds}"
     qps_mean = vector_to_map(
-        safe_vector(client, f"avg_over_time(({qps_expr})[{window}:{subquery_step}])"),
+        safe_vector(client, mean_expr),
         ("method", "path"),
     )
+    peak_expr = f"sum by (method, path)(irate(http_requests_total[{peak_window}]))"
     qps_max = vector_to_map(
-        safe_vector(client, f"max_over_time(({qps_expr})[{window}:{subquery_step}])"),
+        safe_vector(client, f"max_over_time(({peak_expr})[{window}:{subquery_step}])"),
         ("method", "path"),
     )
     qps_min = vector_to_map(
-        safe_vector(client, f"min_over_time(({qps_expr})[{window}:{subquery_step}])"),
+        safe_vector(client, f"min_over_time(({peak_expr})[{window}:{subquery_step}])"),
         ("method", "path"),
     )
     p50 = vector_to_map(
         safe_vector(
             client,
-            f"histogram_quantile(0.50, sum by (le, method, path)(rate(http_request_duration_seconds_bucket[{window}])))",
+            f"histogram_quantile(0.50, sum by (le, method, path)(increase(http_request_duration_seconds_bucket[{window}])))",
         ),
         ("method", "path"),
     )
     p95 = vector_to_map(
         safe_vector(
             client,
-            f"histogram_quantile(0.95, sum by (le, method, path)(rate(http_request_duration_seconds_bucket[{window}])))",
+            f"histogram_quantile(0.95, sum by (le, method, path)(increase(http_request_duration_seconds_bucket[{window}])))",
         ),
         ("method", "path"),
     )
     p99 = vector_to_map(
         safe_vector(
             client,
-            f"histogram_quantile(0.99, sum by (le, method, path)(rate(http_request_duration_seconds_bucket[{window}])))",
+            f"histogram_quantile(0.99, sum by (le, method, path)(increase(http_request_duration_seconds_bucket[{window}])))",
         ),
         ("method", "path"),
     )
@@ -607,27 +616,27 @@ def gather_http_paths(
     overall: StatsSummary = {
         "qps_mean": safe_scalar(
             client,
-            f"avg_over_time((sum(rate(http_requests_total[{rate_window}])))" f"[{window}:{subquery_step}])",
+            f"(sum(increase(http_requests_total[{window}]))) / {window_seconds}",
         )
         or 0.0,
         "qps_max": safe_scalar(
             client,
-            f"max_over_time((sum(rate(http_requests_total[{rate_window}])))" f"[{window}:{subquery_step}])",
+            f"max_over_time(((sum(irate(http_requests_total[{peak_window}]))))[{window}:{subquery_step}])",
         ),
         "qps_min": safe_scalar(
             client,
-            f"min_over_time((sum(rate(http_requests_total[{rate_window}])))" f"[{window}:{subquery_step}])",
+            f"min_over_time(((sum(irate(http_requests_total[{peak_window}]))))[{window}:{subquery_step}])",
         ),
         "p50": safe_scalar(
-            client, f"histogram_quantile(0.50, sum by (le)(rate(http_request_duration_seconds_bucket[{window}])))"
+            client, f"histogram_quantile(0.50, sum by (le)(increase(http_request_duration_seconds_bucket[{window}])))"
         )
         or 0.0,
         "p95": safe_scalar(
-            client, f"histogram_quantile(0.95, sum by (le)(rate(http_request_duration_seconds_bucket[{window}])))"
+            client, f"histogram_quantile(0.95, sum by (le)(increase(http_request_duration_seconds_bucket[{window}])))"
         )
         or 0.0,
         "p99": safe_scalar(
-            client, f"histogram_quantile(0.99, sum by (le)(rate(http_request_duration_seconds_bucket[{window}])))"
+            client, f"histogram_quantile(0.99, sum by (le)(increase(http_request_duration_seconds_bucket[{window}])))"
         )
         or 0.0,
     }
@@ -637,10 +646,11 @@ def gather_http_paths(
 def gather_http_paths_with_status(
     client: PrometheusClient,
     window: str,
-    rate_window: str,
+    window_seconds: int,
+    peak_window: str,
     subquery_step: str,
 ) -> List[HttpPathStatusStats]:
-    qps_expr = f"sum by (method, path, status_code)(rate(http_requests_total[{rate_window}]))"
+    qps_expr = f"sum by (method, path, status_code)(irate(http_requests_total[{peak_window}]))"
 
     def fetch_status_metric(expr: str) -> Dict[Tuple[str, str, str], Optional[float]]:
         samples = safe_vector(client, expr)
@@ -671,17 +681,19 @@ def gather_http_paths_with_status(
         text = str(value)
         return text if text else "-"
 
-    qps_mean_norm = fetch_status_metric(f"avg_over_time(({qps_expr})[{window}:{subquery_step}])")
+    qps_mean_norm = fetch_status_metric(
+        f"(sum by (method, path, status_code)(increase(http_requests_total[{window}]))) / {window_seconds}"
+    )
     qps_max_norm = fetch_status_metric(f"max_over_time(({qps_expr})[{window}:{subquery_step}])")
     qps_min_norm = fetch_status_metric(f"min_over_time(({qps_expr})[{window}:{subquery_step}])")
     p50_norm = fetch_status_metric(
-        f"histogram_quantile(0.50, sum by (le, method, path, status_code)(rate(http_request_duration_seconds_bucket[{window}])))"
+        f"histogram_quantile(0.50, sum by (le, method, path, status_code)(increase(http_request_duration_seconds_bucket[{window}])))"
     )
     p95_norm = fetch_status_metric(
-        f"histogram_quantile(0.95, sum by (le, method, path, status_code)(rate(http_request_duration_seconds_bucket[{window}])))"
+        f"histogram_quantile(0.95, sum by (le, method, path, status_code)(increase(http_request_duration_seconds_bucket[{window}])))"
     )
     p99_norm = fetch_status_metric(
-        f"histogram_quantile(0.99, sum by (le, method, path, status_code)(rate(http_request_duration_seconds_bucket[{window}])))"
+        f"histogram_quantile(0.99, sum by (le, method, path, status_code)(increase(http_request_duration_seconds_bucket[{window}])))"
     )
 
     stats: List[HttpPathStatusStats] = []
@@ -877,8 +889,9 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         start = end - duration
     assert start is not None
     duration_seconds = max((end - start).total_seconds(), 1.0)
+    window_seconds = clamp_window_seconds(duration_seconds)
     window = format_window(duration_seconds)
-    rate_window = compute_rate_window(duration_seconds)
+    peak_window = compute_peak_window(duration_seconds)
     subquery_step = compute_subquery_step(duration_seconds)
 
     client = PrometheusClient(args.prom_url, timeout=args.timeout, default_time=end)
@@ -922,7 +935,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     )
 
     # Store internals
-    store_stats, store_overall = gather_store_methods(client, window, rate_window, subquery_step)
+    store_stats, store_overall = gather_store_methods(client, window, window_seconds, peak_window, subquery_step)
     store_rows: List[List[str]] = [
         [
             stat.method,
@@ -949,7 +962,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     )
     lines.extend(section("CollectionBasedLightningStore", store_lines))
 
-    rollout_outcomes = gather_rollout_outcomes(client, window, rate_window)
+    rollout_outcomes = gather_rollout_outcomes(client, window, window_seconds)
     rollout_rows = [
         [
             stat.status,
@@ -966,7 +979,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     )
 
     # HTTP traffic
-    http_paths, http_overall = gather_http_paths(client, window, rate_window, subquery_step)
+    http_paths, http_overall = gather_http_paths(client, window, window_seconds, peak_window, subquery_step)
     http_rows: List[List[str]] = [
         [
             stat.method,
@@ -993,7 +1006,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     )
     lines.extend(section("HTTP Endpoints", http_lines))
 
-    http_status_stats = gather_http_paths_with_status(client, window, rate_window, subquery_step)
+    http_status_stats = gather_http_paths_with_status(client, window, window_seconds, peak_window, subquery_step)
     http_status_rows: List[List[str]] = []
     for stat in http_status_stats:
         http_status_rows.append(
