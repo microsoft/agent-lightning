@@ -258,7 +258,7 @@ override-dependencies = [
   "websockets>=15.0.1",
   "rich>=13.9.4",
   # verl's numpy<2.0.0 constraint is related to Docker images, not code incompatibility
-  "numpy>=2.0.0",
+  "numpy>=2.0.0,<2.3.0",
 ]
 
 [tool.uv.sources]
