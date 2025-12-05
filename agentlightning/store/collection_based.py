@@ -488,7 +488,8 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         await self._enqueue_many_rollouts([rollout])
         # Notify the subclass that the rollout status has changed.
         all_fields = list(Rollout.model_fields.keys())
-        await self._post_update_rollout([(rollout, all_fields)])
+        # Skip queueing because the rollout is already in the queue.
+        await self._post_update_rollout([(rollout, all_fields)], skip_enqueue=True)
 
         # Return the rollout with no attempt attached.
         return rollout
@@ -517,7 +518,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         await self._enqueue_many_rollouts(prepared_rollouts)
         all_fields = list(Rollout.model_fields.keys())
         rollout_updates = [(rollout, all_fields) for rollout in prepared_rollouts]
-        await self._post_update_rollout(rollout_updates)
+        await self._post_update_rollout(rollout_updates, skip_enqueue=True)
 
         return prepared_rollouts
 
@@ -1180,16 +1181,13 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
             updated_fields: List[str] = []
             latest_attempt = await self._unlocked_get_latest_attempt(collections, rollout.rollout_id)
             if latest_attempt is not None and attempt.attempt_id == latest_attempt.attempt_id:
-                if rollout.status == "preparing":
+                if rollout.status in ["preparing", "queueing", "requeuing"]:
+                    # If rollout is currently preparing or queuing, set it to running
                     rollout.status = "running"
                     await collections.rollouts.update([rollout], update_fields=["status"])
                     rollout_updated = True
                     updated_fields = ["status"]
-                elif rollout.status in ["queuing", "requeuing"]:
-                    rollout.status = "running"
-                    await collections.rollouts.update([rollout], update_fields=["status"])
-                    rollout_updated = True
-                    updated_fields = ["status"]
+                # Otherwise, the rollout has succeeded or failed, do nothing
             return (rollout, updated_fields) if rollout_updated else None
 
         rollout_update = await self.collections.execute(
@@ -1455,13 +1453,16 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         return rollouts_updated[0], update_fields
 
     @tracked("_post_update_rollout")
-    async def _post_update_rollout(self, rollouts: Sequence[Tuple[Rollout, Sequence[str]]]) -> None:
+    async def _post_update_rollout(
+        self, rollouts: Sequence[Tuple[Rollout, Sequence[str]]], skip_enqueue: bool = False
+    ) -> None:
         """Post-update logic for the rollout.
 
         This method has locks inside, so it should be called with the lock held.
 
         Args:
             rollouts: A sequence of tuples, each containing a rollout and the fields that were updated.
+            skip_enqueue: Whether to skip queueing the rollouts.
         """
         for rollout, updated_fields in rollouts:
             # Sometimes "end_time" is set but it's not really updated.
@@ -1472,28 +1473,32 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
                         cast(float, rollout.end_time) - rollout.start_time
                     )
 
-        # If requeuing, add back to queue.
-        # Check whether the rollout is already in queue.
-        candidate_requeue_rollouts: List[str] = []
-        async with self.collections.atomic(
-            mode="r", snapshot=self._read_snapshot, labels=["rollout_queue"]
-        ) as collections:
-            for rollout, updated_fields in rollouts:
-                # I think it's okay that the rollout_queue reports stale data;
-                # the queue can have duplicated rollouts; the dequeue operation will handle it.
-                if (
-                    "status" in updated_fields
-                    and is_queuing(rollout)
-                    and not await collections.rollout_queue.has(rollout.rollout_id)
-                ):
-                    candidate_requeue_rollouts.append(rollout.rollout_id)
+        if not skip_enqueue:
+            # If requeuing, add back to queue.
+            # Check whether the rollout is already in queue.
+            candidate_requeue_rollouts = [
+                rollout.rollout_id
+                for rollout, updated_fields in rollouts
+                if "status" in updated_fields and is_queuing(rollout)
+            ]
+            if candidate_requeue_rollouts:
+                # Do another filter: filter out rollouts that are already in the queue.
+                async with self.collections.atomic(
+                    mode="r", snapshot=self._read_snapshot, labels=["rollout_queue"]
+                ) as collections:
+                    candidate_requeue_rollouts = [
+                        rollout_id
+                        for rollout_id in candidate_requeue_rollouts
+                        if not await collections.rollout_queue.has(rollout_id)
+                    ]
 
-        async with self.collections.atomic(
-            mode="w", snapshot=self._read_snapshot, labels=["rollout_queue"]
-        ) as collections:
-            await collections.rollout_queue.enqueue(candidate_requeue_rollouts)
+                if candidate_requeue_rollouts:
+                    async with self.collections.atomic(
+                        mode="w", snapshot=self._read_snapshot, labels=["rollout_queue"]
+                    ) as collections:
+                        await collections.rollout_queue.enqueue(candidate_requeue_rollouts)
 
-        # NOTE: We also don't need to remove non-queuing rollouts from the queue.
+                # NOTE: We also don't need to remove non-queuing rollouts from the queue.
 
     @tracked("_unlocked_update_attempt_and_rollout")
     async def _unlocked_update_attempt_and_rollout(

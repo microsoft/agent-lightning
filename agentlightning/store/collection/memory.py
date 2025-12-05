@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import threading
 import time
 import weakref
 from collections import deque
@@ -26,6 +25,7 @@ from typing import (
     Union,
 )
 
+import aiologic
 from pydantic import BaseModel
 
 from agentlightning.store.utils import LATENCY_BUCKETS
@@ -861,27 +861,18 @@ class _LoopAwareAsyncLock:
 
 
 class _ThreadSafeAsyncLock:
-    """A threading.Lock that can be used in both async and sync contexts."""
+    """A thread lock powered by aiologic that can be used in both async and sync contexts.
+
+    aiologic claims itself to be a thread-safe asyncio lock.
+    """
 
     def __init__(self):
-        self._lock = threading.Lock()
-
-    def __enter__(self):
-        self._lock.acquire()
-        return self
-
-    def __exit__(self, *args: Any, **kwargs: Any):
-        self._lock.release()
+        self._lock = aiologic.Lock()
 
     async def __aenter__(self):
-        # We run the blocking .acquire() in a thread pool so we don't block the event loop
-        loop = asyncio.get_running_loop()
-        # NOTE: If this fails to acquire, it will block the executor thread that
-        # is running it. That thread will not auto-terminate when asyncio is cancelled.
-        # Therefore, zombie thread is possible if the lock is held for a long time.
-        await loop.run_in_executor(None, self._lock.acquire)
+        await self._lock.async_acquire()
         return self
 
     async def __aexit__(self, *args: Any, **kwargs: Any):
         # .release() is non-blocking, so we can call it directly
-        self._lock.release()
+        self._lock.async_release()

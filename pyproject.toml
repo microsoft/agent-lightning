@@ -25,6 +25,7 @@ dependencies = [
   "portpicker",
   "gunicorn",
   "uvicorn_worker",
+  "aiologic",
 ]
 
 [project.optional-dependencies]

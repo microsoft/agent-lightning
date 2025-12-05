@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import sys
-import threading
 from collections.abc import Iterable
 from collections.abc import Mapping as MappingABC
 from typing import (
@@ -25,6 +24,7 @@ from typing import (
     cast,
 )
 
+import aiologic
 from pydantic import BaseModel
 
 from agentlightning.types import AttemptedRollout, NamedResources, PaginatedResult, ResourcesUpdate, Rollout, Span
@@ -130,7 +130,7 @@ class InMemoryLightningStore(CollectionBasedLightningStore[InMemoryLightningColl
         self._custom_span_size_estimator = span_size_estimator
 
         # Completion tracking for wait_for_rollouts (cross-loop safe)
-        self._completion_events: Dict[str, threading.Event] = {}
+        self._completion_events: Dict[str, aiologic.Event] = {}
 
         # Running rollouts cache, including preparing and running rollouts
         self._running_rollout_ids: Set[str] = set()
@@ -213,9 +213,11 @@ class InMemoryLightningStore(CollectionBasedLightningStore[InMemoryLightningColl
         return ret
 
     @tracked("_post_update_rollout_inmemory")
-    async def _post_update_rollout(self, rollouts: Sequence[Tuple[Rollout, Sequence[str]]]) -> None:
+    async def _post_update_rollout(
+        self, rollouts: Sequence[Tuple[Rollout, Sequence[str]]], skip_enqueue: bool = False
+    ) -> None:
         """Update the running rollout ids set when the rollout updates."""
-        await super()._post_update_rollout(rollouts)
+        await super()._post_update_rollout(rollouts, skip_enqueue=skip_enqueue)
         async with self.collections.atomic(mode="rw", snapshot=self._read_snapshot, labels=["rollouts"]):
             for rollout, _ in rollouts:
                 if is_running(rollout):
@@ -224,10 +226,10 @@ class InMemoryLightningStore(CollectionBasedLightningStore[InMemoryLightningColl
                     self._running_rollout_ids.discard(rollout.rollout_id)
 
                 if is_finished(rollout):
-                    self._completion_events.setdefault(rollout.rollout_id, threading.Event())
+                    self._completion_events.setdefault(rollout.rollout_id, aiologic.Event())
                     self._completion_events[rollout.rollout_id].set()
                 else:
-                    self._completion_events.setdefault(rollout.rollout_id, threading.Event())
+                    self._completion_events.setdefault(rollout.rollout_id, aiologic.Event())
                 # Rollout status can never transition from finished to running (unlike attempt)
                 # so we don't need to clear the completion event even in case of retrying.
 
