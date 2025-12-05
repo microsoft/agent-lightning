@@ -163,6 +163,21 @@ jobs:
             --end "$BENCHMARK_END" \
             | tee "$ARTIFACT_DIR/analysis.txt"
 
+      - name: Collect docker logs
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$ARTIFACT_DIR"
+          cd docker
+          readarray -t services < <(docker compose -f "$COMPOSE_FILE" config --services)
+          if [ "${#services[@]}" -eq 0 ]; then
+            echo "No services defined in compose file."
+            exit 0
+          fi
+          for service in "${services[@]}"; do
+            docker compose -f "$COMPOSE_FILE" logs "$service" > "../$ARTIFACT_DIR/docker-${service}-${SCENARIO_ID}-${BACKEND_ID}.log" || true
+          done
+
       - name: Stop ${{ matrix.backend.id }} Prometheus stack
         if: ${{ always() }}
         run: |
@@ -177,10 +192,6 @@ jobs:
           mkdir -p "$ARTIFACT_DIR"
           if [ -d docker/data/prometheus ]; then
             tar -C docker/data -czf "$ARTIFACT_DIR/prometheus-${SCENARIO_ID}-${BACKEND_ID}.tar.gz" prometheus
-          fi
-          cd docker
-          if docker compose -f "$COMPOSE_FILE" ps --format '{{.Name}}' >/dev/null 2>&1; then
-            docker compose -f "$COMPOSE_FILE" logs app > "../$ARTIFACT_DIR/docker-app-${SCENARIO_ID}-${BACKEND_ID}.log" || true
           fi
 
       - name: Upload benchmark artifacts
@@ -307,6 +318,21 @@ jobs:
             echo "Summary file not found: $summary_file"
           fi
 
+      - name: Collect docker logs
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$ARTIFACT_DIR"
+          cd docker
+          readarray -t services < <(docker compose -f "$COMPOSE_FILE" config --services)
+          if [ "${#services[@]}" -eq 0 ]; then
+            echo "No services defined in compose file."
+            exit 0
+          fi
+          for service in "${services[@]}"; do
+            docker compose -f "$COMPOSE_FILE" logs "$service" > "../$ARTIFACT_DIR/docker-${service}-micro-${MODE_ID}-${BACKEND_ID}.log" || true
+          done
+
       - name: Stop ${{ matrix.backend.id }} Prometheus stack
         if: ${{ always() }}
         run: |
@@ -321,10 +347,6 @@ jobs:
           mkdir -p "$ARTIFACT_DIR"
           if [ -d docker/data/prometheus ]; then
             tar -C docker/data -czf "$ARTIFACT_DIR/prometheus-micro-${MODE_ID}-${BACKEND_ID}.tar.gz" prometheus
-          fi
-          cd docker
-          if docker compose -f "$COMPOSE_FILE" ps --format '{{.Name}}' >/dev/null 2>&1; then
-            docker compose -f "$COMPOSE_FILE" logs app > "../$ARTIFACT_DIR/docker-app-micro-${MODE_ID}-${BACKEND_ID}.log" || true
           fi
 
       - name: Upload micro benchmark artifacts
