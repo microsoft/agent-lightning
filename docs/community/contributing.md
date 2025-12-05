@@ -28,7 +28,7 @@ Documentation improvements are the easiest way to get started. You can find more
 
 Bug fixes are the fastest way to get familiar with the codebase. To get started, you can:
 
-- Browse the ["good first issue"](https://github.com/microsoft/agent-lightning/labels/good%20first%20issue) and ["bug"](https://github.com/microsoft/agent-lightning/labels/bug) labels; drop a comment before you start so we can mark it as taken.
+- Browse the ["help wanted"](https://github.com/microsoft/agent-lightning/labels/help%20wanted) and ["bug"](https://github.com/microsoft/agent-lightning/labels/bug) labels; drop a comment before you start so we can mark it as taken.
 - For fresh bugs, open an issue with reproduction steps, logs, and expected behavior before submitting a fix.
 - Keep each pull request focused, ideally avoiding breaking API changes. Larger refactors should be discussed via RFC or maintainer sync.
 

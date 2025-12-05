@@ -24,6 +24,8 @@
 
 ::: agentlightning.litagent.decorator.prompt_rollout
 
+::: agentlightning.emitter.annotation.OperationContext
+
 ## LLM Proxy
 
 ::: agentlightning.llm_proxy.ModelConfig
