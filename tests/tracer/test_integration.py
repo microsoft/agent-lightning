@@ -50,9 +50,8 @@ from autogen_agentchat.teams import RoundRobinGroupChat
 from autogen_ext.models.openai import OpenAIChatCompletionClient
 from autogen_ext.tools.mcp import McpWorkbench, StdioServerParams
 from fastapi import FastAPI
-from langchain_classic import hub
-from langchain_classic.agents import AgentExecutor, create_react_agent
-from langchain_classic.chat_models import init_chat_model
+from langchain.agents import create_agent
+from langchain.chat_models import init_chat_model
 from langchain_community.agent_toolkits import SQLDatabaseToolkit
 from langchain_community.utilities import SQLDatabase
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
@@ -301,13 +300,16 @@ def agent_langchain_tooluse() -> None:
         disable_streaming=True,
     )
     tools = [multiply]
-    agent = create_react_agent(llm, tools, hub.pull("hwchase17/react"))
-    agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=False)
-    result = agent_executor.invoke(
-        {"input": "what is 42 * 12"},
+    agent = create_agent(
+        model=llm,
+        tools=tools,
+        system_prompt="You are a helpful assistant. Use the multiply tool to answer math questions.",
+    )
+    result = agent.invoke(
+        {"messages": [{"role": "user", "content": "what is 42 * 12"}]},
         {"callbacks": [_langchain_callback_handler]} if _langchain_callback_handler else None,
     )
-    assert "504" in result["output"]
+    assert "504" in result["messages"][-1].content
 
 
 def agent_langgraph() -> None:
