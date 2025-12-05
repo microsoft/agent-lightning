@@ -44,7 +44,7 @@ def retrieve(query: str) -> list:
     for i in range(top_k):
         if I[0][i] != -1:
             chunk = chunks[I[0][i]]
-            results.append({"chunk": chunk, "chunk_id": I[0][i], "distance": D[0][i]})
+            results.append({"chunk": chunk, "chunk_id": int(I[0][i]), "distance": float(D[0][i])})
     return results
 
 
