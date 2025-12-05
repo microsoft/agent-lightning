@@ -6,6 +6,7 @@ AGENTOPS_INSTALLED: bool = False
 AGENTOPS_LANGCHAIN_INSTALLED: bool = False
 LITELLM_INSTALLED: bool = False
 VLLM_INSTALLED: bool = False
+WEAVE_INSTALLED: bool = False
 
 try:
     from . import agentops  # type: ignore
@@ -35,6 +36,13 @@ try:
     from . import agentops_langchain  # type: ignore
 
     AGENTOPS_LANGCHAIN_INSTALLED = True  # type: ignore
+except ImportError:
+    pass
+
+try:
+    from . import weave  # type: ignore
+
+    WEAVE_INSTALLED = True  # type: ignore
 except ImportError:
     pass
 
@@ -111,3 +119,20 @@ def uninstrument_all():
             warnings.warn("agentops_langchain is installed but uninstrument_agentops_langchain could not be imported.")
     else:
         warnings.warn("Agentops-langchain integration is not installed. It's therefore not uninstrumented.")
+
+
+def instrument_weave():
+    if WEAVE_INSTALLED:
+        from .weave import instrument_weave
+
+        instrument_weave()
+
+
+def uninstrument_weave():
+    if WEAVE_INSTALLED:
+        try:
+            from .weave import uninstrument_weave
+
+            uninstrument_weave()
+        except ImportError:
+            warnings.warn("weave is installed but uninstrument_weave could not be imported.")
