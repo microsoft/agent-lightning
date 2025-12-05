@@ -176,7 +176,7 @@ class WeaveTracer(Tracer):
         finally:
             # Finish trace even if no exception
             weave_client.finish_call(trace_call)  # type: ignore
-            await self._on_finish_handler(trace_call)
+            await self._on_finish_handler(trace_call)  # type: ignore
 
     def shutdown(self) -> None:
         """Stop and clean up the dedicated asyncio loop and thread."""

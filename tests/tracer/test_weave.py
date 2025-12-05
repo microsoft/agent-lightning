@@ -136,9 +136,9 @@ def test_weave_with_op():
 
 
 async def _test_weave_with_op_imp():
-    import weave
+    import weave  # type: ignore
 
-    @weave.op
+    @weave.op  # type: ignore
     def _func_with_op():
         """Function that always executed successfully to test success tracing."""
         pass
