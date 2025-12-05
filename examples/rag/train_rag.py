@@ -109,8 +109,7 @@ def config_train_fast() -> Dict[str, Any]:
 
     # Keep it tiny/light without adding new knobs
     config["actor_rollout_ref"]["rollout"]["gpu_memory_utilization"] = 0.8
-    config["trainer"]["total_epochs"] = 1
-    config["trainer"]["total_training_steps"] = 10
+    config["trainer"]["total_epochs"] = 2
     config["trainer"]["test_freq"] = 5
     config["trainer"]["experiment_name"] = EXPERIMENT_NAME
     config["trainer"]["project_name"] = PROJECT_NAME
@@ -153,9 +152,13 @@ def train(config: Dict[str, Any], active_agent: Optional[str]) -> None:
     trainer = agl.Trainer(n_runners=4, algorithm=algorithm, adapter={"agent_match": active_agent})
 
     # 4. Load data
-    # Fill in the path to your previously converted parquet file here
+    # NOTE: Fill in the path to your previously converted parquet file here
+    # For demo purposes, we use the same dataset for training and validation,
+    # which should be avoided in production.
     train_df: pd.DataFrame = pd.read_parquet("data/dataset_tiny.parquet")  # type: ignore
     val_df: pd.DataFrame = pd.read_parquet("data/dataset_tiny.parquet")  # type: ignore
+
+    # Keep the rest of the code unchanged
     train_data: List[Dict[str, Any]] = train_df.to_dict(orient="records")  # type: ignore
     val_data: List[Dict[str, Any]] = val_df.to_dict(orient="records")  # type: ignore
 

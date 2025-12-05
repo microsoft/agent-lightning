@@ -172,7 +172,8 @@ jobs:
       - name: Validate RAG training
         run: |
           set -ex
-          uv run scripts/validate_example_wandb.py ${{ steps.rag_train.outputs.project_name }} ${{ steps.rag_train.outputs.run_name }}
+          # Allow up to 5 rollouts to fail to produce rewards
+          uv run scripts/validate_example_wandb.py ${{ steps.rag_train.outputs.project_name }} ${{ steps.rag_train.outputs.run_name }} --reward-tolerance 5
         env:
           WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
           WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}

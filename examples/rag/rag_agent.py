@@ -43,8 +43,9 @@ class RAGAgent(agl.LitAgent[Dict[str, Any]]):
 
         # The rollout should carry an attempt inside
         rollout = cast(agl.AttemptedRollout, rollout)
+        base_url = llm.get_base_url(rollout.rollout_id, rollout.attempt.attempt_id)
 
-        logger.info(f"Training with model: {llm.model} on endpoint: {llm.endpoint}")
+        logger.info(f"Training with model: {llm.model} on endpoint: {base_url}")
 
         async with MCPServerSse(
             name="wiki_retriever_mcp",
@@ -53,7 +54,7 @@ class RAGAgent(agl.LitAgent[Dict[str, Any]]):
             agent = Agent(
                 model=LitellmModel(
                     model="hosted_vllm/" + llm.model,
-                    base_url=llm.get_base_url(rollout.rollout_id, rollout.attempt.attempt_id),
+                    base_url=base_url,
                 ),
                 model_settings=ModelSettings(
                     max_tokens=2048,
