@@ -865,24 +865,31 @@ async def test_dict_key_value_pop_returns_default(dict_key_value: DictBasedKeyVa
     assert await dict_key_value.size() == 1
 
 
+@pytest.mark.asyncio()
 def test_thread_safe_async_lock_blocks_threads() -> None:
     lock = _ThreadSafeAsyncLock()
     allow_second = threading.Event()
     second_has_lock = threading.Event()
     release_first = threading.Event()
 
-    def first() -> None:
-        with lock:
+    async def first() -> None:
+        async with lock:
             allow_second.set()
             release_first.wait()
 
-    def second() -> None:
+    async def second() -> None:
         allow_second.wait()
-        with lock:
+        async with lock:
             second_has_lock.set()
 
-    t1 = threading.Thread(target=first)
-    t2 = threading.Thread(target=second)
+    def thread1() -> None:
+        asyncio.run(first())
+
+    def thread2() -> None:
+        asyncio.run(second())
+
+    t1 = threading.Thread(target=thread1)
+    t2 = threading.Thread(target=thread2)
     t1.start()
     t2.start()
 
