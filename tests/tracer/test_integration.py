@@ -823,7 +823,7 @@ def test_run_with_agentops_tracer(agent_func_name: str):
     """AgentOps tracer tests are notoriously problematic and does not work well with other tests."""
     if agent_func_name in ["openai_agents_sdk_mcp_tool_use", "agent_autogen_mcp"]:
         pytest.skip("Async MCP server is problematic with AgentOps tracer in multiprocessing mode.")
-    if "langchain" in agent_func_name and not LANGCHAIN_INSTALLED:
+    if ("langchain" in agent_func_name or "langgraph" in agent_func_name) and not LANGCHAIN_INSTALLED:
         pytest.skip("LangChain is not installed. Skip langchain related tests.")
 
     ctx = multiprocessing.get_context("spawn")
