@@ -1212,6 +1212,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
 
         See [`LightningStore.wait_for_rollouts()`][agentlightning.LightningStore.wait_for_rollouts] for semantics.
         """
+        print(f"wait_for_rollouts: {rollout_ids}")
         # Wait for all rollouts concurrently
         rollouts = await asyncio.gather(
             *[self.wait_for_rollout(rid, timeout) for rid in rollout_ids], return_exceptions=True
