@@ -15,8 +15,10 @@ from typing import Optional, Sequence
 from rich.console import Console
 
 import agentlightning as agl
-from agentlightning.types.tracer import OtelResource, Span, SpanContext, TraceStatus
+from agentlightning.types import EnqueueRolloutRequest, OtelResource, Span, SpanContext, TraceStatus
 from agentlightning.utils.system_snapshot import system_snapshot
+
+from .utils import flatten_dict, random_dict
 
 console = Console()
 
@@ -28,7 +30,7 @@ def _close_store_client(store: agl.LightningStoreClient) -> None:
         pass
 
 
-def _make_span(rollout_id: str, attempt_id: str, sequence_id: int, name: str) -> Span:
+def _make_span(rollout_id: str, attempt_id: str, sequence_id: int, name: str, attribute_size: int) -> Span:
     trace_hex = f"{sequence_id:032x}"
     span_hex = f"{sequence_id:016x}"
     return Span(
@@ -40,7 +42,14 @@ def _make_span(rollout_id: str, attempt_id: str, sequence_id: int, name: str) ->
         parent_id=None,
         name=name,
         status=TraceStatus(status_code="OK"),
-        attributes={},
+        attributes=flatten_dict(
+            random_dict(
+                depth=1,
+                breadth=attribute_size,
+                key_length=(3, 20),
+                value_length=(5, 300),
+            )
+        ),
         events=[],
         links=[],
         start_time=None,
@@ -77,7 +86,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--summary-file", help="File to append final benchmark summary.")
     parser.add_argument(
         "mode",
-        choices=("worker", "dequeue-empty", "rollout"),
+        choices=("worker", "dequeue-empty", "rollout", "dequeue-update-attempt"),
         help="Mode to exercise different operations.",
     )
     args = parser.parse_args(argv)
@@ -173,6 +182,7 @@ def _rollout_flow_task(args: tuple[str, int, int]) -> bool:
                 attempt_id,
                 task_id * spans_per_attempt + seq,
                 f"micro-span-{seq}",
+                attribute_size=1,
             )
             await store.add_span(span)
         console.print(f"Updating attempt {attempt_id} for task {task_id} with {spans_per_attempt} spans")
@@ -207,6 +217,80 @@ def simulate_rollout_with_spans(store_url: str, spans_per_attempt: int = 4) -> B
     return BenchmarkSummary(mode="rollout", total_tasks=len(task_ids), successes=successes, duration=duration)
 
 
+def _dequeue_and_update_attempt_task(args: tuple[str, str, str, int]) -> bool:
+    store_url, worker_id, task_id, spans_per_attempt = args
+    console.print(f"Dequeueing and update attempt with worker {worker_id} for task {task_id}")
+    store = agl.LightningStoreClient(store_url)
+
+    async def _async_task() -> None:
+        console.print(f"[Task {task_id}] Dequeueing rollout")
+        attempted = await store.dequeue_rollout(worker_id=worker_id)
+        assert attempted is not None, "Expected to dequeue a rollout"
+        console.print(f"[Task {task_id}] Retrieving span sequence IDs")
+        sequence_ids = await store.get_many_span_sequence_ids(
+            [(attempted.rollout_id, attempted.attempt.attempt_id) for _ in range(spans_per_attempt)]
+        )
+        console.print(f"[Task {task_id}] Adding {spans_per_attempt} spans")
+        spans = [
+            _make_span(
+                attempted.rollout_id,
+                attempted.attempt.attempt_id,
+                sequence_id,
+                f"micro-span-{sequence_id}",
+                attribute_size=32,
+            )
+            for sequence_id in sequence_ids
+        ]
+        await store.add_many_spans(spans)
+        console.print(
+            f"[Task {task_id}] Updating attempt to succeeded: rollout_id={attempted.rollout_id} "
+            f"attempt_id={attempted.attempt.attempt_id}"
+        )
+        await store.update_attempt(attempted.rollout_id, attempted.attempt.attempt_id, status="succeeded")
+
+    try:
+        asyncio.run(_async_task())
+        return True
+    except Exception as e:
+        console.print(f"Error dequeueing and updating worker {worker_id} for task {task_id}: {e}")
+        return False
+    finally:
+        _close_store_client(store)
+
+
+def dequeue_and_update_attempts(store_url: str, spans_per_attempt: int = 4) -> BenchmarkSummary:
+    """Simulate dequeueing rollouts and updating attempts with spans."""
+    start_time = time.time()
+
+    async def _enqueue_rollouts() -> None:
+        store = agl.LightningStoreClient(store_url)
+        console.print("Enqueuing rollouts for dequeue benchmark")
+        await store.enqueue_many_rollouts(
+            [EnqueueRolloutRequest(input={"task": f"Dequeue-Task-{i}"}) for i in range(12 * 16)]
+        )
+        await store.close()
+
+    asyncio.run(_enqueue_rollouts())
+
+    worker_ids = [(f"Worker-{i}", f"Task-{j * 12 + i}") for i in range(12) for j in range(16)]
+    with multiprocessing.get_context("fork").Pool(processes=12) as pool:
+        successful_tasks = pool.map(
+            _dequeue_and_update_attempt_task,
+            [(store_url, worker_id, task_id, spans_per_attempt) for worker_id, task_id in worker_ids],
+        )
+
+    end_time = time.time()
+    successes = sum(successful_tasks)
+    duration = end_time - start_time
+    throughput = successes / duration if duration > 0 else 0.0
+    console.print(f"Dequeue and update attempt success rate: {successes / len(worker_ids):.3f}")
+    console.print(f"Time taken: {duration:.3f} seconds")
+    console.print(f"Throughput: {throughput:.3f} attempts/second")
+    return BenchmarkSummary(
+        mode="dequeue-update-attempt", total_tasks=len(worker_ids), successes=successes, duration=duration
+    )
+
+
 def record_summary(summary: BenchmarkSummary, summary_file: Optional[str]) -> None:
     message = (
         f"[summary] mode={summary.mode} success_rate={summary.success_rate:.3f} "
@@ -229,6 +313,8 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         summary = simulate_dequeue_empty_and_update_workers(args.store_url)
     elif args.mode == "rollout":
         summary = simulate_rollout_with_spans(args.store_url)
+    elif args.mode == "dequeue-update-attempt":
+        summary = dequeue_and_update_attempts(args.store_url)
     else:
         raise ValueError(f"Invalid mode: {args.mode}")
     record_summary(summary, args.summary_file)
