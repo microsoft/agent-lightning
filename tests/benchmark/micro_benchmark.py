@@ -222,14 +222,22 @@ def _dequeue_and_update_attempt_task(args: tuple[str, str, str, int]) -> bool:
     console.print(f"Dequeueing and update attempt with worker {worker_id} for task {task_id}")
     store = agl.LightningStoreClient(store_url)
 
-    async def _async_task() -> None:
+    async def _async_task() -> bool:
         console.print(f"[Task {task_id}] Dequeueing rollout")
         attempted = await store.dequeue_rollout(worker_id=worker_id)
-        assert attempted is not None, "Expected to dequeue a rollout"
+        if attempted is None:
+            console.print(f"[Task {task_id}] No rollout available to dequeue")
+            return False
         console.print(f"[Task {task_id}] Retrieving span sequence IDs")
         sequence_ids = await store.get_many_span_sequence_ids(
             [(attempted.rollout_id, attempted.attempt.attempt_id) for _ in range(spans_per_attempt)]
         )
+        if len(sequence_ids) != spans_per_attempt:
+            console.print(
+                f"[Task {task_id}] Unable to retrieve enough span sequence IDs: "
+                f"expected={spans_per_attempt} got={len(sequence_ids)}"
+            )
+            return False
         console.print(f"[Task {task_id}] Adding {spans_per_attempt} spans")
         spans = [
             _make_span(
@@ -241,16 +249,22 @@ def _dequeue_and_update_attempt_task(args: tuple[str, str, str, int]) -> bool:
             )
             for sequence_id in sequence_ids
         ]
-        await store.add_many_spans(spans)
+        stored_spans = await store.add_many_spans(spans)
+        if len(stored_spans) != len(spans):
+            console.print(
+                f"[Task {task_id}] Only stored {len(stored_spans)}/{len(spans)} spans for "
+                f"rollout_id={attempted.rollout_id} attempt_id={attempted.attempt.attempt_id}"
+            )
+            return False
         console.print(
             f"[Task {task_id}] Updating attempt to succeeded: rollout_id={attempted.rollout_id} "
             f"attempt_id={attempted.attempt.attempt_id}"
         )
         await store.update_attempt(attempted.rollout_id, attempted.attempt.attempt_id, status="succeeded")
+        return True
 
     try:
-        asyncio.run(_async_task())
-        return True
+        return asyncio.run(_async_task())
     except Exception as e:
         console.print(f"Error dequeueing and updating worker {worker_id} for task {task_id}: {e}")
         return False
@@ -261,33 +275,42 @@ def _dequeue_and_update_attempt_task(args: tuple[str, str, str, int]) -> bool:
 def dequeue_and_update_attempts(store_url: str, spans_per_attempt: int = 4) -> BenchmarkSummary:
     """Simulate dequeueing rollouts and updating attempts with spans."""
     start_time = time.time()
+    total_workers = 512
+    attempts_per_worker = 16
+    total_rollouts = total_workers * attempts_per_worker
 
     async def _enqueue_rollouts() -> None:
         store = agl.LightningStoreClient(store_url)
         console.print("Enqueuing rollouts for dequeue benchmark")
-        await store.enqueue_many_rollouts(
-            [EnqueueRolloutRequest(input={"task": f"Dequeue-Task-{i}"}) for i in range(512 * 16)]
-        )
-        await store.close()
+        try:
+            await store.enqueue_many_rollouts(
+                [EnqueueRolloutRequest(input={"task": f"Dequeue-Task-{i}"}) for i in range(total_rollouts)]
+            )
+        finally:
+            await store.close()
 
     asyncio.run(_enqueue_rollouts())
 
-    worker_ids = [(f"Worker-{i}", f"Task-{j * 512 + i}") for i in range(512) for j in range(16)]
-    with multiprocessing.get_context("fork").Pool(processes=512) as pool:
+    worker_jobs = [
+        (f"Worker-{worker_idx}-Attempt-{attempt_idx}", f"Task-{attempt_idx * total_workers + worker_idx}")
+        for worker_idx in range(total_workers)
+        for attempt_idx in range(attempts_per_worker)
+    ]
+    with multiprocessing.get_context("fork").Pool(processes=total_workers) as pool:
         successful_tasks = pool.map(
             _dequeue_and_update_attempt_task,
-            [(store_url, worker_id, task_id, spans_per_attempt) for worker_id, task_id in worker_ids],
+            [(store_url, worker_id, task_id, spans_per_attempt) for worker_id, task_id in worker_jobs],
         )
 
     end_time = time.time()
     successes = sum(successful_tasks)
     duration = end_time - start_time
     throughput = successes / duration if duration > 0 else 0.0
-    console.print(f"Dequeue and update attempt success rate: {successes / len(worker_ids):.3f}")
+    console.print(f"Dequeue and update attempt success rate: {successes / len(worker_jobs):.3f}")
     console.print(f"Time taken: {duration:.3f} seconds")
     console.print(f"Throughput: {throughput:.3f} rollouts/second")
     return BenchmarkSummary(
-        mode="dequeue-update-attempt", total_tasks=len(worker_ids), successes=successes, duration=duration
+        mode="dequeue-update-attempt", total_tasks=len(worker_jobs), successes=successes, duration=duration
     )
 
 

@@ -224,9 +224,9 @@ jobs:
           - id: rollout
             display: Rollout + span
             cli: rollout
-          - id: dequeue-update
+          - id: dequeue-update-attempt
             display: Dequeue + update attempt
-            cli: dequeue-update
+            cli: dequeue-update-attempt
     env:
       STORE_URL: http://localhost:4747
       STORE_API_URL: http://localhost:4747/v1/agl
