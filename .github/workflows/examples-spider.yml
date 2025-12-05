@@ -164,7 +164,15 @@ jobs:
           PYTHONUNBUFFERED=1 python train_rag.py fast
           sleep 10
         shell: bash
-        # env:
-        #   WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
-        #   WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
+        env:
+          WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
+          WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
         id: rag_train
+
+      - name: Validate RAG training
+        run: |
+          set -ex
+          uv run scripts/validate_example_wandb.py ${{ steps.rag_train.outputs.project_name }} ${{ steps.rag_train.outputs.run_name }}
+        env:
+          WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
+          WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}

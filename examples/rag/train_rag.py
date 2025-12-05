@@ -10,6 +10,8 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
+import uuid
 from copy import deepcopy
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -74,10 +76,7 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
         "n_gpus_per_node": 1,
         "val_before_train": True,
         "critic_warmup": 0,
-        "logger": [
-            "console",
-            # "wandb"
-        ],  # Remove wandb for easier local debugging, add back when needed
+        "logger": ["console"],  # Disable wandb for easier local debugging, add back when needed
         "project_name": "AgentLightning",
         "experiment_name": "rag_agent",
         "nnodes": 1,
@@ -90,7 +89,31 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
 def config_train_fast() -> Dict[str, Any]:
     """Fast training configuration for CI/testing"""
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-    EXPERIMENT_NAME = f"rag_fast_{timestamp}"
+    random_suffix = uuid.uuid4().hex[:8]
+    EXPERIMENT_NAME = f"rag_fast_{timestamp}_{random_suffix}"
+
+    PROJECT_NAME = "AgentLightningCI"
+
+    # Simulate writing to $GITHUB_OUTPUT if it’s set
+    github_output = os.getenv("GITHUB_OUTPUT")
+    if github_output:
+        with open(github_output, "a") as f:
+            f.write(f"project_name={PROJECT_NAME}\n")
+            f.write(f"run_name={EXPERIMENT_NAME}\n")
+
+        print("Set environment variables:")
+        print(f"PROJECT_NAME={PROJECT_NAME}")
+        print(f"EXPERIMENT_NAME={EXPERIMENT_NAME}")
+
+    config = deepcopy(RL_TRAINING_CONFIG)
+
+    # Keep it tiny/light without adding new knobs
+    config["actor_rollout_ref"]["rollout"]["gpu_memory_utilization"] = 0.8
+    config["trainer"]["total_epochs"] = 1
+    config["trainer"]["total_training_steps"] = 10
+    config["trainer"]["test_freq"] = 10
+    config["trainer"]["experiment_name"] = EXPERIMENT_NAME
+    config["trainer"]["project_name"] = PROJECT_NAME
 
     config = deepcopy(RL_TRAINING_CONFIG)
 
@@ -103,6 +126,7 @@ def config_train_fast() -> Dict[str, Any]:
     config["trainer"]["total_epochs"] = 1
     config["trainer"]["experiment_name"] = EXPERIMENT_NAME
     config["trainer"]["test_freq"] = 1
+    config["trainer"]["logger"] = ["console", "wandb"]
     return config
 
 

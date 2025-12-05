@@ -6,8 +6,15 @@ This example demonstrates training a Retrieval-Augmented Generation (RAG) agent 
 
 This example can run on a single GPU for demonstration purposes.
 
-1. Set up the environment following the documentation. It is recommended to activate the virtual environment with `source .venv/bin/activate`.
-2. Prepare the tiny dataset.
+**Step 1:** Set up the environment. It is recommended to setup with uv and activate the virtual environment with:
+
+```bash
+uv sync --frozen --extra apo --group agents --group torch-gpu-stable --extra verl --group rag
+source .venv/bin/activate
+```
+
+**Step 2:** Prepare the tiny dataset.
+
 ```bash
 pip install gdown
 
@@ -24,26 +31,25 @@ gdown --fuzzy "https://drive.google.com/file/d/1REXCpRLbeZu1KfWWKhIGEQe_WNHUOBkS
 gdown --fuzzy "https://drive.google.com/file/d/1f6P-h_8KSRhe5pqDHWbRQWvUhTygfZ-c/view?usp=drive_link" \
     -O index_hnsw_faiss_n32e40_tiny.index
 ```
-3. Start the MCP server
-Open a terminal and run:
+
+**Step 3:** Start the MCP server. Open a terminal and run:
+
 ```bash
 python wiki_retriever_mcp.py
 ```
 
-4. Start training
-Open another terminal and run:
+**Step 4:** Start training. Open another terminal and run:
+
 ```bash
 python train_rag.py
 ```
-
 
 ## Included Files
 
 | File/Directory | Description |
 |----------------|-------------|
-| `rag_agent.py` | Agent-lightning agent example using the OpenAI Agents SDK |
+| `rag_agent.py` | RAG agent example using the OpenAI Agents SDK, with debugging utils |
 | `train_rag.py` | Initiates the GRPO training process |
-| `rag_run_dev.py` | Development run test |
 | `metric_utils.py` | Scoring utilities for exact match, F1 score, and response parsing |
 | `wiki_retriever_mcp.py` | MCP server for Wikipedia retrieval |
 
