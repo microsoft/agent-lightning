@@ -206,10 +206,11 @@ swebench = [
 ]
 
 # Summarize into large installable groups.
+# Note: langchain is excluded from agents to avoid conflicts with torch-legacy.
+# Use --group langchain explicitly when needed.
 agents = [
   {include-group = "autogen"},
   {include-group = "openai-agents"},
-  {include-group = "langchain"},
   {include-group = "sql"},
   {include-group = "anthropic"},
   {include-group = "crewai"},
