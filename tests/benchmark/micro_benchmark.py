@@ -266,14 +266,14 @@ def dequeue_and_update_attempts(store_url: str, spans_per_attempt: int = 4) -> B
         store = agl.LightningStoreClient(store_url)
         console.print("Enqueuing rollouts for dequeue benchmark")
         await store.enqueue_many_rollouts(
-            [EnqueueRolloutRequest(input={"task": f"Dequeue-Task-{i}"}) for i in range(12 * 16)]
+            [EnqueueRolloutRequest(input={"task": f"Dequeue-Task-{i}"}) for i in range(512 * 16)]
         )
         await store.close()
 
     asyncio.run(_enqueue_rollouts())
 
-    worker_ids = [(f"Worker-{i}", f"Task-{j * 12 + i}") for i in range(12) for j in range(16)]
-    with multiprocessing.get_context("fork").Pool(processes=12) as pool:
+    worker_ids = [(f"Worker-{i}", f"Task-{j * 512 + i}") for i in range(512) for j in range(16)]
+    with multiprocessing.get_context("fork").Pool(processes=512) as pool:
         successful_tasks = pool.map(
             _dequeue_and_update_attempt_task,
             [(store_url, worker_id, task_id, spans_per_attempt) for worker_id, task_id in worker_ids],
@@ -285,7 +285,7 @@ def dequeue_and_update_attempts(store_url: str, spans_per_attempt: int = 4) -> B
     throughput = successes / duration if duration > 0 else 0.0
     console.print(f"Dequeue and update attempt success rate: {successes / len(worker_ids):.3f}")
     console.print(f"Time taken: {duration:.3f} seconds")
-    console.print(f"Throughput: {throughput:.3f} attempts/second")
+    console.print(f"Throughput: {throughput:.3f} rollouts/second")
     return BenchmarkSummary(
         mode="dequeue-update-attempt", total_tasks=len(worker_ids), successes=successes, duration=duration
     )

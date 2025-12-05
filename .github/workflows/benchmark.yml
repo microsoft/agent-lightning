@@ -216,14 +216,17 @@ jobs:
             compose_file: compose.prometheus-mongo-store.yml
         mode:
           - id: worker
-            display: Update worker throughput
+            display: Update worker
             cli: worker
           - id: dequeue-empty
-            display: Dequeue empty throughput
+            display: Dequeue empty
             cli: dequeue-empty
           - id: rollout
-            display: Rollout + span throughput
+            display: Rollout + span
             cli: rollout
+          - id: dequeue-update
+            display: Dequeue + update attempt
+            cli: dequeue-update
     env:
       STORE_URL: http://localhost:4747
       STORE_API_URL: http://localhost:4747/v1/agl
