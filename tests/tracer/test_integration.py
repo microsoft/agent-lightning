@@ -53,12 +53,12 @@ from fastapi import FastAPI
 from langchain_classic import hub
 from langchain_classic.agents import AgentExecutor, create_react_agent
 from langchain_classic.chat_models import init_chat_model
-from langchain_core.tools import tool
 from langchain_community.agent_toolkits import SQLDatabaseToolkit
 from langchain_community.utilities import SQLDatabase
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START, MessagesState, StateGraph
 from openai import AsyncOpenAI, OpenAI
