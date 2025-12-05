@@ -309,6 +309,46 @@ async def test_step_raises_for_invalid_result_type() -> None:
 
 
 @pytest.mark.asyncio
+async def test_readable_spans_return_skip_store_when_tracer_is_otel(monkeypatch: pytest.MonkeyPatch) -> None:
+    class DummyTracerWithOtel(DummyTracer):
+        pass
+
+    class RecordingStore(InMemoryLightningStore):
+        def __init__(self) -> None:
+            super().__init__()
+            self.add_otel_span_calls = 0
+
+        async def add_otel_span(
+            self, rollout_id: str, attempt_id: str, readable_span: ReadableSpan, sequence_id: int | None = None
+        ) -> Span | None:
+            self.add_otel_span_calls += 1
+            return await super().add_otel_span(rollout_id, attempt_id, readable_span, sequence_id)
+
+    monkeypatch.setattr("agentlightning.runner.agent.OtelTracer", DummyTracerWithOtel)
+
+    store = RecordingStore()
+    await store.update_resources("default", {"llm": LLM(endpoint="http://localhost", model="dummy")})
+
+    tracer = DummyTracerWithOtel()
+    runner = LitAgentRunner[Any](tracer=tracer)
+    agent = HeartbeatAgent()
+    runner.init(agent)
+    runner.init_worker(worker_id=0, store=store)
+
+    attempted_rollout = await store.start_rollout(input={"task": "otel"}, mode="val")
+    spans = [create_readable_span("otel-span")]
+
+    result_spans = await runner._post_process_rollout_result(  # pyright: ignore[reportPrivateUsage]
+        attempted_rollout, spans
+    )
+
+    assert result_spans == spans
+    assert store.add_otel_span_calls == 0
+
+    teardown_runner(runner)
+
+
+@pytest.mark.asyncio
 async def test_step_handles_non_llm_resource() -> None:
     class PromptAgent(LitAgent[str]):
         def validation_rollout(self, task: str, resources: Dict[str, Any], rollout: Any) -> float:
