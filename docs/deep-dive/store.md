@@ -117,7 +117,7 @@ rollout = await store.enqueue_rollout(input, config=cfg)
 | ------------------------------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------- |
 | N/A                                   | `queuing`                                 | Created by `enqueue_rollout()`.                                                                   |
 | `preparing`                           | `queuing/requeuing` → `preparing`         | Typically `dequeue_rollout()` or `start_rollout()`/`start_attempt()` creates a new attempt.       |
-| `running`                             | `preparing/queuing/requeuing` → `running` | First `add_[otel_]span()` flips the attempt to `running`; rollout follows via `propagate_status`. |
+| `running`                             | `preparing/queuing/requeuing` → `running` | First `add_[otel_]span()` flips the attempt to `running`; rollout follows via `rollout_status_from_attempt`. |
 | `succeeded`                           | `*` → `succeeded`                         | Terminal. Rollout `end_time` set.                                                                 |
 | `failed` / `timeout` / `unresponsive` | `*` → `requeuing`                         | **Only if** `status ∈ retry_condition ∧ sequence_id < max_attempts`.                              |
 | `failed` / `timeout` / `unresponsive` | `*` → `failed`                            | Otherwise (no retries left or retries disabled).                                                  |
@@ -125,7 +125,7 @@ rollout = await store.enqueue_rollout(input, config=cfg)
 
 !!! note "Why aggregation?"
 
-    In code, we use `propagate_status()` which actively updates the rollout based on the latest attempt. Reading the table above is usually easier than reverse-engineering the propagation logic in the code: think of the rollout’s transitions as *callbacks* on attempt state changes, plus queue/cancel paths.
+    In code, we use `rollout_status_from_attempt()` which actively updates the rollout based on the latest attempt. Reading the table above is usually easier than reverse-engineering the propagation logic in the code: think of the rollout’s transitions as *callbacks* on attempt state changes, plus queue/cancel paths.
 
 ## Spans
 

@@ -1,0 +1,151 @@
+name: Examples - Claude Code
+permissions:
+  contents: read
+on:
+  schedule:
+    # Every day at 4 AM UTC+8
+    - cron: "0 20 * * *"
+
+  workflow_dispatch:
+
+  repository_dispatch:
+    types: [ci-claude-code, ci-all]
+
+run-name: >-
+  ${{ github.event_name == 'repository_dispatch'
+      && format(
+        'Claude Code - PR #{0} - {1} - {2}',
+        github.event.client_payload.pull_number,
+        github.event.client_payload.ci_label,
+        github.event.client_payload.correlation_id
+      )
+      || format('Claude Code - {0}', github.event_name) }}
+
+jobs:
+  claude-code:
+    if: >
+      github.event_name != 'repository_dispatch' ||
+      github.event.action == 'ci-claude-code' ||
+      github.event.action == 'ci-all'
+    name: Claude Code (Python ${{ matrix.python-version }}, ${{ matrix.setup-script }})
+    runs-on: [self-hosted, 1ES.Pool=agl-runner-gpu]
+    timeout-minutes: 60
+    strategy:
+      matrix:
+        include:
+          - python-version: "3.12"
+            setup-script: "stable"
+          - python-version: "3.13"
+            setup-script: "latest"
+      fail-fast: false
+    steps:
+      - name: Check GPU status
+        run: nvidia-smi
+      - name: Check disk space
+        run: df -h
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.pr_ref || (github.event.pull_request.number && format('refs/pull/{0}/merge', github.event.pull_request.number)) || github.ref }}
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          python-version: ${{ matrix.python-version }}
+      - name: Upgrade dependencies (latest)
+        run: uv lock --upgrade
+        if: matrix.setup-script == 'latest'
+      - name: Sync dependencies
+        run: |
+          uv sync --frozen --no-default-groups \
+            --group dev --group experiment --group agents --group torch-gpu-stable
+      - name: Freeze dependencies
+        run: |
+          set -ex
+          uv pip freeze | tee requirements-freeze.txt
+          echo "UV_LOCKED=1" >> $GITHUB_ENV
+          echo "UV_NO_SYNC=1" >> $GITHUB_ENV
+      - name: Upload dependencies artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependencies-claude-code-${{ matrix.python-version }}-${{ matrix.setup-script }}
+          path: requirements-freeze.txt
+          compression-level: 0
+
+      - name: Download model
+        run: |
+          source .venv/bin/activate
+          python -c "from transformers import AutoModelForCausalLM; AutoModelForCausalLM.from_pretrained('Qwen/Qwen3-Coder-30B-A3B-Instruct')"
+
+      - name: Launch vLLM server
+        run: |
+          set -euo pipefail
+          source .venv/bin/activate
+          vllm serve Qwen/Qwen3-Coder-30B-A3B-Instruct \
+            --max-model-len 131072 \
+            --enable-auto-tool-choice \
+            --tool-call-parser qwen3_coder \
+            --port 45993 &
+
+          VLLM_READY=0
+          for i in {1..100}; do
+            if curl -sSf http://localhost:45993/v1/models > /dev/null 2>&1; then
+              echo "vLLM server is ready!"
+              VLLM_READY=1
+              break
+            fi
+            echo "Waiting for vLLM server to be ready... (${i})"
+            sleep 5
+          done
+          if [[ "$VLLM_READY" != "1" ]]; then
+            echo "vLLM server failed to start!"
+            exit 1
+          fi
+
+      - name: Claude Code sanity check with vLLM models
+        run: |
+          source .venv/bin/activate
+          cd examples/claude_code
+          python claude_code_agent.py vllm --backend-model-high Qwen/Qwen3-Coder-30B-A3B-Instruct --backend-model-low Qwen/Qwen3-Coder-30B-A3B-Instruct --base-url http://localhost:45993/v1 --debug
+        shell: bash
+
+      - name: Upload sanity check artifacts for vLLM
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: claude-code-sanity-check-vllm-${{ matrix.setup-script }}
+          path: |
+            examples/claude_code/data/
+            examples/claude_code/logs/
+          if-no-files-found: error
+
+      - name: Cleanup vLLM
+        run: |
+          set -euo pipefail
+          pkill -f vllm
+          for i in {1..60}; do
+            if ! pgrep -f vllm; then
+              break
+            fi
+            sleep 5
+          done
+          rm -rf examples/claude_code/data/
+          rm -rf examples/claude_code/logs/
+
+      - name: Claude Code sanity check with OpenAI models
+        run: |
+          source .venv/bin/activate
+          cd examples/claude_code
+          python claude_code_agent.py openai --backend-model-high gpt-5.1-codex-mini --backend-model-low gpt-4.1-mini --debug
+        shell: bash
+        env:
+          OPENAI_BASE_URL: ${{ secrets.AZURE_OPENAI_ENDPOINT_SWEDEN }}
+          OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY_SWEDEN }}
+
+      - name: Upload sanity check artifacts for OpenAI
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: claude-code-sanity-check-openai-${{ matrix.setup-script }}
+          path: |
+            examples/claude_code/data/
+            examples/claude_code/logs/
+          if-no-files-found: error

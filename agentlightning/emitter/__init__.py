@@ -1,6 +1,6 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-from .annotation import emit_annotation
+from .annotation import emit_annotation, operation
 from .exception import emit_exception
 from .message import emit_message, get_message_value
 from .object import emit_object, get_object_value
@@ -16,6 +16,7 @@ from .reward import (
 
 __all__ = [
     "reward",
+    "operation",
     "emit_reward",
     "get_reward_value",
     "get_rewards_from_span",

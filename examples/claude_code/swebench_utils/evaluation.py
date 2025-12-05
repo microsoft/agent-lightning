@@ -7,13 +7,6 @@ instances. It handles containerized execution of test scripts, patch application
 and generation of evaluation reports. The module orchestrates the complete evaluation
 process including container management, patch application, test execution, and result
 grading.
-
-Key components:
-- Instance evaluation with containerized test execution
-- Patch application and validation
-- Test script execution with timeouts
-- Evaluation report generation and logging
-- Container lifecycle management
 """
 
 import json

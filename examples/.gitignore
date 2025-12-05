@@ -4,6 +4,7 @@ outputs/
 checkpoints/
 calc-x-data.zip
 spider-data.zip
+claude_code/logs/
 agentops.log
 unsloth/models/
 unsloth/unsloth_compiled_cache/

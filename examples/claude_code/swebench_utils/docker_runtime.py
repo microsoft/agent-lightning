@@ -1,6 +1,5 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-
 """Docker runtime management for repository setup and command execution.
 
 Provides containerized environment for repository testing with command execution,
@@ -10,6 +9,7 @@ file operations, and state management capabilities.
 from __future__ import annotations
 
 import json
+import logging
 import queue
 import re
 import threading
@@ -20,9 +20,13 @@ from typing import Any, Callable, Dict, List, Optional
 
 from docker.errors import DockerException, ImageNotFound
 from docker.models.containers import Container
+from swebench.harness.constants import SWEbenchInstance
 from typing_extensions import Self
 
 import docker
+
+# This will log to the console for debugging purposes.
+claude_code_logger = logging.getLogger("claude_code_agent.docker_runtime")
 
 CMD_OUTPUT_PS1_BEGIN = "\n###PS1JSON###\n"
 CMD_OUTPUT_PS1_END = "\n###PS1END###"
@@ -187,7 +191,7 @@ class Runtime:
         ).replace('"', r"\"")
         ps1 = CMD_OUTPUT_PS1_BEGIN + json_str + CMD_OUTPUT_PS1_END + "\n"
         self.send_command(f'export PROMPT_COMMAND=\'export PS1="{ps1}"\'; export PS2=""')
-        self.send_command("apt update && apt install -y git")
+        self.send_command("apt update -qq && apt install -y -qq git")
         self.stopped = False
 
     def _stream_output(self):
@@ -207,6 +211,7 @@ class Runtime:
     def _start_output_thread(self):
         self.output_thread = threading.Thread(target=self._stream_output, daemon=True)
         self.output_thread.start()
+        # TODO: kill the thread if main thread is stopped
 
     def _clear_initial_prompt(self):
         time.sleep(0.5)
@@ -273,7 +278,25 @@ class Runtime:
 
         raise TypeError(f"Don't know how to write to {type(self.sock).__name__}")
 
+    def _log_command_result(self, result: CommandResult) -> None:
+        claude_code_logger.debug("Docker runtime command finished with metadata: %s", result.metadata)
+        if len(result.output) > 2048:
+            logged_output = result.output[:1024] + "\n(... stripped due to length ...)\n" + result.output[-1024:]
+        else:
+            logged_output = result.output
+        claude_code_logger.debug(
+            "Docker runtime command finished with output (length = %d):\n%s", len(result.output), logged_output
+        )
+        # Output to the evaluation logger simultaneously
+        self.logger(text=logged_output)
+
     def send_command(self, command: str, timeout: float = 20 * 60) -> CommandResult:
+        # Redact sensitive API keys from the command before logging
+        redacted_command = command
+        for sensitive_var in ["ANTHROPIC_AUTH_TOKEN", "API_KEY", "SECRET_KEY"]:
+            pattern = rf"(export (.*?){re.escape(sensitive_var)}(.*?)=)[^\s]+"
+            redacted_command = re.sub(pattern, rf"\1****REDACTED****", redacted_command)
+        claude_code_logger.info("Docker runtime receiving command: %s", redacted_command)
         # Normalize newline semantics for interactive shells
         if not command.endswith("\n"):
             command += "\n"
@@ -284,9 +307,10 @@ class Runtime:
         self._send_bytes(command.encode())
 
         output, metadata = self._read_raw_output(timeout=timeout)
+        # TODO: Check exit code of the command (claude code download fail will not be caught by this)
         if metadata is not None:
             result = CommandResult(output=output, metadata=metadata)
-            self.logger(text=result.output)
+            self._log_command_result(result)
             return result
 
         # handle timeout
@@ -298,22 +322,26 @@ class Runtime:
         output = output + kill_output + "\n**Exited due to timeout**\n"
         if kill_metadata is not None:
             kill_metadata.exit_code = TIMEOUT_EXIT_CODE
-            return CommandResult(output=output, metadata=kill_metadata)
+            result = CommandResult(output=output, metadata=kill_metadata)
+            self._log_command_result(result)
+            return result
 
         fallback_metadata = CmdOutputMetadata(
             exit_code=TIMEOUT_EXIT_CODE,
         )
-
         result = CommandResult(output=output, metadata=fallback_metadata)
-        self.logger(text=result.output)
+        self._log_command_result(result)
         return result
 
     def cleanup(self) -> None:
         if self.stopped:
             return
         try:
+            claude_code_logger.info(f"Stopping container: {self.container.id}")
             self.container.stop()
+            claude_code_logger.info(f"Removing container: {self.container.id}")
             self.container.remove(force=True)
+            claude_code_logger.info(f"Container removed: {self.container.id}")
             self.stopped = True
         except Exception as e:
             print(f"Failed to stop container: {e}")
@@ -343,7 +371,7 @@ class Runtime:
     def start_session(
         cls,
         image_name: str,
-        instance: dict[Any, Any],
+        instance: SWEbenchInstance,
         log_function: Callable[..., None] = lambda: None,
     ) -> Runtime:
         """
@@ -376,6 +404,9 @@ class Runtime:
         shell_command = "/bin/bash"
         working_dir = "/testbed"
 
+        claude_code_logger.info(
+            f"Starting container {container_name} with image {image_name}. Shell command: {shell_command}"
+        )
         container = client.containers.run(
             image_name,
             name=container_name,
@@ -392,6 +423,7 @@ class Runtime:
             cpu_quota=int(CPU_CORES * 100000),
             mem_limit=MEM_LIMIT,
         )
+        claude_code_logger.info(f"Container {container_name} started with ID: {container.id}")
 
         session = cls(container, log_function=log_function)
 

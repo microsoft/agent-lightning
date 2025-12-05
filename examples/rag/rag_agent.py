@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, cast
+import logging
+from typing import Any, Dict, cast
 
 from agents import Agent, Runner
 from agents.extensions.models.litellm_model import LitellmModel
@@ -10,15 +11,10 @@ from agents.mcp import MCPServerSse
 from agents.model_settings import ModelSettings
 from utils import compute_scores
 
-from agentlightning import (
-    LLM,
-    LitAgent,
-    NamedResources,
-    Trainer,
-    setup_logging,
-)
+import agentlightning as agl
 
-setup_logging()
+agl.setup_logging()
+logger = logging.getLogger(__name__)
 
 agent_prompt = """You are an assistant who answers questions using Wikipedia retriever. Answer the question using only the retrieved passages. Verify your answer directly against the text.
 
@@ -32,14 +28,20 @@ After each search:
 Repeat as needed. When done, wrap your final, concise answer in <answer> tags."""
 
 
-class RAGAgent(LitAgent[Any]):
+class RAGAgent(agl.LitAgent[Dict[str, Any]]):
     def __init__(self, trained_agents: str | None = None) -> None:
         super().__init__(trained_agents=trained_agents)
         self.mcp_server_url = "http://127.0.0.1:8099/sse"
 
-    async def training_rollout_async(self, task: Any, rollout_id: str, resources: NamedResources) -> Any:  # type: ignore
-        llm: LLM = cast(LLM, resources.get("main_llm"))
-        print("Training with model:", llm.model, "on endpoint:", llm.endpoint)
+    # (task, resources, rollout)
+    async def training_rollout_async(
+        self, task: Dict[str, Any], resources: agl.NamedResources, rollout: agl.Rollout
+    ) -> float | None:
+        # llm resources
+        llm = cast(agl.LLM, resources["main_llm"])
+
+        logger.info(f"Training with model: {llm.model} on endpoint: {llm.endpoint}")
+
         async with MCPServerSse(
             name="wiki_retriever_mcp",
             params={"url": self.mcp_server_url},
@@ -55,26 +57,39 @@ class RAGAgent(LitAgent[Any]):
                 mcp_servers=[server],
             )
             result = await Runner.run(agent, task["question"])
-            answer = result.final_output  # type: ignore
+            answer = result.final_output
+
+            # reward
             reward = compute_scores(answer, str(task["answer"]))
-            print(
+
+            logger.info(
                 "question:{} answer: {} ground_truth: {} reward: {}".format(
                     task["question"], answer, task["answer"], reward
                 )
             )
             return reward
 
-    async def validation_rollout_async(self, task: Any, rollout_id: str, resources: NamedResources) -> Any:  # type: ignore
-        llm: LLM = cast(LLM, resources.get("main_llm"))
-        resources = {
-            "main_llm": LLM(
+    # (task, resources, rollout)
+    async def validation_rollout_async(
+        self, task: Dict[str, Any], resources: agl.NamedResources, rollout: agl.Rollout
+    ) -> float | None:
+        llm = cast(agl.LLM, resources["main_llm"])
+
+        # set temperature
+        val_resources: agl.NamedResources = {
+            "main_llm": agl.LLM(
                 endpoint=llm.endpoint,
                 model=llm.model,
                 sampling_parameters={"temperature": 0.7},
             )
         }
-        return await self.training_rollout_async(task, rollout_id, resources)
+
+        # reuse training rollout for validation
+        return await self.training_rollout_async(task, val_resources, rollout)
 
 
 if __name__ == "__main__":
-    Trainer(n_workers=12).fit_v0(RAGAgent(), "http://localhost:9999/")
+
+    trainer = agl.Trainer(n_workers=2)
+
+    print("Agent initialized. Please use 'agl.Trainer(...).fit(...)' with a dataset to start training.")

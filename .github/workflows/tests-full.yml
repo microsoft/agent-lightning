@@ -320,3 +320,24 @@ jobs:
             echo "Waiting for llm_proxy.py to finish..."
             sleep 5
           done
+
+      - name: MultiMetrics backend example
+        run: |
+          set -euo pipefail
+          source .venv/bin/activate
+          cd examples/minimal
+          python write_metrics.py --duration 8 --prom-port 9105 --prom-host 0.0.0.0 2>&1 | tee metrics.log &
+          pid=$!
+
+          for attempt in $(seq 1 20); do
+            if curl -sSf http://localhost:9105/metrics | grep -q minimal_requests_total; then
+              echo "Metrics endpoint responding"
+              wait $pid
+              cat metrics.log
+              exit 0
+            fi
+            sleep 1
+          done
+
+          echo "Metrics endpoint did not respond"
+          exit 1
