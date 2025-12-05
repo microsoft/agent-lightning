@@ -140,7 +140,7 @@ jobs:
           set -ex
           source .venv/bin/activate
           cd examples/rag
-          uv run python rag_run_dev.py
+          uv run python rag_agent.py
         shell: bash
 
       - name: Stop vLLM Server

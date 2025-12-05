@@ -1,6 +1,7 @@
 # Copyright (c) Microsoft. All rights reserved.
 
 import asyncio
+import logging
 import random
 from contextlib import asynccontextmanager
 from typing import Any, AsyncGenerator, Dict, List, Literal, Optional, Sequence, Tuple, cast
@@ -262,6 +263,49 @@ async def test_step_emits_reward_for_float_result() -> None:
     spans = await store.query_spans(rollout_id, attempt_id)
     rewards = [span.attributes.get("agentlightning.reward.0.value") for span in spans if span.name == AGL_ANNOTATION]
     assert rewards == [0.75]
+
+
+@pytest.mark.asyncio
+async def test_step_emits_reward_for_bool_result(caplog: pytest.LogCaptureFixture) -> None:
+    class BoolRewardAgent(LitAgent[Dict[str, Any]]):
+        def validation_rollout(self, task: Dict[str, Any], resources: Dict[str, Any], rollout: Any) -> bool:
+            return True
+
+    agent = BoolRewardAgent()
+    runner, store, _ = await setup_runner(agent)
+    caplog.set_level(logging.WARNING)
+    try:
+        await runner.step({"prompt": "hello"})
+    finally:
+        teardown_runner(runner)
+
+    assert "Reward is not a number" in caplog.text
+    rollout_id, attempt_id = await assert_single_attempt_succeeded(store)
+    spans = await store.query_spans(rollout_id, attempt_id)
+    rewards = [span.attributes.get("agentlightning.reward.0.value") for span in spans if span.name == AGL_ANNOTATION]
+    assert rewards == [1.0]
+
+
+@pytest.mark.asyncio
+async def test_step_raises_for_invalid_result_type() -> None:
+    class InvalidResultAgent(LitAgent[Dict[str, Any]]):
+        def validation_rollout(  # type: ignore[reportIncompatibleMethodOverride]
+            self, task: Dict[str, Any], resources: Dict[str, Any], rollout: Any
+        ) -> Dict[str, Any]:
+            return {"unexpected": True}
+
+    agent = InvalidResultAgent()
+    runner, store, _ = await setup_runner(agent)
+    try:
+        with pytest.raises(TypeError, match="Invalid raw result type"):
+            await runner.step({"task": "bad-result"})
+    finally:
+        teardown_runner(runner)
+
+    rollouts = await store.query_rollouts()
+    assert len(rollouts) == 1
+    attempts = await store.query_attempts(rollouts[0].rollout_id)
+    assert attempts[-1].status == "failed"
 
 
 @pytest.mark.asyncio
