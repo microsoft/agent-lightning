@@ -56,7 +56,7 @@ class RAGAgent(agl.LitAgent[Dict[str, Any]]):
                     base_url=llm.get_base_url(rollout.rollout_id, rollout.attempt.attempt_id),
                 ),
                 model_settings=ModelSettings(
-                    max_tokens=4096,
+                    max_tokens=2048,
                     temperature=0.7,
                 ),
                 name="Assistant",
@@ -82,12 +82,14 @@ class RAGAgent(agl.LitAgent[Dict[str, Any]]):
         self, task: Dict[str, Any], resources: agl.NamedResources, rollout: agl.Rollout
     ) -> float | None:
         """Validation rollout will share the same logic as the training rollout."""
+        # Same as training rollout, but with different temperature
         llm = cast(agl.LLM, resources["main_llm"])
+        rollout = cast(agl.AttemptedRollout, rollout)
 
         # set temperature
         val_resources: agl.NamedResources = {
             "main_llm": agl.LLM(
-                endpoint=llm.endpoint,
+                endpoint=llm.get_base_url(rollout.rollout_id, rollout.attempt.attempt_id),
                 model=llm.model,
                 sampling_parameters={"temperature": 0.7},
             )

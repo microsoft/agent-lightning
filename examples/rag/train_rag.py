@@ -29,8 +29,8 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
     },
     "data": {
         "train_batch_size": 16,  # Default configuration for multi-GPU
-        "max_prompt_length": 4096,
-        "max_response_length": 1024,
+        "max_prompt_length": 8192,
+        "max_response_length": 2048,
         "truncation": "error",
     },
     "actor_rollout_ref": {
