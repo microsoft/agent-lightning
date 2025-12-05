@@ -32,7 +32,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (method, path) (rate(http_requests_total{path!='/v1/prometheus/'}[1m]))",
+          "expr": "sum by (method, path) (rate(http_requests_total{path!='/v1/prometheus/'}[15s]))",
           "legendFormat": "{{method}} {{path}}"
         }
       ]
@@ -48,15 +48,15 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum by (le) (rate(http_request_duration_seconds_bucket{path!='/v1/prometheus/'}[1m])))",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(http_request_duration_seconds_bucket{path!='/v1/prometheus/'}[15s])))",
           "legendFormat": "P50"
         },
         {
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{path!='/v1/prometheus/'}[1m])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{path!='/v1/prometheus/'}[15s])))",
           "legendFormat": "P95"
         },
         {
-          "expr": "histogram_quantile(0.99, sum by (le) (rate(http_request_duration_seconds_bucket{path!='/v1/prometheus/'}[1m])))",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(http_request_duration_seconds_bucket{path!='/v1/prometheus/'}[15s])))",
           "legendFormat": "P99"
         }
       ],
@@ -90,7 +90,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (method) (rate(collection_store_total[1m]))",
+          "expr": "sum by (method) (rate(collection_store_total[15s]))",
           "legendFormat": "{{method}}"
         }
       ],
@@ -111,15 +111,15 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum by (le) (rate(collection_store_latency_seconds_bucket[1m])))",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(collection_store_latency_seconds_bucket[15s])))",
           "legendFormat": "P50"
         },
         {
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(collection_store_latency_seconds_bucket[1m])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(collection_store_latency_seconds_bucket[15s])))",
           "legendFormat": "P95"
         },
         {
-          "expr": "histogram_quantile(0.99, sum by (le) (rate(collection_store_latency_seconds_bucket[1m])))",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(collection_store_latency_seconds_bucket[15s])))",
           "legendFormat": "P99"
         }
       ],
@@ -140,7 +140,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (method, error_type) (rate(collection_store_total{error_type!='OK'}[1m]))",
+          "expr": "sum by (method, error_type) (rate(collection_store_total{error_type!='OK'}[15s]))",
           "legendFormat": "{{method}} - {{error_type}}"
         }
       ],
@@ -161,7 +161,7 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum by (le, method) (rate(collection_store_latency_seconds_bucket[1m])))",
+          "expr": "histogram_quantile(0.50, sum by (le, method) (rate(collection_store_latency_seconds_bucket[15s])))",
           "legendFormat": "{{method}}"
         }
       ],
@@ -182,7 +182,7 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum by (le, method) (rate(collection_store_latency_seconds_bucket[1m])))",
+          "expr": "histogram_quantile(0.95, sum by (le, method) (rate(collection_store_latency_seconds_bucket[15s])))",
           "legendFormat": "{{method}}"
         }
       ],
@@ -203,7 +203,7 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum by (le, method) (rate(collection_store_latency_seconds_bucket[1m]))) * sum by (method) (rate(collection_store_total[1m]))",
+          "expr": "histogram_quantile(0.50, sum by (le, method) (rate(collection_store_latency_seconds_bucket[15s]))) * sum by (method) (rate(collection_store_total[15s]))",
           "legendFormat": "{{method}}"
         }
       ],
@@ -224,7 +224,7 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum by (le, method, path) (rate(http_request_duration_seconds_bucket{path!='/v1/prometheus/'}[1m])))",
+          "expr": "histogram_quantile(0.95, sum by (le, method, path) (rate(http_request_duration_seconds_bucket{path!='/v1/prometheus/'}[15s])))",
           "legendFormat": "{{method}} {{path}}"
         }
       ],
@@ -258,7 +258,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection'}[1m]))",
+          "expr": "sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection'}[15s]))",
           "legendFormat": "{{operation}} - {{collection}}"
         }
       ]
@@ -274,7 +274,7 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum by (le, operation) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection'}[1m])))",
+          "expr": "histogram_quantile(0.95, sum by (le, operation) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection'}[15s])))",
           "legendFormat": "{{operation}}"
         }
       ],
@@ -295,7 +295,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (error_type, operation) (rate(mongo_operation_errors_total{operation!='ensure_collection'}[1m]))",
+          "expr": "sum by (error_type, operation) (rate(mongo_operation_errors_total{operation!='ensure_collection'}[15s]))",
           "legendFormat": "{{operation}} - {{error_type}}"
         }
       ]
@@ -324,7 +324,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='wait_for_rollouts'}[1m])) / scalar(clamp_min(sum(rate(collection_store_total{method='wait_for_rollouts'}[1m])), 1e-9))",
+          "expr": "sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='wait_for_rollouts'}[15s])) / scalar(clamp_min(sum(rate(collection_store_total{method='wait_for_rollouts'}[15s])), 1e-9))",
           "legendFormat": "{{operation}} - {{collection}}"
         }
       ],
@@ -345,7 +345,7 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='wait_for_rollouts'}[1m])))",
+          "expr": "histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='wait_for_rollouts'}[15s])))",
           "legendFormat": "{{operation}} - {{collection}}"
         }
       ],
@@ -366,7 +366,7 @@
       },
       "targets": [
         {
-          "expr": "(histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='wait_for_rollouts'}[1m])))) * (sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='wait_for_rollouts'}[1m])) / scalar(clamp_min(sum(rate(collection_store_total{method='wait_for_rollouts'}[1m])), 1e-9)))",
+          "expr": "(histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='wait_for_rollouts'}[15s])))) * (sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='wait_for_rollouts'}[15s])) / scalar(clamp_min(sum(rate(collection_store_total{method='wait_for_rollouts'}[15s])), 1e-9)))",
           "legendFormat": "{{operation}} - {{collection}}"
         }
       ],
@@ -387,7 +387,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='add_many_spans'}[1m])) / scalar(clamp_min(sum(rate(collection_store_total{method='add_many_spans'}[1m])), 1e-9))",
+          "expr": "sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='add_many_spans'}[15s])) / scalar(clamp_min(sum(rate(collection_store_total{method='add_many_spans'}[15s])), 1e-9))",
           "legendFormat": "{{operation}} - {{collection}}"
         }
       ],
@@ -408,7 +408,7 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='add_many_spans'}[1m])))",
+          "expr": "histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='add_many_spans'}[15s])))",
           "legendFormat": "{{operation}} - {{collection}}"
         }
       ],
@@ -429,7 +429,7 @@
       },
       "targets": [
         {
-          "expr": "(histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='add_many_spans'}[1m])))) * (sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='add_many_spans'}[1m])) / scalar(clamp_min(sum(rate(collection_store_total{method='add_many_spans'}[1m])), 1e-9)))",
+          "expr": "(histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='add_many_spans'}[15s])))) * (sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='add_many_spans'}[15s])) / scalar(clamp_min(sum(rate(collection_store_total{method='add_many_spans'}[15s])), 1e-9)))",
           "legendFormat": "{{operation}} - {{collection}}"
         }
       ],
@@ -450,7 +450,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='dequeue_rollout'}[1m])) / scalar(clamp_min(sum(rate(collection_store_total{method='dequeue_rollout'}[1m])), 1e-9))",
+          "expr": "sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='dequeue_rollout'}[15s])) / scalar(clamp_min(sum(rate(collection_store_total{method='dequeue_rollout'}[15s])), 1e-9))",
           "legendFormat": "{{operation}} - {{collection}}"
         }
       ],
@@ -471,7 +471,7 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='dequeue_rollout'}[1m])))",
+          "expr": "histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='dequeue_rollout'}[15s])))",
           "legendFormat": "{{operation}} - {{collection}}"
         }
       ],
@@ -492,7 +492,7 @@
       },
       "targets": [
         {
-          "expr": "(histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='dequeue_rollout'}[1m])))) * (sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='dequeue_rollout'}[1m])) / scalar(clamp_min(sum(rate(collection_store_total{method='dequeue_rollout'}[1m])), 1e-9)))",
+          "expr": "(histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='dequeue_rollout'}[15s])))) * (sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='dequeue_rollout'}[15s])) / scalar(clamp_min(sum(rate(collection_store_total{method='dequeue_rollout'}[15s])), 1e-9)))",
           "legendFormat": "{{operation}} - {{collection}}"
         }
       ],
@@ -513,7 +513,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='update_attempt'}[1m])) / scalar(clamp_min(sum(rate(collection_store_total{method='update_attempt'}[1m])), 1e-9))",
+          "expr": "sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='update_attempt'}[15s])) / scalar(clamp_min(sum(rate(collection_store_total{method='update_attempt'}[15s])), 1e-9))",
           "legendFormat": "{{operation}} - {{collection}}"
         }
       ],
@@ -534,7 +534,7 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='update_attempt'}[1m])))",
+          "expr": "histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='update_attempt'}[15s])))",
           "legendFormat": "{{operation}} - {{collection}}"
         }
       ],
@@ -555,7 +555,7 @@
       },
       "targets": [
         {
-          "expr": "(histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='update_attempt'}[1m])))) * (sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='update_attempt'}[1m])) / scalar(clamp_min(sum(rate(collection_store_total{method='update_attempt'}[1m])), 1e-9)))",
+          "expr": "(histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='update_attempt'}[15s])))) * (sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='update_attempt'}[15s])) / scalar(clamp_min(sum(rate(collection_store_total{method='update_attempt'}[15s])), 1e-9)))",
           "legendFormat": "{{operation}} - {{collection}}"
         }
       ],
@@ -576,7 +576,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='update_worker'}[1m])) / scalar(clamp_min(sum(rate(collection_store_total{method='update_worker'}[1m])), 1e-9))",
+          "expr": "sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='update_worker'}[15s])) / scalar(clamp_min(sum(rate(collection_store_total{method='update_worker'}[15s])), 1e-9))",
           "legendFormat": "{{operation}} - {{collection}}"
         }
       ],
@@ -597,7 +597,7 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='update_worker'}[1m])))",
+          "expr": "histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='update_worker'}[15s])))",
           "legendFormat": "{{operation}} - {{collection}}"
         }
       ],
@@ -618,7 +618,7 @@
       },
       "targets": [
         {
-          "expr": "(histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='update_worker'}[1m])))) * (sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='update_worker'}[1m])) / scalar(clamp_min(sum(rate(collection_store_total{method='update_worker'}[1m])), 1e-9)))",
+          "expr": "(histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='update_worker'}[15s])))) * (sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='update_worker'}[15s])) / scalar(clamp_min(sum(rate(collection_store_total{method='update_worker'}[15s])), 1e-9)))",
           "legendFormat": "{{operation}} - {{collection}}"
         }
       ],
@@ -639,7 +639,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='_healthcheck'}[1m])) / scalar(clamp_min(sum(rate(collection_store_total{method='_healthcheck'}[1m])), 1e-9))",
+          "expr": "sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='_healthcheck'}[15s])) / scalar(clamp_min(sum(rate(collection_store_total{method='_healthcheck'}[15s])), 1e-9))",
           "legendFormat": "{{operation}} - {{collection}}"
         }
       ],
@@ -660,7 +660,7 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='_healthcheck'}[1m])))",
+          "expr": "histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='_healthcheck'}[15s])))",
           "legendFormat": "{{operation}} - {{collection}}"
         }
       ],
@@ -681,7 +681,7 @@
       },
       "targets": [
         {
-          "expr": "(histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='_healthcheck'}[1m])))) * (sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='_healthcheck'}[1m])) / scalar(clamp_min(sum(rate(collection_store_total{method='_healthcheck'}[1m])), 1e-9)))",
+          "expr": "(histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='_healthcheck'}[15s])))) * (sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='_healthcheck'}[15s])) / scalar(clamp_min(sum(rate(collection_store_total{method='_healthcheck'}[15s])), 1e-9)))",
           "legendFormat": "{{operation}} - {{collection}}"
         }
       ],
@@ -702,7 +702,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='add_many_spans'}[1m])) / scalar(clamp_min(sum(rate(collection_store_total{method='add_many_spans'}[1m])), 1e-9))",
+          "expr": "sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='add_many_spans'}[15s])) / scalar(clamp_min(sum(rate(collection_store_total{method='add_many_spans'}[15s])), 1e-9))",
           "legendFormat": "{{operation}} - {{collection}}"
         }
       ],
@@ -723,7 +723,7 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='add_many_spans'}[1m])))",
+          "expr": "histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='add_many_spans'}[15s])))",
           "legendFormat": "{{operation}} - {{collection}}"
         }
       ],
@@ -744,7 +744,7 @@
       },
       "targets": [
         {
-          "expr": "(histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='add_many_spans'}[1m])))) * (sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='add_many_spans'}[1m])) / scalar(clamp_min(sum(rate(collection_store_total{method='add_many_spans'}[1m])), 1e-9)))",
+          "expr": "(histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='add_many_spans'}[15s])))) * (sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='add_many_spans'}[15s])) / scalar(clamp_min(sum(rate(collection_store_total{method='add_many_spans'}[15s])), 1e-9)))",
           "legendFormat": "{{operation}} - {{collection}}"
         }
       ],
@@ -765,7 +765,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='add_otel_span'}[1m])) / scalar(clamp_min(sum(rate(collection_store_total{method='add_otel_span'}[1m])), 1e-9))",
+          "expr": "sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='add_otel_span'}[15s])) / scalar(clamp_min(sum(rate(collection_store_total{method='add_otel_span'}[15s])), 1e-9))",
           "legendFormat": "{{operation}} - {{collection}}"
         }
       ],
@@ -786,7 +786,7 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='add_otel_span'}[1m])))",
+          "expr": "histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='add_otel_span'}[15s])))",
           "legendFormat": "{{operation}} - {{collection}}"
         }
       ],
@@ -807,7 +807,7 @@
       },
       "targets": [
         {
-          "expr": "(histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='add_otel_span'}[1m])))) * (sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='add_otel_span'}[1m])) / scalar(clamp_min(sum(rate(collection_store_total{method='add_otel_span'}[1m])), 1e-9)))",
+          "expr": "(histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='add_otel_span'}[15s])))) * (sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='add_otel_span'}[15s])) / scalar(clamp_min(sum(rate(collection_store_total{method='add_otel_span'}[15s])), 1e-9)))",
           "legendFormat": "{{operation}} - {{collection}}"
         }
       ],
@@ -828,19 +828,19 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(mongo_operation_num_attempts_bucket{operation='execute__transaction'}[1m])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(mongo_operation_num_attempts_bucket{operation='execute__transaction'}[15s])))",
           "legendFormat": "P95"
         },
         {
-          "expr": "histogram_quantile(0.99, sum by (le) (rate(mongo_operation_num_attempts_bucket{operation='execute__transaction'}[1m])))",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(mongo_operation_num_attempts_bucket{operation='execute__transaction'}[15s])))",
           "legendFormat": "P99"
         },
         {
-          "expr": "histogram_quantile(0.999, sum by (le) (rate(mongo_operation_num_attempts_bucket{operation='execute__transaction'}[1m])))",
+          "expr": "histogram_quantile(0.999, sum by (le) (rate(mongo_operation_num_attempts_bucket{operation='execute__transaction'}[15s])))",
           "legendFormat": "P99.9"
         },
         {
-          "expr": "histogram_quantile(1.0, sum by (le) (rate(mongo_operation_num_attempts_bucket{operation='execute__transaction'}[1m])))",
+          "expr": "histogram_quantile(1.0, sum by (le) (rate(mongo_operation_num_attempts_bucket{operation='execute__transaction'}[15s])))",
           "legendFormat": "Max"
         }
       ],
@@ -861,19 +861,19 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(mongo_operation_num_attempts_bucket{operation='execute__commit'}[1m])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(mongo_operation_num_attempts_bucket{operation='execute__commit'}[15s])))",
           "legendFormat": "P95"
         },
         {
-          "expr": "histogram_quantile(0.999, sum by (le) (rate(mongo_operation_num_attempts_bucket{operation='execute__commit'}[1m])))",
+          "expr": "histogram_quantile(0.999, sum by (le) (rate(mongo_operation_num_attempts_bucket{operation='execute__commit'}[15s])))",
           "legendFormat": "P99.9"
         },
         {
-          "expr": "histogram_quantile(0.99, sum by (le) (rate(mongo_operation_num_attempts_bucket{operation='execute__commit'}[1m])))",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(mongo_operation_num_attempts_bucket{operation='execute__commit'}[15s])))",
           "legendFormat": "P99"
         },
         {
-          "expr": "histogram_quantile(1.0, sum by (le) (rate(mongo_operation_num_attempts_bucket{operation='execute__commit'}[1m])))",
+          "expr": "histogram_quantile(1.0, sum by (le) (rate(mongo_operation_num_attempts_bucket{operation='execute__commit'}[15s])))",
           "legendFormat": "Max"
         }
       ],
@@ -894,7 +894,7 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.99, sum by (le, store_method) (rate(mongo_operation_num_attempts_bucket{operation='execute__transaction'}[1m])))",
+          "expr": "histogram_quantile(0.99, sum by (le, store_method) (rate(mongo_operation_num_attempts_bucket{operation='execute__transaction'}[15s])))",
           "legendFormat": "{{store_method}}"
         }
       ],
@@ -928,7 +928,7 @@
       },
       "targets": [
         {
-          "expr": "rate(mongodb_ss_opcounters[1m])",
+          "expr": "rate(mongodb_ss_opcounters[15s])",
           "legendFormat": "{{type}}"
         }
       ]
@@ -977,19 +977,19 @@
       "id": 302,
       "targets": [
         {
-          "expr": "histogram_quantile(0.25, sum by (le) (rate(collection_store_rollout_duration_seconds_bucket[1m])))",
+          "expr": "histogram_quantile(0.25, sum by (le) (rate(collection_store_rollout_duration_seconds_bucket[15s])))",
           "legendFormat": "P25"
         },
         {
-          "expr": "histogram_quantile(0.50, sum by (le) (rate(collection_store_rollout_duration_seconds_bucket[1m])))",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(collection_store_rollout_duration_seconds_bucket[15s])))",
           "legendFormat": "P50"
         },
         {
-          "expr": "histogram_quantile(0.75, sum by (le) (rate(collection_store_rollout_duration_seconds_bucket[1m])))",
+          "expr": "histogram_quantile(0.75, sum by (le) (rate(collection_store_rollout_duration_seconds_bucket[15s])))",
           "legendFormat": "P75"
         },
         {
-          "expr": "histogram_quantile(1.0, sum by (le) (rate(collection_store_rollout_duration_seconds_bucket[1m])))",
+          "expr": "histogram_quantile(1.0, sum by (le) (rate(collection_store_rollout_duration_seconds_bucket[15s])))",
           "legendFormat": "Max"
         }
       ],
@@ -1011,7 +1011,7 @@
       "id": 303,
       "targets": [
         {
-          "expr": "sum by (status) (rate(collection_store_rollout_total[1m]))",
+          "expr": "sum by (status) (rate(collection_store_rollout_total[15s]))",
           "legendFormat": "{{status}}"
         }
       ],
@@ -1046,7 +1046,7 @@
       "id": 305,
       "targets": [
         {
-          "expr": "sum by (collection) (rate(memory_collection_lock_rate_total[1m]))",
+          "expr": "sum by (collection) (rate(memory_collection_lock_rate_total[15s]))",
           "legendFormat": "{{collection}}"
         }
       ],
@@ -1068,15 +1068,15 @@
       "id": 306,
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum by (le, collection) (rate(memory_collection_lock_latency_seconds_bucket[1m])))",
+          "expr": "histogram_quantile(0.50, sum by (le, collection) (rate(memory_collection_lock_latency_seconds_bucket[15s])))",
           "legendFormat": "P50 {{collection}}"
         },
         {
-          "expr": "histogram_quantile(0.95, sum by (le, collection) (rate(memory_collection_lock_latency_seconds_bucket[1m])))",
+          "expr": "histogram_quantile(0.95, sum by (le, collection) (rate(memory_collection_lock_latency_seconds_bucket[15s])))",
           "legendFormat": "P95 {{collection}}"
         },
         {
-          "expr": "histogram_quantile(0.99, sum by (le, collection) (rate(memory_collection_lock_latency_seconds_bucket[1m])))",
+          "expr": "histogram_quantile(0.99, sum by (le, collection) (rate(memory_collection_lock_latency_seconds_bucket[15s])))",
           "legendFormat": "P99 {{collection}}"
         }
       ],
@@ -1106,7 +1106,7 @@
       "id": 308,
       "targets": [
         {
-          "expr": "sum by (method, path, status_code) (rate(http_requests_total{path!='/v1/prometheus/'}[1m]))",
+          "expr": "sum by (method, path, status_code) (rate(http_requests_total{path!='/v1/prometheus/'}[15s]))",
           "legendFormat": "{{method}} {{path}} {{status_code}}"
         }
       ],
@@ -1128,7 +1128,7 @@
       "id": 309,
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum by (le, method, path, status_code) (rate(http_request_duration_seconds_bucket{path!='/v1/prometheus/'}[1m])))",
+          "expr": "histogram_quantile(0.95, sum by (le, method, path, status_code) (rate(http_request_duration_seconds_bucket{path!='/v1/prometheus/'}[15s])))",
           "legendFormat": "{{method}} {{path}} {{status_code}}"
         }
       ],
