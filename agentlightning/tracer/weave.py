@@ -7,7 +7,7 @@ import logging
 import os
 import threading
 from contextlib import asynccontextmanager
-from typing import TYPE_CHECKING, Any, AsyncContextManager, List, Optional
+from typing import TYPE_CHECKING, Any, AsyncIterator, Dict, List, Optional, Tuple, Union
 
 from agentlightning.instrumentation import instrument_weave, uninstrument_weave
 from agentlightning.store.base import LightningStore
@@ -19,6 +19,8 @@ if TYPE_CHECKING:
     from weave.trace.call import Call  # type: ignore
 else:
     Call = Any  # type: ignore
+
+JSONPrimitive = Union[str, int, float, bool, None]
 
 logger = logging.getLogger(__name__)
 
@@ -126,7 +128,7 @@ class WeaveTracer(Tracer):
         store: Optional[LightningStore] = None,
         rollout_id: Optional[str] = None,
         attempt_id: Optional[str] = None,
-    ) -> AsyncContextManager[Any]:
+    ) -> AsyncIterator[Any]:
         """
         Synchronous implementation of the tracing context.
 
@@ -236,19 +238,26 @@ class WeaveTracer(Tracer):
         exception = getattr(call, "exception", None)  # type: ignore
         status_code = "ERROR" if exception else "OK"
 
-        def sanitize(inputs: dict, output: dict) -> dict:
-            stack = [(inputs or {}, "input"), (output or {}, "output")]
-            attributes = {}
+        def sanitize(
+            inputs: Dict[str, Any],
+            output: Dict[str, Any],
+        ) -> Dict[str, str | JSONPrimitive]:
+            stack: List[Tuple[Any, str]] = [
+                (inputs or {}, "input"),
+                (output or {}, "output"),
+            ]
+
+            attributes: Dict[str, str | JSONPrimitive] = {}
 
             while stack:
                 value, key = stack.pop()
 
                 if isinstance(value, dict):
-                    for k, v in value.items():
-                        stack.append((v, f"{key}.{k}"))
+                    for k, v in value.items():  # type: ignore
+                        stack.append((v, f"{key}.{k}"))  # type: ignore
                 elif isinstance(value, (list, tuple)):
-                    for i, v in enumerate(value):
-                        stack.append((v, f"{key}.{i}"))
+                    for i, v in enumerate(value):  # type: ignore
+                        stack.append((v, f"{key}.{i}"))  # type: ignore
                 else:
                     if value is None:
                         attributes[key] = "None"
@@ -294,7 +303,7 @@ class WeaveTracer(Tracer):
             parent_id=parent_id,
             name=getattr(call, "func_name", "unknown"),  # type: ignore
             status=TraceStatus(status_code=status_code),
-            attributes=attributes,
+            attributes=attributes,  # type: ignore
             events=[],  # Weave calls do not generate events
             links=[],  # Weave calls do not generate links
             start_time=start_ts,
