@@ -707,6 +707,72 @@ async def test_step_with_custom_resources_returns_rollout() -> None:
 
 
 @pytest.mark.asyncio
+async def test_step_registers_worker_id_on_start_rollout(monkeypatch: pytest.MonkeyPatch) -> None:
+    """runner.step should pass the formatted worker ID down to the store."""
+
+    class WorkerAwareAgent(LitAgent[Dict[str, Any]]):
+        def validation_rollout(self, task: Dict[str, Any], resources: Dict[str, Any], rollout: Any) -> float:
+            return 1.0
+
+    agent = WorkerAwareAgent()
+    runner, store, _ = await setup_runner(agent)
+
+    expected_worker_label = runner.get_worker_id()
+    captured: Dict[str, Optional[str]] = {}
+    original_start_rollout = store.start_rollout
+
+    async def wrapped_start_rollout(*args: Any, **kwargs: Any):
+        captured["worker_id"] = kwargs.get("worker_id")
+        return await original_start_rollout(*args, **kwargs)
+
+    monkeypatch.setattr(store, "start_rollout", wrapped_start_rollout)
+
+    try:
+        await runner.step({"task": "worker-aware"})
+    finally:
+        teardown_runner(runner)
+
+    assert captured["worker_id"] == expected_worker_label
+
+
+@pytest.mark.asyncio
+async def test_iter_passes_worker_id_to_dequeue(monkeypatch: pytest.MonkeyPatch) -> None:
+    """iter() should poll the store with the formatted worker identifier."""
+
+    class IdleAgent(LitAgent[Dict[str, Any]]):
+        def validation_rollout(
+            self, task: Dict[str, Any], resources: Dict[str, Any], rollout: Any
+        ) -> float:  # pragma: no cover - not invoked
+            return 0.0
+
+    agent = IdleAgent()
+    runner, store, _ = await setup_runner(agent, poll_interval=0.01)
+
+    expected_worker_label = runner.get_worker_id()
+    captured: Dict[str, Optional[str]] = {}
+    event = ThreadingEvent()
+
+    async def fake_dequeue(*, worker_id: Optional[str] = None):
+        captured["worker_id"] = worker_id
+        event.set()
+        return None
+
+    async def fast_sleep(self: LitAgentRunner[Any], event: Optional[ExecutionEvent] = None) -> None:
+        if event is not None:
+            event.set()
+
+    monkeypatch.setattr(store, "dequeue_rollout", fake_dequeue)
+    monkeypatch.setattr(LitAgentRunner, "_sleep_until_next_poll", fast_sleep)
+
+    try:
+        await runner.iter(event=event)
+    finally:
+        teardown_runner(runner)
+
+    assert captured["worker_id"] == expected_worker_label
+
+
+@pytest.mark.asyncio
 async def test_emit_heartbeat_updates_worker_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
     snapshot = {"cpu_pct": 42.0, "mem_pct": 10.5}
     monkeypatch.setattr("agentlightning.runner.agent.system_snapshot", lambda: snapshot)

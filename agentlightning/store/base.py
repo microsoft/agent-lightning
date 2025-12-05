@@ -10,6 +10,7 @@ from agentlightning.types import (
     Attempt,
     AttemptedRollout,
     AttemptStatus,
+    EnqueueRolloutRequest,
     NamedResources,
     ResourcesUpdate,
     Rollout,
@@ -100,19 +101,6 @@ class LightningStoreStatistics(TypedDict, total=False):
     """Memory capacity of the store in bytes."""
 
 
-class _EnqueueRolloutRequestRequired(TypedDict):
-    input: TaskInput
-
-
-class EnqueueRolloutRequest(_EnqueueRolloutRequestRequired, total=False):
-    """Payload describing a rollout to be queued via `enqueue_rollout`."""
-
-    mode: Optional[RolloutMode]
-    resources_id: Optional[str]
-    config: Optional[RolloutConfig]
-    metadata: Optional[Dict[str, Any]]
-
-
 class LightningStore:
     """Contract for the persistent control-plane that coordinates training rollouts.
 
@@ -174,6 +162,7 @@ class LightningStore:
         resources_id: str | None = None,
         config: RolloutConfig | None = None,
         metadata: Dict[str, Any] | None = None,
+        worker_id: str | None = None,
     ) -> AttemptedRollout:
         """Register a rollout and immediately create its first attempt.
 
@@ -196,6 +185,7 @@ class LightningStore:
             resources_id: Concrete resource snapshot to execute against; defaults to the latest stored snapshot.
             config: Rollout retry/timeout policy. Should default to a fresh [`RolloutConfig`][agentlightning.RolloutConfig].
             metadata: Free-form metadata persisted verbatim with the rollout.
+            worker_id: Optional worker identifier to associate the new attempt with.
 
         Returns:
             The fully-populated [`AttemptedRollout`][agentlightning.AttemptedRollout] including
@@ -241,7 +231,7 @@ class LightningStore:
         """
         raise NotImplementedError()
 
-    async def enqueue_many_rollouts(self, inputs: Sequence[EnqueueRolloutRequest]) -> Sequence[Rollout]:
+    async def enqueue_many_rollouts(self, rollouts: Sequence[EnqueueRolloutRequest]) -> Sequence[Rollout]:
         """Persist multiple rollouts in `queuing` state.
 
         The implementation can delegate to [`enqueue_rollout()`][agentlightning.LightningStore.enqueue_rollout]
@@ -249,11 +239,11 @@ class LightningStore:
         more efficient bulk enqueue semantics.
 
         Args:
-            inputs: Rollout submission payloads mirroring [`enqueue_rollout()`][agentlightning.LightningStore.enqueue_rollout]'s
+            rollouts: Rollout submission payloads mirroring [`enqueue_rollout()`][agentlightning.LightningStore.enqueue_rollout]'s
                 parameters. Each entry requires `input` and can optionally include other fields.
 
         Returns:
-            Rollouts enqueued in the same order as `inputs`.
+            Rollouts enqueued in the same order as `rollouts`.
         """
         raise NotImplementedError()
 
@@ -272,6 +262,9 @@ class LightningStore:
           runner knows both rollout metadata and the attempt identifier.
         * Optionally refresh the caller's [`Worker`][agentlightning.Worker] telemetry
           (e.g., `last_dequeue_time`) when `worker_id` is provided.
+
+        Args:
+            worker_id: Optional worker identifier to associate the claimed attempt with.
 
         Returns:
             The next attempt to execute, or `None` when no eligible rollouts are queued.
@@ -304,7 +297,7 @@ class LightningStore:
         """
         raise NotImplementedError()
 
-    async def start_attempt(self, rollout_id: str) -> AttemptedRollout:
+    async def start_attempt(self, rollout_id: str, worker_id: Optional[str] = None) -> AttemptedRollout:
         """Create a manual retry attempt for an existing rollout.
 
         This is typically invoked by runners that wish to retry outside of the
@@ -315,6 +308,7 @@ class LightningStore:
 
         Args:
             rollout_id: Unique identifier of the rollout receiving a new attempt.
+            worker_id: Optional worker identifier to associate the new attempt with.
 
         Returns:
             The rollout paired with its newly-created attempt.

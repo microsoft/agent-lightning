@@ -25,6 +25,7 @@ dependencies = [
   "portpicker",
   "gunicorn",
   "uvicorn_worker",
+  "aiologic",
 ]
 
 [project.optional-dependencies]
@@ -102,8 +103,8 @@ torch-stable = [
   "transformers>=4.55.0,!=4.57.2",
   # vLLM 0.11.1 requires PyTorch 2.9.0, which is incompatible with flash-attn
   # https://github.com/Dao-AILab/flash-attention/issues/1967
-  # Similar issues with vLLM 0.11.2
-  "vllm>=0.10.2,!=0.11.1,!=0.11.2",
+  # Similar issues with vLLM 0.11.2 and 0.12.0
+  "vllm>=0.10.2,!=0.11.1,!=0.11.2,!=0.12.0",
   # LiteLLM can then be upgraded with new vLLM
   "litellm[proxy]>=1.78",
 ]

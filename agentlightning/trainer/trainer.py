@@ -220,10 +220,6 @@ class Trainer(TrainerLegacy):
         # We might be able to support a list of resources in future.
         self.initial_resources = initial_resources
 
-        # The active store for the current execution context
-        self.store = self._make_store(store)
-        self.runner = self._make_runner(runner)
-
         self.port = port
 
         self.strategy = self._make_strategy(
@@ -231,6 +227,11 @@ class Trainer(TrainerLegacy):
             n_runners=self.n_runners,
             port=port,
         )
+
+        # The active store for the current execution context
+        self.store = self._make_store(store, self.strategy)
+        self.runner = self._make_runner(runner)
+
         if hasattr(self.strategy, "n_runners"):
             strategy_runners = getattr(self.strategy, "n_runners")
             if isinstance(strategy_runners, int) and strategy_runners > 0:
@@ -289,13 +290,19 @@ class Trainer(TrainerLegacy):
             type_error_fmt="Adapter factory returned {type_name}, which is not a TraceAdapter subclass.",
         )
 
-    def _make_store(self, store: ComponentSpec[LightningStore]) -> LightningStore:
-        """Resolve the store implementation backing rollouts, attempts, spans, and resources."""
+    def _make_store(self, store: ComponentSpec[LightningStore], strategy: ExecutionStrategy) -> LightningStore:
+        """Resolve the store implementation backing rollouts, attempts, spans, and resources.
+
+        By default, it's always a in-memory store. If using a client/server execution strategy,
+        the in-memory store will be initialized in a thread-safe manner.
+        """
+        is_client_server = isinstance(strategy, ClientServerExecutionStrategy)
+        default_store_factory = lambda: InMemoryLightningStore(thread_safe=is_client_server)
         return build_component(
             store,
             expected_type=LightningStore,
             spec_name="store",
-            default_factory=InMemoryLightningStore,
+            default_factory=default_store_factory,
             invalid_spec_error_fmt="Invalid store type: {actual_type}. Expected LightningStore, str, dict, or None.",
             type_error_fmt="Store factory returned {type_name}, which is not a LightningStore subclass.",
         )

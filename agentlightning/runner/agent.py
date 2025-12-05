@@ -73,7 +73,7 @@ class LitAgentRunner(Runner[T_task]):
         max_rollouts: Optional[int] = None,
         poll_interval: float = 5.0,
         heartbeat_interval: float = 10.0,
-        interval_jitter: float = 0.1,
+        interval_jitter: float = 0.5,
         heartbeat_launch_mode: Literal["asyncio", "thread"] = "asyncio",
     ) -> None:
         """Initialize the agent runner.
@@ -593,16 +593,6 @@ class LitAgentRunner(Runner[T_task]):
                 if next_rollout is None:
                     return
 
-                try:
-                    # Claim the rollout but updating the current worker id
-                    await store.update_attempt(
-                        next_rollout.rollout_id, next_rollout.attempt.attempt_id, worker_id=self.get_worker_id()
-                    )
-                except Exception:
-                    # This exception could happen if the rollout is dequeued and the other end died for some reason
-                    logger.exception(f"{self._log_prefix()} Exception during update_attempt, giving up the rollout.")
-                    continue
-
                 # Execute the step
                 await self._step_impl(next_rollout)
 
@@ -656,12 +646,8 @@ class LitAgentRunner(Runner[T_task]):
         else:
             resources_id = None
 
-        attempted_rollout = await self.get_store().start_rollout(input=input, mode=mode, resources_id=resources_id)
-        # Register the attempt as running by the current worker
-        await self.get_store().update_attempt(
-            attempted_rollout.rollout_id,
-            attempted_rollout.attempt.attempt_id,
-            worker_id=self.get_worker_id(),
+        attempted_rollout = await self.get_store().start_rollout(
+            input=input, mode=mode, resources_id=resources_id, worker_id=self.get_worker_id()
         )
         rollout_id = await self._step_impl(attempted_rollout, raise_on_exception=True)
 

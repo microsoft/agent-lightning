@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import threading
+import time
 import weakref
 from collections import deque
 from contextlib import AsyncExitStack, asynccontextmanager
@@ -25,8 +25,10 @@ from typing import (
     Union,
 )
 
+import aiologic
 from pydantic import BaseModel
 
+from agentlightning.store.utils import LATENCY_BUCKETS
 from agentlightning.types import (
     Attempt,
     FilterField,
@@ -719,7 +721,7 @@ class InMemoryLightningCollections(LightningCollections):
     Serves as the storage base for [`InMemoryLightningStore`][agentlightning.InMemoryLightningStore].
     """
 
-    def __init__(self, lock_type: Literal["thread", "asyncio"]):
+    def __init__(self, lock_type: Literal["thread", "asyncio"], prometheus: bool = False):
         self._lock = {
             "rollouts": _LoopAwareAsyncLock() if lock_type == "asyncio" else _ThreadSafeAsyncLock(),
             "attempts": _LoopAwareAsyncLock() if lock_type == "asyncio" else _ThreadSafeAsyncLock(),
@@ -738,6 +740,22 @@ class InMemoryLightningCollections(LightningCollections):
         self._workers = ListBasedCollection(items=[], item_type=Worker, primary_keys=["worker_id"])
         self._rollout_queue = DequeBasedQueue(items=[], item_type=str)
         self._span_sequence_ids = DictBasedKeyValue[str, int](data={})  # rollout_id -> sequence_id
+
+        self._prometheus = prometheus
+        if self._prometheus:
+            from prometheus_client import Counter, Histogram
+
+            self._rate_metric = Counter(
+                "memory_collection_lock_rate",
+                "Rate of memory collection locks",
+                ["collection"],
+            )
+            self._latency_metric = Histogram(
+                "memory_collection_lock_latency_seconds",
+                "Latency of memory collection locks",
+                ["collection"],
+                buckets=LATENCY_BUCKETS,
+            )
 
     @property
     def rollouts(self) -> ListBasedCollection[Rollout]:
@@ -783,10 +801,21 @@ class InMemoryLightningCollections(LightningCollections):
         if not labels:
             # If no labels are provided, use all locks.
             labels = list(self._lock.keys())
-        managers = [self._lock[label] for label in labels]
+
+        # IMPORTANT: Sort the labels to ensure consistent locking order.
+        # This is necessary to avoid deadlocks when multiple threads/coroutines
+        # are trying to acquire the same locks in different orders.
+        labels = sorted(labels)
+
+        managers = [(label, self._lock[label]) for label in labels]
         async with AsyncExitStack() as stack:
-            for manager in managers:
+            for label, manager in managers:
+                start_time = time.perf_counter()
                 await stack.enter_async_context(manager)
+                elapsed = time.perf_counter() - start_time
+                if self._prometheus:
+                    self._rate_metric.labels(collection=label).inc()
+                    self._latency_metric.labels(collection=label).observe(elapsed)
             yield self
 
     async def evict_spans_for_rollout(self, rollout_id: str) -> None:
@@ -838,24 +867,18 @@ class _LoopAwareAsyncLock:
 
 
 class _ThreadSafeAsyncLock:
-    """A threading.Lock that can be used in both async and sync contexts."""
+    """A thread lock powered by aiologic that can be used in both async and sync contexts.
+
+    aiologic claims itself to be a thread-safe asyncio lock.
+    """
 
     def __init__(self):
-        self._lock = threading.Lock()
-
-    def __enter__(self):
-        self._lock.acquire()
-        return self
-
-    def __exit__(self, *args: Any, **kwargs: Any):
-        self._lock.release()
+        self._lock = aiologic.Lock()
 
     async def __aenter__(self):
-        # We run the blocking .acquire() in a thread pool so we don't block the event loop
-        loop = asyncio.get_running_loop()
-        await loop.run_in_executor(None, self._lock.acquire)
+        await self._lock.async_acquire()
         return self
 
     async def __aexit__(self, *args: Any, **kwargs: Any):
         # .release() is non-blocking, so we can call it directly
-        self._lock.release()
+        self._lock.async_release()
