@@ -18,7 +18,6 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import pytest
 
-from agentlightning.execution import client_server as cs_mod
 from agentlightning.execution.client_server import ClientServerExecutionStrategy
 from agentlightning.execution.events import ExecutionEvent
 from agentlightning.store.base import LightningStore
@@ -1245,7 +1244,6 @@ def test_execute_main_runner_store_state_isolated_in_subprocess(store: DummyLigh
     ), "Store state should not be modified in main process when main_process='runner'"
 
 
-# kh
 def test_run_with_sigint_child_runner_exits_cleanly_on_sigint() -> None:
     """
     When _run_with_sigint, delivering SIGINT to that process should lead to a graceful shutdown:

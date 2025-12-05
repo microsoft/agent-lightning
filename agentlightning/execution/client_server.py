@@ -18,8 +18,6 @@ from .events import ExecutionEvent, MultiprocessingEvent
 
 logger = logging.getLogger(__name__)
 
-SIGINT_SEEN: bool = False
-
 
 class ClientServerExecutionStrategy(ExecutionStrategy):
     """Run algorithm and runner bundles as separate processes over HTTP.
@@ -146,7 +144,7 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
             await algorithm(wrapper_store, stop_evt)
             logger.debug("Algorithm bundle completed successfully")
         except asyncio.CancelledError:
-            logger.debug("Algorithm coming into CancelledError")
+            logger.debug("Algorithm received CancelledError; signaling stop event")
             stop_evt.set()
             raise
         except KeyboardInterrupt:
@@ -186,7 +184,7 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
             await runner(client_store, worker_id, stop_evt)
             logger.debug("Runner %s completed successfully", worker_id)
         except asyncio.CancelledError:
-            logger.debug("Runner %s coming into CancelledError", worker_id)
+            logger.debug("Runner %s received CancelledError; signaling stop event", worker_id)
             stop_evt.set()
             raise
         except KeyboardInterrupt:
@@ -206,71 +204,6 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
                 else:
                     logger.debug("Runner %s closed LightningStore client", worker_id)
 
-    def _run_with_sigint(
-        self,
-        kind: Literal["runner", "algorithm"],
-        *,
-        runner: RunnerBundle | None = None,
-        algorithm: AlgorithmBundle | None = None,
-        worker_id: int = 0,
-        store: LightningStore,
-        stop_evt: ExecutionEvent,
-        is_main_process: bool,
-    ) -> None:
-        """Run `_execute_runner` or `_execute_algorithm` in a fresh event loop with a SIGINT handler."""
-
-        if kind == "runner":
-            if is_main_process:
-                log_prefix = "Main runner process"
-            else:
-                log_prefix = f"Runner process {worker_id}"
-        else:  # kind == "algorithm"
-            log_prefix = "Algorithm process"
-
-        if kind == "runner":
-            assert runner is not None
-            make_coro = lambda: self._execute_runner(runner, worker_id, store, stop_evt)
-        else:
-            assert algorithm is not None
-            make_coro = lambda: self._execute_algorithm(algorithm, store, stop_evt)
-
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-        # Explicitly create the main task so the SIGINT handler can do cancel()
-        main_task: asyncio.Task[None] = loop.create_task(make_coro())
-
-        def _sigint_handler(signum: int, frame: object | None) -> None:
-            global SIGINT_SEEN
-            SIGINT_SEEN = True
-            logger.debug("%s received SIGINT; cancelling main task", log_prefix)
-            # Turn SIGINT into cancellation of the main "_execute_*" task so
-            # the runner/algorithm receives asyncio.CancelledError.
-            main_task.cancel()
-
-        signal.signal(signal.SIGINT, _sigint_handler)
-
-        try:
-            loop.run_until_complete(main_task)
-        except asyncio.CancelledError:
-            global SIGINT_SEEN
-            if SIGINT_SEEN and not is_main_process:
-                logger.debug("%s cancelled due to SIGINT; treating as graceful shutdown", log_prefix)
-            elif SIGINT_SEEN and is_main_process:  # Raise KeyboardInterrupt if is_main_process
-                logger.debug("%s cancelled due to SIGINT on main process; raising KeyboardInterrupt", log_prefix)
-                raise KeyboardInterrupt
-            else:  # not SIGINT_SEEN
-                logger.warning(
-                    "%s received unexpected asyncio.CancelledError without SIGINT; treating as crash", log_prefix
-                )
-                raise
-        finally:
-            try:
-                loop.run_until_complete(loop.shutdown_asyncgens())
-            except Exception:
-                logger.exception("Error during shutdown_asyncgens for %s", log_prefix)
-            loop.close()
-
     def _spawn_runners(
         self,
         runner: RunnerBundle,
@@ -285,14 +218,13 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
         def _runner_sync(runner: RunnerBundle, worker_id: int, store: LightningStore, stop_evt: ExecutionEvent) -> None:
             # Runners are executed in child processes; each process owns its own
             # event loop to keep the asyncio scheduler isolated.
-            self._run_with_sigint(
-                kind="runner",
-                runner=runner,
-                worker_id=worker_id,
-                store=store,
-                stop_evt=stop_evt,
-                is_main_process=False,
-            )
+            try:
+                asyncio.run(self._execute_runner(runner, worker_id, store, stop_evt))
+            except KeyboardInterrupt:
+                logger.warning("Runner (asyncio) %s received KeyboardInterrupt; exiting gracefully", worker_id)
+            except BaseException as exc:
+                logger.exception("Runner (asyncio) %s crashed by %s; signaling stop event", worker_id, exc)
+                raise
 
         for i in range(self.n_runners):
             process = cast(
@@ -316,7 +248,13 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
         """Used when `main_process == "runner"`."""
 
         def _algorithm_sync(algorithm: AlgorithmBundle, store: LightningStore, stop_evt: ExecutionEvent) -> None:
-            asyncio.run(self._execute_algorithm(algorithm, store, stop_evt))
+            try:
+                asyncio.run(self._execute_algorithm(algorithm, store, stop_evt))
+            except KeyboardInterrupt:
+                logger.warning("Algorithm (asyncio.run) received KeyboardInterrupt; exiting gracefully")
+            except BaseException as exc:
+                logger.exception("Algorithm (asyncio.run) crashed by %s; signaling stop event", exc)
+                raise
 
         process = cast(
             multiprocessing.Process,
@@ -437,24 +375,11 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
         try:
             if self.role == "algorithm":
                 logger.info("Running algorithm solely...")
-                self._run_with_sigint(
-                    kind="algorithm",
-                    algorithm=algorithm,
-                    store=store,
-                    stop_evt=stop_evt,
-                    is_main_process=True,
-                )
+                asyncio.run(self._execute_algorithm(algorithm, store, stop_evt))
             elif self.role == "runner":
                 if self.n_runners == 1:
                     logger.info("Running runner solely...")
-                    self._run_with_sigint(
-                        kind="runner",
-                        runner=runner,
-                        worker_id=0,
-                        store=store,
-                        stop_evt=stop_evt,
-                        is_main_process=True,
-                    )
+                    asyncio.run(self._execute_runner(runner, 0, store, stop_evt))
                 else:
                     logger.info("Spawning runner processes...")
                     processes = self._spawn_runners(runner, store, stop_evt, ctx=ctx)
@@ -468,13 +393,7 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
                     processes = self._spawn_runners(runner, store, stop_evt, ctx=ctx)
                     try:
                         logger.info("Running algorithm...")
-                        self._run_with_sigint(
-                            kind="algorithm",
-                            algorithm=algorithm,
-                            store=store,
-                            stop_evt=stop_evt,
-                            is_main_process=True,
-                        )
+                        asyncio.run(self._execute_algorithm(algorithm, store, stop_evt))
                     finally:
                         # Always request the runner side to unwind once the
                         # algorithm/server portion finishes (successfully or not).
@@ -492,14 +411,7 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
                     # the background process spawned above (the provided
                     # store must therefore be picklable when using spawn).
                     logger.info("Running runner...")
-                    self._run_with_sigint(
-                        kind="runner",
-                        runner=runner,
-                        worker_id=0,
-                        store=store,
-                        stop_evt=stop_evt,
-                        is_main_process=True,
-                    )
+                    asyncio.run(self._execute_runner(runner, 0, store, stop_evt))
 
                     # Wait for the algorithm process to finish.
                     algorithm_process.join()
