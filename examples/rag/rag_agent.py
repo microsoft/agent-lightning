@@ -76,7 +76,7 @@ class RAGAgent(agl.LitAgent[Dict[str, Any]]):
                 task["answer"],
                 reward,
             )
-            return reward
+            return float(reward)  # Convert to float for compatibility with the Runner
 
     async def validation_rollout_async(
         self, task: Dict[str, Any], resources: agl.NamedResources, rollout: agl.Rollout

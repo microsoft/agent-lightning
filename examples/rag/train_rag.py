@@ -111,21 +111,9 @@ def config_train_fast() -> Dict[str, Any]:
     config["actor_rollout_ref"]["rollout"]["gpu_memory_utilization"] = 0.8
     config["trainer"]["total_epochs"] = 1
     config["trainer"]["total_training_steps"] = 10
-    config["trainer"]["test_freq"] = 10
+    config["trainer"]["test_freq"] = 5
     config["trainer"]["experiment_name"] = EXPERIMENT_NAME
     config["trainer"]["project_name"] = PROJECT_NAME
-
-    config = deepcopy(RL_TRAINING_CONFIG)
-
-    # Minimal parameters to ensure storage works
-    config["actor_rollout_ref"]["rollout"]["gpu_memory_utilization"] = 0.4
-    config["data"]["train_batch_size"] = 2
-    config["actor_rollout_ref"]["actor"]["ppo_mini_batch_size"] = 2
-    config["actor_rollout_ref"]["actor"]["ppo_micro_batch_size_per_gpu"] = 1
-
-    config["trainer"]["total_epochs"] = 1
-    config["trainer"]["experiment_name"] = EXPERIMENT_NAME
-    config["trainer"]["test_freq"] = 1
     config["trainer"]["logger"] = ["console", "wandb"]
     return config
 
