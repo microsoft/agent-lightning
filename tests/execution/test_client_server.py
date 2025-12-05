@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import multiprocessing
-import os
 import signal
 import socket
 import sys
@@ -1244,75 +1243,62 @@ def test_execute_main_runner_store_state_isolated_in_subprocess(store: DummyLigh
     ), "Store state should not be modified in main process when main_process='runner'"
 
 
-def test_run_with_sigint_child_runner_exits_cleanly_on_sigint() -> None:
+def test_spawn_runners_handles_keyboard_interrupt_gracefully(store: LightningStore) -> None:
     """
-    When _run_with_sigint, delivering SIGINT to that process should lead to a graceful shutdown:
-    No exception escapes _run_with_sigint.
+    Test that KeyboardInterrupt (Ctrl+C) is caught by _runner_sync
+    and results in a graceful exit (exitcode 0).
     """
-    port: int = _free_port()
     strat = ClientServerExecutionStrategy(
         role="runner",
         n_runners=1,
         server_host="127.0.0.1",
-        server_port=port,
-        graceful_timeout=0.05,
-        terminate_timeout=0.05,
+        server_port=_free_port(),
     )
-
     ctx = get_context()
+    stop_evt: ExecutionEvent = MpEvent()
 
-    def target() -> None:
-        dummy_store = DummyLightningStore({})
-        stop_evt: ExecutionEvent = DummyEvt()
+    processes = strat._spawn_runners(_kbint_in_runner, store, stop_evt, ctx=ctx)  # pyright: ignore[reportPrivateUsage]
 
-        strat._run_with_sigint(  # pyright: ignore[reportPrivateUsage]
-            kind="runner",
-            runner=_noop_runner,
-            worker_id=0,
-            store=dummy_store,
-            stop_evt=stop_evt,
-            is_main_process=False,
-        )
-
-    p: Process = ctx.Process(target=target, name="runner-sigint-child")
-    p.start()
     try:
-        assert p.pid is not None
-        os.kill(p.pid, signal.SIGINT)
-        p.join(timeout=5.0)
-        assert not p.is_alive()
-        assert p.exitcode == 0
+        for p in processes:
+            p.join(timeout=2.0)
+
+        for p in processes:
+            assert not p.is_alive()
+            assert p.exitcode == 0, f"Runner {p.name} should exit gracefully on KeyboardInterrupt"
+
     finally:
-        if p.is_alive():
-            p.terminate()
-        p.join()
+        for p in processes:
+            if p.is_alive():
+                p.terminate()
+                p.join()
 
 
-def test_run_with_sigint_propagates_non_sigint_cancelled_error() -> None:
+def test_spawn_runners_treats_cancelled_error_as_crash(store: LightningStore) -> None:
     """
-    A runner that raises asyncio.CancelledError should cause CancelledError to propagate:
-    - the asyncio.CancelledError is not swallowed,
-    - the caller of _run_with_sigint observes the exception.
+    Test that asyncio.CancelledError in __spawn_runners causes a crash (exitcode != 0).
     """
-    port: int = _free_port()
     strat = ClientServerExecutionStrategy(
         role="runner",
         n_runners=1,
         server_host="127.0.0.1",
-        server_port=port,
-        graceful_timeout=0.05,
-        terminate_timeout=0.05,
+        server_port=_free_port(),
     )
+    ctx = get_context()
+    stop_evt: ExecutionEvent = MpEvent()
 
-    dummy_store = DummyLightningStore({})
-    stop_evt: ExecutionEvent = DummyEvt()
+    processes = strat._spawn_runners(_cancel_in_runner, store, stop_evt, ctx=ctx)  # pyright: ignore[reportPrivateUsage]
 
-    with pytest.raises(asyncio.CancelledError):
-        strat._run_with_sigint(  # pyright: ignore[reportPrivateUsage]
-            kind="runner",
-            runner=_cancel_in_runner,
-            worker_id=0,
-            store=dummy_store,
-            stop_evt=stop_evt,
-            is_main_process=True,
-        )
+    try:
+        for p in processes:
+            p.join(timeout=2.0)
+
+        for p in processes:
+            assert not p.is_alive()
+            assert p.exitcode != 0, f"Runner {p.name} should crash on CancelledError (exitcode={p.exitcode})"
+
+    finally:
+        for p in processes:
+            if p.is_alive():
+                p.terminate()
+                p.join()
