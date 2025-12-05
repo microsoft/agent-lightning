@@ -130,3 +130,6 @@ dist
 .pnp.*
 
 .DS_Store
+
+# Storybook build output
+storybook-static
