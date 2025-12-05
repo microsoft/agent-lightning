@@ -801,6 +801,12 @@ class InMemoryLightningCollections(LightningCollections):
         if not labels:
             # If no labels are provided, use all locks.
             labels = list(self._lock.keys())
+
+        # IMPORTANT: Sort the labels to ensure consistent locking order.
+        # This is necessary to avoid deadlocks when multiple threads/coroutines
+        # are trying to acquire the same locks in different orders.
+        labels = sorted(labels)
+
         managers = [(label, self._lock[label]) for label in labels]
         async with AsyncExitStack() as stack:
             for label, manager in managers:
