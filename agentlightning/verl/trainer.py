@@ -182,7 +182,7 @@ class AgentLightningTrainer(RayPPOTrainer):
         self.adapter = adapter
 
     def _validate(self):
-        assert len(self.val_dataloader) == 1, "Please set val_batch_size to None for better throughput."
+        # assert len(self.val_dataloader) == 1, "Please set val_batch_size to None for better throughput."
 
         test_data = next(iter(self.val_dataloader))
         test_batch = DataProto.from_single_dict(test_data)
@@ -201,7 +201,6 @@ class AgentLightningTrainer(RayPPOTrainer):
 
     def _train_step(self, batch_dict: dict) -> dict:
         # Isolate in a separate method to automatically recycle the variables before validation.
-        breakpoint()
         batch: DataProto = DataProto.from_single_dict(batch_dict)
         metrics = {}
         timing_raw = {}
@@ -462,7 +461,6 @@ class AgentLightningTrainer(RayPPOTrainer):
         self.global_steps += 1
         last_val_metrics = None
 
-        breakpoint()
         for epoch in range(self.config.trainer.total_epochs):
             for batch_dict in self.train_dataloader:
                 metrics = {}
@@ -470,7 +468,6 @@ class AgentLightningTrainer(RayPPOTrainer):
                 is_last_step = self.global_steps >= self.total_training_steps
 
                 # train step
-                breakpoint()
                 metrics = self._train_step(batch_dict)
 
                 # validate
