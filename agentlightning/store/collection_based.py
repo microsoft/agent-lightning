@@ -1223,7 +1223,10 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
                 logger.error(f"Error waiting for rollout {rollout_id}: {rollout}")
 
         # Filter out the exceptions
-        return [rollout for rollout in rollouts if isinstance(rollout, Rollout)]
+        ret = [rollout for rollout in rollouts if isinstance(rollout, Rollout)]
+        finished_rollout_ids = set([rollout.rollout_id for rollout in ret])
+        logger.info(f"unfinished_rollouts: {set(rollout_ids) - finished_rollout_ids}")
+        return ret
 
     @tracked("wait_for_rollout")
     async def wait_for_rollout(self, rollout_id: str, timeout: Optional[float] = None) -> Optional[Rollout]:

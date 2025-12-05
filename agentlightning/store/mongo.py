@@ -137,6 +137,7 @@ class MongoLightningStore(CollectionBasedLightningStore[MongoLightningCollection
             await asyncio.sleep(rest_time)
             current_time = time.time()
 
+        logger.info(f"unfinished_rollouts: {unfinished_rollout_ids}")
         # Reorder the rollouts to match the input order
         return [finished_rollouts[rollout_id] for rollout_id in rollout_ids if rollout_id in finished_rollouts]
 
