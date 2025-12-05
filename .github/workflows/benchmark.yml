@@ -227,6 +227,9 @@ jobs:
           - id: dequeue-update-attempt
             display: Dequeue + update attempt
             cli: dequeue-update-attempt
+          - id: dequeue-only
+            display: Dequeue only
+            cli: dequeue-only
     env:
       STORE_URL: http://localhost:4747
       STORE_API_URL: http://localhost:4747/v1/agl
