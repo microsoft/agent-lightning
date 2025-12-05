@@ -233,6 +233,9 @@ class WeaveTracer(Tracer):
         span_id = str(getattr(call, "id", None))  # type: ignore
         parent_id = str(getattr(call, "parent_id", None)) if getattr(call, "parent_id", None) else None  # type: ignore
 
+        exception = getattr(call, "exception", None)  # type: ignore
+        status_code = "ERROR" if exception else "OK"
+
         def sanitize(inputs: dict, output: dict) -> dict:
             stack = [(inputs or {}, "input"), (output or {}, "output")]
             attributes = {}
@@ -262,22 +265,6 @@ class WeaveTracer(Tracer):
         inputs = getattr(call, "inputs", {})  # type: ignore
         output = getattr(call, "output", {})  # type: ignore
         attributes = sanitize(inputs, output)
-
-        def is_success(summary: dict) -> bool:
-            if not summary:
-                return False
-
-            status_counts = summary.get("status_counts", {})
-            if not status_counts:
-                return False
-
-            success_count = status_counts.get("success", 0)
-            error_count = status_counts.get("error", 0)
-
-            return success_count > 0 and error_count == 0
-
-        summary = getattr(call, "summary", {})  # type: ignore
-        status_code = "OK" if is_success(summary) else "ERROR"
 
         context = SpanContext(
             trace_id=trace_id,

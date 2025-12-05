@@ -1,11 +1,7 @@
 {
   // Paths to check
   "include": ["agentlightning", "tests", "examples"],
-  "exclude": [
-    "**/data",
-    "**/assets",
-    "agentlightning/tracer/weave.py"
-  ],
+  "exclude": ["**/data", "**/assets"],
 
   // Lock Python version for consistent semantics
   "pythonVersion": "3.12",

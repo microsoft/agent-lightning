@@ -2,7 +2,7 @@
 
 import logging
 import os
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 import requests
 

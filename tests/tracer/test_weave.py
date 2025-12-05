@@ -34,10 +34,21 @@ def _func_without_exception():
     pass
 
 
-@pytest.mark.skip(reason="Skipping this test temporarily")
-def test_weave_trace_workable_store_valid():
+def _func_with_exception():
+    """Function that always executed successfully to test success tracing."""
+    raise ValueError("This is a test exception")
+
+
+@pytest.mark.parametrize("with_exception", [True, False])
+def test_weave_trace_workable_store_valid(with_exception: bool):
+
+    if with_exception:
+        func = _test_weave_trace_with_exception
+    else:
+        func = _test_weave_trace_without_exception
+
     ctx = multiprocessing.get_context("spawn")
-    proc = ctx.Process(target=_run_async, args=(_test_weave_trace_workable_store_valid_async,))
+    proc = ctx.Process(target=_run_async, args=(func,))
     proc.start()
     proc.join(30.0)  # On GPU server, the time is around 10 seconds.
 
@@ -57,7 +68,7 @@ def _run_async(coro: Callable[[], Coroutine[Any, Any, Any]]) -> None:
     asyncio.run(coro())
 
 
-async def _test_weave_trace_workable_store_valid_async():
+async def _test_weave_trace_without_exception():
     tracer = WeaveTracer()
     tracer.init()
     tracer.init_worker(0)
@@ -72,6 +83,93 @@ async def _test_weave_trace_workable_store_valid_async():
             _func_without_exception()
         spans = store.get_traces()
         assert len(spans) > 0
+
+        has_error = False
+        for span in spans:
+            has_error = getattr(span, "status", None) and span.status.status_code == "ERROR"
+
+        assert not has_error
+    finally:
+        tracer.teardown_worker(0)
+        tracer.teardown()
+
+
+async def _test_weave_trace_with_exception():
+    tracer = WeaveTracer()
+    tracer.init()
+    tracer.init_worker(0)
+
+    store = MockLightningStore()
+
+    try:
+        # Case where store, rollout_id, and attempt_id are all non-none.
+        async with tracer.trace_context(
+            name="weave_test", store=store, rollout_id="test_rollout_id", attempt_id="test_attempt_id"
+        ):
+            _func_with_exception()
+        spans = store.get_traces()
+        assert len(spans) > 0
+
+        has_error = False
+        for span in spans:
+            has_error = getattr(span, "status", None) and span.status.status_code == "ERROR"
+
+        assert has_error
+    finally:
+        tracer.teardown_worker(0)
+        tracer.teardown()
+
+
+def test_weave_with_op():
+    ctx = multiprocessing.get_context("spawn")
+    proc = ctx.Process(target=_run_async, args=(_test_weave_with_op_imp,))
+    proc.start()
+    proc.join(30.0)  # On GPU server, the time is around 10 seconds.
+
+    if proc.is_alive():
+        proc.terminate()
+        proc.join(5)
+        if proc.is_alive():
+            proc.kill()
+
+        assert False, "Child process hung. Check test output for details."
+
+
+async def _test_weave_with_op_imp():
+    import weave
+
+    @weave.op
+    def _func_with_op():
+        """Function that always executed successfully to test success tracing."""
+        pass
+
+    tracer = WeaveTracer()
+    tracer.init()
+    tracer.init_worker(0)
+
+    try:
+        store = MockLightningStore()
+        # Case where store, rollout_id, and attempt_id are all non-none.
+        async with tracer.trace_context(
+            name="weave_test", store=store, rollout_id="test_rollout_id", attempt_id="test_attempt_id"
+        ):
+            _func_with_op()
+        spans = store.get_traces()
+        len_spans_with_op = len(spans)
+
+        store = MockLightningStore()
+        # Case where store, rollout_id, and attempt_id are all non-none.
+        async with tracer.trace_context(
+            name="weave_test", store=store, rollout_id="test_rollout_id", attempt_id="test_attempt_id"
+        ):
+            _func_without_exception()
+        spans = store.get_traces()
+        len_spans_without_op = len(spans)
+
+        assert len_spans_with_op > 0
+        assert len_spans_without_op > 0
+        assert len_spans_with_op > len_spans_without_op
+
     finally:
         tracer.teardown_worker(0)
         tracer.teardown()
