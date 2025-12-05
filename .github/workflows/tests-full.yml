@@ -58,9 +58,13 @@ jobs:
       - name: Sync dependencies (latest)
         run: uv sync --frozen --no-default-groups --extra apo --extra mongo --group dev --group agents --group langchain --group torch-gpu-stable
         if: matrix.setup-script == 'latest'
-      - name: Sync dependencies (stable & legacy)
+      - name: Sync dependencies (stable)
         run: uv sync --frozen --no-default-groups --extra apo --extra mongo --group dev --group agents --group langchain --group torch-gpu-${{ matrix.setup-script }}
-        if: matrix.setup-script != 'latest'
+        if: matrix.setup-script == 'stable'
+      # Don't install langchain for legacy dependency because it has conflicts with torch.
+      - name: Sync dependencies (legacy)
+        run: uv sync --frozen --no-default-groups --extra apo --extra mongo --group dev --group agents --group torch-gpu-legacy
+        if: matrix.setup-script == 'legacy'
       - name: Freeze dependencies
         run: |
           set -ex
@@ -180,9 +184,13 @@ jobs:
       - name: Sync dependencies (latest)
         run: uv sync --frozen --no-default-groups --extra apo --group dev --group agents --group langchain --group torch-gpu-stable
         if: matrix.setup-script == 'latest'
-      - name: Sync dependencies (stable & legacy)
-        run: uv sync --frozen --no-default-groups --extra apo --group dev --group agents --group langchain --group torch-gpu-${{ matrix.setup-script }}
-        if: matrix.setup-script != 'latest'
+      - name: Sync dependencies (stable)
+        run: uv sync --frozen --no-default-groups --extra apo --extra mongo --group dev --group agents --group langchain --group torch-gpu-${{ matrix.setup-script }}
+        if: matrix.setup-script == 'stable'
+      # Don't install langchain for legacy dependency because it has conflicts with torch.
+      - name: Sync dependencies (legacy)
+        run: uv sync --frozen --no-default-groups --extra apo --extra mongo --group dev --group agents --group torch-gpu-legacy
+        if: matrix.setup-script == 'legacy'
       - name: Freeze dependencies
         run: |
           set -ex

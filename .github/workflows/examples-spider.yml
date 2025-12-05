@@ -33,8 +33,7 @@ jobs:
     strategy:
       matrix:
         include:
-        - python-version: '3.10'
-          setup-script: 'legacy'
+        # legacy is omitted because langchain doesn't work with legacy vllm versions
         - python-version: '3.12'
           setup-script: 'stable'
         - python-version: '3.13'
@@ -65,11 +64,6 @@ jobs:
           uv sync --frozen --no-default-groups --extra verl \
             --group dev --group experiment --group agents --group langchain --group torch-gpu-${{ matrix.setup-script }}
         if: matrix.setup-script == 'stable'
-      - name: Sync dependencies (legacy)
-        run: |
-          uv sync --frozen --no-default-groups --extra verl \
-            --group dev --group experiment --group agents --group torch-gpu-${{ matrix.setup-script }}
-        if: matrix.setup-script == 'legacy'
       - name: Freeze dependencies
         run: |
           set -ex

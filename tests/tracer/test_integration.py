@@ -30,7 +30,7 @@ import socket
 import threading
 import time
 from contextlib import asynccontextmanager, contextmanager
-from typing import Any, Callable, Dict, Iterator, List, Literal, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Dict, Iterator, List, Literal, Optional, Tuple
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import agentops
@@ -50,16 +50,6 @@ from autogen_agentchat.teams import RoundRobinGroupChat
 from autogen_ext.models.openai import OpenAIChatCompletionClient
 from autogen_ext.tools.mcp import McpWorkbench, StdioServerParams
 from fastapi import FastAPI
-from langchain.agents import create_agent
-from langchain.chat_models import init_chat_model
-from langchain_community.agent_toolkits import SQLDatabaseToolkit
-from langchain_community.utilities import SQLDatabase
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
-from langchain_core.output_parsers import StrOutputParser
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.tools import tool
-from langchain_openai import ChatOpenAI
-from langgraph.graph import END, START, MessagesState, StateGraph
 from openai import AsyncOpenAI, OpenAI
 from opentelemetry.sdk.trace import ReadableSpan
 from pydantic import BaseModel, Field
@@ -72,6 +62,24 @@ from agentlightning.tracer.http import HttpTracer
 from agentlightning.types import Span, Triplet
 
 from ..common.tracer import clear_agentops_init, clear_tracer_provider
+
+try:
+    import langchain
+    LANGCHAIN_INSTALLED = True
+except ImportError:
+    LANGCHAIN_INSTALLED = False
+
+if TYPE_CHECKING or LANGCHAIN_INSTALLED:
+    from langchain.agents import create_agent
+    from langchain.chat_models import init_chat_model
+    from langchain_community.agent_toolkits import SQLDatabaseToolkit
+    from langchain_community.utilities import SQLDatabase
+    from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
+    from langchain_core.output_parsers import StrOutputParser
+    from langchain_core.prompts import ChatPromptTemplate
+    from langchain_core.tools import tool
+    from langchain_openai import ChatOpenAI
+    from langgraph.graph import END, START, MessagesState, StateGraph
 
 USE_OPENAI = os.environ.get("USE_OPENAI", "false").lower() == "true"
 OPENAI_BASE_URL = "http://127.0.0.1:58000/v1"
@@ -814,6 +822,8 @@ def test_run_with_agentops_tracer(agent_func_name: str):
     """AgentOps tracer tests are notoriously problematic and does not work well with other tests."""
     if agent_func_name in ["openai_agents_sdk_mcp_tool_use", "agent_autogen_mcp"]:
         pytest.skip("Async MCP server is problematic with AgentOps tracer in multiprocessing mode.")
+    if "langchain"  in agent_func_name and not LANGCHAIN_INSTALLED:
+        pytest.skip("LangChain is not installed. Skip langchain related tests.")
 
     ctx = multiprocessing.get_context("spawn")
     proc = ctx.Process(target=_test_run_with_agentops_tracer_impl, args=(agent_func_name,))
@@ -841,7 +851,9 @@ def _test_run_with_agentops_tracer_impl(agent_func_name: str):
     tracer.init_worker(0)
 
     global _langchain_callback_handler
-    _langchain_callback_handler = tracer.get_langchain_callback_handler()
+
+    if LANGCHAIN_INSTALLED:
+        _langchain_callback_handler = tracer.get_langchain_callback_handler()
 
     try:
         tracer.trace_run(
