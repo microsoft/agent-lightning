@@ -595,7 +595,10 @@ class AgentLightningTrainer(RayPPOTrainer):
                     
                     # Extract and log the SFT loss
                     # Use actor loss from update_actor output (same as GRPO)
-                    if "actor/loss" in actor_output_metrics:
+                    # Note: update_actor returns "actor/pg_loss" not "actor/loss"
+                    if "actor/pg_loss" in actor_output_metrics:
+                        metrics["raft/loss"] = actor_output_metrics["actor/pg_loss"]
+                    elif "actor/loss" in actor_output_metrics:
                         metrics["raft/loss"] = actor_output_metrics["actor/loss"]
                     else:
                         # Fallback: use a default value if loss not found
