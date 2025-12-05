@@ -1034,7 +1034,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
             *mongo_latency_p95.keys(),
             *mongo_latency_p99.keys(),
         },
-        key=lambda item: str(item),
+        key=str,
     )
     mongo_ops_rows = [
         [
@@ -1066,7 +1066,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
             *memory_lock_p95.keys(),
             *memory_lock_p99.keys(),
         },
-        key=lambda item: str(item),
+        key=str,
     )
     memory_lock_rows = [
         [

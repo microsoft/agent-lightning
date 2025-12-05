@@ -438,6 +438,7 @@ class LightningStoreServer(LightningStore):
         if self._prometheus:
             self._setup_prometheus(api=api, app=self.app)
 
+        # TODO: This should only be enabled in development mode.
         @self.app.middleware("http")
         async def _app_exception_handler(  # pyright: ignore[reportUnusedFunction]
             request: Request, call_next: Callable[[Request], Awaitable[Response]]
@@ -907,7 +908,7 @@ class LightningStoreServer(LightningStore):
             request: Request, call_next: Callable[[Request], Awaitable[Response]]
         ) -> Response:
             start = time.perf_counter()
-            status = 500  # Default to 500 if things crash hard
+            status = 520  # Default to 520 if things crash hard
 
             try:
                 response = await call_next(request)
@@ -918,6 +919,7 @@ class LightningStoreServer(LightningStore):
                 status = 499  # Standard Nginx code for "Client Closed Request"
                 raise  # Re-raise to let Uvicorn handle the cleanup
             except Exception:
+                # TODO: Record the error type
                 status = 500
                 raise
             finally:

@@ -429,7 +429,7 @@
       },
       "targets": [
         {
-          "expr": "(histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='add_many_spans'}[1m])))) * (sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='add_many_spans'}[1m])) / scalar(clamp_min(sum(rate(collection_store_total{method='add_span'}[1m])), 1e-9)))",
+          "expr": "(histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='add_many_spans'}[1m])))) * (sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='add_many_spans'}[1m])) / scalar(clamp_min(sum(rate(collection_store_total{method='add_many_spans'}[1m])), 1e-9)))",
           "legendFormat": "{{operation}} - {{collection}}"
         }
       ],

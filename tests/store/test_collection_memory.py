@@ -865,7 +865,6 @@ async def test_dict_key_value_pop_returns_default(dict_key_value: DictBasedKeyVa
     assert await dict_key_value.size() == 1
 
 
-@pytest.mark.asyncio()
 def test_thread_safe_async_lock_blocks_threads() -> None:
     lock = _ThreadSafeAsyncLock()
     allow_second = threading.Event()
