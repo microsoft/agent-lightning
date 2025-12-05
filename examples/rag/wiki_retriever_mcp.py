@@ -8,14 +8,14 @@ import faiss
 from fastmcp import FastMCP
 from sentence_transformers import SentenceTransformer
 
-index = faiss.read_index("index_hnsw_faiss_n32e40_tiny.index")
+index = faiss.read_index("data/index_hnsw_faiss_n32e40_tiny.index")
 print("Index loaded successfully.")
 
 model = SentenceTransformer("BAAI/bge-large-en-v1.5")
 print("Model loaded successfully.")
 
 # with open('/mnt/input/agent_lightning/nq_list.pkl', 'rb') as f:
-with open("chunks_candidate_tiny.pkl", "rb") as f:
+with open("data/chunks_candidate_tiny.pkl", "rb") as f:
     chunks = pickle.load(f)
 print("Chunks loaded successfully.")
 

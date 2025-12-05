@@ -89,9 +89,10 @@ jobs:
         run: |
           set -euo pipefail
           cd examples/rag
-          uv run gdown --fuzzy "https://drive.google.com/file/d/1Pq4Ag8zVoN8gUtLu0LcBfY35Dm5zL0hq/view?usp=drive_link" -O dataset_tiny.parquet
-          uv run gdown --fuzzy "https://drive.google.com/file/d/1REXCpRLbeZu1KfWWKhIGEQe_WNHUOBkS/view?usp=drive_link" -O chunks_candidate_tiny.pkl
-          uv run gdown --fuzzy "https://drive.google.com/file/d/1f6P-h_8KSRhe5pqDHWbRQWvUhTygfZ-c/view?usp=drive_link" -O index_hnsw_faiss_n32e40_tiny.index
+          mkdir -p data
+          uv run gdown --fuzzy "https://drive.google.com/file/d/1Pq4Ag8zVoN8gUtLu0LcBfY35Dm5zL0hq/view?usp=drive_link" -O data/dataset_tiny.parquet
+          uv run gdown --fuzzy "https://drive.google.com/file/d/1REXCpRLbeZu1KfWWKhIGEQe_WNHUOBkS/view?usp=drive_link" -O data/chunks_candidate_tiny.pkl
+          uv run gdown --fuzzy "https://drive.google.com/file/d/1f6P-h_8KSRhe5pqDHWbRQWvUhTygfZ-c/view?usp=drive_link" -O data/index_hnsw_faiss_n32e40_tiny.index
 
       - name: Run WIKI Retriever MCP Server
         run: |

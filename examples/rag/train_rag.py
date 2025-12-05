@@ -142,8 +142,8 @@ def train(config: Dict[str, Any], active_agent: Optional[str]) -> None:
 
     # 4. Load data
     # Fill in the path to your previously converted parquet file here
-    train_df: pd.DataFrame = pd.read_parquet("dataset_tiny.parquet")  # type: ignore
-    val_df: pd.DataFrame = pd.read_parquet("dataset_tiny.parquet")  # type: ignore
+    train_df: pd.DataFrame = pd.read_parquet("data/dataset_tiny.parquet")  # type: ignore
+    val_df: pd.DataFrame = pd.read_parquet("data/dataset_tiny.parquet")  # type: ignore
     train_data: List[Dict[str, Any]] = train_df.to_dict(orient="records")  # type: ignore
     val_data: List[Dict[str, Any]] = val_df.to_dict(orient="records")  # type: ignore
 

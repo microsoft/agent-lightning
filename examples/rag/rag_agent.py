@@ -41,6 +41,9 @@ class RAGAgent(agl.LitAgent[Dict[str, Any]]):
         # llm resources
         llm = cast(agl.LLM, resources["main_llm"])
 
+        # The rollout should carry an attempt inside
+        rollout = cast(agl.AttemptedRollout, rollout)
+
         logger.info(f"Training with model: {llm.model} on endpoint: {llm.endpoint}")
 
         async with MCPServerSse(
@@ -48,7 +51,10 @@ class RAGAgent(agl.LitAgent[Dict[str, Any]]):
             params={"url": self.mcp_server_url},
         ) as server:
             agent = Agent(
-                model=LitellmModel(model="hosted_vllm/" + llm.model, base_url=llm.endpoint),
+                model=LitellmModel(
+                    model="hosted_vllm/" + llm.model,
+                    base_url=llm.get_base_url(rollout.rollout_id, rollout.attempt.attempt_id),
+                ),
                 model_settings=ModelSettings(
                     max_tokens=4096,
                     temperature=0.7,
@@ -97,9 +103,9 @@ def debug():
     agl.setup_logging("DEBUG", apply_to=[logger.name])
 
     # 1. loading dataset
-    dataset_path = "dataset_tiny.parquet"
+    dataset_path = "data/dataset_tiny.parquet"
     df: pd.DataFrame = pd.read_parquet(dataset_path)  # type: ignore
-    data: List[Dict[str, Any]] = df.to_dict(orient="records")  # type: ignore
+    data: List[Dict[str, Any]] = df.head(5).to_dict(orient="records")  # type: ignore
     # NOTE: The following dummy data can also be used if you don't have the dataset.
     # data: List[Dict[str, Any]] = [{"question": "What is the capital of France?", "answer": "Paris"}]
 
