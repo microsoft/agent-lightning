@@ -2213,7 +2213,7 @@ numbers so store implementations only need to persist <a class="autorefs autoref
 <h2 id="thread-safety">Thread Safety<a class="headerlink" href="#thread-safety" title="Permanent link">&para;</a></h2>
 <p><strong><a class="autorefs autorefs-internal" title="            agentlightning.LightningStoreThreaded" href="../../reference/store/#agentlightning.LightningStoreThreaded"><code>LightningStoreThreaded</code></a></strong> is a subclass of <a class="autorefs autorefs-internal" title="            agentlightning.LightningStore" href="../../reference/store/#agentlightning.LightningStore"><code>LightningStore</code></a> that wraps another underlying store to make a store instance safe for multi-threaded callers. It wraps every state-mutating call in a mutex. Specifically:</p>
 <ul>
-<li>Methods like <a class="autorefs autorefs-internal" title="            start_rollout(input, mode=None, resources_id=None, config=None, metadata=None)
+<li>Methods like <a class="autorefs autorefs-internal" title="            start_rollout(input, mode=None, resources_id=None, config=None, metadata=None, worker_id=None)
 
   
       async

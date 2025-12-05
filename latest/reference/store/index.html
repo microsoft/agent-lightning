@@ -1841,10 +1841,32 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#agentlightning.CollectionBasedLightningStore.dequeue_many_rollouts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;dequeue_many_rollouts
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#agentlightning.CollectionBasedLightningStore.dequeue_rollout" class="md-nav__link">
     <span class="md-ellipsis">
       
         <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;dequeue_rollout
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#agentlightning.CollectionBasedLightningStore.enqueue_many_rollouts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;enqueue_many_rollouts
       
     </span>
   </a>
@@ -3842,10 +3864,32 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#agentlightning.CollectionBasedLightningStore.dequeue_many_rollouts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;dequeue_many_rollouts
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#agentlightning.CollectionBasedLightningStore.dequeue_rollout" class="md-nav__link">
     <span class="md-ellipsis">
       
         <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;dequeue_rollout
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#agentlightning.CollectionBasedLightningStore.enqueue_many_rollouts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;enqueue_many_rollouts
       
     </span>
   </a>
@@ -5574,6 +5618,21 @@ state. When a rollout is claimed, implementations must:</p>
 </ul>
 
 
+<p><span class="doc-section-title">Parameters:</span></p>
+    <ul>
+        <li class="doc-section-item field-body">
+            <b><code>worker_id</code></b>
+              (<code><span title="typing.Optional">Optional</span>[<span title="str">str</span>]</code>, default:
+                  <code>None</code>
+)
+          –
+          <div class="doc-md-description">
+            <p>Optional worker identifier to associate the claimed attempt with.</p>
+          </div>
+        </li>
+    </ul>
+
+
 <p><span class="doc-section-title">Returns:</span></p>
     <ul>
         <li class="doc-section-item field-body">
@@ -5606,7 +5665,7 @@ state. When a rollout is claimed, implementations must:</p>
 
 
 <h4 id="agentlightning.LightningStore.enqueue_many_rollouts" class="doc doc-heading">
-<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">enqueue_many_rollouts</span><span class="p">(</span><span class="n">inputs</span><span class="p">)</span></code>
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">enqueue_many_rollouts</span><span class="p">(</span><span class="n">rollouts</span><span class="p">)</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-async"><code>async</code></small>
@@ -5630,8 +5689,8 @@ more efficient bulk enqueue semantics.</p>
 <p><span class="doc-section-title">Parameters:</span></p>
     <ul>
         <li class="doc-section-item field-body">
-            <b><code>inputs</code></b>
-              (<code><span title="typing.Sequence">Sequence</span>[<span title="agentlightning.store.base.EnqueueRolloutRequest">EnqueueRolloutRequest</span>]</code>)
+            <b><code>rollouts</code></b>
+              (<code><span title="typing.Sequence">Sequence</span>[<a class="autorefs autorefs-internal" title="            agentlightning.EnqueueRolloutRequest (agentlightning.types.EnqueueRolloutRequest)" href="../types/#agentlightning.EnqueueRolloutRequest">EnqueueRolloutRequest</a>]</code>)
           –
           <div class="doc-md-description">
             <p>Rollout submission payloads mirroring <a class="autorefs autorefs-internal" title="            enqueue_rollout(input, mode=None, resources_id=None, config=None, metadata=None)
@@ -5651,7 +5710,7 @@ parameters. Each entry requires <code>input</code> and can optionally include ot
               <code><span title="typing.Sequence">Sequence</span>[<a class="autorefs autorefs-internal" title="            agentlightning.Rollout (agentlightning.types.Rollout)" href="../types/#agentlightning.Rollout">Rollout</a>]</code>
           –
           <div class="doc-md-description">
-            <p>Rollouts enqueued in the same order as <code>inputs</code>.</p>
+            <p>Rollouts enqueued in the same order as <code>rollouts</code>.</p>
           </div>
         </li>
     </ul>
@@ -5679,7 +5738,7 @@ parameters. Each entry requires <code>input</code> and can optionally include ot
         <p>Persist a rollout in <code>queuing</code> state so runners can claim it later.</p>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
-<p>Different from <a class="autorefs autorefs-internal" title="            start_rollout(input, mode=None, resources_id=None, config=None, metadata=None)
+<p>Different from <a class="autorefs autorefs-internal" title="            start_rollout(input, mode=None, resources_id=None, config=None, metadata=None, worker_id=None)
 
   
       async
@@ -7025,7 +7084,7 @@ The <code>rollout_id</code> argument is always applied with AND semantics.</p>
 
 
 <h4 id="agentlightning.LightningStore.start_attempt" class="doc doc-heading">
-<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">start_attempt</span><span class="p">(</span><span class="n">rollout_id</span><span class="p">)</span></code>
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">start_attempt</span><span class="p">(</span><span class="n">rollout_id</span><span class="p">,</span> <span class="n">worker_id</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-async"><code>async</code></small>
@@ -7052,6 +7111,16 @@ and return an up-to-date <a class="autorefs autorefs-internal" title="          
           –
           <div class="doc-md-description">
             <p>Unique identifier of the rollout receiving a new attempt.</p>
+          </div>
+        </li>
+        <li class="doc-section-item field-body">
+            <b><code>worker_id</code></b>
+              (<code><span title="typing.Optional">Optional</span>[<span title="str">str</span>]</code>, default:
+                  <code>None</code>
+)
+          –
+          <div class="doc-md-description">
+            <p>Optional worker identifier to associate the new attempt with.</p>
           </div>
         </li>
     </ul>
@@ -7096,7 +7165,7 @@ and return an up-to-date <a class="autorefs autorefs-internal" title="          
 
 
 <h4 id="agentlightning.LightningStore.start_rollout" class="doc doc-heading">
-<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">start_rollout</span><span class="p">(</span><span class="nb">input</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">resources_id</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">config</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">metadata</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">start_rollout</span><span class="p">(</span><span class="nb">input</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">resources_id</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">config</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">metadata</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">worker_id</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-async"><code>async</code></small>
@@ -7184,6 +7253,16 @@ public queue. Implementations are expected to:</p>
           –
           <div class="doc-md-description">
             <p>Free-form metadata persisted verbatim with the rollout.</p>
+          </div>
+        </li>
+        <li class="doc-section-item field-body">
+            <b><code>worker_id</code></b>
+              (<code><span title="str">str</span> | None</code>, default:
+                  <code>None</code>
+)
+          –
+          <div class="doc-md-description">
+            <p>Optional worker identifier to associate the new attempt with.</p>
           </div>
         </li>
     </ul>
@@ -8315,6 +8394,28 @@ It may use an isolated snapshot that supports repeatable reads.</p>
 <div class="doc doc-object doc-function">
 
 
+<h4 id="agentlightning.CollectionBasedLightningStore.dequeue_many_rollouts" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">dequeue_many_rollouts</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">worker_id</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-async"><code>async</code></small>
+  </span>
+
+<a href="#agentlightning.CollectionBasedLightningStore.dequeue_many_rollouts" class="headerlink" title="Permanent link">&para;</a></h4>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Retrieves up to <code>limit</code> tasks from the queue without blocking.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
 <h4 id="agentlightning.CollectionBasedLightningStore.dequeue_rollout" class="doc doc-heading">
 <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">dequeue_rollout</span><span class="p">(</span><span class="n">worker_id</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
 
@@ -8335,6 +8436,28 @@ Returns <code>None</code> if the queue is empty.</p>
   
       async
   " href="#agentlightning.LightningStore.dequeue_rollout"><code>LightningStore.dequeue_rollout()</code></a> for semantics.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h4 id="agentlightning.CollectionBasedLightningStore.enqueue_many_rollouts" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">enqueue_many_rollouts</span><span class="p">(</span><span class="n">rollouts</span><span class="p">)</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-async"><code>async</code></small>
+  </span>
+
+<a href="#agentlightning.CollectionBasedLightningStore.enqueue_many_rollouts" class="headerlink" title="Permanent link">&para;</a></h4>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Adds many rollouts in a batch.</p>
 
 
     </div>
@@ -8653,7 +8776,7 @@ Returns an empty list if no spans are found.</p>
 
 
 <h4 id="agentlightning.CollectionBasedLightningStore.start_attempt" class="doc doc-heading">
-<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">start_attempt</span><span class="p">(</span><span class="n">rollout_id</span><span class="p">)</span></code>
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">start_attempt</span><span class="p">(</span><span class="n">rollout_id</span><span class="p">,</span> <span class="n">worker_id</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-async"><code>async</code></small>
@@ -8665,7 +8788,7 @@ Returns an empty list if no spans are found.</p>
     <div class="doc doc-contents ">
 
         <p>Creates a new attempt for a given rollout ID and return the attempt details.</p>
-<p>See <a class="autorefs autorefs-internal" title="            start_attempt(rollout_id)
+<p>See <a class="autorefs autorefs-internal" title="            start_attempt(rollout_id, worker_id=None)
 
   
       async
@@ -8680,7 +8803,7 @@ Returns an empty list if no spans are found.</p>
 
 
 <h4 id="agentlightning.CollectionBasedLightningStore.start_rollout" class="doc doc-heading">
-<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">start_rollout</span><span class="p">(</span><span class="nb">input</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">resources_id</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">config</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">metadata</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">start_rollout</span><span class="p">(</span><span class="nb">input</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">resources_id</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">config</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">metadata</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">worker_id</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-async"><code>async</code></small>
@@ -8692,7 +8815,7 @@ Returns an empty list if no spans are found.</p>
     <div class="doc doc-contents ">
 
         <p>Notify the store that I'm about to run a rollout.</p>
-<p>See <a class="autorefs autorefs-internal" title="            start_rollout(input, mode=None, resources_id=None, config=None, metadata=None)
+<p>See <a class="autorefs autorefs-internal" title="            start_rollout(input, mode=None, resources_id=None, config=None, metadata=None, worker_id=None)
 
   
       async
