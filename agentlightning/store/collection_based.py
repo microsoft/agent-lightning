@@ -610,6 +610,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
             if not dequeued:
                 break
             rollout_id = dequeued[0]
+            print("dequeued rollout_id: ", rollout_id)
 
             post_dequeue_result = await self._post_dequeue_rollouts([rollout_id], worker_id)
             if post_dequeue_result:
@@ -617,6 +618,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
                 attempted_rollout, _ = post_dequeue_result[0]
                 if worker_id is not None:
                     await self._sync_workers_with_attempts([attempted_rollout.attempt], dequeue=True)
+                print(f"attempted_rollout: {attempted_rollout}")
                 return attempted_rollout
 
             # else continue the loop
