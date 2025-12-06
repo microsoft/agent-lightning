@@ -164,7 +164,7 @@ class TrackedCollection:
             finally:
                 elapsed = time.perf_counter() - start_time
                 self._tracker.inc_counter(  # pyright: ignore[reportPrivateUsage]
-                    "agl.store.total",
+                    "agl.collections.total",
                     labels={
                         "store_method": store_method,
                         "operation": operation,
@@ -174,7 +174,7 @@ class TrackedCollection:
                     },
                 )
                 self._tracker.observe_histogram(  # pyright: ignore[reportPrivateUsage]
-                    "agl.store.latency",
+                    "agl.collections.latency",
                     value=elapsed,
                     labels={
                         "store_method": store_method,
@@ -411,8 +411,9 @@ class LightningCollections(TrackedCollection):
             "agl.collections.latency",
             labels,
             buckets=LATENCY_BUCKETS,
+            group_level=2,
         )
-        self._tracker.register_counter("agl.collections.total", labels)
+        self._tracker.register_counter("agl.collections.total", labels, group_level=2)
 
     @property
     def tracker(self) -> MetricsBackend | None:

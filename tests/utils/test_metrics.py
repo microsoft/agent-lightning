@@ -66,7 +66,7 @@ def test_console_backend_logs_histograms_with_human_units() -> None:
 
 def test_console_backend_respects_group_level_limit():
     backend = ConsoleMetricsBackend(group_level=2, log_interval_seconds=0.0)
-    truncated = backend._truncate_labels_for_logging({"group1": "a", "group2": "b", "group3": "c"})
+    truncated = backend._truncate_labels_for_logging({"group1": "a", "group2": "b", "group3": "c"}, backend.group_level)
     line = backend._log_counter("metric", truncated, [0.0, 2.0], [1.0, 1.0], snapshot_time=5.0)
 
     assert line == "metric{group1=a,group2=b}=0.40/s"
@@ -83,16 +83,22 @@ class _RecordingBackend(MetricsBackend):
     def __init__(self) -> None:
         self.calls: List[Tuple[str, Tuple[Any, ...]]] = []
 
-    def register_counter(self, name: str, label_names: Optional[Sequence[str]] = None) -> None:
-        self.calls.append(("register_counter", (name, tuple(label_names or ()))))
+    def register_counter(
+        self,
+        name: str,
+        label_names: Optional[Sequence[str]] = None,
+        group_level: Optional[int] = None,
+    ) -> None:
+        self.calls.append(("register_counter", (name, tuple(label_names or ()), group_level)))
 
     def register_histogram(
         self,
         name: str,
         label_names: Optional[Sequence[str]] = None,
         buckets: Optional[Sequence[float]] = None,
+        group_level: Optional[int] = None,
     ) -> None:
-        self.calls.append(("register_histogram", (name, tuple(label_names or ()), tuple(buckets or ()))))
+        self.calls.append(("register_histogram", (name, tuple(label_names or ()), tuple(buckets or ()), group_level)))
 
     def inc_counter(self, name: str, amount: float = 1.0, labels: Optional[Dict[str, str]] = None) -> None:
         self.calls.append(("inc_counter", (name, amount, labels or {})))
@@ -112,8 +118,8 @@ def test_multi_metrics_backend_fans_out_calls() -> None:
     multi.observe_histogram("latency", value=0.4, labels={"method": "GET"})
 
     expected_calls: List[Tuple[str, Tuple[Any, ...]]] = [
-        ("register_counter", ("hits", ("method",))),
-        ("register_histogram", ("latency", ("method",), (0.1, 1.0))),
+        ("register_counter", ("hits", ("method",), None)),
+        ("register_histogram", ("latency", ("method",), (0.1, 1.0), None)),
         ("inc_counter", ("hits", 2.5, {"method": "GET"})),
         ("observe_histogram", ("latency", 0.4, {"method": "GET"})),
     ]
@@ -340,6 +346,26 @@ def test_console_backend_snapshot_logs_single_line() -> None:
     assert logged and "counter=" in logged[0] and "latency=" in logged[0]
 
 
+def test_console_backend_snapshot_entries_are_sorted() -> None:
+    backend = ConsoleMetricsBackend(group_level=1)
+    logged: List[str] = []
+    backend._log = logged.append  # type: ignore[assignment]
+
+    backend._log_snapshot(
+        [
+            ("zeta", {"a": "1"}, [0.0], [1.0]),
+            ("alpha", {"b": "2"}, [0.1], [2.0]),
+        ],
+        [],
+        snapshot_time=1.0,
+    )
+
+    assert logged, "expected log output"
+    line = logged[-1]
+    assert line.startswith("alpha{b=2}")
+    assert "  zeta{a=1}" in line
+
+
 def test_console_backend_group_level_none_aggregates_all_label_groups() -> None:
     backend = ConsoleMetricsBackend(group_level=None)
     logged: List[str] = []
@@ -400,3 +426,58 @@ def test_console_backend_logs_preserve_registration_label_order(monkeypatch: pyt
     assert logged, "expected log output"
     last_line = logged[-1]
     assert "requests{path=/search,method=GET,status=200}" in last_line
+
+
+def test_console_backend_metric_specific_group_level_applies(monkeypatch: pytest.MonkeyPatch) -> None:
+    backend = ConsoleMetricsBackend(window_seconds=None, log_interval_seconds=0.0)
+    backend.register_counter("requests", ["service", "endpoint", "status"], group_level=2)
+
+    logged: List[str] = []
+    backend._log = logged.append  # type: ignore[assignment]
+
+    times = iter([0.0, 1.0])
+    monkeypatch.setattr(metrics_module.time, "time", lambda: next(times))
+
+    backend.inc_counter("requests", labels={"status": "200", "endpoint": "/search", "service": "svcA"})
+
+    assert logged, "expected log output"
+    last_line = logged[-1]
+    assert "requests{service=svcA,endpoint=/search}" in last_line
+    assert "status" not in last_line
+
+
+def test_console_backend_global_group_level_overrides_metric(monkeypatch: pytest.MonkeyPatch) -> None:
+    backend = ConsoleMetricsBackend(window_seconds=None, log_interval_seconds=0.0, group_level=1)
+    backend.register_counter("requests", ["service", "endpoint"], group_level=2)
+
+    logged: List[str] = []
+    backend._log = logged.append  # type: ignore[assignment]
+
+    times = iter([0.0, 1.0])
+    monkeypatch.setattr(metrics_module.time, "time", lambda: next(times))
+
+    backend.inc_counter("requests", labels={"service": "svcA", "endpoint": "/search"})
+
+    assert logged, "expected log output"
+    last_line = logged[-1]
+    assert "requests{service=svcA}" in last_line
+    assert "endpoint" not in last_line
+
+
+def test_console_backend_histogram_metric_group_level(monkeypatch: pytest.MonkeyPatch) -> None:
+    backend = ConsoleMetricsBackend(window_seconds=None, log_interval_seconds=0.0)
+    backend.register_histogram("latency", ["service", "endpoint"], group_level=1)
+
+    logged: List[str] = []
+    backend._log = logged.append  # type: ignore[assignment]
+
+    times = iter([0.0, 1.0, 2.0])
+    monkeypatch.setattr(metrics_module.time, "time", lambda: next(times))
+
+    backend.observe_histogram("latency", value=0.01, labels={"service": "svcA", "endpoint": "/search"})
+    backend.observe_histogram("latency", value=0.02, labels={"service": "svcA", "endpoint": "/chat"})
+
+    assert logged, "expected log output"
+    latest = logged[-1]
+    assert "latency{service=svcA}" in latest
+    assert "endpoint" not in latest

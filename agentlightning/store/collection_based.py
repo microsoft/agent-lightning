@@ -235,19 +235,23 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
                 "agl.store.latency",
                 ["method", "status"],
                 buckets=LATENCY_BUCKETS,
+                group_level=1,
             )
             self._tracker.register_counter(
                 "agl.store.total",
                 ["method", "status"],
+                group_level=1,
             )
             self._tracker.register_counter(
                 "agl.rollouts.total",
                 ["status", "mode"],
+                group_level=1,
             )
             self._tracker.register_histogram(
                 "agl.rollouts.duration",
                 ["status", "mode"],
                 buckets=LATENCY_BUCKETS,
+                group_level=1,
             )
 
     async def statistics(self) -> LightningStoreStatistics:

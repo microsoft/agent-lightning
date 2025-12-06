@@ -862,11 +862,13 @@ class LightningStoreServer(LightningStore):
         self._tracker.register_counter(
             "agl.http.total",
             ["path", "method", "status"],
+            group_level=2,
         )
         self._tracker.register_histogram(
             "agl.http.latency",
             ["path", "method", "status"],
             buckets=LATENCY_BUCKETS,
+            group_level=2,
         )
 
         def get_template_path(path: str) -> str:

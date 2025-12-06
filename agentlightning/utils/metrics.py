@@ -25,6 +25,7 @@ if TYPE_CHECKING:
     from prometheus_client import CollectorRegistry
 
 LabelDict = Dict[str, str]
+# Label metadata
 LabelKey = Tuple[Tuple[str, str], ...]  # normalized (key, value) pairs in registration order
 
 logger = logging.getLogger(__name__)
@@ -80,6 +81,7 @@ class _CounterDef:
 
     name: str
     label_names: Tuple[str, ...]
+    group_level: Optional[int] = None
 
 
 @dataclass(frozen=True)
@@ -89,6 +91,7 @@ class _HistogramDef:
     name: str
     label_names: Tuple[str, ...]
     buckets: Tuple[float, ...]
+    group_level: Optional[int] = None
 
 
 @dataclass
@@ -114,12 +117,17 @@ class MetricsBackend:
         self,
         name: str,
         label_names: Optional[Sequence[str]] = None,
+        group_level: Optional[int] = None,
     ) -> None:
         """Registers a counter metric.
 
         Args:
             name: Metric name.
-            label_names: List of label names. Order is not important.
+            label_names: List of label names. Order determines the truncation
+                priority for group-level logging.
+            group_level: Optional per-metric grouping depth for backends that
+                support label grouping (Console). Global backend settings take
+                precedence when provided.
 
         Raises:
             ValueError: If the metric is already registered with a different
@@ -132,14 +140,19 @@ class MetricsBackend:
         name: str,
         label_names: Optional[Sequence[str]] = None,
         buckets: Optional[Sequence[float]] = None,
+        group_level: Optional[int] = None,
     ) -> None:
         """Registers a histogram metric.
 
         Args:
             name: Metric name.
-            label_names: List of label names. Order is not important.
+            label_names: List of label names. Order determines the truncation
+                priority for group-level logging.
             buckets: Bucket boundaries (exclusive upper bounds). If None, the
                 backend may choose defaults.
+            group_level: Optional per-metric grouping depth for backends that
+                support label grouping (Console). Global backend settings take
+                precedence when provided.
 
         Raises:
             ValueError: If the metric is already registered with a different
@@ -208,6 +221,9 @@ class ConsoleMetricsBackend(MetricsBackend):
 
     If `group_level` is None or < 1, all label combinations for a metric are
     merged into a single log entry (equivalent to grouping by zero labels).
+    Individual counters or histograms can set their own `group_level` during
+    registration; those values apply only when the backend-level `group_level`
+    is unset, allowing selective overrides.
 
     Thread-safety: A single lock protects shared state mutation, pruning, and snapshotting.
     Percentile computation, formatting, and printing are done after releasing the lock.
@@ -252,6 +268,7 @@ class ConsoleMetricsBackend(MetricsBackend):
         self,
         name: str,
         label_names: Optional[Sequence[str]] = None,
+        group_level: Optional[int] = None,
     ) -> None:
         """Registers a counter metric.
 
@@ -273,13 +290,14 @@ class ConsoleMetricsBackend(MetricsBackend):
                     )
                 return
 
-            self._counters[name] = _CounterDef(name=name, label_names=label_tuple)
+            self._counters[name] = _CounterDef(name=name, label_names=label_tuple, group_level=group_level)
 
     def register_histogram(
         self,
         name: str,
         label_names: Optional[Sequence[str]] = None,
         buckets: Optional[Sequence[float]] = None,
+        group_level: Optional[int] = None,
     ) -> None:
         """Registers a histogram metric.
 
@@ -311,6 +329,7 @@ class ConsoleMetricsBackend(MetricsBackend):
                 name=name,
                 label_names=label_tuple,
                 buckets=bucket_tuple,
+                group_level=group_level,
             )
 
     def inc_counter(
@@ -493,21 +512,22 @@ class ConsoleMetricsBackend(MetricsBackend):
 
         return counter_snaps, hist_snaps
 
-    def _truncate_labels_for_logging(self, labels: LabelDict) -> LabelDict:
+    def _truncate_labels_for_logging(self, labels: LabelDict, group_level: Optional[int]) -> LabelDict:
         """Returns a label dict truncated to the configured group depth.
 
         Args:
             labels: Original label dictionary.
+            group_level: Effective grouping depth for this metric.
 
         Returns:
             A new dictionary containing at most `group_level` label pairs,
-            chosen by registered label order. If group_level is None or < 1, returns
-            an empty dict so that all label combinations collapse together.
+            chosen by registered label order. If group_level is None or < 1,
+            returns an empty dict so that all label combinations collapse together.
         """
-        if self.group_level is None or self.group_level < 1:
+        if group_level is None or group_level < 1:
             return {}
         items = list(labels.items())
-        return dict(items[: self.group_level])
+        return dict(items[:group_level])
 
     def _log(self, message: str) -> None:
         """Logs a message via the module logger."""
@@ -537,7 +557,20 @@ class ConsoleMetricsBackend(MetricsBackend):
                 entries.append(line)
 
         if entries:
+            entries.sort()
             self._log("  ".join(entries))
+
+    def _effective_group_level(self, metric_name: str, *, is_histogram: bool) -> Optional[int]:
+        """Returns the active group level for a metric, honoring per-metric overrides."""
+        if self.group_level is not None:
+            return self.group_level
+        if is_histogram:
+            definition = self._histograms.get(metric_name)
+        else:
+            definition = self._counters.get(metric_name)
+        if definition is None:
+            return None
+        return definition.group_level
 
     def _group_counter_snapshots(
         self,
@@ -545,7 +578,8 @@ class ConsoleMetricsBackend(MetricsBackend):
     ) -> List[Tuple[str, LabelDict, List[float], List[float]]]:
         grouped: Dict[Tuple[str, Tuple[Tuple[str, str], ...]], Dict[str, Any]] = {}
         for name, labels, timestamps, amounts in counter_snaps:
-            truncated_labels = self._truncate_labels_for_logging(labels)
+            group_level = self._effective_group_level(name, is_histogram=False)
+            truncated_labels = self._truncate_labels_for_logging(labels, group_level)
             key = (name, tuple(truncated_labels.items()))
             entry = grouped.setdefault(
                 key,
@@ -580,7 +614,8 @@ class ConsoleMetricsBackend(MetricsBackend):
     ) -> List[Tuple[str, LabelDict, List[float], Tuple[float, ...]]]:
         grouped: Dict[Tuple[str, Tuple[Tuple[str, str], ...]], Dict[str, Any]] = {}
         for name, labels, values, buckets in hist_snaps:
-            truncated_labels = self._truncate_labels_for_logging(labels)
+            group_level = self._effective_group_level(name, is_histogram=True)
+            truncated_labels = self._truncate_labels_for_logging(labels, group_level)
             key = (name, tuple(truncated_labels.items()))
             entry = grouped.setdefault(
                 key,
@@ -716,6 +751,7 @@ class PrometheusMetricsBackend(MetricsBackend):
         self,
         name: str,
         label_names: Optional[Sequence[str]] = None,
+        group_level: Optional[int] = None,
     ) -> None:
         """Registers a Prometheus counter metric."""
         from prometheus_client import Counter as PromCounter
@@ -735,7 +771,7 @@ class PrometheusMetricsBackend(MetricsBackend):
                     )
                 return
 
-            self._counters[name] = _CounterDef(name=name, label_names=label_tuple)
+            self._counters[name] = _CounterDef(name=name, label_names=label_tuple, group_level=group_level)
 
             prom_counter = PromCounter(
                 name,
@@ -749,6 +785,7 @@ class PrometheusMetricsBackend(MetricsBackend):
         name: str,
         label_names: Optional[Sequence[str]] = None,
         buckets: Optional[Sequence[float]] = None,
+        group_level: Optional[int] = None,
     ) -> None:
         """Registers a Prometheus histogram metric."""
         from prometheus_client import Histogram as PromHistogram
@@ -774,6 +811,7 @@ class PrometheusMetricsBackend(MetricsBackend):
                 name=name,
                 label_names=label_tuple,
                 buckets=bucket_tuple,
+                group_level=group_level,
             )
 
             if bucket_tuple:
@@ -851,16 +889,18 @@ class MultiMetricsBackend(MetricsBackend):
         self,
         name: str,
         label_names: Optional[Sequence[str]] = None,
+        group_level: Optional[int] = None,
     ) -> None:
         """Registers a counter metric in all underlying backends."""
         for backend in self._backends:
-            backend.register_counter(name, label_names=label_names)
+            backend.register_counter(name, label_names=label_names, group_level=group_level)
 
     def register_histogram(
         self,
         name: str,
         label_names: Optional[Sequence[str]] = None,
         buckets: Optional[Sequence[float]] = None,
+        group_level: Optional[int] = None,
     ) -> None:
         """Registers a histogram metric in all underlying backends."""
         for backend in self._backends:
@@ -868,6 +908,7 @@ class MultiMetricsBackend(MetricsBackend):
                 name,
                 label_names=label_names,
                 buckets=buckets,
+                group_level=group_level,
             )
 
     def inc_counter(

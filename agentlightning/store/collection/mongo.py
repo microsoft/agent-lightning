@@ -375,7 +375,7 @@ class MongoBasedCollection(Collection[T_model]):
     @property
     def extra_tracking_labels(self) -> Mapping[str, str]:
         return {
-            "database_name": self._database_name,
+            "database": self._database_name,
         }
 
     @tracked("ensure_collection")
@@ -742,7 +742,7 @@ class MongoBasedQueue(Queue[T_generic], Generic[T_generic]):
     @property
     def extra_tracking_labels(self) -> Mapping[str, str]:
         return {
-            "database_name": self._database_name,
+            "database": self._database_name,
         }
 
     @property
@@ -923,7 +923,7 @@ class MongoBasedKeyValue(KeyValue[K, V], Generic[K, V]):
     @property
     def extra_tracking_labels(self) -> Mapping[str, str]:
         return {
-            "database_name": self._database_name,
+            "database": self._database_name,
         }
 
     @property
@@ -1057,7 +1057,7 @@ class MongoLightningCollections(LightningCollections):
         span_sequence_ids: Optional[MongoBasedKeyValue[str, int]] = None,
         tracker: MetricsBackend | None = None,
     ):
-        super().__init__(tracker=tracker)
+        super().__init__(tracker=tracker, extra_labels=["database"])
         self._client_pool = client_pool
         self._database_name = database_name
         self._partition_id = partition_id

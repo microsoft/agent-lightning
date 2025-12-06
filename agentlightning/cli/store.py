@@ -84,7 +84,7 @@ def main(argv: Iterable[str] | None = None) -> int:
             prometheus_registry = get_prometheus_registry()
 
     if "console" in args.tracker:
-        trackers.append(ConsoleMetricsBackend(group_level=1))
+        trackers.append(ConsoleMetricsBackend())
 
     if len(trackers) == 0:
         tracker: MetricsBackend | None = None
