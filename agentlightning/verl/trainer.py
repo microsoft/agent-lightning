@@ -489,16 +489,10 @@ class AgentLightningTrainer(RayPPOTrainer):
             if self.config.trainer.balance_batch:
                 self._balance_batch(positive_batch, metrics=metrics)
             
-            # Pad batch for distributed training
-            positive_batch, pad_size = pad_dataproto_to_divisor(positive_batch, self.actor_rollout_wg.world_size)
-            
             # RAFT Step 3: Prepare batch for RAFT loss computation
             # Remove advantage-related fields since RAFT doesn't use them
             raft_batch = positive_batch
             max_response_length = raft_batch.batch["responses"].shape[-1]
-            
-            # Unpad before computing loss
-            raft_batch = unpad_dataproto(raft_batch, pad_size=pad_size)
             
             # RAFT Step 4: Prepare batch for actor update
             # Need to compute old_log_probs and set required meta_info fields
