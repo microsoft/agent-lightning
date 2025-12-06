@@ -404,7 +404,7 @@ class LightningCollections(TrackedCollection):
     def register_collection_metrics(self, extra_labels: Optional[Sequence[str]] = None) -> None:
         if self._tracker is None:
             return
-        labels = ["store_method", "operation", "collection", "error_type"]
+        labels = ["store_method", "operation", "collection", "status"]
         if extra_labels is not None:
             labels.extend(extra_labels)
         self._tracker.register_histogram(
@@ -412,10 +412,7 @@ class LightningCollections(TrackedCollection):
             labels,
             buckets=LATENCY_BUCKETS,
         )
-        self._tracker.register_counter(
-            "agl.collections.total",
-            labels + ["error_type"],
-        )
+        self._tracker.register_counter("agl.collections.total", labels)
 
     @property
     def tracker(self) -> MetricsBackend | None:

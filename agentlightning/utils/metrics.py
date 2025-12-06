@@ -213,8 +213,8 @@ class ConsoleMetricsBackend(MetricsBackend):
 
     def __init__(
         self,
-        window_seconds: Optional[float] = 60.0,
-        log_interval_seconds: float = 5.0,
+        window_seconds: Optional[float] = 30.0,
+        log_interval_seconds: float = 10.0,
         group_level: Optional[int] = None,
     ) -> None:
         """Initializes ConsoleMetricsBackend.
@@ -823,6 +823,7 @@ class MultiMetricsBackend(MetricsBackend):
             backend.observe_histogram(name, value=value, labels=labels)
 
 
+# This variable should be carried into forked processes
 _prometheus_multiproc_dir: tempfile.TemporaryDirectory[str] | None = None
 
 
@@ -857,17 +858,19 @@ def get_prometheus_registry() -> CollectorRegistry:
     return REGISTRY
 
 
-def shutdown_metrics():
+def shutdown_metrics(server: Any = None, worker: Any = None, *args: Any, **kwargs: Any) -> None:
     """Shutdown prometheus metrics."""
 
-    from prometheus_client import multiprocess
+    if _prometheus_multiproc_dir is not None:
+        from prometheus_client import multiprocess
 
-    path = _prometheus_multiproc_dir
-    if path is None:
-        return
-    try:
-        pid = os.getpid()
-        multiprocess.mark_process_dead(pid, path.name)  # type: ignore
-        logger.debug("Marked Prometheus metrics for process %d as dead", pid)
-    except Exception as e:
-        logger.error("Error during metrics cleanup: %s", str(e))
+        path = _prometheus_multiproc_dir
+        try:
+            if hasattr(worker, "pid"):
+                pid = worker.pid
+            else:
+                pid = os.getpid()
+            multiprocess.mark_process_dead(pid, path.name)  # type: ignore
+            logger.debug("Marked Prometheus metrics for process %d as dead", pid)
+        except Exception as e:
+            logger.error("Error during metrics cleanup: %s", str(e))

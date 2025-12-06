@@ -11,6 +11,7 @@ import time
 import traceback
 from pathlib import Path
 from typing import (
+    TYPE_CHECKING,
     Any,
     Awaitable,
     Callable,
@@ -66,6 +67,9 @@ from agentlightning.utils.server_launcher import LaunchMode, PythonServerLaunche
 from .base import UNSET, LightningStore, LightningStoreCapabilities, LightningStoreStatistics, Unset
 from .collection.base import resolve_error_type
 from .utils import LATENCY_BUCKETS
+
+if TYPE_CHECKING:
+    from prometheus_client import CollectorRegistry
 
 server_logger = logging.getLogger("agentlightning.store.server")
 client_logger = logging.getLogger("agentlightning.store.client")
@@ -253,6 +257,7 @@ class LightningStoreServer(LightningStore):
         launcher_args: PythonServerLauncherArgs | None = None,
         n_workers: int = 1,
         tracker: MetricsBackend | None = None,
+        prometheus_registry: CollectorRegistry | None = None,
     ):
         super().__init__()
         self.store = store
@@ -290,6 +295,9 @@ class LightningStoreServer(LightningStore):
             args=self.launcher_args,
         )
         self._tracker = tracker
+        self._prometheus_registry = prometheus_registry
+        if self._prometheus_registry is not None and self._tracker is None:
+            raise ValueError("prometheus_registry is provided but tracker is not provided.")
 
         self._lock: threading.Lock = threading.Lock()
         self._cors_allow_origins = self._normalize_cors_origins(cors_allow_origins)
@@ -356,6 +364,7 @@ class LightningStoreServer(LightningStore):
         self._cors_allow_origins = state.get("_cors_allow_origins")
         self._client = None
         self._lock = threading.Lock()
+        self._prometheus_registry = None
         # Do NOT reconstruct app, _uvicorn_config, _uvicorn_server
         # to avoid transferring server state to subprocess
 
@@ -883,7 +892,7 @@ class LightningStoreServer(LightningStore):
             return path
 
         @app.middleware("http")
-        async def prometheus_http_middleware(  # pyright: ignore[reportUnusedFunction]
+        async def tracking_middleware(  # pyright: ignore[reportUnusedFunction]
             request: Request, call_next: Callable[[Request], Awaitable[Response]]
         ) -> Response:
             if self._tracker is None:
@@ -921,11 +930,11 @@ class LightningStoreServer(LightningStore):
                     labels={"method": method, "path": path, "status": str(status)},
                 )
 
-        # TODO: check whether prometheus is enabled
-        metrics_app = make_asgi_app(registry=registry)  # type: ignore
+        if self._prometheus_registry is not None:
+            metrics_app = make_asgi_app(registry=self._prometheus_registry)  # type: ignore
 
-        # This App would need to be accessed via /v1/prometheus/ (note the trailing slash)
-        app.mount(api.prefix + "/prometheus", metrics_app)  # pyright: ignore[reportUnknownArgumentType]
+            # This App would need to be accessed via /v1/prometheus/ (note the trailing slash)
+            app.mount(api.prefix + "/prometheus", metrics_app)  # pyright: ignore[reportUnknownArgumentType]
 
     def _setup_otlp(self, api: APIRouter):
         """Setup OTLP endpoints."""
