@@ -156,6 +156,21 @@ def compute_data_metrics(batch: DataProto, use_critic: bool = True, suffix: str 
     return metrics
 
 
+def log_step_for_mismatch_detail(step: int) -> None:
+    import os
+    os.makedirs("mismatch_log", exist_ok=True)
+    with open("mismatch_log/template_mismatch.log", "a+") as f:
+        print("-" * 10 + f" Step {step}" + "-" * 10, file=f)
+    with open("mismatch_log/retoken_mismatch.log", "a+") as f:
+        print("-" * 10 + f" Step {step}" + "-" * 10, file=f)
+    with open("mismatch_log/others_mismatch.log", "a+") as f:
+        print("-" * 10 + f" Step {step}" + "-" * 10, file=f)
+    with open("mismatch_log/response_ids_num_mismatch.log", "a+") as f:
+        print("-" * 10 + f" Step {step}" + "-" * 10, file=f)
+    with open("mismatch_log/bad_case_unexpected.log", "a+") as f:
+        print("-" * 10 + f" Step {step}" + "-" * 10, file=f)
+
+
 class AgentLightningTrainer(RayPPOTrainer):
     """
     Specialized PPO trainer for agent-based reinforcement learning.
@@ -217,9 +232,12 @@ class AgentLightningTrainer(RayPPOTrainer):
                     gen_batch.non_tensor_batch, self.async_rollout_manager.server_addresses
                 )
                 self.agent_mode_daemon.run_until_all_finished()
+            with _timer("gen_postprocess", timing_raw):
                 batch, agent_metrics = self.agent_mode_daemon.get_train_data_batch(
                     max_prompt_length=self.config.data.max_prompt_length,
-                    max_response_length=self.config.data.max_response_length,
+                    max_response_length=self.config.actor_rollout_ref.rollout.trace_aggregator.trajectory_max_length \
+                        if self.config.actor_rollout_ref.rollout.trace_aggregator.mode.startswith("trajectory") else \
+                            self.config.data.max_response_length,
                     device=gen_batch.batch["fake_ids"].device,
                 )
                 metrics.update(agent_metrics)
@@ -245,7 +263,8 @@ class AgentLightningTrainer(RayPPOTrainer):
             # uid is used for algorithm like GRPO, should be aligned to data id
             batch.non_tensor_batch["uid"] = batch.non_tensor_batch["data_id_list"]
 
-            batch.batch["response_mask"] = compute_response_mask(batch)
+            if "response_mask" not in batch.batch:
+                batch.batch["response_mask"] = compute_response_mask(batch)
 
             # compute global_valid tokens
             batch.meta_info["global_token_num"] = torch.sum(batch.batch["attention_mask"], dim=-1).tolist()
@@ -427,6 +446,7 @@ class AgentLightningTrainer(RayPPOTrainer):
             store=self.store,
             llm_proxy=self.llm_proxy,
             adapter=self.adapter,
+            trace_aggregator=self.config.actor_rollout_ref.rollout.trace_aggregator,
         )
         self.agent_mode_daemon.start()
 
@@ -449,6 +469,7 @@ class AgentLightningTrainer(RayPPOTrainer):
 
         for epoch in range(self.config.trainer.total_epochs):
             for batch_dict in self.train_dataloader:
+                log_step_for_mismatch_detail(self.global_steps)  # log data, only for debug testing
                 metrics = {}
                 timing_raw = {}
                 is_last_step = self.global_steps >= self.total_training_steps
