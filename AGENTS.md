@@ -16,14 +16,16 @@ Agent Lightning runs through a continuous loop: runners and tracers emit spans, 
 Always commit the refreshed `uv.lock` when dependencies shift, and mention optional groups (VERL, APO, GPU) in PR notes.
 
 ## Coding Style & Naming Conventions
-- Target `requires-python >= 3.10`, four-space indentation, 120-character lines, and formatter-owned diffs (Black + isort, `black` profile). Use `snake_case` for modules, functions, and variables; `PascalCase` for classes and React components; lowercase hyphenation for CLI flags, branch names, and TypeScript filenames.
+- Target `requires-python >= 3.10`, four-space indentation, 120-character lines (restriction can be relaxed for docstrings), and formatter-owned diffs (Black + isort, `black` profile). Use `snake_case` for modules, functions, and variables; `PascalCase` for classes and React components; lowercase hyphenation for CLI flags, branch names, and TypeScript filenames.
 - Maintain exhaustive type hints (pyright enforces them) and prefer shared dataclasses or Pydantic models from `agentlightning.types`.
 - Author Google-style docstrings for new modules or public methods—succinct descriptions, no redundant type info, no redundant `Key features/components` bullet points, and `[][]` syntax for cross-references.
+- Writing logs is encouraged, especially for long functions with multiple steps and try-except blocks that catch all exceptions. Use `logging.getLogger(__name__)` to get loggers. Distinguish between DEBUG, INFO, WARNING, and ERROR logs.
 
 ## Testing Guidelines
 - Mirror runtime directories under `tests/` and match filenames for quick traceability.
 - Parametrize pytest cases and apply markers (`openai`, `gpu`, `agentops`, `mongo`, `llmproxy`) so optional suites can be skipped via selectors like `-m "not mongo"` yet still exercised in CI.
 - Lean on fixtures, favor real stores/spans/agents over mocks, and drive coverage across the majority of branches.
+- If an imported module is missing from the environment, check whether `uv sync` has been run with the right groups. Do not make stubs for external dependencies unless necessary.
 
 ## Example Contributions
 - Ship each example with a README that includes smoke-test instructions so maintainers can validate quickly. The README must contain an "Included Files" section summarizing every file and its role.
