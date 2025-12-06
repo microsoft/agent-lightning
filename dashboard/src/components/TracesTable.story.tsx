@@ -3,6 +3,8 @@
 import { useMemo, useState } from 'react';
 import type { Meta, StoryObj } from '@storybook/react';
 import { IconSearch } from '@tabler/icons-react';
+import { waitFor, within } from '@testing-library/dom';
+import userEvent from '@testing-library/user-event';
 import { Box, Stack, TextInput, Title } from '@mantine/core';
 import type { Span } from '@/types';
 import { compareRecords } from '@/utils/table';
@@ -570,4 +572,19 @@ const sequenceSortTestSpans: Span[] = [
 
 export const SequenceIdSortTest: Story = {
   render: () => <TracesTableStoryWrapper maxWidth={1200} spans={sequenceSortTestSpans} />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const seqHeader = await canvas.findByRole('button', { name: /seq\./i });
+
+    await userEvent.click(seqHeader);
+
+    await waitFor(() => {
+      const rows = canvas.getAllByRole('row');
+      const firstRow = rows[1];
+      if (!firstRow) {
+        throw new Error('Expected at least one data row after sorting by sequence ID');
+      }
+      within(firstRow).getByText('task_sequence_14');
+    });
+  },
 };
