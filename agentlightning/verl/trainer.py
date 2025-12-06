@@ -528,40 +528,17 @@ class AgentLightningTrainer(RayPPOTrainer):
                 raft_batch = unpad_dataproto(raft_batch, pad_size=pad_size_prep)
             
             # RAFT Step 5: Pure SFT update
-            # Use standard cross-entropy loss like TRL's SFTTrainer
-            # Reference: trl/trainer/sft_trainer.py compute_loss method
+            # Use standard cross-entropy loss via PPO with advantages=1.0 and disabled clipping
+            # Note: PPO loss with advantages=1.0 and no clipping becomes equivalent to SFT
             with _timer("update_actor_sft", timing_raw):
-                # Prepare inputs for SFT loss computation (like SFTTrainer)
-                # SFTTrainer expects: input_ids, attention_mask, labels
-                input_ids = raft_batch.batch["input_ids"]  # (batch_size, seq_len)
-                attention_mask = raft_batch.batch["attention_mask"]  # (batch_size, seq_len)
-                
-                # Create labels: -100 for prompt tokens (ignore in loss), actual token IDs for response
-                # This matches SFTTrainer's label format
-                labels = input_ids.clone()
-                # Shift labels for next-token prediction: predict token[t] given tokens[<t]
-                labels[:, :-1] = input_ids[:, 1:].clone()
-                labels[:, -1] = -100  # Last token has no next token
-                
-                # Mask prompt tokens with -100 (they will be ignored in loss)
-                # Only compute loss on response tokens
-                prompt_length = input_ids.shape[-1] - max_response_length
-                labels[:, :prompt_length] = -100
-                
-                # Also mask padding tokens
-                labels = labels.masked_fill(~attention_mask.bool(), -100)
-                
                 # Set advantages to 1.0 (no advantage weighting, pure SFT)
-                # This makes the PPO loss equivalent to standard cross-entropy
+                # This makes the PPO loss equivalent to standard cross-entropy when clipping is disabled
                 raft_batch.batch["advantages"] = torch.ones(
                     (len(raft_batch), max_response_length),
-                    device=input_ids.device,
+                    device=raft_batch.batch["input_ids"].device,
                     dtype=torch.float32
                 )
                 raft_batch.batch["returns"] = raft_batch.batch["advantages"].clone()
-                
-                # Store labels in batch for potential use
-                raft_batch.batch["labels"] = labels
                 
                 # Remove any existing values field (no critic in RAFT)
                 if "values" in raft_batch.batch:
@@ -570,18 +547,19 @@ class AgentLightningTrainer(RayPPOTrainer):
                 # Pad again for distributed training before update_actor
                 raft_batch, pad_size_actor = pad_dataproto_to_divisor(raft_batch, self.actor_rollout_wg.world_size)
                 
-                # Temporarily disable PPO clipping for pure SFT (like SFTTrainer)
-                # Set clip_ratio to 1.0 effectively disables clipping
+                # Temporarily disable PPO clipping for pure SFT
                 original_clip_low = self.config.actor_rollout_ref.actor.get("clip_ratio_low", 0.2)
                 original_clip_high = self.config.actor_rollout_ref.actor.get("clip_ratio_high", 0.3)
                 
-                # Disable clipping: set both ratios to 1.0 (no clipping in pure SFT)
-                self.config.actor_rollout_ref.actor["clip_ratio_low"] = 1.0
-                self.config.actor_rollout_ref.actor["clip_ratio_high"] = 1.0
+                # Disable clipping: set both ratios to a very large value (effectively no clipping)
+                # Using 1000.0 ensures clip(ratio, 1-1, 1+1000) = clip(ratio, 0, 1001) 
+                # which doesn't restrict ratio values in [0, +∞) range
+                self.config.actor_rollout_ref.actor["clip_ratio_low"] = 1
+                self.config.actor_rollout_ref.actor["clip_ratio_high"] = 1000
                 
                 try:
                     # Update actor with pure SFT loss
-                    # With advantages=1.0 and clip_ratio=1.0, this becomes standard cross-entropy
+                    # With advantages=1.0 and clipping disabled, this becomes standard cross-entropy
                     # This mimics SFTTrainer.compute_loss() behavior
                     actor_output = self.actor_rollout_wg.update_actor(raft_batch)
                     actor_output_metrics = reduce_metrics(actor_output.meta_info["metrics"])
