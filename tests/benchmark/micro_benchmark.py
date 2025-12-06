@@ -403,6 +403,8 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     else:
         raise ValueError(f"Invalid mode: {args.mode}")
     record_summary(summary, args.summary_file)
+    if summary.success_rate < 1.0:
+        raise ValueError(f"Benchmark failed with success rate {summary.success_rate:.3f}")
 
 
 if __name__ == "__main__":
