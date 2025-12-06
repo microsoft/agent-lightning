@@ -12,3 +12,6 @@ unsloth/unsloth_training_checkpoints/
 apo/pomltrace/
 tinker/logs/
 tinker/crewai_*.html
+rag/dataset_tiny.parquet
+rag/chunks_candidate_tiny.pkl
+rag/index_hnsw_faiss_n32e40_tiny.index

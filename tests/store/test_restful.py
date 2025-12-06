@@ -209,6 +209,89 @@ async def test_cors_allows_wildcard_origin() -> None:
 
 
 @pytest.mark.asyncio
+async def test_enqueue_endpoint_batches_payloads(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    _server, _client, session, api_endpoint = server_client
+
+    single_payload = {"rollouts": [{"input": {"task": "single"}}]}
+    async with session.post(f"{api_endpoint}/queues/rollouts/enqueue", json=single_payload) as resp:
+        assert resp.status == 201
+        body = await resp.json()
+        assert isinstance(body, list)
+        assert len(body) == 1  # type: ignore
+        assert body[0]["input"] == {"task": "single"}
+
+    batch_payload = {
+        "rollouts": [
+            {"input": {"task": "batch-1"}, "metadata": {"batch": 1}},
+            {"input": {"task": "batch-2"}},
+        ]
+    }
+    async with session.post(f"{api_endpoint}/queues/rollouts/enqueue", json=batch_payload) as resp:
+        assert resp.status == 201
+        body = await resp.json()
+        assert len(body) == 2
+        assert [item["input"]["task"] for item in body] == ["batch-1", "batch-2"]
+        assert body[0]["metadata"] == {"batch": 1}
+
+
+@pytest.mark.asyncio
+async def test_dequeue_endpoint_returns_batches(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    server, _client, session, api_endpoint = server_client
+
+    for idx in range(3):
+        await server.enqueue_rollout(input={"idx": idx})
+
+    async with session.post(
+        f"{api_endpoint}/queues/rollouts/dequeue", json={"limit": 2, "worker_id": "rest-worker"}
+    ) as resp:
+        assert resp.status == 200
+        body = await resp.json()
+        assert len(body) == 2
+        assert all(item["attempt"]["worker_id"] == "rest-worker" for item in body)
+
+    async with session.post(f"{api_endpoint}/queues/rollouts/dequeue") as resp:
+        assert resp.status == 200
+        body = await resp.json()
+        assert len(body) == 1
+
+    async with session.post(f"{api_endpoint}/queues/rollouts/dequeue") as resp:
+        assert resp.status == 200
+        body = await resp.json()
+        assert body == []
+
+
+@pytest.mark.asyncio
+async def test_enqueue_endpoint_requires_rollouts_field(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    _server, _client, session, api_endpoint = server_client
+
+    async with session.post(f"{api_endpoint}/queues/rollouts/enqueue", json={}) as resp:
+        assert resp.status == 422
+
+
+@pytest.mark.asyncio
+async def test_dequeue_endpoint_zero_limit_returns_empty(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    server, _client, session, api_endpoint = server_client
+    await server.enqueue_rollout(input={"idx": 0})
+
+    async with session.post(f"{api_endpoint}/queues/rollouts/dequeue", json={"limit": 0}) as resp:
+        assert resp.status == 200
+        assert await resp.json() == []
+
+    async with session.post(f"{api_endpoint}/queues/rollouts/dequeue", json={"limit": 1}) as resp:
+        assert resp.status == 200
+        body = await resp.json()
+        assert len(body) == 1
+
+
+@pytest.mark.asyncio
 async def test_statistics_endpoint_returns_counts(
     server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
 ) -> None:
@@ -223,6 +306,52 @@ async def test_statistics_endpoint_returns_counts(
     expected_name = server.store.__class__.__name__ if server.store is not None else payload["name"]
     assert payload["name"] == expected_name
     assert payload["total_rollouts"] >= 1
+
+
+@pytest.mark.asyncio
+async def test_rest_start_rollout_propagates_worker_id(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    server, _client, session, api_endpoint = server_client
+    payload = {"input": {"source": "rest-worker"}, "worker_id": "rest-start-worker"}
+
+    async with session.post(f"{api_endpoint}/rollouts", json=payload) as resp:
+        assert resp.status == 201
+        data = await resp.json()
+
+    assert data["attempt"]["worker_id"] == "rest-start-worker"
+    worker = await server.get_worker_by_id("rest-start-worker")
+    assert worker is not None
+    assert worker.status == "busy"
+    assert worker.current_rollout_id == data["rollout_id"]
+    assert worker.current_attempt_id == data["attempt"]["attempt_id"]
+
+
+@pytest.mark.asyncio
+async def test_rest_start_attempt_propagates_worker_id(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient, aiohttp.ClientSession, str],
+) -> None:
+    server, _client, session, api_endpoint = server_client
+
+    async with session.post(f"{api_endpoint}/rollouts", json={"input": {"source": "rest-retry"}}) as resp:
+        assert resp.status == 201
+        base_rollout = await resp.json()
+
+    attempt_worker = "rest-attempt-worker"
+    async with session.post(
+        f"{api_endpoint}/rollouts/{base_rollout['rollout_id']}/attempts",
+        json={"worker_id": attempt_worker},
+    ) as resp:
+        assert resp.status == 201
+        retry_payload = await resp.json()
+
+    assert retry_payload["attempt"]["sequence_id"] == 2
+    assert retry_payload["attempt"]["worker_id"] == attempt_worker
+    worker = await server.get_worker_by_id(attempt_worker)
+    assert worker is not None
+    assert worker.status == "busy"
+    assert worker.current_rollout_id == retry_payload["rollout_id"]
+    assert worker.current_attempt_id == retry_payload["attempt"]["attempt_id"]
 
 
 # Rollouts Pagination, Sorting, and Filtering Tests

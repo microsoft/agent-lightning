@@ -377,7 +377,7 @@
       }
     },
     {
-      "title": "add_span: Mongo Ops per Call (by Operation)",
+      "title": "add_many_spans: Mongo Ops per Call (by Operation)",
       "type": "timeseries",
       "gridPos": {
         "h": 8,
@@ -387,7 +387,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='add_span'}[1m])) / scalar(clamp_min(sum(rate(collection_store_total{method='add_span'}[1m])), 1e-9))",
+          "expr": "sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='add_many_spans'}[1m])) / scalar(clamp_min(sum(rate(collection_store_total{method='add_many_spans'}[1m])), 1e-9))",
           "legendFormat": "{{operation}} - {{collection}}"
         }
       ],
@@ -398,7 +398,7 @@
       }
     },
     {
-      "title": "add_span: Mongo Latency (P50)",
+      "title": "add_many_spans: Mongo Latency (P50)",
       "type": "timeseries",
       "gridPos": {
         "h": 8,
@@ -408,7 +408,7 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='add_span'}[1m])))",
+          "expr": "histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='add_many_spans'}[1m])))",
           "legendFormat": "{{operation}} - {{collection}}"
         }
       ],
@@ -419,7 +419,7 @@
       }
     },
     {
-      "title": "add_span: Mongo Time per Call (P50)",
+      "title": "add_many_spans: Mongo Time per Call (P50)",
       "type": "timeseries",
       "gridPos": {
         "h": 8,
@@ -429,7 +429,7 @@
       },
       "targets": [
         {
-          "expr": "(histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='add_span'}[1m])))) * (sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='add_span'}[1m])) / scalar(clamp_min(sum(rate(collection_store_total{method='add_span'}[1m])), 1e-9)))",
+          "expr": "(histogram_quantile(0.50, sum by (le, operation, collection) (rate(mongo_operation_duration_seconds_bucket{operation!='ensure_collection', store_method='add_many_spans'}[1m])))) * (sum by (operation, collection) (rate(mongo_operation_total{operation!='ensure_collection', store_method='add_many_spans'}[1m])) / scalar(clamp_min(sum(rate(collection_store_total{method='add_many_spans'}[1m])), 1e-9)))",
           "legendFormat": "{{operation}} - {{collection}}"
         }
       ],
@@ -1016,6 +1016,123 @@
         }
       ],
       "title": "Rollout Completion Rate (by Status)",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 140
+      },
+      "id": 304,
+      "panels": [],
+      "title": "In-memory Collection Locks",
+      "type": "row"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops/s"
+        }
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 0,
+        "y": 141
+      },
+      "id": 305,
+      "targets": [
+        {
+          "expr": "sum by (collection) (rate(memory_collection_lock_rate_total[1m]))",
+          "legendFormat": "{{collection}}"
+        }
+      ],
+      "title": "Memory Lock Rate (by Collection)",
+      "type": "timeseries"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 12,
+        "y": 141
+      },
+      "id": 306,
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le, collection) (rate(memory_collection_lock_latency_seconds_bucket[1m])))",
+          "legendFormat": "P50 {{collection}}"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, collection) (rate(memory_collection_lock_latency_seconds_bucket[1m])))",
+          "legendFormat": "P95 {{collection}}"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le, collection) (rate(memory_collection_lock_latency_seconds_bucket[1m])))",
+          "legendFormat": "P99 {{collection}}"
+        }
+      ],
+      "title": "Memory Lock Latency (P50, P95, P99)",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 151
+      },
+      "id": 307,
+      "panels": [],
+      "title": "HTTP Status Insights",
+      "type": "row"
+    },
+    {
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 0,
+        "y": 152
+      },
+      "id": 308,
+      "targets": [
+        {
+          "expr": "sum by (method, path, status_code) (rate(http_requests_total{path!='/v1/prometheus/'}[1m]))",
+          "legendFormat": "{{method}} {{path}} {{status_code}}"
+        }
+      ],
+      "title": "HTTP Requests / Sec (by Path & Status)",
+      "type": "timeseries"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 12,
+        "y": 152
+      },
+      "id": 309,
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, method, path, status_code) (rate(http_request_duration_seconds_bucket{path!='/v1/prometheus/'}[1m])))",
+          "legendFormat": "{{method}} {{path}} {{status_code}}"
+        }
+      ],
+      "title": "HTTP Latency P95 (by Path & Status)",
       "type": "timeseries"
     }
   ],
