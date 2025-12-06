@@ -182,7 +182,7 @@ class AgentLightningTrainer(RayPPOTrainer):
         self.adapter = adapter
 
     def _validate(self):
-        # assert len(self.val_dataloader) == 1, "Please set val_batch_size to None for better throughput."
+        assert len(self.val_dataloader) == 1, "Please set val_batch_size to None for better throughput."
 
         test_data = next(iter(self.val_dataloader))
         test_batch = DataProto.from_single_dict(test_data)
@@ -428,20 +428,8 @@ class AgentLightningTrainer(RayPPOTrainer):
             llm_proxy=self.llm_proxy,
             adapter=self.adapter,
             processor=self.processor,  # For Qwen2-VL mrope position_ids
+            image_base_dir=getattr(self.config.data, "image_base_dir", None),
         )
-
-        # Set image base directory for multimodal models (resolve relative image paths)
-        # Priority: 1) config.data.image_base_dir  2) infer from train_files path
-        import os
-        if hasattr(self.config.data, "image_base_dir") and self.config.data.image_base_dir:
-            self.agent_mode_daemon.image_base_dir = self.config.data.image_base_dir
-        else:
-            train_files = self.config.data.train_files
-            if isinstance(train_files, (list, tuple)):
-                train_files = train_files[0]
-            if train_files and os.path.exists(train_files):
-                self.agent_mode_daemon.image_base_dir = os.path.dirname(os.path.abspath(train_files))
-
         self.agent_mode_daemon.start()
 
         # perform validation before training

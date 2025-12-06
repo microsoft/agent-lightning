@@ -150,6 +150,7 @@ class AgentModeDaemon:
         store: LightningStore | None = None,
         adapter: TraceToTripletBase | None = None,
         processor: Any = None,
+        image_base_dir: Optional[str] = None,
     ):
         self.mode = mode
         self.llm_timeout_seconds = llm_timeout_seconds
@@ -191,7 +192,7 @@ class AgentModeDaemon:
         self.tokenizer = tokenizer
         self.processor = processor
         self.reward_fillna_value = reward_fillna_value
-        self.image_base_dir: Optional[str] = None  # Set via set_image_base_dir()
+        self.image_base_dir = image_base_dir
 
         # Check if model requires multimodal position_ids (e.g., Qwen2-VL, GLM4V)
         self._use_mrope = is_mrope_model(processor)

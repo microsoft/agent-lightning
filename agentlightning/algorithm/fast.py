@@ -133,11 +133,8 @@ class Baseline(FastAlgorithm):
             adapter = None
         if adapter is not None:
             spans = await store.query_spans(rollout_id=rollout_id, attempt_id="latest")
-            if spans:
-                transformed_data = adapter.adapt(spans)
-                logger.info(f"[Rollout {rollout_id}] Adapted data: {transformed_data}")
-            else:
-                logger.warning(f"[Rollout {rollout_id}] No spans found to adapt (rollout may not have executed)")
+            transformed_data = adapter.adapt(spans)
+            logger.info(f"[Rollout {rollout_id}] Adapted data: {transformed_data}")
 
     async def _enqueue_rollouts(
         self, dataset: Dataset[Any], train_indices: List[int], val_indices: List[int], resources_id: str

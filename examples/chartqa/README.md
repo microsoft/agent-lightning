@@ -11,7 +11,7 @@ This example requires a single node with at least one 40GB GPU. Follow the [inst
 Additionally, install the vision-language model dependencies:
 
 ```bash
-uv pip install datasets pillow pandas pyarrow
+uv pip install datasets pillow pandas pyarrow nest_asyncio
 uv pip install "langgraph<1.0" "langchain[openai]<1.0" "langchain-community"
 ```
 

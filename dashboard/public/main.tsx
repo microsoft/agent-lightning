@@ -1,3 +1,3 @@
 // Copyright (c) Microsoft. All rights reserved.
 
-import '../src/main';
+import '../src/main.js';

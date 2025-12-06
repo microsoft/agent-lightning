@@ -113,9 +113,12 @@ def get_image_grid_thw(
         """Resolve image path, handling relative paths with base_dir."""
         if os.path.isabs(path):
             return path
-        if image_base_dir is not None:
-            return os.path.join(image_base_dir, path)
-        return path
+        if image_base_dir is None:
+            raise ValueError(
+                f"Relative image path '{path}' found but 'image_base_dir' is not set. "
+                "Please set 'data.image_base_dir' in your config to the directory containing your images."
+            )
+        return os.path.join(image_base_dir, path)
 
     try:
         from PIL import Image
@@ -155,8 +158,7 @@ def get_image_grid_thw(
         return model_inputs.get("image_grid_thw")
 
     except Exception as e:
-        print(f"Warning: Failed to process images for mrope: {e}")
-        return None
+        raise RuntimeError(f"Failed to process images for mrope: {e}") from e
 
 
 def compute_mrope_position_ids(

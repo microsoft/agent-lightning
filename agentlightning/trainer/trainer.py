@@ -542,20 +542,16 @@ class Trainer(TrainerLegacy):
         loop until the execution event is set or an exception occurs. Cleanup mirrors the initialization
         sequence to keep tracer state, hooks, and agent resources consistent across restarts.
         """
-        print(f"[DEBUG] Worker {worker_id}: Starting _runner_bundle", flush=True)
         runner_instance: Runner[Any] | None = None
         runner_initialized = False
         worker_initialized = False
         try:
             # If not using shm execution strategy, we are already in the forked process
             runner_instance = self.runner
-            print(f"[DEBUG] Worker {worker_id}: Calling runner.init()", flush=True)
             runner_instance.init(agent=agent, hooks=self.hooks)
             runner_initialized = True
-            print(f"[DEBUG] Worker {worker_id}: Calling runner.init_worker()", flush=True)
             runner_instance.init_worker(worker_id, store)
             worker_initialized = True
-            print(f"[DEBUG] Worker {worker_id}: Starting runner.iter()", flush=True)
             await runner_instance.iter(event=event)
         except Exception:
             logger.exception("Runner bundle encountered an error (worker_id=%s).", worker_id)

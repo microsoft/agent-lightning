@@ -39,25 +39,6 @@ def run_ppo(
     llm_proxy: LLMProxy | None,
     adapter: TraceAdapter[Any] | None,
 ) -> None:
-    import os
-    # Build environment variables for Ray workers
-    env_vars = {
-        "TOKENIZERS_PARALLELISM": "true",
-        "NCCL_DEBUG": "WARN",
-        "VLLM_LOGGING_LEVEL": "WARN",
-    }
-
-    # Pass debug environment variables to Ray workers if set
-    if os.environ.get("DEBUG_RAY_WORKER"):
-        env_vars["DEBUG_RAY_WORKER"] = os.environ.get("DEBUG_RAY_WORKER", "")
-        env_vars["DEBUG_RAY_WORKER_PORT"] = os.environ.get("DEBUG_RAY_WORKER_PORT", "5679")
-
-    # Print Ray log directory for debugging
-    import tempfile
-    ray_temp = os.path.join(tempfile.gettempdir(), "ray")
-    print(f"Ray initialized. Log directory: {ray_temp}/session_latest/logs/")
-    print(f"Use ray.get_runtime_context() for debugging.")
-
     if not ray.is_initialized():
         # this is for local ray cluster
         try:
@@ -68,8 +49,7 @@ def run_ppo(
             num_cpus = config.ray_init.num_cpus
         ray.init(
             runtime_env={
-                # "env_vars": {"TOKENIZERS_PARALLELISM": "true", "NCCL_DEBUG": "WARN", "VLLM_LOGGING_LEVEL": "WARN"}
-                "env_vars": env_vars
+                "env_vars": {"TOKENIZERS_PARALLELISM": "true", "NCCL_DEBUG": "WARN", "VLLM_LOGGING_LEVEL": "WARN"}
             },
             num_cpus=num_cpus,
         )
@@ -98,22 +78,6 @@ class TaskRunner:
         llm_proxy: LLMProxy | None,
         adapter: TraceAdapter | None,
     ):
-        import os
-        print(f"[Ray Worker] DEBUG_RAY_WORKER={os.environ.get('DEBUG_RAY_WORKER')}")
-        if os.environ.get("DEBUG_RAY_WORKER"):
-            try:
-                import debugpy
-                debug_port = int(os.environ.get("DEBUG_RAY_WORKER_PORT", "5679"))
-                debugpy.listen(("0.0.0.0", debug_port))
-                print(f"[Ray Worker] Debugpy listening on port {debug_port}")
-                print(f"[Ray Worker] Attach VSCode debugger to localhost:{debug_port}")
-                debugpy.wait_for_client()  # Wait for debugger to attach
-                print("[Ray Worker] Debugger attached, continuing execution...")
-            except ImportError:
-                print("[Ray Worker] debugpy not installed. Install with: pip install debugpy")
-            except Exception as e:
-                print(f"[Ray Worker] Failed to start debugpy: {e}")
-
         # print initial config
         from pprint import pprint
 

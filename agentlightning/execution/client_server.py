@@ -174,11 +174,11 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
             client_store = store
         try:
             if self.managed_store:
-                logger.info("Runner %s started, connecting to server at %s:%s", worker_id, self.server_host, self.server_port)
+                logger.debug("Runner %s connecting to server at %s:%s", worker_id, self.server_host, self.server_port)
             else:
-                logger.info("Runner %s started with provided store", worker_id)
+                logger.debug("Runner %s executing with provided store", worker_id)
             await runner(client_store, worker_id, stop_evt)
-            logger.info("Runner %s completed successfully", worker_id)
+            logger.debug("Runner %s completed successfully", worker_id)
         except KeyboardInterrupt:
             logger.warning("Runner %s received KeyboardInterrupt; signaling stop event", worker_id)
             stop_evt.set()
@@ -210,7 +210,6 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
         def _runner_sync(runner: RunnerBundle, worker_id: int, store: LightningStore, stop_evt: ExecutionEvent) -> None:
             # Runners are executed in child processes; each process owns its own
             # event loop to keep the asyncio scheduler isolated.
-            print(f"[DEBUG] Runner subprocess started (worker_id={worker_id}, pid={os.getpid()})", flush=True)
             asyncio.run(self._execute_runner(runner, worker_id, store, stop_evt))
 
         for i in range(self.n_runners):
@@ -219,7 +218,7 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
                 ctx.Process(target=_runner_sync, args=(runner, i, store, stop_evt), name=f"runner-{i}"),  # type: ignore
             )
             process.start()
-            logger.info("Spawned runner process %s (pid=%s)", process.name, process.pid)
+            logger.debug("Spawned runner process %s (pid=%s)", process.name, process.pid)
             processes.append(process)
 
         return processes

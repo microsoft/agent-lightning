@@ -136,9 +136,7 @@ class AgentOpsTracer(OtelTracer):
         attempt_id: Optional[str] = None,
     ) -> Iterator[trace_api.Tracer]:
         """Implementation of `trace_context` for synchronous execution."""
-        print(f"[DEBUG] _trace_context_sync called for rollout_id={rollout_id}, attempt_id={attempt_id}", flush=True)
         if not self._lightning_span_processor:
-            print(f"[DEBUG] LightningSpanProcessor not initialized! agentops_managed={self.agentops_managed}, instrument_managed={self.instrument_managed}", flush=True)
             raise RuntimeError("LightningSpanProcessor is not initialized. Call init_worker() first.")
         tracer_provider = self._get_tracer_provider()
 

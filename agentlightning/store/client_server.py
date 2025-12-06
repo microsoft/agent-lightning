@@ -1423,7 +1423,6 @@ class LightningStoreClient(LightningStore):
         self._connection_timeout = state["_connection_timeout"]
         self._dequeue_was_successful = False
         self._dequeue_first_unsuccessful = True
-        print(f"[DEBUG] LightningStoreClient unpickled in PID {os.getpid()}, server_address: {self.server_address}", flush=True)
 
     async def _get_session(self) -> aiohttp.ClientSession:
         # In the proxy process, FastAPI middleware calls
@@ -1466,12 +1465,12 @@ class LightningStoreClient(LightningStore):
             client_logger.info("No health retry delays configured; skipping health checks.")
             return True
 
-        client_logger.debug(f"Waiting for server to be healthy at {self.server_address}/health")
+        client_logger.info(f"Waiting for server to be healthy at {self.server_address}/health")
         for delay in [*self._health_retry_delays, 0.0]:
             try:
                 async with session.get(f"{self.server_address}/health") as r:
                     if r.status == 200:
-                        client_logger.debug(f"Server is healthy at {self.server_address}/health")
+                        client_logger.info(f"Server is healthy at {self.server_address}/health")
                         return True
             except Exception:
                 # swallow and retry
@@ -1512,7 +1511,7 @@ class LightningStoreClient(LightningStore):
 
         for delay in attempts:
             if delay:
-                client_logger.debug(f"Waiting {delay} seconds before retrying {method}: {path}")
+                client_logger.info(f"Waiting {delay} seconds before retrying {method}: {path}")
                 await asyncio.sleep(delay)
             try:
                 http_call = getattr(session, method)
@@ -1540,7 +1539,7 @@ class LightningStoreClient(LightningStore):
                 # Network/session issue: probe health before retrying
                 client_logger.debug(f"Network/session issue: {net_exc}", exc_info=True)
                 last_exc = net_exc
-                client_logger.debug(f"Network/session issue will be retried. Retrying the request {method}: {path}")
+                client_logger.info(f"Network/session issue will be retried. Retrying the request {method}: {path}")
                 if not await self._wait_until_healthy(session):
                     break  # server is not healthy, do not retry
 

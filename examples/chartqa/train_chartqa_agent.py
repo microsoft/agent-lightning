@@ -28,7 +28,6 @@ RL_CONFIG: Dict[str, Any] = {
         "val_files": "data/test_chartqa.parquet",
         "image_base_dir": DATA_DIR,
         "train_batch_size": 1,
-        "val_batch_size":10,
         "max_prompt_length": 2048,
         "max_response_length": 512,
         "truncation": "error",
@@ -39,7 +38,7 @@ RL_CONFIG: Dict[str, Any] = {
             "n": 4,
             "log_prob_micro_batch_size_per_gpu": 1,
             "name": "vllm",
-            "gpu_memory_utilization": 0.5,
+            "gpu_memory_utilization": 0.4,
             "enable_prefix_caching": True,
             "engine_kwargs": {"vllm": {"allowed_local_media_path": IMAGES_DIR}},
         },
@@ -128,7 +127,7 @@ def train(config: Dict[str, Any]) -> None:
         try:
             store_client = agl.LightningStoreClient("http://127.0.0.1:4747")
             trainer = agl.Trainer(
-                n_runners=2,
+                n_runners=10,
                 algorithm=algorithm,
                 store=store_client,
                 strategy={"name": "cs", "managed_store": False},
