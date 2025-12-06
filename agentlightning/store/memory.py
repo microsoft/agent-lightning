@@ -28,6 +28,7 @@ import aiologic
 from pydantic import BaseModel
 
 from agentlightning.types import AttemptedRollout, NamedResources, PaginatedResult, ResourcesUpdate, Rollout, Span
+from agentlightning.utils.metrics import MetricsBackend
 
 from .base import UNSET, LightningStoreCapabilities, LightningStoreStatistics, Unset, is_finished, is_running
 from .collection import InMemoryLightningCollections
@@ -87,13 +88,11 @@ class InMemoryLightningStore(CollectionBasedLightningStore[InMemoryLightningColl
         eviction_memory_threshold: float | int | None = None,
         safe_memory_threshold: float | int | None = None,
         span_size_estimator: Callable[[Span], int] | None = None,
-        prometheus: bool = False,
+        tracker: MetricsBackend | None = None,
     ):
         super().__init__(
-            collections=InMemoryLightningCollections(
-                lock_type="thread" if thread_safe else "asyncio", prometheus=prometheus
-            ),
-            prometheus=prometheus,
+            collections=InMemoryLightningCollections(lock_type="thread" if thread_safe else "asyncio", tracker=tracker),
+            tracker=tracker,
         )
 
         self._thread_safe = thread_safe

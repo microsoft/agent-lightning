@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import functools
+import inspect
+import time
+from contextlib import asynccontextmanager
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -22,9 +26,13 @@ from typing import (
     cast,
 )
 
+from agentlightning.store.utils import LATENCY_BUCKETS
+from agentlightning.utils.metrics import MetricsBackend
+
 if TYPE_CHECKING:
     from typing import Self
 
+from agentlightning.store.base import LightningStore
 from agentlightning.types import (
     Attempt,
     FilterField,
@@ -40,6 +48,7 @@ from agentlightning.types import (
 T = TypeVar("T")  # Recommended to be a BaseModel
 K = TypeVar("K")
 V = TypeVar("V")
+T_callable = TypeVar("T_callable", bound=Callable[..., Any])
 
 AtomicMode = Literal["r", "w", "rw"]
 """What is expected within the atomic context. Can be "read", "write", or "read-write"."""
@@ -51,8 +60,134 @@ These labels are used to identify the collections that are affected by the atomi
 """
 
 
-class Collection(Generic[T]):
-    """Behaves like a list of items. Supporting addition, updating, and deletion of items."""
+COLLECTION_TRACKING_STORE_METHODS = frozenset(
+    [name for name in LightningStore.__dict__ if not name.startswith("_")] + ["_healthcheck"]
+)
+
+_UNKNOWN_STORE_METHOD = "unknown"
+
+
+def _nearest_lightning_store_method_from_stack() -> str:
+    """Stack introspection so that we capture the nearest public API method from the
+    call stack whenever metrics are recorded."""
+    frame = inspect.currentframe()
+    try:
+        if frame is None:
+            return _UNKNOWN_STORE_METHOD
+        frame = frame.f_back
+        while frame is not None:
+            self_obj = frame.f_locals.get("self")
+            method_name = frame.f_locals.get("method_name")
+            if method_name in COLLECTION_TRACKING_STORE_METHODS and isinstance(self_obj, LightningStore):
+                return method_name
+            frame = frame.f_back
+        return _UNKNOWN_STORE_METHOD
+    except Exception:
+        return _UNKNOWN_STORE_METHOD
+    finally:
+        del frame
+
+
+def resolve_error_type(exc: BaseException | None) -> str:
+    if exc is None:
+        return "N/A"
+
+    try:
+        from .mongo import resolve_mongo_error_type
+
+        error_type = resolve_mongo_error_type(exc)
+        if error_type is not None:
+            return error_type
+    except ImportError:
+        pass
+
+    return exc.__class__.__name__
+
+
+def tracked(operation: str):
+    """Decorator to track the execution of the decorated method."""
+
+    def decorator(func: T_callable) -> T_callable:
+
+        @functools.wraps(func)
+        async def wrapper(self: TrackedCollection, *args: Any, **kwargs: Any) -> Any:
+            async with self.tracking_context(operation, self.collection_name, **self.extra_tracking_labels):
+                return await func(self, *args, **kwargs)
+
+        return cast(T_callable, wrapper)
+
+    return decorator
+
+
+class TrackedCollection:
+    """An object that can be tracked by the metrics backend."""
+
+    def __init__(self, tracker: MetricsBackend | None = None):
+        self._tracker = tracker
+
+    @property
+    def tracker(self) -> MetricsBackend | None:
+        return self._tracker
+
+    @property
+    def collection_name(self) -> str:
+        """The identifier of the collection."""
+        raise NotImplementedError()
+
+    @property
+    def extra_tracking_labels(self) -> Mapping[str, Any]:
+        """Extra labels to add to the tracking context."""
+        return {}
+
+    @asynccontextmanager
+    async def tracking_context(self, operation: str, collection: str):
+        """Context manager to track the execution of the decorated method.
+
+        Args:
+            operation: The operation to track.
+            collection: The collection to track.
+        """
+        if self._tracker is None:
+            # no-op context manager
+            yield
+
+        else:
+            # Enable tracking
+            start_time = time.perf_counter()
+            status: str = "OK"
+            store_method = _nearest_lightning_store_method_from_stack()
+            try:
+                yield
+            except BaseException as exc:
+                status = resolve_error_type(exc)
+                raise
+            finally:
+                elapsed = time.perf_counter() - start_time
+                self._tracker.inc_counter(  # pyright: ignore[reportPrivateUsage]
+                    "agl.store.total",
+                    labels={
+                        "store_method": store_method,
+                        "operation": operation,
+                        "collection": collection,
+                        "status": status,
+                        **self.extra_tracking_labels,
+                    },
+                )
+                self._tracker.observe_histogram(  # pyright: ignore[reportPrivateUsage]
+                    "agl.store.latency",
+                    value=elapsed,
+                    labels={
+                        "store_method": store_method,
+                        "operation": operation,
+                        "collection": collection,
+                        "status": status,
+                        **self.extra_tracking_labels,
+                    },
+                )
+
+
+class Collection(TrackedCollection, Generic[T]):
+    """Standard collection interface. Behaves like a list of items. Supporting addition, updating, and deletion of items."""
 
     def primary_keys(self) -> Sequence[str]:
         """Get the primary keys of the collection."""
@@ -174,7 +309,7 @@ class Collection(Generic[T]):
         raise NotImplementedError()
 
 
-class Queue(Generic[T]):
+class Queue(TrackedCollection, Generic[T]):
     """Behaves like a deque. Supporting appending items to the end and popping items from the front."""
 
     def __repr__(self) -> str:
@@ -228,7 +363,7 @@ class Queue(Generic[T]):
         raise NotImplementedError()
 
 
-class KeyValue(Generic[K, V]):
+class KeyValue(TrackedCollection, Generic[K, V]):
     """Behaves like a dictionary. Supporting addition, updating, and deletion of items."""
 
     def __repr__(self) -> str:
@@ -255,12 +390,36 @@ class KeyValue(Generic[K, V]):
         raise NotImplementedError()
 
 
-class LightningCollections:
+class LightningCollections(TrackedCollection):
     """Collections of rollouts, attempts, spans, resources, and workers.
 
     [LightningStore][agentlightning.LightningStore] implementations can use this as a storage base
     to implement the store API.
     """
+
+    def __init__(self, tracker: MetricsBackend | None = None, extra_labels: Optional[Sequence[str]] = None):
+        super().__init__(tracker=tracker)
+        self.register_collection_metrics(extra_labels)
+
+    def register_collection_metrics(self, extra_labels: Optional[Sequence[str]] = None) -> None:
+        if self._tracker is None:
+            return
+        labels = ["store_method", "operation", "collection", "error_type"]
+        if extra_labels is not None:
+            labels.extend(extra_labels)
+        self._tracker.register_histogram(
+            "agl.collections.latency",
+            labels,
+            buckets=LATENCY_BUCKETS,
+        )
+        self._tracker.register_counter(
+            "agl.collections.total",
+            labels + ["error_type"],
+        )
+
+    @property
+    def tracker(self) -> MetricsBackend | None:
+        return self._tracker
 
     @property
     def rollouts(self) -> Collection[Rollout]:
