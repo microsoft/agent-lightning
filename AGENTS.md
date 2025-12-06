@@ -1,36 +1,36 @@
 # Repository Guidelines
 
 ## Architecture Overview
-Agent Lightning loops through stages: runner and tracer emit spans, LightningStore (`agentlightning/store/`) synchronizes them, and algorithms in `agentlightning/algorithm/` learn from the traces.
+Agent Lightning runs through a continuous loop: runners and tracers emit spans, `LightningStore` (`agentlightning/store/`) keeps them synchronized, and algorithms in `agentlightning/algorithm/` consume those traces to improve behavior.
 
 ## Project Structure & Module Organization
-- `agentlightning/`: adapters, runner/execution stack, trainer, tracer, reward logic, `agl` CLI.
-- `docs/` & `examples/`: documentation (assets in `docs/assets/`, nav in `mkdocs.yml`) plus runnable workflows whose READMEs link to their how-to guides. `docs/how-to` contains step-by-step guides for accomplishing a specific task; `docs/tutorials` contains conceptual walkthroughs for components or features.
-- `dashboard/`, `scripts/`, `tests/`: UI bundles, automation for releases/datasets/CI, and coverage mirrors of the runtime tree—document download steps instead of committing binaries.
+- `agentlightning/`: adapters, execution stack, training loop, tracer, reward logic, and the `agl` CLI.
+- `docs/` & `examples/`: narrative and procedural docs (assets in `docs/assets/`, navigation in `mkdocs.yml`) plus runnable workflows whose READMEs point to their companion how-to guides. `docs/how-to` covers task-focused instructions, while `docs/tutorials` explains concepts and subsystems.
+- `dashboard/`, `scripts/`, `tests/`: UI bundles, release/dataset/CI automation, and mirrored coverage of the runtime tree. Record download steps rather than committing binaries.
 
 ## Build, Test, and Development Commands
-- `uv sync --group dev` — install tooling once.
-- `uv run --no-sync pytest -v` — run suites; add a path or `-k expr` for targeted loops.
-- `uv run --no-sync pyright` — static analysis aligned with CI.
-- `uv run --no-sync pre-commit run --all-files --show-diff-on-failure` and `uv run --no-sync mkdocs build --strict` — formatting/lint hooks plus doc validation.
-Commit the refreshed `uv.lock` whenever dependencies move and note optional groups (VERL, APO, GPU) in PRs.
+- `uv sync --group dev` — provision tooling once per environment.
+- `uv run --no-sync pytest -v` — execute the full suite; add a path or `-k expr` to narrow the run.
+- `uv run --no-sync pyright` — enforce static typing parity with CI.
+- `uv run --no-sync pre-commit run --all-files --show-diff-on-failure` and `uv run --no-sync mkdocs build --strict` — keep formatting tidy and documentation valid.
+Always commit the refreshed `uv.lock` when dependencies shift, and mention optional groups (VERL, APO, GPU) in PR notes.
 
 ## Coding Style & Naming Conventions
-- Stay compatible with `requires-python >= 3.10`, use 4-space indentation, 120-character lines, and formatter-managed diffs (Black + isort, profile `black`). `snake_case` for modules/functions/variables, `PascalCase` for classes and React components, and lowercase-hyphenated CLI flags, branch names and TypeScript files.
-- Keep type hints exhaustive (pyright enforced) and reuse dataclasses/Pydantic models from `agentlightning.types`.
-- Use Google-style docstrings for new modules or public methods, keeping descriptions short and avoiding redundant type annotations. Use `[][]` syntax for cross-references.
+- Target `requires-python >= 3.10`, four-space indentation, 120-character lines, and formatter-owned diffs (Black + isort, `black` profile). Use `snake_case` for modules, functions, and variables; `PascalCase` for classes and React components; lowercase hyphenation for CLI flags, branch names, and TypeScript filenames.
+- Maintain exhaustive type hints (pyright enforces them) and prefer shared dataclasses or Pydantic models from `agentlightning.types`.
+- Author Google-style docstrings for new modules or public methods—succinct descriptions, no redundant type info, no redundant `Key features/components` bullet points, and `[][]` syntax for cross-references.
 
 ## Testing Guidelines
-- Mirror runtime directories under `tests/` and align filenames for quick lookup.
-- Parametrize pytest cases and apply markers (`openai`, `gpu`, `agentops`, `mongo`, `llmproxy`) so optional suites can be skipped with selectors like `-m "not mongo"` yet still run in CI.
-- Favor fixtures; prefer real stores/spans/agents over fakes. Make sure most branches are covered by tests.
+- Mirror runtime directories under `tests/` and match filenames for quick traceability.
+- Parametrize pytest cases and apply markers (`openai`, `gpu`, `agentops`, `mongo`, `llmproxy`) so optional suites can be skipped via selectors like `-m "not mongo"` yet still exercised in CI.
+- Lean on fixtures, favor real stores/spans/agents over mocks, and drive coverage across the majority of branches.
 
 ## Example Contributions
-- Examples should include a README with smoke instructions so maintainers can validate them quickly. The README should contain a "Included Files" section with a list of the files in the example directory and a description of what each file does.
-- The major example files that are meant to be run should be self-contained and have a module-level docstring with CLI usage instructions. Important/complex classes/functions that are meant to be read and learned for users should be documented with their own docstrings and inline comments.
-- New examples should include a CI workflow that runs the example and verifies that it runs successfully. The workflow should be named `examples-<name>.yml` and should be placed in the `.github/workflows/` directory. The workflow should be registered in `badge-<name>.yml`, `badge-examples.yml`, and `badge-latest.yml` if necessary.
+- Ship each example with a README that includes smoke-test instructions so maintainers can validate quickly. The README must contain an "Included Files" section summarizing every file and its role.
+- Keep runnable example modules self-contained with a module-level docstring describing CLI usage. Document important or educational classes/functions with targeted docstrings and inline comments where clarity matters.
+- Add a CI workflow per example named `examples-<name>.yml` in `.github/workflows/`. Register it in `badge-<name>.yml`, `badge-examples.yml`, and `badge-latest.yml` when applicable so badges stay accurate.
 
 ## Commit & Pull Request Guidelines
-- Branch from fresh `main` using `feature/<slug>`, `fix/<slug>`, `docs/<slug>`, or `chore/<slug>`.
-- Write imperative, scoped commits, reference issues with `Fixes #123`, and rerun pre-commit plus relevant pytest/doc builds before pushing.
-- PR descriptions should summarize intent, list verification commands, highlight dependency or docs-navigation updates, and link new docs/examples via `mkdocs.yml` or `examples/README.md`; include logs for dashboard tweaks.
+- Branch from a fresh `main` using `feature/<slug>`, `fix/<slug>`, `docs/<slug>`, or `chore/<slug>`.
+- Write imperative, scoped commits, reference issues with `Fixes #123`, and rerun pre-commit plus the relevant pytest/doc builds before pushing.
+- Use PR descriptions to summarize intent, list verification commands, call out dependency or docs-navigation updates, and link new docs/examples via `mkdocs.yml` or `examples/README.md`. Include logs for dashboard changes.
