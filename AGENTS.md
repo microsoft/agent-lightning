@@ -1,28 +1,32 @@
-# Repository Guidelines for Agent-lightning
+# Repository Guidelines
+
+## Architecture Overview
+Agent Lightning loops through stages: runner and tracer emit spans, LightningStore (`agentlightning/store/`) synchronizes them, and algorithms in `agentlightning/algorithm/` learn from the traces.
 
 ## Project Structure & Module Organization
-
-The `agentlightning/` package holds adapters, runners, tracers, reward logic, and the `agl` CLI entry point. Docs, tutorials, and the algorithm zoo live under `docs/`, while runnable workflows and benchmarking recipes sit in `examples/`. Dashboards and UI assets live in `dashboard/`; automation scripts live in `scripts/`; regression coverage mirrors runtime modules inside `tests/`. Register new documentation in `mkdocs.yml` and keep example READMEs brief by pointing to the relevant how-to guide.
+- `agentlightning/`: adapters, runner/execution stack, trainer, tracer, reward logic, `agl` CLI.
+- `docs/` & `examples/`: documentation (assets in `docs/assets/`, nav in `mkdocs.yml`) plus runnable workflows whose READMEs link to their how-to guides.
+- `dashboard/`, `scripts/`, `tests/`: UI bundles, automation for releases/datasets/CI, and coverage mirrors of the runtime tree—document download steps instead of committing binaries.
 
 ## Build, Test, and Development Commands
-
-Run `uv sync --group dev` to install tooling, then execute everything through `uv run --no-sync <cmd>`. Core commands:
-
-- `uv run --no-sync pytest tests/path/to/test_file.py` — run unit-test (use `-k` for targeted debugging and `-m` for skipping tests).
-- `uv run --no-sync pyright /path/to/file.py` — static type validation aligned with CI.
-- `uv run --no-sync pre-commit run --all-files --show-diff-on-failure` — applies Black, isort, Flake8, and lint hooks.
-- `uv run --no-sync mkdocs build --strict` — validates docs.
-
-Record extra dependencies with `uv lock` so reviewers can replay the environment.
+- `uv sync --group dev` — install tooling once.
+- `uv run --no-sync pytest -v` — run suites; add a path or `-k expr` for targeted loops.
+- `uv run --no-sync pyright` — static analysis aligned with CI.
+- `uv run --no-sync pre-commit run --all-files --show-diff-on-failure` and `uv run --no-sync mkdocs build --strict` — formatting/lint hooks plus doc validation.
+Commit the refreshed `uv.lock` whenever dependencies move and note optional groups (VERL, APO, GPU) in PRs.
 
 ## Coding Style & Naming Conventions
-
-Python 3.12 features are allowed, but stay compatible with `requires-python = ">=3.10"`. Use 4-space indentation, 120-character lines, and Black + isort (profile `black`) formatting; do not hand-edit generated diffs. Modules, functions, and variables use `snake_case`; classes use `PascalCase`; CLI and branch names use lowercase hyphenated tokens. Keep type hints up to date (pyright enforces them; especially for new tests) and favor dataclasses/Pydantic models already defined in `agentlightning.types`. Use Google-style docstrings for new modules, classes, and functions; use `[][]` syntax for symbol references; refrain from adding type hints to parameters in docstrings.
+- Stay compatible with `requires-python >= 3.10`, use 4-space indentation, 120-character lines, and formatter-managed diffs (Black + isort, profile `black`).
+- Adopt `snake_case` for modules/functions/variables, `PascalCase` for classes, and lowercase-hyphenated CLI flags or branch names.
+- Keep type hints exhaustive (pyright enforced) and reuse dataclasses/Pydantic models from `agentlightning.types`.
+- Use Google-style docstrings for new modules or public methods, keeping descriptions short and avoiding redundant type annotations. Use `[][]` syntax for cross-references.
 
 ## Testing Guidelines
-
-Add or update `tests/` cases whenever touching logic. Prefer colocated modules (e.g., `tests/execution/` for trainer code) and mirror filenames. Use parametrized tests plus `pytest.mark` gates (`openai`, `gpu`, `agentops`, `mongo`, `llmproxy`) so hardware/API-dependent suites can be skipped locally via `-m "not gpu"`. Favor fixtures or fake spans instead of live services, and call out required environment variables (like `OPENAI_API_KEY`) near the test. When testing, target specific files or units; refrain from running the entire test suite.
+- Mirror runtime directories under `tests/` and align filenames for quick lookup.
+- Parametrize pytest cases and apply markers (`openai`, `gpu`, `agentops`, `mongo`, `llmproxy`) so optional suites can be skipped with selectors like `-m "not mongo"` yet still run in CI.
+- Favor fixtures, fake spans, and local LightningStore instances; gate unavoidable external calls with the relevant marker and mention required environment variables when present.
 
 ## Commit & Pull Request Guidelines
-
-Work from fresh `main` and branch using `feature/<slug>`, `fix/<slug>`, `docs/<slug>`, or `chore/<slug>`. Write imperative, scoped commits and reference issues with `Fixes #123` where applicable. Before pushing, rerun hooks and the relevant tests; attach logs or screenshots for UI/dashboard tweaks. PRs should summarize intent, list the commands you ran, and surface dependency or doc-navigation updates so reviewers can trace coverage quickly.
+- Branch from fresh `main` using `feature/<slug>`, `fix/<slug>`, `docs/<slug>`, or `chore/<slug>`.
+- Write imperative, scoped commits, reference issues with `Fixes #123`, and rerun pre-commit plus relevant pytest/doc builds before pushing.
+- PR descriptions should summarize intent, list verification commands, highlight dependency or docs-navigation updates, and link new docs/examples via `mkdocs.yml` or `examples/README.md`; include logs for dashboard tweaks.
