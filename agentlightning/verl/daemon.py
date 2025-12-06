@@ -693,7 +693,14 @@ class AgentModeDaemon:
         )
         return metric_dict
 
-    def get_train_data_batch(self, max_prompt_length: int, max_response_length: int, device: torch.device):
+    def get_train_data_batch(
+        self,
+        max_prompt_length: int,
+        max_response_length: int,
+        device: torch.device,
+        use_final_reward_as_step_reward: bool = True,
+        is_gigpo: bool = False,
+    ):
         """
         Processes completed rollouts to generate a training data batch.
 
@@ -721,12 +728,32 @@ class AgentModeDaemon:
             # The client should report triplets that contain prompt_ids and response_ids.
             # Example triplet.prompt: {"token_ids": [...]}
             # Example triplet.response: {"token_ids": [...]}
-            trace_list = [
-                {"prompt_ids": t.prompt.get("token_ids", []), "response_ids": t.response.get("token_ids", [])}
-                for t in rollout.triplets
-            ]
+            # trace_list = [
+            #     {"prompt_ids": t.prompt.get("token_ids", []), "response_ids": t.response.get("token_ids", [])}
+            #     for t in rollout.triplets
+            # ]
+            trace_list = []
+            for t in rollout.triplets:
+                trace_dict = {
+                    "prompt_ids": t.prompt.get("token_ids", []),
+                    "response_ids": t.response.get("token_ids", []),
+                    "step_reward": t.reward,
+                }
+
+                # Optional fields
+                intrinsic = t.metadata.get("intrinsic_reward")
+                message = t.metadata.get("message")
+
+                if intrinsic is not None:
+                    trace_dict["step_intrinsic_reward"] = intrinsic
+
+                if message is not None:
+                    trace_dict["message"] = message
+
+                trace_list.append(trace_dict)
+
             info = {
-                "reward": final_reward,
+                "final_reward": final_reward,
                 "trace_list": trace_list,
                 "data_id": original_sample["data_id"],
             }
@@ -747,17 +774,28 @@ class AgentModeDaemon:
         input_attention_mask_list: List[List[int]] = []
         response_ids_list: List[List[int]] = []
         response_attention_mask_list: List[List[int]] = []
-        reward_list: List[float] = []
+        final_reward_list: List[float] = []
+        step_reward_list: List[float] = []
         data_id_list: List[str] = []
         rollout_id_list: List[str] = []
         turn_index_list: List[int] = []
         is_drop_list: List[bool] = []
         n_trunc_sample_because_of_response = 0
 
+        # optional fields
+        step_intrinsic_reward_list: List[float] = []
+        message_list: List[str] = []
+
         for rollout_id, sample_info in finished_id_to_sample_info.items():
             for turn_index, trace in enumerate(sample_info["trace_list"]):
 
-                reward_list.append(sample_info["reward"])
+                final_reward_list.append(sample_info["final_reward"])
+                step_reward_list.append(trace["step_reward"])
+                if "step_intrinsic_reward" in trace:
+                    step_intrinsic_reward_list.append(trace["step_intrinsic_reward"])
+                if "message" in trace:
+                    message_list.append(trace["message"])
+
                 prompt_ids, response_ids = trace["prompt_ids"], trace["response_ids"]
 
                 # Mark samples with prompts exceeding max_prompt_length to be dropped later
@@ -799,7 +837,10 @@ class AgentModeDaemon:
         attention_mask = torch.cat([input_attention_mask, response_attention_mask], dim=-1)
         position_ids = torch.clamp(torch.cumsum(attention_mask, dim=-1) - 1, min=0)
         is_drop_mask = torch.BoolTensor(is_drop_list).to(device)
-        scores = torch.tensor(reward_list, dtype=torch.bfloat16).to(device)
+        if use_final_reward_as_step_reward:
+            scores = torch.tensor(final_reward_list, dtype=torch.float32).to(device)
+        else:
+            scores = torch.tensor(step_reward_list, dtype=torch.float32).to(device)
 
         # Create token-level scores by placing the final reward at the last token position
         token_level_scores = torch.zeros_like(attention_mask, dtype=scores.dtype)
@@ -810,19 +851,33 @@ class AgentModeDaemon:
         # Only take the last response_length part of the sequence to get the token-level scores for the model's response part.
         token_level_scores = token_level_scores[:, -max_response_length:]
 
+        # Create token-level intrinsic rewards
+        token_level_intrinsic_rewards = None
+        if len(intrinsic_reward_list) > 0:
+            intrinsic_reward_list = [0.0 if reward is None else reward for reward in intrinsic_reward_list]
+            intrinsic_rewards = torch.tensor(intrinsic_reward_list, dtype=torch.float32).to(device)
+            token_level_intrinsic_rewards = torch.zeros_like(attention_mask, dtype=intrinsic_rewards.dtype)
+            token_level_intrinsic_rewards[torch.arange(n_transition), eos_mask_idx] = intrinsic_rewards
+            token_level_intrinsic_rewards = token_level_intrinsic_rewards[:, -max_response_length:]
+
         # Form the final batch using TensorDict
-        batch = TensorDict(
-            {
-                "prompts": batch_input_ids,
-                "responses": batch_response_ids,
-                "input_ids": batch_seq,  # here input_ids become the whole sentences
-                "attention_mask": attention_mask,
-                "position_ids": position_ids,
-                "is_drop_mask": is_drop_mask,
-                "token_level_scores": token_level_scores.contiguous(),
-            },
-            batch_size=n_transition,
-        )
+        batch_dict = {
+            "prompts": batch_input_ids,
+            "responses": batch_response_ids,
+            "input_ids": batch_seq,  # here input_ids become the whole sentences
+            "attention_mask": attention_mask,
+            "position_ids": position_ids,
+            "is_drop_mask": is_drop_mask,
+            "token_level_scores": token_level_scores.contiguous(),
+        }
+        batch_dict["step_rewards"] = torch.tensor(np.array(step_reward_list), dtype=torch.float32).to(device)
+        if token_level_intrinsic_rewards is not None:
+            batch_dict["step_intrinsic_rewards"] = torch.tensor(
+                np.array(step_intrinsic_reward_list), dtype=torch.float32
+            ).to(device)
+            batch_dict["token_level_intrinsic_rewards"] = token_level_intrinsic_rewards.contiguous()
+
+        batch = TensorDict(batch_dict, batch_size=n_transition)
         data_proto = DataProto(batch=batch)
 
         data_metrics = {
@@ -838,6 +893,10 @@ class AgentModeDaemon:
         data_proto.non_tensor_batch["data_id_list"] = np.array(data_id_list)  # type: ignore
         data_proto.non_tensor_batch["rollout_id_list"] = np.array(rollout_id_list)  # type: ignore
         data_proto.non_tensor_batch["turn_index_list"] = np.array(turn_index_list)  # type: ignore
+
+        data_proto.non_tensor_batch["step_rewards"] = np.array(step_reward_list)
+        if len(message_list) > 0 and is_gigpo:
+            data_proto.non_tensor_batch["anchor_obs"] = np.array(message_list)
 
         return data_proto, data_metrics
 
