@@ -25,7 +25,7 @@ if TYPE_CHECKING:
     from prometheus_client import CollectorRegistry
 
 LabelDict = Dict[str, str]
-LabelKey = Tuple[Tuple[str, str], ...]  # normalized, sorted (key, value) pairs
+LabelKey = Tuple[Tuple[str, str], ...]  # normalized (key, value) pairs in registration order
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +45,7 @@ def _validate_labels(
         expected_names: Expected label names as a tuple.
 
     Returns:
-        A tuple of (key, value) pairs sorted by registered label order.
+        A tuple of (key, value) pairs honoring the registered label order.
 
     Raises:
         ValueError: If label keys do not match expected_names.
@@ -67,11 +67,11 @@ def _normalize_label_names(label_names: Optional[Sequence[str]]) -> Tuple[str, .
         label_names: Iterable of label names or None.
 
     Returns:
-        A tuple of label names sorted alphabetically.
+        A tuple of label names preserving their original order.
     """
     if not label_names:
         return ()
-    return tuple(sorted(label_names))
+    return tuple(label_names)
 
 
 @dataclass(frozen=True)
@@ -199,13 +199,15 @@ class ConsoleMetricsBackend(MetricsBackend):
 
     Rate is always per second.
 
-    Label grouping: When logging, labels are truncated to the first `group_level` label
-    pairs (according to sorted label key order). For example:
+    Label grouping: When logging, label dictionaries are truncated to the first
+    `group_level` label pairs (following the registered label order) and metrics
+    with identical truncated labels are aggregated together. For example:
 
         labels = {"method": "GET", "path": "/", "status": "200"}
-        group_level = 2 -> logged labels {"method": "GET", "path": "/"}
+        group_level = 2 -> aggregated labels {"method": "GET", "path": "/"}
 
-    If `group_level` is None or < 1, all labels are logged.
+    If `group_level` is None or < 1, all label combinations for a metric are
+    merged into a single log entry (equivalent to grouping by zero labels).
 
     Thread-safety: A single lock protects shared state mutation, pruning, and snapshotting.
     Percentile computation, formatting, and printing are done after releasing the lock.
@@ -226,8 +228,9 @@ class ConsoleMetricsBackend(MetricsBackend):
                 When the interval elapses, the next metric event triggers a
                 snapshot and logging of all metrics.
             group_level: Label grouping depth. When logging, only the first
-                `group_level` labels (sorted by key) are included. If None or
-                < 1, all labels are included.
+                `group_level` labels (following registered order) are retained and metric
+                events sharing those labels are aggregated. If None or < 1,
+                all label combinations collapse into a single group per metric.
         """
         self.window_seconds = window_seconds
         self.log_interval_seconds = log_interval_seconds
@@ -498,12 +501,12 @@ class ConsoleMetricsBackend(MetricsBackend):
 
         Returns:
             A new dictionary containing at most `group_level` label pairs,
-            chosen by sorted key order. If group_level is None or < 1, returns
-            a shallow copy of the original labels.
+            chosen by registered label order. If group_level is None or < 1, returns
+            an empty dict so that all label combinations collapse together.
         """
         if self.group_level is None or self.group_level < 1:
-            return dict(labels)
-        items = sorted(labels.items())
+            return {}
+        items = list(labels.items())
         return dict(items[: self.group_level])
 
     def _log(self, message: str) -> None:
@@ -523,20 +526,85 @@ class ConsoleMetricsBackend(MetricsBackend):
             hist_snaps: Histogram snapshot list.
         """
         entries: List[str] = []
-        for name, labels, timestamps, amounts in counter_snaps:
-            truncated_labels = self._truncate_labels_for_logging(labels)
-            line = self._log_counter(name, truncated_labels, timestamps, amounts, snapshot_time)
+        for name, labels, timestamps, amounts in self._group_counter_snapshots(counter_snaps):
+            line = self._log_counter(name, labels, timestamps, amounts, snapshot_time)
             if line:
                 entries.append(line)
 
-        for name, labels, values, buckets in hist_snaps:
-            truncated_labels = self._truncate_labels_for_logging(labels)
-            line = self._log_histogram(name, truncated_labels, values, buckets, snapshot_time)
+        for name, labels, values, buckets in self._group_histogram_snapshots(hist_snaps):
+            line = self._log_histogram(name, labels, values, buckets, snapshot_time)
             if line:
                 entries.append(line)
 
         if entries:
             self._log("  ".join(entries))
+
+    def _group_counter_snapshots(
+        self,
+        counter_snaps: List[Tuple[str, LabelDict, List[float], List[float]]],
+    ) -> List[Tuple[str, LabelDict, List[float], List[float]]]:
+        grouped: Dict[Tuple[str, Tuple[Tuple[str, str], ...]], Dict[str, Any]] = {}
+        for name, labels, timestamps, amounts in counter_snaps:
+            truncated_labels = self._truncate_labels_for_logging(labels)
+            key = (name, tuple(truncated_labels.items()))
+            entry = grouped.setdefault(
+                key,
+                {"name": name, "labels": truncated_labels, "timestamps": [], "amounts": []},
+            )
+            entry["timestamps"].extend(timestamps)
+            entry["amounts"].extend(amounts)
+
+        grouped_snaps: List[Tuple[str, LabelDict, List[float], List[float]]] = []
+        for entry in grouped.values():
+            timestamps = entry["timestamps"]
+            amounts = entry["amounts"]
+            if not timestamps:
+                continue
+            combined = sorted(zip(timestamps, amounts), key=lambda item: item[0])
+            ordered_timestamps = [ts for ts, _ in combined]
+            ordered_amounts = [amt for _, amt in combined]
+            grouped_snaps.append(
+                (
+                    entry["name"],
+                    entry["labels"],
+                    ordered_timestamps,
+                    ordered_amounts,
+                )
+            )
+
+        return grouped_snaps
+
+    def _group_histogram_snapshots(
+        self,
+        hist_snaps: List[Tuple[str, LabelDict, List[float], Tuple[float, ...]]],
+    ) -> List[Tuple[str, LabelDict, List[float], Tuple[float, ...]]]:
+        grouped: Dict[Tuple[str, Tuple[Tuple[str, str], ...]], Dict[str, Any]] = {}
+        for name, labels, values, buckets in hist_snaps:
+            truncated_labels = self._truncate_labels_for_logging(labels)
+            key = (name, tuple(truncated_labels.items()))
+            entry = grouped.setdefault(
+                key,
+                {"name": name, "labels": truncated_labels, "values": [], "buckets": buckets},
+            )
+            if entry["buckets"] != buckets:
+                raise ValueError(f"Histogram buckets mismatch for metric '{name}'.")
+            entry["values"].extend(values)
+
+        grouped_snaps: List[Tuple[str, LabelDict, List[float], Tuple[float, ...]]] = []
+        for entry in grouped.values():
+            values = entry["values"]
+            if not values:
+                continue
+            grouped_snaps.append(
+                (
+                    entry["name"],
+                    entry["labels"],
+                    list(values),
+                    entry["buckets"],
+                )
+            )
+
+        return grouped_snaps
 
     def _log_counter(
         self,
@@ -598,8 +666,8 @@ class ConsoleMetricsBackend(MetricsBackend):
 
 def _format_label_string(labels: LabelDict) -> str:
     if not labels:
-        return "{}"
-    ordered = ",".join(f"{key}={value}" for key, value in sorted(labels.items()))
+        return ""
+    ordered = ",".join(f"{key}={value}" for key, value in labels.items())
     return f"{{{ordered}}}"
 
 

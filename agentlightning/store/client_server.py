@@ -860,12 +860,12 @@ class LightningStoreServer(LightningStore):
             return
 
         self._tracker.register_counter(
-            "http_requests_total",
-            ["method", "path", "status"],
+            "agl.http.total",
+            ["path", "method", "status"],
         )
         self._tracker.register_histogram(
-            "http_request_duration_seconds",
-            ["method", "path", "status"],
+            "agl.http.latency",
+            ["path", "method", "status"],
             buckets=LATENCY_BUCKETS,
         )
 
@@ -921,11 +921,11 @@ class LightningStoreServer(LightningStore):
                 method = request.method
 
                 self._tracker.inc_counter(
-                    "http_requests_total",
+                    "agl.http.total",
                     labels={"method": method, "path": path, "status": str(status)},
                 )
                 self._tracker.observe_histogram(
-                    "http_request_duration_seconds",
+                    "agl.http.latency",
                     value=elapsed,
                     labels={"method": method, "path": path, "status": str(status)},
                 )

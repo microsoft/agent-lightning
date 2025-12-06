@@ -28,19 +28,19 @@ def test_validate_labels_reports_missing_label_with_metric_name() -> None:
     assert "'status' is required" in message
 
 
-def test_normalize_label_names_is_sorted() -> None:
-    assert metrics_module._normalize_label_names(["b", "a", "b"]) == ("a", "b", "b")
+def test_normalize_label_names_preserves_original_order() -> None:
+    assert metrics_module._normalize_label_names(["b", "a", "b"]) == ("b", "a", "b")
     assert metrics_module._normalize_label_names(None) == ()
 
 
-def test_console_backend_logs_counters_with_sorted_labels() -> None:
-    backend = ConsoleMetricsBackend()
+def test_console_backend_logs_counters_with_registration_order() -> None:
+    backend = ConsoleMetricsBackend(log_interval_seconds=0.0)
     line = backend._log_counter(
         "rate",
-        {"group2": "b", "group1": "a"},
+        {"group1": "a", "group2": "b"},
         timestamps=[0.0, 1.0],
         amounts=[1.0, 1.0],
-        snapshot_time=2.0,
+        snapshot_time=5.0,
     )
 
     assert line == "rate{group1=a,group2=b}=0.40/s"
@@ -50,7 +50,7 @@ def test_console_backend_logs_histograms_with_human_units() -> None:
     backend = ConsoleMetricsBackend()
     line = backend._log_histogram(
         "latency",
-        {"group2": "b", "group1": "a"},
+        {"group1": "a", "group2": "b"},
         values=[0.00395, 0.0168, 3.5],
         buckets=(0.5,),
         snapshot_time=1.0,
@@ -65,9 +65,9 @@ def test_console_backend_logs_histograms_with_human_units() -> None:
 
 
 def test_console_backend_respects_group_level_limit():
-    backend = ConsoleMetricsBackend(group_level=2)
-    truncated = backend._truncate_labels_for_logging({"group3": "c", "group1": "a", "group2": "b"})
-    line = backend._log_counter("metric", truncated, [0.0, 2.0], [1.0, 1.0], snapshot_time=3.0)
+    backend = ConsoleMetricsBackend(group_level=2, log_interval_seconds=0.0)
+    truncated = backend._truncate_labels_for_logging({"group1": "a", "group2": "b", "group3": "c"})
+    line = backend._log_counter("metric", truncated, [0.0, 2.0], [1.0, 1.0], snapshot_time=5.0)
 
     assert line == "metric{group1=a,group2=b}=0.40/s"
 
@@ -231,7 +231,7 @@ def _split_segments(log_lines: Sequence[str]) -> List[str]:
 
 
 def test_console_backend_sliding_window_rate_and_eviction(monkeypatch: pytest.MonkeyPatch) -> None:
-    backend = ConsoleMetricsBackend(window_seconds=5.0, log_interval_seconds=0.0)
+    backend = ConsoleMetricsBackend(window_seconds=5.0, log_interval_seconds=0.0, group_level=2)
     backend.register_counter("requests", ["group", "path"])
 
     logged: List[str] = []
@@ -285,7 +285,7 @@ def test_console_backend_histogram_quantiles_and_group_depth(monkeypatch: pytest
     backend.observe_histogram("latency", value=2.0, labels=svc_b_labels)
 
     svc_a_segments = [
-        seg for seg in _split_segments(logged) if seg.startswith("latency{endpoint=/search,service=svcA}")
+        seg for seg in _split_segments(logged) if seg.startswith("latency{service=svcA,endpoint=/search}")
     ]
     assert svc_a_segments, "expected log entries for service A"
     latest = svc_a_segments[-1]
@@ -318,8 +318,8 @@ def test_console_backend_logs_all_metric_groups(monkeypatch: pytest.MonkeyPatch)
 
     assert logged, "expected log output"
     last_line = logged[-1]
-    assert "requests{group=api}" in last_line
-    assert "errors{group=api}" in last_line
+    assert "requests=" in last_line
+    assert "errors=" in last_line
 
 
 def test_console_backend_snapshot_logs_single_line() -> None:
@@ -337,4 +337,66 @@ def test_console_backend_snapshot_logs_single_line() -> None:
         snapshot_time=1.5,
     )
 
-    assert logged and "counter{g=1}" in logged[0] and "latency{g=1}" in logged[0]
+    assert logged and "counter=" in logged[0] and "latency=" in logged[0]
+
+
+def test_console_backend_group_level_none_aggregates_all_label_groups() -> None:
+    backend = ConsoleMetricsBackend(group_level=None)
+    logged: List[str] = []
+    backend._log = logged.append  # type: ignore[assignment]
+
+    backend._log_snapshot(
+        [
+            ("requests", {"group": "api", "path": "/a"}, [0.0], [1.0]),
+            ("requests", {"group": "api", "path": "/b"}, [0.5], [2.0]),
+        ],
+        [
+            ("latency", {"group": "api", "path": "/a"}, [0.1], (0.5,)),
+            ("latency", {"group": "api", "path": "/b"}, [0.2], (0.5,)),
+        ],
+        snapshot_time=1.0,
+    )
+
+    assert logged, "expected log output"
+    line = logged[-1]
+    assert line.count("requests=") == 1
+    assert line.count("latency=") == 1
+
+
+def test_console_backend_group_level_positive_only_aggregates_prefix() -> None:
+    backend = ConsoleMetricsBackend(group_level=1)
+    logged: List[str] = []
+    backend._log = logged.append  # type: ignore[assignment]
+
+    backend._log_snapshot(
+        [
+            ("requests", {"a": "x", "b": "y"}, [0.0], [1.0]),
+            ("requests", {"a": "x", "b": "z"}, [0.1], [2.0]),
+            ("requests", {"a": "w", "b": "y"}, [0.2], [3.0]),
+        ],
+        [],
+        snapshot_time=1.0,
+    )
+
+    assert logged, "expected log output"
+    line = logged[-1]
+    # With group_level=1 we should see aggregation by the first declared label key.
+    assert line.count("requests{a=w}") == 1
+    assert line.count("requests{a=x}") == 1
+
+
+def test_console_backend_logs_preserve_registration_label_order(monkeypatch: pytest.MonkeyPatch) -> None:
+    backend = ConsoleMetricsBackend(window_seconds=None, log_interval_seconds=0.0, group_level=3)
+    backend.register_counter("requests", ["path", "method", "status"])
+
+    logged: List[str] = []
+    backend._log = logged.append  # type: ignore[assignment]
+
+    times = iter([0.0, 1.0])
+    monkeypatch.setattr(metrics_module.time, "time", lambda: next(times))
+
+    backend.inc_counter("requests", labels={"status": "200", "path": "/search", "method": "GET"})
+
+    assert logged, "expected log output"
+    last_line = logged[-1]
+    assert "requests{path=/search,method=GET,status=200}" in last_line
