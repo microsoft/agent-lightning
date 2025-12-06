@@ -6,9 +6,16 @@ This example demonstrates training a Retrieval-Augmented Generation (RAG) agent 
 
 This example can run on a single GPU for demonstration purposes.
 
-1. Set up the environment following the documentation. It is recommended to activate the virtual environment with `source .venv/bin/activate`.
-2. Prepare the tiny dataset.
+**Step 1:** Set up the environment. It is recommended to setup with uv and activate the virtual environment with:
+
+```bash
+uv sync --frozen --extra apo --group agents --group torch-gpu-stable --extra verl --group rag
+source .venv/bin/activate
 ```
+
+**Step 2:** Prepare the tiny dataset.
+
+```bash
 pip install gdown
 
 # tiny training dataset
@@ -24,29 +31,27 @@ gdown --fuzzy "https://drive.google.com/file/d/1REXCpRLbeZu1KfWWKhIGEQe_WNHUOBkS
 gdown --fuzzy "https://drive.google.com/file/d/1f6P-h_8KSRhe5pqDHWbRQWvUhTygfZ-c/view?usp=drive_link" \
     -O index_hnsw_faiss_n32e40_tiny.index
 ```
-3. Start the MCP server
-Open a terminal and run:
-```
-cd examples/rag
+
+**Step 3:** Start the MCP server. Open a terminal and run:
+
+```bash
 python wiki_retriever_mcp.py
 ```
 
-4. Start training
-Open another terminal and run:
-```
-python examples/rag/train_rag.py
-```
+**Step 4:** Start training. Open another terminal and run:
 
+```bash
+python train_rag.py
+```
 
 ## Included Files
 
 | File/Directory | Description |
 |----------------|-------------|
-| `rag_agent.py` | AgentLightning agent example using the OpenAI Agents SDK |
+| `rag_agent.py` | RAG agent example using the OpenAI Agents SDK, with debugging utils |
 | `train_rag.py` | Initiates the GRPO training process |
-| `rag_run_dev.py` | Development run test |
-| `utils.py` | Scoring utilities for exact match, F1 score, and response parsing |
-| `wiki_retriever_mcp/` | MCP server (`wiki_retriever_mcp.py`) for Wikipedia retrieval |
+| `metric_utils.py` | Scoring utilities for exact match, F1 score, and response parsing |
+| `wiki_retriever_mcp.py` | MCP server for Wikipedia retrieval |
 
 ## How to Prepare the Retrieval Corpus Yourself
 
@@ -57,13 +62,9 @@ To enable semantic retrieval with this MCP server, you need two files:
 
 These two files work together: the FAISS index stores the vector embeddings and their mapping to integer IDs, while the pickle file stores the actual text chunks. The integer IDs in the index correspond exactly to the positions in the chunk list.
 
----
-
 ### Step 1: Collecting Text Chunks
 
 First, you need a collection of text passages (chunks). For example, you can download a Wikipedia-based dataset such as `wiki18_100w.zip` from the [FlashRAG_dataset](https://huggingface.co/datasets/FlashRAG) or use other pre-split corpora.
-
----
 
 ### Step 2: Creating the FAISS Index (`nq_hnsw_faiss_n32e40.index`)
 
@@ -72,15 +73,11 @@ First, you need a collection of text passages (chunks). For example, you can dow
 - In this example, we use an **HNSW index** (Hierarchical Navigable Small World graph), which supports efficient approximate nearest-neighbor search.
 - The index stores only embeddings and integer IDs (no raw text).
 
----
-
 ### Step 3: Creating the Chunk List (`nq_list.pkl`)
 
 - Store the raw text chunks in a Python list.
 - Save this list with `pickle`.
 - The index ID returned by FAISS corresponds to the list index in this file. For example, if FAISS search returns `I[0][i] = 12345`, then the corresponding text chunk is `chunks[12345]`.
-
----
 
 ### Example Schema
 
@@ -102,8 +99,6 @@ First, you need a collection of text passages (chunks). For example, you can dow
         ...
     ]
     ```
-
----
 
 ### Step 4: Code Example - Building Index and Chunk List
 
