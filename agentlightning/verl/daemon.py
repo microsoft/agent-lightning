@@ -853,9 +853,9 @@ class AgentModeDaemon:
 
         # Create token-level intrinsic rewards
         token_level_intrinsic_rewards = None
-        if len(intrinsic_reward_list) > 0:
-            intrinsic_reward_list = [0.0 if reward is None else reward for reward in intrinsic_reward_list]
-            intrinsic_rewards = torch.tensor(intrinsic_reward_list, dtype=torch.float32).to(device)
+        if len(step_intrinsic_reward_list) > 0:
+            step_intrinsic_reward_list = [0.0 if reward is None else reward for reward in step_intrinsic_reward_list]
+            intrinsic_rewards = torch.tensor(step_intrinsic_reward_list, dtype=torch.float32).to(device)
             token_level_intrinsic_rewards = torch.zeros_like(attention_mask, dtype=intrinsic_rewards.dtype)
             token_level_intrinsic_rewards[torch.arange(n_transition), eos_mask_idx] = intrinsic_rewards
             token_level_intrinsic_rewards = token_level_intrinsic_rewards[:, -max_response_length:]
