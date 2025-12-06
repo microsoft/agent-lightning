@@ -1,5 +1,7 @@
 # RAG Agent Example
 
+[![rag workflow status](https://github.com/microsoft/agent-lightning/actions/workflows/examples-rag.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/examples-rag.yml)
+
 This example demonstrates training a Retrieval-Augmented Generation (RAG) agent using Agent-Lightning with retrieval capabilities. The agent answers multi-hop questions from a tiny MuSiQue dataset by retrieving and reasoning over Wikipedia passages.
 
 ## Overview
