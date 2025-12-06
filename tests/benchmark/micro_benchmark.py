@@ -271,8 +271,11 @@ def dequeue_rollouts(store_url: str) -> BenchmarkSummary:
 
     async def _query_remaining_rollouts() -> List[str]:
         store = agl.LightningStoreClient(store_url)
-        remaining_rollouts = await store.query_rollouts(status_in=["queuing"])
-        return [item.rollout_id for item in remaining_rollouts]
+        try:
+            remaining_rollouts = await store.query_rollouts(status_in=["queuing"])
+            return [item.rollout_id for item in remaining_rollouts]
+        finally:
+            await store.close()
 
     end_time = time.time()
     remaining_rollouts = asyncio.run(_query_remaining_rollouts())
