@@ -783,7 +783,7 @@ def debug_chartqa_agent():
     if not os.path.exists(test_data_path):
         raise FileNotFoundError(f"Test data file {test_data_path} does not exist. Please run prepare_data.py first.")
 
-    df = pd.read_parquet(test_data_path).head(3)  # type: ignore
+    df = pd.read_parquet(test_data_path).head(10)  # type: ignore
     test_data = cast(List[Dict[str, Any]], df.to_dict(orient="records"))  # type: ignore
     print("Debug data:", test_data[0])
 
@@ -816,7 +816,7 @@ def debug_chartqa_agent():
         # time.sleep(2)
 
         trainer = agl.Trainer(
-            n_workers=1,
+            n_workers=2,
             store=store,  # CRITICAL: Pass same store to trainer
             llm_proxy=llm_proxy,
             strategy={"name": "shm", "main_thread":"algorithm", "managed_store": False},
