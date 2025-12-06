@@ -24,215 +24,21 @@ import pandas as pd
 import termcolor
 from langchain.chat_models import init_chat_model
 from langchain_core.messages import AnyMessage, BaseMessage, HumanMessage
-from langchain_core.prompts import ChatPromptTemplate
 from langgraph.graph import END, START, MessagesState, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 import agentlightning as agl
+from prompts import (
+    ANALYZE_CHART_PROMPT,
+    CALCULATE_ANSWER_PROMPT,
+    CHECK_ANSWER_PROMPT,
+    EXTRACT_DATA_PROMPT,
+    REFINE_ANSWER_PROMPT,
+)
 
 agl.configure_logger()
 
 logger = agl.configure_logger(name=__name__)
-
-
-# System Prompts
-
-ANALYZE_CHART_PROMPT = ChatPromptTemplate(
-    [
-        (
-            "system",
-            """
-You are a visual reasoning expert analyzing charts and graphs.
-Given a chart image and a question, first carefully observe and describe the chart.
-
-Instructions:
-- Identify the chart type (bar chart, line chart, pie chart, scatter plot, etc.)
-- Note the axes labels and units (if applicable)
-- Describe the data series or categories shown
-- Observe key patterns, trends, or noteworthy values
-- Pay attention to legends, titles, and annotations
-
-## Output Format ##
-
-Provide your observation inside <observe> and </observe> tags.
-
-Example:
-<observe>
-Bar chart showing GDP of 5 countries. X-axis shows country names, Y-axis shows GDP in trillions of USD.
-Data values: USA appears highest at around 25, China second at around 20, followed by India, UK, and France.
-</observe>
-""".strip(),
-        ),
-        ("user", "Question: {question}"),
-    ]
-)
-
-
-EXTRACT_DATA_PROMPT = ChatPromptTemplate(
-    [
-        (
-            "system",
-            """
-Based on your observation of the chart, extract the specific data values needed to answer the question.
-
-Instructions:
-- Extract only the data relevant to the question
-- Be precise with values (read carefully from the chart)
-- Include labels/categories with each value
-- Use appropriate units
-
-## Output Format ##
-
-Provide extracted data inside <extract> and </extract> tags.
-Format: Label1: Value1, Label2: Value2, ...
-
-Example:
-<extract>
-USA: 25, China: 20, India: 15, UK: 10, France: 8
-</extract>
-""".strip(),
-        ),
-        (
-            "user",
-            """Observation: {observation}
-
-Question: {question}
-
-Please extract the relevant data values.""",
-        ),
-    ]
-)
-
-
-CALCULATE_ANSWER_PROMPT = ChatPromptTemplate(
-    [
-        (
-            "system",
-            """
-Using the extracted data, perform any necessary calculations to answer the question.
-
-Instructions:
-- Show your calculation steps clearly
-- Use correct mathematical operations
-- Pay attention to the question (average, sum, difference, maximum, etc.)
-- Provide a precise numerical answer if applicable
-- Keep the answer concise (typically 1-10 words)
-
-## Output Format ##
-
-Show calculation inside <calculate> and </calculate> tags (if needed).
-Provide final answer inside <answer> and </answer> tags.
-
-Example:
-<calculate>
-Average = (25 + 20 + 15 + 10 + 8) / 5 = 78 / 5 = 15.6
-</calculate>
-<answer>
-15.6
-</answer>
-""".strip(),
-        ),
-        (
-            "user",
-            """Extracted Data: {extracted_data}
-
-Question: {question}
-
-Please calculate and provide the answer.""",
-        ),
-    ]
-)
-
-
-CHECK_ANSWER_PROMPT = ChatPromptTemplate(
-    [
-        (
-            "system",
-            """
-You are a chart analysis expert with strong attention to detail.
-Review the answer for potential mistakes.
-
-Common mistakes to check:
-- Incorrect data extraction from chart (misread values)
-- Arithmetic errors in calculations
-- Misunderstanding the question type (average vs. sum vs. difference)
-- Wrong number of data points counted
-- Incorrect units or scale interpretation
-- Off-by-one errors
-
-## Chart Information ##
-
-Observation: {observation}
-Extracted Data: {extracted_data}
-
-## Output Format ##
-
-If any mistakes are found, list each error clearly.
-After listing mistakes (if any), conclude with **ONE** of the following exact phrases in all caps:
-- If mistakes are found: `THE ANSWER IS INCORRECT.`
-- If no mistakes are found: `THE ANSWER IS CORRECT.`
-
-DO NOT write the corrected answer in this response. You only need to report mistakes.
-""".strip(),
-        ),
-        (
-            "user",
-            """Question: {question}
-
-Current Answer: {answer}
-
-Calculation shown:
-{calculation}
-
-Please review this answer for correctness.""",
-        ),
-    ]
-)
-
-
-REFINE_ANSWER_PROMPT = ChatPromptTemplate(
-    [
-        (
-            "system",
-            """
-You are a chart analysis agent.
-The previous answer had errors. Based on the feedback, provide a corrected answer.
-
-Instructions:
-- Re-examine the chart observation carefully
-- Correct any data extraction errors by re-extracting if needed
-- Fix calculation mistakes
-- Address all points mentioned in the feedback
-
-## Chart Observation ##
-
-{observation}
-
-## Output Format ##
-
-If you need to re-extract data, provide it inside <extract> and </extract> tags.
-Show corrected calculation inside <calculate> and </calculate> tags.
-Provide corrected answer inside <answer> and </answer> tags.
-""".strip(),
-        ),
-        (
-            "user",
-            """Question: {question}
-
-## Previous Attempt ##
-
-Extracted Data: {extracted_data}
-Calculation: {calculation}
-Answer: {answer}
-
-## Feedback ##
-
-{feedback}
-
-Please provide the corrected answer.""",
-        ),
-    ]
-)
 
 
 # State Management
@@ -252,7 +58,6 @@ class ChartState(MessagesState):
 
 
 # Agent Class
-
 class ChartQAAgent:
     """Chart QA agent with multi-step reasoning and refinement loop."""
 
@@ -592,10 +397,6 @@ class LitChartQAAgent(agl.LitAgent[Dict[str, Any]]):
 
         rollout_id = rollout.rollout_id
 
-        logger.info(f"[Rollout {rollout_id}] Question: {question}")
-        logger.info(f"[Rollout {rollout_id}] Ground Truth: {ground_truth}")
-        logger.info(f"[Rollout {rollout_id}] Image: {image_path}")
-
         # Create agent
         agent = ChartQAAgent(
             max_turns=self.max_turns,
@@ -618,7 +419,6 @@ class LitChartQAAgent(agl.LitAgent[Dict[str, Any]]):
         try:
             # Run agent
             handler = self.tracer.get_langchain_handler()
-            print(f"[DEBUG] question: {question}, image_path: {image_path}")
             result = agent.invoke(  # type: ignore
                 {"question": question, "image_path": image_path},  # type: ignore
                 {"callbacks": [handler] if handler else [], "recursion_limit": 100},
@@ -627,28 +427,16 @@ class LitChartQAAgent(agl.LitAgent[Dict[str, Any]]):
             import traceback
             error_msg = f"[Rollout {rollout_id}] Error during agent invocation: {e}\n{traceback.format_exc()}"
             logger.exception(error_msg)
-            print(error_msg)  # Also print to stdout for Ray worker logs
             return None
 
         predicted_answer = result["answer"]
-        logger.info(f"[Rollout {rollout_id}] Predicted Answer: {predicted_answer}")
 
         end_time_rollout = time.time()
 
         # Evaluate
         reward = evaluate_answer(predicted_answer, ground_truth, raise_on_error=False)
-        logger.info(f"[Rollout {rollout_id}] Reward: {reward}")
-
-        # Emit reward span - it will be auto-written to store via LightningSpanProcessor
-        # since we're inside trace_context()
-        # if reward is not None:
-        #     from agentlightning import emit_reward
-        #     emit_reward(reward)
 
         end_time_eval = time.time()
-
-        logger.info(f"[Rollout {rollout_id}] Time taken for rollout: {end_time_rollout - start_time:.2f} seconds")
-        logger.info(f"[Rollout {rollout_id}] Time taken for evaluation: {end_time_eval - end_time_rollout:.2f} seconds")
 
         return reward
 
@@ -680,95 +468,7 @@ def create_llm_proxy_for_chartqa(vllm_endpoint: str, port: int = 8081) -> agl.LL
         launch_mode="thread",  # Thread mode requires thread-safe store
     )
 
-    logger.info(f"Created LLMProxy: port={port}, vllm_endpoint={vllm_endpoint}, launch_mode=thread")
     return llm_proxy
-
-
-# class TokenIdInspectorHook(agl.Hook):
-#     """Hook to inspect and verify token IDs are being captured.
-
-#     This hook provides detailed diagnostics for token ID capture in both
-#     text-only and multimodal (image + text) requests.
-#     """
-
-#     def __init__(self, verbose: bool = True):
-#         """Initialize the hook.
-
-#         Args:
-#             verbose: If True, print detailed diagnostics for each span
-#         """
-#         self.verbose = verbose
-#         self.total_spans_checked = 0
-#         self.spans_with_token_ids = 0
-
-#     async def on_trace_end(self, *, agent, runner, tracer, rollout):
-#         """Print token ID information after each rollout."""
-#         trace = tracer.get_last_trace()
-#         print(f"\n{'='*70}")
-#         print(f"Token ID Inspection for Rollout {rollout.rollout_id}")
-#         print(f"{'='*70}")
-
-#         found_token_ids = False
-#         for span in trace:
-#             if "chat.completion" in span.name:
-#                 self.total_spans_checked += 1
-#                 attrs = span.attributes
-#                 prompt_ids = attrs.get("prompt_token_ids", [])
-#                 response_ids = attrs.get("response_token_ids", [])
-
-#                 print(f"\n[Span #{span.sequence_id}] {span.name}")
-
-#                 # Check prompt token IDs
-#                 if prompt_ids:
-#                     print(f"  ✅ Prompt token IDs: {len(prompt_ids)} tokens")
-#                     if self.verbose:
-#                         print(f"     First 10: {prompt_ids[:10]}")
-#                         print(f"     Last 10:  {prompt_ids[-10:]}")
-
-#                     # Heuristic to detect multimodal input (Qwen2-VL specific)
-#                     # Multimodal requests typically have many more prompt tokens
-#                     if len(prompt_ids) > 100:
-#                         print(f"  📊 Likely multimodal input (large token count)")
-#                     found_token_ids = True
-#                 else:
-#                     print(f"  ❌ NO prompt_token_ids")
-#                     if self.verbose:
-#                         print(f"     Available attributes: {list(attrs.keys())}")
-
-#                 # Check response token IDs
-#                 if response_ids:
-#                     print(f"  ✅ Response token IDs: {len(response_ids)} tokens")
-#                     if self.verbose:
-#                         print(f"     First 10: {response_ids[:10]}")
-#                         print(f"     Last 10:  {response_ids[-10:]}")
-#                     found_token_ids = True
-#                 else:
-#                     print(f"  ❌ NO response_token_ids")
-
-#                 # Track successful captures
-#                 if prompt_ids and response_ids:
-#                     self.spans_with_token_ids += 1
-
-#                 # Additional diagnostics if verbose
-#                 if self.verbose:
-#                     # Check for usage stats
-#                     if "gen_ai.usage.prompt_tokens" in attrs:
-#                         print(f"  📊 Usage - Prompt: {attrs['gen_ai.usage.prompt_tokens']} tokens")
-#                     if "gen_ai.usage.completion_tokens" in attrs:
-#                         print(f"  📊 Usage - Completion: {attrs['gen_ai.usage.completion_tokens']} tokens")
-
-#         # Summary
-#         print(f"\n{'='*70}")
-#         if found_token_ids:
-#             print(f"✅ Token IDs are being captured successfully!")
-#             print(f"   Spans with complete token IDs: {self.spans_with_token_ids}/{self.total_spans_checked}")
-#         else:
-#             print(f"⚠️  No token IDs found in any spans")
-#             print(f"\n🔍 Troubleshooting tips:")
-#             print(f"   1. Ensure LLMProxy is running and callbacks=['return_token_ids'] is set")
-#             print(f"   2. Check that vLLM supports return_token_ids for your model")
-#             print(f"   3. Verify Agent's LLM endpoint points to LLMProxy (not vLLM directly)")
-#         print(f"{'='*70}\n")
 
 
 def debug_chartqa_agent():
@@ -785,7 +485,6 @@ def debug_chartqa_agent():
 
     df = pd.read_parquet(test_data_path).head(10)  # type: ignore
     test_data = cast(List[Dict[str, Any]], df.to_dict(orient="records"))  # type: ignore
-    print("Debug data:", test_data[0])
 
     vllm_endpoint = os.environ.get("OPENAI_API_BASE", "http://localhost:8088/v1")
 
@@ -829,7 +528,6 @@ def debug_chartqa_agent():
             },
         )
 
-        logger.info("Starting trainer.dev()...")
         trainer.dev(LitChartQAAgent(), test_data)
 
     except KeyboardInterrupt:
