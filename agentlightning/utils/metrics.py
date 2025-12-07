@@ -216,8 +216,10 @@ class ConsoleMetricsBackend(MetricsBackend):
     `group_level` label pairs (following the registered label order) and metrics
     with identical truncated labels are aggregated together. For example:
 
-        labels = {"method": "GET", "path": "/", "status": "200"}
-        group_level = 2 -> aggregated labels {"method": "GET", "path": "/"}
+    ```python
+    labels = {"method": "GET", "path": "/", "status": "200"}
+    group_level = 2  # aggregated labels {"method": "GET", "path": "/"}
+    ```
 
     If `group_level` is None or < 1, all label combinations for a metric are
     merged into a single log entry (equivalent to grouping by zero labels).

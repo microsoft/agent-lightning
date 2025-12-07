@@ -218,7 +218,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         read_snapshot: Make sure read operations are atomic. If set to true,
             all read operations like `query_rollouts` will have better consistency.
             It may use an isolated snapshot that supports repeatable reads.
-        prometheus: Enable Prometheus tracking.
+        tracker: Enable metrics tracking.
     """
 
     def __init__(
