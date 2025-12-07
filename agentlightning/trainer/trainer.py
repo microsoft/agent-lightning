@@ -153,7 +153,7 @@ class Trainer(TrainerLegacy):
         self.worker_id: Optional[int] = None
 
         if dev:
-            logger.warning(
+            warnings.warn(
                 "Trainer(dev=True) is deprecated and will be removed in future versions. "
                 "Please use Trainer.dev(...) instead.",
                 DeprecationWarning,
