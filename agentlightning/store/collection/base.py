@@ -111,7 +111,7 @@ def tracked(operation: str):
 
         @functools.wraps(func)
         async def wrapper(self: TrackedCollection, *args: Any, **kwargs: Any) -> Any:
-            async with self.tracking_context(operation, self.collection_name, **self.extra_tracking_labels):
+            async with self.tracking_context(operation, self.collection_name):
                 return await func(self, *args, **kwargs)
 
         return cast(T_callable, wrapper)

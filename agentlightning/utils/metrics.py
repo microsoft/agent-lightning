@@ -16,7 +16,6 @@ from __future__ import annotations
 import logging
 import os
 import tempfile
-import threading
 import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Tuple
@@ -754,8 +753,6 @@ class PrometheusMetricsBackend(MetricsBackend):
         self._prom_counters: Dict[str, Any] = {}
         self._prom_histograms: Dict[str, Any] = {}
 
-        self._registration_lock = threading.Lock()
-
     def register_counter(
         self,
         name: str,
@@ -767,27 +764,25 @@ class PrometheusMetricsBackend(MetricsBackend):
 
         label_tuple = _normalize_label_names(label_names)
 
-        with self._registration_lock:
-            if name in self._histograms:
-                raise ValueError(f"Metric '{name}' already registered as histogram.")
+        if name in self._histograms:
+            raise ValueError(f"Metric '{name}' already registered as histogram.")
 
-            existing = self._counters.get(name)
-            if existing is not None:
-                if existing.label_names != label_tuple:
-                    raise ValueError(
-                        f"Counter '{name}' already registered with labels "
-                        f"{existing.label_names}, got {label_tuple}."
-                    )
-                return
+        existing = self._counters.get(name)
+        if existing is not None:
+            if existing.label_names != label_tuple:
+                raise ValueError(
+                    f"Counter '{name}' already registered with labels " f"{existing.label_names}, got {label_tuple}."
+                )
+            return
 
-            self._counters[name] = _CounterDef(name=name, label_names=label_tuple, group_level=group_level)
+        self._counters[name] = _CounterDef(name=name, label_names=label_tuple, group_level=group_level)
 
-            prom_counter = PromCounter(
-                name,
-                f"Counter {name}",
-                labelnames=label_tuple,
-            )
-            self._prom_counters[name] = prom_counter
+        prom_counter = PromCounter(
+            name,
+            f"Counter {name}",
+            labelnames=label_tuple,
+        )
+        self._prom_counters[name] = prom_counter
 
     def register_histogram(
         self,
@@ -802,42 +797,41 @@ class PrometheusMetricsBackend(MetricsBackend):
         label_tuple = _normalize_label_names(label_names)
         bucket_tuple = tuple(buckets) if buckets is not None else ()
 
-        with self._registration_lock:
-            if name in self._counters:
-                raise ValueError(f"Metric '{name}' already registered as counter.")
+        if name in self._counters:
+            raise ValueError(f"Metric '{name}' already registered as counter.")
 
-            existing = self._histograms.get(name)
-            if existing is not None:
-                if existing.label_names != label_tuple or existing.buckets != bucket_tuple:
-                    raise ValueError(
-                        f"Histogram '{name}' already registered with "
-                        f"labels={existing.label_names}, "
-                        f"buckets={existing.buckets}."
-                    )
-                return
+        existing = self._histograms.get(name)
+        if existing is not None:
+            if existing.label_names != label_tuple or existing.buckets != bucket_tuple:
+                raise ValueError(
+                    f"Histogram '{name}' already registered with "
+                    f"labels={existing.label_names}, "
+                    f"buckets={existing.buckets}."
+                )
+            return
 
-            self._histograms[name] = _HistogramDef(
-                name=name,
-                label_names=label_tuple,
+        self._histograms[name] = _HistogramDef(
+            name=name,
+            label_names=label_tuple,
+            buckets=bucket_tuple,
+            group_level=group_level,
+        )
+
+        if bucket_tuple:
+            prom_hist = PromHistogram(
+                name,
+                f"Histogram {name}",
+                labelnames=label_tuple,
                 buckets=bucket_tuple,
-                group_level=group_level,
+            )
+        else:
+            prom_hist = PromHistogram(
+                name,
+                f"Histogram {name}",
+                labelnames=label_tuple,
             )
 
-            if bucket_tuple:
-                prom_hist = PromHistogram(
-                    name,
-                    f"Histogram {name}",
-                    labelnames=label_tuple,
-                    buckets=bucket_tuple,
-                )
-            else:
-                prom_hist = PromHistogram(
-                    name,
-                    f"Histogram {name}",
-                    labelnames=label_tuple,
-                )
-
-            self._prom_histograms[name] = prom_hist
+        self._prom_histograms[name] = prom_hist
 
     async def inc_counter(
         self,
@@ -959,7 +953,7 @@ def setup_multiprocess_prometheus():
         logger.debug("Created PROMETHEUS_MULTIPROC_DIR at %s", _prometheus_multiproc_dir.name)
     else:
         logger.warning(
-            "Found PROMETHEUS_MULTIPROC_DIR was set by user. " "This directory must be wiped between multiple runs."
+            "Found PROMETHEUS_MULTIPROC_DIR was set by user. This directory must be wiped between multiple runs."
         )
 
 
@@ -968,7 +962,7 @@ def get_prometheus_registry() -> CollectorRegistry:
     from prometheus_client import REGISTRY, CollectorRegistry, multiprocess
 
     if os.getenv("PROMETHEUS_MULTIPROC_DIR") is not None:
-        logger.debug("Using multiprocess registry for prometheus metrics")
+        logger.info("Using multiprocess registry for prometheus metrics: %s", os.getenv("PROMETHEUS_MULTIPROC_DIR"))
         registry = CollectorRegistry()
         multiprocess.MultiProcessCollector(registry)
         return registry

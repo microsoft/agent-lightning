@@ -78,12 +78,15 @@ def main(argv: Iterable[str] | None = None) -> int:
     trackers: List[MetricsBackend] = []
     prometheus_registry: CollectorRegistry | None = None
     if "prometheus" in args.tracker:
+        logger.info("Enabling Prometheus metrics tracking.")
         trackers.append(PrometheusMetricsBackend())
         if args.n_workers > 1:
+            logger.info("Setting up Prometheus multiprocess directory for metrics tracking.")
             setup_multiprocess_prometheus()
-            prometheus_registry = get_prometheus_registry()
+        prometheus_registry = get_prometheus_registry()
 
     if "console" in args.tracker:
+        logger.info("Enabling console metrics tracking.")
         trackers.append(ConsoleMetricsBackend())
 
     if len(trackers) == 0:
