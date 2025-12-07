@@ -6,7 +6,7 @@ This example demonstrates training a visual reasoning agent on the ChartQA datas
 
 ## Requirements
 
-This example requires a single node with at least one 40GB GPU. Follow the [installation guide](../../docs/tutorials/installation.md) to install Agent-Lightning and VERL-related dependencies.
+This example requires a single node with at least two 40GB GPU. Follow the [installation guide](../../docs/tutorials/installation.md) to install Agent-Lightning and VERL-related dependencies.
 
 Additionally, install the vision-language model dependencies:
 
@@ -28,7 +28,7 @@ This downloads the ChartQA dataset from HuggingFace (`HuggingFaceM4/ChartQA`), s
 
 **Dataset Statistics:**
 - Training: ~18,000 chart question-answer pairs
-- Test: ~2,000 pairs
+- Test: ~2,500 pairs
 - Chart types: Bar, line, pie, scatter, etc.
 
 ## Included Files
@@ -44,34 +44,43 @@ This downloads the ChartQA dataset from HuggingFace (`HuggingFaceM4/ChartQA`), s
 
 ## Running Examples
 
-### Debugging with OpenAI API
+### Debugging with Cloud API (Default)
 
-For quick testing with OpenAI API (no local GPU required):
+For quick testing with OpenAI or other cloud APIs (no local GPU required):
 
 ```bash
 export OPENAI_API_KEY=your-api-key
-USE_OPENAI=1 OPENAI_MODEL=gpt-4o uv run python chartqa_agent.py
+export MODEL=gpt-4o  # or other vision-capable model
+python chartqa_agent.py
 ```
 
-### Debugging with Local Model
-
-To test the agent with a local vLLM server:
+For other providers (Azure, etc.), set `OPENAI_API_BASE`:
 
 ```bash
-# Run the agent on test samples
-export OPENAI_API_BASE=http://localhost:8088/v1
-export MODEL=Qwen/Qwen2-VL-2B-Instruct
-export CHARTQA_DATA_DIR=<path to chartqa data>
+export OPENAI_API_BASE=https://your-resource.openai.azure.com/v1
+export MODEL=gpt-4o
+python chartqa_agent.py
+```
 
+### Debugging with Local Model (LLMProxy)
+
+To test the agent with a local vLLM server and LLMProxy:
+
+```bash
 # Start a vLLM server (specify image path for VLM)
-vllm serve Qwen/Qwen2-VL-2B-Instruct \
+export CHARTQA_DATA_DIR=<path to chartqa data>
+vllm serve Qwen/Qwen3-VL-2B-Instruct \
     --gpu-memory-utilization 0.6 \
     --max-model-len 4096 \
     --allowed-local-media-path $CHARTQA_DATA_DIR \
     --enable-prefix-caching \
     --port 8088
 
-uv run python chartqa_agent.py
+# Run the agent with LLMProxy
+USE_LLM_PROXY=1 \
+    OPENAI_API_BASE=http://localhost:8088/v1 \
+    MODEL=Qwen/Qwen3-VL-2B-Instruct \
+    python chartqa_agent.py
 ```
 
 ### Training with Local Model
@@ -80,10 +89,10 @@ Run the training script with VERL reinforcement learning:
 
 ```bash
 # Fast training (CI/testing, reduced epochs)
-uv run python train_chartqa_agent.py fast
+python train_chartqa_agent.py fast
 
 # Standard Qwen2-VL-2B training (2 epochs)
-uv run python train_chartqa_agent.py qwen
+python train_chartqa_agent.py qwen
 ```
 
 If you want to track experiments with Weights & Biases, set the `WANDB_API_KEY` environment variable before training.

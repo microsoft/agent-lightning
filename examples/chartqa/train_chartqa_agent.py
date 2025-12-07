@@ -89,33 +89,6 @@ def config_qwen() -> Dict[str, Any]:
 
 
 def train(config: Dict[str, Any]) -> None:
-    # Initialize Ray debugpy on port 5679
-    try:
-        import debugpy
-        import ray
-
-        # Check if we're in a Ray worker
-        if ray.is_initialized():
-            # Only attach debugger if not already attached
-            if not debugpy.is_client_connected():
-                debugpy.listen(("0.0.0.0", 5679))
-                print(f"[DEBUG] Debugpy listening on port 5679 (Ray worker PID: {os.getpid()})")
-                print("[DEBUG] Waiting for debugger to attach...")
-                debugpy.wait_for_client()
-                print("[DEBUG] Debugger attached!")
-        else:
-            # For main process, optionally enable debugging
-            if os.getenv("ENABLE_DEBUG", "0") == "1":
-                debugpy.listen(("0.0.0.0", 5679))
-                print(f"[DEBUG] Debugpy listening on port 5679 (Main process PID: {os.getpid()})")
-                print("[DEBUG] Waiting for debugger to attach...")
-                debugpy.wait_for_client()
-                print("[DEBUG] Debugger attached!")
-    except ImportError:
-        print("[WARNING] debugpy not installed. Skipping debug setup.")
-    except Exception as e:
-        print(f"[WARNING] Failed to initialize debugpy: {e}")
-
     agl.setup_logging(level="DEBUG", apply_to=["agentlightning", __name__])
     agent = LitChartQAAgent()
     algorithm = agl.VERL(config)

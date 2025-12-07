@@ -1,5 +1,3 @@
-# Copyright (c) Microsoft. All rights reserved.
-
 """ChartQA agent demonstrating multi-step visual reasoning with refinement loop.
 
 This agent analyzes charts and answers questions using a multi-turn workflow:
@@ -8,16 +6,13 @@ This agent analyzes charts and answers questions using a multi-turn workflow:
 3. calculate_answer: Perform calculations and provide answer
 4. check_answer: Verify the answer quality
 5. refine_answer: (conditional) Refine if errors detected
-
-Architecture inspired by SQL agent's write→execute→check→rewrite pattern,
-adapted for visual chart reasoning.
 """
 
 from __future__ import annotations
 
+import logging
 import os
 import re
-import time
 from typing import Any, Dict, List, Literal, Optional, cast
 
 import pandas as pd
@@ -36,16 +31,12 @@ from prompts import (
     REFINE_ANSWER_PROMPT,
 )
 
-agl.configure_logger()
+agl.setup_logging(apply_to=[__name__])
 
-logger = agl.configure_logger(name=__name__)
+logger = logging.getLogger(__name__)
 
-
-# State Management
 
 class ChartState(MessagesState):
-    """State for chart reasoning workflow."""
-
     question: str
     image_path: str
     observation: str
@@ -57,7 +48,6 @@ class ChartState(MessagesState):
     messages: list[AnyMessage]
 
 
-# Agent Class
 class ChartQAAgent:
     """Chart QA agent with multi-step reasoning and refinement loop."""
 
@@ -67,10 +57,11 @@ class ChartQAAgent:
         debug: bool = False,
         endpoint: str | None = None,
         verl_replacement: Dict[str, Any] | None = None,
+        use_base64_images: bool = False,
     ):
         self.debug = debug
         self.max_turns = max_turns
-
+        self.use_base64_images = use_base64_images
         if verl_replacement is not None:
             self.model_name: str = verl_replacement["model"]  # type: ignore
             assert endpoint is not None
@@ -80,12 +71,12 @@ class ChartQAAgent:
                 openai_api_base=endpoint,
                 openai_api_key=os.environ.get("OPENAI_API_KEY", "token-abc123"),
                 temperature=verl_replacement["temperature"],
-                max_retries=2,  # Retry on failure
+                max_retries=2,
                 max_tokens=1024,
-                timeout=300,  # 5 minute timeout per request
+                timeout=300,
             )
         else:
-            self.model_name: str = os.environ.get("MODEL", "Qwen/Qwen2-VL-2B-Instruct")
+            self.model_name = os.environ.get("MODEL", "Qwen/Qwen2-VL-2B-Instruct")
             self.llm = init_chat_model(
                 self.model_name,
                 model_provider="openai",
@@ -93,11 +84,11 @@ class ChartQAAgent:
                 openai_api_key=os.environ.get("OPENAI_API_KEY", "token-abc123"),
                 temperature=0.0,
                 max_retries=1,
-                max_tokens=1024,
+                max_tokens=512,
             )
 
     def invoke_prompt(self, prompt: Any) -> AnyMessage:
-        """Invoke LLM with prompt (with debug printing)."""
+        """Invoke LLM with prompt."""
         if self.debug:
             for message in prompt.messages:
                 termcolor.cprint(message.pretty_repr(), "blue")
@@ -106,7 +97,6 @@ class ChartQAAgent:
             result = self.llm.invoke(prompt)
         except Exception as e:
             logger.error(f"Failed to invoke prompt: {e}")
-            # Fallback to create a random response
             result = self.llm.invoke([HumanMessage(content="Please provide a reasonable answer.")])
 
         if self.debug:
@@ -115,18 +105,27 @@ class ChartQAAgent:
         return result  # type: ignore
 
     def invoke_prompt_with_image(self, prompt_text: str, image_path: str) -> str:
-        """Invoke vision-language model with image."""
-        # Construct multimodal message
-        if not image_path.startswith("file://"):
-            # Use realpath to resolve symlinks and match vLLM's path validation
-            image_path = f"file://{os.path.realpath(image_path)}"
+        """Invoke vision-language model with image.
+
+        Handles both local vLLM (file:// URLs) and cloud APIs (base64 encoding).
+        Cloud APIs (OpenAI, Anthropic, Google, Azure, etc.) require base64 encoding.
+        """
+        # Determine image URL format based on endpoint
+        if self.use_base64_images:
+            # Cloud APIs require base64 encoding for local files
+            image_url = self._encode_image_base64(image_path)
+        else:
+            # Local vLLM supports file:// URLs
+            if not image_path.startswith("file://"):
+                image_path = f"file://{os.path.realpath(image_path)}"
+            image_url = image_path
 
         messages = [
             {
                 "role": "user",
                 "content": [
                     {"type": "text", "text": prompt_text},
-                    {"type": "image_url", "image_url": {"url": image_path}},
+                    {"type": "image_url", "image_url": {"url": image_url}},
                 ],
             }
         ]
@@ -146,26 +145,40 @@ class ChartQAAgent:
 
         return response  # type: ignore
 
+    def _encode_image_base64(self, image_path: str) -> str:
+        """Encode local image file as base64 data URI for cloud APIs."""
+        import base64
+        import mimetypes
+
+        # Handle file:// prefix
+        if image_path.startswith("file://"):
+            image_path = image_path[7:]
+
+        # Determine MIME type
+        mime_type, _ = mimetypes.guess_type(image_path)
+        if mime_type is None:
+            mime_type = "image/png"
+
+        # Read and encode image
+        with open(image_path, "rb") as f:
+            image_data = base64.b64encode(f.read()).decode("utf-8")
+
+        return f"data:{mime_type};base64,{image_data}"
+
     def extract_content(self, text: str, tag: str) -> str:
         """Extract content between XML-style tags."""
-        pattern = rf"<{tag}>(.*?)</{tag}>"
-        match = re.search(pattern, text, re.DOTALL)
-        if match:
-            return match.group(1).strip()
-        return ""
+        match = re.search(rf"<{tag}>(.*?)</{tag}>", text, re.DOTALL)
+        return match.group(1).strip() if match else ""
 
     def analyze_chart(self, state: ChartState) -> ChartState:
         """Step 1: Observe and describe the chart."""
-        prompt = ANALYZE_CHART_PROMPT.invoke({"question": state["question"]})
-        prompt_text = prompt.messages[1].content  # Get the user message text
+        prompt: Any = ANALYZE_CHART_PROMPT.invoke({"question": state["question"]})  # type: ignore
+        prompt_text = prompt.messages[1].content
 
-        # Call VLM with image
         result_text = self.invoke_prompt_with_image(prompt_text, state["image_path"])
 
-        # Extract observation
         observation = self.extract_content(result_text, "observe")
         if not observation:
-            # Fallback if tags not used
             observation = result_text
 
         return {  # type: ignore
@@ -177,7 +190,7 @@ class ChartQAAgent:
 
     def extract_data(self, state: ChartState) -> ChartState:
         """Step 2: Extract specific data values."""
-        prompt = EXTRACT_DATA_PROMPT.invoke(
+        prompt: Any = EXTRACT_DATA_PROMPT.invoke(  # type: ignore
             {
                 "observation": state["observation"],
                 "question": state["question"],
@@ -185,7 +198,6 @@ class ChartQAAgent:
         )
         result = self.invoke_prompt(prompt)
 
-        # Extract data
         extracted_data = self.extract_content(result.content, "extract")  # type: ignore
         if not extracted_data:
             extracted_data = result.content  # type: ignore
@@ -198,7 +210,7 @@ class ChartQAAgent:
 
     def calculate_answer(self, state: ChartState) -> ChartState:
         """Step 3: Calculate and provide answer."""
-        prompt = CALCULATE_ANSWER_PROMPT.invoke(
+        prompt: Any = CALCULATE_ANSWER_PROMPT.invoke(  # type: ignore
             {
                 "extracted_data": state["extracted_data"],
                 "question": state["question"],
@@ -206,12 +218,9 @@ class ChartQAAgent:
         )
         result = self.invoke_prompt(prompt)
 
-        # Extract calculation and answer
         calculation = self.extract_content(result.content, "calculate")  # type: ignore
         answer = self.extract_content(result.content, "answer")  # type: ignore
-
         if not answer:
-            # Fallback if answer tag not found
             answer = result.content  # type: ignore
 
         return {  # type: ignore
@@ -223,7 +232,7 @@ class ChartQAAgent:
 
     def check_answer(self, state: ChartState) -> ChartState:
         """Step 4: Verify answer quality."""
-        prompt = CHECK_ANSWER_PROMPT.invoke(
+        prompt: Any = CHECK_ANSWER_PROMPT.invoke(  # type: ignore
             {
                 "observation": state["observation"],
                 "extracted_data": state["extracted_data"],
@@ -245,7 +254,7 @@ class ChartQAAgent:
 
     def refine_answer(self, state: ChartState) -> ChartState:
         """Step 5: Refine answer based on feedback."""
-        prompt = REFINE_ANSWER_PROMPT.invoke(
+        prompt: Any = REFINE_ANSWER_PROMPT.invoke(  # type: ignore
             {
                 "observation": state["observation"],
                 "extracted_data": state["extracted_data"],
@@ -256,21 +265,16 @@ class ChartQAAgent:
             }
         )
         result = self.invoke_prompt(prompt)
+        content: str = result.content  # type: ignore
 
-        # Re-extract data if provided
-        new_extracted = self.extract_content(result.content, "extract")  # type: ignore
-        if new_extracted:
-            extracted_data = new_extracted
-        else:
-            extracted_data = state["extracted_data"]
+        new_extracted = self.extract_content(content, "extract")
+        extracted_data = new_extracted if new_extracted else state["extracted_data"]
 
-        # New calculation
-        new_calculation = self.extract_content(result.content, "calculate")  # type: ignore
+        new_calculation = self.extract_content(content, "calculate")
 
-        # New answer
-        new_answer = self.extract_content(result.content, "answer")  # type: ignore
+        new_answer = self.extract_content(content, "answer")
         if not new_answer:
-            new_answer = result.content  # type: ignore
+            new_answer = content
 
         return {  # type: ignore
             **state,
@@ -287,7 +291,6 @@ class ChartQAAgent:
             last_message = state["messages"][-1]
             if "THE ANSWER IS CORRECT" in last_message.content:  # type: ignore
                 if "THE ANSWER IS INCORRECT" in last_message.content:  # type: ignore
-                    # Both found, check which is last
                     correct_index = last_message.content.rfind("THE ANSWER IS CORRECT")  # type: ignore
                     incorrect_index = last_message.content.rfind("THE ANSWER IS INCORRECT")  # type: ignore
                     if correct_index > incorrect_index:
@@ -313,14 +316,10 @@ class ChartQAAgent:
         builder.add_edge("analyze_chart", "extract_data")
         builder.add_edge("extract_data", "calculate_answer")
         builder.add_edge("calculate_answer", "check_answer")
-
-        # Conditional: continue or refine
         builder.add_conditional_edges(
             "check_answer",
             self.should_continue,  # type: ignore
         )
-
-        # Refinement loop
         builder.add_edge("refine_answer", "extract_data")
 
         return builder.compile()  # type: ignore
@@ -329,7 +328,6 @@ class ChartQAAgent:
 def evaluate_answer(predicted: str, ground_truth: str, raise_on_error: bool = False) -> float:
     """Evaluate answer accuracy."""
     try:
-        # Normalize strings
         pred = predicted.lower().strip()
         gt = ground_truth.lower().strip()
 
@@ -341,7 +339,6 @@ def evaluate_answer(predicted: str, ground_truth: str, raise_on_error: bool = Fa
         try:
             pred_num = float(pred.replace(",", ""))
             gt_num = float(gt.replace(",", ""))
-            # Allow small relative error
             if abs(pred_num - gt_num) / max(abs(gt_num), 1e-9) < 0.02:
                 return 1.0
         except (ValueError, AttributeError):
@@ -355,9 +352,8 @@ def evaluate_answer(predicted: str, ground_truth: str, raise_on_error: bool = Fa
     except Exception as e:
         if raise_on_error:
             raise
-        else:
-            logger.exception(f"Error evaluating answer: {e}")
-            return 0.0
+        logger.exception(f"Error evaluating answer: {e}")
+        return 0.0
 
 
 class LitChartQAAgent(agl.LitAgent[Dict[str, Any]]):
@@ -368,13 +364,14 @@ class LitChartQAAgent(agl.LitAgent[Dict[str, Any]]):
         trained_agents: Optional[str] = r"analyze|extract|calculate",
         val_temperature: Optional[float] = None,
         max_turns: int = 3,
+        use_base64_images: bool = False,
     ) -> None:
         super().__init__(trained_agents=trained_agents)
         self.val_temperature = val_temperature
-        # Use absolute path to ensure Ray actors can find images
+        self.max_turns = max_turns
+        self.use_base64_images = use_base64_images
         default_data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
         self.chartqa_dir = os.environ.get("CHARTQA_DATA_DIR", default_data_dir)
-        self.max_turns = max_turns
 
     def rollout(
         self,
@@ -384,10 +381,8 @@ class LitChartQAAgent(agl.LitAgent[Dict[str, Any]]):
     ) -> float | None:
         """Execute agent rollout on a ChartQA task."""
         question = task["question"]
-        start_time = time.time()
         llm: agl.LLM = cast(agl.LLM, resources["main_llm"])
 
-        # Construct full image path
         image_path = os.path.join(self.chartqa_dir, task["image_path"])
         ground_truth = task["answer"]
 
@@ -397,7 +392,6 @@ class LitChartQAAgent(agl.LitAgent[Dict[str, Any]]):
 
         rollout_id = rollout.rollout_id
 
-        # Create agent
         agent = ChartQAAgent(
             max_turns=self.max_turns,
             debug=False,
@@ -414,10 +408,10 @@ class LitChartQAAgent(agl.LitAgent[Dict[str, Any]]):
                     ),
                 }
             ),
+            use_base64_images=self.use_base64_images,
         ).graph()
 
         try:
-            # Run agent
             handler = self.tracer.get_langchain_handler()
             result = agent.invoke(  # type: ignore
                 {"question": question, "image_path": image_path},  # type: ignore
@@ -425,104 +419,138 @@ class LitChartQAAgent(agl.LitAgent[Dict[str, Any]]):
             )
         except Exception as e:
             import traceback
+
             error_msg = f"[Rollout {rollout_id}] Error during agent invocation: {e}\n{traceback.format_exc()}"
             logger.exception(error_msg)
             return None
 
         predicted_answer = result["answer"]
-
-        end_time_rollout = time.time()
-
-        # Evaluate
         reward = evaluate_answer(predicted_answer, ground_truth, raise_on_error=False)
-
-        end_time_eval = time.time()
 
         return reward
 
 
 def create_llm_proxy_for_chartqa(vllm_endpoint: str, port: int = 8081) -> agl.LLMProxy:
-    """Create LLMProxy configured for ChartQA with token ID capture.
-
-    Args:
-        vllm_endpoint: The vLLM server endpoint (e.g., http://localhost:8088/v1)
-        port: Port for LLMProxy to listen on
-
-    Returns:
-        Configured LLMProxy instance ready to start
-    """
-    # Use LightningStoreThreaded for thread-safe operations (required for launch_mode="thread")
+    """Create LLMProxy configured for ChartQA with token ID capture."""
     store = agl.LightningStoreThreaded(agl.InMemoryLightningStore())
 
     llm_proxy = agl.LLMProxy(
         port=port,
         store=store,
-        model_list=[{
-            "model_name": "Qwen/Qwen2-VL-2B-Instruct",
-            "litellm_params": {
-                "model": "hosted_vllm/Qwen/Qwen2-VL-2B-Instruct",
-                "api_base": vllm_endpoint,
-            },
-        }],
-        callbacks=["return_token_ids", "opentelemetry"],  # Enable token ID capture
-        launch_mode="thread",  # Thread mode requires thread-safe store
+        model_list=[
+            {
+                "model_name": "Qwen/Qwen2-VL-2B-Instruct",
+                "litellm_params": {
+                    "model": "hosted_vllm/Qwen/Qwen2-VL-2B-Instruct",
+                    "api_base": vllm_endpoint,
+                },
+            }
+        ],
+        callbacks=["return_token_ids"],
+        launch_mode="thread",
     )
 
     return llm_proxy
 
 
 def debug_chartqa_agent():
-    """Debug function to test agent with sample data and token ID capture."""
+    """Debug function to test agent with cloud APIs (default).
+
+    Usage:
+        python chartqa_agent.py
+
+    Environment variables:
+        MODEL: Model name (default: gpt-4o)
+        OPENAI_API_BASE: API endpoint (default: https://api.openai.com/v1)
+        OPENAI_API_KEY: API key for authentication
+    """
+    chartqa_dir = os.environ.get("CHARTQA_DATA_DIR", "data")
+    test_data_path = os.path.join(chartqa_dir, "test_chartqa.parquet")
+
+    if not os.path.exists(test_data_path):
+        raise FileNotFoundError(
+            f"Test data file {test_data_path} does not exist. Please run prepare_data.py first."
+        )
+
+    df = pd.read_parquet(test_data_path).head(10)  # type: ignore
+    test_data = cast(List[Dict[str, Any]], df.to_dict(orient="records"))  # type: ignore
+
+    model = os.environ.get("MODEL", "gpt-4o")
+    endpoint = os.environ.get("OPENAI_API_BASE", "https://api.openai.com/v1")
+    logger.info(f"Debug data: {len(test_data)} samples, model: {model}, endpoint: {endpoint}")
+
+    trainer = agl.Trainer(
+        n_workers=1,
+        initial_resources={
+            "main_llm": agl.LLM(
+                endpoint=endpoint,
+                model=model,
+                sampling_parameters={"temperature": 0.0},
+            )
+        },
+    )
+    trainer.dev(LitChartQAAgent(use_base64_images=True), test_data)
+
+
+def debug_chartqa_agent_with_llm_proxy():
+    """Debug function to test agent with local vLLM server and LLMProxy.
+
+    Usage:
+        USE_LLM_PROXY=1 OPENAI_API_BASE=http://localhost:8088/v1 python chartqa_agent.py
+    """
     import asyncio
+
     import nest_asyncio
-    nest_asyncio.apply()  # Allow nested event loops (trainer may create its own)
+
+    nest_asyncio.apply()
 
     chartqa_dir = os.environ.get("CHARTQA_DATA_DIR", "data")
     test_data_path = os.path.join(chartqa_dir, "test_chartqa.parquet")
 
     if not os.path.exists(test_data_path):
-        raise FileNotFoundError(f"Test data file {test_data_path} does not exist. Please run prepare_data.py first.")
+        raise FileNotFoundError(
+            f"Test data file {test_data_path} does not exist. Please run prepare_data.py first."
+        )
 
     df = pd.read_parquet(test_data_path).head(10)  # type: ignore
     test_data = cast(List[Dict[str, Any]], df.to_dict(orient="records"))  # type: ignore
 
     vllm_endpoint = os.environ.get("OPENAI_API_BASE", "http://localhost:8088/v1")
+    model = os.environ.get("MODEL", "Qwen/Qwen2-VL-2B-Instruct")
 
-    # Create SHARED store for both LLMProxy and Trainer
     store = agl.LightningStoreThreaded(agl.InMemoryLightningStore())
 
     llm_proxy = agl.LLMProxy(
         port=8089,
-        store=store,  # Use shared store
-        model_list=[{
-            "model_name": "Qwen/Qwen2-VL-2B-Instruct",
-            "litellm_params": {
-                "model": "hosted_vllm/Qwen/Qwen2-VL-2B-Instruct",
-                "api_base": vllm_endpoint,
-            },
-        }],
-        callbacks=["return_token_ids"],  # Remove "opentelemetry" to avoid otlp_traces issue
+        store=store,
+        model_list=[
+            {
+                "model_name": model,
+                "litellm_params": {
+                    "model": f"hosted_vllm/{model}",
+                    "api_base": vllm_endpoint,
+                },
+            }
+        ],
+        callbacks=["return_token_ids"],
         launch_mode="thread",
     )
 
     try:
-        # Start LLMProxy
         logger.info("Starting LLMProxy...")
         asyncio.run(llm_proxy.start())
 
-        # Wait for LLMProxy to be ready
         logger.info("Waiting for LLMProxy to be ready...")
-        # time.sleep(2)
 
         trainer = agl.Trainer(
             n_workers=2,
-            store=store,  # CRITICAL: Pass same store to trainer
+            store=store,
             llm_proxy=llm_proxy,
-            strategy={"name": "shm", "main_thread":"algorithm", "managed_store": False},
+            strategy={"name": "shm", "main_thread": "algorithm", "managed_store": False},
             initial_resources={
                 "main_llm": agl.LLM(
                     endpoint="http://localhost:8089/v1",
-                    model="Qwen/Qwen2-VL-2B-Instruct",
+                    model=model,
                     sampling_parameters={"temperature": 0.0},
                 )
             },
@@ -546,4 +574,7 @@ def debug_chartqa_agent():
 
 
 if __name__ == "__main__":
-    debug_chartqa_agent()
+    if os.environ.get("USE_LLM_PROXY", "").lower() in ("1", "true", "yes"):
+        debug_chartqa_agent_with_llm_proxy()
+    else:
+        debug_chartqa_agent()
