@@ -49,7 +49,7 @@ This downloads the ChartQA dataset from HuggingFace (`HuggingFaceM4/ChartQA`), s
 For quick testing with OpenAI or other cloud APIs (no local GPU required):
 
 ```bash
-export OPENAI_API_KEY=your-api-key
+export OPENAI_API_KEY=<your-api-key>
 export MODEL=gpt-4o  # or other vision-capable model
 python chartqa_agent.py
 ```
@@ -69,7 +69,7 @@ To test the agent with a local vLLM server and LLMProxy:
 ```bash
 # Start a vLLM server (specify image path for VLM)
 export CHARTQA_DATA_DIR=<path to chartqa data>
-vllm serve Qwen/Qwen3-VL-2B-Instruct \
+vllm serve Qwen/Qwen2-VL-2B-Instruct \
     --gpu-memory-utilization 0.6 \
     --max-model-len 4096 \
     --allowed-local-media-path $CHARTQA_DATA_DIR \
@@ -79,7 +79,7 @@ vllm serve Qwen/Qwen3-VL-2B-Instruct \
 # Run the agent with LLMProxy
 USE_LLM_PROXY=1 \
     OPENAI_API_BASE=http://localhost:8088/v1 \
-    MODEL=Qwen/Qwen3-VL-2B-Instruct \
+    MODEL=Qwen/Qwen2-VL-2B-Instruct \
     python chartqa_agent.py
 ```
 
