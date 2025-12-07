@@ -144,7 +144,7 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
             await algorithm(wrapper_store, stop_evt)
             logger.debug("Algorithm bundle completed successfully")
         except asyncio.CancelledError:
-            logger.debug("Algorithm received CancelledError; signaling stop event")
+            logger.info("Algorithm received CancelledError; signaling stop event")
             stop_evt.set()
             raise
         except KeyboardInterrupt:
