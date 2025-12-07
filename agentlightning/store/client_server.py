@@ -922,11 +922,11 @@ class LightningStoreServer(LightningStore):
                 path = get_template_path(request.url.path)
                 method = request.method
 
-                self._tracker.inc_counter(
+                await self._tracker.inc_counter(
                     "agl.http.total",
                     labels={"method": method, "path": path, "status": str(status)},
                 )
-                self._tracker.observe_histogram(
+                await self._tracker.observe_histogram(
                     "agl.http.latency",
                     value=elapsed,
                     labels={"method": method, "path": path, "status": str(status)},

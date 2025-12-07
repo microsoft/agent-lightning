@@ -100,22 +100,23 @@ class _RecordingBackend(MetricsBackend):
     ) -> None:
         self.calls.append(("register_histogram", (name, tuple(label_names or ()), tuple(buckets or ()), group_level)))
 
-    def inc_counter(self, name: str, amount: float = 1.0, labels: Optional[Dict[str, str]] = None) -> None:
+    async def inc_counter(self, name: str, amount: float = 1.0, labels: Optional[Dict[str, str]] = None) -> None:
         self.calls.append(("inc_counter", (name, amount, labels or {})))
 
-    def observe_histogram(self, name: str, value: float, labels: Optional[Dict[str, str]] = None) -> None:
+    async def observe_histogram(self, name: str, value: float, labels: Optional[Dict[str, str]] = None) -> None:
         self.calls.append(("observe_histogram", (name, value, labels or {})))
 
 
-def test_multi_metrics_backend_fans_out_calls() -> None:
+@pytest.mark.asyncio
+async def test_multi_metrics_backend_fans_out_calls() -> None:
     backend_a = _RecordingBackend()
     backend_b = _RecordingBackend()
     multi = MultiMetricsBackend([backend_a, backend_b])
 
     multi.register_counter("hits", label_names=["method"])
     multi.register_histogram("latency", label_names=["method"], buckets=[0.1, 1.0])
-    multi.inc_counter("hits", amount=2.5, labels={"method": "GET"})
-    multi.observe_histogram("latency", value=0.4, labels={"method": "GET"})
+    await multi.inc_counter("hits", amount=2.5, labels={"method": "GET"})
+    await multi.observe_histogram("latency", value=0.4, labels={"method": "GET"})
 
     expected_calls: List[Tuple[str, Tuple[Any, ...]]] = [
         ("register_counter", ("hits", ("method",), None)),
@@ -212,7 +213,8 @@ def _make_prometheus_stub() -> _PrometheusStub:
     return _PrometheusStub()
 
 
-def test_prometheus_backend_binds_stubbed_prometheus(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.asyncio
+async def test_prometheus_backend_binds_stubbed_prometheus(monkeypatch: pytest.MonkeyPatch) -> None:
     stub = _make_prometheus_stub()
     monkeypatch.setitem(sys.modules, "prometheus_client", stub)
 
@@ -220,8 +222,8 @@ def test_prometheus_backend_binds_stubbed_prometheus(monkeypatch: pytest.MonkeyP
     backend.register_counter("hits", ["method"])
     backend.register_histogram("latency", ["method"], buckets=[0.5])
 
-    backend.inc_counter("hits", amount=2.0, labels={"method": "GET"})
-    backend.observe_histogram("latency", value=0.1, labels={"method": "GET"})
+    await backend.inc_counter("hits", amount=2.0, labels={"method": "GET"})
+    await backend.observe_histogram("latency", value=0.1, labels={"method": "GET"})
 
     counter_instance = stub.counter_instances[0]
     histogram_instance = stub.histogram_instances[0]
@@ -236,7 +238,8 @@ def _split_segments(log_lines: Sequence[str]) -> List[str]:
     return [seg for seg in segments if seg]
 
 
-def test_console_backend_sliding_window_rate_and_eviction(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.asyncio
+async def test_console_backend_sliding_window_rate_and_eviction(monkeypatch: pytest.MonkeyPatch) -> None:
     backend = ConsoleMetricsBackend(window_seconds=5.0, log_interval_seconds=0.0, group_level=2)
     backend.register_counter("requests", ["group", "path"])
 
@@ -247,9 +250,9 @@ def test_console_backend_sliding_window_rate_and_eviction(monkeypatch: pytest.Mo
     monkeypatch.setattr(metrics_module.time, "time", lambda: next(times))
 
     labels = {"group": "api", "path": "/list"}
-    backend.inc_counter("requests", labels=labels)
-    backend.inc_counter("requests", labels=labels)
-    backend.inc_counter("requests", labels=labels)
+    await backend.inc_counter("requests", labels=labels)
+    await backend.inc_counter("requests", labels=labels)
+    await backend.inc_counter("requests", labels=labels)
 
     segments = [seg for seg in _split_segments(logged) if seg.startswith("requests{group=api,path=/list}")]
     assert len(segments) == 3
@@ -272,7 +275,8 @@ def _duration_to_seconds(payload: str) -> float:
     raise AssertionError(f"Unknown duration format: {payload}")
 
 
-def test_console_backend_histogram_quantiles_and_group_depth(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.asyncio
+async def test_console_backend_histogram_quantiles_and_group_depth(monkeypatch: pytest.MonkeyPatch) -> None:
     backend = ConsoleMetricsBackend(window_seconds=10.0, log_interval_seconds=0.0, group_level=2)
     backend.register_histogram("latency", ["service", "endpoint", "status"])
 
@@ -285,10 +289,10 @@ def test_console_backend_histogram_quantiles_and_group_depth(monkeypatch: pytest
     svc_a_labels = {"service": "svcA", "endpoint": "/search", "status": "200"}
     svc_b_labels = {"service": "svcB", "endpoint": "/chat", "status": "500"}
 
-    backend.observe_histogram("latency", value=0.01, labels=svc_a_labels)
-    backend.observe_histogram("latency", value=0.02, labels=svc_a_labels)
-    backend.observe_histogram("latency", value=0.03, labels=svc_a_labels)
-    backend.observe_histogram("latency", value=2.0, labels=svc_b_labels)
+    await backend.observe_histogram("latency", value=0.01, labels=svc_a_labels)
+    await backend.observe_histogram("latency", value=0.02, labels=svc_a_labels)
+    await backend.observe_histogram("latency", value=0.03, labels=svc_a_labels)
+    await backend.observe_histogram("latency", value=2.0, labels=svc_b_labels)
 
     svc_a_segments = [
         seg for seg in _split_segments(logged) if seg.startswith("latency{service=svcA,endpoint=/search}")
@@ -308,7 +312,8 @@ def test_console_backend_histogram_quantiles_and_group_depth(monkeypatch: pytest
     assert abs(p99 - 0.0298) < 5e-3
 
 
-def test_console_backend_logs_all_metric_groups(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.asyncio
+async def test_console_backend_logs_all_metric_groups(monkeypatch: pytest.MonkeyPatch) -> None:
     backend = ConsoleMetricsBackend(window_seconds=None, log_interval_seconds=0.0)
     backend.register_counter("requests", ["group"])
     backend.register_counter("errors", ["group"])
@@ -319,8 +324,8 @@ def test_console_backend_logs_all_metric_groups(monkeypatch: pytest.MonkeyPatch)
     times = iter([0.0, 1.0])
     monkeypatch.setattr(metrics_module.time, "time", lambda: next(times))
 
-    backend.inc_counter("requests", labels={"group": "api"})
-    backend.inc_counter("errors", labels={"group": "api"})
+    await backend.inc_counter("requests", labels={"group": "api"})
+    await backend.inc_counter("errors", labels={"group": "api"})
 
     assert logged, "expected log output"
     last_line = logged[-1]
@@ -411,7 +416,8 @@ def test_console_backend_group_level_positive_only_aggregates_prefix() -> None:
     assert line.count("requests{a=x}") == 1
 
 
-def test_console_backend_logs_preserve_registration_label_order(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.asyncio
+async def test_console_backend_logs_preserve_registration_label_order(monkeypatch: pytest.MonkeyPatch) -> None:
     backend = ConsoleMetricsBackend(window_seconds=None, log_interval_seconds=0.0, group_level=3)
     backend.register_counter("requests", ["path", "method", "status"])
 
@@ -421,14 +427,15 @@ def test_console_backend_logs_preserve_registration_label_order(monkeypatch: pyt
     times = iter([0.0, 1.0])
     monkeypatch.setattr(metrics_module.time, "time", lambda: next(times))
 
-    backend.inc_counter("requests", labels={"status": "200", "path": "/search", "method": "GET"})
+    await backend.inc_counter("requests", labels={"status": "200", "path": "/search", "method": "GET"})
 
     assert logged, "expected log output"
     last_line = logged[-1]
     assert "requests{path=/search,method=GET,status=200}" in last_line
 
 
-def test_console_backend_metric_specific_group_level_applies(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.asyncio
+async def test_console_backend_metric_specific_group_level_applies(monkeypatch: pytest.MonkeyPatch) -> None:
     backend = ConsoleMetricsBackend(window_seconds=None, log_interval_seconds=0.0)
     backend.register_counter("requests", ["service", "endpoint", "status"], group_level=2)
 
@@ -438,7 +445,7 @@ def test_console_backend_metric_specific_group_level_applies(monkeypatch: pytest
     times = iter([0.0, 1.0])
     monkeypatch.setattr(metrics_module.time, "time", lambda: next(times))
 
-    backend.inc_counter("requests", labels={"status": "200", "endpoint": "/search", "service": "svcA"})
+    await backend.inc_counter("requests", labels={"status": "200", "endpoint": "/search", "service": "svcA"})
 
     assert logged, "expected log output"
     last_line = logged[-1]
@@ -446,7 +453,8 @@ def test_console_backend_metric_specific_group_level_applies(monkeypatch: pytest
     assert "status" not in last_line
 
 
-def test_console_backend_global_group_level_overrides_metric(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.asyncio
+async def test_console_backend_global_group_level_overrides_metric(monkeypatch: pytest.MonkeyPatch) -> None:
     backend = ConsoleMetricsBackend(window_seconds=None, log_interval_seconds=0.0, group_level=1)
     backend.register_counter("requests", ["service", "endpoint"], group_level=2)
 
@@ -456,7 +464,7 @@ def test_console_backend_global_group_level_overrides_metric(monkeypatch: pytest
     times = iter([0.0, 1.0])
     monkeypatch.setattr(metrics_module.time, "time", lambda: next(times))
 
-    backend.inc_counter("requests", labels={"service": "svcA", "endpoint": "/search"})
+    await backend.inc_counter("requests", labels={"service": "svcA", "endpoint": "/search"})
 
     assert logged, "expected log output"
     last_line = logged[-1]
@@ -464,7 +472,8 @@ def test_console_backend_global_group_level_overrides_metric(monkeypatch: pytest
     assert "endpoint" not in last_line
 
 
-def test_console_backend_histogram_metric_group_level(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.asyncio
+async def test_console_backend_histogram_metric_group_level(monkeypatch: pytest.MonkeyPatch) -> None:
     backend = ConsoleMetricsBackend(window_seconds=None, log_interval_seconds=0.0)
     backend.register_histogram("latency", ["service", "endpoint"], group_level=1)
 
@@ -474,8 +483,8 @@ def test_console_backend_histogram_metric_group_level(monkeypatch: pytest.Monkey
     times = iter([0.0, 1.0, 2.0])
     monkeypatch.setattr(metrics_module.time, "time", lambda: next(times))
 
-    backend.observe_histogram("latency", value=0.01, labels={"service": "svcA", "endpoint": "/search"})
-    backend.observe_histogram("latency", value=0.02, labels={"service": "svcA", "endpoint": "/chat"})
+    await backend.observe_histogram("latency", value=0.01, labels={"service": "svcA", "endpoint": "/search"})
+    await backend.observe_histogram("latency", value=0.02, labels={"service": "svcA", "endpoint": "/chat"})
 
     assert logged, "expected log output"
     latest = logged[-1]

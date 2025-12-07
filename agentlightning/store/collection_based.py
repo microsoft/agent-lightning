@@ -144,10 +144,10 @@ def tracked(name: str):
                 raise
             finally:
                 elapsed = time.perf_counter() - start_time
-                self._tracker.inc_counter(  # pyright: ignore[reportPrivateUsage]
+                await self._tracker.inc_counter(  # pyright: ignore[reportPrivateUsage]
                     "agl.store.total", labels={"method": name, "status": status}
                 )
-                self._tracker.observe_histogram(  # pyright: ignore[reportPrivateUsage]
+                await self._tracker.observe_histogram(  # pyright: ignore[reportPrivateUsage]
                     "agl.store.latency", value=elapsed, labels={"method": name, "status": status}
                 )
 
@@ -1481,8 +1481,8 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
                         "status": rollout.status,
                         "mode": rollout.mode if rollout.mode is not None else "unknown",
                     }
-                    self._tracker.inc_counter("agl.rollouts.total", labels=labels)
-                    self._tracker.observe_histogram(
+                    await self._tracker.inc_counter("agl.rollouts.total", labels=labels)
+                    await self._tracker.observe_histogram(
                         "agl.rollouts.duration", value=cast(float, rollout.end_time) - rollout.start_time, labels=labels
                     )
 

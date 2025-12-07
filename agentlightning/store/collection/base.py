@@ -163,7 +163,7 @@ class TrackedCollection:
                 raise
             finally:
                 elapsed = time.perf_counter() - start_time
-                self._tracker.inc_counter(  # pyright: ignore[reportPrivateUsage]
+                await self._tracker.inc_counter(  # pyright: ignore[reportPrivateUsage]
                     "agl.collections.total",
                     labels={
                         "store_method": store_method,
@@ -173,7 +173,7 @@ class TrackedCollection:
                         **self.extra_tracking_labels,
                     },
                 )
-                self._tracker.observe_histogram(  # pyright: ignore[reportPrivateUsage]
+                await self._tracker.observe_histogram(  # pyright: ignore[reportPrivateUsage]
                     "agl.collections.latency",
                     value=elapsed,
                     labels={
