@@ -54,7 +54,11 @@ RL_CONFIG: Dict[str, Any] = {
             "fsdp_config": {"param_offload": True, "optimizer_offload": True},
         },
         "ref": {"log_prob_micro_batch_size_per_gpu": 1, "fsdp_config": {"param_offload": True}},
-        "model": {"path": "Qwen/Qwen2-VL-2B-Instruct", "use_remove_padding": True, "enable_gradient_checkpointing": True},
+        "model": {
+            "path": "Qwen/Qwen2-VL-2B-Instruct",
+            "use_remove_padding": True,
+            "enable_gradient_checkpointing": True,
+        },
     },
     "trainer": {
         "n_gpus_per_node": 2,

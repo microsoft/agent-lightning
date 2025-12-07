@@ -1,5 +1,3 @@
-# Copyright (c) Microsoft. All rights reserved.
-
 """
 Multimodal support utilities for Agent Lightning.
 
@@ -7,20 +5,33 @@ This module provides helper functions for working with multimodal agents,
 particularly for vision-language tasks.
 """
 
+from __future__ import annotations
+
 import base64
 from io import BytesIO
 from pathlib import Path
-from typing import Dict, List, Union
+from typing import TYPE_CHECKING, Any, Union
 
+if TYPE_CHECKING:
+    from PIL import Image as PILImage
+
+    ImageType = PILImage.Image
+else:
+    ImageType = Any
+
+# Check for optional dependencies
+_multimodal_deps_available = False
 try:
-    from PIL import Image
-    import requests
-    MULTIMODAL_DEPS_AVAILABLE = True
+    import requests as _requests
+    from PIL import Image as _Image
+
+    _multimodal_deps_available = True
 except ImportError:
-    MULTIMODAL_DEPS_AVAILABLE = False
+    _requests = None  # type: ignore[assignment]
+    _Image = None  # type: ignore[assignment]
 
 
-def encode_image_to_base64(image: Union[str, Path, "Image.Image"], max_size: int = 2048) -> str:
+def encode_image_to_base64(image: Union[str, Path, ImageType], max_size: int = 2048) -> str:
     """
     Encode an image to base64 string for multimodal LLM APIs.
 
@@ -44,29 +55,27 @@ def encode_image_to_base64(image: Union[str, Path, "Image.Image"], max_size: int
         >>> img = Image.open("photo.jpg")
         >>> encoded = encode_image_to_base64(img)
     """
-    if not MULTIMODAL_DEPS_AVAILABLE:
-        raise ImportError(
-            "Multimodal support requires Pillow and requests. "
-            "Install with: pip install Pillow requests"
-        )
+    if not _multimodal_deps_available or _requests is None or _Image is None:
+        raise ImportError("Multimodal support requires Pillow and requests. Install with: pip install Pillow requests")
 
     # Load image
     if isinstance(image, (str, Path)):
         image_str = str(image)
         if image_str.startswith(("http://", "https://")):
-            response = requests.get(image_str, timeout=30)
+            response = _requests.get(image_str, timeout=30)
             response.raise_for_status()
-            img = Image.open(BytesIO(response.content))
+            img = _Image.open(BytesIO(response.content))
         else:
-            img = Image.open(image_str)
-    elif isinstance(image, Image.Image):
+            img = _Image.open(image_str)
+    elif hasattr(image, "mode"):
+        # PIL Image object
         img = image
     else:
         raise TypeError(f"Unsupported image type: {type(image)}")
 
     # Convert to RGB
     if img.mode == "RGBA":
-        background = Image.new("RGB", img.size, (255, 255, 255))
+        background = _Image.new("RGB", img.size, (255, 255, 255))
         background.paste(img, mask=img.split()[3])
         img = background
     elif img.mode != "RGB":
@@ -74,7 +83,7 @@ def encode_image_to_base64(image: Union[str, Path, "Image.Image"], max_size: int
 
     # Resize if needed
     if max(img.size) > max_size:
-        img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+        img.thumbnail((max_size, max_size), _Image.Resampling.LANCZOS)
 
     # Encode
     buffered = BytesIO()
@@ -84,11 +93,7 @@ def encode_image_to_base64(image: Union[str, Path, "Image.Image"], max_size: int
     return f"data:image/jpeg;base64,{img_str}"
 
 
-def create_image_message(
-    text: str,
-    image: Union[str, Path, "Image.Image"],
-    use_base64: bool = True
-) -> Dict:
+def create_image_message(text: str, image: Union[str, Path, ImageType], use_base64: bool = True) -> dict[str, Any]:
     """
     Create an OpenAI-compatible multimodal message.
 
@@ -107,19 +112,13 @@ def create_image_message(
         >>> len(msg["content"])
         2
     """
-    content: List[Dict] = [{"type": "text", "text": text}]
+    content: list[dict[str, Any]] = [{"type": "text", "text": text}]
 
     if isinstance(image, str) and image.startswith(("http://", "https://")) and not use_base64:
-        content.append({
-            "type": "image_url",
-            "image_url": {"url": image}
-        })
+        content.append({"type": "image_url", "image_url": {"url": image}})
     else:
         encoded = encode_image_to_base64(image)
-        content.append({
-            "type": "image_url",
-            "image_url": {"url": encoded}
-        })
+        content.append({"type": "image_url", "image_url": {"url": encoded}})
 
     return {"role": "user", "content": content}
 

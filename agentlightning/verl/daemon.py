@@ -194,7 +194,7 @@ class AgentModeDaemon:
         self.reward_fillna_value = reward_fillna_value
         self.image_base_dir = image_base_dir
 
-        # Check if model requires multimodal position_ids (e.g., Qwen2-VL, GLM4V)
+        # Check if model requires multimodal position_ids (e.g., Qwen2-VL)
         self._use_mrope = is_mrope_model(processor)
 
         # Internal State
@@ -785,7 +785,7 @@ class AgentModeDaemon:
         # Compute position_ids - use mrope for Qwen2-VL, standard 2D otherwise
         if self._use_mrope:
             # For Qwen2-VL: compute 4D position_ids (batch_size, 4, seq_length)
-            position_ids_list = []
+            position_ids_list: list[torch.Tensor] = []
             for i in range(n_transition):
                 pos_ids = compute_mrope_position_ids(
                     processor=self.processor,

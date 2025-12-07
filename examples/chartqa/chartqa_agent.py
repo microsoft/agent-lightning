@@ -21,8 +21,6 @@ from langchain.chat_models import init_chat_model
 from langchain_core.messages import AnyMessage, BaseMessage, HumanMessage
 from langgraph.graph import END, START, MessagesState, StateGraph
 from langgraph.graph.state import CompiledStateGraph
-
-import agentlightning as agl
 from prompts import (
     ANALYZE_CHART_PROMPT,
     CALCULATE_ANSWER_PROMPT,
@@ -30,6 +28,8 @@ from prompts import (
     EXTRACT_DATA_PROMPT,
     REFINE_ANSWER_PROMPT,
 )
+
+import agentlightning as agl
 
 agl.setup_logging(apply_to=[__name__])
 
@@ -468,9 +468,7 @@ def debug_chartqa_agent():
     test_data_path = os.path.join(chartqa_dir, "test_chartqa.parquet")
 
     if not os.path.exists(test_data_path):
-        raise FileNotFoundError(
-            f"Test data file {test_data_path} does not exist. Please run prepare_data.py first."
-        )
+        raise FileNotFoundError(f"Test data file {test_data_path} does not exist. Please run prepare_data.py first.")
 
     df = pd.read_parquet(test_data_path).head(10)  # type: ignore
     test_data = cast(List[Dict[str, Any]], df.to_dict(orient="records"))  # type: ignore
@@ -508,9 +506,7 @@ def debug_chartqa_agent_with_llm_proxy():
     test_data_path = os.path.join(chartqa_dir, "test_chartqa.parquet")
 
     if not os.path.exists(test_data_path):
-        raise FileNotFoundError(
-            f"Test data file {test_data_path} does not exist. Please run prepare_data.py first."
-        )
+        raise FileNotFoundError(f"Test data file {test_data_path} does not exist. Please run prepare_data.py first.")
 
     df = pd.read_parquet(test_data_path).head(10)  # type: ignore
     test_data = cast(List[Dict[str, Any]], df.to_dict(orient="records"))  # type: ignore

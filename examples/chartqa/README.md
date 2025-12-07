@@ -98,5 +98,3 @@ python train_chartqa_agent.py qwen
 If you want to track experiments with Weights & Biases, set the `WANDB_API_KEY` environment variable before training.
 
 The script automatically launches agent workers and the training server. The agent workers execute chart reasoning rollouts using the vision-language model, while the training server applies the VERL algorithm (GRPO) to improve the model based on answer accuracy rewards.
-
-

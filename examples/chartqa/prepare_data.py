@@ -22,12 +22,14 @@ def prepare_chartqa():
             if not image_path.exists():
                 item["image"].save(image_path)
 
-            tasks.append({
-                "id": f"{split}_{idx}",
-                "image_path": f"images/{image_filename}",
-                "question": item["query"],
-                "answer": str(item["label"]),
-            })
+            tasks.append(
+                {
+                    "id": f"{split}_{idx}",
+                    "image_path": f"images/{image_filename}",
+                    "question": item["query"],
+                    "answer": str(item["label"]),
+                }
+            )
 
         pd.DataFrame(tasks).to_parquet(data_dir / f"{split}_chartqa.parquet", index=False)
 

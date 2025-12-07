@@ -7,7 +7,6 @@ Supported Models:
 -----------------
 - Qwen2-VL (Qwen2VLImageProcessor)
 - Qwen3-VL (Qwen3VLImageProcessor)
-- GLM4V (Glm4vImageProcessor)
 
 Adding Support for New Models:
 ------------------------------
@@ -18,7 +17,7 @@ To add support for a new multimodal model that uses M-RoPE:
 3. The model's VERL implementation should be in `verl/models/transformers/<model_name>.py`
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 import torch
 
@@ -34,7 +33,7 @@ def is_mrope_model(processor: Any) -> bool:
     Check if the processor belongs to a model that requires M-RoPE position embeddings.
 
     M-RoPE (Multi-dimensional Rotary Position Embedding) is used by multimodal models
-    like Qwen2-VL, Qwen3-VL, and GLM4V to encode spatial and temporal positions of
+    like Qwen2-VL and Qwen3-VL to encode spatial and temporal positions of
     vision tokens.
 
     Args:
@@ -60,7 +59,6 @@ def is_mrope_model(processor: Any) -> bool:
     mrope_processors = [
         "Qwen2VLImageProcessor",  # Qwen2-VL
         "Qwen3VLImageProcessor",  # Qwen3-VL
-        "Glm4vImageProcessor",    # GLM4V
     ]
 
     return any(name in image_processor_name for name in mrope_processors)
@@ -131,16 +129,18 @@ def get_image_grid_thw(
             images = [Image.open(resolved_path).convert("RGB")]
         elif isinstance(image_data, list):
             # List of image paths or PIL images
-            for img in image_data:
-                if isinstance(img, str):
-                    resolved_path = resolve_path(img)
+            for img_item in image_data:  # pyright: ignore[reportUnknownVariableType]
+                if isinstance(img_item, str):
+                    resolved_path = resolve_path(img_item)
                     images.append(Image.open(resolved_path).convert("RGB"))
-                elif isinstance(img, Image.Image):
-                    images.append(img.convert("RGB"))
-                elif isinstance(img, dict) and "image" in img:
+                elif isinstance(img_item, Image.Image):
+                    images.append(img_item.convert("RGB"))
+                elif isinstance(img_item, dict) and "image" in img_item:
                     # Format like {"type": "image", "image": "path"}
-                    resolved_path = resolve_path(img["image"])
-                    images.append(Image.open(resolved_path).convert("RGB"))
+                    image_path = img_item["image"]  # pyright: ignore[reportUnknownVariableType]
+                    if isinstance(image_path, str):
+                        resolved_path = resolve_path(image_path)
+                        images.append(Image.open(resolved_path).convert("RGB"))
         elif hasattr(image_data, "convert"):
             # PIL Image
             images = [image_data.convert("RGB")]
@@ -194,18 +194,24 @@ def compute_mrope_position_ids(
     """
     # Import the appropriate get_rope_index based on processor type
     # To add a new model: add an elif branch with the model's get_rope_index import
-    image_processor_name = processor.image_processor.__class__.__name__
-
+    # Type hint for get_rope_index functions (external library lacks type annotations)
+    get_rope_index: Callable[..., torch.Tensor]
     if "Qwen3VL" in processor.__class__.__name__:
-        from verl.models.transformers.qwen3_vl import get_rope_index
-    elif "Glm4v" in image_processor_name:
-        from verl.models.transformers.glm4v import get_rope_index
+        from verl.models.transformers.qwen3_vl import (
+            get_rope_index as _get_rope_index,  # pyright: ignore[reportUnknownVariableType]
+        )
+
+        get_rope_index = _get_rope_index  # pyright: ignore[reportUnknownVariableType]
     else:
         # Default to Qwen2-VL
-        from verl.models.transformers.qwen2_vl import get_rope_index
+        from verl.models.transformers.qwen2_vl import (
+            get_rope_index as _get_rope_index,  # pyright: ignore[reportUnknownVariableType]
+        )
+
+        get_rope_index = _get_rope_index  # pyright: ignore[reportUnknownVariableType]
 
     # Get vision position_ids (3, seq_length) for t, h, w
-    vision_position_ids = get_rope_index(
+    vision_position_ids: torch.Tensor = get_rope_index(
         processor,
         input_ids=input_ids,
         image_grid_thw=image_grid_thw,
