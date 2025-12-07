@@ -933,7 +933,11 @@ class LightningStoreServer(LightningStore):
                 )
 
         if self._prometheus_registry is not None:
-            metrics_app = make_asgi_app(registry=self._prometheus_registry)  # type: ignore
+            from prometheus_client import make_asgi_app  # pyright: ignore[reportUnknownVariableType]
+
+            metrics_app = make_asgi_app(  # pyright: ignore[reportUnknownVariableType]
+                registry=self._prometheus_registry
+            )
 
             # This App would need to be accessed via /v1/prometheus/ (note the trailing slash)
             app.mount(api.prefix + "/prometheus", metrics_app)  # pyright: ignore[reportUnknownArgumentType]

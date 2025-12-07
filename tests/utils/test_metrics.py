@@ -6,13 +6,14 @@ from __future__ import annotations
 
 import logging
 import sys
-import types
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import pytest
 
 import agentlightning.utils.metrics as metrics_module
 from agentlightning.utils.metrics import ConsoleMetricsBackend, MetricsBackend, MultiMetricsBackend
+
+from ..common.prometheus_stub import make_prometheus_stub
 
 
 def test_validate_labels_reports_missing_label_with_metric_name() -> None:
@@ -129,93 +130,9 @@ async def test_multi_metrics_backend_fans_out_calls() -> None:
     assert backend_b.calls == expected_calls
 
 
-class _PrometheusStub(types.ModuleType):
-    def __init__(self) -> None:
-        super().__init__("prometheus_client")
-        self.counter_instances: List["_PromCounter"] = []
-        self.histogram_instances: List["_PromHistogram"] = []
-
-        self_owner = self
-
-        class _CounterChild:
-            def __init__(self) -> None:
-                self.value = 0.0
-
-            def inc(self, amount: float = 1.0) -> None:
-                self.value += amount
-
-        class _HistogramChild:
-            def __init__(self) -> None:
-                self.values: List[float] = []
-
-            def observe(self, value: float) -> None:
-                self.values.append(value)
-
-        class _PromCounter:
-            def __init__(self, name: str, doc: str, labelnames: Sequence[str]) -> None:
-                self.name = name
-                self.doc = doc
-                self.labelnames = tuple(labelnames)
-                self.default = _CounterChild()
-                self.children: Dict[Tuple[Tuple[str, str], ...], _CounterChild] = {}
-                self._register()
-
-            def _register(self) -> None:
-                self_owner.counter_instances.append(self)
-
-            def labels(self, **kwargs: str) -> _CounterChild:
-                key = tuple(sorted(kwargs.items()))
-                return self.children.setdefault(key, _CounterChild())
-
-            def inc(self, amount: float = 1.0) -> None:
-                self.default.inc(amount)
-
-        class _PromHistogram:
-            def __init__(self, name: str, doc: str, labelnames: Sequence[str], buckets: Sequence[float]) -> None:
-                self.name = name
-                self.doc = doc
-                self.labelnames = tuple(labelnames)
-                self.buckets = tuple(buckets)
-                self.default = _HistogramChild()
-                self.children: Dict[Tuple[Tuple[str, str], ...], _HistogramChild] = {}
-                self._register()
-
-            def _register(self) -> None:
-                self_owner.histogram_instances.append(self)
-
-            def labels(self, **kwargs: str) -> _HistogramChild:
-                key = tuple(sorted(kwargs.items()))
-                return self.children.setdefault(key, _HistogramChild())
-
-            def observe(self, value: float) -> None:
-                self.default.observe(value)
-
-        self.Counter = _PromCounter
-        self.Histogram = _PromHistogram
-
-        class CollectorRegistry:
-            pass
-
-        self.CollectorRegistry = CollectorRegistry
-        self.REGISTRY = CollectorRegistry()
-
-        class _Multiprocess:
-            def __init__(self) -> None:
-                self.registry: Optional[CollectorRegistry] = None
-
-            def MultiProcessCollector(self, registry: CollectorRegistry) -> None:
-                self.registry = registry
-
-        self.multiprocess = _Multiprocess()
-
-
-def _make_prometheus_stub() -> _PrometheusStub:
-    return _PrometheusStub()
-
-
 @pytest.mark.asyncio
 async def test_prometheus_backend_binds_stubbed_prometheus(monkeypatch: pytest.MonkeyPatch) -> None:
-    stub = _make_prometheus_stub()
+    stub = make_prometheus_stub()
     monkeypatch.setitem(sys.modules, "prometheus_client", stub)
 
     backend = metrics_module.PrometheusMetricsBackend()

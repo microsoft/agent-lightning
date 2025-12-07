@@ -1162,6 +1162,12 @@ class MongoLightningCollections(LightningCollections):
     def collection_name(self) -> str:
         return "router"  # Special collection name for tracking transactions
 
+    @property
+    def extra_tracking_labels(self) -> Mapping[str, str]:
+        return {
+            "database": self._database_name,
+        }
+
     def with_session(self, session: AsyncClientSession) -> Self:
         instance = self.__class__(
             client_pool=self._client_pool,
