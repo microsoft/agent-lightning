@@ -119,7 +119,6 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         default="5m",
         help="Fallback duration (e.g. 5m, 1h) used when --start is omitted.",
     )
-    parser.add_argument("--top", type=int, default=8, help="Number of rows to show per table.")
     return parser.parse_args(argv)
 
 
@@ -356,9 +355,8 @@ class MetricGroupSpec:
     count_metric: Optional[str] = None
 
 
-def metric_row_sort_key(row: MetricRow) -> Tuple[float, Tuple[str, ...]]:
-    avg = row.avg_rate if row.avg_rate is not None else float("-inf")
-    return (-avg, row.label_values)
+def metric_row_sort_key(row: MetricRow) -> Tuple[str, ...]:
+    return row.label_values
 
 
 STORE_TOTAL_FIELDS = {
@@ -718,7 +716,7 @@ def fmt_rate(value: Optional[float]) -> str:
 def fmt_latency(value: Optional[float]) -> str:
     if value is None or math.isnan(value):
         return "-"
-    if value < 0.5:
+    if abs(value) < 0.5:
         return f"{value * 1e3:.2f} ms"
     return f"{value:.2f} s"
 
@@ -751,8 +749,6 @@ def section(title: str, body: Iterable[str]) -> List[str]:
 def render_metric_group_table(
     spec: MetricGroupSpec,
     rows: Sequence[MetricRow],
-    *,
-    limit: Optional[int] = None,
 ) -> List[str]:
     headers = list(spec.label_headers)
     headers.extend(
@@ -776,8 +772,6 @@ def render_metric_group_table(
     if not rows:
         return render_table(headers, [])
     sorted_rows = sorted(rows, key=metric_row_sort_key)
-    if limit is not None and limit > 0:
-        sorted_rows = sorted_rows[:limit]
     rendered_rows: List[List[str]] = []
     for row in sorted_rows:
         label_cells = list(row.label_values) if spec.label_headers else []
@@ -985,7 +979,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
                 half_window_seconds=half_window_seconds,
             )
             category_lines.append("### " + spec.title)
-            category_lines.extend(render_metric_group_table(spec, rows, limit=args.top))
+            category_lines.extend(render_metric_group_table(spec, rows))
             if idx != len(specs) - 1:
                 category_lines.append("")
         lines.extend(section(category_title, category_lines))
