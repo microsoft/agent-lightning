@@ -80,7 +80,7 @@ def main(argv: Iterable[str] | None = None) -> int:
                 setup_multiprocess_prometheus()
                 logger.info("Setting up Prometheus multiprocess directory for metrics tracking.")
             trackers.append(PrometheusMetricsBackend())
-    
+
         if "console" in args.tracker:
             logger.info("Enabling console metrics tracking.")
             trackers.append(ConsoleMetricsBackend())
