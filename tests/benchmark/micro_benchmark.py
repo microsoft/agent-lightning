@@ -16,6 +16,7 @@ from rich.console import Console
 
 import agentlightning as agl
 from agentlightning.types import EnqueueRolloutRequest, OtelResource, Span, SpanContext, TraceStatus
+from agentlightning.utils.metrics import ConsoleMetricsBackend, MultiMetricsBackend
 from agentlightning.utils.system_snapshot import system_snapshot
 
 from .utils import flatten_dict, random_dict
@@ -98,8 +99,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--summary-file", help="File to append final benchmark summary.")
     parser.add_argument(
         "mode",
-        choices=("worker", "dequeue-empty", "dequeue-only", "rollout", "dequeue-update-attempt"),
-        help="Mode to exercise different operations.",
+        choices=("worker", "dequeue-empty", "dequeue-only", "rollout", "dequeue-update-attempt", "metrics"),
+        help="Mode to exercise different operations (metrics targets MultiMetricsBackend fan-out).",
     )
     args = parser.parse_args(argv)
     return args
@@ -377,6 +378,46 @@ def dequeue_and_update_attempts(store_url: str, spans_per_attempt: int = 4) -> B
     )
 
 
+def benchmark_multi_metrics_backend(iterations: int = 10_000_000) -> BenchmarkSummary:
+    """Benchmark MultiMetricsBackend fan-out cost."""
+
+    console.print(f"Benchmarking MultiMetricsBackend for {iterations} iterations (2 metric ops per iteration)")
+
+    agl.setup_logging()
+
+    console_backend = ConsoleMetricsBackend(window_seconds=0.5, log_interval_seconds=0.1, group_level=None)
+    console_backend_secondary = ConsoleMetricsBackend(
+        window_seconds=None, log_interval_seconds=1_000_000.0, group_level=None
+    )
+    backend = MultiMetricsBackend([console_backend, console_backend_secondary])
+
+    backend.register_counter("benchmark.metrics.counter", label_names=["worker"])
+    backend.register_histogram(
+        "benchmark.metrics.latency",
+        label_names=["worker"],
+        buckets=(0.001, 0.005, 0.05, 0.5, 1.0),
+    )
+    labels = {"worker": "benchmark"}
+
+    async def _exercise_metrics() -> None:
+        for i in range(iterations):
+            await backend.inc_counter("benchmark.metrics.counter", labels=labels)
+            await backend.observe_histogram(
+                "benchmark.metrics.latency",
+                value=(i % 100) / 100.0,
+                labels=labels,
+            )
+
+    start_time = time.time()
+    asyncio.run(_exercise_metrics())
+    duration = time.time() - start_time
+    total_ops = iterations * 2
+    throughput = total_ops / duration if duration > 0 else 0.0
+
+    console.print(f"Executed {total_ops} metric updates in {duration:.3f}s ({throughput:.1f} ops/s)")
+    return BenchmarkSummary(mode="metrics", total_tasks=total_ops, successes=total_ops, duration=duration)
+
+
 def record_summary(summary: BenchmarkSummary, summary_file: Optional[str]) -> None:
     message = (
         f"[summary] mode={summary.mode} success_rate={summary.success_rate:.3f} "
@@ -403,6 +444,8 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         summary = simulate_rollout_with_spans(args.store_url)
     elif args.mode == "dequeue-update-attempt":
         summary = dequeue_and_update_attempts(args.store_url)
+    elif args.mode == "metrics":
+        summary = benchmark_multi_metrics_backend()
     else:
         raise ValueError(f"Invalid mode: {args.mode}")
     record_summary(summary, args.summary_file)
