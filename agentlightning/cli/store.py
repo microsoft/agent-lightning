@@ -72,17 +72,18 @@ def main(argv: Iterable[str] | None = None) -> int:
     setup_logging(args.log_level)
 
     trackers: List[MetricsBackend] = []
-    if "prometheus" in args.tracker:
-        logger.info("Enabling Prometheus metrics tracking.")
-        if args.n_workers > 1:
-            # This has to be done before prometheus_client is imported
-            setup_multiprocess_prometheus()
-            logger.info("Setting up Prometheus multiprocess directory for metrics tracking.")
-        trackers.append(PrometheusMetricsBackend())
-
-    if "console" in args.tracker:
-        logger.info("Enabling console metrics tracking.")
-        trackers.append(ConsoleMetricsBackend())
+    if args.tracker:
+        if "prometheus" in args.tracker:
+            logger.info("Enabling Prometheus metrics tracking.")
+            if args.n_workers > 1:
+                # This has to be done before prometheus_client is imported
+                setup_multiprocess_prometheus()
+                logger.info("Setting up Prometheus multiprocess directory for metrics tracking.")
+            trackers.append(PrometheusMetricsBackend())
+    
+        if "console" in args.tracker:
+            logger.info("Enabling console metrics tracking.")
+            trackers.append(ConsoleMetricsBackend())
 
     if len(trackers) == 0:
         tracker: MetricsBackend | None = None
