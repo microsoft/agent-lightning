@@ -288,8 +288,8 @@ async def test_prometheus_metrics_backend_tracks_http_metrics(monkeypatch: pytes
     backend = PrometheusMetricsBackend()
     await _exercise_server_metrics_backend(backend)
 
-    http_counter = next(inst for inst in stub.counter_instances if inst.name == "agl.http.total")
-    http_histogram = next(inst for inst in stub.histogram_instances if inst.name == "agl.http.latency")
+    http_counter = next(inst for inst in stub.counter_instances if inst.name == "agl_http_total")
+    http_histogram = next(inst for inst in stub.histogram_instances if inst.name == "agl_http_latency")
     assert any(child.value > 0 for child in http_counter.children.values())
     assert any(child.values for child in http_histogram.children.values())
 
@@ -309,7 +309,7 @@ async def test_multi_metrics_backend_updates_all_children(monkeypatch: pytest.Mo
     }
     assert "agl.http.total" in console_counters
 
-    prom_counter = next(inst for inst in stub.counter_instances if inst.name == "agl.http.total")
+    prom_counter = next(inst for inst in stub.counter_instances if inst.name == "agl_http_total")
     assert any(child.value > 0 for child in prom_counter.children.values())
 
 

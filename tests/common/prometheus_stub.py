@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import types
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 
 class _CounterChild:
@@ -25,10 +25,11 @@ class _HistogramChild:
 class PrometheusStub(types.ModuleType):
     """Minimal prometheus_client replacement for unit tests."""
 
-    def __init__(self) -> None:
+    def __init__(self, real_client: Any) -> None:
         super().__init__("prometheus_client")
         self.counter_instances: List[_PromCounter] = []
         self.histogram_instances: List[_PromHistogram] = []
+        self.real_client = real_client
 
         class CollectorRegistry:
             pass
@@ -46,6 +47,10 @@ class PrometheusStub(types.ModuleType):
 
         self.Counter = _PromCounterFactory(self)
         self.Histogram = _PromHistogramFactory(self)
+        self.make_asgi_app = self._make_asgi_app
+
+    def _make_asgi_app(self, *args: Any, **kwargs: Any) -> Any:
+        return self.real_client.make_asgi_app(*args, **kwargs)
 
 
 class _PromCounterFactory:
@@ -115,4 +120,6 @@ class _PromHistogram:
 
 def make_prometheus_stub() -> PrometheusStub:
     """Factory helper for tests."""
-    return PrometheusStub()
+    import prometheus_client
+
+    return PrometheusStub(prometheus_client)
