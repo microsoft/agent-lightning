@@ -764,13 +764,13 @@ def render_metric_group_table(
             "P95",
             "P99",
             "Max Latency",
-            "Time Consumed/s",
+            "Time/s",
             "Avg Time/req",
-            "Avg Rate Δ (late-early)",
-            "P50 Δ (late-early)",
-            "P95 Δ (late-early)",
-            "Time Δ (late-early)",
-            "Avg Time/req Δ (late-early)",
+            "Avg Rate Δ",
+            "P50 Δ",
+            "P95 Δ",
+            "Time Δ",
+            "Avg Time/req Δ",
         ]
     )
     if not rows:
@@ -984,7 +984,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
                 half_window=half_window,
                 half_window_seconds=half_window_seconds,
             )
-            category_lines.append(spec.title)
+            category_lines.append("### " + spec.title)
             category_lines.extend(render_metric_group_table(spec, rows, limit=args.top))
             if idx != len(specs) - 1:
                 category_lines.append("")
@@ -1025,31 +1025,6 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         for op_type, rate in sorted(mongo_opcounters.items(), key=lambda item: str(item[0]))
     ]
     diagnostics_blocks.append(render_table(["MongoDB Opcounter", "Ops/s"], mongo_opcounters_rows))
-
-    memory_lock_rate = cast(Dict[str, float], diag.get("memory_lock_rate", {}))
-    memory_lock_p50 = cast(Dict[str, float], diag.get("memory_lock_p50", {}))
-    memory_lock_p95 = cast(Dict[str, float], diag.get("memory_lock_p95", {}))
-    memory_lock_p99 = cast(Dict[str, float], diag.get("memory_lock_p99", {}))
-    memory_collections = sorted(
-        {
-            *memory_lock_rate.keys(),
-            *memory_lock_p50.keys(),
-            *memory_lock_p95.keys(),
-            *memory_lock_p99.keys(),
-        },
-        key=str,
-    )
-    memory_lock_rows = [
-        [
-            collection or "-",
-            fmt_rate(memory_lock_rate.get(collection)),
-            fmt_latency(memory_lock_p50.get(collection)),
-            fmt_latency(memory_lock_p95.get(collection)),
-            fmt_latency(memory_lock_p99.get(collection)),
-        ]
-        for collection in memory_collections
-    ]
-    diagnostics_blocks.append(render_table(["Memory Collection", "Locks/s", "P50", "P95", "P99"], memory_lock_rows))
 
     mongo_misc_rows: List[List[str]] = []
     if diag.get("mongo_connections") is not None:
