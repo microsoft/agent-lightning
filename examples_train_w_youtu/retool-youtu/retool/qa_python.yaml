@@ -1,0 +1,10 @@
+# @package _global_
+defaults:
+  - /model/base@model
+  - /tools/codesnip@toolkits.codesnip
+  - _self_
+
+agent:
+  name: qa_python
+  instructions: |
+    You are Qwen, created by Alibaba Cloud. You are a helpful assistant.

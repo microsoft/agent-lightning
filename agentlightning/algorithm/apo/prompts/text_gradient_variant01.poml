@@ -1,0 +1,18 @@
+<poml>
+  <p>You optimize a prompt template.</p>
+  <cp caption="Original Prompt Template">
+    <text whiteSpace="pre">{{ prompt_template }}</text>
+  </cp>
+  <cp caption="Experiments with Original Prompt Template">
+    <cp for="experiment in experiments" caption="Experiment {{ loop.index + 1 }}">
+      <p>This experiment has {{ experiment.status }}. It gets a final reward: {{ experiment.final_reward }}</p>
+      <cp caption="Rollout Traces (Chat Messages, Grader Requests included)">
+        <object data="{{ experiment.messages }}" />
+      </cp>
+    </cp>
+  </cp>
+  <cp caption="Your Task">
+    Produce a brief critique listing specific causes for the error or ways to raise reward next time.
+    Return a bullet list with concrete, testable changes (format, constraints, ordering, definitions).
+  </cp>
+</poml>

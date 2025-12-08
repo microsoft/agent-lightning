@@ -1,0 +1,19 @@
+{
+  // Paths to check
+  "include": ["agentlightning", "tests", "examples"],
+  "exclude": ["**/data", "**/assets"],
+
+  // Lock Python version for consistent semantics
+  "pythonVersion": "3.12",
+
+  // Start strict; downgrade only if noisy
+  "typeCheckingMode": "strict",
+
+  // reporting tweaks
+  "reportMissingTypeStubs": "none",
+  "reportUnknownMemberType": "error",
+  "reportUnknownVariableType": "error",
+  "reportMissingImports": "error",
+  "reportMissingModuleSource": "error",
+  "reportOptionalMemberAccess": "error"
+}
