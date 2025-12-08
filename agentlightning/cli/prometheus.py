@@ -6,19 +6,16 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import contextlib
 import logging
 import os
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Sequence
+from typing import Iterable
 
 from fastapi import FastAPI
 from prometheus_client import make_asgi_app  # pyright: ignore[reportUnknownVariableType]
 
 from agentlightning.logging import setup as setup_logging
-from agentlightning.store.utils import LATENCY_BUCKETS
-from agentlightning.utils.metrics import PrometheusMetricsBackend, get_prometheus_registry
+from agentlightning.utils.metrics import get_prometheus_registry
 from agentlightning.utils.server_launcher import PythonServerLauncher, PythonServerLauncherArgs
 
 logger = logging.getLogger(__name__)
@@ -105,71 +102,13 @@ def main(argv: Iterable[str] | None = None) -> int:
     launcher = PythonServerLauncher(app, launcher_args)
 
     try:
-        asyncio.run(_serve_with_warmup(launcher))
+        asyncio.run(launcher.run_forever())
     except KeyboardInterrupt:
         logger.info("Received shutdown signal. Stopping Prometheus server.")
     except RuntimeError as exc:
         logger.error("Prometheus server failed to start: %s", exc, exc_info=True)
         return 1
     return 0
-
-
-@dataclass(frozen=True)
-class _MetricSpec:
-    name: str
-    kind: str
-    label_names: Sequence[str]
-    buckets: Sequence[float] | None = None
-
-    @property
-    def prometheus_name(self) -> str:
-        return self.name.replace(".", "_")
-
-
-_DEFAULT_LABEL_VALUE = ""
-_METRIC_SPECS: tuple[_MetricSpec, ...] = (
-    _MetricSpec("agl.http.total", "counter", ("path", "method", "status")),
-    _MetricSpec("agl.http.latency", "histogram", ("path", "method", "status"), LATENCY_BUCKETS),
-    _MetricSpec("agl.store.total", "counter", ("method", "status")),
-    _MetricSpec("agl.store.latency", "histogram", ("method", "status"), LATENCY_BUCKETS),
-    _MetricSpec("agl.rollouts.total", "counter", ("status", "mode")),
-    _MetricSpec("agl.rollouts.duration", "histogram", ("status", "mode"), LATENCY_BUCKETS),
-    _MetricSpec("agl.collections.total", "counter", ("store_method", "operation", "collection", "status")),
-    _MetricSpec(
-        "agl.collections.latency",
-        "histogram",
-        ("store_method", "operation", "collection", "status"),
-        LATENCY_BUCKETS,
-    ),
-)
-
-
-async def _serve_with_warmup(launcher: PythonServerLauncher) -> None:
-    warm_task = asyncio.create_task(_warm_prometheus_metrics())
-    try:
-        await launcher.run_forever()
-    finally:
-        warm_task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await warm_task
-
-
-async def _warm_prometheus_metrics() -> None:
-    """Emit a zero-value sample for each Agent Lightning metric."""
-    await asyncio.sleep(0.1)
-    backend = PrometheusMetricsBackend()
-    placeholder_cache: dict[tuple[str, ...], dict[str, str]] = {}
-    for spec in _METRIC_SPECS:
-        labels = placeholder_cache.setdefault(
-            tuple(spec.label_names),
-            {name: _DEFAULT_LABEL_VALUE for name in spec.label_names},
-        )
-        if spec.kind == "counter":
-            backend.register_counter(spec.name, spec.label_names)
-            await backend.inc_counter(spec.name, amount=0, labels=labels)
-        elif spec.kind == "histogram":
-            backend.register_histogram(spec.name, spec.label_names, buckets=spec.buckets)
-            await backend.observe_histogram(spec.name, value=0.0, labels=labels)
 
 
 if __name__ == "__main__":

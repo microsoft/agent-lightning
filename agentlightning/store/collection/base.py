@@ -61,7 +61,7 @@ These labels are used to identify the collections that are affected by the atomi
 
 
 COLLECTION_TRACKING_STORE_METHODS = frozenset(
-    [name for name in LightningStore.__dict__ if not name.startswith("_")] + ["_healthcheck"]
+    [name for name in LightningStore.__dict__ if not name.startswith("_")] + ["_scan_for_unhealthy_rollouts"]
 )
 
 _UNKNOWN_STORE_METHOD = "unknown"
