@@ -862,6 +862,11 @@ class LightningStoreServer(LightningStore):
             buckets=LATENCY_BUCKETS,
             group_level=2,
         )
+        self._tracker.register_counter(
+            "agl.http.latency.sum",
+            ["path", "method", "status"],
+            group_level=0,
+        )
 
         def get_template_path(path: str) -> str:
             # Handle "latest" keywords BEFORE generic IDs
@@ -921,6 +926,11 @@ class LightningStoreServer(LightningStore):
                 await self._tracker.observe_histogram(
                     "agl.http.latency",
                     value=elapsed,
+                    labels={"method": method, "path": path, "status": str(status)},
+                )
+                await self._tracker.inc_counter(
+                    "agl.http.latency.sum",
+                    amount=elapsed,
                     labels={"method": method, "path": path, "status": str(status)},
                 )
 

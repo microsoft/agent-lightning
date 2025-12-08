@@ -150,6 +150,9 @@ def tracked(name: str):
                 await self._tracker.observe_histogram(  # pyright: ignore[reportPrivateUsage]
                     "agl.store.latency", value=elapsed, labels={"method": name, "status": status}
                 )
+                await self._tracker.inc_counter(  # pyright: ignore[reportPrivateUsage]
+                    "agl.store.latency.sum", amount=elapsed, labels={"method": name, "status": status}
+                )
 
         return cast(T_callable, wrapper)
 
@@ -238,6 +241,11 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
                 group_level=1,
             )
             self._tracker.register_counter(
+                "agl.store.latency.sum",
+                ["method", "status"],
+                group_level=0,
+            )
+            self._tracker.register_counter(
                 "agl.store.total",
                 ["method", "status"],
                 group_level=1,
@@ -252,6 +260,11 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
                 ["status", "mode"],
                 buckets=LATENCY_BUCKETS,
                 group_level=1,
+            )
+            self._tracker.register_counter(
+                "agl.rollouts.duration.sum",
+                ["status", "mode"],
+                group_level=0,
             )
 
     async def statistics(self) -> LightningStoreStatistics:
@@ -1489,10 +1502,14 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
                         "status": rollout.status,
                         "mode": rollout.mode if rollout.mode is not None else "unknown",
                     }
+                    duration = cast(float, rollout.end_time) - rollout.start_time
                     await self._tracker.inc_counter("agl.rollouts.total", labels=labels)
                     await self._tracker.observe_histogram(
-                        "agl.rollouts.duration", value=cast(float, rollout.end_time) - rollout.start_time, labels=labels
+                        "agl.rollouts.duration",
+                        value=duration,
+                        labels=labels,
                     )
+                    await self._tracker.inc_counter("agl.rollouts.duration.sum", amount=duration, labels=labels)
 
         if not skip_enqueue:
             # If requeuing, add back to queue.

@@ -185,6 +185,17 @@ class TrackedCollection:
                         **self.extra_tracking_labels,
                     },
                 )
+                await self._tracker.inc_counter(  # pyright: ignore[reportPrivateUsage]
+                    "agl.collections.latency.sum",
+                    amount=elapsed,
+                    labels={
+                        "store_method": store_method,
+                        "operation": operation,
+                        "collection": collection,
+                        "status": status,
+                        **self.extra_tracking_labels,
+                    },
+                )
 
 
 class Collection(TrackedCollection, Generic[T]):
@@ -415,6 +426,7 @@ class LightningCollections(TrackedCollection):
             group_level=2,
         )
         self._tracker.register_counter("agl.collections.total", labels, group_level=2)
+        self._tracker.register_counter("agl.collections.latency.sum", labels, group_level=0)
 
     @property
     def tracker(self) -> MetricsBackend | None:
