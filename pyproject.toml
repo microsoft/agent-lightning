@@ -32,12 +32,6 @@ dependencies = [
 apo = [
   "poml",
 ]
-multimodal = [
-  "Pillow",
-  "requests",
-  "transformers",
-  "nest_asyncio",
-]
 # It's not recommended to use agentlightning[verl] to install VERL and its dependencies.
 # though it's listed here for completeness.
 verl = [
@@ -193,6 +187,15 @@ langchain = [
   "langchain[openai]>=1.0.0",
   "langchain-community>=0.4.0",
   "langchain-text-splitters>=1.0.0",
+]
+chartqa = [
+  {include-group = "langchain"},
+  "datasets",
+  "Pillow",
+  "pandas",
+  "pyarrow",
+  "nest_asyncio",
+  "qwen-vl-utils",
 ]
 sql = [
   "sqlparse",

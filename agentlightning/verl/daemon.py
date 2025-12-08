@@ -23,11 +23,6 @@ from agentlightning.adapter.triplet import TracerTraceToTriplet, TraceToTripletB
 from agentlightning.llm_proxy import LLMProxy, ModelConfig
 from agentlightning.store.base import LightningStore
 from agentlightning.types import EnqueueRolloutRequest, Rollout, RolloutConfig, Task
-from agentlightning.verl.multimodal_utils import (
-    compute_mrope_position_ids,
-    get_image_grid_thw,
-    is_mrope_model,
-)
 
 __all__ = [
     "AgentModeDaemon",
@@ -195,7 +190,7 @@ class AgentModeDaemon:
         self.image_base_dir = image_base_dir
 
         # Check if model requires multimodal position_ids (e.g., Qwen2-VL)
-        self._use_mrope = is_mrope_model(processor)
+        self._use_mrope = self._is_mrope_model()
 
         # Internal State
         self.backend_llm_server_addresses: List[str] = []
@@ -213,6 +208,91 @@ class AgentModeDaemon:
         self._internal_loop = loop
         loop.run_forever()
         loop.close()
+
+    # Multimodal utilities for M-RoPE position embeddings
+
+    def _is_mrope_model(self) -> bool:
+        """Check if processor requires M-RoPE position embeddings."""
+        if self.processor is None or not hasattr(self.processor, "image_processor"):
+            return False
+        name = self.processor.image_processor.__class__.__name__
+        return "Qwen2VLImageProcessor" in name or "Qwen3VLImageProcessor" in name
+
+    def _resolve_image_path(self, path: str) -> str:
+        """Resolve relative image path with base directory."""
+        import os
+
+        if os.path.isabs(path):
+            return path
+        if self.image_base_dir is None:
+            raise ValueError(f"Relative path '{path}' requires 'image_base_dir' to be set.")
+        return os.path.join(self.image_base_dir, path)
+
+    def _get_image_grid_thw(self, original_sample: Dict[str, Any]) -> Optional[torch.Tensor]:
+        """Extract image_grid_thw from sample for M-RoPE computation."""
+        from PIL import Image
+        from verl.utils.dataset.vision_utils import process_image
+
+        if self.processor is None:
+            return None
+
+        image_keys = ["images", "image", "image_path"]
+        image_data = None
+        for key in image_keys:
+            if key in original_sample and original_sample[key]:
+                image_data = original_sample[key]
+                break
+
+        if image_data is None:
+            return None
+
+        def to_image_uri(path: str) -> str:
+            if path.startswith(("http://", "https://")):
+                return path
+            resolved = self._resolve_image_path(path)
+            return f"file://{resolved}"
+
+        paths: List[str] = []
+        if isinstance(image_data, str):
+            paths = [image_data]
+        elif isinstance(image_data, list):
+            for item in image_data:
+                if isinstance(item, str):
+                    paths.append(item)
+                elif isinstance(item, dict) and "image" in item:
+                    paths.append(item["image"])
+
+        if not paths:
+            return None
+
+        images: List[Image.Image] = [process_image({"image": to_image_uri(p)}) for p in paths]
+        model_inputs = self.processor(text=["dummy"], images=images, return_tensors="pt")
+        return model_inputs.get("image_grid_thw")
+
+    def _compute_mrope_position_ids(
+        self,
+        input_ids: torch.Tensor,
+        attention_mask: torch.Tensor,
+        image_grid_thw: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        """Compute 4D position_ids for M-RoPE models."""
+        from typing import Callable
+
+        get_rope_index: Callable[..., torch.Tensor]
+        if "Qwen3VL" in self.processor.__class__.__name__:
+            from verl.models.transformers.qwen3_vl import get_rope_index
+        else:
+            from verl.models.transformers.qwen2_vl import get_rope_index
+
+        vision_pos = get_rope_index(
+            self.processor, input_ids=input_ids, image_grid_thw=image_grid_thw, attention_mask=attention_mask
+        )
+
+        valid_mask = attention_mask.bool()
+        text_pos = torch.zeros((1, len(input_ids)), dtype=torch.long, device=input_ids.device)
+        text_pos[0, valid_mask] = torch.arange(valid_mask.sum().item(), device=input_ids.device)
+
+        return torch.cat([text_pos, vision_pos], dim=0)
 
     def _start_proxy_server_v0(self):
         """
@@ -725,9 +805,7 @@ class AgentModeDaemon:
         if self._use_mrope:
             for rollout_id in finished_id_to_sample_info.keys():
                 original_sample = self._task_id_to_original_sample[rollout_id]
-                rollout_to_image_grid_thw[rollout_id] = get_image_grid_thw(
-                    self.processor, original_sample, image_base_dir=self.image_base_dir
-                )
+                rollout_to_image_grid_thw[rollout_id] = self._get_image_grid_thw(original_sample)
 
         for rollout_id, sample_info in finished_id_to_sample_info.items():
             for turn_index, trace in enumerate(sample_info["trace_list"]):
@@ -787,8 +865,7 @@ class AgentModeDaemon:
             # For Qwen2-VL: compute 4D position_ids (batch_size, 4, seq_length)
             position_ids_list: list[torch.Tensor] = []
             for i in range(n_transition):
-                pos_ids = compute_mrope_position_ids(
-                    processor=self.processor,
+                pos_ids = self._compute_mrope_position_ids(
                     input_ids=batch_seq[i],
                     attention_mask=attention_mask[i],
                     image_grid_thw=image_grid_thw_list[i] if image_grid_thw_list else None,

@@ -30,6 +30,7 @@ from prompts import (
 )
 
 import agentlightning as agl
+from agentlightning.adapter.multimodal import encode_image_to_base64
 
 agl.setup_logging(apply_to=[__name__])
 
@@ -113,7 +114,7 @@ class ChartQAAgent:
         # Determine image URL format based on endpoint
         if self.use_base64_images:
             # Cloud APIs require base64 encoding for local files
-            image_url = self._encode_image_base64(image_path)
+            image_url = encode_image_to_base64(image_path)
         else:
             # Local vLLM supports file:// URLs
             if not image_path.startswith("file://"):
@@ -144,26 +145,6 @@ class ChartQAAgent:
             termcolor.cprint(f"[VLM Response] {response[:200]}...", "green")
 
         return response  # type: ignore
-
-    def _encode_image_base64(self, image_path: str) -> str:
-        """Encode local image file as base64 data URI for cloud APIs."""
-        import base64
-        import mimetypes
-
-        # Handle file:// prefix
-        if image_path.startswith("file://"):
-            image_path = image_path[7:]
-
-        # Determine MIME type
-        mime_type, _ = mimetypes.guess_type(image_path)
-        if mime_type is None:
-            mime_type = "image/png"
-
-        # Read and encode image
-        with open(image_path, "rb") as f:
-            image_data = base64.b64encode(f.read()).decode("utf-8")
-
-        return f"data:{mime_type};base64,{image_data}"
 
     def extract_content(self, text: str, tag: str) -> str:
         """Extract content between XML-style tags."""

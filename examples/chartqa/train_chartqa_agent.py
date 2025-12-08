@@ -6,7 +6,6 @@ import argparse
 import asyncio
 import os
 from copy import deepcopy
-from datetime import datetime
 from typing import Any, Dict
 
 import nest_asyncio
@@ -68,28 +67,23 @@ RL_CONFIG: Dict[str, Any] = {
         "project_name": "AgentLightning",
         "experiment_name": "chartqa",
         "nnodes": 1,
-        "test_freq": 32,
-        "total_epochs": 2,
     },
 }
 
 
 def config_fast() -> Dict[str, Any]:
+    """Fast config for testing (2 steps)."""
     config = deepcopy(RL_CONFIG)
-    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-    config["trainer"]["experiment_name"] = f"chartqa_{timestamp}"
-    config["trainer"]["project_name"] = "AgentLightningCI"
-    config["trainer"]["total_training_steps"] = 100000
+    config["trainer"]["total_training_steps"] = 2
     config["trainer"]["test_freq"] = 1
-    if github_output := os.getenv("GITHUB_OUTPUT"):
-        with open(github_output, "a") as f:
-            f.write(f"project_name={config['trainer']['project_name']}\n")
-            f.write(f"run_name={config['trainer']['experiment_name']}\n")
     return config
 
 
 def config_qwen() -> Dict[str, Any]:
-    return deepcopy(RL_CONFIG)
+    config = deepcopy(RL_CONFIG)
+    config["trainer"]["total_training_steps"] = 10000
+    config["trainer"]["test_freq"] = 100
+    return config
 
 
 def train(config: Dict[str, Any]) -> None:

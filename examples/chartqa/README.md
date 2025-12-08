@@ -1,19 +1,20 @@
 # ChartQA Example
 
-[![chartqa CI status](https://github.com/microsoft/agent-lightning/actions/workflows/examples-chartqa.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/examples-chartqa.yml)
-
 This example demonstrates training a visual reasoning agent on the ChartQA dataset using Agent-Lightning with the VERL algorithm and LangGraph framework. The agent answers questions about charts through a multi-step workflow with self-refinement. It's compatible with Agent-lightning v0.2 or later.
 
 ## Requirements
 
-This example requires a single node with at least two 40GB GPU. Follow the [installation guide](../../docs/tutorials/installation.md) to install Agent-Lightning and VERL-related dependencies.
-
-Additionally, install the vision-language model dependencies:
+This example requires a single node with at least two 40GB GPU. Install dependencies with:
 
 ```bash
-uv pip install datasets pillow pandas pyarrow nest_asyncio
-uv pip install "langgraph<1.0" "langchain[openai]<1.0" "langchain-community"
+uv sync --frozen \
+    --group dev \
+    --group torch-gpu-stable \
+    --group chartqa \
+    --no-default-groups
 ```
+
+See the [installation guide](../../docs/tutorials/installation.md) for more details on dependency groups.
 
 ## Dataset
 
@@ -21,7 +22,7 @@ Download the ChartQA dataset and prepare it for training:
 
 ```bash
 cd examples/chartqa
-./download_chartqa.sh
+python prepare_data.py
 ```
 
 This downloads the ChartQA dataset from HuggingFace (`HuggingFaceM4/ChartQA`), saves images locally, and creates parquet files for training/testing. No HuggingFace token is required (public dataset).
@@ -37,8 +38,7 @@ This downloads the ChartQA dataset from HuggingFace (`HuggingFaceM4/ChartQA`), s
 |----------------|-------------|
 | `chartqa_agent.py` | Chart reasoning agent using LangGraph with multi-step workflow (observe → extract → calculate → check → refine) |
 | `train_chartqa_agent.py` | Training script using VERL algorithm with configurable hyperparameters (fast, qwen) |
-| `download_chartqa.sh` | Script to download the ChartQA dataset from HuggingFace |
-| `prepare_data.py` | Script to prepare parquet files from downloaded images |
+| `prepare_data.py` | Script to download ChartQA dataset from HuggingFace and prepare parquet files |
 | `prompts.py` | Prompt templates for the agent workflow |
 | `data/` | Directory containing images and parquet files after download |
 
@@ -69,8 +69,8 @@ To test the agent with a local vLLM server and LLMProxy:
 ```bash
 # Start a vLLM server (specify image path for VLM)
 export CHARTQA_DATA_DIR=<path to chartqa data>
-vllm serve Qwen/Qwen2-VL-2B-Instruct \
-    --gpu-memory-utilization 0.6 \
+CUDA_VISIBLE_DEVICES=4 vllm serve Qwen/Qwen2-VL-2B-Instruct \
+    --gpu-memory-utilization 0.4 \
     --max-model-len 4096 \
     --allowed-local-media-path $CHARTQA_DATA_DIR \
     --enable-prefix-caching \
@@ -88,10 +88,10 @@ USE_LLM_PROXY=1 \
 Run the training script with VERL reinforcement learning:
 
 ```bash
-# Fast training (CI/testing, reduced epochs)
+# Fast training for testing (2 steps)
 python train_chartqa_agent.py fast
 
-# Standard Qwen2-VL-2B training (2 epochs)
+# Standard Qwen2-VL-2B training
 python train_chartqa_agent.py qwen
 ```
 
