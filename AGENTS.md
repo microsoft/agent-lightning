@@ -15,6 +15,10 @@ Agent Lightning runs through a continuous loop: runners and tracers emit spans, 
 - `uv run --no-sync pre-commit run --all-files --show-diff-on-failure` and `uv run --no-sync mkdocs build --strict` — keep formatting tidy and documentation valid.
 Always commit the refreshed `uv.lock` when dependencies shift, and mention optional groups (VERL, APO, GPU) in PR notes.
 
+## Common Issues & Fixes
+- When `uv run` errors with `Permission denied` under `~/.cache`, override both cache locations inline: ``UV_CACHE="$(pwd)/.cache_uv" XDG_CACHE_HOME="$(pwd)/.cache_xdg" uv run --no-sync <command>``.
+
+
 ## Coding Style & Naming Conventions
 - Target `requires-python >= 3.10`, four-space indentation, 120-character lines (though docstrings may run longer), and formatter-owned diffs (Black + isort, `black` profile). Use `snake_case` for modules, functions, and variables; `PascalCase` for classes and React components; lowercase hyphenation for CLI flags, branch names, and TypeScript filenames.
 - Maintain exhaustive type hints (pyright enforces them) and prefer shared dataclasses or Pydantic models from `agentlightning.types`.

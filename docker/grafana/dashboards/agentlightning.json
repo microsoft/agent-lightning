@@ -44,7 +44,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (method, path) (rate(agl.http.total[15s]))",
+          "expr": "sum by (method, path) (rate(agl_http_total[15s]))",
           "legendFormat": "{{method}} {{path}}"
         }
       ],
@@ -74,15 +74,15 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum by (le) (rate(agl.http.latency_bucket[15s])))",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(agl_http_latency_bucket[15s])))",
           "legendFormat": "P50"
         },
         {
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(agl.http.latency_bucket[15s])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(agl_http_latency_bucket[15s])))",
           "legendFormat": "P95"
         },
         {
-          "expr": "histogram_quantile(0.99, sum by (le) (rate(agl.http.latency_bucket[15s])))",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(agl_http_latency_bucket[15s])))",
           "legendFormat": "P99"
         }
       ],
@@ -112,7 +112,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (method, path, status) (rate(agl.http.total{status!~\"2..\"}[15s]))",
+          "expr": "sum by (method, path, status) (rate(agl_http_total{status!~\"2..\"}[15s]))",
           "legendFormat": "{{method}} {{path}} {{status}}"
         }
       ],
@@ -155,7 +155,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (method) (rate(agl.store.total[15s]))",
+          "expr": "sum by (method) (rate(agl_store_total[15s]))",
           "legendFormat": "{{method}}"
         }
       ],
@@ -185,15 +185,15 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum by (le) (rate(agl.store.latency_bucket[15s])))",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(agl_store_latency_bucket[15s])))",
           "legendFormat": "P50"
         },
         {
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(agl.store.latency_bucket[15s])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(agl_store_latency_bucket[15s])))",
           "legendFormat": "P95"
         },
         {
-          "expr": "histogram_quantile(0.99, sum by (le) (rate(agl.store.latency_bucket[15s])))",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(agl_store_latency_bucket[15s])))",
           "legendFormat": "P99"
         }
       ],
@@ -223,7 +223,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (method, status) (rate(agl.store.total{status!=\"OK\"}[15s]))",
+          "expr": "sum by (method, status) (rate(agl_store_total{status!=\"OK\"}[15s]))",
           "legendFormat": "{{method}} {{status}}"
         }
       ],
@@ -266,7 +266,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (store_method, operation) (rate(agl.collections.total[15s]))",
+          "expr": "sum by (store_method, operation) (rate(agl_collections_total[15s]))",
           "legendFormat": "{{store_method}} {{operation}}"
         }
       ],
@@ -296,7 +296,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (store_method, collection, status) (rate(agl.collections.total{status!=\"OK\"}[15s]))",
+          "expr": "sum by (store_method, collection, status) (rate(agl_collections_total{status!=\"OK\"}[15s]))",
           "legendFormat": "{{store_method}} {{collection}} {{status}}"
         }
       ],
@@ -326,15 +326,15 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum by (le) (rate(agl.collections.latency_bucket[15s])))",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(agl_collections_latency_bucket[15s])))",
           "legendFormat": "P50"
         },
         {
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(agl.collections.latency_bucket[15s])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(agl_collections_latency_bucket[15s])))",
           "legendFormat": "P95"
         },
         {
-          "expr": "histogram_quantile(0.99, sum by (le) (rate(agl.collections.latency_bucket[15s])))",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(agl_collections_latency_bucket[15s])))",
           "legendFormat": "P99"
         }
       ],
@@ -364,7 +364,7 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum by (le, store_method) (rate(agl.collections.latency_bucket[15s])))",
+          "expr": "histogram_quantile(0.95, sum by (le, store_method) (rate(agl_collections_latency_bucket[15s])))",
           "legendFormat": "{{store_method}}"
         }
       ],
@@ -407,7 +407,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (status) (rate(agl.rollouts.total[15s]))",
+          "expr": "sum by (status) (rate(agl_rollouts_total[15s]))",
           "legendFormat": "{{status}}"
         }
       ],
@@ -437,7 +437,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (mode) (rate(agl.rollouts.total[15s]))",
+          "expr": "sum by (mode) (rate(agl_rollouts_total[15s]))",
           "legendFormat": "{{mode}}"
         }
       ],
@@ -467,15 +467,15 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum by (le) (rate(agl.rollouts.duration_bucket[15s])))",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(agl_rollouts_duration_bucket[15s])))",
           "legendFormat": "P50"
         },
         {
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(agl.rollouts.duration_bucket[15s])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(agl_rollouts_duration_bucket[15s])))",
           "legendFormat": "P95"
         },
         {
-          "expr": "histogram_quantile(0.99, sum by (le) (rate(agl.rollouts.duration_bucket[15s])))",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(agl_rollouts_duration_bucket[15s])))",
           "legendFormat": "P99"
         }
       ],
@@ -505,7 +505,7 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum by (le, status) (rate(agl.rollouts.duration_bucket[15s])))",
+          "expr": "histogram_quantile(0.95, sum by (le, status) (rate(agl_rollouts_duration_bucket[15s])))",
           "legendFormat": "{{status}}"
         }
       ],

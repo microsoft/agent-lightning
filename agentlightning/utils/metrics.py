@@ -76,6 +76,12 @@ def _normalize_label_names(label_names: Optional[Sequence[str]]) -> Tuple[str, .
     return tuple(label_names)
 
 
+def _normalize_prometheus_metric_name(metric_name: str) -> str:
+    """Normalizes Prometheus metric names by replacing unsupported characters."""
+
+    return metric_name.replace(".", "_")
+
+
 @dataclass(frozen=True)
 class _CounterDef:
     """Definition of a registered counter metric."""
@@ -756,6 +762,7 @@ class PrometheusMetricsBackend(MetricsBackend):
         self._histograms: Dict[str, _HistogramDef] = {}
         self._prom_counters: Dict[str, Any] = {}
         self._prom_histograms: Dict[str, Any] = {}
+        self._prom_metric_names: Dict[str, str] = {}
 
     def has_prometheus(self) -> bool:
         """Check if the backend has prometheus support."""
@@ -783,10 +790,11 @@ class PrometheusMetricsBackend(MetricsBackend):
                 )
             return
 
+        prom_name = self._register_prometheus_metric_name(name)
         self._counters[name] = _CounterDef(name=name, label_names=label_tuple, group_level=group_level)
 
         prom_counter = PromCounter(
-            name,
+            prom_name,
             f"Counter {name}",
             labelnames=label_tuple,
         )
@@ -818,6 +826,7 @@ class PrometheusMetricsBackend(MetricsBackend):
                 )
             return
 
+        prom_name = self._register_prometheus_metric_name(name)
         self._histograms[name] = _HistogramDef(
             name=name,
             label_names=label_tuple,
@@ -827,14 +836,14 @@ class PrometheusMetricsBackend(MetricsBackend):
 
         if bucket_tuple:
             prom_hist = PromHistogram(
-                name,
+                prom_name,
                 f"Histogram {name}",
                 labelnames=label_tuple,
                 buckets=bucket_tuple,
             )
         else:
             prom_hist = PromHistogram(
-                name,
+                prom_name,
                 f"Histogram {name}",
                 labelnames=label_tuple,
             )
@@ -878,6 +887,19 @@ class PrometheusMetricsBackend(MetricsBackend):
             prom_hist.labels(**dict(label_key)).observe(value)
         else:
             prom_hist.observe(value)
+
+    def _register_prometheus_metric_name(self, name: str) -> str:
+        """Registers the normalized Prometheus metric name and ensures uniqueness."""
+
+        normalized = _normalize_prometheus_metric_name(name)
+        existing = self._prom_metric_names.get(normalized)
+        if existing is not None and existing != name:
+            raise ValueError(
+                f"Prometheus metric name conflict: '{name}' normalizes to '{normalized}', "
+                f"which is already used by '{existing}'. Consider renaming one of the metrics."
+            )
+        self._prom_metric_names.setdefault(normalized, name)
+        return normalized
 
 
 class MultiMetricsBackend(MetricsBackend):

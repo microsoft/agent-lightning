@@ -148,6 +148,28 @@ async def test_prometheus_backend_binds_stubbed_prometheus(monkeypatch: pytest.M
     assert histogram_instance.children[(("method", "GET"),)].values == [0.1]
 
 
+def test_prometheus_backend_normalizes_metric_names(monkeypatch: pytest.MonkeyPatch) -> None:
+    stub = make_prometheus_stub()
+    monkeypatch.setitem(sys.modules, "prometheus_client", stub)
+
+    backend = metrics_module.PrometheusMetricsBackend()
+    backend.register_counter("api.v1.hits")
+    backend.register_histogram("latency.v1")
+
+    assert stub.counter_instances[0].name == "api_v1_hits"
+    assert stub.histogram_instances[0].name == "latency_v1"
+
+
+def test_prometheus_backend_detects_normalized_name_conflicts(monkeypatch: pytest.MonkeyPatch) -> None:
+    stub = make_prometheus_stub()
+    monkeypatch.setitem(sys.modules, "prometheus_client", stub)
+
+    backend = metrics_module.PrometheusMetricsBackend()
+    backend.register_counter("api.v1.hits")
+    with pytest.raises(ValueError):
+        backend.register_histogram("api_v1_hits")
+
+
 def _split_segments(log_lines: Sequence[str]) -> List[str]:
     segments: List[str] = []
     for line in log_lines:
