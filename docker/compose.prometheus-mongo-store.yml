@@ -26,13 +26,10 @@ services:
       - /bin/bash
       - -c
       - |
-          mkdir -p /tmp/prometheus &&
           agl store --host 0.0.0.0 --port 4747 \
-            --prometheus --backend mongo \
+            --tracker console prometheus --backend mongo \
             --mongo-uri mongodb://mongo:27017/?replicaSet=rs0 \
             --n-workers ${AGL_STORE_N_WORKERS:-32}
-    environment:
-      - PROMETHEUS_MULTIPROC_DIR=/tmp/prometheus
 
   mongodb-exporter:
     image: percona/mongodb_exporter:0.47.1

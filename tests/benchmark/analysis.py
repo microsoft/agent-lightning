@@ -364,9 +364,9 @@ def gather_store_methods(
     peak_window: str,
     subquery_step: str,
 ) -> Tuple[List[StoreMethodStats], StatsSummary]:
-    mean_expr = f"(sum by (method)(increase(collection_store_total[{window}]))) / {window_seconds}"
+    mean_expr = f"(sum by (method)(increase(agl_store_total[{window}]))) / {window_seconds}"
     ops_mean = vector_to_map(safe_vector(client, mean_expr), ("method",))
-    peak_expr = f"sum by (method)(irate(collection_store_total[{peak_window}]))"
+    peak_expr = f"sum by (method)(irate(agl_store_total[{peak_window}]))"
     ops_max = vector_to_map(
         safe_vector(client, f"max_over_time(({peak_expr})[{window}:{subquery_step}])"),
         ("method",),
@@ -378,21 +378,21 @@ def gather_store_methods(
     p50 = vector_to_map(
         safe_vector(
             client,
-            f"histogram_quantile(0.50, sum by (le, method)(rate(collection_store_latency_seconds_bucket[{window}])))",
+            f"histogram_quantile(0.50, sum by (le, method)(rate(agl_store_latency_bucket[{window}])))",
         ),
         ("method",),
     )
     p95 = vector_to_map(
         safe_vector(
             client,
-            f"histogram_quantile(0.95, sum by (le, method)(rate(collection_store_latency_seconds_bucket[{window}])))",
+            f"histogram_quantile(0.95, sum by (le, method)(rate(agl_store_latency_bucket[{window}])))",
         ),
         ("method",),
     )
     p99 = vector_to_map(
         safe_vector(
             client,
-            f"histogram_quantile(0.99, sum by (le, method)(rate(collection_store_latency_seconds_bucket[{window}])))",
+            f"histogram_quantile(0.99, sum by (le, method)(rate(agl_store_latency_bucket[{window}])))",
         ),
         ("method",),
     )
@@ -416,30 +416,30 @@ def gather_store_methods(
     overall: StatsSummary = {
         "ops_mean": safe_scalar(
             client,
-            f"(sum(increase(collection_store_total[{window}]))) / {window_seconds}",
+            f"(sum(increase(agl_store_total[{window}]))) / {window_seconds}",
         )
         or 0.0,
         "ops_max": safe_scalar(
             client,
-            f"max_over_time(((sum(irate(collection_store_total[{peak_window}]))))[{window}:{subquery_step}])",
+            f"max_over_time(((sum(irate(agl_store_total[{peak_window}]))))[{window}:{subquery_step}])",
         ),
         "ops_min": safe_scalar(
             client,
-            f"min_over_time(((sum(irate(collection_store_total[{peak_window}]))))[{window}:{subquery_step}])",
+            f"min_over_time(((sum(irate(agl_store_total[{peak_window}]))))[{window}:{subquery_step}])",
         ),
         "p50": safe_scalar(
             client,
-            f"histogram_quantile(0.50, sum by (le)(rate(collection_store_latency_seconds_bucket[{window}])))",
+            f"histogram_quantile(0.50, sum by (le)(rate(agl_store_latency_bucket[{window}])))",
         )
         or 0.0,
         "p95": safe_scalar(
             client,
-            f"histogram_quantile(0.95, sum by (le)(rate(collection_store_latency_seconds_bucket[{window}])))",
+            f"histogram_quantile(0.95, sum by (le)(rate(agl_store_latency_bucket[{window}])))",
         )
         or 0.0,
         "p99": safe_scalar(
             client,
-            f"histogram_quantile(0.99, sum by (le)(rate(collection_store_latency_seconds_bucket[{window}])))",
+            f"histogram_quantile(0.99, sum by (le)(rate(agl_store_latency_bucket[{window}])))",
         )
         or 0.0,
     }
@@ -454,39 +454,35 @@ def gather_rollout_outcomes(
     rate_map = vector_to_map(
         safe_vector(
             client,
-            f"(sum by (status)(increase(collection_store_rollout_total[{window}]))) / {window_seconds}",
+            f"(sum by (status)(increase(agl_rollouts_total[{window}]))) / {window_seconds}",
         ),
         ("status",),
     )
     p25_map = vector_to_map(
         safe_vector(
             client,
-            f"histogram_quantile(0.25, "
-            f"sum by (le, status)(increase(collection_store_rollout_duration_seconds_bucket[{window}])))",
+            f"histogram_quantile(0.25, " f"sum by (le, status)(increase(agl_rollouts_duration_bucket[{window}])))",
         ),
         ("status",),
     )
     p50_map = vector_to_map(
         safe_vector(
             client,
-            f"histogram_quantile(0.50, "
-            f"sum by (le, status)(increase(collection_store_rollout_duration_seconds_bucket[{window}])))",
+            f"histogram_quantile(0.50, " f"sum by (le, status)(increase(agl_rollouts_duration_bucket[{window}])))",
         ),
         ("status",),
     )
     p75_map = vector_to_map(
         safe_vector(
             client,
-            f"histogram_quantile(0.75, "
-            f"sum by (le, status)(increase(collection_store_rollout_duration_seconds_bucket[{window}])))",
+            f"histogram_quantile(0.75, " f"sum by (le, status)(increase(agl_rollouts_duration_bucket[{window}])))",
         ),
         ("status",),
     )
     max_map = vector_to_map(
         safe_vector(
             client,
-            f"histogram_quantile(1.00, "
-            f"sum by (le, status)(increase(collection_store_rollout_duration_seconds_bucket[{window}])))",
+            f"histogram_quantile(1.00, " f"sum by (le, status)(increase(agl_rollouts_duration_bucket[{window}])))",
         ),
         ("status",),
     )
@@ -527,7 +523,7 @@ class HttpPathStats:
 class HttpPathStatusStats:
     method: str
     path: str
-    status_code: str
+    status: str
     qps_mean: float
     qps_max: Optional[float]
     qps_min: Optional[float]
@@ -543,12 +539,12 @@ def gather_http_paths(
     peak_window: str,
     subquery_step: str,
 ) -> Tuple[List[HttpPathStats], StatsSummary]:
-    mean_expr = f"(sum by (method, path)(increase(http_requests_total[{window}]))) / {window_seconds}"
+    mean_expr = f"(sum by (method, path)(increase(agl_http_total[{window}]))) / {window_seconds}"
     qps_mean = vector_to_map(
         safe_vector(client, mean_expr),
         ("method", "path"),
     )
-    peak_expr = f"sum by (method, path)(irate(http_requests_total[{peak_window}]))"
+    peak_expr = f"sum by (method, path)(irate(agl_http_total[{peak_window}]))"
     qps_max = vector_to_map(
         safe_vector(client, f"max_over_time(({peak_expr})[{window}:{subquery_step}])"),
         ("method", "path"),
@@ -560,21 +556,21 @@ def gather_http_paths(
     p50 = vector_to_map(
         safe_vector(
             client,
-            f"histogram_quantile(0.50, sum by (le, method, path)(increase(http_request_duration_seconds_bucket[{window}])))",
+            f"histogram_quantile(0.50, sum by (le, method, path)(increase(agl_http_latency_bucket[{window}])))",
         ),
         ("method", "path"),
     )
     p95 = vector_to_map(
         safe_vector(
             client,
-            f"histogram_quantile(0.95, sum by (le, method, path)(increase(http_request_duration_seconds_bucket[{window}])))",
+            f"histogram_quantile(0.95, sum by (le, method, path)(increase(agl_http_latency_bucket[{window}])))",
         ),
         ("method", "path"),
     )
     p99 = vector_to_map(
         safe_vector(
             client,
-            f"histogram_quantile(0.99, sum by (le, method, path)(increase(http_request_duration_seconds_bucket[{window}])))",
+            f"histogram_quantile(0.99, sum by (le, method, path)(increase(agl_http_latency_bucket[{window}])))",
         ),
         ("method", "path"),
     )
@@ -616,27 +612,27 @@ def gather_http_paths(
     overall: StatsSummary = {
         "qps_mean": safe_scalar(
             client,
-            f"(sum(increase(http_requests_total[{window}]))) / {window_seconds}",
+            f"(sum(increase(agl_http_total[{window}]))) / {window_seconds}",
         )
         or 0.0,
         "qps_max": safe_scalar(
             client,
-            f"max_over_time(((sum(irate(http_requests_total[{peak_window}]))))[{window}:{subquery_step}])",
+            f"max_over_time(((sum(irate(agl_http_total[{peak_window}]))))[{window}:{subquery_step}])",
         ),
         "qps_min": safe_scalar(
             client,
-            f"min_over_time(((sum(irate(http_requests_total[{peak_window}]))))[{window}:{subquery_step}])",
+            f"min_over_time(((sum(irate(agl_http_total[{peak_window}]))))[{window}:{subquery_step}])",
         ),
         "p50": safe_scalar(
-            client, f"histogram_quantile(0.50, sum by (le)(increase(http_request_duration_seconds_bucket[{window}])))"
+            client, f"histogram_quantile(0.50, sum by (le)(increase(agl_http_latency_bucket[{window}])))"
         )
         or 0.0,
         "p95": safe_scalar(
-            client, f"histogram_quantile(0.95, sum by (le)(increase(http_request_duration_seconds_bucket[{window}])))"
+            client, f"histogram_quantile(0.95, sum by (le)(increase(agl_http_latency_bucket[{window}])))"
         )
         or 0.0,
         "p99": safe_scalar(
-            client, f"histogram_quantile(0.99, sum by (le)(increase(http_request_duration_seconds_bucket[{window}])))"
+            client, f"histogram_quantile(0.99, sum by (le)(increase(agl_http_latency_bucket[{window}])))"
         )
         or 0.0,
     }
@@ -650,7 +646,7 @@ def gather_http_paths_with_status(
     peak_window: str,
     subquery_step: str,
 ) -> List[HttpPathStatusStats]:
-    qps_expr = f"sum by (method, path, status_code)(irate(http_requests_total[{peak_window}]))"
+    qps_expr = f"sum by (method, path, status)(irate(agl_http_total[{peak_window}]))"
 
     def fetch_status_metric(expr: str) -> Dict[Tuple[str, str, str], Optional[float]]:
         samples = safe_vector(client, expr)
@@ -666,7 +662,7 @@ def gather_http_paths_with_status(
                 metric_map = {}
             method_raw = metric_map.get("method")
             path_raw = metric_map.get("path")
-            status_raw = metric_map.get("status_code")
+            status_raw = metric_map.get("status")
             key = (
                 _normalize_label(method_raw),
                 _normalize_label(path_raw),
@@ -682,18 +678,18 @@ def gather_http_paths_with_status(
         return text if text else "-"
 
     qps_mean_norm = fetch_status_metric(
-        f"(sum by (method, path, status_code)(increase(http_requests_total[{window}]))) / {window_seconds}"
+        f"(sum by (method, path, status)(increase(agl_http_total[{window}]))) / {window_seconds}"
     )
     qps_max_norm = fetch_status_metric(f"max_over_time(({qps_expr})[{window}:{subquery_step}])")
     qps_min_norm = fetch_status_metric(f"min_over_time(({qps_expr})[{window}:{subquery_step}])")
     p50_norm = fetch_status_metric(
-        f"histogram_quantile(0.50, sum by (le, method, path, status_code)(increase(http_request_duration_seconds_bucket[{window}])))"
+        f"histogram_quantile(0.50, sum by (le, method, path, status)(increase(agl_http_latency_bucket[{window}])))"
     )
     p95_norm = fetch_status_metric(
-        f"histogram_quantile(0.95, sum by (le, method, path, status_code)(increase(http_request_duration_seconds_bucket[{window}])))"
+        f"histogram_quantile(0.95, sum by (le, method, path, status)(increase(agl_http_latency_bucket[{window}])))"
     )
     p99_norm = fetch_status_metric(
-        f"histogram_quantile(0.99, sum by (le, method, path, status_code)(increase(http_request_duration_seconds_bucket[{window}])))"
+        f"histogram_quantile(0.99, sum by (le, method, path, status)(increase(agl_http_latency_bucket[{window}])))"
     )
 
     stats: List[HttpPathStatusStats] = []
@@ -1013,7 +1009,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
             [
                 stat.method,
                 stat.path,
-                stat.status_code,
+                stat.status,
                 fmt_rate(stat.qps_mean),
                 fmt_rate(stat.qps_max),
                 fmt_rate(stat.qps_min),

@@ -4,7 +4,7 @@ services:
       file: compose.store.yml
       service: app
 
-    command: agl store --host 0.0.0.0 --port 4747 --prometheus --backend memory
+    command: agl store --host 0.0.0.0 --port 4747 --tracker console prometheus --backend memory
 
   node-exporter:
     image: prom/node-exporter:latest

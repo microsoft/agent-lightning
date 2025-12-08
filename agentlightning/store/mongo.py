@@ -22,9 +22,10 @@ from typing import (
 from pymongo import AsyncMongoClient
 
 from agentlightning.types import Attempt, AttemptedRollout, Rollout
+from agentlightning.utils.metrics import MetricsBackend
 
 from .base import LightningStoreCapabilities, is_finished
-from .collection.mongo import MongoClientPool, MongoLightningCollections, MongoOperationPrometheusTracker
+from .collection.mongo import MongoClientPool, MongoLightningCollections
 from .collection_based import CollectionBasedLightningStore, healthcheck_before, tracked
 
 T_callable = TypeVar("T_callable", bound=Callable[..., Any])
@@ -54,9 +55,8 @@ class MongoLightningStore(CollectionBasedLightningStore[MongoLightningCollection
         client: AsyncMongoClient[Mapping[str, Any]] | str,
         database_name: str | None = None,
         partition_id: str | None = None,
-        prometheus: bool = False,
+        tracker: MetricsBackend | None = None,
     ) -> None:
-        self._enable_prometheus = prometheus
         self._auto_created_client = False
         if isinstance(client, str):
             self._client = AsyncMongoClient[Mapping[str, Any]](client)
@@ -78,9 +78,9 @@ class MongoLightningStore(CollectionBasedLightningStore[MongoLightningCollection
                 self._client_pool,
                 database_name,
                 partition_id,
-                prometheus_tracker=MongoOperationPrometheusTracker(enabled=self._enable_prometheus),
+                tracker=tracker,
             ),
-            prometheus=self._enable_prometheus,
+            tracker=tracker,
         )
 
     @property
@@ -107,7 +107,6 @@ class MongoLightningStore(CollectionBasedLightningStore[MongoLightningCollection
 
         Concurrently wait for all rollouts to complete with a timeout.
         """
-        print(f"wait_for_rollouts: {rollout_ids}")
         start_time = time.time()
         current_time = start_time
         deadline = start_time + timeout if timeout is not None else None
@@ -136,6 +135,15 @@ class MongoLightningStore(CollectionBasedLightningStore[MongoLightningCollection
             rest_time = max(0.01, min(deadline - time.time() - 0.1, 10.0)) if deadline is not None else 10.0
             await asyncio.sleep(rest_time)
             current_time = time.time()
+
+        # Logging will help debugging when there are stuck rollouts.
+        logger.debug(
+            "Waiting for rollouts. Number of finished rollouts: %d; number of unfinished rollouts: %d",
+            len(finished_rollouts),
+            len(unfinished_rollout_ids),
+        )
+        if len(unfinished_rollout_ids) < 30:
+            logger.debug("Unfinished rollouts: %s", unfinished_rollout_ids)
 
         # Reorder the rollouts to match the input order
         return [finished_rollouts[rollout_id] for rollout_id in rollout_ids if rollout_id in finished_rollouts]

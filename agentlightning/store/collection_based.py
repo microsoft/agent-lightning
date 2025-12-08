@@ -60,6 +60,7 @@ from agentlightning.types import (
     Worker,
     WorkerStatus,
 )
+from agentlightning.utils.metrics import MetricsBackend
 
 from .base import (
     UNSET,
@@ -71,7 +72,7 @@ from .base import (
     is_queuing,
 )
 from .collection import FilterOptions, LightningCollections
-from .collection.base import AtomicLabels
+from .collection.base import COLLECTION_TRACKING_STORE_METHODS, AtomicLabels
 from .utils import LATENCY_BUCKETS, rollout_status_from_attempt, scan_unhealthy_rollouts
 
 T_callable = TypeVar("T_callable", bound=Callable[..., Any])
@@ -119,34 +120,36 @@ def _with_collections_execute(labels: Sequence[AtomicLabels]):
 def tracked(name: str):
     """Decorator to track the execution of the decorated method with Prometheus."""
 
-    _public_methods = frozenset([name for name in LightningStore.__dict__ if not name.startswith("_")])
-
     def decorator(func: T_callable) -> T_callable:
 
         @functools.wraps(func)
         async def wrapper(self: CollectionBasedLightningStore[T_collections], *args: Any, **kwargs: Any) -> Any:
-            # For backtracking in Mongo-collection methods.
+            # For backtracking in collection methods.
             # Only track the public methods (+healthcheck)
-            if name in _public_methods or name == "_healthcheck":
+            if name in COLLECTION_TRACKING_STORE_METHODS:
                 method_name = name  # pyright: ignore[reportUnusedVariable]
             else:
                 method_name = None  # pyright: ignore[reportUnusedVariable]
 
-            if not self._prometheus:  # pyright: ignore[reportPrivateUsage]
+            if self._tracker is None:  # pyright: ignore[reportPrivateUsage]
                 # Skip the tracking because tracking is not configured
                 return await func(self, *args, **kwargs)
 
             start_time = time.perf_counter()
+            status: str = "OK"
             try:
-                ret = await func(self, *args, **kwargs)
-                self._total_metric.labels(name, "OK").inc()  # pyright: ignore[reportPrivateUsage]
-                return ret
-            except Exception as exc:
-                self._total_metric.labels(name, exc.__class__.__name__).inc()  # pyright: ignore[reportPrivateUsage]
+                return await func(self, *args, **kwargs)
+            except BaseException as exc:
+                status = exc.__class__.__name__
                 raise
             finally:
                 elapsed = time.perf_counter() - start_time
-                self._latency_metric.labels(name).observe(elapsed)  # pyright: ignore[reportPrivateUsage]
+                await self._tracker.inc_counter(  # pyright: ignore[reportPrivateUsage]
+                    "agl.store.total", labels={"method": name, "status": status}
+                )
+                await self._tracker.observe_histogram(  # pyright: ignore[reportPrivateUsage]
+                    "agl.store.latency", value=elapsed, labels={"method": name, "status": status}
+                )
 
         return cast(T_callable, wrapper)
 
@@ -215,40 +218,40 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         read_snapshot: Make sure read operations are atomic. If set to true,
             all read operations like `query_rollouts` will have better consistency.
             It may use an isolated snapshot that supports repeatable reads.
-        prometheus: Enable Prometheus tracking.
+        tracker: Enable metrics tracking.
     """
 
-    def __init__(self, collections: T_collections, *, read_snapshot: bool = False, prometheus: bool = False):
+    def __init__(
+        self, collections: T_collections, *, read_snapshot: bool = False, tracker: MetricsBackend | None = None
+    ):
         # rollouts and spans' storage
         self.collections = collections
         self._read_snapshot = read_snapshot
-        self._prometheus = prometheus
+        self._tracker = tracker
         self._launch_time = time.time()
 
-        if prometheus:
-            from prometheus_client import Counter, Histogram
-
-            self._latency_metric = Histogram(
-                "collection_store_latency_seconds",
-                "Latency of CollectionBasedLightningStore methods",
-                ["method"],
+        if self._tracker is not None:
+            self._tracker.register_histogram(
+                "agl.store.latency",
+                ["method", "status"],
                 buckets=LATENCY_BUCKETS,
+                group_level=1,
             )
-            self._total_metric = Counter(
-                "collection_store_total",
-                "Total MongoDB operations",
-                ["method", "error_type"],
+            self._tracker.register_counter(
+                "agl.store.total",
+                ["method", "status"],
+                group_level=1,
             )
-            self._rollout_counter = Counter(
-                "collection_store_rollout_total",
-                "Total rollouts",
+            self._tracker.register_counter(
+                "agl.rollouts.total",
                 ["status", "mode"],
+                group_level=1,
             )
-            self._rollout_duration_metric = Histogram(
-                "collection_store_rollout_duration_seconds",
-                "Duration of rollouts",
+            self._tracker.register_histogram(
+                "agl.rollouts.duration",
                 ["status", "mode"],
                 buckets=LATENCY_BUCKETS,
+                group_level=1,
             )
 
     async def statistics(self) -> LightningStoreStatistics:
@@ -610,7 +613,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
             if not dequeued:
                 break
             rollout_id = dequeued[0]
-            logger.info("dequeued rollout_id: %s. worker_id: %s", rollout_id, worker_id)
+            logger.debug("Rollout ID %s has been dequeued by Worker ID %s", rollout_id, worker_id)
 
             post_dequeue_result = await self._post_dequeue_rollouts([rollout_id], worker_id)
             if post_dequeue_result:
@@ -618,7 +621,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
                 attempted_rollout, _ = post_dequeue_result[0]
                 if worker_id is not None:
                     await self._sync_workers_with_attempts([attempted_rollout.attempt], dequeue=True)
-                logger.info(f"attempted_rollout: {attempted_rollout}")
+                logger.debug("Rollout has been prepared for Worker ID %s: %s", worker_id, attempted_rollout)
                 return attempted_rollout
 
             # else continue the loop
@@ -1142,6 +1145,8 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         if successful_spans:
             await self._post_add_spans(successful_spans, rollout_id, attempt_id)
 
+        logger.debug("Added %d spans for rollout %s, attempt %s", len(successful_spans), rollout_id, attempt_id)
+
         return successful_spans
 
     @tracked("_post_add_spans")
@@ -1212,7 +1217,6 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
 
         See [`LightningStore.wait_for_rollouts()`][agentlightning.LightningStore.wait_for_rollouts] for semantics.
         """
-        logger.info(f"wait_for_rollouts: {rollout_ids}")
         # Wait for all rollouts concurrently
         rollouts = await asyncio.gather(
             *[self.wait_for_rollout(rid, timeout) for rid in rollout_ids], return_exceptions=True
@@ -1223,7 +1227,17 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
                 logger.error(f"Error waiting for rollout {rollout_id}: {rollout}")
 
         # Filter out the exceptions
-        return [rollout for rollout in rollouts if isinstance(rollout, Rollout)]
+        ret = [rollout for rollout in rollouts if isinstance(rollout, Rollout)]
+        finished_rollout_ids = set([rollout.rollout_id for rollout in ret])
+        unfinished_rollout_ids = set(rollout_ids) - finished_rollout_ids
+        logger.debug(
+            "Waiting for rollouts. Number of finished rollouts: %d; number of unfinished rollouts: %d",
+            len(finished_rollout_ids),
+            len(unfinished_rollout_ids),
+        )
+        if len(unfinished_rollout_ids) < 30:
+            logger.debug("Unfinished rollouts: %s", unfinished_rollout_ids)
+        return ret
 
     @tracked("wait_for_rollout")
     async def wait_for_rollout(self, rollout_id: str, timeout: Optional[float] = None) -> Optional[Rollout]:
@@ -1470,10 +1484,14 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         for rollout, updated_fields in rollouts:
             # Sometimes "end_time" is set but it's not really updated.
             if "end_time" in updated_fields and is_finished(rollout):
-                if self._prometheus:
-                    self._rollout_counter.labels(rollout.status, rollout.mode).inc()
-                    self._rollout_duration_metric.labels(rollout.status, rollout.mode).observe(
-                        cast(float, rollout.end_time) - rollout.start_time
+                if self._tracker is not None:
+                    labels = {
+                        "status": rollout.status,
+                        "mode": rollout.mode if rollout.mode is not None else "unknown",
+                    }
+                    await self._tracker.inc_counter("agl.rollouts.total", labels=labels)
+                    await self._tracker.observe_histogram(
+                        "agl.rollouts.duration", value=cast(float, rollout.end_time) - rollout.start_time, labels=labels
                     )
 
         if not skip_enqueue:
