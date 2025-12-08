@@ -9,8 +9,10 @@ import datetime as dt
 import json
 import math
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple, cast
+from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple, cast
 from urllib import error, parse, request
+
+import aiohttp
 
 
 class PrometheusQueryError(RuntimeError):
@@ -315,6 +317,9 @@ def fetch_store_statistics(store_url: str, timeout: float) -> Optional[Dict[str,
         return None
     except json.JSONDecodeError as exc:
         print(f"[warn] Failed to decode store statistics: {exc} (url={stats_url})")
+        return None
+    except aiohttp.ClientError as exc:
+        print(f"[warn] HTTP error fetching store statistics: {exc} (url={stats_url})")
         return None
 
 
@@ -682,11 +687,6 @@ def gather_diagnostics(client: PrometheusClient, window: str) -> Dict[str, Any]:
     return diagnostics
 
 
-# ---------------------------------------------------------------------------
-# Rendering helpers
-# ---------------------------------------------------------------------------
-
-
 def render_table(headers: Sequence[str], rows: Sequence[Sequence[str]]) -> List[str]:
     if not rows:
         return [f"(no data for {headers})"]
@@ -749,6 +749,7 @@ def section(title: str, body: Iterable[str]) -> List[str]:
 def render_metric_group_table(
     spec: MetricGroupSpec,
     rows: Sequence[MetricRow],
+    extra_columns: Optional[Sequence[Tuple[str, Callable[[MetricRow], str]]]] = None,
 ) -> List[str]:
     headers = list(spec.label_headers)
     headers.extend(
@@ -769,6 +770,9 @@ def render_metric_group_table(
             "Avg Time/req Δ",
         ]
     )
+    column_renderers: Sequence[Tuple[str, Callable[[MetricRow], str]]] = extra_columns or ()
+    for header, _ in column_renderers:
+        headers.append(header)
     if not rows:
         return render_table(headers, [])
     sorted_rows = sorted(rows, key=metric_row_sort_key)
@@ -791,13 +795,31 @@ def render_metric_group_table(
             fmt_latency(row.time_delta),
             fmt_latency(row.time_per_request_delta),
         ]
-        rendered_rows.append(label_cells + metrics)
+        extra_cells = [renderer(row) for _, renderer in column_renderers]
+        rendered_rows.append(label_cells + metrics + extra_cells)
     return render_table(headers, rendered_rows)
 
 
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
+def make_store_time_share_column(
+    store_time_per_sec: Mapping[str, Optional[float]],
+) -> Tuple[str, Callable[[MetricRow], str]]:
+    def render_cell(row: MetricRow) -> str:
+        if not row.label_values:
+            return "-"
+        method = row.label_values[0]
+        store_time = store_time_per_sec.get(method)
+        collection_time = row.time_per_sec
+        if (
+            store_time is None
+            or collection_time is None
+            or math.isnan(store_time)
+            or math.isnan(collection_time)
+            or store_time <= 0
+        ):
+            return "-"
+        return fmt_percentage(collection_time / store_time)
+
+    return ("Store Time %", render_cell)
 
 
 def main(argv: Optional[Sequence[str]] = None) -> None:
@@ -926,25 +948,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
             "Collection Metrics",
             (
                 MetricGroupSpec(
-                    title="agl.collections ungrouped",
-                    histogram_bucket_metric="agl_collections_latency_bucket",
-                    label_names=tuple(),
-                    label_headers=tuple(),
-                ),
-                MetricGroupSpec(
-                    title="agl.collections grouped by store_method",
-                    histogram_bucket_metric="agl_collections_latency_bucket",
-                    label_names=("store_method",),
-                    label_headers=("Store Method",),
-                ),
-                MetricGroupSpec(
-                    title="agl.collections grouped by store_method, operation",
-                    histogram_bucket_metric="agl_collections_latency_bucket",
-                    label_names=("store_method", "operation"),
-                    label_headers=("Store Method", "Operation"),
-                ),
-                MetricGroupSpec(
-                    title="agl.collections grouped by store_method, collection",
+                    title="agl.collections grouped by store_method, collection, operation",
                     histogram_bucket_metric="agl_collections_latency_bucket",
                     label_names=("store_method", "collection"),
                     label_headers=("Store Method", "Collection"),
@@ -965,6 +969,8 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         ),
     ]
 
+    store_method_time_per_sec: Dict[str, Optional[float]] = {}
+
     for category_title, specs in metric_categories:
         category_lines: List[str] = []
         for idx, spec in enumerate(specs):
@@ -978,8 +984,17 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
                 half_window=half_window,
                 half_window_seconds=half_window_seconds,
             )
+            if spec.histogram_bucket_metric == "agl_store_latency_bucket" and spec.label_names == ("method",):
+                store_method_time_per_sec = {
+                    row.label_values[0]: row.time_per_sec
+                    for row in rows
+                    if row.label_values and len(row.label_values) == 1
+                }
+            extra_columns: Optional[Sequence[Tuple[str, Callable[[MetricRow], str]]]] = None
+            if "store_method" in spec.label_names:
+                extra_columns = [make_store_time_share_column(store_method_time_per_sec)]
             category_lines.append("### " + spec.title)
-            category_lines.extend(render_metric_group_table(spec, rows))
+            category_lines.extend(render_metric_group_table(spec, rows, extra_columns=extra_columns))
             if idx != len(specs) - 1:
                 category_lines.append("")
         lines.extend(section(category_title, category_lines))

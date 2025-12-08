@@ -200,6 +200,9 @@ jobs:
           set -euo pipefail
           for attempt in {1..60}; do
             if curl -fsS "$STORE_API_URL/health" >/dev/null 2>&1; then
+              sleep 1
+              curl -fsS "$STORE_API_URL/rollouts"  # Warm up the scraper
+              sleep 15  # Allow some time for the baseline metrics to be established
               exit 0
             fi
             sleep 1
