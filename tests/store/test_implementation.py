@@ -29,7 +29,9 @@ from agentlightning.store.base import UNSET, LightningStore
 from agentlightning.store.memory import InMemoryLightningStore, estimate_model_size
 from agentlightning.types import (
     LLM,
+    Attempt,
     AttemptedRollout,
+    EnqueueRolloutRequest,
     Event,
     Link,
     OtelResource,
@@ -675,6 +677,49 @@ async def test_requeue_mechanism(store_fixture: LightningStore) -> None:
 
 
 @pytest.mark.asyncio
+async def test_enqueue_many_rollouts_preserves_order(store_fixture: LightningStore) -> None:
+    """enqueue_many_rollouts should enqueue tasks in the provided order with matching metadata."""
+
+    requests = [
+        EnqueueRolloutRequest(input={"idx": 0}, metadata={"batch": "a"}),
+        EnqueueRolloutRequest(input={"idx": 1}, mode="train"),
+        EnqueueRolloutRequest(input={"idx": 2}, config=RolloutConfig(timeout_seconds=3.5)),
+    ]
+
+    rollouts = await store_fixture.enqueue_many_rollouts(requests)
+
+    assert [rollout.input["idx"] for rollout in rollouts] == [0, 1, 2]
+    assert all(rollout.status == "queuing" for rollout in rollouts)
+    assert rollouts[0].metadata == {"batch": "a"}
+    assert rollouts[1].mode == "train"
+    assert rollouts[2].config.timeout_seconds == 3.5
+
+    for expected_idx in range(3):
+        dequeued = await store_fixture.dequeue_rollout()
+        assert dequeued is not None
+        assert dequeued.input["idx"] == expected_idx
+
+
+@pytest.mark.asyncio
+async def test_dequeue_many_rollouts_with_limit(store_fixture: LightningStore) -> None:
+    """dequeue_many_rollouts should honor limit and propagate worker IDs to attempts."""
+
+    requests = [EnqueueRolloutRequest(input={"idx": idx}) for idx in range(4)]
+    await store_fixture.enqueue_many_rollouts(requests)
+
+    first_batch = await store_fixture.dequeue_many_rollouts(limit=2, worker_id="bulk-worker")
+    assert len(first_batch) == 2
+    assert [attempt.input["idx"] for attempt in first_batch] == [0, 1]
+    assert all(attempt.attempt.worker_id == "bulk-worker" for attempt in first_batch)
+
+    second_batch = await store_fixture.dequeue_many_rollouts(limit=5, worker_id="bulk-worker")
+    assert len(second_batch) == 2
+    assert [attempt.input["idx"] for attempt in second_batch] == [2, 3]
+
+    assert await store_fixture.dequeue_many_rollouts(limit=1) == []
+
+
+@pytest.mark.asyncio
 async def test_update_and_query_workers(store_fixture: LightningStore) -> None:
     """Workers can be created, heartbeats recorded, and telemetry auto-updated."""
     first = await store_fixture.update_worker("worker-1", heartbeat_stats={"cpu": 0.5})
@@ -715,6 +760,70 @@ async def test_update_and_query_workers(store_fixture: LightningStore) -> None:
 
     with pytest.raises(TypeError):
         await store_fixture.update_worker("worker-1", heartbeat_stats=None)  # type: ignore[arg-type]
+
+
+@pytest.mark.asyncio
+async def test_worker_sync_preserves_existing_fields(store_fixture: LightningStore) -> None:
+    """Worker heartbeats should survive status syncs triggered by attempts."""
+    worker_id = "worker-sync-preserve"
+    initial = await store_fixture.update_worker(worker_id, heartbeat_stats={"cpu": 0.42})
+    assert initial.last_heartbeat_time is not None
+
+    attempted = await store_fixture.start_rollout(input={"task": "preserve"}, worker_id=worker_id)
+
+    busy = await store_fixture.get_worker_by_id(worker_id)
+    assert busy is not None
+    assert busy.heartbeat_stats == {"cpu": 0.42}
+    assert busy.last_heartbeat_time == initial.last_heartbeat_time
+
+    await store_fixture.update_attempt(attempted.rollout_id, attempted.attempt.attempt_id, status="succeeded")
+    idle = await store_fixture.get_worker_by_id(worker_id)
+    assert idle is not None
+    assert idle.heartbeat_stats == {"cpu": 0.42}
+    assert idle.last_heartbeat_time == initial.last_heartbeat_time
+
+
+@pytest.mark.asyncio
+async def test_start_rollout_assigns_worker(store_fixture: LightningStore) -> None:
+    """start_rollout should immediately associate attempts with the provided worker."""
+    attempted = await store_fixture.start_rollout(input={"task": "direct"}, worker_id="worker-direct")
+
+    assert attempted.attempt.worker_id == "worker-direct"
+    worker = await store_fixture.get_worker_by_id("worker-direct")
+    assert worker is not None
+    assert worker.status == "busy"
+    assert worker.current_rollout_id == attempted.rollout_id
+    assert worker.current_attempt_id == attempted.attempt.attempt_id
+
+
+@pytest.mark.asyncio
+async def test_dequeue_rollout_assigns_worker(store_fixture: LightningStore) -> None:
+    """dequeue_rollout should stamp attempts and worker telemetry with worker_id."""
+    await store_fixture.enqueue_rollout(input={"task": "queued"})
+    dequeued = await store_fixture.dequeue_rollout(worker_id="worker-dequeue")
+
+    assert dequeued is not None
+    assert dequeued.attempt.worker_id == "worker-dequeue"
+    worker = await store_fixture.get_worker_by_id("worker-dequeue")
+    assert worker is not None
+    assert worker.status == "busy"
+    assert worker.current_rollout_id == dequeued.rollout_id
+    assert worker.current_attempt_id == dequeued.attempt.attempt_id
+
+
+@pytest.mark.asyncio
+async def test_start_attempt_assigns_worker(store_fixture: LightningStore) -> None:
+    """Manual retries should also update worker state when worker_id is provided."""
+    initial = await store_fixture.start_rollout(input={"task": "retry-seed"})
+    retry = await store_fixture.start_attempt(initial.rollout_id, worker_id="worker-retry")
+
+    assert retry.attempt.sequence_id == 2
+    assert retry.attempt.worker_id == "worker-retry"
+    worker = await store_fixture.get_worker_by_id("worker-retry")
+    assert worker is not None
+    assert worker.status == "busy"
+    assert worker.current_rollout_id == retry.rollout_id
+    assert worker.current_attempt_id == retry.attempt.attempt_id
 
 
 @pytest.mark.asyncio
@@ -1256,6 +1365,35 @@ async def test_span_updates_attempt_status(store_fixture: LightningStore, mock_r
 
 
 @pytest.mark.asyncio
+async def test_spans_promote_preparing_attempt_with_heartbeat(
+    store_fixture: LightningStore, mock_readable_span: Mock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Spans should set heartbeat time and promote preparing attempts/rollouts to running."""
+    rollout = await store_fixture.enqueue_rollout(input={"test": "preparing-heartbeat"})
+    dequeued = await store_fixture.dequeue_rollout()
+    assert dequeued is not None
+
+    attempts_before = await store_fixture.query_attempts(rollout.rollout_id)
+    assert attempts_before
+    attempt_id = attempts_before[0].attempt_id
+    assert attempts_before[0].status == "preparing"
+    assert attempts_before[0].last_heartbeat_time is None
+
+    heartbeat_time = 1234.5
+    monkeypatch.setattr("agentlightning.store.collection_based.time.time", lambda: heartbeat_time)
+
+    await store_fixture.add_otel_span(rollout.rollout_id, attempt_id, mock_readable_span)
+
+    attempt_after = (await store_fixture.query_attempts(rollout.rollout_id))[0]
+    assert attempt_after.status == "running"
+    assert attempt_after.last_heartbeat_time == heartbeat_time
+
+    rollout_after = await store_fixture.get_rollout_by_id(rollout.rollout_id)
+    assert rollout_after is not None
+    assert rollout_after.status == "running"
+
+
+@pytest.mark.asyncio
 async def test_unresponsive_attempt_recovers_after_span(
     store_fixture: LightningStore, mock_readable_span: Mock
 ) -> None:
@@ -1301,6 +1439,77 @@ async def test_running_attempt_updates_heartbeat(
     await store_fixture.add_otel_span(rollout.rollout_id, attempt_id, mock_readable_span)
     attempt_after_second = (await store_fixture.query_attempts(rollout.rollout_id))[0]
     assert attempt_after_second.last_heartbeat_time == first_heartbeat + 100.0
+
+
+@pytest.mark.asyncio
+async def test_span_post_add_preserves_concurrent_updates(
+    store_fixture: LightningStore, mock_readable_span: Mock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Concurrent attempt updates should not be clobbered when spans record heartbeats."""
+    rollout = await store_fixture.enqueue_rollout(input={"test": "span-concurrency"})
+    dequeued = await store_fixture.dequeue_rollout()
+    assert dequeued is not None
+    attempt_id = dequeued.attempt.attempt_id
+
+    original_post = store_fixture._post_add_spans  # type: ignore
+
+    async def patched_post(spans: List[Span], rollout_id: str, mutated_attempt_id: str) -> None:
+        await store_fixture.update_attempt(rollout_id, mutated_attempt_id, metadata={"concurrent": True})
+        await original_post(spans, rollout_id, mutated_attempt_id)
+
+    monkeypatch.setattr(store_fixture, "_post_add_spans", patched_post)
+
+    await store_fixture.add_otel_span(rollout.rollout_id, attempt_id, mock_readable_span)
+
+    attempt_after = (await store_fixture.query_attempts(rollout.rollout_id))[0]
+    assert attempt_after.metadata == {"concurrent": True}
+
+
+@pytest.mark.asyncio
+async def test_healthcheck_marks_unresponsive_and_updates_worker(
+    store_fixture: LightningStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Healthcheck should mark attempts unresponsive and sync worker state via the helper."""
+
+    class TimeStub:
+        def __init__(self, value: float):
+            self.value = value
+
+        def __call__(self) -> float:
+            return self.value
+
+    time_stub = TimeStub(100.0)
+    monkeypatch.setattr("agentlightning.store.collection_based.time.time", time_stub)
+
+    rollout = await store_fixture.enqueue_rollout(
+        input={"test": "healthcheck-worker"},
+        config=RolloutConfig(unresponsive_seconds=1.0),
+    )
+    dequeued = await store_fixture.dequeue_rollout(worker_id="worker-sync")
+    assert dequeued is not None
+    attempt_id = dequeued.attempt.attempt_id
+    await store_fixture.update_attempt(rollout.rollout_id, attempt_id, worker_id="worker-sync")
+
+    original_sync = store_fixture._sync_workers_with_attempts  # type: ignore
+    sync_calls: List[str] = []
+
+    async def tracking_sync(attempts: Sequence[Attempt]) -> None:
+        for attempt in attempts:
+            sync_calls.append(attempt.attempt_id)
+        await original_sync(attempts)
+
+    monkeypatch.setattr(store_fixture, "_sync_workers_with_attempts", tracking_sync)
+
+    time_stub.value = 105.0
+    await store_fixture.get_rollout_by_id(rollout.rollout_id)
+
+    worker = await store_fixture.get_worker_by_id("worker-sync")
+    assert worker is not None
+    assert worker.status == "unknown"
+
+    attempt_after = (await store_fixture.query_attempts(rollout.rollout_id))[0]
+    assert attempt_after.status == "unresponsive"
+    assert sync_calls == [attempt_after.attempt_id]
 
 
 @pytest.mark.asyncio
@@ -2329,7 +2538,7 @@ async def test_concurrent_resource_updates(store_fixture: LightningStore) -> Non
 @pytest.mark.asyncio
 async def test_update_nonexistent_rollout(store_fixture: LightningStore) -> None:
     """Test updating non-existent rollout raises error."""
-    with pytest.raises(ValueError, match="Rollout nonexistent not found"):
+    with pytest.raises(ValueError, match=r"Item.*does not exist"):
         await store_fixture.update_rollout(rollout_id="nonexistent", status="failed")
 
 

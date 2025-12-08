@@ -29,6 +29,11 @@ AGL_EXCEPTION = "agentlightning.exception"
 Used by the exception emitter to record exception details.
 """
 
+AGL_OPERATION = "agentlightning.operation"
+"""Agent-lightning's standard span name for functions.
+Wrap function or code-blocks as operations.
+"""
+
 AGL_VIRTUAL = "agentlightning.virtual"
 """Agent-lightning's standard span name for virtual operations.
 
@@ -83,6 +88,15 @@ class LightningSpanAttributes(Enum):
 
     OBJECT_JSON = "agentlightning.object.json"
     """Attribute name for object serialized value (JSON) in object spans."""
+
+    OPERATION_NAME = "agentlightning.operation.name"
+    """Attribute name for operation name in operation spans, normally the function name."""
+
+    OPERATION_INPUT = "agentlightning.operation.input"
+    """Attribute name for operation input in operation spans."""
+
+    OPERATION_OUTPUT = "agentlightning.operation.output"
+    """Attribute name for operation output in operation spans."""
 
 
 class RewardAttributes(Enum):

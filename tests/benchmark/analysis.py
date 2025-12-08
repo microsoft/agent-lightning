@@ -153,8 +153,13 @@ def format_window(seconds: float) -> str:
     return f"{seconds}s"
 
 
-def compute_rate_window(duration_seconds: float) -> str:
-    return format_window(min(duration_seconds, 60.0))
+def clamp_window_seconds(duration_seconds: float) -> int:
+    return max(int(duration_seconds), 1)
+
+
+def compute_peak_window(duration_seconds: float) -> str:
+    peak_seconds = max(min(int(duration_seconds), 60), 1)
+    return f"{peak_seconds}s"
 
 
 def compute_subquery_step(duration_seconds: float) -> str:
@@ -355,40 +360,39 @@ class RolloutOutcomeStats:
 def gather_store_methods(
     client: PrometheusClient,
     window: str,
-    rate_window: str,
+    window_seconds: int,
+    peak_window: str,
     subquery_step: str,
 ) -> Tuple[List[StoreMethodStats], StatsSummary]:
-    ops_expr = f"sum by (method)(rate(collection_store_total[{rate_window}]))"
-    ops_mean = vector_to_map(
-        safe_vector(client, f"avg_over_time(({ops_expr})[{window}:{subquery_step}])"),
-        ("method",),
-    )
+    mean_expr = f"(sum by (method)(increase(agl_store_total[{window}]))) / {window_seconds}"
+    ops_mean = vector_to_map(safe_vector(client, mean_expr), ("method",))
+    peak_expr = f"sum by (method)(irate(agl_store_total[{peak_window}]))"
     ops_max = vector_to_map(
-        safe_vector(client, f"max_over_time(({ops_expr})[{window}:{subquery_step}])"),
+        safe_vector(client, f"max_over_time(({peak_expr})[{window}:{subquery_step}])"),
         ("method",),
     )
     ops_min = vector_to_map(
-        safe_vector(client, f"min_over_time(({ops_expr})[{window}:{subquery_step}])"),
+        safe_vector(client, f"min_over_time(({peak_expr})[{window}:{subquery_step}])"),
         ("method",),
     )
     p50 = vector_to_map(
         safe_vector(
             client,
-            f"histogram_quantile(0.50, sum by (le, method)(rate(collection_store_latency_seconds_bucket[{window}])))",
+            f"histogram_quantile(0.50, sum by (le, method)(rate(agl_store_latency_bucket[{window}])))",
         ),
         ("method",),
     )
     p95 = vector_to_map(
         safe_vector(
             client,
-            f"histogram_quantile(0.95, sum by (le, method)(rate(collection_store_latency_seconds_bucket[{window}])))",
+            f"histogram_quantile(0.95, sum by (le, method)(rate(agl_store_latency_bucket[{window}])))",
         ),
         ("method",),
     )
     p99 = vector_to_map(
         safe_vector(
             client,
-            f"histogram_quantile(0.99, sum by (le, method)(rate(collection_store_latency_seconds_bucket[{window}])))",
+            f"histogram_quantile(0.99, sum by (le, method)(rate(agl_store_latency_bucket[{window}])))",
         ),
         ("method",),
     )
@@ -412,30 +416,30 @@ def gather_store_methods(
     overall: StatsSummary = {
         "ops_mean": safe_scalar(
             client,
-            f"avg_over_time((sum(rate(collection_store_total[{rate_window}])))[{window}:{subquery_step}])",
+            f"(sum(increase(agl_store_total[{window}]))) / {window_seconds}",
         )
         or 0.0,
         "ops_max": safe_scalar(
             client,
-            f"max_over_time((sum(rate(collection_store_total[{rate_window}])))[{window}:{subquery_step}])",
+            f"max_over_time(((sum(irate(agl_store_total[{peak_window}]))))[{window}:{subquery_step}])",
         ),
         "ops_min": safe_scalar(
             client,
-            f"min_over_time((sum(rate(collection_store_total[{rate_window}])))[{window}:{subquery_step}])",
+            f"min_over_time(((sum(irate(agl_store_total[{peak_window}]))))[{window}:{subquery_step}])",
         ),
         "p50": safe_scalar(
             client,
-            f"histogram_quantile(0.50, sum by (le)(rate(collection_store_latency_seconds_bucket[{window}])))",
+            f"histogram_quantile(0.50, sum by (le)(rate(agl_store_latency_bucket[{window}])))",
         )
         or 0.0,
         "p95": safe_scalar(
             client,
-            f"histogram_quantile(0.95, sum by (le)(rate(collection_store_latency_seconds_bucket[{window}])))",
+            f"histogram_quantile(0.95, sum by (le)(rate(agl_store_latency_bucket[{window}])))",
         )
         or 0.0,
         "p99": safe_scalar(
             client,
-            f"histogram_quantile(0.99, sum by (le)(rate(collection_store_latency_seconds_bucket[{window}])))",
+            f"histogram_quantile(0.99, sum by (le)(rate(agl_store_latency_bucket[{window}])))",
         )
         or 0.0,
     }
@@ -445,41 +449,40 @@ def gather_store_methods(
 def gather_rollout_outcomes(
     client: PrometheusClient,
     window: str,
-    rate_window: str,
+    window_seconds: int,
 ) -> List[RolloutOutcomeStats]:
     rate_map = vector_to_map(
-        safe_vector(client, f"sum by (status)(rate(collection_store_rollout_total[{rate_window}]))"),
+        safe_vector(
+            client,
+            f"(sum by (status)(increase(agl_rollouts_total[{window}]))) / {window_seconds}",
+        ),
         ("status",),
     )
     p25_map = vector_to_map(
         safe_vector(
             client,
-            f"histogram_quantile(0.25, "
-            f"sum by (le, status)(rate(collection_store_rollout_duration_seconds_bucket[{window}])))",
+            f"histogram_quantile(0.25, " f"sum by (le, status)(increase(agl_rollouts_duration_bucket[{window}])))",
         ),
         ("status",),
     )
     p50_map = vector_to_map(
         safe_vector(
             client,
-            f"histogram_quantile(0.50, "
-            f"sum by (le, status)(rate(collection_store_rollout_duration_seconds_bucket[{window}])))",
+            f"histogram_quantile(0.50, " f"sum by (le, status)(increase(agl_rollouts_duration_bucket[{window}])))",
         ),
         ("status",),
     )
     p75_map = vector_to_map(
         safe_vector(
             client,
-            f"histogram_quantile(0.75, "
-            f"sum by (le, status)(rate(collection_store_rollout_duration_seconds_bucket[{window}])))",
+            f"histogram_quantile(0.75, " f"sum by (le, status)(increase(agl_rollouts_duration_bucket[{window}])))",
         ),
         ("status",),
     )
     max_map = vector_to_map(
         safe_vector(
             client,
-            f"histogram_quantile(1.00, "
-            f"sum by (le, status)(rate(collection_store_rollout_duration_seconds_bucket[{window}])))",
+            f"histogram_quantile(1.00, " f"sum by (le, status)(increase(agl_rollouts_duration_bucket[{window}])))",
         ),
         ("status",),
     )
@@ -516,43 +519,58 @@ class HttpPathStats:
     p99: Optional[float]
 
 
+@dataclass
+class HttpPathStatusStats:
+    method: str
+    path: str
+    status: str
+    qps_mean: float
+    qps_max: Optional[float]
+    qps_min: Optional[float]
+    p50: Optional[float]
+    p95: Optional[float]
+    p99: Optional[float]
+
+
 def gather_http_paths(
     client: PrometheusClient,
     window: str,
-    rate_window: str,
+    window_seconds: int,
+    peak_window: str,
     subquery_step: str,
 ) -> Tuple[List[HttpPathStats], StatsSummary]:
-    qps_expr = f"sum by (method, path)(rate(http_requests_total[{rate_window}]))"
+    mean_expr = f"(sum by (method, path)(increase(agl_http_total[{window}]))) / {window_seconds}"
     qps_mean = vector_to_map(
-        safe_vector(client, f"avg_over_time(({qps_expr})[{window}:{subquery_step}])"),
+        safe_vector(client, mean_expr),
         ("method", "path"),
     )
+    peak_expr = f"sum by (method, path)(irate(agl_http_total[{peak_window}]))"
     qps_max = vector_to_map(
-        safe_vector(client, f"max_over_time(({qps_expr})[{window}:{subquery_step}])"),
+        safe_vector(client, f"max_over_time(({peak_expr})[{window}:{subquery_step}])"),
         ("method", "path"),
     )
     qps_min = vector_to_map(
-        safe_vector(client, f"min_over_time(({qps_expr})[{window}:{subquery_step}])"),
+        safe_vector(client, f"min_over_time(({peak_expr})[{window}:{subquery_step}])"),
         ("method", "path"),
     )
     p50 = vector_to_map(
         safe_vector(
             client,
-            f"histogram_quantile(0.50, sum by (le, method, path)(rate(http_request_duration_seconds_bucket[{window}])))",
+            f"histogram_quantile(0.50, sum by (le, method, path)(increase(agl_http_latency_bucket[{window}])))",
         ),
         ("method", "path"),
     )
     p95 = vector_to_map(
         safe_vector(
             client,
-            f"histogram_quantile(0.95, sum by (le, method, path)(rate(http_request_duration_seconds_bucket[{window}])))",
+            f"histogram_quantile(0.95, sum by (le, method, path)(increase(agl_http_latency_bucket[{window}])))",
         ),
         ("method", "path"),
     )
     p99 = vector_to_map(
         safe_vector(
             client,
-            f"histogram_quantile(0.99, sum by (le, method, path)(rate(http_request_duration_seconds_bucket[{window}])))",
+            f"histogram_quantile(0.99, sum by (le, method, path)(increase(agl_http_latency_bucket[{window}])))",
         ),
         ("method", "path"),
     )
@@ -594,31 +612,103 @@ def gather_http_paths(
     overall: StatsSummary = {
         "qps_mean": safe_scalar(
             client,
-            f"avg_over_time((sum(rate(http_requests_total[{rate_window}])))" f"[{window}:{subquery_step}])",
+            f"(sum(increase(agl_http_total[{window}]))) / {window_seconds}",
         )
         or 0.0,
         "qps_max": safe_scalar(
             client,
-            f"max_over_time((sum(rate(http_requests_total[{rate_window}])))" f"[{window}:{subquery_step}])",
+            f"max_over_time(((sum(irate(agl_http_total[{peak_window}]))))[{window}:{subquery_step}])",
         ),
         "qps_min": safe_scalar(
             client,
-            f"min_over_time((sum(rate(http_requests_total[{rate_window}])))" f"[{window}:{subquery_step}])",
+            f"min_over_time(((sum(irate(agl_http_total[{peak_window}]))))[{window}:{subquery_step}])",
         ),
         "p50": safe_scalar(
-            client, f"histogram_quantile(0.50, sum by (le)(rate(http_request_duration_seconds_bucket[{window}])))"
+            client, f"histogram_quantile(0.50, sum by (le)(increase(agl_http_latency_bucket[{window}])))"
         )
         or 0.0,
         "p95": safe_scalar(
-            client, f"histogram_quantile(0.95, sum by (le)(rate(http_request_duration_seconds_bucket[{window}])))"
+            client, f"histogram_quantile(0.95, sum by (le)(increase(agl_http_latency_bucket[{window}])))"
         )
         or 0.0,
         "p99": safe_scalar(
-            client, f"histogram_quantile(0.99, sum by (le)(rate(http_request_duration_seconds_bucket[{window}])))"
+            client, f"histogram_quantile(0.99, sum by (le)(increase(agl_http_latency_bucket[{window}])))"
         )
         or 0.0,
     }
     return path_stats, overall
+
+
+def gather_http_paths_with_status(
+    client: PrometheusClient,
+    window: str,
+    window_seconds: int,
+    peak_window: str,
+    subquery_step: str,
+) -> List[HttpPathStatusStats]:
+    qps_expr = f"sum by (method, path, status)(irate(agl_http_total[{peak_window}]))"
+
+    def fetch_status_metric(expr: str) -> Dict[Tuple[str, str, str], Optional[float]]:
+        samples = safe_vector(client, expr)
+        typed: Dict[Tuple[str, str, str], Optional[float]] = {}
+        if not samples:
+            return typed
+        for sample in samples:
+            metric_obj = sample.get("metric", {})
+            metric_map: Mapping[str, Any]
+            if isinstance(metric_obj, Mapping):
+                metric_map = cast(Mapping[str, Any], metric_obj)
+            else:
+                metric_map = {}
+            method_raw = metric_map.get("method")
+            path_raw = metric_map.get("path")
+            status_raw = metric_map.get("status")
+            key = (
+                _normalize_label(method_raw),
+                _normalize_label(path_raw),
+                _normalize_label(status_raw),
+            )
+            typed[key] = _sample_value(sample)
+        return typed
+
+    def _normalize_label(value: Any) -> str:
+        if value is None:
+            return "-"
+        text = str(value)
+        return text if text else "-"
+
+    qps_mean_norm = fetch_status_metric(
+        f"(sum by (method, path, status)(increase(agl_http_total[{window}]))) / {window_seconds}"
+    )
+    qps_max_norm = fetch_status_metric(f"max_over_time(({qps_expr})[{window}:{subquery_step}])")
+    qps_min_norm = fetch_status_metric(f"min_over_time(({qps_expr})[{window}:{subquery_step}])")
+    p50_norm = fetch_status_metric(
+        f"histogram_quantile(0.50, sum by (le, method, path, status)(increase(agl_http_latency_bucket[{window}])))"
+    )
+    p95_norm = fetch_status_metric(
+        f"histogram_quantile(0.95, sum by (le, method, path, status)(increase(agl_http_latency_bucket[{window}])))"
+    )
+    p99_norm = fetch_status_metric(
+        f"histogram_quantile(0.99, sum by (le, method, path, status)(increase(agl_http_latency_bucket[{window}])))"
+    )
+
+    stats: List[HttpPathStatusStats] = []
+    for key in sorted(qps_mean_norm.keys()):
+        method_label, path_label, status_label = key
+        stats.append(
+            HttpPathStatusStats(
+                method_label,
+                path_label,
+                status_label,
+                qps_mean_norm.get(key, 0.0) or 0.0,
+                qps_max_norm.get(key),
+                qps_min_norm.get(key),
+                p50_norm.get(key),
+                p95_norm.get(key),
+                p99_norm.get(key),
+            )
+        )
+    return stats
 
 
 # ---------------------------------------------------------------------------
@@ -632,6 +722,27 @@ def gather_diagnostics(client: PrometheusClient, window: str) -> Dict[str, Any]:
         safe_vector(
             client,
             f"sum by (operation)(rate(mongo_operation_total{{operation!='ensure_collection'}}[{window}]))",
+        ),
+        ("operation",),
+    )
+    diagnostics["mongo_latency_p50"] = vector_to_map(
+        safe_vector(
+            client,
+            f"histogram_quantile(0.50, sum by (le, operation)(rate(mongo_operation_duration_seconds_bucket{{operation!='ensure_collection'}}[{window}])))",
+        ),
+        ("operation",),
+    )
+    diagnostics["mongo_latency_p95"] = vector_to_map(
+        safe_vector(
+            client,
+            f"histogram_quantile(0.95, sum by (le, operation)(rate(mongo_operation_duration_seconds_bucket{{operation!='ensure_collection'}}[{window}])))",
+        ),
+        ("operation",),
+    )
+    diagnostics["mongo_latency_p99"] = vector_to_map(
+        safe_vector(
+            client,
+            f"histogram_quantile(0.99, sum by (le, operation)(rate(mongo_operation_duration_seconds_bucket{{operation!='ensure_collection'}}[{window}])))",
         ),
         ("operation",),
     )
@@ -651,6 +762,31 @@ def gather_diagnostics(client: PrometheusClient, window: str) -> Dict[str, Any]:
                 mongo_opcounters[str(label or "-")] = value
     diagnostics["mongo_opcounters"] = mongo_opcounters
     diagnostics["mongo_connections"] = safe_scalar(client, "avg(mongodb_ss_connections{conn_type='current'})")
+    diagnostics["memory_lock_rate"] = vector_to_map(
+        safe_vector(client, f"sum by (collection)(rate(memory_collection_lock_rate_total[{window}]))"),
+        ("collection",),
+    )
+    diagnostics["memory_lock_p50"] = vector_to_map(
+        safe_vector(
+            client,
+            f"histogram_quantile(0.50, sum by (le, collection)(rate(memory_collection_lock_latency_seconds_bucket[{window}])))",
+        ),
+        ("collection",),
+    )
+    diagnostics["memory_lock_p95"] = vector_to_map(
+        safe_vector(
+            client,
+            f"histogram_quantile(0.95, sum by (le, collection)(rate(memory_collection_lock_latency_seconds_bucket[{window}])))",
+        ),
+        ("collection",),
+    )
+    diagnostics["memory_lock_p99"] = vector_to_map(
+        safe_vector(
+            client,
+            f"histogram_quantile(0.99, sum by (le, collection)(rate(memory_collection_lock_latency_seconds_bucket[{window}])))",
+        ),
+        ("collection",),
+    )
     diagnostics["cpu_usage"] = safe_scalar(client, f"1 - avg(rate(node_cpu_seconds_total{{mode='idle'}}[{window}]))")
     diagnostics["memory_total"] = safe_scalar(client, "avg(node_memory_MemTotal_bytes)")
     diagnostics["memory_available"] = safe_scalar(client, "avg(node_memory_MemAvailable_bytes)")
@@ -749,8 +885,9 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         start = end - duration
     assert start is not None
     duration_seconds = max((end - start).total_seconds(), 1.0)
+    window_seconds = clamp_window_seconds(duration_seconds)
     window = format_window(duration_seconds)
-    rate_window = compute_rate_window(duration_seconds)
+    peak_window = compute_peak_window(duration_seconds)
     subquery_step = compute_subquery_step(duration_seconds)
 
     client = PrometheusClient(args.prom_url, timeout=args.timeout, default_time=end)
@@ -794,7 +931,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     )
 
     # Store internals
-    store_stats, store_overall = gather_store_methods(client, window, rate_window, subquery_step)
+    store_stats, store_overall = gather_store_methods(client, window, window_seconds, peak_window, subquery_step)
     store_rows: List[List[str]] = [
         [
             stat.method,
@@ -821,7 +958,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     )
     lines.extend(section("CollectionBasedLightningStore", store_lines))
 
-    rollout_outcomes = gather_rollout_outcomes(client, window, rate_window)
+    rollout_outcomes = gather_rollout_outcomes(client, window, window_seconds)
     rollout_rows = [
         [
             stat.status,
@@ -838,7 +975,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     )
 
     # HTTP traffic
-    http_paths, http_overall = gather_http_paths(client, window, rate_window, subquery_step)
+    http_paths, http_overall = gather_http_paths(client, window, window_seconds, peak_window, subquery_step)
     http_rows: List[List[str]] = [
         [
             stat.method,
@@ -865,16 +1002,60 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     )
     lines.extend(section("HTTP Endpoints", http_lines))
 
+    http_status_stats = gather_http_paths_with_status(client, window, window_seconds, peak_window, subquery_step)
+    http_status_rows: List[List[str]] = []
+    for stat in http_status_stats:
+        http_status_rows.append(
+            [
+                stat.method,
+                stat.path,
+                stat.status,
+                fmt_rate(stat.qps_mean),
+                fmt_rate(stat.qps_max),
+                fmt_rate(stat.qps_min),
+                fmt_latency(stat.p50),
+                fmt_latency(stat.p95),
+                fmt_latency(stat.p99),
+            ]
+        )
+    lines.extend(
+        section(
+            "HTTP Endpoints (by Status)",
+            render_table(
+                ["Method", "Path", "Status Code", "Mean Req/s", "Max Req/s", "Min Req/s", "P50", "P95", "P99"],
+                http_status_rows,
+            ),
+        )
+    )
+
     # Diagnostics
     diag = gather_diagnostics(client, window)
     diagnostics_blocks: List[List[str]] = []
 
     mongo_ops = cast(Dict[str, float], diag.get("mongo_ops", {}))
+    mongo_latency_p50 = cast(Dict[str, float], diag.get("mongo_latency_p50", {}))
+    mongo_latency_p95 = cast(Dict[str, float], diag.get("mongo_latency_p95", {}))
+    mongo_latency_p99 = cast(Dict[str, float], diag.get("mongo_latency_p99", {}))
+    mongo_op_keys = sorted(
+        {
+            *mongo_ops.keys(),
+            *mongo_latency_p50.keys(),
+            *mongo_latency_p95.keys(),
+            *mongo_latency_p99.keys(),
+        },
+        key=str,
+    )
     mongo_ops_rows = [
-        [operation or "-", fmt_rate(rate)]
-        for operation, rate in sorted(mongo_ops.items(), key=lambda item: str(item[0]))
+        [
+            op or "-",
+            fmt_rate(mongo_ops.get(op)),
+            fmt_latency(mongo_latency_p50.get(op)),
+            fmt_latency(mongo_latency_p95.get(op)),
+            fmt_latency(mongo_latency_p99.get(op)),
+        ]
+        for op in mongo_op_keys
     ]
-    diagnostics_blocks.append(render_table(["Mongo Operation", "Ops/s"], mongo_ops_rows))
+    diagnostics_blocks.append(render_table(["Mongo Operation", "Ops/s", "P50", "P95", "P99"], mongo_ops_rows))
 
     mongo_opcounters = cast(Dict[str, float], diag.get("mongo_opcounters", {}))
     mongo_opcounters_rows = [
@@ -882,6 +1063,31 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         for op_type, rate in sorted(mongo_opcounters.items(), key=lambda item: str(item[0]))
     ]
     diagnostics_blocks.append(render_table(["MongoDB Opcounter", "Ops/s"], mongo_opcounters_rows))
+
+    memory_lock_rate = cast(Dict[str, float], diag.get("memory_lock_rate", {}))
+    memory_lock_p50 = cast(Dict[str, float], diag.get("memory_lock_p50", {}))
+    memory_lock_p95 = cast(Dict[str, float], diag.get("memory_lock_p95", {}))
+    memory_lock_p99 = cast(Dict[str, float], diag.get("memory_lock_p99", {}))
+    memory_collections = sorted(
+        {
+            *memory_lock_rate.keys(),
+            *memory_lock_p50.keys(),
+            *memory_lock_p95.keys(),
+            *memory_lock_p99.keys(),
+        },
+        key=str,
+    )
+    memory_lock_rows = [
+        [
+            collection or "-",
+            fmt_rate(memory_lock_rate.get(collection)),
+            fmt_latency(memory_lock_p50.get(collection)),
+            fmt_latency(memory_lock_p95.get(collection)),
+            fmt_latency(memory_lock_p99.get(collection)),
+        ]
+        for collection in memory_collections
+    ]
+    diagnostics_blocks.append(render_table(["Memory Collection", "Locks/s", "P50", "P95", "P99"], memory_lock_rows))
 
     mongo_misc_rows: List[List[str]] = []
     if diag.get("mongo_connections") is not None:

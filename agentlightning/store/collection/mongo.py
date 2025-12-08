@@ -3,9 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import contextvars
-import functools
-import inspect
 import logging
 import random
 import re
@@ -30,19 +27,19 @@ from typing import (
     cast,
 )
 
+from agentlightning.utils.metrics import MetricsBackend
+
 if TYPE_CHECKING:
     from typing import Self
 
 from pydantic import BaseModel, TypeAdapter
-from pymongo import AsyncMongoClient, ReadPreference, WriteConcern
+from pymongo import AsyncMongoClient, ReadPreference, ReturnDocument, WriteConcern
 from pymongo.asynchronous.client_session import AsyncClientSession
 from pymongo.asynchronous.collection import AsyncCollection
 from pymongo.asynchronous.database import AsyncDatabase
 from pymongo.errors import CollectionInvalid, ConnectionFailure, DuplicateKeyError, OperationFailure, PyMongoError
 from pymongo.read_concern import ReadConcern
 
-from agentlightning.store.base import LightningStore
-from agentlightning.store.utils import LATENCY_BUCKETS
 from agentlightning.types import (
     Attempt,
     FilterOptions,
@@ -55,12 +52,14 @@ from agentlightning.types import (
 )
 
 from .base import (
+    AtomicMode,
     Collection,
     KeyValue,
     LightningCollections,
     Queue,
     normalize_filter_options,
     resolve_sort_options,
+    tracked,
 )
 
 T_model = TypeVar("T_model", bound=BaseModel)
@@ -76,236 +75,27 @@ V = TypeVar("V")
 
 logger = logging.getLogger(__name__)
 
-_OPERATION_CONTEXT: contextvars.ContextVar["_MongoOperationContext | None"] = contextvars.ContextVar(
-    "_mongo_operation_context", default=None
-)
 
-_LIGHTNING_STORE_PUBLIC_METHODS = frozenset(
-    [name for name, value in LightningStore.__dict__.items() if not name.startswith("_") and callable(value)]
-    + ["_healthcheck"]
-)
-
-_UNKNOWN_STORE_METHOD = "unknown"
-
-
-def _nearest_lightning_store_method_from_stack() -> str:
-    """Stack introspection so that we capture the nearest public API method from the
-    call stack whenever metrics are recorded."""
-    frame = inspect.currentframe()
-    try:
-        if frame is None:
-            return _UNKNOWN_STORE_METHOD
-        frame = frame.f_back
-        while frame is not None:
-            self_obj = frame.f_locals.get("self")
-            method_name = frame.f_locals.get("method_name")
-            if method_name in _LIGHTNING_STORE_PUBLIC_METHODS and isinstance(self_obj, LightningStore):
-                return method_name
-            frame = frame.f_back
-        return _UNKNOWN_STORE_METHOD
-    except Exception:
-        return _UNKNOWN_STORE_METHOD
-    finally:
-        del frame
-
-
-class MongoOperationPrometheusTracker:
-    """A tracker for MongoDB operations metrics.
-
-    All classes should share one single instance of this tracker.
-    """
-
-    def __init__(self, enabled: bool):
-        self._enabled = enabled
-
-        if enabled:
-            from prometheus_client import Counter, Histogram
-
-            base_labels = ["operation", "database", "collection", "store_method"]
-            self._latency_metric = Histogram(
-                "mongo_operation_duration_seconds",
-                "Latency of MongoDB operations",
-                base_labels,
-                buckets=LATENCY_BUCKETS,
-            )
-            self._total_metric = Counter(
-                "mongo_operation_total",
-                "Total MongoDB operations",
-                base_labels + ["status"],
-            )
-            self._error_metric = Counter(
-                "mongo_operation_errors_total",
-                "Total MongoDB operations that failed",
-                base_labels + ["error_type"],
-            )
-            self._num_attempts_metric = Histogram(
-                "mongo_operation_num_attempts",
-                "Number of attempts for MongoDB operations",
-                base_labels,
-                buckets=list(range(10)) + list(range(10, 100, 5)),
-            )
-
-    def track(self, operation: str, database: str, collection: str) -> _MongoOperationContext | _DummyOperationContext:
-        if not self._enabled:
-            return _DummyOperationContext()
-        return _MongoOperationContext(self, operation, database, collection)
-
-    @staticmethod
-    def classify_error(exc: BaseException | None) -> str:
-        if exc is None:
-            return "Other"
-        is_transient = isinstance(exc, PyMongoError) and exc.has_error_label("TransientTransactionError")
-        if isinstance(exc, OperationFailure):
-            if is_transient:
-                return f"OperationFailure-{exc.code}-Transient"
-            else:
-                return f"OperationFailure-{exc.code}"
-        if isinstance(exc, DuplicateKeyError):
-            return "DuplicateKeyError-Transient" if is_transient else "DuplicateKeyError"
-        if isinstance(exc, PyMongoError):
-            if is_transient:
-                return f"{exc.__class__.__name__}-Transient"
-            else:
-                return exc.__class__.__name__
-        if isinstance(exc, ConnectionFailure):
-            return "ConnectionFailure-Transient" if is_transient else "ConnectionFailure"
-        return "Other-Transient" if is_transient else "Other"
-
-    def observe(
-        self,
-        *,
-        operation: str,
-        database: str,
-        collection: str,
-        elapsed: float,
-        status: str,
-        error_type: str | None,
-        num_attempts: int | None = None,
-    ) -> None:
-        if not self._enabled:
-            return
-
-        store_method = _nearest_lightning_store_method_from_stack()
-        self._total_metric.labels(operation, database, collection, store_method, status).inc()
-        self._latency_metric.labels(operation, database, collection, store_method).observe(elapsed)
-        if status == "error" and error_type:
-            self._error_metric.labels(operation, database, collection, store_method, error_type).inc()
-        if num_attempts is not None:
-            self._num_attempts_metric.labels(operation, database, collection, store_method).observe(num_attempts)
-
-
-class _MongoOperationContext:
-    """A context manager for tracking MongoDB operations.
-
-    Used via:
-
-    ```python
-    with self.tracker.track("insert", "database", "collection") as track_context:
-        try:
-            await collection.insert_one({})
-        except Exception as exc:
-            # For errors that can be ignored, report the error to the tracker.
-            track_context.report_error(exc)
-    ```
-    """
-
-    def __init__(self, tracker: MongoOperationPrometheusTracker, operation: str, database: str, collection: str):
-        self._tracker = tracker
-        self._operation = operation
-        self._database = database
-        self._collection = collection
-        self._start: float = 0.0
-        self._active: bool = False
-        self._error_type: str | None = None
-        self._num_attempts: int | None = None
-
-    def __enter__(self) -> "_MongoOperationContext":
-        self._active = True
-        self._start = time.perf_counter()
-        return self
-
-    def __exit__(self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: Any) -> bool:
-        if not self._active:
-            return False
-
-        elapsed = time.perf_counter() - self._start
-
-        # Try to classify the error
-        if self._error_type is not None:
-            error_type = self._error_type
-        elif exc is not None:
-            error_type = self._tracker.classify_error(exc)
+def resolve_mongo_error_type(exc: BaseException | None) -> str | None:
+    is_transient = isinstance(exc, PyMongoError) and exc.has_error_label("TransientTransactionError")
+    if isinstance(exc, OperationFailure):
+        if is_transient:
+            return f"OperationFailure-{exc.code}-Transient"
         else:
-            error_type = None
-
-        status = "ok" if error_type is None else "error"
-        self._tracker.observe(
-            operation=self._operation,
-            database=self._database,
-            collection=self._collection,
-            elapsed=elapsed,
-            status=status,
-            error_type=error_type,
-            num_attempts=self._num_attempts,
-        )
-        return False
-
-    def report_error(self, exc: BaseException) -> None:
-        """Used to report errors that occurred in the middle of an operation."""
-        self._error_type = self._tracker.classify_error(exc)
-
-    def report_num_attempts(self, num_attempts: int) -> None:
-        """Used to report the number of attempts that occurred in the middle of an operation."""
-        self._num_attempts = num_attempts
-
-
-class _DummyOperationContext:
-    """A dummy context manager that does nothing, but compatible with _MongoOperationContext."""
-
-    def __init__(self):
-        pass
-
-    def __enter__(self) -> "_DummyOperationContext":
-        return self
-
-    def __exit__(self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: Any) -> bool:
-        return False
-
-    def report_error(self, exc: BaseException) -> None:
-        pass
-
-    def report_num_attempts(self, num_attempts: int) -> None:
-        pass
-
-
-def _mongo_operation(operation: str) -> Callable[[T_callable], T_callable]:
-    def decorator(func: T_callable) -> T_callable:
-        if not asyncio.iscoroutinefunction(func):
-            raise TypeError(f"_mongo_operation decorator requires coroutine functions, got {func.__name__}")
-
-        @functools.wraps(func)
-        async def wrapper(
-            self: (
-                MongoBasedCollection[T_model]
-                | MongoBasedQueue[T_generic]
-                | MongoBasedKeyValue[K, V]
-                | MongoLightningCollections
-            ),
-            *args: Any,
-            **kwargs: Any,
-        ) -> Any:
-            tracker = self._prometheus_tracker  # pyright: ignore[reportPrivateUsage]
-            if not tracker._enabled:  # pyright: ignore[reportPrivateUsage]
-                # Skip the tracking because tracking is not configured
-                return await func(self, *args, **kwargs)
-            with tracker.track(
-                operation, self._database_name, self._collection_name  # pyright: ignore[reportPrivateUsage]
-            ):
-                return await func(self, *args, **kwargs)
-
-        return wrapper  # type: ignore
-
-    return decorator
+            return f"OperationFailure-{exc.code}"
+    if isinstance(exc, DuplicateKeyError):
+        return "DuplicateKeyError-Transient" if is_transient else "DuplicateKeyError"
+    if isinstance(exc, PyMongoError):
+        if is_transient:
+            return f"{exc.__class__.__name__}-Transient"
+        else:
+            return exc.__class__.__name__
+    if isinstance(exc, ConnectionFailure):
+        return "ConnectionFailure-Transient" if is_transient else "ConnectionFailure"
+    if is_transient:
+        return "Other-Transient"
+    else:
+        return None
 
 
 def _field_ops_to_conditions(field: str, ops: Mapping[str, Any]) -> List[Dict[str, Any]]:
@@ -544,6 +334,7 @@ class MongoBasedCollection(Collection[T_model]):
         primary_keys: The primary keys of the collection.
         item_type: The type of the items in the collection.
         extra_indexes: The extra indexes to create on the collection.
+        tracker: The metrics tracker to use.
     """
 
     def __init__(
@@ -555,8 +346,9 @@ class MongoBasedCollection(Collection[T_model]):
         primary_keys: Sequence[str],
         item_type: Type[T_model],
         extra_indexes: Sequence[Sequence[str]] = [],
-        prometheus_tracker: MongoOperationPrometheusTracker | None = None,
+        tracker: MetricsBackend | None = None,
     ):
+        super().__init__(tracker=tracker)
         if isinstance(client_pool, AsyncMongoClient):
             self._client_pool = MongoClientPool(client_pool)
         else:
@@ -567,9 +359,6 @@ class MongoBasedCollection(Collection[T_model]):
         self._collection_created = False
         self._extra_indexes = [list(index) for index in extra_indexes]
         self._session: Optional[AsyncClientSession] = None
-        self._prometheus_tracker = (
-            prometheus_tracker if prometheus_tracker is not None else MongoOperationPrometheusTracker(enabled=False)
-        )
 
         if not primary_keys:
             raise ValueError("primary_keys must be non-empty")
@@ -579,7 +368,17 @@ class MongoBasedCollection(Collection[T_model]):
             raise ValueError(f"item_type must be a subclass of BaseModel, got {item_type.__name__}")
         self._item_type = item_type
 
-    @_mongo_operation("ensure_collection")
+    @property
+    def collection_name(self) -> str:
+        return self._collection_name
+
+    @property
+    def extra_tracking_labels(self) -> Mapping[str, str]:
+        return {
+            "database": self._database_name,
+        }
+
+    @tracked("ensure_collection")
     async def ensure_collection(self) -> AsyncCollection[Mapping[str, Any]]:
         """Ensure the backing MongoDB collection exists (and optionally its indexes).
 
@@ -605,7 +404,7 @@ class MongoBasedCollection(Collection[T_model]):
             primary_keys=self._primary_keys,
             item_type=self._item_type,
             extra_indexes=self._extra_indexes,
-            prometheus_tracker=self._prometheus_tracker,
+            tracker=self._tracker,
         )
         collection._collection_created = self._collection_created
         collection._session = session
@@ -618,7 +417,7 @@ class MongoBasedCollection(Collection[T_model]):
     def item_type(self) -> Type[T_model]:
         return self._item_type
 
-    @_mongo_operation("size")
+    @tracked("size")
     async def size(self) -> int:
         collection = await self.ensure_collection()
         return await collection.count_documents({"partition_id": self._partition_id}, session=self._session)
@@ -663,7 +462,15 @@ class MongoBasedCollection(Collection[T_model]):
 
         return combined
 
-    @_mongo_operation("query")
+    def _model_validate_item(self, raw: Mapping[str, Any]) -> T_model:
+        item_type_has_id = "_id" in self._item_type.model_fields
+        # Remove _id from the raw document if the item type does not have it.
+        if not item_type_has_id:
+            raw = {k: v for k, v in raw.items() if k != "_id"}
+        # Convert Mongo document to Pydantic model
+        return self._item_type.model_validate(raw)  # type: ignore[arg-type]
+
+    @tracked("query")
     async def query(
         self,
         filter: Optional[FilterOptions] = None,
@@ -676,12 +483,11 @@ class MongoBasedCollection(Collection[T_model]):
         The handling of null-values in sorting is different from memory-based implementation.
         In MongoDB, null values are treated as less than non-null values.
         """
-        await self.ensure_collection()
+        collection = await self.ensure_collection()
 
         combined = self._inject_partition_filter(filter)
         mongo_filter = _build_mongo_filter(cast(FilterOptions, combined))
 
-        collection = await self.ensure_collection()
         total = await collection.count_documents(mongo_filter, session=self._session)
 
         if limit == 0:
@@ -705,26 +511,41 @@ class MongoBasedCollection(Collection[T_model]):
             cursor = cursor.limit(limit)
 
         items: List[T_model] = []
-        item_type_has_id = "_id" in self._item_type.model_fields
         async for raw in cursor:
-            # Remove _id from the raw document if the item type does not have it.
-            if not item_type_has_id:
-                raw.pop("_id", None)  # type: ignore
-            # Convert Mongo document to Pydantic model
-            items.append(self._item_type.model_validate(raw))  # type: ignore[arg-type]
+            items.append(self._model_validate_item(raw))
 
         return PaginatedResult[T_model](items=items, limit=limit, offset=offset, total=total)
 
-    @_mongo_operation("get")
+    @tracked("get")
     async def get(
         self,
         filter: Optional[FilterOptions] = None,
         sort: Optional[SortOptions] = None,
     ) -> Optional[T_model]:
-        result = await self.query(filter=filter, sort=sort, limit=1, offset=0)
-        return result.items[0] if result.items else None
+        collection = await self.ensure_collection()
 
-    @_mongo_operation("insert")
+        combined = self._inject_partition_filter(filter)
+        mongo_filter = _build_mongo_filter(cast(FilterOptions, combined))
+
+        sort_name, sort_order = resolve_sort_options(sort)
+        mongo_sort: Optional[List[Tuple[str, int]]] = None
+        if sort_name is not None:
+            model_fields = getattr(self._item_type, "model_fields", {})
+            if sort_name not in model_fields:
+                raise ValueError(
+                    f"Failed to sort items by '{sort_name}': field does not exist on {self._item_type.__name__}"
+                )
+            direction = 1 if sort_order == "asc" else -1
+            mongo_sort = [(sort_name, direction)]
+
+        raw = await collection.find_one(mongo_filter, sort=mongo_sort, session=self._session)
+
+        if raw is None:
+            return None
+
+        return self._model_validate_item(raw)
+
+    @tracked("insert")
     async def insert(self, items: Sequence[T_model]) -> None:
         if not items:
             return
@@ -756,53 +577,114 @@ class MongoBasedCollection(Collection[T_model]):
         else:
             existing_filter = {"partition_id": self._partition_id, "$or": pk_conditions}
 
-        with self._prometheus_tracker.track("insert__find_existing", self._database_name, self._collection_name):
+        async with self.tracking_context("insert.find_existing", self._collection_name):
             existing = await collection.find_one(existing_filter, session=self._session)
             if existing is not None:
                 existing_values = tuple(existing.get(pk) for pk in self._primary_keys)
                 raise ValueError(f"Item with primary key(s) {self._render_pk_values(existing_values)} already exists")
 
-        with self._prometheus_tracker.track(
-            "insert__insert_many", self._database_name, self._collection_name
-        ) as tracker:
-            try:
+        try:
+            async with self.tracking_context("insert.insert_many", self._collection_name):
                 await collection.insert_many(docs, session=self._session)
-            except DuplicateKeyError as exc:
-                # In case the DB enforces uniqueness via index, normalize to ValueError
-                tracker.report_error(exc)
-                raise ValueError("Duplicate key error while inserting items") from exc
+        except DuplicateKeyError as exc:
+            # In case the DB enforces uniqueness via index, normalize to ValueError
+            raise ValueError("Duplicate key error while inserting items") from exc
 
-    @_mongo_operation("update")
-    async def update(self, items: Sequence[T_model]) -> None:
+    @tracked("update")
+    async def update(self, items: Sequence[T_model], update_fields: Sequence[str] | None = None) -> List[T_model]:
         if not items:
-            return
+            return []
 
+        updated_items: List[T_model] = []
         collection = await self.ensure_collection()
+
         for item in items:
             self._ensure_item_type(item)
             pk_filter = self._pk_filter(item)
             doc = item.model_dump()
             doc["partition_id"] = self._partition_id
-            with self._prometheus_tracker.track("update__replace_one", self._database_name, self._collection_name):
-                result = await collection.replace_one(pk_filter, doc, session=self._session)
-            if result.matched_count == 0:
+
+            updated_doc = None
+
+            # Branch 1: Full Replace
+            if update_fields is None:
+                async with self.tracking_context("update.find_one_and_replace", self._collection_name):
+                    updated_doc = await collection.find_one_and_replace(
+                        filter=pk_filter,
+                        replacement=doc,
+                        session=self._session,
+                        return_document=ReturnDocument.AFTER,  # Returns the new version
+                    )
+
+            # Branch 2: Partial Update
+            else:
+                update_doc = {field: doc[field] for field in update_fields if field in doc}
+                async with self.tracking_context("update.find_one_and_update", self._collection_name):
+                    updated_doc = await collection.find_one_and_update(
+                        filter=pk_filter,
+                        update={"$set": update_doc},
+                        session=self._session,
+                        return_document=ReturnDocument.AFTER,  # Returns the new version
+                    )
+
+            # Validation and Reconstruction
+            if updated_doc is None:  # type: ignore
                 raise ValueError(f"Item with primary key(s) {pk_filter} does not exist")
 
-    @_mongo_operation("upsert")
-    async def upsert(self, items: Sequence[T_model]) -> None:
-        if not items:
-            return
+            # Re-instantiate the model from the raw MongoDB dictionary.
+            new_item = self._model_validate_item(updated_doc)
+            updated_items.append(new_item)
 
+        return updated_items
+
+    @tracked("upsert")
+    async def upsert(self, items: Sequence[T_model], update_fields: Sequence[str] | None = None) -> List[T_model]:
+        if not items:
+            return []
+
+        upserted_items: List[T_model] = []
         collection = await self.ensure_collection()
+
         for item in items:
             self._ensure_item_type(item)
             pk_filter = self._pk_filter(item)
-            doc = item.model_dump()
-            doc["partition_id"] = self._partition_id
-            with self._prometheus_tracker.track("upsert__replace_one", self._database_name, self._collection_name):
-                await collection.replace_one(pk_filter, doc, upsert=True, session=self._session)
 
-    @_mongo_operation("delete")
+            insert_doc = item.model_dump()
+            insert_doc["partition_id"] = self._partition_id
+
+            # If update_fields is None, we update ALL fields (standard upsert behavior).
+            # Otherwise, we only update specific fields, but insert the full doc if it's new.
+            target_fields = update_fields if update_fields is not None else list(insert_doc.keys())
+
+            # 1. $set: Fields that should be overwritten if the document exists
+            update_subset = {field: insert_doc[field] for field in target_fields if field in insert_doc}
+
+            # 2. $setOnInsert: Fields that are only set if we are creating a NEW document
+            # (Everything in the model that isn't in the update_subset)
+            set_on_insert = {k: v for k, v in insert_doc.items() if k not in update_subset}
+
+            update_spec: Dict[str, Dict[str, Any]] = {}
+            if set_on_insert:
+                update_spec["$setOnInsert"] = set_on_insert
+            if update_subset:
+                update_spec["$set"] = update_subset
+
+            async with self.tracking_context("upsert.find_one_and_update", self._collection_name):
+                result_doc = await collection.find_one_and_update(
+                    filter=pk_filter,
+                    update=update_spec,
+                    upsert=True,
+                    session=self._session,
+                    return_document=ReturnDocument.AFTER,
+                )
+
+            # Because upsert=True, result_doc is guaranteed to be not None
+            new_item = self._model_validate_item(result_doc)
+            upserted_items.append(new_item)
+
+        return upserted_items
+
+    @tracked("delete")
     async def delete(self, items: Sequence[T_model]) -> None:
         if not items:
             return
@@ -811,7 +693,7 @@ class MongoBasedCollection(Collection[T_model]):
         for item in items:
             self._ensure_item_type(item)
             pk_filter = self._pk_filter(item)
-            with self._prometheus_tracker.track("delete__delete_one", self._database_name, self._collection_name):
+            async with self.tracking_context("delete.delete_one", self._collection_name):
                 result = await collection.delete_one(pk_filter, session=self._session)
             if result.deleted_count == 0:
                 raise ValueError(f"Item with primary key(s) {pk_filter} does not exist")
@@ -830,7 +712,7 @@ class MongoBasedQueue(Queue[T_generic], Generic[T_generic]):
         collection_name: str,
         partition_id: str,
         item_type: Type[T_generic],
-        prometheus_tracker: MongoOperationPrometheusTracker | None = None,
+        tracker: MetricsBackend | None = None,
     ) -> None:
         """
         Args:
@@ -840,6 +722,7 @@ class MongoBasedQueue(Queue[T_generic], Generic[T_generic]):
             partition_id: Partition identifier; allows multiple logical queues in one collection.
             item_type: The Python type of queue items (primitive or BaseModel subclass).
         """
+        super().__init__(tracker=tracker)
         if isinstance(client_pool, AsyncMongoClient):
             self._client_pool = MongoClientPool(client_pool)
         else:
@@ -852,14 +735,21 @@ class MongoBasedQueue(Queue[T_generic], Generic[T_generic]):
         self._collection_created = False
 
         self._session: Optional[AsyncClientSession] = None
-        self._prometheus_tracker = (
-            prometheus_tracker if prometheus_tracker is not None else MongoOperationPrometheusTracker(enabled=False)
-        )
 
     def item_type(self) -> Type[T_generic]:
         return self._item_type
 
-    @_mongo_operation("ensure_collection")
+    @property
+    def extra_tracking_labels(self) -> Mapping[str, str]:
+        return {
+            "database": self._database_name,
+        }
+
+    @property
+    def collection_name(self) -> str:
+        return self._collection_name
+
+    @tracked("ensure_collection")
     async def ensure_collection(self) -> AsyncCollection[Mapping[str, Any]]:
         """Ensure the backing collection exists.
 
@@ -879,13 +769,13 @@ class MongoBasedQueue(Queue[T_generic], Generic[T_generic]):
             collection_name=self._collection_name,
             partition_id=self._partition_id,
             item_type=self._item_type,
-            prometheus_tracker=self._prometheus_tracker,
+            tracker=self._tracker,
         )
         queue._collection_created = self._collection_created
         queue._session = session
         return queue
 
-    @_mongo_operation("has")
+    @tracked("has")
     async def has(self, item: T_generic) -> bool:
         collection = await self.ensure_collection()
         encoded = self._adapter.dump_python(item, mode="python")
@@ -899,7 +789,7 @@ class MongoBasedQueue(Queue[T_generic], Generic[T_generic]):
         )
         return doc is not None
 
-    @_mongo_operation("enqueue")
+    @tracked("enqueue")
     async def enqueue(self, items: Sequence[T_generic]) -> Sequence[T_generic]:
         if not items:
             return []
@@ -918,11 +808,11 @@ class MongoBasedQueue(Queue[T_generic], Generic[T_generic]):
                 }
             )
 
-        with self._prometheus_tracker.track("enqueue__insert_many", self._database_name, self._collection_name):
+        async with self.tracking_context("enqueue.insert_many", self.collection_name):
             await collection.insert_many(docs, session=self._session)
         return list(items)
 
-    @_mongo_operation("dequeue")
+    @tracked("dequeue")
     async def dequeue(self, limit: int = 1) -> Sequence[T_generic]:
         if limit <= 0:
             return []
@@ -932,9 +822,7 @@ class MongoBasedQueue(Queue[T_generic], Generic[T_generic]):
 
         # Atomic claim loop using find_one_and_update
         for _ in range(limit):
-            with self._prometheus_tracker.track(
-                "dequeue__find_one_and_update", self._database_name, self._collection_name
-            ):
+            async with self.tracking_context("dequeue.find_one_and_update", self.collection_name):
                 doc = await collection.find_one_and_update(
                     {
                         "partition_id": self._partition_id,
@@ -955,13 +843,13 @@ class MongoBasedQueue(Queue[T_generic], Generic[T_generic]):
 
         return results
 
-    @_mongo_operation("peek")
+    @tracked("peek")
     async def peek(self, limit: int = 1) -> Sequence[T_generic]:
         if limit <= 0:
             return []
 
         collection = await self.ensure_collection()
-        with self._prometheus_tracker.track("peek__find", self._database_name, self._collection_name):
+        async with self.tracking_context("peek.find", self.collection_name):
             cursor = (
                 collection.find(
                     {
@@ -981,7 +869,7 @@ class MongoBasedQueue(Queue[T_generic], Generic[T_generic]):
 
         return items
 
-    @_mongo_operation("size")
+    @tracked("size")
     async def size(self) -> int:
         collection = await self.ensure_collection()
         return await collection.count_documents(
@@ -1004,7 +892,7 @@ class MongoBasedKeyValue(KeyValue[K, V], Generic[K, V]):
         partition_id: str,
         key_type: Type[K],
         value_type: Type[V],
-        prometheus_tracker: MongoOperationPrometheusTracker | None = None,
+        tracker: MetricsBackend | None = None,
     ) -> None:
         """
         Args:
@@ -1014,7 +902,9 @@ class MongoBasedKeyValue(KeyValue[K, V], Generic[K, V]):
             partition_id: Partition identifier; allows multiple logical maps in one collection.
             key_type: The Python type of keys (primitive or BaseModel).
             value_type: The Python type of values (primitive or BaseModel).
+            tracker: The metrics tracker to use.
         """
+        super().__init__(tracker=tracker)
         if isinstance(client_pool, AsyncMongoClient):
             self._client_pool = MongoClientPool(client_pool)
         else:
@@ -1029,11 +919,18 @@ class MongoBasedKeyValue(KeyValue[K, V], Generic[K, V]):
         self._collection_created = False
 
         self._session: Optional[AsyncClientSession] = None
-        self._prometheus_tracker = (
-            prometheus_tracker if prometheus_tracker is not None else MongoOperationPrometheusTracker(enabled=False)
-        )
 
-    @_mongo_operation("ensure_collection")
+    @property
+    def extra_tracking_labels(self) -> Mapping[str, str]:
+        return {
+            "database": self._database_name,
+        }
+
+    @property
+    def collection_name(self) -> str:
+        return self._collection_name
+
+    @tracked("ensure_collection")
     async def ensure_collection(self, *, create_indexes: bool = True) -> AsyncCollection[Mapping[str, Any]]:
         """Ensure the backing collection exists (and optionally its indexes)."""
         if not self._collection_created:
@@ -1051,14 +948,14 @@ class MongoBasedKeyValue(KeyValue[K, V], Generic[K, V]):
             partition_id=self._partition_id,
             key_type=self._key_type,
             value_type=self._value_type,
-            prometheus_tracker=self._prometheus_tracker,
+            tracker=self._tracker,
         )
         key_value._collection_created = self._collection_created
         key_value._session = session
 
         return key_value
 
-    @_mongo_operation("has")
+    @tracked("has")
     async def has(self, key: K) -> bool:
         collection = await self.ensure_collection()
         encoded_key = self._key_adapter.dump_python(key, mode="python")
@@ -1071,7 +968,7 @@ class MongoBasedKeyValue(KeyValue[K, V], Generic[K, V]):
         )
         return doc is not None
 
-    @_mongo_operation("get")
+    @tracked("get")
     async def get(self, key: K, default: V | None = None) -> V | None:
         collection = await self.ensure_collection()
         encoded_key = self._key_adapter.dump_python(key, mode="python")
@@ -1088,15 +985,13 @@ class MongoBasedKeyValue(KeyValue[K, V], Generic[K, V]):
         raw_value = doc["value"]
         return self._value_adapter.validate_python(raw_value)
 
-    @_mongo_operation("set")
+    @tracked("set")
     async def set(self, key: K, value: V) -> None:
         collection = await self.ensure_collection()
         encoded_key = self._key_adapter.dump_python(key, mode="python")
         encoded_value = self._value_adapter.dump_python(value, mode="python")
-        with self._prometheus_tracker.track(
-            "upsert__replace_one", self._database_name, self._collection_name
-        ) as tracer:
-            try:
+        try:
+            async with self.tracking_context("set.replace_one", self.collection_name):
                 await collection.replace_one(
                     {
                         "partition_id": self._partition_id,
@@ -1110,12 +1005,11 @@ class MongoBasedKeyValue(KeyValue[K, V], Generic[K, V]):
                     upsert=True,
                     session=self._session,
                 )
-            except DuplicateKeyError as exc:
-                # Very unlikely with replace_one+upsert, but normalize anyway.
-                tracer.report_error(exc)
-                raise ValueError("Duplicate key error while setting key-value item") from exc
+        except DuplicateKeyError as exc:
+            # Very unlikely with replace_one+upsert, but normalize anyway.
+            raise ValueError("Duplicate key error while setting key-value item") from exc
 
-    @_mongo_operation("pop")
+    @tracked("pop")
     async def pop(self, key: K, default: V | None = None) -> V | None:
         collection = await self.ensure_collection()
         encoded_key = self._key_adapter.dump_python(key, mode="python")
@@ -1132,7 +1026,7 @@ class MongoBasedKeyValue(KeyValue[K, V], Generic[K, V]):
         raw_value = doc["value"]
         return self._value_adapter.validate_python(raw_value)
 
-    @_mongo_operation("size")
+    @tracked("size")
     async def size(self) -> int:
         collection = await self.ensure_collection()
         return await collection.count_documents(
@@ -1161,15 +1055,12 @@ class MongoLightningCollections(LightningCollections):
         workers: Optional[MongoBasedCollection[Worker]] = None,
         rollout_queue: Optional[MongoBasedQueue[str]] = None,
         span_sequence_ids: Optional[MongoBasedKeyValue[str, int]] = None,
-        prometheus_tracker: MongoOperationPrometheusTracker | None = None,
+        tracker: MetricsBackend | None = None,
     ):
+        super().__init__(tracker=tracker, extra_labels=["database"])
         self._client_pool = client_pool
         self._database_name = database_name
-        self._collection_name = "collections"  # Special collection name for tracking transactions
         self._partition_id = partition_id
-        self._prometheus_tracker = (
-            prometheus_tracker if prometheus_tracker is not None else MongoOperationPrometheusTracker(enabled=False)
-        )
         self._collection_ensured = False
         self._rollouts = (
             rollouts
@@ -1182,7 +1073,7 @@ class MongoLightningCollections(LightningCollections):
                 ["rollout_id"],
                 Rollout,
                 [["status"]],
-                prometheus_tracker=self._prometheus_tracker,
+                tracker=self._tracker,
             )
         )
         self._attempts = (
@@ -1196,7 +1087,7 @@ class MongoLightningCollections(LightningCollections):
                 ["rollout_id", "attempt_id"],
                 Attempt,
                 [["status"], ["sequence_id"]],
-                prometheus_tracker=self._prometheus_tracker,
+                tracker=self._tracker,
             )
         )
         self._spans = (
@@ -1210,7 +1101,7 @@ class MongoLightningCollections(LightningCollections):
                 ["rollout_id", "attempt_id", "span_id"],
                 Span,
                 [["sequence_id"]],
-                prometheus_tracker=self._prometheus_tracker,
+                tracker=self._tracker,
             )
         )
         self._resources = (
@@ -1224,7 +1115,7 @@ class MongoLightningCollections(LightningCollections):
                 ["resources_id"],
                 ResourcesUpdate,
                 ["update_time"],
-                prometheus_tracker=self._prometheus_tracker,
+                tracker=self._tracker,
             )
         )
         self._workers = (
@@ -1238,7 +1129,7 @@ class MongoLightningCollections(LightningCollections):
                 ["worker_id"],
                 Worker,
                 ["status"],
-                prometheus_tracker=self._prometheus_tracker,
+                tracker=self._tracker,
             )
         )
         self._rollout_queue = (
@@ -1250,7 +1141,7 @@ class MongoLightningCollections(LightningCollections):
                 "rollout_queue",
                 self._partition_id,
                 str,
-                prometheus_tracker=self._prometheus_tracker,
+                tracker=self._tracker,
             )
         )
         self._span_sequence_ids = (
@@ -1263,9 +1154,19 @@ class MongoLightningCollections(LightningCollections):
                 self._partition_id,
                 str,
                 int,
-                prometheus_tracker=self._prometheus_tracker,
+                tracker=self._tracker,
             )
         )
+
+    @property
+    def collection_name(self) -> str:
+        return "router"  # Special collection name for tracking transactions
+
+    @property
+    def extra_tracking_labels(self) -> Mapping[str, str]:
+        return {
+            "database": self._database_name,
+        }
 
     def with_session(self, session: AsyncClientSession) -> Self:
         instance = self.__class__(
@@ -1279,7 +1180,7 @@ class MongoLightningCollections(LightningCollections):
             workers=self._workers.with_session(session),
             rollout_queue=self._rollout_queue.with_session(session),
             span_sequence_ids=self._span_sequence_ids.with_session(session),
-            prometheus_tracker=self._prometheus_tracker,
+            tracker=self._tracker,
         )
         instance._collection_ensured = self._collection_ensured
         return instance
@@ -1312,7 +1213,7 @@ class MongoLightningCollections(LightningCollections):
     def span_sequence_ids(self) -> MongoBasedKeyValue[str, int]:
         return self._span_sequence_ids
 
-    @_mongo_operation("ensure_collections")
+    @tracked("ensure_collections")
     async def _ensure_collections(self) -> None:
         """Ensure all collections exist."""
         if self._collection_ensured:
@@ -1327,67 +1228,63 @@ class MongoLightningCollections(LightningCollections):
         self._collection_ensured = True
 
     @asynccontextmanager
-    async def atomic(self, *args: Any, **kwargs: Any):
+    async def atomic(
+        self, mode: AtomicMode = "rw", snapshot: bool = False, commit: bool = False, *args: Any, **kwargs: Any
+    ):
         """Perform a atomic operation on the collections."""
-        with self._prometheus_tracker.track("atomic", self._database_name, self._collection_name):
+        if commit:
+            raise ValueError("Commit should be used with execute() instead.")
+        async with self.tracking_context("atomic", self.collection_name):
             # First step: ensure all collections exist before going into the atomic block
             if not self._collection_ensured:
                 await self._ensure_collections()
-            # One session for one transaction
-            client = await self._client_pool.get_client()
-            async with client.start_session() as session:
-                collection_with_session = self.with_session(session)
-                try:
-                    # Start the transaction now
-                    await session.start_transaction(
-                        write_concern=WriteConcern("majority"),
-                        read_concern=ReadConcern("local"),
-                        read_preference=ReadPreference.PRIMARY,
-                    )
-                    yield collection_with_session
-                    # Commit the transaction
-                    await session.commit_transaction()
-                # Catch KeyboardInterrupt, CancelledError, etc. and cleanup.
-                except BaseException as exc:
-                    if session.in_transaction:
-                        await session.abort_transaction()
-                    if isinstance(exc, PyMongoError) and exc.has_error_label("TransientTransactionError"):
-                        # NOTE: Retry is via execute
-                        raise RuntimeError("Transaction failed with transient error") from exc
-                    raise
+            # Execute directly without commit
+            yield self
 
-    @_mongo_operation("execute")
-    async def execute(self, callback: Callable[[Self], Awaitable[T_generic]]) -> T_generic:
+    @tracked("execute")
+    async def execute(
+        self,
+        callback: Callable[[Self], Awaitable[T_generic]],
+        *,
+        mode: AtomicMode = "rw",
+        snapshot: bool = False,
+        commit: bool = False,
+        **kwargs: Any,
+    ) -> T_generic:
         """Execute the given callback within an atomic operation, and with retries on transient errors."""
         if not self._collection_ensured:
             await self._ensure_collections()
         client = await self._client_pool.get_client()
 
+        # If commit is not turned on, just execute the callback directly.
+        if not commit:
+            return await callback(self)
+
+        # If snapshot is enabled, use snapshot read concern.
+        read_concern = ReadConcern("snapshot") if snapshot else ReadConcern("local")
+        # If mode is "r", write_concern is not needed.
+        write_concern = WriteConcern("majority") if mode != "r" else None
+
         async with client.start_session() as session:
             collections = self.with_session(session)
-            with self._prometheus_tracker.track(
-                "execute__transaction", self._database_name, self._collection_name
-            ) as tracker:
-                try:
-                    return await self._with_transaction(session, collections, callback, tracker)
-                except (ConnectionFailure, OperationFailure) as exc:
-                    # Un-retryable errors.
-                    tracker.report_error(exc)
-                    raise RuntimeError("Transaction failed with connection or operation error") from exc
+            try:
+                return await self.with_transaction(session, collections, callback, read_concern, write_concern)
+            except (ConnectionFailure, OperationFailure) as exc:
+                # Un-retryable errors.
+                raise RuntimeError("Transaction failed with connection or operation error") from exc
 
-    async def _with_transaction(
+    @tracked("with_transaction")
+    async def with_transaction(
         self,
         session: AsyncClientSession,
         collections: Self,
         callback: Callable[[Self], Awaitable[T_generic]],
-        transaction_tracker: _MongoOperationContext | _DummyOperationContext,
+        read_concern: ReadConcern,
+        write_concern: Optional[WriteConcern],
     ) -> T_generic:
         # This will start a transaction, run transaction callback, and commit.
         # It will also transparently retry on some transient errors.
         # Expanded implementation of with_transaction from client_session
-        num_attempts = 0
-        read_concern = ReadConcern("local")
-        write_concern = WriteConcern("majority")
         read_preference = ReadPreference.PRIMARY
         transaction_retry_time_limit = 120
         start_time = time.monotonic()
@@ -1396,72 +1293,58 @@ class MongoLightningCollections(LightningCollections):
             return time.monotonic() - start_time < transaction_retry_time_limit
 
         async def _jitter_before_retry() -> None:
-            with self._prometheus_tracker.track("execute__jitter", self._database_name, self._collection_name):
+            async with self.tracking_context("execute.jitter", self.collection_name):
                 await asyncio.sleep(random.uniform(0, 0.05))
 
         while True:
             await session.start_transaction(read_concern, write_concern, read_preference)
 
-            with self._prometheus_tracker.track(
-                "execute__callback", self._database_name, self._collection_name
-            ) as callback_tracker:
-                try:
-                    num_attempts += 1
-                    transaction_tracker.report_num_attempts(num_attempts)
-                    # The _session is always the same within one transaction,
-                    # so we can use the same collections object.
+            try:
+                # The _session is always the same within one transaction,
+                # so we can use the same collections object.
+                async with self.tracking_context("execute.callback", self.collection_name):
                     ret = await callback(collections)
-                # Catch KeyboardInterrupt, CancelledError, etc. and cleanup.
-                except BaseException as exc:
-                    callback_tracker.report_error(exc)
-                    if session.in_transaction:
-                        await session.abort_transaction()
-                    if (
-                        isinstance(exc, PyMongoError)
-                        and exc.has_error_label("TransientTransactionError")
-                        and _within_time_limit()
-                    ):
-                        # Retry the entire transaction.
-                        await _jitter_before_retry()
-                        continue
-                    raise
+            # Catch KeyboardInterrupt, CancelledError, etc. and cleanup.
+            except BaseException as exc:
+                if session.in_transaction:
+                    await session.abort_transaction()
+                if (
+                    isinstance(exc, PyMongoError)
+                    and exc.has_error_label("TransientTransactionError")
+                    and _within_time_limit()
+                ):
+                    # Retry the entire transaction.
+                    await _jitter_before_retry()
+                    continue
+                raise
 
             if not session.in_transaction:
                 # Assume callback intentionally ended the transaction.
                 return ret
 
-            commit_num_attempts = 0
-
             # Tracks the commit operation.
-            with self._prometheus_tracker.track(
-                "execute__commit", self._database_name, self._collection_name
-            ) as commit_tracker:
+            async with self.tracking_context("execute.commit", self.collection_name):
                 # Loop until the commit succeeds or we hit the time limit.
                 while True:
                     # Tracks the commit attempt.
-                    with self._prometheus_tracker.track(
-                        "execute__commit_attempt", self._database_name, self._collection_name
-                    ) as commit_attempt_tracker:
-                        try:
-                            commit_num_attempts += 1
-                            commit_tracker.report_num_attempts(commit_num_attempts)
+                    try:
+                        async with self.tracking_context("execute.commit_once", self.collection_name):
                             await session.commit_transaction()
-                        except PyMongoError as exc:
-                            commit_attempt_tracker.report_error(exc)
-                            if (
-                                exc.has_error_label("UnknownTransactionCommitResult")
-                                and _within_time_limit()
-                                and not (isinstance(exc, OperationFailure) and exc.code == 50)  # max_time_expired_error
-                            ):
-                                # Retry the commit.
-                                await _jitter_before_retry()
-                                continue
+                    except PyMongoError as exc:
+                        if (
+                            exc.has_error_label("UnknownTransactionCommitResult")
+                            and _within_time_limit()
+                            and not (isinstance(exc, OperationFailure) and exc.code == 50)  # max_time_expired_error
+                        ):
+                            # Retry the commit.
+                            await _jitter_before_retry()
+                            continue
 
-                            if exc.has_error_label("TransientTransactionError") and _within_time_limit():
-                                # Retry the entire transaction.
-                                await _jitter_before_retry()
-                                break
-                            raise
+                        if exc.has_error_label("TransientTransactionError") and _within_time_limit():
+                            # Retry the entire transaction.
+                            await _jitter_before_retry()
+                            break
+                        raise
 
-                        # Commit succeeded.
-                        return ret
+                    # Commit succeeded.
+                    return ret

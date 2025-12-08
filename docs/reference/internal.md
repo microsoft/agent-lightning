@@ -24,6 +24,8 @@
 
 ::: agentlightning.litagent.decorator.prompt_rollout
 
+::: agentlightning.emitter.annotation.OperationContext
+
 ## LLM Proxy
 
 ::: agentlightning.llm_proxy.ModelConfig
@@ -44,13 +46,29 @@
 
 ::: agentlightning.store.base.UNSET
 
-::: agentlightning.store.utils.propagate_status
+::: agentlightning.store.utils.rollout_status_from_attempt
+
+::: agentlightning.store.utils.scan_unhealthy_rollouts
 
 ## Tracing and OpenTelemetry
 
 ::: agentlightning.tracer.otel.LightningSpanProcessor
 
 ## Utilities
+
+::: agentlightning.utils.metrics.MetricsBackend
+
+::: agentlightning.utils.metrics.ConsoleMetricsBackend
+
+::: agentlightning.utils.metrics.PrometheusMetricsBackend
+
+::: agentlightning.utils.metrics.MultiMetricsBackend
+
+::: agentlightning.utils.metrics.setup_multiprocess_prometheus
+
+::: agentlightning.utils.metrics.get_prometheus_registry
+
+::: agentlightning.utils.metrics.shutdown_metrics
 
 ::: agentlightning.utils.server_launcher.PythonServerLauncher
 
