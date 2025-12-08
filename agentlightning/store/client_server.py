@@ -11,7 +11,6 @@ import time
 import traceback
 from pathlib import Path
 from typing import (
-    TYPE_CHECKING,
     Any,
     Awaitable,
     Callable,
@@ -60,16 +59,13 @@ from agentlightning.types import (
     Worker,
     WorkerStatus,
 )
-from agentlightning.utils.metrics import MetricsBackend
+from agentlightning.utils.metrics import MetricsBackend, get_prometheus_registry
 from agentlightning.utils.otlp import handle_otlp_export, spans_from_proto
 from agentlightning.utils.server_launcher import LaunchMode, PythonServerLauncher, PythonServerLauncherArgs
 
 from .base import UNSET, LightningStore, LightningStoreCapabilities, LightningStoreStatistics, Unset
 from .collection.base import resolve_error_type
 from .utils import LATENCY_BUCKETS
-
-if TYPE_CHECKING:
-    from prometheus_client import CollectorRegistry
 
 server_logger = logging.getLogger("agentlightning.store.server")
 client_logger = logging.getLogger("agentlightning.store.client")
@@ -257,7 +253,6 @@ class LightningStoreServer(LightningStore):
         launcher_args: PythonServerLauncherArgs | None = None,
         n_workers: int = 1,
         tracker: MetricsBackend | None = None,
-        prometheus_registry: CollectorRegistry | None = None,
     ):
         super().__init__()
         self.store = store
@@ -295,9 +290,6 @@ class LightningStoreServer(LightningStore):
             args=self.launcher_args,
         )
         self._tracker = tracker
-        self._prometheus_registry = prometheus_registry
-        if self._prometheus_registry is not None and self._tracker is None:
-            raise ValueError("prometheus_registry is provided but tracker is not provided.")
 
         self._lock: threading.Lock = threading.Lock()
         self._cors_allow_origins = self._normalize_cors_origins(cors_allow_origins)
@@ -932,11 +924,11 @@ class LightningStoreServer(LightningStore):
                     labels={"method": method, "path": path, "status": str(status)},
                 )
 
-        if self._prometheus_registry is not None:
+        if self._tracker.has_prometheus():
             from prometheus_client import make_asgi_app  # pyright: ignore[reportUnknownVariableType]
 
             metrics_app = make_asgi_app(  # pyright: ignore[reportUnknownVariableType]
-                registry=self._prometheus_registry
+                registry=get_prometheus_registry()
             )
 
             # This App would need to be accessed via /v1/prometheus/ (note the trailing slash)

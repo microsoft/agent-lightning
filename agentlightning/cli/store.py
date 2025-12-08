@@ -7,10 +7,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
-from typing import TYPE_CHECKING, Iterable, List
-
-if TYPE_CHECKING:
-    from prometheus_client import CollectorRegistry
+from typing import Iterable, List
 
 from agentlightning import setup_logging
 from agentlightning.store.client_server import LightningStoreServer
@@ -20,7 +17,6 @@ from agentlightning.utils.metrics import (
     MetricsBackend,
     MultiMetricsBackend,
     PrometheusMetricsBackend,
-    get_prometheus_registry,
     setup_multiprocess_prometheus,
 )
 
@@ -76,14 +72,13 @@ def main(argv: Iterable[str] | None = None) -> int:
     setup_logging(args.log_level)
 
     trackers: List[MetricsBackend] = []
-    prometheus_registry: CollectorRegistry | None = None
     if "prometheus" in args.tracker:
         logger.info("Enabling Prometheus metrics tracking.")
-        trackers.append(PrometheusMetricsBackend())
         if args.n_workers > 1:
-            logger.info("Setting up Prometheus multiprocess directory for metrics tracking.")
+            # This has to be done before prometheus_client is imported
             setup_multiprocess_prometheus()
-        prometheus_registry = get_prometheus_registry()
+            logger.info("Setting up Prometheus multiprocess directory for metrics tracking.")
+        trackers.append(PrometheusMetricsBackend())
 
     if "console" in args.tracker:
         logger.info("Enabling console metrics tracking.")
@@ -121,7 +116,6 @@ def main(argv: Iterable[str] | None = None) -> int:
         cors_allow_origins=args.cors_origins,
         launch_mode=launch_mode,
         tracker=tracker,
-        prometheus_registry=prometheus_registry,
         n_workers=args.n_workers,
     )
     try:

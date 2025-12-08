@@ -114,6 +114,10 @@ class _HistogramState:
 class MetricsBackend:
     """Abstract base class for metrics backends."""
 
+    def has_prometheus(self) -> bool:
+        """Check if the backend has prometheus support."""
+        return False
+
     def register_counter(
         self,
         name: str,
@@ -753,6 +757,10 @@ class PrometheusMetricsBackend(MetricsBackend):
         self._prom_counters: Dict[str, Any] = {}
         self._prom_histograms: Dict[str, Any] = {}
 
+    def has_prometheus(self) -> bool:
+        """Check if the backend has prometheus support."""
+        return True
+
     def register_counter(
         self,
         name: str,
@@ -887,6 +895,10 @@ class MultiMetricsBackend(MetricsBackend):
         if not backends:
             raise ValueError("MultiMetricsBackend requires at least one backend.")
         self._backends = list(backends)
+
+    def has_prometheus(self) -> bool:
+        """Check if the backend has prometheus support."""
+        return any(backend.has_prometheus() for backend in self._backends)
 
     def register_counter(
         self,
