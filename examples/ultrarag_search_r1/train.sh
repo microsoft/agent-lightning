@@ -19,11 +19,15 @@ export VLLM_PORT=${VLLM_PORT:-8001}
 export VLLM_HOST=${VLLM_HOST:-127.0.0.1}
 export PYTORCH_CUDA_ALLOC_CONF=${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}
 
-export BASE_MODEL=${BASE_MODEL:-/path/to/model}
+export BASE_MODEL=${BASE_MODEL:-/path/to/llama-3.2-3b-instruct}
 export DATA_DIR=${DATA_DIR:-${SCRIPT_DIR}/../search_r1/data}
 export EXPERIMENT_NAME=${EXPERIMENT_NAME:-ultrarag_search_r1}
 export PROJECT_NAME=${PROJECT_NAME:-AgentLightning-ultrarag}
-export RAY_ADDRESS=${RAY_ADDRESS:-127.0.0.1:6380}
+
+echo "Using GPUs: $CUDA_VISIBLE_DEVICES"
+echo "Number of GPUs: $N_GPUS"
+echo "Data dir: $DATA_DIR"
+echo "Base model: $BASE_MODEL"
 
 cd "${SCRIPT_DIR}"
 PYTHONPATH="${SCRIPT_DIR}" ${PYTHON} -m agentlightning.verl \
@@ -32,7 +36,7 @@ PYTHONPATH="${SCRIPT_DIR}" ${PYTHON} -m agentlightning.verl \
     data.val_files=${DATA_DIR}/test_100.parquet \
     actor_rollout_ref.rollout.tensor_model_parallel_size=1 \
     trainer.n_gpus_per_node=${N_GPUS} \
-    data.train_batch_size=512 \
+    data.train_batch_size=32 \
     actor_rollout_ref.rollout.n=2 \
     actor_rollout_ref.actor.ppo_mini_batch_size=128 \
     actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=4 \

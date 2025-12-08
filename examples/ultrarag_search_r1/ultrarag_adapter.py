@@ -9,6 +9,7 @@ import os
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, cast
+import logging
 
 from agentlightning import LLM, LitAgent, NamedResources, Trainer, setup_logging
 from agentlightning.reward import reward
@@ -118,11 +119,20 @@ class UltraRAGPipelineExecutor:
         if not self.pipeline_config:
             raise ValueError("Pipeline config not loaded")
         
+        
+        import ultrarag.client as ultrarag_client
+        if getattr(ultrarag_client, "logger", None) is None:
+            ultrarag_client.logger = logging.getLogger("ultrarag")
+        logger = ultrarag_client.logger
+        logger.setLevel(logging.INFO)
+        if not logger.handlers:
+            logger.addHandler(logging.StreamHandler())
+
         from ultrarag.client import run as ultrarag_run
         import tempfile
         import json
         import yaml
-        
+
         temp_param_file = None
         temp_benchmark_file = None
         
