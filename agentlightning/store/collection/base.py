@@ -99,6 +99,7 @@ def resolve_error_type(exc: BaseException | None) -> str:
         if error_type is not None:
             return error_type
     except ImportError:
+        # If the mongo backend is not available, fall back to using the exception's class name.
         pass
 
     return exc.__class__.__name__
