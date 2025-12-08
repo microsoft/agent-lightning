@@ -137,7 +137,15 @@ class MongoLightningStore(CollectionBasedLightningStore[MongoLightningCollection
             await asyncio.sleep(rest_time)
             current_time = time.time()
 
-        logger.info(f"unfinished_rollouts: {unfinished_rollout_ids}")
+        # Logging will help debugging when there are stuck rollouts.
+        logger.debug(
+            "Waiting for rollouts. Number of finished rollouts: %d; number of unfinished rollouts: %d",
+            len(finished_rollouts),
+            len(unfinished_rollout_ids),
+        )
+        if len(unfinished_rollout_ids) < 30:
+            logger.debug("Unfinished rollouts: %s", unfinished_rollout_ids)
+
         # Reorder the rollouts to match the input order
         return [finished_rollouts[rollout_id] for rollout_id in rollout_ids if rollout_id in finished_rollouts]
 

@@ -613,7 +613,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
             if not dequeued:
                 break
             rollout_id = dequeued[0]
-            logger.info("dequeued rollout_id: %s. worker_id: %s", rollout_id, worker_id)
+            logger.debug("Rollout ID %s has been dequeued by Worker ID %s", rollout_id, worker_id)
 
             post_dequeue_result = await self._post_dequeue_rollouts([rollout_id], worker_id)
             if post_dequeue_result:
@@ -621,7 +621,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
                 attempted_rollout, _ = post_dequeue_result[0]
                 if worker_id is not None:
                     await self._sync_workers_with_attempts([attempted_rollout.attempt], dequeue=True)
-                logger.info(f"attempted_rollout: {attempted_rollout}")
+                logger.debug("Rollout has been prepared for Worker ID %s: %s", worker_id, attempted_rollout)
                 return attempted_rollout
 
             # else continue the loop
@@ -1145,6 +1145,8 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         if successful_spans:
             await self._post_add_spans(successful_spans, rollout_id, attempt_id)
 
+        logger.debug("Added %d spans for rollout %s, attempt %s", len(successful_spans), rollout_id, attempt_id)
+
         return successful_spans
 
     @tracked("_post_add_spans")
@@ -1215,7 +1217,6 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
 
         See [`LightningStore.wait_for_rollouts()`][agentlightning.LightningStore.wait_for_rollouts] for semantics.
         """
-        logger.info(f"wait_for_rollouts: {rollout_ids}")
         # Wait for all rollouts concurrently
         rollouts = await asyncio.gather(
             *[self.wait_for_rollout(rid, timeout) for rid in rollout_ids], return_exceptions=True
@@ -1228,7 +1229,14 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         # Filter out the exceptions
         ret = [rollout for rollout in rollouts if isinstance(rollout, Rollout)]
         finished_rollout_ids = set([rollout.rollout_id for rollout in ret])
-        logger.info(f"unfinished_rollouts: {set(rollout_ids) - finished_rollout_ids}")
+        unfinished_rollout_ids = set(rollout_ids) - finished_rollout_ids
+        logger.debug(
+            "Waiting for rollouts. Number of finished rollouts: %d; number of unfinished rollouts: %d",
+            len(finished_rollout_ids),
+            len(unfinished_rollout_ids),
+        )
+        if len(unfinished_rollout_ids) < 30:
+            logger.debug("Unfinished rollouts: %s", unfinished_rollout_ids)
         return ret
 
     @tracked("wait_for_rollout")
