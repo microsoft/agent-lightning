@@ -277,10 +277,6 @@ async def test_console_metrics_backend_tracks_http_and_store_metrics() -> None:
     hist_metrics = {name for name, _ in backend._hist_state.keys()}  # pyright: ignore[reportPrivateUsage]
     assert "agl.http.total" in counter_metrics
     assert "agl.store.total" in counter_metrics
-    assert "agl.http.latency.sum" in counter_metrics
-    assert "agl.store.latency.sum" in counter_metrics
-    assert "agl.collections.latency.sum" in counter_metrics
-    assert "agl.rollouts.duration.sum" in counter_metrics
     assert "agl.http.latency" in hist_metrics
 
 
@@ -296,8 +292,6 @@ async def test_prometheus_metrics_backend_tracks_http_metrics(monkeypatch: pytes
     http_histogram = next(inst for inst in stub.histogram_instances if inst.name == "agl_http_latency")
     assert any(child.value > 0 for child in http_counter.children.values())
     assert any(child.values for child in http_histogram.children.values())
-    latency_sum_counter = next(inst for inst in stub.counter_instances if inst.name == "agl_http_latency_sum")
-    assert any(child.value > 0 for child in latency_sum_counter.children.values())
 
 
 @pytest.mark.asyncio
@@ -314,7 +308,6 @@ async def test_multi_metrics_backend_updates_all_children(monkeypatch: pytest.Mo
         name for name, _ in console_backend._counter_state.keys()  # pyright: ignore[reportPrivateUsage]
     }
     assert "agl.http.total" in console_counters
-    assert "agl.http.latency.sum" in console_counters
 
     prom_counter = next(inst for inst in stub.counter_instances if inst.name == "agl_http_total")
     assert any(child.value > 0 for child in prom_counter.children.values())

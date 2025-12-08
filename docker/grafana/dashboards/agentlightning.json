@@ -44,7 +44,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (method, path) (rate(agl_http_total[15s]))",
+          "expr": "sum by (method, path) (rate(agl_http_latency_count[15s]))",
           "legendFormat": "{{method}} {{path}}"
         }
       ],
@@ -112,7 +112,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (method, path, status) (rate(agl_http_total{status!~\"2..\"}[15s]))",
+          "expr": "sum by (method, path, status) (rate(agl_http_latency_count{status!~\"2..\"}[15s]))",
           "legendFormat": "{{method}} {{path}} {{status}}"
         }
       ],
@@ -155,7 +155,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (method) (rate(agl_store_total[15s]))",
+          "expr": "sum by (method) (rate(agl_store_latency_count[15s]))",
           "legendFormat": "{{method}}"
         }
       ],
@@ -223,7 +223,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (method, status) (rate(agl_store_total{status!=\"OK\"}[15s]))",
+          "expr": "sum by (method, status) (rate(agl_store_latency_count{status!=\"OK\"}[15s]))",
           "legendFormat": "{{method}} {{status}}"
         }
       ],
@@ -266,7 +266,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (store_method, operation) (rate(agl_collections_total[15s]))",
+          "expr": "sum by (store_method, operation) (rate(agl_collections_latency_count[15s]))",
           "legendFormat": "{{store_method}} {{operation}}"
         }
       ],
@@ -296,7 +296,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (store_method, collection, status) (rate(agl_collections_total{status!=\"OK\"}[15s]))",
+          "expr": "sum by (store_method, collection, status) (rate(agl_collections_latency_count{status!=\"OK\"}[15s]))",
           "legendFormat": "{{store_method}} {{collection}} {{status}}"
         }
       ],
@@ -407,7 +407,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (status) (rate(agl_rollouts_total[15s]))",
+          "expr": "sum by (status) (rate(agl_rollouts_duration_count[15s]))",
           "legendFormat": "{{status}}"
         }
       ],
@@ -437,7 +437,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (mode) (rate(agl_rollouts_total[15s]))",
+          "expr": "sum by (mode) (rate(agl_rollouts_duration_count[15s]))",
           "legendFormat": "{{mode}}"
         }
       ],

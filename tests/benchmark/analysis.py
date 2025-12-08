@@ -258,6 +258,12 @@ def histogram_sum_metric_name(bucket_metric: str) -> str:
     return f"{bucket_metric}_sum"
 
 
+def histogram_count_metric_name(bucket_metric: str) -> str:
+    if bucket_metric.endswith("_bucket"):
+        return f"{bucket_metric[: -len('_bucket')]}_count"
+    return f"{bucket_metric}_count"
+
+
 def divide_or_none(numerator: Optional[float], denominator: Optional[float]) -> Optional[float]:
     if numerator is None or denominator is None:
         return None
@@ -313,11 +319,6 @@ def fetch_store_statistics(store_url: str, timeout: float) -> Optional[Dict[str,
         return None
 
 
-# ---------------------------------------------------------------------------
-# Part 1 – high level throughput
-# ---------------------------------------------------------------------------
-
-
 @dataclass
 class CollectionThroughput:
     name: str
@@ -347,12 +348,12 @@ class MetricRow:
 @dataclass(frozen=True)
 class MetricGroupSpec:
     title: str
-    counter_metric: str
     histogram_bucket_metric: str
-    latency_sum_metric: str
     label_names: Tuple[str, ...]
     label_headers: Tuple[str, ...]
     selector: str = ""
+    sum_metric: Optional[str] = None
+    count_metric: Optional[str] = None
 
 
 def metric_row_sort_key(row: MetricRow) -> Tuple[float, Tuple[str, ...]]:
@@ -436,16 +437,17 @@ def gather_metric_group(
     label_names = spec.label_names
     sum_clause = sum_by_clause(label_names)
     hist_clause = histogram_sum_by_clause(label_names)
-    counter_metric = f"{spec.counter_metric}{spec.selector}" if spec.selector else spec.counter_metric
     bucket_metric = f"{spec.histogram_bucket_metric}{spec.selector}" if spec.selector else spec.histogram_bucket_metric
-    base_sum_metric = spec.latency_sum_metric or histogram_sum_metric_name(spec.histogram_bucket_metric)
-    latency_sum_metric = f"{base_sum_metric}{spec.selector}" if spec.selector else base_sum_metric
+    base_sum_metric = spec.sum_metric or histogram_sum_metric_name(spec.histogram_bucket_metric)
+    sum_metric = f"{base_sum_metric}{spec.selector}" if spec.selector else base_sum_metric
+    base_count_metric = spec.count_metric or histogram_count_metric_name(spec.histogram_bucket_metric)
+    count_metric = f"{base_count_metric}{spec.selector}" if spec.selector else base_count_metric
 
-    count_total_expr = f"{sum_clause}(increase({counter_metric}[{window}])))"
+    count_total_expr = f"{sum_clause}(increase({count_metric}[{window}]))"
     count_total_map = vector_to_labeled_map(safe_vector(client, count_total_expr), label_names)
     avg_map = {key: value / window_seconds for key, value in count_total_map.items()} if window_seconds > 0 else {}
 
-    peak_expr = f"{sum_clause}(irate({counter_metric}[{peak_window}]))"
+    peak_expr = f"{sum_clause}(irate({count_metric}[{peak_window}]))"
     max_expr = f"max_over_time(({peak_expr})[{window}:{subquery_step}])"
     min_expr = f"min_over_time(({peak_expr})[{window}:{subquery_step}])"
     max_map = vector_to_labeled_map(safe_vector(client, max_expr), label_names)
@@ -480,26 +482,18 @@ def gather_metric_group(
         label_names,
     )
 
-    time_total_expr = f"{sum_clause}(increase({latency_sum_metric}[{window}])))"
+    time_total_expr = f"{sum_clause}(increase({sum_metric}[{window}]))"
     time_total_map = vector_to_labeled_map(safe_vector(client, time_total_expr), label_names)
     time_rate_map = {key: value / window_seconds for key, value in time_total_map.items()} if window_seconds > 0 else {}
     avg_time_map = compute_average_time_map(time_total_map, count_total_map)
 
     if half_window and half_window_seconds and half_window_seconds > 0:
-        count_late_expr = f"{sum_clause}(increase({counter_metric}[{half_window}])))"
-        count_early_expr = f"{sum_clause}(increase({counter_metric}[{half_window}] offset {half_window})))"
+        count_late_expr = f"{sum_clause}(increase({count_metric}[{half_window}]))"
+        count_early_expr = f"{sum_clause}(increase({count_metric}[{half_window}] offset {half_window}))"
         count_late_total_map = vector_to_labeled_map(safe_vector(client, count_late_expr), label_names)
         count_early_total_map = vector_to_labeled_map(safe_vector(client, count_early_expr), label_names)
-        avg_late_map = (
-            {key: value / half_window_seconds for key, value in count_late_total_map.items()}
-            if half_window_seconds > 0
-            else {}
-        )
-        avg_early_map = (
-            {key: value / half_window_seconds for key, value in count_early_total_map.items()}
-            if half_window_seconds > 0
-            else {}
-        )
+        avg_late_map = {key: value / half_window_seconds for key, value in count_late_total_map.items()}
+        avg_early_map = {key: value / half_window_seconds for key, value in count_early_total_map.items()}
 
         p50_late_expr = f"histogram_quantile(0.50, {hist_clause}(increase({bucket_metric}[{half_window}])))"
         p50_early_expr = (
@@ -515,20 +509,12 @@ def gather_metric_group(
         p95_late_map = vector_to_labeled_map(safe_vector(client, p95_late_expr), label_names)
         p95_early_map = vector_to_labeled_map(safe_vector(client, p95_early_expr), label_names)
 
-        time_late_expr = f"{sum_clause}(increase({latency_sum_metric}[{half_window}])))"
-        time_early_expr = f"{sum_clause}(increase({latency_sum_metric}[{half_window}] offset {half_window})))"
+        time_late_expr = f"{sum_clause}(increase({sum_metric}[{half_window}]))"
+        time_early_expr = f"{sum_clause}(increase({sum_metric}[{half_window}] offset {half_window}))"
         time_late_total_map = vector_to_labeled_map(safe_vector(client, time_late_expr), label_names)
         time_early_total_map = vector_to_labeled_map(safe_vector(client, time_early_expr), label_names)
-        time_late_map = (
-            {key: value / half_window_seconds for key, value in time_late_total_map.items()}
-            if half_window_seconds > 0
-            else {}
-        )
-        time_early_map = (
-            {key: value / half_window_seconds for key, value in time_early_total_map.items()}
-            if half_window_seconds > 0
-            else {}
-        )
+        time_late_map = {key: value / half_window_seconds for key, value in time_late_total_map.items()}
+        time_early_map = {key: value / half_window_seconds for key, value in time_early_total_map.items()}
         avg_time_late_map = compute_average_time_map(time_late_total_map, count_late_total_map)
         avg_time_early_map = compute_average_time_map(time_early_total_map, count_early_total_map)
     else:
@@ -558,6 +544,8 @@ def gather_metric_group(
     all_keys.update(max_latency_map.keys())
     all_keys.update(time_rate_map.keys())
     all_keys.update(avg_time_map.keys())
+    all_keys.update(count_late_total_map.keys())
+    all_keys.update(count_early_total_map.keys())
     all_keys.update(avg_late_map.keys())
     all_keys.update(avg_early_map.keys())
     all_keys.update(p50_late_map.keys())
@@ -882,27 +870,21 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
             (
                 MetricGroupSpec(
                     title="agl.http ungrouped",
-                    counter_metric="agl_http_total",
                     histogram_bucket_metric="agl_http_latency_bucket",
                     label_names=tuple(),
                     label_headers=tuple(),
-                    latency_sum_metric="agl_http_latency_sum",
                 ),
                 MetricGroupSpec(
                     title="agl.http grouped by path, method",
-                    counter_metric="agl_http_total",
                     histogram_bucket_metric="agl_http_latency_bucket",
                     label_names=("path", "method"),
                     label_headers=("Path", "Method"),
-                    latency_sum_metric="agl_http_latency_sum",
                 ),
                 MetricGroupSpec(
                     title="agl.http grouped by path, method, status",
-                    counter_metric="agl_http_total",
                     histogram_bucket_metric="agl_http_latency_bucket",
                     label_names=("path", "method", "status"),
                     label_headers=("Path", "Method", "Status"),
-                    latency_sum_metric="agl_http_latency_sum",
                 ),
             ),
         ),
@@ -911,27 +893,21 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
             (
                 MetricGroupSpec(
                     title="agl.store ungrouped",
-                    counter_metric="agl_store_total",
                     histogram_bucket_metric="agl_store_latency_bucket",
                     label_names=tuple(),
                     label_headers=tuple(),
-                    latency_sum_metric="agl_store_latency_sum",
                 ),
                 MetricGroupSpec(
                     title="agl.store grouped by method",
-                    counter_metric="agl_store_total",
                     histogram_bucket_metric="agl_store_latency_bucket",
                     label_names=("method",),
                     label_headers=("Method",),
-                    latency_sum_metric="agl_store_latency_sum",
                 ),
                 MetricGroupSpec(
                     title="agl.store grouped by method, status",
-                    counter_metric="agl_store_total",
                     histogram_bucket_metric="agl_store_latency_bucket",
                     label_names=("method", "status"),
                     label_headers=("Method", "Status"),
-                    latency_sum_metric="agl_store_latency_sum",
                 ),
             ),
         ),
@@ -940,19 +916,15 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
             (
                 MetricGroupSpec(
                     title="agl.rollouts ungrouped",
-                    counter_metric="agl_rollouts_total",
                     histogram_bucket_metric="agl_rollouts_duration_bucket",
                     label_names=tuple(),
                     label_headers=tuple(),
-                    latency_sum_metric="agl_rollouts_duration_sum",
                 ),
                 MetricGroupSpec(
                     title="agl.rollouts grouped by status",
-                    counter_metric="agl_rollouts_total",
                     histogram_bucket_metric="agl_rollouts_duration_bucket",
                     label_names=("status",),
                     label_headers=("Status",),
-                    latency_sum_metric="agl_rollouts_duration_sum",
                 ),
             ),
         ),
@@ -961,51 +933,39 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
             (
                 MetricGroupSpec(
                     title="agl.collections ungrouped",
-                    counter_metric="agl_collections_total",
                     histogram_bucket_metric="agl_collections_latency_bucket",
                     label_names=tuple(),
                     label_headers=tuple(),
-                    latency_sum_metric="agl_collections_latency_sum",
                 ),
                 MetricGroupSpec(
                     title="agl.collections grouped by store_method",
-                    counter_metric="agl_collections_total",
                     histogram_bucket_metric="agl_collections_latency_bucket",
                     label_names=("store_method",),
                     label_headers=("Store Method",),
-                    latency_sum_metric="agl_collections_latency_sum",
                 ),
                 MetricGroupSpec(
                     title="agl.collections grouped by store_method, operation",
-                    counter_metric="agl_collections_total",
                     histogram_bucket_metric="agl_collections_latency_bucket",
                     label_names=("store_method", "operation"),
                     label_headers=("Store Method", "Operation"),
-                    latency_sum_metric="agl_collections_latency_sum",
                 ),
                 MetricGroupSpec(
                     title="agl.collections grouped by store_method, collection",
-                    counter_metric="agl_collections_total",
                     histogram_bucket_metric="agl_collections_latency_bucket",
                     label_names=("store_method", "collection"),
                     label_headers=("Store Method", "Collection"),
-                    latency_sum_metric="agl_collections_latency_sum",
                 ),
                 MetricGroupSpec(
                     title="agl.collections grouped by store_method, collection, operation, status",
-                    counter_metric="agl_collections_total",
                     histogram_bucket_metric="agl_collections_latency_bucket",
                     label_names=("store_method", "collection", "operation", "status"),
                     label_headers=("Store Method", "Collection", "Operation", "Status"),
-                    latency_sum_metric="agl_collections_latency_sum",
                 ),
                 MetricGroupSpec(
                     title="agl.collections grouped by collection, operation, status",
-                    counter_metric="agl_collections_total",
                     histogram_bucket_metric="agl_collections_latency_bucket",
                     label_names=("collection", "operation", "status"),
                     label_headers=("Collection", "Operation", "Status"),
-                    latency_sum_metric="agl_collections_latency_sum",
                 ),
             ),
         ),
