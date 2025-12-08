@@ -166,7 +166,7 @@ jobs:
       ANALYSIS_FILE: ${{ format('analysis-{0}.log', matrix.workload.id) }}
       SUMMARY_FILE: ${{ format('summary-{0}.log', matrix.workload.id) }}
       PROM_ARCHIVE_BASENAME: ${{ format('prometheus-{0}-{1}', matrix.workload.id, matrix.backend.id) }}
-      ARTIFACT_NAME: ${{ format('{0}-{1}-{2}', matrix.workload.kind == 'micro' && 'micro-benchmark' || 'benchmark', matrix.workload.id, matrix.backend.id) }}
+      ARTIFACT_NAME: ${{ format('{0}-{1}', matrix.workload.id, matrix.backend.id) }}
     steps:
       - uses: actions/checkout@v4
 
