@@ -107,7 +107,6 @@ class MongoLightningStore(CollectionBasedLightningStore[MongoLightningCollection
 
         Concurrently wait for all rollouts to complete with a timeout.
         """
-        print(f"wait_for_rollouts: {rollout_ids}")
         start_time = time.time()
         current_time = start_time
         deadline = start_time + timeout if timeout is not None else None
