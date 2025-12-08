@@ -8228,13 +8228,13 @@ It may use an isolated snapshot that supports repeatable reads.</p>
           </div>
         </li>
         <li class="doc-section-item field-body">
-            <b><code>prometheus</code></b>
-              (<code><span title="bool">bool</span></code>, default:
-                  <code>False</code>
+            <b><code>tracker</code></b>
+              (<code><a class="autorefs autorefs-internal" title="            agentlightning.utils.metrics.MetricsBackend" href="../internal/#agentlightning.utils.metrics.MetricsBackend">MetricsBackend</a> | None</code>, default:
+                  <code>None</code>
 )
           –
           <div class="doc-md-description">
-            <p>Enable Prometheus tracking.</p>
+            <p>Enable metrics tracking.</p>
           </div>
         </li>
     </ul>
@@ -9122,13 +9122,13 @@ It's not allowed to set <code>host</code>, <code>port</code>, <code>launch_mode<
           </div>
         </li>
         <li class="doc-section-item field-body">
-            <b><code>prometheus</code></b>
-              (<code><span title="bool">bool</span></code>, default:
-                  <code>False</code>
+            <b><code>tracker</code></b>
+              (<code><a class="autorefs autorefs-internal" title="            agentlightning.utils.metrics.MetricsBackend" href="../internal/#agentlightning.utils.metrics.MetricsBackend">MetricsBackend</a> | None</code>, default:
+                  <code>None</code>
 )
           –
           <div class="doc-md-description">
-            <p>Whether to enable Prometheus metrics.</p>
+            <p>The metrics tracker to use for the server.</p>
           </div>
         </li>
     </ul>
@@ -10013,11 +10013,11 @@ Make sure the threaded stores are instantiated before initializing the threads.<
 
     <div class="doc doc-contents first">
             <p class="doc doc-class-bases">
-              Bases: <code><span title="typing.Generic">Generic</span>[<span title="agentlightning.store.collection.base.T">T</span>]</code></p>
+              Bases: <code><span title="agentlightning.store.collection.base.TrackedCollection">TrackedCollection</span></code>, <code><span title="typing.Generic">Generic</span>[<span title="agentlightning.store.collection.base.T">T</span>]</code></p>
 
 
 
-        <p>Behaves like a list of items. Supporting addition, updating, and deletion of items.</p>
+        <p>Standard collection interface. Behaves like a list of items. Supporting addition, updating, and deletion of items.</p>
 
 
 
@@ -10475,7 +10475,7 @@ Otherwise, they will be inserted.</p>
 
     <div class="doc doc-contents first">
             <p class="doc doc-class-bases">
-              Bases: <code><span title="typing.Generic">Generic</span>[<span title="agentlightning.store.collection.base.T">T</span>]</code></p>
+              Bases: <code><span title="agentlightning.store.collection.base.TrackedCollection">TrackedCollection</span></code>, <code><span title="typing.Generic">Generic</span>[<span title="agentlightning.store.collection.base.T">T</span>]</code></p>
 
 
 
@@ -10744,7 +10744,7 @@ Otherwise, they will be inserted.</p>
 
     <div class="doc doc-contents first">
             <p class="doc doc-class-bases">
-              Bases: <code><span title="typing.Generic">Generic</span>[<span title="agentlightning.store.collection.base.K">K</span>, <span title="agentlightning.store.collection.base.V">V</span>]</code></p>
+              Bases: <code><span title="agentlightning.store.collection.base.TrackedCollection">TrackedCollection</span></code>, <code><span title="typing.Generic">Generic</span>[<span title="agentlightning.store.collection.base.K">K</span>, <span title="agentlightning.store.collection.base.V">V</span>]</code></p>
 
 
 
@@ -10901,6 +10901,8 @@ Otherwise, they will be inserted.</p>
 
 
     <div class="doc doc-contents first">
+            <p class="doc doc-class-bases">
+              Bases: <code><span title="agentlightning.store.collection.base.TrackedCollection">TrackedCollection</span></code></p>
 
 
 
