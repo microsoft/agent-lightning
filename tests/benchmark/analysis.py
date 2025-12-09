@@ -233,7 +233,7 @@ def vector_to_labeled_map(
         if labels:
             key = tuple(_normalize_label_value(metric.get(label)) for label in labels)
         else:
-            key = tuple()
+            key = tuple[str, ...]()
         value = _sample_value(sample)
         if value is not None:
             mapping[key] = value
