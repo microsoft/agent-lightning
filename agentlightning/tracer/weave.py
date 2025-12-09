@@ -38,12 +38,7 @@ class WeaveTracer(Tracer):
     Attributes:
         project_name: Name of the Weave project. Used to initialize the Weave client.
         _store: Optional LightningStore instance for storing collected spans.
-        _tracing_enabled: Flag to enable/disable tracing at runtime. (weave op requires this)
-        postprocess_output: Placeholder attribute observed by Weave SDK for op inputs. (weave op requires this)
-
-        _loop: Dedicated asyncio event loop for background tasks.
-        _loop_thread: Thread running the dedicated event loop.
-        _loop_ready: Event to signal when the loop is ready.
+        instrument_managed: Whether to patch the Weave/W&B integration to bypass actual network calls for testing.
     """
 
     def __init__(
@@ -55,7 +50,7 @@ class WeaveTracer(Tracer):
         Args:
             project_name: Optional project name for Weave; defaults to the current module name.
             wandb_api_key: Optional W&B API key; sets environment variable if provided.
-            pass_weave_service: Whether to bypass actual Weave/W&B network calls (for testing).
+            instrument_managed: Whether to patch the Weave/W&B integration to bypass actual network calls for testing.
         """
         super().__init__()
         self.project_name = project_name or __name__
@@ -65,11 +60,6 @@ class WeaveTracer(Tracer):
 
         if wandb_api_key:
             os.environ["WANDB_API_KEY"] = wandb_api_key
-
-        # Private asyncio loop running in a daemon thread
-        self._loop_ready = threading.Event()
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
-        self._loop_thread: Optional[threading.Thread] = None
 
     def instrument(self, worker_id: int):
         instrument_weave()
@@ -114,7 +104,6 @@ class WeaveTracer(Tracer):
             worker_id: Identifier of the worker.
         """
         super().teardown_worker(worker_id)
-        self.shutdown()
 
         if self.instrument_managed:
             self.uninstrument(worker_id)
@@ -177,14 +166,6 @@ class WeaveTracer(Tracer):
             # Finish trace even if no exception
             weave_client.finish_call(trace_call)  # type: ignore
             await self._on_finish_handler(trace_call)  # type: ignore
-
-    def shutdown(self) -> None:
-        """Stop and clean up the dedicated asyncio loop and thread."""
-        if self._loop:
-            self._loop.call_soon_threadsafe(self._loop.stop)
-            self._loop = None
-        if self._loop_thread:
-            self._loop_thread.join(timeout=5)
 
     async def _on_finish_handler(self, call: "Call", *args: Any, **kwargs: Any) -> None:  # type: ignore
         """
