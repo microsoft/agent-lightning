@@ -186,12 +186,12 @@ async def _preload_queue(collections: LightningCollections, total_tasks: int, ta
     for idx in range(total_tasks):
         batch.append(f"{task_prefix}-queue-{idx}")
         if len(batch) >= 512:
-            async with collections.atomic(mode="rw", labels=["rollout_queue"]):
-                await collections.rollout_queue.enqueue(batch)
+            async with collections.atomic(mode="rw", labels=["rollout_queue"]) as collections_atomic:
+                await collections_atomic.rollout_queue.enqueue(batch)
             batch.clear()
     if batch:
-        async with collections.atomic(mode="rw", labels=["rollout_queue"]):
-            await collections.rollout_queue.enqueue(batch)
+        async with collections.atomic(mode="rw", labels=["rollout_queue"]) as collections_atomic:
+            await collections_atomic.rollout_queue.enqueue(batch)
 
 
 async def _reset_mongo_database(uri: str, database: str) -> None:
@@ -266,8 +266,7 @@ class BaseBenchmark:
         """Prepare backend-specific state before running workers."""
         if self.kind == "dequeue":
             async with self.worker_context() as collections:
-                async with collections.atomic(mode="rw", labels=["rollout_queue"]) as collections_atomic:
-                    await _preload_queue(collections_atomic, self.total_tasks, self.task_prefix)
+                await _preload_queue(collections, self.total_tasks, self.task_prefix)
 
 
 class MemoryBenchmark(BaseBenchmark):
@@ -433,10 +432,10 @@ async def insert_worker_async(
         rollout = _make_rollout(worker_index, sequence, task_prefix)
         req_start = time.perf_counter()
         try:
-            async with collections.atomic(mode="rw", labels=["rollouts"]):
+            async with collections.atomic(mode="rw", labels=["rollouts"]) as collections_atomic:
                 if random.uniform(0, 1) < 0.01:
                     console.print("Inserting rollout:", rollout.rollout_id)
-                await collections.rollouts.insert([rollout])
+                await collections_atomic.rollouts.insert([rollout])
             durations.append(time.perf_counter() - req_start)
         except Exception:
             failures += 1
@@ -459,8 +458,8 @@ async def dequeue_worker_async(
             break
         req_start = time.perf_counter()
         try:
-            async with collections.atomic(mode="rw", labels=["rollout_queue"]):
-                items = await collections.rollout_queue.dequeue(limit=1)
+            async with collections.atomic(mode="rw", labels=["rollout_queue"]) as collections_atomic:
+                items = await collections_atomic.rollout_queue.dequeue(limit=1)
                 if items and random.uniform(0, 1) < 0.01:
                     console.print("Dequeued items:", items[0])
         except Exception:
