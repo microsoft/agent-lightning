@@ -975,7 +975,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
                     title="agl.collections grouped by store_privmeth, collection, operation, status",
                     histogram_bucket_metric="agl_collections_latency_bucket",
                     label_names=("store_privmeth", "collection", "operation", "status"),
-                    label_headers=("Store Private Method", "Collection", "Operation", "Status"),
+                    label_headers=("Store Priv Meth", "Collection", "Operation", "Status"),
                 ),
                 MetricGroupSpec(
                     title="agl.collections grouped by collection, operation, status",
@@ -1014,7 +1014,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
                 extra_column_specs.append(
                     make_time_share_column(
                         label_index=pubmeth_index,
-                        column_title="Store Time %",
+                        column_title="Share %",
                         time_per_sec_map=store_method_time_per_sec,
                     )
                 )
@@ -1023,7 +1023,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
                 extra_column_specs.append(
                     make_time_share_column(
                         label_index=privmeth_index,
-                        column_title="Private Time %",
+                        column_title="Share (Priv) %",
                         time_per_sec_map=store_method_time_per_sec,
                     )
                 )

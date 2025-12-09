@@ -85,6 +85,7 @@ class MongoLightningStore(CollectionBasedLightningStore[MongoLightningCollection
                 tracker=tracker,
             ),
             tracker=tracker,
+            scan_debounce_seconds=scan_debounce_seconds,
         )
 
     @property

@@ -1777,9 +1777,17 @@ def nearest_lightning_store_method_from_stack() -> Tuple[str, str]:
                 self_obj = frame.f_locals.get("self")
                 public_method_name = frame.f_locals.get("public_method_name")
                 private_method_name = frame.f_locals.get("private_method_name")
-                if public_method_name in COLLECTION_STORE_PUBLIC_METHODS and isinstance(self_obj, LightningStore):
+                if (
+                    final_public_method_name == _UNKNOWN_STORE_METHOD
+                    and public_method_name in COLLECTION_STORE_PUBLIC_METHODS
+                    and isinstance(self_obj, LightningStore)
+                ):
                     final_public_method_name = public_method_name
-                if private_method_name in COLLECTION_STORE_ALL_METHODS and isinstance(self_obj, LightningStore):
+                if (
+                    final_private_method_name == _UNKNOWN_STORE_METHOD
+                    and private_method_name in COLLECTION_STORE_ALL_METHODS
+                    and isinstance(self_obj, LightningStore)
+                ):
                     final_private_method_name = private_method_name
                 frame = frame.f_back
     except Exception as exc:
