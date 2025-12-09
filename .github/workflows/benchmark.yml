@@ -18,7 +18,7 @@ jobs:
           - id: mongo
             compose_file: compose.prometheus-mongo-store.yml
         workload:
-          - id: minimal-production
+          - id: minimal-scale
             display: Minimal production scale
             kind: scenario
             store_workers: 4
@@ -33,7 +33,7 @@ jobs:
               --n-runners 32
               --max-rounds 6
               --sleep-seconds 0.5
-          - id: medium-production
+          - id: medium-scale
             display: Medium production scale
             kind: scenario
             store_workers: 16
@@ -47,6 +47,21 @@ jobs:
               --batch-size 1000
               --n-runners 100
               --max-rounds 10
+              --sleep-seconds 0.1
+          - id: midhigh-scale
+            display: Mid-high production scale
+            kind: scenario
+            store_workers: 32
+            runner:
+              - self-hosted
+              - 1ES.Pool=agl-runner-cpu
+            timeout: 60
+            args: >-
+              --mode batch
+              --total-tasks 20000
+              --batch-size 2048
+              --n-runners 256
+              --max-rounds 8
               --sleep-seconds 0.1
           - id: large-batch
             display: Large batch waves
@@ -331,7 +346,7 @@ jobs:
             concurrency: 128
             type: insert
           - id: low-insert
-            total_tasks: 10000
+            total_tasks: 100000
             concurrency: 4
             type: insert
           - id: high-dequeue
@@ -343,7 +358,7 @@ jobs:
             concurrency: 128
             type: dequeue
           - id: low-dequeue
-            total_tasks: 10000
+            total_tasks: 100000
             concurrency: 4
             type: dequeue
     env:
