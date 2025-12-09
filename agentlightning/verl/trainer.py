@@ -416,7 +416,7 @@ class AgentLightningTrainer(RayPPOTrainer):
                 outputs=sample_outputs,
                 scores=sample_scores,
                 reward_extra_infos_dict={},
-                ground_truth_scores=[""]*len(inputs),  # 或者 None / 0，占位即可
+                # ground_truth_scores=[""]*len(inputs),  # 或者 None / 0，占位即可
                 dump_path=val_data_dir,
             )
             val_steps = self.global_steps
