@@ -63,6 +63,8 @@ For detailed testing, please refer to this directory `examples_train_w_youtu/ret
 
 * Deployment of vLLM service
 
+**Prerequisites:** Before starting the agent, please ensure that you have installed youtu-agent, and that the `retool` directory from `examples_train_w_youtu/retool-youtu/retool` is placed in `youtu-agent/configs/agents/retool`.
+
 ```bash
 # launch vLLM backend server
 export BASE_MODEL="YOUR_MODEL_PATH"

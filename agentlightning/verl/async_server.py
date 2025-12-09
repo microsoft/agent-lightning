@@ -3,13 +3,19 @@
 # type: ignore
 
 import logging
+import os
+import socket
 import time
+from contextlib import asynccontextmanager
 from copy import deepcopy
 
+import fastapi
 import ray
+import uvicorn
 from starlette.requests import Request
 from starlette.responses import JSONResponse, StreamingResponse
 from verl.workers.rollout.vllm_rollout.vllm_async_server import AsyncvLLMServer
+from vllm.entrypoints.logger import RequestLogger
 from vllm.entrypoints.openai.protocol import (
     ChatCompletionRequest,
     ChatCompletionResponse,
@@ -18,11 +24,19 @@ from vllm.entrypoints.openai.protocol import (
     ErrorResponse,
     UsageInfo,
 )
+from vllm.entrypoints.openai.serving_chat import OpenAIServingChat
+from vllm.entrypoints.openai.serving_models import BaseModelPath, OpenAIServingModels
 from vllm.utils import random_uuid
 
 from agentlightning.instrumentation.vllm import ChatCompletionResponsePatched, instrument_vllm
 
 logger = logging.getLogger(__name__)
+
+
+def _get_free_port():
+    with socket.socket() as sock:
+        sock.bind(("", 0))
+        return sock.getsockname()[1]
 
 
 def _unwrap_ray_remote(cls):
@@ -40,6 +54,69 @@ class PatchedvLLMServer(_unwrap_ray_remote(AsyncvLLMServer)):
 
         self.config = deepcopy(self.config)
         # self.config.rollout.multi_turn.tool_config_path = "/dev/null"
+
+    async def _start_fastapi_server(self):
+        @asynccontextmanager
+        async def lifespan(app: fastapi.FastAPI):
+            print(f"FastAPI listen on {self.address}:{self.port}")
+            self.server_ready.set()
+            yield
+
+            # There's no way to gracefully restart uvicorn server if port is already in use,
+            # so we exit the process directly and let AsyncLLMServerManager restart it.
+            print("FastAPI shutdown, maybe address already in use, exit process immediately.")
+            os._exit(-1)
+
+        app = fastapi.FastAPI(lifespan=lifespan)
+        app.router.add_api_route("/v1/chat/completions", self.chat_completion, methods=["POST"])
+
+        self.port = _get_free_port()
+        # Configure uvicorn with connection limits to prevent "Maximum number of open connections reached" errors
+        # limit_concurrency: Maximum number of concurrent connections per server instance
+        # backlog: Maximum number of pending connections in TCP queue
+        # timeout_keep_alive: Seconds to keep idle connections alive before closing
+        config = uvicorn.Config(
+            app,
+            host=["::", "0.0.0.0"],
+            port=self.port,
+            log_level="warning",
+            limit_concurrency=int(os.environ.get("UVICORN_LIMIT_CONCURRENCY", 200)),
+            backlog=int(os.environ.get("UVICORN_BACKLOG", 2048)),
+            timeout_keep_alive=int(os.environ.get("UVICORN_TIMEOUT_KEEP_ALIVE", 30)),
+        )
+        server = uvicorn.Server(config)
+        await server.serve()
+        
+    async def init_engine(self):
+        """Init vLLM AsyncLLM engine with improved tool_parser configuration."""
+        # Call parent's init_engine first
+        await super().init_engine()
+        
+        # Apply improved tool_parser configuration logic
+        # Only use tool_parser when tool_config_path is explicitly set and not "/dev/null"
+        config = self.config.rollout
+        tool_config = config.multi_turn.tool_config_path
+        enable_auto_tools = tool_config is not None and tool_config != "/dev/null"
+        tool_parser = config.multi_turn.format if enable_auto_tools else None
+        
+        # Recreate openai_serving_chat with improved configuration
+        model_path = self.config.model.path
+        model_name = "/".join(model_path.split("/")[-2:])
+        model_config = self.engine.model_config
+        BASE_MODEL_PATHS = [BaseModelPath(name=model_name, model_path=model_path)]
+        models = OpenAIServingModels(self.engine, model_config, BASE_MODEL_PATHS)
+        
+        self.openai_serving_chat = OpenAIServingChat(
+            self.engine,
+            model_config,
+            models,
+            "assistant",
+            request_logger=RequestLogger(max_log_len=4096),
+            chat_template=None,
+            chat_template_content_format="auto",
+            enable_auto_tools=enable_auto_tools,
+            tool_parser=tool_parser,
+        )
 
     async def chat_completion(self, raw_request: Request):
         """OpenAI-compatible HTTP endpoint.
