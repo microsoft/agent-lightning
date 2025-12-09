@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import time
+import uuid
 import weakref
 from collections import deque
 from contextlib import AsyncExitStack, asynccontextmanager
@@ -28,7 +28,6 @@ from typing import (
 import aiologic
 from pydantic import BaseModel
 
-from agentlightning.store.utils import LATENCY_BUCKETS
 from agentlightning.types import (
     Attempt,
     FilterField,
@@ -40,6 +39,7 @@ from agentlightning.types import (
     Span,
     Worker,
 )
+from agentlightning.utils.metrics import MetricsBackend
 
 from .base import (
     AtomicMode,
@@ -50,6 +50,7 @@ from .base import (
     Queue,
     normalize_filter_options,
     resolve_sort_options,
+    tracked,
 )
 
 T = TypeVar("T")  # Recommended to be a BaseModel, not a dict
@@ -192,10 +193,19 @@ class ListBasedCollection(Collection[T]):
        if the field is str-like, 0 if the field is int-like, 0.0 if the field is float-like.
     """
 
-    def __init__(self, items: List[T], item_type: Type[T], primary_keys: Sequence[str]):
+    def __init__(
+        self,
+        items: List[T],
+        item_type: Type[T],
+        primary_keys: Sequence[str],
+        id: Optional[str] = None,
+        tracker: Optional[MetricsBackend] = None,
+    ):
+        super().__init__(tracker=tracker)
         if not primary_keys:
             raise ValueError("primary_keys must be non-empty")
 
+        self._id = id if id is not None else str(uuid.uuid4())
         self._items: Dict[Any, Any] = {}
         self._size: int = 0
         if issubclass(item_type, dict):
@@ -206,6 +216,10 @@ class ListBasedCollection(Collection[T]):
         # Pre-populate the collection with the given items.
         for item in items or []:
             self._mutate_single(item, mode="insert")
+
+    @property
+    def collection_name(self) -> str:
+        return self._id
 
     def primary_keys(self) -> Sequence[str]:
         """Return the primary key field names for this collection."""
@@ -483,6 +497,7 @@ class ListBasedCollection(Collection[T]):
             # No items exist for this primary-key prefix.
             return ()
 
+    @tracked("query")
     async def query(
         self,
         filter: Optional[FilterOptions] = None,
@@ -546,6 +561,7 @@ class ListBasedCollection(Collection[T]):
             total=total_matched,
         )
 
+    @tracked("get")
     async def get(
         self,
         filter: Optional[FilterOptions] = None,
@@ -582,6 +598,7 @@ class ListBasedCollection(Collection[T]):
 
         return best_item
 
+    @tracked("insert")
     async def insert(self, items: Sequence[T]) -> None:
         """Insert the given items.
 
@@ -603,6 +620,7 @@ class ListBasedCollection(Collection[T]):
         for item in prepared:
             self._mutate_single(item, mode="insert")
 
+    @tracked("update")
     async def update(self, items: Sequence[T], update_fields: Sequence[str] | None = None) -> Sequence[T]:
         """Update the given items.
 
@@ -617,6 +635,7 @@ class ListBasedCollection(Collection[T]):
             updated_items.append(updated)
         return updated_items
 
+    @tracked("upsert")
     async def upsert(self, items: Sequence[T], update_fields: Sequence[str] | None = None) -> Sequence[T]:
         """Upsert the given items (insert if missing, otherwise update)."""
         upserted_items: List[T] = []
@@ -627,6 +646,7 @@ class ListBasedCollection(Collection[T]):
             upserted_items.append(upserted)
         return upserted_items
 
+    @tracked("delete")
     async def delete(self, items: Sequence[T]) -> None:
         """Delete the given items.
 
@@ -646,23 +666,37 @@ class DequeBasedQueue(Queue[T]):
     Provides O(1) amortized enqueue (append) and dequeue (popleft).
     """
 
-    def __init__(self, item_type: Type[T], items: Optional[Sequence[T]] = None):
+    def __init__(
+        self,
+        item_type: Type[T],
+        items: Optional[Sequence[T]] = None,
+        id: Optional[str] = None,
+        tracker: Optional[MetricsBackend] = None,
+    ):
+        super().__init__(tracker=tracker)
         self._items: Deque[T] = deque()
         self._item_type: Type[T] = item_type
+        self._id = id if id is not None else str(uuid.uuid4())
         if items:
             self._items.extend(items)
 
     def item_type(self) -> Type[T]:
         return self._item_type
 
+    @property
+    def collection_name(self) -> str:
+        return self._id
+
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__}[{self.item_type().__name__}] ({len(self._items)})>"
 
+    @tracked("has")
     async def has(self, item: T) -> bool:
         if not isinstance(item, self._item_type):
             raise TypeError(f"Expected item of type {self._item_type.__name__}, got {type(item).__name__}")
         return item in self._items
 
+    @tracked("enqueue")
     async def enqueue(self, items: Sequence[T]) -> Sequence[T]:
         for item in items:
             if not isinstance(item, self._item_type):
@@ -670,6 +704,7 @@ class DequeBasedQueue(Queue[T]):
             self._items.append(item)
         return items
 
+    @tracked("dequeue")
     async def dequeue(self, limit: int = 1) -> Sequence[T]:
         if limit <= 0:
             return []
@@ -678,6 +713,7 @@ class DequeBasedQueue(Queue[T]):
             out.append(self._items.popleft())
         return out
 
+    @tracked("peek")
     async def peek(self, limit: int = 1) -> Sequence[T]:
         if limit <= 0:
             return []
@@ -689,6 +725,7 @@ class DequeBasedQueue(Queue[T]):
             result.append(item)
         return result
 
+    @tracked("size")
     async def size(self) -> int:
         return len(self._items)
 
@@ -696,21 +733,34 @@ class DequeBasedQueue(Queue[T]):
 class DictBasedKeyValue(KeyValue[K, V]):
     """KeyValue implementation backed by a plain dictionary."""
 
-    def __init__(self, data: Optional[Mapping[K, V]] = None):
+    def __init__(
+        self, data: Optional[Mapping[K, V]] = None, id: Optional[str] = None, tracker: Optional[MetricsBackend] = None
+    ):
+        super().__init__(tracker=tracker)
         self._values: Dict[K, V] = dict(data) if data else {}
+        self._id = id if id is not None else str(uuid.uuid4())
 
+    @property
+    def collection_name(self) -> str:
+        return self._id
+
+    @tracked("has")
     async def has(self, key: K) -> bool:
         return key in self._values
 
+    @tracked("get")
     async def get(self, key: K, default: V | None = None) -> V | None:
         return self._values.get(key, default)
 
+    @tracked("set")
     async def set(self, key: K, value: V) -> None:
         self._values[key] = value
 
+    @tracked("pop")
     async def pop(self, key: K, default: V | None = None) -> V | None:
         return self._values.pop(key, default)
 
+    @tracked("size")
     async def size(self) -> int:
         return len(self._values)
 
@@ -721,7 +771,8 @@ class InMemoryLightningCollections(LightningCollections):
     Serves as the storage base for [`InMemoryLightningStore`][agentlightning.InMemoryLightningStore].
     """
 
-    def __init__(self, lock_type: Literal["thread", "asyncio"], prometheus: bool = False):
+    def __init__(self, lock_type: Literal["thread", "asyncio"], tracker: MetricsBackend | None = None):
+        super().__init__(tracker=tracker)
         self._lock = {
             "rollouts": _LoopAwareAsyncLock() if lock_type == "asyncio" else _ThreadSafeAsyncLock(),
             "attempts": _LoopAwareAsyncLock() if lock_type == "asyncio" else _ThreadSafeAsyncLock(),
@@ -731,31 +782,29 @@ class InMemoryLightningCollections(LightningCollections):
             "rollout_queue": _LoopAwareAsyncLock() if lock_type == "asyncio" else _ThreadSafeAsyncLock(),
             "span_sequence_ids": _LoopAwareAsyncLock() if lock_type == "asyncio" else _ThreadSafeAsyncLock(),
         }
-        self._rollouts = ListBasedCollection(items=[], item_type=Rollout, primary_keys=["rollout_id"])
-        self._attempts = ListBasedCollection(items=[], item_type=Attempt, primary_keys=["rollout_id", "attempt_id"])
-        self._spans = ListBasedCollection(
-            items=[], item_type=Span, primary_keys=["rollout_id", "attempt_id", "span_id"]
+        self._rollouts = ListBasedCollection(
+            items=[], item_type=Rollout, primary_keys=["rollout_id"], id="rollouts", tracker=tracker
         )
-        self._resources = ListBasedCollection(items=[], item_type=ResourcesUpdate, primary_keys=["resources_id"])
-        self._workers = ListBasedCollection(items=[], item_type=Worker, primary_keys=["worker_id"])
-        self._rollout_queue = DequeBasedQueue(items=[], item_type=str)
-        self._span_sequence_ids = DictBasedKeyValue[str, int](data={})  # rollout_id -> sequence_id
+        self._attempts = ListBasedCollection(
+            items=[], item_type=Attempt, primary_keys=["rollout_id", "attempt_id"], id="attempts", tracker=tracker
+        )
+        self._spans = ListBasedCollection(
+            items=[], item_type=Span, primary_keys=["rollout_id", "attempt_id", "span_id"], id="spans", tracker=tracker
+        )
+        self._resources = ListBasedCollection(
+            items=[], item_type=ResourcesUpdate, primary_keys=["resources_id"], id="resources", tracker=tracker
+        )
+        self._workers = ListBasedCollection(
+            items=[], item_type=Worker, primary_keys=["worker_id"], id="workers", tracker=tracker
+        )
+        self._rollout_queue = DequeBasedQueue(items=[], item_type=str, id="rollout_queue", tracker=tracker)
+        self._span_sequence_ids = DictBasedKeyValue[str, int](
+            data={}, id="span_sequence_ids", tracker=tracker
+        )  # rollout_id -> sequence_id
 
-        self._prometheus = prometheus
-        if self._prometheus:
-            from prometheus_client import Counter, Histogram
-
-            self._rate_metric = Counter(
-                "memory_collection_lock_rate",
-                "Rate of memory collection locks",
-                ["collection"],
-            )
-            self._latency_metric = Histogram(
-                "memory_collection_lock_latency_seconds",
-                "Latency of memory collection locks",
-                ["collection"],
-                buckets=LATENCY_BUCKETS,
-            )
+    @property
+    def collection_name(self) -> str:
+        return "router"
 
     @property
     def rollouts(self) -> ListBasedCollection[Rollout]:
@@ -807,17 +856,15 @@ class InMemoryLightningCollections(LightningCollections):
         # are trying to acquire the same locks in different orders.
         labels = sorted(labels)
 
-        managers = [(label, self._lock[label]) for label in labels]
-        async with AsyncExitStack() as stack:
-            for label, manager in managers:
-                start_time = time.perf_counter()
-                await stack.enter_async_context(manager)
-                elapsed = time.perf_counter() - start_time
-                if self._prometheus:
-                    self._rate_metric.labels(collection=label).inc()
-                    self._latency_metric.labels(collection=label).observe(elapsed)
-            yield self
+        async with self.tracking_context(operation="atomic", collection=self.collection_name):
+            managers = [(label, self._lock[label]) for label in labels]
+            async with AsyncExitStack() as stack:
+                for label, manager in managers:
+                    async with self.tracking_context(operation="lock", collection=label):
+                        await stack.enter_async_context(manager)
+                yield self
 
+    @tracked("evict_spans_for_rollout")
     async def evict_spans_for_rollout(self, rollout_id: str) -> None:
         """Evict all spans for a given rollout ID.
 

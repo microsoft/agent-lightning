@@ -10,6 +10,8 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
+import uuid
 from copy import deepcopy
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -26,12 +28,9 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
         "use_kl_in_reward": False,
     },
     "data": {
-        # Fill in the path to your previously converted parquet file here
-        "train_files": "examples/rag/dataset_tiny.parquet",
-        "val_files": "examples/rag/dataset_tiny.parquet",
         "train_batch_size": 16,  # Default configuration for multi-GPU
-        "max_prompt_length": 4096,
-        "max_response_length": 1024,
+        "max_prompt_length": 8192,
+        "max_response_length": 2048,
         "truncation": "error",
     },
     "actor_rollout_ref": {
@@ -77,10 +76,7 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
         "n_gpus_per_node": 1,
         "val_before_train": True,
         "critic_warmup": 0,
-        "logger": [
-            "console",
-            # "wandb"
-        ],  # Remove wandb for easier local debugging, add back when needed
+        "logger": ["console"],  # Disable wandb for easier local debugging, add back when needed
         "project_name": "AgentLightning",
         "experiment_name": "rag_agent",
         "nnodes": 1,
@@ -93,19 +89,31 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
 def config_train_fast() -> Dict[str, Any]:
     """Fast training configuration for CI/testing"""
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-    EXPERIMENT_NAME = f"rag_fast_{timestamp}"
+    random_suffix = uuid.uuid4().hex[:8]
+    EXPERIMENT_NAME = f"rag_fast_{timestamp}_{random_suffix}"
+
+    PROJECT_NAME = "AgentLightningCI"
+
+    # Simulate writing to $GITHUB_OUTPUT if it’s set
+    github_output = os.getenv("GITHUB_OUTPUT")
+    if github_output:
+        with open(github_output, "a") as f:
+            f.write(f"project_name={PROJECT_NAME}\n")
+            f.write(f"run_name={EXPERIMENT_NAME}\n")
+
+        print("Set environment variables:")
+        print(f"PROJECT_NAME={PROJECT_NAME}")
+        print(f"EXPERIMENT_NAME={EXPERIMENT_NAME}")
 
     config = deepcopy(RL_TRAINING_CONFIG)
 
-    # Minimal parameters to ensure storage works
-    config["actor_rollout_ref"]["rollout"]["gpu_memory_utilization"] = 0.4
-    config["data"]["train_batch_size"] = 2
-    config["actor_rollout_ref"]["actor"]["ppo_mini_batch_size"] = 2
-    config["actor_rollout_ref"]["actor"]["ppo_micro_batch_size_per_gpu"] = 1
-
-    config["trainer"]["total_epochs"] = 1
+    # Keep it tiny/light without adding new knobs
+    config["actor_rollout_ref"]["rollout"]["gpu_memory_utilization"] = 0.8
+    config["trainer"]["total_epochs"] = 2
+    config["trainer"]["test_freq"] = 5
     config["trainer"]["experiment_name"] = EXPERIMENT_NAME
-    config["trainer"]["test_freq"] = 1
+    config["trainer"]["project_name"] = PROJECT_NAME
+    config["trainer"]["logger"] = ["console", "wandb"]
     return config
 
 
@@ -144,8 +152,13 @@ def train(config: Dict[str, Any], active_agent: Optional[str]) -> None:
     trainer = agl.Trainer(n_runners=4, algorithm=algorithm, adapter={"agent_match": active_agent})
 
     # 4. Load data
-    train_df: pd.DataFrame = pd.read_parquet(config["data"]["train_files"])  # type: ignore
-    val_df: pd.DataFrame = pd.read_parquet(config["data"]["val_files"])  # type: ignore
+    # NOTE: Fill in the path to your previously converted parquet file here
+    # For demo purposes, we use the same dataset for training and validation,
+    # which should be avoided in production.
+    train_df: pd.DataFrame = pd.read_parquet("data/dataset_tiny.parquet")  # type: ignore
+    val_df: pd.DataFrame = pd.read_parquet("data/dataset_tiny.parquet")  # type: ignore
+
+    # Keep the rest of the code unchanged
     train_data: List[Dict[str, Any]] = train_df.to_dict(orient="records")  # type: ignore
     val_data: List[Dict[str, Any]] = val_df.to_dict(orient="records")  # type: ignore
 

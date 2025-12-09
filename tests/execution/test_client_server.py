@@ -394,6 +394,11 @@ async def _kbint_in_runner(store: LightningStore, worker_id: int, event: Executi
     raise KeyboardInterrupt()
 
 
+async def _cancel_in_runner(store: LightningStore, worker_id: int, event: ExecutionEvent) -> None:
+    _ = (store, worker_id, event)
+    raise asyncio.CancelledError()
+
+
 async def _timeout_error_in_runner(store: LightningStore, worker_id: int, event: ExecutionEvent) -> None:
     # Provoke client's validation (pre-request), then raise TimeoutError.
     with pytest.raises(ValueError):
@@ -1236,3 +1241,64 @@ def test_execute_main_runner_store_state_isolated_in_subprocess(store: DummyLigh
     assert (
         len(store.calls) == initial_call_count
     ), "Store state should not be modified in main process when main_process='runner'"
+
+
+def test_spawn_runners_handles_keyboard_interrupt_gracefully(store: LightningStore) -> None:
+    """
+    Test that KeyboardInterrupt (Ctrl+C) is caught by _runner_sync
+    and results in a graceful exit (exitcode 0).
+    """
+    strat = ClientServerExecutionStrategy(
+        role="runner",
+        n_runners=1,
+        server_host="127.0.0.1",
+        server_port=_free_port(),
+    )
+    ctx = get_context()
+    stop_evt: ExecutionEvent = MpEvent()
+
+    processes = strat._spawn_runners(_kbint_in_runner, store, stop_evt, ctx=ctx)  # pyright: ignore[reportPrivateUsage]
+
+    try:
+        for p in processes:
+            p.join(timeout=2.0)
+
+        for p in processes:
+            assert not p.is_alive()
+            assert p.exitcode == 0, f"Runner {p.name} should exit gracefully on KeyboardInterrupt"
+
+    finally:
+        for p in processes:
+            if p.is_alive():
+                p.terminate()
+                p.join()
+
+
+def test_spawn_runners_treats_cancelled_error_as_crash(store: LightningStore) -> None:
+    """
+    Test that asyncio.CancelledError in __spawn_runners causes a crash (exitcode != 0).
+    """
+    strat = ClientServerExecutionStrategy(
+        role="runner",
+        n_runners=1,
+        server_host="127.0.0.1",
+        server_port=_free_port(),
+    )
+    ctx = get_context()
+    stop_evt: ExecutionEvent = MpEvent()
+
+    processes = strat._spawn_runners(_cancel_in_runner, store, stop_evt, ctx=ctx)  # pyright: ignore[reportPrivateUsage]
+
+    try:
+        for p in processes:
+            p.join(timeout=2.0)
+
+        for p in processes:
+            assert not p.is_alive()
+            assert p.exitcode != 0, f"Runner {p.name} should crash on CancelledError (exitcode={p.exitcode})"
+
+    finally:
+        for p in processes:
+            if p.is_alive():
+                p.terminate()
+                p.join()

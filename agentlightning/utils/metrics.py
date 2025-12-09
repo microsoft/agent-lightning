@@ -16,16 +16,18 @@ from __future__ import annotations
 import logging
 import os
 import tempfile
-import threading
 import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Tuple
+
+import aiologic
 
 if TYPE_CHECKING:
     from prometheus_client import CollectorRegistry
 
 LabelDict = Dict[str, str]
-LabelKey = Tuple[Tuple[str, str], ...]  # normalized, sorted (key, value) pairs
+# Label metadata
+LabelKey = Tuple[Tuple[str, str], ...]  # normalized (key, value) pairs in registration order
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +47,7 @@ def _validate_labels(
         expected_names: Expected label names as a tuple.
 
     Returns:
-        A tuple of (key, value) pairs sorted by registered label order.
+        A tuple of (key, value) pairs honoring the registered label order.
 
     Raises:
         ValueError: If label keys do not match expected_names.
@@ -67,11 +69,17 @@ def _normalize_label_names(label_names: Optional[Sequence[str]]) -> Tuple[str, .
         label_names: Iterable of label names or None.
 
     Returns:
-        A tuple of label names sorted alphabetically.
+        A tuple of label names preserving their original order.
     """
     if not label_names:
         return ()
-    return tuple(sorted(label_names))
+    return tuple(label_names)
+
+
+def _normalize_prometheus_metric_name(metric_name: str) -> str:
+    """Normalizes Prometheus metric names by replacing unsupported characters."""
+
+    return metric_name.replace(".", "_")
 
 
 @dataclass(frozen=True)
@@ -80,6 +88,7 @@ class _CounterDef:
 
     name: str
     label_names: Tuple[str, ...]
+    group_level: Optional[int] = None
 
 
 @dataclass(frozen=True)
@@ -89,6 +98,7 @@ class _HistogramDef:
     name: str
     label_names: Tuple[str, ...]
     buckets: Tuple[float, ...]
+    group_level: Optional[int] = None
 
 
 @dataclass
@@ -110,16 +120,25 @@ class _HistogramState:
 class MetricsBackend:
     """Abstract base class for metrics backends."""
 
+    def has_prometheus(self) -> bool:
+        """Check if the backend has prometheus support."""
+        return False
+
     def register_counter(
         self,
         name: str,
         label_names: Optional[Sequence[str]] = None,
+        group_level: Optional[int] = None,
     ) -> None:
         """Registers a counter metric.
 
         Args:
             name: Metric name.
-            label_names: List of label names. Order is not important.
+            label_names: List of label names. Order determines the truncation
+                priority for group-level logging.
+            group_level: Optional per-metric grouping depth for backends that
+                support label grouping (Console). Global backend settings take
+                precedence when provided.
 
         Raises:
             ValueError: If the metric is already registered with a different
@@ -132,14 +151,19 @@ class MetricsBackend:
         name: str,
         label_names: Optional[Sequence[str]] = None,
         buckets: Optional[Sequence[float]] = None,
+        group_level: Optional[int] = None,
     ) -> None:
         """Registers a histogram metric.
 
         Args:
             name: Metric name.
-            label_names: List of label names. Order is not important.
+            label_names: List of label names. Order determines the truncation
+                priority for group-level logging.
             buckets: Bucket boundaries (exclusive upper bounds). If None, the
                 backend may choose defaults.
+            group_level: Optional per-metric grouping depth for backends that
+                support label grouping (Console). Global backend settings take
+                precedence when provided.
 
         Raises:
             ValueError: If the metric is already registered with a different
@@ -147,7 +171,7 @@ class MetricsBackend:
         """
         raise NotImplementedError()
 
-    def inc_counter(
+    async def inc_counter(
         self,
         name: str,
         amount: float = 1.0,
@@ -166,7 +190,7 @@ class MetricsBackend:
         """
         raise NotImplementedError()
 
-    def observe_histogram(
+    async def observe_histogram(
         self,
         name: str,
         value: float,
@@ -199,22 +223,32 @@ class ConsoleMetricsBackend(MetricsBackend):
 
     Rate is always per second.
 
-    Label grouping: When logging, labels are truncated to the first `group_level` label
-    pairs (according to sorted label key order). For example:
+    Label grouping: When logging, label dictionaries are truncated to the first
+    `group_level` label pairs (following the registered label order) and metrics
+    with identical truncated labels are aggregated together. For example:
 
-        labels = {"method": "GET", "path": "/", "status": "200"}
-        group_level = 2 -> logged labels {"method": "GET", "path": "/"}
+    ```python
+    labels = {"method": "GET", "path": "/", "status": "200"}
+    group_level = 2  # aggregated labels {"method": "GET", "path": "/"}
+    ```
 
-    If `group_level` is None or < 1, all labels are logged.
+    If `group_level` is None or < 1, all label combinations for a metric are
+    merged into a single log entry (equivalent to grouping by zero labels).
+    Individual counters or histograms can set their own `group_level` during
+    registration; those values apply only when the backend-level `group_level`
+    is unset, allowing selective overrides.
 
-    Thread-safety: A single lock protects shared state mutation, pruning, and snapshotting.
-    Percentile computation, formatting, and printing are done after releasing the lock.
+    Thread-safety: Runtime updates and snapshotting use two aiologic locks: one for mutating
+    shared state and another that serializes the global logging decision/snapshot capture so
+    other tasks can continue writing. Metric registration happens during initialization,
+    so it is intentionally left lock-free; this assumption is documented here to avoid
+    blocking writes unnecessarily.
     """
 
     def __init__(
         self,
         window_seconds: Optional[float] = 60.0,
-        log_interval_seconds: float = 5.0,
+        log_interval_seconds: float = 10.0,
         group_level: Optional[int] = None,
     ) -> None:
         """Initializes ConsoleMetricsBackend.
@@ -226,8 +260,9 @@ class ConsoleMetricsBackend(MetricsBackend):
                 When the interval elapses, the next metric event triggers a
                 snapshot and logging of all metrics.
             group_level: Label grouping depth. When logging, only the first
-                `group_level` labels (sorted by key) are included. If None or
-                < 1, all labels are included.
+                `group_level` labels (following registered order) are retained and metric
+                events sharing those labels are aggregated. If None or < 1,
+                all label combinations collapse into a single group per metric.
         """
         self.window_seconds = window_seconds
         self.log_interval_seconds = log_interval_seconds
@@ -243,40 +278,42 @@ class ConsoleMetricsBackend(MetricsBackend):
         # Global last log time (for all metrics)
         self._last_log_time: Optional[float] = None
 
-        self._lock = threading.Lock()
+        self._write_lock = aiologic.Lock()
+        self._snapshot_lock = aiologic.Lock()
 
     def register_counter(
         self,
         name: str,
         label_names: Optional[Sequence[str]] = None,
+        group_level: Optional[int] = None,
     ) -> None:
         """Registers a counter metric.
 
         See base class for argument documentation.
         """
         label_tuple = _normalize_label_names(label_names)
-        with self._lock:
-            existing_counter = self._counters.get(name)
-            existing_hist = self._histograms.get(name)
+        existing_counter = self._counters.get(name)
+        existing_hist = self._histograms.get(name)
 
-            if existing_hist is not None:
-                raise ValueError(f"Metric '{name}' already registered as histogram.")
+        if existing_hist is not None:
+            raise ValueError(f"Metric '{name}' already registered as histogram.")
 
-            if existing_counter is not None:
-                if existing_counter.label_names != label_tuple:
-                    raise ValueError(
-                        f"Counter '{name}' already registered with labels "
-                        f"{existing_counter.label_names}, got {label_tuple}."
-                    )
-                return
+        if existing_counter is not None:
+            if existing_counter.label_names != label_tuple:
+                raise ValueError(
+                    f"Counter '{name}' already registered with labels "
+                    f"{existing_counter.label_names}, got {label_tuple}."
+                )
+            return
 
-            self._counters[name] = _CounterDef(name=name, label_names=label_tuple)
+        self._counters[name] = _CounterDef(name=name, label_names=label_tuple, group_level=group_level)
 
     def register_histogram(
         self,
         name: str,
         label_names: Optional[Sequence[str]] = None,
         buckets: Optional[Sequence[float]] = None,
+        group_level: Optional[int] = None,
     ) -> None:
         """Registers a histogram metric.
 
@@ -288,29 +325,29 @@ class ConsoleMetricsBackend(MetricsBackend):
         else:
             bucket_tuple = tuple(buckets)
 
-        with self._lock:
-            existing_counter = self._counters.get(name)
-            existing_hist = self._histograms.get(name)
+        existing_counter = self._counters.get(name)
+        existing_hist = self._histograms.get(name)
 
-            if existing_counter is not None:
-                raise ValueError(f"Metric '{name}' already registered as counter.")
+        if existing_counter is not None:
+            raise ValueError(f"Metric '{name}' already registered as counter.")
 
-            if existing_hist is not None:
-                if existing_hist.label_names != label_tuple or existing_hist.buckets != bucket_tuple:
-                    raise ValueError(
-                        f"Histogram '{name}' already registered with "
-                        f"labels={existing_hist.label_names}, "
-                        f"buckets={existing_hist.buckets}."
-                    )
-                return
+        if existing_hist is not None:
+            if existing_hist.label_names != label_tuple or existing_hist.buckets != bucket_tuple:
+                raise ValueError(
+                    f"Histogram '{name}' already registered with "
+                    f"labels={existing_hist.label_names}, "
+                    f"buckets={existing_hist.buckets}."
+                )
+            return
 
-            self._histograms[name] = _HistogramDef(
-                name=name,
-                label_names=label_tuple,
-                buckets=bucket_tuple,
-            )
+        self._histograms[name] = _HistogramDef(
+            name=name,
+            label_names=label_tuple,
+            buckets=bucket_tuple,
+            group_level=group_level,
+        )
 
-    def inc_counter(
+    async def inc_counter(
         self,
         name: str,
         amount: float = 1.0,
@@ -330,7 +367,7 @@ class ConsoleMetricsBackend(MetricsBackend):
         label_key = _validate_labels("counter", name, labels, definition.label_names)
         state_key = (name, label_key)
 
-        with self._lock:
+        async with self._write_lock:
             state = self._counter_state.get(state_key)
             if state is None:
                 state = _CounterState(timestamps=[], amounts=[])
@@ -340,18 +377,19 @@ class ConsoleMetricsBackend(MetricsBackend):
             state.amounts.append(amount)
             self._prune_events(state.timestamps, state.amounts, now)
 
-            should_log = self._should_log_locked(now)
-            if should_log:
-                counter_snaps, hist_snaps = self._snapshot_locked(now)
-                snapshot_time = now
-            else:
-                counter_snaps = hist_snaps = []
-                snapshot_time = now
+        counter_snaps: List[Tuple[str, LabelDict, List[float], List[float]]] = []
+        hist_snaps: List[Tuple[str, LabelDict, List[float], Tuple[float, ...]]] = []
+        should_log = False
+        snapshot_time = now
 
-        if should_log and (counter_snaps or hist_snaps):
+        async with self._snapshot_lock:
+            should_log = self._should_log_locked(now)
+        if should_log:
+            async with self._write_lock:
+                counter_snaps, hist_snaps = self._snapshot_locked(now)
             self._log_snapshot(counter_snaps, hist_snaps, snapshot_time)
 
-    def observe_histogram(
+    async def observe_histogram(
         self,
         name: str,
         value: float,
@@ -371,7 +409,7 @@ class ConsoleMetricsBackend(MetricsBackend):
         label_key = _validate_labels("histogram", name, labels, definition.label_names)
         state_key = (name, label_key)
 
-        with self._lock:
+        async with self._write_lock:
             state = self._hist_state.get(state_key)
             if state is None:
                 state = _HistogramState(timestamps=[], values=[])
@@ -381,15 +419,17 @@ class ConsoleMetricsBackend(MetricsBackend):
             state.values.append(value)
             self._prune_events(state.timestamps, state.values, now)
 
-            should_log = self._should_log_locked(now)
-            if should_log:
-                counter_snaps, hist_snaps = self._snapshot_locked(now)
-                snapshot_time = now
-            else:
-                counter_snaps = hist_snaps = []
-                snapshot_time = now
+        counter_snaps: List[Tuple[str, LabelDict, List[float], List[float]]] = []
+        hist_snaps: List[Tuple[str, LabelDict, List[float], Tuple[float, ...]]] = []
+        should_log = False
+        snapshot_time = now
 
-        if should_log and (counter_snaps or hist_snaps):
+        async with self._snapshot_lock:
+            should_log = self._should_log_locked(now)
+
+        if should_log:
+            async with self._write_lock:
+                counter_snaps, hist_snaps = self._snapshot_locked(now)
             self._log_snapshot(counter_snaps, hist_snaps, snapshot_time)
 
     def _prune_events(
@@ -490,21 +530,22 @@ class ConsoleMetricsBackend(MetricsBackend):
 
         return counter_snaps, hist_snaps
 
-    def _truncate_labels_for_logging(self, labels: LabelDict) -> LabelDict:
+    def _truncate_labels_for_logging(self, labels: LabelDict, group_level: Optional[int]) -> LabelDict:
         """Returns a label dict truncated to the configured group depth.
 
         Args:
             labels: Original label dictionary.
+            group_level: Effective grouping depth for this metric.
 
         Returns:
             A new dictionary containing at most `group_level` label pairs,
-            chosen by sorted key order. If group_level is None or < 1, returns
-            a shallow copy of the original labels.
+            chosen by registered label order. If group_level is None or < 1,
+            returns an empty dict so that all label combinations collapse together.
         """
-        if self.group_level is None or self.group_level < 1:
-            return dict(labels)
-        items = sorted(labels.items())
-        return dict(items[: self.group_level])
+        if group_level is None or group_level < 1:
+            return {}
+        items = list(labels.items())
+        return dict(items[:group_level])
 
     def _log(self, message: str) -> None:
         """Logs a message via the module logger."""
@@ -523,20 +564,100 @@ class ConsoleMetricsBackend(MetricsBackend):
             hist_snaps: Histogram snapshot list.
         """
         entries: List[str] = []
-        for name, labels, timestamps, amounts in counter_snaps:
-            truncated_labels = self._truncate_labels_for_logging(labels)
-            line = self._log_counter(name, truncated_labels, timestamps, amounts, snapshot_time)
+        for name, labels, timestamps, amounts in self._group_counter_snapshots(counter_snaps):
+            line = self._log_counter(name, labels, timestamps, amounts, snapshot_time)
             if line:
                 entries.append(line)
 
-        for name, labels, values, buckets in hist_snaps:
-            truncated_labels = self._truncate_labels_for_logging(labels)
-            line = self._log_histogram(name, truncated_labels, values, buckets, snapshot_time)
+        for name, labels, values, buckets in self._group_histogram_snapshots(hist_snaps):
+            line = self._log_histogram(name, labels, values, buckets, snapshot_time)
             if line:
                 entries.append(line)
 
         if entries:
+            entries.sort()
             self._log("  ".join(entries))
+
+    def _effective_group_level(self, metric_name: str, *, is_histogram: bool) -> Optional[int]:
+        """Returns the active group level for a metric, honoring per-metric overrides."""
+        if self.group_level is not None:
+            return self.group_level
+        if is_histogram:
+            definition = self._histograms.get(metric_name)
+        else:
+            definition = self._counters.get(metric_name)
+        if definition is None:
+            return None
+        return definition.group_level
+
+    def _group_counter_snapshots(
+        self,
+        counter_snaps: List[Tuple[str, LabelDict, List[float], List[float]]],
+    ) -> List[Tuple[str, LabelDict, List[float], List[float]]]:
+        grouped: Dict[Tuple[str, Tuple[Tuple[str, str], ...]], Dict[str, Any]] = {}
+        for name, labels, timestamps, amounts in counter_snaps:
+            group_level = self._effective_group_level(name, is_histogram=False)
+            truncated_labels = self._truncate_labels_for_logging(labels, group_level)
+            key = (name, tuple(truncated_labels.items()))
+            entry = grouped.setdefault(
+                key,
+                {"name": name, "labels": truncated_labels, "timestamps": [], "amounts": []},
+            )
+            entry["timestamps"].extend(timestamps)
+            entry["amounts"].extend(amounts)
+
+        grouped_snaps: List[Tuple[str, LabelDict, List[float], List[float]]] = []
+        for entry in grouped.values():
+            timestamps = entry["timestamps"]
+            amounts = entry["amounts"]
+            if not timestamps:
+                continue
+            combined = sorted(zip(timestamps, amounts), key=lambda item: item[0])
+            ordered_timestamps = [ts for ts, _ in combined]
+            ordered_amounts = [amt for _, amt in combined]
+            grouped_snaps.append(
+                (
+                    entry["name"],
+                    entry["labels"],
+                    ordered_timestamps,
+                    ordered_amounts,
+                )
+            )
+
+        return grouped_snaps
+
+    def _group_histogram_snapshots(
+        self,
+        hist_snaps: List[Tuple[str, LabelDict, List[float], Tuple[float, ...]]],
+    ) -> List[Tuple[str, LabelDict, List[float], Tuple[float, ...]]]:
+        grouped: Dict[Tuple[str, Tuple[Tuple[str, str], ...]], Dict[str, Any]] = {}
+        for name, labels, values, buckets in hist_snaps:
+            group_level = self._effective_group_level(name, is_histogram=True)
+            truncated_labels = self._truncate_labels_for_logging(labels, group_level)
+            key = (name, tuple(truncated_labels.items()))
+            entry = grouped.setdefault(
+                key,
+                {"name": name, "labels": truncated_labels, "values": [], "buckets": buckets},
+            )
+            if entry["buckets"] != buckets:
+                raise ValueError(f"Histogram buckets mismatch for metric '{name}'.")
+            entry["values"].extend(values)
+
+        grouped_snaps: List[Tuple[str, LabelDict, List[float], Tuple[float, ...]]] = []
+        for entry in grouped.values():
+            values = entry["values"]
+            if not values:
+                continue
+            grouped_snaps.append(
+                (
+                    entry["name"],
+                    entry["labels"],
+                    list(values),
+                    entry["buckets"],
+                )
+            )
+
+        return grouped_snaps
 
     def _log_counter(
         self,
@@ -598,8 +719,8 @@ class ConsoleMetricsBackend(MetricsBackend):
 
 def _format_label_string(labels: LabelDict) -> str:
     if not labels:
-        return "{}"
-    ordered = ",".join(f"{key}={value}" for key, value in sorted(labels.items()))
+        return ""
+    ordered = ",".join(f"{key}={value}" for key, value in labels.items())
     return f"{{{ordered}}}"
 
 
@@ -641,46 +762,50 @@ class PrometheusMetricsBackend(MetricsBackend):
         self._histograms: Dict[str, _HistogramDef] = {}
         self._prom_counters: Dict[str, Any] = {}
         self._prom_histograms: Dict[str, Any] = {}
+        self._prom_metric_names: Dict[str, str] = {}
 
-        self._lock = threading.Lock()
+    def has_prometheus(self) -> bool:
+        """Check if the backend has prometheus support."""
+        return True
 
     def register_counter(
         self,
         name: str,
         label_names: Optional[Sequence[str]] = None,
+        group_level: Optional[int] = None,
     ) -> None:
         """Registers a Prometheus counter metric."""
         from prometheus_client import Counter as PromCounter
 
         label_tuple = _normalize_label_names(label_names)
 
-        with self._lock:
-            if name in self._histograms:
-                raise ValueError(f"Metric '{name}' already registered as histogram.")
+        if name in self._histograms:
+            raise ValueError(f"Metric '{name}' already registered as histogram.")
 
-            existing = self._counters.get(name)
-            if existing is not None:
-                if existing.label_names != label_tuple:
-                    raise ValueError(
-                        f"Counter '{name}' already registered with labels "
-                        f"{existing.label_names}, got {label_tuple}."
-                    )
-                return
+        existing = self._counters.get(name)
+        if existing is not None:
+            if existing.label_names != label_tuple:
+                raise ValueError(
+                    f"Counter '{name}' already registered with labels " f"{existing.label_names}, got {label_tuple}."
+                )
+            return
 
-            self._counters[name] = _CounterDef(name=name, label_names=label_tuple)
+        prom_name = self._register_prometheus_metric_name(name)
+        self._counters[name] = _CounterDef(name=name, label_names=label_tuple, group_level=group_level)
 
-            prom_counter = PromCounter(
-                name,
-                f"Counter {name}",
-                labelnames=label_tuple,
-            )
-            self._prom_counters[name] = prom_counter
+        prom_counter = PromCounter(
+            prom_name,
+            f"Counter {name}",
+            labelnames=label_tuple,
+        )
+        self._prom_counters[name] = prom_counter
 
     def register_histogram(
         self,
         name: str,
         label_names: Optional[Sequence[str]] = None,
         buckets: Optional[Sequence[float]] = None,
+        group_level: Optional[int] = None,
     ) -> None:
         """Registers a Prometheus histogram metric."""
         from prometheus_client import Histogram as PromHistogram
@@ -688,43 +813,44 @@ class PrometheusMetricsBackend(MetricsBackend):
         label_tuple = _normalize_label_names(label_names)
         bucket_tuple = tuple(buckets) if buckets is not None else ()
 
-        with self._lock:
-            if name in self._counters:
-                raise ValueError(f"Metric '{name}' already registered as counter.")
+        if name in self._counters:
+            raise ValueError(f"Metric '{name}' already registered as counter.")
 
-            existing = self._histograms.get(name)
-            if existing is not None:
-                if existing.label_names != label_tuple or existing.buckets != bucket_tuple:
-                    raise ValueError(
-                        f"Histogram '{name}' already registered with "
-                        f"labels={existing.label_names}, "
-                        f"buckets={existing.buckets}."
-                    )
-                return
+        existing = self._histograms.get(name)
+        if existing is not None:
+            if existing.label_names != label_tuple or existing.buckets != bucket_tuple:
+                raise ValueError(
+                    f"Histogram '{name}' already registered with "
+                    f"labels={existing.label_names}, "
+                    f"buckets={existing.buckets}."
+                )
+            return
 
-            self._histograms[name] = _HistogramDef(
-                name=name,
-                label_names=label_tuple,
+        prom_name = self._register_prometheus_metric_name(name)
+        self._histograms[name] = _HistogramDef(
+            name=name,
+            label_names=label_tuple,
+            buckets=bucket_tuple,
+            group_level=group_level,
+        )
+
+        if bucket_tuple:
+            prom_hist = PromHistogram(
+                prom_name,
+                f"Histogram {name}",
+                labelnames=label_tuple,
                 buckets=bucket_tuple,
             )
+        else:
+            prom_hist = PromHistogram(
+                prom_name,
+                f"Histogram {name}",
+                labelnames=label_tuple,
+            )
 
-            if bucket_tuple:
-                prom_hist = PromHistogram(
-                    name,
-                    f"Histogram {name}",
-                    labelnames=label_tuple,
-                    buckets=bucket_tuple,
-                )
-            else:
-                prom_hist = PromHistogram(
-                    name,
-                    f"Histogram {name}",
-                    labelnames=label_tuple,
-                )
+        self._prom_histograms[name] = prom_hist
 
-            self._prom_histograms[name] = prom_hist
-
-    def inc_counter(
+    async def inc_counter(
         self,
         name: str,
         amount: float = 1.0,
@@ -743,7 +869,7 @@ class PrometheusMetricsBackend(MetricsBackend):
         else:
             prom_counter.inc(amount)
 
-    def observe_histogram(
+    async def observe_histogram(
         self,
         name: str,
         value: float,
@@ -762,6 +888,19 @@ class PrometheusMetricsBackend(MetricsBackend):
         else:
             prom_hist.observe(value)
 
+    def _register_prometheus_metric_name(self, name: str) -> str:
+        """Registers the normalized Prometheus metric name and ensures uniqueness."""
+
+        normalized = _normalize_prometheus_metric_name(name)
+        existing = self._prom_metric_names.get(normalized)
+        if existing is not None and existing != name:
+            raise ValueError(
+                f"Prometheus metric name conflict: '{name}' normalizes to '{normalized}', "
+                f"which is already used by '{existing}'. Consider renaming one of the metrics."
+            )
+        self._prom_metric_names.setdefault(normalized, name)
+        return normalized
+
 
 class MultiMetricsBackend(MetricsBackend):
     """Metrics backend that forwards calls to multiple underlying backends."""
@@ -779,20 +918,26 @@ class MultiMetricsBackend(MetricsBackend):
             raise ValueError("MultiMetricsBackend requires at least one backend.")
         self._backends = list(backends)
 
+    def has_prometheus(self) -> bool:
+        """Check if the backend has prometheus support."""
+        return any(backend.has_prometheus() for backend in self._backends)
+
     def register_counter(
         self,
         name: str,
         label_names: Optional[Sequence[str]] = None,
+        group_level: Optional[int] = None,
     ) -> None:
         """Registers a counter metric in all underlying backends."""
         for backend in self._backends:
-            backend.register_counter(name, label_names=label_names)
+            backend.register_counter(name, label_names=label_names, group_level=group_level)
 
     def register_histogram(
         self,
         name: str,
         label_names: Optional[Sequence[str]] = None,
         buckets: Optional[Sequence[float]] = None,
+        group_level: Optional[int] = None,
     ) -> None:
         """Registers a histogram metric in all underlying backends."""
         for backend in self._backends:
@@ -800,9 +945,10 @@ class MultiMetricsBackend(MetricsBackend):
                 name,
                 label_names=label_names,
                 buckets=buckets,
+                group_level=group_level,
             )
 
-    def inc_counter(
+    async def inc_counter(
         self,
         name: str,
         amount: float = 1.0,
@@ -810,9 +956,9 @@ class MultiMetricsBackend(MetricsBackend):
     ) -> None:
         """Increments a counter metric in all underlying backends."""
         for backend in self._backends:
-            backend.inc_counter(name, amount=amount, labels=labels)
+            await backend.inc_counter(name, amount=amount, labels=labels)
 
-    def observe_histogram(
+    async def observe_histogram(
         self,
         name: str,
         value: float,
@@ -820,9 +966,10 @@ class MultiMetricsBackend(MetricsBackend):
     ) -> None:
         """Records a histogram observation in all underlying backends."""
         for backend in self._backends:
-            backend.observe_histogram(name, value=value, labels=labels)
+            await backend.observe_histogram(name, value=value, labels=labels)
 
 
+# This variable should be carried into forked processes
 _prometheus_multiproc_dir: tempfile.TemporaryDirectory[str] | None = None
 
 
@@ -840,7 +987,7 @@ def setup_multiprocess_prometheus():
         logger.debug("Created PROMETHEUS_MULTIPROC_DIR at %s", _prometheus_multiproc_dir.name)
     else:
         logger.warning(
-            "Found PROMETHEUS_MULTIPROC_DIR was set by user. " "This directory must be wiped between multiple runs."
+            "Found PROMETHEUS_MULTIPROC_DIR was set by user. This directory must be wiped between multiple runs."
         )
 
 
@@ -849,7 +996,7 @@ def get_prometheus_registry() -> CollectorRegistry:
     from prometheus_client import REGISTRY, CollectorRegistry, multiprocess
 
     if os.getenv("PROMETHEUS_MULTIPROC_DIR") is not None:
-        logger.debug("Using multiprocess registry for prometheus metrics")
+        logger.info("Using multiprocess registry for prometheus metrics: %s", os.getenv("PROMETHEUS_MULTIPROC_DIR"))
         registry = CollectorRegistry()
         multiprocess.MultiProcessCollector(registry)
         return registry
@@ -857,17 +1004,19 @@ def get_prometheus_registry() -> CollectorRegistry:
     return REGISTRY
 
 
-def shutdown_metrics():
+def shutdown_metrics(server: Any = None, worker: Any = None, *args: Any, **kwargs: Any) -> None:
     """Shutdown prometheus metrics."""
 
-    from prometheus_client import multiprocess
+    if _prometheus_multiproc_dir is not None:
+        from prometheus_client import multiprocess
 
-    path = _prometheus_multiproc_dir
-    if path is None:
-        return
-    try:
-        pid = os.getpid()
-        multiprocess.mark_process_dead(pid, path.name)  # type: ignore
-        logger.debug("Marked Prometheus metrics for process %d as dead", pid)
-    except Exception as e:
-        logger.error("Error during metrics cleanup: %s", str(e))
+        path = _prometheus_multiproc_dir
+        try:
+            if hasattr(worker, "pid"):
+                pid = worker.pid
+            else:
+                pid = os.getpid()
+            multiprocess.mark_process_dead(pid, path.name)  # type: ignore
+            logger.debug("Marked Prometheus metrics for process %d as dead", pid)
+        except Exception as e:
+            logger.error("Error during metrics cleanup: %s", str(e))
