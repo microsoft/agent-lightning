@@ -18,7 +18,7 @@ pip install -e ./
 
 
 ## Experimental Settings
-We provide two examples that show how to train your LLM under the [**Youtu-Agent**]([Youtu-agent](https://github.com/TencentCloudADP/youtu-agent/tree/rl/agl)) with [**Agent Lightning**](https://github.com/microsoft/agent-lightning/tree/contrib/youtu-agent-lightning).
+We provide two examples that show how to train your LLM under the [**Youtu-Agent**](https://github.com/TencentCloudADP/youtu-agent/tree/rl/agl) with [**Agent Lightning**](https://github.com/microsoft/agent-lightning/tree/contrib/youtu-agent-lightning).
 
 
 ### ReTool
