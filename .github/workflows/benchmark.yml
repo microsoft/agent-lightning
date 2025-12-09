@@ -383,7 +383,7 @@ jobs:
           mkdir -p "$ARTIFACT_DIR"
           echo "Running collection benchmark (backend=${{ matrix.backend.id }}, workload=${{ matrix.workload.id }})"
           uv run --locked --no-sync python -m tests.benchmark.collection_benchmark \
-            "${{ matrix.workload.type }}"
+            "${{ matrix.workload.type }}" \
             --backend "${{ matrix.backend.id }}" \
             --total-tasks "${{ matrix.workload.total_tasks }}" \
             --concurrency "${{ matrix.workload.concurrency }}" \
@@ -393,6 +393,7 @@ jobs:
             --mongo-database agentlightning_collection_bench
 
       - name: Show collection benchmark summary
+        if: ${{ always() }}
         run: |
           set -euo pipefail
           if [ -f "$SUMMARY_FILE" ]; then

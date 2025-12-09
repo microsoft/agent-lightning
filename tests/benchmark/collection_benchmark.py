@@ -9,6 +9,7 @@ import asyncio
 import json
 import math
 import multiprocessing as mp
+import random
 import threading
 import time
 import uuid
@@ -433,7 +434,8 @@ async def insert_worker_async(
         req_start = time.perf_counter()
         try:
             async with collections.atomic(mode="rw", labels=["rollouts"]):
-                console.print("Inserting rollout:", rollout.rollout_id)
+                if random.uniform(0, 1) < 0.01:
+                    console.print("Inserting rollout:", rollout.rollout_id)
                 await collections.rollouts.insert([rollout])
             durations.append(time.perf_counter() - req_start)
         except Exception:
@@ -459,7 +461,7 @@ async def dequeue_worker_async(
         try:
             async with collections.atomic(mode="rw", labels=["rollout_queue"]):
                 items = await collections.rollout_queue.dequeue(limit=1)
-                if items:
+                if items and random.uniform(0, 1) < 0.01:
                     console.print("Dequeued items:", items[0])
         except Exception:
             failures += 1
