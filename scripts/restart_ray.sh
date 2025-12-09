@@ -5,8 +5,6 @@ set -ex
 ray stop -v --force --grace-period 60
 ps aux
 
-export http_proxy="http://172.31.255.10:8888"
-export https_proxy="http://172.31.255.10:8888"
 export HTTP_PROXY="$http_proxy"
 export HTTPS_PROXY="$https_proxy"
 export NO_PROXY="127.0.0.1,localhost,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"

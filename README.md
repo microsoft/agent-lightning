@@ -86,14 +86,15 @@ agl store --port 9999
 2. Runner
 
 ```bash
-CODESNIP_SERVER_URL="YOUR_SANDBOX_URL" AGL_MANAGED_STORE=0 AGL_CURRENT_ROLE=runner python train_calc_sandbox_agent.py --external-store-address http://localhost:9999 --n-runners 10
+AGL_MANAGED_STORE=0 AGL_CURRENT_ROLE=runner python train_calc_sandbox_agent.py --external-store-address http://localhost:9999 --n-runners 10
 ```
 
 #### Training
 
-* For single node:
+* For single node test:
 ```
-bash run_ray.sh examples_train_w_youtu/retool-youtu/run_qwen2.5_7b_single_node.sh
+bash scripts/restart_ray.sh
+bash examples_train_w_youtu/retool-youtu/run_qwen2.5_7b_single_node.sh
 ```
 
 * For multi-node (e.g., 4 nodes with 32 GPUs)
