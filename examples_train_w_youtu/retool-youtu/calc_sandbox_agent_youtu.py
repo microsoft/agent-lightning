@@ -1,24 +1,87 @@
-"""
-Example: Using Sandbox via MCP Server with HTTP/SSE Transport
+"""ReTool Calc Sandbox Agent with Youtu-Agent and AgentLightning.
 
-This demonstrates how to use the MCP sandbox server with HTTP/SSE transport
-instead of stdio. This approach allows:
-- ✅ Reusing the same server instance across multiple agents
-- ✅ Better process isolation and resource management
-- ✅ Easier debugging (can test HTTP endpoints directly)
-- ✅ Multiple concurrent clients connecting to one server
+This module implements a rollout function for training LLMs to solve mathematical problems
+using a Python code interpreter (sandbox) within the ReTool framework. The agent integrates
+Youtu-Agent for multi-turn tool calling and AgentLightning for reinforcement learning training.
 
-Setup:
-    1. Start the MCP server in a separate terminal:
-       python mcp-server-sandbox-http.py --port 8765
+Overview:
+    - ReTool challenges LLMs with tool-integrated reasoning where a Python code interpreter
+      is provided to solve mathematical problems
+    - This agent uses Youtu-Agent's TrainingAgent to handle multi-turn interactions
+    - AgentLightning's rollout decorator enables RL training with reward computation
+    - Sandbox execution is managed via MCP (Model Context Protocol) with HTTP/SSE transport
+
+Prerequisites:
+    1. vLLM Service: Deploy a vLLM backend server for model inference
+       ```bash
+       export BASE_MODEL="YOUR_MODEL_PATH"
+       bash vllm_deploy.sh
+       ```
     
-    2. Run this agent (will connect via HTTP/SSE):
-       python calc_sandbox_agent_http.py
+    2. Sandbox Service: Launch SandboxFusion server for code execution
+       ```bash
+       export CODESNIP_SERVER_URL="YOUR_SANDBOX_URL"
+       ```
+       See: https://github.com/bytedance/SandboxFusion
+    
+    3. Environment Variables:
+       - OPENAI_BASE_URL: vLLM service endpoint (default: http://127.0.0.1:8033/v1)
+       - OPENAI_API_KEY: API key for the model service
+       - MODEL_PATH: Model name/identifier
+       - CODESNIP_SERVER_URL: Sandbox service URL
 
-Compared to calc_sandbox_agent.py (stdio version):
-- Server runs independently, can be shared across processes
-- Network-based communication (localhost)
-- Better for production deployments
+Usage:
+    Debug/Testing Mode:
+        ```bash
+        # Set environment variables
+        export OPENAI_BASE_URL="http://127.0.0.1:8033/v1"
+        export MODEL_PATH="qwen"
+        export CODESNIP_SERVER_URL="YOUR_SANDBOX_URL"
+        
+        # Run debug function
+        python calc_sandbox_agent_youtu.py
+        ```
+    
+    Training Mode:
+        This rollout function is used by train_calc_sandbox_agent.py for RL training.
+        See the training script for full training setup with Store and Runner services.
+        
+        For single node training:
+        ```bash
+        bash run_ray.sh examples_train_w_youtu/retool-youtu/run_qwen2.5_7b_single_node.sh
+        ```
+        
+        For multi-node training (e.g., 4 nodes with 32 GPUs):
+        ```bash
+        bash run_ray.sh examples_train_w_youtu/retool-youtu/run_qwen2.5_7b.sh
+        ```
+
+Key Components:
+    - RetoolTask: TypedDict defining the structure of training samples
+    - calc_sandbox_agent_youtu: Main rollout function decorated with @agl.rollout
+    - compute_reward_with_metrics: Calculates reward and accuracy using retool's scoring
+    - emit_reward_with_metrics: Emits reward and metrics to AgentLightning tracer
+    - debug: Standalone debugging function for testing without full training setup
+
+Data Format:
+    Each task (RetoolTask) contains:
+        - data_source: Source identifier (e.g., "aime_2024", "aime_2025")
+        - question: The raw problem text
+        - prompt: List of message dicts with role and content
+        - ability: Problem type (e.g., "MATH")
+        - reward_model: Dict containing ground_truth answer
+        - agent_name: Name of the agent (e.g., "tool_agent")
+
+Reward Computation:
+    The agent computes rewards using retool's compute_score function, which evaluates:
+        - Exact match accuracy (acc)
+        - Overall score considering correctness 
+
+References:
+    - ReTool: https://github.com/ReTool-RL/ReTool
+    - Training Dataset: https://huggingface.co/datasets/BytedTsinghua-SIA/DAPO-Math-17k
+    - Testing Dataset: https://huggingface.co/datasets/BytedTsinghua-SIA/AIME-2024
+    - Sandbox Service: https://github.com/bytedance/SandboxFusion
 """
 import asyncio
 import os
@@ -156,7 +219,7 @@ async def calc_sandbox_agent_youtu(task: RetoolTask, llm: agl.LLM) -> None:
             final_output = result.final_output
             messages = result.to_input_list()
         except asyncio.TimeoutError:
-            print("Failure:", str(e))
+            print("Failure: Agent run timed out after", AGENT_RUN_TIMEOUT, "seconds")
             final_output = "None"
             messages = []
 
