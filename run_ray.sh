@@ -72,14 +72,12 @@ export RAY_ADDRESS="http://127.0.0.1:${SUBMIT_MASTER_PORT}"
 
 
 # —— 以下代码已经在 tmux session 里 ——
-tmux new-window -d -t "$SESSION" -n "$window_name"
-
-tmux send-keys -t "$SESSION:$window_name" 'source ~/miniconda3/bin/activate' C-m
-tmux send-keys -t "$SESSION:$window_name" 'conda activate agent-lightning' C-m
-tmux send-keys -t "$SESSION:$window_name" 'agl store --port 9999' C-m
-
-sleep 5
-echo "[$window_name] 窗口已启动，脚本继续..."
+# tmux new-window -d -t "$SESSION" -n "$window_name"
+# tmux send-keys -t "$SESSION:$window_name" 'source ~/miniconda3/bin/activate' C-m
+# tmux send-keys -t "$SESSION:$window_name" 'conda activate agent-lightning' C-m
+# tmux send-keys -t "$SESSION:$window_name" 'agl store --port 9999' C-m
+# sleep 5
+# echo "[$window_name] 窗口已启动，脚本继续..."
 
 
 if [ "${NODE_RANK}" != "0" ]; then
