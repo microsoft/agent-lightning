@@ -399,7 +399,7 @@ jobs:
           if [ -f "$SUMMARY_FILE" ]; then
             echo "Collection benchmark summary (${{ matrix.backend.id }}):"
             cat "$SUMMARY_FILE"
-          else:
+          else
             echo "Summary file not found: $SUMMARY_FILE"
           fi
 
