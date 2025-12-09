@@ -133,6 +133,7 @@ def tracked(name: str):
             # Only track the public methods (+healthcheck)
             if name in COLLECTION_STORE_PUBLIC_METHODS:
                 public_method_name = name  # pyright: ignore[reportUnusedVariable]
+                public_meth_in_stack = name  # We are in a public method already.
             if name in COLLECTION_STORE_ALL_METHODS:
                 private_method_name = name  # pyright: ignore[reportUnusedVariable]
 
@@ -1187,47 +1188,45 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         if not spans:
             return
 
-        async def _update_rollout_attempt(collections: T_collections) -> Optional[Tuple[Rollout, Sequence[str]]]:
-            attempt = await collections.attempts.get(
-                {"rollout_id": {"exact": rollout_id}, "attempt_id": {"exact": attempt_id}}
-            )
-            if attempt is None:
-                return None
-            rollout = await collections.rollouts.get({"rollout_id": {"exact": rollout_id}})
-            if rollout is None:
-                return None
-
-            # Update attempt heartbeat and ensure persistence
-            attempt.last_heartbeat_time = time.time()
-            if attempt.status in ["preparing", "unresponsive"]:
-                attempt.status = "running"
-            await collections.attempts.update([attempt], update_fields=["last_heartbeat_time", "status"])
-
-            # If the status has already timed out or failed, do not change it (but heartbeat is still recorded)
-
-            # Update rollout status if it's the latest attempt
-            rollout_updated: bool = False
-            updated_fields: List[str] = []
-            latest_attempt = await self._unlocked_get_latest_attempt(collections, rollout.rollout_id)
-            if latest_attempt is not None and attempt.attempt_id == latest_attempt.attempt_id:
-                if rollout.status in ["preparing", "queueing", "requeuing"]:
-                    # If rollout is currently preparing or queuing, set it to running
-                    rollout.status = "running"
-                    await collections.rollouts.update([rollout], update_fields=["status"])
-                    rollout_updated = True
-                    updated_fields = ["status"]
-                # Otherwise, the rollout has succeeded or failed, do nothing
-            return (rollout, updated_fields) if rollout_updated else None
-
-        rollout_update = await self.collections.execute(
-            _update_rollout_attempt,
-            mode="rw",
-            snapshot=self._read_snapshot,
-            commit=True,
-            labels=["rollouts", "attempts"],
-        )
+        rollout_update = await self._on_attempt_heartbeat(rollout_id=rollout_id, attempt_id=attempt_id)
         if rollout_update is not None:
             await self._post_update_rollout([rollout_update])
+
+    @tracked("_on_attempt_heartbeat")
+    @_with_collections_execute(labels=["rollouts", "attempts"])
+    async def _on_attempt_heartbeat(
+        self, collections: T_collections, rollout_id: str, attempt_id: str
+    ) -> Optional[Tuple[Rollout, Sequence[str]]]:
+        attempt = await collections.attempts.get(
+            {"rollout_id": {"exact": rollout_id}, "attempt_id": {"exact": attempt_id}}
+        )
+        if attempt is None:
+            return None
+        rollout = await collections.rollouts.get({"rollout_id": {"exact": rollout_id}})
+        if rollout is None:
+            return None
+
+        # Update attempt heartbeat and ensure persistence
+        attempt.last_heartbeat_time = time.time()
+        if attempt.status in ["preparing", "unresponsive"]:
+            attempt.status = "running"
+        await collections.attempts.update([attempt], update_fields=["last_heartbeat_time", "status"])
+
+        # If the status has already timed out or failed, do not change it (but heartbeat is still recorded)
+
+        # Update rollout status if it's the latest attempt
+        rollout_updated: bool = False
+        updated_fields: List[str] = []
+        latest_attempt = await self._unlocked_get_latest_attempt(collections, rollout.rollout_id)
+        if latest_attempt is not None and attempt.attempt_id == latest_attempt.attempt_id:
+            if rollout.status in ["preparing", "queueing", "requeuing"]:
+                # If rollout is currently preparing or queuing, set it to running
+                rollout.status = "running"
+                await collections.rollouts.update([rollout], update_fields=["status"])
+                rollout_updated = True
+                updated_fields = ["status"]
+            # Otherwise, the rollout has succeeded or failed, do nothing
+        return (rollout, updated_fields) if rollout_updated else None
 
     @tracked("wait_for_rollouts")
     @healthcheck_before

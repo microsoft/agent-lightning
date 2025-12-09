@@ -306,3 +306,97 @@ jobs:
           name: ${{ env.ARTIFACT_NAME }}
           path: ${{ env.ARTIFACT_DIR }}
           if-no-files-found: error
+
+  collection-benchmarks:
+    name: collection (${{ matrix.backend.id }}, ${{ matrix.workload.id }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        backend:
+          - id: memory
+            needs_mongo: false
+          - id: mongo
+            needs_mongo: true
+        workload:
+          - id: high
+            total_tasks: 100000
+            concurrency: 2048
+          - id: medium
+            total_tasks: 100000
+            concurrency: 128
+          - id: low
+            total_tasks: 10000
+            concurrency: 4
+    env:
+      ARTIFACT_DIR: ${{ format('artifacts/{0}-{1}', matrix.backend.id, matrix.workload.id) }}
+      SUMMARY_FILE: ${{ format('artifacts/{0}-{1}/summary-{0}-{1}.jsonl', matrix.backend.id, matrix.workload.id) }}
+      ARTIFACT_NAME: ${{ format('collections-{0}-{1}', matrix.backend.id, matrix.workload.id) }}
+      MONGO_URI: mongodb://localhost:27017/?replicaSet=rs0
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          python-version: '3.12'
+
+      - name: Sync dependencies
+        run: uv sync --frozen --extra mongo --group core-stable --group dev
+
+      - name: Launch MongoDB
+        if: ${{ matrix.backend.needs_mongo }}
+        run: |
+          set -euo pipefail
+          cd docker
+          docker compose -f compose.mongo.yml down -v || true
+          docker compose -f compose.mongo.yml up -d --quiet-pull
+          for attempt in {1..60}; do
+            if docker compose -f compose.mongo.yml exec -T mongo mongosh --quiet --eval 'db.runCommand({ping:1})' >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "MongoDB did not become ready in time" >&2
+          docker compose -f compose.mongo.yml logs mongo
+          exit 1
+
+      - name: Run collection benchmark
+        run: |
+          set -euo pipefail
+          mkdir -p "$ARTIFACT_DIR"
+          echo "Running collection benchmark (backend=${{ matrix.backend.id }}, workload=${{ matrix.workload.id }})"
+          uv run --locked --no-sync python -m tests.benchmark.collection_benchmark \
+            "${{ matrix.backend.id }}" \
+            --total-tasks "${{ matrix.workload.total_tasks }}" \
+            --concurrency "${{ matrix.workload.concurrency }}" \
+            --task-prefix "${{ matrix.backend.id }}-${{ matrix.workload.id }}" \
+            --summary-file "$SUMMARY_FILE" \
+            --mongo-uri "$MONGO_URI" \
+            --mongo-database agentlightning_collection_bench
+
+      - name: Show collection benchmark summary
+        run: |
+          set -euo pipefail
+          if [ -f "$SUMMARY_FILE" ]; then
+            echo "Collection benchmark summary (${{ matrix.backend.id }}):"
+            cat "$SUMMARY_FILE"
+          else:
+            echo "Summary file not found: $SUMMARY_FILE"
+          fi
+
+      - name: Stop MongoDB
+        if: ${{ always() && matrix.backend.needs_mongo }}
+        run: |
+          set -euo pipefail
+          cd docker
+          docker compose -f compose.mongo.yml down -v || true
+
+      - name: Upload collection artifacts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: ${{ env.ARTIFACT_DIR }}
+          if-no-files-found: error
