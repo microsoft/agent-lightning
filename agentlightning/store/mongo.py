@@ -47,6 +47,9 @@ class MongoLightningStore(CollectionBasedLightningStore[MongoLightningCollection
         database: The MongoDB database. Could be a string name or an instance of AsyncDatabase.
             You must provide at least one of client or database.
         partition_id: The partition id. Useful when sharing the database among multiple Agent-lightning trainers.
+        tracker: The metrics tracker to use.
+        scan_debounce_seconds: The debounce time for the scan for unhealthy rollouts.
+            Set to 0 to disable debouncing.
     """
 
     def __init__(
@@ -56,6 +59,7 @@ class MongoLightningStore(CollectionBasedLightningStore[MongoLightningCollection
         database_name: str | None = None,
         partition_id: str | None = None,
         tracker: MetricsBackend | None = None,
+        scan_debounce_seconds: float = 10.0,
     ) -> None:
         self._auto_created_client = False
         if isinstance(client, str):

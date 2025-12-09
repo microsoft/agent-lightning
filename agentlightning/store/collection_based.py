@@ -38,6 +38,7 @@ from typing import (
     cast,
 )
 
+import aiologic
 from opentelemetry.sdk.trace import ReadableSpan
 from pydantic import BaseModel
 from typing_extensions import Concatenate
@@ -219,16 +220,31 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
             all read operations like `query_rollouts` will have better consistency.
             It may use an isolated snapshot that supports repeatable reads.
         tracker: Enable metrics tracking.
+        scan_debounce_seconds: The debounce time for the scan for unhealthy rollouts.
+            Set to 0 to disable debouncing. The debounce is a non-perfect traffic control.
+            It's isolated for each store instance if there are multiple worker replicas.
     """
 
     def __init__(
-        self, collections: T_collections, *, read_snapshot: bool = False, tracker: MetricsBackend | None = None
-    ):
+        self,
+        collections: T_collections,
+        *,
+        read_snapshot: bool = False,
+        tracker: MetricsBackend | None = None,
+        scan_debounce_seconds: float = 10.0,
+    ) -> None:
         # rollouts and spans' storage
         self.collections = collections
         self._read_snapshot = read_snapshot
         self._tracker = tracker
         self._launch_time = time.time()
+        self._scan_debounce_seconds = scan_debounce_seconds
+        last_scan_time = self._launch_time
+        if self._scan_debounce_seconds > 0:
+            # Allow the first scan immediately after instantiation
+            last_scan_time -= self._scan_debounce_seconds
+        self._last_scan_entrance_time = last_scan_time
+        self._scan_entrance_lock = aiologic.Lock()
 
         if self._tracker is not None:
             self._tracker.register_histogram(
@@ -1668,6 +1684,9 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
     @tracked("_scan_for_unhealthy_rollouts")
     async def _scan_for_unhealthy_rollouts(self) -> None:
         """Perform healthcheck against all running rollouts in the store."""
+        if not await self._should_scan_for_unhealthy_rollouts():
+            return
+
         rollouts, attempts_sync_required = await self._find_and_update_unhealthy_rollouts()
 
         if rollouts:
@@ -1676,6 +1695,25 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         # Sync worker status
         if attempts_sync_required:
             await self._sync_workers_with_attempts(attempts_sync_required)
+
+    @tracked("_should_scan_for_unhealthy_rollouts")
+    async def _should_scan_for_unhealthy_rollouts(self) -> bool:
+        """Check if the scan for unhealthy rollouts should be performed."""
+        if self._scan_debounce_seconds <= 0:
+            return True
+
+        now = time.time()
+        should_scan = now - self._last_scan_entrance_time >= self._scan_debounce_seconds
+        if not should_scan:
+            return False
+
+        # Someone else may be racing for the same scan. Double-check inside the lock.
+        async with self._scan_entrance_lock:
+            now = time.time()
+            if now - self._last_scan_entrance_time < self._scan_debounce_seconds:
+                return False
+            self._last_scan_entrance_time = now
+            return True
 
     @tracked("_find_and_update_unhealthy_rollouts")
     @_with_collections_execute(labels=["rollouts", "attempts"])

@@ -743,6 +743,9 @@ class PrometheusMetricsBackend(MetricsBackend):
 
     Thread-safety: Registration is protected by a lock. Metric updates assume metrics
     are registered during initialization and then remain stable.
+
+    Due to the nature of Prometheus, this backend is only suitable for recording high-volume metrics.
+    Low-volume metrics might be lost if the event has only appeared once.
     """
 
     def __init__(self) -> None:
