@@ -66,6 +66,7 @@ TRAIN_FILES=[train_asearcher_base]
 TEST_FILES=[test_nq, test_triviaqa, test_popqa, test_hotpotqa, test_2wikimultihopqa, test_musique, test_bamboogle]
 
 
+
 RL_TRAINING_CONFIG: Dict[str, Any] = {
     "algorithm": {
         "adv_estimator": "grpo",
@@ -85,7 +86,7 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
             "tensor_model_parallel_size": 2,
             "n": 16,
             "log_prob_micro_batch_size_per_gpu": 1,
-            "multi_turn": {"format": "hermes", "max_user_turns": 5, "max_assistant_turns": 5},
+            "multi_turn": {"tool_config_path": "examples_train_w_youtu/search_r1_youtu/search_tool_config.yaml", "format": "hermes", "max_user_turns": 15, "max_assistant_turns": 15},
             "temperature": 1.0,
             "top_p": 1.0,
             "name": "vllm",
@@ -94,7 +95,13 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
                 "top_p": 1.0,
                 "temperature":0.0,
                 "n":1,
-            }
+            },
+            "engine_kwargs": {
+                "vllm": {
+                    "enable_auto_tool_choice": True,
+                    "tool_call_parser": "hermes",
+                }
+            },
         },
         "actor": {
             "ppo_mini_batch_size": 128,

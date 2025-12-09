@@ -1,0 +1,25 @@
+tools:
+  - class_name: verl.tools.search_tool_wiki.SearchTool
+    config:
+      retrieval_service_url: http://{YOUR_RETRIEVAL_SERVICE_IP}/retrieve
+      num_workers: 32
+      rate_limit: 32
+      timeout: 30
+      type: native
+      topk: 3
+      
+    tool_schema:
+      type: function
+      function:
+        name: perform_single_search_batch
+        description: Performs batched searches on wikipedia; supply an array 'query'; the tool retrieves the top 3 results for each query in one call.
+        parameters:
+          type: object
+          properties:
+            query:
+              type: array
+              item:
+                type: string
+              description: Array of query strings. Include multiple complementary search queries in a single call.
+          required:
+            - query
