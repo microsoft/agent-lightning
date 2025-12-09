@@ -803,14 +803,17 @@ def render_metric_group_table(
     return render_table(headers, rendered_rows)
 
 
-def make_store_time_share_column(
-    store_time_per_sec: Mapping[str, Optional[float]],
+def make_time_share_column(
+    *,
+    label_index: int,
+    column_title: str,
+    time_per_sec_map: Mapping[str, Optional[float]],
 ) -> Tuple[str, Callable[[MetricRow], str]]:
     def render_cell(row: MetricRow) -> str:
-        if not row.label_values:
+        if not row.label_values or len(row.label_values) <= label_index:
             return "-"
-        method = row.label_values[0]
-        store_time = store_time_per_sec.get(method)
+        label_value = row.label_values[label_index]
+        store_time = time_per_sec_map.get(label_value)
         collection_time = row.time_per_sec
         if (
             store_time is None
@@ -822,7 +825,7 @@ def make_store_time_share_column(
             return "-"
         return fmt_percentage(collection_time / store_time)
 
-    return ("Store Time %", render_cell)
+    return (column_title, render_cell)
 
 
 def main(argv: Optional[Sequence[str]] = None) -> None:
@@ -928,6 +931,12 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
                     label_names=("method", "status"),
                     label_headers=("Method", "Status"),
                 ),
+                MetricGroupSpec(
+                    title="agl.store grouped by store_pubmeth, method, status",
+                    histogram_bucket_metric="agl_store_latency_bucket",
+                    label_names=("store_pubmeth", "method", "status"),
+                    label_headers=("Store Method", "Private Method", "Status"),
+                ),
             ),
         ),
         (
@@ -963,6 +972,12 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
                     label_headers=("Store Method", "Collection", "Operation", "Status"),
                 ),
                 MetricGroupSpec(
+                    title="agl.collections grouped by store_privmeth, collection, operation, status",
+                    histogram_bucket_metric="agl_collections_latency_bucket",
+                    label_names=("store_privmeth", "collection", "operation", "status"),
+                    label_headers=("Store Private Method", "Collection", "Operation", "Status"),
+                ),
+                MetricGroupSpec(
                     title="agl.collections grouped by collection, operation, status",
                     histogram_bucket_metric="agl_collections_latency_bucket",
                     label_names=("collection", "operation", "status"),
@@ -972,7 +987,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         ),
     ]
 
-    store_pubmeth_time_per_sec: Dict[str, Optional[float]] = {}
+    store_method_time_per_sec: Dict[str, Optional[float]] = {}
 
     for category_title, specs in metric_categories:
         category_lines: List[str] = []
@@ -988,14 +1003,31 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
                 half_window_seconds=half_window_seconds,
             )
             if spec.histogram_bucket_metric == "agl_store_latency_bucket" and spec.label_names == ("method",):
-                store_pubmeth_time_per_sec = {
+                store_method_time_per_sec = {
                     row.label_values[0]: row.time_per_sec
                     for row in rows
                     if row.label_values and len(row.label_values) == 1
                 }
-            extra_columns: Optional[Sequence[Tuple[str, Callable[[MetricRow], str]]]] = None
+            extra_column_specs: List[Tuple[str, Callable[[MetricRow], str]]] = []
             if "store_pubmeth" in spec.label_names:
-                extra_columns = [make_store_time_share_column(store_pubmeth_time_per_sec)]
+                pubmeth_index = spec.label_names.index("store_pubmeth")
+                extra_column_specs.append(
+                    make_time_share_column(
+                        label_index=pubmeth_index,
+                        column_title="Store Time %",
+                        time_per_sec_map=store_method_time_per_sec,
+                    )
+                )
+            if "store_privmeth" in spec.label_names:
+                privmeth_index = spec.label_names.index("store_privmeth")
+                extra_column_specs.append(
+                    make_time_share_column(
+                        label_index=privmeth_index,
+                        column_title="Private Time %",
+                        time_per_sec_map=store_method_time_per_sec,
+                    )
+                )
+            extra_columns = extra_column_specs or None
             category_lines.append("### " + spec.title)
             category_lines.extend(render_metric_group_table(spec, rows, extra_columns=extra_columns))
             if idx != len(specs) - 1:
