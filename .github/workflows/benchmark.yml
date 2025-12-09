@@ -309,7 +309,7 @@ jobs:
 
   collection-benchmarks:
     name: collection (${{ matrix.backend.id }}, ${{ matrix.workload.id }})
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.backend.runner }}
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -317,8 +317,12 @@ jobs:
         backend:
           - id: memory
             needs_mongo: false
+            runner: ubuntu-latest
           - id: mongo
             needs_mongo: true
+            runner:
+              - self-hosted
+              - 1ES.Pool=agl-runner-cpu
         workload:
           - id: high-insert
             total_tasks: 100000
