@@ -21,7 +21,7 @@ N_RUNNERS=128
 
 # ================= Experiment =================
 PROJECT_DIR="$(pwd)"
-experiment_name=qwen2.5-7b_dapo_retool_youtu_agl_grpo_wo_tool_reward
+experiment_name=qwen2.5-7b_dapo
 project_name=agent_lightning_retool
 default_local_dir="${PROJECT_DIR}/checkpoints/$project_name/$experiment_name"
 mkdir -p ${default_local_dir}
@@ -30,7 +30,6 @@ mkdir -p ${default_local_dir}
 AGENT_LOG_DIR=${default_local_dir}/logs
 cd ${PROJECT_DIR}/examples_train_w_youtu/retool_youtu
 mkdir -p ${AGENT_LOG_DIR}
-export CODESNIP_SERVER_URL=http://10.16.7.213:80
 echo "Start AGL STORE"
 nohup agl store --port 9999 > $AGENT_LOG_DIR/${experiment_name}_store_output.log 2>&1 &
 sleep 5
