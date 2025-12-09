@@ -90,6 +90,12 @@ def tracked(operation: str):
     return decorator
 
 
+class DuplicatedPrimaryKeyError(ValueError):
+    """Error raised when a duplicate key is encountered."""
+
+    pass
+
+
 class TrackedCollection:
     """An object that can be tracked by the metrics backend."""
 

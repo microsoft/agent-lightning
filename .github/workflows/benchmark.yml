@@ -320,9 +320,7 @@ jobs:
             runner: ubuntu-latest
           - id: mongo
             needs_mongo: true
-            runner:
-              - self-hosted
-              - 1ES.Pool=agl-runner-cpu
+            runner: ubuntu-latest
         workload:
           - id: high-insert
             total_tasks: 100000

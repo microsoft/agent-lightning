@@ -238,6 +238,7 @@ class BaseBenchmark:
 
     def worker_entrypoint(self, worker_index: int, task_queue: Any, start_barrier: Any) -> WorkerResult:
         start_barrier.wait()
+        console.print(f"Worker {worker_index} starting")
 
         async def _runner() -> WorkerResult:
             async with self.worker_context() as collections:
@@ -365,7 +366,7 @@ class MongoBenchmark(BaseBenchmark):
         self,
         worker_fn: Callable[[int, Any, Any], WorkerResult],
     ) -> List[WorkerResult]:
-        ctx = mp.get_context("spawn")
+        ctx = mp.get_context("fork")
         task_queue = ctx.Queue()
         for task_id in range(self.total_tasks):
             task_queue.put(task_id)

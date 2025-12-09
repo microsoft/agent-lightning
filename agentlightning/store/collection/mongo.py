@@ -37,7 +37,14 @@ from pymongo import AsyncMongoClient, ReadPreference, ReturnDocument, WriteConce
 from pymongo.asynchronous.client_session import AsyncClientSession
 from pymongo.asynchronous.collection import AsyncCollection
 from pymongo.asynchronous.database import AsyncDatabase
-from pymongo.errors import CollectionInvalid, ConnectionFailure, DuplicateKeyError, OperationFailure, PyMongoError
+from pymongo.errors import (
+    BulkWriteError,
+    CollectionInvalid,
+    ConnectionFailure,
+    DuplicateKeyError,
+    OperationFailure,
+    PyMongoError,
+)
 from pymongo.read_concern import ReadConcern
 
 from agentlightning.types import (
@@ -54,6 +61,7 @@ from agentlightning.types import (
 from .base import (
     AtomicMode,
     Collection,
+    DuplicatedPrimaryKeyError,
     KeyValue,
     LightningCollections,
     Queue,
@@ -547,24 +555,19 @@ class MongoBasedCollection(Collection[T_model]):
 
     @tracked("insert")
     async def insert(self, items: Sequence[T_model]) -> None:
+        """Insert items into the collection.
+
+        The implementation does NOT do checks for duplicate primary keys,
+        neither within the same insert call nor across different insert calls.
+        It relies on the database to enforce uniqueness via indexes.
+        """
         if not items:
             return
 
         collection = await self.ensure_collection()
         docs: List[Mapping[str, Any]] = []
-        pk_conditions: List[Dict[str, Any]] = []
-        seen_primary_keys: set[Tuple[Any, ...]] = set()
         for item in items:
             self._ensure_item_type(item)
-            pk_filter = self._pk_filter(item)
-            pk_values = tuple(pk_filter[pk] for pk in self._primary_keys)
-            if pk_values in seen_primary_keys:
-                raise ValueError(
-                    f"Insert payload contains duplicate primary key(s): {self._render_pk_values(pk_values)}"
-                )
-            seen_primary_keys.add(pk_values)
-            pk_conditions.append({pk: pk_filter[pk] for pk in self._primary_keys})
-
             doc = item.model_dump()
             doc["partition_id"] = self._partition_id
             docs.append(doc)
@@ -572,23 +575,17 @@ class MongoBasedCollection(Collection[T_model]):
         if not docs:
             return
 
-        if len(pk_conditions) == 1:
-            existing_filter: Dict[str, Any] = {"partition_id": self._partition_id, **pk_conditions[0]}
-        else:
-            existing_filter = {"partition_id": self._partition_id, "$or": pk_conditions}
-
-        async with self.tracking_context("insert.find_existing", self._collection_name):
-            existing = await collection.find_one(existing_filter, session=self._session)
-            if existing is not None:
-                existing_values = tuple(existing.get(pk) for pk in self._primary_keys)
-                raise ValueError(f"Item with primary key(s) {self._render_pk_values(existing_values)} already exists")
-
         try:
             async with self.tracking_context("insert.insert_many", self._collection_name):
                 await collection.insert_many(docs, session=self._session)
         except DuplicateKeyError as exc:
             # In case the DB enforces uniqueness via index, normalize to ValueError
-            raise ValueError("Duplicate key error while inserting items") from exc
+            raise DuplicatedPrimaryKeyError("Duplicated primary key(s) while inserting items") from exc
+        except BulkWriteError as exc:
+            write_errors = exc.details.get("writeErrors", [])
+            if write_errors and write_errors[0].get("code") == 11000:
+                raise DuplicatedPrimaryKeyError("Duplicated primary key(s) while inserting items") from exc
+            raise
 
     @tracked("update")
     async def update(self, items: Sequence[T_model], update_fields: Sequence[str] | None = None) -> List[T_model]:
@@ -1007,7 +1004,7 @@ class MongoBasedKeyValue(KeyValue[K, V], Generic[K, V]):
                 )
         except DuplicateKeyError as exc:
             # Very unlikely with replace_one+upsert, but normalize anyway.
-            raise ValueError("Duplicate key error while setting key-value item") from exc
+            raise DuplicatedPrimaryKeyError("Duplicate key error while setting key-value item") from exc
 
     @tracked("pop")
     async def pop(self, key: K, default: V | None = None) -> V | None:

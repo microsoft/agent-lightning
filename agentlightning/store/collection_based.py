@@ -74,7 +74,7 @@ from .base import (
     is_queuing,
 )
 from .collection import FilterOptions, LightningCollections
-from .collection.base import AtomicLabels
+from .collection.base import AtomicLabels, DuplicatedPrimaryKeyError
 from .utils import LATENCY_BUCKETS, rollout_status_from_attempt, scan_unhealthy_rollouts
 
 T_callable = TypeVar("T_callable", bound=Callable[..., Any])
@@ -1107,13 +1107,11 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
             try:
                 await collections.spans.insert([span])
                 return True
-            except ValueError as e:
-                if "already exists" in str(e) or "contains duplicate" in str(e):
-                    logger.error(
-                        f"Duplicated span added for rollout={span.rollout_id}, attempt={span.attempt_id}, span={span.span_id}. Skipping."
-                    )
-                    return False
-                raise
+            except DuplicatedPrimaryKeyError:
+                logger.error(
+                    f"Duplicated span added for rollout={span.rollout_id}, attempt={span.attempt_id}, span={span.span_id}. Skipping."
+                )
+                return False
 
         successful_spans: List[Span] = []
         try:
@@ -1121,22 +1119,20 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
             async with self.collections.atomic(
                 mode="w", snapshot=self._read_snapshot, commit=False, labels=["spans"]
             ) as collections:
+                # FIXME: Part of the insertion might complete though the full operation fails.
+                # In that case, the "insert spans" return values might not be accurate.
                 await collections.spans.insert(spans)
             successful_spans.extend(spans)
-        except ValueError as e:
-            if "already exists" in str(e) or "contains duplicate" in str(e):
-                # There is a duplicate span, we warn it
-                # We fallback to adding the spans one by one
-                async def _add_many_spans_fallback(collections: T_collections):
-                    for span in spans:
-                        if await _add_span_fallback(collections, span):
-                            successful_spans.append(span)
-
-                await self.collections.execute(
-                    _add_many_spans_fallback, mode="w", snapshot=self._read_snapshot, commit=True, labels=["spans"]
-                )
-            else:
-                raise
+        except DuplicatedPrimaryKeyError:
+            # There is a duplicate span, we warn it
+            # We fallback to adding the spans one by one
+            for span in spans:
+                async with self.collections.atomic(
+                    mode="w", snapshot=self._read_snapshot, labels=["spans"]
+                ) as collections:
+                    # No need to commit here, it will be simple atomic write operations
+                    if await _add_span_fallback(collections, span):
+                        successful_spans.append(span)
 
         return successful_spans
 

@@ -117,11 +117,13 @@ async def test_list_collection_insert_rejects_duplicate_payload(sample_collectio
     dup_a = SampleItem(partition="omega", index=1, name="dup-a", status="new")
     dup_b = SampleItem(partition="omega", index=1, name="dup-b", status="new")
 
-    with pytest.raises(ValueError, match="duplicate primary key"):
+    with pytest.raises(ValueError, match=r"(duplicated|Duplicated) primary key"):
         await sample_collection.insert([dup_a, dup_b])
 
-    assert await sample_collection.size() == starting_size
-    assert await sample_collection.get({"partition": {"exact": "omega"}}) is None
+    if isinstance(sample_collection, ListBasedCollection):
+        # Only ListBasedCollection supports this rejecting duplicate items within the same insert batch.
+        assert await sample_collection.size() == starting_size
+        assert await sample_collection.get({"partition": {"exact": "omega"}}) is None
 
 
 @pytest.mark.asyncio()
@@ -1108,31 +1110,6 @@ async def test_mongo_based_sanity_check(temporary_mongo_database: AsyncDatabase[
         assert await span_kv.get("span-123") == 1
         assert await span_kv.pop("span-123") == 1
         assert not await span_kv.has("span-123")
-
-
-@pytest.mark.mongo
-@pytest.mark.asyncio()
-async def test_mongo_based_collection_rejects_duplicate_payload(temporary_mongo_database: AsyncDatabase[Any]) -> None:
-    from agentlightning.store.collection.mongo import MongoBasedCollection, MongoClientPool
-
-    async with MongoClientPool(temporary_mongo_database.client) as client_pool:
-        collection = MongoBasedCollection[Any](
-            client_pool,
-            temporary_mongo_database.name,
-            f"duplicate-check-{uuid4().hex}",
-            "partition-dup",
-            ["rollout_id"],
-            Rollout,
-        )
-        await collection.ensure_collection()
-        start_time = time.time()
-        first = Rollout(rollout_id="dup-rollout", input="payload", start_time=start_time, status="running")
-        duplicate = Rollout(rollout_id="dup-rollout", input="payload", start_time=start_time, status="running")
-
-        with pytest.raises(ValueError, match="duplicate primary key"):
-            await collection.insert([first, duplicate])
-
-        assert await collection.size() == 0
 
 
 @pytest.mark.mongo

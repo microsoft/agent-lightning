@@ -44,6 +44,7 @@ from agentlightning.utils.metrics import MetricsBackend
 from .base import (
     AtomicMode,
     Collection,
+    DuplicatedPrimaryKeyError,
     FilterMap,
     KeyValue,
     LightningCollections,
@@ -313,7 +314,9 @@ class ListBasedCollection(Collection[T]):
 
             if mode == "insert":
                 if exists:
-                    raise ValueError(f"Item already exists with primary key(s): {self._render_key_values(key_values)}")
+                    raise DuplicatedPrimaryKeyError(
+                        f"Item already exists with primary key(s): {self._render_key_values(key_values)}"
+                    )
                 parent[final_key] = item
                 self._size += 1
             else:  # upsert
@@ -603,7 +606,7 @@ class ListBasedCollection(Collection[T]):
         """Insert the given items.
 
         Raises:
-            ValueError: If any item with the same primary keys already exists.
+            DuplicatedPrimaryKeyError: If any item with the same primary keys already exists.
         """
         seen_keys: set[Tuple[Any, ...]] = set()
         prepared: List[T] = []
@@ -611,8 +614,8 @@ class ListBasedCollection(Collection[T]):
             self._ensure_item_type(item)
             key_values = self._extract_primary_key_values(item)
             if key_values in seen_keys:
-                raise ValueError(
-                    f"Insert payload contains duplicate primary key(s): {self._render_key_values(key_values)}"
+                raise DuplicatedPrimaryKeyError(
+                    f"Insert payload contains duplicated primary key(s): {self._render_key_values(key_values)}"
                 )
             seen_keys.add(key_values)
             prepared.append(item)
