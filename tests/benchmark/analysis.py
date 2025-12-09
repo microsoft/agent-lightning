@@ -951,15 +951,15 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
             "Collection Metrics",
             (
                 MetricGroupSpec(
-                    title="agl.collections grouped by store_method, collection, operation",
+                    title="agl.collections grouped by store_pubmeth, collection, operation",
                     histogram_bucket_metric="agl_collections_latency_bucket",
-                    label_names=("store_method", "collection"),
+                    label_names=("store_pubmeth", "collection"),
                     label_headers=("Store Method", "Collection"),
                 ),
                 MetricGroupSpec(
-                    title="agl.collections grouped by store_method, collection, operation, status",
+                    title="agl.collections grouped by store_pubmeth, collection, operation, status",
                     histogram_bucket_metric="agl_collections_latency_bucket",
-                    label_names=("store_method", "collection", "operation", "status"),
+                    label_names=("store_pubmeth", "collection", "operation", "status"),
                     label_headers=("Store Method", "Collection", "Operation", "Status"),
                 ),
                 MetricGroupSpec(
@@ -972,7 +972,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         ),
     ]
 
-    store_method_time_per_sec: Dict[str, Optional[float]] = {}
+    store_pubmeth_time_per_sec: Dict[str, Optional[float]] = {}
 
     for category_title, specs in metric_categories:
         category_lines: List[str] = []
@@ -988,14 +988,14 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
                 half_window_seconds=half_window_seconds,
             )
             if spec.histogram_bucket_metric == "agl_store_latency_bucket" and spec.label_names == ("method",):
-                store_method_time_per_sec = {
+                store_pubmeth_time_per_sec = {
                     row.label_values[0]: row.time_per_sec
                     for row in rows
                     if row.label_values and len(row.label_values) == 1
                 }
             extra_columns: Optional[Sequence[Tuple[str, Callable[[MetricRow], str]]]] = None
-            if "store_method" in spec.label_names:
-                extra_columns = [make_store_time_share_column(store_method_time_per_sec)]
+            if "store_pubmeth" in spec.label_names:
+                extra_columns = [make_store_time_share_column(store_pubmeth_time_per_sec)]
             category_lines.append("### " + spec.title)
             category_lines.extend(render_metric_group_table(spec, rows, extra_columns=extra_columns))
             if idx != len(specs) - 1:

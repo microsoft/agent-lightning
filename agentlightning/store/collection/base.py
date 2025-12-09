@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import functools
-import inspect
 import time
 from contextlib import asynccontextmanager
 from typing import (
@@ -32,7 +31,6 @@ from agentlightning.utils.metrics import MetricsBackend
 if TYPE_CHECKING:
     from typing import Self
 
-from agentlightning.store.base import LightningStore
 from agentlightning.types import (
     Attempt,
     FilterField,
@@ -58,34 +56,6 @@ AtomicLabels = Literal["rollouts", "attempts", "spans", "resources", "workers", 
 
 These labels are used to identify the collections that are affected by the atomic operation.
 """
-
-
-COLLECTION_TRACKING_STORE_METHODS = frozenset(
-    [name for name in LightningStore.__dict__ if not name.startswith("_")] + ["_scan_for_unhealthy_rollouts"]
-)
-
-_UNKNOWN_STORE_METHOD = "unknown"
-
-
-def _nearest_lightning_store_method_from_stack() -> str:
-    """Stack introspection so that we capture the nearest public API method from the
-    call stack whenever metrics are recorded."""
-    frame = inspect.currentframe()
-    try:
-        if frame is None:
-            return _UNKNOWN_STORE_METHOD
-        frame = frame.f_back
-        while frame is not None:
-            self_obj = frame.f_locals.get("self")
-            method_name = frame.f_locals.get("method_name")
-            if method_name in COLLECTION_TRACKING_STORE_METHODS and isinstance(self_obj, LightningStore):
-                return method_name
-            frame = frame.f_back
-        return _UNKNOWN_STORE_METHOD
-    except Exception:
-        return _UNKNOWN_STORE_METHOD
-    finally:
-        del frame
 
 
 def resolve_error_type(exc: BaseException | None) -> str:
@@ -153,10 +123,12 @@ class TrackedCollection:
             yield
 
         else:
+            from agentlightning.store.collection_based import nearest_lightning_store_method_from_stack
+
             # Enable tracking
             start_time = time.perf_counter()
             status: str = "OK"
-            store_method = _nearest_lightning_store_method_from_stack()
+            public_store_method, private_store_method = nearest_lightning_store_method_from_stack()
             try:
                 yield
             except BaseException as exc:
@@ -167,7 +139,8 @@ class TrackedCollection:
                 await self._tracker.inc_counter(  # pyright: ignore[reportPrivateUsage]
                     "agl.collections.total",
                     labels={
-                        "store_method": store_method,
+                        "store_pubmeth": public_store_method,
+                        "store_privmeth": private_store_method,
                         "operation": operation,
                         "collection": collection,
                         "status": status,
@@ -178,7 +151,8 @@ class TrackedCollection:
                     "agl.collections.latency",
                     value=elapsed,
                     labels={
-                        "store_method": store_method,
+                        "store_pubmeth": public_store_method,
+                        "store_privmeth": private_store_method,
                         "operation": operation,
                         "collection": collection,
                         "status": status,
@@ -405,7 +379,7 @@ class LightningCollections(TrackedCollection):
     def register_collection_metrics(self, extra_labels: Optional[Sequence[str]] = None) -> None:
         if self._tracker is None:
             return
-        labels = ["store_method", "operation", "collection", "status"]
+        labels = ["store_pubmeth", "operation", "collection", "store_privmeth", "status"]
         if extra_labels is not None:
             labels.extend(extra_labels)
         self._tracker.register_histogram(

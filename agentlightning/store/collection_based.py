@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import functools
 import hashlib
+import inspect
 import logging
 import time
 import uuid
@@ -73,7 +74,7 @@ from .base import (
     is_queuing,
 )
 from .collection import FilterOptions, LightningCollections
-from .collection.base import COLLECTION_TRACKING_STORE_METHODS, AtomicLabels
+from .collection.base import AtomicLabels
 from .utils import LATENCY_BUCKETS, rollout_status_from_attempt, scan_unhealthy_rollouts
 
 T_callable = TypeVar("T_callable", bound=Callable[..., Any])
@@ -125,12 +126,15 @@ def tracked(name: str):
 
         @functools.wraps(func)
         async def wrapper(self: CollectionBasedLightningStore[T_collections], *args: Any, **kwargs: Any) -> Any:
+            # Backtracking where this method comes from
+            public_meth_in_stack, _ = nearest_lightning_store_method_from_stack()
+
             # For backtracking in collection methods.
             # Only track the public methods (+healthcheck)
-            if name in COLLECTION_TRACKING_STORE_METHODS:
-                method_name = name  # pyright: ignore[reportUnusedVariable]
-            else:
-                method_name = None  # pyright: ignore[reportUnusedVariable]
+            if name in COLLECTION_STORE_PUBLIC_METHODS:
+                public_method_name = name  # pyright: ignore[reportUnusedVariable]
+            if name in COLLECTION_STORE_ALL_METHODS:
+                private_method_name = name  # pyright: ignore[reportUnusedVariable]
 
             if self._tracker is None:  # pyright: ignore[reportPrivateUsage]
                 # Skip the tracking because tracking is not configured
@@ -146,10 +150,12 @@ def tracked(name: str):
             finally:
                 elapsed = time.perf_counter() - start_time
                 await self._tracker.inc_counter(  # pyright: ignore[reportPrivateUsage]
-                    "agl.store.total", labels={"method": name, "status": status}
+                    "agl.store.total", labels={"method": name, "store_pubmeth": public_meth_in_stack, "status": status}
                 )
                 await self._tracker.observe_histogram(  # pyright: ignore[reportPrivateUsage]
-                    "agl.store.latency", value=elapsed, labels={"method": name, "status": status}
+                    "agl.store.latency",
+                    value=elapsed,
+                    labels={"method": name, "store_pubmeth": public_meth_in_stack, "status": status},
                 )
 
         return cast(T_callable, wrapper)
@@ -249,13 +255,13 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         if self._tracker is not None:
             self._tracker.register_histogram(
                 "agl.store.latency",
-                ["method", "status"],
+                ["method", "store_pubmeth", "status"],
                 buckets=LATENCY_BUCKETS,
                 group_level=1,
             )
             self._tracker.register_counter(
                 "agl.store.total",
-                ["method", "status"],
+                ["method", "store_pubmeth", "status"],
                 group_level=1,
             )
             self._tracker.register_counter(
@@ -1743,3 +1749,42 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
             if worker_sync_required:
                 attempts.append(attempt)
         return rollouts, attempts
+
+
+# _scan_for_unhealthy_rollouts is somehow standalone and automatically invoked.
+COLLECTION_STORE_PUBLIC_METHODS = frozenset(
+    [name for name in LightningStore.__dict__ if not name.startswith("_")] + ["_scan_for_unhealthy_rollouts"]
+)
+
+COLLECTION_STORE_ALL_METHODS = frozenset([name for name in CollectionBasedLightningStore.__dict__])
+
+_UNKNOWN_STORE_METHOD = "unknown"
+
+
+def nearest_lightning_store_method_from_stack() -> Tuple[str, str]:
+    """Stack introspection so that we capture the nearest public API method from the
+    call stack whenever metrics are recorded.
+
+    Returns:
+        A tuple of public method name and nearest private method name.
+    """
+    frame = inspect.currentframe()
+    final_public_method_name = final_private_method_name = _UNKNOWN_STORE_METHOD
+    try:
+        if frame is not None:
+            frame = frame.f_back
+            while frame is not None:
+                self_obj = frame.f_locals.get("self")
+                public_method_name = frame.f_locals.get("public_method_name")
+                private_method_name = frame.f_locals.get("private_method_name")
+                if public_method_name in COLLECTION_STORE_PUBLIC_METHODS and isinstance(self_obj, LightningStore):
+                    final_public_method_name = public_method_name
+                if private_method_name in COLLECTION_STORE_ALL_METHODS and isinstance(self_obj, LightningStore):
+                    final_private_method_name = private_method_name
+                frame = frame.f_back
+    except Exception as exc:
+        logger.debug("Error during stack introspection for LightningStore method: %s", exc)
+    finally:
+        del frame
+
+    return final_public_method_name, final_private_method_name
