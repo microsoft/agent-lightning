@@ -15,8 +15,6 @@ from .base import Tracer
 
 if TYPE_CHECKING:
     from weave.trace.call import Call  # type: ignore
-else:
-    Call = Any  # type: ignore
 
 JSONPrimitive = Union[str, int, float, bool, None]
 
