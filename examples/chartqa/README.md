@@ -69,8 +69,8 @@ To test the agent with a local vLLM server and LLMProxy:
 ```bash
 # Start a vLLM server (specify image path for VLM)
 export CHARTQA_DATA_DIR=<path to chartqa data>
-CUDA_VISIBLE_DEVICES=4 vllm serve Qwen/Qwen2-VL-2B-Instruct \
-    --gpu-memory-utilization 0.4 \
+vllm serve Qwen/Qwen2-VL-2B-Instruct \
+    --gpu-memory-utilization 0.6 \
     --max-model-len 4096 \
     --allowed-local-media-path $CHARTQA_DATA_DIR \
     --enable-prefix-caching \
