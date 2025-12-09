@@ -57,9 +57,10 @@ def _timer(name: str, timing_raw: Dict[str, float]):
 def _compute_reference_log_prob(trainer: object, batch: DataProto) -> DataProto:
     """Compute reference log probability using the correct worker based on LoRA configuration.
 
-    In verl 0.6.0+, when LoRA is enabled (lora_rank > 0 or lora_adapter_path is set),
+    In verl 0.6.0+, when LoRA is detected (indicated by ref_in_actor=True),
     the reference policy is computed by the actor rollout worker instead of a separate
-    ref policy worker. This function handles both scenarios.
+    ref policy worker. This function handles both scenarios by checking the ref_in_actor flag.
+    Note: verl sets ref_in_actor=True when it detects LoRA configuration (e.g., lora_rank > 0 or lora_adapter_path is set).
 
     Args:
         trainer: The trainer instance (AgentLightningTrainer or RayPPOTrainer).
