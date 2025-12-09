@@ -3,25 +3,7 @@
 from types import SimpleNamespace
 
 import pytest
-
-
-def _compute_reference_log_prob(trainer: object, batch: object) -> object:
-    """Test copy of the function - matches implementation in verl/trainer.py"""
-    if getattr(trainer, "ref_in_actor", False):
-        actor_worker = getattr(trainer, "actor_rollout_wg", None)
-        if actor_worker is None:
-            raise RuntimeError("actor_rollout_wg is required when ref_in_actor is True.")
-        return actor_worker.compute_ref_log_prob(batch)
-
-    ref_worker = getattr(trainer, "ref_policy_wg", None)
-    if ref_worker is None:
-        raise RuntimeError(
-            "Reference policy worker was not initialized. "
-            "Ensure `use_reference_policy` is enabled and the VERL config exposes the ref worker."
-        )
-    return ref_worker.compute_ref_log_prob(batch)
-
-
+from agentlightning.verl.trainer import _compute_reference_log_prob
 class DummyWorker:
     """Mock worker for testing."""
 
