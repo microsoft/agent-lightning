@@ -136,6 +136,18 @@ https://api.wandb.ai/links/yuleiqin-tencent/0e2hs7io
 
 We sincerely appreciate the efforts from the following projects:
 
+* Youtu-agent
+```
+@misc{youtu-agent-2025,
+  title={Youtu-agent: A Simple yet Powerful Agent Framework},
+  author={Tencent Youtu Lab},
+  year={2025},
+  publisher = {GitHub},
+  journal = {GitHub repository},
+  howpublished = {\url{https://github.com/TencentCloudADP/youtu-agent}},
+}
+```
+
 * AgentLightning
 ```
 @misc{luo2025agentlightningtrainai,
