@@ -8,14 +8,15 @@
 
 
 
-This repository allows you to train your agents built by [Youtu-agent](https://github.com/TencentCloudADP/youtu-agent/tree/rl/agl) with Agent Lightning and **we have verified the performaces** of code/math (ReTool) and search (SearchR1) tasks with multi-node training on **128 GPUs**.
+This repository is the modified version of [Agent Lightning](https://github.com/microsoft/agent-lightning/tree/contrib/youtu-agent-lightning) that is used to train your agents built by [Youtu-agent](https://github.com/TencentCloudADP/youtu-agent/tree/rl/agl). Modifications are made to the original **[AgentLightning@v0.2.2](https://github.com/microsoft/agent-lightning/releases/tag/v0.2.2)** for:
 
-
-Modifications are made to the original **[AgentLightning@v0.2.2](https://github.com/microsoft/agent-lightning/releases/tag/v0.2.2)** for:
 * scaling up training with more agent runners;
 * fixing bugs when bridged with Youtu-agent;
 * correcting GRPO advantage estimation for multi-turn trajectories;
 * stabilizing RL training with tricks (e.g., filtering).
+
+
+We have **verified the performaces** of code/math (ReTool) and search (SearchR1) tasks with multi-node training on **128 GPUs**. For details on how to reproduce the results, please refer to the [Quick Start](#quick-start) section ([Youtu-agent](https://github.com/TencentCloudADP/youtu-agent/tree/rl/agl) repository).
 
 
 ## Verified Training Performance
@@ -59,6 +60,8 @@ The RL training dynamics (at least 200 steps) of 7B instruct models are provided
 
 ## Quick Start
 
+### Installation
+
 Clone the project and install verl, agentlightning, and youtu-agent:
 
 ```bash
@@ -84,10 +87,10 @@ cp .env.example .env
 
 
 ## Experimental Settings
+
 We provide two agent learning examples that show how to train your LLM with [**Youtu-Agent**](https://github.com/TencentCloudADP/youtu-agent/tree/rl/agl) with [**Agent Lightning**](https://github.com/microsoft/agent-lightning/tree/contrib/youtu-agent-lightning): ReTool (code/math) and SearchR1 (search).
 
 The detailed training and validation instructions are provided in the [**Youtu-Agent**](https://github.com/TencentCloudADP/youtu-agent/tree/rl/agl) repository.
-
 
 
 ## Acknowledgement
