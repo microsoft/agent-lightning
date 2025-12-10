@@ -8,12 +8,12 @@
 
 
 
-This repository allows you to train your agents built by Youtu-agent with Agent Lightning and **we have verified the performaces** of code/math (ReTool) and search (SearchR1) tasks with multi-node training on **128 GPUs**.
+This repository allows you to train your agents built by [Youtu-agent](https://github.com/TencentCloudADP/youtu-agent/tree/rl/agl) with Agent Lightning and **we have verified the performaces** of code/math (ReTool) and search (SearchR1) tasks with multi-node training on **128 GPUs**.
 
 
 Modifications are made to the original **[AgentLightning@v0.2.2](https://github.com/microsoft/agent-lightning/releases/tag/v0.2.2)** for:
 * scaling up training with more agent runners;
-* fixing bugs when bridged with [Youtu-agent](https://github.com/TencentCloudADP/youtu-agent/tree/rl/agl);
+* fixing bugs when bridged with Youtu-agent;
 * correcting GRPO advantage estimation for multi-turn trajectories;
 * stabilizing RL training with tricks (e.g., filtering).
 
@@ -21,9 +21,10 @@ Modifications are made to the original **[AgentLightning@v0.2.2](https://github.
 ## Verified Training Performance
 
 
-The training dynamics (at least 200 steps) of 7B instruct models are provided below for reference, confirming the effectiveness and stability of training with our repository.
+The RL training dynamics (at least 200 steps) of 7B instruct models are provided below for reference, confirming the effectiveness and stability of training with our repository. More performance gains are expected with prolonged training.
 
-- [ReTool](https://api.wandb.ai/links/1275747829-fudan-university/vwxn21w2)
+
+- [ReTool](https://api.wandb.ai/links/1275747829-fudan-university/vwxn21w2). AIME24: 0.10 (step 0) -> 0.45 (step 460).
 
 <table>
   <tr>
@@ -34,7 +35,7 @@ The training dynamics (at least 200 steps) of 7B instruct models are provided be
 </table>
 
 
-- [SearchR1](https://api.wandb.ai/links/yuleiqin-tencent/0e2hs7io)
+- [SearchR1](https://api.wandb.ai/links/yuleiqin-tencent/0e2hs7io). TriviaQA: 0.37 (step 0) -> 0.54 (step 200); PopQA: 0.16 (step 0) -> 0.35 (step 200); NQ: 0.24 (step 0) -> 0.45 (step 200); MuSiQue: 0.06 (step 0) -> 0.14 (step 200); HotpotQA: 0.21 (step 0) -> 0.38 (step 200); Bamboogle: 0.23 (step 0) -> 0.36 (step 200); 2wiki: 0.22 (step 0) -> 0.32 (step 200).
 
 <table>
   <tr>
@@ -55,117 +56,38 @@ The training dynamics (at least 200 steps) of 7B instruct models are provided be
 </table>
 
 
+
 ## Quick Start
 
-Clone the project and install verl 0.5.0 and agentlightning:
-```
+Clone the project and install verl, agentlightning, and youtu-agent:
+
+```bash
+# create anaconda env (optional)
+conda create -n agent-lightning python==3.12.0
+
+# install verl
 pip install verl==0.5.0
+
+# install agent-lightning
+git clone -b contrib/youtu-agent-lightning https://github.com/microsoft/agent-lightning.git
 cd agent-lightning
-pip install -e ./
+pip install -e .
+
+# install youtu-agent
+cd ..
+git clone -b rl/agl https://github.com/TencentCloudADP/youtu-agent.git
+cd youtu-agent
+pip install -e .
+# modify your .env accordingly
+cp .env.example .env
 ```
 
 
 ## Experimental Settings
-We provide two examples that show how to train your LLM under the [**Youtu-Agent**](https://github.com/TencentCloudADP/youtu-agent/tree/rl/agl) with [**Agent Lightning**](https://github.com/microsoft/agent-lightning/tree/contrib/youtu-agent-lightning).
+We provide two agent learning examples that show how to train your LLM with [**Youtu-Agent**](https://github.com/TencentCloudADP/youtu-agent/tree/rl/agl) with [**Agent Lightning**](https://github.com/microsoft/agent-lightning/tree/contrib/youtu-agent-lightning): ReTool (code/math) and SearchR1 (search).
 
+The detailed training and validation instructions are provided in the [**Youtu-Agent**](https://github.com/TencentCloudADP/youtu-agent/tree/rl/agl) repository.
 
-### ReTool
-
-ReTool challenges LLMs with tool-integrated reasoning where a Python code interpretor is provided to solve mathematic problems [https://github.com/ReTool-RL/ReTool].
-
-* Training Dataset 🤗 [https://huggingface.co/datasets/BytedTsinghua-SIA/DAPO-Math-17k]
-* Testing Dataset 🤗 [https://huggingface.co/datasets/BytedTsinghua-SIA/AIME-2024]
-* Sandbox Service ⌨️ [https://github.com/bytedance/SandboxFusion]
-
-### ASearcher 
-
-ASearcher challenges LLMs with web/database information retrieval capabilities where a local wiki retrieval/search API tool is provided to solve complicated, multi-hop questions [https://github.com/inclusionAI/ASearcher].
-
-
-* Training Dataset 🤗 [https://huggingface.co/datasets/inclusionAI/ASearcher-train-data]
-* Testing Dataset 🤗 [https://huggingface.co/datasets/inclusionAI/ASearcher-test-data]
-* Retrieval Service 🔍 [https://github.com/inclusionAI/ASearcher/blob/main/scripts/launch_local_server.sh]
-
-
-## Dataset Preparation
-
-### ReTool
-
-* Download all the necessary datasets used in ReTool from the huggingface websites.
-
-
-### SearchR1
-
-* Download all the necessary datasets used in ASearcher from the huggingface websites.
-* Run the following script:
-```
-bash examples_train_w_youtu/search_r1_youtu/data_preprocess/run_preprocess.sh
-```
-
-## Training and Validation
-
-### ReTool
-For detailed testing, please refer to this directory `examples_train_w_youtu/retool-youtu`.
-* For 7B model, we recommend at least 32 GPUs with 96GB memory.
-
-#### Debugging and Testing
-
-* Deployment of vLLM service
-
-**Prerequisites:** Before starting the agent, please ensure that you have installed youtu-agent, and that the `retool` directory from `examples_train_w_youtu/retool-youtu/retool` is placed in `youtu-agent/configs/agents/retool`.
-
-```bash
-# launch vLLM backend server
-export BASE_MODEL="YOUR_MODEL_PATH"
-bash vllm_deploy.sh
-
-# run the agent code
-# You must launch the sandbox server first! (SandBoxFusion)
-export CODESNIP_SERVER_URL="YOUR_SANDBOX_URL"
-python calc_sandbox_agent_youtu.py
-```
-
-* Deployment of Store and Runner service
-1. Store
-
-```bash
-agl store --port 9999
-```
-
-2. Runner
-
-```bash
-AGL_MANAGED_STORE=0 AGL_CURRENT_ROLE=runner python train_calc_sandbox_agent.py --external-store-address http://localhost:9999 --n-runners 10
-```
-
-#### Training
-
-* For single node test:
-```
-bash scripts/restart_ray.sh
-bash examples_train_w_youtu/retool-youtu/run_qwen2.5_7b_single_node.sh
-```
-
-* For multi-node (e.g., 4 nodes with 32 GPUs)
-```
-bash run_ray.sh examples_train_w_youtu/retool-youtu/run_qwen2.5_7b.sh
-```
-
-### SearchR1
-* For 3B model, we recommend at least 2 GPUs with 96GB memory.
-* For 32B model, we recommend at least 32 GPUs with 96GB memory.
-* Please modify the number of nodes and number of GPUs in the `examples_train_w_youtu/search_r1-youtu/train_search_agent.py`.
-* Make sure all the environment variables mentioned below are properly set.
-* It is noted that for reward score, we use both rule-based (exact-match) and llm-based (llm-as-a-judge) scoring techniques. Therefore, a llm service (openai-compatible) URL should be prepared in advance.
-
-
-```
-# 3B model
-bash run_ray.sh examples_train_w_youtu/search_r1_youtu/trainer3b_utu_onpolicy.sh
-
-# 32B model
-bash run_ray.sh examples_train_w_youtu/search_r1_youtu/trainer32b_utu_onpolicy.sh
-```
 
 
 ## Acknowledgement
