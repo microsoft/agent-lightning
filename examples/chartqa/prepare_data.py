@@ -1,9 +1,12 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 """Prepare ChartQA dataset from HuggingFace for training."""
 
 from pathlib import Path
+from typing import Any, Dict, List
 
 import pandas as pd
-from datasets import load_dataset
+from datasets import load_dataset  # pyright: ignore[reportUnknownVariableType]
 
 
 def prepare_chartqa():
@@ -15,8 +18,11 @@ def prepare_chartqa():
     dataset = load_dataset("HuggingFaceM4/ChartQA")
 
     for split in ["train", "test"]:
-        tasks = []
-        for idx, item in enumerate(dataset[split]):
+        tasks: List[Dict[str, Any]] = []
+        dataset_length = len(dataset[split])  # type: ignore
+        for idx, item in enumerate(dataset[split]):  # pyright: ignore[reportUnknownArgumentType]
+            if idx % 1000 == 0:
+                print(f"Processing {split} item {idx} (out of {dataset_length})")
             image_filename = f"{split}_{idx:06d}.png"
             image_path = images_dir / image_filename
             if not image_path.exists():
@@ -31,7 +37,7 @@ def prepare_chartqa():
                 }
             )
 
-        pd.DataFrame(tasks).to_parquet(data_dir / f"{split}_chartqa.parquet", index=False)
+        pd.DataFrame(tasks).to_parquet(data_dir / f"{split}_chartqa.parquet", index=False)  # type: ignore
 
 
 if __name__ == "__main__":

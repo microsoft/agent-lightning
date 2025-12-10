@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 """Prompts for ChartQA agent workflow."""
 
 from langchain_core.prompts import ChatPromptTemplate

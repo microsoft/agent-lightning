@@ -1,6 +1,9 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 """ChartQA agent demonstrating multi-step visual reasoning with refinement loop.
 
 This agent analyzes charts and answers questions using a multi-turn workflow:
+
 1. analyze_chart: Observe and describe the chart
 2. extract_data: Extract specific data values
 3. calculate_answer: Perform calculations and provide answer
@@ -21,6 +24,7 @@ from langchain.chat_models import init_chat_model
 from langchain_core.messages import AnyMessage, BaseMessage, HumanMessage
 from langgraph.graph import END, START, MessagesState, StateGraph
 from langgraph.graph.state import CompiledStateGraph
+from multimodal_utils import encode_image_to_base64
 from prompts import (
     ANALYZE_CHART_PROMPT,
     CALCULATE_ANSWER_PROMPT,
@@ -30,7 +34,6 @@ from prompts import (
 )
 
 import agentlightning as agl
-from agentlightning.adapter.multimodal import encode_image_to_base64
 
 agl.setup_logging(apply_to=[__name__])
 
@@ -185,7 +188,7 @@ class ChartQAAgent:
 
         return {  # type: ignore
             **state,
-            "extracted_data": extracted_data,
+            "extracted_data": extracted_data,  # type: ignore
             "messages": [*state.get("messages", []), result],
         }
 
@@ -202,7 +205,7 @@ class ChartQAAgent:
         calculation = self.extract_content(result.content, "calculate")  # type: ignore
         answer = self.extract_content(result.content, "answer")  # type: ignore
         if not answer:
-            answer = result.content  # type: ignore
+            answer = cast(str, result.content)  # type: ignore
 
         return {  # type: ignore
             **state,
@@ -268,7 +271,9 @@ class ChartQAAgent:
 
     def should_continue(self, state: ChartState) -> Literal[END, "refine_answer"]:  # type: ignore
         """Determine if refinement is needed."""
-        if state["messages"] and isinstance(state["messages"][-1], BaseMessage):
+        if state["messages"] and isinstance(
+            state["messages"][-1], BaseMessage
+        ):  # pyright: ignore[reportUnnecessaryIsInstance]
             last_message = state["messages"][-1]
             if "THE ANSWER IS CORRECT" in last_message.content:  # type: ignore
                 if "THE ANSWER IS INCORRECT" in last_message.content:  # type: ignore
@@ -454,7 +459,7 @@ def debug_chartqa_agent():
     df = pd.read_parquet(test_data_path).head(10)  # type: ignore
     test_data = cast(List[Dict[str, Any]], df.to_dict(orient="records"))  # type: ignore
 
-    model = os.environ.get("MODEL", "gpt-4o")
+    model = os.environ.get("MODEL", "gpt-4.1-mini")
     endpoint = os.environ.get("OPENAI_API_BASE", "https://api.openai.com/v1")
     logger.info(f"Debug data: {len(test_data)} samples, model: {model}, endpoint: {endpoint}")
 
@@ -481,7 +486,7 @@ def debug_chartqa_agent_with_llm_proxy():
 
     import nest_asyncio
 
-    nest_asyncio.apply()
+    nest_asyncio.apply()  # type: ignore
 
     chartqa_dir = os.environ.get("CHARTQA_DATA_DIR", "data")
     test_data_path = os.path.join(chartqa_dir, "test_chartqa.parquet")

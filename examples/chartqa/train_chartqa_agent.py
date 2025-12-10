@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 """Train ChartQA agent using VERL reinforcement learning."""
 
 from __future__ import annotations
@@ -14,7 +16,7 @@ from chartqa_agent import LitChartQAAgent
 
 import agentlightning as agl
 
-nest_asyncio.apply()
+nest_asyncio.apply()  # type: ignore
 
 EXAMPLES_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.realpath(os.path.join(EXAMPLES_DIR, "data"))
@@ -103,9 +105,9 @@ def train(config: Dict[str, Any]) -> None:
                 store=store_client,
                 strategy={"name": "cs", "managed_store": False},
             )
-            train_data = pd.read_parquet(config["data"]["train_files"]).to_dict(orient="records")
-            val_data = pd.read_parquet(config["data"]["val_files"]).to_dict(orient="records")
-            trainer.fit(agent, train_dataset=train_data, val_dataset=val_data)
+            train_data = pd.read_parquet(config["data"]["train_files"]).to_dict(orient="records")  # type: ignore
+            val_data = pd.read_parquet(config["data"]["val_files"]).to_dict(orient="records")  # type: ignore
+            trainer.fit(agent, train_dataset=train_data, val_dataset=val_data)  # type: ignore
         finally:
             await store_server.stop()
 
