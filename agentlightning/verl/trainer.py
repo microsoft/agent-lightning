@@ -234,8 +234,10 @@ class AgentLightningTrainer(RayPPOTrainer):
                 self.agent_mode_daemon.run_until_all_finished()
             with _timer("gen_postprocess", timing_raw):
                 batch, agent_metrics = self.agent_mode_daemon.get_train_data_batch(
-                    max_prompt_length=self.config.data.max_prompt_length,
-                    max_response_length=self.config.actor_rollout_ref.rollout.trace_aggregator.trajectory_max_length \
+                    max_prompt_length=self.config.actor_rollout_ref.rollout.trace_aggregator.trajectory_max_prompt_length \
+                        if self.config.actor_rollout_ref.rollout.trace_aggregator.mode.startswith("trajectory") else \
+                            self.config.data.max_prompt_length,
+                    max_response_length=self.config.actor_rollout_ref.rollout.trace_aggregator.trajectory_max_response_length \
                         if self.config.actor_rollout_ref.rollout.trace_aggregator.mode.startswith("trajectory") else \
                             self.config.data.max_response_length,
                     device=gen_batch.batch["fake_ids"].device,

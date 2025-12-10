@@ -901,7 +901,7 @@ class AgentModeDaemon:
                 merged_trace_idx: List[List[int]] = []
                 current_merged_trace_idx: List[int] = []
                 current_context: List[int] = []
-                turn_ids = []  # log data, only for debug testing
+                turn_ids: List[dict[str, List[int]]] = []  # log data, only for debug testing
                 for turn_index, trace in enumerate(sample_info["trace_list"]):
                     # log data, only for debug testing
                     turn_ids.append(
@@ -951,9 +951,19 @@ class AgentModeDaemon:
 
                 for current_merged_trace_idx in merged_trace_idx:
                     prompt_ids = sample_info["trace_list"][current_merged_trace_idx[0]]["prompt_ids"]
-                    accum_response_ids = sample_info["trace_list"][current_merged_trace_idx[0]]["response_ids"]
+
+                    # if the merged_trace_idx doesn't start with the beginning of the prompt_ids, we need to adjust it
+                    if current_merged_trace_idx[0] > 0 and len(prompt_ids) > max_prompt_length:
+                        accum_response_ids = prompt_ids[max_prompt_length:]
+                        prompt_ids = prompt_ids[:max_prompt_length]
+                        response_mask = [1] * len(accum_response_ids)
+                    else:
+                        accum_response_ids = []
+                        response_mask = []
+
                     prompt_length = len(prompt_ids)
-                    response_mask = [1] * len(accum_response_ids)
+                    accum_response_ids += sample_info["trace_list"][current_merged_trace_idx[0]]["response_ids"]
+                    response_mask += [1] * len(accum_response_ids)
                     for turn_index in current_merged_trace_idx[1:]:
                         trace = sample_info["trace_list"][turn_index]
                         new_prompt_length = len(trace["prompt_ids"]) - len(accum_response_ids) - prompt_length
@@ -961,12 +971,14 @@ class AgentModeDaemon:
                         accum_response_ids += trace["response_ids"]
                         response_mask += [0] * new_prompt_length
                         response_mask += [1] * len(trace["response_ids"])
+
+                    # only for debug testing
                     final_sample = sample_info["trace_list"][current_merged_trace_idx[-1]]
-                    response_ids = final_sample["prompt_ids"][prompt_length:] + final_sample["response_ids"]
-                    if len(response_ids) != len(accum_response_ids):  # only for debug testing
+                    response_ids_from_final_sample = final_sample["prompt_ids"][prompt_length:] + final_sample["response_ids"]
+                    if len(response_ids_from_final_sample) != len(accum_response_ids):
                         with open("mismatch_log/response_ids_num_mismatch.log", "a+") as f:
                             print("-" * 20, file=f)
-                            print(response_ids, file=f)
+                            print(response_ids_from_final_sample, file=f)
                             print(accum_response_ids, file=f)
 
                     response_ids = accum_response_ids  # convert to the generating response ids, only for debug testing
@@ -1003,7 +1015,7 @@ class AgentModeDaemon:
                     response_mask_list.append(one_response_mask)
                     data_id_list.append(sample_info["data_id"])
                     rollout_id_list.append(rollout_id)
-                    turn_index_list.append(current_merged_trace_idx)
+                    # turn_index_list.append(current_merged_trace_idx)
         else:
             raise ValueError(f"Unknown trace_aggregator mode: {self.trace_aggregator.mode}")
 
@@ -1057,13 +1069,17 @@ class AgentModeDaemon:
             "training/n_triplets": n_transition,
             # log data, only for debug testing
             **({
-                "training/n_unmerged_turns": unmerged_count,
-                "training/avg_response_by_turn": np.mean(response_per_turn_list) if response_per_turn_list else 0,
-                "training/max_response_by_turn": np.max(response_per_turn_list) if response_per_turn_list else 0,
-                "training/min_response_by_turn": np.min(response_per_turn_list) if response_per_turn_list else 0,
+                "training/n_unmerged_rollouts": unmerged_count,
+                "training/n_triplets_by_turn": len(response_per_turn_list),
+                "training/avg_response_length_by_turn": np.mean(response_per_turn_list),
+                "training/max_response_length_by_turn": np.max(response_per_turn_list),
+                "training/min_response_length_by_turn": np.min(response_per_turn_list),
                 "training/template_mismatch_triplets": template_mismatch_count,
                 "training/retoken_mismatch_triplets": retoken_mismatch_count,
                 "training/others_mismatch_triplets": others_mismatch_count,
+                "training/template_mismatch_ratio": template_mismatch_count / len(response_per_turn_list),
+                "training/retoken_mismatch_ratio": retoken_mismatch_count / len(response_per_turn_list),
+                "training/others_mismatch_ratio": others_mismatch_count / len(response_per_turn_list),
             } if self.trace_aggregator.mode.startswith("trajectory") else {}),
         }
 
