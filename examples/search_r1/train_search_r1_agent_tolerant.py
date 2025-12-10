@@ -45,7 +45,8 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
                 "mode": "trajectory-tolerant",
                 "special_token_tolerance": 0,  # only allow re-token mismatches
                 "string_tolerance": 0,  # only allow re-token mismatches
-                "trajectory_max_length": 34384,
+                "trajectory_max_prompt_length": 4096,
+                "trajectory_max_response_length": 34384,
             }
         },
         "actor": {
