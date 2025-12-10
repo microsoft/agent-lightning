@@ -88,9 +88,7 @@ cp .env.example .env
 
 ### Experimental Settings
 
-We provide two agent learning examples that show how to train your LLM with [**Youtu-Agent**](https://github.com/TencentCloudADP/youtu-agent/tree/rl/agl) with [**Agent Lightning**](https://github.com/microsoft/agent-lightning/tree/contrib/youtu-agent-lightning): ReTool (code/math) and SearchR1 (search).
-
-The detailed training and validation instructions are provided in the [**Youtu-Agent**](https://github.com/TencentCloudADP/youtu-agent/tree/rl/agl) repository.
+We provide two agent learning examples that show how to train your LLM with [**Youtu-Agent**](https://github.com/TencentCloudADP/youtu-agent/tree/rl/agl) with [**Agent Lightning**](https://github.com/microsoft/agent-lightning/tree/contrib/youtu-agent-lightning): ReTool (code/math) and SearchR1 (search). The detailed training and validation instructions are provided in the [**Youtu-Agent**](https://github.com/TencentCloudADP/youtu-agent/tree/rl/agl) repository.
 
 
 ## Acknowledgement
