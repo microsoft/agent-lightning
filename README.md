@@ -1,22 +1,22 @@
 
-# Training Youtu-agent with AgentLightning
+# Training Youtu-Agent with AgentLightning
 
 
 
 
-<img src="docs/assets/youtu-agl-mascot.png" alt="Youtu-agent x Agent Lightning logo" width="280" align="left" style="margin-right:20px;">
+<img src="docs/assets/youtu-agl-mascot.png" alt="Youtu-Agent x Agent Lightning logo" width="280" align="left" style="margin-right:20px;">
 
 
 
-This repository is the modified version of [Agent Lightning](https://github.com/microsoft/agent-lightning/tree/contrib/youtu-agent-lightning) that is used to train your agents built by [Youtu-agent](https://github.com/TencentCloudADP/youtu-agent/tree/rl/agl). Modifications are made to the original **[AgentLightning@v0.2.2](https://github.com/microsoft/agent-lightning/releases/tag/v0.2.2)** for:
+This repository is the modified version of [Agent Lightning](https://github.com/microsoft/agent-lightning/tree/contrib/youtu-agent-lightning) that is used to train your agents built by [Youtu-Agent](https://github.com/TencentCloudADP/youtu-agent/tree/rl/agl). Modifications are made to the original **[AgentLightning@v0.2.2](https://github.com/microsoft/agent-lightning/releases/tag/v0.2.2)** for:
 
 * scaling up training with more agent runners;
-* fixing bugs when bridged with Youtu-agent;
+* fixing bugs when bridged with Youtu-Agent;
 * correcting GRPO advantage estimation for multi-turn trajectories;
 * stabilizing RL training with tricks (e.g., filtering).
 
 
-We have **verified the performaces** of code/math (ReTool) and search (SearchR1) tasks with multi-node training on **128 GPUs**. For details on how to reproduce the results, please refer to the [Quick Start](#quick-start) section ([Youtu-agent](https://github.com/TencentCloudADP/youtu-agent/tree/rl/agl) repository).
+We have **verified the performaces** of code/math (ReTool) and search (SearchR1) tasks with multi-node training on **128 GPUs**. For details on how to reproduce the results, please refer to the [Quick Start](#quick-start) section ([Youtu-Agent](https://github.com/TencentCloudADP/youtu-agent/tree/rl/agl) repository).
 
 
 ## Verified Training Performance
@@ -95,10 +95,10 @@ We provide two agent learning examples that show how to train your LLM with [**Y
 
 We sincerely appreciate the efforts from the following projects:
 
-* Youtu-agent
+* Youtu-Agent
 ```
 @misc{youtu-agent-2025,
-  title={Youtu-agent: A Simple yet Powerful Agent Framework},
+  title={Youtu-Agent: A Simple yet Powerful Agent Framework},
   author={Tencent Youtu Lab},
   year={2025},
   publisher = {GitHub},
