@@ -12,8 +12,6 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple, cast
 from urllib import error, parse, request
 
-import aiohttp
-
 
 class PrometheusQueryError(RuntimeError):
     """Raised when Prometheus returns an error payload."""
@@ -317,9 +315,6 @@ def fetch_store_statistics(store_url: str, timeout: float) -> Optional[Dict[str,
         return None
     except json.JSONDecodeError as exc:
         print(f"[warn] Failed to decode store statistics: {exc} (url={stats_url})")
-        return None
-    except aiohttp.ClientError as exc:
-        print(f"[warn] HTTP error fetching store statistics: {exc} (url={stats_url})")
         return None
     except TimeoutError as exc:
         print(f"[warn] Timeout fetching store statistics: {exc} (url={stats_url})")

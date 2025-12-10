@@ -270,7 +270,7 @@ class MongoClientPool(Generic[T_mapping]):
     async def close(self) -> None:
         """Close all clients currently tracked by the pool."""
 
-        with self._lock:
+        async with self._lock:
             clients = list(self._client_pool.values())
             self._client_pool.clear()
             self._collection_pool.clear()
