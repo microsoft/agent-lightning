@@ -3041,7 +3041,7 @@ async def test_healthcheck_unresponsive_behavior(store_fixture: LightningStore, 
     """Test that healthcheck detects and handles unresponsive conditions."""
     # Create rollout with short unresponsive timeout but no retry for unresponsive
     config = RolloutConfig(
-        unresponsive_seconds=0.1,  # Very short unresponsive timeout
+        unresponsive_seconds=0.2,  # Very short unresponsive timeout
         max_attempts=3,
         retry_condition=["timeout"],  # Note: "unresponsive" not in retry_condition
     )
@@ -3060,7 +3060,7 @@ async def test_healthcheck_unresponsive_behavior(store_fixture: LightningStore, 
     assert running_attempts[0].last_heartbeat_time is not None
 
     # Wait for unresponsive timeout
-    await asyncio.sleep(0.15)  # Wait longer than unresponsive_seconds
+    await asyncio.sleep(0.25)  # Wait longer than unresponsive_seconds
 
     # Verify attempt was marked as unresponsive
     attempts_after = await store_fixture.query_attempts(rollout.rollout_id)
