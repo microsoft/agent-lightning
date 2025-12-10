@@ -218,5 +218,5 @@ agentlightning/dashboard/**/*.svg
 docker/data/
 
 # AGL simulation
-examples/simulation/envs/alfworld/alfworld_source/*
+agl_envs/
 wandb/

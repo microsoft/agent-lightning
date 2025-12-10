@@ -13,7 +13,7 @@ from captioners.debugging import (
     print_llm_chat_input,
     print_llm_single_input,
 )
-from envs import make_env_manager
+from agl_envs.simulation import make_env_manager
 
 from agentlightning import LLM, LitAgent, NamedResources, Rollout, configure_logger, emit_object, emit_reward, operation
 from agentlightning.utils.otel import make_link_attributes

@@ -1,0 +1,16 @@
+env_name: scienceworld
+seed: 0
+format_penalty: 0.1
+binary_reward: False
+save_rollout: False
+log_pure_env_obs: False # True for GiGPO
+reawrd_scale: 10.0
+use_success_rate: True
+
+# only for scienceworld
+use_action_correction: False
+
+captioner:
+  type: cot # naive or cot
+  obs_type: single # chat or single
+  max_text_history: 2

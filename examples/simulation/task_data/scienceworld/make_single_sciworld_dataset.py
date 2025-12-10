@@ -2,7 +2,7 @@ import json
 import os
 
 import pandas as pd
-from scienceworld import ScienceWorldEnv
+from agl_envs.simulation.scienceworld import ScienceWorldEnv
 
 total_task_list = [
     "boil",

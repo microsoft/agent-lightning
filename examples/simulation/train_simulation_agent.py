@@ -31,8 +31,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--env", type=str, default="alfworld")
     parser.add_argument("--algorithm", type=str, default="grpo")
-    parser.add_argument("--debug", action="store_true")
-    parser.add_argument("--n_workers", type=int, default=64, help="Number of workers for training")
+    parser.add_argument("--debug", action="store_true", default=True)
+    parser.add_argument("--n_workers", type=int, default=1, help="Number of workers for training")
     parser.add_argument("--trial", type=int, default=0, help="Number of trials")
     parser.add_argument("--task_num", type=int, default=25, help="ScienceWorld Task number to inject as env var")
     parser.add_argument("--_background", action="store_true", help=argparse.SUPPRESS)
@@ -50,7 +50,7 @@ if __name__ == "__main__":
         os.environ["TASK_NUM"] = str(args.task_num)
 
     # Load configs
-    agent_config_path = f"examples/simulation/envs/env_config/{args.env}.yaml"
+    agent_config_path = f"examples/simulation/env_config/{args.env}.yaml"
     if args.debug:
         trainer_config_path = f"examples/simulation/run/{args.env}/debug/{args.algorithm}.yaml"
     else:

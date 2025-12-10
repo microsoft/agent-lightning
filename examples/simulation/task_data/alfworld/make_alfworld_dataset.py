@@ -6,7 +6,7 @@ import pandas as pd
 from tqdm import tqdm
 
 # Set ALFWORLD data path
-os.environ["ALFWORLD_DATA"] = "examples/simulation/envs/alfworld/alfworld_source"
+os.environ["ALFWORLD_DATA"] = "agl_envs/simulation/alfworld/alfworld_source"
 alfworld_data_path = os.environ.get("ALFWORLD_DATA")
 
 train_data_path = f"{alfworld_data_path}/json_2.1.1/train"

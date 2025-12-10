@@ -8,23 +8,7 @@ Now it's your turn to take an action. You should first reason step-by-step about
 Once you've finished your reasoning, you should choose an appropriate action for the current step and present it within <action> </action> tags.
 """.strip()
 
-SCIWORLD_COT_INSTRUCTION = """
-You could try to explore different actions, especially when you are not sure what the best action for your current observation.
-Now it's your turn to take an action. You should first reason step-by-step about the current situation. This reasoning process MUST be enclosed within <think> </think> tags.
-Once you've finished your reasoning, you should choose an appropriate action for the current step and present it within <action> </action> tags.
-""".strip()
-
-BABASIAI_COT_INSTRUCTION = """
-Now it's your turn to take an action. You should first reason step-by-step about the current situation. This reasoning process MUST be enclosed within <think> </think> tags.
-Once you’ve finished your reasoning, choose an appropriate action—idle, up, right, down, or left—for the current step, and present it within <action>...</action> tags.
-""".strip()
-
 NAIVE_INSTRUCTION = """
-Please response with only one line with one sentence, following the possible action format shown above. No extra words are allowed.
-""".strip()
-
-SCIWORLD_NAIVE_INSTRUCTION = """
-You could try to explore different actions, especially when you are not sure what the best action for your current observation.
 Please response with only one line with one sentence, following the possible action format shown above. No extra words are allowed.
 """.strip()
 
@@ -52,7 +36,7 @@ INSTRUCTION_MAP = {
 }
 
 
-def _get_instruction(type: str, env_name: str = None, config_type: int = 0):
+def _get_instruction(type: str, env_name: str = None):
     """
     Return the appropriate instruction text based on the type and environment name.
 
@@ -66,19 +50,13 @@ def _get_instruction(type: str, env_name: str = None, config_type: int = 0):
     Raises:
         ValueError: If the instruction type is not recognized.
     """
-    if type == "cot" and env_name == "babaisai":
-        return BABASIAI_COT_INSTRUCTION
-    if type == "cot" and env_name == "scienceworld" and config_type == 1:
-        return SCIWORLD_COT_INSTRUCTION
-    elif type == "naive" and env_name == "scienceworld" and config_type == 1:
-        return SCIWORLD_NAIVE_INSTRUCTION
-    elif type in INSTRUCTION_MAP:
+    if type in INSTRUCTION_MAP:
         return INSTRUCTION_MAP[type]
     else:
         raise ValueError(f"Unknown instruction type: {type}")
 
 
-def add_chat_instruction(prompt, type: str, sep: str = "\n\n", env_name: str = None, config_type: int = 0):
+def add_chat_instruction(prompt, type: str, sep: str = "\n\n", env_name: str = None):
     """
     Add the selected instruction text to the last message in a chat prompt (list version).
 
@@ -92,19 +70,19 @@ def add_chat_instruction(prompt, type: str, sep: str = "\n\n", env_name: str = N
     """
     if type == "tip":
         new_prompt = copy.deepcopy(prompt)
-        tip_instruction = _get_instruction(type, env_name, config_type)
+        tip_instruction = _get_instruction(type, env_name)
         new_prompt.append(UserMessage(source="user", content=tip_instruction))
 
         return new_prompt
     else:
         new_prompt = copy.deepcopy(prompt)
-        instruction = _get_instruction(type, env_name, config_type)
+        instruction = _get_instruction(type, env_name)
         new_prompt[-1].content += sep + instruction
 
         return new_prompt
 
 
-def add_single_instruction(prompt, type: str, sep: str = "\n\n", env_name: str = None, config_type: int = 0):
+def add_single_instruction(prompt, type: str, sep: str = "\n\n", env_name: str = None):
     """
     Add the selected instruction text to a single prompt (string or list version).
 
@@ -119,7 +97,7 @@ def add_single_instruction(prompt, type: str, sep: str = "\n\n", env_name: str =
     Raises:
         TypeError: If the prompt type is not string or list.
     """
-    instruction = _get_instruction(type, env_name, config_type)
+    instruction = _get_instruction(type, env_name)
 
     if isinstance(prompt, str):
         return prompt + sep + instruction

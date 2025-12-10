@@ -27,6 +27,6 @@ conda run -n agl-alfworld pip install -U "autogen-agentchat" "autogen-ext[openai
 
 # ---------- Download ALFWorld Source ----------
 echo "=== Downloading ALFWorld source ==="
-conda run -n agl-alfworld python examples/simulation/envs/alfworld/download_alfworld_source.py
+conda run -n agl-alfworld python agl_envs/simulation/alfworld/download_alfworld_source.py
 
 echo "✅ agl-alfworld environment has been successfully set up!"
