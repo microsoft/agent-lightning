@@ -32,7 +32,7 @@ class MongoLightningStore(CollectionBasedLightningStore[MongoLightningCollection
 
     Args:
         mongo_uri: MongoDB connection string (defaults to local replica set).
-        mongo_client_kwargs: Extra keyword arguments forwarded to [`AsyncMongoClient`][].
+        mongo_client_kwargs: Extra keyword arguments forwarded to `AsyncMongoClient`.
         database: The MongoDB database name. Defaults to ``agentlightning``.
         partition_id: The partition id. Useful when sharing the database among multiple Agent-lightning trainers.
         tracker: The metrics tracker to use.

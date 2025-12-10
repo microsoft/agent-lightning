@@ -250,12 +250,13 @@ async def _ensure_collection(
 class MongoClientPool(Generic[T_mapping]):
     """A pool of MongoDB clients, each bound to a specific event loop.
 
-    The pool lazily creates [`AsyncMongoClient`][] instances per event loop using the provided
+    The pool lazily creates `AsyncMongoClient` instances per event loop using the provided
     connection parameters, ensuring we never try to reuse a client across loops.
     """
 
     def __init__(self, *, mongo_uri: str, mongo_client_kwargs: Mapping[str, Any] | None = None):
-        self._lock = aiologic.Lock()
+        self._get_collection_lock = aiologic.Lock()
+        self._get_client_lock = aiologic.Lock()
         self._mongo_uri = mongo_uri
         self._mongo_client_kwargs = dict(mongo_client_kwargs or {})
         self._client_pool: Dict[int, AsyncMongoClient[T_mapping]] = {}
@@ -270,7 +271,7 @@ class MongoClientPool(Generic[T_mapping]):
     async def close(self) -> None:
         """Close all clients currently tracked by the pool."""
 
-        async with self._lock:
+        async with self._get_client_lock, self._get_collection_lock:
             clients = list(self._client_pool.values())
             self._client_pool.clear()
             self._collection_pool.clear()
@@ -291,7 +292,7 @@ class MongoClientPool(Generic[T_mapping]):
             await existing.aconnect()  # This actually does nothing if the client is already connected.
             return existing
 
-        async with self._lock:
+        async with self._get_client_lock:
             # Another coroutine may have already created the client.
             if key in self._client_pool:
                 await self._client_pool[key].aconnect()
@@ -309,7 +310,7 @@ class MongoClientPool(Generic[T_mapping]):
         if key in self._collection_pool:
             return self._collection_pool[key]
 
-        async with self._lock:
+        async with self._get_collection_lock:
             # Another coroutine may have already created the collection.
             if key in self._collection_pool:
                 return self._collection_pool[key]
