@@ -2,16 +2,58 @@
 # Training Youtu-agent with AgentLightning
 
 
-## Introduction
 
-<img src="docs/assets/youtu-agl-mascot.png" alt="Youtu-agent x Agent Lightning logo" width="200" align="left" style="margin-right:20px;">
+
+<img src="docs/assets/youtu-agl-mascot.png" alt="Youtu-agent x Agent Lightning logo" width="150" align="left" style="margin-right:20px;">
+
+
+
+This repository allows you to train your agents built by Youtu-agent with Agent Lightning and **we have verified the performaces** of code/math (ReTool) and search (SearchR1) tasks with multi-node training on **128 GPUs**.
+
 
 Modifications are made to the original **[AgentLightning@v0.2.2](https://github.com/microsoft/agent-lightning/releases/tag/v0.2.2)** for:
 * scaling up training with more agent runners;
 * fixing bugs when bridged with [Youtu-agent](https://github.com/TencentCloudADP/youtu-agent/tree/rl/agl);
 * correcting GRPO advantage estimation for multi-turn trajectories;
-* stabilizing RL training with tricks (e.g., filtering);
-* demonstration examples with both ReTool (Math/Code) and SearchR1 (Search) agent scenarios.
+* stabilizing RL training with tricks (e.g., filtering).
+
+
+## Verified Training Performance
+
+
+The training dynamics (at least 200 steps) of 7B instruct models are provided below for reference, confirming the effectiveness and stability of training with our repository.
+
+- [ReTool](https://api.wandb.ai/links/1275747829-fudan-university/vwxn21w2)
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/assets/images/retool_entropy.png" width="200"/></td>
+    <td align="center"><img src="docs/assets/images/retool_gradnorm.png" width="200"/></td>
+    <td align="center"><img src="docs/assets/images/retool_val_ame24.png" width="200"/></td>
+  </tr>
+</table>
+
+
+- [SearchR1](https://api.wandb.ai/links/yuleiqin-tencent/0e2hs7io)
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/assets/images/search_entropy.png" width="200"/></td>
+    <td align="center"><img src="docs/assets/images/search_gradnorm.png" width="200"/></td>
+    <td align="center"><img src="docs/assets/images/search_val_triviaqa.png" width="200"/></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/assets/images/search_val_popqa.png" width="200"/></td>
+    <td align="center"><img src="docs/assets/images/search_val_nq.png" width="200"/></td>
+    <td align="center"><img src="docs/assets/images/search_val_musique.png" width="200"/></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/assets/images/search_val_hotpotqa.png" width="200"/></td>
+    <td align="center"><img src="docs/assets/images/search_val_bamboogle.png" width="200"/></td>
+    <td align="center"><img src="docs/assets/images/search_val_2wiki.png" width="200"/></td>
+  </tr>
+</table>
+
 
 ## Quick Start
 
@@ -126,20 +168,7 @@ bash run_ray.sh examples_train_w_youtu/search_r1_youtu/trainer32b_utu_onpolicy.s
 ```
 
 
-## Training Dynamics Curve
-
-We provide the training dynamics for reference.
-
-### ReTool
-
-https://api.wandb.ai/links/1275747829-fudan-university/yboqje53
-
-### SearchR1
-
-https://api.wandb.ai/links/yuleiqin-tencent/0e2hs7io
-
-
-# Acknowledgement
+## Acknowledgement
 
 We sincerely appreciate the efforts from the following projects:
 
