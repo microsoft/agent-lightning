@@ -77,18 +77,25 @@ Have a project that builds on Agent-lightning but does not belong in the main re
 
 ## Agent-lightning Contrib
 
-Use [`contrib/`]({{ src("contrib") }}) for experiments, third-party adapters, or curated recipes that do not belong in the core runtime tree yet. Keep each addition isolated with clear ownership so downstream users can depend on it safely. The core steps:
+[`contrib/`]({{ src("contrib") }}) is where work-in-progress or third-party integrations, and curated recipes live before they are hardened enough for the core runtime tree. Think of it as an incubator: additions should remain easy to consume, clearly owned, and scoped so downstream users can vendor them with minimal risk.
 
-1. **Decide the scope** — Recipes live under `contrib/recipes/<topic>/`, package extensions under `contrib/agentlightning/contrib/<feature>/`, and helper assets under `contrib/scripts/`.
-2. **Document the module** — Ship a README per contribution with usage, smoke-test commands, dependencies.
-3. **Keep code style consistent** — Add exhaustive type hints. Run `uv run --no-sync pyright` and `uv run --no-sync pytest` for any new runtime module.
-4. **Demonstrate reproducibility** — Provide download scripts or instructions instead of storing binaries.
+### What Belongs Here
 
-The acceptance bar for contrib contributions is lower than for core contributions. We don't expect contrib to have the same code quality, test coverage, and documentation as core contributions. However, we do expect the contributions should match the following criteria:
+- **Recipes** that assemble multiple Agent Lightning components for a narrow task (`contrib/recipes/<topic>/`). Each recipe must be self-contained, include running instructions and result reports.
+- **Runtime extensions** that would bloat the primary `agentlightning/` namespace (`contrib/agentlightning/contrib/<feature>/`). These should mirror the published wheel layout so that `import agentlightning.contrib.<feature>` works out of the box.
+- **Supporting scripts and assets** (`contrib/scripts/`) that automate dataset downloads, environment preparation, or benchmarks required by contrib modules.
 
-- Each recipe is isolated to a fresh folder with a README explaining its purpose and ownership.
-- `CODEOWNERS` entries are updated when needed.
-- No large binaries or credentials are checked in; download steps are scripted or documented.
+If you are unsure where a contribution should live, start a thread in Discord or open an issue before writing code. The [contrib README]({{ src("contrib/README.md") }}) also lists the directory expectations.
+
+### Submission Checklist
+
+1. **Isolate the addition.** Create a new folder scoped to the feature, add a README describing ownership, usage, and smoke tests, and link to any companion docs/examples.
+2. **Document everything.** Include configuration steps, environment variables, and sample commands so contributors can reproduce the results without guesswork.
+3. **Keep quality predictable.** Match the repo’s style guide, apply exhaustive type hints, and run `uv run --no-sync pyright` plus targeted `pytest` suites for any Python module you touch.
+4. **Ship reproducibility artifacts.** Store only scripts or instructions for downloading datasets, weights, or binaries—never upload large artifacts or credentials directly.
+5. **Update ownership.** Add `CODEOWNERS` entries when new directories appear so maintainers know who can review follow-up fixes.
+
+Contrib entries do not need the same maturity level as core code, but they must still meet the baseline above. Submissions that lack documentation, hide ownership, or depend on untracked assets are typically rejected until those gaps are resolved.
 
 ### Other Contribution Ideas
 
