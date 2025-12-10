@@ -1253,6 +1253,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#agl-prometheus" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        agl prometheus
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#agl-agentops" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1680,6 +1691,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#agl-prometheus" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        agl prometheus
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#agl-agentops" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1749,7 +1771,7 @@
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="October 15, 2025 05:37:44 UTC"><span class="timeago" datetime="2025-10-15T05:37:44+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="October 15, 2025 05:37:44 UTC">2025-10-15</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="December 10, 2025 13:11:29 UTC"><span class="timeago" datetime="2025-12-10T13:11:29+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="December 10, 2025 13:11:29 UTC">2025-12-10</span>
   </span>
 
     
@@ -1797,21 +1819,22 @@ Try to use <code>agl -h</code> to get the latest help message.</p>
 <p>Agent-lightning also provides utilities to help you build your own CLI for <a class="autorefs autorefs-internal" title="            agentlightning.LitAgent" href="../agent/#agentlightning.LitAgent">LitAgent</a> and <a class="autorefs autorefs-internal" title="            agentlightning.Trainer" href="../trainer/#agentlightning.Trainer">Trainer</a>. See <a href="../trainer/">Trainer</a> for references.</p>
 </div>
 <h2 id="agl">agl<a class="headerlink" href="#agl" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>usage: agl [-h] {vllm,store,agentops}
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>usage: agl [-h] {vllm,store,prometheus,agentops}
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>Agent Lightning CLI entry point.
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>
 <a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>Available subcommands:
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>  vllm      Run the vLLM CLI with Agent Lightning instrumentation.
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>  store     Run a LightningStore server.
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>  agentops  Start the AgentOps server manager.
-<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>
-<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>positional arguments:
-<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>  {vllm,store,agentops}
-<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>                        Subcommand to run.
-<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>
-<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>options:
-<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>  -h, --help            show this help message and exit
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>  vllm        Run the vLLM CLI with Agent Lightning instrumentation.
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>  store       Run a LightningStore server.
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>  prometheus  Serve Prometheus metrics from the multiprocess registry.
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>  agentops    Start the AgentOps server manager.
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>positional arguments:
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>  {vllm,store,prometheus,agentops}
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>                        Subcommand to run.
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>options:
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>  -h, --help            show this help message and exit
 </code></pre></div>
 <h2 id="agl-vllm">agl vllm<a class="headerlink" href="#agl-vllm" title="Permanent link">&para;</a></h2>
 <p>Agent-lightning's instrumented vLLM CLI.</p>
@@ -1846,16 +1869,32 @@ Try to use <code>agl -h</code> to get the latest help message.</p>
 <a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>  -h, --help   show this help message and exit
 <a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>  --port PORT  Port to run the server on
 </code></pre></div>
-<h2 id="agl-agentops">agl agentops<a class="headerlink" href="#agl-agentops" title="Permanent link">&para;</a></h2>
-<p>Start a mock AgentOps server to bypass the online service of AgentOps.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>usage: agl agentops [-h] [--daemon] [--port PORT]
+<h2 id="agl-prometheus">agl prometheus<a class="headerlink" href="#agl-prometheus" title="Permanent link">&para;</a></h2>
+<p>Expose the Prometheus multiprocess registry on a dedicated FastAPI server. This is useful when the main LightningStore service is under heavy load; exporters can scrape this auxiliary endpoint instead.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>usage: agl prometheus [-h] [--host HOST] [--port PORT] [--metrics-path METRICS_PATH] [--log-level {DEBUG,INFO,WARNING,ERROR}] [--access-log]
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>Start AgentOps server
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>Serve Prometheus metrics outside the LightningStore server.
 <a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>
 <a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>options:
-<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>  -h, --help   show this help message and exit
-<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>  --daemon     Run server as a daemon
-<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>  --port PORT  Port to run the server on
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>  -h, --help            show this help message and exit
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>  --host HOST           Host to bind the metrics server to.
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>  --port PORT           Port to expose the Prometheus metrics on.
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>  --metrics-path METRICS_PATH
+<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>                        HTTP path used to expose metrics. Must start with &#39;/&#39; and not be the root path.
+<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>  --log-level {DEBUG,INFO,WARNING,ERROR}
+<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a>                        Configure the logging level for the metrics server.
+<a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a>  --access-log          Enable uvicorn access logs. Disabled by default to reduce noise.
+</code></pre></div>
+<h2 id="agl-agentops">agl agentops<a class="headerlink" href="#agl-agentops" title="Permanent link">&para;</a></h2>
+<p>Start a mock AgentOps server to bypass the online service of AgentOps.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>usage: agl agentops [-h] [--daemon] [--port PORT]
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>Start AgentOps server
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>options:
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>  -h, --help   show this help message and exit
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>  --daemon     Run server as a daemon
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>  --port PORT  Port to run the server on
 </code></pre></div>
 
 <!-- Was this page helpful? -->

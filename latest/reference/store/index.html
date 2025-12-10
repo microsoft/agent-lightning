@@ -2670,6 +2670,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#agentlightning.store.collection.KeyValue.chmax" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;chmax
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#agentlightning.store.collection.KeyValue.get" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2685,6 +2696,17 @@
     <span class="md-ellipsis">
       
         <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;has
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#agentlightning.store.collection.KeyValue.inc" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;inc
       
     </span>
   </a>
@@ -4693,6 +4715,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#agentlightning.store.collection.KeyValue.chmax" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;chmax
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#agentlightning.store.collection.KeyValue.get" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4708,6 +4741,17 @@
     <span class="md-ellipsis">
       
         <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;has
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#agentlightning.store.collection.KeyValue.inc" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;inc
       
     </span>
   </a>
@@ -8051,6 +8095,16 @@ Thread-safe and async-compatible but data is not persistent.</p>
 <p><span class="doc-section-title">Parameters:</span></p>
     <ul>
         <li class="doc-section-item field-body">
+            <b><code>thread_safe</code></b>
+              (<code><span title="bool">bool</span></code>, default:
+                  <code>False</code>
+)
+          –
+          <div class="doc-md-description">
+            <p>Whether the store is thread-safe.</p>
+          </div>
+        </li>
+        <li class="doc-section-item field-body">
             <b><code>eviction_memory_threshold</code></b>
               (<code><span title="float">float</span> | <span title="int">int</span> | None</code>, default:
                   <code>None</code>
@@ -8081,6 +8135,27 @@ By default, it's 80% of the eviction threshold.</p>
           <div class="doc-md-description">
             <p>A function to estimate the size of a span in bytes.
 By default, it's a simple size estimator that uses sys.getsizeof.</p>
+          </div>
+        </li>
+        <li class="doc-section-item field-body">
+            <b><code>tracker</code></b>
+              (<code><a class="autorefs autorefs-internal" title="            agentlightning.utils.metrics.MetricsBackend" href="../internal/#agentlightning.utils.metrics.MetricsBackend">MetricsBackend</a> | None</code>, default:
+                  <code>None</code>
+)
+          –
+          <div class="doc-md-description">
+            <p>The metrics tracker to use.</p>
+          </div>
+        </li>
+        <li class="doc-section-item field-body">
+            <b><code>scan_debounce_seconds</code></b>
+              (<code><span title="float">float</span></code>, default:
+                  <code>10.0</code>
+)
+          –
+          <div class="doc-md-description">
+            <p>The debounce time for the scan for unhealthy rollouts.
+Set to 0 to disable debouncing.</p>
           </div>
         </li>
     </ul>
@@ -8235,6 +8310,18 @@ It may use an isolated snapshot that supports repeatable reads.</p>
           –
           <div class="doc-md-description">
             <p>Enable metrics tracking.</p>
+          </div>
+        </li>
+        <li class="doc-section-item field-body">
+            <b><code>scan_debounce_seconds</code></b>
+              (<code><span title="float">float</span></code>, default:
+                  <code>10.0</code>
+)
+          –
+          <div class="doc-md-description">
+            <p>The debounce time for the scan for unhealthy rollouts.
+Set to 0 to disable debouncing. The debounce is a non-perfect traffic control.
+It's isolated for each store instance if there are multiple worker replicas.</p>
           </div>
         </li>
     </ul>
@@ -9982,7 +10069,7 @@ Make sure the threaded stores are instantiated before initializing the threads.<
 
 
 <h3 id="agentlightning.store.collection.AtomicLabels" class="doc doc-heading">
-<code class="doc-symbol doc-symbol-heading doc-symbol-attribute"></code>            <code class="highlight language-python"><span class="n">agentlightning</span><span class="o">.</span><span class="n">store</span><span class="o">.</span><span class="n">collection</span><span class="o">.</span><span class="n">AtomicLabels</span> <span class="o">=</span> <span class="n">Literal</span><span class="p">[</span><span class="s1">&#39;rollouts&#39;</span><span class="p">,</span> <span class="s1">&#39;attempts&#39;</span><span class="p">,</span> <span class="s1">&#39;spans&#39;</span><span class="p">,</span> <span class="s1">&#39;resources&#39;</span><span class="p">,</span> <span class="s1">&#39;workers&#39;</span><span class="p">,</span> <span class="s1">&#39;rollout_queue&#39;</span><span class="p">,</span> <span class="s1">&#39;span_sequence_ids&#39;</span><span class="p">]</span></code>
+<code class="doc-symbol doc-symbol-heading doc-symbol-attribute"></code>            <code class="highlight language-python"><span class="n">agentlightning</span><span class="o">.</span><span class="n">store</span><span class="o">.</span><span class="n">collection</span><span class="o">.</span><span class="n">AtomicLabels</span> <span class="o">=</span> <span class="n">Literal</span><span class="p">[</span><span class="s1">&#39;rollouts&#39;</span><span class="p">,</span> <span class="s1">&#39;attempts&#39;</span><span class="p">,</span> <span class="s1">&#39;spans&#39;</span><span class="p">,</span> <span class="s1">&#39;resources&#39;</span><span class="p">,</span> <span class="s1">&#39;workers&#39;</span><span class="p">,</span> <span class="s1">&#39;rollout_queue&#39;</span><span class="p">,</span> <span class="s1">&#39;span_sequence_ids&#39;</span><span class="p">,</span> <span class="s1">&#39;generic&#39;</span><span class="p">]</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-module-attribute"><code>module-attribute</code></small>
@@ -9995,6 +10082,7 @@ Make sure the threaded stores are instantiated before initializing the threads.<
 
         <p>Labels for atomic operations.</p>
 <p>These labels are used to identify the collections that are affected by the atomic operation.</p>
+<p>The <code>generic</code> label is used to identify atomic operations that are not associated with any specific collection.</p>
 
     </div>
 
@@ -10774,6 +10862,40 @@ Otherwise, they will be inserted.</p>
 <div class="doc doc-object doc-function">
 
 
+<h4 id="agentlightning.store.collection.KeyValue.chmax" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">chmax</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-async"><code>async</code></small>
+  </span>
+
+<a href="#agentlightning.store.collection.KeyValue.chmax" class="headerlink" title="Permanent link">&para;</a></h4>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Set the value for the given key to the maximum of the current and new value.</p>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <ul>
+        <li class="doc-section-item field-body">
+              <code><span title="TypeError">TypeError</span></code>
+            –
+          <div class="doc-md-description">
+            <p>If the existing value or <code>value</code> is not numeric.</p>
+          </div>
+        </li>
+    </ul>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
 <h4 id="agentlightning.store.collection.KeyValue.get" class="doc doc-heading">
 <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
 
@@ -10809,6 +10931,40 @@ Otherwise, they will be inserted.</p>
     <div class="doc doc-contents ">
 
         <p>Check if the given key is in the dictionary.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h4 id="agentlightning.store.collection.KeyValue.inc" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">inc</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">amount</span><span class="p">)</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-async"><code>async</code></small>
+  </span>
+
+<a href="#agentlightning.store.collection.KeyValue.inc" class="headerlink" title="Permanent link">&para;</a></h4>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Increase the numeric value for the given key by <code>amount</code> and return the new value.</p>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <ul>
+        <li class="doc-section-item field-body">
+              <code><span title="TypeError">TypeError</span></code>
+            –
+          <div class="doc-md-description">
+            <p>If the existing value or <code>amount</code> is not numeric.</p>
+          </div>
+        </li>
+    </ul>
 
 
     </div>
@@ -11149,7 +11305,7 @@ Remember that the real behavior is implementation-dependent.</p>
         </li>
         <li class="doc-section-item field-body">
             <b><code>labels</code></b>
-              (<code><span title="typing.Optional">Optional</span>[<span title="typing.Sequence">Sequence</span>[<a class="autorefs autorefs-internal" title="            agentlightning.store.collection.AtomicLabels = Literal['rollouts', 'attempts', 'spans', 'resources', 'workers', 'rollout_queue', 'span_sequence_ids']
+              (<code><span title="typing.Optional">Optional</span>[<span title="typing.Sequence">Sequence</span>[<a class="autorefs autorefs-internal" title="            agentlightning.store.collection.AtomicLabels = Literal['rollouts', 'attempts', 'spans', 'resources', 'workers', 'rollout_queue', 'span_sequence_ids', 'generic']
 
   
       module-attribute
@@ -11345,7 +11501,7 @@ Remember that the real behavior is implementation-dependent.</p>
 <p><span class="doc-section-title">Raises:</span></p>
     <ul>
         <li class="doc-section-item field-body">
-              <code><span title="ValueError">ValueError</span></code>
+              <code><span title="agentlightning.store.collection.base.DuplicatedPrimaryKeyError">DuplicatedPrimaryKeyError</span></code>
             –
           <div class="doc-md-description">
             <p>If any item with the same primary keys already exists.</p>
