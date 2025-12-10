@@ -6,7 +6,6 @@ import asyncio
 import logging
 import random
 import re
-import threading
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -249,23 +248,17 @@ async def _ensure_collection(
 
 
 class MongoClientPool(Generic[T_mapping]):
-    """A pool of MongoDB clients, each binded to a specific event loop.
+    """A pool of MongoDB clients, each bound to a specific event loop.
 
-    This class is to resolve the issue of MongoDB client cannot be shared across event loops:
-
-    ```
-    Cannot use AsyncMongoClient in different event loop. AsyncMongoClient uses low-level asyncio APIs that bind it to the event loop it was created on.
-    ```
-
-    Use the client pool with a context manager to ensure all clients are closed when the context is exited.
+    The pool lazily creates [`AsyncMongoClient`][] instances per event loop using the provided
+    connection parameters, ensuring we never try to reuse a client across loops.
     """
 
-    def __init__(self, client: AsyncMongoClient[T_mapping]):
-        self._lock = threading.Lock()
-
-        self._client_base = client
+    def __init__(self, *, mongo_uri: str, mongo_client_kwargs: Mapping[str, Any] | None = None):
+        self._lock = aiologic.Lock()
+        self._mongo_uri = mongo_uri
+        self._mongo_client_kwargs = dict(mongo_client_kwargs or {})
         self._client_pool: Dict[int, AsyncMongoClient[T_mapping]] = {}
-
         self._collection_pool: Dict[Tuple[int, str, str], AsyncCollection[T_mapping]] = {}
 
     async def __aenter__(self) -> Self:
@@ -275,18 +268,16 @@ class MongoClientPool(Generic[T_mapping]):
         await self.close()
 
     async def close(self) -> None:
-        """Close all clients in the pool (except the base client)."""
+        """Close all clients currently tracked by the pool."""
 
         with self._lock:
             clients = list(self._client_pool.values())
             self._client_pool.clear()
+            self._collection_pool.clear()
 
         for client in clients:
             try:
-                if client is not self._client_base:
-                    await client.close()
-                else:
-                    logger.debug("Skipping closing base client: %s", client)
+                await client.close()
             except Exception:
                 logger.exception("Error closing MongoDB client: %s", client)
 
@@ -295,31 +286,22 @@ class MongoClientPool(Generic[T_mapping]):
         key = id(loop)
 
         # If there is already a client specifically for this loop, return it.
-        if key in self._client_pool:
-            # Verify that the client still works.
-            await self._client_pool[key].aconnect()
-            return self._client_pool[key]
+        existing = self._client_pool.get(key)
+        if existing is not None:
+            await existing.aconnect()  # This actually does nothing if the client is already connected.
+            return existing
 
-        try:
-            # Try whether the base client will work.
-            await self._client_base.aconnect()
+        async with self._lock:
+            # Another coroutine may have already created the client.
+            if key in self._client_pool:
+                await self._client_pool[key].aconnect()
+                return self._client_pool[key]
 
-            with self._lock:
-                # If it works, add it to the pool and return it.
-                self._client_pool.setdefault(key, self._client_base)
-            return self._client_base
-        except RuntimeError as exc:
-            if "Cannot use AsyncMongoClient in different event loop" in str(exc):
-                with self._lock:
-                    # Create a new client for this loop.
-                    client = self._client_base._duplicate()  # type: ignore
-                    # Try whether the new client will work.
-                    await client.aconnect()
-                    # Add it to the pool and return it.
-                    self._client_pool.setdefault(key, client)  # type: ignore
-                return client  # type: ignore
-
-            raise
+            # Create a new client for this loop.
+            client = AsyncMongoClient[T_mapping](self._mongo_uri, **self._mongo_client_kwargs)
+            await client.aconnect()
+            self._client_pool[key] = client
+            return client
 
     async def get_collection(self, database_name: str, collection_name: str) -> AsyncCollection[T_mapping]:
         loop = asyncio.get_running_loop()
@@ -327,12 +309,16 @@ class MongoClientPool(Generic[T_mapping]):
         if key in self._collection_pool:
             return self._collection_pool[key]
 
-        # Create a new collection for this loop.
-        client = await self.get_client()
-        collection = client[database_name][collection_name]
-        with self._lock:
+        async with self._lock:
+            # Another coroutine may have already created the collection.
+            if key in self._collection_pool:
+                return self._collection_pool[key]
+
+            # Create a new collection for this loop.
+            client = await self.get_client()
+            collection = client[database_name][collection_name]
             self._collection_pool.setdefault(key, collection)
-        return collection
+            return collection
 
 
 class MongoBasedCollection(Collection[T_model]):
@@ -351,7 +337,7 @@ class MongoBasedCollection(Collection[T_model]):
 
     def __init__(
         self,
-        client_pool: MongoClientPool[Mapping[str, Any]] | AsyncMongoClient[Mapping[str, Any]],
+        client_pool: MongoClientPool[Mapping[str, Any]],
         database_name: str,
         collection_name: str,
         partition_id: str,
@@ -361,10 +347,7 @@ class MongoBasedCollection(Collection[T_model]):
         tracker: MetricsBackend | None = None,
     ):
         super().__init__(tracker=tracker)
-        if isinstance(client_pool, AsyncMongoClient):
-            self._client_pool = MongoClientPool(client_pool)
-        else:
-            self._client_pool = client_pool
+        self._client_pool = client_pool
         self._database_name = database_name
         self._collection_name = collection_name
         self._partition_id = partition_id
@@ -708,7 +691,7 @@ class MongoBasedQueue(Queue[T_generic], Generic[T_generic]):
 
     def __init__(
         self,
-        client_pool: MongoClientPool[Mapping[str, Any]] | AsyncMongoClient[Mapping[str, Any]],
+        client_pool: MongoClientPool[Mapping[str, Any]],
         database_name: str,
         collection_name: str,
         partition_id: str,
@@ -724,10 +707,7 @@ class MongoBasedQueue(Queue[T_generic], Generic[T_generic]):
             item_type: The Python type of queue items (primitive or BaseModel subclass).
         """
         super().__init__(tracker=tracker)
-        if isinstance(client_pool, AsyncMongoClient):
-            self._client_pool = MongoClientPool(client_pool)
-        else:
-            self._client_pool = client_pool
+        self._client_pool = client_pool
         self._database_name = database_name
         self._collection_name = collection_name
         self._partition_id = partition_id
@@ -887,7 +867,7 @@ class MongoBasedKeyValue(KeyValue[K, V], Generic[K, V]):
 
     def __init__(
         self,
-        client_pool: MongoClientPool[Mapping[str, Any]] | AsyncMongoClient[Mapping[str, Any]],
+        client_pool: MongoClientPool[Mapping[str, Any]],
         database_name: str,
         collection_name: str,
         partition_id: str,
@@ -906,10 +886,7 @@ class MongoBasedKeyValue(KeyValue[K, V], Generic[K, V]):
             tracker: The metrics tracker to use.
         """
         super().__init__(tracker=tracker)
-        if isinstance(client_pool, AsyncMongoClient):
-            self._client_pool = MongoClientPool(client_pool)
-        else:
-            self._client_pool = client_pool
+        self._client_pool = client_pool
         self._database_name = database_name
         self._collection_name = collection_name
         self._partition_id = partition_id

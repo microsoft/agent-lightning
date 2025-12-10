@@ -32,7 +32,7 @@ from agentlightning.store.collection.memory import _item_matches_filters  # pyri
 from agentlightning.store.collection.memory import _LoopAwareAsyncLock  # pyright: ignore[reportPrivateUsage]
 from agentlightning.store.collection.memory import _ThreadSafeAsyncLock  # pyright: ignore[reportPrivateUsage]
 from agentlightning.types import Rollout
-from tests.store.conftest import QueueItem, SampleItem
+from tests.store.conftest import QueueItem, SampleItem, mongo_client_kwargs, mongo_uri
 
 if TYPE_CHECKING:
     from pymongo.asynchronous.database import AsyncDatabase
@@ -937,7 +937,9 @@ async def test_dict_key_value_chmax_rejects_non_numeric_value(
 async def test_mongo_key_value_inc_rejects_non_numeric_value(temporary_mongo_database: AsyncDatabase[Any]) -> None:
     from agentlightning.store.collection.mongo import MongoBasedKeyValue, MongoClientPool
 
-    async with MongoClientPool(temporary_mongo_database.client) as client_pool:
+    async with MongoClientPool[Mapping[str, Any]](
+        mongo_uri=mongo_uri, mongo_client_kwargs=mongo_client_kwargs
+    ) as client_pool:
         key_value = MongoBasedKeyValue[str, int](
             client_pool,
             temporary_mongo_database.name,
@@ -964,7 +966,9 @@ async def test_mongo_key_value_inc_rejects_non_numeric_value(temporary_mongo_dat
 async def test_mongo_key_value_chmax_behaves_like_max(temporary_mongo_database: AsyncDatabase[Any]) -> None:
     from agentlightning.store.collection.mongo import MongoBasedKeyValue, MongoClientPool
 
-    async with MongoClientPool(temporary_mongo_database.client) as client_pool:
+    async with MongoClientPool[Mapping[str, Any]](
+        mongo_uri=mongo_uri, mongo_client_kwargs=mongo_client_kwargs
+    ) as client_pool:
         key_value = MongoBasedKeyValue[str, int](
             client_pool,
             temporary_mongo_database.name,
@@ -984,7 +988,9 @@ async def test_mongo_key_value_chmax_behaves_like_max(temporary_mongo_database: 
 async def test_mongo_key_value_chmax_rejects_non_numeric_value(temporary_mongo_database: AsyncDatabase[Any]) -> None:
     from agentlightning.store.collection.mongo import MongoBasedKeyValue, MongoClientPool
 
-    async with MongoClientPool(temporary_mongo_database.client) as client_pool:
+    async with MongoClientPool[Mapping[str, Any]](
+        mongo_uri=mongo_uri, mongo_client_kwargs=mongo_client_kwargs
+    ) as client_pool:
         key_value = MongoBasedKeyValue[str, int](
             client_pool,
             temporary_mongo_database.name,
@@ -1212,7 +1218,9 @@ async def test_mongo_based_sanity_check(temporary_mongo_database: AsyncDatabase[
         MongoClientPool,
     )
 
-    async with MongoClientPool(temporary_mongo_database.client) as client_pool:
+    async with MongoClientPool[Mapping[str, Any]](
+        mongo_uri=mongo_uri, mongo_client_kwargs=mongo_client_kwargs
+    ) as client_pool:
         collection = MongoBasedCollection[Any](
             client_pool, temporary_mongo_database.name, "test", "test-123", ["rollout_id"], Rollout
         )
@@ -1259,7 +1267,9 @@ async def test_mongo_ensure_collection_creates_partition_scoped_index(
     from agentlightning.store.collection.mongo import MongoBasedCollection, MongoClientPool
 
     collection_name = f"ensure-{uuid4().hex}"
-    async with MongoClientPool(temporary_mongo_database.client) as client_pool:
+    async with MongoClientPool[Mapping[str, Any]](
+        mongo_uri=mongo_uri, mongo_client_kwargs=mongo_client_kwargs
+    ) as client_pool:
         collection = MongoBasedCollection[Any](
             client_pool,
             temporary_mongo_database.name,
@@ -1289,7 +1299,9 @@ async def test_mongo_ensure_collection_survives_concurrent_calls(temporary_mongo
     collection_name = f"ensure-{uuid4().hex}"
 
     async def ensure_once() -> None:
-        async with MongoClientPool(temporary_mongo_database.client) as client_pool:
+        async with MongoClientPool[Mapping[str, Any]](
+            mongo_uri=mongo_uri, mongo_client_kwargs=mongo_client_kwargs
+        ) as client_pool:
             collection = MongoBasedCollection(
                 client_pool,
                 temporary_mongo_database.name,
@@ -1320,7 +1332,9 @@ async def test_mongo_ensure_collection_repeats_without_altering_indexes(
     from agentlightning.store.collection.mongo import MongoBasedCollection, MongoClientPool
 
     collection_name = f"ensure-{uuid4().hex}"
-    async with MongoClientPool(temporary_mongo_database.client) as client_pool:
+    async with MongoClientPool[Mapping[str, Any]](
+        mongo_uri=mongo_uri, mongo_client_kwargs=mongo_client_kwargs
+    ) as client_pool:
         collection = MongoBasedCollection(
             client_pool, temporary_mongo_database.name, collection_name, "partition-repeat", ["index"], SampleItem
         )
@@ -1341,7 +1355,9 @@ async def _with_mongo_collections(
 ) -> Any:
     from agentlightning.store.collection.mongo import MongoClientPool, MongoLightningCollections
 
-    async with MongoClientPool(db.client) as client_pool:
+    async with MongoClientPool[Mapping[str, Any]](
+        mongo_uri=mongo_uri, mongo_client_kwargs=mongo_client_kwargs
+    ) as client_pool:
         collections = MongoLightningCollections(
             client_pool=client_pool,
             database_name=db.name,

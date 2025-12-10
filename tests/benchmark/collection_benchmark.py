@@ -347,8 +347,7 @@ class MongoBenchmark(BaseBenchmark):
 
     @asynccontextmanager
     async def worker_context(self):
-        client = AsyncMongoClient[Mapping[str, Any]](self.mongo_uri)
-        pool = MongoClientPool(client)
+        pool = MongoClientPool[Mapping[str, Any]](mongo_uri=self.mongo_uri)
         collections = MongoLightningCollections(
             client_pool=pool,
             database_name=self.mongo_database,
@@ -360,7 +359,6 @@ class MongoBenchmark(BaseBenchmark):
             yield collections
         finally:
             await pool.close()
-            await client.close()
 
     def spawn_workers(
         self,

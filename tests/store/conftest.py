@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import time
 from itertools import count
-from typing import TYPE_CHECKING, Any, AsyncGenerator, Dict, List, Sequence
+from typing import TYPE_CHECKING, Any, AsyncGenerator, Dict, List, Mapping, Sequence
 from unittest.mock import Mock
 from uuid import uuid4
 
@@ -40,10 +40,13 @@ __all__ = [
     "dict_key_value",
     "dict_key_value_data",
     "temporary_mongo_database",
+    "mongo_uri",
+    "mongo_client_kwargs",
 ]
 
 
 mongo_uri = os.getenv("AGL_TEST_MONGO_URI", "mongodb://localhost:27017/?replicaSet=rs0")
+mongo_client_kwargs: Dict[str, Any] = {"serverSelectionTimeoutMS": 5000}
 
 
 @pytest.fixture
@@ -64,7 +67,10 @@ async def mongo_store(temporary_mongo_database: AsyncDatabase[Any]):
     from agentlightning.store.mongo import MongoLightningStore
 
     db = MongoLightningStore(
-        client=temporary_mongo_database.client, database_name=temporary_mongo_database.name, scan_debounce_seconds=0
+        mongo_uri=mongo_uri,
+        mongo_client_kwargs=mongo_client_kwargs,
+        database_name=temporary_mongo_database.name,
+        scan_debounce_seconds=0,
     )
     try:
         yield db
@@ -78,7 +84,8 @@ async def mongo_debounced_store(fake_time: _FakeTime, temporary_mongo_database: 
     from agentlightning.store.mongo import MongoLightningStore
 
     db = MongoLightningStore(
-        client=temporary_mongo_database.client,
+        mongo_uri=mongo_uri,
+        mongo_client_kwargs=mongo_client_kwargs,
         database_name=temporary_mongo_database.name,
         scan_debounce_seconds=5.0,
     )
@@ -191,7 +198,7 @@ def fake_time(monkeypatch: pytest.MonkeyPatch) -> _FakeTime:
 async def mongo_client():
     from pymongo import AsyncMongoClient
 
-    client = AsyncMongoClient[Any](mongo_uri, serverSelectionTimeoutMS=5000)
+    client = AsyncMongoClient[Any](mongo_uri, **mongo_client_kwargs)
     try:
         await client.admin.command("ping")
     except Exception as exc:  # depends on external service
@@ -334,7 +341,9 @@ def sample_collection_memory(sample_items: Sequence[SampleItem]) -> ListBasedCol
 async def sample_collection_mongo(temporary_mongo_database: AsyncDatabase[Any], sample_items: Sequence[SampleItem]):
     from agentlightning.store.collection.mongo import MongoBasedCollection, MongoClientPool
 
-    async with MongoClientPool(temporary_mongo_database.client) as client_pool:
+    async with MongoClientPool[Mapping[str, Any]](
+        mongo_uri=mongo_uri, mongo_client_kwargs=mongo_client_kwargs
+    ) as client_pool:
         collection = MongoBasedCollection(
             client_pool,
             temporary_mongo_database.name,
@@ -371,7 +380,9 @@ def deque_queue_memory() -> DequeBasedQueue[QueueItem]:
 async def deque_queue_mongo(temporary_mongo_database: AsyncDatabase[Any]):
     from agentlightning.store.collection.mongo import MongoBasedQueue, MongoClientPool
 
-    async with MongoClientPool(temporary_mongo_database.client) as client_pool:
+    async with MongoClientPool[Mapping[str, Any]](
+        mongo_uri=mongo_uri, mongo_client_kwargs=mongo_client_kwargs
+    ) as client_pool:
         queue = MongoBasedQueue[QueueItem](
             client_pool,
             temporary_mongo_database.name,
@@ -411,7 +422,9 @@ def dict_key_value_memory(dict_key_value_data: Dict[str, int]) -> DictBasedKeyVa
 async def dict_key_value_mongo(temporary_mongo_database: AsyncDatabase[Any], dict_key_value_data: Dict[str, int]):
     from agentlightning.store.collection.mongo import MongoBasedKeyValue, MongoClientPool
 
-    async with MongoClientPool(temporary_mongo_database.client) as client_pool:
+    async with MongoClientPool[Mapping[str, Any]](
+        mongo_uri=mongo_uri, mongo_client_kwargs=mongo_client_kwargs
+    ) as client_pool:
         key_value = MongoBasedKeyValue[str, int](
             client_pool,
             temporary_mongo_database.name,
