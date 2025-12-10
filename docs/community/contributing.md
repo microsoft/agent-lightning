@@ -75,6 +75,21 @@ Most brand-new algorithms ultimately land as “new examples,” so read that se
 
 Have a project that builds on Agent-lightning but does not belong in the main repo? Fork it or depend on it externally, then let us know. We can showcase notable projects in [Community Projects](../index.md) and the main [README]({{ src("README.md") }}).
 
+## Agent-lightning Contrib
+
+Use [`contrib/`]({{ src("contrib") }}) for experiments, third-party adapters, or curated recipes that do not belong in the core runtime tree yet. Keep each addition isolated with clear ownership so downstream users can depend on it safely. The core steps:
+
+1. **Decide the scope** — Recipes live under `contrib/recipes/<topic>/`, package extensions under `contrib/agentlightning/contrib/<feature>/`, and helper assets under `contrib/scripts/`.
+2. **Document the module** — Ship a README per contribution with usage, smoke-test commands, dependencies.
+3. **Keep code style consistent** — Add exhaustive type hints. Run `uv run --no-sync pyright` and `uv run --no-sync pytest` for any new runtime module.
+4. **Demonstrate reproducibility** — Provide download scripts or instructions instead of storing binaries.
+
+The acceptance bar for contrib contributions is lower than for core contributions. We don't expect contrib to have the same code quality, test coverage, and documentation as core contributions. However, we do expect the contributions should match the following criteria:
+
+- Each recipe is isolated to a fresh folder with a README explaining its purpose and ownership.
+- `CODEOWNERS` entries are updated when needed.
+- No large binaries or credentials are checked in; download steps are scripted or documented.
+
 ### Other Contribution Ideas
 
 - **Tests.** Add or improve cases in [`tests/`]({{ src("tests") }}) (unit, integration, or end-to-end).
