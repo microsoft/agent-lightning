@@ -18,6 +18,7 @@ from typing import (
     Sequence,
     Tuple,
     Union,
+    cast,
 )
 from uuid import uuid4
 
@@ -25,7 +26,7 @@ import pytest
 from pydantic import BaseModel
 
 import agentlightning.store.collection.memory as memory_module
-from agentlightning.store.collection import DequeBasedQueue, DictBasedKeyValue, ListBasedCollection
+from agentlightning.store.collection import DequeBasedQueue, DictBasedKeyValue, KeyValue, ListBasedCollection
 from agentlightning.store.collection.base import Collection
 from agentlightning.store.collection.memory import _item_matches_filters  # pyright: ignore[reportPrivateUsage]
 from agentlightning.store.collection.memory import _LoopAwareAsyncLock  # pyright: ignore[reportPrivateUsage]
@@ -865,6 +866,60 @@ async def test_dict_key_value_pop_returns_default(dict_key_value: DictBasedKeyVa
     result = await dict_key_value.pop("missing", 42)
     assert result == 42
     assert await dict_key_value.size() == 1
+
+
+@pytest.mark.asyncio()
+async def test_key_value_inc_updates_existing(dict_key_value: KeyValue[str, int]) -> None:
+    new_value = await dict_key_value.inc("alpha", 2)
+    assert new_value == 3
+    assert await dict_key_value.get("alpha") == 3
+
+
+@pytest.mark.asyncio()
+async def test_key_value_inc_initializes_missing(dict_key_value: KeyValue[str, int]) -> None:
+    new_value = await dict_key_value.inc("gamma", 4)
+    assert new_value == 4
+    assert await dict_key_value.has("gamma")
+
+
+@pytest.mark.asyncio()
+async def test_key_value_inc_rejects_non_numeric_amount(dict_key_value: KeyValue[str, int]) -> None:
+    with pytest.raises(TypeError):
+        await dict_key_value.inc("alpha", cast(Any, "invalid"))
+
+
+@pytest.mark.asyncio()
+async def test_dict_key_value_inc_rejects_non_numeric_value(dict_key_value_memory: DictBasedKeyValue[str, Any]) -> None:
+    await dict_key_value_memory.set("alpha", cast(Any, "na"))
+    with pytest.raises(TypeError):
+        await dict_key_value_memory.inc("alpha", 1)
+
+
+@pytest.mark.mongo
+@pytest.mark.asyncio()
+async def test_mongo_key_value_inc_rejects_non_numeric_value(temporary_mongo_database: AsyncDatabase[Any]) -> None:
+    from agentlightning.store.collection.mongo import MongoBasedKeyValue, MongoClientPool
+
+    async with MongoClientPool(temporary_mongo_database.client) as client_pool:
+        key_value = MongoBasedKeyValue[str, int](
+            client_pool,
+            temporary_mongo_database.name,
+            f"kv-inc-{uuid4().hex}",
+            "partition-inc",
+            str,
+            int,
+        )
+        collection = await key_value.ensure_collection()
+        await collection.insert_one(
+            {
+                "partition_id": "partition-inc",
+                "key": "alpha",
+                "value": "oops",
+            }
+        )
+
+        with pytest.raises(TypeError):
+            await key_value.inc("alpha", 1)
 
 
 def test_thread_safe_async_lock_blocks_threads() -> None:

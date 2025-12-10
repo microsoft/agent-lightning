@@ -5,6 +5,7 @@ from __future__ import annotations
 import functools
 import time
 from contextlib import asynccontextmanager
+from numbers import Real
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -21,6 +22,7 @@ from typing import (
     Sequence,
     Tuple,
     Type,
+    TypeGuard,
     TypeVar,
     cast,
 )
@@ -92,6 +94,19 @@ def tracked(operation: str):
         return cast(T_callable, wrapper)
 
     return decorator
+
+
+def ensure_numeric(value: Any, *, description: str) -> TypeGuard[Real]:
+    """Validate that *value* behaves like a real number.
+
+    Returns true or crashes.
+    """
+
+    if isinstance(value, bool):
+        raise TypeError(f"{description} must be numeric; got bool")
+    if not isinstance(value, Real):
+        raise TypeError(f"{description} must be numeric; got {type(value).__name__}")
+    return True
 
 
 class DuplicatedPrimaryKeyError(ValueError):
@@ -364,6 +379,14 @@ class KeyValue(TrackedCollection, Generic[K, V]):
 
     async def set(self, key: K, value: V) -> None:
         """Set the value for the given key."""
+        raise NotImplementedError()
+
+    async def inc(self, key: K, amount: V) -> V:
+        """Increase the numeric value for the given key by `amount` and return the new value.
+
+        Raises:
+            TypeError: If the existing value or `amount` is not numeric.
+        """
         raise NotImplementedError()
 
     async def pop(self, key: K, default: V | None = None) -> V | None:

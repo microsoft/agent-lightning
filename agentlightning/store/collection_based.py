@@ -995,26 +995,28 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         return await self._get_latest_resources()
 
     @tracked("_issue_many_span_sequence_ids")
-    @_with_collections_execute(labels=["span_sequence_ids"])
-    async def _issue_many_span_sequence_ids(self, collections: T_collections, rollout_ids: List[str]) -> List[int]:
+    async def _issue_many_span_sequence_ids(self, rollout_ids: List[str]) -> List[int]:
         """Issue a new span sequence ID for a given rollout."""
-        # Cache the next sequence IDs for the rollouts (for both RW)
-        next_sequence_ids_cache: Dict[str, int] = {}
+        if not rollout_ids:
+            return []
+
+        request_counts: Dict[str, int] = defaultdict(int)
+        for rollout_id in rollout_ids:
+            request_counts[rollout_id] += 1
+
+        latest_values: Dict[str, int] = {}
+        for rollout_id, count in request_counts.items():
+            async with self.collections.atomic(mode="rw", snapshot=False, labels=["span_sequence_ids"]) as collections:
+                latest_values[rollout_id] = await collections.span_sequence_ids.inc(rollout_id, count)
+
+        next_value_tracker: Dict[str, int] = {
+            rollout_id: latest_values[rollout_id] - request_counts[rollout_id] for rollout_id in request_counts
+        }
+
         result: List[int] = []
         for rollout_id in rollout_ids:
-            if rollout_id not in next_sequence_ids_cache:
-                retrieved_id = await collections.span_sequence_ids.get(rollout_id)
-                if retrieved_id is None:
-                    retrieved_id = 0
-                next_sequence_ids_cache[rollout_id] = retrieved_id
-
-            # Increment the sequence ID for the rollout
-            next_sequence_ids_cache[rollout_id] += 1
-            result.append(next_sequence_ids_cache[rollout_id])
-
-        # Propagate the cache to storage
-        for rollout_id, sequence_id in next_sequence_ids_cache.items():
-            await collections.span_sequence_ids.set(rollout_id, sequence_id)
+            next_value_tracker[rollout_id] += 1
+            result.append(next_value_tracker[rollout_id])
 
         return result
 

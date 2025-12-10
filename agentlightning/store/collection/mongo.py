@@ -68,6 +68,7 @@ from .base import (
     KeyValue,
     LightningCollections,
     Queue,
+    ensure_numeric,
     normalize_filter_options,
     resolve_sort_options,
     tracked,
@@ -1008,6 +1009,35 @@ class MongoBasedKeyValue(KeyValue[K, V], Generic[K, V]):
         except DuplicateKeyError as exc:
             # Very unlikely with replace_one+upsert, but normalize anyway.
             raise DuplicatedPrimaryKeyError("Duplicate key error while setting key-value item") from exc
+
+    @tracked("inc")
+    async def inc(self, key: K, amount: V) -> V:
+        assert ensure_numeric(amount, description="amount")
+        collection = await self.ensure_collection()
+        encoded_key = self._key_adapter.dump_python(key, mode="python")
+        encoded_amount = self._value_adapter.dump_python(amount, mode="python")
+        try:
+            async with self.tracking_context("inc.find_one_and_update", self.collection_name):
+                doc = await collection.find_one_and_update(
+                    {
+                        "partition_id": self._partition_id,
+                        "key": encoded_key,
+                    },
+                    {
+                        "$inc": {"value": encoded_amount},
+                    },
+                    upsert=True,
+                    return_document=ReturnDocument.AFTER,
+                    session=self._session,
+                )
+        except OperationFailure as exc:
+            if exc.code == 14 or "Cannot apply $inc" in str(exc):
+                raise TypeError(f"value for key {key!r} is not numeric") from exc
+            raise
+        if doc is None:  # type: ignore
+            raise RuntimeError("Failed to increment value; MongoDB did not return a document")
+        raw_value = doc["value"]
+        return self._value_adapter.validate_python(raw_value)
 
     @tracked("pop")
     async def pop(self, key: K, default: V | None = None) -> V | None:

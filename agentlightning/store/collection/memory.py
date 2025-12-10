@@ -23,6 +23,7 @@ from typing import (
     Type,
     TypeVar,
     Union,
+    cast,
 )
 
 import aiologic
@@ -50,6 +51,7 @@ from .base import (
     KeyValue,
     LightningCollections,
     Queue,
+    ensure_numeric,
     normalize_filter_options,
     resolve_sort_options,
     tracked,
@@ -759,6 +761,19 @@ class DictBasedKeyValue(KeyValue[K, V]):
     @tracked("set")
     async def set(self, key: K, value: V) -> None:
         self._values[key] = value
+
+    @tracked("inc")
+    async def inc(self, key: K, amount: V) -> V:
+        assert ensure_numeric(amount, description="amount")
+        if key in self._values:
+            current_value = self._values[key]
+            assert ensure_numeric(current_value, description=f"value for key {key!r}")
+            new_value = cast(V, current_value + amount)
+            self._values[key] = new_value
+        else:
+            new_value = amount
+            self._values[key] = new_value
+        return new_value
 
     @tracked("pop")
     async def pop(self, key: K, default: V | None = None) -> V | None:
