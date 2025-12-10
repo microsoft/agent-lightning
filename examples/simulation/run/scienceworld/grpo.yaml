@@ -12,7 +12,7 @@ variables:
   TASK_NUM: ${oc.env:TASK_NUM,-1}
   TRIAL: ${oc.env:TRIAL,0}
   EXPERIMENT_NAME: grpo-sciworld-${variables.TRIAL}
-  DATA_DIR: examples/simulation/task_data/scienceworld/multi_data
+  DATA_DIR: agl_envs/task_data/scienceworld/multi_data
   OUTPUT_DIR: /mnt/jeonghyekim/agl_v1/1108/${variables.EXPERIMENT_NAME}
 
 # ==========================
