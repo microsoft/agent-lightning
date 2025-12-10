@@ -11,7 +11,7 @@ variables:
   PROJECT_NAME: AGL-v1-ALFWorld-Final
   TRIAL: ${oc.env:TRIAL,0}
   EXPERIMENT_NAME: qwen2.5-7b-gigpo-alfworld-${variables.TRIAL}
-  DATA_DIR: agl_envs/task_data/alfworld
+  DATA_DIR: agl_envs/simulation/task_data/alfworld
   OUTPUT_DIR: /mnt/jeonghyekim/agl_v1/1201/${variables.EXPERIMENT_NAME}
 
 # ==========================

@@ -6,8 +6,8 @@ algorithm:
   use_kl_in_reward: false
 
 data:
-  train_files: agl_envs/task_data/alfworld/train.parquet
-  val_files: agl_envs/task_data/alfworld/test.parquet
+  train_files: agl_envs/simulation/task_data/alfworld/train.parquet
+  val_files: agl_envs/simulation/task_data/alfworld/test.parquet
   train_batch_size: 1
   val_batch_size: 140
   max_prompt_length: 2048
