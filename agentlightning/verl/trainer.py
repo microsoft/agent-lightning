@@ -54,39 +54,6 @@ def _timer(name: str, timing_raw: Dict[str, float]):
     timing_raw[name] += timer.last
 
 
-def _compute_reference_log_prob(trainer: object, batch: DataProto) -> DataProto:
-    """Compute reference log probability using the correct worker based on LoRA configuration.
-
-    In verl 0.6.0+, when LoRA is detected (indicated by ref_in_actor=True),
-    the reference policy is computed by the actor rollout worker instead of a separate
-    ref policy worker. This function handles both scenarios by checking the ref_in_actor flag.
-    Note: verl sets ref_in_actor=True when it detects LoRA configuration (e.g., lora_rank > 0 or lora_adapter_path is set).
-
-    Args:
-        trainer: The trainer instance (AgentLightningTrainer or RayPPOTrainer).
-        batch: The data batch to compute reference log probabilities for.
-
-    Returns:
-        DataProto with reference log probabilities added.
-
-    Raises:
-        RuntimeError: If the required worker is not available.
-    """
-    if getattr(trainer, "ref_in_actor", False):
-        actor_worker = getattr(trainer, "actor_rollout_wg", None)
-        if actor_worker is None:
-            raise RuntimeError("actor_rollout_wg is required when ref_in_actor is True.")
-        return actor_worker.compute_ref_log_prob(batch)
-
-    ref_worker = getattr(trainer, "ref_policy_wg", None)
-    if ref_worker is None:
-        raise RuntimeError(
-            "Reference policy worker was not initialized. "
-            "Ensure `use_reference_policy` is enabled and the VERL config exposes the ref worker."
-        )
-    return ref_worker.compute_ref_log_prob(batch)
-
-
 # This function is adapted from verl.
 # We introduce a new parameter `suffix` to distinguish between metrics computed
 # before and after AgentLightning’s post-processing.
@@ -232,6 +199,37 @@ class AgentLightningTrainer(RayPPOTrainer):
         self.async_rollout_manager.sleep()
         return test_metrics
 
+    def _compute_reference_log_prob(self, batch: DataProto) -> DataProto:
+        """Compute reference log probability using the correct worker based on LoRA configuration.
+
+        In verl 0.6.0+, when LoRA is detected (indicated by ref_in_actor=True),
+        the reference policy is computed by the actor rollout worker instead of a separate
+        ref policy worker. This method handles both scenarios by checking the ref_in_actor flag.
+        Note: verl sets ref_in_actor=True when it detects LoRA configuration (e.g., lora_rank > 0 or lora_adapter_path is set).
+
+        Args:
+            batch: The data batch to compute reference log probabilities for.
+
+        Returns:
+            DataProto with reference log probabilities added.
+
+        Raises:
+            RuntimeError: If the required worker is not available.
+        """
+        if getattr(self, "ref_in_actor", False):
+            actor_worker = getattr(self, "actor_rollout_wg", None)
+            if actor_worker is None:
+                raise RuntimeError("actor_rollout_wg is required when ref_in_actor is True.")
+            return actor_worker.compute_ref_log_prob(batch)
+
+        ref_worker = getattr(self, "ref_policy_wg", None)
+        if ref_worker is None:
+            raise RuntimeError(
+                "Reference policy worker was not initialized. "
+                "Ensure `use_reference_policy` is enabled and the VERL config exposes the ref worker."
+            )
+        return ref_worker.compute_ref_log_prob(batch)
+
     def _train_step(self, batch_dict: dict) -> dict:
         # Isolate in a separate method to automatically recycle the variables before validation.
         batch: DataProto = DataProto.from_single_dict(batch_dict)
@@ -309,7 +307,7 @@ class AgentLightningTrainer(RayPPOTrainer):
             if self.use_reference_policy:
                 # compute reference log_prob
                 with _timer("ref", timing_raw):
-                    ref_log_prob = _compute_reference_log_prob(self, batch)
+                    ref_log_prob = self._compute_reference_log_prob(batch)
                     batch = batch.union(ref_log_prob)
 
             # compute values
