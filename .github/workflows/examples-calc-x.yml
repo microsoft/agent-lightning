@@ -284,6 +284,7 @@ jobs:
           WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
           WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
         id: calc_x_train_lora
+        if: matrix.setup-script != 'legacy'
 
       - name: Validate training with LoRA
         run: |
@@ -292,6 +293,7 @@ jobs:
         env:
           WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
           WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
+        if: matrix.setup-script != 'legacy'
 
       - name: Training with external store
         run: |
