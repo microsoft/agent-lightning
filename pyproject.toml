@@ -39,6 +39,10 @@ verl = [
   "vllm>=0.8.4", # Due to interface change of ExternalZeroMQDistributedExecutor
 ]
 
+weave = [
+  "weave",
+]
+
 # Store-related dependencies.
 mongo = [
   "pymongo",

@@ -1,0 +1,18 @@
+# Pre-defined workflow with workflow_dispatch trigger,
+# convenient for testing and debugging.
+
+name: Playground
+permissions:
+  contents: read
+on:
+  workflow_dispatch:
+
+jobs:
+  playground:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Run script
+        run: |
+          echo "Hello, world!"
