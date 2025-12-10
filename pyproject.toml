@@ -123,6 +123,12 @@ torch-legacy = [
   "vllm==0.9.2",
   "litellm[proxy]==1.74.15",
 ]
+vllm-0-10-2 = [
+  "vllm==0.10.2",
+]
+vllm-0-11-0 = [
+  "vllm==0.11.0",
+]
 
 # Flash-attention must build with CUDA toolkit.
 # Use this instead of --group torch-stable --group torch-gpu
@@ -235,6 +241,18 @@ conflicts = [
   [
     { group = "torch-stable" },
     { group = "torch-legacy" },
+  ],
+  [
+    { group = "vllm-0-10-2" },
+    { group = "vllm-0-11-0" },
+  ],
+  [
+    { group = "torch-legacy" },
+    { group = "vllm-0-10-2" },
+  ],
+  [
+    { group = "torch-legacy" },
+    { group = "vllm-0-11-0" },
   ],
   # langchain >= 1.0 requires openai >= 1.109.1 (via langchain-openai),
   # but torch-legacy uses vllm==0.9.2 which requires openai<=1.90.0
