@@ -123,6 +123,9 @@ torch-legacy = [
   "vllm==0.9.2",
   "litellm[proxy]==1.74.15",
 ]
+
+# Specific vllm versions for compatibility testing or workarounds.
+# Use these when you need a pinned vllm version separate from torch groups.
 vllm-0-10-2 = [
   {include-group = "torch-stable"},
   "vllm==0.10.2",
