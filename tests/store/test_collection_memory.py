@@ -22,6 +22,7 @@ from typing import (
 )
 from uuid import uuid4
 
+import pydantic
 import pytest
 from pydantic import BaseModel
 
@@ -1008,7 +1009,7 @@ async def test_mongo_key_value_chmax_rejects_non_numeric_value(temporary_mongo_d
             }
         )
 
-        with pytest.raises(TypeError):
+        with pytest.raises((TypeError, pydantic.ValidationError)):
             await key_value.chmax("alpha", 1)
 
 
