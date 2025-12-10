@@ -13,7 +13,7 @@ If a contribution starts depending on core release cadence, tight CI guarantees,
 ## Directory map
 
 - `agentlightning/` — Namespace packages, utilities, and adapters that extend the published wheel. Place new code under `agentlightning/contrib/<feature>/` so `import agentlightning.contrib.<feature>` works for downstream users.
-- `recipes/` — Task-focused example bundles that solves a specific problem and derives certain results. Each recipe belongs in its own directory with a README that documents usage, result reports, and ownership.
+- `recipes/` — Task-focused example bundles that solve a specific problem and derive certain results. Each recipe belongs in its own directory with a README that documents usage, result reports, and ownership.
 - `scripts/` — Shared automation, dataset download steps, or reproducibility helpers that support the contrib modules above.
 
 When adding folders, document the intent in a local README, link to companion docs or examples, and update `CODEOWNERS` so future fixes reach the right reviewers quickly.
