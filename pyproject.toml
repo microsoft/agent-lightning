@@ -124,9 +124,11 @@ torch-legacy = [
   "litellm[proxy]==1.74.15",
 ]
 vllm-0-10-2 = [
+  {include-group = "torch-stable"},
   "vllm==0.10.2",
 ]
 vllm-0-11-0 = [
+  {include-group = "torch-stable"},
   "vllm==0.11.0",
 ]
 
@@ -244,14 +246,6 @@ conflicts = [
   ],
   [
     { group = "vllm-0-10-2" },
-    { group = "vllm-0-11-0" },
-  ],
-  [
-    { group = "torch-legacy" },
-    { group = "vllm-0-10-2" },
-  ],
-  [
-    { group = "torch-legacy" },
     { group = "vllm-0-11-0" },
   ],
   # langchain >= 1.0 requires openai >= 1.109.1 (via langchain-openai),
