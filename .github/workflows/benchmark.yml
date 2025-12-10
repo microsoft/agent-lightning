@@ -51,7 +51,7 @@ jobs:
           - id: midhigh-scale
             display: Mid-high production scale
             kind: scenario
-            store_workers: 32
+            store_workers: 24
             runner:
               - self-hosted
               - 1ES.Pool=agl-runner-cpu
@@ -129,42 +129,42 @@ jobs:
           - id: micro-worker
             display: Update worker
             kind: micro
-            store_workers: 32
+            store_workers: 8
             runner: ubuntu-latest
             timeout: 30
             cli: worker
           - id: micro-dequeue-empty
             display: Dequeue empty
             kind: micro
-            store_workers: 32
+            store_workers: 8
             runner: ubuntu-latest
             timeout: 30
             cli: dequeue-empty
           - id: micro-rollout
             display: Rollout + span
             kind: micro
-            store_workers: 32
+            store_workers: 8
             runner: ubuntu-latest
             timeout: 30
             cli: rollout
           - id: micro-dequeue-update-attempt
             display: Dequeue + update attempt
             kind: micro
-            store_workers: 32
+            store_workers: 8
             runner: ubuntu-latest
             timeout: 30
             cli: dequeue-update-attempt
           - id: micro-dequeue-only
             display: Dequeue only
             kind: micro
-            store_workers: 32
+            store_workers: 8
             runner: ubuntu-latest
             timeout: 30
             cli: dequeue-only
           - id: micro-metrics
             display: Multi-metric fan-out
             kind: micro
-            store_workers: 32
+            store_workers: 8
             runner: ubuntu-latest
             timeout: 15
             cli: metrics
