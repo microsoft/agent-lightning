@@ -20,6 +20,7 @@ from litellm.types.utils import ChoiceLogprobs as LitellmChoiceLogprobs
 from litellm.types.utils import Choices
 from litellm.types.utils import Message as LitellmMessage
 from litellm.types.utils import ModelResponse
+from litellm.types.utils import TopLogprob as LitellmTopLogprob
 from litellm.utils import custom_llm_setup
 from pydantic import TypeAdapter
 from tinker.types import ModelInput, SampleResponse, SamplingParams
@@ -173,7 +174,8 @@ class TinkerLLM(CustomLLM):
                             token=token,
                             bytes=bytes,
                             logprob=logprob,
-                            top_logprobs=[],
+                            # NOTE: This top logprob is not the real top logprob. It's just used to fool the LiteLLM type validator.
+                            top_logprobs=[LitellmTopLogprob(token=token, bytes=bytes, logprob=logprob)],
                         )
                         for token, bytes, logprob in zip(token_strings, bytes_list, seq.logprobs)
                     ]

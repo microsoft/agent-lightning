@@ -161,7 +161,7 @@ trl = [
 tinker = [
   {include-group = "torch-stable"},
   "tinker>=0.2.2",
-  "tinker_cookbook",
+  "tinker_cookbook>=0.1.0",
   "wandb",
 ]
 
@@ -271,7 +271,6 @@ torch = [
   { index = "pytorch-cu128", group = "torch-cu128" },
   { index = "pytorch-cpu", group = "torch-cpu" },
 ]
-tinker_cookbook = { git = "https://github.com/thinking-machines-lab/tinker-cookbook" }
 
 [[tool.uv.index]]
 name = "pypi"
