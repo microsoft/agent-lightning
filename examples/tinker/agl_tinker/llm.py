@@ -105,10 +105,9 @@ class TinkerLLM(CustomLLM):
         """
         self.sampling_client = sampling_client
 
-    def _validate_messages(self, messages: Any) -> TypeGuard[List[TinkerMessage]]:
-        TypeAdapter(List[TinkerMessage]).validate_python(messages)
+    def _canonicalize_messages(self, messages: Any) -> List[TinkerMessage]:
+        return TypeAdapter(List[TinkerMessage]).validate_python(messages)
         # Exception will be raised if validation fails
-        return True
 
     def _validate_role(self, role: str) -> TypeGuard[Literal["assistant", "user", "system", "tool", "function"]]:
         if role not in ["assistant", "user", "system", "tool", "function"]:
@@ -116,13 +115,11 @@ class TinkerLLM(CustomLLM):
         return True
 
     def _parse_tool_call(self, tool_call: TinkerToolCall) -> ChatCompletionMessageToolCall:
-        if set(tool_call.keys()) != {"name", "args"}:
-            logger.warning(f"Found unexpected tool call keys: {tool_call.keys()}")
         return ChatCompletionMessageToolCall(
-            id=generate_id("tinker-tool-call-"),
+            id=tool_call.id or generate_id("tinker-tool-call-"),
             function={
-                "name": tool_call["name"],
-                "arguments": tool_call["args"],
+                "name": tool_call.function.name,
+                "arguments": tool_call.function.arguments,
             },
             type="function",
         )
@@ -151,10 +148,8 @@ class TinkerLLM(CustomLLM):
     def _prepare_model_input(self, **kwargs: Any) -> ModelInput:
         """LiteLLM messages -> Tinker ModelInput."""
         messages = kwargs.pop("messages", None)
-        if self._validate_messages(messages):
-            return self.renderer.build_generation_prompt(messages)
-        else:
-            assert False, "This should never happen"
+        canonical_messages = self._canonicalize_messages(messages)
+        return self.renderer.build_generation_prompt(canonical_messages)
 
     def _parse_response(self, model_input: ModelInput, response: SampleResponse) -> ModelResponse:
         """Tinker Response -> LiteLLM Response.
@@ -188,6 +183,7 @@ class TinkerLLM(CustomLLM):
                 role = parsed_response["role"]
                 if not self._validate_role(role):
                     assert False, "This should never happen"
+                # FIXME: The content should not be still there if tool call has been parsed.
                 content = parsed_response["content"]
                 # NOTE(yuge): I thought about adding this to make it more robust to empty responses,
                 # but later I found it's a configuration error in my renderer. So I think it's better
