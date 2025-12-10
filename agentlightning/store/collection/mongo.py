@@ -6,7 +6,6 @@ import asyncio
 import logging
 import random
 import re
-import threading
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -27,6 +26,8 @@ from typing import (
     cast,
 )
 
+import aiologic
+
 from agentlightning.utils.metrics import MetricsBackend
 
 if TYPE_CHECKING:
@@ -37,7 +38,14 @@ from pymongo import AsyncMongoClient, ReadPreference, ReturnDocument, WriteConce
 from pymongo.asynchronous.client_session import AsyncClientSession
 from pymongo.asynchronous.collection import AsyncCollection
 from pymongo.asynchronous.database import AsyncDatabase
-from pymongo.errors import CollectionInvalid, ConnectionFailure, DuplicateKeyError, OperationFailure, PyMongoError
+from pymongo.errors import (
+    BulkWriteError,
+    CollectionInvalid,
+    ConnectionFailure,
+    DuplicateKeyError,
+    OperationFailure,
+    PyMongoError,
+)
 from pymongo.read_concern import ReadConcern
 
 from agentlightning.types import (
@@ -52,11 +60,14 @@ from agentlightning.types import (
 )
 
 from .base import (
+    AtomicLabels,
     AtomicMode,
     Collection,
+    DuplicatedPrimaryKeyError,
     KeyValue,
     LightningCollections,
     Queue,
+    ensure_numeric,
     normalize_filter_options,
     resolve_sort_options,
     tracked,
@@ -237,23 +248,18 @@ async def _ensure_collection(
 
 
 class MongoClientPool(Generic[T_mapping]):
-    """A pool of MongoDB clients, each binded to a specific event loop.
+    """A pool of MongoDB clients, each bound to a specific event loop.
 
-    This class is to resolve the issue of MongoDB client cannot be shared across event loops:
-
-    ```
-    Cannot use AsyncMongoClient in different event loop. AsyncMongoClient uses low-level asyncio APIs that bind it to the event loop it was created on.
-    ```
-
-    Use the client pool with a context manager to ensure all clients are closed when the context is exited.
+    The pool lazily creates `AsyncMongoClient` instances per event loop using the provided
+    connection parameters, ensuring we never try to reuse a client across loops.
     """
 
-    def __init__(self, client: AsyncMongoClient[T_mapping]):
-        self._lock = threading.Lock()
-
-        self._client_base = client
+    def __init__(self, *, mongo_uri: str, mongo_client_kwargs: Mapping[str, Any] | None = None):
+        self._get_collection_lock = aiologic.Lock()
+        self._get_client_lock = aiologic.Lock()
+        self._mongo_uri = mongo_uri
+        self._mongo_client_kwargs = dict(mongo_client_kwargs or {})
         self._client_pool: Dict[int, AsyncMongoClient[T_mapping]] = {}
-
         self._collection_pool: Dict[Tuple[int, str, str], AsyncCollection[T_mapping]] = {}
 
     async def __aenter__(self) -> Self:
@@ -263,18 +269,16 @@ class MongoClientPool(Generic[T_mapping]):
         await self.close()
 
     async def close(self) -> None:
-        """Close all clients in the pool (except the base client)."""
+        """Close all clients currently tracked by the pool."""
 
-        with self._lock:
+        async with self._get_client_lock, self._get_collection_lock:
             clients = list(self._client_pool.values())
             self._client_pool.clear()
+            self._collection_pool.clear()
 
         for client in clients:
             try:
-                if client is not self._client_base:
-                    await client.close()
-                else:
-                    logger.debug("Skipping closing base client: %s", client)
+                await client.close()
             except Exception:
                 logger.exception("Error closing MongoDB client: %s", client)
 
@@ -283,31 +287,22 @@ class MongoClientPool(Generic[T_mapping]):
         key = id(loop)
 
         # If there is already a client specifically for this loop, return it.
-        if key in self._client_pool:
-            # Verify that the client still works.
-            await self._client_pool[key].aconnect()
-            return self._client_pool[key]
+        existing = self._client_pool.get(key)
+        if existing is not None:
+            await existing.aconnect()  # This actually does nothing if the client is already connected.
+            return existing
 
-        try:
-            # Try whether the base client will work.
-            await self._client_base.aconnect()
+        async with self._get_client_lock:
+            # Another coroutine may have already created the client.
+            if key in self._client_pool:
+                await self._client_pool[key].aconnect()
+                return self._client_pool[key]
 
-            with self._lock:
-                # If it works, add it to the pool and return it.
-                self._client_pool.setdefault(key, self._client_base)
-            return self._client_base
-        except RuntimeError as exc:
-            if "Cannot use AsyncMongoClient in different event loop" in str(exc):
-                with self._lock:
-                    # Create a new client for this loop.
-                    client = self._client_base._duplicate()  # type: ignore
-                    # Try whether the new client will work.
-                    await client.aconnect()
-                    # Add it to the pool and return it.
-                    self._client_pool.setdefault(key, client)  # type: ignore
-                return client  # type: ignore
-
-            raise
+            # Create a new client for this loop.
+            client = AsyncMongoClient[T_mapping](self._mongo_uri, **self._mongo_client_kwargs)
+            await client.aconnect()
+            self._client_pool[key] = client
+            return client
 
     async def get_collection(self, database_name: str, collection_name: str) -> AsyncCollection[T_mapping]:
         loop = asyncio.get_running_loop()
@@ -315,12 +310,16 @@ class MongoClientPool(Generic[T_mapping]):
         if key in self._collection_pool:
             return self._collection_pool[key]
 
-        # Create a new collection for this loop.
-        client = await self.get_client()
-        collection = client[database_name][collection_name]
-        with self._lock:
+        async with self._get_collection_lock:
+            # Another coroutine may have already created the collection.
+            if key in self._collection_pool:
+                return self._collection_pool[key]
+
+            # Create a new collection for this loop.
+            client = await self.get_client()
+            collection = client[database_name][collection_name]
             self._collection_pool.setdefault(key, collection)
-        return collection
+            return collection
 
 
 class MongoBasedCollection(Collection[T_model]):
@@ -339,7 +338,7 @@ class MongoBasedCollection(Collection[T_model]):
 
     def __init__(
         self,
-        client_pool: MongoClientPool[Mapping[str, Any]] | AsyncMongoClient[Mapping[str, Any]],
+        client_pool: MongoClientPool[Mapping[str, Any]],
         database_name: str,
         collection_name: str,
         partition_id: str,
@@ -349,10 +348,7 @@ class MongoBasedCollection(Collection[T_model]):
         tracker: MetricsBackend | None = None,
     ):
         super().__init__(tracker=tracker)
-        if isinstance(client_pool, AsyncMongoClient):
-            self._client_pool = MongoClientPool(client_pool)
-        else:
-            self._client_pool = client_pool
+        self._client_pool = client_pool
         self._database_name = database_name
         self._collection_name = collection_name
         self._partition_id = partition_id
@@ -547,24 +543,19 @@ class MongoBasedCollection(Collection[T_model]):
 
     @tracked("insert")
     async def insert(self, items: Sequence[T_model]) -> None:
+        """Insert items into the collection.
+
+        The implementation does NOT do checks for duplicate primary keys,
+        neither within the same insert call nor across different insert calls.
+        It relies on the database to enforce uniqueness via indexes.
+        """
         if not items:
             return
 
         collection = await self.ensure_collection()
         docs: List[Mapping[str, Any]] = []
-        pk_conditions: List[Dict[str, Any]] = []
-        seen_primary_keys: set[Tuple[Any, ...]] = set()
         for item in items:
             self._ensure_item_type(item)
-            pk_filter = self._pk_filter(item)
-            pk_values = tuple(pk_filter[pk] for pk in self._primary_keys)
-            if pk_values in seen_primary_keys:
-                raise ValueError(
-                    f"Insert payload contains duplicate primary key(s): {self._render_pk_values(pk_values)}"
-                )
-            seen_primary_keys.add(pk_values)
-            pk_conditions.append({pk: pk_filter[pk] for pk in self._primary_keys})
-
             doc = item.model_dump()
             doc["partition_id"] = self._partition_id
             docs.append(doc)
@@ -572,23 +563,17 @@ class MongoBasedCollection(Collection[T_model]):
         if not docs:
             return
 
-        if len(pk_conditions) == 1:
-            existing_filter: Dict[str, Any] = {"partition_id": self._partition_id, **pk_conditions[0]}
-        else:
-            existing_filter = {"partition_id": self._partition_id, "$or": pk_conditions}
-
-        async with self.tracking_context("insert.find_existing", self._collection_name):
-            existing = await collection.find_one(existing_filter, session=self._session)
-            if existing is not None:
-                existing_values = tuple(existing.get(pk) for pk in self._primary_keys)
-                raise ValueError(f"Item with primary key(s) {self._render_pk_values(existing_values)} already exists")
-
         try:
             async with self.tracking_context("insert.insert_many", self._collection_name):
                 await collection.insert_many(docs, session=self._session)
         except DuplicateKeyError as exc:
             # In case the DB enforces uniqueness via index, normalize to ValueError
-            raise ValueError("Duplicate key error while inserting items") from exc
+            raise DuplicatedPrimaryKeyError("Duplicated primary key(s) while inserting items") from exc
+        except BulkWriteError as exc:
+            write_errors = exc.details.get("writeErrors", [])
+            if write_errors and write_errors[0].get("code") == 11000:
+                raise DuplicatedPrimaryKeyError("Duplicated primary key(s) while inserting items") from exc
+            raise
 
     @tracked("update")
     async def update(self, items: Sequence[T_model], update_fields: Sequence[str] | None = None) -> List[T_model]:
@@ -707,7 +692,7 @@ class MongoBasedQueue(Queue[T_generic], Generic[T_generic]):
 
     def __init__(
         self,
-        client_pool: MongoClientPool[Mapping[str, Any]] | AsyncMongoClient[Mapping[str, Any]],
+        client_pool: MongoClientPool[Mapping[str, Any]],
         database_name: str,
         collection_name: str,
         partition_id: str,
@@ -723,10 +708,7 @@ class MongoBasedQueue(Queue[T_generic], Generic[T_generic]):
             item_type: The Python type of queue items (primitive or BaseModel subclass).
         """
         super().__init__(tracker=tracker)
-        if isinstance(client_pool, AsyncMongoClient):
-            self._client_pool = MongoClientPool(client_pool)
-        else:
-            self._client_pool = client_pool
+        self._client_pool = client_pool
         self._database_name = database_name
         self._collection_name = collection_name
         self._partition_id = partition_id
@@ -886,7 +868,7 @@ class MongoBasedKeyValue(KeyValue[K, V], Generic[K, V]):
 
     def __init__(
         self,
-        client_pool: MongoClientPool[Mapping[str, Any]] | AsyncMongoClient[Mapping[str, Any]],
+        client_pool: MongoClientPool[Mapping[str, Any]],
         database_name: str,
         collection_name: str,
         partition_id: str,
@@ -905,10 +887,7 @@ class MongoBasedKeyValue(KeyValue[K, V], Generic[K, V]):
             tracker: The metrics tracker to use.
         """
         super().__init__(tracker=tracker)
-        if isinstance(client_pool, AsyncMongoClient):
-            self._client_pool = MongoClientPool(client_pool)
-        else:
-            self._client_pool = client_pool
+        self._client_pool = client_pool
         self._database_name = database_name
         self._collection_name = collection_name
         self._partition_id = partition_id
@@ -1007,7 +986,65 @@ class MongoBasedKeyValue(KeyValue[K, V], Generic[K, V]):
                 )
         except DuplicateKeyError as exc:
             # Very unlikely with replace_one+upsert, but normalize anyway.
-            raise ValueError("Duplicate key error while setting key-value item") from exc
+            raise DuplicatedPrimaryKeyError("Duplicate key error while setting key-value item") from exc
+
+    @tracked("inc")
+    async def inc(self, key: K, amount: V) -> V:
+        assert ensure_numeric(amount, description="amount")
+        collection = await self.ensure_collection()
+        encoded_key = self._key_adapter.dump_python(key, mode="python")
+        encoded_amount = self._value_adapter.dump_python(amount, mode="python")
+        try:
+            async with self.tracking_context("inc.find_one_and_update", self.collection_name):
+                doc = await collection.find_one_and_update(
+                    {
+                        "partition_id": self._partition_id,
+                        "key": encoded_key,
+                    },
+                    {
+                        "$inc": {"value": encoded_amount},
+                    },
+                    upsert=True,
+                    return_document=ReturnDocument.AFTER,
+                    session=self._session,
+                )
+        except OperationFailure as exc:
+            if exc.code == 14 or "Cannot apply $inc" in str(exc):
+                raise TypeError(f"value for key {key!r} is not numeric") from exc
+            raise
+        if doc is None:  # type: ignore
+            raise RuntimeError("Failed to increment value; MongoDB did not return a document")
+        raw_value = doc["value"]
+        return self._value_adapter.validate_python(raw_value)
+
+    @tracked("chmax")
+    async def chmax(self, key: K, value: V) -> V:
+        assert ensure_numeric(value, description="value")
+        collection = await self.ensure_collection()
+        encoded_key = self._key_adapter.dump_python(key, mode="python")
+        encoded_value = self._value_adapter.dump_python(value, mode="python")
+        try:
+            async with self.tracking_context("chmax.find_one_and_update", self.collection_name):
+                doc = await collection.find_one_and_update(
+                    {
+                        "partition_id": self._partition_id,
+                        "key": encoded_key,
+                    },
+                    {
+                        "$max": {"value": encoded_value},
+                    },
+                    upsert=True,
+                    return_document=ReturnDocument.AFTER,
+                    session=self._session,
+                )
+        except OperationFailure as exc:
+            if exc.code == 14 or "Cannot apply $max" in str(exc):
+                raise TypeError(f"value for key {key!r} is not numeric") from exc
+            raise
+        if doc is None:  # type: ignore
+            raise RuntimeError("Failed to update value; MongoDB did not return a document")
+        raw_value = doc["value"]
+        return self._value_adapter.validate_python(raw_value)
 
     @tracked("pop")
     async def pop(self, key: K, default: V | None = None) -> V | None:
@@ -1062,6 +1099,7 @@ class MongoLightningCollections(LightningCollections):
         self._database_name = database_name
         self._partition_id = partition_id
         self._collection_ensured = False
+        self._lock = aiologic.Lock()  # used for generic atomic operations like scan debounce seconds
         self._rollouts = (
             rollouts
             if rollouts is not None
@@ -1228,18 +1266,39 @@ class MongoLightningCollections(LightningCollections):
         self._collection_ensured = True
 
     @asynccontextmanager
+    async def _lock_manager(self, labels: Optional[Sequence[AtomicLabels]]):
+        if labels is None or "generic" not in labels:
+            yield
+
+        else:
+            # Only lock the generic label.
+            try:
+                async with self.tracking_context("lock", self.collection_name):
+                    await self._lock.async_acquire()
+                yield
+            finally:
+                self._lock.async_release()
+
+    @asynccontextmanager
     async def atomic(
-        self, mode: AtomicMode = "rw", snapshot: bool = False, commit: bool = False, *args: Any, **kwargs: Any
+        self,
+        mode: AtomicMode = "rw",
+        snapshot: bool = False,
+        commit: bool = False,
+        labels: Optional[Sequence[AtomicLabels]] = None,
+        *args: Any,
+        **kwargs: Any,
     ):
         """Perform a atomic operation on the collections."""
         if commit:
             raise ValueError("Commit should be used with execute() instead.")
-        async with self.tracking_context("atomic", self.collection_name):
-            # First step: ensure all collections exist before going into the atomic block
-            if not self._collection_ensured:
-                await self._ensure_collections()
-            # Execute directly without commit
-            yield self
+        async with self._lock_manager(labels):
+            async with self.tracking_context("atomic", self.collection_name):
+                # First step: ensure all collections exist before going into the atomic block
+                if not self._collection_ensured:
+                    await self._ensure_collections()
+                # Execute directly without commit
+                yield self
 
     @tracked("execute")
     async def execute(
@@ -1249,6 +1308,7 @@ class MongoLightningCollections(LightningCollections):
         mode: AtomicMode = "rw",
         snapshot: bool = False,
         commit: bool = False,
+        labels: Optional[Sequence[AtomicLabels]] = None,
         **kwargs: Any,
     ) -> T_generic:
         """Execute the given callback within an atomic operation, and with retries on transient errors."""
@@ -1258,7 +1318,8 @@ class MongoLightningCollections(LightningCollections):
 
         # If commit is not turned on, just execute the callback directly.
         if not commit:
-            return await callback(self)
+            async with self._lock_manager(labels):
+                return await callback(self)
 
         # If snapshot is enabled, use snapshot read concern.
         read_concern = ReadConcern("snapshot") if snapshot else ReadConcern("local")
@@ -1268,7 +1329,8 @@ class MongoLightningCollections(LightningCollections):
         async with client.start_session() as session:
             collections = self.with_session(session)
             try:
-                return await self.with_transaction(session, collections, callback, read_concern, write_concern)
+                async with self._lock_manager(labels):
+                    return await self.with_transaction(session, collections, callback, read_concern, write_concern)
             except (ConnectionFailure, OperationFailure) as exc:
                 # Un-retryable errors.
                 raise RuntimeError("Transaction failed with connection or operation error") from exc

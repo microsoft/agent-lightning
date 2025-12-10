@@ -100,7 +100,7 @@ def main(argv: Iterable[str] | None = None) -> int:
     elif args.backend == "mongo":
         from agentlightning.store.mongo import MongoLightningStore
 
-        store = MongoLightningStore(client=args.mongo_uri, tracker=tracker)
+        store = MongoLightningStore(mongo_uri=args.mongo_uri, tracker=tracker)
     else:
         raise ValueError(f"Invalid backend: {args.backend}")
 
