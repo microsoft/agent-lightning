@@ -89,9 +89,9 @@ If you are unsure where a contribution should live, start a thread in Discord or
 
 A quick checklist for contributions to be accepted:
 
-1. **Document everything.** Include configuration steps, environment variables, and sample commands so contributors an reproduce the results without guesswork.
+1. **Document everything.** Include configuration steps, environment variables, and sample commands so contributors an reproduce the results without guesswork. Pin to a specific version of Agent-lightning and other dependencies to avoid unexpected changes if you don't want to update the recipe frequently.
 2. **Keep quality predictable.** Match the repo’s style guide, apply exhaustive type hints, and run `uv run --no-sync pyright` plus targeted `pytest` suites for any Python module you touch.
-3. **Ship reproducibility artifacts.** Store only scripts or instructions for downloading datasets, weights, or binaries—never upload large artifacts or credentials directly.
+3. **Ship reproducibility artifacts.** Store only scripts or instructions for downloading datasets, weights, or binaries. Never upload large artifacts or credentials directly.
 4. **Update ownership.** Add `CODEOWNERS` entries when new directories appear so maintainers know who can review follow-up fixes.
 
 Contrib entries do not need the same maturity level as core code, but they must still meet the baseline above. Submissions that lack documentation, hide ownership, or depend on untracked assets are typically rejected until those gaps are resolved.

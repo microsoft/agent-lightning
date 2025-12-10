@@ -18,11 +18,4 @@ If a contribution starts depending on core release cadence, tight CI guarantees,
 
 When adding folders, document the intent in a local README, link to companion docs or examples, and update `CODEOWNERS` so future fixes reach the right reviewers quickly.
 
-## Submission checklist
-
-1. Create a new, isolated directory and include a README with usage, dependencies, environment variables, and smoke-test commands.
-2. Follow the repository coding standards: type hints, logging best practices, and `uv run --no-sync pyright`/`pytest` for any Python module you touch.
-3. Provide scripts or documented commands for downloading datasets, weights, or binaries instead of committing large artifacts directly.
-4. Update `CODEOWNERS` when ownership changes or new directories appear.
-
 Questions or proposals for new subtrees can be discussed in Discord, GitHub issues, or GitHub Discussions before opening a PR. For the canonical requirements and review checklist, see the “Agent-lightning Contrib” section of [`docs/community/contributing.md`](../docs/community/contributing.md).
