@@ -1,11 +1,16 @@
 
 # Training Youtu-agent with AgentLightning
 
+<img src="docs/assets/youtu-agl-mascot.png" alt="Youtu-agent x Agent Lightning logo" width="200" align="left" style="margin-right:20px;">
+
+## Introduction
+
 Modifications are made to the original **[AgentLightning@v0.2.2](https://github.com/microsoft/agent-lightning/releases/tag/v0.2.2)** for:
 * scaling up training with more agent runners;
 * fixing bugs when bridged with [Youtu-agent](https://github.com/TencentCloudADP/youtu-agent/tree/rl/agl);
 * correcting GRPO advantage estimation for multi-turn trajectories;
 * stabilizing RL training with tricks (e.g., filtering).
+
 
 ## Quick Start
 
