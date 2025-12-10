@@ -51,10 +51,14 @@ T_callable = TypeVar("T_callable", bound=Callable[..., Any])
 AtomicMode = Literal["r", "w", "rw"]
 """What is expected within the atomic context. Can be "read", "write", or "read-write"."""
 
-AtomicLabels = Literal["rollouts", "attempts", "spans", "resources", "workers", "rollout_queue", "span_sequence_ids"]
+AtomicLabels = Literal[
+    "rollouts", "attempts", "spans", "resources", "workers", "rollout_queue", "span_sequence_ids", "generic"
+]
 """Labels for atomic operations.
 
 These labels are used to identify the collections that are affected by the atomic operation.
+
+The `generic` label is used to identify atomic operations that are not associated with any specific collection.
 """
 
 

@@ -42,6 +42,7 @@ from agentlightning.types import (
 from agentlightning.utils.metrics import MetricsBackend
 
 from .base import (
+    AtomicLabels,
     AtomicMode,
     Collection,
     DuplicatedPrimaryKeyError,
@@ -776,7 +777,7 @@ class InMemoryLightningCollections(LightningCollections):
 
     def __init__(self, lock_type: Literal["thread", "asyncio"], tracker: MetricsBackend | None = None):
         super().__init__(tracker=tracker)
-        self._lock = {
+        self._lock: Mapping[AtomicLabels, _LoopAwareAsyncLock | _ThreadSafeAsyncLock] = {
             "rollouts": _LoopAwareAsyncLock() if lock_type == "asyncio" else _ThreadSafeAsyncLock(),
             "attempts": _LoopAwareAsyncLock() if lock_type == "asyncio" else _ThreadSafeAsyncLock(),
             "spans": _LoopAwareAsyncLock() if lock_type == "asyncio" else _ThreadSafeAsyncLock(),
@@ -784,6 +785,7 @@ class InMemoryLightningCollections(LightningCollections):
             "workers": _LoopAwareAsyncLock() if lock_type == "asyncio" else _ThreadSafeAsyncLock(),
             "rollout_queue": _LoopAwareAsyncLock() if lock_type == "asyncio" else _ThreadSafeAsyncLock(),
             "span_sequence_ids": _LoopAwareAsyncLock() if lock_type == "asyncio" else _ThreadSafeAsyncLock(),
+            "generic": _LoopAwareAsyncLock() if lock_type == "asyncio" else _ThreadSafeAsyncLock(),
         }
         self._rollouts = ListBasedCollection(
             items=[], item_type=Rollout, primary_keys=["rollout_id"], id="rollouts", tracker=tracker
@@ -839,7 +841,12 @@ class InMemoryLightningCollections(LightningCollections):
 
     @asynccontextmanager
     async def atomic(
-        self, *, mode: AtomicMode = "rw", snapshot: bool = False, labels: Optional[Sequence[str]] = None, **kwargs: Any
+        self,
+        *,
+        mode: AtomicMode = "rw",
+        snapshot: bool = False,
+        labels: Optional[Sequence[AtomicLabels]] = None,
+        **kwargs: Any,
     ):
         """In-memory collections apply a lock outside. It doesn't need to manipulate the collections inside.
 

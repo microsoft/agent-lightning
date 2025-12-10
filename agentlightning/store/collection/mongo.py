@@ -27,6 +27,8 @@ from typing import (
     cast,
 )
 
+import aiologic
+
 from agentlightning.utils.metrics import MetricsBackend
 
 if TYPE_CHECKING:
@@ -59,6 +61,7 @@ from agentlightning.types import (
 )
 
 from .base import (
+    AtomicLabels,
     AtomicMode,
     Collection,
     DuplicatedPrimaryKeyError,
@@ -1059,6 +1062,7 @@ class MongoLightningCollections(LightningCollections):
         self._database_name = database_name
         self._partition_id = partition_id
         self._collection_ensured = False
+        self._lock = aiologic.Lock()  # used for generic atomic operations like scan debounce seconds
         self._rollouts = (
             rollouts
             if rollouts is not None
@@ -1225,18 +1229,39 @@ class MongoLightningCollections(LightningCollections):
         self._collection_ensured = True
 
     @asynccontextmanager
+    async def _lock_manager(self, labels: Optional[Sequence[AtomicLabels]]):
+        if labels is None or "generic" not in labels:
+            yield
+
+        else:
+            # Only lock the generic label.
+            try:
+                async with self.tracking_context("lock", self.collection_name):
+                    await self._lock.async_acquire()
+                yield
+            finally:
+                self._lock.async_release()
+
+    @asynccontextmanager
     async def atomic(
-        self, mode: AtomicMode = "rw", snapshot: bool = False, commit: bool = False, *args: Any, **kwargs: Any
+        self,
+        mode: AtomicMode = "rw",
+        snapshot: bool = False,
+        commit: bool = False,
+        labels: Optional[Sequence[AtomicLabels]] = None,
+        *args: Any,
+        **kwargs: Any,
     ):
         """Perform a atomic operation on the collections."""
         if commit:
             raise ValueError("Commit should be used with execute() instead.")
-        async with self.tracking_context("atomic", self.collection_name):
-            # First step: ensure all collections exist before going into the atomic block
-            if not self._collection_ensured:
-                await self._ensure_collections()
-            # Execute directly without commit
-            yield self
+        async with self._lock_manager(labels):
+            async with self.tracking_context("atomic", self.collection_name):
+                # First step: ensure all collections exist before going into the atomic block
+                if not self._collection_ensured:
+                    await self._ensure_collections()
+                # Execute directly without commit
+                yield self
 
     @tracked("execute")
     async def execute(
@@ -1246,6 +1271,7 @@ class MongoLightningCollections(LightningCollections):
         mode: AtomicMode = "rw",
         snapshot: bool = False,
         commit: bool = False,
+        labels: Optional[Sequence[AtomicLabels]] = None,
         **kwargs: Any,
     ) -> T_generic:
         """Execute the given callback within an atomic operation, and with retries on transient errors."""
@@ -1255,7 +1281,8 @@ class MongoLightningCollections(LightningCollections):
 
         # If commit is not turned on, just execute the callback directly.
         if not commit:
-            return await callback(self)
+            async with self._lock_manager(labels):
+                return await callback(self)
 
         # If snapshot is enabled, use snapshot read concern.
         read_concern = ReadConcern("snapshot") if snapshot else ReadConcern("local")
@@ -1265,7 +1292,8 @@ class MongoLightningCollections(LightningCollections):
         async with client.start_session() as session:
             collections = self.with_session(session)
             try:
-                return await self.with_transaction(session, collections, callback, read_concern, write_concern)
+                async with self._lock_manager(labels):
+                    return await self.with_transaction(session, collections, callback, read_concern, write_concern)
             except (ConnectionFailure, OperationFailure) as exc:
                 # Un-retryable errors.
                 raise RuntimeError("Transaction failed with connection or operation error") from exc

@@ -39,7 +39,6 @@ from typing import (
     cast,
 )
 
-import aiologic
 from opentelemetry.sdk.trace import ReadableSpan
 from pydantic import BaseModel
 from typing_extensions import Concatenate
@@ -245,13 +244,14 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         self._read_snapshot = read_snapshot
         self._tracker = tracker
         self._launch_time = time.time()
+
+        # Control scan debounce to avoid overloading the store.
         self._scan_debounce_seconds = scan_debounce_seconds
         last_scan_time = self._launch_time
         if self._scan_debounce_seconds > 0:
             # Allow the first scan immediately after instantiation
             last_scan_time -= self._scan_debounce_seconds
         self._last_scan_entrance_time = last_scan_time
-        self._scan_entrance_lock = aiologic.Lock()
 
         if self._tracker is not None:
             self._tracker.register_histogram(
@@ -1709,7 +1709,7 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
             return False
 
         # Someone else may be racing for the same scan. Double-check inside the lock.
-        async with self._scan_entrance_lock:
+        async with self.collections.atomic(mode="rw", snapshot=self._read_snapshot, labels=["generic"]):
             now = time.time()
             if now - self._last_scan_entrance_time < self._scan_debounce_seconds:
                 return False
