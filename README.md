@@ -4,7 +4,7 @@
 
 
 
-<img src="docs/assets/youtu-agl-mascot.png" alt="Youtu-agent x Agent Lightning logo" width="300" align="left" style="margin-right:20px;">
+<img src="docs/assets/youtu-agl-mascot.png" alt="Youtu-agent x Agent Lightning logo" width="280" align="left" style="margin-right:20px;">
 
 
 
