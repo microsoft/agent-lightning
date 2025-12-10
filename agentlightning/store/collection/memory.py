@@ -775,6 +775,20 @@ class DictBasedKeyValue(KeyValue[K, V]):
             self._values[key] = new_value
         return new_value
 
+    @tracked("chmax")
+    async def chmax(self, key: K, value: V) -> V:
+        assert ensure_numeric(value, description="value")
+        if key in self._values:
+            current_value = self._values[key]
+            assert ensure_numeric(current_value, description=f"value for key {key!r}")
+            if value > current_value:
+                self._values[key] = value
+                return value
+            return current_value
+        else:
+            self._values[key] = value
+            return value
+
     @tracked("pop")
     async def pop(self, key: K, default: V | None = None) -> V | None:
         return self._values.pop(key, default)

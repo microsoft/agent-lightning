@@ -1039,6 +1039,35 @@ class MongoBasedKeyValue(KeyValue[K, V], Generic[K, V]):
         raw_value = doc["value"]
         return self._value_adapter.validate_python(raw_value)
 
+    @tracked("chmax")
+    async def chmax(self, key: K, value: V) -> V:
+        assert ensure_numeric(value, description="value")
+        collection = await self.ensure_collection()
+        encoded_key = self._key_adapter.dump_python(key, mode="python")
+        encoded_value = self._value_adapter.dump_python(value, mode="python")
+        try:
+            async with self.tracking_context("chmax.find_one_and_update", self.collection_name):
+                doc = await collection.find_one_and_update(
+                    {
+                        "partition_id": self._partition_id,
+                        "key": encoded_key,
+                    },
+                    {
+                        "$max": {"value": encoded_value},
+                    },
+                    upsert=True,
+                    return_document=ReturnDocument.AFTER,
+                    session=self._session,
+                )
+        except OperationFailure as exc:
+            if exc.code == 14 or "Cannot apply $max" in str(exc):
+                raise TypeError(f"value for key {key!r} is not numeric") from exc
+            raise
+        if doc is None:  # type: ignore
+            raise RuntimeError("Failed to update value; MongoDB did not return a document")
+        raw_value = doc["value"]
+        return self._value_adapter.validate_python(raw_value)
+
     @tracked("pop")
     async def pop(self, key: K, default: V | None = None) -> V | None:
         collection = await self.ensure_collection()

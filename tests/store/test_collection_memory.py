@@ -889,10 +889,47 @@ async def test_key_value_inc_rejects_non_numeric_amount(dict_key_value: KeyValue
 
 
 @pytest.mark.asyncio()
+async def test_key_value_chmax_updates_existing(dict_key_value: KeyValue[str, int]) -> None:
+    new_value = await dict_key_value.chmax("alpha", 10)
+    assert new_value == 10
+    assert await dict_key_value.get("alpha") == 10
+
+
+@pytest.mark.asyncio()
+async def test_key_value_chmax_ignores_smaller(dict_key_value: KeyValue[str, int]) -> None:
+    initial = await dict_key_value.get("alpha")
+    result = await dict_key_value.chmax("alpha", 0)
+    assert result == initial
+    assert await dict_key_value.get("alpha") == initial
+
+
+@pytest.mark.asyncio()
+async def test_key_value_chmax_initializes_missing(dict_key_value: KeyValue[str, int]) -> None:
+    result = await dict_key_value.chmax("gamma", 7)
+    assert result == 7
+    assert await dict_key_value.get("gamma") == 7
+
+
+@pytest.mark.asyncio()
+async def test_key_value_chmax_rejects_non_numeric_value(dict_key_value: KeyValue[str, int]) -> None:
+    with pytest.raises(TypeError):
+        await dict_key_value.chmax("alpha", cast(Any, "wrong"))
+
+
+@pytest.mark.asyncio()
 async def test_dict_key_value_inc_rejects_non_numeric_value(dict_key_value_memory: DictBasedKeyValue[str, Any]) -> None:
     await dict_key_value_memory.set("alpha", cast(Any, "na"))
     with pytest.raises(TypeError):
         await dict_key_value_memory.inc("alpha", 1)
+
+
+@pytest.mark.asyncio()
+async def test_dict_key_value_chmax_rejects_non_numeric_value(
+    dict_key_value_memory: DictBasedKeyValue[str, Any],
+) -> None:
+    await dict_key_value_memory.set("alpha", cast(Any, "na"))
+    with pytest.raises(TypeError):
+        await dict_key_value_memory.chmax("alpha", 1)
 
 
 @pytest.mark.mongo
@@ -920,6 +957,53 @@ async def test_mongo_key_value_inc_rejects_non_numeric_value(temporary_mongo_dat
 
         with pytest.raises(TypeError):
             await key_value.inc("alpha", 1)
+
+
+@pytest.mark.mongo
+@pytest.mark.asyncio()
+async def test_mongo_key_value_chmax_behaves_like_max(temporary_mongo_database: AsyncDatabase[Any]) -> None:
+    from agentlightning.store.collection.mongo import MongoBasedKeyValue, MongoClientPool
+
+    async with MongoClientPool(temporary_mongo_database.client) as client_pool:
+        key_value = MongoBasedKeyValue[str, int](
+            client_pool,
+            temporary_mongo_database.name,
+            f"kv-chmax-{uuid4().hex}",
+            "partition-chmax",
+            str,
+            int,
+        )
+        assert await key_value.chmax("alpha", 5) == 5
+        assert await key_value.chmax("alpha", 3) == 5
+        assert await key_value.chmax("alpha", 9) == 9
+        assert await key_value.get("alpha") == 9
+
+
+@pytest.mark.mongo
+@pytest.mark.asyncio()
+async def test_mongo_key_value_chmax_rejects_non_numeric_value(temporary_mongo_database: AsyncDatabase[Any]) -> None:
+    from agentlightning.store.collection.mongo import MongoBasedKeyValue, MongoClientPool
+
+    async with MongoClientPool(temporary_mongo_database.client) as client_pool:
+        key_value = MongoBasedKeyValue[str, int](
+            client_pool,
+            temporary_mongo_database.name,
+            f"kv-chmax-bad-{uuid4().hex}",
+            "partition-chmax-bad",
+            str,
+            int,
+        )
+        collection = await key_value.ensure_collection()
+        await collection.insert_one(
+            {
+                "partition_id": "partition-chmax-bad",
+                "key": "alpha",
+                "value": "oops",
+            }
+        )
+
+        with pytest.raises(TypeError):
+            await key_value.chmax("alpha", 1)
 
 
 def test_thread_safe_async_lock_blocks_threads() -> None:

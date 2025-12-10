@@ -1021,13 +1021,10 @@ class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):
         return result
 
     @tracked("_sync_span_sequence_id")
-    @_with_collections_execute(labels=["span_sequence_ids"])
-    async def _sync_span_sequence_id(self, collections: T_collections, rollout_id: str, sequence_id: int) -> None:
+    async def _sync_span_sequence_id(self, rollout_id: str, sequence_id: int) -> None:
         """Sync the span sequence ID for a given rollout from the input span sequence ID."""
-        existing_sequence_id = await collections.span_sequence_ids.get(rollout_id)
-        if existing_sequence_id is None:
-            existing_sequence_id = 0
-        await collections.span_sequence_ids.set(rollout_id, max(existing_sequence_id, sequence_id))
+        async with self.collections.atomic(mode="rw", snapshot=False, labels=["span_sequence_ids"]) as collections:
+            await collections.span_sequence_ids.chmax(rollout_id, sequence_id)
 
     @tracked("get_next_span_sequence_id")
     async def get_next_span_sequence_id(self, rollout_id: str, attempt_id: str) -> int:

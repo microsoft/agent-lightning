@@ -389,6 +389,14 @@ class KeyValue(TrackedCollection, Generic[K, V]):
         """
         raise NotImplementedError()
 
+    async def chmax(self, key: K, value: V) -> V:
+        """Set the value for the given key to the maximum of the current and new value.
+
+        Raises:
+            TypeError: If the existing value or `value` is not numeric.
+        """
+        raise NotImplementedError()
+
     async def pop(self, key: K, default: V | None = None) -> V | None:
         """Pop the value for the given key, or the default value if the key is not found."""
         raise NotImplementedError()
