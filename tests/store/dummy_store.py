@@ -10,6 +10,7 @@ from agentlightning.types import (
     Attempt,
     AttemptedRollout,
     AttemptStatus,
+    EnqueueRolloutRequest,
     NamedResources,
     ResourcesUpdate,
     Rollout,
@@ -42,8 +43,9 @@ class DummyLightningStore(LightningStore):
         resources_id: Optional[str] = None,
         config: Optional[RolloutConfig] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        worker_id: Optional[str] = None,
     ) -> AttemptedRollout:
-        self.calls.append(("start_rollout", (input, mode, resources_id, config, metadata), {}))
+        self.calls.append(("start_rollout", (input, mode, resources_id, config, metadata, worker_id), {}))
         return self.return_values["start_rollout"]
 
     async def enqueue_rollout(
@@ -57,12 +59,25 @@ class DummyLightningStore(LightningStore):
         self.calls.append(("enqueue_rollout", (input, mode, resources_id, config, metadata), {}))
         return self.return_values["enqueue_rollout"]
 
+    async def enqueue_many_rollouts(self, rollouts: Sequence[EnqueueRolloutRequest]) -> Sequence[Rollout]:
+        self.calls.append(("enqueue_many_rollouts", (rollouts,), {}))
+        return self.return_values["enqueue_many_rollouts"]
+
     async def dequeue_rollout(self, worker_id: Optional[str] = None) -> Optional[AttemptedRollout]:
         self.calls.append(("dequeue_rollout", (worker_id,), {}))
         return self.return_values["dequeue_rollout"]
 
-    async def start_attempt(self, rollout_id: str) -> AttemptedRollout:
-        self.calls.append(("start_attempt", (rollout_id,), {}))
+    async def dequeue_many_rollouts(
+        self,
+        *,
+        limit: int = 1,
+        worker_id: Optional[str] = None,
+    ) -> Sequence[AttemptedRollout]:
+        self.calls.append(("dequeue_many_rollouts", (), {"limit": limit, "worker_id": worker_id}))
+        return self.return_values["dequeue_many_rollouts"]
+
+    async def start_attempt(self, rollout_id: str, worker_id: Optional[str] = None) -> AttemptedRollout:
+        self.calls.append(("start_attempt", (rollout_id, worker_id), {}))
         return self.return_values["start_attempt"]
 
     async def query_rollouts(self, *args: Any, **kwargs: Any) -> List[Rollout]:

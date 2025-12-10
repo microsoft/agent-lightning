@@ -22,6 +22,8 @@
 
 ::: agentlightning.Rollout
 
+::: agentlightning.EnqueueRolloutRequest
+
 ::: agentlightning.Attempt
 
 ::: agentlightning.AttemptedRollout

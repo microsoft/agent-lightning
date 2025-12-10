@@ -10,6 +10,7 @@ on:
       - Examples - Tinker
       - Examples - Azure
       - Examples - Claude Code
+      - Examples - RAG
     types: [completed]
 
   workflow_dispatch:
@@ -37,5 +38,6 @@ jobs:
               { workflow: 'examples-tinker.yml', label: 'examples-tinker.stable', variants: ['stable'] },
               { workflow: 'examples-azure.yml', label: 'examples-azure.stable', variants: ['stable'] },
               { workflow: 'examples-claude-code.yml', label: 'examples-claude-code.stable', variants: ['stable'] },
+              { workflow: 'examples-rag.yml', label: 'examples-rag.stable', variants: ['stable'] },
             ];
             await badgeAggregation({ github, context, core, dependencies });

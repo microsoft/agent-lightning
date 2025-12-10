@@ -19,7 +19,7 @@ from .utils import flatten_dict, random_dict
 
 console = Console()
 
-MAX_RUNTIME_SECONDS = 45 * 60
+MAX_RUNTIME_SECONDS = 30 * 60
 
 
 def _abort_due_to_timeout() -> None:
@@ -303,6 +303,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
 
 def main(argv: Optional[Sequence[str]] = None) -> None:
     args = parse_args(argv)
+    agl.setup_logging()
     store = agl.LightningStoreClient(args.store_url)
     timeout_guard = _start_timeout_guard(MAX_RUNTIME_SECONDS)
     try:

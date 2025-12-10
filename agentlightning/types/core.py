@@ -53,6 +53,7 @@ __all__ = [
     "Rollout",
     "Attempt",
     "AttemptedRollout",
+    "EnqueueRolloutRequest",
     "Hook",
     "Worker",
     "WorkerStatus",
@@ -209,6 +210,24 @@ class AttemptedRollout(Rollout):
         if self.attempt.rollout_id != self.rollout_id:
             raise ValueError("Inconsistent rollout_id between Rollout and Attempt")
         return self
+
+
+class EnqueueRolloutRequest(BaseModel):
+    """Payload describing a rollout to be queued via [`enqueue_rollout`][agentlightning.LightningStore.enqueue_rollout].
+
+    A subset of fields from [`Rollout`][agentlightning.Rollout] used for queuing new rollouts.
+    """
+
+    input: TaskInput
+    """Task input used to generate the rollout."""
+    mode: Optional[RolloutMode] = None
+    """Execution mode such as `"train"`, `"val"` or `"test"`. See [`RolloutMode`][agentlightning.RolloutMode]."""
+    resources_id: Optional[str] = None
+    """Identifier of the resources required to execute the rollout."""
+    config: Optional[RolloutConfig] = None
+    """Retry and timeout configuration associated with the rollout."""
+    metadata: Optional[Dict[str, Any]] = None
+    """Additional metadata attached to the rollout."""
 
 
 WorkerStatus = Literal["idle", "busy", "unknown"]

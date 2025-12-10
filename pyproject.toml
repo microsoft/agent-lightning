@@ -25,6 +25,7 @@ dependencies = [
   "portpicker",
   "gunicorn",
   "uvicorn_worker",
+  "aiologic",
 ]
 
 [project.optional-dependencies]
@@ -36,6 +37,10 @@ apo = [
 verl = [
   "verl>=0.5.0",
   "vllm>=0.8.4", # Due to interface change of ExternalZeroMQDistributedExecutor
+]
+
+weave = [
+  "weave",
 ]
 
 # Store-related dependencies.
@@ -102,8 +107,8 @@ torch-stable = [
   "transformers>=4.55.0,!=4.57.2",
   # vLLM 0.11.1 requires PyTorch 2.9.0, which is incompatible with flash-attn
   # https://github.com/Dao-AILab/flash-attention/issues/1967
-  # Similar issues with vLLM 0.11.2
-  "vllm>=0.10.2,!=0.11.1,!=0.11.2",
+  # Similar issues with vLLM 0.11.2 and 0.12.0
+  "vllm>=0.10.2,!=0.11.1,!=0.11.2,!=0.12.0",
   # LiteLLM can then be upgraded with new vLLM
   "litellm[proxy]>=1.78",
 ]
@@ -182,14 +187,19 @@ anthropic = [
   "anthropic",
 ]
 langchain = [
-  "langgraph<1.0",
-  "langchain[openai]<1.0",
-  "langchain-community",
-  "langchain-text-splitters<1.0",
+  "langgraph>=1.0.0",
+  "langchain[openai]>=1.0.0",
+  "langchain-community>=0.4.0",
+  "langchain-text-splitters>=1.0.0",
 ]
 sql = [
   "sqlparse",
   "nltk",
+]
+rag = [
+  "fastmcp>=2.13.1",
+  "faiss-cpu>=1.11.0",
+  "sentence-transformers>=4.1.0",
 ]
 crewai = [
   # https://github.com/crewAIInc/crewAI/issues/3959
@@ -200,10 +210,11 @@ swebench = [
 ]
 
 # Summarize into large installable groups.
+# Note: langchain is excluded from agents to avoid conflicts with torch-legacy.
+# Use --group langchain explicitly when needed.
 agents = [
   {include-group = "autogen"},
   {include-group = "openai-agents"},
-  {include-group = "langchain"},
   {include-group = "sql"},
   {include-group = "anthropic"},
   {include-group = "crewai"},
@@ -225,6 +236,12 @@ conflicts = [
     { group = "torch-stable" },
     { group = "torch-legacy" },
   ],
+  # langchain >= 1.0 requires openai >= 1.109.1 (via langchain-openai),
+  # but torch-legacy uses vllm==0.9.2 which requires openai<=1.90.0
+  [
+    { group = "langchain" },
+    { group = "torch-legacy" },
+  ],
 ]
 environments = [
   "sys_platform == 'linux'",
@@ -241,6 +258,12 @@ override-dependencies = [
   "uvicorn>=0.38.0",
   # Conflicts between packaging dependency of pyvers (dependency of tensordict) and agentops.
   "packaging>=24.0",
+  # Conflicts between litellm and fastmcp
+  "websockets>=15.0.1",
+  "rich>=13.9.4",
+  # verl's numpy<2.0.0 constraint is related to Docker images, not code incompatibility
+  # Lock to 2.3.0 because numba relies on numpy 2.2
+  "numpy>=2.0.0,<2.3.0",
 ]
 
 [tool.uv.sources]
