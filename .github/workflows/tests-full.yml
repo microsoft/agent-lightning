@@ -29,26 +29,30 @@ jobs:
       github.event.action == 'ci-all'
     name: GPU Test (${{ matrix.mark.display-name }}, ${{ matrix.env.setup-script }}, Python ${{ matrix.env.python-version }})
 
-    runs-on: [self-hosted, 1ES.Pool=agl-runner-gpu]
+    runs-on: ${{ matrix.mark.runs-on }}
     timeout-minutes: 30
     strategy:
       matrix:
         mark:
           - id: store
             display-name: Store
-            pytest-mark: 'store'
+            pytest-mark: 'store'  # store tests should not require gpu
+            runs-on: ubuntu-latest
           # AgentOps needs to be separated because it injects tricky global state.
           - id: agentops
             display-name: AgentOps
-            pytest-mark: 'agentops'  # include agentops+litellm tests here
-          # litellm proxy tests are slow
-          - id: llmproxy
-            display-name: LLM proxy
-            pytest-mark: 'llmproxy and not agentops'
-          # other tests: adapter, execution engine, etc.
+            pytest-mark: 'agentops'  # including agentops+litellm tests here
+            runs-on: [self-hosted, 1ES.Pool=agl-runner-gpu]
+          # Other tests that require GPU
+          - id: gpu
+            display-name: GPU required
+            pytest-mark: '(gpu or llmproxy) and not agentops'
+            runs-on: [self-hosted, 1ES.Pool=agl-runner-gpu]
+          # Other uncovered tests
           - id: others
             display-name: Others
-            pytest-mark: 'not store and not agentops and not llmproxy'
+            pytest-mark: 'not store and not agentops and not gpu and not llmproxy'
+            runs-on: ubuntu-latest
         env:
         - python-version: '3.10'
           setup-script: 'legacy'
