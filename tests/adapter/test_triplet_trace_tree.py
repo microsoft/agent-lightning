@@ -18,7 +18,7 @@ def qwen_multimodal_attrs(response_id: str) -> Dict[str, Any]:
     """Simplified attributes derived from the provided Qwen trace dump."""
     prompt_content = json.dumps(
         [
-            {"type": "text", "text": "Question: How many food item is shown in the bar graph?"},
+            {"type": "text", "text": "Question: How many food items are shown in the bar graph?"},
             {"type": "image_url", "image_url": {"url": "file:///home/kiki/Projects/chartqa/test.png"}},
         ]
     )
@@ -49,7 +49,7 @@ def gpt_multimodal_attrs(response_id: str) -> Dict[str, Any]:
     """Simplified attributes derived from the provided GPT-4o trace dump."""
     prompt_content = json.dumps(
         [
-            {"type": "text", "text": "Question: How many food item is shown in the bar graph?"},
+            {"type": "text", "text": "Question: How many food items are shown in the bar graph?"},
             {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,AAA..."}},
         ]
     )
@@ -147,6 +147,18 @@ def reward_attributes(value: float) -> Dict[str, Any]:
     return {
         "agentops.task.output": json.dumps({"type": "reward", "value": value}),
     }
+
+
+def make_trace_tree_root() -> TraceTree:
+    """Create a minimal trace tree root for helper-only tests."""
+    root_span = make_span(
+        span_id="trace-root",
+        name="agent.session",
+        parent_id=None,
+        start_time=0.0,
+        end_time=1.0,
+    )
+    return TraceTree(root_span.span_id, root_span)
 
 
 def test_trace_tree_from_spans_orders_children_and_agent_names():
@@ -541,7 +553,8 @@ def test_tracer_trace_to_triplet_handles_multimodal_payloads():
     qwen_response = filter_and_unflatten_attributes(llm_first.attributes, "gen_ai.response")
     assert triplets[0].metadata["request"] == qwen_request
     assert triplets[0].metadata["response"] == qwen_response
-    assert triplets[0].response["raw_content"] == qwen_response
+    qwen_completion = filter_and_unflatten_attributes(llm_first.attributes, "gen_ai.completion")
+    assert triplets[0].response["raw_content"] == qwen_completion
 
     gpt_prompt_raw = triplets[1].prompt["raw_content"]
     assert gpt_prompt_raw == filter_and_unflatten_attributes(llm_second.attributes, "gen_ai.prompt")
@@ -552,5 +565,70 @@ def test_tracer_trace_to_triplet_handles_multimodal_payloads():
     gpt_response = filter_and_unflatten_attributes(llm_second.attributes, "gen_ai.response")
     assert triplets[1].metadata["request"] == gpt_request
     assert triplets[1].metadata["response"] == gpt_response
-    assert triplets[1].response["raw_content"] == gpt_response
+    gpt_completion = filter_and_unflatten_attributes(llm_second.attributes, "gen_ai.completion")
+    assert triplets[1].response["raw_content"] == gpt_completion
     assert second.reward == 0.7
+
+
+def test_extract_prompt_image_urls_from_list_payload():
+    tree = make_trace_tree_root()
+    prompt_raw_content = [
+        {
+            "role": "user",
+            "content": json.dumps(
+                [
+                    {"type": "text", "text": "describe the image"},
+                    {"type": "image_url", "image_url": {"url": "https://example.com/a.png"}},
+                ]
+            ),
+        },
+        {
+            "role": "assistant",
+            "content": json.dumps(
+                [
+                    {"type": "text", "text": "another prompt"},
+                    {"type": "image_url", "image_url": {"url": "https://example.com/b.png"}},
+                ]
+            ),
+        },
+    ]
+
+    image_urls = tree.extract_prompt_image_urls(prompt_raw_content)
+
+    assert image_urls == ["https://example.com/a.png", "https://example.com/b.png"]
+
+
+def test_extract_prompt_image_urls_handles_numeric_dict_keys():
+    tree = make_trace_tree_root()
+    prompt_raw_content = {
+        "1": {
+            "role": "assistant",
+            "content": [
+                {"type": "text", "text": "second"},
+                {"type": "image_url", "image_url": {"url": "https://example.com/second.png"}},
+            ],
+        },
+        "0": {
+            "role": "user",
+            "content": [
+                {"type": "image_url", "image_url": {"url": "https://example.com/first.png"}},
+                {"type": "text", "text": "first"},
+            ],
+        },
+    }
+
+    image_urls = tree.extract_prompt_image_urls(prompt_raw_content)
+
+    assert image_urls == ["https://example.com/first.png", "https://example.com/second.png"]
+
+
+def test_extract_prompt_image_urls_gracefully_handles_invalid_payloads():
+    tree = make_trace_tree_root()
+    invalid_prompt_content = [
+        {"role": "user", "content": "not-a-json"},
+        {"role": "assistant", "content": json.dumps([{"type": "text", "text": "no images here"}])},
+        {"role": "system"},
+    ]
+
+    assert tree.extract_prompt_image_urls(invalid_prompt_content) == []
+    assert tree.extract_prompt_image_urls("unexpected-string") == []

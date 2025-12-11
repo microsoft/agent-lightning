@@ -508,7 +508,15 @@ class TraceTree:
         return rewards
 
     def extract_prompt_image_urls(self, prompt_raw_content: Any) -> List[str]:
-        """Extract image URLs from the span attributes, in order of appearance."""
+        """Extract image URLs from the span attributes, in order of appearance.
+
+        Args:
+            prompt_raw_content: The raw content of the prompt, which can be in one of several formats:
+
+                - List[dict]: A list of message entries, each being a dict with at least a "content" key.
+                - Dict[str, Any]: A dictionary, often with numeric string keys (e.g., `{"0": {...}, "1": {...}}`), where each value is a message entry.
+                  If the dict does not have numeric keys, it is treated as a single message entry.
+        """
         message_entries: List[Any] = []
         if isinstance(prompt_raw_content, list):
             message_entries = cast(List[Any], prompt_raw_content)
@@ -565,11 +573,11 @@ class TraceTree:
         request_metadata = filter_and_unflatten_attributes(span.attributes, "gen_ai.request")
         response_metadata = filter_and_unflatten_attributes(span.attributes, "gen_ai.response")
         prompt_raw_content = filter_and_unflatten_attributes(span.attributes, "gen_ai.prompt")
-        response_raw_content = filter_and_unflatten_attributes(span.attributes, "gen_ai.response")
+        completion_raw_content = filter_and_unflatten_attributes(span.attributes, "gen_ai.completion")
         image_urls = self.extract_prompt_image_urls(prompt_raw_content)
 
         prompt_payload = {"token_ids": prompt_token_ids, "raw_content": prompt_raw_content, "image_urls": image_urls}
-        response_payload = {"token_ids": response_token_ids, "raw_content": response_raw_content}
+        response_payload = {"token_ids": response_token_ids, "raw_content": completion_raw_content}
 
         logprobs_content = span.attributes.get("logprobs.content", None)  # type: ignore
         if isinstance(logprobs_content, str):
