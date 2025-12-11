@@ -3420,6 +3420,7 @@ finish.</p>
 <p>The baseline algorithm batches task submissions, waits for each rollout to
 finish, and logs every collected span and reward. It is primarily useful as
 a smoke test for the platform plumbing rather than a performant trainer.</p>
+<p>The baseline algorithm will auto-start a LLM proxy if one is provided and not yet started.</p>
 
 
 <p><span class="doc-section-title">Parameters:</span></p>
@@ -3525,7 +3526,7 @@ throttling additional submissions.</p>
 
 
 <h4 id="agentlightning.Baseline.run" class="doc doc-heading">
-<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">run</span><span class="p">(</span><span class="n">train_dataset</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">val_dataset</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">run</span><span class="p">(</span><span class="n">store</span><span class="p">,</span> <span class="n">llm_proxy</span><span class="p">,</span> <span class="n">train_dataset</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">val_dataset</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-async"><code>async</code></small>
