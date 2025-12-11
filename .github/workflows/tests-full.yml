@@ -27,13 +27,29 @@ jobs:
       github.event_name != 'repository_dispatch' ||
       github.event.action == 'ci-gpu' ||
       github.event.action == 'ci-all'
-    name: GPU Test with Python ${{ matrix.python-version }} (${{ matrix.setup-script }})
+    name: GPU Test (${{ matrix.mark.display-name }}, ${{ matrix.env.setup-script }}, Python ${{ matrix.env.python-version }})
 
     runs-on: [self-hosted, 1ES.Pool=agl-runner-gpu]
     timeout-minutes: 30
     strategy:
       matrix:
-        include:
+        mark:
+          - id: store
+            display-name: Store
+            pytest-mark: 'store'
+          # AgentOps needs to be separated because it injects tricky global state.
+          - id: agentops
+            display-name: AgentOps
+            pytest-mark: 'agentops'  # include agentops+litellm tests here
+          # litellm proxy tests are slow
+          - id: llmproxy
+            display-name: LLM proxy
+            pytest-mark: 'llmproxy and not agentops'
+          # other tests: adapter, execution engine, etc.
+          - id: others
+            display-name: Others
+            pytest-mark: 'not store and not agentops and not llmproxy'
+        env:
         - python-version: '3.10'
           setup-script: 'legacy'
         - python-version: '3.12'
@@ -51,20 +67,20 @@ jobs:
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
-          python-version: ${{ matrix.python-version }}
+          python-version: ${{ matrix.env.python-version }}
       - name: Upgrade dependencies (latest)
         run: uv lock --upgrade
-        if: matrix.setup-script == 'latest'
+        if: matrix.env.setup-script == 'latest'
       - name: Sync dependencies (latest)
         run: uv sync --frozen --no-default-groups --extra apo --extra mongo --group dev --group agents --group langchain --group torch-gpu-stable
-        if: matrix.setup-script == 'latest'
+        if: matrix.env.setup-script == 'latest'
       - name: Sync dependencies (stable)
-        run: uv sync --frozen --no-default-groups --extra apo --extra mongo --group dev --group agents --group langchain --group torch-gpu-${{ matrix.setup-script }}
-        if: matrix.setup-script == 'stable'
+        run: uv sync --frozen --no-default-groups --extra apo --extra mongo --group dev --group agents --group langchain --group torch-gpu-${{ matrix.env.setup-script }}
+        if: matrix.env.setup-script == 'stable'
       # Don't install langchain for legacy dependency because it has conflicts with torch.
       - name: Sync dependencies (legacy)
         run: uv sync --frozen --no-default-groups --extra apo --extra mongo --group dev --group agents --group torch-gpu-legacy
-        if: matrix.setup-script == 'legacy'
+        if: matrix.env.setup-script == 'legacy'
       - name: Freeze dependencies
         run: |
           set -ex
@@ -74,13 +90,15 @@ jobs:
       - name: Upload dependencies artifact
         uses: actions/upload-artifact@v4
         with:
-          name: dependencies-tests-full-${{ matrix.python-version }}-${{ matrix.setup-script }}
+          name: dependencies-tests-full-${{ matrix.mark.id }}-${{ matrix.env.python-version }}-${{ matrix.env.setup-script }}
           path: requirements-freeze.txt
           compression-level: 0
 
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: dashboard/package-lock.json
       - name: Install JavaScript dependencies
         run: cd dashboard && npm ci
       - name: Build dashboard
@@ -139,9 +157,10 @@ jobs:
           AZURE_API_BASE: ${{ secrets.AZURE_GROUP_SUBSCRIPTION_API_BASE }}
           AZURE_API_KEY: ${{ secrets.AZURE_GROUP_SUBSCRIPTION_API_KEY }}
 
+      # mongo, openai, gpu, all enabled by default
       - name: Run tests
         run: |
-          uv run pytest -v --durations=0 tests
+          uv run pytest -v --durations=0 tests -m "${{ matrix.mark.pytest-mark }}"
         env:
           PYTEST_ADDOPTS: "--color=yes"
           OPENAI_BASE_URL: http://localhost:12306/
