@@ -22,8 +22,6 @@ IMAGES_DIR = os.path.realpath(os.path.join(EXAMPLES_DIR, "data", "images"))
 RL_CONFIG: Dict[str, Any] = {
     "algorithm": {"adv_estimator": "grpo", "use_kl_in_reward": False},
     "data": {
-        "train_files": "data/train_chartqa.parquet",
-        "val_files": "data/test_chartqa.parquet",
         "image_base_dir": DATA_DIR,
         "train_batch_size": 1,
         "max_prompt_length": 2048,
@@ -70,6 +68,17 @@ RL_CONFIG: Dict[str, Any] = {
 }
 
 
+def config_ci() -> Dict[str, Any]:
+    """Config for CI testing."""
+    config = deepcopy(RL_CONFIG)
+    config["actor_rollout_ref"]["rollout"]["tensor_model_parallel_size"] = 1
+    config["actor_rollout_ref"]["rollout"]["gpu_memory_utilization"] = 0.6
+    config["trainer"]["n_gpus_per_node"] = 1
+    config["trainer"]["total_training_steps"] = 2
+    config["trainer"]["test_freq"] = 2
+    return config
+
+
 def config_fast() -> Dict[str, Any]:
     """Fast config for testing (2 steps)."""
     config = deepcopy(RL_CONFIG)
@@ -100,19 +109,24 @@ def train(config: Dict[str, Any], external_store_address: str, n_runners: int, d
         algorithm=algorithm,
         store=store,
     )
-    train_data = pd.read_parquet(config["data"]["train_files"]).to_dict(orient="records")  # type: ignore
-    val_data = pd.read_parquet(config["data"]["val_files"]).to_dict(orient="records")  # type: ignore
+
+    train_data_path = os.path.join(DATA_DIR, "train_chartqa.parquet")
+    val_data_path = os.path.join(DATA_DIR, "test_chartqa.parquet")
+
+    train_data = pd.read_parquet(train_data_path).to_dict(orient="records")  # type: ignore
+    val_data = pd.read_parquet(val_data_path).to_dict(orient="records")  # type: ignore
     trainer.fit(agent, train_dataset=train_data, val_dataset=val_data)  # type: ignore
 
 
 if __name__ == "__main__":
+    agl.setup_logging(apply_to=["chartqa_agent"])
     parser = argparse.ArgumentParser(description="Train ChartQA agent")
-    parser.add_argument("config", choices=["fast", "qwen"], help="Training configuration")
+    parser.add_argument("config", choices=["fast", "qwen", "ci"], help="Training configuration")
     parser.add_argument("--n-runners", type=int, default=10, help="Number of runners for Trainer")
     parser.add_argument(
         "--external-store-address",
         type=str,
-        default="",
+        default=None,
         help="Connect to an external store instead of creating a new one in memory (e.g., http://localhost:4747)",
     )
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
@@ -126,8 +140,14 @@ if __name__ == "__main__":
                 "Otherwise the trainer will still try to manage the store lifecycle for you!"
             )
 
+    CONFIGS = {
+        "fast": config_fast,
+        "qwen": config_qwen,
+        "ci": config_ci,
+    }
+
     train(
-        config={"fast": config_fast, "qwen": config_qwen}[args.config](),
+        config=CONFIGS[args.config](),
         external_store_address=args.external_store_address,
         n_runners=args.n_runners,
         debug=args.debug,

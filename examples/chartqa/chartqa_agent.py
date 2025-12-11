@@ -16,9 +16,8 @@ from __future__ import annotations
 import logging
 import os
 import re
-from typing import Any, Dict, List, Literal, Optional, cast
+from typing import Any, Dict, Literal, Optional, cast
 
-import pandas as pd
 import termcolor
 from langchain.chat_models import init_chat_model
 from langchain_core.messages import AnyMessage, BaseMessage, HumanMessage
@@ -35,9 +34,7 @@ from prompts import (
 
 import agentlightning as agl
 
-agl.setup_logging(apply_to=[__name__])
-
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("chartqa_agent")
 
 
 class ChartState(MessagesState):
@@ -414,149 +411,3 @@ class LitChartQAAgent(agl.LitAgent[Dict[str, Any]]):
         reward = evaluate_answer(predicted_answer, ground_truth, raise_on_error=False)
 
         return reward
-
-
-def create_llm_proxy_for_chartqa(vllm_endpoint: str, port: int = 8081) -> agl.LLMProxy:
-    """Create LLMProxy configured for ChartQA with token ID capture."""
-    store = agl.LightningStoreThreaded(agl.InMemoryLightningStore())
-
-    llm_proxy = agl.LLMProxy(
-        port=port,
-        store=store,
-        model_list=[
-            {
-                "model_name": "Qwen/Qwen2-VL-2B-Instruct",
-                "litellm_params": {
-                    "model": "hosted_vllm/Qwen/Qwen2-VL-2B-Instruct",
-                    "api_base": vllm_endpoint,
-                },
-            }
-        ],
-        callbacks=["return_token_ids"],
-        launch_mode="thread",
-    )
-
-    return llm_proxy
-
-
-def debug_chartqa_agent():
-    """Debug function to test agent with cloud APIs (default).
-
-    Usage:
-        python chartqa_agent.py
-
-    Environment variables:
-        MODEL: Model name (default: gpt-4o)
-        OPENAI_API_BASE: API endpoint (default: https://api.openai.com/v1)
-        OPENAI_API_KEY: API key for authentication
-    """
-    chartqa_dir = os.environ.get("CHARTQA_DATA_DIR", "data")
-    test_data_path = os.path.join(chartqa_dir, "test_chartqa.parquet")
-
-    if not os.path.exists(test_data_path):
-        raise FileNotFoundError(f"Test data file {test_data_path} does not exist. Please run prepare_data.py first.")
-
-    df = pd.read_parquet(test_data_path).head(10)  # type: ignore
-    test_data = cast(List[Dict[str, Any]], df.to_dict(orient="records"))  # type: ignore
-
-    model = os.environ.get("MODEL", "gpt-4.1-mini")
-    endpoint = os.environ.get("OPENAI_API_BASE", "https://api.openai.com/v1")
-    logger.info(f"Debug data: {len(test_data)} samples, model: {model}, endpoint: {endpoint}")
-
-    trainer = agl.Trainer(
-        n_workers=1,
-        initial_resources={
-            "main_llm": agl.LLM(
-                endpoint=endpoint,
-                model=model,
-                sampling_parameters={"temperature": 0.0},
-            )
-        },
-    )
-    trainer.dev(LitChartQAAgent(use_base64_images=True), test_data)
-
-
-def debug_chartqa_agent_with_llm_proxy():
-    """Debug function to test agent with local vLLM server and LLMProxy.
-
-    Usage:
-        USE_LLM_PROXY=1 OPENAI_API_BASE=http://localhost:8088/v1 python chartqa_agent.py
-    """
-    import asyncio
-
-    import nest_asyncio
-
-    nest_asyncio.apply()  # type: ignore
-
-    chartqa_dir = os.environ.get("CHARTQA_DATA_DIR", "data")
-    test_data_path = os.path.join(chartqa_dir, "test_chartqa.parquet")
-
-    if not os.path.exists(test_data_path):
-        raise FileNotFoundError(f"Test data file {test_data_path} does not exist. Please run prepare_data.py first.")
-
-    df = pd.read_parquet(test_data_path).head(10)  # type: ignore
-    test_data = cast(List[Dict[str, Any]], df.to_dict(orient="records"))  # type: ignore
-
-    vllm_endpoint = os.environ.get("OPENAI_API_BASE", "http://localhost:8088/v1")
-    model = os.environ.get("MODEL", "Qwen/Qwen2-VL-2B-Instruct")
-
-    store = agl.LightningStoreThreaded(agl.InMemoryLightningStore())
-
-    llm_proxy = agl.LLMProxy(
-        port=8089,
-        store=store,
-        model_list=[
-            {
-                "model_name": model,
-                "litellm_params": {
-                    "model": f"hosted_vllm/{model}",
-                    "api_base": vllm_endpoint,
-                },
-            }
-        ],
-        callbacks=["return_token_ids"],
-        launch_mode="thread",
-    )
-
-    try:
-        logger.info("Starting LLMProxy...")
-        asyncio.run(llm_proxy.start())
-
-        logger.info("Waiting for LLMProxy to be ready...")
-
-        trainer = agl.Trainer(
-            n_workers=2,
-            store=store,
-            llm_proxy=llm_proxy,
-            strategy={"name": "shm", "main_thread": "algorithm", "managed_store": False},
-            initial_resources={
-                "main_llm": agl.LLM(
-                    endpoint="http://localhost:8089/v1",
-                    model=model,
-                    sampling_parameters={"temperature": 0.0},
-                )
-            },
-        )
-
-        trainer.dev(LitChartQAAgent(), test_data)
-
-    except KeyboardInterrupt:
-        logger.info("Interrupted by user")
-    except Exception as e:
-        logger.error(f"Error during debug session: {e}", exc_info=True)
-        raise
-    finally:
-        logger.info("Shutting down LLMProxy...")
-        try:
-            asyncio.run(llm_proxy.stop())
-            logger.info("LLMProxy stopped successfully")
-        except Exception as e:
-            logger.error(f"Error stopping LLMProxy: {e}")
-        logger.info("Debug session completed")
-
-
-if __name__ == "__main__":
-    if os.environ.get("USE_LLM_PROXY", "").lower() in ("1", "true", "yes"):
-        debug_chartqa_agent_with_llm_proxy()
-    else:
-        debug_chartqa_agent()
