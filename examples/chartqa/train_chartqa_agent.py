@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 """Train ChartQA agent using VERL reinforcement learning."""
 
 from __future__ import annotations
