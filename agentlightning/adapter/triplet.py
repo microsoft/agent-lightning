@@ -492,7 +492,7 @@ class TraceTree:
                 assign_to: List[Tuple[str, int]] = []
                 for child in item.children:
                     if child.id in llm_call_ids:
-                        assign_to.append(child.id)  # type: ignore
+                        assign_to.append((child.id, child.end_time))  # type: ignore
 
                     agentops_output = item.maybe_reward_dict()
                     if agentops_output and agentops_output.get("type") == "reward":
