@@ -41,6 +41,8 @@ class Baseline(FastAlgorithm):
     finish, and logs every collected span and reward. It is primarily useful as
     a smoke test for the platform plumbing rather than a performant trainer.
 
+    The baseline algorithm will auto-start a LLM proxy if one is provided and not yet started.
+
     Args:
         n_epochs: Number of dataset passes to execute for both the train and val
             splits during developer experiments.
