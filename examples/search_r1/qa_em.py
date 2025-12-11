@@ -75,7 +75,7 @@ def extract_solution(solution_str: str) -> Optional[str]:
     matches = list(match_iter)
 
     # If there are 0 or exactly 1 matches, return None
-    if len(matches) <= 1:
+    if len(matches) == 0:
         return None
 
     # If there are 2 or more matches, return the last one
