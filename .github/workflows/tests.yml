@@ -20,6 +20,7 @@ jobs:
     strategy:
       matrix:
         setup: [fast, slow]
+      fail-fast: false
     name: Lint - ${{ matrix.setup }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -116,7 +117,7 @@ jobs:
   test:
     strategy:
       matrix:
-        include:
+        env:
           - python-version: '3.10'
             setup-script: 'legacy'
           - python-version: '3.11'
@@ -125,9 +126,19 @@ jobs:
             setup-script: 'stable'
           - python-version: '3.13'
             setup-script: 'latest'
+        mark:
+          # store has many tests and is a good isolated group.
+          - display-name: store
+            pytest-mark: 'store'
+          # AgentOps needs to be separated because it injects tricky global state.
+          - display-name: agentops
+            pytest-mark: 'agentops'
+          # litellm, unmarked tests, etc.
+          - display-name: others
+            pytest-mark: 'not store and not agentops'
       fail-fast: false
 
-    name: Test with Python ${{ matrix.python-version }} (${{ matrix.setup-script }})
+    name: Test (${{ matrix.mark.display-name }}, ${{ matrix.env.setup-script }}, Python ${{ matrix.env.python-version }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -135,16 +146,16 @@ jobs:
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
-          python-version: ${{ matrix.python-version }}
+          python-version: ${{ matrix.env.python-version }}
       - name: Upgrade dependencies (latest)
         run: uv lock --upgrade
-        if: matrix.setup-script == 'latest'
+        if: matrix.env.setup-script == 'latest'
       - name: Sync dependencies (latest)
         run: uv sync --frozen --no-default-groups --extra apo --group dev --group agents --group langchain --group core-stable
-        if: matrix.setup-script == 'latest'
+        if: matrix.env.setup-script == 'latest'
       - name: Sync dependencies (stable & legacy)
-        run: uv sync --frozen --no-default-groups --extra apo --group dev --group agents --group langchain --group core-${{ matrix.setup-script }}
-        if: matrix.setup-script != 'latest'
+        run: uv sync --frozen --no-default-groups --extra apo --group dev --group agents --group langchain --group core-${{ matrix.env.setup-script }}
+        if: matrix.env.setup-script != 'latest'
       - name: Freeze dependencies
         run: |
           set -ex
@@ -154,7 +165,7 @@ jobs:
       - name: Upload dependencies artifact
         uses: actions/upload-artifact@v4
         with:
-          name: dependencies-${{ matrix.python-version }}-${{ matrix.setup-script }}
+          name: dependencies-${{ matrix.env.python-version }}-${{ matrix.env.setup-script }}
           path: requirements-freeze.txt
           compression-level: 0
 
@@ -168,12 +179,12 @@ jobs:
 
       - name: Run tests
         run: |
-          uv run pytest -v --durations=0 tests -m "not mongo"
+          uv run pytest -v --durations=0 tests -m "not mongo and not openai and not gpu and (${{ matrix.mark.pytest-mark }})"
         env:
           PYTEST_ADDOPTS: "--color=yes"
 
   test-js:
-    name: Test - JavaScript
+    name: Test (JavaScript)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
