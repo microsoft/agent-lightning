@@ -1,0 +1,55 @@
+custom: {}
+generation:
+  backend: vllm
+  backend_configs:
+    vllm:
+      model_name_or_path: /path/to/model
+      trust_remote_code: true
+      dtype: auto
+      gpu_ids: 0
+      gpu_memory_utilization: 0.4
+  sampling_params:
+    max_tokens: 4096
+    temperature: 0.7
+    top_p: 0.8
+  system_prompt: ''
+prompt:
+  template: prompt/qa_boxed.jinja
+  r1_searcher_gen_template: prompt/r1_searcher_append.jinja
+retriever:
+  backend: sentence_transformers
+  backend_configs:
+    sentence_transformers:
+      trust_remote_code: true
+      sentence_transformers_encode:
+        encode_chunk_size: 256
+        normalize_embeddings: false
+        psg_prompt_name: document
+        psg_task: null
+        q_prompt_name: query
+        q_task: null
+    openai:
+      api_key: ''
+      base_url: https://api.openai.com/v1
+      model_name: text-embedding-3-small
+    infinity:
+      bettertransformer: false
+      model_warmup: false
+      pooling_method: auto
+      trust_remote_code: true
+    bm25:
+      lang: en
+      save_path: index/bm25
+  batch_size: 8
+  corpus_path: data/wiki18_ultra.jsonl
+  gpu_ids: 0
+  index_backend: faiss
+  index_backend_configs:
+    faiss:
+      index_chunk_size: 256
+      index_path: data/e5_Flat.index
+      index_use_gpu: true
+  is_multimodal: false
+  model_name_or_path: intfloat/e5-base-v2
+  query_instruction: ''
+  top_k: 5
