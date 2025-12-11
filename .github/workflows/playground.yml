@@ -138,7 +138,7 @@ jobs:
         run: |
           set -euo pipefail
           source .venv/bin/activate
-          cd examples/rag
+          cd examples/chartqa
           ../../scripts/restart_ray.sh
           sleep 5
           PYTHONUNBUFFERED=1 python train_chartqa_agent.py ci
