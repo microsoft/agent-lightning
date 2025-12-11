@@ -376,7 +376,8 @@ class TraceTree:
 
             if is_llm_call:
                 llm_calls.append((self, within_matching_subtree))  # type: ignore
-                existing_llm_call_response_ids = existing_llm_call_response_ids or set()
+                if existing_llm_call_response_ids is None:
+                    existing_llm_call_response_ids = set()
                 if response_id is not None:
                     existing_llm_call_response_ids.add(response_id)
                 if within_llm_call is not None:
