@@ -29,6 +29,8 @@ from agentlightning.utils.otel import (
     unflatten_attributes,
 )
 
+pytestmark = pytest.mark.utils
+
 
 def _span_context(trace_id_hex: str, span_id_hex: str) -> trace_api.SpanContext:
     return trace_api.SpanContext(

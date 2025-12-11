@@ -2,8 +2,9 @@
 
 import os
 from contextlib import asynccontextmanager
-from typing import Any, AsyncGenerator, Dict, Optional, cast
+from typing import Any, AsyncGenerator, Awaitable, Dict, Optional, cast
 
+import litellm
 import openai
 import pytest
 
@@ -21,19 +22,38 @@ from ..common.tracer import clear_tracer_provider
 from ..common.vllm import VLLM_AVAILABLE, RemoteOpenAIServer
 
 
-async def init_runner(
-    agent: LitAgent[Any],
-    *,
-    resources: Optional[Dict[str, LLM]] = None,
-) -> tuple[LitAgentRunner[Any], InMemoryLightningStore]:
-    store = InMemoryLightningStore()
-    llm_resource: NamedResources = resources or {"llm": LLM(endpoint="http://localhost", model="dummy")}  # type: ignore[assignment]
-    await store.update_resources("default", llm_resource)
+class InitRunnerFunction:
 
-    runner = LitAgentRunner[Any](tracer=AgentOpsTracer(), poll_interval=0.01)
-    runner.init(agent)
-    runner.init_worker(worker_id=0, store=store)
-    return runner, store
+    def __call__(
+        self,
+        agent: LitAgent[Any],
+        *,
+        resources: Optional[Dict[str, LLM]] = None,
+    ) -> Awaitable[tuple[LitAgentRunner[Any], InMemoryLightningStore]]: ...
+
+
+@pytest.fixture(
+    params=[
+        pytest.param("agentops", marks=pytest.mark.agentops),
+    ]
+)
+def init_runner(request: pytest.FixtureRequest) -> InitRunnerFunction:
+    async def init_runner_fn(
+        agent: LitAgent[Any],
+        *,
+        resources: Optional[Dict[str, LLM]] = None,
+    ) -> tuple[LitAgentRunner[Any], InMemoryLightningStore]:
+        store = InMemoryLightningStore()
+        llm_resource: NamedResources = resources or {"llm": LLM(endpoint="http://localhost", model="dummy")}  # type: ignore[assignment]
+        await store.update_resources("default", llm_resource)
+
+        # This is always AgentOpsTracer for now
+        runner = LitAgentRunner[Any](tracer=AgentOpsTracer(), poll_interval=0.01)
+        runner.init(agent)
+        runner.init_worker(worker_id=0, store=store)
+        return runner, store
+
+    return init_runner_fn  # type: ignore
 
 
 def teardown_runner(runner: LitAgentRunner[Any]) -> None:
@@ -51,7 +71,7 @@ def setup_module():
 
 
 @pytest.mark.asyncio
-async def test_runner_integration_basic_rollout() -> None:
+async def test_runner_integration_basic_rollout(init_runner: InitRunnerFunction) -> None:
     class EchoAgent(LitAgent[str]):
         async def validation_rollout_async(self, task: str, resources: Dict[str, Any], rollout: Any) -> None:
             emit_reward(1.0)
@@ -71,11 +91,8 @@ async def test_runner_integration_basic_rollout() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.skipif(
-    not (os.getenv("OPENAI_BASE_URL") and os.getenv("OPENAI_API_KEY")),
-    reason="OpenAI endpoint or key not configured",
-)
-async def test_runner_integration_with_openai() -> None:
+@pytest.mark.openai
+async def test_runner_integration_with_openai(init_runner: InitRunnerFunction) -> None:
     class OpenAIAgent(LitAgent[str]):
         async def validation_rollout_async(self, task: str, resources: NamedResources, rollout: Rollout) -> float:
             llm = cast(LLM, resources["llm"])
@@ -86,6 +103,9 @@ async def test_runner_integration_with_openai() -> None:
             )
             assert response.choices, "OpenAI response should contain choices"
             return 0.0
+
+    if not (os.getenv("OPENAI_BASE_URL") and os.getenv("OPENAI_API_KEY")):
+        raise RuntimeError("OpenAI endpoint or key not configured")
 
     base_url = os.environ["OPENAI_BASE_URL"]
     api_key = os.environ["OPENAI_API_KEY"]
@@ -104,22 +124,24 @@ async def test_runner_integration_with_openai() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.openai
 @pytest.mark.skipif(
     not (os.getenv("OPENAI_BASE_URL") and os.getenv("OPENAI_API_KEY")),
     reason="OpenAI endpoint or key not configured",
 )
-async def test_runner_integration_with_litellm_proxy() -> None:
-    litellm = pytest.importorskip("litellm")
-
+async def test_runner_integration_with_litellm_proxy(init_runner: InitRunnerFunction) -> None:
     class LiteLLMAgent(LitAgent[str]):
         def validation_rollout(self, task: str, resources: NamedResources, rollout: Rollout) -> float:
             llm = cast(LLM, resources["llm"])
-            response = litellm.completion(
+            response = litellm.completion(  # type: ignore
                 model=llm.model,
                 messages=[{"role": "user", "content": task}],
             )
-            assert response.get("choices"), "litellm proxy should return choices"
+            assert response.get("choices"), "litellm proxy should return choices"  # type: ignore
             return 0.0
+
+    if not (os.getenv("OPENAI_BASE_URL") and os.getenv("OPENAI_API_KEY")):
+        raise RuntimeError("OpenAI endpoint or key not configured")
 
     agent = LiteLLMAgent()
     resources = {"llm": LLM(endpoint="http://dummy", model="openai/gpt-4o-mini")}
@@ -154,7 +176,11 @@ def server():
 
 
 class LLMProxyWithClearedTracerProvider(LLMProxy):
-    """LLMProxy that clears the tracer provider before serving."""
+    """LLMProxy that clears the tracer provider before serving.
+
+    It will be run in a separate process, so the tracer provider initialized there does not
+    interfere with the main process's tracer provider.
+    """
 
     @asynccontextmanager
     async def _serve_context(self) -> AsyncGenerator[None, None]:
@@ -165,11 +191,10 @@ class LLMProxyWithClearedTracerProvider(LLMProxy):
 
 
 @pytest.mark.asyncio
-async def test_runner_integration_with_spawned_litellm_proxy(server: RemoteOpenAIServer) -> None:
-    torch = pytest.importorskip("torch")
-    if not torch.cuda.is_available():
-        pytest.skip("GPU not available")
-
+@pytest.mark.gpu
+async def test_runner_integration_with_spawned_litellm_proxy(
+    init_runner: InitRunnerFunction, server: RemoteOpenAIServer
+) -> None:
     class ProxyAgent(LitAgent[str]):
         async def validation_rollout_async(self, task: str, resources: NamedResources, rollout: Rollout) -> float:
             attempted_rollout = cast(AttemptedRollout, rollout)

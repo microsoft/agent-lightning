@@ -40,6 +40,8 @@ if TYPE_CHECKING:
 
     from agentlightning.store.collection.mongo import MongoLightningCollections
 
+pytestmark = [pytest.mark.store]
+
 
 def _build_collection(items: Iterable[SampleItem] = ()) -> ListBasedCollection[SampleItem]:
     return ListBasedCollection(list(items), SampleItem, ("partition", "index"))

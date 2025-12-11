@@ -46,6 +46,8 @@ from agentlightning.types import (
     TraceStatus,
 )
 
+pytestmark = [pytest.mark.store]
+
 
 class FakeTimeController(Protocol):
     def set(self, value: float) -> None: ...
