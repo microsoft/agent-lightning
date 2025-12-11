@@ -71,7 +71,9 @@ jobs:
         run: |
           set -euo pipefail
           cd examples/chartqa
-          uv run python prepare_data.py
+          uv run gdown --fuzzy "https://drive.google.com/file/d/1fWRt9hehg8_uV7BDWSCwKTycM60JcmGN/view?usp=sharing" -O chartqa-data.zip
+          unzip chartqa-data.zip
+          rm chartqa-data.zip
         shell: bash
 
       - name: ChartQA sanity check with GPT

@@ -74,7 +74,7 @@ jobs:
       - name: Upload dependencies artifact
         uses: actions/upload-artifact@v4
         with:
-          name: dependencies-spider-${{ matrix.python-version }}-${{ matrix.setup-script }}
+          name: dependencies-rag-${{ matrix.python-version }}-${{ matrix.setup-script }}
           path: requirements-freeze.txt
           compression-level: 0
 
