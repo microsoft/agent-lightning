@@ -75,14 +75,14 @@ def instrument_weave():
     global _original_weave_get
     _original_default_entity_name_getter = wandb.Api.default_entity_name  # type: ignore
     _original_upsert_project_getter = wandb.Api.upsert_project  # type: ignore
-    _original_weave_post = weave.utils.http_requests.session.post  # type: ignore
-    _original_weave_get = weave.utils.http_requests.session.get  # type: ignore
+    _original_weave_post = weave.utils.http_requests.post  # type: ignore
+    _original_weave_get = weave.utils.http_requests.get  # type: ignore
 
     # Patch API methods and HTTP requests
     wandb.Api.default_entity_name = default_entity_name_getter  # type: ignore
     wandb.Api.upsert_project = upsert_project_getter  # type: ignore
-    weave.utils.http_requests.session.post = post  # type: ignore
-    weave.utils.http_requests.session.get = get  # type: ignore
+    weave.utils.http_requests.post = post  # type: ignore
+    weave.utils.http_requests.get = get  # type: ignore
 
     # Silence Weave logging
     for name in logging.root.manager.loggerDict:
@@ -123,13 +123,13 @@ def uninstrument_weave():
 
     global _original_weave_post
     if _original_weave_post is not None:
-        weave.utils.http_requests.session.post = _original_weave_post  # type: ignore
+        weave.utils.http_requests.post = _original_weave_post  # type: ignore
         _original_weave_post = None
         logger.info("restored weave.utils.http_requests.session.post")
 
     global _original_weave_get
     if _original_weave_get is not None:
-        weave.utils.http_requests.session.get = _original_weave_get  # type: ignore
+        weave.utils.http_requests.get = _original_weave_get  # type: ignore
         _original_weave_get = None
         logger.info("restored weave.utils.http_requests.session.get")
 

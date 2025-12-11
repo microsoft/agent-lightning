@@ -2,38 +2,58 @@
 
 from __future__ import annotations
 
+import datetime
+import hashlib
 import logging
 import os
+import uuid
 from contextlib import asynccontextmanager
-from typing import TYPE_CHECKING, Any, AsyncIterator, Dict, List, Optional, Tuple, Union
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    AsyncIterator,
+    Awaitable,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Sequence,
+    Tuple,
+    Union,
+    cast,
+)
 
-from agentlightning.instrumentation import instrument_weave, uninstrument_weave
+from agentlightning.instrumentation.weave import instrument_weave, uninstrument_weave
 from agentlightning.store.base import LightningStore
 from agentlightning.types.tracer import OtelResource, Span, SpanContext, TraceStatus
 
 from .base import Tracer
 
 if TYPE_CHECKING:
-    from weave.trace.call import Call  # type: ignore
+    from weave.trace.call import Call
 
 JSONPrimitive = Union[str, int, float, bool, None]
 
 logger = logging.getLogger(__name__)
 
 
+def generate_span_id() -> str:
+    return "sp-" + hashlib.sha1(uuid.uuid4().bytes).hexdigest()[:12]
+
+
 class WeaveTracer(Tracer):
-    """
-    Tracer implementation using Weave for telemetry and trace logging.
+    """Tracer implementation using Weave for telemetry and trace logging.
 
     This replaces AgentOpsTracer with a Weave-based manual trace context. It tracks:
+
     - Function/method calls
     - Input/Output data
     - Exceptions
+
     and logs them to Weave Cloud (W&B backend) or optionally bypasses the network for testing.
 
     Attributes:
         project_name: Name of the Weave project. Used to initialize the Weave client.
-        _store: Optional LightningStore instance for storing collected spans.
         instrument_managed: Whether to patch the Weave/W&B integration to bypass actual network calls for testing.
     """
 
@@ -53,6 +73,11 @@ class WeaveTracer(Tracer):
         self.sequence_id = 0
         self._store: Optional[LightningStore] = None
         self.instrument_managed = instrument_managed
+
+        self._default_sequence_counter: int = 0
+        self._spans: List[Span] = []
+        self._rollout_id: Optional[str] = None
+        self._attempt_id: Optional[str] = None
 
         if wandb_api_key:
             os.environ["WANDB_API_KEY"] = wandb_api_key
@@ -89,8 +114,8 @@ class WeaveTracer(Tracer):
             try:
                 weave.init(project_name=self.project_name)  # type: ignore
                 logger.info(f"[Worker {worker_id}] Weave client initialized.")
-            except Exception as e:
-                raise RuntimeError(f"Failed to initialize Weave for project '{self.project_name}': {e}")
+            except Exception as exc:
+                raise RuntimeError(f"Failed to initialize Weave for project '{self.project_name}'") from exc
 
     def teardown_worker(self, worker_id: int):
         """
@@ -110,9 +135,9 @@ class WeaveTracer(Tracer):
         self,
         name: Optional[str] = None,
         *,
-        store: Optional[LightningStore] = None,
         rollout_id: Optional[str] = None,
         attempt_id: Optional[str] = None,
+        **kwargs: Any,
     ) -> AsyncIterator[Any]:
         """
         Synchronous implementation of the tracing context.
@@ -130,46 +155,54 @@ class WeaveTracer(Tracer):
         arg_op = name or self.project_name
         arg_inputs: dict[str, str] | None = {"rollout_id": rollout_id or "", "attempt_id": attempt_id or ""}
 
-        if store is not None and rollout_id is not None and attempt_id is not None:
-            self._rollout_id = rollout_id
-            self._attempt_id = attempt_id
-            self._store = store
-        else:
-            raise ValueError("store, rollout_id, and attempt_id must be either all provided")
+        self._spans.clear()
 
         try:
-            import datetime
-
             import weave
-        except ImportError:
-            raise RuntimeError("Weave is not installed. Install it to use WeaveTracer.")
+        except ImportError as exc:
+            raise RuntimeError("Weave is not installed. Install it to use WeaveTracer.") from exc
 
-        weave_client = weave.get_client()  # type: ignore
+        weave_client = weave.get_client()
         if not weave_client:
             raise RuntimeError("Weave client is not initialized. Call init_worker() first.")
 
+        if rollout_id is not None and attempt_id is not None:
+            self._rollout_id = rollout_id
+            self._attempt_id = attempt_id
+        elif rollout_id is None and attempt_id is None:
+            logger.warning("No rollout_id or attempt_id provided. Skipping writing to store.")
+        else:
+            raise ValueError("rollout_id and attempt_id must be either both provided or both None")
+
         # Create a new trace call object in Weave
-        trace_call = weave_client.create_call(op=arg_op, inputs=arg_inputs)  # type: ignore
+        trace_call = weave_client.create_call(op=arg_op, inputs=arg_inputs)  # pyright: ignore[reportUnknownMemberType]
         trace_call.started_at = datetime.datetime.now(tz=datetime.timezone.utc)
 
         try:
             yield trace_call
         except Exception as e:
             # Finish trace and log any exception
-            weave_client.finish_call(trace_call, exception=e)  # type: ignore
+            weave_client.finish_call(trace_call, exception=e)  # pyright: ignore[reportUnknownMemberType]
             logger.error(f"Trace failed for rollout_id={rollout_id}, attempt_id={attempt_id}, error={e}")
         finally:
             # Finish trace even if no exception
-            weave_client.finish_call(trace_call)  # type: ignore
-            await self._on_finish_handler(trace_call)  # type: ignore
+            weave_client.finish_call(trace_call)  # pyright: ignore[reportUnknownMemberType]
+            await self._on_finish_handler(trace_call)
 
-    async def _on_finish_handler(self, call: "Call", *args: Any, **kwargs: Any) -> None:  # type: ignore
+            self._rollout_id = None
+            self._attempt_id = None
+
+    def get_last_trace(self) -> List[Span]:
+        return self._spans
+
+    async def _on_finish_handler(self, call: Call, *args: Any, **kwargs: Any) -> None:
         """
         Handler called when a Weave Call finishes.
 
         Converts the call (including nested children) into spans and stores them in LightningStore.
         """
-        spans, self.sequence_id = self.convert_call_to_spans(call, self._rollout_id, self._attempt_id, self.sequence_id)  # type: ignore
+        spans = await self.convert_call_to_spans(call, self._rollout_id, self._attempt_id)
+        self._spans.extend(spans)
 
         if self._store and self._rollout_id and self._attempt_id:
             try:
@@ -177,13 +210,22 @@ class WeaveTracer(Tracer):
             except Exception as e:
                 logger.exception(f"Error adding span to store: {e}")
 
-    def convert_call_to_spans(
+    async def _sequence_generator(self, request_count: int) -> Sequence[int]:
+        if self._rollout_id and self._attempt_id and self._store:
+            return await self._store.get_many_span_sequence_ids(
+                [(self._rollout_id, self._attempt_id) for _ in range(request_count)]
+            )
+        else:
+            ret = [self._default_sequence_counter + i for i in range(request_count)]
+            self._default_sequence_counter += request_count
+            return ret
+
+    async def convert_call_to_spans(
         self,
-        call: "Call",  # type: ignore
+        call: Call,
         rollout_id: Optional[str] = None,
         attempt_id: Optional[str] = None,
-        seq_start: int = 0,
-    ) -> tuple[List[Span], int]:
+    ) -> List[Span]:
         """
         Recursively convert a Weave Call (with nested children) into a flat list of Agent Lightning Spans.
 
@@ -191,28 +233,28 @@ class WeaveTracer(Tracer):
             call: The Weave Call object.
             rollout_id: Optional rollout ID to attach to spans.
             attempt_id: Optional attempt ID to attach to spans.
-            seq_start: Sequence number to start from.
+            sequence_generator: Callable to generate sequence IDs.
 
         Returns:
-            Tuple of (list_of_spans, next_sequence_id).
+            List of converted spans.
         """
         spans: List[Span] = []
-        sequence_id = seq_start
+        sequence_id = await self._sequence_generator(1)
 
-        rollout_id = rollout_id or ""  # type: ignore
-        attempt_id = attempt_id or ""  # type: ignore
+        rollout_id = rollout_id or ""
+        attempt_id = attempt_id or ""
 
-        start_dt = getattr(call, "started_at", None)  # type: ignore
+        start_dt = getattr(call, "started_at", None)
         start_ts: Optional[float] = start_dt.timestamp() if start_dt else None
 
-        end_dt = getattr(call, "ended_at", None)  # type: ignore
+        end_dt = getattr(call, "ended_at", None)
         end_ts: Optional[float] = end_dt.timestamp() if end_dt else None
 
-        trace_id = str(getattr(call, "trace_id", None))  # type: ignore
-        span_id = str(getattr(call, "id", None))  # type: ignore
-        parent_id = str(getattr(call, "parent_id", None)) if getattr(call, "parent_id", None) else None  # type: ignore
+        trace_id = call.trace_id
+        span_id = call.id or generate_span_id()
+        parent_id = call.parent_id
 
-        exception = getattr(call, "exception", None)  # type: ignore
+        exception = getattr(call, "exception", None)
         status_code = "ERROR" if exception else "OK"
 
         def sanitize(
@@ -230,11 +272,11 @@ class WeaveTracer(Tracer):
                 value, key = stack.pop()
 
                 if isinstance(value, dict):
-                    for k, v in value.items():  # type: ignore
-                        stack.append((v, f"{key}.{k}"))  # type: ignore
+                    for k, v in cast(Dict[str, Any], value).items():
+                        stack.append((v, f"{key}.{k}"))
                 elif isinstance(value, (list, tuple)):
-                    for i, v in enumerate(value):  # type: ignore
-                        stack.append((v, f"{key}.{i}"))  # type: ignore
+                    for i, v in enumerate(cast(List[Any], value)):
+                        stack.append((v, f"{key}.{i}"))
                 else:
                     if value is None:
                         attributes[key] = "None"
@@ -248,8 +290,8 @@ class WeaveTracer(Tracer):
 
             return attributes
 
-        inputs = getattr(call, "inputs", {})  # type: ignore
-        output = getattr(call, "output", {})  # type: ignore
+        inputs = call.inputs
+        output = call.output
         attributes = sanitize(inputs, output)
 
         context = SpanContext(
@@ -274,11 +316,11 @@ class WeaveTracer(Tracer):
         span = Span(
             rollout_id=rollout_id or "",
             attempt_id=attempt_id or "",
-            sequence_id=sequence_id,
+            sequence_id=sequence_id[0],
             trace_id=trace_id,
             span_id=span_id,
             parent_id=parent_id,
-            name=getattr(call, "func_name", "unknown"),  # type: ignore
+            name=call.func_name,
             status=TraceStatus(status_code=status_code),
             attributes=attributes,  # type: ignore
             events=[],  # Weave calls do not generate events
@@ -291,17 +333,15 @@ class WeaveTracer(Tracer):
         )
 
         spans.append(span)
-        sequence_id += 1
 
-        children: List["Call"] = getattr(call, "_children", [])  # type: ignore
+        children: List[Call] = call._children  # pyright: ignore[reportPrivateUsage]
         # Recursively process child calls
-        for child in children:  # type: ignore
-            child_spans, sequence_id = self.convert_call_to_spans(  # type: ignore
-                child,  # type: ignore
+        for child in children:
+            child_spans = await self.convert_call_to_spans(
+                child,
                 rollout_id=rollout_id,
                 attempt_id=attempt_id,
-                seq_start=sequence_id,
             )
             spans.extend(child_spans)
 
-        return spans, sequence_id
+        return spans

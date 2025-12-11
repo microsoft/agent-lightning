@@ -39,7 +39,7 @@ verl = [
 ]
 
 weave = [
-  "weave",
+  "weave>=0.52.22",
 ]
 
 # Store-related dependencies.
@@ -262,6 +262,8 @@ override-dependencies = [
   # verl's numpy<2.0.0 constraint is related to Docker images, not code incompatibility
   # Lock to 2.3.0 because numba relies on numpy 2.2
   "numpy>=2.0.0,<2.3.0",
+  # vllm relies on setuptools<80, but polyfile-weave depends on setuptools>=80.9.0
+  "setuptools>=80.9.0",
 ]
 
 [tool.uv.sources]
