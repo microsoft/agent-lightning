@@ -119,6 +119,27 @@ jobs:
   test:
     strategy:
       matrix:
+        mark:
+          # store has many tests and is a good isolated group.
+          - id: store
+            display-name: Store
+            pytest-mark: 'store'
+          # AgentOps needs to be separated because it injects tricky global state.
+          - id: agentops
+            display-name: AgentOps
+            pytest-mark: 'agentops'
+          # litellm proxy tests are slow
+          - id: llmproxy
+            display-name: LLM proxy
+            pytest-mark: 'llmproxy'
+          # Robustness of utilities is important. There are many tests.
+          - id: utils
+            display-name: Utilities
+            pytest-mark: 'utils'
+          # unmarked tests: adapter, execution engine, etc.
+          - id: others
+            display-name: Others
+            pytest-mark: 'not store and not agentops and not llmproxy and not utils'
         env:
           - python-version: '3.10'
             setup-script: 'legacy'
@@ -128,19 +149,6 @@ jobs:
             setup-script: 'stable'
           - python-version: '3.13'
             setup-script: 'latest'
-        mark:
-          # store has many tests and is a good isolated group.
-          - display-name: store
-            pytest-mark: 'store'
-          # AgentOps needs to be separated because it injects tricky global state.
-          - display-name: agentops
-            pytest-mark: 'agentops'
-          # litellm proxy tests are slow
-          - display-name: llmproxy
-            pytest-mark: 'llmproxy'
-          # unmarked tests: adapter, logging, etc.
-          - display-name: others
-            pytest-mark: 'not store and not agentops and not llmproxy'
       fail-fast: false
 
     name: Test (${{ matrix.mark.display-name }}, ${{ matrix.env.setup-script }}, Python ${{ matrix.env.python-version }})
@@ -170,7 +178,7 @@ jobs:
       - name: Upload dependencies artifact
         uses: actions/upload-artifact@v4
         with:
-          name: dependencies-${{ matrix.mark.display-name }}-${{ matrix.env.python-version }}-${{ matrix.env.setup-script }}
+          name: dependencies-${{ matrix.mark.id }}-${{ matrix.env.python-version }}-${{ matrix.env.setup-script }}
           path: requirements-freeze.txt
           compression-level: 0
 

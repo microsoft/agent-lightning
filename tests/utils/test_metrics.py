@@ -15,6 +15,8 @@ from agentlightning.utils.metrics import ConsoleMetricsBackend, MetricsBackend, 
 
 from ..common.prometheus_stub import make_prometheus_stub
 
+pytestmark = pytest.mark.utils
+
 
 def test_validate_labels_reports_missing_label_with_metric_name() -> None:
     labels = {"method": "GET", "status": "200"}

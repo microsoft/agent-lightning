@@ -9,6 +9,8 @@ import pytest
 
 from agentlightning.utils import system_snapshot
 
+pytestmark = pytest.mark.utils
+
 
 def _patch_system_snapshot(monkeypatch: pytest.MonkeyPatch, include_gpu: bool = False) -> Optional[SimpleNamespace]:
     monkeypatch.setattr(system_snapshot.platform, "processor", lambda: "test-cpu")

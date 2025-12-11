@@ -326,6 +326,7 @@ markers = [
   "mongo: tests that require MongoDB",
   "store: tests for agentlightning.store module",
   "prometheus: tests that require Prometheus",
+  "utils: tests for utility functions",
 ]
 
 [tool.black]
