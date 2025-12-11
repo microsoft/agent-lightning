@@ -84,16 +84,25 @@ USE_LLM_PROXY=1 \
 ```
 
 ### Training with Local Model
+#### Using an External Store
 
-Run the training script with VERL reinforcement learning:
+Use an external store server (recommended for distributed setups), first start the store:
 
 ```bash
-# Fast training for testing (2 steps)
-python train_chartqa_agent.py fast
-
-# Standard Qwen2-VL-2B training
-python train_chartqa_agent.py qwen
+agl store --port 4747
 ```
+
+Then run the training script with the external store address:
+
+```bash
+AGL_MANAGED_STORE=0 python train_chartqa_agent.py fast --external-store-address http://localhost:4747
+```
+
+Additional CLI options:
+
+- `--n-runners`: Number of runners for Trainer (default: 10)
+- `--external-store-address`: Connect to an external store (e.g., `http://localhost:4747`)
+- `--debug`: Enable debug logging
 
 If you want to track experiments with Weights & Biases, set the `WANDB_API_KEY` environment variable before training.
 

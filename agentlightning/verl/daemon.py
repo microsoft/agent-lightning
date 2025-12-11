@@ -228,44 +228,28 @@ class AgentModeDaemon:
             raise ValueError(f"Relative path '{path}' requires 'image_base_dir' to be set.")
         return os.path.join(self.image_base_dir, path)
 
-    def _get_image_grid_thw(self, original_sample: Dict[str, Any]) -> Optional[torch.Tensor]:
-        """Extract image_grid_thw from sample for M-RoPE computation."""
+    def _get_image_grid_thw(self, image_urls: List[str]) -> Optional[torch.Tensor]:
+        """Compute image_grid_thw from image URLs for M-RoPE computation.
+
+        Args:
+            image_urls: List of image URLs extracted from triplet prompt payload.
+                URLs can be http(s):// URLs or file:// URIs, or data: URIs.
+        """
         from PIL import Image
         from verl.utils.dataset.vision_utils import process_image
 
-        if self.processor is None:
+        if self.processor is None or not image_urls:
             return None
 
-        image_keys = ["images", "image", "image_path"]
-        image_data = None
-        for key in image_keys:
-            if key in original_sample and original_sample[key]:
-                image_data = original_sample[key]
-                break
-
-        if image_data is None:
-            return None
-
-        def to_image_uri(path: str) -> str:
-            if path.startswith(("http://", "https://")):
-                return path
-            resolved = self._resolve_image_path(path)
+        def to_image_uri(url: str) -> str:
+            # Already a proper URI (http, https, file, data)
+            if url.startswith(("http://", "https://", "file://", "data:")):
+                return url
+            # Treat as a file path that needs resolution
+            resolved = self._resolve_image_path(url)
             return f"file://{resolved}"
 
-        paths: List[str] = []
-        if isinstance(image_data, str):
-            paths = [image_data]
-        elif isinstance(image_data, list):
-            for item in image_data:
-                if isinstance(item, str):
-                    paths.append(item)
-                elif isinstance(item, dict) and "image" in item:
-                    paths.append(item["image"])
-
-        if not paths:
-            return None
-
-        images: List[Image.Image] = [process_image({"image": to_image_uri(p)}) for p in paths]
+        images: List[Image.Image] = [process_image({"image": to_image_uri(url)}) for url in image_urls]
         model_inputs = self.processor(text=["dummy"], images=images, return_tensors="pt")
         return model_inputs.get("image_grid_thw")
 
@@ -764,10 +748,14 @@ class AgentModeDaemon:
                 continue
 
             # The client should report triplets that contain prompt_ids and response_ids.
-            # Example triplet.prompt: {"token_ids": [...]}
+            # Example triplet.prompt: {"token_ids": [...], "image_urls": [...]}
             # Example triplet.response: {"token_ids": [...]}
             trace_list = [
-                {"prompt_ids": t.prompt.get("token_ids", []), "response_ids": t.response.get("token_ids", [])}
+                {
+                    "prompt_ids": t.prompt.get("token_ids", []),
+                    "response_ids": t.response.get("token_ids", []),
+                    "image_urls": t.prompt.get("image_urls", []),
+                }
                 for t in rollout.triplets
             ]
             info = {
@@ -799,13 +787,6 @@ class AgentModeDaemon:
         is_drop_list: List[bool] = []
         image_grid_thw_list: List[Optional[torch.Tensor]] = []  # For Qwen2-VL mrope
         n_trunc_sample_because_of_response = 0
-
-        # Pre-compute image_grid_thw for each rollout (only for first turn which has image)
-        rollout_to_image_grid_thw: Dict[str, Optional[torch.Tensor]] = {}
-        if self._use_mrope:
-            for rollout_id in finished_id_to_sample_info.keys():
-                original_sample = self._task_id_to_original_sample[rollout_id]
-                rollout_to_image_grid_thw[rollout_id] = self._get_image_grid_thw(original_sample)
 
         for rollout_id, sample_info in finished_id_to_sample_info.items():
             for turn_index, trace in enumerate(sample_info["trace_list"]):
@@ -841,14 +822,10 @@ class AgentModeDaemon:
                 rollout_id_list.append(rollout_id)
                 turn_index_list.append(turn_index)
 
-                # Store image_grid_thw for this triplet (only first turn has image)
+                # Compute image_grid_thw for this triplet using image_urls from prompt
                 if self._use_mrope:
-                    # Only the first turn contains the image in the prompt
-                    if turn_index == 0:
-                        image_grid_thw_list.append(rollout_to_image_grid_thw.get(rollout_id))
-                    else:
-                        # Subsequent turns don't have new images
-                        image_grid_thw_list.append(None)
+                    image_urls = trace.get("image_urls", [])
+                    image_grid_thw_list.append(self._get_image_grid_thw(image_urls))
 
         n_transition = len(input_ids_list)
         batch_input_ids = torch.LongTensor(input_ids_list).to(device)

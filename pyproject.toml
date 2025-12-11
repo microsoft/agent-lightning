@@ -210,7 +210,6 @@ chartqa = [
   "Pillow",
   "pandas",
   "pyarrow",
-  "nest_asyncio",
   "qwen-vl-utils",
 ]
 sql = [
