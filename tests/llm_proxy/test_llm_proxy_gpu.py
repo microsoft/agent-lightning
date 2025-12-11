@@ -32,15 +32,7 @@ from agentlightning.types import LLM, Span
 from ..common.tracer import clear_tracer_provider
 from ..common.vllm import VLLM_VERSION, RemoteOpenAIServer
 
-try:
-    import torch  # type: ignore
-
-    GPU_AVAILABLE = torch.cuda.is_available()
-except Exception:
-    GPU_AVAILABLE = False  # type: ignore
-
-if not GPU_AVAILABLE:
-    pytest.skip(reason="GPU not available", allow_module_level=True)
+pytestmark = [pytest.mark.gpu, pytest.mark.litellm]
 
 
 @pytest.fixture(scope="module")

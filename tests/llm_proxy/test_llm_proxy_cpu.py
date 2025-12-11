@@ -27,6 +27,8 @@ from agentlightning.utils.server_launcher import PythonServerLauncherArgs
 from ..common.network import get_free_port
 from ..common.tracer import clear_tracer_provider
 
+pytestmark = pytest.mark.litellm
+
 
 class _FakeSpanContext:
     def __init__(self, span_id: int):
