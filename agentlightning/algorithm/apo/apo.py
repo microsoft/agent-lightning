@@ -37,15 +37,13 @@ from openai import AsyncOpenAI
 
 from agentlightning.adapter.messages import TraceToMessages
 from agentlightning.algorithm.base import Algorithm
-from agentlightning.algorithm.utils import batch_iter_over_dataset
+from agentlightning.algorithm.utils import batch_iter_over_dataset, with_llm_proxy, with_store
 from agentlightning.reward import find_final_reward
 from agentlightning.types import Dataset, NamedResources, PromptTemplate, Rollout, RolloutMode, RolloutStatus
 
 if TYPE_CHECKING:
-    from agentlightning.store.base import LightningStore
     from agentlightning.llm_proxy import LLMProxy
-
-from agentlightning.algorithm.utils import with_llm_proxy, with_store
+    from agentlightning.store.base import LightningStore
 
 logger = logging.getLogger(__name__)
 
@@ -804,8 +802,8 @@ class APO(Algorithm, Generic[T_task]):
     @with_store
     async def run(
         self,
-        store: LightningStore,  # This param will be stripped by the decorator
-        llm_proxy: Optional[LLMProxy],  # This param will be stripped by the decorator
+        store: LightningStore,  # Injected by decorator - callers should not provide this parameter
+        llm_proxy: Optional[LLMProxy],  # Injected by decorator - callers should not provide this parameter
         train_dataset: Optional[Dataset[T_task]] = None,
         val_dataset: Optional[Dataset[T_task]] = None,
     ) -> None:

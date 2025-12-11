@@ -5,7 +5,7 @@ from __future__ import annotations
 import functools
 import logging
 import random
-from types import CoroutineType
+from collections.abc import Coroutine
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -75,8 +75,8 @@ def batch_iter_over_dataset(dataset: Dataset[T_task], batch_size: int) -> Iterat
 
 
 def with_store(
-    func: Callable[Concatenate[T_algo, LightningStore, P], CoroutineType[Any, Any, R]],
-) -> Callable[Concatenate[T_algo, P], CoroutineType[Any, Any, R]]:
+    func: Callable[Concatenate[T_algo, LightningStore, P], Coroutine[Any, Any, R]],
+) -> Callable[Concatenate[T_algo, P], Coroutine[Any, Any, R]]:
     """Inject the algorithm's `LightningStore` into coroutine methods.
 
     The decorator calls `Algorithm.get_store()` once per invocation and passes the
@@ -105,8 +105,8 @@ def with_llm_proxy(
     required: Literal[False] = False,
     auto_start: bool = True,
 ) -> Callable[
-    [Callable[Concatenate[T_algo, Optional[LLMProxy], P], CoroutineType[Any, Any, R]]],
-    Callable[Concatenate[T_algo, P], CoroutineType[Any, Any, R]],
+    [Callable[Concatenate[T_algo, Optional[LLMProxy], P], Coroutine[Any, Any, R]]],
+    Callable[Concatenate[T_algo, P], Coroutine[Any, Any, R]],
 ]: ...
 
 
@@ -115,8 +115,8 @@ def with_llm_proxy(
     required: Literal[True],
     auto_start: bool = True,
 ) -> Callable[
-    [Callable[Concatenate[T_algo, LLMProxy, P], CoroutineType[Any, Any, R]]],
-    Callable[Concatenate[T_algo, P], CoroutineType[Any, Any, R]],
+    [Callable[Concatenate[T_algo, LLMProxy, P], Coroutine[Any, Any, R]]],
+    Callable[Concatenate[T_algo, P], Coroutine[Any, Any, R]],
 ]: ...
 
 
@@ -124,8 +124,8 @@ def with_llm_proxy(
     required: bool = False,
     auto_start: bool = True,
 ) -> Callable[
-    [Callable[..., CoroutineType[Any, Any, Any]]],
-    Callable[..., CoroutineType[Any, Any, Any]],
+    [Callable[..., Coroutine[Any, Any, Any]]],
+    Callable[..., Coroutine[Any, Any, Any]],
 ]:
     """Resolve and optionally lifecycle-manage the configured LLM proxy.
 
@@ -143,14 +143,16 @@ def with_llm_proxy(
     """
 
     def decorator(
-        func: Callable[..., CoroutineType[Any, Any, Any]],
-    ) -> Callable[..., CoroutineType[Any, Any, Any]]:
+        func: Callable[..., Coroutine[Any, Any, Any]],
+    ) -> Callable[..., Coroutine[Any, Any, Any]]:
         @functools.wraps(func)
         async def wrapper(self: Algorithm, *args: Any, **kwargs: Any) -> Any:
             llm_proxy = self.get_llm_proxy()
 
             if required and llm_proxy is None:
-                raise ValueError("LLM proxy not found")
+                raise ValueError(
+                    "LLM proxy is required but not configured. Call set_llm_proxy() before using this method."
+                )
 
             auto_started = False
             if auto_start and llm_proxy is not None:

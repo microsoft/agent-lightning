@@ -189,8 +189,8 @@ class Baseline(FastAlgorithm):
     @with_store
     async def run(
         self,
-        store: LightningStore,  # This param will be stripped by the decorator
-        llm_proxy: Optional[LLMProxy],  # This param will be stripped by the decorator
+        store: LightningStore,  # Injected by decorator - callers should not provide this parameter
+        llm_proxy: Optional[LLMProxy],  # Injected by decorator - callers should not provide this parameter
         train_dataset: Optional[Dataset[Any]] = None,
         val_dataset: Optional[Dataset[Any]] = None,
     ) -> None:
