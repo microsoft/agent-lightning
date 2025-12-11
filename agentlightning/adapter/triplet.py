@@ -13,6 +13,7 @@ from pydantic import BaseModel
 
 from agentlightning.emitter.reward import get_reward_value
 from agentlightning.types import Span, Triplet
+from agentlightning.utils.otel import filter_and_unflatten_attributes
 
 from .base import TraceAdapter
 
@@ -506,6 +507,52 @@ class TraceTree:
 
         return rewards
 
+    def extract_prompt_image_urls(self, prompt_raw_content: Any) -> List[str]:
+        """Extract image URLs from the span attributes, in order of appearance."""
+        message_entries: List[Any] = []
+        if isinstance(prompt_raw_content, list):
+            message_entries = cast(List[Any], prompt_raw_content)
+        elif isinstance(prompt_raw_content, dict):
+            # Common when the attributes expand to {"0": {...}, "prompt_filter_results": ...}
+            numeric_keys = [
+                key
+                for key in cast(Dict[str, Any], prompt_raw_content).keys()
+                if isinstance(key, str) and key.isdigit()  # pyright: ignore[reportUnnecessaryIsInstance]
+            ]
+            if numeric_keys:
+                for key in sorted(numeric_keys, key=int):
+                    message_entries.append(prompt_raw_content[key])
+            else:
+                message_entries = [prompt_raw_content]
+        else:
+            return []
+
+        image_urls: List[str] = []
+        for message in cast(List[Dict[str, Any]], message_entries):
+            if (
+                not isinstance(message, dict)  # pyright: ignore[reportUnnecessaryIsInstance]
+                or "content" not in message
+            ):
+                continue
+            content = message["content"]
+            if isinstance(content, str):
+                try:
+                    content = json.loads(content)  # This content should now be a list
+                except json.JSONDecodeError:
+                    logger.warning(f"Failed to parse message content as JSON: {content}")
+                    continue
+            if isinstance(content, list):
+                for content_part in cast(List[Dict[str, Any]], content):
+                    if not isinstance(content_part, dict):  # pyright: ignore[reportUnnecessaryIsInstance]
+                        continue
+                    if content_part.get("type") == "image_url":
+                        image_url_dict = cast(Dict[str, Any], content_part.get("image_url"))
+                        if not isinstance(image_url_dict, dict):  # pyright: ignore[reportUnnecessaryIsInstance]
+                            continue
+                        if "url" in image_url_dict:
+                            image_urls.append(image_url_dict["url"])
+        return image_urls
+
     def span_to_triplet(self, span: Span, agent_name: str) -> Triplet:
         """Convert a span to a triplet.
 
@@ -515,19 +562,27 @@ class TraceTree:
         prompt_token_ids = span.attributes.get("prompt_token_ids", [])  # type: ignore
         response_token_ids = span.attributes.get("response_token_ids", [])  # type: ignore
         response_id = span.attributes.get("gen_ai.response.id", None)  # type: ignore
+        request_metadata = filter_and_unflatten_attributes(span.attributes, "gen_ai.request")
+        response_metadata = filter_and_unflatten_attributes(span.attributes, "gen_ai.response")
+        prompt_raw_content = filter_and_unflatten_attributes(span.attributes, "gen_ai.prompt")
+        response_raw_content = filter_and_unflatten_attributes(span.attributes, "gen_ai.response")
+        image_urls = self.extract_prompt_image_urls(prompt_raw_content)
+
+        prompt_payload = {"token_ids": prompt_token_ids, "raw_content": prompt_raw_content, "image_urls": image_urls}
+        response_payload = {"token_ids": response_token_ids, "raw_content": response_raw_content}
 
         logprobs_content = span.attributes.get("logprobs.content", None)  # type: ignore
         if isinstance(logprobs_content, str):
             logprobs_content = json.loads(logprobs_content)
-            response: Dict[str, Any] = {"token_ids": response_token_ids, "logprobs": logprobs_content}
-        else:
-            response = {"token_ids": response_token_ids}
+            response_payload["logprobs"] = logprobs_content
 
         return Triplet(
-            prompt={"token_ids": prompt_token_ids},
-            response=response,
+            prompt=prompt_payload,
+            response=response_payload,
             reward=None,
-            metadata=dict(response_id=response_id, agent_name=agent_name),
+            metadata=dict(
+                request=request_metadata, response=response_metadata, response_id=response_id, agent_name=agent_name
+            ),
         )
 
     def to_trajectory(
