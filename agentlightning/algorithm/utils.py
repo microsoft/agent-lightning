@@ -155,9 +155,9 @@ def with_llm_proxy(
             auto_started = False
             if auto_start and llm_proxy is not None:
                 if llm_proxy.is_running():
-                    logger.info("LLM proxy is already running, skipping start")
+                    logger.info("Proxy is already running, skipping start")
                 else:
-                    logger.info("Starting LLM proxy managed by the algorithm")
+                    logger.info("Starting proxy, managed by the algorithm")
                     await llm_proxy.start()
                     auto_started = True
 
@@ -167,7 +167,7 @@ def with_llm_proxy(
                 return await func(self, llm_proxy, *args, **kwargs)
             finally:
                 if auto_started and llm_proxy is not None:
-                    logger.info("Stopping LLM proxy managed by the algorithm")
+                    logger.info("Stopping proxy, managed by the algorithm")
                     await llm_proxy.stop()
 
         return wrapper

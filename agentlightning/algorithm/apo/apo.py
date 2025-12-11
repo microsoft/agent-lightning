@@ -7,6 +7,8 @@ APO with textual gradients that read rollout spans and outputs to modify the pro
 - rollout: same pattern as your example, but task is a dict (T_task)
 """
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import random
