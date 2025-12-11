@@ -64,6 +64,8 @@ jobs:
     steps:
       - name: Check GPU status
         run: nvidia-smi
+        if: matrix.mark.runs-on != 'ubuntu-latest'
+
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.pr_ref || (github.event.pull_request.number && format('refs/pull/{0}/merge', github.event.pull_request.number)) || github.ref }}
