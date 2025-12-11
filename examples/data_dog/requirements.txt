@@ -1,0 +1,15 @@
+
+# DataDog Integration Example Requirements
+
+# Core dependencies
+agentlightning
+
+# DataDog APM tracing
+ddtrace
+
+# OpenAI client for LLM calls
+openai
+
+# Optional: For local testing
+# vllm
+# ollama
