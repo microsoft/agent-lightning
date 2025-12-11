@@ -14,17 +14,18 @@
 ## agl
 
 ```text
-usage: agl [-h] {vllm,store,agentops}
+usage: agl [-h] {vllm,store,prometheus,agentops}
 
 Agent Lightning CLI entry point.
 
 Available subcommands:
-  vllm      Run the vLLM CLI with Agent Lightning instrumentation.
-  store     Run a LightningStore server.
-  agentops  Start the AgentOps server manager.
+  vllm        Run the vLLM CLI with Agent Lightning instrumentation.
+  store       Run a LightningStore server.
+  prometheus  Serve Prometheus metrics from the multiprocess registry.
+  agentops    Start the AgentOps server manager.
 
 positional arguments:
-  {vllm,store,agentops}
+  {vllm,store,prometheus,agentops}
                         Subcommand to run.
 
 options:
@@ -71,6 +72,26 @@ Run a LightningStore server
 options:
   -h, --help   show this help message and exit
   --port PORT  Port to run the server on
+```
+
+## agl prometheus
+
+Expose the Prometheus multiprocess registry on a dedicated FastAPI server. This is useful when the main LightningStore service is under heavy load; exporters can scrape this auxiliary endpoint instead.
+
+```text
+usage: agl prometheus [-h] [--host HOST] [--port PORT] [--metrics-path METRICS_PATH] [--log-level {DEBUG,INFO,WARNING,ERROR}] [--access-log]
+
+Serve Prometheus metrics outside the LightningStore server.
+
+options:
+  -h, --help            show this help message and exit
+  --host HOST           Host to bind the metrics server to.
+  --port PORT           Port to expose the Prometheus metrics on.
+  --metrics-path METRICS_PATH
+                        HTTP path used to expose metrics. Must start with '/' and not be the root path.
+  --log-level {DEBUG,INFO,WARNING,ERROR}
+                        Configure the logging level for the metrics server.
+  --access-log          Enable uvicorn access logs. Disabled by default to reduce noise.
 ```
 
 ## agl agentops

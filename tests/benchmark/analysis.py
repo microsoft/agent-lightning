@@ -9,7 +9,7 @@ import datetime as dt
 import json
 import math
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple, TypeGuard, cast
+from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple, cast
 from urllib import error, parse, request
 
 
@@ -119,7 +119,6 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         default="5m",
         help="Fallback duration (e.g. 5m, 1h) used when --start is omitted.",
     )
-    parser.add_argument("--top", type=int, default=8, help="Number of rows to show per table.")
     return parser.parse_args(argv)
 
 
@@ -168,17 +167,6 @@ def compute_subquery_step(duration_seconds: float) -> str:
     return f"{step_seconds}s"
 
 
-def _is_http_pair(value: Any) -> TypeGuard[Tuple[Any, Any]]:
-    if not isinstance(value, tuple):
-        return False
-    try:
-        value[0]
-        value[1]
-    except IndexError:
-        return False
-    return True
-
-
 def _sample_value(sample: Mapping[str, object]) -> Optional[float]:
     value_obj = sample.get("value")
     if not isinstance(value_obj, Sequence):
@@ -220,6 +208,82 @@ def vector_to_map(
     return mapping
 
 
+def _normalize_label_value(value: Any) -> str:
+    if value is None:
+        return "-"
+    text = str(value)
+    return text if text else "-"
+
+
+def vector_to_labeled_map(
+    samples: Optional[Sequence[Mapping[str, object]]],
+    labels: Sequence[str],
+) -> Dict[Tuple[str, ...], float]:
+    mapping: Dict[Tuple[str, ...], float] = {}
+    if not samples:
+        return mapping
+    for sample in samples:
+        metric_obj = sample.get("metric", {})
+        if isinstance(metric_obj, Mapping):
+            metric = dict(cast(Mapping[str, object], metric_obj))
+        else:
+            metric = {}
+        if labels:
+            key = tuple(_normalize_label_value(metric.get(label)) for label in labels)
+        else:
+            key = tuple[str, ...]()
+        value = _sample_value(sample)
+        if value is not None:
+            mapping[key] = value
+    return mapping
+
+
+def sum_by_clause(labels: Sequence[str]) -> str:
+    if labels:
+        joined = ", ".join(labels)
+        return f"sum by ({joined})"
+    return "sum"
+
+
+def histogram_sum_by_clause(labels: Sequence[str]) -> str:
+    le_prefixed = ("le", *labels)
+    joined = ", ".join(le_prefixed)
+    return f"sum by ({joined})"
+
+
+def histogram_sum_metric_name(bucket_metric: str) -> str:
+    if bucket_metric.endswith("_bucket"):
+        return f"{bucket_metric[: -len('_bucket')]}_sum"
+    return f"{bucket_metric}_sum"
+
+
+def histogram_count_metric_name(bucket_metric: str) -> str:
+    if bucket_metric.endswith("_bucket"):
+        return f"{bucket_metric[: -len('_bucket')]}_count"
+    return f"{bucket_metric}_count"
+
+
+def divide_or_none(numerator: Optional[float], denominator: Optional[float]) -> Optional[float]:
+    if numerator is None or denominator is None:
+        return None
+    if denominator == 0:
+        return None
+    return numerator / denominator
+
+
+def compute_average_time_map(
+    time_totals: Mapping[Tuple[str, ...], float],
+    count_totals: Mapping[Tuple[str, ...], float],
+) -> Dict[Tuple[str, ...], float]:
+    averages: Dict[Tuple[str, ...], float] = {}
+    keys = set(time_totals.keys()).union(count_totals.keys())
+    for key in keys:
+        avg = divide_or_none(time_totals.get(key), count_totals.get(key))
+        if avg is not None:
+            averages[key] = avg
+    return averages
+
+
 def safe_vector(client: PrometheusClient, expr: str) -> Optional[List[Mapping[str, object]]]:
     try:
         return client.query_vector(expr)
@@ -252,11 +316,9 @@ def fetch_store_statistics(store_url: str, timeout: float) -> Optional[Dict[str,
     except json.JSONDecodeError as exc:
         print(f"[warn] Failed to decode store statistics: {exc} (url={stats_url})")
         return None
-
-
-# ---------------------------------------------------------------------------
-# Part 1 – high level throughput
-# ---------------------------------------------------------------------------
+    except TimeoutError as exc:
+        print(f"[warn] Timeout fetching store statistics: {exc} (url={stats_url})")
+        return None
 
 
 @dataclass
@@ -264,6 +326,40 @@ class CollectionThroughput:
     name: str
     count: Optional[float]
     per_sec: Optional[float]
+
+
+@dataclass
+class MetricRow:
+    label_values: Tuple[str, ...]
+    avg_rate: Optional[float]
+    max_rate: Optional[float]
+    min_rate: Optional[float]
+    p50: Optional[float]
+    p95: Optional[float]
+    p99: Optional[float]
+    max_latency: Optional[float]
+    time_per_sec: Optional[float]
+    time_per_request: Optional[float]
+    avg_rate_delta: Optional[float]
+    p50_delta: Optional[float]
+    p95_delta: Optional[float]
+    time_delta: Optional[float]
+    time_per_request_delta: Optional[float]
+
+
+@dataclass(frozen=True)
+class MetricGroupSpec:
+    title: str
+    histogram_bucket_metric: str
+    label_names: Tuple[str, ...]
+    label_headers: Tuple[str, ...]
+    selector: str = ""
+    sum_metric: Optional[str] = None
+    count_metric: Optional[str] = None
+
+
+def metric_row_sort_key(row: MetricRow) -> Tuple[str, ...]:
+    return row.label_values
 
 
 STORE_TOTAL_FIELDS = {
@@ -328,396 +424,176 @@ def gather_collection_throughput(
     return rows
 
 
-# ---------------------------------------------------------------------------
-# Part 2 – CollectionBasedLightningStore method stats
-# ---------------------------------------------------------------------------
-
-
-@dataclass
-class StoreMethodStats:
-    method: str
-    ops_mean: float
-    ops_max: Optional[float]
-    ops_min: Optional[float]
-    p50: Optional[float]
-    p95: Optional[float]
-    p99: Optional[float]
-
-
-StatsSummary = Dict[str, Optional[float]]
-
-
-@dataclass
-class RolloutOutcomeStats:
-    status: str
-    rate: Optional[float]
-    p25: Optional[float]
-    p50: Optional[float]
-    p75: Optional[float]
-    max_latency: Optional[float]
-
-
-def gather_store_methods(
+def gather_metric_group(
     client: PrometheusClient,
+    spec: MetricGroupSpec,
+    *,
     window: str,
     window_seconds: int,
     peak_window: str,
     subquery_step: str,
-) -> Tuple[List[StoreMethodStats], StatsSummary]:
-    mean_expr = f"(sum by (method)(increase(collection_store_total[{window}]))) / {window_seconds}"
-    ops_mean = vector_to_map(safe_vector(client, mean_expr), ("method",))
-    peak_expr = f"sum by (method)(irate(collection_store_total[{peak_window}]))"
-    ops_max = vector_to_map(
-        safe_vector(client, f"max_over_time(({peak_expr})[{window}:{subquery_step}])"),
-        ("method",),
-    )
-    ops_min = vector_to_map(
-        safe_vector(client, f"min_over_time(({peak_expr})[{window}:{subquery_step}])"),
-        ("method",),
-    )
-    p50 = vector_to_map(
+    half_window: Optional[str],
+    half_window_seconds: Optional[int],
+) -> List[MetricRow]:
+    label_names = spec.label_names
+    sum_clause = sum_by_clause(label_names)
+    hist_clause = histogram_sum_by_clause(label_names)
+    bucket_metric = f"{spec.histogram_bucket_metric}{spec.selector}" if spec.selector else spec.histogram_bucket_metric
+    base_sum_metric = spec.sum_metric or histogram_sum_metric_name(spec.histogram_bucket_metric)
+    sum_metric = f"{base_sum_metric}{spec.selector}" if spec.selector else base_sum_metric
+    base_count_metric = spec.count_metric or histogram_count_metric_name(spec.histogram_bucket_metric)
+    count_metric = f"{base_count_metric}{spec.selector}" if spec.selector else base_count_metric
+
+    count_total_expr = f"{sum_clause}(increase({count_metric}[{window}]))"
+    count_total_map = vector_to_labeled_map(safe_vector(client, count_total_expr), label_names)
+    avg_map = {key: value / window_seconds for key, value in count_total_map.items()} if window_seconds > 0 else {}
+
+    peak_expr = f"{sum_clause}(irate({count_metric}[{peak_window}]))"
+    max_expr = f"max_over_time(({peak_expr})[{window}:{subquery_step}])"
+    min_expr = f"min_over_time(({peak_expr})[{window}:{subquery_step}])"
+    max_map = vector_to_labeled_map(safe_vector(client, max_expr), label_names)
+    min_map = vector_to_labeled_map(safe_vector(client, min_expr), label_names)
+
+    p50_map = vector_to_labeled_map(
         safe_vector(
             client,
-            f"histogram_quantile(0.50, sum by (le, method)(rate(collection_store_latency_seconds_bucket[{window}])))",
+            f"histogram_quantile(0.50, {hist_clause}(increase({bucket_metric}[{window}])))",
         ),
-        ("method",),
+        label_names,
     )
-    p95 = vector_to_map(
+    p95_map = vector_to_labeled_map(
         safe_vector(
             client,
-            f"histogram_quantile(0.95, sum by (le, method)(rate(collection_store_latency_seconds_bucket[{window}])))",
+            f"histogram_quantile(0.95, {hist_clause}(increase({bucket_metric}[{window}])))",
         ),
-        ("method",),
+        label_names,
     )
-    p99 = vector_to_map(
+    p99_map = vector_to_labeled_map(
         safe_vector(
             client,
-            f"histogram_quantile(0.99, sum by (le, method)(rate(collection_store_latency_seconds_bucket[{window}])))",
+            f"histogram_quantile(0.99, {hist_clause}(increase({bucket_metric}[{window}])))",
         ),
-        ("method",),
+        label_names,
     )
-    rows: List[StoreMethodStats] = []
-    for method, rate in sorted(ops_mean.items(), key=lambda item: str(item[0])):
-        p50_val = p50.get(method)
-        p95_val = p95.get(method)
-        p99_val = p99.get(method)
+    max_latency_map = vector_to_labeled_map(
+        safe_vector(
+            client,
+            f"histogram_quantile(1.00, {hist_clause}(increase({bucket_metric}[{window}])))",
+        ),
+        label_names,
+    )
+
+    time_total_expr = f"{sum_clause}(increase({sum_metric}[{window}]))"
+    time_total_map = vector_to_labeled_map(safe_vector(client, time_total_expr), label_names)
+    time_rate_map = {key: value / window_seconds for key, value in time_total_map.items()} if window_seconds > 0 else {}
+    avg_time_map = compute_average_time_map(time_total_map, count_total_map)
+
+    if half_window and half_window_seconds and half_window_seconds > 0:
+        count_late_expr = f"{sum_clause}(increase({count_metric}[{half_window}]))"
+        count_early_expr = f"{sum_clause}(increase({count_metric}[{half_window}] offset {half_window}))"
+        count_late_total_map = vector_to_labeled_map(safe_vector(client, count_late_expr), label_names)
+        count_early_total_map = vector_to_labeled_map(safe_vector(client, count_early_expr), label_names)
+        avg_late_map = {key: value / half_window_seconds for key, value in count_late_total_map.items()}
+        avg_early_map = {key: value / half_window_seconds for key, value in count_early_total_map.items()}
+
+        p50_late_expr = f"histogram_quantile(0.50, {hist_clause}(increase({bucket_metric}[{half_window}])))"
+        p50_early_expr = (
+            f"histogram_quantile(0.50, {hist_clause}(increase({bucket_metric}[{half_window}] offset {half_window})))"
+        )
+        p50_late_map = vector_to_labeled_map(safe_vector(client, p50_late_expr), label_names)
+        p50_early_map = vector_to_labeled_map(safe_vector(client, p50_early_expr), label_names)
+
+        p95_late_expr = f"histogram_quantile(0.95, {hist_clause}(increase({bucket_metric}[{half_window}])))"
+        p95_early_expr = (
+            f"histogram_quantile(0.95, {hist_clause}(increase({bucket_metric}[{half_window}] offset {half_window})))"
+        )
+        p95_late_map = vector_to_labeled_map(safe_vector(client, p95_late_expr), label_names)
+        p95_early_map = vector_to_labeled_map(safe_vector(client, p95_early_expr), label_names)
+
+        time_late_expr = f"{sum_clause}(increase({sum_metric}[{half_window}]))"
+        time_early_expr = f"{sum_clause}(increase({sum_metric}[{half_window}] offset {half_window}))"
+        time_late_total_map = vector_to_labeled_map(safe_vector(client, time_late_expr), label_names)
+        time_early_total_map = vector_to_labeled_map(safe_vector(client, time_early_expr), label_names)
+        time_late_map = {key: value / half_window_seconds for key, value in time_late_total_map.items()}
+        time_early_map = {key: value / half_window_seconds for key, value in time_early_total_map.items()}
+        avg_time_late_map = compute_average_time_map(time_late_total_map, count_late_total_map)
+        avg_time_early_map = compute_average_time_map(time_early_total_map, count_early_total_map)
+    else:
+        count_late_total_map: Dict[Tuple[str, ...], float] = {}
+        count_early_total_map: Dict[Tuple[str, ...], float] = {}
+        avg_late_map: Dict[Tuple[str, ...], float] = {}
+        avg_early_map: Dict[Tuple[str, ...], float] = {}
+        p50_late_map: Dict[Tuple[str, ...], float] = {}
+        p50_early_map: Dict[Tuple[str, ...], float] = {}
+        p95_late_map: Dict[Tuple[str, ...], float] = {}
+        p95_early_map: Dict[Tuple[str, ...], float] = {}
+        time_late_map: Dict[Tuple[str, ...], float] = {}
+        time_early_map: Dict[Tuple[str, ...], float] = {}
+        time_late_total_map = {}
+        time_early_total_map = {}
+        avg_time_late_map = {}
+        avg_time_early_map = {}
+
+    all_keys: Set[Tuple[str, ...]] = set()
+    all_keys.update(count_total_map.keys())
+    all_keys.update(avg_map.keys())
+    all_keys.update(max_map.keys())
+    all_keys.update(min_map.keys())
+    all_keys.update(p50_map.keys())
+    all_keys.update(p95_map.keys())
+    all_keys.update(p99_map.keys())
+    all_keys.update(max_latency_map.keys())
+    all_keys.update(time_rate_map.keys())
+    all_keys.update(avg_time_map.keys())
+    all_keys.update(count_late_total_map.keys())
+    all_keys.update(count_early_total_map.keys())
+    all_keys.update(avg_late_map.keys())
+    all_keys.update(avg_early_map.keys())
+    all_keys.update(p50_late_map.keys())
+    all_keys.update(p50_early_map.keys())
+    all_keys.update(p95_late_map.keys())
+    all_keys.update(p95_early_map.keys())
+    all_keys.update(time_late_map.keys())
+    all_keys.update(time_early_map.keys())
+    all_keys.update(avg_time_late_map.keys())
+    all_keys.update(avg_time_early_map.keys())
+
+    if not all_keys:
+        return []
+
+    def build_delta(
+        late_map: Mapping[Tuple[str, ...], float],
+        early_map: Mapping[Tuple[str, ...], float],
+        key: Tuple[str, ...],
+    ) -> Optional[float]:
+        late = late_map.get(key)
+        early = early_map.get(key)
+        if late is None or early is None:
+            return None
+        return late - early
+
+    rows: List[MetricRow] = []
+    for key in sorted(all_keys):
         rows.append(
-            StoreMethodStats(
-                str(method or "-"),
-                rate,
-                ops_max.get(method),
-                ops_min.get(method),
-                p50_val,
-                p95_val,
-                p99_val,
+            MetricRow(
+                label_values=key,
+                avg_rate=avg_map.get(key),
+                max_rate=max_map.get(key),
+                min_rate=min_map.get(key),
+                p50=p50_map.get(key),
+                p95=p95_map.get(key),
+                p99=p99_map.get(key),
+                max_latency=max_latency_map.get(key),
+                time_per_sec=time_rate_map.get(key),
+                time_per_request=avg_time_map.get(key),
+                avg_rate_delta=build_delta(avg_late_map, avg_early_map, key),
+                p50_delta=build_delta(p50_late_map, p50_early_map, key),
+                p95_delta=build_delta(p95_late_map, p95_early_map, key),
+                time_delta=build_delta(time_late_map, time_early_map, key),
+                time_per_request_delta=build_delta(avg_time_late_map, avg_time_early_map, key),
             )
         )
-
-    overall: StatsSummary = {
-        "ops_mean": safe_scalar(
-            client,
-            f"(sum(increase(collection_store_total[{window}]))) / {window_seconds}",
-        )
-        or 0.0,
-        "ops_max": safe_scalar(
-            client,
-            f"max_over_time(((sum(irate(collection_store_total[{peak_window}]))))[{window}:{subquery_step}])",
-        ),
-        "ops_min": safe_scalar(
-            client,
-            f"min_over_time(((sum(irate(collection_store_total[{peak_window}]))))[{window}:{subquery_step}])",
-        ),
-        "p50": safe_scalar(
-            client,
-            f"histogram_quantile(0.50, sum by (le)(rate(collection_store_latency_seconds_bucket[{window}])))",
-        )
-        or 0.0,
-        "p95": safe_scalar(
-            client,
-            f"histogram_quantile(0.95, sum by (le)(rate(collection_store_latency_seconds_bucket[{window}])))",
-        )
-        or 0.0,
-        "p99": safe_scalar(
-            client,
-            f"histogram_quantile(0.99, sum by (le)(rate(collection_store_latency_seconds_bucket[{window}])))",
-        )
-        or 0.0,
-    }
-    return rows, overall
-
-
-def gather_rollout_outcomes(
-    client: PrometheusClient,
-    window: str,
-    window_seconds: int,
-) -> List[RolloutOutcomeStats]:
-    rate_map = vector_to_map(
-        safe_vector(
-            client,
-            f"(sum by (status)(increase(collection_store_rollout_total[{window}]))) / {window_seconds}",
-        ),
-        ("status",),
-    )
-    p25_map = vector_to_map(
-        safe_vector(
-            client,
-            f"histogram_quantile(0.25, "
-            f"sum by (le, status)(increase(collection_store_rollout_duration_seconds_bucket[{window}])))",
-        ),
-        ("status",),
-    )
-    p50_map = vector_to_map(
-        safe_vector(
-            client,
-            f"histogram_quantile(0.50, "
-            f"sum by (le, status)(increase(collection_store_rollout_duration_seconds_bucket[{window}])))",
-        ),
-        ("status",),
-    )
-    p75_map = vector_to_map(
-        safe_vector(
-            client,
-            f"histogram_quantile(0.75, "
-            f"sum by (le, status)(increase(collection_store_rollout_duration_seconds_bucket[{window}])))",
-        ),
-        ("status",),
-    )
-    max_map = vector_to_map(
-        safe_vector(
-            client,
-            f"histogram_quantile(1.00, "
-            f"sum by (le, status)(increase(collection_store_rollout_duration_seconds_bucket[{window}])))",
-        ),
-        ("status",),
-    )
-    statuses = sorted({*rate_map.keys(), *p25_map.keys(), *p50_map.keys(), *p75_map.keys(), *max_map.keys()}, key=str)
-    stats: List[RolloutOutcomeStats] = []
-    for status in statuses:
-        stats.append(
-            RolloutOutcomeStats(
-                status=str(status or "-"),
-                rate=rate_map.get(status),
-                p25=p25_map.get(status),
-                p50=p50_map.get(status),
-                p75=p75_map.get(status),
-                max_latency=max_map.get(status),
-            )
-        )
-    return stats
-
-
-# ---------------------------------------------------------------------------
-# Part 3 – HTTP traffic
-# ---------------------------------------------------------------------------
-
-
-@dataclass
-class HttpPathStats:
-    method: str
-    path: str
-    qps_mean: float
-    qps_max: Optional[float]
-    qps_min: Optional[float]
-    p50: Optional[float]
-    p95: Optional[float]
-    p99: Optional[float]
-
-
-@dataclass
-class HttpPathStatusStats:
-    method: str
-    path: str
-    status_code: str
-    qps_mean: float
-    qps_max: Optional[float]
-    qps_min: Optional[float]
-    p50: Optional[float]
-    p95: Optional[float]
-    p99: Optional[float]
-
-
-def gather_http_paths(
-    client: PrometheusClient,
-    window: str,
-    window_seconds: int,
-    peak_window: str,
-    subquery_step: str,
-) -> Tuple[List[HttpPathStats], StatsSummary]:
-    mean_expr = f"(sum by (method, path)(increase(http_requests_total[{window}]))) / {window_seconds}"
-    qps_mean = vector_to_map(
-        safe_vector(client, mean_expr),
-        ("method", "path"),
-    )
-    peak_expr = f"sum by (method, path)(irate(http_requests_total[{peak_window}]))"
-    qps_max = vector_to_map(
-        safe_vector(client, f"max_over_time(({peak_expr})[{window}:{subquery_step}])"),
-        ("method", "path"),
-    )
-    qps_min = vector_to_map(
-        safe_vector(client, f"min_over_time(({peak_expr})[{window}:{subquery_step}])"),
-        ("method", "path"),
-    )
-    p50 = vector_to_map(
-        safe_vector(
-            client,
-            f"histogram_quantile(0.50, sum by (le, method, path)(increase(http_request_duration_seconds_bucket[{window}])))",
-        ),
-        ("method", "path"),
-    )
-    p95 = vector_to_map(
-        safe_vector(
-            client,
-            f"histogram_quantile(0.95, sum by (le, method, path)(increase(http_request_duration_seconds_bucket[{window}])))",
-        ),
-        ("method", "path"),
-    )
-    p99 = vector_to_map(
-        safe_vector(
-            client,
-            f"histogram_quantile(0.99, sum by (le, method, path)(increase(http_request_duration_seconds_bucket[{window}])))",
-        ),
-        ("method", "path"),
-    )
-
-    def normalize_http_key(raw_key: Any) -> Tuple[str, str]:
-        if _is_http_pair(raw_key):
-            method_raw, path_raw = raw_key
-            return (str(method_raw or "-"), str(path_raw or "-"))
-        return ("-", str(raw_key))
-
-    def normalize_dict(source: Mapping[Any, Optional[float]]) -> Dict[Tuple[str, str], Optional[float]]:
-        normalized: Dict[Tuple[str, str], Optional[float]] = {}
-        for raw_key, value in source.items():
-            normalized[normalize_http_key(raw_key)] = value
-        return normalized
-
-    qps_mean_norm = normalize_dict(cast(Mapping[Any, Optional[float]], qps_mean))
-    qps_max_norm = normalize_dict(cast(Mapping[Any, Optional[float]], qps_max))
-    qps_min_norm = normalize_dict(cast(Mapping[Any, Optional[float]], qps_min))
-    p50_norm = normalize_dict(cast(Mapping[Any, Optional[float]], p50))
-    p95_norm = normalize_dict(cast(Mapping[Any, Optional[float]], p95))
-    p99_norm = normalize_dict(cast(Mapping[Any, Optional[float]], p99))
-
-    path_stats: List[HttpPathStats] = []
-    for method_path in sorted(qps_mean_norm.keys()):
-        method_label, path_label = method_path
-        path_stats.append(
-            HttpPathStats(
-                method_label,
-                path_label,
-                qps_mean_norm.get(method_path, 0.0) or 0.0,
-                qps_max_norm.get(method_path),
-                qps_min_norm.get(method_path),
-                p50_norm.get(method_path),
-                p95_norm.get(method_path),
-                p99_norm.get(method_path),
-            )
-        )
-    overall: StatsSummary = {
-        "qps_mean": safe_scalar(
-            client,
-            f"(sum(increase(http_requests_total[{window}]))) / {window_seconds}",
-        )
-        or 0.0,
-        "qps_max": safe_scalar(
-            client,
-            f"max_over_time(((sum(irate(http_requests_total[{peak_window}]))))[{window}:{subquery_step}])",
-        ),
-        "qps_min": safe_scalar(
-            client,
-            f"min_over_time(((sum(irate(http_requests_total[{peak_window}]))))[{window}:{subquery_step}])",
-        ),
-        "p50": safe_scalar(
-            client, f"histogram_quantile(0.50, sum by (le)(increase(http_request_duration_seconds_bucket[{window}])))"
-        )
-        or 0.0,
-        "p95": safe_scalar(
-            client, f"histogram_quantile(0.95, sum by (le)(increase(http_request_duration_seconds_bucket[{window}])))"
-        )
-        or 0.0,
-        "p99": safe_scalar(
-            client, f"histogram_quantile(0.99, sum by (le)(increase(http_request_duration_seconds_bucket[{window}])))"
-        )
-        or 0.0,
-    }
-    return path_stats, overall
-
-
-def gather_http_paths_with_status(
-    client: PrometheusClient,
-    window: str,
-    window_seconds: int,
-    peak_window: str,
-    subquery_step: str,
-) -> List[HttpPathStatusStats]:
-    qps_expr = f"sum by (method, path, status_code)(irate(http_requests_total[{peak_window}]))"
-
-    def fetch_status_metric(expr: str) -> Dict[Tuple[str, str, str], Optional[float]]:
-        samples = safe_vector(client, expr)
-        typed: Dict[Tuple[str, str, str], Optional[float]] = {}
-        if not samples:
-            return typed
-        for sample in samples:
-            metric_obj = sample.get("metric", {})
-            metric_map: Mapping[str, Any]
-            if isinstance(metric_obj, Mapping):
-                metric_map = cast(Mapping[str, Any], metric_obj)
-            else:
-                metric_map = {}
-            method_raw = metric_map.get("method")
-            path_raw = metric_map.get("path")
-            status_raw = metric_map.get("status_code")
-            key = (
-                _normalize_label(method_raw),
-                _normalize_label(path_raw),
-                _normalize_label(status_raw),
-            )
-            typed[key] = _sample_value(sample)
-        return typed
-
-    def _normalize_label(value: Any) -> str:
-        if value is None:
-            return "-"
-        text = str(value)
-        return text if text else "-"
-
-    qps_mean_norm = fetch_status_metric(
-        f"(sum by (method, path, status_code)(increase(http_requests_total[{window}]))) / {window_seconds}"
-    )
-    qps_max_norm = fetch_status_metric(f"max_over_time(({qps_expr})[{window}:{subquery_step}])")
-    qps_min_norm = fetch_status_metric(f"min_over_time(({qps_expr})[{window}:{subquery_step}])")
-    p50_norm = fetch_status_metric(
-        f"histogram_quantile(0.50, sum by (le, method, path, status_code)(increase(http_request_duration_seconds_bucket[{window}])))"
-    )
-    p95_norm = fetch_status_metric(
-        f"histogram_quantile(0.95, sum by (le, method, path, status_code)(increase(http_request_duration_seconds_bucket[{window}])))"
-    )
-    p99_norm = fetch_status_metric(
-        f"histogram_quantile(0.99, sum by (le, method, path, status_code)(increase(http_request_duration_seconds_bucket[{window}])))"
-    )
-
-    stats: List[HttpPathStatusStats] = []
-    for key in sorted(qps_mean_norm.keys()):
-        method_label, path_label, status_label = key
-        stats.append(
-            HttpPathStatusStats(
-                method_label,
-                path_label,
-                status_label,
-                qps_mean_norm.get(key, 0.0) or 0.0,
-                qps_max_norm.get(key),
-                qps_min_norm.get(key),
-                p50_norm.get(key),
-                p95_norm.get(key),
-                p99_norm.get(key),
-            )
-        )
-    return stats
-
-
-# ---------------------------------------------------------------------------
-# Part 4 – diagnostics
-# ---------------------------------------------------------------------------
+    return rows
 
 
 def gather_diagnostics(client: PrometheusClient, window: str) -> Dict[str, Any]:
@@ -809,11 +685,6 @@ def gather_diagnostics(client: PrometheusClient, window: str) -> Dict[str, Any]:
     return diagnostics
 
 
-# ---------------------------------------------------------------------------
-# Rendering helpers
-# ---------------------------------------------------------------------------
-
-
 def render_table(headers: Sequence[str], rows: Sequence[Sequence[str]]) -> List[str]:
     if not rows:
         return [f"(no data for {headers})"]
@@ -843,7 +714,7 @@ def fmt_rate(value: Optional[float]) -> str:
 def fmt_latency(value: Optional[float]) -> str:
     if value is None or math.isnan(value):
         return "-"
-    if value < 0.5:
+    if abs(value) < 0.5:
         return f"{value * 1e3:.2f} ms"
     return f"{value:.2f} s"
 
@@ -873,9 +744,83 @@ def section(title: str, body: Iterable[str]) -> List[str]:
     return lines
 
 
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
+def render_metric_group_table(
+    spec: MetricGroupSpec,
+    rows: Sequence[MetricRow],
+    extra_columns: Optional[Sequence[Tuple[str, Callable[[MetricRow], str]]]] = None,
+) -> List[str]:
+    headers = list(spec.label_headers)
+    headers.extend(
+        [
+            "Avg Rate/s",
+            "Max Rate/s",
+            "Min Rate/s",
+            "P50",
+            "P95",
+            "P99",
+            "Max Latency",
+            "Time/s",
+            "Avg Time/req",
+            "Avg Rate Δ",
+            "P50 Δ",
+            "P95 Δ",
+            "Time Δ",
+            "Avg Time/req Δ",
+        ]
+    )
+    column_renderers: Sequence[Tuple[str, Callable[[MetricRow], str]]] = extra_columns or ()
+    for header, _ in column_renderers:
+        headers.append(header)
+    if not rows:
+        return render_table(headers, [])
+    sorted_rows = sorted(rows, key=metric_row_sort_key)
+    rendered_rows: List[List[str]] = []
+    for row in sorted_rows:
+        label_cells = list(row.label_values) if spec.label_headers else []
+        metrics = [
+            fmt_rate(row.avg_rate),
+            fmt_rate(row.max_rate),
+            fmt_rate(row.min_rate),
+            fmt_latency(row.p50),
+            fmt_latency(row.p95),
+            fmt_latency(row.p99),
+            fmt_latency(row.max_latency),
+            fmt_latency(row.time_per_sec),
+            fmt_latency(row.time_per_request),
+            fmt_rate(row.avg_rate_delta),
+            fmt_latency(row.p50_delta),
+            fmt_latency(row.p95_delta),
+            fmt_latency(row.time_delta),
+            fmt_latency(row.time_per_request_delta),
+        ]
+        extra_cells = [renderer(row) for _, renderer in column_renderers]
+        rendered_rows.append(label_cells + metrics + extra_cells)
+    return render_table(headers, rendered_rows)
+
+
+def make_time_share_column(
+    *,
+    label_index: int,
+    column_title: str,
+    time_per_sec_map: Mapping[str, Optional[float]],
+) -> Tuple[str, Callable[[MetricRow], str]]:
+    def render_cell(row: MetricRow) -> str:
+        if not row.label_values or len(row.label_values) <= label_index:
+            return "-"
+        label_value = row.label_values[label_index]
+        store_time = time_per_sec_map.get(label_value)
+        collection_time = row.time_per_sec
+        if (
+            store_time is None
+            or collection_time is None
+            or math.isnan(store_time)
+            or math.isnan(collection_time)
+            or store_time <= 0
+        ):
+            return "-"
+        return fmt_percentage(collection_time / store_time)
+
+    return (column_title, render_cell)
 
 
 def main(argv: Optional[Sequence[str]] = None) -> None:
@@ -893,6 +838,8 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     window = format_window(duration_seconds)
     peak_window = compute_peak_window(duration_seconds)
     subquery_step = compute_subquery_step(duration_seconds)
+    half_window_seconds = window_seconds // 2 if window_seconds // 2 >= 1 else None
+    half_window = format_window(half_window_seconds) if half_window_seconds else None
 
     client = PrometheusClient(args.prom_url, timeout=args.timeout, default_time=end)
     store_stats = fetch_store_statistics(args.store_url, timeout=args.timeout)
@@ -909,7 +856,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     throughput_rows = gather_collection_throughput(
         client, collections=STORE_TOTAL_COLLECTIONS, duration_seconds=duration_seconds
     )
-    rows: List[List[str]] = []
+    throughput_table: List[List[str]] = []
     for item in throughput_rows:
         store_total = store_totals.get(item.name)
         if store_total is not None:
@@ -926,111 +873,161 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
             per_sec_value = float(count_value) / duration_seconds
         else:
             per_sec_value = item.per_sec
-        rows.append([item.name, count_str, fmt_rate(per_sec_value)])
+        throughput_table.append([item.name, count_str, fmt_rate(per_sec_value)])
     lines.extend(
         section(
             "Rollout / Attempt / Span / Resource / Worker Throughput",
-            render_table(["Collection", "Count", "Per Sec"], rows),
+            render_table(["Collection", "Count", "Per Sec"], throughput_table),
         )
     )
 
-    # Store internals
-    store_stats, store_overall = gather_store_methods(client, window, window_seconds, peak_window, subquery_step)
-    store_rows: List[List[str]] = [
-        [
-            stat.method,
-            fmt_rate(stat.ops_mean),
-            fmt_rate(stat.ops_max),
-            fmt_rate(stat.ops_min),
-            fmt_latency(stat.p50),
-            fmt_latency(stat.p95),
-            fmt_latency(stat.p99),
-        ]
-        for stat in store_stats
-    ]
-    store_lines = render_table(
-        ["Method", "Mean Ops/s", "Max Ops/s", "Min Ops/s", "P50", "P95", "P99"],
-        store_rows,
-    )
-    store_lines.append(
-        f"Overall: mean={fmt_rate(store_overall['ops_mean'])}, "
-        f"max={fmt_rate(store_overall['ops_max'])}, "
-        f"min={fmt_rate(store_overall['ops_min'])}, "
-        f"P50={fmt_latency(store_overall['p50'])}, "
-        f"P95={fmt_latency(store_overall['p95'])}, "
-        f"P99={fmt_latency(store_overall['p99'])}"
-    )
-    lines.extend(section("CollectionBasedLightningStore", store_lines))
-
-    rollout_outcomes = gather_rollout_outcomes(client, window, window_seconds)
-    rollout_rows = [
-        [
-            stat.status,
-            fmt_rate(stat.rate),
-            fmt_latency(stat.p25),
-            fmt_latency(stat.p50),
-            fmt_latency(stat.p75),
-            fmt_latency(stat.max_latency),
-        ]
-        for stat in rollout_outcomes
-    ]
-    lines.extend(
-        section("Rollout Outcomes", render_table(["Status", "Rate", "P25", "P50", "P75", "Max"], rollout_rows))
-    )
-
-    # HTTP traffic
-    http_paths, http_overall = gather_http_paths(client, window, window_seconds, peak_window, subquery_step)
-    http_rows: List[List[str]] = [
-        [
-            stat.method,
-            stat.path,
-            fmt_rate(stat.qps_mean),
-            fmt_rate(stat.qps_max),
-            fmt_rate(stat.qps_min),
-            fmt_latency(stat.p50),
-            fmt_latency(stat.p95),
-            fmt_latency(stat.p99),
-        ]
-        for stat in http_paths
-    ]
-    http_lines = render_table(
-        ["Method", "Path", "Mean Req/s", "Max Req/s", "Min Req/s", "P50", "P95", "P99"], http_rows
-    )
-    http_lines.append(
-        f"Overall HTTP: mean={fmt_rate(http_overall['qps_mean'])}, "
-        f"max={fmt_rate(http_overall['qps_max'])}, "
-        f"min={fmt_rate(http_overall['qps_min'])}, "
-        f"P50={fmt_latency(http_overall['p50'])}, "
-        f"P95={fmt_latency(http_overall['p95'])}, "
-        f"P99={fmt_latency(http_overall['p99'])}"
-    )
-    lines.extend(section("HTTP Endpoints", http_lines))
-
-    http_status_stats = gather_http_paths_with_status(client, window, window_seconds, peak_window, subquery_step)
-    http_status_rows: List[List[str]] = []
-    for stat in http_status_stats:
-        http_status_rows.append(
-            [
-                stat.method,
-                stat.path,
-                stat.status_code,
-                fmt_rate(stat.qps_mean),
-                fmt_rate(stat.qps_max),
-                fmt_rate(stat.qps_min),
-                fmt_latency(stat.p50),
-                fmt_latency(stat.p95),
-                fmt_latency(stat.p99),
-            ]
-        )
-    lines.extend(
-        section(
-            "HTTP Endpoints (by Status)",
-            render_table(
-                ["Method", "Path", "Status Code", "Mean Req/s", "Max Req/s", "Min Req/s", "P50", "P95", "P99"],
-                http_status_rows,
+    metric_categories: Sequence[Tuple[str, Sequence[MetricGroupSpec]]] = [
+        (
+            "HTTP Metrics",
+            (
+                MetricGroupSpec(
+                    title="agl.http ungrouped",
+                    histogram_bucket_metric="agl_http_latency_bucket",
+                    label_names=tuple(),
+                    label_headers=tuple(),
+                ),
+                MetricGroupSpec(
+                    title="agl.http grouped by path, method",
+                    histogram_bucket_metric="agl_http_latency_bucket",
+                    label_names=("path", "method"),
+                    label_headers=("Path", "Method"),
+                ),
+                MetricGroupSpec(
+                    title="agl.http grouped by path, method, status",
+                    histogram_bucket_metric="agl_http_latency_bucket",
+                    label_names=("path", "method", "status"),
+                    label_headers=("Path", "Method", "Status"),
+                ),
             ),
-        )
-    )
+        ),
+        (
+            "Store Metrics",
+            (
+                MetricGroupSpec(
+                    title="agl.store ungrouped",
+                    histogram_bucket_metric="agl_store_latency_bucket",
+                    label_names=tuple(),
+                    label_headers=tuple(),
+                ),
+                MetricGroupSpec(
+                    title="agl.store grouped by method",
+                    histogram_bucket_metric="agl_store_latency_bucket",
+                    label_names=("method",),
+                    label_headers=("Method",),
+                ),
+                MetricGroupSpec(
+                    title="agl.store grouped by method, status",
+                    histogram_bucket_metric="agl_store_latency_bucket",
+                    label_names=("method", "status"),
+                    label_headers=("Method", "Status"),
+                ),
+                MetricGroupSpec(
+                    title="agl.store grouped by store_pubmeth, method, status",
+                    histogram_bucket_metric="agl_store_latency_bucket",
+                    label_names=("store_pubmeth", "method", "status"),
+                    label_headers=("Store Method", "Private Method", "Status"),
+                ),
+            ),
+        ),
+        (
+            "Rollout Outcomes",
+            (
+                MetricGroupSpec(
+                    title="agl.rollouts ungrouped",
+                    histogram_bucket_metric="agl_rollouts_duration_bucket",
+                    label_names=tuple(),
+                    label_headers=tuple(),
+                ),
+                MetricGroupSpec(
+                    title="agl.rollouts grouped by status",
+                    histogram_bucket_metric="agl_rollouts_duration_bucket",
+                    label_names=("status",),
+                    label_headers=("Status",),
+                ),
+            ),
+        ),
+        (
+            "Collection Metrics",
+            (
+                MetricGroupSpec(
+                    title="agl.collections grouped by store_pubmeth, collection, operation",
+                    histogram_bucket_metric="agl_collections_latency_bucket",
+                    label_names=("store_pubmeth", "collection"),
+                    label_headers=("Store Method", "Collection"),
+                ),
+                MetricGroupSpec(
+                    title="agl.collections grouped by store_pubmeth, collection, operation, status",
+                    histogram_bucket_metric="agl_collections_latency_bucket",
+                    label_names=("store_pubmeth", "collection", "operation", "status"),
+                    label_headers=("Store Method", "Collection", "Operation", "Status"),
+                ),
+                MetricGroupSpec(
+                    title="agl.collections grouped by store_privmeth, collection, operation, status",
+                    histogram_bucket_metric="agl_collections_latency_bucket",
+                    label_names=("store_privmeth", "collection", "operation", "status"),
+                    label_headers=("Store Priv Meth", "Collection", "Operation", "Status"),
+                ),
+                MetricGroupSpec(
+                    title="agl.collections grouped by collection, operation, status",
+                    histogram_bucket_metric="agl_collections_latency_bucket",
+                    label_names=("collection", "operation", "status"),
+                    label_headers=("Collection", "Operation", "Status"),
+                ),
+            ),
+        ),
+    ]
+
+    store_method_time_per_sec: Dict[str, Optional[float]] = {}
+
+    for category_title, specs in metric_categories:
+        category_lines: List[str] = []
+        for idx, spec in enumerate(specs):
+            rows = gather_metric_group(
+                client,
+                spec,
+                window=window,
+                window_seconds=window_seconds,
+                peak_window=peak_window,
+                subquery_step=subquery_step,
+                half_window=half_window,
+                half_window_seconds=half_window_seconds,
+            )
+            if spec.histogram_bucket_metric == "agl_store_latency_bucket" and spec.label_names == ("method",):
+                store_method_time_per_sec = {
+                    row.label_values[0]: row.time_per_sec
+                    for row in rows
+                    if row.label_values and len(row.label_values) == 1
+                }
+            extra_column_specs: List[Tuple[str, Callable[[MetricRow], str]]] = []
+            if "store_pubmeth" in spec.label_names:
+                pubmeth_index = spec.label_names.index("store_pubmeth")
+                extra_column_specs.append(
+                    make_time_share_column(
+                        label_index=pubmeth_index,
+                        column_title="Share %",
+                        time_per_sec_map=store_method_time_per_sec,
+                    )
+                )
+            if "store_privmeth" in spec.label_names:
+                privmeth_index = spec.label_names.index("store_privmeth")
+                extra_column_specs.append(
+                    make_time_share_column(
+                        label_index=privmeth_index,
+                        column_title="Share (Priv) %",
+                        time_per_sec_map=store_method_time_per_sec,
+                    )
+                )
+            extra_columns = extra_column_specs or None
+            category_lines.append("### " + spec.title)
+            category_lines.extend(render_metric_group_table(spec, rows, extra_columns=extra_columns))
+            if idx != len(specs) - 1:
+                category_lines.append("")
+        lines.extend(section(category_title, category_lines))
 
     # Diagnostics
     diag = gather_diagnostics(client, window)
@@ -1067,31 +1064,6 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         for op_type, rate in sorted(mongo_opcounters.items(), key=lambda item: str(item[0]))
     ]
     diagnostics_blocks.append(render_table(["MongoDB Opcounter", "Ops/s"], mongo_opcounters_rows))
-
-    memory_lock_rate = cast(Dict[str, float], diag.get("memory_lock_rate", {}))
-    memory_lock_p50 = cast(Dict[str, float], diag.get("memory_lock_p50", {}))
-    memory_lock_p95 = cast(Dict[str, float], diag.get("memory_lock_p95", {}))
-    memory_lock_p99 = cast(Dict[str, float], diag.get("memory_lock_p99", {}))
-    memory_collections = sorted(
-        {
-            *memory_lock_rate.keys(),
-            *memory_lock_p50.keys(),
-            *memory_lock_p95.keys(),
-            *memory_lock_p99.keys(),
-        },
-        key=str,
-    )
-    memory_lock_rows = [
-        [
-            collection or "-",
-            fmt_rate(memory_lock_rate.get(collection)),
-            fmt_latency(memory_lock_p50.get(collection)),
-            fmt_latency(memory_lock_p95.get(collection)),
-            fmt_latency(memory_lock_p99.get(collection)),
-        ]
-        for collection in memory_collections
-    ]
-    diagnostics_blocks.append(render_table(["Memory Collection", "Locks/s", "P50", "P95", "P99"], memory_lock_rows))
 
     mongo_misc_rows: List[List[str]] = []
     if diag.get("mongo_connections") is not None:

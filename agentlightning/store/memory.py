@@ -28,6 +28,7 @@ import aiologic
 from pydantic import BaseModel
 
 from agentlightning.types import AttemptedRollout, NamedResources, PaginatedResult, ResourcesUpdate, Rollout, Span
+from agentlightning.utils.metrics import MetricsBackend
 
 from .base import UNSET, LightningStoreCapabilities, LightningStoreStatistics, Unset, is_finished, is_running
 from .collection import InMemoryLightningCollections
@@ -72,12 +73,16 @@ class InMemoryLightningStore(CollectionBasedLightningStore[InMemoryLightningColl
     Thread-safe and async-compatible but data is not persistent.
 
     Args:
+        thread_safe: Whether the store is thread-safe.
         eviction_memory_threshold: The threshold for evicting spans in bytes.
             By default, it's 70% of the total VRAM available.
         safe_memory_threshold: The threshold for safe memory usage in bytes.
             By default, it's 80% of the eviction threshold.
         span_size_estimator: A function to estimate the size of a span in bytes.
             By default, it's a simple size estimator that uses sys.getsizeof.
+        tracker: The metrics tracker to use.
+        scan_debounce_seconds: The debounce time for the scan for unhealthy rollouts.
+            Set to 0 to disable debouncing.
     """
 
     def __init__(
@@ -87,13 +92,13 @@ class InMemoryLightningStore(CollectionBasedLightningStore[InMemoryLightningColl
         eviction_memory_threshold: float | int | None = None,
         safe_memory_threshold: float | int | None = None,
         span_size_estimator: Callable[[Span], int] | None = None,
-        prometheus: bool = False,
+        tracker: MetricsBackend | None = None,
+        scan_debounce_seconds: float = 10.0,
     ):
         super().__init__(
-            collections=InMemoryLightningCollections(
-                lock_type="thread" if thread_safe else "asyncio", prometheus=prometheus
-            ),
-            prometheus=prometheus,
+            collections=InMemoryLightningCollections(lock_type="thread" if thread_safe else "asyncio", tracker=tracker),
+            tracker=tracker,
+            scan_debounce_seconds=scan_debounce_seconds,
         )
 
         self._thread_safe = thread_safe
