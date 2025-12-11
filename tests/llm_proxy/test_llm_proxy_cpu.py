@@ -27,7 +27,7 @@ from agentlightning.utils.server_launcher import PythonServerLauncherArgs
 from ..common.network import get_free_port
 from ..common.tracer import clear_tracer_provider
 
-pytestmark = pytest.mark.litellm
+pytestmark = pytest.mark.llmproxy
 
 
 class _FakeSpanContext:

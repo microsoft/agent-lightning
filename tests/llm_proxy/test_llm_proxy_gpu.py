@@ -32,7 +32,7 @@ from agentlightning.types import LLM, Span
 from ..common.tracer import clear_tracer_provider
 from ..common.vllm import VLLM_VERSION, RemoteOpenAIServer
 
-pytestmark = [pytest.mark.gpu, pytest.mark.litellm]
+pytestmark = [pytest.mark.gpu, pytest.mark.llmproxy]
 
 
 @pytest.fixture(scope="module")
