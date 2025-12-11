@@ -13,7 +13,22 @@ import random
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Counter, Dict, Generic, Iterator, List, Optional, Sequence, Set, Tuple, TypedDict, TypeVar, cast
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Counter,
+    Dict,
+    Generic,
+    Iterator,
+    List,
+    Optional,
+    Sequence,
+    Set,
+    Tuple,
+    TypedDict,
+    TypeVar,
+    cast,
+)
 
 import poml
 from openai import AsyncOpenAI
@@ -23,6 +38,12 @@ from agentlightning.algorithm.base import Algorithm
 from agentlightning.algorithm.utils import batch_iter_over_dataset
 from agentlightning.reward import find_final_reward
 from agentlightning.types import Dataset, NamedResources, PromptTemplate, Rollout, RolloutMode, RolloutStatus
+
+if TYPE_CHECKING:
+    from agentlightning.store.base import LightningStore
+    from agentlightning.llm_proxy import LLMProxy
+
+from agentlightning.algorithm.utils import with_llm_proxy, with_store
 
 logger = logging.getLogger(__name__)
 
@@ -360,8 +381,10 @@ class APO(Algorithm, Generic[T_task]):
             )
         return new_prompt
 
+    @with_store
     async def get_rollout_results(
         self,
+        store: LightningStore,
         rollout: List[Rollout],
         *,
         prefix: Optional[str] = None,
@@ -379,7 +402,6 @@ class APO(Algorithm, Generic[T_task]):
             List of rollout results formatted for APO processing.
         """
         rollout_results: List[RolloutResultForAPO] = []
-        store = self.get_store()
         adapter = self.get_adapter()
         for r in rollout:
             spans = await store.query_spans(r.rollout_id)
@@ -776,8 +798,12 @@ class APO(Algorithm, Generic[T_task]):
                 prefix=prefix,
             )
 
+    @with_llm_proxy()
+    @with_store
     async def run(
         self,
+        store: LightningStore,  # This param will be stripped by the decorator
+        llm_proxy: Optional[LLMProxy],  # This param will be stripped by the decorator
         train_dataset: Optional[Dataset[T_task]] = None,
         val_dataset: Optional[Dataset[T_task]] = None,
     ) -> None:
