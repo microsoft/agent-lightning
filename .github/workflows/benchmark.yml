@@ -6,9 +6,9 @@ on:
 
 jobs:
   benchmark:
-    name: Benchmark (${{ matrix.backend.id }}, ${{ matrix.scenario.display }})
-    runs-on: [self-hosted, 1ES.Pool=agl-runner-cpu]
-    timeout-minutes: 60
+    name: ${{ matrix.workload.kind }} (${{ matrix.backend.id }}, ${{ matrix.workload.display }})
+    runs-on: ${{ matrix.workload.runner }}
+    timeout-minutes: ${{ matrix.workload.timeout }}
     strategy:
       fail-fast: false
       matrix:
@@ -17,10 +17,15 @@ jobs:
             compose_file: compose.prometheus-memory-store.yml
           - id: mongo
             compose_file: compose.prometheus-mongo-store.yml
-        scenario:
-          - id: minimal-production
+        workload:
+          - id: scenario-minimal-scale
             display: Minimal production scale
+            kind: scenario
             store_workers: 4
+            runner:
+              - self-hosted
+              - 1ES.Pool=agl-runner-cpu
+            timeout: 60
             args: >-
               --mode batch
               --total-tasks 4096
@@ -28,9 +33,14 @@ jobs:
               --n-runners 32
               --max-rounds 6
               --sleep-seconds 0.5
-          - id: medium-production
+          - id: scenario-medium-scale
             display: Medium production scale
+            kind: scenario
             store_workers: 16
+            runner:
+              - self-hosted
+              - 1ES.Pool=agl-runner-cpu
+            timeout: 60
             args: >-
               --mode batch
               --total-tasks 10000
@@ -38,9 +48,29 @@ jobs:
               --n-runners 100
               --max-rounds 10
               --sleep-seconds 0.1
-          - id: large-batch
+          - id: scenario-midhigh-scale
+            display: Mid-high production scale
+            kind: scenario
+            store_workers: 24
+            runner:
+              - self-hosted
+              - 1ES.Pool=agl-runner-cpu
+            timeout: 60
+            args: >-
+              --mode batch
+              --total-tasks 20000
+              --batch-size 2048
+              --n-runners 256
+              --max-rounds 8
+              --sleep-seconds 0.1
+          - id: scenario-large-batch
             display: Large batch waves
+            kind: scenario
             store_workers: 32
+            runner:
+              - self-hosted
+              - 1ES.Pool=agl-runner-cpu
+            timeout: 60
             args: >-
               --mode batch
               --total-tasks 100000
@@ -48,9 +78,14 @@ jobs:
               --n-runners 256
               --max-rounds 6
               --sleep-seconds 0.1
-          - id: long-queues
+          - id: scenario-long-queues
             display: Long rollout queues
+            kind: scenario
             store_workers: 32
+            runner:
+              - self-hosted
+              - 1ES.Pool=agl-runner-cpu
+            timeout: 60
             args: >-
               --mode batch_partial
               --total-tasks 100000
@@ -59,9 +94,14 @@ jobs:
               --remaining-tasks 4096
               --max-rounds 4
               --sleep-seconds 0.1
-          - id: high-concurrency
+          - id: scenario-high-concurrency
             display: High-throughput concurrent requests
+            kind: scenario
             store_workers: 32
+            runner:
+              - self-hosted
+              - 1ES.Pool=agl-runner-cpu
+            timeout: 60
             args: >-
               --mode single
               --total-tasks 100000
@@ -69,9 +109,14 @@ jobs:
               --n-runners 256
               --max-rounds 2
               --sleep-seconds 0.1
-          - id: heavy-traces
+          - id: scenario-heavy-traces
             display: Heavy rollouts with deep traces
+            kind: scenario
             store_workers: 64
+            runner:
+              - self-hosted
+              - 1ES.Pool=agl-runner-cpu
+            timeout: 60
             args: >-
               --mode batch_partial
               --total-tasks 10000
@@ -80,15 +125,63 @@ jobs:
               --n-runners 512
               --max-rounds 20
               --sleep-seconds 1.0
+
+          - id: micro-worker
+            display: Update worker
+            kind: micro
+            store_workers: 8
+            runner: ubuntu-latest
+            timeout: 30
+            cli: worker
+          - id: micro-dequeue-empty
+            display: Dequeue empty
+            kind: micro
+            store_workers: 8
+            runner: ubuntu-latest
+            timeout: 30
+            cli: dequeue-empty
+          - id: micro-rollout
+            display: Rollout + span
+            kind: micro
+            store_workers: 8
+            runner: ubuntu-latest
+            timeout: 30
+            cli: rollout
+          - id: micro-dequeue-update-attempt
+            display: Dequeue + update attempt
+            kind: micro
+            store_workers: 8
+            runner: ubuntu-latest
+            timeout: 30
+            cli: dequeue-update-attempt
+          - id: micro-dequeue-only
+            display: Dequeue only
+            kind: micro
+            store_workers: 8
+            runner: ubuntu-latest
+            timeout: 30
+            cli: dequeue-only
+          - id: micro-metrics
+            display: Multi-metric fan-out
+            kind: micro
+            store_workers: 8
+            runner: ubuntu-latest
+            timeout: 15
+            cli: metrics
     env:
       STORE_URL: http://localhost:4747
       STORE_API_URL: http://localhost:4747/v1/agl
       PROM_URL: http://localhost:9090
-      SCENARIO_ID: ${{ matrix.scenario.id }}
+      WORKLOAD_KIND: ${{ matrix.workload.kind }}
+      WORKLOAD_ID: ${{ matrix.workload.id }}
       BACKEND_ID: ${{ matrix.backend.id }}
-      ARTIFACT_DIR: artifacts/${{ matrix.scenario.id }}-${{ matrix.backend.id }}
+      ARTIFACT_DIR: ${{ format('artifacts/{0}-{1}', matrix.workload.id, matrix.backend.id) }}
       COMPOSE_FILE: ${{ matrix.backend.compose_file }}
-      AGL_STORE_N_WORKERS: ${{ matrix.scenario.store_workers }}
+      AGL_STORE_N_WORKERS: ${{ matrix.workload.store_workers }}
+      ANALYSIS_FILE: ${{ format('analysis-{0}.log', matrix.workload.id) }}
+      SUMMARY_FILE: ${{ format('summary-{0}.log', matrix.workload.id) }}
+      PROM_ARCHIVE_BASENAME: ${{ format('prometheus-{0}-{1}', matrix.workload.id, matrix.backend.id) }}
+      ARTIFACT_NAME: ${{ format('{0}-{1}', matrix.workload.id, matrix.backend.id) }}
     steps:
       - uses: actions/checkout@v4
 
@@ -122,38 +215,65 @@ jobs:
           set -euo pipefail
           for attempt in {1..60}; do
             if curl -fsS "$STORE_API_URL/health" >/dev/null 2>&1; then
+              sleep 1
+              curl -fsS "$STORE_API_URL/rollouts"  # Warm up the scraper
+              sleep 15  # Allow some time for the baseline metrics to be established
               exit 0
             fi
             sleep 1
           done
           echo "Store did not become ready in time" >&2
-          docker compose -f "$COMPOSE_FILE" logs app
+          # show logs for debugging
+          cd docker && docker compose -f "$COMPOSE_FILE" logs app
           exit 1
 
       - name: Prepare artifact directory
         run: mkdir -p "$ARTIFACT_DIR"
 
-      - name: Record benchmark start
+      - name: Record workload start
         run: echo "BENCHMARK_START=$(date -u +%FT%TZ)" >> "$GITHUB_ENV"
 
-      - name: Run ${{ matrix.scenario.display }} workload
+      - name: (Scenario) Run ${{ matrix.workload.display }} workload
+        if: ${{ matrix.workload.kind == 'scenario' }}
         run: |
           set -euo pipefail
           uv run --locked --no-sync python -m tests.benchmark.benchmark_store \
             --store-url "$STORE_URL" \
-            ${{ matrix.scenario.args }}
+            ${{ matrix.workload.args }}
 
-      - name: Record benchmark end
+      - name: (Micro) Run ${{ matrix.workload.display }}
+        if: ${{ matrix.workload.kind == 'micro' }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$ARTIFACT_DIR"
+          uv run --locked --no-sync python -m tests.benchmark.micro_benchmark \
+            --store-url "$STORE_URL" \
+            --summary-file "$ARTIFACT_DIR/$SUMMARY_FILE" \
+            "${{ matrix.workload.cli }}" | tee "$ARTIFACT_DIR/${{ matrix.workload.id }}.txt"
+
+      - name: Record workload end
         if: ${{ always() }}
         run: echo "BENCHMARK_END=$(date -u +%FT%TZ)" >> "$GITHUB_ENV"
 
-      - name: Run benchmark analysis
+      - name: Show micro benchmark summary
+        if: ${{ always() && matrix.workload.kind == 'micro' }}
+        run: |
+          set -euo pipefail
+          summary_file="$ARTIFACT_DIR/$SUMMARY_FILE"
+          if [ -f "$summary_file" ]; then
+            echo "Micro benchmark summary ($WORKLOAD_ID/$BACKEND_ID):"
+            cat "$summary_file"
+          else
+            echo "Summary file not found: $summary_file"
+          fi
+
+      - name: Run workload analysis
         if: ${{ always() }}
         run: |
           set -euo pipefail
           mkdir -p "$ARTIFACT_DIR"
           if [ -z "${BENCHMARK_START:-}" ] || [ -z "${BENCHMARK_END:-}" ]; then
-            echo "Analysis skipped: benchmark window not recorded." > "$ARTIFACT_DIR/analysis.txt"
+            echo "Analysis skipped: benchmark window not recorded." > "$ARTIFACT_DIR/$ANALYSIS_FILE"
             exit 1
           fi
           uv run --locked --no-sync python -m tests.benchmark.analysis \
@@ -161,7 +281,22 @@ jobs:
             --store-url "$STORE_API_URL" \
             --start "$BENCHMARK_START" \
             --end "$BENCHMARK_END" \
-            | tee "$ARTIFACT_DIR/analysis.txt"
+            | tee "$ARTIFACT_DIR/$ANALYSIS_FILE"
+
+      - name: Collect docker logs
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$ARTIFACT_DIR"
+          cd docker
+          readarray -t services < <(docker compose -f "$COMPOSE_FILE" config --services)
+          if [ "${#services[@]}" -eq 0 ]; then
+            echo "No services defined in compose file."
+            exit 0
+          fi
+          for service in "${services[@]}"; do
+            docker compose -f "$COMPOSE_FILE" logs "$service" > "../$ARTIFACT_DIR/docker-${service}-${WORKLOAD_ID}-${BACKEND_ID}.log" || true
+          done
 
       - name: Stop ${{ matrix.backend.id }} Prometheus stack
         if: ${{ always() }}
@@ -176,51 +311,61 @@ jobs:
           set -euo pipefail
           mkdir -p "$ARTIFACT_DIR"
           if [ -d docker/data/prometheus ]; then
-            tar -C docker/data -czf "$ARTIFACT_DIR/prometheus-${SCENARIO_ID}-${BACKEND_ID}.tar.gz" prometheus
-          fi
-          if docker compose -f "$COMPOSE_FILE" ps --format '{{.Name}}' >/dev/null 2>&1; then
-            docker compose -f "$COMPOSE_FILE" logs app > "$ARTIFACT_DIR/docker-${SCENARIO_ID}-${BACKEND_ID}.log" || true
+            tar -C docker/data -czf "$ARTIFACT_DIR/${PROM_ARCHIVE_BASENAME}.tar.gz" prometheus
           fi
 
-      - name: Upload benchmark artifacts
+      - name: Upload workload artifacts
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: benchmark-${{ matrix.scenario.id }}-${{ matrix.backend.id }}
+          name: ${{ env.ARTIFACT_NAME }}
           path: ${{ env.ARTIFACT_DIR }}
           if-no-files-found: error
 
-  micro-benchmark:
-    name: Micro-benchmark (${{ matrix.backend.id }}, ${{ matrix.mode.display }})
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+  collection-benchmarks:
+    name: collection (${{ matrix.backend.id }}, ${{ matrix.workload.id }})
+    runs-on: ${{ matrix.backend.runner }}
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
         backend:
           - id: memory
-            compose_file: compose.prometheus-memory-store.yml
+            needs_mongo: false
+            runner: ubuntu-latest
           - id: mongo
-            compose_file: compose.prometheus-mongo-store.yml
-        mode:
-          - id: worker
-            display: Update worker throughput
-            cli: worker
-          - id: dequeue-empty
-            display: Dequeue empty throughput
-            cli: dequeue-empty
-          - id: rollout
-            display: Rollout + span throughput
-            cli: rollout
+            needs_mongo: true
+            runner: ubuntu-latest
+        workload:
+          - id: high-insert
+            total_tasks: 100000
+            concurrency: 2048
+            type: insert
+          - id: medium-insert
+            total_tasks: 100000
+            concurrency: 128
+            type: insert
+          - id: low-insert
+            total_tasks: 100000
+            concurrency: 4
+            type: insert
+          - id: high-dequeue
+            total_tasks: 100000
+            concurrency: 2048
+            type: dequeue
+          - id: medium-dequeue
+            total_tasks: 100000
+            concurrency: 128
+            type: dequeue
+          - id: low-dequeue
+            total_tasks: 100000
+            concurrency: 4
+            type: dequeue
     env:
-      STORE_URL: http://localhost:4747
-      STORE_API_URL: http://localhost:4747/v1/agl
-      PROM_URL: http://localhost:9090
-      BACKEND_ID: ${{ matrix.backend.id }}
-      MODE_ID: ${{ matrix.mode.id }}
-      ARTIFACT_DIR: artifacts/micro-${{ matrix.mode.id }}-${{ matrix.backend.id }}
-      COMPOSE_FILE: ${{ matrix.backend.compose_file }}
-      AGL_STORE_N_WORKERS: 8
+      ARTIFACT_DIR: ${{ format('artifacts/{0}-{1}', matrix.backend.id, matrix.workload.id) }}
+      SUMMARY_FILE: ${{ format('artifacts/{0}-{1}/summary-{0}-{1}.jsonl', matrix.backend.id, matrix.workload.id) }}
+      ARTIFACT_NAME: ${{ format('collections-{0}-{1}', matrix.backend.id, matrix.workload.id) }}
+      MONGO_URI: mongodb://localhost:27017/?replicaSet=rs0
     steps:
       - uses: actions/checkout@v4
 
@@ -232,103 +377,60 @@ jobs:
       - name: Sync dependencies
         run: uv sync --frozen --extra mongo --group core-stable --group dev
 
-      - name: Reset benchmark data directories
+      - name: Launch MongoDB
+        if: ${{ matrix.backend.needs_mongo }}
         run: |
           set -euo pipefail
           cd docker
-          rm -rf data
-          bash setup.sh
-
-      - name: Launch ${{ matrix.backend.id }} Prometheus stack
-        run: |
-          set -euo pipefail
-          cd docker
-          docker compose -f "$COMPOSE_FILE" down -v || true
-          docker compose -f "$COMPOSE_FILE" up -d --quiet-pull
-
-      - name: Wait for store readiness
-        run: |
-          set -euo pipefail
+          docker compose -f compose.mongo.yml down -v || true
+          docker compose -f compose.mongo.yml up -d --quiet-pull
           for attempt in {1..60}; do
-            if curl -fsS "$STORE_API_URL/health" >/dev/null 2>&1; then
+            if docker compose -f compose.mongo.yml exec -T mongo mongosh --quiet --eval 'db.runCommand({ping:1})' >/dev/null 2>&1; then
               exit 0
             fi
-            sleep 1
+            sleep 2
           done
-          echo "Store did not become ready in time" >&2
-          cd docker && docker compose -f "$COMPOSE_FILE" logs app
+          echo "MongoDB did not become ready in time" >&2
+          docker compose -f compose.mongo.yml logs mongo
           exit 1
 
-      - name: Prepare artifact directory
-        run: mkdir -p "$ARTIFACT_DIR"
-
-      - name: Record micro benchmark start
-        run: echo "BENCHMARK_START=$(date -u +%FT%TZ)" >> "$GITHUB_ENV"
-
-      - name: Run ${{ matrix.mode.display }}
+      - name: Run collection benchmark
         run: |
           set -euo pipefail
           mkdir -p "$ARTIFACT_DIR"
-          uv run --locked --no-sync python -m tests.benchmark.micro_benchmark \
-            --store-url "$STORE_URL" \
-            --summary-file "$ARTIFACT_DIR/summary-${MODE_ID}.txt" \
-            "${{ matrix.mode.cli }}" | tee "$ARTIFACT_DIR/micro-${MODE_ID}.txt"
+          echo "Running collection benchmark (backend=${{ matrix.backend.id }}, workload=${{ matrix.workload.id }})"
+          uv run --locked --no-sync python -m tests.benchmark.collection_benchmark \
+            "${{ matrix.workload.type }}" \
+            --backend "${{ matrix.backend.id }}" \
+            --total-tasks "${{ matrix.workload.total_tasks }}" \
+            --concurrency "${{ matrix.workload.concurrency }}" \
+            --task-prefix "${{ matrix.backend.id }}-${{ matrix.workload.id }}" \
+            --summary-file "$SUMMARY_FILE" \
+            --mongo-uri "$MONGO_URI" \
+            --mongo-database agentlightning_collection_bench
 
-      - name: Record micro benchmark end
-        if: ${{ always() }}
-        run: echo "BENCHMARK_END=$(date -u +%FT%TZ)" >> "$GITHUB_ENV"
-
-      - name: Run micro benchmark analysis
-        if: ${{ always() }}
-        run: |
-          set -euo pipefail
-          mkdir -p "$ARTIFACT_DIR"
-          if [ -z "${BENCHMARK_START:-}" ] || [ -z "${BENCHMARK_END:-}" ]; then
-            echo "Analysis skipped: benchmark window not recorded." > "$ARTIFACT_DIR/analysis-${MODE_ID}.txt"
-            exit 1
-          fi
-          uv run --locked --no-sync python -m tests.benchmark.analysis \
-            --prom-url "$PROM_URL" \
-            --store-url "$STORE_API_URL" \
-            --start "$BENCHMARK_START" \
-            --end "$BENCHMARK_END" \
-            | tee "$ARTIFACT_DIR/analysis-${MODE_ID}.txt"
-
-      - name: Show micro benchmark summary
+      - name: Show collection benchmark summary
         if: ${{ always() }}
         run: |
           set -euo pipefail
-          summary_file="$ARTIFACT_DIR/summary-${MODE_ID}.txt"
-          if [ -f "$summary_file" ]; then
-            echo "Micro benchmark summary ($MODE_ID/$BACKEND_ID):"
-            cat "$summary_file"
+          if [ -f "$SUMMARY_FILE" ]; then
+            echo "Collection benchmark summary (${{ matrix.backend.id }}):"
+            cat "$SUMMARY_FILE"
           else
-            echo "Summary file not found: $summary_file"
+            echo "Summary file not found: $SUMMARY_FILE"
           fi
 
-      - name: Stop ${{ matrix.backend.id }} Prometheus stack
-        if: ${{ always() }}
+      - name: Stop MongoDB
+        if: ${{ always() && matrix.backend.needs_mongo }}
         run: |
           set -euo pipefail
           cd docker
-          docker compose -f "$COMPOSE_FILE" down -v || true
+          docker compose -f compose.mongo.yml down -v || true
 
-      - name: Archive Prometheus metrics
-        if: ${{ always() }}
-        run: |
-          set -euo pipefail
-          mkdir -p "$ARTIFACT_DIR"
-          if [ -d docker/data/prometheus ]; then
-            tar -C docker/data -czf "$ARTIFACT_DIR/prometheus-micro-${MODE_ID}-${BACKEND_ID}.tar.gz" prometheus
-          fi
-          if docker compose -f "$COMPOSE_FILE" ps --format '{{.Name}}' >/dev/null 2>&1; then
-            docker compose -f "$COMPOSE_FILE" logs app > "$ARTIFACT_DIR/docker-micro-${MODE_ID}-${BACKEND_ID}.log" || true
-          fi
-
-      - name: Upload micro benchmark artifacts
+      - name: Upload collection artifacts
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: micro-benchmark-${{ matrix.mode.id }}-${{ matrix.backend.id }}
+          name: ${{ env.ARTIFACT_NAME }}
           path: ${{ env.ARTIFACT_DIR }}
           if-no-files-found: error

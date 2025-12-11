@@ -5,7 +5,7 @@ services:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.path=/prometheus"
     volumes:
-      - ./prometheus.memory-store.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/prometheus.base.yml:/etc/prometheus/prometheus.yml:ro
       - ${AGL_MONITORING_DATA_PATH:?Set AGL_MONITORING_DATA_PATH to the metrics directory}/prometheus:/prometheus
     ports:
       - "9090:9090"

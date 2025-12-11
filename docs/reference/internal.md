@@ -56,6 +56,20 @@
 
 ## Utilities
 
+::: agentlightning.utils.metrics.MetricsBackend
+
+::: agentlightning.utils.metrics.ConsoleMetricsBackend
+
+::: agentlightning.utils.metrics.PrometheusMetricsBackend
+
+::: agentlightning.utils.metrics.MultiMetricsBackend
+
+::: agentlightning.utils.metrics.setup_multiprocess_prometheus
+
+::: agentlightning.utils.metrics.get_prometheus_registry
+
+::: agentlightning.utils.metrics.shutdown_metrics
+
 ::: agentlightning.utils.server_launcher.PythonServerLauncher
 
 ::: agentlightning.utils.server_launcher.PythonServerLauncherArgs

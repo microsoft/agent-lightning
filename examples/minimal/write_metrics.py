@@ -17,6 +17,7 @@ endpoint binds to `0.0.0.0:9105`.
 from __future__ import annotations
 
 import argparse
+import asyncio
 import random
 import signal
 import sys
@@ -43,7 +44,7 @@ def _register_metrics(backend: MetricsBackend) -> None:
     )
 
 
-def _emit_metrics(backend: MetricsBackend, duration: float, operations: Sequence[str]) -> None:
+async def _emit_metrics(backend: MetricsBackend, duration: float, operations: Sequence[str]) -> None:
     statuses = ["200", "404", "500"]
     end_time = time.time() + duration
     random.seed(1337)
@@ -51,9 +52,9 @@ def _emit_metrics(backend: MetricsBackend, duration: float, operations: Sequence
         operation = random.choice(operations)
         status = random.choices(statuses, weights=[0.9, 0.05, 0.05], k=1)[0]
         latency = random.lognormvariate(-4.0, 0.5)
-        backend.inc_counter("minimal_requests_total", labels={"operation": operation, "status": status})
-        backend.observe_histogram("minimal_latency_seconds", value=latency, labels={"operation": operation})
-        time.sleep(0.25)
+        await backend.inc_counter("minimal_requests_total", labels={"operation": operation, "status": status})
+        await backend.observe_histogram("minimal_latency_seconds", value=latency, labels={"operation": operation})
+        await asyncio.sleep(0.25)
 
 
 def main() -> None:
@@ -85,7 +86,7 @@ def main() -> None:
 
     original_handler = signal.signal(signal.SIGINT, _handle_interrupt)
     try:
-        _emit_metrics(backend, duration=args.duration, operations=["search", "summary", "answer"])
+        asyncio.run(_emit_metrics(backend, duration=args.duration, operations=["search", "summary", "answer"]))
     finally:
         signal.signal(signal.SIGINT, original_handler)
 

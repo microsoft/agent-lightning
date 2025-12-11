@@ -59,10 +59,12 @@ from agentlightning.types import (
     Worker,
     WorkerStatus,
 )
+from agentlightning.utils.metrics import MetricsBackend, get_prometheus_registry
 from agentlightning.utils.otlp import handle_otlp_export, spans_from_proto
 from agentlightning.utils.server_launcher import LaunchMode, PythonServerLauncher, PythonServerLauncherArgs
 
 from .base import UNSET, LightningStore, LightningStoreCapabilities, LightningStoreStatistics, Unset
+from .collection.base import resolve_error_type
 from .utils import LATENCY_BUCKETS
 
 server_logger = logging.getLogger("agentlightning.store.server")
@@ -238,7 +240,7 @@ class LightningStoreServer(LightningStore):
         launcher_args: The arguments to use for the server launcher.
             It's not allowed to set `host`, `port`, `launch_mode` together with `launcher_args`.
         n_workers: The number of workers to run in the server. Only applicable for `mp` launch mode.
-        prometheus: Whether to enable Prometheus metrics.
+        tracker: The metrics tracker to use for the server.
     """
 
     def __init__(
@@ -250,7 +252,7 @@ class LightningStoreServer(LightningStore):
         launch_mode: LaunchMode = "thread",
         launcher_args: PythonServerLauncherArgs | None = None,
         n_workers: int = 1,
-        prometheus: bool = False,
+        tracker: MetricsBackend | None = None,
     ):
         super().__init__()
         self.store = store
@@ -268,6 +270,7 @@ class LightningStoreServer(LightningStore):
                 port=port,
                 launch_mode=launch_mode,
                 healthcheck_url=API_V1_AGL_PREFIX + "/health",
+                n_workers=n_workers,
             )
 
         store_capabilities = self.store.capabilities
@@ -287,7 +290,7 @@ class LightningStoreServer(LightningStore):
             app=self.app,
             args=self.launcher_args,
         )
-        self._prometheus = prometheus
+        self._tracker = tracker
 
         self._lock: threading.Lock = threading.Lock()
         self._cors_allow_origins = self._normalize_cors_origins(cors_allow_origins)
@@ -332,7 +335,6 @@ class LightningStoreServer(LightningStore):
         return {
             "launcher_args": self.launcher_args,
             "server_launcher": self.server_launcher,
-            "_prometheus": self._prometheus,
             "_owner_pid": self._owner_pid,
         }
 
@@ -350,11 +352,12 @@ class LightningStoreServer(LightningStore):
         self.store = None
         self.launcher_args = state["launcher_args"]
         self.server_launcher = state["server_launcher"]
-        self._prometheus = state["_prometheus"]
+        self._tracker = None
         self._owner_pid = state["_owner_pid"]
         self._cors_allow_origins = state.get("_cors_allow_origins")
         self._client = None
         self._lock = threading.Lock()
+        self._prometheus_registry = None
         # Do NOT reconstruct app, _uvicorn_config, _uvicorn_server
         # to avoid transferring server state to subprocess
 
@@ -435,8 +438,8 @@ class LightningStoreServer(LightningStore):
         api = APIRouter(prefix=API_V1_PREFIX)
 
         # The outermost-layer of monitoring
-        if self._prometheus:
-            self._setup_prometheus(api=api, app=self.app)
+        if self._tracker is not None:
+            self._setup_metrics(api=api, app=self.app)
 
         # TODO: This should only be enabled in development mode.
         @self.app.middleware("http")
@@ -844,41 +847,21 @@ class LightningStoreServer(LightningStore):
         # Finally, mount the dashboard assets
         self._setup_dashboard()
 
-    def _setup_prometheus(self, api: APIRouter, app: FastAPI):
+    def _setup_metrics(self, api: APIRouter, app: FastAPI):
         """Setup Prometheus metrics endpoints."""
-        try:
-            from prometheus_client import make_asgi_app  # type: ignore
-            from prometheus_client import (
-                REGISTRY,
-                CollectorRegistry,
-                Counter,
-                Histogram,
-                multiprocess,
-            )
-        except ImportError:
-            raise ImportError(
-                "Prometheus client is not installed. Please either install it or set prometheus to False."
-            )
+        if self._tracker is None:
+            return
 
-        # Multi-process mode: https://prometheus.github.io/client_python/multiprocess/
-        is_multiprocess = self.launcher_args.launch_mode == "mp" and self.launcher_args.n_workers > 1
-        if is_multiprocess:
-            registry = CollectorRegistry()
-            multiprocess.MultiProcessCollector(registry)
-        else:
-            registry = REGISTRY
-
-        HTTP_REQUESTS = Counter(
-            "http_requests_total",
-            "Total HTTP requests",
-            ["method", "path", "status_code"],
+        self._tracker.register_counter(
+            "agl.http.total",
+            ["path", "method", "status"],
+            group_level=2,
         )
-
-        HTTP_LATENCY = Histogram(
-            "http_request_duration_seconds",
-            "Latency of HTTP requests",
-            ["method", "path", "status_code"],
+        self._tracker.register_histogram(
+            "agl.http.latency",
+            ["path", "method", "status"],
             buckets=LATENCY_BUCKETS,
+            group_level=2,
         )
 
         def get_template_path(path: str) -> str:
@@ -904,9 +887,12 @@ class LightningStoreServer(LightningStore):
             return path
 
         @app.middleware("http")
-        async def prometheus_http_middleware(  # pyright: ignore[reportUnusedFunction]
+        async def tracking_middleware(  # pyright: ignore[reportUnusedFunction]
             request: Request, call_next: Callable[[Request], Awaitable[Response]]
         ) -> Response:
+            if self._tracker is None:
+                return await call_next(request)
+
             start = time.perf_counter()
             status = 520  # Default to 520 if things crash hard
 
@@ -918,9 +904,8 @@ class LightningStoreServer(LightningStore):
                 # Client disconnected (Timeout)
                 status = 499  # Standard Nginx code for "Client Closed Request"
                 raise  # Re-raise to let Uvicorn handle the cleanup
-            except Exception:
-                # TODO: Record the error type
-                status = 500
+            except Exception as exc:
+                status = resolve_error_type(exc)
                 raise
             finally:
                 # This block executes NO MATTER WHAT happens above
@@ -930,13 +915,25 @@ class LightningStoreServer(LightningStore):
                 path = get_template_path(request.url.path)
                 method = request.method
 
-                HTTP_REQUESTS.labels(method, path, status).inc()
-                HTTP_LATENCY.labels(method, path, status).observe(elapsed)
+                await self._tracker.inc_counter(
+                    "agl.http.total",
+                    labels={"method": method, "path": path, "status": str(status)},
+                )
+                await self._tracker.observe_histogram(
+                    "agl.http.latency",
+                    value=elapsed,
+                    labels={"method": method, "path": path, "status": str(status)},
+                )
 
-        metrics_app = make_asgi_app(registry=registry)  # type: ignore
+        if self._tracker.has_prometheus():
+            from prometheus_client import make_asgi_app  # pyright: ignore[reportUnknownVariableType]
 
-        # This App would need to be accessed via /v1/prometheus/ (note the trailing slash)
-        app.mount(api.prefix + "/prometheus", metrics_app)  # pyright: ignore[reportUnknownArgumentType]
+            metrics_app = make_asgi_app(  # pyright: ignore[reportUnknownVariableType]
+                registry=get_prometheus_registry()
+            )
+
+            # This App would need to be accessed via /v1/prometheus/ (note the trailing slash)
+            app.mount(api.prefix + "/prometheus", metrics_app)  # pyright: ignore[reportUnknownArgumentType]
 
     def _setup_otlp(self, api: APIRouter):
         """Setup OTLP endpoints."""

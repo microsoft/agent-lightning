@@ -3,6 +3,7 @@ verl_old
 meta-llama/**
 debug/*.png
 requirements-freeze*.txt
+/playground
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

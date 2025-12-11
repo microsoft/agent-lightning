@@ -582,6 +582,7 @@ class LitAgentRunner(Runner[T_task]):
                 while not (event is not None and event.is_set()):
                     logger.debug(f"{self._log_prefix()} Try to poll for next rollout.")
                     next_rollout = await store.dequeue_rollout(worker_id=self.get_worker_id())
+                    logger.debug(f"{self._log_prefix()} Next rollout retrieved: {next_rollout}")
                     if next_rollout is None:
                         logger.debug(
                             f"{self._log_prefix()} No rollout to poll. Waiting for {self._poll_interval} seconds."
