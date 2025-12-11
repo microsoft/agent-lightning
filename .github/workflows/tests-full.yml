@@ -38,21 +38,25 @@ jobs:
             display-name: Store
             pytest-mark: 'store'  # store tests should not require gpu
             runs-on: ubuntu-latest
+            has-gpu: false
           # AgentOps needs to be separated because it injects tricky global state.
           - id: agentops
             display-name: AgentOps
             pytest-mark: 'agentops'  # including agentops+litellm tests here
             runs-on: [self-hosted, 1ES.Pool=agl-runner-gpu]
+            has-gpu: true
           # Other tests that require GPU
           - id: gpu
             display-name: GPU required
             pytest-mark: '(gpu or llmproxy) and not agentops'
             runs-on: [self-hosted, 1ES.Pool=agl-runner-gpu]
+            has-gpu: true
           # Other uncovered tests
           - id: others
             display-name: Others
             pytest-mark: 'not store and not agentops and not gpu and not llmproxy'
             runs-on: ubuntu-latest
+            has-gpu: false
         env:
         - python-version: '3.10'
           setup-script: 'legacy'
@@ -63,9 +67,8 @@ jobs:
       fail-fast: false
     steps:
       - name: Check GPU status
+        if: matrix.mark.has-gpu
         run: nvidia-smi
-        if: matrix.mark.runs-on != 'ubuntu-latest'
-
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.pr_ref || (github.event.pull_request.number && format('refs/pull/{0}/merge', github.event.pull_request.number)) || github.ref }}
@@ -77,16 +80,27 @@ jobs:
       - name: Upgrade dependencies (latest)
         run: uv lock --upgrade
         if: matrix.env.setup-script == 'latest'
-      - name: Sync dependencies (latest)
+
+      - name: Sync dependencies (latest, gpu)
+        if: matrix.env.setup-script == 'latest' && matrix.mark.has-gpu
         run: uv sync --frozen --no-default-groups --extra apo --extra mongo --group dev --group agents --group langchain --group torch-gpu-stable
-        if: matrix.env.setup-script == 'latest'
-      - name: Sync dependencies (stable)
+      - name: Sync dependencies (latest, cpu)
+        if: matrix.env.setup-script == 'latest' && !matrix.mark.has-gpu
+        run: uv sync --frozen --no-default-groups --extra apo --extra mongo --group dev --group agents --group langchain --group torch-stable --group torch-cpu
+      - name: Sync dependencies (stable, gpu)
+        if: matrix.env.setup-script == 'stable' && matrix.mark.has-gpu
         run: uv sync --frozen --no-default-groups --extra apo --extra mongo --group dev --group agents --group langchain --group torch-gpu-${{ matrix.env.setup-script }}
-        if: matrix.env.setup-script == 'stable'
+      - name: Sync dependencies (stable, cpu)
+        if: matrix.env.setup-script == 'stable' && !matrix.mark.has-gpu
+        run: uv sync --frozen --no-default-groups --extra apo --extra mongo --group dev --group agents --group langchain --group torch-stable --group torch-cpu
       # Don't install langchain for legacy dependency because it has conflicts with torch.
-      - name: Sync dependencies (legacy)
+      - name: Sync dependencies (legacy, gpu)
+        if: matrix.env.setup-script == 'legacy' && matrix.mark.has-gpu
         run: uv sync --frozen --no-default-groups --extra apo --extra mongo --group dev --group agents --group torch-gpu-legacy
-        if: matrix.env.setup-script == 'legacy'
+      - name: Sync dependencies (legacy, cpu)
+        if: matrix.env.setup-script == 'legacy' && !matrix.mark.has-gpu
+        run: uv sync --frozen --no-default-groups --extra apo --extra mongo --group dev --group agents --group torch-legacy --group torch-cpu
+
       - name: Freeze dependencies
         run: |
           set -ex
