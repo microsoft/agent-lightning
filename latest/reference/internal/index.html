@@ -1462,6 +1462,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#agentlightning.adapter.triplet.TraceTree.extract_prompt_image_urls" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;extract_prompt_image_urls
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#agentlightning.adapter.triplet.TraceTree.find_llm_calls" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3757,6 +3768,17 @@
     <span class="md-ellipsis">
       
         <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;agent_name
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#agentlightning.adapter.triplet.TraceTree.extract_prompt_image_urls" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;extract_prompt_image_urls
       
     </span>
   </a>
@@ -6089,6 +6111,42 @@
           –
           <div class="doc-md-description">
             <p>Agent name extracted from known attributes, otherwise <code>None</code>.</p>
+          </div>
+        </li>
+    </ul>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h4 id="agentlightning.adapter.triplet.TraceTree.extract_prompt_image_urls" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="n">extract_prompt_image_urls</span><span class="p">(</span><span class="n">prompt_raw_content</span><span class="p">)</span></code>
+
+<a href="#agentlightning.adapter.triplet.TraceTree.extract_prompt_image_urls" class="headerlink" title="Permanent link">&para;</a></h4>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Extract image URLs from the span attributes, in order of appearance.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <ul>
+        <li class="doc-section-item field-body">
+            <b><code>prompt_raw_content</code></b>
+              (<code><span title="typing.Any">Any</span></code>)
+          –
+          <div class="doc-md-description">
+            <p>The raw content of the prompt, which can be in one of several formats:</p>
+<ul>
+<li>List[dict]: A list of message entries, each being a dict with at least a "content" key.</li>
+<li>Dict[str, Any]: A dictionary, often with numeric string keys (e.g., <code>{"0": {...}, "1": {...}}</code>), where each value is a message entry.
+  If the dict does not have numeric keys, it is treated as a single message entry.</li>
+</ul>
           </div>
         </li>
     </ul>
