@@ -73,6 +73,8 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: dashboard/package-lock.json
       - name: Install dependencies
         run: cd dashboard && npm ci
       - name: Run ESLint
@@ -133,9 +135,12 @@ jobs:
           # AgentOps needs to be separated because it injects tricky global state.
           - display-name: agentops
             pytest-mark: 'agentops'
-          # litellm, unmarked tests, etc.
+          # litellm proxy tests are slow
+          - display-name: llmproxy
+            pytest-mark: 'llmproxy'
+          # unmarked tests: adapter, logging, etc.
           - display-name: others
-            pytest-mark: 'not store and not agentops'
+            pytest-mark: 'not store and not agentops and not llmproxy'
       fail-fast: false
 
     name: Test (${{ matrix.mark.display-name }}, ${{ matrix.env.setup-script }}, Python ${{ matrix.env.python-version }})
@@ -165,13 +170,15 @@ jobs:
       - name: Upload dependencies artifact
         uses: actions/upload-artifact@v4
         with:
-          name: dependencies-${{ matrix.env.python-version }}-${{ matrix.env.setup-script }}
+          name: dependencies-${{ matrix.mark.display-name }}-${{ matrix.env.python-version }}-${{ matrix.env.setup-script }}
           path: requirements-freeze.txt
           compression-level: 0
 
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: dashboard/package-lock.json
       - name: Install JavaScript dependencies
         run: cd dashboard && npm ci
       - name: Build dashboard
@@ -194,6 +201,8 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: dashboard/package-lock.json
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
