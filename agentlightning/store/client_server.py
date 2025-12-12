@@ -1455,9 +1455,6 @@ class LightningStoreClient(LightningStore):
                         f"Server is shutting down. Request {method}: {path} was cancelled."
                     ) from cancel_exc
 
-                # Flag not set - check health, but handle cancellation of health check itself
-                # Cancellation during network operations usually indicates server shutdown or connection loss
-                # Be conservative: only re-raise if we can definitively prove server is healthy
                 try:
                     # Use a timeout to prevent health check from hanging
                     is_healthy = await asyncio.wait_for(
