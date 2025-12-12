@@ -144,6 +144,8 @@ class AgentModeDaemon:
         llm_proxy: LLMProxy | None = None,
         store: LightningStore | None = None,
         adapter: TraceToTripletBase | None = None,
+        processor: Any = None,
+        image_base_dir: Optional[str] = None,
     ):
         self.mode = mode
         self.llm_timeout_seconds = llm_timeout_seconds
@@ -183,7 +185,12 @@ class AgentModeDaemon:
         self.mini_batch_size = mini_batch_size
         self.pad_token_id = pad_token_id
         self.tokenizer = tokenizer
+        self.processor = processor
         self.reward_fillna_value = reward_fillna_value
+        self.image_base_dir = image_base_dir
+
+        # Check if model requires multimodal position_ids (e.g., Qwen2-VL)
+        self._use_mrope = self._is_mrope_model()
 
         # Internal State
         self.backend_llm_server_addresses: List[str] = []
@@ -201,6 +208,75 @@ class AgentModeDaemon:
         self._internal_loop = loop
         loop.run_forever()
         loop.close()
+
+    # Multimodal utilities for M-RoPE position embeddings
+
+    def _is_mrope_model(self) -> bool:
+        """Check if processor requires M-RoPE position embeddings."""
+        if self.processor is None or not hasattr(self.processor, "image_processor"):
+            return False
+        name = self.processor.image_processor.__class__.__name__
+        return "Qwen2VLImageProcessor" in name or "Qwen3VLImageProcessor" in name
+
+    def _resolve_image_path(self, path: str) -> str:
+        """Resolve relative image path with base directory."""
+        import os
+
+        if os.path.isabs(path):
+            return path
+        if self.image_base_dir is None:
+            raise ValueError(f"Relative path '{path}' requires 'image_base_dir' to be set.")
+        return os.path.join(self.image_base_dir, path)
+
+    def _get_image_grid_thw(self, image_urls: List[str]) -> Optional[torch.Tensor]:
+        """Compute image_grid_thw from image URLs for M-RoPE computation.
+
+        Args:
+            image_urls: List of image URLs extracted from triplet prompt payload.
+                URLs can be http(s):// URLs or file:// URIs, or data: URIs.
+        """
+        from PIL import Image
+        from verl.utils.dataset.vision_utils import process_image  # pyright: ignore[reportUnknownVariableType]
+
+        if self.processor is None or not image_urls:
+            return None
+
+        def to_image_uri(url: str) -> str:
+            # Already a proper URI (http, https, file, data)
+            if url.startswith(("http://", "https://", "file://", "data:")):
+                return url
+            # Treat as a file path that needs resolution
+            resolved = self._resolve_image_path(url)
+            return f"file://{resolved}"
+
+        images: List[Image.Image] = [process_image({"image": to_image_uri(url)}) for url in image_urls]
+        model_inputs = self.processor(text=["dummy"], images=images, return_tensors="pt")
+        return model_inputs.get("image_grid_thw")
+
+    def _compute_mrope_position_ids(
+        self,
+        input_ids: torch.Tensor,
+        attention_mask: torch.Tensor,
+        image_grid_thw: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        """Compute 4D position_ids for M-RoPE models."""
+        from typing import Callable
+
+        get_rope_index: Callable[..., torch.Tensor]
+        if "Qwen3VL" in self.processor.__class__.__name__:
+            from verl.models.transformers.qwen3_vl import get_rope_index  # pyright: ignore[reportUnknownVariableType]
+        else:
+            from verl.models.transformers.qwen2_vl import get_rope_index  # pyright: ignore[reportUnknownVariableType]
+
+        vision_pos = get_rope_index(
+            self.processor, input_ids=input_ids, image_grid_thw=image_grid_thw, attention_mask=attention_mask
+        )
+
+        valid_mask = attention_mask.bool()
+        text_pos = torch.zeros((1, len(input_ids)), dtype=torch.long, device=input_ids.device)
+        text_pos[0, valid_mask] = torch.arange(valid_mask.sum().item(), device=input_ids.device)
+
+        return torch.cat([text_pos, vision_pos], dim=0)
 
     def _start_proxy_server_v0(self):
         """
@@ -672,10 +748,14 @@ class AgentModeDaemon:
                 continue
 
             # The client should report triplets that contain prompt_ids and response_ids.
-            # Example triplet.prompt: {"token_ids": [...]}
+            # Example triplet.prompt: {"token_ids": [...], "image_urls": [...]}
             # Example triplet.response: {"token_ids": [...]}
             trace_list = [
-                {"prompt_ids": t.prompt.get("token_ids", []), "response_ids": t.response.get("token_ids", [])}
+                {
+                    "prompt_ids": t.prompt.get("token_ids", []),
+                    "response_ids": t.response.get("token_ids", []),
+                    "image_urls": t.prompt.get("image_urls", []),
+                }
                 for t in rollout.triplets
             ]
             info = {
@@ -705,6 +785,7 @@ class AgentModeDaemon:
         rollout_id_list: List[str] = []
         turn_index_list: List[int] = []
         is_drop_list: List[bool] = []
+        image_grid_thw_list: List[Optional[torch.Tensor]] = []  # For Qwen2-VL mrope
         n_trunc_sample_because_of_response = 0
 
         for rollout_id, sample_info in finished_id_to_sample_info.items():
@@ -741,6 +822,11 @@ class AgentModeDaemon:
                 rollout_id_list.append(rollout_id)
                 turn_index_list.append(turn_index)
 
+                # Compute image_grid_thw for this triplet using image_urls from prompt
+                if self._use_mrope:
+                    image_urls = trace.get("image_urls", [])
+                    image_grid_thw_list.append(self._get_image_grid_thw(image_urls))
+
         n_transition = len(input_ids_list)
         batch_input_ids = torch.LongTensor(input_ids_list).to(device)
         input_attention_mask = torch.LongTensor(input_attention_mask_list).to(device)
@@ -750,15 +836,38 @@ class AgentModeDaemon:
         # Concatenate prompts and responses to form the full sequence
         batch_seq = torch.cat([batch_input_ids, batch_response_ids], dim=-1)
         attention_mask = torch.cat([input_attention_mask, response_attention_mask], dim=-1)
-        position_ids = torch.clamp(torch.cumsum(attention_mask, dim=-1) - 1, min=0)
+
+        # Compute position_ids - use mrope for Qwen2-VL, standard 2D otherwise
+        if self._use_mrope:
+            # For Qwen2-VL: compute 4D position_ids (batch_size, 4, seq_length)
+            position_ids_list: list[torch.Tensor] = []
+            for i in range(n_transition):
+                pos_ids = self._compute_mrope_position_ids(
+                    input_ids=batch_seq[i],
+                    attention_mask=attention_mask[i],
+                    image_grid_thw=image_grid_thw_list[i] if image_grid_thw_list else None,
+                )  # (4, seq_length)
+                position_ids_list.append(pos_ids)
+            # Stack to (batch_size, 4, seq_length)
+            position_ids = torch.stack(position_ids_list, dim=0)
+        else:
+            # Standard 2D position_ids (batch_size, seq_length)
+            position_ids = torch.clamp(torch.cumsum(attention_mask, dim=-1) - 1, min=0)
+
         is_drop_mask = torch.BoolTensor(is_drop_list).to(device)
         scores = torch.tensor(reward_list, dtype=torch.bfloat16).to(device)
 
         # Create token-level scores by placing the final reward at the last token position
         token_level_scores = torch.zeros_like(attention_mask, dtype=scores.dtype)
+        # For mrope (3D position_ids), use the first dimension (text position_ids) for eos calculation
+        if self._use_mrope:
+            # position_ids is (batch_size, 4, seq_length), use first dim for text positions
+            text_position_ids = position_ids[:, 0, :]  # (batch_size, seq_length)
+            eos_mask_idx = torch.argmax(text_position_ids * attention_mask, dim=-1)  # (bsz,)
+        else:
+            eos_mask_idx = torch.argmax(position_ids * attention_mask, dim=-1)  # (bsz,)
         # At the eos_mask_idx position of each sample, fill in the corresponding scores.
         # torch.arange(n_transition) generates [0,1,2,...,bsz-1] as indices for the batch dimension.
-        eos_mask_idx = torch.argmax(position_ids * attention_mask, dim=-1)  # (bsz,)
         token_level_scores[torch.arange(n_transition), eos_mask_idx] = scores
         # Only take the last response_length part of the sequence to get the token-level scores for the model's response part.
         token_level_scores = token_level_scores[:, -max_response_length:]

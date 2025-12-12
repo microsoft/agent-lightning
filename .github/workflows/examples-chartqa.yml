@@ -1,0 +1,151 @@
+name: Examples - ChartQA
+permissions:
+  contents: read
+on:
+  workflow_dispatch:
+
+jobs:
+  chartqa:
+    if: >
+      github.event_name != 'repository_dispatch' ||
+      github.event.action == 'ci-chartqa' ||
+      github.event.action == 'ci-all'
+    name: ChartQA (Python ${{ matrix.python-version }}, ${{ matrix.setup-script }})
+    runs-on: [self-hosted, 1ES.Pool=agl-runner-gpu]
+    timeout-minutes: 60
+    strategy:
+      matrix:
+        include:
+        - python-version: '3.12'
+          setup-script: 'stable'
+      fail-fast: false
+    steps:
+      - name: Check GPU status
+        run: nvidia-smi
+      - name: Check disk space
+        run: df -h
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.pr_ref || (github.event.pull_request.number && format('refs/pull/{0}/merge', github.event.pull_request.number)) || github.ref }}
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          python-version: ${{ matrix.python-version }}
+      - name: Upgrade dependencies (latest)
+        run: uv lock --upgrade
+        if: matrix.setup-script == 'latest'
+      - name: Sync dependencies
+        run: |
+          uv sync --frozen --no-default-groups --extra verl \
+            --group dev --group experiment --group image --group langchain --group vllm-0-10-2 --group torch-gpu-stable
+      - name: Freeze dependencies
+        run: |
+          set -ex
+          uv pip freeze | tee requirements-freeze.txt
+          echo "UV_LOCKED=1" >> $GITHUB_ENV
+          echo "UV_NO_SYNC=1" >> $GITHUB_ENV
+      - name: Upload dependencies artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependencies-chartqa-${{ matrix.python-version }}-${{ matrix.setup-script }}
+          path: requirements-freeze.txt
+          compression-level: 0
+
+      - name: Launch LiteLLM Proxy
+        run: |
+          ./scripts/litellm_run.sh
+        env:
+          AZURE_API_BASE: ${{ secrets.AZURE_GROUP_SUBSCRIPTION_API_BASE }}
+          AZURE_API_KEY: ${{ secrets.AZURE_GROUP_SUBSCRIPTION_API_KEY }}
+
+      - name: Prepare ChartQA dataset
+        run: |
+          set -euo pipefail
+          cd examples/chartqa
+          uv run gdown --fuzzy "https://drive.google.com/file/d/1fWRt9hehg8_uV7BDWSCwKTycM60JcmGN/view?usp=sharing" -O chartqa-data.zip
+          unzip chartqa-data.zip
+          rm chartqa-data.zip
+        shell: bash
+
+      - name: ChartQA sanity check with GPT
+        run: |
+          set -euo pipefail
+          cd examples/chartqa
+          uv run python debug_chartqa_agent.py
+        shell: bash
+        env:
+          OPENAI_API_BASE: http://localhost:12306/
+          OPENAI_API_KEY: dummy
+
+      - name: Run vLLM Server
+        run: |
+          set -euo pipefail
+          source .venv/bin/activate
+          cd examples/chartqa
+          uv run --no-sync vllm serve Qwen/Qwen2-VL-2B-Instruct \
+            --gpu-memory-utilization 0.9 \
+            --max-model-len 4096 \
+            --allowed-local-media-path "$(pwd)/data" \
+            --enable-prefix-caching \
+            --port 8088 &
+
+          VLLM_READY=0
+          for i in {1..100}; do
+            if curl -sSf http://localhost:8088/v1/models > /dev/null 2>&1; then
+              echo "vLLM server is ready!"
+              VLLM_READY=1
+              break
+            fi
+            echo "Waiting for vLLM server to be ready... (${i})"
+            sleep 5
+          done
+          if [[ "$VLLM_READY" != "1" ]]; then
+            echo "vLLM server failed to start!"
+            exit 1
+          fi
+
+      - name: ChartQA sanity check with vLLM
+        run: |
+          set -euo pipefail
+          source .venv/bin/activate
+          cd examples/chartqa
+          uv run python debug_chartqa_agent.py
+        shell: bash
+        env:
+          USE_LLM_PROXY: "1"
+          OPENAI_API_BASE: http://localhost:8088/v1
+          OPENAI_MODEL: Qwen/Qwen2-VL-2B-Instruct
+
+      - name: Stop vLLM Server
+        run: |
+          set -euo pipefail
+          pkill -f vllm
+          for i in {1..60}; do
+            if ! pgrep -f vllm; then
+              break
+            fi
+            sleep 5
+          done
+
+      - name: ChartQA training
+        run: |
+          set -euo pipefail
+          source .venv/bin/activate
+          cd examples/chartqa
+          ../../scripts/restart_ray.sh
+          sleep 5
+          PYTHONUNBUFFERED=1 python train_chartqa_agent.py ci
+          sleep 10
+        shell: bash
+        env:
+          WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
+          WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
+        id: chartqa_train
+
+      - name: Validate ChartQA training
+        run: |
+          set -euo pipefail
+          uv run scripts/validate_example_wandb.py ${{ steps.chartqa_train.outputs.project_name }} ${{ steps.chartqa_train.outputs.run_name }}
+        env:
+          WANDB_BASE_URL: ${{ secrets.MSR_WANDB_BASE_URL }}
+          WANDB_API_KEY: ${{ secrets.MSR_WANDB_API_KEY }}
