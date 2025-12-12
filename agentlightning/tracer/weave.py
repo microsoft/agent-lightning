@@ -15,6 +15,7 @@ from typing import (
     Awaitable,
     Callable,
     Dict,
+    Iterator,
     List,
     Optional,
     Sequence,
@@ -22,6 +23,12 @@ from typing import (
     Union,
     cast,
 )
+
+from pydantic import validate_call
+from weave.trace_server import trace_server_interface as tsi
+from weave.trace_server.ids import generate_id
+from weave.trace_server_bindings.client_interface import TraceServerClientInterface
+from weave.trace_server_bindings.models import ServerInfoRes
 
 from agentlightning.instrumentation.weave import instrument_weave, uninstrument_weave
 from agentlightning.store.base import LightningStore
@@ -39,6 +46,284 @@ logger = logging.getLogger(__name__)
 
 def generate_span_id() -> str:
     return "sp-" + hashlib.sha1(uuid.uuid4().bytes).hexdigest()[:12]
+
+
+class InMemoryTraceServer(TraceServerClientInterface):
+    """A minimal in-memory implementation of the TraceServerInterface for in-memory tracking of calls and objects.
+
+    It stores calls and objects in local dictionaries and returns valid Pydantic responses to satisfy the Weave client.
+    """
+
+    def __init__(self):
+        # Minimal storage to allow basic querying in tests
+        self.calls: Dict[str, tsi.CallSchema] = {}
+        self.objs: Dict[str, Any] = {}
+        self.files: Dict[str, bytes] = {}
+        self.feedback: List[tsi.FeedbackCreateReq] = []
+
+    @classmethod
+    def from_env(cls, *args: Any, **kwargs: Any) -> InMemoryTraceServer:
+        return cls()
+
+    def server_info(self) -> ServerInfoRes:
+        return ServerInfoRes(min_required_weave_python_version="0.52.22")
+
+    def ensure_project_exists(self, entity: str, project: str) -> tsi.EnsureProjectExistsRes:
+        return tsi.EnsureProjectExistsRes(
+            project_name=project,
+        )
+
+    # --- Call API (Functional) ---
+
+    @validate_call
+    def call_start(self, req: tsi.CallStartReq) -> tsi.CallStartRes:
+        request_content = req.start.model_dump(exclude_none=True)
+        # Generate ID if not provided
+        call_id = request_content.get("id") or generate_id()
+        trace_id = request_content.get("trace_id") or generate_id()
+        request_content["id"] = call_id
+        request_content["trace_id"] = trace_id
+
+        # Store initial state
+        self.calls[call_id] = tsi.CallSchema(**request_content)
+        return tsi.CallStartRes(id=call_id, trace_id=trace_id)
+
+    @validate_call
+    def call_end(self, req: tsi.CallEndReq) -> tsi.CallEndRes:
+        if req.end.id in self.calls:
+            request_content = req.end.model_dump(exclude_none=True)
+            self.calls[req.end.id] = self.calls[req.end.id].model_copy(update=request_content)
+            print(self.calls[req.end.id])
+        return tsi.CallEndRes()
+
+    @validate_call
+    def call_start_batch(self, req: tsi.CallCreateBatchReq) -> tsi.CallCreateBatchRes:
+        # Simple loop for batch compatibility
+        for item in req.batch:
+            if isinstance(item, tsi.CallStartReq):
+                self.call_start(item)
+            elif isinstance(item, tsi.CallEndReq):
+                self.call_end(item)
+        return tsi.CallCreateBatchRes(res=[])
+
+    @validate_call
+    def call_read(self, req: tsi.CallReadReq) -> tsi.CallReadRes:
+        # Basic retrieval
+        call_data = self.calls.get(req.id)
+        if not call_data:
+            # In a real server this might 404, but for dummy we return generic
+            return tsi.CallReadRes(call=None)
+
+        return tsi.CallReadRes(call=call_data)
+
+    @validate_call
+    def calls_query(self, req: tsi.CallsQueryReq) -> tsi.CallsQueryRes:
+        return tsi.CallsQueryRes(calls=list(self.calls_query_stream(req)))
+
+    @validate_call
+    def calls_query_stream(self, req: tsi.CallsQueryReq) -> Iterator[tsi.CallSchema]:
+        # Dumb filter: returns everything. Add filtering logic here if needed.
+        yield from self.calls.values()
+
+    @validate_call
+    def calls_delete(self, req: tsi.CallsDeleteReq) -> tsi.CallsDeleteRes:
+        num_deleted = 0
+        for call_id in req.call_ids:
+            if call_id in self.calls:
+                self.calls.pop(call_id, None)
+                num_deleted += 1
+        return tsi.CallsDeleteRes(num_deleted=len(req.call_ids))
+
+    @validate_call
+    def call_update(self, req: tsi.CallUpdateReq) -> tsi.CallUpdateRes:
+        # Do nothing for now
+        return tsi.CallUpdateRes()
+
+    @validate_call
+    def calls_query_stats(self, req: tsi.CallsQueryStatsReq) -> tsi.CallsQueryStatsRes:
+        return tsi.CallsQueryStatsRes(count=len(self.calls))
+
+    # --- Object API (Minimal Storage) ---
+
+    @validate_call
+    def obj_create(self, req: tsi.ObjCreateReq) -> tsi.ObjCreateRes:
+        digest = generate_id()  # Dummy digest
+        self.objs[digest] = req.obj
+        return tsi.ObjCreateRes(digest=digest)
+
+    @validate_call
+    def obj_read(self, req: tsi.ObjReadReq) -> tsi.ObjReadRes:
+        return tsi.ObjReadRes(obj=self.objs.get(req.digest, {}))
+
+    @validate_call
+    def objs_query(self, req: tsi.ObjQueryReq) -> tsi.ObjQueryRes:
+        return tsi.ObjQueryRes(objs=[])
+
+    def obj_delete(self, req: tsi.ObjDeleteReq) -> tsi.ObjDeleteRes:
+        return tsi.ObjDeleteRes(num_deleted=0)
+
+    # --- Tables (Mocked) ---
+
+    @validate_call
+    def table_create(self, req: tsi.TableCreateReq) -> tsi.TableCreateRes:
+        return tsi.TableCreateRes(digest=generate_id(), row_digests=[])
+
+    @validate_call
+    def table_update(self, req: tsi.TableUpdateReq) -> tsi.TableUpdateRes:
+        return tsi.TableUpdateRes(digest=generate_id(), updated_row_digests=[])
+
+    @validate_call
+    def table_query(self, req: tsi.TableQueryReq) -> tsi.TableQueryRes:
+        return tsi.TableQueryRes(rows=[])
+
+    @validate_call
+    def table_query_stream(self, req: tsi.TableQueryReq) -> Iterator[tsi.TableRowSchema]:
+        yield from []
+
+    @validate_call
+    def table_query_stats(self, req: tsi.TableQueryStatsReq) -> tsi.TableQueryStatsRes:
+        return tsi.TableQueryStatsRes(count=0)
+
+    # --- Files (Mocked) ---
+
+    def file_create(self, req: tsi.FileCreateReq) -> tsi.FileCreateRes:
+        self.files[req.name] = req.content
+        return tsi.FileCreateRes(digest=generate_id())
+
+    def file_content_read(self, req: tsi.FileContentReadReq) -> tsi.FileContentReadRes:
+        return tsi.FileContentReadRes(content=b"dummy_content")
+
+    def files_stats(self, req: tsi.FilesStatsReq) -> tsi.FilesStatsRes:
+        return tsi.FilesStatsRes(total_size_bytes=sum(len(content) for content in self.files.values()))
+
+    # --- Feedback (Mocked) ---
+
+    @validate_call
+    def feedback_create(self, req: tsi.FeedbackCreateReq) -> tsi.FeedbackCreateRes:
+        req.id = req.id or generate_id()
+        self.feedback.append(req)
+        return tsi.FeedbackCreateRes(
+            id=req.id,
+            created_at=datetime.datetime.now(datetime.timezone.utc),
+            wb_user_id="dummy_user",
+            payload=req.payload,
+        )
+
+    def feedback_create_batch(self, req: tsi.FeedbackCreateBatchReq) -> tsi.FeedbackCreateBatchRes:
+        for item in req.batch:
+            self.feedback_create(item)
+        return tsi.FeedbackCreateBatchRes(res=[])
+
+    @validate_call
+    def feedback_query(self, req: tsi.FeedbackQueryReq) -> tsi.FeedbackQueryRes:
+        return tsi.FeedbackQueryRes(result=[])
+
+    @validate_call
+    def feedback_purge(self, req: tsi.FeedbackPurgeReq) -> tsi.FeedbackPurgeRes:
+        self.feedback = []
+        return tsi.FeedbackPurgeRes()
+
+    @validate_call
+    def feedback_replace(self, req: tsi.FeedbackReplaceReq) -> tsi.FeedbackReplaceRes:
+        return tsi.FeedbackReplaceRes(
+            id=req.id or generate_id(),
+            created_at=datetime.datetime.now(datetime.timezone.utc),
+            wb_user_id="dummy",
+            payload={},
+        )
+
+    # --- Costs (Mocked) ---
+
+    @validate_call
+    def cost_query(self, req: tsi.CostQueryReq) -> tsi.CostQueryRes:
+        return tsi.CostQueryRes(results=[])
+
+    @validate_call
+    def cost_create(self, req: tsi.CostCreateReq) -> tsi.CostCreateRes:
+        return tsi.CostCreateRes(ids=[])
+
+    # --- V2 APIs (Mocked - Return Success) ---
+    # These return valid dummy IDs to prevent client crashes
+
+    def op_create(self, req: tsi.OpCreateReq) -> tsi.OpCreateRes:
+        return tsi.OpCreateRes(digest=generate_id(), object_id=generate_id(), version_index=0)
+
+    def op_read(self, req: tsi.OpReadReq) -> tsi.OpReadRes:
+        return tsi.OpReadRes(op=None)  # type: ignore
+
+    def op_list(self, req: tsi.OpListReq) -> Iterator[tsi.OpReadRes]:
+        yield from []
+
+    def op_delete(self, req: tsi.OpDeleteReq) -> tsi.OpDeleteRes:
+        return tsi.OpDeleteRes(num_deleted=0)
+
+    def dataset_create(self, req: tsi.DatasetCreateReq) -> tsi.DatasetCreateRes:
+        return tsi.DatasetCreateRes(digest=generate_id(), object_id=generate_id(), version_index=0)
+
+    def dataset_read(self, req: tsi.DatasetReadReq) -> tsi.DatasetReadRes:
+        return tsi.DatasetReadRes(dataset=None)  # type: ignore
+
+    def dataset_list(self, req: tsi.DatasetListReq) -> Iterator[tsi.DatasetReadRes]:
+        yield from []
+
+    def dataset_delete(self, req: tsi.DatasetDeleteReq) -> tsi.DatasetDeleteRes:
+        return tsi.DatasetDeleteRes(num_deleted=0)
+
+    def model_create(self, req: tsi.ModelCreateReq) -> tsi.ModelCreateRes:
+        return tsi.ModelCreateRes(
+            digest=generate_id(), object_id=generate_id(), version_index=0, model_ref=generate_id()
+        )
+
+    def model_read(self, req: tsi.ModelReadReq) -> tsi.ModelReadRes:
+        return tsi.ModelReadRes(model=None)  # type: ignore
+
+    def model_list(self, req: tsi.ModelListReq) -> Iterator[tsi.ModelReadRes]:
+        yield from []
+
+    def model_delete(self, req: tsi.ModelDeleteReq) -> tsi.ModelDeleteRes:
+        return tsi.ModelDeleteRes(num_deleted=0)
+
+    def evaluation_create(self, req: tsi.EvaluationCreateReq) -> tsi.EvaluationCreateRes:
+        return tsi.EvaluationCreateRes(
+            digest=generate_id(), object_id=generate_id(), version_index=0, evaluation_ref=generate_id()
+        )
+
+    def evaluation_read(self, req: tsi.EvaluationReadReq) -> tsi.EvaluationReadRes:
+        return tsi.EvaluationReadRes(evaluation=None)  # type: ignore
+
+    def evaluation_list(self, req: tsi.EvaluationListReq) -> Iterator[tsi.EvaluationReadRes]:
+        yield from []
+
+    def evaluation_delete(self, req: tsi.EvaluationDeleteReq) -> tsi.EvaluationDeleteRes:
+        return tsi.EvaluationDeleteRes(num_deleted=0)
+
+    def evaluation_run_create(self, req: tsi.EvaluationRunCreateReq) -> tsi.EvaluationRunCreateRes:
+        return tsi.EvaluationRunCreateRes(evaluation_run_id=generate_id())
+
+    def evaluation_run_read(self, req: tsi.EvaluationRunReadReq) -> tsi.EvaluationRunReadRes:
+        return tsi.EvaluationRunReadRes(evaluation_run=None)  # type: ignore
+
+    def prediction_create(self, req: tsi.PredictionCreateReq) -> tsi.PredictionCreateRes:
+        return tsi.PredictionCreateRes(prediction_id=generate_id())
+
+    def score_create(self, req: tsi.ScoreCreateReq) -> tsi.ScoreCreateRes:
+        return tsi.ScoreCreateRes(score_id=generate_id())
+
+    # --- Unimplemented / Extras ---
+
+    def otel_export(self, req: tsi.OtelExportReq) -> tsi.OtelExportRes:
+        return tsi.OtelExportRes()
+
+    def project_stats(self, req: tsi.ProjectStatsReq) -> tsi.ProjectStatsRes:
+        return tsi.ProjectStatsRes(
+            trace_storage_size_bytes=0,
+            objects_storage_size_bytes=0,
+            tables_storage_size_bytes=0,
+            files_storage_size_bytes=0,
+        )
+
+    def image_create(self, req: tsi.ImageGenerationCreateReq) -> tsi.ImageGenerationCreateRes:
+        return tsi.ImageGenerationCreateRes(response={})
 
 
 class WeaveTracer(Tracer):
@@ -73,6 +358,7 @@ class WeaveTracer(Tracer):
         self.sequence_id = 0
         self._store: Optional[LightningStore] = None
         self.instrument_managed = instrument_managed
+        self._server = InMemoryTraceServer()
 
         self._default_sequence_counter: int = 0
         self._spans: List[Span] = []
@@ -102,12 +388,19 @@ class WeaveTracer(Tracer):
 
         try:
             import weave
-        except ImportError:
-            raise RuntimeError("Weave is not installed. Install it to use WeaveTracer.")
+        except ImportError as exc:
+            raise RuntimeError("Weave is not installed. Install it to use WeaveTracer.") from exc
 
         # Optionally patch network calls to bypass real Weave/W&B endpoints
-        if self.instrument_managed:
-            self.instrument(worker_id)
+        # if self.instrument_managed:
+        #     self.instrument(worker_id)
+
+        import weave.trace.weave_init
+
+        def init_weave_get_server(*args, **kwargs):
+            return self._server
+
+        weave.trace.weave_init.init_weave_get_server = init_weave_get_server
 
         # Initialize the Weave client if not already initialized
         if weave.get_client() is None:  # type: ignore
@@ -116,6 +409,9 @@ class WeaveTracer(Tracer):
                 logger.info(f"[Worker {worker_id}] Weave client initialized.")
             except Exception as exc:
                 raise RuntimeError(f"Failed to initialize Weave for project '{self.project_name}'") from exc
+        else:
+            # FIXME
+            pass
 
     def teardown_worker(self, worker_id: int):
         """
@@ -126,9 +422,9 @@ class WeaveTracer(Tracer):
         """
         super().teardown_worker(worker_id)
 
-        if self.instrument_managed:
-            self.uninstrument(worker_id)
-            logger.info(f"[Worker {worker_id}] Instrumentation removed.")
+        # if self.instrument_managed:
+        #     self.uninstrument(worker_id)
+        #     logger.info(f"[Worker {worker_id}] Instrumentation removed.")
 
     @asynccontextmanager
     async def trace_context(
@@ -241,13 +537,15 @@ class WeaveTracer(Tracer):
         spans: List[Span] = []
         sequence_id = await self._sequence_generator(1)
 
+        # print(f"call: {call}")
+
         rollout_id = rollout_id or ""
         attempt_id = attempt_id or ""
 
-        start_dt = getattr(call, "started_at", None)
+        start_dt = call.started_at
         start_ts: Optional[float] = start_dt.timestamp() if start_dt else None
 
-        end_dt = getattr(call, "ended_at", None)
+        end_dt = call.ended_at
         end_ts: Optional[float] = end_dt.timestamp() if end_dt else None
 
         trace_id = call.trace_id
