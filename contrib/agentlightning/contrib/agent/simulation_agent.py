@@ -14,6 +14,7 @@ from captioners.debugging import (
     print_llm_single_input,
 )
 from agl_envs.simulation import make_env_manager
+from contrib.recipes.simulation.captioners import create_prompt_builder
 
 from agentlightning import LLM, LitAgent, NamedResources, Rollout, configure_logger, emit_object, emit_reward, operation
 from agentlightning.utils.otel import make_link_attributes
@@ -95,7 +96,8 @@ class SimulationAgent(LitAgent):
 
         try:
             # Setup environment
-            self.env = make_env_manager(self.config.env_name, task, self.config, render_mode=None)
+            prompt_builder = create_prompt_builder(self.config.captioner)
+            self.env = make_env_manager(self.config.env_name, task, self.config, prompt_builder=prompt_builder)
             obs, pure_env_obs, infos = self.env.reset()
             episode_reward, done = 0.0, False
 

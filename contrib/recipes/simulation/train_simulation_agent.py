@@ -1,13 +1,13 @@
 import argparse
 import os
-import subprocess
-import time
 
 from omegaconf import OmegaConf
 
 from agentlightning import Trainer
 from agentlightning.algorithm.verl import VERL
-from examples.simulation.utils import kill_process_on_port, run_cmd
+from contrib.agentlightning.contrib.algorithm.simulation_verl.trainer import SimulationAgentLightningTrainer
+from contrib.agentlightning.contrib.algorithm.simulation_verl.daemon import SimulationAgentModeDaemon
+from contrib.recipes.simulation.utils import kill_process_on_port, run_cmd
 
 
 def train_val_dataset(cfg):
@@ -65,10 +65,17 @@ if __name__ == "__main__":
     train_dataset, val_dataset = train_val_dataset(rl_training_config)
 
     # Initialize agent
-    from simulation_agent import SimulationAgent
+    from contrib.agentlightning.contrib.agent.simulation_agent import SimulationAgent
 
     agent = SimulationAgent(agent_config)
 
     # Initialize trainer and start training
-    trainer = Trainer(algorithm=VERL(rl_training_config), n_workers=args.n_workers)
+    trainer = Trainer(
+        algorithm=VERL(
+            config=rl_training_config,
+            trainer_cls=SimulationAgentLightningTrainer,
+            daemon_cls=SimulationAgentModeDaemon,
+        ),
+        n_workers=args.n_workers,
+    )
     trainer.fit(agent, train_dataset, val_dataset=val_dataset)
