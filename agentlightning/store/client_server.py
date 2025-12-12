@@ -1473,11 +1473,6 @@ class LightningStoreClient(LightningStore):
                         raise ServerShutdownError(
                             f"Server is shutting down. Request {method}: {path} was cancelled."
                         ) from cancel_exc
-                    # Server is healthy - this might be a genuine cancellation
-                    # However, during shutdown, health check might succeed briefly before server dies
-                    # Be conservative: if CancelledError occurs during network op, assume shutdown
-                    # unless we're very confident it's a genuine cancellation
-                    # For now, convert to ServerShutdownError to be safe (caller can handle it gracefully)
                     client_logger.debug(
                         f"CancelledError during network operation. Converting to ServerShutdownError for safety: {method}: {path}"
                     )
