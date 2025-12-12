@@ -75,6 +75,15 @@ T = TypeVar("T")
 T_model = TypeVar("T_model", bound=BaseModel)
 
 
+class ServerShutdownError(Exception):
+    """Raised when the server is shutting down and requests cannot be completed.
+
+    This exception is raised instead of ServerDisconnectedError when we detect
+    that the server is permanently unavailable (e.g., during graceful shutdown).
+    Callers should handle this gracefully without dumping full tracebacks.
+    """
+
+
 class RolloutRequest(BaseModel):
     input: TaskInput
     mode: Optional[Literal["train", "val", "test"]] = None
@@ -1238,6 +1247,9 @@ class LightningStoreClient(LightningStore):
         self._dequeue_was_successful: bool = False
         self._dequeue_first_unsuccessful: bool = True
 
+        # Track server shutdown state to handle errors gracefully
+        self._server_shutting_down: bool = False
+
     @property
     def capabilities(self) -> LightningStoreCapabilities:
         """Return the capabilities of the store."""
@@ -1287,6 +1299,7 @@ class LightningStoreClient(LightningStore):
         self._connection_timeout = state["_connection_timeout"]
         self._dequeue_was_successful = False
         self._dequeue_first_unsuccessful = True
+        self._server_shutting_down = False
 
     async def _get_session(self) -> aiohttp.ClientSession:
         # In the proxy process, FastAPI middleware calls
@@ -1324,6 +1337,7 @@ class LightningStoreClient(LightningStore):
         """
         Probe the server's /health until it responds 200 or retries are exhausted.
         Returns True if healthy, False otherwise.
+        When this returns False, it indicates the server is shutting down or permanently unavailable.
         """
         if not self._health_retry_delays:
             client_logger.info("No health retry delays configured; skipping health checks.")
@@ -1342,9 +1356,12 @@ class LightningStoreClient(LightningStore):
                     client_logger.warning(f"Server is not healthy yet. Retrying in {delay} seconds.")
             if delay > 0.0:
                 await asyncio.sleep(delay)
-        client_logger.error(
-            f"Server is not healthy at {self.server_address}/health after {len(self._health_retry_delays)} retry attempts"
+        client_logger.warning(
+            f"Server is not healthy at {self.server_address}/health after {len(self._health_retry_delays)} retry attempts. "
+            "Server appears to be shutting down."
         )
+        # Mark server as shutting down to handle subsequent errors gracefully
+        self._server_shutting_down = True
         return False
 
     async def _request_json(
@@ -1405,6 +1422,15 @@ class LightningStoreClient(LightningStore):
                 last_exc = net_exc
                 client_logger.info(f"Network/session issue will be retried. Retrying the request {method}: {path}")
                 if not await self._wait_until_healthy(session):
+                    # Server is shutting down - handle ServerDisconnectedError gracefully
+                    if isinstance(net_exc, aiohttp.ServerDisconnectedError) and self._server_shutting_down:
+                        client_logger.debug(
+                            f"Server is shutting down. Suppressing ServerDisconnectedError for {method}: {path}"
+                        )
+                        # Raise a specific exception that callers can catch and handle gracefully
+                        raise ServerShutdownError(
+                            f"Server is shutting down. Request {method}: {path} cannot be completed."
+                        ) from net_exc
                     break  # server is not healthy, do not retry
 
         # exhausted retries
