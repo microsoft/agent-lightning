@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures as futures
 import logging
 import re
+import weakref
 from contextlib import asynccontextmanager
 from typing import (
     Any,
@@ -101,8 +103,9 @@ class WeaveTracer(Tracer):
         self._spans: List[Span] = []  # spans in the current trace
         self._rollout_id: Optional[str] = None
         self._attempt_id: Optional[str] = None
-        self._call_start_futures: Dict[str, asyncio.Future[int]] = {}
-        self._call_end_futures: List[asyncio.Future[None]] = []
+        self._call_start_futures: Dict[str, asyncio.Future[int] | futures.Future[int]] = {}
+        self._call_end_futures: List[asyncio.Future[None] | futures.Future[None]] = []
+        self._loop: weakref.ReferenceType[asyncio.AbstractEventLoop] | None = None
 
     def instrument(self, worker_id: int):
         instrument_weave(self._server)
@@ -177,14 +180,6 @@ class WeaveTracer(Tracer):
             ValueError: If store, rollout_id, and attempt_id are inconsistently provided.
             RuntimeError: If Weave is not installed or client is uninitialized.
         """
-        arg_op = name or self.project_name
-        arg_inputs: dict[str, str] | None = {"rollout_id": rollout_id or "", "attempt_id": attempt_id or ""}
-
-        self._spans.clear()
-
-        weave_client = weave.get_client()
-        if not weave_client:
-            raise RuntimeError("Weave client is not initialized. Call init_worker() first.")
 
         if rollout_id is not None and attempt_id is not None:
             self._rollout_id = rollout_id
@@ -194,34 +189,119 @@ class WeaveTracer(Tracer):
         else:
             raise ValueError("rollout_id and attempt_id must be either both provided or both None")
 
-        # Create a new trace call object in Weave
-        trace_call = weave_client.create_call(op=arg_op, inputs=arg_inputs)  # pyright: ignore[reportUnknownMemberType]
+        await self._init_trace_context()
 
         try:
-            yield trace_call
-        except Exception as exc:
-            # Finish trace and log any exception
-            weave_client.finish_call(trace_call, exception=exc)  # pyright: ignore[reportUnknownMemberType]
-            logger.error(f"Trace failed for rollout_id={rollout_id}, attempt_id={attempt_id}, error={exc}")
-        finally:
-            # Finish trace even if no exception
-            weave_client.finish_call(trace_call)  # pyright: ignore[reportUnknownMemberType]
+            arg_op = name or self.project_name
+            arg_inputs: dict[str, str] = {}
+            if rollout_id is not None:
+                arg_inputs[LightningResourceAttributes.ROLLOUT_ID.value] = rollout_id
+            if attempt_id is not None:
+                arg_inputs[LightningResourceAttributes.ATTEMPT_ID.value] = attempt_id
 
+            weave_client = weave.get_client()
+            if not weave_client:
+                raise RuntimeError("Weave client is not initialized. Call init_worker() first.")
+
+            # Create a new trace call object in Weave
+            trace_call = weave_client.create_call(
+                op=arg_op, inputs=arg_inputs
+            )  # pyright: ignore[reportUnknownMemberType]
+
+            try:
+                yield trace_call
+                # Finish trace even if no exception
+                weave_client.finish_call(trace_call)  # pyright: ignore[reportUnknownMemberType]
+            except Exception as exc:
+                # Finish trace and log any exception
+                weave_client.finish_call(trace_call, exception=exc)  # pyright: ignore[reportUnknownMemberType]
+                logger.error(f"Trace failed for rollout_id={rollout_id}, attempt_id={attempt_id}, error={exc}")
+
+            weave_client.flush()
+
+            # It's possible that the call end futures are from a dedicated Weave thread pool,
+            await asyncio.gather(*[asyncio.wrap_future(future) for future in self._call_end_futures])
+            print("final call_end_futures", self._call_end_futures)
+
+        finally:
+            # Mandatory cleanup
             self._rollout_id = None
             self._attempt_id = None
+
+    async def _init_trace_context(self) -> None:
+        """Initialize the trace context."""
+        self._spans.clear()
+        self._calls.clear()
+        self._rollout_id = None
+        self._attempt_id = None
+        self._call_start_futures.clear()
+        self._call_end_futures.clear()
+        print(id(asyncio.get_running_loop()))
+        import threading
+
+        print(threading.current_thread())
+        self._loop = weakref.ref(asyncio.get_running_loop())
+
+    def _ensure_loop(self) -> tuple[asyncio.AbstractEventLoop, bool]:
+        """Returns a usable event loop and a boolean indicating whether it's the current running loop.
+
+        Prefer using the main loop if it's possible. Otherwise, use the current running loop.
+        """
+        # Get the current running loop
+        try:
+            running_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            running_loop = None
+
+        # Get the main loop, which can be a different loop
+        if self._loop is not None:
+            main_loop = self._loop()
+        else:
+            main_loop = None
+
+        if main_loop is not None:
+            return main_loop, id(main_loop) == id(running_loop)
+        elif running_loop is not None:
+            return running_loop, True
+        else:
+            raise RuntimeError("No running event loop found. This should not happen.")
 
     def get_last_trace(self) -> List[Span]:
         return self._spans
 
     def call_start_callback(self, call: tsi.CallSchema) -> None:
-        loop = asyncio.get_event_loop()
-        task = loop.create_task(self.call_start_handler(call))
-        self._call_start_futures[call.id] = task
+        # The callback must possibly be called from a dedicated Weave thread pool,
+        # but it should be executed on the main event loop.
+        try:
+            loop, is_current_loop = self._ensure_loop()
+            import threading
+
+            print("call start", id(loop), threading.current_thread(), is_current_loop)
+            if is_current_loop:
+                task = loop.create_task(self.call_start_handler(call))
+                self._call_start_futures[call.id] = task
+            else:
+                # Schedule the task on the dedicated loop
+                task = asyncio.run_coroutine_threadsafe(self.call_start_handler(call), loop)
+                self._call_start_futures[call.id] = task
+            print("call_start_futures", self._call_start_futures)
+        except Exception as exc:
+            logger.exception(f"Error creating call start task: {exc}", exc_info=True)
 
     def call_end_callback(self, call: tsi.CallSchema) -> None:
-        loop = asyncio.get_event_loop()
-        task = loop.create_task(self.call_finish_handler(call))
-        self._call_end_futures.append(task)
+        try:
+            loop, is_current_loop = self._ensure_loop()
+            import threading
+
+            print("call end", id(loop), threading.current_thread(), is_current_loop)
+            if is_current_loop:
+                task = loop.create_task(self.call_finish_handler(call))
+            else:
+                task = asyncio.run_coroutine_threadsafe(self.call_finish_handler(call), loop)
+            self._call_end_futures.append(task)
+            print("call_end_futures", self._call_end_futures)
+        except Exception as exc:
+            logger.exception(f"Error creating call finish task: {exc}", exc_info=True)
 
     async def _get_next_sequence_id(self) -> int:
         if self._rollout_id and self._attempt_id and self._store:
@@ -243,6 +323,7 @@ class WeaveTracer(Tracer):
             raise ValueError(f"Call {call.id} already has a start future")
 
         self._calls[call.id] = call
+        print("call_start_handler", call)
 
         sequence_id = await self._get_next_sequence_id()
         return sequence_id
@@ -254,7 +335,7 @@ class WeaveTracer(Tracer):
         """
         # Make sure the corresponding call_start_future is complete
         if call.id in self._call_start_futures:
-            sequence_id = await self._call_start_futures[call.id]
+            sequence_id = await asyncio.wrap_future(self._call_start_futures[call.id])
             del self._call_start_futures[call.id]
         else:
             # Fetch a new sequence ID as the call_start is somehow missing
@@ -262,6 +343,7 @@ class WeaveTracer(Tracer):
             sequence_id = await self._get_next_sequence_id()
 
         self._calls[call.id] = call
+        print("call_finish_handler", call)
 
         span = await self.convert_call_to_span(call, self._rollout_id, self._attempt_id, sequence_id)
         self._spans.append(span)

@@ -6,6 +6,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Iterator, List
 
+import weave.trace.weave_init
 from pydantic import validate_call
 from weave.trace_server import trace_server_interface as tsi
 from weave.trace_server.ids import generate_id
@@ -403,6 +404,7 @@ class InMemoryWeaveTraceServer(TraceServerClientInterface):
 
 # Module-level storage for originals
 _original_init_weave_get_server: Callable[..., Any] | None = None
+_original_get_entity_project_from_project_name: Callable[..., Any] | None = None
 
 
 def init_weave_get_server_factory(server: InMemoryWeaveTraceServer) -> Callable[..., Any]:
@@ -412,25 +414,36 @@ def init_weave_get_server_factory(server: InMemoryWeaveTraceServer) -> Callable[
     return init_weave_get_server
 
 
+def get_entity_project_from_project_name_factory(entity_name: str) -> tuple[str, str]:
+    try:
+        assert _original_get_entity_project_from_project_name is not None
+        return _original_get_entity_project_from_project_name(entity_name)
+    except weave.trace.weave_init.WeaveWandbAuthenticationException:
+        return "agl", "weave"
+
+
 def instrument_weave(server: InMemoryWeaveTraceServer):
     """Patch the Weave/W&B integration to bypass actual network calls for testing."""
 
-    import weave.trace.weave_init
-
-    global _original_init_weave_get_server
+    global _original_init_weave_get_server, _original_get_entity_project_from_project_name
     _original_init_weave_get_server = weave.trace.weave_init.init_weave_get_server
-
+    _original_get_entity_project_from_project_name = weave.trace.weave_init.get_entity_project_from_project_name
     weave.trace.weave_init.init_weave_get_server = init_weave_get_server_factory(server)
+    weave.trace.weave_init.get_entity_project_from_project_name = get_entity_project_from_project_name_factory
 
 
 def uninstrument_weave():
     """Restore the original Weave/W&B integration methods and HTTP requests."""
-    global _original_init_weave_get_server
+    global _original_init_weave_get_server, _original_get_entity_project_from_project_name
 
     if _original_init_weave_get_server is not None:
-        import weave.trace.weave_init
-
         weave.trace.weave_init.init_weave_get_server = _original_init_weave_get_server
         _original_init_weave_get_server = None
+    else:
+        raise RuntimeError("Weave/W&B integration was not instrumented.")
+
+    if _original_get_entity_project_from_project_name is not None:
+        weave.trace.weave_init.get_entity_project_from_project_name = _original_get_entity_project_from_project_name
+        _original_get_entity_project_from_project_name = None
     else:
         raise RuntimeError("Weave/W&B integration was not instrumented.")
