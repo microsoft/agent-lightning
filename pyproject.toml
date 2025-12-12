@@ -11,7 +11,6 @@ dependencies = [
   "setproctitle",
   "flask",
   "agentops>=0.4.13",
-  "httpdbg",
   "uvicorn",
   "fastapi",
   "aiohttp",
@@ -119,9 +118,19 @@ torch-legacy = [
   "torchvision==0.22.0",
   "transformers==4.53.3",
   "tokenizers>=0.21,<0.22",
-  "flash-attn==2.8.1",
   "vllm==0.9.2",
   "litellm[proxy]==1.74.15",
+]
+
+# Specific vllm versions for compatibility testing or workarounds.
+# Use these when you need a pinned vllm version separate from torch groups.
+vllm-0-10-2 = [
+  {include-group = "torch-stable"},
+  "vllm==0.10.2",
+]
+vllm-0-11-0 = [
+  {include-group = "torch-stable"},
+  "vllm==0.11.0",
 ]
 
 # Flash-attention must build with CUDA toolkit.
@@ -236,6 +245,10 @@ conflicts = [
     { group = "torch-stable" },
     { group = "torch-legacy" },
   ],
+  [
+    { group = "vllm-0-10-2" },
+    { group = "vllm-0-11-0" },
+  ],
   # langchain >= 1.0 requires openai >= 1.109.1 (via langchain-openai),
   # but torch-legacy uses vllm==0.9.2 which requires openai<=1.90.0
   [
@@ -325,6 +338,9 @@ markers = [
   "agentops: tests that require AgentOps",
   "llmproxy: tests that require LiteLLM",
   "mongo: tests that require MongoDB",
+  "store: tests for agentlightning.store module",
+  "prometheus: tests that require Prometheus",
+  "utils: tests for utility functions",
 ]
 
 [tool.black]
