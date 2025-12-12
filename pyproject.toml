@@ -11,7 +11,6 @@ dependencies = [
   "setproctitle",
   "flask",
   "agentops>=0.4.13",
-  "httpdbg",
   "uvicorn",
   "fastapi",
   "aiohttp",
@@ -119,7 +118,6 @@ torch-legacy = [
   "torchvision==0.22.0",
   "transformers==4.53.3",
   "tokenizers>=0.21,<0.22",
-  "flash-attn==2.8.1",
   "vllm==0.9.2",
   "litellm[proxy]==1.74.15",
 ]
@@ -349,6 +347,9 @@ markers = [
   "agentops: tests that require AgentOps",
   "llmproxy: tests that require LiteLLM",
   "mongo: tests that require MongoDB",
+  "store: tests for agentlightning.store module",
+  "prometheus: tests that require Prometheus",
+  "utils: tests for utility functions",
 ]
 
 [tool.black]

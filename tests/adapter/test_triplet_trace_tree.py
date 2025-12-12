@@ -19,7 +19,7 @@ def qwen_multimodal_attrs(response_id: str) -> Dict[str, Any]:
     prompt_content = json.dumps(
         [
             {"type": "text", "text": "Question: How many food items are shown in the bar graph?"},
-            {"type": "image_url", "image_url": {"url": "file:///home/kiki/Projects/chartqa/test.png"}},
+            {"type": "image_url", "image_url": {"url": "file:///root/test.png"}},
         ]
     )
     return {
@@ -546,9 +546,9 @@ def test_tracer_trace_to_triplet_handles_multimodal_payloads():
     assert triplets[1].metadata["agent_name"] == "vision-agent"
     qwen_prompt_raw = triplets[0].prompt["raw_content"]
     assert qwen_prompt_raw == filter_and_unflatten_attributes(llm_first.attributes, "gen_ai.prompt")
-    assert triplets[0].prompt["image_urls"] == ["file:///home/kiki/Projects/chartqa/test.png"]
+    assert triplets[0].prompt["image_urls"] == ["file:///root/test.png"]
     qwen_content = json.loads(qwen_prompt_raw[0]["content"])
-    assert qwen_content[1]["image_url"]["url"] == "file:///home/kiki/Projects/chartqa/test.png"
+    assert qwen_content[1]["image_url"]["url"] == "file:///root/test.png"
     qwen_request = filter_and_unflatten_attributes(llm_first.attributes, "gen_ai.request")
     qwen_response = filter_and_unflatten_attributes(llm_first.attributes, "gen_ai.response")
     assert triplets[0].metadata["request"] == qwen_request
