@@ -859,8 +859,6 @@ class AgentModeDaemon:
 
         # Create token-level scores by placing the final reward at the last token position
         token_level_scores = torch.zeros_like(attention_mask, dtype=scores.dtype)
-        # At the eos_mask_idx position of each sample, fill in the corresponding scores.
-        # torch.arange(n_transition) generates [0,1,2,...,bsz-1] as indices for the batch dimension.
         # For mrope (3D position_ids), use the first dimension (text position_ids) for eos calculation
         if self._use_mrope:
             # position_ids is (batch_size, 4, seq_length), use first dim for text positions
@@ -868,6 +866,8 @@ class AgentModeDaemon:
             eos_mask_idx = torch.argmax(text_position_ids * attention_mask, dim=-1)  # (bsz,)
         else:
             eos_mask_idx = torch.argmax(position_ids * attention_mask, dim=-1)  # (bsz,)
+        # At the eos_mask_idx position of each sample, fill in the corresponding scores.
+        # torch.arange(n_transition) generates [0,1,2,...,bsz-1] as indices for the batch dimension.
         token_level_scores[torch.arange(n_transition), eos_mask_idx] = scores
         # Only take the last response_length part of the sequence to get the token-level scores for the model's response part.
         token_level_scores = token_level_scores[:, -max_response_length:]
