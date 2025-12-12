@@ -1438,9 +1438,95 @@ class LightningStoreClient(LightningStore):
                             f"Server is shutting down. Request {method}: {path} cannot be completed."
                         ) from net_exc
                     break  # server is not healthy, do not retry
+            except asyncio.CancelledError as cancel_exc:
+                # Cancellation can occur during async operations, especially during shutdown
+                client_logger.debug(f"Request cancelled: {method}: {path}", exc_info=True)
+                # Check if server is shutting down - if so, convert to ServerShutdownError
+                # Also check health to see if server is actually down (might not have set flag yet)
+                with self._lock:
+                    is_shutting_down = self._server_shutting_down
+
+                # If flag is already set, convert immediately
+                if is_shutting_down:
+                    client_logger.debug(
+                        f"Server is shutting down. Converting CancelledError to ServerShutdownError for {method}: {path}"
+                    )
+                    raise ServerShutdownError(
+                        f"Server is shutting down. Request {method}: {path} was cancelled."
+                    ) from cancel_exc
+
+                # Flag not set - check health, but handle cancellation of health check itself
+                # Cancellation during network operations usually indicates server shutdown or connection loss
+                # Be conservative: only re-raise if we can definitively prove server is healthy
+                try:
+                    # Use a timeout to prevent health check from hanging
+                    is_healthy = await asyncio.wait_for(
+                        self._wait_until_healthy(session), timeout=1.0  # Quick health check with timeout
+                    )
+                    if not is_healthy:
+                        # Health check failed - server is down
+                        with self._lock:
+                            self._server_shutting_down = True
+                        client_logger.debug(
+                            f"Server is shutting down. Converting CancelledError to ServerShutdownError for {method}: {path}"
+                        )
+                        raise ServerShutdownError(
+                            f"Server is shutting down. Request {method}: {path} was cancelled."
+                        ) from cancel_exc
+                    # Server is healthy - this might be a genuine cancellation
+                    # However, during shutdown, health check might succeed briefly before server dies
+                    # Be conservative: if CancelledError occurs during network op, assume shutdown
+                    # unless we're very confident it's a genuine cancellation
+                    # For now, convert to ServerShutdownError to be safe (caller can handle it gracefully)
+                    client_logger.debug(
+                        f"CancelledError during network operation. Converting to ServerShutdownError for safety: {method}: {path}"
+                    )
+                    raise ServerShutdownError(
+                        f"Request {method}: {path} was cancelled (likely due to server shutdown)."
+                    ) from cancel_exc
+                except asyncio.TimeoutError:
+                    # Health check timed out - server is likely down
+                    with self._lock:
+                        self._server_shutting_down = True
+                    client_logger.debug(
+                        f"Health check timed out. Converting CancelledError to ServerShutdownError for {method}: {path}"
+                    )
+                    raise ServerShutdownError(
+                        f"Server is shutting down. Request {method}: {path} was cancelled."
+                    ) from cancel_exc
+                except asyncio.CancelledError:
+                    # Health check itself was cancelled - this strongly suggests server shutdown
+                    # Convert to ServerShutdownError to be safe
+                    with self._lock:
+                        self._server_shutting_down = True
+                    client_logger.debug(
+                        f"Health check was cancelled. Converting CancelledError to ServerShutdownError for {method}: {path}"
+                    )
+                    raise ServerShutdownError(
+                        f"Server is shutting down. Request {method}: {path} was cancelled."
+                    ) from cancel_exc
 
         # exhausted retries
         assert last_exc is not None
+        # Before raising, check if it's a network exception and server is shutting down
+        if isinstance(
+            last_exc,
+            (
+                aiohttp.ServerDisconnectedError,
+                aiohttp.ClientConnectorError,
+                aiohttp.ClientOSError,
+                asyncio.TimeoutError,
+            ),
+        ):
+            with self._lock:
+                is_shutting_down = self._server_shutting_down
+            if is_shutting_down:
+                client_logger.debug(
+                    f"Server is shutting down. Converting {type(last_exc).__name__} to ServerShutdownError for {method}: {path}"
+                )
+                raise ServerShutdownError(
+                    f"Server is shutting down. Request {method}: {path} cannot be completed."
+                ) from last_exc
         raise last_exc
 
     async def close(self):

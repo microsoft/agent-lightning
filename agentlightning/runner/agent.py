@@ -292,10 +292,10 @@ class LitAgentRunner(Runner[T_task]):
             # We add it to the store manually
             try:
                 await store.add_otel_span(rollout.rollout_id, rollout.attempt.attempt_id, reward_span)
-            except ServerShutdownError:
-                # Server is shutting down - handle gracefully without traceback
+            except (ServerShutdownError, asyncio.CancelledError):
+                # Server is shutting down or request was cancelled - handle gracefully without traceback
                 logger.debug(
-                    f"{self._log_prefix(rollout.rollout_id)} Server is shutting down. "
+                    f"{self._log_prefix(rollout.rollout_id)} Server is shutting down or request cancelled. "
                     "Skipping add_otel_span for reward span."
                 )
             trace_spans.append(reward_span)
@@ -316,10 +316,10 @@ class LitAgentRunner(Runner[T_task]):
                             await store.add_otel_span(
                                 rollout.rollout_id, rollout.attempt.attempt_id, cast(ReadableSpan, span)
                             )
-                        except ServerShutdownError:
-                            # Server is shutting down - handle gracefully without traceback
+                        except (ServerShutdownError, asyncio.CancelledError):
+                            # Server is shutting down or request was cancelled - handle gracefully without traceback
                             logger.debug(
-                                f"{self._log_prefix(rollout.rollout_id)} Server is shutting down. "
+                                f"{self._log_prefix(rollout.rollout_id)} Server is shutting down or request cancelled. "
                                 f"Skipping add_otel_span for span: {span.name}"
                             )
                 else:
@@ -543,9 +543,11 @@ class LitAgentRunner(Runner[T_task]):
                     await store.update_attempt(rollout_id, next_rollout.attempt.attempt_id, status="failed")
                 else:
                     await store.update_attempt(rollout_id, next_rollout.attempt.attempt_id, status="succeeded")
-            except ServerShutdownError:
-                # Server is shutting down - handle gracefully without traceback
-                logger.debug(f"{self._log_prefix(rollout_id)} Server is shutting down. Skipping update_attempt.")
+            except (ServerShutdownError, asyncio.CancelledError):
+                # Server is shutting down or request was cancelled - handle gracefully without traceback
+                logger.debug(
+                    f"{self._log_prefix(rollout_id)} Server is shutting down or request cancelled. Skipping update_attempt."
+                )
             except Exception:
                 logger.exception(
                     f"{self._log_prefix(rollout_id)} Exception during update_attempt. Giving up the update."
@@ -600,10 +602,10 @@ class LitAgentRunner(Runner[T_task]):
                     await store.update_attempt(
                         next_rollout.rollout_id, next_rollout.attempt.attempt_id, worker_id=self.get_worker_id()
                     )
-                except ServerShutdownError:
-                    # Server is shutting down - handle gracefully without traceback
+                except (ServerShutdownError, asyncio.CancelledError):
+                    # Server is shutting down or request was cancelled - handle gracefully without traceback
                     logger.debug(
-                        f"{self._log_prefix()} Server is shutting down. Skipping update_attempt for rollout claim."
+                        f"{self._log_prefix()} Server is shutting down or request cancelled. Skipping update_attempt for rollout claim."
                     )
                     continue
                 except Exception:
