@@ -97,10 +97,11 @@ def config_ci() -> Dict[str, Any]:
             f.write(f"run_name={EXPERIMENT_NAME}\n")
 
     config = deepcopy(RL_CONFIG)
+    config["data"]["train_batch_size"] = 16
     config["trainer"]["n_gpus_per_node"] = 1
-    config["trainer"]["total_training_steps"] = 6
+    config["trainer"]["total_training_steps"] = 4
     config["trainer"]["val_before_train"] = True
-    config["trainer"]["test_freq"] = 3
+    config["trainer"]["test_freq"] = 2
     return config
 
 
