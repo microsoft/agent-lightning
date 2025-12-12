@@ -37,16 +37,10 @@ jobs:
       - name: Upgrade dependencies (latest)
         run: uv lock --upgrade
         if: matrix.setup-script == 'latest'
-      - name: Sync dependencies (latest)
+      - name: Sync dependencies
         run: |
           uv sync --frozen --no-default-groups --extra verl \
-            --group dev --group experiment --group chartqa --group torch-gpu-stable
-        if: matrix.setup-script == 'latest'
-      - name: Sync dependencies (stable & legacy)
-        run: |
-          uv sync --frozen --no-default-groups --extra verl \
-            --group dev --group experiment --group chartqa --group torch-gpu-stable
-        if: matrix.setup-script != 'latest'
+            --group dev --group experiment --group image --group langchain --group vllm-0-10-2 --group torch-gpu-stable
       - name: Freeze dependencies
         run: |
           set -ex
