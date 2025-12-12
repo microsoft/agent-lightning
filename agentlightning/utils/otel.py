@@ -295,7 +295,9 @@ def filter_and_unflatten_attributes(attributes: Dict[str, Any], prefix: str) -> 
     return unflatten_attributes(stripped_attributes)
 
 
-def flatten_attributes(nested_data: Union[Dict[str, Any], List[Any]]) -> Dict[str, Any]:
+def flatten_attributes(
+    nested_data: Union[Dict[str, Any], List[Any]], *, expand_leaf_lists: bool = True
+) -> Dict[str, Any]:
     """Flatten a nested dictionary or list into a flat dictionary with dotted keys.
 
     This function recursively traverses dictionaries and lists, producing a flat
@@ -308,14 +310,25 @@ def flatten_attributes(nested_data: Union[Dict[str, Any], List[Any]]) -> Dict[st
         {"a.b": 1, "a.c.0": 2, "a.c.1": 3}
 
     Args:
-        nested_data: A nested structure composed of dictionaries, lists, or
-            primitive values.
+        nested_data: A nested structure composed of dictionaries, lists, or primitive values.
+        expand_leaf_lists: Whether to expand lists composed only of primitive values.
+            When ``False``, lists of str/int/float/bool are treated as leaf values and
+            stored without enumerating their indices.
 
     Returns:
         A flat dictionary mapping dotted-string paths to primitive values.
     """
 
     flat: Dict[str, Any] = {}
+
+    def _primitive_type(value: Any) -> Union[type[str], type[int], type[float], type[bool]]:
+        if isinstance(value, bool):
+            return bool
+        if isinstance(value, int):
+            return int
+        if isinstance(value, float):
+            return float
+        return str
 
     def _walk(value: Any, prefix: str = "") -> None:
         if isinstance(value, dict):
@@ -327,7 +340,22 @@ def flatten_attributes(nested_data: Union[Dict[str, Any], List[Any]]) -> Dict[st
                 new_prefix = f"{prefix}.{k}" if prefix else k
                 _walk(v, new_prefix)
         elif isinstance(value, list):
-            for idx, item in enumerate(cast(List[Any], value)):
+            maybe_list = cast(List[Any], value)
+            is_leaf_candidate = bool(maybe_list) and all(
+                isinstance(item, (str, int, float, bool)) for item in maybe_list
+            )
+            if not expand_leaf_lists and is_leaf_candidate and prefix:
+                primitive_types = {_primitive_type(item) for item in maybe_list}
+                if len(primitive_types) == 1:
+                    flat[prefix] = maybe_list
+                    return
+                logger.warning(
+                    "List attribute '%s' contains mixed primitive types %s; expanding indexed keys instead.",
+                    prefix,
+                    primitive_types,
+                )
+
+            for idx, item in enumerate(maybe_list):
                 new_prefix = f"{prefix}.{idx}" if prefix else str(idx)
                 _walk(item, new_prefix)
         else:
@@ -404,13 +432,20 @@ def unflatten_attributes(flat_data: Dict[str, Any]) -> Union[Dict[str, Any], Lis
 
 def sanitize_attribute_value(object: Any) -> AttributeValue:
     """Sanitize an attribute value to be a valid OpenTelemetry attribute value."""
-    if isinstance(object, (str, int, float, bool, bytes)):
+    if isinstance(object, (str, int, float, bool)):
         return object
+
+    if isinstance(object, list):
+        try:
+            return sanitize_list_attribute_sanity(cast(List[Any], object))
+        except ValueError as exc:
+            logger.warning(f"Failed to sanitize list attribute. Fallback to JSON serialization: {exc}")
+
     try:
-        # This include null, list, dict, etc.
+        # This include null, dict, etc.
         serialized = json.dumps(object)
     except (TypeError, ValueError) as exc:
-        raise ValueError(f"Object must be JSON serializable, got: {type(object)}.") from exc
+        raise ValueError(f"Object must be JSON serializable, got: {type(cast(Any, object))}.") from exc
     return serialized
 
 
@@ -425,16 +460,33 @@ def sanitize_attributes(attributes: Dict[str, Any]) -> Attributes:
     return result
 
 
-def check_attributes_sanity(attributes: Dict[Any, Any]) -> None:
-    """Check if a dictionary of attributes is a valid OpenTelemetry attributes.
+def sanitize_list_attribute_sanity(maybe_list: List[Any]) -> AttributeValue:
+    """Try to sanitize a list of attributes to be a valid OpenTelemetry attribute value.
 
-    This sanity check should be more strict than the OpenTelemetry allowed attribute types.
-    It doesn't allow lists.
+    Raise error if the list contains multiple types of primitive values.
     """
+    if all(isinstance(item, str) for item in maybe_list):
+        return list[str](maybe_list)
+    if all(isinstance(item, bool) for item in maybe_list):
+        return list[bool](maybe_list)
+    if all(isinstance(item, (int, bool)) for item in maybe_list):
+        return [int(item) for item in maybe_list]
+    if all(isinstance(item, (float, int, bool)) for item in maybe_list):
+        return [float(item) for item in maybe_list]
+
+    list_types: List[Any] = [type(item) for item in maybe_list]
+    raise ValueError(f"List must contain only one type of primitive values, got: {set(list_types)}.")
+
+
+def check_attributes_sanity(attributes: Dict[Any, Any]) -> None:
+    """Check if a dictionary of attributes is a valid OpenTelemetry attributes."""
     for k, v in attributes.items():
         if not isinstance(k, str):
             raise ValueError(f"Attribute key must be a string, got {type(k)} for key '{k}'")
-        if not isinstance(v, (str, int, float, bool, bytes)):
-            raise ValueError(
-                f"Attribute value must be a string, int, float, bool, or bytes, got {type(v)} for value '{v}'"
-            )
+        if isinstance(v, list):
+            try:
+                sanitize_list_attribute_sanity(cast(List[Any], v))
+            except ValueError as exc:
+                raise ValueError(f"Failed to sanitize list attribute '{k}': {exc}") from exc
+        elif not isinstance(v, (str, int, float, bool)):
+            raise ValueError(f"Attribute value must be a string, int, float, bool, o, got {type(v)} for value '{v}'")

@@ -397,7 +397,7 @@ class WeaveTracer(Tracer):
         if call.exception:
             attributes[WeaveSpanAttributes.WEAVE_EXCEPTION.value] = call.exception
 
-        sanitized_attributes = sanitize_attributes(flatten_attributes(attributes))
+        sanitized_attributes = sanitize_attributes(flatten_attributes(attributes, expand_leaf_lists=False))
 
         context = SpanContext(
             trace_id=call.trace_id,

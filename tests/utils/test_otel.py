@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from types import SimpleNamespace
 from typing import Any, Dict, List
@@ -16,6 +17,7 @@ from agentlightning.semconv import LightningSpanAttributes, LinkPydanticModel
 from agentlightning.types.tracer import Span
 from agentlightning.utils import otel
 from agentlightning.utils.otel import (
+    check_attributes_sanity,
     extract_links_from_attributes,
     extract_tags_from_attributes,
     filter_and_unflatten_attributes,
@@ -26,6 +28,9 @@ from agentlightning.utils.otel import (
     make_link_attributes,
     make_tag_attributes,
     query_linked_spans,
+    sanitize_attribute_value,
+    sanitize_attributes,
+    sanitize_list_attribute_sanity,
     unflatten_attributes,
 )
 
@@ -88,6 +93,48 @@ def test_flatten_nested_lists_and_dicts() -> None:
         "users.1.name": "Bob",
         # Empty list yields no extra keys
     }
+
+
+def test_flatten_leaf_lists_can_stay_compact() -> None:
+    data = {"tags": ["fast", "reliable"]}
+    result = flatten_attributes(data, expand_leaf_lists=False)
+    assert result == {"tags": ["fast", "reliable"]}
+
+
+def test_flatten_non_leaf_lists_still_expand_when_leaf_expansion_disabled() -> None:
+    data = {"users": [{"name": "Alice"}, {"name": "Bob"}]}
+    result = flatten_attributes(data, expand_leaf_lists=False)
+    assert result == {
+        "users.0.name": "Alice",
+        "users.1.name": "Bob",
+    }
+
+
+def test_flatten_leaf_lists_with_mixed_types_warns_and_expands(caplog: pytest.LogCaptureFixture) -> None:
+    data = {"values": [1, "two"]}
+    caplog.set_level(logging.WARNING, logger="agentlightning.utils.otel")
+
+    result = flatten_attributes(data, expand_leaf_lists=False)
+
+    assert result == {
+        "values.0": 1,
+        "values.1": "two",
+    }
+    assert "mixed primitive types" in caplog.text
+
+
+def test_flatten_leaf_lists_with_mixed_numbers_warns_and_expands(caplog: pytest.LogCaptureFixture) -> None:
+    data = {"values": [1, 2.0, 3]}
+    caplog.set_level(logging.WARNING, logger="agentlightning.utils.otel")
+
+    result = flatten_attributes(data, expand_leaf_lists=False)
+
+    assert result == {
+        "values.0": 1,
+        "values.1": 2.0,
+        "values.2": 3,
+    }
+    assert "mixed primitive types" in caplog.text
 
 
 def test_flatten_mixed_types_and_none() -> None:
@@ -284,6 +331,93 @@ def test_round_trip_with_empty_list_information_loss_is_expected() -> None:
     reconstructed = unflatten_attributes(flat)
     assert reconstructed == {}
     assert reconstructed != data  # explicit documentation of the behavior
+
+
+def test_sanitize_attribute_value_handles_primitives_and_lists() -> None:
+    assert sanitize_attribute_value("text") == "text"
+    assert sanitize_attribute_value(42) == 42
+    assert sanitize_attribute_value(3.14) == 3.14
+    assert sanitize_attribute_value(True) is True
+    assert sanitize_attribute_value([True, 2]) == [1, 2]
+
+
+def test_sanitize_attribute_value_falls_back_to_json_for_hybrid_lists(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.WARNING, logger="agentlightning.utils.otel")
+    result = sanitize_attribute_value([1, "two"])
+    assert result == json.dumps([1, "two"])
+    assert "Failed to sanitize list attribute" in caplog.text
+
+
+def test_sanitize_attribute_value_rejects_non_serializable_objects() -> None:
+    class Unserializable:
+        pass
+
+    with pytest.raises(ValueError, match="Object must be JSON serializable"):
+        sanitize_attribute_value(Unserializable())
+
+
+def test_sanitize_attributes_returns_clean_values() -> None:
+    attributes = {
+        "name": "agent",
+        "enabled": True,
+        "scores": [1, True],
+        "flags": [True, False],
+    }
+
+    result = sanitize_attributes(attributes)
+    assert result["name"] == "agent"
+    assert result["enabled"] is True
+    assert result["scores"] == [1, 1]
+    assert result["flags"] == [True, False]
+
+
+def test_sanitize_attributes_exposes_key_in_error() -> None:
+    class Bad:
+        pass
+
+    attributes = {"ok": "value", "bad": Bad()}
+    with pytest.raises(ValueError, match="Failed to sanitize attribute 'bad'"):
+        sanitize_attributes(attributes)
+
+
+def test_sanitize_list_attribute_sanity_supports_primitive_lists() -> None:
+    assert sanitize_list_attribute_sanity(["a", "b"]) == ["a", "b"]
+    assert sanitize_list_attribute_sanity([True, False]) == [True, False]
+    assert sanitize_list_attribute_sanity([1, False]) == [1, 0]
+    assert sanitize_list_attribute_sanity([1.0, 2, True]) == [1.0, 2.0, 1.0]
+
+
+def test_sanitize_list_attribute_sanity_rejects_mixed_types() -> None:
+    with pytest.raises(ValueError, match="List must contain only one type of primitive values"):
+        sanitize_list_attribute_sanity([1, "two"])
+
+
+def test_check_attributes_sanity_accepts_valid_payload() -> None:
+    attributes: Dict[str, Any] = {
+        "name": "agent",
+        "count": 3,
+        "ratio": 0.5,
+        "enabled": False,
+        "flags": [True, False],
+        "scores": [1, True],
+    }
+
+    check_attributes_sanity(attributes)
+
+
+def test_check_attributes_sanity_requires_string_keys() -> None:
+    with pytest.raises(ValueError, match="Attribute key must be a string"):
+        check_attributes_sanity({1: "value"})  # type: ignore[arg-type]
+
+
+def test_check_attributes_sanity_wraps_list_errors() -> None:
+    with pytest.raises(ValueError, match="Failed to sanitize list attribute 'mixed'"):
+        check_attributes_sanity({"mixed": [1, "two"]})
+
+
+def test_check_attributes_sanity_rejects_non_primitive_values() -> None:
+    with pytest.raises(ValueError, match="Attribute value must be a string"):
+        check_attributes_sanity({"bad": {"nested": "value"}})
 
 
 def test_make_and_extract_link_attributes_round_trip() -> None:
