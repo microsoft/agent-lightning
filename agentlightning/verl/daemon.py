@@ -236,7 +236,7 @@ class AgentModeDaemon:
                 URLs can be http(s):// URLs or file:// URIs, or data: URIs.
         """
         from PIL import Image
-        from verl.utils.dataset.vision_utils import process_image
+        from verl.utils.dataset.vision_utils import process_image  # pyright: ignore[reportUnknownVariableType]
 
         if self.processor is None or not image_urls:
             return None
@@ -264,9 +264,9 @@ class AgentModeDaemon:
 
         get_rope_index: Callable[..., torch.Tensor]
         if "Qwen3VL" in self.processor.__class__.__name__:
-            from verl.models.transformers.qwen3_vl import get_rope_index
+            from verl.models.transformers.qwen3_vl import get_rope_index  # pyright: ignore[reportUnknownVariableType]
         else:
-            from verl.models.transformers.qwen2_vl import get_rope_index
+            from verl.models.transformers.qwen2_vl import get_rope_index  # pyright: ignore[reportUnknownVariableType]
 
         vision_pos = get_rope_index(
             self.processor, input_ids=input_ids, image_grid_thw=image_grid_thw, attention_mask=attention_mask
