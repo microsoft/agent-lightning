@@ -45,6 +45,7 @@ This downloads the ChartQA dataset from HuggingFace (`HuggingFaceM4/ChartQA`), s
 | `prepare_data.py` | Script to download ChartQA dataset from HuggingFace and prepare parquet files |
 | `prompts.py` | Prompt templates for the agent workflow |
 | `multimodal_utils.py` | Utility functions for encoding images to base64 |
+| `env_var.py` | Environment variables and configurations |
 | `data/` | Directory containing images and parquet files after download |
 
 ## Running Examples

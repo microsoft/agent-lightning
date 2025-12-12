@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft. All rights reserved.
+
 import os
 
 __all__ = [
