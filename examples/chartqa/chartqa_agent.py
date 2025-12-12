@@ -2,23 +2,16 @@
 
 """ChartQA agent demonstrating LangGraph-based visual reasoning with refinement.
 
-This module defines [ChartQAAgent][] plus the supporting prompt utilities used by
-``debug_chartqa_agent.py`` and ``train_chartqa_agent.py``. The workflow mirrors the
-structured steps documented in ``examples/calc_x/calc_agent.py`` while extending them
-to multimodal prompts:
+This module defines `ChartQAAgent` plus the supporting prompt utilities used by
+`debug_chartqa_agent.py` and `train_chartqa_agent.py`.
 
-1. ``analyze_chart`` observes and summarizes the chart.
-2. ``extract_data`` calls a text-only LLM to extract the requested values.
-3. ``calculate_answer`` runs calculations grounded in prior steps.
-4. ``check_answer`` verifies reasoning quality.
-5. ``refine_answer`` conditionally patches mistakes before responding.
+1. `analyze_chart` observes and summarizes the chart.
+2. `extract_data` calls a text-only LLM to extract the requested values.
+3. `calculate_answer` runs calculations grounded in prior steps.
+4. `check_answer` verifies reasoning quality.
+5. `refine_answer` conditionally patches mistakes before responding.
 
-Example usage:
-
-```bash
-python debug_chartqa_agent.py
-python train_chartqa_agent.py debug --n-runners 2
-```
+Example usage can be found in `debug_chartqa_agent.py` and `train_chartqa_agent.py`.
 """
 
 from __future__ import annotations
