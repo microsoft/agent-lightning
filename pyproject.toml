@@ -11,7 +11,6 @@ dependencies = [
   "setproctitle",
   "flask",
   "agentops>=0.4.13",
-  "httpdbg",
   "uvicorn",
   "fastapi",
   "aiohttp",
@@ -119,7 +118,6 @@ torch-legacy = [
   "torchvision==0.22.0",
   "transformers==4.53.3",
   "tokenizers>=0.21,<0.22",
-  "flash-attn==2.8.1",
   "vllm==0.9.2",
   "litellm[proxy]==1.74.15",
 ]
@@ -172,7 +170,7 @@ trl = [
 tinker = [
   {include-group = "torch-stable"},
   "tinker>=0.2.2",
-  "tinker_cookbook",
+  "tinker_cookbook>=0.1.0",
   "wandb",
 ]
 
@@ -286,7 +284,6 @@ torch = [
   { index = "pytorch-cu128", group = "torch-cu128" },
   { index = "pytorch-cpu", group = "torch-cpu" },
 ]
-tinker_cookbook = { git = "https://github.com/thinking-machines-lab/tinker-cookbook" }
 
 [[tool.uv.index]]
 name = "pypi"
@@ -341,6 +338,9 @@ markers = [
   "agentops: tests that require AgentOps",
   "llmproxy: tests that require LiteLLM",
   "mongo: tests that require MongoDB",
+  "store: tests for agentlightning.store module",
+  "prometheus: tests that require Prometheus",
+  "utils: tests for utility functions",
 ]
 
 [tool.black]

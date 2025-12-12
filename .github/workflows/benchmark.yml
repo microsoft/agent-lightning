@@ -18,7 +18,7 @@ jobs:
           - id: mongo
             compose_file: compose.prometheus-mongo-store.yml
         workload:
-          - id: minimal-production
+          - id: scenario-minimal-scale
             display: Minimal production scale
             kind: scenario
             store_workers: 4
@@ -33,7 +33,7 @@ jobs:
               --n-runners 32
               --max-rounds 6
               --sleep-seconds 0.5
-          - id: medium-production
+          - id: scenario-medium-scale
             display: Medium production scale
             kind: scenario
             store_workers: 16
@@ -48,7 +48,22 @@ jobs:
               --n-runners 100
               --max-rounds 10
               --sleep-seconds 0.1
-          - id: large-batch
+          - id: scenario-midhigh-scale
+            display: Mid-high production scale
+            kind: scenario
+            store_workers: 24
+            runner:
+              - self-hosted
+              - 1ES.Pool=agl-runner-cpu
+            timeout: 60
+            args: >-
+              --mode batch
+              --total-tasks 20000
+              --batch-size 2048
+              --n-runners 256
+              --max-rounds 8
+              --sleep-seconds 0.1
+          - id: scenario-large-batch
             display: Large batch waves
             kind: scenario
             store_workers: 32
@@ -63,7 +78,7 @@ jobs:
               --n-runners 256
               --max-rounds 6
               --sleep-seconds 0.1
-          - id: long-queues
+          - id: scenario-long-queues
             display: Long rollout queues
             kind: scenario
             store_workers: 32
@@ -79,7 +94,7 @@ jobs:
               --remaining-tasks 4096
               --max-rounds 4
               --sleep-seconds 0.1
-          - id: high-concurrency
+          - id: scenario-high-concurrency
             display: High-throughput concurrent requests
             kind: scenario
             store_workers: 32
@@ -94,7 +109,7 @@ jobs:
               --n-runners 256
               --max-rounds 2
               --sleep-seconds 0.1
-          - id: heavy-traces
+          - id: scenario-heavy-traces
             display: Heavy rollouts with deep traces
             kind: scenario
             store_workers: 64
@@ -149,7 +164,7 @@ jobs:
           - id: micro-metrics
             display: Multi-metric fan-out
             kind: micro
-            store_workers: 1
+            store_workers: 8
             runner: ubuntu-latest
             timeout: 15
             cli: metrics
@@ -166,7 +181,7 @@ jobs:
       ANALYSIS_FILE: ${{ format('analysis-{0}.log', matrix.workload.id) }}
       SUMMARY_FILE: ${{ format('summary-{0}.log', matrix.workload.id) }}
       PROM_ARCHIVE_BASENAME: ${{ format('prometheus-{0}-{1}', matrix.workload.id, matrix.backend.id) }}
-      ARTIFACT_NAME: ${{ format('{0}-{1}-{2}', matrix.workload.kind == 'micro' && 'micro-benchmark' || 'benchmark', matrix.workload.id, matrix.backend.id) }}
+      ARTIFACT_NAME: ${{ format('{0}-{1}', matrix.workload.id, matrix.backend.id) }}
     steps:
       - uses: actions/checkout@v4
 
@@ -200,6 +215,9 @@ jobs:
           set -euo pipefail
           for attempt in {1..60}; do
             if curl -fsS "$STORE_API_URL/health" >/dev/null 2>&1; then
+              sleep 1
+              curl -fsS "$STORE_API_URL/rollouts"  # Warm up the scraper
+              sleep 15  # Allow some time for the baseline metrics to be established
               exit 0
             fi
             sleep 1
@@ -297,6 +315,119 @@ jobs:
           fi
 
       - name: Upload workload artifacts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: ${{ env.ARTIFACT_DIR }}
+          if-no-files-found: error
+
+  collection-benchmarks:
+    name: collection (${{ matrix.backend.id }}, ${{ matrix.workload.id }})
+    runs-on: ${{ matrix.backend.runner }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        backend:
+          - id: memory
+            needs_mongo: false
+            runner: ubuntu-latest
+          - id: mongo
+            needs_mongo: true
+            runner: ubuntu-latest
+        workload:
+          - id: high-insert
+            total_tasks: 100000
+            concurrency: 2048
+            type: insert
+          - id: medium-insert
+            total_tasks: 100000
+            concurrency: 128
+            type: insert
+          - id: low-insert
+            total_tasks: 100000
+            concurrency: 4
+            type: insert
+          - id: high-dequeue
+            total_tasks: 100000
+            concurrency: 2048
+            type: dequeue
+          - id: medium-dequeue
+            total_tasks: 100000
+            concurrency: 128
+            type: dequeue
+          - id: low-dequeue
+            total_tasks: 100000
+            concurrency: 4
+            type: dequeue
+    env:
+      ARTIFACT_DIR: ${{ format('artifacts/{0}-{1}', matrix.backend.id, matrix.workload.id) }}
+      SUMMARY_FILE: ${{ format('artifacts/{0}-{1}/summary-{0}-{1}.jsonl', matrix.backend.id, matrix.workload.id) }}
+      ARTIFACT_NAME: ${{ format('collections-{0}-{1}', matrix.backend.id, matrix.workload.id) }}
+      MONGO_URI: mongodb://localhost:27017/?replicaSet=rs0
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          python-version: '3.12'
+
+      - name: Sync dependencies
+        run: uv sync --frozen --extra mongo --group core-stable --group dev
+
+      - name: Launch MongoDB
+        if: ${{ matrix.backend.needs_mongo }}
+        run: |
+          set -euo pipefail
+          cd docker
+          docker compose -f compose.mongo.yml down -v || true
+          docker compose -f compose.mongo.yml up -d --quiet-pull
+          for attempt in {1..60}; do
+            if docker compose -f compose.mongo.yml exec -T mongo mongosh --quiet --eval 'db.runCommand({ping:1})' >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "MongoDB did not become ready in time" >&2
+          docker compose -f compose.mongo.yml logs mongo
+          exit 1
+
+      - name: Run collection benchmark
+        run: |
+          set -euo pipefail
+          mkdir -p "$ARTIFACT_DIR"
+          echo "Running collection benchmark (backend=${{ matrix.backend.id }}, workload=${{ matrix.workload.id }})"
+          uv run --locked --no-sync python -m tests.benchmark.collection_benchmark \
+            "${{ matrix.workload.type }}" \
+            --backend "${{ matrix.backend.id }}" \
+            --total-tasks "${{ matrix.workload.total_tasks }}" \
+            --concurrency "${{ matrix.workload.concurrency }}" \
+            --task-prefix "${{ matrix.backend.id }}-${{ matrix.workload.id }}" \
+            --summary-file "$SUMMARY_FILE" \
+            --mongo-uri "$MONGO_URI" \
+            --mongo-database agentlightning_collection_bench
+
+      - name: Show collection benchmark summary
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          if [ -f "$SUMMARY_FILE" ]; then
+            echo "Collection benchmark summary (${{ matrix.backend.id }}):"
+            cat "$SUMMARY_FILE"
+          else
+            echo "Summary file not found: $SUMMARY_FILE"
+          fi
+
+      - name: Stop MongoDB
+        if: ${{ always() && matrix.backend.needs_mongo }}
+        run: |
+          set -euo pipefail
+          cd docker
+          docker compose -f compose.mongo.yml down -v || true
+
+      - name: Upload collection artifacts
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:

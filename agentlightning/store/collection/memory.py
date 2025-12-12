@@ -23,6 +23,7 @@ from typing import (
     Type,
     TypeVar,
     Union,
+    cast,
 )
 
 import aiologic
@@ -42,12 +43,15 @@ from agentlightning.types import (
 from agentlightning.utils.metrics import MetricsBackend
 
 from .base import (
+    AtomicLabels,
     AtomicMode,
     Collection,
+    DuplicatedPrimaryKeyError,
     FilterMap,
     KeyValue,
     LightningCollections,
     Queue,
+    ensure_numeric,
     normalize_filter_options,
     resolve_sort_options,
     tracked,
@@ -313,7 +317,9 @@ class ListBasedCollection(Collection[T]):
 
             if mode == "insert":
                 if exists:
-                    raise ValueError(f"Item already exists with primary key(s): {self._render_key_values(key_values)}")
+                    raise DuplicatedPrimaryKeyError(
+                        f"Item already exists with primary key(s): {self._render_key_values(key_values)}"
+                    )
                 parent[final_key] = item
                 self._size += 1
             else:  # upsert
@@ -603,7 +609,7 @@ class ListBasedCollection(Collection[T]):
         """Insert the given items.
 
         Raises:
-            ValueError: If any item with the same primary keys already exists.
+            DuplicatedPrimaryKeyError: If any item with the same primary keys already exists.
         """
         seen_keys: set[Tuple[Any, ...]] = set()
         prepared: List[T] = []
@@ -611,8 +617,8 @@ class ListBasedCollection(Collection[T]):
             self._ensure_item_type(item)
             key_values = self._extract_primary_key_values(item)
             if key_values in seen_keys:
-                raise ValueError(
-                    f"Insert payload contains duplicate primary key(s): {self._render_key_values(key_values)}"
+                raise DuplicatedPrimaryKeyError(
+                    f"Insert payload contains duplicated primary key(s): {self._render_key_values(key_values)}"
                 )
             seen_keys.add(key_values)
             prepared.append(item)
@@ -756,6 +762,33 @@ class DictBasedKeyValue(KeyValue[K, V]):
     async def set(self, key: K, value: V) -> None:
         self._values[key] = value
 
+    @tracked("inc")
+    async def inc(self, key: K, amount: V) -> V:
+        assert ensure_numeric(amount, description="amount")
+        if key in self._values:
+            current_value = self._values[key]
+            assert ensure_numeric(current_value, description=f"value for key {key!r}")
+            new_value = cast(V, current_value + amount)
+            self._values[key] = new_value
+        else:
+            new_value = amount
+            self._values[key] = new_value
+        return new_value
+
+    @tracked("chmax")
+    async def chmax(self, key: K, value: V) -> V:
+        assert ensure_numeric(value, description="value")
+        if key in self._values:
+            current_value = self._values[key]
+            assert ensure_numeric(current_value, description=f"value for key {key!r}")
+            if value > current_value:
+                self._values[key] = value
+                return value
+            return current_value
+        else:
+            self._values[key] = value
+            return value
+
     @tracked("pop")
     async def pop(self, key: K, default: V | None = None) -> V | None:
         return self._values.pop(key, default)
@@ -773,7 +806,7 @@ class InMemoryLightningCollections(LightningCollections):
 
     def __init__(self, lock_type: Literal["thread", "asyncio"], tracker: MetricsBackend | None = None):
         super().__init__(tracker=tracker)
-        self._lock = {
+        self._lock: Mapping[AtomicLabels, _LoopAwareAsyncLock | _ThreadSafeAsyncLock] = {
             "rollouts": _LoopAwareAsyncLock() if lock_type == "asyncio" else _ThreadSafeAsyncLock(),
             "attempts": _LoopAwareAsyncLock() if lock_type == "asyncio" else _ThreadSafeAsyncLock(),
             "spans": _LoopAwareAsyncLock() if lock_type == "asyncio" else _ThreadSafeAsyncLock(),
@@ -781,6 +814,7 @@ class InMemoryLightningCollections(LightningCollections):
             "workers": _LoopAwareAsyncLock() if lock_type == "asyncio" else _ThreadSafeAsyncLock(),
             "rollout_queue": _LoopAwareAsyncLock() if lock_type == "asyncio" else _ThreadSafeAsyncLock(),
             "span_sequence_ids": _LoopAwareAsyncLock() if lock_type == "asyncio" else _ThreadSafeAsyncLock(),
+            "generic": _LoopAwareAsyncLock() if lock_type == "asyncio" else _ThreadSafeAsyncLock(),
         }
         self._rollouts = ListBasedCollection(
             items=[], item_type=Rollout, primary_keys=["rollout_id"], id="rollouts", tracker=tracker
@@ -836,7 +870,12 @@ class InMemoryLightningCollections(LightningCollections):
 
     @asynccontextmanager
     async def atomic(
-        self, *, mode: AtomicMode = "rw", snapshot: bool = False, labels: Optional[Sequence[str]] = None, **kwargs: Any
+        self,
+        *,
+        mode: AtomicMode = "rw",
+        snapshot: bool = False,
+        labels: Optional[Sequence[AtomicLabels]] = None,
+        **kwargs: Any,
     ):
         """In-memory collections apply a lock outside. It doesn't need to manipulate the collections inside.
 

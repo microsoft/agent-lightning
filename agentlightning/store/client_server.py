@@ -270,6 +270,7 @@ class LightningStoreServer(LightningStore):
                 port=port,
                 launch_mode=launch_mode,
                 healthcheck_url=API_V1_AGL_PREFIX + "/health",
+                n_workers=n_workers,
             )
 
         store_capabilities = self.store.capabilities

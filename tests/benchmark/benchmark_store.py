@@ -157,11 +157,13 @@ class AlgorithmBatch(agl.Algorithm):
 
             pending = {rollout_id: task_name for rollout_id, task_name in batch_rollouts}
             completed_ids: Set[str] = set()
+            completed_ids_last_updated: int = 0
             while len(completed_ids) < len(batch_rollouts):
                 finished_rollouts = await store.wait_for_rollouts(
                     rollout_ids=[rollout_id for rollout_id, _ in batch_rollouts],
                     timeout=0.0,
                 )
+                complete_ids_updated: bool = False
                 for rollout in finished_rollouts:
                     rollout_id = rollout.rollout_id
                     if rollout_id in completed_ids:
@@ -171,6 +173,18 @@ class AlgorithmBatch(agl.Algorithm):
                     spans = await store.query_spans(rollout_id=rollout_id, attempt_id="latest")
                     check_spans(spans, pending[rollout_id])
                     completed_ids.add(rollout_id)
+                    complete_ids_updated = True
+
+                # Check and warn for stale rollouts
+                if complete_ids_updated:
+                    completed_ids_last_updated = 0
+                else:
+                    completed_ids_last_updated += 1
+                    if completed_ids_last_updated >= 10:
+                        unfinished_ids = set(rollout_id for rollout_id, _ in batch_rollouts) - completed_ids
+                        print(f"Stale rollouts: {unfinished_ids}")
+                        completed_ids_last_updated = 0
+
                 await asyncio.sleep(5.0)
 
     async def algorithm_batch_with_completion_threshold(self, total_tasks: int, batch_size: int, remaining_tasks: int):

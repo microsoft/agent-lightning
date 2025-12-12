@@ -38,6 +38,8 @@ from agentlightning.utils.server_launcher import LaunchMode, PythonServerLaunche
 
 from ..common.prometheus_stub import make_prometheus_stub
 
+pytestmark = [pytest.mark.store]
+
 
 def _make_span(rollout_id: str, attempt_id: str, sequence_id: int, name: str) -> Span:
     return Span(
