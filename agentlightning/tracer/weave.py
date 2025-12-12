@@ -49,9 +49,10 @@ def generate_span_id() -> str:
 
 
 class InMemoryTraceServer(TraceServerClientInterface):
-    """A minimal in-memory implementation of the TraceServerInterface for in-memory tracking of calls and objects.
+    """A minimal in-memory implementation of the TraceServerInterface.
 
-    It stores calls and objects in local dictionaries and returns valid Pydantic responses to satisfy the Weave client.
+    It stores calls and objects in local dictionaries and returns valid Pydantic
+    responses to satisfy the Weave client and FullTraceServerInterface protocol.
     """
 
     def __init__(self):
@@ -62,29 +63,25 @@ class InMemoryTraceServer(TraceServerClientInterface):
         self.feedback: List[tsi.FeedbackCreateReq] = []
 
     @classmethod
-    def from_env(cls, *args: Any, **kwargs: Any) -> InMemoryTraceServer:
+    def from_env(cls, *args: Any, **kwargs: Any) -> "InMemoryTraceServer":
         return cls()
 
     def server_info(self) -> ServerInfoRes:
         return ServerInfoRes(min_required_weave_python_version="0.52.22")
 
     def ensure_project_exists(self, entity: str, project: str) -> tsi.EnsureProjectExistsRes:
-        return tsi.EnsureProjectExistsRes(
-            project_name=project,
-        )
+        return tsi.EnsureProjectExistsRes(project_name=project)
 
-    # --- Call API (Functional) ---
+    # --- Call API ---
 
     @validate_call
     def call_start(self, req: tsi.CallStartReq) -> tsi.CallStartRes:
         request_content = req.start.model_dump(exclude_none=True)
-        # Generate ID if not provided
         call_id = request_content.get("id") or generate_id()
         trace_id = request_content.get("trace_id") or generate_id()
         request_content["id"] = call_id
         request_content["trace_id"] = trace_id
 
-        # Store initial state
         self.calls[call_id] = tsi.CallSchema(**request_content)
         return tsi.CallStartRes(id=call_id, trace_id=trace_id)
 
@@ -93,12 +90,10 @@ class InMemoryTraceServer(TraceServerClientInterface):
         if req.end.id in self.calls:
             request_content = req.end.model_dump(exclude_none=True)
             self.calls[req.end.id] = self.calls[req.end.id].model_copy(update=request_content)
-            print(self.calls[req.end.id])
         return tsi.CallEndRes()
 
     @validate_call
     def call_start_batch(self, req: tsi.CallCreateBatchReq) -> tsi.CallCreateBatchRes:
-        # Simple loop for batch compatibility
         for item in req.batch:
             if isinstance(item, tsi.CallStartReq):
                 self.call_start(item)
@@ -108,12 +103,7 @@ class InMemoryTraceServer(TraceServerClientInterface):
 
     @validate_call
     def call_read(self, req: tsi.CallReadReq) -> tsi.CallReadRes:
-        # Basic retrieval
         call_data = self.calls.get(req.id)
-        if not call_data:
-            # In a real server this might 404, but for dummy we return generic
-            return tsi.CallReadRes(call=None)
-
         return tsi.CallReadRes(call=call_data)
 
     @validate_call
@@ -122,7 +112,6 @@ class InMemoryTraceServer(TraceServerClientInterface):
 
     @validate_call
     def calls_query_stream(self, req: tsi.CallsQueryReq) -> Iterator[tsi.CallSchema]:
-        # Dumb filter: returns everything. Add filtering logic here if needed.
         yield from self.calls.values()
 
     @validate_call
@@ -130,24 +119,37 @@ class InMemoryTraceServer(TraceServerClientInterface):
         num_deleted = 0
         for call_id in req.call_ids:
             if call_id in self.calls:
-                self.calls.pop(call_id, None)
+                del self.calls[call_id]
                 num_deleted += 1
-        return tsi.CallsDeleteRes(num_deleted=len(req.call_ids))
+        return tsi.CallsDeleteRes(num_deleted=num_deleted)
 
     @validate_call
     def call_update(self, req: tsi.CallUpdateReq) -> tsi.CallUpdateRes:
-        # Do nothing for now
         return tsi.CallUpdateRes()
 
     @validate_call
     def calls_query_stats(self, req: tsi.CallsQueryStatsReq) -> tsi.CallsQueryStatsRes:
         return tsi.CallsQueryStatsRes(count=len(self.calls))
 
-    # --- Object API (Minimal Storage) ---
+    # --- Cost API ---
+
+    @validate_call
+    def cost_create(self, req: tsi.CostCreateReq) -> tsi.CostCreateRes:
+        return tsi.CostCreateRes(ids=[(generate_id(), generate_id()) for _ in req.costs])
+
+    @validate_call
+    def cost_query(self, req: tsi.CostQueryReq) -> tsi.CostQueryRes:
+        return tsi.CostQueryRes(results=[])
+
+    @validate_call
+    def cost_purge(self, req: tsi.CostPurgeReq) -> tsi.CostPurgeRes:
+        return tsi.CostPurgeRes()
+
+    # --- Object API (Legacy V1) ---
 
     @validate_call
     def obj_create(self, req: tsi.ObjCreateReq) -> tsi.ObjCreateRes:
-        digest = generate_id()  # Dummy digest
+        digest = generate_id()
         self.objs[digest] = req.obj
         return tsi.ObjCreateRes(digest=digest)
 
@@ -159,14 +161,19 @@ class InMemoryTraceServer(TraceServerClientInterface):
     def objs_query(self, req: tsi.ObjQueryReq) -> tsi.ObjQueryRes:
         return tsi.ObjQueryRes(objs=[])
 
+    @validate_call
     def obj_delete(self, req: tsi.ObjDeleteReq) -> tsi.ObjDeleteRes:
         return tsi.ObjDeleteRes(num_deleted=0)
 
-    # --- Tables (Mocked) ---
+    # --- Table API ---
 
     @validate_call
     def table_create(self, req: tsi.TableCreateReq) -> tsi.TableCreateRes:
         return tsi.TableCreateRes(digest=generate_id(), row_digests=[])
+
+    @validate_call
+    def table_create_from_digests(self, req: tsi.TableCreateFromDigestsReq) -> tsi.TableCreateFromDigestsRes:
+        return tsi.TableCreateFromDigestsRes(digest=generate_id())
 
     @validate_call
     def table_update(self, req: tsi.TableUpdateReq) -> tsi.TableUpdateRes:
@@ -184,19 +191,30 @@ class InMemoryTraceServer(TraceServerClientInterface):
     def table_query_stats(self, req: tsi.TableQueryStatsReq) -> tsi.TableQueryStatsRes:
         return tsi.TableQueryStatsRes(count=0)
 
-    # --- Files (Mocked) ---
+    @validate_call
+    def table_query_stats_batch(self, req: tsi.TableQueryStatsBatchReq) -> tsi.TableQueryStatsBatchRes:
+        return tsi.TableQueryStatsBatchRes(tables=[])
+
+    # --- Ref API ---
+
+    @validate_call
+    def refs_read_batch(self, req: tsi.RefsReadBatchReq) -> tsi.RefsReadBatchRes:
+        return tsi.RefsReadBatchRes(vals=[])
+
+    # --- File API ---
 
     def file_create(self, req: tsi.FileCreateReq) -> tsi.FileCreateRes:
         self.files[req.name] = req.content
         return tsi.FileCreateRes(digest=generate_id())
 
     def file_content_read(self, req: tsi.FileContentReadReq) -> tsi.FileContentReadRes:
-        return tsi.FileContentReadRes(content=b"dummy_content")
+        return tsi.FileContentReadRes(content=self.files.get(req.digest, b"dummy_content"))
 
     def files_stats(self, req: tsi.FilesStatsReq) -> tsi.FilesStatsRes:
-        return tsi.FilesStatsRes(total_size_bytes=sum(len(content) for content in self.files.values()))
+        total_size = sum(len(c) for c in self.files.values())
+        return tsi.FilesStatsRes(total_size_bytes=total_size)
 
-    # --- Feedback (Mocked) ---
+    # --- Feedback API ---
 
     @validate_call
     def feedback_create(self, req: tsi.FeedbackCreateReq) -> tsi.FeedbackCreateRes:
@@ -210,9 +228,11 @@ class InMemoryTraceServer(TraceServerClientInterface):
         )
 
     def feedback_create_batch(self, req: tsi.FeedbackCreateBatchReq) -> tsi.FeedbackCreateBatchRes:
+        results: List[tsi.FeedbackCreateRes] = []
         for item in req.batch:
-            self.feedback_create(item)
-        return tsi.FeedbackCreateBatchRes(res=[])
+            res = self.feedback_create(item)
+            results.append(res)
+        return tsi.FeedbackCreateBatchRes(res=results)
 
     @validate_call
     def feedback_query(self, req: tsi.FeedbackQueryReq) -> tsi.FeedbackQueryRes:
@@ -220,7 +240,7 @@ class InMemoryTraceServer(TraceServerClientInterface):
 
     @validate_call
     def feedback_purge(self, req: tsi.FeedbackPurgeReq) -> tsi.FeedbackPurgeRes:
-        self.feedback = []
+        self.feedback.clear()
         return tsi.FeedbackPurgeRes()
 
     @validate_call
@@ -232,19 +252,66 @@ class InMemoryTraceServer(TraceServerClientInterface):
             payload={},
         )
 
-    # --- Costs (Mocked) ---
+    # --- Action API ---
 
     @validate_call
-    def cost_query(self, req: tsi.CostQueryReq) -> tsi.CostQueryRes:
-        return tsi.CostQueryRes(results=[])
+    def actions_execute_batch(self, req: tsi.ActionsExecuteBatchReq) -> tsi.ActionsExecuteBatchRes:
+        return tsi.ActionsExecuteBatchRes()
+
+    # --- Execute LLM API ---
 
     @validate_call
-    def cost_create(self, req: tsi.CostCreateReq) -> tsi.CostCreateRes:
-        return tsi.CostCreateRes(ids=[])
+    def completions_create(self, req: tsi.CompletionsCreateReq) -> tsi.CompletionsCreateRes:
+        return tsi.CompletionsCreateRes(response={"choices": [{"text": "dummy completion"}]})
 
-    # --- V2 APIs (Mocked - Return Success) ---
-    # These return valid dummy IDs to prevent client crashes
+    @validate_call
+    def completions_create_stream(self, req: tsi.CompletionsCreateReq) -> Iterator[dict[str, Any]]:
+        yield {"choices": [{"text": "dummy "}]}
+        yield {"choices": [{"text": "stream"}]}
 
+    # --- Execute Image Generation API ---
+
+    @validate_call
+    def image_create(self, req: tsi.ImageGenerationCreateReq) -> tsi.ImageGenerationCreateRes:
+        return tsi.ImageGenerationCreateRes(response={})
+
+    # --- Project Statistics API ---
+
+    @validate_call
+    def project_stats(self, req: tsi.ProjectStatsReq) -> tsi.ProjectStatsRes:
+        return tsi.ProjectStatsRes(
+            trace_storage_size_bytes=0,
+            objects_storage_size_bytes=0,
+            tables_storage_size_bytes=0,
+            files_storage_size_bytes=0,
+        )
+
+    # --- Thread API ---
+
+    @validate_call
+    def threads_query_stream(self, req: tsi.ThreadsQueryReq) -> Iterator[tsi.ThreadSchema]:
+        yield from []
+
+    # --- Evaluation API (V1) ---
+
+    @validate_call
+    def evaluate_model(self, req: tsi.EvaluateModelReq) -> tsi.EvaluateModelRes:
+        return tsi.EvaluateModelRes(call_id=generate_id())
+
+    @validate_call
+    def evaluation_status(self, req: tsi.EvaluationStatusReq) -> tsi.EvaluationStatusRes:
+        return tsi.EvaluationStatusRes(status=tsi.EvaluationStatusNotFound())
+
+    # --- OTEL API ---
+
+    def otel_export(self, req: tsi.OtelExportReq) -> tsi.OtelExportRes:
+        return tsi.OtelExportRes()
+
+    # ==========================================
+    # Object Interface (V2 APIs)
+    # ==========================================
+
+    # --- Ops ---
     def op_create(self, req: tsi.OpCreateReq) -> tsi.OpCreateRes:
         return tsi.OpCreateRes(digest=generate_id(), object_id=generate_id(), version_index=0)
 
@@ -257,6 +324,7 @@ class InMemoryTraceServer(TraceServerClientInterface):
     def op_delete(self, req: tsi.OpDeleteReq) -> tsi.OpDeleteRes:
         return tsi.OpDeleteRes(num_deleted=0)
 
+    # --- Datasets ---
     def dataset_create(self, req: tsi.DatasetCreateReq) -> tsi.DatasetCreateRes:
         return tsi.DatasetCreateRes(digest=generate_id(), object_id=generate_id(), version_index=0)
 
@@ -269,20 +337,20 @@ class InMemoryTraceServer(TraceServerClientInterface):
     def dataset_delete(self, req: tsi.DatasetDeleteReq) -> tsi.DatasetDeleteRes:
         return tsi.DatasetDeleteRes(num_deleted=0)
 
-    def model_create(self, req: tsi.ModelCreateReq) -> tsi.ModelCreateRes:
-        return tsi.ModelCreateRes(
-            digest=generate_id(), object_id=generate_id(), version_index=0, model_ref=generate_id()
-        )
+    # --- Scorers ---
+    def scorer_create(self, req: tsi.ScorerCreateReq) -> tsi.ScorerCreateRes:
+        return tsi.ScorerCreateRes(digest=generate_id(), object_id=generate_id(), version_index=0, scorer=generate_id())
 
-    def model_read(self, req: tsi.ModelReadReq) -> tsi.ModelReadRes:
-        return tsi.ModelReadRes(model=None)  # type: ignore
+    def scorer_read(self, req: tsi.ScorerReadReq) -> tsi.ScorerReadRes:
+        return tsi.ScorerReadRes(scorer=None)  # type: ignore
 
-    def model_list(self, req: tsi.ModelListReq) -> Iterator[tsi.ModelReadRes]:
+    def scorer_list(self, req: tsi.ScorerListReq) -> Iterator[tsi.ScorerReadRes]:
         yield from []
 
-    def model_delete(self, req: tsi.ModelDeleteReq) -> tsi.ModelDeleteRes:
-        return tsi.ModelDeleteRes(num_deleted=0)
+    def scorer_delete(self, req: tsi.ScorerDeleteReq) -> tsi.ScorerDeleteRes:
+        return tsi.ScorerDeleteRes(num_deleted=0)
 
+    # --- Evaluations (V2) ---
     def evaluation_create(self, req: tsi.EvaluationCreateReq) -> tsi.EvaluationCreateRes:
         return tsi.EvaluationCreateRes(
             digest=generate_id(), object_id=generate_id(), version_index=0, evaluation_ref=generate_id()
@@ -297,33 +365,65 @@ class InMemoryTraceServer(TraceServerClientInterface):
     def evaluation_delete(self, req: tsi.EvaluationDeleteReq) -> tsi.EvaluationDeleteRes:
         return tsi.EvaluationDeleteRes(num_deleted=0)
 
+    # --- Models ---
+    def model_create(self, req: tsi.ModelCreateReq) -> tsi.ModelCreateRes:
+        return tsi.ModelCreateRes(
+            digest=generate_id(), object_id=generate_id(), version_index=0, model_ref=generate_id()
+        )
+
+    def model_read(self, req: tsi.ModelReadReq) -> tsi.ModelReadRes:
+        return tsi.ModelReadRes(model=None)  # type: ignore
+
+    def model_list(self, req: tsi.ModelListReq) -> Iterator[tsi.ModelReadRes]:
+        yield from []
+
+    def model_delete(self, req: tsi.ModelDeleteReq) -> tsi.ModelDeleteRes:
+        return tsi.ModelDeleteRes(num_deleted=0)
+
+    # --- Evaluation Runs ---
     def evaluation_run_create(self, req: tsi.EvaluationRunCreateReq) -> tsi.EvaluationRunCreateRes:
         return tsi.EvaluationRunCreateRes(evaluation_run_id=generate_id())
 
     def evaluation_run_read(self, req: tsi.EvaluationRunReadReq) -> tsi.EvaluationRunReadRes:
         return tsi.EvaluationRunReadRes(evaluation_run=None)  # type: ignore
 
+    def evaluation_run_list(self, req: tsi.EvaluationRunListReq) -> Iterator[tsi.EvaluationRunReadRes]:
+        yield from []
+
+    def evaluation_run_delete(self, req: tsi.EvaluationRunDeleteReq) -> tsi.EvaluationRunDeleteRes:
+        return tsi.EvaluationRunDeleteRes(num_deleted=0)
+
+    def evaluation_run_finish(self, req: tsi.EvaluationRunFinishReq) -> tsi.EvaluationRunFinishRes:
+        return tsi.EvaluationRunFinishRes(success=True)
+
+    # --- Predictions ---
     def prediction_create(self, req: tsi.PredictionCreateReq) -> tsi.PredictionCreateRes:
         return tsi.PredictionCreateRes(prediction_id=generate_id())
 
+    def prediction_read(self, req: tsi.PredictionReadReq) -> tsi.PredictionReadRes:
+        return tsi.PredictionReadRes(prediction=None)  # type: ignore
+
+    def prediction_list(self, req: tsi.PredictionListReq) -> Iterator[tsi.PredictionReadRes]:
+        yield from []
+
+    def prediction_delete(self, req: tsi.PredictionDeleteReq) -> tsi.PredictionDeleteRes:
+        return tsi.PredictionDeleteRes(num_deleted=0)
+
+    def prediction_finish(self, req: tsi.PredictionFinishReq) -> tsi.PredictionFinishRes:
+        return tsi.PredictionFinishRes(success=True)
+
+    # --- Scores ---
     def score_create(self, req: tsi.ScoreCreateReq) -> tsi.ScoreCreateRes:
         return tsi.ScoreCreateRes(score_id=generate_id())
 
-    # --- Unimplemented / Extras ---
+    def score_read(self, req: tsi.ScoreReadReq) -> tsi.ScoreReadRes:
+        return tsi.ScoreReadRes(score=None)  # type: ignore
 
-    def otel_export(self, req: tsi.OtelExportReq) -> tsi.OtelExportRes:
-        return tsi.OtelExportRes()
+    def score_list(self, req: tsi.ScoreListReq) -> Iterator[tsi.ScoreReadRes]:
+        yield from []
 
-    def project_stats(self, req: tsi.ProjectStatsReq) -> tsi.ProjectStatsRes:
-        return tsi.ProjectStatsRes(
-            trace_storage_size_bytes=0,
-            objects_storage_size_bytes=0,
-            tables_storage_size_bytes=0,
-            files_storage_size_bytes=0,
-        )
-
-    def image_create(self, req: tsi.ImageGenerationCreateReq) -> tsi.ImageGenerationCreateRes:
-        return tsi.ImageGenerationCreateRes(response={})
+    def score_delete(self, req: tsi.ScoreDeleteReq) -> tsi.ScoreDeleteRes:
+        return tsi.ScoreDeleteRes(num_deleted=0)
 
 
 class WeaveTracer(Tracer):
