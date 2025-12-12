@@ -6,8 +6,9 @@ import logging
 import os
 from typing import Any, Dict, List, cast
 
+import env_var as chartqa_env_var
 import pandas as pd
-from chartqa_agent import LitChartQAAgent
+from chartqa_agent import ChartQAAgent
 
 import agentlightning as agl
 
@@ -41,15 +42,14 @@ def debug_chartqa_agent():
     """Debug function to test agent with cloud APIs (default).
 
     Usage:
-        python chartqa_agent.py
+        python debug_chartqa_agent.py
 
     Environment variables:
         MODEL: Model name (default: gpt-4o)
         OPENAI_API_BASE: API endpoint (default: https://api.openai.com/v1)
         OPENAI_API_KEY: API key for authentication
     """
-    chartqa_dir = os.environ.get("CHARTQA_DATA_DIR", "data")
-    test_data_path = os.path.join(chartqa_dir, "test_chartqa.parquet")
+    test_data_path = os.path.join(chartqa_env_var.CHARTQA_DATA_DIR, "test_chartqa.parquet")
 
     if not os.path.exists(test_data_path):
         raise FileNotFoundError(f"Test data file {test_data_path} does not exist. Please run prepare_data.py first.")
@@ -57,8 +57,8 @@ def debug_chartqa_agent():
     df = pd.read_parquet(test_data_path).head(10)  # type: ignore
     test_data = cast(List[Dict[str, Any]], df.to_dict(orient="records"))  # type: ignore
 
-    model = os.environ.get("MODEL", "gpt-4.1-mini")
-    endpoint = os.environ.get("OPENAI_API_BASE", "https://api.openai.com/v1")
+    model = chartqa_env_var.OPENAI_MODEL
+    endpoint = chartqa_env_var.OPENAI_API_BASE
     logger.info(f"Debug data: {len(test_data)} samples, model: {model}, endpoint: {endpoint}")
 
     trainer = agl.Trainer(
@@ -71,17 +71,16 @@ def debug_chartqa_agent():
             )
         },
     )
-    trainer.dev(LitChartQAAgent(use_base64_images=True), test_data)
+    trainer.dev(ChartQAAgent(use_base64_images=True), test_data)
 
 
 def debug_chartqa_agent_with_llm_proxy():
     """Debug function to test agent with local vLLM server and LLMProxy.
 
     Usage:
-        USE_LLM_PROXY=1 OPENAI_API_BASE=http://localhost:8088/v1 python chartqa_agent.py
+        USE_LLM_PROXY=1 OPENAI_API_BASE=http://localhost:8088/v1 OPENAI_MODEL=Qwen/Qwen2-VL-2B-Instruct python debug_chartqa_agent.py
     """
-    chartqa_dir = os.environ.get("CHARTQA_DATA_DIR", "data")
-    test_data_path = os.path.join(chartqa_dir, "test_chartqa.parquet")
+    test_data_path = os.path.join(chartqa_env_var.CHARTQA_DATA_DIR, "test_chartqa.parquet")
 
     if not os.path.exists(test_data_path):
         raise FileNotFoundError(f"Test data file {test_data_path} does not exist. Please run prepare_data.py first.")
@@ -89,14 +88,11 @@ def debug_chartqa_agent_with_llm_proxy():
     df = pd.read_parquet(test_data_path).head(10)  # type: ignore
     test_data = cast(List[Dict[str, Any]], df.to_dict(orient="records"))  # type: ignore
 
-    vllm_endpoint = os.environ.get("OPENAI_API_BASE", "http://localhost:8088/v1")
-    model = os.environ.get("MODEL", "Qwen/Qwen2-VL-2B-Instruct")
-
-    store = agl.LightningStoreThreaded(agl.InMemoryLightningStore())
+    vllm_endpoint = chartqa_env_var.OPENAI_API_BASE
+    model = chartqa_env_var.OPENAI_MODEL
 
     llm_proxy = agl.LLMProxy(
         port=8089,
-        store=store,
         model_list=[
             {
                 "model_name": model,
@@ -107,14 +103,11 @@ def debug_chartqa_agent_with_llm_proxy():
             }
         ],
         callbacks=["return_token_ids"],
-        launch_mode="thread",
     )
 
     trainer = agl.Trainer(
         n_workers=2,
-        store=store,
         llm_proxy=llm_proxy,
-        strategy={"name": "shm", "main_thread": "algorithm", "managed_store": False},
         initial_resources={
             "main_llm": agl.LLM(
                 endpoint="http://localhost:8089/v1",
@@ -124,12 +117,12 @@ def debug_chartqa_agent_with_llm_proxy():
         },
     )
 
-    trainer.dev(LitChartQAAgent(), test_data)
+    trainer.dev(ChartQAAgent(), test_data)
 
 
 if __name__ == "__main__":
     agl.setup_logging(apply_to=["chartqa_agent"])
-    if os.environ.get("USE_LLM_PROXY", "").lower() in ("1", "true", "yes"):
+    if chartqa_env_var.USE_LLM_PROXY:
         debug_chartqa_agent_with_llm_proxy()
     else:
         debug_chartqa_agent()

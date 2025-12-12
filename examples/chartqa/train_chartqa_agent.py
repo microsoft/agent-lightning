@@ -7,40 +7,37 @@ from __future__ import annotations
 import argparse
 import os
 from copy import deepcopy
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, cast
 
+import env_var as chartqa_env_var
 import pandas as pd
-from chartqa_agent import LitChartQAAgent
+from chartqa_agent import ChartQAAgent
 
 import agentlightning as agl
 from agentlightning.env_var import LightningEnvVar, resolve_bool_env_var
 
-EXAMPLES_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.realpath(os.path.join(EXAMPLES_DIR, "data"))
-IMAGES_DIR = os.path.realpath(os.path.join(EXAMPLES_DIR, "data", "images"))
-
 RL_CONFIG: Dict[str, Any] = {
     "algorithm": {"adv_estimator": "grpo", "use_kl_in_reward": False},
     "data": {
-        "image_base_dir": DATA_DIR,
-        "train_batch_size": 1,
-        "max_prompt_length": 2048,
-        "max_response_length": 512,
+        "image_base_dir": chartqa_env_var.CHARTQA_IMAGES_DIR,
+        "train_batch_size": 32,
+        "max_prompt_length": 4096,
+        "max_response_length": 1024,
         "truncation": "error",
     },
     "actor_rollout_ref": {
         "rollout": {
-            "tensor_model_parallel_size": 2,
+            "tensor_model_parallel_size": 1,
             "n": 4,
             "log_prob_micro_batch_size_per_gpu": 1,
             "name": "vllm",
-            "gpu_memory_utilization": 0.4,
+            "gpu_memory_utilization": 0.8,
             "enable_prefix_caching": True,
-            "engine_kwargs": {"vllm": {"allowed_local_media_path": IMAGES_DIR}},
+            "engine_kwargs": {"vllm": {"allowed_local_media_path": chartqa_env_var.CHARTQA_IMAGES_DIR}},
         },
         "actor": {
-            "ppo_mini_batch_size": 1,
-            "ppo_micro_batch_size_per_gpu": 1,
+            "ppo_mini_batch_size": 32,
+            "ppo_micro_batch_size_per_gpu": 4,
             "optim": {"lr": 1e-6},
             "use_kl_loss": False,
             "kl_loss_coef": 0.0,
@@ -57,7 +54,7 @@ RL_CONFIG: Dict[str, Any] = {
         },
     },
     "trainer": {
-        "n_gpus_per_node": 2,
+        "n_gpus_per_node": 1,
         "val_before_train": False,
         "critic_warmup": 0,
         "logger": ["console", "wandb"],
@@ -71,32 +68,41 @@ RL_CONFIG: Dict[str, Any] = {
 def config_ci() -> Dict[str, Any]:
     """Config for CI testing."""
     config = deepcopy(RL_CONFIG)
-    config["actor_rollout_ref"]["rollout"]["tensor_model_parallel_size"] = 1
-    config["actor_rollout_ref"]["rollout"]["gpu_memory_utilization"] = 0.6
     config["trainer"]["n_gpus_per_node"] = 1
-    config["trainer"]["total_training_steps"] = 2
-    config["trainer"]["test_freq"] = 2
+    config["trainer"]["total_training_steps"] = 6
+    config["trainer"]["val_before_train"] = True
+    config["trainer"]["test_freq"] = 3
     return config
 
 
-def config_fast() -> Dict[str, Any]:
-    """Fast config for testing (2 steps)."""
+def config_debug() -> Dict[str, Any]:
+    """debug config for debugging and testing (several steps)."""
     config = deepcopy(RL_CONFIG)
-    config["trainer"]["total_training_steps"] = 2
+    config["actor_rollout_ref"]["rollout"]["gpu_memory_utilization"] = 0.5
+    config["trainer"]["total_training_steps"] = 10
     config["trainer"]["test_freq"] = 2
     return config
 
 
 def config_qwen() -> Dict[str, Any]:
     config = deepcopy(RL_CONFIG)
-    config["trainer"]["total_training_steps"] = 10000
-    config["trainer"]["test_freq"] = 100
+    config["trainer"]["val_before_train"] = True
+    config["trainer"]["n_gpus_per_node"] = 2
+    config["trainer"]["total_epochs"] = 2
+    config["trainer"]["test_freq"] = 32
     return config
 
 
-def train(config: Dict[str, Any], external_store_address: str, n_runners: int, debug: bool) -> None:
+def train(
+    config: Dict[str, Any],
+    train_data: agl.Dataset[Any],
+    val_data: agl.Dataset[Any],
+    external_store_address: str,
+    n_runners: int,
+    debug: bool,
+) -> None:
     agl.setup_logging(level="DEBUG" if debug else "INFO", apply_to=["agentlightning", __name__])
-    agent = LitChartQAAgent()
+    agent = ChartQAAgent()
     algorithm = agl.VERL(config)
 
     if external_store_address:
@@ -110,18 +116,13 @@ def train(config: Dict[str, Any], external_store_address: str, n_runners: int, d
         store=store,
     )
 
-    train_data_path = os.path.join(DATA_DIR, "train_chartqa.parquet")
-    val_data_path = os.path.join(DATA_DIR, "test_chartqa.parquet")
-
-    train_data = pd.read_parquet(train_data_path).to_dict(orient="records")  # type: ignore
-    val_data = pd.read_parquet(val_data_path).to_dict(orient="records")  # type: ignore
     trainer.fit(agent, train_dataset=train_data, val_dataset=val_data)  # type: ignore
 
 
-if __name__ == "__main__":
+def main():
     agl.setup_logging(apply_to=["chartqa_agent"])
     parser = argparse.ArgumentParser(description="Train ChartQA agent")
-    parser.add_argument("config", choices=["fast", "qwen", "ci"], help="Training configuration")
+    parser.add_argument("config", choices=["debug", "qwen", "ci"], help="Training configuration")
     parser.add_argument("--n-runners", type=int, default=10, help="Number of runners for Trainer")
     parser.add_argument(
         "--external-store-address",
@@ -141,14 +142,30 @@ if __name__ == "__main__":
             )
 
     CONFIGS = {
-        "fast": config_fast,
+        "debug": config_debug,
         "qwen": config_qwen,
         "ci": config_ci,
     }
 
+    train_data_path = os.path.join(chartqa_env_var.CHARTQA_DATA_DIR, "train_chartqa.parquet")
+    val_data_path = os.path.join(chartqa_env_var.CHARTQA_DATA_DIR, "test_chartqa.parquet")
+
+    train_data = pd.read_parquet(train_data_path).to_dict(orient="records")  # type: ignore
+
+    if args.config in ["debug", "ci"]:
+        val_data = pd.read_parquet(val_data_path).sample(n=100, random_state=42).to_dict(orient="records")  # type: ignore
+    else:
+        val_data = pd.read_parquet(val_data_path).to_dict(orient="records")  # type: ignore
+
     train(
         config=CONFIGS[args.config](),
+        train_data=cast(agl.Dataset[Any], train_data),
+        val_data=cast(agl.Dataset[Any], val_data),
         external_store_address=args.external_store_address,
         n_runners=args.n_runners,
         debug=args.debug,
     )
+
+
+if __name__ == "__main__":
+    main()

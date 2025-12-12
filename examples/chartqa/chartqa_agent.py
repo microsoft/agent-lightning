@@ -16,10 +16,11 @@ from __future__ import annotations
 import logging
 import os
 import re
-from typing import Any, Dict, Literal, Optional, cast
+from typing import Any, Dict, Literal, cast
 
+import env_var as chartqa_env_var
 import termcolor
-from langchain.chat_models import init_chat_model
+from langchain.chat_models import BaseChatModel, init_chat_model
 from langchain_core.messages import AnyMessage, BaseMessage, HumanMessage
 from langgraph.graph import END, START, MessagesState, StateGraph
 from langgraph.graph.state import CompiledStateGraph
@@ -49,44 +50,62 @@ class ChartState(MessagesState):
     messages: list[AnyMessage]
 
 
-class ChartQAAgent:
+class ChartQAAgent(agl.LitAgent[Dict[str, Any]]):
     """Chart QA agent with multi-step reasoning and refinement loop."""
 
     def __init__(
         self,
+        model_name: str | None = None,
         max_turns: int = 3,
         debug: bool = False,
         endpoint: str | None = None,
-        verl_replacement: Dict[str, Any] | None = None,
+        temperature: float = 0.0,
         use_base64_images: bool = False,
     ):
         self.debug = debug
         self.max_turns = max_turns
         self.use_base64_images = use_base64_images
-        if verl_replacement is not None:
-            self.model_name: str = verl_replacement["model"]  # type: ignore
-            assert endpoint is not None
-            self.llm = init_chat_model(
-                self.model_name,
-                model_provider="openai",
-                openai_api_base=endpoint,
-                openai_api_key=os.environ.get("OPENAI_API_KEY", "token-abc123"),
-                temperature=verl_replacement["temperature"],
-                max_retries=2,
-                max_tokens=1024,
-                timeout=300,
-            )
-        else:
-            self.model_name = os.environ.get("MODEL", "Qwen/Qwen2-VL-2B-Instruct")
-            self.llm = init_chat_model(
-                self.model_name,
-                model_provider="openai",
-                openai_api_base=endpoint or os.environ["OPENAI_API_BASE"],
-                openai_api_key=os.environ.get("OPENAI_API_KEY", "token-abc123"),
-                temperature=0.0,
-                max_retries=1,
-                max_tokens=512,
-            )
+        self.model_name = model_name
+        self.endpoint = endpoint
+        self.temperature = temperature
+
+        self._llm: BaseChatModel | None = None
+        self._graph: CompiledStateGraph[ChartState] | None = None
+
+    def _create_llm(self) -> BaseChatModel:
+        if self.model_name is None:
+            raise ValueError("model_name is required for creating LLM")
+        return init_chat_model(
+            self.model_name,
+            model_provider="openai",
+            openai_api_base=self.endpoint,
+            openai_api_key=chartqa_env_var.OPENAI_API_KEY,
+            temperature=self.temperature,
+            max_retries=2,
+            max_tokens=1024,
+            timeout=300,
+        )
+
+    def update_llm_config(self, model_name: str, endpoint: str | None, temperature: float | None) -> None:
+        """Update the LLM configuration. Re-create the LLM if the configuration is changed."""
+        updated: bool = False
+        if model_name != self.model_name:
+            self.model_name = model_name
+            updated = True
+        if endpoint != self.endpoint:
+            self.endpoint = endpoint
+            updated = True
+        if temperature != self.temperature:
+            self.temperature = temperature
+            updated = True
+        if updated:
+            self._llm = self._create_llm()
+
+    def _ensure_llm(self) -> BaseChatModel:
+        """Ensure the LLM is created and cached."""
+        if self._llm is None:
+            self._llm = self._create_llm()
+        return self._llm
 
     def invoke_prompt(self, prompt: Any) -> AnyMessage:
         """Invoke LLM with prompt."""
@@ -95,10 +114,10 @@ class ChartQAAgent:
                 termcolor.cprint(message.pretty_repr(), "blue")
 
         try:
-            result = self.llm.invoke(prompt)
+            result = self._ensure_llm().invoke(prompt)
         except Exception as e:
             logger.error(f"Failed to invoke prompt: {e}")
-            result = self.llm.invoke([HumanMessage(content="Please provide a reasonable answer.")])
+            result = self._ensure_llm().invoke([HumanMessage(content="Please provide a reasonable answer.")])
 
         if self.debug:
             termcolor.cprint(result.pretty_repr(), "green")
@@ -135,7 +154,7 @@ class ChartQAAgent:
             termcolor.cprint(f"[VLM Call] {prompt_text[:100]}...", "blue")
 
         try:
-            result = self.llm.invoke(messages)
+            result = self._ensure_llm().invoke(messages)
             response = result.content if hasattr(result, "content") else str(result)  # type: ignore
         except Exception as e:
             logger.error(f"Failed to invoke VLM: {e}")
@@ -288,6 +307,10 @@ class ChartQAAgent:
 
     def graph(self) -> CompiledStateGraph[ChartState]:
         """Build the workflow graph with refinement loop."""
+        # Check if the graph is already built
+        if self._graph is not None:
+            return self._graph
+
         builder = StateGraph(ChartState)
         builder.add_node(self.analyze_chart)  # type: ignore
         builder.add_node(self.extract_data)  # type: ignore
@@ -305,7 +328,48 @@ class ChartQAAgent:
         )
         builder.add_edge("refine_answer", "extract_data")
 
-        return builder.compile()  # type: ignore
+        self._graph = builder.compile()  # type: ignore
+        return self._graph
+
+    def rollout(self, task: Dict[str, Any], resources: agl.NamedResources, rollout: agl.Rollout) -> float | None:
+        """AgentLightning wrapper for ChartQA agent."""
+
+        question = task["question"]
+
+        rollout = cast(agl.AttemptedRollout, rollout)
+        llm = cast(agl.LLM, resources["main_llm"])
+
+        image_path = os.path.join(chartqa_env_var.CHARTQA_DATA_DIR, task["image_path"])
+        ground_truth = task["answer"]
+
+        if not os.path.exists(image_path):
+            logger.error(f"Image {image_path} does not exist. Skipping.")
+            return None
+
+        # The new rollout could have a different endpoint or temperature.
+        # Update the LLM if necessary.
+        self.update_llm_config(
+            model_name=llm.model,
+            endpoint=llm.get_base_url(rollout.rollout_id, rollout.attempt.attempt_id),
+            temperature=llm.sampling_parameters.get("temperature", 0.0),
+        )
+
+        try:
+            handler = self.tracer.get_langchain_handler()
+            result = self.graph().invoke(  # type: ignore
+                {"question": question, "image_path": image_path},  # type: ignore
+                {"callbacks": [handler] if handler else [], "recursion_limit": 100},
+            )
+        except Exception as e:
+            error_msg = f"[Rollout {rollout.rollout_id}] Error during agent invocation: {e}"
+            logger.error(error_msg, exc_info=True)
+            # Return 0.0 as reward to indicate failure
+            return 0.0
+
+        predicted_answer = result["answer"]
+        reward = evaluate_answer(predicted_answer, ground_truth, raise_on_error=False)
+
+        return reward
 
 
 def evaluate_answer(predicted: str, ground_truth: str, raise_on_error: bool = False) -> float:
@@ -337,77 +401,3 @@ def evaluate_answer(predicted: str, ground_truth: str, raise_on_error: bool = Fa
             raise
         logger.exception(f"Error evaluating answer: {e}")
         return 0.0
-
-
-class LitChartQAAgent(agl.LitAgent[Dict[str, Any]]):
-    """AgentLightning wrapper for ChartQA agent."""
-
-    def __init__(
-        self,
-        trained_agents: Optional[str] = r"analyze|extract|calculate",
-        val_temperature: Optional[float] = None,
-        max_turns: int = 3,
-        use_base64_images: bool = False,
-    ) -> None:
-        super().__init__(trained_agents=trained_agents)
-        self.val_temperature = val_temperature
-        self.max_turns = max_turns
-        self.use_base64_images = use_base64_images
-        default_data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
-        self.chartqa_dir = os.environ.get("CHARTQA_DATA_DIR", default_data_dir)
-
-    def rollout(
-        self,
-        task: Dict[str, Any],
-        resources: agl.NamedResources,
-        rollout: agl.Rollout,
-    ) -> float | None:
-        """Execute agent rollout on a ChartQA task."""
-        question = task["question"]
-        llm: agl.LLM = cast(agl.LLM, resources["main_llm"])
-
-        image_path = os.path.join(self.chartqa_dir, task["image_path"])
-        ground_truth = task["answer"]
-
-        if not os.path.exists(image_path):
-            logger.error(f"Image {image_path} does not exist. Skipping.")
-            return None
-
-        rollout_id = rollout.rollout_id
-
-        agent = ChartQAAgent(
-            max_turns=self.max_turns,
-            debug=False,
-            endpoint=llm.get_base_url(rollout.rollout_id, rollout.attempt.attempt_id),  # type: ignore
-            verl_replacement=(
-                {"model": llm.model, **llm.sampling_parameters}
-                if rollout.mode == "train"
-                else {
-                    "model": llm.model,
-                    "temperature": (
-                        self.val_temperature
-                        if self.val_temperature is not None
-                        else llm.sampling_parameters.get("temperature", 0.0)
-                    ),
-                }
-            ),
-            use_base64_images=self.use_base64_images,
-        ).graph()
-
-        try:
-            handler = self.tracer.get_langchain_handler()
-            result = agent.invoke(  # type: ignore
-                {"question": question, "image_path": image_path},  # type: ignore
-                {"callbacks": [handler] if handler else [], "recursion_limit": 100},
-            )
-        except Exception as e:
-            import traceback
-
-            error_msg = f"[Rollout {rollout_id}] Error during agent invocation: {e}\n{traceback.format_exc()}"
-            logger.exception(error_msg)
-            return None
-
-        predicted_answer = result["answer"]
-        reward = evaluate_answer(predicted_answer, ground_truth, raise_on_error=False)
-
-        return reward
