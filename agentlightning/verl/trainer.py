@@ -8,7 +8,7 @@ import random
 from contextlib import contextmanager
 from copy import deepcopy
 from pprint import pprint
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Type
 
 import numpy as np
 import torch

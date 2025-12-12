@@ -96,8 +96,8 @@ class TaskRunner:
         store: LightningStore | None,
         llm_proxy: LLMProxy | None,
         adapter: TraceAdapter[Any] | None,
-        daemon_cls: Type[AgentModeDaemon],
         trainer_cls: Type[AgentLightningTrainer],
+        daemon_cls: Type[AgentModeDaemon],
     ):
         # print initial config
         from pprint import pprint
