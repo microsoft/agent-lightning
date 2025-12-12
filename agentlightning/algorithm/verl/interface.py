@@ -1,6 +1,6 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional, Type
 
 from hydra import compose, initialize
 from omegaconf import OmegaConf
@@ -9,6 +9,10 @@ from agentlightning.algorithm.base import Algorithm
 from agentlightning.client import AgentLightningClient
 from agentlightning.types import Dataset
 from agentlightning.verl.entrypoint import run_ppo  # type: ignore
+
+if TYPE_CHECKING:
+    from agentlightning.verl.daemon import AgentModeDaemon
+    from agentlightning.verl.trainer import AgentLightningTrainer
 
 
 class VERL(Algorithm):
@@ -23,6 +27,8 @@ class VERL(Algorithm):
         config: Dictionary mirroring the overrides passed to the VERL CLI. The
             overrides are merged with VERL's packaged defaults via Hydra before
             launching training.
+        trainer_cls: Optional override for the trainer class. Experimental.
+        daemon_cls: Optional override for the daemon class. Experimental.
 
     Examples:
         ```python
@@ -90,7 +96,12 @@ class VERL(Algorithm):
         ```
     """
 
-    def __init__(self, config: dict[str, Any]):
+    def __init__(
+        self,
+        config: dict[str, Any],
+        trainer_cls: Optional[Type[AgentLightningTrainer]] = None,
+        daemon_cls: Optional[Type[AgentModeDaemon]] = None,
+    ):
         super().__init__()
 
         # Compose the base config exactly like your decorator:
@@ -102,6 +113,8 @@ class VERL(Algorithm):
         # Allow adding new fields
         OmegaConf.set_struct(base_cfg, False)
         self.config = OmegaConf.merge(base_cfg, override_conf)
+        self.trainer_cls = trainer_cls
+        self.daemon_cls = daemon_cls
 
     def run(
         self,
@@ -119,6 +132,11 @@ class VERL(Algorithm):
                 adapter have been garbage-collected when using the V1 execution
                 mode.
         """
+        from agentlightning.verl.daemon import AgentModeDaemon
+        from agentlightning.verl.trainer import AgentLightningTrainer
+
+        trainer_cls = self.trainer_cls or AgentLightningTrainer
+        daemon_cls = self.daemon_cls or AgentModeDaemon
         try:
             store = self.get_store()
         except Exception:
@@ -130,6 +148,8 @@ class VERL(Algorithm):
                 store=None,
                 llm_proxy=None,
                 adapter=None,
+                trainer_cls=trainer_cls,
+                daemon_cls=daemon_cls,
             )
         else:
             print("Store is set. Assuming v1 execution mode.")
@@ -142,6 +162,8 @@ class VERL(Algorithm):
                 store=store,
                 llm_proxy=llm_proxy,
                 adapter=adapter,
+                trainer_cls=trainer_cls,
+                daemon_cls=daemon_cls,
             )
 
     def get_client(self) -> AgentLightningClient:
