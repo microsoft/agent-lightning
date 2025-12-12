@@ -22,6 +22,7 @@ import json
 import os
 import pprint
 import re
+import textwrap
 import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, List, Literal, Mapping, Optional, Tuple, Union
@@ -711,7 +712,18 @@ async def _run_tracer_with_agent(settings: OpenAISettings, tracer: Tracer, agent
             for span in tracer.get_last_trace()
         ]
         for span in last_trace_normalized:
-            print(">>>", span)
+            print(">>> rollout_id =", span.rollout_id)
+            print("... attempt_id =", span.attempt_id)
+            print("... sequence_id =", span.sequence_id)
+            print("... trace_id =", span.trace_id)
+            print("... span_id =", span.span_id)
+            print("... parent_id =", span.parent_id)
+            print("... name =", span.name)
+            print("... status =", span.status)
+            print(
+                "... attributes =",
+                textwrap.indent(pprint.pformat(span.attributes, width=200, indent=4), "    ").lstrip(),
+            )
         tree = TraceTree.from_spans(last_trace_normalized)
 
         tree.repair_hierarchy()

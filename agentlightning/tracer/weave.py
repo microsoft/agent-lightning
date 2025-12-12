@@ -36,7 +36,7 @@ def op_name_to_func_name(op_name: str) -> str:
 
     Weave operation names look like this: `weave:///xxx/agentlightning.tracer.weave/op/openai.chat.completions.create:019b10be-...-44d74272569c`
     """
-    match = re.match(r"/([^/:]+):", op_name)
+    match = re.search(r"/([^/:]+):", op_name)
     if match:
         return match.group(1)
     else:
@@ -191,18 +191,18 @@ class WeaveTracer(Tracer):
 
         await self._init_trace_context()
 
+        weave_client = weave.get_client()
+        if not weave_client:
+            raise RuntimeError("Weave client is not initialized. Call init_worker() first.")
+
+        arg_op = name or self.project_name
+        arg_inputs: dict[str, str] = {}
+        if rollout_id is not None:
+            arg_inputs[LightningResourceAttributes.ROLLOUT_ID.value] = rollout_id
+        if attempt_id is not None:
+            arg_inputs[LightningResourceAttributes.ATTEMPT_ID.value] = attempt_id
+
         try:
-            arg_op = name or self.project_name
-            arg_inputs: dict[str, str] = {}
-            if rollout_id is not None:
-                arg_inputs[LightningResourceAttributes.ROLLOUT_ID.value] = rollout_id
-            if attempt_id is not None:
-                arg_inputs[LightningResourceAttributes.ATTEMPT_ID.value] = attempt_id
-
-            weave_client = weave.get_client()
-            if not weave_client:
-                raise RuntimeError("Weave client is not initialized. Call init_worker() first.")
-
             # Create a new trace call object in Weave
             trace_call = weave_client.create_call(  # pyright: ignore[reportUnknownMemberType]
                 op=arg_op, inputs=arg_inputs
@@ -221,7 +221,6 @@ class WeaveTracer(Tracer):
 
             # It's possible that the call end futures are from a dedicated Weave thread pool,
             await asyncio.gather(*[asyncio.wrap_future(future) for future in self._call_end_futures])
-            print("final call_end_futures", self._call_end_futures)
 
         finally:
             # Mandatory cleanup
@@ -236,10 +235,6 @@ class WeaveTracer(Tracer):
         self._attempt_id = None
         self._call_start_futures.clear()
         self._call_end_futures.clear()
-        print(id(asyncio.get_running_loop()))
-        import threading
-
-        print(threading.current_thread())
         self._loop = weakref.ref(asyncio.get_running_loop())
 
     def _ensure_loop(self) -> tuple[asyncio.AbstractEventLoop, bool]:
@@ -278,36 +273,32 @@ class WeaveTracer(Tracer):
         # but it should be executed on the main event loop.
         try:
             loop, is_current_loop = self._ensure_loop()
-            import threading
-
-            print("call start", id(loop), threading.current_thread(), is_current_loop)
             if is_current_loop:
                 task = loop.create_task(self.call_start_handler(call))
-                self._call_start_futures[call.id] = task
             else:
                 # Schedule the task on the dedicated loop
                 task = asyncio.run_coroutine_threadsafe(self.call_start_handler(call), loop)
-                self._call_start_futures[call.id] = task
-            print("call_start_futures", self._call_start_futures)
+            self._call_start_futures[call.id] = task
         except Exception as exc:
             logger.exception(f"Error creating call start task: {exc}", exc_info=True)
 
     def call_end_callback(self, call: tsi.CallSchema) -> None:
         try:
             loop, is_current_loop = self._ensure_loop()
-            import threading
-
-            print("call end", id(loop), threading.current_thread(), is_current_loop)
             if is_current_loop:
                 task = loop.create_task(self.call_finish_handler(call))
             else:
+                # Schedule the task on the dedicated loop
                 task = asyncio.run_coroutine_threadsafe(self.call_finish_handler(call), loop)
             self._call_end_futures.append(task)
-            print("call_end_futures", self._call_end_futures)
         except Exception as exc:
             logger.exception(f"Error creating call finish task: {exc}", exc_info=True)
 
     async def _get_next_sequence_id(self) -> int:
+        """Get the next sequence ID for a span.
+
+        Use store to get the next sequence ID if available, otherwise use a default counter.
+        """
         if self._rollout_id and self._attempt_id and self._store:
             return await self._store.get_next_span_sequence_id(self._rollout_id, self._attempt_id)
         else:
@@ -341,7 +332,6 @@ class WeaveTracer(Tracer):
             sequence_id = await self._get_next_sequence_id()
 
         self._calls[call.id] = call
-        print("call_finish_handler", call)
 
         span = await self.convert_call_to_span(call, self._rollout_id, self._attempt_id, sequence_id)
         self._spans.append(span)

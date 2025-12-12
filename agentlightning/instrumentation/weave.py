@@ -55,6 +55,10 @@ class InMemoryWeaveTraceServer(TraceServerClientInterface):
         trace_id = request_content.get("trace_id") or generate_id()
         request_content["id"] = call_id
         request_content["trace_id"] = trace_id
+        import traceback
+
+        print("!!! call_start: call_id =", call_id, "trace_id =", trace_id, "request_content =", request_content)
+        print("!!! call_start:", str(traceback.format_stack()))
 
         self.calls[call_id] = tsi.CallSchema(**request_content)
         return tsi.CallStartRes(id=call_id, trace_id=trace_id)
@@ -65,6 +69,10 @@ class InMemoryWeaveTraceServer(TraceServerClientInterface):
         if req.end.id in self.calls:
             self.calls[req.end.id] = self.calls[req.end.id].model_copy(update=request_content)
         else:
+            import traceback
+
+            print("!!! call_end: call not found", req.end.id, self.calls)
+            print("!!! call_end:", str(traceback.format_stack()))
             self.calls[req.end.id] = tsi.CallSchema(**request_content)
         return tsi.CallEndRes()
 
