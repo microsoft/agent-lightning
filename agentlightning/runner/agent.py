@@ -545,7 +545,7 @@ class LitAgentRunner(Runner[T_task]):
                     await store.update_attempt(rollout_id, next_rollout.attempt.attempt_id, status="succeeded")
             except ServerShutdownError:
                 # Server is shutting down - handle gracefully without traceback
-                logger.debug(f"{self._log_prefix(rollout_id)} Server is shutting down. " "Skipping update_attempt.")
+                logger.debug(f"{self._log_prefix(rollout_id)} Server is shutting down. Skipping update_attempt.")
             except Exception:
                 logger.exception(
                     f"{self._log_prefix(rollout_id)} Exception during update_attempt. Giving up the update."
@@ -603,7 +603,7 @@ class LitAgentRunner(Runner[T_task]):
                 except ServerShutdownError:
                     # Server is shutting down - handle gracefully without traceback
                     logger.debug(
-                        f"{self._log_prefix()} Server is shutting down. " "Skipping update_attempt for rollout claim."
+                        f"{self._log_prefix()} Server is shutting down. Skipping update_attempt for rollout claim."
                     )
                     continue
                 except Exception:

@@ -1349,6 +1349,9 @@ class LightningStoreClient(LightningStore):
                 async with session.get(f"{self.server_address}/health") as r:
                     if r.status == 200:
                         client_logger.info(f"Server is healthy at {self.server_address}/health")
+                        # Reset shutdown flag if server recovers
+                        with self._lock:
+                            self._server_shutting_down = False
                         return True
             except Exception:
                 # swallow and retry
@@ -1361,7 +1364,8 @@ class LightningStoreClient(LightningStore):
             "Server appears to be shutting down."
         )
         # Mark server as shutting down to handle subsequent errors gracefully
-        self._server_shutting_down = True
+        with self._lock:
+            self._server_shutting_down = True
         return False
 
     async def _request_json(
@@ -1422,10 +1426,12 @@ class LightningStoreClient(LightningStore):
                 last_exc = net_exc
                 client_logger.info(f"Network/session issue will be retried. Retrying the request {method}: {path}")
                 if not await self._wait_until_healthy(session):
-                    # Server is shutting down - handle ServerDisconnectedError gracefully
-                    if isinstance(net_exc, aiohttp.ServerDisconnectedError) and self._server_shutting_down:
+                    # Server is shutting down - handle all network errors gracefully
+                    with self._lock:
+                        is_shutting_down = self._server_shutting_down
+                    if is_shutting_down:
                         client_logger.debug(
-                            f"Server is shutting down. Suppressing ServerDisconnectedError for {method}: {path}"
+                            f"Server is shutting down. Suppressing {type(net_exc).__name__} for {method}: {path}"
                         )
                         # Raise a specific exception that callers can catch and handle gracefully
                         raise ServerShutdownError(
