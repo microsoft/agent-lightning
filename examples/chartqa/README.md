@@ -85,7 +85,7 @@ vllm serve Qwen/Qwen2-VL-2B-Instruct \
 USE_LLM_PROXY=1 \
     OPENAI_API_BASE=http://localhost:8088/v1 \
     OPENAI_MODEL=Qwen/Qwen2-VL-2B-Instruct \
-    python chartqa_agent.py
+    python debug_chartqa_agent.py
 ```
 
 ### Training with Local Model
@@ -103,7 +103,7 @@ agl store --port 4747
 Then run the training script with the external store address:
 
 ```bash
-AGL_MANAGED_STORE=0 python train_chartqa_agent.py fast --external-store-address http://localhost:4747
+AGL_MANAGED_STORE=0 python train_chartqa_agent.py qwen --external-store-address http://localhost:4747
 ```
 
 If you want to track experiments with Weights & Biases, set the `WANDB_API_KEY` environment variable before training.
