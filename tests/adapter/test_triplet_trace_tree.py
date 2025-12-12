@@ -608,6 +608,14 @@ def test_tracer_trace_to_triplet_reward_match_first_sibling():
         end_time=9.0,
         attributes={"agent.name": "sibling-agent"},
     )
+    other_agent = make_span(
+        "agent-2",
+        "agent.node",
+        parent_id="root",
+        start_time=1.0,
+        end_time=9.0,
+        attributes={"agent.name": "sibling-agent"},
+    )
     llm_1 = make_llm_span(
         "llm-1",
         parent_id="agent",
@@ -627,15 +635,15 @@ def test_tracer_trace_to_triplet_reward_match_first_sibling():
     )
     llm_2 = make_llm_span(
         "llm-2",
-        parent_id="agent",
-        start=4.0,
-        end=5.0,
+        parent_id="agent-2",
+        start=3.1,
+        end=3.2,
         prompt_ids=[3],
         response_ids=[4],
         response_id="resp-2",
     )
 
-    spans = [root, agent, llm_1, reward, llm_2]
+    spans = [root, agent, other_agent, llm_1, reward, llm_2]
 
     adapter = TracerTraceToTriplet(
         agent_match="sibling-agent",
