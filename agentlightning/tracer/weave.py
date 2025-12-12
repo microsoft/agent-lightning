@@ -204,9 +204,9 @@ class WeaveTracer(Tracer):
                 raise RuntimeError("Weave client is not initialized. Call init_worker() first.")
 
             # Create a new trace call object in Weave
-            trace_call = weave_client.create_call(
+            trace_call = weave_client.create_call(  # pyright: ignore[reportUnknownMemberType]
                 op=arg_op, inputs=arg_inputs
-            )  # pyright: ignore[reportUnknownMemberType]
+            )
 
             try:
                 yield trace_call
@@ -270,6 +270,10 @@ class WeaveTracer(Tracer):
         return self._spans
 
     def call_start_callback(self, call: tsi.CallSchema) -> None:
+        if call.id in self._call_start_futures:
+            raise ValueError(f"Call {call.id} already has a start future")
+        self._calls[call.id] = call
+
         # The callback must possibly be called from a dedicated Weave thread pool,
         # but it should be executed on the main event loop.
         try:
@@ -319,12 +323,6 @@ class WeaveTracer(Tracer):
         Returns:
             The sequence ID for the call.
         """
-        if call.id in self._call_start_futures:
-            raise ValueError(f"Call {call.id} already has a start future")
-
-        self._calls[call.id] = call
-        print("call_start_handler", call)
-
         sequence_id = await self._get_next_sequence_id()
         return sequence_id
 
