@@ -102,6 +102,8 @@ def config_ci() -> Dict[str, Any]:
     config["trainer"]["total_training_steps"] = 4
     config["trainer"]["val_before_train"] = True
     config["trainer"]["test_freq"] = 2
+    config["trainer"]["experiment_name"] = EXPERIMENT_NAME
+    config["trainer"]["project_name"] = PROJECT_NAME
     return config
 
 
