@@ -122,6 +122,8 @@ jobs:
         shell: bash
         env:
           USE_LLM_PROXY: "1"
+          OPENAI_API_BASE: http://localhost:8088/v1
+          OPENAI_MODEL: Qwen/Qwen2-VL-2B-Instruct
 
       - name: Stop vLLM Server
         run: |

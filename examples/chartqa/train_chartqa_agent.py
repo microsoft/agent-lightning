@@ -1,12 +1,29 @@
 # Copyright (c) Microsoft. All rights reserved.
 
-"""Train ChartQA agent using VERL reinforcement learning."""
+"""Training helper for ChartQA modeled VERL workflow.
+
+Example usage:
+
+```bash
+python train_chartqa_agent.py debug --n-runners 2
+```
+
+or:
+
+```bash
+AGL_MANAGED_STORE=0 python train_chartqa_agent.py qwen --external-store-address http://localhost:9999
+```
+
+Make sure to run `python prepare_data.py` so the parquet files referenced here exist.
+"""
 
 from __future__ import annotations
 
 import argparse
 import os
+import uuid
 from copy import deepcopy
+from datetime import datetime
 from typing import Any, Dict, Optional, cast
 
 import env_var as chartqa_env_var
@@ -66,7 +83,19 @@ RL_CONFIG: Dict[str, Any] = {
 
 
 def config_ci() -> Dict[str, Any]:
-    """Config for CI testing."""
+    """Return a CI-friendly RL config for ChartQA."""
+    # For CI testing, we need to set the experiment name and project name so that
+    # they are available to subsequent steps.
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    random_suffix = uuid.uuid4().hex[:8]
+    EXPERIMENT_NAME = f"chartqa_ci_{timestamp}_{random_suffix}"
+    PROJECT_NAME = "AgentLightningCI"
+    github_output = os.getenv("GITHUB_OUTPUT")
+    if github_output:
+        with open(github_output, "a") as f:
+            f.write(f"project_name={PROJECT_NAME}\n")
+            f.write(f"run_name={EXPERIMENT_NAME}\n")
+
     config = deepcopy(RL_CONFIG)
     config["trainer"]["n_gpus_per_node"] = 1
     config["trainer"]["total_training_steps"] = 6
@@ -76,7 +105,7 @@ def config_ci() -> Dict[str, Any]:
 
 
 def config_debug() -> Dict[str, Any]:
-    """debug config for debugging and testing (several steps)."""
+    """Return a short debugging config for smoke testing ChartQA training."""
     config = deepcopy(RL_CONFIG)
     config["actor_rollout_ref"]["rollout"]["gpu_memory_utilization"] = 0.5
     config["trainer"]["total_training_steps"] = 10
@@ -85,6 +114,7 @@ def config_debug() -> Dict[str, Any]:
 
 
 def config_qwen() -> Dict[str, Any]:
+    """Return a Qwen-focused config with validation before each epoch."""
     config = deepcopy(RL_CONFIG)
     config["trainer"]["val_before_train"] = True
     config["trainer"]["n_gpus_per_node"] = 2
@@ -101,6 +131,16 @@ def train(
     n_runners: int,
     debug: bool,
 ) -> None:
+    """Run VERL training for ChartQA.
+
+    Args:
+        config: VERL configuration produced by one of the helpers above.
+        train_data: Training dataset of ChartQA samples.
+        val_data: Validation dataset for periodic evaluation.
+        external_store_address: Optional address of an existing LightningStore to reuse.
+        n_runners: Number of runners passed to [`Trainer.fit`][agentlightning.Trainer.fit].
+        debug: Enables verbose logging tied to `--debug`.
+    """
     agl.setup_logging(level="DEBUG" if debug else "INFO", apply_to=["agentlightning", __name__])
     agent = ChartQAAgent()
     algorithm = agl.VERL(config)
@@ -120,6 +160,7 @@ def train(
 
 
 def main():
+    """Parse CLI arguments and kick off ChartQA training."""
     agl.setup_logging(apply_to=["chartqa_agent"])
     parser = argparse.ArgumentParser(description="Train ChartQA agent")
     parser.add_argument("config", choices=["debug", "qwen", "ci"], help="Training configuration")
