@@ -2,6 +2,7 @@
 
 """Utilities shared for OpenTelemetry span (attributes) support."""
 
+import json
 import logging
 from typing import Any, Dict, List, Sequence, Union, cast
 from warnings import filterwarnings
@@ -17,7 +18,7 @@ from pydantic import TypeAdapter
 
 from agentlightning.env_var import LightningEnvVar, resolve_bool_env_var
 from agentlightning.semconv import LightningSpanAttributes, LinkAttributes, LinkPydanticModel
-from agentlightning.types import SpanLike
+from agentlightning.types import Attributes, AttributeValue, SpanLike
 from agentlightning.utils.otlp import LightningStoreOTLPExporter
 
 logger = logging.getLogger(__name__)
@@ -399,3 +400,41 @@ def unflatten_attributes(flat_data: Dict[str, Any]) -> Union[Dict[str, Any], Lis
         return node
 
     return convert(root)
+
+
+def sanitize_attribute_value(object: Any) -> AttributeValue:
+    """Sanitize an attribute value to be a valid OpenTelemetry attribute value."""
+    if isinstance(object, (str, int, float, bool, bytes)):
+        return object
+    try:
+        # This include null, list, dict, etc.
+        serialized = json.dumps(object)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Object must be JSON serializable, got: {type(object)}.") from exc
+    return serialized
+
+
+def sanitize_attributes(attributes: Dict[str, Any]) -> Attributes:
+    """Sanitize a dictionary of attributes to be a valid OpenTelemetry attributes."""
+    result: Attributes = {}
+    for k, v in attributes.items():
+        try:
+            result[k] = sanitize_attribute_value(v)
+        except ValueError as exc:
+            raise ValueError(f"Failed to sanitize attribute '{k}': {exc}") from exc
+    return result
+
+
+def check_attributes_sanity(attributes: Dict[Any, Any]) -> None:
+    """Check if a dictionary of attributes is a valid OpenTelemetry attributes.
+
+    This sanity check should be more strict than the OpenTelemetry allowed attribute types.
+    It doesn't allow lists.
+    """
+    for k, v in attributes.items():
+        if not isinstance(k, str):
+            raise ValueError(f"Attribute key must be a string, got {type(k)} for key '{k}'")
+        if not isinstance(v, (str, int, float, bool, bytes)):
+            raise ValueError(
+                f"Attribute value must be a string, int, float, bool, or bytes, got {type(v)} for value '{v}'"
+            )

@@ -53,6 +53,9 @@ class LightningResourceAttributes(Enum):
     SPAN_SEQUENCE_ID = "agentlightning.span_sequence_id"
     """Resource name for span sequence ID in Agent-lightning spans."""
 
+    TRACER_NAME = "agentlightning.tracer.name"
+    """Which tracer is used to create this span."""
+
 
 class LightningSpanAttributes(Enum):
     """Attribute names that commonly appear in Agent-lightning spans.
@@ -97,6 +100,28 @@ class LightningSpanAttributes(Enum):
 
     OPERATION_OUTPUT = "agentlightning.operation.output"
     """Attribute name for operation output in operation spans."""
+
+
+class WeaveSpanAttributes(Enum):
+    """Attribute names for spans imported from Weave."""
+
+    WEAVE_INPUT = "weave.input"
+    """Attribute name for weave input."""
+
+    WEAVE_OUTPUT = "weave.output"
+    """Attribute name for weave output."""
+
+    WEAVE_EXCEPTION = "weave.exception"
+    """Attribute name for weave exception."""
+
+    WEAVE_SUMMARY = "weave.summary"
+    """Attribute name for weave summary."""
+
+    WEAVE_OP_NAME = "weave.op_name"
+    """Attribute name for weave operation name."""
+
+    WEAVE_ATTRIBUTES = "weave.attributes"
+    """Attribute name for weave attributes."""
 
 
 class RewardAttributes(Enum):

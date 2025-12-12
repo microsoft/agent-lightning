@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import logging
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any, AsyncContextManager, Awaitable, Callable, ContextManager, List, Optional
+from typing import TYPE_CHECKING, Any, AsyncContextManager, Awaitable, Callable, ContextManager, List, Optional, Union
 
 from opentelemetry.sdk.trace import ReadableSpan
 
 from agentlightning.store.base import LightningStore
-from agentlightning.types import ParallelWorkerBase
+from agentlightning.types import ParallelWorkerBase, Span
 
 if TYPE_CHECKING:
     from langchain_core.callbacks.base import BaseCallbackHandler  # type: ignore
@@ -98,7 +98,7 @@ class Tracer(ParallelWorkerBase):
         """Internal API for CI backward compatibility."""
         raise NotImplementedError()
 
-    def get_last_trace(self) -> List[ReadableSpan]:
+    def get_last_trace(self) -> Union[List[ReadableSpan], List[Span]]:
         """
         Retrieves the raw list of captured spans from the most recent trace.
 

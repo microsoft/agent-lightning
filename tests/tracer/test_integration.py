@@ -710,6 +710,8 @@ async def _run_tracer_with_agent(settings: OpenAISettings, tracer: Tracer, agent
             Span.from_opentelemetry(span, "dummy", "dummy", 0) if isinstance(span, ReadableSpan) else span
             for span in tracer.get_last_trace()
         ]
+        for span in last_trace_normalized:
+            print(">>>", span)
         tree = TraceTree.from_spans(last_trace_normalized)
 
         tree.repair_hierarchy()
