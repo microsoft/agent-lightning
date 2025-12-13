@@ -16,4 +16,19 @@ This catalog highlights the examples shipped with Agent-lightning.
 | [tinker](./tinker) | Reinforcement learning with Tinker as the backend training service. | [![tinker workflow status](https://github.com/microsoft/agent-lightning/actions/workflows/badge-tinker.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/examples-tinker.yml) |
 | [unsloth](./unsloth) | Supervised fine-tuning example powered by Unsloth with 4-bit quantization and LoRA. | [![unsloth workflow status](https://github.com/microsoft/agent-lightning/actions/workflows/badge-unsloth.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/examples-unsloth.yml) |
 
-*NOTE: CI status avoids taking any workflow running with latest dependencies into account. That's why we reference the corresponding `badge-*` workflows instead. Each example's own README also displays its `examples-*` workflow status whenever the project is maintained by CI.*
+## `examples-*` workflow status
+
+CI status above avoids taking any workflow running with latest dependencies into account. That's why we reference the corresponding `badge-*` workflows instead. The following table displays the raw `examples-*` workflow status whenever the project is maintained by CI.*
+
+| Workflow | Status |
+|----------|--------|
+| `examples-apo.yml` | [![examples-apo workflow status](https://github.com/microsoft/agent-lightning/actions/workflows/examples-apo.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/examples-apo.yml) |
+| `examples-azure.yml` | [![examples-azure workflow status](https://github.com/microsoft/agent-lightning/actions/workflows/examples-azure.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/examples-azure.yml) |
+| `examples-calc-x.yml` | [![examples-calc-x workflow status](https://github.com/microsoft/agent-lightning/actions/workflows/examples-calc-x.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/examples-calc-x.yml) |
+| `examples-chartqa.yml` | [![examples-chartqa workflow status](https://github.com/microsoft/agent-lightning/actions/workflows/examples-chartqa.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/examples-chartqa.yml) |
+| `examples-claude-code.yml` | [![examples-claude-code workflow status](https://github.com/microsoft/agent-lightning/actions/workflows/examples-claude-code.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/examples-claude-code.yml) |
+| `examples-compat.yml` | [![examples-compat workflow status](https://github.com/microsoft/agent-lightning/actions/workflows/examples-compat.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/examples-compat.yml) |
+| `examples-rag.yml` | [![examples-rag workflow status](https://github.com/microsoft/agent-lightning/actions/workflows/examples-rag.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/examples-rag.yml) |
+| `examples-spider.yml` | [![examples-spider workflow status](https://github.com/microsoft/agent-lightning/actions/workflows/examples-spider.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/examples-spider.yml) |
+| `examples-tinker.yml` | [![examples-tinker workflow status](https://github.com/microsoft/agent-lightning/actions/workflows/examples-tinker.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/examples-tinker.yml) |
+| `examples-unsloth.yml` | [![examples-unsloth workflow status](https://github.com/microsoft/agent-lightning/actions/workflows/examples-unsloth.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/examples-unsloth.yml) |
