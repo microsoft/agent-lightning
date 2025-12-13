@@ -6,26 +6,69 @@ import asyncio
 import logging
 import threading
 import warnings
-from contextlib import asynccontextmanager
-from typing import Any, AsyncGenerator, Awaitable, List, Optional
+from contextlib import asynccontextmanager, contextmanager
+from typing import Any, AsyncGenerator, Awaitable, Iterator, List, Optional
 
 import opentelemetry.trace as trace_api
-from agentops.sdk.core import BatchSpanProcessor
 from opentelemetry.instrumentation.utils import suppress_instrumentation
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import ReadableSpan, SpanProcessor
-from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace import TracerProvider as TracerProviderImpl
-from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export import BatchSpanProcessor, SimpleSpanProcessor
 
 from agentlightning.semconv import LightningResourceAttributes
 from agentlightning.store.base import LightningStore
+from agentlightning.types import Attributes, Span, SpanCoreFields, SpanRecordingContext, StatusCode, TraceStatus
+from agentlightning.types.tracer import convert_timestamp
 from agentlightning.utils.otel import get_tracer_provider
 from agentlightning.utils.otlp import LightningStoreOTLPExporter
 
 from .base import Tracer
 
 logger = logging.getLogger(__name__)
+
+
+def to_otel_status_code(status_code: StatusCode) -> trace_api.StatusCode:
+    if status_code == "UNSET":
+        return trace_api.StatusCode.UNSET
+    elif status_code == "ERROR":
+        return trace_api.StatusCode.ERROR
+    else:
+        return trace_api.StatusCode.OK
+
+
+class OtelSpanRecordingContext(SpanRecordingContext):
+    def __init__(self, span: trace_api.Span) -> None:
+        self._span = span
+
+    def record_exception(self, exception: BaseException) -> None:
+        self._span.record_exception(exception)
+
+    def record_attributes(self, attributes: Attributes) -> None:
+        self._span.set_attributes(attributes)
+
+    def record_status(self, status_code: StatusCode, description: Optional[str] = None) -> None:
+        otel_status_code = to_otel_status_code(status_code)
+        self._span.set_status(otel_status_code, description)
+
+    def finalize(self) -> None:
+        # Do nothing
+        pass
+
+    def get_otel_span(self) -> trace_api.Span:
+        return self._span
+
+    def get_recorded_span(self) -> SpanCoreFields:
+        if isinstance(self._span, ReadableSpan):
+            return SpanCoreFields(
+                name=self._span.name,
+                attributes=self._span.attributes,  # pyright: ignore[reportArgumentType]
+                start_time=convert_timestamp(self._span.start_time),  # pyright: ignore[reportArgumentType]
+                end_time=convert_timestamp(self._span.end_time),  # pyright: ignore[reportArgumentType]
+                status=TraceStatus.from_opentelemetry(self._span.status),
+            )
+        else:
+            raise ValueError(f"Span is not a ReadableSpan: {self._span}")
 
 
 class OtelTracer(Tracer):
@@ -38,7 +81,7 @@ class OtelTracer(Tracer):
     def __init__(self):
         super().__init__()
         # This provider is only initialized when the worker is initialized.
-        self._tracer_provider: Optional[TracerProvider] = None
+        self._tracer_provider: Optional[trace_api.TracerProvider] = None
         self._lightning_span_processor: Optional[LightningSpanProcessor] = None
         self._simple_span_processor: Optional[SimpleSpanProcessor] = None
         self._otlp_span_exporter: Optional[LightningStoreOTLPExporter] = None
@@ -63,7 +106,7 @@ class OtelTracer(Tracer):
         except RuntimeError:
             logger.debug(f"[Worker {worker_id}] Tracer provider is not initialized by OtelTracer. Initializing it now.")
 
-        self._tracer_provider = TracerProvider()
+        self._tracer_provider = TracerProviderImpl()
         trace_api.set_tracer_provider(self._tracer_provider)
         self._lightning_span_processor = LightningSpanProcessor()
         self._tracer_provider.add_span_processor(self._lightning_span_processor)
@@ -129,12 +172,66 @@ class OtelTracer(Tracer):
         else:
             raise ValueError("rollout_id and attempt_id must be either all provided or all None")
 
-    def get_last_trace(self) -> List[ReadableSpan]:
+    def create_span(
+        self,
+        name: str,
+        attributes: Optional[Attributes] = None,
+        timestamp: Optional[float] = None,
+        status: Optional[TraceStatus] = None,
+    ) -> SpanCoreFields:
+        # Fire the span to the current active tracer provider.
+        tracer_provider = self._get_tracer_provider()
+        tracer = tracer_provider.get_tracer(__name__)
+        span = tracer.start_span(
+            name, attributes=attributes, start_time=int(timestamp * 1_000_000_000) if timestamp else None
+        )
+        if status is not None:
+            span.set_status(to_otel_status_code(status.status_code), status.description)
+        span.end(int(timestamp * 1_000_000_000) if timestamp else None)
+
+        # The span should have been auto-created by now.
+        # Return the core fields of the span.
+        if isinstance(span, ReadableSpan):
+            return SpanCoreFields(
+                name=name,
+                attributes=span.attributes,  # pyright: ignore[reportArgumentType]
+                start_time=convert_timestamp(span.start_time),  # pyright: ignore[reportArgumentType]
+                end_time=convert_timestamp(span.end_time),  # pyright: ignore[reportArgumentType]
+                status=TraceStatus.from_opentelemetry(span.status),
+            )
+        else:
+            raise ValueError(f"Span is not a ReadableSpan: {span}")
+
+    @contextmanager
+    def operation_context(
+        self, name: str, attributes: Optional[Attributes] = None, start_time: Optional[float] = None
+    ) -> Iterator[SpanRecordingContext]:
+        # Record the span to the current active tracer provider.
+        tracer_provider = self._get_tracer_provider()
+        tracer = tracer_provider.get_tracer(__name__)
+
+        # Activate the span as the current span within otel.
+        with tracer.start_as_current_span(
+            name, attributes=attributes, start_time=int(start_time * 1_000_000_000) if start_time else None
+        ) as span:
+            recording_context = OtelSpanRecordingContext(span)
+            try:
+                yield recording_context
+                recording_context.finalize()
+            except Exception as exc:
+                recording_context.record_exception(exc)
+                recording_context.record_status("ERROR", str(exc))
+                recording_context.finalize()
+                raise
+
+        # No need to retrieve the span here. It's already been sent to otel processor.
+
+    def get_last_trace(self) -> List[Span]:
         """
         Retrieves the raw list of captured spans from the most recent trace.
 
         Returns:
-            A list of OpenTelemetry `ReadableSpan` objects.
+            A list of `Span` objects.
         """
         if not self._lightning_span_processor:
             raise RuntimeError("LightningSpanProcessor is not initialized. Call init_worker() first.")
@@ -143,6 +240,8 @@ class OtelTracer(Tracer):
     def _get_tracer_provider(self) -> TracerProviderImpl:
         if self._tracer_provider is None:
             raise RuntimeError("TracerProvider is not initialized. Call init_worker() first.")
+        if not isinstance(self._tracer_provider, TracerProviderImpl):
+            raise TypeError(f"TracerProvider is not a opentelemetry.sdk.trace.TracerProvider: {self._tracer_provider}")
         return self._tracer_provider
 
     def _enable_native_otlp_exporter(self, store: LightningStore, rollout_id: str, attempt_id: str):
@@ -215,12 +314,13 @@ class LightningSpanProcessor(SpanProcessor):
 
     def __init__(self, disable_store_submission: bool = False):
         self._disable_store_submission: bool = disable_store_submission
-        self._spans: List[ReadableSpan] = []
+        self._spans: List[Span] = []
 
         # Store related context and states
         self._store: Optional[LightningStore] = None
         self._rollout_id: Optional[str] = None
         self._attempt_id: Optional[str] = None
+        self._local_sequence_id: int = 0
         self._lock = threading.Lock()
 
         # private asyncio loop running in a daemon thread
@@ -330,7 +430,7 @@ class LightningSpanProcessor(SpanProcessor):
     def force_flush(self, timeout_millis: int = 30000) -> bool:
         return True
 
-    def spans(self) -> List[ReadableSpan]:
+    def spans(self) -> List[Span]:
         """
         Get the list of spans collected by this processor.
         This is useful for debugging and testing purposes.
@@ -373,12 +473,23 @@ class LightningSpanProcessor(SpanProcessor):
                 # Submit add_otel_span to the event loop and wait for it to complete
                 with suppress_instrumentation():
                     self._ensure_loop()
-                    self._await_in_loop(
+                    uploaded_span = self._await_in_loop(
                         self._store.add_otel_span(self._rollout_id, self._attempt_id, span),
                         timeout=60.0,
                     )
+                    if uploaded_span is not None:
+                        self._spans.append(uploaded_span)
             except Exception:
                 # log; on_end MUST NOT raise
                 logger.exception(f"Error adding span to store: {span.name}")
 
-        self._spans.append(span)
+        else:
+            # Fallback path
+            created_span = Span.from_opentelemetry(
+                span,
+                rollout_id=self._rollout_id or "rollout-dummy",
+                attempt_id=self._attempt_id or "attempt-dummy",
+                sequence_id=self._local_sequence_id,
+            )
+            self._local_sequence_id += 1
+            self._spans.append(created_span)

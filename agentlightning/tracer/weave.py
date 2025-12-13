@@ -28,7 +28,7 @@ from agentlightning.types.tracer import OtelResource, Span, SpanContext, TraceSt
 from agentlightning.utils.id import generate_id
 from agentlightning.utils.otel import flatten_attributes, sanitize_attributes
 
-from .base import Tracer
+from .base import Tracer, with_active_tracer_context
 
 logger = logging.getLogger(__name__)
 
@@ -192,6 +192,7 @@ class WeaveTracer(Tracer):
             self.uninstrument(worker_id)
             logger.info(f"[Worker {worker_id}] Instrumentation removed.")
 
+    @with_active_tracer_context
     @asynccontextmanager
     async def trace_context(
         self,
