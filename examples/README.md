@@ -2,6 +2,8 @@
 
 This catalog highlights the examples shipped with Agent-lightning.
 
+Community-contributed examples and recipes are available in the [contrib](../contrib) directory.
+
 | Example | Description | CI Maintenance |
 |---------|-------------|----------------|
 | [apo](./apo) | Automatic Prompt Optimization tutorials covering built-in, custom, and debugging workflows. | [![apo workflow status](https://github.com/microsoft/agent-lightning/actions/workflows/badge-apo.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/examples-apo.yml) |
@@ -11,7 +13,6 @@ This catalog highlights the examples shipped with Agent-lightning.
 | [claude_code](./claude_code) | Claude Code SWE-bench harness that records Agent-lightning traces across Anthropic, vLLM, and OpenAI-compatible backends. | [![claude_code workflow status](https://github.com/microsoft/agent-lightning/actions/workflows/badge-claude-code.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/examples-claude-code.yml) |
 | [minimal](./minimal) | Bite-sized programs that demonstrate how individual Agent-lightning building blocks behave in isolation. | [![minimal workflow status](https://github.com/microsoft/agent-lightning/actions/workflows/badge-unit.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/badge-unit.yml) |
 | [rag](./rag) | Retrieval-Augmented Generation pipeline targeting the MuSiQue dataset with Wikipedia retrieval. | [![rag workflow status](https://github.com/microsoft/agent-lightning/actions/workflows/badge-rag.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/examples-rag.yml) |
-| [search_r1](./search_r1) | Framework-free Search-R1 reinforcement learning training workflow with a retrieval backend. | **Last verified with Agent-lightning v0.1.2** |
 | [spider](./spider) | Text-to-SQL reinforcement learning training on the Spider dataset using LangGraph. | [![spider workflow status](https://github.com/microsoft/agent-lightning/actions/workflows/badge-spider.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/examples-spider.yml) |
 | [tinker](./tinker) | Reinforcement learning with Tinker as the backend training service. | [![tinker workflow status](https://github.com/microsoft/agent-lightning/actions/workflows/badge-tinker.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/examples-tinker.yml) |
 | [unsloth](./unsloth) | Supervised fine-tuning example powered by Unsloth with 4-bit quantization and LoRA. | [![unsloth workflow status](https://github.com/microsoft/agent-lightning/actions/workflows/badge-unsloth.yml/badge.svg)](https://github.com/microsoft/agent-lightning/actions/workflows/examples-unsloth.yml) |
