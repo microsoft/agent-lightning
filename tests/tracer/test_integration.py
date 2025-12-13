@@ -726,6 +726,11 @@ async def _run_tracer_with_agent(settings: OpenAISettings, tracer: Tracer, agent
             )
         tree = TraceTree.from_spans(last_trace_normalized)
 
+        # Visualize the trace tree for debug
+        debug_dir = os.path.join(os.path.dirname(__file__), "debug")
+        os.makedirs(debug_dir, exist_ok=True)
+        tree.visualize(filename=os.path.join(debug_dir, f"{tracer.__class__.__name__}_{agent_name}"))
+
         tree.repair_hierarchy()
 
         assert_expected_pairs_in_tree(tree.names_tuple(), AGENTOPS_EXPECTED_TREES[agent_name])

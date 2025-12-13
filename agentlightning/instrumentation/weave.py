@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Iterator, List
 
@@ -32,9 +33,12 @@ class InMemoryWeaveTraceServer(TraceServerClientInterface):
     def __init__(self):
         # Minimal storage to allow basic querying in tests
         self.calls: Dict[str, tsi.CallSchema] = {}
+        self.partial_calls: Dict[str, Dict[str, Any]] = {}
         self.objs: Dict[str, Any] = {}
         self.files: Dict[str, bytes] = {}
         self.feedback: List[tsi.FeedbackCreateReq] = []
+
+        self._call_threading_lock = threading.Lock()
 
     @classmethod
     def from_env(cls, *args: Any, **kwargs: Any) -> InMemoryWeaveTraceServer:
@@ -50,30 +54,40 @@ class InMemoryWeaveTraceServer(TraceServerClientInterface):
 
     @validate_call
     def call_start(self, req: tsi.CallStartReq) -> tsi.CallStartRes:
+        # NOTE: It's not necessary that call_end must be called after call_start.
         request_content = req.start.model_dump(exclude_none=True)
+
+        # If id needs to be generated here, it's very likely we won't be able to find the call later.
+        # This is just to make the type checker happy.
         call_id = request_content.get("id") or generate_id()
         trace_id = request_content.get("trace_id") or generate_id()
         request_content["id"] = call_id
         request_content["trace_id"] = trace_id
-        import traceback
 
-        print("!!! call_start: call_id =", call_id, "trace_id =", trace_id, "request_content =", request_content)
-        print("!!! call_start:", str(traceback.format_stack()))
+        with self._call_threading_lock:
+            if call_id in self.partial_calls:
+                # call_end has already been called for this call.
+                kwargs = {**request_content, **self.partial_calls[call_id]}
+                self.calls[call_id] = tsi.CallSchema(**kwargs)
+                del self.partial_calls[call_id]
+            else:
+                self.partial_calls[call_id] = request_content
 
-        self.calls[call_id] = tsi.CallSchema(**request_content)
         return tsi.CallStartRes(id=call_id, trace_id=trace_id)
 
     @validate_call
     def call_end(self, req: tsi.CallEndReq) -> tsi.CallEndRes:
         request_content = req.end.model_dump(exclude_none=True)
-        if req.end.id in self.calls:
-            self.calls[req.end.id] = self.calls[req.end.id].model_copy(update=request_content)
-        else:
-            import traceback
+        call_id = req.end.id
 
-            print("!!! call_end: call not found", req.end.id, self.calls)
-            print("!!! call_end:", str(traceback.format_stack()))
-            self.calls[req.end.id] = tsi.CallSchema(**request_content)
+        with self._call_threading_lock:
+            if call_id in self.partial_calls:
+                # End request always override the start request content.
+                kwargs = {**self.partial_calls[call_id], **request_content}
+                self.calls[call_id] = tsi.CallSchema(**kwargs)
+                del self.partial_calls[call_id]
+            else:
+                self.partial_calls[call_id] = request_content
         return tsi.CallEndRes()
 
     @validate_call
@@ -430,6 +444,7 @@ def get_entity_project_from_project_name_factory(entity_name: str) -> tuple[str,
         assert _original_get_entity_project_from_project_name is not None
         return _original_get_entity_project_from_project_name(entity_name)
     except weave.trace.weave_init.WeaveWandbAuthenticationException:
+        # In case API is not available.
         return "agl", "weave"
 
 

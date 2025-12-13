@@ -18,12 +18,14 @@ from typing import (
 )
 
 import weave
+from weave.trace.settings import UserSettings
 from weave.trace_server import trace_server_interface as tsi
 
 from agentlightning.instrumentation.weave import InMemoryWeaveTraceServer, instrument_weave, uninstrument_weave
 from agentlightning.semconv import LightningResourceAttributes, WeaveSpanAttributes
 from agentlightning.store.base import LightningStore
 from agentlightning.types.tracer import OtelResource, Span, SpanContext, TraceStatus
+from agentlightning.utils.id import generate_id
 from agentlightning.utils.otel import flatten_attributes, sanitize_attributes
 
 from .base import Tracer
@@ -43,27 +45,48 @@ def op_name_to_func_name(op_name: str) -> str:
         return op_name
 
 
+def random_project_name() -> str:
+    return "agl/weave-" + generate_id(12)
+
+
 class WeaveTracerManagedTraceServer(InMemoryWeaveTraceServer):
     """A managed trace server for WeaveTracer."""
 
     def __init__(
-        self, call_start_callback: Callable[[tsi.CallSchema], None], call_end_callback: Callable[[tsi.CallSchema], None]
+        self,
+        partial_call_callback: Callable[[Dict[str, Any]], None],
+        complete_call_callback: Callable[[tsi.CallSchema], None],
     ):
         super().__init__()
-        self.call_start_callback = call_start_callback
-        self.call_end_callback = call_end_callback
+        self.partial_call_callback = partial_call_callback
+        self.complete_call_callback = complete_call_callback
+
+    def trigger_callbacks(self, call_id: str) -> None:
+        with self._call_threading_lock:
+            if call_id in self.calls:
+                self.complete_call_callback(self.calls[call_id])
+            elif call_id in self.partial_calls:
+                self.partial_call_callback(self.partial_calls[call_id])
+            else:
+                logger.error(f"Call {call_id} not found in partial_calls or calls")
 
     def call_start(self, req: tsi.CallStartReq) -> tsi.CallStartRes:
-        ret = super().call_start(req)
-        if req.start.id in self.calls:
-            self.call_start_callback(self.calls[req.start.id])
-        return ret
+        try:
+            ret = super().call_start(req)
+            self.trigger_callbacks(ret.id)
+            return ret
+        except Exception:
+            logger.exception(f"Error calling call_start: {req}", exc_info=True)
+            raise
 
     def call_end(self, req: tsi.CallEndReq) -> tsi.CallEndRes:
-        ret = super().call_end(req)
-        if req.end.id in self.calls:
-            self.call_end_callback(self.calls[req.end.id])
-        return ret
+        try:
+            ret = super().call_end(req)
+            self.trigger_callbacks(req.end.id)
+            return ret
+        except Exception:
+            logger.exception(f"Error calling call_end: {req}", exc_info=True)
+            raise
 
 
 class WeaveTracer(Tracer):
@@ -79,23 +102,27 @@ class WeaveTracer(Tracer):
     """
 
     def __init__(
-        self, *, project_name: str | None = None, wandb_api_key: str | None = None, instrument_managed: bool = True
+        self,
+        *,
+        project_name: str | None = None,
+        weave_user_settings: UserSettings | None = None,
+        instrument_managed: bool = True,
     ):
-        """
-        Initialize a WeaveTracer instance.
+        """Initialize a WeaveTracer instance.
 
         Args:
             project_name: Optional project name for Weave; defaults to the current module name.
-            wandb_api_key: Optional W&B API key.
+            weave_user_settings: Optional UserSettings for Weave.
             instrument_managed: Whether to patch the Weave/W&B integration to bypass actual network calls for testing.
         """
         super().__init__()
-        self.project_name = project_name or __name__
-        self.sequence_id = 0
-        self._store: Optional[LightningStore] = None
+        self.project_name = project_name
         self.instrument_managed = instrument_managed
+        self.weave_user_settings = weave_user_settings or UserSettings(use_server_cache=False)
+
+        self._store: Optional[LightningStore] = None
         self._server = WeaveTracerManagedTraceServer(
-            call_start_callback=self.call_start_callback, call_end_callback=self.call_end_callback
+            partial_call_callback=self.partial_call_callback, complete_call_callback=self.complete_call_callback
         )
 
         self._default_sequence_counter: int = 0
@@ -103,8 +130,8 @@ class WeaveTracer(Tracer):
         self._spans: List[Span] = []  # spans in the current trace
         self._rollout_id: Optional[str] = None
         self._attempt_id: Optional[str] = None
-        self._call_start_futures: Dict[str, asyncio.Future[int] | futures.Future[int]] = {}
-        self._call_end_futures: List[asyncio.Future[None] | futures.Future[None]] = []
+        self._partial_call_futures: Dict[str, asyncio.Future[int] | futures.Future[int]] = {}
+        self._complete_call_futures: List[asyncio.Future[None] | futures.Future[None]] = []
         self._loop: weakref.ReferenceType[asyncio.AbstractEventLoop] | None = None
 
     def instrument(self, worker_id: int):
@@ -134,16 +161,23 @@ class WeaveTracer(Tracer):
         if self.instrument_managed:
             self.instrument(worker_id)
 
-        # Initialize the Weave client if not already initialized
-        if weave.get_client() is None:  # type: ignore
-            try:
-                weave.init(project_name=self.project_name)  # type: ignore
-                logger.info(f"[Worker {worker_id}] Weave client initialized.")
-            except Exception as exc:
-                raise RuntimeError(f"Failed to initialize Weave for project '{self.project_name}'") from exc
-        else:
-            # FIXME
-            pass
+        weave_client = weave.get_client()
+        if self.project_name is None:
+            self.project_name = random_project_name()
+
+        if weave_client is not None:
+            logger.warning("Weave client was already initialized. Reentrant calls are at your own risk.")
+            if weave_client.project == self.project_name:
+                logger.error(
+                    f"Weave client was already initialized for the same project '{self.project_name}'. It's very likely that weave won't work correctly."
+                )
+
+        # Init no matter what
+        try:
+            weave.init(project_name=self.project_name, settings=self.weave_user_settings)
+            logger.info(f"[Worker {worker_id}] Weave client initialized.")
+        except Exception as exc:
+            raise RuntimeError(f"Failed to initialize Weave for project '{self.project_name}'") from exc
 
     def teardown_worker(self, worker_id: int):
         """
@@ -167,12 +201,10 @@ class WeaveTracer(Tracer):
         attempt_id: Optional[str] = None,
         **kwargs: Any,
     ) -> AsyncIterator[Any]:
-        """
-        Synchronous implementation of the tracing context.
+        """Asynchronous implementation of the tracing context.
 
         Args:
             name: Optional operation name.
-            store: Optional LightningStore instance.
             rollout_id: Optional rollout ID.
             attempt_id: Optional attempt ID.
 
@@ -195,7 +227,13 @@ class WeaveTracer(Tracer):
         if not weave_client:
             raise RuntimeError("Weave client is not initialized. Call init_worker() first.")
 
-        arg_op = name or self.project_name
+        if weave_client.server is not self._server:
+            logger.error(
+                "Weave client is not using the correct trace server. You might have multiple WeaveTracer instances running in the same process. "
+                f"Expected {self._server}, got {weave_client.server}"
+            )
+
+        arg_op = name or weave_client.project
         arg_inputs: dict[str, str] = {}
         if rollout_id is not None:
             arg_inputs[LightningResourceAttributes.ROLLOUT_ID.value] = rollout_id
@@ -216,11 +254,12 @@ class WeaveTracer(Tracer):
                 # Finish trace and log any exception
                 weave_client.finish_call(trace_call, exception=exc)  # pyright: ignore[reportUnknownMemberType]
                 logger.error(f"Trace failed for rollout_id={rollout_id}, attempt_id={attempt_id}, error={exc}")
+                raise
 
             weave_client.flush()
 
             # It's possible that the call end futures are from a dedicated Weave thread pool,
-            await asyncio.gather(*[asyncio.wrap_future(future) for future in self._call_end_futures])
+            await asyncio.gather(*[asyncio.wrap_future(future) for future in self._complete_call_futures])
 
         finally:
             # Mandatory cleanup
@@ -233,8 +272,8 @@ class WeaveTracer(Tracer):
         self._calls.clear()
         self._rollout_id = None
         self._attempt_id = None
-        self._call_start_futures.clear()
-        self._call_end_futures.clear()
+        self._partial_call_futures.clear()
+        self._complete_call_futures.clear()
         self._loop = weakref.ref(asyncio.get_running_loop())
 
     def _ensure_loop(self) -> tuple[asyncio.AbstractEventLoop, bool]:
@@ -264,33 +303,36 @@ class WeaveTracer(Tracer):
     def get_last_trace(self) -> List[Span]:
         return self._spans
 
-    def call_start_callback(self, call: tsi.CallSchema) -> None:
-        if call.id in self._call_start_futures:
-            raise ValueError(f"Call {call.id} already has a start future")
-        self._calls[call.id] = call
+    def partial_call_callback(self, request_content: Dict[str, Any]) -> None:
+        call_id = request_content.get("id")
+        if call_id is None:
+            raise ValueError("Call ID is required even for partial calls")
+
+        if call_id in self._partial_call_futures:
+            raise ValueError(f"Call {call_id} already has a start future")
 
         # The callback must possibly be called from a dedicated Weave thread pool,
         # but it should be executed on the main event loop.
         try:
             loop, is_current_loop = self._ensure_loop()
             if is_current_loop:
-                task = loop.create_task(self.call_start_handler(call))
+                task = loop.create_task(self.partial_call_handler(request_content))
             else:
                 # Schedule the task on the dedicated loop
-                task = asyncio.run_coroutine_threadsafe(self.call_start_handler(call), loop)
-            self._call_start_futures[call.id] = task
+                task = asyncio.run_coroutine_threadsafe(self.partial_call_handler(request_content), loop)
+            self._partial_call_futures[call_id] = task
         except Exception as exc:
             logger.exception(f"Error creating call start task: {exc}", exc_info=True)
 
-    def call_end_callback(self, call: tsi.CallSchema) -> None:
+    def complete_call_callback(self, call: tsi.CallSchema) -> None:
         try:
             loop, is_current_loop = self._ensure_loop()
             if is_current_loop:
-                task = loop.create_task(self.call_finish_handler(call))
+                task = loop.create_task(self.complete_call_handler(call))
             else:
                 # Schedule the task on the dedicated loop
-                task = asyncio.run_coroutine_threadsafe(self.call_finish_handler(call), loop)
-            self._call_end_futures.append(task)
+                task = asyncio.run_coroutine_threadsafe(self.complete_call_handler(call), loop)
+            self._complete_call_futures.append(task)
         except Exception as exc:
             logger.exception(f"Error creating call finish task: {exc}", exc_info=True)
 
@@ -305,7 +347,7 @@ class WeaveTracer(Tracer):
             self._default_sequence_counter += 1
             return self._default_sequence_counter
 
-    async def call_start_handler(self, call: tsi.CallSchema) -> int:
+    async def partial_call_handler(self, request_content: Dict[str, Any]) -> int:
         """Handler called when a Weave Call starts.
 
         Args:
@@ -317,15 +359,15 @@ class WeaveTracer(Tracer):
         sequence_id = await self._get_next_sequence_id()
         return sequence_id
 
-    async def call_finish_handler(self, call: tsi.CallSchema) -> None:
+    async def complete_call_handler(self, call: tsi.CallSchema) -> None:
         """Handler called when a Weave Call finishes.
 
         Converts the call (including nested children) into spans and stores them in LightningStore.
         """
         # Make sure the corresponding call_start_future is complete
-        if call.id in self._call_start_futures:
-            sequence_id = await asyncio.wrap_future(self._call_start_futures[call.id])
-            del self._call_start_futures[call.id]
+        if call.id in self._partial_call_futures:
+            sequence_id = await asyncio.wrap_future(self._partial_call_futures[call.id])
+            del self._partial_call_futures[call.id]
         else:
             # Fetch a new sequence ID as the call_start is somehow missing
             logger.warning(f"Call {call.id} has no start future. Fetching a new sequence ID.")
