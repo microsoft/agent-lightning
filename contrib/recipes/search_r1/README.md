@@ -2,7 +2,7 @@
 
 ## Overview
 
-This example implements **Search R1** within Agent Lightning. It also serves as a demonstration of a **framework-free agent training pipeline**, showing how to run end-to-end RL training without relying on specialized frameworks. **It's tested and compatible with Agent-lightning v0.1.x**.
+This example implements **Search R1** within Agent Lightning. It also serves as a demonstration of a **framework-free agent training pipeline**, showing how to run end-to-end RL training without relying on specialized frameworks. **It's tested and compatible with Agent-lightning v0.1.2**.
 
 The example is designed to run on a single node with 8 GPUs, each having at least 40 GB of memory.
 

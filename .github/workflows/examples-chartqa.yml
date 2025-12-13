@@ -2,7 +2,24 @@ name: Examples - ChartQA
 permissions:
   contents: read
 on:
+  schedule:
+    # Every day at 6 AM UTC+8
+    - cron: "0 22 * * *"
+
   workflow_dispatch:
+
+  repository_dispatch:
+    types: [ci-chartqa, ci-all]
+
+run-name: >-
+  ${{ github.event_name == 'repository_dispatch'
+      && format(
+        'ChartQA - PR #{0} - {1} - {2}',
+        github.event.client_payload.pull_number,
+        github.event.client_payload.ci_label,
+        github.event.client_payload.correlation_id
+      )
+      || format('ChartQA - {0}', github.event_name) }}
 
 jobs:
   chartqa:
