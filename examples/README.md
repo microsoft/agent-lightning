@@ -19,7 +19,7 @@ Community-contributed examples and recipes are available in the [contrib](../con
 
 ## `examples-*` workflow status
 
-CI status above avoids taking any workflow running with latest dependencies into account. That's why we reference the corresponding `badge-*` workflows instead. The following table displays the raw `examples-*` workflow status whenever the project is maintained by CI.*
+CI status above avoids taking any workflow running with latest dependencies into account. That's why we reference the corresponding `badge-*` workflows instead. The following table displays the raw `examples-*` workflow status whenever the project is maintained by CI.
 
 | Workflow | Status |
 |----------|--------|
