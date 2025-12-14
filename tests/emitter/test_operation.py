@@ -409,7 +409,7 @@ def test_operation_honors_propagate_flag(monkeypatch: pytest.MonkeyPatch) -> Non
     assert op.span().status.description is None
     assert op.span().start_time is not None
     assert op.span().end_time is not None
-    assert op.span().start_time < op.span().end_time
-    assert op.span().start_time < time.time()
-    assert op.span().end_time < time.time()
-    assert op.span().start_time < op.span().end_time
+    assert op.span().start_time < op.span().end_time  # type: ignore
+    assert op.span().start_time < time.time()  # type: ignore
+    assert op.span().end_time < time.time()  # type: ignore
+    assert op.span().start_time < op.span().end_time  # type: ignore

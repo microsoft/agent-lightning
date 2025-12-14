@@ -270,6 +270,14 @@ jobs:
           python write_traces.py agentops
           sleep 5
 
+      - name: Write Traces with Operations
+        run: |
+          set -euo pipefail
+          source .venv/bin/activate
+          cd examples/minimal
+          python write_traces.py operation
+          sleep 5
+
       - name: Write Traces via Otel Tracer with Client
         run: |
           set -euo pipefail

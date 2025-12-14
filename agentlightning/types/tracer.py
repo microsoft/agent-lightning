@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+
 """Data models that mirror OpenTelemetry spans for Agent Lightning."""
 
 import json
@@ -220,9 +222,9 @@ class SpanCoreFields(BaseModel):
     """The status of the span."""
     attributes: Attributes
     """The attributes of the span."""
-    start_time: float
+    start_time: Optional[float]
     """The start time of the span."""
-    end_time: float
+    end_time: Optional[float]
     """The end time of the span."""
 
 
@@ -445,7 +447,7 @@ class Span(BaseModel):
         )
 
     @classmethod
-    def from_creation_request(
+    def from_core_fields(
         cls,
         core: SpanCoreFields,
         *,
@@ -470,7 +472,7 @@ class Span(BaseModel):
             attempt_id=attempt_id,
             sequence_id=sequence_id,
             name=core.name,
-            start_time=core.start_time,
+            start_time=core.start_time or time.time(),
             end_time=core.end_time,
             status=core.status,
         )

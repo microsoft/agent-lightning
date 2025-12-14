@@ -61,9 +61,9 @@ class OtelSpanRecordingContext(SpanRecordingContext):
         if isinstance(self._span, ReadableSpan):
             return SpanCoreFields(
                 name=self._span.name,
-                attributes=self._span.attributes,  # pyright: ignore[reportArgumentType]
-                start_time=convert_timestamp(self._span.start_time),  # pyright: ignore[reportArgumentType]
-                end_time=convert_timestamp(self._span.end_time),  # pyright: ignore[reportArgumentType]
+                attributes=dict(self._span.attributes) if self._span.attributes else {},
+                start_time=convert_timestamp(self._span.start_time),
+                end_time=convert_timestamp(self._span.end_time),
                 status=TraceStatus.from_opentelemetry(self._span.status),
             )
         else:
@@ -194,9 +194,9 @@ class OtelTracer(Tracer):
         if isinstance(span, ReadableSpan):
             return SpanCoreFields(
                 name=name,
-                attributes=span.attributes,  # pyright: ignore[reportArgumentType]
-                start_time=convert_timestamp(span.start_time),  # pyright: ignore[reportArgumentType]
-                end_time=convert_timestamp(span.end_time),  # pyright: ignore[reportArgumentType]
+                attributes=dict(span.attributes) if span.attributes else {},
+                start_time=convert_timestamp(span.start_time),
+                end_time=convert_timestamp(span.end_time),
                 status=TraceStatus.from_opentelemetry(span.status),
             )
         else:

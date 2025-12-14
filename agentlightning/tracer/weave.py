@@ -151,8 +151,8 @@ class WeaveSpanRecordingContext(SpanRecordingContext):
         return SpanCoreFields(
             name=self._call.op_name,
             attributes=flatten_attributes(self._call.attributes or {}),
-            start_time=get_timestamp_or_throw(self._call.started_at, "started_at"),
-            end_time=get_timestamp_or_throw(self._call.ended_at, "ended_at"),
+            start_time=self._call.started_at.timestamp() if self._call.started_at else None,
+            end_time=self._call.ended_at.timestamp() if self._call.ended_at else None,
             status=TraceStatus(
                 status_code="OK" if self._call.exception is None else "ERROR", description=self._call.exception
             ),
@@ -395,8 +395,8 @@ class WeaveTracer(Tracer):
         # Immediately finish the call
         weave_client.finish_call(trace_call)  # pyright: ignore[reportUnknownMemberType]
         # We don't wait for the call to be propagated to the server.
-        start_time = get_timestamp_or_throw(trace_call.started_at, "started_at")
-        end_time = get_timestamp_or_throw(trace_call.ended_at, "ended_at")
+        start_time = trace_call.started_at.timestamp() if trace_call.started_at else None
+        end_time = trace_call.ended_at.timestamp() if trace_call.ended_at else None
         trace_status = (
             TraceStatus(status_code="OK")
             if trace_call.exception is None
@@ -404,7 +404,7 @@ class WeaveTracer(Tracer):
         )
         return SpanCoreFields(
             name=name,
-            attributes=trace_call.attributes or {},
+            attributes=flatten_attributes(trace_call.attributes or {}),
             start_time=start_time,
             end_time=end_time,
             status=trace_status,
@@ -434,6 +434,8 @@ class WeaveTracer(Tracer):
         except Exception as exc:
             recording_context.record_exception(exc)
             raise
+        finally:
+            weave_client.finish_call(trace_call)  # pyright: ignore[reportUnknownMemberType]
 
     async def _init_trace_context(self) -> None:
         """Initialize the trace context."""
