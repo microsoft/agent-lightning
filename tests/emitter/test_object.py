@@ -35,7 +35,7 @@ class DummyTracer:
         self.last_name: Optional[str] = None
         self.last_attributes: Optional[Dict[str, Any]] = None
 
-    def start_span(self, name: str, attributes: Optional[Dict[str, Any]] = None) -> DummySpan:
+    def create_span(self, name: str, attributes: Optional[Dict[str, Any]] = None, **kwargs: Any) -> DummySpan:
         self.last_name = name
         self.last_attributes = attributes or {}
         return self._span
@@ -47,7 +47,7 @@ def _stub_tracer(monkeypatch: pytest.MonkeyPatch, span: DummySpan) -> DummyTrace
     def fake_get_tracer(*_: Any, **__: Any) -> DummyTracer:
         return tracer
 
-    monkeypatch.setattr(object_module, "get_tracer", fake_get_tracer)
+    monkeypatch.setattr(object_module, "get_active_tracer", fake_get_tracer)
     return tracer
 
 

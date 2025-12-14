@@ -22,7 +22,8 @@ from typing import (
 )
 
 from agentlightning.semconv import AGL_ANNOTATION, AGL_OPERATION, LightningSpanAttributes
-from agentlightning.tracer import DummyTracer, get_active_tracer
+from agentlightning.tracer.base import get_active_tracer
+from agentlightning.tracer.dummy import DummyTracer
 from agentlightning.types import SpanCoreFields, SpanRecordingContext, TraceStatus
 from agentlightning.utils.otel import check_attributes_sanity, flatten_attributes, sanitize_attributes
 
@@ -105,6 +106,7 @@ class OperationContext:
             self.tracer = DummyTracer()
         self._ctx_manager: Optional[ContextManager[SpanRecordingContext]] = None
         self._recording_context: Optional[SpanRecordingContext] = None
+        self._span: Optional[SpanCoreFields] = None
 
     def __enter__(self) -> "OperationContext":
         """Enter the context manager and start a new span.
@@ -127,8 +129,16 @@ class OperationContext:
         """Exit the context manager and finish the span."""
         if self._ctx_manager:
             self._ctx_manager.__exit__(exc_type, exc_val, exc_tb)
+        if self._recording_context:
+            self._span = self._recording_context.get_recorded_span()
         self._ctx_manager = None
         self._recording_context = None
+
+    def span(self) -> SpanCoreFields:
+        """Get the span that was created by this context manager."""
+        if self._span is None:
+            raise RuntimeError("Span is not ready yet.")
+        return self._span
 
     def set_input(self, *args: Any, **kwargs: Any) -> None:
         """Record input arguments on the current span.

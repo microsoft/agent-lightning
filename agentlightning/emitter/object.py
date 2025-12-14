@@ -6,7 +6,8 @@ import logging
 from typing import Any, Dict, Optional
 
 from agentlightning.semconv import AGL_OBJECT, LightningSpanAttributes
-from agentlightning.tracer import DummyTracer, get_active_tracer
+from agentlightning.tracer.base import get_active_tracer
+from agentlightning.tracer.dummy import DummyTracer
 from agentlightning.types import SpanCoreFields, SpanLike, TraceStatus
 from agentlightning.utils.otel import full_qualified_name
 

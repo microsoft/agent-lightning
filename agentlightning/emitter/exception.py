@@ -4,9 +4,10 @@ import logging
 from typing import Any, Dict, Optional
 
 from agentlightning.semconv import AGL_EXCEPTION
-from agentlightning.tracer import DummyTracer, get_active_tracer
+from agentlightning.tracer.base import get_active_tracer
+from agentlightning.tracer.dummy import DummyTracer
 from agentlightning.types import TraceStatus
-from agentlightning.utils.otel import format_exception_attributes
+from agentlightning.utils.otel import format_exception_attributes, sanitize_attributes
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +35,7 @@ def emit_exception(
     span_attributes = format_exception_attributes(exception)
 
     if attributes:
-        span_attributes.update(attributes)
+        span_attributes.update(sanitize_attributes(attributes))
 
     logger.debug("Emitting exception span for %s", type(exception).__name__)
 

@@ -4,13 +4,11 @@ from .agentops import AgentOpsTracer
 from .base import Tracer, clear_active_tracer, get_active_tracer, set_active_tracer
 from .dummy import DummyTracer
 from .otel import OtelTracer
-from .weave import WeaveTracer
 
 __all__ = [
     "AgentOpsTracer",
     "Tracer",
     "OtelTracer",
-    "WeaveTracer",
     "DummyTracer",
     "get_active_tracer",
     "set_active_tracer",
