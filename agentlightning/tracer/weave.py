@@ -328,7 +328,8 @@ class WeaveTracer(Tracer):
             self._rollout_id = rollout_id
             self._attempt_id = attempt_id
         elif rollout_id is None and attempt_id is None:
-            logger.warning("No rollout_id or attempt_id provided. Skipping writing to store.")
+            logger.info("No rollout_id or attempt_id provided. Skipping writing to store.")
+            self._rollout_id = self._attempt_id = None
         else:
             raise ValueError("rollout_id and attempt_id must be either both provided or both None")
 
@@ -365,15 +366,16 @@ class WeaveTracer(Tracer):
                 logger.error(f"Trace failed for rollout_id={rollout_id}, attempt_id={attempt_id}, error={exc}")
                 raise
 
-            weave_client.flush()
-
-            # It's possible that the call end futures are from a dedicated Weave thread pool,
-            await asyncio.gather(*[asyncio.wrap_future(future) for future in self._complete_call_futures])
-
         finally:
-            # Mandatory cleanup
-            self._rollout_id = None
-            self._attempt_id = None
+            try:
+                weave_client.flush()
+                # It's possible that the call end futures are from a dedicated Weave thread pool,
+                await asyncio.gather(*[asyncio.wrap_future(future) for future in self._complete_call_futures])
+
+            finally:
+                # Mandatory cleanup
+                self._rollout_id = None
+                self._attempt_id = None
 
     def create_span(
         self,
@@ -437,8 +439,6 @@ class WeaveTracer(Tracer):
         """Initialize the trace context."""
         self._spans.clear()
         self._calls.clear()
-        self._rollout_id = None
-        self._attempt_id = None
         self._partial_call_futures.clear()
         self._complete_call_futures.clear()
         self._loop = weakref.ref(asyncio.get_running_loop())
