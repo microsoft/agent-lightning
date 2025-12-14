@@ -7,26 +7,41 @@ import concurrent.futures as futures
 import logging
 import re
 import weakref
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
+from datetime import datetime
 from typing import (
     Any,
     AsyncIterator,
     Callable,
     Dict,
+    Iterator,
     List,
     Optional,
+    cast,
 )
 
 import weave
+from opentelemetry.semconv.attributes import exception_attributes
+from weave.trace.call import Call
 from weave.trace.settings import UserSettings
+from weave.trace.weave_client import WeaveClient
 from weave.trace_server import trace_server_interface as tsi
 
 from agentlightning.instrumentation.weave import InMemoryWeaveTraceServer, instrument_weave, uninstrument_weave
-from agentlightning.semconv import LightningResourceAttributes, WeaveSpanAttributes
+from agentlightning.semconv import LightningResourceAttributes, LightningSpanAttributes
 from agentlightning.store.base import LightningStore
-from agentlightning.types.tracer import OtelResource, Span, SpanContext, TraceStatus
+from agentlightning.types import (
+    Attributes,
+    OtelResource,
+    Span,
+    SpanContext,
+    SpanCoreFields,
+    SpanRecordingContext,
+    StatusCode,
+    TraceStatus,
+)
 from agentlightning.utils.id import generate_id
-from agentlightning.utils.otel import flatten_attributes, sanitize_attributes
+from agentlightning.utils.otel import filter_and_unflatten_attributes, flatten_attributes, sanitize_attributes
 
 from .base import Tracer, with_active_tracer_context
 
@@ -47,6 +62,94 @@ def op_name_to_func_name(op_name: str) -> str:
 
 def random_project_name() -> str:
     return "agl/weave-" + generate_id(12)
+
+
+def get_timestamp_or_throw(date: Optional[datetime], field_name: str) -> float:
+    if date is None:
+        raise ValueError(f"{field_name} is required but not set")
+    return date.timestamp()
+
+
+class WeaveSpanRecordingContext(SpanRecordingContext):
+    """Universal interface for recording operations on a Weave call."""
+
+    def __init__(self, call: Call) -> None:
+        self._call = call
+
+    def record_exception(self, exception: BaseException) -> None:
+        self._call.exception = str(exception)
+
+    def _get_input_from_attributes(self, attributes: Attributes) -> Dict[str, Any]:
+        if LightningSpanAttributes.OPERATION_INPUT.value in attributes:
+            # This can be a very rare case. If it happens, we can just let it throw.
+            return cast(Dict[str, Any], attributes[LightningSpanAttributes.OPERATION_INPUT.value])
+        else:
+            filtered_attributes = filter_and_unflatten_attributes(
+                attributes, LightningSpanAttributes.OPERATION_INPUT.value
+            )
+            if isinstance(filtered_attributes, list):
+                return {str(i): v for i, v in enumerate(filtered_attributes)}
+            else:
+                return filtered_attributes
+
+    def _get_output_from_attributes(self, attributes: Attributes) -> Any:
+        if LightningSpanAttributes.OPERATION_OUTPUT.value in attributes:
+            return attributes[LightningSpanAttributes.OPERATION_OUTPUT.value]
+        else:
+            return filter_and_unflatten_attributes(attributes, LightningSpanAttributes.OPERATION_OUTPUT.value)
+
+    def record_attributes(self, attributes: Attributes) -> None:
+        input_attributes = self._get_input_from_attributes(attributes)
+        if input_attributes:
+            self._call.inputs.update(input_attributes)
+
+        output_attributes = self._get_output_from_attributes(attributes)
+        if output_attributes:
+            if self._call.output is not None:
+                logger.warning(f"Output is already set. It will be overridden: {self._call.output}")
+            self._call.output = output_attributes
+
+        if LightningSpanAttributes.OPERATION_NAME.value in attributes:
+            logger.error(
+                f"Cannot record operation name as an attribute. It will be skipped: {attributes[LightningSpanAttributes.OPERATION_NAME.value]}"
+            )
+
+        # The rest of the attributes are recorded as summary.
+        for key, value in attributes.items():
+            if (
+                not key == LightningSpanAttributes.OPERATION_INPUT.value
+                and not key.startswith(LightningSpanAttributes.OPERATION_INPUT.value + ".")
+                and not key == LightningSpanAttributes.OPERATION_OUTPUT.value
+                and not key.startswith(LightningSpanAttributes.OPERATION_OUTPUT.value + ".")
+                and not key == LightningSpanAttributes.OPERATION_NAME.value
+            ):
+                if self._call.summary is None:
+                    self._call.summary = {}
+                self._call.summary[key] = value
+
+    def record_status(self, status_code: StatusCode, description: Optional[str] = None) -> None:
+        if status_code == "ERROR":
+            if not description:
+                raise ValueError("Description is required when status code is ERROR")
+            self._call.exception = description
+        elif status_code == "OK":
+            self._call.exception = None
+        # Do nothing for other status codes.
+
+    def finalize(self) -> None:
+        # Do nothing
+        pass
+
+    def get_recorded_span(self) -> SpanCoreFields:
+        return SpanCoreFields(
+            name=self._call.op_name,
+            attributes=flatten_attributes(self._call.attributes or {}),
+            start_time=get_timestamp_or_throw(self._call.started_at, "started_at"),
+            end_time=get_timestamp_or_throw(self._call.ended_at, "ended_at"),
+            status=TraceStatus(
+                status_code="OK" if self._call.exception is None else "ERROR", description=self._call.exception
+            ),
+        )
 
 
 class WeaveTracerManagedTraceServer(InMemoryWeaveTraceServer):
@@ -224,9 +327,7 @@ class WeaveTracer(Tracer):
 
         await self._init_trace_context()
 
-        weave_client = weave.get_client()
-        if not weave_client:
-            raise RuntimeError("Weave client is not initialized. Call init_worker() first.")
+        weave_client = self._get_weave_client()
 
         if weave_client.server is not self._server:
             logger.error(
@@ -267,6 +368,65 @@ class WeaveTracer(Tracer):
             self._rollout_id = None
             self._attempt_id = None
 
+    def create_span(
+        self,
+        name: str,
+        attributes: Optional[Attributes] = None,
+        timestamp: Optional[float] = None,
+        status: Optional[TraceStatus] = None,
+    ) -> SpanCoreFields:
+        if timestamp is not None:
+            logger.warning("Weave doesn't support customizing the start time of a call. Timestamp is ignored.")
+        weave_client = self._get_weave_client()
+        trace_call = weave_client.create_call(  # pyright: ignore[reportUnknownMemberType]
+            op=name,
+            attributes=attributes,
+            inputs={},
+        )
+        # Immediately finish the call
+        weave_client.finish_call(trace_call)  # pyright: ignore[reportUnknownMemberType]
+        # We don't wait for the call to be propagated to the server.
+        start_time = get_timestamp_or_throw(trace_call.started_at, "started_at")
+        end_time = get_timestamp_or_throw(trace_call.ended_at, "ended_at")
+        trace_status = (
+            TraceStatus(status_code="OK")
+            if trace_call.exception is None
+            else TraceStatus(status_code="ERROR", description=trace_call.exception)
+        )
+        return SpanCoreFields(
+            name=name,
+            attributes=trace_call.attributes or {},
+            start_time=start_time,
+            end_time=end_time,
+            status=trace_status,
+        )
+
+    @contextmanager
+    def operation_context(
+        self,
+        name: str,
+        attributes: Optional[Attributes] = None,
+        start_time: Optional[float] = None,
+        end_time: Optional[float] = None,
+    ) -> Iterator[SpanRecordingContext]:
+        if start_time is not None:
+            logger.warning("Weave doesn't support customizing the start time of a call. Timestamp is ignored.")
+        if end_time is not None:
+            logger.warning("Weave doesn't support customizing the end time of a call. Timestamp is ignored.")
+        weave_client = self._get_weave_client()
+        trace_call = weave_client.create_call(  # pyright: ignore[reportUnknownMemberType]
+            op=name,
+            attributes=attributes,
+            inputs={},
+        )
+        recording_context = WeaveSpanRecordingContext(trace_call)
+        try:
+            yield recording_context
+        except Exception as exc:
+            recording_context.record_exception(exc)
+            recording_context.record_status("ERROR", str(exc))
+            raise
+
     async def _init_trace_context(self) -> None:
         """Initialize the trace context."""
         self._spans.clear()
@@ -276,6 +436,13 @@ class WeaveTracer(Tracer):
         self._partial_call_futures.clear()
         self._complete_call_futures.clear()
         self._loop = weakref.ref(asyncio.get_running_loop())
+
+    def _get_weave_client(self) -> WeaveClient:
+        """Get the Weave client."""
+        weave_client = weave.get_client()
+        if not weave_client:
+            raise RuntimeError("Weave client is not initialized. Call init_worker() first.")
+        return weave_client
 
     def _ensure_loop(self) -> tuple[asyncio.AbstractEventLoop, bool]:
         """Returns a usable event loop and a boolean indicating whether it's the current running loop.
@@ -417,18 +584,19 @@ class WeaveTracer(Tracer):
             status = TraceStatus(status_code="OK")
 
         attributes: Dict[str, Any] = {
-            WeaveSpanAttributes.WEAVE_OP_NAME.value: call.op_name,
+            LightningSpanAttributes.OPERATION_NAME.value: call.op_name,
+            # op_name can be possibly overridden by the attributes.
+            **call.attributes,
         }
         if call.inputs:
-            attributes[WeaveSpanAttributes.WEAVE_INPUT.value] = call.inputs
+            attributes[LightningSpanAttributes.OPERATION_INPUT.value] = call.inputs
         if call.output:
-            attributes[WeaveSpanAttributes.WEAVE_OUTPUT.value] = call.output
+            attributes[LightningSpanAttributes.OPERATION_OUTPUT.value] = call.output
         if call.summary:
-            attributes[WeaveSpanAttributes.WEAVE_SUMMARY.value] = call.summary
-        if call.attributes:
-            attributes[WeaveSpanAttributes.WEAVE_ATTRIBUTES.value] = call.attributes
+            # attributes can be possibly overridden by the summary.
+            attributes.update(call.summary)
         if call.exception:
-            attributes[WeaveSpanAttributes.WEAVE_EXCEPTION.value] = call.exception
+            attributes[exception_attributes.EXCEPTION_MESSAGE] = call.exception
 
         sanitized_attributes = sanitize_attributes(flatten_attributes(attributes, expand_leaf_lists=False))
 

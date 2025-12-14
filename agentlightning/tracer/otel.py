@@ -51,10 +51,6 @@ class OtelSpanRecordingContext(SpanRecordingContext):
         otel_status_code = to_otel_status_code(status_code)
         self._span.set_status(otel_status_code, description)
 
-    def finalize(self) -> None:
-        # Do nothing
-        pass
-
     def get_otel_span(self) -> trace_api.Span:
         return self._span
 
@@ -204,8 +200,14 @@ class OtelTracer(Tracer):
 
     @contextmanager
     def operation_context(
-        self, name: str, attributes: Optional[Attributes] = None, start_time: Optional[float] = None
+        self,
+        name: str,
+        attributes: Optional[Attributes] = None,
+        start_time: Optional[float] = None,
+        end_time: Optional[float] = None,
     ) -> Iterator[SpanRecordingContext]:
+        if end_time is not None:
+            logger.warning("OpenTelemetry doesn't support customizing the end time of a span. End time is ignored.")
         # Record the span to the current active tracer provider.
         tracer_provider = self._get_tracer_provider()
         tracer = tracer_provider.get_tracer(__name__)
@@ -217,11 +219,9 @@ class OtelTracer(Tracer):
             recording_context = OtelSpanRecordingContext(span)
             try:
                 yield recording_context
-                recording_context.finalize()
             except Exception as exc:
                 recording_context.record_exception(exc)
                 recording_context.record_status("ERROR", str(exc))
-                recording_context.finalize()
                 raise
 
         # No need to retrieve the span here. It's already been sent to otel processor.

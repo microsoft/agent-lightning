@@ -102,28 +102,6 @@ class LightningSpanAttributes(Enum):
     """Attribute name for operation output in operation spans."""
 
 
-class WeaveSpanAttributes(Enum):
-    """Attribute names for spans imported from Weave."""
-
-    WEAVE_INPUT = "weave.input"
-    """Attribute name for weave input."""
-
-    WEAVE_OUTPUT = "weave.output"
-    """Attribute name for weave output."""
-
-    WEAVE_EXCEPTION = "weave.exception"
-    """Attribute name for weave exception."""
-
-    WEAVE_SUMMARY = "weave.summary"
-    """Attribute name for weave summary."""
-
-    WEAVE_OP_NAME = "weave.op_name"
-    """Attribute name for weave operation name."""
-
-    WEAVE_ATTRIBUTES = "weave.attributes"
-    """Attribute name for weave attributes."""
-
-
 class RewardAttributes(Enum):
     """Multi-dimensional reward attributes will look like:
 

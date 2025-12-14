@@ -227,7 +227,7 @@ class SpanCoreFields(BaseModel):
 
 
 class SpanRecordingContext(Protocol):
-    """Context for recording operations on a span."""
+    """Context for recording operations on a span. It doesn't have to finalize the span; the caller will do it."""
 
     def record_exception(self, exception: BaseException) -> None:
         """Record an exception on the span."""
@@ -239,10 +239,6 @@ class SpanRecordingContext(Protocol):
 
     def record_status(self, status_code: StatusCode, description: Optional[str] = None) -> None:
         """Record the status of the span."""
-        raise NotImplementedError()
-
-    def finalize(self) -> None:
-        """Finish the span."""
         raise NotImplementedError()
 
     def get_recorded_span(self) -> SpanCoreFields:

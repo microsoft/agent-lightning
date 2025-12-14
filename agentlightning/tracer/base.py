@@ -154,7 +154,11 @@ class Tracer(ParallelWorkerBase):
         raise NotImplementedError()
 
     def operation_context(
-        self, name: str, attributes: Optional[Attributes] = None, start_time: Optional[float] = None
+        self,
+        name: str,
+        attributes: Optional[Attributes] = None,
+        start_time: Optional[float] = None,
+        end_time: Optional[float] = None,
     ) -> ContextManager[SpanRecordingContext]:
         """Start to record an operation to a span.
 
@@ -162,6 +166,7 @@ class Tracer(ParallelWorkerBase):
             name: The name of the operation.
             attributes: The attributes of the operation.
             start_time: The start time of the operation.
+            end_time: The end time of the operation.
 
         Returns:
             A context for recording the operation on the span.
