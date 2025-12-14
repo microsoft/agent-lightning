@@ -5,7 +5,7 @@
 import json
 import logging
 import traceback
-from typing import Any, Dict, List, Sequence, Union, cast
+from typing import Any, Dict, List, Sequence, TypeVar, Union, cast
 from warnings import filterwarnings
 
 import opentelemetry.trace as trace_api
@@ -39,6 +39,8 @@ __all__ = [
     "flatten_attributes",
     "unflatten_attributes",
 ]
+
+T_SpanLike = TypeVar("T_SpanLike", bound=SpanLike)
 
 
 def full_qualified_name(obj: type) -> str:
@@ -202,7 +204,7 @@ def make_link_attributes(links: Dict[str, str]) -> Dict[str, Any]:
     return flatten_attributes({LightningSpanAttributes.LINK.value: link_list}, expand_leaf_lists=True)
 
 
-def query_linked_spans(spans: Sequence[SpanLike], links: List[LinkPydanticModel]) -> List[SpanLike]:
+def query_linked_spans(spans: Sequence[T_SpanLike], links: List[LinkPydanticModel]) -> List[T_SpanLike]:
     """Query spans that are linked by the given link attributes.
 
     Args:
@@ -212,7 +214,7 @@ def query_linked_spans(spans: Sequence[SpanLike], links: List[LinkPydanticModel]
     Returns:
         A list of spans that match the given link attributes.
     """
-    matched_spans: List[SpanLike] = []
+    matched_spans: List[T_SpanLike] = []
 
     for span in spans:
         span_attributes = span.attributes or {}
