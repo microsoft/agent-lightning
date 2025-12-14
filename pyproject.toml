@@ -323,6 +323,7 @@ markers = [
   "openai: tests that require OpenAI API",
   "gpu: tests that require GPU",
   "agentops: tests that require AgentOps",
+  "weave: tests that require Weave",
   "llmproxy: tests that require LiteLLM",
   "mongo: tests that require MongoDB",
   "store: tests for agentlightning.store module",

@@ -37,6 +37,7 @@ jobs:
         run: |
           uv sync --frozen \
             --extra apo \
+            --extra weave \
             --extra verl \
             --extra mongo \
             --group dev \
@@ -128,6 +129,10 @@ jobs:
           - id: agentops
             display-name: AgentOps
             pytest-mark: 'agentops'
+          # Similar for Weave.
+          - id: weave
+            display-name: Weave
+            pytest-mark: 'weave'
           # litellm proxy tests are slow
           - id: llmproxy
             display-name: LLM proxy
@@ -139,7 +144,7 @@ jobs:
           # unmarked tests: adapter, execution engine, etc.
           - id: others
             display-name: Others
-            pytest-mark: 'not store and not agentops and not llmproxy and not utils'
+            pytest-mark: 'not store and not agentops and not weave and not llmproxy and not utils'
         env:
           - python-version: '3.10'
             setup-script: 'legacy'
@@ -164,10 +169,10 @@ jobs:
         run: uv lock --upgrade
         if: matrix.env.setup-script == 'latest'
       - name: Sync dependencies (latest)
-        run: uv sync --frozen --no-default-groups --extra apo --group dev --group agents --group langchain --group core-stable
+        run: uv sync --frozen --no-default-groups --extra apo --extra weave --group dev --group agents --group langchain --group core-stable
         if: matrix.env.setup-script == 'latest'
       - name: Sync dependencies (stable & legacy)
-        run: uv sync --frozen --no-default-groups --extra apo --group dev --group agents --group langchain --group core-${{ matrix.env.setup-script }}
+        run: uv sync --frozen --no-default-groups --extra apo --extra weave --group dev --group agents --group langchain --group core-${{ matrix.env.setup-script }}
         if: matrix.env.setup-script != 'latest'
       - name: Freeze dependencies
         run: |
@@ -216,7 +221,7 @@ jobs:
           enable-cache: true
           python-version: '3.12'
       - name: Sync Python dependencies
-        run: uv sync --frozen --no-default-groups --extra apo --group dev --group agents --group core-stable
+        run: uv sync --frozen --no-default-groups --extra apo --extra weave --group dev --group agents --group core-stable
       - name: Install JavaScript dependencies
         run: cd dashboard && npm ci
       - name: Run vitest

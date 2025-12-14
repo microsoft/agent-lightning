@@ -45,6 +45,12 @@ jobs:
             pytest-mark: 'agentops'  # including agentops+litellm tests here
             runs-on: [self-hosted, 1ES.Pool=agl-runner-gpu]
             has-gpu: true
+          # Similar for Weave.
+          - id: weave
+            display-name: Weave
+            pytest-mark: 'weave'
+            runs-on: ubuntu-latest  # No GPU tests for Weave.
+            has-gpu: false
           # Other tests that require GPU
           - id: gpu
             display-name: GPU required
@@ -54,7 +60,7 @@ jobs:
           # Other uncovered tests
           - id: others
             display-name: Others
-            pytest-mark: 'not store and not agentops and not gpu and not llmproxy'
+            pytest-mark: 'not store and not agentops and not weave and not gpu and not llmproxy'
             runs-on: ubuntu-latest
             has-gpu: false
         env:
@@ -83,24 +89,24 @@ jobs:
 
       - name: Sync dependencies (latest, gpu)
         if: matrix.env.setup-script == 'latest' && matrix.mark.has-gpu
-        run: uv sync --frozen --no-default-groups --extra apo --extra mongo --group dev --group agents --group langchain --group torch-gpu-stable
+        run: uv sync --frozen --no-default-groups --extra apo --extra weave --extra mongo --group dev --group agents --group langchain --group torch-gpu-stable
       # Don't install vllm/pytorch on CPU counterparts
       - name: Sync dependencies (latest, cpu)
         if: matrix.env.setup-script == 'latest' && !matrix.mark.has-gpu
-        run: uv sync --frozen --no-default-groups --extra apo --extra mongo --group dev --group agents --group langchain --group core-stable
+        run: uv sync --frozen --no-default-groups --extra apo --extra weave --extra mongo --group dev --group agents --group langchain --group core-stable
       - name: Sync dependencies (stable, gpu)
         if: matrix.env.setup-script == 'stable' && matrix.mark.has-gpu
-        run: uv sync --frozen --no-default-groups --extra apo --extra mongo --group dev --group agents --group langchain --group torch-gpu-${{ matrix.env.setup-script }}
+        run: uv sync --frozen --no-default-groups --extra apo --extra weave --extra mongo --group dev --group agents --group langchain --group torch-gpu-${{ matrix.env.setup-script }}
       - name: Sync dependencies (stable, cpu)
         if: matrix.env.setup-script == 'stable' && !matrix.mark.has-gpu
-        run: uv sync --frozen --no-default-groups --extra apo --extra mongo --group dev --group agents --group langchain --group core-stable
+        run: uv sync --frozen --no-default-groups --extra apo --extra weave --extra mongo --group dev --group agents --group langchain --group core-stable
       # Don't install langchain for legacy dependency because it has conflicts with torch.
       - name: Sync dependencies (legacy, gpu)
         if: matrix.env.setup-script == 'legacy' && matrix.mark.has-gpu
-        run: uv sync --frozen --no-default-groups --extra apo --extra mongo --group dev --group agents --group torch-gpu-legacy
+        run: uv sync --frozen --no-default-groups --extra apo --extra weave --extra mongo --group dev --group agents --group torch-gpu-legacy
       - name: Sync dependencies (legacy, cpu)
         if: matrix.env.setup-script == 'legacy' && !matrix.mark.has-gpu
-        run: uv sync --frozen --no-default-groups --extra apo --extra mongo --group dev --group agents --group core-legacy
+        run: uv sync --frozen --no-default-groups --extra apo --extra weave --extra mongo --group dev --group agents --group core-legacy
 
       - name: Freeze dependencies
         run: |
