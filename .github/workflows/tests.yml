@@ -19,7 +19,7 @@ jobs:
   lint:
     strategy:
       matrix:
-        setup: [fast, slow]
+        setup: [fast, slow, next]
       fail-fast: false
     name: Lint - ${{ matrix.setup }}
     runs-on: ubuntu-latest
@@ -33,6 +33,9 @@ jobs:
       - name: Sync dependencies (fast)
         run: uv sync --frozen --group dev --no-default-groups
         if: matrix.setup == 'fast'
+      - name: Upgrade dependencies (next)
+        run: uv lock --upgrade
+        if: matrix.setup == 'next'
       - name: Sync dependencies (slow)
         run: |
           uv sync --frozen \
@@ -48,7 +51,7 @@ jobs:
             --group agents \
             --group langchain \
             --no-default-groups
-        if: matrix.setup == 'slow'
+        if: matrix.setup != 'fast'
       # This pre-commit skips JavaScript on purpose.
       - name: Run pre-commit
         uses: pre-commit/action@v3.0.1
@@ -63,7 +66,7 @@ jobs:
         if: matrix.setup == 'fast'
       - name: Run pyright (slow)
         run: uv run --locked --no-sync pyright -p pyrightconfig.json
-        if: matrix.setup == 'slow'
+        if: matrix.setup != 'fast'
 
   lint-js:
     name: Lint - JavaScript

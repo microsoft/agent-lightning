@@ -122,6 +122,17 @@ torch-legacy = [
   "litellm[proxy]==1.74.15",
 ]
 
+# Specific vllm versions for compatibility testing or workarounds.
+# Use these when you need a pinned vllm version separate from torch groups.
+vllm-0-10-2 = [
+  {include-group = "torch-stable"},
+  "vllm==0.10.2",
+]
+vllm-0-11-0 = [
+  {include-group = "torch-stable"},
+  "vllm==0.11.0",
+]
+
 # Flash-attention must build with CUDA toolkit.
 # Use this instead of --group torch-stable --group torch-gpu
 torch-gpu-stable = [
@@ -161,6 +172,17 @@ tinker = [
   "tinker>=0.2.2",
   "tinker_cookbook>=0.1.0",
   "wandb",
+]
+
+# For Multi-modality supports.
+image = [
+  # NOTE: It's tied to vLLM 0.10.2 but it will blow the uv.lock file if we include it.
+  # {include-group = "vllm-0-10-2"},
+  "datasets",
+  "Pillow",
+  "pandas",
+  "pyarrow",
+  "qwen-vl-utils",
 ]
 
 # Agent-related dependencies.
@@ -233,6 +255,10 @@ conflicts = [
   [
     { group = "torch-stable" },
     { group = "torch-legacy" },
+  ],
+  [
+    { group = "vllm-0-10-2" },
+    { group = "vllm-0-11-0" },
   ],
   # langchain >= 1.0 requires openai >= 1.109.1 (via langchain-openai),
   # but torch-legacy uses vllm==0.9.2 which requires openai<=1.90.0

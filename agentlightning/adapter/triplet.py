@@ -492,12 +492,12 @@ class TraceTree:
                 assign_to: List[Tuple[str, int]] = []
                 for child in item.children:
                     if child.id in llm_call_ids:
-                        assign_to.append(child.id)  # type: ignore
+                        assign_to.append((child.id, child.end_time))  # type: ignore
 
-                    agentops_output = item.maybe_reward_dict()
+                    agentops_output = child.maybe_reward_dict()
                     if agentops_output and agentops_output.get("type") == "reward":
                         for assign_to_id, assign_to_end_time in reversed(assign_to):
-                            if assign_to_end_time > item.start_time:  # type: ignore
+                            if assign_to_end_time > child.start_time:  # type: ignore
                                 # This reward happens before the end of the LLM call.
                                 continue
                             if assign_to_id in rewards:
