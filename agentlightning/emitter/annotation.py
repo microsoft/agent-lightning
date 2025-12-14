@@ -7,6 +7,7 @@ import functools
 import inspect
 import json
 import logging
+import time
 from types import TracebackType
 from typing import (
     Any,
@@ -22,19 +23,17 @@ from typing import (
     overload,
 )
 
-from opentelemetry import trace
-from opentelemetry.sdk.trace import ReadableSpan
-from opentelemetry.trace import Status, StatusCode
-
 from agentlightning.semconv import AGL_ANNOTATION, AGL_OPERATION, LightningSpanAttributes
-from agentlightning.utils.otel import flatten_attributes, get_tracer
+from agentlightning.tracer import DummyTracer, get_active_tracer
+from agentlightning.types import SpanCoreFields, TraceStatus
+from agentlightning.utils.otel import check_attributes_sanity, flatten_attributes, get_tracer
 
 _FnType = TypeVar("_FnType", bound=Callable[..., Any])
 
 logger = logging.getLogger(__name__)
 
 
-def emit_annotation(annotation: Dict[str, Any], propagate: bool = True) -> ReadableSpan:
+def emit_annotation(annotation: Dict[str, Any], propagate: bool = True) -> SpanCoreFields:
     """Emit a new annotation span.
 
     This is the underlying implementation of [`emit_reward`][agentlightning.emit_reward].
@@ -48,25 +47,25 @@ def emit_annotation(annotation: Dict[str, Any], propagate: bool = True) -> Reada
     Args:
         annotation: Dictionary containing annotation key-value pairs.
             Representatives are rewards, tags, and metadata.
-        propagate: Whether to propagate the span to exporters automatically.
+        propagate: Whether to propagate the span to tracers automatically.
     """
-    annotation_attributes = flatten_attributes(annotation)
-    if any(not isinstance(v, (str, int, float, bool, bytes)) for v in annotation_attributes.values()):
-        raise TypeError("All annotation attributes must be primitive types (str, int, float, bool, bytes)")
+    annotation_attributes = flatten_attributes(annotation, expand_leaf_lists=False)
+    check_attributes_sanity(annotation_attributes)
+    logger.debug("Emitting annotation span with keys %s", annotation_attributes.keys())
 
-    # TODO: this should use a tracer from current context rather than the singleton
-    tracer = get_tracer(use_active_span_processor=propagate)
-    span = tracer.start_span(
-        AGL_ANNOTATION,
+    if propagate:
+        tracer = get_active_tracer()
+        if tracer is None:
+            raise RuntimeError("No active tracer found. Cannot emit annotation span.")
+    else:
+        # Do not actually propagate to any store or tracer backend.
+        tracer = DummyTracer()
+
+    return tracer.create_span(
+        name=AGL_ANNOTATION,
         attributes=annotation_attributes,
+        status=TraceStatus(status_code="OK"),
     )
-    logger.debug("Emitting annotation span with keys %s", annotation_attributes)
-    with span:
-        pass
-    if not isinstance(span, ReadableSpan):
-        raise ValueError(f"Span is not a ReadableSpan: {span}")
-
-    return span
 
 
 def _safe_json_dump(obj: Any) -> str:

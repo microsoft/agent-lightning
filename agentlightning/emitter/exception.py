@@ -1,13 +1,10 @@
 # Copyright (c) Microsoft. All rights reserved.
 
 import logging
-import traceback
 from typing import Any, Dict, Optional
 
-from opentelemetry.semconv.attributes import exception_attributes
-
 from agentlightning.semconv import AGL_EXCEPTION
-from agentlightning.utils.otel import get_tracer
+from agentlightning.utils.otel import format_exception_attributes, get_tracer
 
 logger = logging.getLogger(__name__)
 
@@ -34,14 +31,7 @@ def emit_exception(
         raise TypeError(f"Expected a BaseException instance, got: {type(exception)}.")
 
     tracer = get_tracer(use_active_span_processor=propagate)
-    stacktrace = "".join(traceback.format_exception(type(exception), exception, exception.__traceback__))
-    span_attributes = {
-        exception_attributes.EXCEPTION_TYPE: type(exception).__name__,
-        exception_attributes.EXCEPTION_MESSAGE: str(exception),
-        exception_attributes.EXCEPTION_ESCAPED: True,
-    }
-    if stacktrace.strip():
-        span_attributes[exception_attributes.EXCEPTION_STACKTRACE] = stacktrace
+    span_attributes = format_exception_attributes(exception)
 
     if attributes:
         span_attributes.update(attributes)

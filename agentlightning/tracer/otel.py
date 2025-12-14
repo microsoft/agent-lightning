@@ -43,6 +43,7 @@ class OtelSpanRecordingContext(SpanRecordingContext):
 
     def record_exception(self, exception: BaseException) -> None:
         self._span.record_exception(exception)
+        self.record_status("ERROR", str(exception))
 
     def record_attributes(self, attributes: Attributes) -> None:
         self._span.set_attributes(attributes)
@@ -221,7 +222,6 @@ class OtelTracer(Tracer):
                 yield recording_context
             except Exception as exc:
                 recording_context.record_exception(exc)
-                recording_context.record_status("ERROR", str(exc))
                 raise
 
         # No need to retrieve the span here. It's already been sent to otel processor.

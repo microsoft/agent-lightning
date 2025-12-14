@@ -41,7 +41,12 @@ from agentlightning.types import (
     TraceStatus,
 )
 from agentlightning.utils.id import generate_id
-from agentlightning.utils.otel import filter_and_unflatten_attributes, flatten_attributes, sanitize_attributes
+from agentlightning.utils.otel import (
+    filter_and_unflatten_attributes,
+    flatten_attributes,
+    format_exception_attributes,
+    sanitize_attributes,
+)
 
 from .base import Tracer, with_active_tracer_context
 
@@ -78,6 +83,8 @@ class WeaveSpanRecordingContext(SpanRecordingContext):
 
     def record_exception(self, exception: BaseException) -> None:
         self._call.exception = str(exception)
+        self.record_status("ERROR", str(exception))
+        self.record_attributes(format_exception_attributes(exception))
 
     def _get_input_from_attributes(self, attributes: Attributes) -> Dict[str, Any]:
         if LightningSpanAttributes.OPERATION_INPUT.value in attributes:
@@ -424,7 +431,6 @@ class WeaveTracer(Tracer):
             yield recording_context
         except Exception as exc:
             recording_context.record_exception(exc)
-            recording_context.record_status("ERROR", str(exc))
             raise
 
     async def _init_trace_context(self) -> None:

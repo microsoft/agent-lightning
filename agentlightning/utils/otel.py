@@ -4,6 +4,7 @@
 
 import json
 import logging
+import traceback
 from typing import Any, Dict, List, Sequence, Union, cast
 from warnings import filterwarnings
 
@@ -13,6 +14,7 @@ from opentelemetry.sdk.trace import ReadableSpan, SpanLimits, SynchronousMultiSp
 from opentelemetry.sdk.trace import TracerProvider as TracerProviderImpl
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, SimpleSpanProcessor
 from opentelemetry.sdk.util.instrumentation import InstrumentationInfo, InstrumentationScope
+from opentelemetry.semconv.attributes import exception_attributes
 from opentelemetry.trace import get_tracer_provider as otel_get_tracer_provider
 from pydantic import TypeAdapter
 
@@ -490,3 +492,16 @@ def check_attributes_sanity(attributes: Dict[Any, Any]) -> None:
                 raise ValueError(f"Failed to sanitize list attribute '{k}': {exc}") from exc
         elif not isinstance(v, (str, int, float, bool)):
             raise ValueError(f"Attribute value must be a string, int, float, bool, o, got {type(v)} for value '{v}'")
+
+
+def format_exception_attributes(exception: BaseException) -> Attributes:
+    """Format an exception into a dictionary of attributes."""
+    stacktrace = "".join(traceback.format_exception(type(exception), exception, exception.__traceback__))
+    span_attributes: Attributes = {
+        exception_attributes.EXCEPTION_TYPE: type(exception).__name__,
+        exception_attributes.EXCEPTION_MESSAGE: str(exception),
+        exception_attributes.EXCEPTION_ESCAPED: True,
+    }
+    if stacktrace.strip():
+        span_attributes[exception_attributes.EXCEPTION_STACKTRACE] = stacktrace
+    return span_attributes
