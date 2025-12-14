@@ -527,7 +527,7 @@ class WeaveTracer(Tracer):
         """Handler called when a Weave Call starts.
 
         Args:
-            call: The Weave Call object.
+            request_content: The partial Weave Call object.
 
         Returns:
             The sequence ID for the call.

@@ -169,8 +169,7 @@ class Tracer(ParallelWorkerBase):
             end_time: The end time of the operation.
 
         Returns:
-            A context for recording the operation on the span.
-            Call [`finish()`][agentlightning.SpanRecordingContext.finish] when the recording is complete.
+            A [`SpanRecordingContext`][agentlightning.SpanRecordingContext] for recording the operation on the span.
         """
         raise NotImplementedError()
 
