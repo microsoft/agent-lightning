@@ -110,7 +110,7 @@ class Tracer(ParallelWorkerBase):
         Retrieves the raw list of captured spans from the most recent trace.
 
         Returns:
-            A list of OpenTelemetry `ReadableSpan` objects.
+            A list of [`Span`][agentlightning.Span] objects collected during the last trace.
         """
         raise NotImplementedError()
 

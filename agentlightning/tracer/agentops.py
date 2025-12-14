@@ -19,6 +19,7 @@ from opentelemetry.trace.status import StatusCode
 from agentlightning.instrumentation import instrument_all, uninstrument_all
 from agentlightning.store.base import LightningStore
 
+from .base import with_active_tracer_context
 from .otel import LightningSpanProcessor, OtelTracer
 
 if TYPE_CHECKING:
@@ -94,6 +95,7 @@ class AgentOpsTracer(OtelTracer):
             self.uninstrument(worker_id)
             logger.info(f"[Worker {worker_id}] Instrumentation removed.")
 
+    @with_active_tracer_context
     @asynccontextmanager
     async def trace_context(
         self,

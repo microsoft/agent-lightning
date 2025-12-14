@@ -28,31 +28,42 @@ from agentlightning.reward import emit_reward, find_reward_spans, get_reward_val
 from agentlightning.store.base import LightningStore
 from agentlightning.tracer.agentops import LightningSpanProcessor
 from agentlightning.tracer.otel import OtelTracer
+from agentlightning.types.tracer import Span
 from agentlightning.utils import otlp
 
 from ..common.tracer import clear_agentops_init, clear_tracer_provider
 
 
-def create_span(name: str, sampled: bool = True, with_context: bool = True) -> MagicMock:
+def create_span(name: str, sampled: bool = True, with_context: bool = True) -> ReadableSpan:
     """Helper to create mock spans with different properties."""
-    span = MagicMock(spec=ReadableSpan)
-    span.name = name
-    if with_context:
-        span.context = SpanContext(
-            trace_id=hash(name) % (2**64),
-            span_id=hash(name) % (2**64),
-            is_remote=False,
-            trace_flags=TraceFlags(0x01 if sampled else 0x00),
-        )
-    else:
-        span.context = None
+    return ReadableSpan(
+        name=name,
+        context=(
+            SpanContext(
+                trace_id=hash(name) % (2**64),
+                span_id=hash(name) % (2**64),
+                is_remote=False,
+                trace_flags=TraceFlags(0x01 if sampled else 0x00),
+            )
+            if with_context
+            else None
+        ),
+    )
+
+
+async def add_otel_span(
+    rollout_id: str, attempt_id: str, readable_span: ReadableSpan, sequence_id: int | None = None
+) -> Span:
+    span = Span.from_opentelemetry(
+        readable_span, rollout_id=rollout_id, attempt_id=attempt_id, sequence_id=sequence_id or 0
+    )
     return span
 
 
 def create_mock_store(otlp_supported: bool = False) -> MagicMock:
     """Helper to create a mock LightningStore."""
     store = MagicMock(spec=LightningStore)
-    store.add_otel_span = AsyncMock(return_value=None)
+    store.add_otel_span = AsyncMock(side_effect=add_otel_span)
     store.capabilities = {"otlp_traces": otlp_supported}
     store.otlp_traces_endpoint.return_value = "http://store/v1/traces"
     return store
@@ -167,7 +178,7 @@ def test_span_collection_with_filtering():
     # Only sampled span with context should be collected
     collected = processor.spans()
     assert len(collected) == 1
-    assert collected[0] == sampled_span
+    assert collected[0].name == "sampled"
 
     processor.shutdown()
 
@@ -384,7 +395,7 @@ def test_store_write_timeout(store: MagicMock):
 
     # Create a slow async function that exceeds timeout
     async def slow_write(*args: Any, **kwargs: Any) -> None:
-        await asyncio.sleep(10)
+        await asyncio.sleep(15)
 
     store.add_otel_span = AsyncMock(side_effect=slow_write)
 
@@ -423,8 +434,8 @@ def test_multiple_processors_in_same_process():
 
     assert len(processor1.spans()) == 1
     assert len(processor2.spans()) == 1
-    assert processor1.spans()[0] == span1
-    assert processor2.spans()[0] == span2
+    assert processor1.spans()[0].name == "p1_span"
+    assert processor2.spans()[0].name == "p2_span"
 
     processor1.shutdown()
     processor2.shutdown()

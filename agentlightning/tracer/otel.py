@@ -23,9 +23,11 @@ from agentlightning.types.tracer import convert_timestamp
 from agentlightning.utils.otel import get_tracer_provider
 from agentlightning.utils.otlp import LightningStoreOTLPExporter
 
-from .base import Tracer
+from .base import Tracer, with_active_tracer_context
 
 logger = logging.getLogger(__name__)
+
+STORE_WRITE_TIMEOUT_SECONDS = 10.0
 
 
 def to_otel_status_code(status_code: StatusCode) -> trace_api.StatusCode:
@@ -118,6 +120,7 @@ class OtelTracer(Tracer):
         super().teardown_worker(worker_id)
         logger.info(f"[Worker {worker_id}] Tearing down OpenTelemetry tracer does NOT remove the tracer provider.")
 
+    @with_active_tracer_context
     @asynccontextmanager
     async def trace_context(
         self,
@@ -231,7 +234,7 @@ class OtelTracer(Tracer):
         Retrieves the raw list of captured spans from the most recent trace.
 
         Returns:
-            A list of `Span` objects.
+            A list of [`Span`][agentlightning.Span] objects captured during the most recent trace.
         """
         if not self._lightning_span_processor:
             raise RuntimeError("LightningSpanProcessor is not initialized. Call init_worker() first.")
@@ -436,7 +439,7 @@ class LightningSpanProcessor(SpanProcessor):
         This is useful for debugging and testing purposes.
 
         Returns:
-            List of ReadableSpan objects collected during tracing.
+            List of [`Span`][agentlightning.Span] objects collected during tracing.
         """
         return self._spans
 
@@ -475,13 +478,36 @@ class LightningSpanProcessor(SpanProcessor):
                     self._ensure_loop()
                     uploaded_span = self._await_in_loop(
                         self._store.add_otel_span(self._rollout_id, self._attempt_id, span),
-                        timeout=60.0,
+                        timeout=STORE_WRITE_TIMEOUT_SECONDS,
                     )
                     if uploaded_span is not None:
                         self._spans.append(uploaded_span)
+            except TimeoutError:
+                logger.warning(
+                    "Timed out adding span %s to store after %.1f seconds. The span will be stored locally "
+                    "but it's not guaranteed to be persisted.",
+                    span.name,
+                    STORE_WRITE_TIMEOUT_SECONDS,
+                )
+                self._spans.append(
+                    Span.from_opentelemetry(
+                        span,
+                        rollout_id=self._rollout_id,
+                        attempt_id=self._attempt_id,
+                        sequence_id=self._local_sequence_id,
+                    )
+                )
             except Exception:
                 # log; on_end MUST NOT raise
-                logger.exception(f"Error adding span to store: {span.name}")
+                logger.exception(f"Error adding span to store: {span.name}. The span will be store locally only.")
+                self._spans.append(
+                    Span.from_opentelemetry(
+                        span,
+                        rollout_id=self._rollout_id,
+                        attempt_id=self._attempt_id,
+                        sequence_id=self._local_sequence_id,
+                    )
+                )
 
         else:
             # Fallback path

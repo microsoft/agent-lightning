@@ -10,6 +10,7 @@ from typing import Any, Dict, List
 import opentelemetry.trace as trace_api
 import pytest
 from opentelemetry.sdk.trace import ReadableSpan, SynchronousMultiSpanProcessor
+from opentelemetry.semconv.attributes import exception_attributes
 from opentelemetry.trace import TraceFlags
 from pydantic import ValidationError
 
@@ -23,6 +24,8 @@ from agentlightning.utils.otel import (
     filter_and_unflatten_attributes,
     filter_attributes,
     flatten_attributes,
+    format_exception_attributes,
+    full_qualified_name,
     get_tracer,
     get_tracer_provider,
     make_link_attributes,
@@ -52,9 +55,30 @@ def test_flatten_simple_nested_dict_and_list() -> None:
     result = flatten_attributes(data)
     assert result == {
         "a.b": 1,
+        "a.c": [2, 3],
+    }
+
+
+def test_flatten_simple_nested_dict_and_list_with_leaf_expansion() -> None:
+    data = {"a": {"b": 1, "c": [2, 3]}}
+    result = flatten_attributes(data, expand_leaf_lists=True)
+    assert result == {
+        "a.b": 1,
         "a.c.0": 2,
         "a.c.1": 3,
     }
+
+
+def test_full_qualified_name_handles_builtin_and_custom_classes() -> None:
+    class LocalClass:
+        pass
+
+    builtin_result = full_qualified_name(int)
+    local_result = full_qualified_name(LocalClass)
+
+    assert builtin_result == "int"
+    assert local_result.endswith("LocalClass")
+    assert local_result.startswith("tests.utils.test_otel")
 
 
 def test_flatten_empty_dict() -> None:
@@ -88,10 +112,9 @@ def test_flatten_nested_lists_and_dicts() -> None:
     result = flatten_attributes(data)
     assert result == {
         "users.0.name": "Alice",
-        "users.0.tags.0": "admin",
-        "users.0.tags.1": "staff",
+        "users.0.tags": ["admin", "staff"],
         "users.1.name": "Bob",
-        # Empty list yields no extra keys
+        # Empty leaf lists remain implicit
     }
 
 
@@ -378,6 +401,19 @@ def test_sanitize_attributes_exposes_key_in_error() -> None:
     attributes = {"ok": "value", "bad": Bad()}
     with pytest.raises(ValueError, match="Failed to sanitize attribute 'bad'"):
         sanitize_attributes(attributes)
+
+
+def test_format_exception_attributes_captures_metadata() -> None:
+    try:
+        raise RuntimeError("boom")
+    except RuntimeError as err:
+        attrs = format_exception_attributes(err)
+
+    assert attrs[exception_attributes.EXCEPTION_TYPE] == "RuntimeError"
+    assert attrs[exception_attributes.EXCEPTION_MESSAGE] == "boom"
+    assert attrs[exception_attributes.EXCEPTION_ESCAPED] is True
+    assert exception_attributes.EXCEPTION_STACKTRACE in attrs
+    assert "RuntimeError: boom" in attrs[exception_attributes.EXCEPTION_STACKTRACE]  # type: ignore
 
 
 def test_sanitize_list_attribute_sanity_supports_primitive_lists() -> None:
