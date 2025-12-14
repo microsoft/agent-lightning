@@ -95,7 +95,7 @@ class OperationContext:
             propagate: Whether the span should be sent to active exporters.
         """
         self.name = name
-        self.initial_attributes = attributes
+        self.initial_attributes = flatten_attributes(attributes, expand_leaf_lists=False)
         self.propagate = propagate
         if propagate:
             tracer = get_active_tracer()
@@ -143,7 +143,7 @@ class OperationContext:
     def set_input(self, *args: Any, **kwargs: Any) -> None:
         """Record input arguments on the current span.
 
-        Positional arguments are stored under the `input.args` attribute,
+        Positional arguments are stored under the `input.args.<index>` attributes,
         and keyword arguments are stored under `input.<name>` attributes.
 
         This is intended for use inside a `with operation(...) as op` block.
@@ -155,12 +155,18 @@ class OperationContext:
         if not self._recording_context:
             raise RuntimeError("No recording context found. Cannot set input.")
 
+        prefix = LightningSpanAttributes.OPERATION_INPUT.value
         attributes: Dict[str, Any] = {}
         if args:
-            attributes[f"{LightningSpanAttributes.OPERATION_INPUT.value}.args"] = args
+            for idx, value in enumerate(args):
+                flattened = flatten_attributes({str(idx): value})
+                for nested_key, nested_value in flattened.items():
+                    attributes[f"{prefix}.args.{nested_key}"] = nested_value
         if kwargs:
-            for k, v in kwargs.items():
-                attributes[f"{LightningSpanAttributes.OPERATION_INPUT.value}.{k}"] = v
+            for key, value in kwargs.items():
+                flattened = flatten_attributes({key: value})
+                for nested_key, nested_value in flattened.items():
+                    attributes[f"{prefix}.{nested_key}"] = nested_value
         if attributes:
             self._recording_context.record_attributes(sanitize_attributes(attributes))
 
@@ -175,9 +181,8 @@ class OperationContext:
         if not self._recording_context:
             raise RuntimeError("No recording context found. Cannot set output.")
 
-        self._recording_context.record_attributes(
-            sanitize_attributes({LightningSpanAttributes.OPERATION_OUTPUT.value: output})
-        )
+        flattened = flatten_attributes({LightningSpanAttributes.OPERATION_OUTPUT.value: output})
+        self._recording_context.record_attributes(sanitize_attributes(flattened))
 
     def __call__(self, fn: _FnType) -> _FnType:
         """Wrap a callable so its execution is traced in a span.
@@ -209,19 +214,37 @@ class OperationContext:
             try:
                 bound = sig.bind(*args, **kwargs)
                 bound.apply_defaults()
-                for k, v in bound.arguments.items():
-                    attributes[f"{LightningSpanAttributes.OPERATION_INPUT.value}.{k}"] = v
+                for name, value in bound.arguments.items():
+                    parameter = sig.parameters.get(name)
+                    if parameter and parameter.kind is inspect.Parameter.VAR_POSITIONAL:
+                        attr_prefix = f"{LightningSpanAttributes.OPERATION_INPUT.value}.{name}"
+                        for idx, item in enumerate(value):
+                            flattened = flatten_attributes({str(idx): item})
+                            for nested_key, nested_value in flattened.items():
+                                attributes[f"{attr_prefix}.{nested_key}"] = nested_value
+                    else:
+                        flattened = flatten_attributes({name: value})
+                        for nested_key, nested_value in flattened.items():
+                            attributes[f"{LightningSpanAttributes.OPERATION_INPUT.value}.{nested_key}"] = nested_value
             except Exception:
-                attributes[f"{LightningSpanAttributes.OPERATION_INPUT.value}.args"] = args
-                attributes[f"{LightningSpanAttributes.OPERATION_INPUT.value}.kwargs"] = kwargs
+                if args:
+                    for idx, value in enumerate(args):
+                        flattened = flatten_attributes({str(idx): value})
+                        for nested_key, nested_value in flattened.items():
+                            attributes[f"{LightningSpanAttributes.OPERATION_INPUT.value}.args.{nested_key}"] = (
+                                nested_value
+                            )
+                if kwargs:
+                    flattened = flatten_attributes({"kwargs": kwargs})
+                    for nested_key, nested_value in flattened.items():
+                        attributes[f"{LightningSpanAttributes.OPERATION_INPUT.value}.{nested_key}"] = nested_value
             if attributes:
                 recording_ctx.record_attributes(sanitize_attributes(attributes))
 
         def _record_auto_outputs(recording_ctx: SpanRecordingContext, result: Any) -> None:
             """Record the output value on the span."""
-            recording_ctx.record_attributes(
-                sanitize_attributes({LightningSpanAttributes.OPERATION_OUTPUT.value: result})
-            )
+            flattened = flatten_attributes({LightningSpanAttributes.OPERATION_OUTPUT.value: result})
+            recording_ctx.record_attributes(sanitize_attributes(flattened))
 
         if asyncio.iscoroutinefunction(fn) or inspect.iscoroutinefunction(fn):
 

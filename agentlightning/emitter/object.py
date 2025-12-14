@@ -9,7 +9,7 @@ from agentlightning.semconv import AGL_OBJECT, LightningSpanAttributes
 from agentlightning.tracer.base import get_active_tracer
 from agentlightning.tracer.dummy import DummyTracer
 from agentlightning.types import SpanCoreFields, SpanLike, TraceStatus
-from agentlightning.utils.otel import full_qualified_name
+from agentlightning.utils.otel import flatten_attributes, full_qualified_name, sanitize_attributes
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +27,8 @@ def emit_object(object: Any, attributes: Optional[Dict[str, Any]] = None, propag
     """
     span_attributes = encode_object(object)
     if attributes:
-        span_attributes.update(attributes)
+        flattened = flatten_attributes(attributes, expand_leaf_lists=False)
+        span_attributes.update(sanitize_attributes(flattened))
 
     attr_length = 0
     if LightningSpanAttributes.OBJECT_JSON.value in span_attributes:

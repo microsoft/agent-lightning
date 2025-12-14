@@ -175,3 +175,23 @@ def test_get_object_value_raises_for_unknown_literal_type() -> None:
 
     with pytest.raises(RuntimeError):
         get_object_value(cast(SpanLike, span))
+
+
+def test_emit_object_flattens_attributes(monkeypatch: pytest.MonkeyPatch) -> None:
+    span = DummySpan()
+    tracer = _stub_tracer(monkeypatch, span)
+
+    emit_object({"foo": "bar"}, attributes={"meta": {"tag": "foo"}, "labels": ["x", "y"]})
+
+    assert tracer.last_attributes is not None
+    assert tracer.last_attributes["meta.tag"] == "foo"
+    assert tracer.last_attributes["labels"] == ["x", "y"]
+
+
+def test_emit_object_propagate_false(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fail_get_active_tracer() -> DummyTracer:
+        raise AssertionError("Should not resolve tracer when propagate=False")
+
+    monkeypatch.setattr(object_module, "get_active_tracer", fail_get_active_tracer)
+
+    emit_object({"foo": "bar"}, propagate=False)

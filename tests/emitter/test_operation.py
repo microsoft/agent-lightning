@@ -22,7 +22,12 @@ from agentlightning.semconv import AGL_ANNOTATION, AGL_OPERATION, LightningSpanA
 from agentlightning.tracer.dummy import DummySpanRecordingContext, DummyTracer
 from agentlightning.types import SpanCoreFields, TraceStatus
 from agentlightning.types.tracer import Attributes
-from agentlightning.utils.otel import extract_links_from_attributes, make_link_attributes, query_linked_spans
+from agentlightning.utils.otel import (
+    extract_links_from_attributes,
+    filter_and_unflatten_attributes,
+    make_link_attributes,
+    query_linked_spans,
+)
 
 
 class RecordingTracer:
@@ -136,8 +141,11 @@ def _install_recording_tracer(monkeypatch: pytest.MonkeyPatch) -> RecordingTrace
     return tracer
 
 
-def _loads_attr(recording: DummySpanRecordingContext, key: str) -> Any:
-    value = recording.attributes[key]
+def _resolve_attr(recording: DummySpanRecordingContext, key: str) -> Any:
+    if key in recording.attributes:
+        value = recording.attributes[key]
+    else:
+        value = filter_and_unflatten_attributes(recording.attributes, key)
     if isinstance(value, str):
         try:
             return json.loads(value)
@@ -163,12 +171,12 @@ def test_operation_context_serializes_inputs(monkeypatch: pytest.MonkeyPatch) ->
 
     recording = tracer.recordings[-1]
     assert recording.name == "custom-span"
-    assert _loads_attr(recording, "meta") == {"foo": 1}
+    assert recording.attributes["meta.foo"] == 1
     assert recording.attributes["count"] == 2
     input_prefix = LightningSpanAttributes.OPERATION_INPUT.value
-    assert _loads_attr(recording, f"{input_prefix}.args") == [{"payload": 1}]
+    assert _resolve_attr(recording, f"{input_prefix}.args") == [{"payload": 1}]
     assert recording.attributes[f"{input_prefix}.flag"] is True
-    assert _loads_attr(recording, LightningSpanAttributes.OPERATION_OUTPUT.value) == {"success": True}
+    assert _resolve_attr(recording, LightningSpanAttributes.OPERATION_OUTPUT.value) == {"success": True}
 
 
 def test_operation_context_set_input_supports_multiple_values(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -181,9 +189,23 @@ def test_operation_context_set_input_supports_multiple_values(monkeypatch: pytes
 
     recording = tracer.recordings[-1]
     input_prefix = LightningSpanAttributes.OPERATION_INPUT.value
-    assert _loads_attr(recording, f"{input_prefix}.args") == [1, 2]
-    assert _loads_attr(recording, f"{input_prefix}.data") == {"foo": ["bar"]}
-    assert _loads_attr(recording, f"{input_prefix}.flags") == [True, False]
+    assert _resolve_attr(recording, f"{input_prefix}.args") == [1, 2]
+    assert _resolve_attr(recording, f"{input_prefix}.data") == {"foo": ["bar"]}
+    assert _resolve_attr(recording, f"{input_prefix}.flags") == [True, False]
+
+
+def test_operation_context_set_input_expands_positional_attributes(monkeypatch: pytest.MonkeyPatch) -> None:
+    tracer = _install_recording_tracer(monkeypatch)
+
+    ctx = OperationContext("ctx", {})
+
+    with ctx as op:
+        op.set_input("alpha", "beta")
+
+    recording = tracer.recordings[-1]
+    input_prefix = LightningSpanAttributes.OPERATION_INPUT.value
+    assert recording.attributes[f"{input_prefix}.args.0"] == "alpha"
+    assert recording.attributes[f"{input_prefix}.args.1"] == "beta"
 
 
 def test_operation_context_rejects_non_serializable_output(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -225,9 +247,9 @@ def test_operation_factory_context_records_inputs_and_outputs(monkeypatch: pytes
     input_prefix = LightningSpanAttributes.OPERATION_INPUT.value
     assert recording.name == AGL_OPERATION
     assert recording.attributes["tags"] == ["one", "two"]
-    assert _loads_attr(recording, f"{input_prefix}.args") == ["alpha"]
-    assert _loads_attr(recording, f"{input_prefix}.meta") == {"score": 0.5}
-    assert _loads_attr(recording, LightningSpanAttributes.OPERATION_OUTPUT.value) == ["beta", "gamma"]
+    assert _resolve_attr(recording, f"{input_prefix}.args") == ["alpha"]
+    assert _resolve_attr(recording, f"{input_prefix}.meta") == {"score": 0.5}
+    assert _resolve_attr(recording, LightningSpanAttributes.OPERATION_OUTPUT.value) == ["beta", "gamma"]
 
 
 def test_operation_factory_uses_standard_span_name(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -238,7 +260,7 @@ def test_operation_factory_uses_standard_span_name(monkeypatch: pytest.MonkeyPat
 
     recording = tracer.recordings[-1]
     assert recording.name == AGL_OPERATION
-    assert _loads_attr(recording, "user") == {"id": 5}
+    assert recording.attributes["user.id"] == 5
 
 
 def test_operation_rejects_custom_span_names() -> None:
@@ -258,13 +280,13 @@ def test_operation_decorator_sync_records_span_attributes(monkeypatch: pytest.Mo
     assert result == {"joined": {"value": 1, "source": "unit"}}
     recording = tracer.recordings[-1]
     assert recording.name == AGL_OPERATION
-    assert _loads_attr(recording, "category") == {"kind": "combine"}
+    assert recording.attributes["category.kind"] == "combine"
 
     input_prefix = LightningSpanAttributes.OPERATION_INPUT.value
-    assert _loads_attr(recording, f"{input_prefix}.data") == {"value": 1}
-    assert _loads_attr(recording, f"{input_prefix}.meta") == {"source": "unit"}
+    assert _resolve_attr(recording, f"{input_prefix}.data") == {"value": 1}
+    assert _resolve_attr(recording, f"{input_prefix}.meta") == {"source": "unit"}
     assert recording.attributes[LightningSpanAttributes.OPERATION_NAME.value] == "combine"
-    assert _loads_attr(recording, LightningSpanAttributes.OPERATION_OUTPUT.value) == result
+    assert _resolve_attr(recording, LightningSpanAttributes.OPERATION_OUTPUT.value) == result
 
 
 def test_operation_decorator_handles_complex_signature(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -289,13 +311,13 @@ def test_operation_decorator_handles_complex_signature(monkeypatch: pytest.Monke
     recording = tracer.recordings[-1]
     input_prefix = LightningSpanAttributes.OPERATION_INPUT.value
 
-    assert _loads_attr(recording, f"{input_prefix}.first") == 1
-    assert _loads_attr(recording, f"{input_prefix}.required") == "req"
-    assert _loads_attr(recording, f"{input_prefix}.default") == 7
-    assert _loads_attr(recording, f"{input_prefix}.extra") == [8, 9]
-    assert _loads_attr(recording, f"{input_prefix}.kwonly") == "x"
-    assert _loads_attr(recording, f"{input_prefix}.kwdefault") == "y"
-    assert _loads_attr(recording, f"{input_prefix}.rest") == {"tag": "value"}
+    assert _resolve_attr(recording, f"{input_prefix}.first") == 1
+    assert _resolve_attr(recording, f"{input_prefix}.required") == "req"
+    assert _resolve_attr(recording, f"{input_prefix}.default") == 7
+    assert _resolve_attr(recording, f"{input_prefix}.extra") == [8, 9]
+    assert _resolve_attr(recording, f"{input_prefix}.kwonly") == "x"
+    assert _resolve_attr(recording, f"{input_prefix}.kwdefault") == "y"
+    assert _resolve_attr(recording, f"{input_prefix}.rest") == {"tag": "value"}
     assert recording.attributes[LightningSpanAttributes.OPERATION_NAME.value] == "complicated"
     assert recording.status.status_code == "ERROR"
 
@@ -328,8 +350,8 @@ async def test_operation_async_wrapper_records_attributes(monkeypatch: pytest.Mo
     assert result == {"payload": {"value": 3}}
     recording = tracer.recordings[-1]
     prefix = LightningSpanAttributes.OPERATION_INPUT.value
-    assert _loads_attr(recording, f"{prefix}.payload") == {"value": 3}
-    assert _loads_attr(recording, LightningSpanAttributes.OPERATION_OUTPUT.value) == result
+    assert _resolve_attr(recording, f"{prefix}.payload") == {"value": 3}
+    assert _resolve_attr(recording, LightningSpanAttributes.OPERATION_OUTPUT.value) == result
 
 
 def test_operation_span_can_be_resolved_via_annotation_links(monkeypatch: pytest.MonkeyPatch) -> None:

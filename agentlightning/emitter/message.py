@@ -7,7 +7,7 @@ from agentlightning.semconv import AGL_MESSAGE, LightningSpanAttributes
 from agentlightning.tracer.base import get_active_tracer
 from agentlightning.tracer.dummy import DummyTracer
 from agentlightning.types import Attributes, SpanLike
-from agentlightning.utils.otel import sanitize_attributes
+from agentlightning.utils.otel import flatten_attributes, sanitize_attributes
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +37,8 @@ def emit_message(message: str, attributes: Optional[Dict[str, Any]] = None, prop
         tracer = DummyTracer()
     span_attributes: Attributes = {LightningSpanAttributes.MESSAGE_BODY.value: message}
     if attributes:
-        span_attributes.update(sanitize_attributes(attributes))
+        flattened = flatten_attributes(attributes, expand_leaf_lists=False)
+        span_attributes.update(sanitize_attributes(flattened))
     logger.debug("Emitting message span with message: %s", message)
     tracer.create_span(
         AGL_MESSAGE,

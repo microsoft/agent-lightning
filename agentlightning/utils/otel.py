@@ -169,7 +169,7 @@ def make_tag_attributes(tags: List[str]) -> Dict[str, Any]:
     ["gen_ai.model:gpt-4", "reward.extrinsic"]
     ```
     """
-    return flatten_attributes({LightningSpanAttributes.TAG.value: tags})
+    return flatten_attributes({LightningSpanAttributes.TAG.value: tags}, expand_leaf_lists=True)
 
 
 def extract_tags_from_attributes(attributes: Dict[str, Any]) -> List[str]:
@@ -199,7 +199,7 @@ def make_link_attributes(links: Dict[str, str]) -> Dict[str, Any]:
         if not isinstance(value, str):  # pyright: ignore[reportUnnecessaryIsInstance]
             raise ValueError(f"Link value must be a string, got {type(value)} for key '{key}'")
         link_list.append({LinkAttributes.KEY_MATCH.value: key, LinkAttributes.VALUE_MATCH.value: value})
-    return flatten_attributes({LightningSpanAttributes.LINK.value: link_list})
+    return flatten_attributes({LightningSpanAttributes.LINK.value: link_list}, expand_leaf_lists=True)
 
 
 def query_linked_spans(spans: Sequence[SpanLike], links: List[LinkPydanticModel]) -> List[SpanLike]:
@@ -298,7 +298,7 @@ def filter_and_unflatten_attributes(attributes: Dict[str, Any], prefix: str) -> 
 
 
 def flatten_attributes(
-    nested_data: Union[Dict[str, Any], List[Any]], *, expand_leaf_lists: bool = True
+    nested_data: Union[Dict[str, Any], List[Any]], *, expand_leaf_lists: bool = False
 ) -> Dict[str, Any]:
     """Flatten a nested dictionary or list into a flat dictionary with dotted keys.
 
@@ -308,14 +308,14 @@ def flatten_attributes(
 
     Example:
 
-        >>> flatten_attributes({"a": {"b": 1, "c": [2, 3]}})
+        >>> flatten_attributes({"a": {"b": 1, "c": [2, 3]}}, expand_leaf_lists=True)
         {"a.b": 1, "a.c.0": 2, "a.c.1": 3}
 
     Args:
         nested_data: A nested structure composed of dictionaries, lists, or primitive values.
         expand_leaf_lists: Whether to expand lists composed only of primitive values.
-            When ``False``, lists of str/int/float/bool are treated as leaf values and
-            stored without enumerating their indices.
+            When `False` (the default), lists of str/int/float/bool are treated as
+            leaf values and stored without enumerating their indices.
 
     Returns:
         A flat dictionary mapping dotted-string paths to primitive values.
