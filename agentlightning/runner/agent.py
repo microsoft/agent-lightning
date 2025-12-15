@@ -43,6 +43,7 @@ from agentlightning.types import (
     RolloutMode,
     RolloutRawResult,
     Span,
+    SpanCoreFields,
 )
 from agentlightning.utils.system_snapshot import system_snapshot
 
@@ -276,7 +277,7 @@ class LitAgentRunner(Runner[T_task]):
         """
         store = self.get_store()
 
-        trace_spans: list[ReadableSpan] | list[Span] = []
+        trace_spans: list[Span] = []
         result_recognized: bool = False
 
         # Case 0: result is None
@@ -295,31 +296,38 @@ class LitAgentRunner(Runner[T_task]):
             # Preserve the existing spans before another span is emitted
             trace_spans = list(self._tracer.get_last_trace())
             # This will NOT emit another span to the tracer
-            reward_span = emit_reward(raw_result, propagate=False)
+            reward_span_core_fields = emit_reward(raw_result, propagate=False)
             # We add it to the store manually
-            await store.add_otel_span(rollout.rollout_id, rollout.attempt.attempt_id, reward_span)
-            trace_spans.append(reward_span)
+            sequence_id = await store.get_next_span_sequence_id(rollout.rollout_id, rollout.attempt.attempt_id)
+            reward_span = Span.from_core_fields(
+                reward_span_core_fields,
+                rollout_id=rollout.rollout_id,
+                attempt_id=rollout.attempt.attempt_id,
+                sequence_id=sequence_id,
+            )
+            await store.add_span(reward_span)
             result_recognized = True
 
-        # Case 2-3: result is a list
+        # Case 2-4: result is a list
         if isinstance(raw_result, list):
-            # For rollout methods that return a list, we assume that the returned spans
-            # are the complete span set from the whole rollout
-            trace_spans = raw_result
-
             # Case 2: result is a list of ReadableSpan (OpenTelemetry spans)
             if len(raw_result) > 0 and all(isinstance(t, ReadableSpan) for t in raw_result):
-                if not isinstance(self._tracer, OtelTracer):
-                    for span in raw_result:
-                        await store.add_otel_span(
-                            rollout.rollout_id, rollout.attempt.attempt_id, cast(ReadableSpan, span)
-                        )
-                else:
+                if isinstance(self._tracer, OtelTracer):
                     logger.warning(
                         f"{self._log_prefix(rollout.rollout_id)} Tracer is already an OpenTelemetry tracer. "
                         "The traces should have already been added to the store. "
-                        "No need to return anything from rollout."
+                        "Returning the traces from the rollout will result in duplicate spans."
                     )
+                for span in raw_result:
+                    added_span = await store.add_otel_span(
+                        rollout.rollout_id, rollout.attempt.attempt_id, cast(ReadableSpan, span)
+                    )
+                    if added_span is not None:
+                        trace_spans.append(added_span)
+                    else:
+                        logger.error(
+                            f"{self._log_prefix(rollout.rollout_id)} Failed to add OpenTelemetry span to the store: {span}"
+                        )
                 result_recognized = True
 
             # Case 3: result is a list of Span (agentlightning spans)
@@ -327,7 +335,25 @@ class LitAgentRunner(Runner[T_task]):
                 # Add the spans directly to the store
                 for span in raw_result:
                     await store.add_span(cast(Span, span))
-                trace_spans = raw_result
+                trace_spans = [cast(Span, span) for span in raw_result]
+                result_recognized = True
+
+            # Case 4: result is a list of SpanCoreFields (agentlightning spans)
+            elif len(raw_result) > 0 and all(isinstance(t, SpanCoreFields) for t in raw_result):
+                # Add the spans directly to the store too, but needs to get sequence id first
+                sequence_ids = await store.get_many_span_sequence_ids(
+                    [(rollout.rollout_id, rollout.attempt.attempt_id) for _ in range(len(raw_result))]
+                )
+                trace_spans = [
+                    Span.from_core_fields(
+                        cast(SpanCoreFields, span_core_fields),
+                        rollout_id=rollout.rollout_id,
+                        attempt_id=rollout.attempt.attempt_id,
+                        sequence_id=sequence_id,
+                    )
+                    for span_core_fields, sequence_id in zip(raw_result, sequence_ids, strict=True)
+                ]
+                await store.add_many_spans(trace_spans)
                 result_recognized = True
 
             # Left over cases for list
@@ -336,7 +362,7 @@ class LitAgentRunner(Runner[T_task]):
                     f"{self._log_prefix(rollout.rollout_id)} The rollout returns an empty list. "
                     "Please check your rollout implementation."
                 )
-                trace_spans = raw_result
+                trace_spans = []
                 result_recognized = True
 
             else:

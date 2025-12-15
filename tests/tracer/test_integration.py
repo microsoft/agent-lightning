@@ -22,8 +22,10 @@ import json
 import os
 import pprint
 import re
+import shutil
 import textwrap
 import time
+import warnings
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, List, Literal, Mapping, Optional, Tuple, Union
 
@@ -728,10 +730,13 @@ async def _run_tracer_with_agent(
             )
         tree = TraceTree.from_spans(last_trace_normalized)
 
-        # Visualize the trace tree for debug
-        debug_dir = os.path.join(os.path.dirname(__file__), "debug")
-        os.makedirs(debug_dir, exist_ok=True)
-        tree.visualize(filename=os.path.join(debug_dir, f"{tracer.__class__.__name__}_{agent_name}"))
+        if shutil.which("dot"):
+            # Visualize the trace tree for debug
+            debug_dir = os.path.join(os.path.dirname(__file__), "debug")
+            os.makedirs(debug_dir, exist_ok=True)
+            tree.visualize(filename=os.path.join(debug_dir, f"{tracer.__class__.__name__}_{agent_name}"))
+        else:
+            warnings.warn("dot is not installed. Skipping trace tree visualization.")
 
         tree.repair_hierarchy()
 

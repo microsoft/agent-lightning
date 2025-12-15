@@ -211,7 +211,7 @@ class OtelResource(BaseModel):
 
 
 class SpanCoreFields(BaseModel):
-    """Core fields of a span. Used by span creators who doesn't care about the full span model.
+    """Core fields of a span. Used by span creators who don't care about the full span model.
 
     If the spans are managed by some OTel tracer provider, it's not advised to create spans via this path.
     """

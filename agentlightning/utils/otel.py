@@ -493,7 +493,9 @@ def check_attributes_sanity(attributes: Dict[Any, Any]) -> None:
             except ValueError as exc:
                 raise ValueError(f"Failed to sanitize list attribute '{k}': {exc}") from exc
         elif not isinstance(v, (str, int, float, bool)):
-            raise ValueError(f"Attribute value must be a string, int, float, bool, o, got {type(v)} for value '{v}'")
+            raise ValueError(
+                f"Attribute value must be a string, int, float, bool, or list of these, got {type(v)} for value '{v}'"
+            )
 
 
 def format_exception_attributes(exception: BaseException) -> Attributes:

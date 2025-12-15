@@ -60,7 +60,7 @@ class DummySpanRecordingContext(SpanRecordingContext):
 
 
 class DummyTracer(Tracer):
-    """A dummy tracer that do not trace anything, but it is compatible with the emitter API.
+    """A dummy tracer that does not trace anything, but it is compatible with the emitter API.
 
     It doesn't rely on any backend tracer, and also doesn't use any stores.
     """
