@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import os
 import re
-import shutil
-import tempfile
 import time
-from typing import Any, Dict, List, Literal, Optional, Tuple, TypedDict, cast
+import pandas as pd
+from typing import Any, Dict, List, Optional, Tuple, TypedDict, cast
 
 
 import requests
@@ -98,14 +97,10 @@ def passages2string(retrieval_result: List[RetrievalItem]) -> str:
 def call_llm(
     llm_client: OpenAI,
     model_name: str,
-    content: str = "",
     messages: List[dict] = [],
     temperature: float = 1.0,
     max_tokens: int = 500,
 ) -> str:
-    if not len(messages):
-        messages=[{"role": "user", "content": content}]
-    print(messages)
     response = llm_client.chat.completions.create(
         model=model_name,
         messages=messages,

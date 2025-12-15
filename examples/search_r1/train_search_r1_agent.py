@@ -76,7 +76,7 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
         "experiment_name": "searchr1_minibatch256_runner32",
         "nnodes": 1,
         "test_freq": 10,
-        "save_freq":10,
+        "save_freq": 10,
         "total_epochs": 15,
         "total_training_steps": 300,
         "default_local_dir": "/mnt/teamdrive/search_r1/searchr1_checkpoints/searchr1_minibatch256_runner32/"
