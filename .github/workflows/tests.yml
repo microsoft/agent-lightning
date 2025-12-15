@@ -111,6 +111,10 @@ jobs:
       - name: Set source commit for docs
         run: |
           echo "SOURCE_COMMIT=${{ github.sha }}" >> $GITHUB_ENV
+      - name: Verify OpenAPI specification is up-to-date
+        run: |
+          uv run --locked --no-sync python scripts/export_openapi.py
+          git diff --exit-code docs/assets/store-openapi.json
       - name: Build documentation
         run: uv run --locked --no-sync mkdocs build --strict
       - name: Upload docs artifact
