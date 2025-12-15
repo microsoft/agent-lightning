@@ -1,6 +1,5 @@
 import subprocess
 
-
 def run_cmd(cmd):
     """Execute a shell command and print its output"""
     print(f"👉 Running: {cmd}")

@@ -9,10 +9,6 @@ from autogen_agentchat.agents import AssistantAgent
 from autogen_core.models import ModelFamily
 from autogen_ext.models.openai import OpenAIChatCompletionClient
 from captioners.add_instruction import add_chat_instruction, add_single_instruction
-from captioners.debugging import (
-    print_llm_chat_input,
-    print_llm_single_input,
-)
 from agl_envs.simulation import make_env_manager
 from contrib.recipes.simulation.captioners import create_prompt_builder
 
@@ -66,14 +62,6 @@ class SimulationAgent(LitAgent):
                 return add_single_instruction(obs, "naive", sep, self.config.env_name)
 
         raise ValueError(f"Unsupported obs_type={obs_type}, type={cap_type}")
-
-    def _print_llm_input(self, obs):
-        obs_type = self.config.captioner.obs_type
-
-        if obs_type == "chat":
-            return print_llm_chat_input(obs)
-        elif obs_type == "single":
-            return print_llm_single_input(obs)
 
     async def rollout_async(
         self,
