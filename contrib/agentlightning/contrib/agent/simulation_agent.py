@@ -8,12 +8,13 @@ import numpy as np
 from autogen_agentchat.agents import AssistantAgent
 from autogen_core.models import ModelFamily
 from autogen_ext.models.openai import OpenAIChatCompletionClient
-from captioners.add_instruction import add_chat_instruction, add_single_instruction
-from agl_envs.simulation import make_env_manager
-from contrib.recipes.simulation.captioners import create_prompt_builder
 
 from agentlightning import LLM, LitAgent, NamedResources, Rollout, configure_logger, emit_object, emit_reward, operation
 from agentlightning.utils.otel import make_link_attributes
+
+from agl_envs.simulation import make_env_manager, HistoryPromptBuilder
+
+from utils.add_instruction import add_chat_instruction, add_single_instruction
 
 logger = configure_logger(name=__name__, level=logging.ERROR)
 
@@ -84,7 +85,7 @@ class SimulationAgent(LitAgent):
 
         try:
             # Setup environment
-            prompt_builder = create_prompt_builder(self.config.captioner)
+            prompt_builder = HistoryPromptBuilder(max_history=self.config.captioner.max_history)
             self.env = make_env_manager(self.config.env_name, task, self.config, prompt_builder=prompt_builder)
             obs, pure_env_obs, infos = self.env.reset()
             episode_reward, done = 0.0, False

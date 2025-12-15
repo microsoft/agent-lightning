@@ -2,18 +2,17 @@
 # Variable definitions
 # ==========================
 variables:
-  NUM_GPUS: 8
+  NUM_GPUS: 2
   MINI_BATCH_SIZE: 32
   PER_GPU_BATCH_SIZE: 16
   TENSOR_MODEL_PARALLEL_SIZE: 2
   NUM_ROLLOUTS: 8
   BASE_MODEL: Qwen/Qwen2.5-1.5B-Instruct
-  PROJECT_NAME: AGL-v1-ScienceWorld-4
+  PROJECT_NAME: AGL-Simulation-ScienceWorld
   TASK_NUM: ${oc.env:TASK_NUM,-1}
   TRIAL: ${oc.env:TRIAL,0}
   EXPERIMENT_NAME: grpo-sciworld-${variables.TRIAL}
   DATA_DIR: agl_envs/simulation/task_data/scienceworld/multi_data
-  OUTPUT_DIR: /mnt/jeonghyekim/agl_v1/1108/${variables.EXPERIMENT_NAME}
 
 # ==========================
 # Main Config
@@ -29,7 +28,7 @@ algorithm:
 data:
   train_files: ${variables.DATA_DIR}/train.parquet
   val_files: ${variables.DATA_DIR}/test.parquet
-  train_batch_size: 16
+  train_batch_size: 32
   val_batch_size: 144
   max_prompt_length: 6000
   max_response_length: 1024
@@ -73,7 +72,6 @@ actor_rollout_ref:
     enable_gradient_checkpointing: true
 
 trainer:
-  default_local_dir: ${variables.OUTPUT_DIR}/checkpoints
   n_gpus_per_node: ${variables.NUM_GPUS}
   val_before_train: false
   critic_warmup: 0

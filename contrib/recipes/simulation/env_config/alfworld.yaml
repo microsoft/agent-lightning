@@ -10,7 +10,7 @@ use_success_rate: False
 captioner:
   type: cot # naive or cot
   obs_type: single # chat or single
-  max_text_history: 2
+  max_history: 2
 
 alfworld_kwargs:
   max_steps: 50

@@ -13,4 +13,4 @@ use_action_correction: False
 captioner:
   type: cot # naive or cot
   obs_type: single # chat or single
-  max_text_history: 2
+  max_history: 2

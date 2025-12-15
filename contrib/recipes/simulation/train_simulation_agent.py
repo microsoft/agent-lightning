@@ -29,7 +29,7 @@ def get_config(path):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--env", type=str, default="alfworld")
+    parser.add_argument("--env", type=str, default="scienceworld")
     parser.add_argument("--algorithm", type=str, default="grpo")
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--n_workers", type=int, default=64, help="Number of workers for training")
