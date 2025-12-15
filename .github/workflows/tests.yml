@@ -224,7 +224,7 @@ jobs:
           enable-cache: true
           python-version: '3.12'
       - name: Sync Python dependencies
-        run: uv sync --frozen --no-default-groups --extra apo --extra weave --group dev --group agents --group core-stable
+        run: uv sync --frozen --no-default-groups --extra apo --group dev --group agents --group core-stable
       - name: Install JavaScript dependencies
         run: cd dashboard && npm ci
       - name: Run vitest
