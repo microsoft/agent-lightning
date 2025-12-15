@@ -15,8 +15,6 @@ jobs:
         backend:
           - id: memory
             compose_file: compose.prometheus-memory-store.yml
-          - id: mongo
-            compose_file: compose.prometheus-mongo-store.yml
         workload:
           - id: scenario-minimal-scale
             display: Minimal production scale
@@ -125,52 +123,9 @@ jobs:
               --n-runners 512
               --max-rounds 20
               --sleep-seconds 1.0
-
-          - id: micro-worker
-            display: Update worker
-            kind: micro
-            store_workers: 8
-            runner: ubuntu-latest
-            timeout: 30
-            cli: worker
-          - id: micro-dequeue-empty
-            display: Dequeue empty
-            kind: micro
-            store_workers: 8
-            runner: ubuntu-latest
-            timeout: 30
-            cli: dequeue-empty
-          - id: micro-rollout
-            display: Rollout + span
-            kind: micro
-            store_workers: 8
-            runner: ubuntu-latest
-            timeout: 30
-            cli: rollout
-          - id: micro-dequeue-update-attempt
-            display: Dequeue + update attempt
-            kind: micro
-            store_workers: 8
-            runner: ubuntu-latest
-            timeout: 30
-            cli: dequeue-update-attempt
-          - id: micro-dequeue-only
-            display: Dequeue only
-            kind: micro
-            store_workers: 8
-            runner: ubuntu-latest
-            timeout: 30
-            cli: dequeue-only
-          - id: micro-metrics
-            display: Multi-metric fan-out
-            kind: micro
-            store_workers: 8
-            runner: ubuntu-latest
-            timeout: 15
-            cli: metrics
     env:
       STORE_URL: http://localhost:4747
-      STORE_API_URL: http://localhost:4747/v1/agl
+      STORE_API_URL: http://localhost:4747
       PROM_URL: http://localhost:9090
       WORKLOAD_KIND: ${{ matrix.workload.kind }}
       WORKLOAD_ID: ${{ matrix.workload.id }}
@@ -192,6 +147,9 @@ jobs:
 
       - name: Sync dependencies
         run: uv sync --frozen --extra mongo --group core-stable --group dev
+
+      - name: Install Legacy Agent-lightning
+        run: uv pip install agentlightning==0.2.2
 
       - name: Check disk space
         run: df -h
@@ -255,34 +213,6 @@ jobs:
         if: ${{ always() }}
         run: echo "BENCHMARK_END=$(date -u +%FT%TZ)" >> "$GITHUB_ENV"
 
-      - name: Show micro benchmark summary
-        if: ${{ always() && matrix.workload.kind == 'micro' }}
-        run: |
-          set -euo pipefail
-          summary_file="$ARTIFACT_DIR/$SUMMARY_FILE"
-          if [ -f "$summary_file" ]; then
-            echo "Micro benchmark summary ($WORKLOAD_ID/$BACKEND_ID):"
-            cat "$summary_file"
-          else
-            echo "Summary file not found: $summary_file"
-          fi
-
-      - name: Run workload analysis
-        if: ${{ always() }}
-        run: |
-          set -euo pipefail
-          mkdir -p "$ARTIFACT_DIR"
-          if [ -z "${BENCHMARK_START:-}" ] || [ -z "${BENCHMARK_END:-}" ]; then
-            echo "Analysis skipped: benchmark window not recorded." > "$ARTIFACT_DIR/$ANALYSIS_FILE"
-            exit 1
-          fi
-          uv run --locked --no-sync python -m tests.benchmark.analysis \
-            --prom-url "$PROM_URL" \
-            --store-url "$STORE_API_URL" \
-            --start "$BENCHMARK_START" \
-            --end "$BENCHMARK_END" \
-            | tee "$ARTIFACT_DIR/$ANALYSIS_FILE"
-
       - name: Collect docker logs
         if: ${{ always() }}
         run: |
@@ -298,136 +228,7 @@ jobs:
             docker compose -f "$COMPOSE_FILE" logs "$service" > "../$ARTIFACT_DIR/docker-${service}-${WORKLOAD_ID}-${BACKEND_ID}.log" || true
           done
 
-      - name: Stop ${{ matrix.backend.id }} Prometheus stack
-        if: ${{ always() }}
-        run: |
-          set -euo pipefail
-          cd docker
-          docker compose -f "$COMPOSE_FILE" down -v || true
-
-      - name: Archive Prometheus metrics
-        if: ${{ always() }}
-        run: |
-          set -euo pipefail
-          mkdir -p "$ARTIFACT_DIR"
-          if [ -d docker/data/prometheus ]; then
-            tar -C docker/data -czf "$ARTIFACT_DIR/${PROM_ARCHIVE_BASENAME}.tar.gz" prometheus
-          fi
-
       - name: Upload workload artifacts
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ env.ARTIFACT_NAME }}
-          path: ${{ env.ARTIFACT_DIR }}
-          if-no-files-found: error
-
-  collection-benchmarks:
-    name: collection (${{ matrix.backend.id }}, ${{ matrix.workload.id }})
-    runs-on: ${{ matrix.backend.runner }}
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        backend:
-          - id: memory
-            needs_mongo: false
-            runner: ubuntu-latest
-          - id: mongo
-            needs_mongo: true
-            runner: ubuntu-latest
-        workload:
-          - id: high-insert
-            total_tasks: 100000
-            concurrency: 2048
-            type: insert
-          - id: medium-insert
-            total_tasks: 100000
-            concurrency: 128
-            type: insert
-          - id: low-insert
-            total_tasks: 100000
-            concurrency: 4
-            type: insert
-          - id: high-dequeue
-            total_tasks: 100000
-            concurrency: 2048
-            type: dequeue
-          - id: medium-dequeue
-            total_tasks: 100000
-            concurrency: 128
-            type: dequeue
-          - id: low-dequeue
-            total_tasks: 100000
-            concurrency: 4
-            type: dequeue
-    env:
-      ARTIFACT_DIR: ${{ format('artifacts/{0}-{1}', matrix.backend.id, matrix.workload.id) }}
-      SUMMARY_FILE: ${{ format('artifacts/{0}-{1}/summary-{0}-{1}.jsonl', matrix.backend.id, matrix.workload.id) }}
-      ARTIFACT_NAME: ${{ format('collections-{0}-{1}', matrix.backend.id, matrix.workload.id) }}
-      MONGO_URI: mongodb://localhost:27017/?replicaSet=rs0
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: astral-sh/setup-uv@v7
-        with:
-          enable-cache: true
-          python-version: '3.12'
-
-      - name: Sync dependencies
-        run: uv sync --frozen --extra mongo --group core-stable --group dev
-
-      - name: Launch MongoDB
-        if: ${{ matrix.backend.needs_mongo }}
-        run: |
-          set -euo pipefail
-          cd docker
-          docker compose -f compose.mongo.yml down -v || true
-          docker compose -f compose.mongo.yml up -d --quiet-pull
-          for attempt in {1..60}; do
-            if docker compose -f compose.mongo.yml exec -T mongo mongosh --quiet --eval 'db.runCommand({ping:1})' >/dev/null 2>&1; then
-              exit 0
-            fi
-            sleep 2
-          done
-          echo "MongoDB did not become ready in time" >&2
-          docker compose -f compose.mongo.yml logs mongo
-          exit 1
-
-      - name: Run collection benchmark
-        run: |
-          set -euo pipefail
-          mkdir -p "$ARTIFACT_DIR"
-          echo "Running collection benchmark (backend=${{ matrix.backend.id }}, workload=${{ matrix.workload.id }})"
-          uv run --locked --no-sync python -m tests.benchmark.collection_benchmark \
-            "${{ matrix.workload.type }}" \
-            --backend "${{ matrix.backend.id }}" \
-            --total-tasks "${{ matrix.workload.total_tasks }}" \
-            --concurrency "${{ matrix.workload.concurrency }}" \
-            --task-prefix "${{ matrix.backend.id }}-${{ matrix.workload.id }}" \
-            --summary-file "$SUMMARY_FILE" \
-            --mongo-uri "$MONGO_URI" \
-            --mongo-database agentlightning_collection_bench
-
-      - name: Show collection benchmark summary
-        if: ${{ always() }}
-        run: |
-          set -euo pipefail
-          if [ -f "$SUMMARY_FILE" ]; then
-            echo "Collection benchmark summary (${{ matrix.backend.id }}):"
-            cat "$SUMMARY_FILE"
-          else
-            echo "Summary file not found: $SUMMARY_FILE"
-          fi
-
-      - name: Stop MongoDB
-        if: ${{ always() && matrix.backend.needs_mongo }}
-        run: |
-          set -euo pipefail
-          cd docker
-          docker compose -f compose.mongo.yml down -v || true
-
-      - name: Upload collection artifacts
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:

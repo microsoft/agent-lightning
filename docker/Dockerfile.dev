@@ -27,7 +27,8 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # Installing separately from its dependencies allows optimal layer caching
 COPY . /app
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --group dev --extra mongo --group core-stable
+    uv sync --locked --group dev --extra mongo --group core-stable && \
+    uv pip install agentlightning==0.2.2
 
 # Place executables in the environment at the front of the path
 ENV PATH="/app/.venv/bin:$PATH"
