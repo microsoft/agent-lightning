@@ -32,7 +32,7 @@ from agentlightning.types import TraceStatus
 from agentlightning.types.tracer import Span
 from agentlightning.utils import otlp
 
-from ..common.tracer import clear_agentops_init, clear_tracer_provider
+from ..common.tracer import clear_tracer_provider
 
 
 def create_span(name: str, sampled: bool = True, with_context: bool = True) -> ReadableSpan:
@@ -519,11 +519,6 @@ def _otel_reward_subprocess(mode: str, conn: Connection[tuple[str, Any]]) -> Non
 async def _otel_reward_subprocess_async(mode: str, conn: Connection[tuple[str, Any]]) -> None:
     tracer: OtelTracer | None = None
     try:
-        try:
-            clear_agentops_init()
-        except Exception:
-            # Some environments ship a minimal agentops stub without tracer helpers.
-            pass
         clear_tracer_provider()
 
         tracer = OtelTracer()

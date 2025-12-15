@@ -8,6 +8,7 @@ from typing import Any, List, Optional, Union
 
 import agentops
 import pytest
+import pytest_asyncio
 import uvicorn
 from agentops.sdk.core import TraceContext
 from fastapi import FastAPI, Request
@@ -21,10 +22,18 @@ from portpicker import pick_unused_port
 
 from agentlightning.store.base import LightningStore, LightningStoreCapabilities
 from agentlightning.tracer.agentops import AgentOpsTracer
-from agentlightning.types import Span
+from agentlightning.types import Span, TraceStatus
 from agentlightning.utils import otlp
 
 pytestmark = [pytest.mark.agentops]
+
+
+@pytest_asyncio.fixture
+async def agentops_tracer():
+    tracer = AgentOpsTracer()
+    with tracer.lifespan():
+        async with tracer.trace_context():
+            yield tracer
 
 
 class MockOTLPService:
@@ -122,9 +131,42 @@ def _func_without_exception():
     pass
 
 
+def test_agentops_tracer_create_span(agentops_tracer: AgentOpsTracer) -> None:
+    status = TraceStatus(status_code="ERROR", description="agentops")
+
+    span = agentops_tracer.create_span(
+        "agentops-span",
+        attributes={"foo": "bar"},
+        status=status,
+        timestamp=42_000.0,
+    )
+
+    assert span.name == "agentops-span"
+    assert span.attributes["foo"] == "bar"
+    assert span.status.status_code == "ERROR"
+    assert span.status.description == "agentops"
+    assert span.start_time is not None
+    assert span.end_time is not None
+
+
+def test_agentops_tracer_operation_context_records_exception(agentops_tracer: AgentOpsTracer) -> None:
+    with pytest.raises(ValueError):
+        with agentops_tracer.operation_context("agentops-op", attributes={"foo": "bar"}) as ctx:
+            raise ValueError("agentops boom")
+
+    recorded_span = ctx.get_recorded_span()  # type: ignore
+    assert recorded_span.name == "agentops-op"
+    assert recorded_span.status.status_code == "ERROR"
+    assert recorded_span.status.description is not None
+    assert "agentops boom" in recorded_span.status.description
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("with_exception", [True, False])
 async def test_trace_error_status_from_instance(with_exception: bool):
+    import agentlightning
+
+    agentlightning.setup_logging("DEBUG")
     captured_state = {}
     old_end_trace = agentops.end_trace
 

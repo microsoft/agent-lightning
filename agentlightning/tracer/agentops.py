@@ -13,11 +13,11 @@ import agentops.sdk.core
 import opentelemetry.trace as trace_api
 from agentops.sdk.core import TracingCore
 from opentelemetry.sdk.trace import TracerProvider as TracerProviderImpl
-from opentelemetry.trace import get_tracer_provider
 from opentelemetry.trace.status import StatusCode
 
 from agentlightning.instrumentation import instrument_all, uninstrument_all
 from agentlightning.store.base import LightningStore
+from agentlightning.utils.otel import get_span_processors, get_tracer_provider
 
 from .base import with_active_tracer_context
 from .otel import LightningSpanProcessor, OtelTracer
@@ -80,13 +80,20 @@ class AgentOpsTracer(OtelTracer):
                 agentops.init(auto_start_session=False)  # type: ignore
                 logger.info(f"[Worker {worker_id}] AgentOps client initialized.")
             else:
-                logger.warning(f"[Worker {worker_id}] AgentOps client was already initialized.")
+                logger.warning(f"[Worker {worker_id}] AgentOps client was already initialized. Skip initialization.")
 
-        self._lightning_span_processor = LightningSpanProcessor()
-
-        # TODO: The span processor cannot be deleted once added.
-        # This might be a problem if the tracer is entered and exited multiple times.
-        self._get_tracer_provider().add_span_processor(self._lightning_span_processor)  # type: ignore
+        span_processors = get_span_processors(self._get_tracer_provider(), LightningSpanProcessor)
+        if len(span_processors) > 0:
+            logger.warning(
+                "LightningSpanProcessor already present in TracerProvider. You might have called init_worker() multiple times."
+                "Agent-lightning will try to reuse the existing LightningSpanProcessor."
+            )
+            if len(span_processors) > 1:
+                logger.error("More than one LightningSpanProcessors present in TracerProvider. This should not happen.")
+            self._lightning_span_processor = span_processors[0]
+        else:
+            self._lightning_span_processor = LightningSpanProcessor()
+            self._get_tracer_provider().add_span_processor(self._lightning_span_processor)  # type: ignore
 
     def teardown_worker(self, worker_id: int) -> None:
         super().teardown_worker(worker_id)
@@ -94,6 +101,9 @@ class AgentOpsTracer(OtelTracer):
         if self.instrument_managed:
             self.uninstrument(worker_id)
             logger.info(f"[Worker {worker_id}] Instrumentation removed.")
+
+        # NOTE: The teardown doesn't try to remove the LightningSpanProcessor from the TracerProvider.
+        # Currently there is no stable way to fully restore the AgentOps state to the initial state.
 
     @with_active_tracer_context
     @asynccontextmanager
@@ -160,7 +170,6 @@ class AgentOpsTracer(OtelTracer):
                 with self._agentops_trace_context(rollout_id, attempt_id, kwargs):
                     yield trace_api.get_tracer(__name__, tracer_provider=tracer_provider)
         elif store is None and rollout_id is None and attempt_id is None:
-            # TODO: Add tests to cover both paths
             self._disable_native_otlp_exporter()
             with self._lightning_span_processor:
                 with self._agentops_trace_context(None, None, kwargs):

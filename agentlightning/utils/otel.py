@@ -5,12 +5,12 @@
 import json
 import logging
 import traceback
-from typing import Any, Dict, List, Sequence, TypeVar, Union, cast
+from typing import Any, Dict, List, Sequence, Type, TypeVar, Union, cast
 from warnings import filterwarnings
 
 import opentelemetry.trace as trace_api
 from agentops.sdk.exporters import OTLPSpanExporter
-from opentelemetry.sdk.trace import ReadableSpan, SpanLimits, SynchronousMultiSpanProcessor, Tracer
+from opentelemetry.sdk.trace import ReadableSpan, SpanLimits, SpanProcessor, SynchronousMultiSpanProcessor, Tracer
 from opentelemetry.sdk.trace import TracerProvider as TracerProviderImpl
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, SimpleSpanProcessor
 from opentelemetry.sdk.util.instrumentation import InstrumentationInfo, InstrumentationScope
@@ -41,6 +41,7 @@ __all__ = [
 ]
 
 T_SpanLike = TypeVar("T_SpanLike", bound=SpanLike)
+T_SpanProcessor = TypeVar("T_SpanProcessor", bound=SpanProcessor)
 
 
 def full_qualified_name(obj: type) -> str:
@@ -115,6 +116,25 @@ def get_tracer_provider(inspect: bool = True) -> TracerProviderImpl:
             logger.debug("  * " + processor)
 
     return tracer_provider
+
+
+def get_span_processors(
+    tracer_provider: TracerProviderImpl, expected_type: Type[T_SpanProcessor]
+) -> List[T_SpanProcessor]:
+    """Get the span processors from the tracer provider.
+
+    Args:
+        tracer_provider: The tracer provider to get the span processors from.
+        expected_type: The type of the span processors to get.
+
+    Returns:
+        A list of span processors of the expected type.
+    """
+    processors: List[T_SpanProcessor] = []
+    for processor in tracer_provider._active_span_processor._span_processors:  # pyright: ignore[reportPrivateUsage]
+        if isinstance(processor, expected_type):
+            processors.append(processor)
+    return processors
 
 
 def get_tracer(use_active_span_processor: bool = True) -> trace_api.Tracer:
