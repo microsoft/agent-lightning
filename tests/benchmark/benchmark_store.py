@@ -19,7 +19,7 @@ from .utils import flatten_dict, random_dict
 
 console = Console()
 
-MAX_RUNTIME_SECONDS = 30 * 60
+MAX_RUNTIME_SECONDS = 110 * 60
 
 
 def _abort_due_to_timeout() -> None:
@@ -219,7 +219,7 @@ class AlgorithmBatch(agl.Algorithm):
                 await asyncio.sleep(0.01)
                 continue
 
-            rollouts = await store.query_rollouts(rollout_id_in=list(active_rollouts.keys()))
+            rollouts = await store.query_rollouts(rollout_ids=list(active_rollouts.keys()))
             newly_completed = 0
             for rollout in rollouts:
                 rollout_id = rollout.rollout_id

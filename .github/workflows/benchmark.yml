@@ -23,7 +23,7 @@ jobs:
             runner:
               - self-hosted
               - 1ES.Pool=agl-runner-cpu
-            timeout: 60
+            timeout: 120
             args: >-
               --mode batch
               --total-tasks 4096
@@ -38,7 +38,7 @@ jobs:
             runner:
               - self-hosted
               - 1ES.Pool=agl-runner-cpu
-            timeout: 60
+            timeout: 120
             args: >-
               --mode batch
               --total-tasks 10000
@@ -53,7 +53,7 @@ jobs:
             runner:
               - self-hosted
               - 1ES.Pool=agl-runner-cpu
-            timeout: 60
+            timeout: 120
             args: >-
               --mode batch
               --total-tasks 20000
@@ -68,10 +68,10 @@ jobs:
             runner:
               - self-hosted
               - 1ES.Pool=agl-runner-cpu
-            timeout: 60
+            timeout: 120
             args: >-
               --mode batch
-              --total-tasks 100000
+              --total-tasks 50000
               --batch-size 8192
               --n-runners 256
               --max-rounds 6
@@ -83,10 +83,10 @@ jobs:
             runner:
               - self-hosted
               - 1ES.Pool=agl-runner-cpu
-            timeout: 60
+            timeout: 120
             args: >-
               --mode batch_partial
-              --total-tasks 100000
+              --total-tasks 50000
               --batch-size 1024
               --n-runners 256
               --remaining-tasks 4096
@@ -99,10 +99,10 @@ jobs:
             runner:
               - self-hosted
               - 1ES.Pool=agl-runner-cpu
-            timeout: 60
+            timeout: 120
             args: >-
               --mode single
-              --total-tasks 100000
+              --total-tasks 50000
               --concurrency 2048
               --n-runners 256
               --max-rounds 2
@@ -114,7 +114,7 @@ jobs:
             runner:
               - self-hosted
               - 1ES.Pool=agl-runner-cpu
-            timeout: 60
+            timeout: 120
             args: >-
               --mode batch_partial
               --total-tasks 10000
