@@ -3296,7 +3296,7 @@ subclass needs to override defaults.</p>
 <p><span class="doc-section-title">Returns:</span></p>
     <ul>
         <li class="doc-section-item field-body">
-              <code><a class="autorefs autorefs-internal" title="            agentlightning.RolloutRawResult = Union[None, float, List[ReadableSpan], List[Span]]
+              <code><a class="autorefs autorefs-internal" title="            agentlightning.RolloutRawResult = Union[None, float, List[ReadableSpan], List[Span], List[SpanCoreFields]]
 
   
       module-attribute
@@ -3307,7 +3307,7 @@ subclass needs to override defaults.</p>
           </div>
         </li>
         <li class="doc-section-item field-body">
-              <code><a class="autorefs autorefs-internal" title="            agentlightning.RolloutRawResult = Union[None, float, List[ReadableSpan], List[Span]]
+              <code><a class="autorefs autorefs-internal" title="            agentlightning.RolloutRawResult = Union[None, float, List[ReadableSpan], List[Span], List[SpanCoreFields]]
 
   
       module-attribute
@@ -3320,7 +3320,7 @@ subclass needs to override defaults.</p>
           </div>
         </li>
         <li class="doc-section-item field-body">
-              <code><a class="autorefs autorefs-internal" title="            agentlightning.RolloutRawResult = Union[None, float, List[ReadableSpan], List[Span]]
+              <code><a class="autorefs autorefs-internal" title="            agentlightning.RolloutRawResult = Union[None, float, List[ReadableSpan], List[Span], List[SpanCoreFields]]
 
   
       module-attribute
@@ -3333,7 +3333,7 @@ subclass needs to override defaults.</p>
           </div>
         </li>
         <li class="doc-section-item field-body">
-              <code><a class="autorefs autorefs-internal" title="            agentlightning.RolloutRawResult = Union[None, float, List[ReadableSpan], List[Span]]
+              <code><a class="autorefs autorefs-internal" title="            agentlightning.RolloutRawResult = Union[None, float, List[ReadableSpan], List[Span], List[SpanCoreFields]]
 
   
       module-attribute
@@ -3346,7 +3346,7 @@ subclass needs to override defaults.</p>
           </div>
         </li>
         <li class="doc-section-item field-body">
-              <code><a class="autorefs autorefs-internal" title="            agentlightning.RolloutRawResult = Union[None, float, List[ReadableSpan], List[Span]]
+              <code><a class="autorefs autorefs-internal" title="            agentlightning.RolloutRawResult = Union[None, float, List[ReadableSpan], List[Span], List[SpanCoreFields]]
 
   
       module-attribute
@@ -3420,7 +3420,7 @@ subclass needs to override defaults.</p>
 <p><span class="doc-section-title">Returns:</span></p>
     <ul>
         <li class="doc-section-item field-body">
-              <code><a class="autorefs autorefs-internal" title="            agentlightning.RolloutRawResult = Union[None, float, List[ReadableSpan], List[Span]]
+              <code><a class="autorefs autorefs-internal" title="            agentlightning.RolloutRawResult = Union[None, float, List[ReadableSpan], List[Span], List[SpanCoreFields]]
 
   
       module-attribute
@@ -3431,7 +3431,7 @@ subclass needs to override defaults.</p>
           </div>
         </li>
         <li class="doc-section-item field-body">
-              <code><a class="autorefs autorefs-internal" title="            agentlightning.RolloutRawResult = Union[None, float, List[ReadableSpan], List[Span]]
+              <code><a class="autorefs autorefs-internal" title="            agentlightning.RolloutRawResult = Union[None, float, List[ReadableSpan], List[Span], List[SpanCoreFields]]
 
   
       module-attribute
@@ -3770,7 +3770,7 @@ Representatives are rewards, tags, and metadata.</p>
 )
           –
           <div class="doc-md-description">
-            <p>Whether to propagate the span to exporters automatically.</p>
+            <p>Whether to propagate the span to tracers automatically.</p>
           </div>
         </li>
     </ul>
@@ -3849,23 +3849,10 @@ Use a dictionary to represent a multi-dimensional reward.</p>
 <p><span class="doc-section-title">Returns:</span></p>
     <ul>
         <li class="doc-section-item field-body">
-              <code><span title="opentelemetry.sdk.trace.ReadableSpan">ReadableSpan</span></code>
+              <code><a class="autorefs autorefs-internal" title="            agentlightning.SpanCoreFields (agentlightning.types.SpanCoreFields)" href="../types/#agentlightning.SpanCoreFields">SpanCoreFields</a></code>
           –
           <div class="doc-md-description">
-            <p>Readable span capturing the recorded reward.</p>
-          </div>
-        </li>
-    </ul>
-
-
-<p><span class="doc-section-title">Raises:</span></p>
-    <ul>
-        <li class="doc-section-item field-body">
-              <code><span title="ValueError">ValueError</span></code>
-            –
-          <div class="doc-md-description">
-            <p>If the provided reward cannot be interpreted as a float or the
-resulting span is not a <a href="https://opentelemetry.io/docs/concepts/signals/traces/"><code>ReadableSpan</code></a> instance.</p>
+            <p>Span core fields capturing the recorded reward.</p>
           </div>
         </li>
     </ul>
