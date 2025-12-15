@@ -185,10 +185,11 @@ class AlgorithmBatch(agl.Algorithm):
                     if time.perf_counter() - completed_ids_last_updated > MAX_STALE_SECONDS / 2:
                         unfinished_ids = set(rollout_id for rollout_id, _ in batch_rollouts) - completed_ids
                         print(f"Stale rollouts: {unfinished_ids}")
-                        completed_ids_last_updated = 0
                     if time.perf_counter() - completed_ids_last_updated > MAX_STALE_SECONDS:
                         current_workers = await store.query_workers()
-                        console.print(f"Current worker status: {current_workers}")
+                        console.print(f"Stalled. Current worker status shown below:")
+                        for worker in current_workers:
+                            console.print(f"  Worker: {worker}", width=1024)  # Avoid wrapping
                         raise RuntimeError("Rollout progress has stalled for too long")
 
                 await asyncio.sleep(5.0)
