@@ -363,6 +363,46 @@ async def test_readable_spans_return_skip_store_when_tracer_is_otel(
 
 
 @pytest.mark.asyncio
+async def test_post_process_readable_spans_adds_each_span() -> None:
+    agent = HeartbeatAgent()
+    runner, store, _ = await setup_runner(agent)
+    attempted_rollout = await store.start_rollout(input={"task": "post-process"}, mode="val")
+
+    spans = [create_readable_span("case-2-span-a"), create_readable_span("case-2-span-b")]
+
+    try:
+        result_spans = await runner._post_process_rollout_result(  # pyright: ignore[reportPrivateUsage]
+            attempted_rollout, spans
+        )
+    finally:
+        teardown_runner(runner)
+
+    assert [span.name for span in result_spans] == ["case-2-span-a", "case-2-span-b"]
+    stored_spans = await store.query_spans(attempted_rollout.rollout_id, attempted_rollout.attempt.attempt_id)
+    assert [span.name for span in stored_spans] == ["case-2-span-a", "case-2-span-b"]
+
+
+@pytest.mark.asyncio
+async def test_post_process_span_core_fields_create_spans() -> None:
+    agent = HeartbeatAgent()
+    runner, store, _ = await setup_runner(agent)
+    attempted_rollout = await store.start_rollout(input={"task": "reward-list"}, mode="val")
+
+    span_core_fields = [emit_reward(0.5, propagate=False), emit_reward(-0.2, propagate=False)]
+
+    try:
+        result_spans = await runner._post_process_rollout_result(  # pyright: ignore[reportPrivateUsage]
+            attempted_rollout, span_core_fields
+        )
+    finally:
+        teardown_runner(runner)
+
+    assert all(span.name == AGL_ANNOTATION for span in result_spans)
+    stored_spans = await store.query_spans(attempted_rollout.rollout_id, attempted_rollout.attempt.attempt_id)
+    assert [span.attributes.get("agentlightning.reward.0.value") for span in stored_spans] == [0.5, -0.2]
+
+
+@pytest.mark.asyncio
 async def test_step_handles_non_llm_resource() -> None:
     class PromptAgent(LitAgent[str]):
         def validation_rollout(self, task: str, resources: Dict[str, Any], rollout: Any) -> float:

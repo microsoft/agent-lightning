@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures as futures
 import logging
+import os
 import re
 import weakref
 from contextlib import asynccontextmanager, contextmanager
@@ -26,6 +27,7 @@ from weave.trace.call import Call
 from weave.trace.settings import UserSettings
 from weave.trace.weave_client import WeaveClient
 from weave.trace_server import trace_server_interface as tsi
+from weave.wandb_interface.context import set_wandb_api_context
 
 from agentlightning.instrumentation.weave import InMemoryWeaveTraceServer, instrument_weave, uninstrument_weave
 from agentlightning.semconv import LightningResourceAttributes, LightningSpanAttributes
@@ -262,14 +264,13 @@ class WeaveTracer(Tracer):
         logger.info(f"[Worker {worker_id}] Setting up Weave tracer...")
         self._store = store
 
-        try:
-            import weave
-        except ImportError as exc:
-            raise RuntimeError("Weave is not installed. Install it to use WeaveTracer.") from exc
-
         # Optionally patch network calls to bypass real Weave/W&B endpoints
         if self.instrument_managed:
             self.instrument(worker_id)
+
+        # If WANDB_API_KEY is not set, we need to initialize Weave with a hack
+        if not os.getenv("WANDB_API_KEY"):
+            set_wandb_api_context("agl", api_key=None, headers=None, cookies=None)
 
         weave_client = weave.get_client()
         if self.project_name is None:
