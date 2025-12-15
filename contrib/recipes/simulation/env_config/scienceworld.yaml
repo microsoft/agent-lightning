@@ -3,7 +3,7 @@ seed: 0
 format_penalty: 0.1
 binary_reward: False
 save_rollout: False
-log_pure_env_obs: False # True for GiGPO
+log_env_obs: False # True for GiGPO
 reawrd_scale: 10.0
 use_success_rate: True
 
@@ -12,5 +12,5 @@ use_action_correction: False
 
 captioner:
   type: cot # naive or cot
-  obs_type: single # chat or single
+  prompt_type: single # chat or single
   max_history: 2

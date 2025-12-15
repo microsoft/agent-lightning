@@ -58,7 +58,7 @@ if __name__ == "__main__":
     agent_config = get_config(agent_config_path)
 
     if "gigpo" in args.algorithm:
-        agent_config.log_pure_env_obs = True
+        agent_config.log_env_obs = True
     rl_training_config = get_config(trainer_config_path)
 
     # Load datasets

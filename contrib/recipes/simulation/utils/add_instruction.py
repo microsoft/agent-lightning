@@ -12,11 +12,6 @@ NAIVE_INSTRUCTION = """
 Please response with only one line with one sentence, following the possible action format shown above. No extra words are allowed.
 """.strip()
 
-CRITIC_INSTRUCTION = """
-Now it's your turn to evaluate the current situation in terms of how much future reward it will bring. You should first reason step-by-step about the current situation. This reasoning process MUST be enclosed within <think> and </think> tags.
-Once you've finished your reasoning, write a score between 0 and 100 inside <evaluate> </evaluate> tags.
-""".strip()
-
 TIP_INSTRUCTION = """
 Thanks for your playing.
 Now you have ended a trajectory and collect some meaningless or valuable information from the interactions with the environment.
@@ -31,7 +26,6 @@ Your response must strictly follow this format:
 INSTRUCTION_MAP = {
     "cot": COT_INSTRUCTION,
     "naive": NAIVE_INSTRUCTION,
-    "critic": CRITIC_INSTRUCTION,
     "tip": TIP_INSTRUCTION,
 }
 

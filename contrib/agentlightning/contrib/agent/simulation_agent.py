@@ -12,7 +12,8 @@ from autogen_ext.models.openai import OpenAIChatCompletionClient
 from agentlightning import LLM, LitAgent, NamedResources, Rollout, configure_logger, emit_object, emit_reward, operation
 from agentlightning.utils.otel import make_link_attributes
 
-from agl_envs.simulation import make_env_manager, HistoryPromptBuilder
+from agl_envs.simulation import make_env_manager
+from contrib.recipes.simulation.prompt_builder import HistoryPromptBuilder
 
 from utils.add_instruction import add_chat_instruction, add_single_instruction
 
@@ -45,24 +46,24 @@ class SimulationAgent(LitAgent):
             model_client=model_client,
         )
 
-    def _get_instructed_obs(self, obs, sep="\n\n"):
-        """Return instructed observation based on obs_type and captioner type."""
-        obs_type = self.config.captioner.obs_type
+    def _get_instructed_prompt(self, prompt, sep="\n\n"):
+        """Return instructed observation based on prompt_type and captioner type."""
+        prompt_type = self.config.captioner.prompt_type
         cap_type = self.config.captioner.type
 
-        if obs_type == "chat":
+        if prompt_type == "chat":
             if cap_type == "cot":
-                return add_chat_instruction(obs, "cot", sep, self.config.env_name)
+                return add_chat_instruction(prompt, "cot", sep, self.config.env_name)
             elif cap_type == "naive":
-                return add_chat_instruction(obs, "naive", sep)
+                return add_chat_instruction(prompt, "naive", sep)
 
-        elif obs_type == "single":
+        elif prompt_type == "single":
             if cap_type == "cot":
-                return add_single_instruction(obs, "cot", sep, self.config.env_name)
+                return add_single_instruction(prompt, "cot", sep, self.config.env_name)
             elif cap_type == "naive":
-                return add_single_instruction(obs, "naive", sep, self.config.env_name)
+                return add_single_instruction(prompt, "naive", sep, self.config.env_name)
 
-        raise ValueError(f"Unsupported obs_type={obs_type}, type={cap_type}")
+        raise ValueError(f"Unsupported prompt_type={prompt_type}, type={cap_type}")
 
     async def rollout_async(
         self,
@@ -85,19 +86,27 @@ class SimulationAgent(LitAgent):
 
         try:
             # Setup environment
-            prompt_builder = HistoryPromptBuilder(max_history=self.config.captioner.max_history)
-            self.env = make_env_manager(self.config.env_name, task, self.config, prompt_builder=prompt_builder)
-            obs, pure_env_obs, infos = self.env.reset()
+            prompt_builder = HistoryPromptBuilder(max_history=self.config.captioner.max_history, prompt_type=self.config.captioner.prompt_type)
+
+            self.env = make_env_manager(self.config.env_name, task, self.config)
+            env_obs, infos, available_actions_hint = self.env.reset()
+
+            prompt_builder.init(self.env)
+            prompt_builder.update_observation(env_obs)
+            prompt_builder.update_admissible_actions(available_actions_hint)
+
+            prompt = prompt_builder.get_prompt()
+
             episode_reward, done = 0.0, False
 
             step_count = 0
             while not done:
                 try:
-                    instructed_obs = self._get_instructed_obs(obs)
+                    instructed_prompt = self._get_instructed_prompt(prompt)
 
                     # Main agent step
                     with operation(step_count=step_count):
-                        result = await self.agent._model_client.create(instructed_obs)
+                        result = await self.agent._model_client.create(instructed_prompt)
                     output = result.content
                     logger.info(f"[LLM output]: {output}")
 
@@ -105,12 +114,19 @@ class SimulationAgent(LitAgent):
                     logger.error(f"[Rollout {rollout_id}] Error during training rollout: {e}", exc_info=True)
                     break
 
-                if self.config.log_pure_env_obs:
-                    emit_object(pure_env_obs, attributes=make_link_attributes({"step_count": str(step_count)}))
+                if self.config.log_env_obs:
+                    emit_object(env_obs, attributes=make_link_attributes({"step_count": str(step_count)}))
 
-                obs, pure_env_obs, executed_action, is_valid, step_reward, terminated, truncated, info = self.env.step(
+                env_obs, executed_action,is_valid, step_reward, terminated, truncated, info, available_actions_hint = self.env.step(
                     output, use_reasoning=self.config.captioner.type == "cot"
                 )
+
+                prompt_builder.update_step_count()
+                prompt_builder.update_action(executed_action)
+                prompt_builder.update_observation(env_obs)
+                prompt_builder.update_admissible_actions(available_actions_hint)
+
+                prompt = prompt_builder.get_prompt()
 
                 if rollout.mode == "train":
                     step_reward *= reward_scale
