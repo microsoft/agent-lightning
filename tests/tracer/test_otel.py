@@ -28,6 +28,7 @@ from agentlightning.reward import emit_reward, find_reward_spans, get_reward_val
 from agentlightning.store.base import LightningStore
 from agentlightning.tracer.agentops import LightningSpanProcessor
 from agentlightning.tracer.otel import OtelTracer
+from agentlightning.types import TraceStatus
 from agentlightning.types.tracer import Span
 from agentlightning.utils import otlp
 
@@ -123,6 +124,51 @@ def store(store_supports_otlp: bool, otlp_server: Optional[Dict[str, Any]]) -> M
         assert otlp_server is not None
         mock_store.otlp_traces_endpoint.return_value = otlp_server["url"]
     return mock_store
+
+
+@pytest.fixture
+def otel_tracer():
+    clear_tracer_provider()
+    tracer = OtelTracer()
+    with tracer.lifespan():
+        yield tracer
+    clear_tracer_provider()
+
+
+def test_otel_tracer_create_span_records_fields(otel_tracer: OtelTracer) -> None:
+    timestamp = 2000.123
+    status = TraceStatus(status_code="ERROR", description="boom")
+
+    span = otel_tracer.create_span(
+        "otel-span",
+        attributes={"foo": "bar"},
+        timestamp=timestamp,
+        status=status,
+    )
+
+    assert span.name == "otel-span"
+    assert span.attributes["foo"] == "bar"
+    assert span.start_time == pytest.approx(timestamp)  # type: ignore
+    assert span.end_time == pytest.approx(timestamp)  # type: ignore
+    assert span.status.status_code == "ERROR"
+    assert span.status.description == "boom"
+
+
+def test_otel_tracer_operation_context_records_span(otel_tracer: OtelTracer) -> None:
+    with pytest.raises(RuntimeError):
+        with otel_tracer.operation_context("otel-operation", attributes={"initial": "value"}) as ctx:
+            ctx.record_attributes({"custom": "attr"})
+            raise RuntimeError("otel failure")
+
+    recorded_span = ctx.get_recorded_span()  # type: ignore
+    assert recorded_span.name == "otel-operation"
+    assert recorded_span.attributes["initial"] == "value"
+    assert recorded_span.attributes["custom"] == "attr"
+    assert recorded_span.status.status_code == "ERROR"
+    assert recorded_span.status.description is not None
+    assert "otel failure" in recorded_span.status.description
+    assert recorded_span.start_time is not None
+    assert recorded_span.end_time is not None
 
 
 def test_initialization_and_shutdown():

@@ -270,7 +270,10 @@ class WeaveTracer(Tracer):
 
         # If WANDB_API_KEY is not set, we need to initialize Weave with a hack
         if not os.getenv("WANDB_API_KEY"):
+            logger.info("WANDB_API_KEY is not set. Initializing Weave a mock context.")
             set_wandb_api_context("agl", api_key=None, headers=None, cookies=None)
+        else:
+            logger.debug("WANDB_API_KEY is set. Weave will be initialized automatically.")
 
         weave_client = weave.get_client()
         if self.project_name is None:

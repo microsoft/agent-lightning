@@ -33,6 +33,52 @@ class MockLightningStore(LightningStore):
         return self.spans
 
 
+class FakeWeaveCall:
+    def __init__(
+        self,
+        op: str,
+        attributes: dict[str, object] | None = None,
+        inputs: dict[str, object] | None = None,
+    ):
+        base_time = datetime.datetime.fromtimestamp(96400, tz=datetime.timezone.utc)
+        self.op_name = op
+        self.attributes = attributes or {}
+        self.inputs = inputs or {}
+        self.output = None
+        self.summary: dict[str, object] | None = {}
+        self.started_at = base_time
+        self.ended_at = base_time
+        self.exception: str | None = None
+
+
+class FakeWeaveClient:
+    def __init__(self, server: object):
+        self.server = server
+        self.project = "fake-project"
+        self.created_calls: list[FakeWeaveCall] = []
+        self.finished_calls: list[FakeWeaveCall] = []
+
+    def create_call(
+        self,
+        *,
+        op: str,
+        attributes: dict[str, object] | None = None,
+        inputs: dict[str, object] | None = None,
+    ) -> FakeWeaveCall:
+        call = FakeWeaveCall(op=op, attributes=attributes or {}, inputs=inputs or {})
+        self.created_calls.append(call)
+        return call
+
+    def finish_call(self, call: FakeWeaveCall, exception: Exception | None = None) -> None:
+        if exception is not None:
+            call.exception = str(exception)
+        call.ended_at = call.started_at + datetime.timedelta(seconds=1)
+        self.finished_calls.append(call)
+
+    def flush(self) -> None:
+        pass
+
+
 def _func_without_exception():
     """Function that always executed successfully to test success tracing."""
     pass
@@ -41,6 +87,41 @@ def _func_without_exception():
 def _func_with_exception():
     """Function that always executed successfully to test success tracing."""
     raise ValueError("This is a test exception")
+
+
+@pytest.mark.weave
+def test_weave_tracer_create_span(monkeypatch: pytest.MonkeyPatch) -> None:
+    import weave  # type: ignore
+
+    tracer = WeaveTracer(instrument_managed=False)
+    fake_client = FakeWeaveClient(server=tracer._server)  # pyright: ignore[reportPrivateUsage]
+    monkeypatch.setattr(weave, "get_client", lambda: fake_client)
+
+    span = tracer.create_span("weave-span", attributes={"foo": "bar"})
+
+    assert span.name == "weave-span"
+    assert span.attributes == {"foo": "bar"}
+    assert len(fake_client.created_calls) == 1
+    assert len(fake_client.finished_calls) == 1
+
+
+@pytest.mark.weave
+def test_weave_tracer_operation_context_records_exception(monkeypatch: pytest.MonkeyPatch) -> None:
+    import weave  # type: ignore
+
+    tracer = WeaveTracer(instrument_managed=False)
+    fake_client = FakeWeaveClient(server=tracer._server)  # pyright: ignore[reportPrivateUsage]
+    monkeypatch.setattr(weave, "get_client", lambda: fake_client)
+
+    with pytest.raises(RuntimeError):
+        with tracer.operation_context("weave-op", attributes={"foo": "bar"}) as ctx:
+            raise RuntimeError("failed")
+
+    recorded_span = ctx.get_recorded_span()  # type: ignore
+    assert recorded_span.name == "weave-op"
+    assert recorded_span.status.status_code == "ERROR"
+    assert recorded_span.status.description == "failed"
+    assert len(fake_client.finished_calls) == 1
 
 
 @pytest.mark.weave
