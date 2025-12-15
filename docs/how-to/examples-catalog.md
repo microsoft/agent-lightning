@@ -30,6 +30,14 @@
 
     [:octicons-repo-24: Browse source]({{ src("examples/calc_x") }})
 
+-   :material-chart-box:{ .lg .middle } __ChartQA vision-language RL__
+
+    ---
+
+    LangGraph-powered workflow for answering chart questions end to end: rollout the multi-modality agent with GPT or vLLM, and train with VERL/GRPO plus self-refinement loops.
+
+    [:octicons-repo-24: Browse source]({{ src("examples/chartqa") }})
+
 -   :material-code-braces:{ .lg .middle } __Claude Code SWE-bench__
 
     ---

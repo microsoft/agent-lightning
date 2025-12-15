@@ -18,8 +18,27 @@ from yarl import URL
 from agentlightning.store.base import UNSET, LightningStore
 from agentlightning.store.client_server import LightningStoreClient, LightningStoreServer
 from agentlightning.store.memory import InMemoryLightningStore
-from agentlightning.types import LLM, OtelResource, PaginatedResult, PromptTemplate, RolloutConfig, Span, TraceStatus
+from agentlightning.types import (
+    LLM,
+    EnqueueRolloutRequest,
+    OtelResource,
+    PaginatedResult,
+    PromptTemplate,
+    RolloutConfig,
+    Span,
+    TraceStatus,
+)
+from agentlightning.utils.metrics import (
+    ConsoleMetricsBackend,
+    MetricsBackend,
+    MultiMetricsBackend,
+    PrometheusMetricsBackend,
+)
 from agentlightning.utils.server_launcher import LaunchMode, PythonServerLauncherArgs
+
+from ..common.prometheus_stub import make_prometheus_stub
+
+pytestmark = [pytest.mark.store]
 
 
 def _make_span(rollout_id: str, attempt_id: str, sequence_id: int, name: str) -> Span:
@@ -69,6 +88,66 @@ async def server_client(
     finally:
         await client.close()
         await server.stop()
+
+
+async def _exercise_server_metrics_backend(tracker: MetricsBackend) -> None:
+    port = pick_unused_port()
+    store = InMemoryLightningStore(tracker=tracker)
+    server = LightningStoreServer(store, "127.0.0.1", port, tracker=tracker)
+    await server.start()
+    client = LightningStoreClient(server.endpoint)
+    try:
+        await _run_server_side_operations(server)
+        await _run_client_side_operations(client)
+    finally:
+        await client.close()
+        await server.stop()
+
+
+async def _run_server_side_operations(server: LightningStoreServer) -> None:
+    await server.update_resources("metrics-server", {})
+    await server.get_latest_resources()
+    started = await server.start_rollout(input={"origin": "server"}, config=RolloutConfig(timeout_seconds=1.0))
+    queued = await server.enqueue_rollout(input={"origin": "server-queue"})
+    dequeued = await server.dequeue_rollout(worker_id="metrics-server-worker")
+    assert dequeued is not None
+
+    await server.add_span(_make_span(dequeued.rollout_id, dequeued.attempt.attempt_id, 0, "server-span"))
+    await server.update_attempt(queued.rollout_id, dequeued.attempt.attempt_id, status="running")
+    await server.update_attempt(queued.rollout_id, dequeued.attempt.attempt_id, status="succeeded")
+    await server.update_rollout(queued.rollout_id, status="succeeded")
+    await server.wait_for_rollouts(rollout_ids=[queued.rollout_id], timeout=0.1)
+    assert started is not None
+
+
+async def _run_client_side_operations(client: LightningStoreClient) -> None:
+    await client.update_resources("metrics-client", {})
+    await client.get_latest_resources()
+
+    await client.start_rollout(input={"origin": "client"}, mode="train", config=RolloutConfig(timeout_seconds=2.0))
+    queued = await client.enqueue_rollout(
+        input={"origin": "client-queue"}, config=RolloutConfig(unresponsive_seconds=5.0)
+    )
+    dequeued = await client.dequeue_rollout(worker_id="metrics-client-worker")
+    assert dequeued is not None
+
+    span = _make_span(dequeued.rollout_id, dequeued.attempt.attempt_id, 1, "client-span")
+    await client.add_span(span)
+
+    await client.update_attempt(
+        dequeued.rollout_id,
+        dequeued.attempt.attempt_id,
+        status="running",
+        worker_id="metrics-client-worker",
+    )
+    await client.update_attempt(dequeued.rollout_id, dequeued.attempt.attempt_id, status="succeeded")
+    await client.update_rollout(dequeued.rollout_id, status="succeeded")
+
+    await client.wait_for_rollouts(rollout_ids=[dequeued.rollout_id], timeout=0.1)
+    await client.query_rollouts()
+    await client.query_attempts(dequeued.rollout_id)
+    await client.get_worker_by_id("metrics-client-worker")
+    assert queued.rollout_id == dequeued.rollout_id
 
 
 @pytest.mark.asyncio
@@ -157,6 +236,233 @@ async def test_server_client_statistics_match(server_client: Tuple[LightningStor
     expected_name = server.store.__class__.__name__ if server.store is not None else server_stats["name"]  # type: ignore
     assert server_stats["name"] == expected_name  # type: ignore
     assert server_stats["total_rollouts"] >= 1  # type: ignore
+
+
+@pytest.mark.asyncio
+async def test_client_start_rollout_propagates_worker_id(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient],
+) -> None:
+    server, client = server_client
+    attempt = await client.start_rollout(input={"source": "remote-worker"}, worker_id="client-worker-start")
+
+    assert attempt.attempt.worker_id == "client-worker-start"
+    worker = await server.get_worker_by_id("client-worker-start")
+    assert worker is not None
+    assert worker.status == "busy"
+    assert worker.current_rollout_id == attempt.rollout_id
+    assert worker.current_attempt_id == attempt.attempt.attempt_id
+
+
+@pytest.mark.asyncio
+async def test_client_start_attempt_propagates_worker_id(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient],
+) -> None:
+    server, client = server_client
+    initial = await client.start_rollout(input={"source": "retry-worker"})
+    retry = await client.start_attempt(initial.rollout_id, worker_id="client-worker-retry")
+
+    assert retry.attempt.sequence_id == 2
+    assert retry.attempt.worker_id == "client-worker-retry"
+    worker = await server.get_worker_by_id("client-worker-retry")
+    assert worker is not None
+    assert worker.status == "busy"
+    assert worker.current_rollout_id == retry.rollout_id
+    assert worker.current_attempt_id == retry.attempt.attempt_id
+
+
+@pytest.mark.asyncio
+async def test_console_metrics_backend_tracks_http_and_store_metrics() -> None:
+    backend = ConsoleMetricsBackend(window_seconds=None, log_interval_seconds=3600.0, group_level=3)
+    await _exercise_server_metrics_backend(backend)
+
+    counter_metrics = {name for name, _ in backend._counter_state.keys()}  # pyright: ignore[reportPrivateUsage]
+    hist_metrics = {name for name, _ in backend._hist_state.keys()}  # pyright: ignore[reportPrivateUsage]
+    assert "agl.http.total" in counter_metrics
+    assert "agl.store.total" in counter_metrics
+    assert "agl.http.latency" in hist_metrics
+
+
+@pytest.mark.asyncio
+@pytest.mark.prometheus
+async def test_prometheus_metrics_backend_tracks_http_metrics(monkeypatch: pytest.MonkeyPatch) -> None:
+    stub = make_prometheus_stub()
+    monkeypatch.setitem(sys.modules, "prometheus_client", stub)
+    backend = PrometheusMetricsBackend()
+    await _exercise_server_metrics_backend(backend)
+
+    http_counter = next(inst for inst in stub.counter_instances if inst.name == "agl_http_total")
+    http_histogram = next(inst for inst in stub.histogram_instances if inst.name == "agl_http_latency")
+    assert any(child.value > 0 for child in http_counter.children.values())
+    assert any(child.values for child in http_histogram.children.values())
+
+
+@pytest.mark.asyncio
+@pytest.mark.prometheus
+async def test_multi_metrics_backend_updates_all_children(monkeypatch: pytest.MonkeyPatch) -> None:
+    stub = make_prometheus_stub()
+    monkeypatch.setitem(sys.modules, "prometheus_client", stub)
+    console_backend = ConsoleMetricsBackend(window_seconds=None, log_interval_seconds=3600.0, group_level=3)
+    prom_backend = PrometheusMetricsBackend()
+    backend = MultiMetricsBackend([console_backend, prom_backend])
+    await _exercise_server_metrics_backend(backend)
+
+    console_counters = {
+        name for name, _ in console_backend._counter_state.keys()  # pyright: ignore[reportPrivateUsage]
+    }
+    assert "agl.http.total" in console_counters
+
+    prom_counter = next(inst for inst in stub.counter_instances if inst.name == "agl_http_total")
+    assert any(child.value > 0 for child in prom_counter.children.values())
+
+
+@pytest.mark.asyncio
+async def test_client_enqueue_many_rollouts_uses_batch_payload(monkeypatch: MonkeyPatch) -> None:
+    client = LightningStoreClient("http://localhost:9000")
+    captured: Dict[str, Any] = {}
+
+    async def fake_request_json(_, method: str, path: str, *, json: Any = None, params: Any = None) -> Any:
+        captured.update({"method": method, "path": path, "json": json})
+        count = len(json["rollouts"]) if json and "rollouts" in json else 0  # type: ignore[index]
+        return [{"rollout_id": f"bulk-{idx}", "input": {"idx": idx}, "start_time": float(idx)} for idx in range(count)]
+
+    monkeypatch.setattr(LightningStoreClient, "_request_json", fake_request_json, raising=False)  # type: ignore
+
+    requests = [
+        EnqueueRolloutRequest(input={"idx": 0}, mode="train", metadata={"batch": "left"}),
+        EnqueueRolloutRequest(input={"idx": 1}, resources_id="resources-1"),
+    ]
+    rollouts = await client.enqueue_many_rollouts(requests)
+
+    assert captured["method"] == "post"
+    assert captured["path"] == "/queues/rollouts/enqueue"
+    assert len(captured["json"]["rollouts"]) == 2  # type: ignore[index]
+    assert captured["json"]["rollouts"][0]["mode"] == "train"  # type: ignore[index]
+    assert captured["json"]["rollouts"][1]["resources_id"] == "resources-1"  # type: ignore[index]
+    assert len(rollouts) == 2
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_client_dequeue_methods_share_batch_logic(monkeypatch: MonkeyPatch) -> None:
+    client = LightningStoreClient("http://localhost:9001")
+
+    def attempt_payload(idx: int) -> Dict[str, Any]:
+        attempt_id = f"attempt-{idx}"
+        rollout_id = f"rollout-{idx}"
+        return {
+            "rollout_id": rollout_id,
+            "input": {"idx": idx},
+            "start_time": float(idx),
+            "status": "preparing",
+            "attempt": {
+                "rollout_id": rollout_id,
+                "attempt_id": attempt_id,
+                "sequence_id": 1,
+                "start_time": float(idx),
+                "status": "preparing",
+                "worker_id": "batch-worker",
+            },
+        }
+
+    payload_queue = [
+        [attempt_payload(0), attempt_payload(1)],
+        [attempt_payload(0)],
+    ]
+
+    class FakeResponse:
+        def __init__(self, body: Any):
+            self._body = body
+            self.status = 200
+
+        async def __aenter__(self) -> "FakeResponse":
+            return self
+
+        async def __aexit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
+            return None
+
+        def raise_for_status(self) -> None:
+            return None
+
+        async def json(self) -> Any:
+            return self._body
+
+    class RecordingSession:
+        def __init__(self) -> None:
+            self.calls: list[Dict[str, Any]] = []
+
+        def post(self, url: str, json: Dict[str, Any]) -> FakeResponse:
+            self.calls.append({"url": url, "json": json})
+            body = payload_queue.pop(0)
+            return FakeResponse(body)
+
+    session = RecordingSession()
+
+    async def fake_get_session() -> RecordingSession:
+        return session
+
+    monkeypatch.setattr(client, "_get_session", fake_get_session)
+
+    batch = await client.dequeue_many_rollouts(limit=2, worker_id="batch-worker")
+    assert len(batch) == 2
+    single = await client.dequeue_rollout(worker_id="batch-worker")
+    assert single is not None
+    assert [call["json"]["limit"] for call in session.calls] == [2, 1]
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_client_dequeue_many_rollouts_skips_network_for_non_positive_limit(monkeypatch: MonkeyPatch) -> None:
+    client = LightningStoreClient("http://localhost:9002")
+
+    async def fail_get_session() -> None:
+        pytest.fail("Client should not request a session when limit <= 0")
+
+    monkeypatch.setattr(client, "_get_session", fail_get_session)
+
+    assert await client.dequeue_many_rollouts(limit=0, worker_id="idle") == []
+    assert await client.dequeue_many_rollouts(limit=-5) == []
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_client_concurrent_enqueue_many_rollouts(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient],
+) -> None:
+    _, client = server_client
+
+    async def enqueue_batch(batch_idx: int) -> list[str]:
+        requests = [EnqueueRolloutRequest(input={"batch": batch_idx, "idx": item}) for item in range(3)]
+        rollouts = await client.enqueue_many_rollouts(requests)
+        return [rollout.rollout_id for rollout in rollouts]
+
+    batches = await asyncio.gather(*(enqueue_batch(batch_idx) for batch_idx in range(5)))
+    all_ids = {rollout_id for batch in batches for rollout_id in batch}
+    assert len(all_ids) == 15
+
+    queried = await client.query_rollouts(limit=-1)
+    assert isinstance(queried, PaginatedResult)
+    assert queried.total >= 15
+
+
+@pytest.mark.asyncio
+async def test_client_concurrent_dequeue_many_rollouts(
+    server_client: Tuple[LightningStoreServer, LightningStoreClient],
+) -> None:
+    server, client = server_client
+    requests = [EnqueueRolloutRequest(input={"idx": idx}) for idx in range(6)]
+    # Seed queue from the server to avoid races with background processing
+    await asyncio.gather(*(server.enqueue_rollout(**req.model_dump()) for req in requests))
+
+    async def consume(limit: int, worker: str):
+        return await client.dequeue_many_rollouts(limit=limit, worker_id=worker)
+
+    batches = await asyncio.gather(
+        consume(3, "worker-a"),
+        consume(3, "worker-b"),
+    )
+    claimed_ids = {attempt.rollout_id for batch in batches for attempt in batch}
+    assert len(claimed_ids) == 6
+    assert await client.dequeue_many_rollouts(limit=1) == []
 
 
 @pytest.mark.asyncio
@@ -313,7 +619,7 @@ async def test_client_server_end_to_end(
     dequeued = await server.dequeue_rollout(worker_id=server_worker_id)
     server_worker_after_dequeue = await server.get_worker_by_id(server_worker_id)
     assert server_worker_after_dequeue is not None
-    assert server_worker_after_dequeue.status == "idle"
+    assert server_worker_after_dequeue.status == "busy"  # should be busy after dequeue
     assert server_worker_after_dequeue.last_dequeue_time is not None
     dequeue_time = server_worker_after_dequeue.last_dequeue_time
     started_attempt = await server.start_attempt(queued_rollout.rollout_id)
@@ -391,7 +697,7 @@ async def test_client_server_end_to_end(
     assert dequeued_client is not None
     client_worker_after_dequeue = await client.get_worker_by_id(client_worker_id)
     assert client_worker_after_dequeue is not None
-    assert client_worker_after_dequeue.status == "idle"
+    assert client_worker_after_dequeue.status == "busy"  # should be busy after dequeue
     assert client_worker_after_dequeue.last_dequeue_time is not None
     client_dequeue_time = client_worker_after_dequeue.last_dequeue_time
     started_client_attempt = await client.start_attempt(dequeued_client.rollout_id)

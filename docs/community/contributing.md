@@ -28,7 +28,7 @@ Documentation improvements are the easiest way to get started. You can find more
 
 Bug fixes are the fastest way to get familiar with the codebase. To get started, you can:
 
-- Browse the ["good first issue"](https://github.com/microsoft/agent-lightning/labels/good%20first%20issue) and ["bug"](https://github.com/microsoft/agent-lightning/labels/bug) labels; drop a comment before you start so we can mark it as taken.
+- Browse the ["help wanted"](https://github.com/microsoft/agent-lightning/labels/help%20wanted) and ["bug"](https://github.com/microsoft/agent-lightning/labels/bug) labels; drop a comment before you start so we can mark it as taken.
 - For fresh bugs, open an issue with reproduction steps, logs, and expected behavior before submitting a fix.
 - Keep each pull request focused, ideally avoiding breaking API changes. Larger refactors should be discussed via RFC or maintainer sync.
 
@@ -46,6 +46,7 @@ Bonus points for examples that:
 - Ship CI or self-test coverage so we know they still work as the core evolves.  **Otherwise, we would have to mark the example as unmaintained because we won't be able to test the examples manually before each release.**
 - Include a [`docs/how-to/`]({{ src("docs/how-to/") }}) guide (or a detailed README if no how-to exists) without duplicating content in multiple places.
 - Favor simple, dependency-light code over heavy abstractions.
+- Ship a README that documents smoke-test instructions and includes an "Included Files" section summarizing every file and its role; keep the runnable module self-contained with a module-level docstring explaining CLI usage, plus targeted docstrings or inline comments for educational functions/classes.
 
 !!! warning "Please discuss first"
 
@@ -73,6 +74,27 @@ Most brand-new algorithms ultimately land as “new examples,” so read that se
 ### Ecosystem Projects
 
 Have a project that builds on Agent-lightning but does not belong in the main repo? Fork it or depend on it externally, then let us know. We can showcase notable projects in [Community Projects](../index.md) and the main [README]({{ src("README.md") }}).
+
+### Agent-lightning Contrib
+
+[`contrib/`]({{ src("contrib") }}) is where work-in-progress or third-party integrations, and curated recipes live before they are hardened enough for the core runtime tree. Think of it as an incubator: additions should remain easy to consume, clearly owned, and scoped so downstream users can vendor them with minimal risk.
+
+The following types of contributions are welcome in the contrib area:
+
+- **Recipes** that assemble multiple Agent Lightning components for a narrow task (`contrib/recipes/<topic>/`). Each recipe must be self-contained, include running instructions and result reports.
+- **Runtime extensions** that would bloat the primary `agentlightning/` namespace (`contrib/agentlightning/contrib/<feature>/`). These should mirror the published wheel layout so that `import agentlightning.contrib.<feature>` works out of the box.
+- **Supporting scripts and assets** (`contrib/scripts/`) that automate dataset downloads, environment preparation, or benchmarks required by contrib modules.
+
+If you are unsure where a contribution should live, start a thread in Discord or open an issue before writing code. The [contrib README]({{ src("contrib/README.md") }}) also lists the directory expectations.
+
+A quick checklist for contributions to be accepted:
+
+1. **Document everything.** Include configuration steps, environment variables, and sample commands so contributors can reproduce the results without guesswork. Pin to a specific version of Agent-lightning and other dependencies to avoid unexpected changes if you don't want to update the recipe frequently.
+2. **Keep quality predictable.** Match the repo’s style guide, apply exhaustive type hints, and run `uv run --no-sync pyright` plus targeted `pytest` suites for any Python module you touch.
+3. **Ship reproducibility artifacts.** Store only scripts or instructions for downloading datasets, weights, or binaries. Never upload large artifacts or credentials directly.
+4. **Update ownership.** Add `CODEOWNERS` entries when new directories appear so maintainers know who can review follow-up fixes.
+
+Contrib entries do not need the same maturity level as core code, but they must still meet the baseline above. Submissions that lack documentation, hide ownership, or depend on untracked assets are typically rejected until those gaps are resolved.
 
 ### Other Contribution Ideas
 
@@ -126,13 +148,13 @@ After `uv sync`, run commands via `uv run ...` (add `--no-sync` once the environ
 Formatting and linting are enforced through [pre-commit](https://pre-commit.com/). Install once, then run before each push:
 
 ```bash
-uv run pre-commit install
-uv run pre-commit run --all-files --show-diff-on-failure --color=always
+uv run --no-sync pre-commit install
+uv run --no-sync pre-commit run --all-files --show-diff-on-failure --color=always
 ```
 
 Once installed, the hooks run automatically on every `git commit`. Running the pre-commit hooks locally keeps CI green and diffs manageable.
 
-### 3. Branch From a Fresh `main`
+### 3. Branch from Fresh `main` and Code
 
 Start all work from the latest upstream state:
 
@@ -165,20 +187,28 @@ Use lowercase with hyphens, e.g., `feature/async-runner-hooks`.
 
     Remember to register new docs in [`mkdocs.yml`]({{ src("mkdocs.yml") }}), add examples to [examples/README]({{ src("examples/README.md") }}), and update the [Examples Catalog](../how-to/examples-catalog.md).
 
+Before you start coding, bring the shared coding conventions with you:
+
+- Target `requires-python >= 3.10`, four-space indentation, ~120-character lines (docstrings may run longer), and formatter-owned diffs (Black + isort with the `black` profile).
+- Use `snake_case` for modules, functions, and variables; `PascalCase` for classes and React components; lowercase hyphenation for CLI flags, branch names, and TypeScript filenames.
+- Maintain exhaustive type hints (pyright enforces them), write succinct Google-style docstrings (with `[][]` cross-references).
+- Prefer dataclasses or Pydantic models from `agentlightning.types`.
+- Log via `logging.getLogger(__name__)` with targeted DEBUG/INFO/WARNING/ERROR calls—especially for long multi-step functions or broad `try/except` blocks.
+
 ### 4. Test and Validate
 
-Most contributions require automated checks. Prefix commands with `uv run` so they use the project environment.
+Most contributions require automated checks. Once `uv sync` locks dependencies, prefix commands with `uv run --no-sync ...` so they share the same environment as CI.
 
 **Full test suite**
 
 ```bash
-uv run pytest -v
+uv run --no-sync pytest -v
 ```
 
 **Targeted tests**
 
 ```bash
-uv run pytest tests/path/to/test_file.py -k test_name
+uv run --no-sync pytest tests/path/to/test_file.py -k test_name
 ```
 
 **Optional/gated tests:** GPU-specific suites or API-dependent tests run automatically when the required hardware or environment variables (such as `OPENAI_API_KEY`) are present.
@@ -186,7 +216,7 @@ uv run pytest tests/path/to/test_file.py -k test_name
 **Static analysis:**
 
 ```bash
-uv run pyright
+uv run --no-sync pyright
 ```
 
 If you have touched code under `examples/`, you should run the example-specific smoke tests. Each directory includes a README with example-specific smoke tests—run those too.
@@ -196,8 +226,8 @@ If you have touched code under `examples/`, you should run the example-specific 
     Keep API references under [docs/reference]({{ src("docs/reference/") }}) up to date. Doc-only changes should still build cleanly:
 
     ```bash
-    uv run mkdocs serve --strict   # live reload
-    uv run mkdocs build --strict   # CI-equivalent
+    uv run --no-sync mkdocs serve --strict   # live reload
+    uv run --no-sync mkdocs build --strict   # CI-equivalent
     ```
 
     `--strict` elevates warnings to errors so you catch issues before CI.
@@ -205,7 +235,7 @@ If you have touched code under `examples/`, you should run the example-specific 
 Before opening a PR, double-check the basics:
 
 - Run `uv lock` if you changed dependencies.
-- Run `uv run pre-commit run --all-files` (hooks installed via `pre-commit install` run automatically on `git commit`, but rerun them if you amended history).
+- Run `uv run --no-sync pre-commit run --all-files --show-diff-on-failure` (hooks installed via `pre-commit install` run automatically on `git commit`, but rerun them if you amended history).
 - Execute the relevant commands from the test list above.
 - Validate each affected example via its README instructions.
 

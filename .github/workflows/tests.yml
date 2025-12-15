@@ -19,7 +19,8 @@ jobs:
   lint:
     strategy:
       matrix:
-        setup: [fast, slow]
+        setup: [fast, slow, next]
+      fail-fast: false
     name: Lint - ${{ matrix.setup }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -32,10 +33,14 @@ jobs:
       - name: Sync dependencies (fast)
         run: uv sync --frozen --group dev --no-default-groups
         if: matrix.setup == 'fast'
+      - name: Upgrade dependencies (next)
+        run: uv lock --upgrade
+        if: matrix.setup == 'next'
       - name: Sync dependencies (slow)
         run: |
           uv sync --frozen \
             --extra apo \
+            --extra weave \
             --extra verl \
             --extra mongo \
             --group dev \
@@ -44,8 +49,9 @@ jobs:
             --group trl \
             --group tinker \
             --group agents \
+            --group langchain \
             --no-default-groups
-        if: matrix.setup == 'slow'
+        if: matrix.setup != 'fast'
       # This pre-commit skips JavaScript on purpose.
       - name: Run pre-commit
         uses: pre-commit/action@v3.0.1
@@ -60,7 +66,7 @@ jobs:
         if: matrix.setup == 'fast'
       - name: Run pyright (slow)
         run: uv run --locked --no-sync pyright -p pyrightconfig.json
-        if: matrix.setup == 'slow'
+        if: matrix.setup != 'fast'
 
   lint-js:
     name: Lint - JavaScript
@@ -71,6 +77,8 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: dashboard/package-lock.json
       - name: Install dependencies
         run: cd dashboard && npm ci
       - name: Run ESLint
@@ -103,6 +111,10 @@ jobs:
       - name: Set source commit for docs
         run: |
           echo "SOURCE_COMMIT=${{ github.sha }}" >> $GITHUB_ENV
+      - name: Verify OpenAPI specification is up-to-date
+        run: |
+          uv run --locked --no-sync python scripts/export_openapi.py
+          git diff --exit-code docs/assets/store-openapi.json
       - name: Build documentation
         run: uv run --locked --no-sync mkdocs build --strict
       - name: Upload docs artifact
@@ -115,7 +127,32 @@ jobs:
   test:
     strategy:
       matrix:
-        include:
+        mark:
+          # store has many tests and is a good isolated group.
+          - id: store
+            display-name: Store
+            pytest-mark: 'store'
+          # AgentOps needs to be separated because it injects tricky global state.
+          - id: agentops
+            display-name: AgentOps
+            pytest-mark: 'agentops'
+          # Similar for Weave.
+          - id: weave
+            display-name: Weave
+            pytest-mark: 'weave'
+          # litellm proxy tests are slow
+          - id: llmproxy
+            display-name: LLM proxy
+            pytest-mark: 'llmproxy'
+          # Robustness of utilities is important. There are many tests.
+          - id: utils
+            display-name: Utilities
+            pytest-mark: 'utils'
+          # unmarked tests: adapter, execution engine, etc.
+          - id: others
+            display-name: Others
+            pytest-mark: 'not store and not agentops and not weave and not llmproxy and not utils'
+        env:
           - python-version: '3.10'
             setup-script: 'legacy'
           - python-version: '3.11'
@@ -126,7 +163,7 @@ jobs:
             setup-script: 'latest'
       fail-fast: false
 
-    name: Test with Python ${{ matrix.python-version }} (${{ matrix.setup-script }})
+    name: Test (${{ matrix.mark.display-name }}, ${{ matrix.env.setup-script }}, Python ${{ matrix.env.python-version }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -134,16 +171,16 @@ jobs:
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
-          python-version: ${{ matrix.python-version }}
+          python-version: ${{ matrix.env.python-version }}
       - name: Upgrade dependencies (latest)
         run: uv lock --upgrade
-        if: matrix.setup-script == 'latest'
+        if: matrix.env.setup-script == 'latest'
       - name: Sync dependencies (latest)
-        run: uv sync --frozen --no-default-groups --extra apo --group dev --group agents --group core-stable
-        if: matrix.setup-script == 'latest'
+        run: uv sync --frozen --no-default-groups --extra apo --extra weave --group dev --group agents --group langchain --group core-stable
+        if: matrix.env.setup-script == 'latest'
       - name: Sync dependencies (stable & legacy)
-        run: uv sync --frozen --no-default-groups --extra apo --group dev --group agents --group core-${{ matrix.setup-script }}
-        if: matrix.setup-script != 'latest'
+        run: uv sync --frozen --no-default-groups --extra apo --extra weave --group dev --group agents --group langchain --group core-${{ matrix.env.setup-script }}
+        if: matrix.env.setup-script != 'latest'
       - name: Freeze dependencies
         run: |
           set -ex
@@ -153,13 +190,15 @@ jobs:
       - name: Upload dependencies artifact
         uses: actions/upload-artifact@v4
         with:
-          name: dependencies-${{ matrix.python-version }}-${{ matrix.setup-script }}
+          name: dependencies-${{ matrix.mark.id }}-${{ matrix.env.python-version }}-${{ matrix.env.setup-script }}
           path: requirements-freeze.txt
           compression-level: 0
 
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: dashboard/package-lock.json
       - name: Install JavaScript dependencies
         run: cd dashboard && npm ci
       - name: Build dashboard
@@ -167,12 +206,12 @@ jobs:
 
       - name: Run tests
         run: |
-          uv run pytest -v --durations=0 tests -m "not mongo"
+          uv run pytest -v --durations=0 tests -m "not mongo and not openai and not gpu and (${{ matrix.mark.pytest-mark }})"
         env:
           PYTEST_ADDOPTS: "--color=yes"
 
   test-js:
-    name: Test - JavaScript
+    name: Test (JavaScript)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -182,6 +221,8 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: dashboard/package-lock.json
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true

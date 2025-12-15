@@ -109,10 +109,10 @@ def split_response(text: str) -> Tuple[str, str]:
 def extract_recall_chunk(prompt: str, response: str) -> Tuple[Set[str], Set[str]]:
     import re
 
-    # 正则表达式，匹配每个search_step内1.和2.后面的内容
+    # Regular expression to match content after 1. and 2. within each search_step
     pattern = r"Retrieved sentences:\s*1\.\s*(.*?)\s*2\.\s*(.*?)(?:\n\s*\d+\.|\n\n|$)"
 
-    # 使用re.findall 提取所有的(s1, s2)
+    # Use re.findall to extract all (s1, s2) pairs
     origin_recall = re.findall(pattern, prompt, re.DOTALL)
     sequential_recall = re.findall(pattern, response, re.DOTALL)
     origin_recall_set = set(s for pair in origin_recall for s in pair)
@@ -121,14 +121,11 @@ def extract_recall_chunk(prompt: str, response: str) -> Tuple[Set[str], Set[str]
     return origin_recall_set, sequential_recall_set
 
 
-import re
-
-
 def extract_retrieved_paragraphs(log_text: str) -> List[str]:
-    # 正则表达式匹配 "Retrieved paragraph:" 后的内容
+    # Regular expression to match content after "Retrieved paragraph:"
     pattern = re.compile(r"Retrieved paragraph:\s*(.*?)\n", re.DOTALL)
 
-    # 提取匹配的段落
+    # Extract matched paragraphs
     matches = pattern.findall(log_text)
     matches = list(set(matches))
     return matches

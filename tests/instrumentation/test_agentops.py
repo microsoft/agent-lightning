@@ -1,7 +1,10 @@
 # Copyright (c) Microsoft. All rights reserved.
 
+# FIXME: This file will have side-effects on other tests if the tests failed and agentops service is not disabled.
+
 from unittest.mock import MagicMock, patch
 
+import pytest
 from opentelemetry.sdk.metrics.export import MetricExportResult
 from opentelemetry.sdk.trace.export import SpanExportResult
 
@@ -13,6 +16,7 @@ from agentlightning.instrumentation.agentops import (
 )
 
 
+@pytest.mark.agentops
 def test_switchable_authenticated_exporter():
     switchable_authenticated_exporter = BypassableAuthenticatedOTLPExporter(endpoint="http://dummy", jwt="dummy")
 
@@ -30,6 +34,7 @@ def test_switchable_authenticated_exporter():
         assert mock_export.call_count == 1
 
 
+@pytest.mark.agentops
 def test_switchable_otlp_metric_exporter():
 
     switchable_otlp_metric_exporter = BypassableOTLPMetricExporter()
@@ -47,6 +52,7 @@ def test_switchable_otlp_metric_exporter():
         assert mock_export.call_count == 1
 
 
+@pytest.mark.agentops
 def test_switchable_otlp_span_exporter():
 
     switchable_otlp_span_exporter = BypassableOTLPSpanExporter()

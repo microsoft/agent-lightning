@@ -1,8 +1,9 @@
 # Agentlightning specific files
 verl_old
 meta-llama/**
-debug/*.png
+**/debug/*.png
 requirements-freeze*.txt
+/playground
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

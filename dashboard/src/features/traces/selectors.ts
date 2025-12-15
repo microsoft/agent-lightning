@@ -23,6 +23,7 @@ export const selectTracesViewMode = (state: RootState) => selectTracesState(stat
 
 const TRACES_SORT_FIELD_MAP: Record<string, string> = {
   name: 'name',
+  sequenceId: 'sequence_id',
   traceId: 'trace_id',
   spanId: 'span_id',
   parentId: 'parent_id',

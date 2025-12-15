@@ -28,7 +28,7 @@ from typing import (
 from opentelemetry.sdk.trace import ReadableSpan
 from pydantic import BaseModel, Field, model_validator
 
-from .tracer import Span
+from .tracer import Span, SpanCoreFields
 
 if TYPE_CHECKING:
     from agentlightning.litagent import LitAgent
@@ -53,6 +53,7 @@ __all__ = [
     "Rollout",
     "Attempt",
     "AttemptedRollout",
+    "EnqueueRolloutRequest",
     "Hook",
     "Worker",
     "WorkerStatus",
@@ -211,6 +212,24 @@ class AttemptedRollout(Rollout):
         return self
 
 
+class EnqueueRolloutRequest(BaseModel):
+    """Payload describing a rollout to be queued via [`enqueue_rollout`][agentlightning.LightningStore.enqueue_rollout].
+
+    A subset of fields from [`Rollout`][agentlightning.Rollout] used for queuing new rollouts.
+    """
+
+    input: TaskInput
+    """Task input used to generate the rollout."""
+    mode: Optional[RolloutMode] = None
+    """Execution mode such as `"train"`, `"val"` or `"test"`. See [`RolloutMode`][agentlightning.RolloutMode]."""
+    resources_id: Optional[str] = None
+    """Identifier of the resources required to execute the rollout."""
+    config: Optional[RolloutConfig] = None
+    """Retry and timeout configuration associated with the rollout."""
+    metadata: Optional[Dict[str, Any]] = None
+    """Additional metadata attached to the rollout."""
+
+
 WorkerStatus = Literal["idle", "busy", "unknown"]
 
 
@@ -288,6 +307,7 @@ RolloutRawResult = Union[
     float,  # only final reward
     List[ReadableSpan],  # constructed OTEL spans by user
     List[Span],  # constructed Span objects by user
+    List[SpanCoreFields],  # constructed SpanCoreFields objects by user
 ]
 """Rollout result type.
 

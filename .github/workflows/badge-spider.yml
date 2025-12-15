@@ -24,6 +24,6 @@ jobs:
           script: |
             const badgeAggregation = require('./scripts/badge_aggregation.js');
             const dependencies = [
-              { workflow: 'examples-spider.yml', label: 'spider', variants: ['stable', 'legacy'] },
+              { workflow: 'examples-spider.yml', label: 'spider', variants: ['stable'] },
             ];
             await badgeAggregation({ github, context, core, dependencies });

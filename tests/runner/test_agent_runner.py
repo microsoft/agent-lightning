@@ -1,6 +1,7 @@
 # Copyright (c) Microsoft. All rights reserved.
 
 import asyncio
+import logging
 import random
 from contextlib import asynccontextmanager
 from typing import Any, AsyncGenerator, Dict, List, Literal, Optional, Sequence, Tuple, cast
@@ -21,7 +22,7 @@ from agentlightning.semconv import AGL_ANNOTATION
 from agentlightning.store.base import UNSET, LightningStore, Unset
 from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.tracer.base import Tracer
-from agentlightning.types import LLM, Hook, NamedResources, PromptTemplate, Rollout, Span, Worker
+from agentlightning.types import LLM, Hook, NamedResources, PromptTemplate, Rollout, Span, SpanCoreFields, Worker
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -72,8 +73,9 @@ def create_agent_span(
 class DummyTracer(Tracer):
     def __init__(self) -> None:
         super().__init__()
-        self._last_trace: List[ReadableSpan] = []
+        self._last_trace: List[Span] = []
         self._contexts: List[Dict[str, Any]] = []
+        self._sequence_id = 0
 
     def init(self, *args: Any, **kwargs: Any) -> None:
         self._last_trace.clear()
@@ -81,7 +83,7 @@ class DummyTracer(Tracer):
     def teardown(self, *args: Any, **kwargs: Any) -> None:
         self._last_trace.clear()
 
-    def get_last_trace(self) -> List[ReadableSpan]:
+    def get_last_trace(self) -> List[Span]:
         return list(self._last_trace)
 
     @asynccontextmanager
@@ -92,7 +94,7 @@ class DummyTracer(Tracer):
         store: Optional[LightningStore] = None,
         rollout_id: Optional[str] = None,
         attempt_id: Optional[str] = None,
-    ) -> AsyncGenerator[List[ReadableSpan], None]:
+    ) -> AsyncGenerator[List[Span], None]:
         previous = self._contexts[-1] if self._contexts else None
         current = {
             "name": name,
@@ -111,7 +113,15 @@ class DummyTracer(Tracer):
 
     def record_span(self, name: str, attributes: Optional[Dict[str, Any]] = None) -> ReadableSpan:
         span = create_readable_span(name, attributes)
-        self._last_trace.append(span)
+        rollout_id = "rollout-dummy"
+        attempt_id = "attempt-dummy"
+        sequence_id = self._sequence_id
+        self._sequence_id += 1
+        if self._contexts:
+            current = self._contexts[-1]
+            rollout_id = current["rollout_id"]
+            attempt_id = current["attempt_id"]
+        self._last_trace.append(Span.from_opentelemetry(span, rollout_id, attempt_id, sequence_id))
         return span
 
 
@@ -262,6 +272,134 @@ async def test_step_emits_reward_for_float_result() -> None:
     spans = await store.query_spans(rollout_id, attempt_id)
     rewards = [span.attributes.get("agentlightning.reward.0.value") for span in spans if span.name == AGL_ANNOTATION]
     assert rewards == [0.75]
+
+
+@pytest.mark.asyncio
+async def test_step_emits_reward_for_bool_result(caplog: pytest.LogCaptureFixture) -> None:
+    class BoolRewardAgent(LitAgent[Dict[str, Any]]):
+        def validation_rollout(self, task: Dict[str, Any], resources: Dict[str, Any], rollout: Any) -> bool:
+            return True
+
+    agent = BoolRewardAgent()
+    runner, store, _ = await setup_runner(agent)
+    caplog.set_level(logging.WARNING)
+    try:
+        await runner.step({"prompt": "hello"})
+    finally:
+        teardown_runner(runner)
+
+    assert "Reward is not a number" in caplog.text
+    rollout_id, attempt_id = await assert_single_attempt_succeeded(store)
+    spans = await store.query_spans(rollout_id, attempt_id)
+    rewards = [span.attributes.get("agentlightning.reward.0.value") for span in spans if span.name == AGL_ANNOTATION]
+    assert rewards == [1.0]
+
+
+@pytest.mark.asyncio
+async def test_step_raises_for_invalid_result_type() -> None:
+    class InvalidResultAgent(LitAgent[Dict[str, Any]]):
+        def validation_rollout(  # type: ignore[reportIncompatibleMethodOverride]
+            self, task: Dict[str, Any], resources: Dict[str, Any], rollout: Any
+        ) -> Dict[str, Any]:
+            return {"unexpected": True}
+
+    agent = InvalidResultAgent()
+    runner, store, _ = await setup_runner(agent)
+    try:
+        with pytest.raises(TypeError, match="Invalid raw result type"):
+            await runner.step({"task": "bad-result"})
+    finally:
+        teardown_runner(runner)
+
+    rollouts = await store.query_rollouts()
+    assert len(rollouts) == 1
+    attempts = await store.query_attempts(rollouts[0].rollout_id)
+    assert attempts[-1].status == "failed"
+
+
+@pytest.mark.asyncio
+async def test_readable_spans_return_skip_store_when_tracer_is_otel(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    class DummyTracerWithOtel(DummyTracer):
+        pass
+
+    class RecordingStore(InMemoryLightningStore):
+        def __init__(self) -> None:
+            super().__init__()
+            self.add_otel_span_calls = 0
+
+        async def add_otel_span(
+            self, rollout_id: str, attempt_id: str, readable_span: ReadableSpan, sequence_id: int | None = None
+        ) -> Span | None:
+            self.add_otel_span_calls += 1
+            return await super().add_otel_span(rollout_id, attempt_id, readable_span, sequence_id)
+
+    monkeypatch.setattr("agentlightning.runner.agent.OtelTracer", DummyTracerWithOtel)
+
+    store = RecordingStore()
+    await store.update_resources("default", {"llm": LLM(endpoint="http://localhost", model="dummy")})
+
+    tracer = DummyTracerWithOtel()
+    runner = LitAgentRunner[Any](tracer=tracer)
+    agent = HeartbeatAgent()
+    runner.init(agent)
+    runner.init_worker(worker_id=0, store=store)
+
+    attempted_rollout = await store.start_rollout(input={"task": "otel"}, mode="val")
+    spans = [create_readable_span("otel-span")]
+
+    result_spans = await runner._post_process_rollout_result(  # pyright: ignore[reportPrivateUsage]
+        attempted_rollout, spans
+    )
+
+    assert all(isinstance(span, Span) for span in result_spans)
+    # Warned, but still logged
+    assert [span.name for span in result_spans] == ["otel-span"]
+    assert store.add_otel_span_calls == 1
+    assert "Tracer is already an OpenTelemetry tracer" in caplog.text
+
+    teardown_runner(runner)
+
+
+@pytest.mark.asyncio
+async def test_post_process_readable_spans_adds_each_span() -> None:
+    agent = HeartbeatAgent()
+    runner, store, _ = await setup_runner(agent)
+    attempted_rollout = await store.start_rollout(input={"task": "post-process"}, mode="val")
+
+    spans = [create_readable_span("case-2-span-a"), create_readable_span("case-2-span-b")]
+
+    try:
+        result_spans = await runner._post_process_rollout_result(  # pyright: ignore[reportPrivateUsage]
+            attempted_rollout, spans
+        )
+    finally:
+        teardown_runner(runner)
+
+    assert [span.name for span in result_spans] == ["case-2-span-a", "case-2-span-b"]
+    stored_spans = await store.query_spans(attempted_rollout.rollout_id, attempted_rollout.attempt.attempt_id)
+    assert [span.name for span in stored_spans] == ["case-2-span-a", "case-2-span-b"]
+
+
+@pytest.mark.asyncio
+async def test_post_process_span_core_fields_create_spans() -> None:
+    agent = HeartbeatAgent()
+    runner, store, _ = await setup_runner(agent)
+    attempted_rollout = await store.start_rollout(input={"task": "reward-list"}, mode="val")
+
+    span_core_fields = [emit_reward(0.5, propagate=False), emit_reward(-0.2, propagate=False)]
+
+    try:
+        result_spans = await runner._post_process_rollout_result(  # pyright: ignore[reportPrivateUsage]
+            attempted_rollout, span_core_fields
+        )
+    finally:
+        teardown_runner(runner)
+
+    assert all(span.name == AGL_ANNOTATION for span in result_spans)
+    stored_spans = await store.query_spans(attempted_rollout.rollout_id, attempted_rollout.attempt.attempt_id)
+    assert [span.attributes.get("agentlightning.reward.0.value") for span in stored_spans] == [0.5, -0.2]
 
 
 @pytest.mark.asyncio
@@ -501,8 +639,8 @@ async def test_agent_emits_multiple_rewards() -> None:
     class RewardListAgent(LitAgent[Dict[str, Any]]):
         def validation_rollout(
             self, task: Dict[str, Any], resources: Dict[str, Any], rollout: Any
-        ) -> List[ReadableSpan]:
-            return [emit_reward(0.2), emit_reward(0.6)]
+        ) -> List[SpanCoreFields]:
+            return [emit_reward(0.2, propagate=False), emit_reward(0.6, propagate=False)]
 
     agent = RewardListAgent()
     runner, store, _ = await setup_runner(agent)
@@ -704,6 +842,72 @@ async def test_step_with_custom_resources_returns_rollout() -> None:
 
     # Verify the rollout has the correct resources_id
     assert result.resources_id is not None
+
+
+@pytest.mark.asyncio
+async def test_step_registers_worker_id_on_start_rollout(monkeypatch: pytest.MonkeyPatch) -> None:
+    """runner.step should pass the formatted worker ID down to the store."""
+
+    class WorkerAwareAgent(LitAgent[Dict[str, Any]]):
+        def validation_rollout(self, task: Dict[str, Any], resources: Dict[str, Any], rollout: Any) -> float:
+            return 1.0
+
+    agent = WorkerAwareAgent()
+    runner, store, _ = await setup_runner(agent)
+
+    expected_worker_label = runner.get_worker_id()
+    captured: Dict[str, Optional[str]] = {}
+    original_start_rollout = store.start_rollout
+
+    async def wrapped_start_rollout(*args: Any, **kwargs: Any):
+        captured["worker_id"] = kwargs.get("worker_id")
+        return await original_start_rollout(*args, **kwargs)
+
+    monkeypatch.setattr(store, "start_rollout", wrapped_start_rollout)
+
+    try:
+        await runner.step({"task": "worker-aware"})
+    finally:
+        teardown_runner(runner)
+
+    assert captured["worker_id"] == expected_worker_label
+
+
+@pytest.mark.asyncio
+async def test_iter_passes_worker_id_to_dequeue(monkeypatch: pytest.MonkeyPatch) -> None:
+    """iter() should poll the store with the formatted worker identifier."""
+
+    class IdleAgent(LitAgent[Dict[str, Any]]):
+        def validation_rollout(
+            self, task: Dict[str, Any], resources: Dict[str, Any], rollout: Any
+        ) -> float:  # pragma: no cover - not invoked
+            return 0.0
+
+    agent = IdleAgent()
+    runner, store, _ = await setup_runner(agent, poll_interval=0.01)
+
+    expected_worker_label = runner.get_worker_id()
+    captured: Dict[str, Optional[str]] = {}
+    event = ThreadingEvent()
+
+    async def fake_dequeue(*, worker_id: Optional[str] = None):
+        captured["worker_id"] = worker_id
+        event.set()
+        return None
+
+    async def fast_sleep(self: LitAgentRunner[Any], event: Optional[ExecutionEvent] = None) -> None:
+        if event is not None:
+            event.set()
+
+    monkeypatch.setattr(store, "dequeue_rollout", fake_dequeue)
+    monkeypatch.setattr(LitAgentRunner, "_sleep_until_next_poll", fast_sleep)
+
+    try:
+        await runner.iter(event=event)
+    finally:
+        teardown_runner(runner)
+
+    assert captured["worker_id"] == expected_worker_label
 
 
 @pytest.mark.asyncio

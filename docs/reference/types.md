@@ -22,6 +22,8 @@
 
 ::: agentlightning.Rollout
 
+::: agentlightning.EnqueueRolloutRequest
+
 ::: agentlightning.Attempt
 
 ::: agentlightning.AttemptedRollout
@@ -79,6 +81,10 @@
 ::: agentlightning.SpanAttributeNames
 
 ::: agentlightning.SpanLike
+
+::: agentlightning.SpanCoreFields
+
+::: agentlightning.SpanRecordingContext
 
 ## Semantic Conventions
 

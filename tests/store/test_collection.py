@@ -3,22 +3,44 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 import time
-from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Literal, Mapping, Sequence, Tuple, Union
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Awaitable,
+    Callable,
+    Dict,
+    Iterable,
+    List,
+    Literal,
+    Mapping,
+    Sequence,
+    Tuple,
+    Union,
+    cast,
+)
 from uuid import uuid4
 
+import pydantic
 import pytest
 from pydantic import BaseModel
 
 import agentlightning.store.collection.memory as memory_module
-from agentlightning.store.collection import DequeBasedQueue, DictBasedKeyValue, ListBasedCollection
+from agentlightning.store.collection import DequeBasedQueue, DictBasedKeyValue, KeyValue, ListBasedCollection
 from agentlightning.store.collection.base import Collection
 from agentlightning.store.collection.memory import _item_matches_filters  # pyright: ignore[reportPrivateUsage]
+from agentlightning.store.collection.memory import _LoopAwareAsyncLock  # pyright: ignore[reportPrivateUsage]
+from agentlightning.store.collection.memory import _ThreadSafeAsyncLock  # pyright: ignore[reportPrivateUsage]
 from agentlightning.types import Rollout
-from tests.store.conftest import QueueItem, SampleItem
+from tests.store.conftest import QueueItem, SampleItem, mongo_client_kwargs, mongo_uri
 
 if TYPE_CHECKING:
     from pymongo.asynchronous.database import AsyncDatabase
+
+    from agentlightning.store.collection.mongo import MongoLightningCollections
+
+pytestmark = [pytest.mark.store]
 
 
 def _build_collection(items: Iterable[SampleItem] = ()) -> ListBasedCollection[SampleItem]:
@@ -99,11 +121,13 @@ async def test_list_collection_insert_rejects_duplicate_payload(sample_collectio
     dup_a = SampleItem(partition="omega", index=1, name="dup-a", status="new")
     dup_b = SampleItem(partition="omega", index=1, name="dup-b", status="new")
 
-    with pytest.raises(ValueError, match="duplicate primary key"):
+    with pytest.raises(ValueError, match=r"(duplicated|Duplicated) primary key"):
         await sample_collection.insert([dup_a, dup_b])
 
-    assert await sample_collection.size() == starting_size
-    assert await sample_collection.get({"partition": {"exact": "omega"}}) is None
+    if isinstance(sample_collection, ListBasedCollection):
+        # Only ListBasedCollection supports this rejecting duplicate items within the same insert batch.
+        assert await sample_collection.size() == starting_size
+        assert await sample_collection.get({"partition": {"exact": "omega"}}) is None
 
 
 @pytest.mark.asyncio()
@@ -164,6 +188,126 @@ async def test_list_collection_upsert_updates_when_existing(sample_collection: C
     assert (await sample_collection.size()) == 8
     fetched = await sample_collection.get({"partition": {"exact": "beta"}, "index": {"exact": 2}})
     assert fetched == replacement
+
+
+@pytest.mark.asyncio()
+async def test_list_collection_upsert_get_or_insert_semantics(sample_collection: Collection[SampleItem]) -> None:
+    filters: Mapping[str, Any] = {"partition": {"exact": "beta"}, "index": {"exact": 2}}
+    original = await sample_collection.get(filters)
+    assert original is not None
+
+    replacement = SampleItem(
+        partition="beta",
+        index=2,
+        name="replacement",
+        status="queued",
+        tags=["patched"],
+        score=999,
+        rank=999,
+        updated_time=99.0,
+        payload={"priority": 99},
+        metadata="replacement",
+    )
+
+    await sample_collection.upsert([replacement], update_fields=[])
+
+    fetched = await sample_collection.get(filters)
+    assert fetched == original and fetched is not None
+    assert fetched.name == original.name
+    assert fetched.status == original.status
+
+
+@pytest.mark.asyncio()
+async def test_list_collection_upsert_updates_selected_fields(sample_collection: Collection[SampleItem]) -> None:
+    filters: Mapping[str, Any] = {"partition": {"exact": "beta"}, "index": {"exact": 1}}
+    original = await sample_collection.get(filters)
+    assert original is not None
+
+    incoming = SampleItem(
+        partition="beta",
+        index=1,
+        name="beta-incoming",
+        status="in-progress",
+        tags=["different"],
+        score=-1.0,
+        rank=42,
+        updated_time=123.45,
+        payload={"priority": -1},
+        metadata="incoming",
+    )
+
+    await sample_collection.upsert([incoming], update_fields=["status", "updated_time"])
+
+    fetched = await sample_collection.get(filters)
+    assert fetched is not None
+    assert fetched.status == incoming.status
+    assert fetched.updated_time == incoming.updated_time
+    # Ensure unspecified fields (e.g. name/tags) remain the same as the original document.
+    assert fetched.name == original.name
+    assert fetched.tags == original.tags
+
+
+@pytest.mark.asyncio()
+async def test_list_collection_update_returns_mutated_items(sample_collection: Collection[SampleItem]) -> None:
+    replacements = [
+        SampleItem(partition="alpha", index=1, name="alpha-new", status="patched"),
+        SampleItem(partition="delta", index=1, name="delta-new", status="patched"),
+    ]
+
+    returned = await sample_collection.update(replacements)
+    assert list(returned) == replacements
+
+    for expected in replacements:
+        fetched = await sample_collection.get(
+            {"partition": {"exact": expected.partition}, "index": {"exact": expected.index}}
+        )
+        assert fetched == expected
+
+    original_beta = await sample_collection.get({"partition": {"exact": "beta"}, "index": {"exact": 1}})
+    assert original_beta is not None
+
+    partial_payload = SampleItem(
+        partition="beta", index=1, name="ignored", status="partial", metadata="updated-metadata"
+    )
+    partial_returned = await sample_collection.update([partial_payload], update_fields=["status", "metadata"])
+    assert len(partial_returned) == 1
+
+    fetched_partial = await sample_collection.get({"partition": {"exact": "beta"}, "index": {"exact": 1}})
+    assert fetched_partial == partial_returned[0]
+    assert fetched_partial is not None
+    assert fetched_partial.status == partial_payload.status
+    assert fetched_partial.metadata == partial_payload.metadata
+    assert fetched_partial.name == original_beta.name
+
+
+@pytest.mark.asyncio()
+async def test_list_collection_upsert_returns_mutated_items(sample_collection: Collection[SampleItem]) -> None:
+    new_item = SampleItem(partition="omega", index=99, name="omega-new", status="queued")
+    inserted = await sample_collection.upsert([new_item])
+    assert list(inserted) == [new_item]
+
+    fetched_new = await sample_collection.get({"partition": {"exact": "omega"}, "index": {"exact": 99}})
+    assert fetched_new == new_item
+
+    original_existing = await sample_collection.get({"partition": {"exact": "beta"}, "index": {"exact": 2}})
+    assert original_existing is not None
+
+    incoming = SampleItem(
+        partition="beta",
+        index=2,
+        name="beta-incoming-new-name",
+        status="processing",
+        tags=["beta", "patched"],
+    )
+    updated = await sample_collection.upsert([incoming], update_fields=["status", "tags"])
+    assert len(updated) == 1
+
+    fetched_existing = await sample_collection.get({"partition": {"exact": "beta"}, "index": {"exact": 2}})
+    assert fetched_existing == updated[0]
+    assert fetched_existing is not None
+    assert fetched_existing.status == incoming.status
+    assert fetched_existing.tags == incoming.tags
+    assert fetched_existing.name == original_existing.name
 
 
 @pytest.mark.asyncio()
@@ -728,11 +872,343 @@ async def test_dict_key_value_pop_returns_default(dict_key_value: DictBasedKeyVa
 
 
 @pytest.mark.asyncio()
+async def test_key_value_inc_updates_existing(dict_key_value: KeyValue[str, int]) -> None:
+    new_value = await dict_key_value.inc("alpha", 2)
+    assert new_value == 3
+    assert await dict_key_value.get("alpha") == 3
+
+
+@pytest.mark.asyncio()
+async def test_key_value_inc_initializes_missing(dict_key_value: KeyValue[str, int]) -> None:
+    new_value = await dict_key_value.inc("gamma", 4)
+    assert new_value == 4
+    assert await dict_key_value.has("gamma")
+
+
+@pytest.mark.asyncio()
+async def test_key_value_inc_rejects_non_numeric_amount(dict_key_value: KeyValue[str, int]) -> None:
+    with pytest.raises(TypeError):
+        await dict_key_value.inc("alpha", cast(Any, "invalid"))
+
+
+@pytest.mark.asyncio()
+async def test_key_value_chmax_updates_existing(dict_key_value: KeyValue[str, int]) -> None:
+    new_value = await dict_key_value.chmax("alpha", 10)
+    assert new_value == 10
+    assert await dict_key_value.get("alpha") == 10
+
+
+@pytest.mark.asyncio()
+async def test_key_value_chmax_ignores_smaller(dict_key_value: KeyValue[str, int]) -> None:
+    initial = await dict_key_value.get("alpha")
+    result = await dict_key_value.chmax("alpha", 0)
+    assert result == initial
+    assert await dict_key_value.get("alpha") == initial
+
+
+@pytest.mark.asyncio()
+async def test_key_value_chmax_initializes_missing(dict_key_value: KeyValue[str, int]) -> None:
+    result = await dict_key_value.chmax("gamma", 7)
+    assert result == 7
+    assert await dict_key_value.get("gamma") == 7
+
+
+@pytest.mark.asyncio()
+async def test_key_value_chmax_rejects_non_numeric_value(dict_key_value: KeyValue[str, int]) -> None:
+    with pytest.raises(TypeError):
+        await dict_key_value.chmax("alpha", cast(Any, "wrong"))
+
+
+@pytest.mark.asyncio()
+async def test_dict_key_value_inc_rejects_non_numeric_value(dict_key_value_memory: DictBasedKeyValue[str, Any]) -> None:
+    await dict_key_value_memory.set("alpha", cast(Any, "na"))
+    with pytest.raises(TypeError):
+        await dict_key_value_memory.inc("alpha", 1)
+
+
+@pytest.mark.asyncio()
+async def test_dict_key_value_chmax_rejects_non_numeric_value(
+    dict_key_value_memory: DictBasedKeyValue[str, Any],
+) -> None:
+    await dict_key_value_memory.set("alpha", cast(Any, "na"))
+    with pytest.raises(TypeError):
+        await dict_key_value_memory.chmax("alpha", 1)
+
+
+@pytest.mark.mongo
+@pytest.mark.asyncio()
+async def test_mongo_key_value_inc_rejects_non_numeric_value(temporary_mongo_database: AsyncDatabase[Any]) -> None:
+    from agentlightning.store.collection.mongo import MongoBasedKeyValue, MongoClientPool
+
+    async with MongoClientPool[Mapping[str, Any]](
+        mongo_uri=mongo_uri, mongo_client_kwargs=mongo_client_kwargs
+    ) as client_pool:
+        key_value = MongoBasedKeyValue[str, int](
+            client_pool,
+            temporary_mongo_database.name,
+            f"kv-inc-{uuid4().hex}",
+            "partition-inc",
+            str,
+            int,
+        )
+        collection = await key_value.ensure_collection()
+        await collection.insert_one(
+            {
+                "partition_id": "partition-inc",
+                "key": "alpha",
+                "value": "oops",
+            }
+        )
+
+        with pytest.raises(TypeError):
+            await key_value.inc("alpha", 1)
+
+
+@pytest.mark.mongo
+@pytest.mark.asyncio()
+async def test_mongo_key_value_chmax_behaves_like_max(temporary_mongo_database: AsyncDatabase[Any]) -> None:
+    from agentlightning.store.collection.mongo import MongoBasedKeyValue, MongoClientPool
+
+    async with MongoClientPool[Mapping[str, Any]](
+        mongo_uri=mongo_uri, mongo_client_kwargs=mongo_client_kwargs
+    ) as client_pool:
+        key_value = MongoBasedKeyValue[str, int](
+            client_pool,
+            temporary_mongo_database.name,
+            f"kv-chmax-{uuid4().hex}",
+            "partition-chmax",
+            str,
+            int,
+        )
+        assert await key_value.chmax("alpha", 5) == 5
+        assert await key_value.chmax("alpha", 3) == 5
+        assert await key_value.chmax("alpha", 9) == 9
+        assert await key_value.get("alpha") == 9
+
+
+@pytest.mark.mongo
+@pytest.mark.asyncio()
+async def test_mongo_key_value_chmax_rejects_non_numeric_value(temporary_mongo_database: AsyncDatabase[Any]) -> None:
+    from agentlightning.store.collection.mongo import MongoBasedKeyValue, MongoClientPool
+
+    async with MongoClientPool[Mapping[str, Any]](
+        mongo_uri=mongo_uri, mongo_client_kwargs=mongo_client_kwargs
+    ) as client_pool:
+        key_value = MongoBasedKeyValue[str, int](
+            client_pool,
+            temporary_mongo_database.name,
+            f"kv-chmax-bad-{uuid4().hex}",
+            "partition-chmax-bad",
+            str,
+            int,
+        )
+        collection = await key_value.ensure_collection()
+        await collection.insert_one(
+            {
+                "partition_id": "partition-chmax-bad",
+                "key": "alpha",
+                "value": "oops",
+            }
+        )
+
+        with pytest.raises((TypeError, pydantic.ValidationError)):
+            await key_value.chmax("alpha", 1)
+
+
+def test_thread_safe_async_lock_blocks_threads() -> None:
+    lock = _ThreadSafeAsyncLock()
+    allow_second = threading.Event()
+    second_has_lock = threading.Event()
+    release_first = threading.Event()
+
+    async def first() -> None:
+        async with lock:
+            allow_second.set()
+            release_first.wait()
+
+    async def second() -> None:
+        allow_second.wait()
+        async with lock:
+            second_has_lock.set()
+
+    def thread1() -> None:
+        asyncio.run(first())
+
+    def thread2() -> None:
+        asyncio.run(second())
+
+    t1 = threading.Thread(target=thread1)
+    t2 = threading.Thread(target=thread2)
+    t1.start()
+    t2.start()
+
+    assert allow_second.wait(timeout=1)
+    assert not second_has_lock.wait(0.05)
+
+    release_first.set()
+    t1.join(timeout=1)
+    t2.join(timeout=1)
+
+    assert second_has_lock.is_set()
+
+
+@pytest.mark.asyncio()
+async def test_thread_safe_async_lock_serializes_async_tasks() -> None:
+    lock = _ThreadSafeAsyncLock()
+    first_entered = asyncio.Event()
+    release_first = asyncio.Event()
+    second_acquired = asyncio.Event()
+
+    async def first() -> None:
+        async with lock:
+            first_entered.set()
+            await release_first.wait()
+
+    async def second() -> None:
+        await first_entered.wait()
+        async with lock:
+            second_acquired.set()
+
+    task1 = asyncio.create_task(first())
+    task2 = asyncio.create_task(second())
+
+    await first_entered.wait()
+    await asyncio.sleep(0)
+    assert not second_acquired.is_set()
+
+    release_first.set()
+    await asyncio.gather(task1, task2)
+
+    assert second_acquired.is_set()
+
+
+@pytest.mark.asyncio()
+async def test_loop_aware_async_lock_serializes_tasks() -> None:
+    lock = _LoopAwareAsyncLock()
+    first_entered = asyncio.Event()
+    release_first = asyncio.Event()
+    second_acquired = asyncio.Event()
+
+    async def first() -> None:
+        async with lock:
+            first_entered.set()
+            await release_first.wait()
+
+    async def second() -> None:
+        await first_entered.wait()
+        async with lock:
+            second_acquired.set()
+
+    task1 = asyncio.create_task(first())
+    task2 = asyncio.create_task(second())
+
+    await first_entered.wait()
+    await asyncio.sleep(0)
+    assert not second_acquired.is_set()
+
+    release_first.set()
+    await asyncio.gather(task1, task2)
+
+    assert second_acquired.is_set()
+
+
+@pytest.mark.asyncio()
+async def test_loop_aware_async_lock_reuses_loop_specific_lock() -> None:
+    lock = _LoopAwareAsyncLock()
+    first_lock: asyncio.Lock | None = None
+
+    async with lock as acquired:
+        first_lock = acquired
+        assert first_lock.locked()
+
+    assert first_lock is not None and not first_lock.locked()
+
+    async with lock as acquired_again:
+        assert acquired_again is first_lock
+
+
+@pytest.mark.asyncio()
+async def test_loop_aware_async_lock_distinguishes_event_loops() -> None:
+    lock = _LoopAwareAsyncLock()
+    main_loop_lock: asyncio.Lock | None = None
+
+    async with lock as acquired:
+        main_loop_lock = acquired
+
+    locks_from_threads: List[asyncio.Lock] = []
+
+    def _worker() -> None:
+        async def runner() -> None:
+            async with lock as acquired:
+                locks_from_threads.append(acquired)
+
+        asyncio.run(runner())
+
+    worker = threading.Thread(target=_worker)
+    worker.start()
+    worker.join(timeout=2)
+
+    assert worker.is_alive() is False
+    assert main_loop_lock is not None
+    assert locks_from_threads
+    assert locks_from_threads[0] is not main_loop_lock
+
+
+@pytest.mark.asyncio()
 async def test_dict_key_value_does_not_mutate_input_mapping(dict_key_value_data: Dict[str, int]) -> None:
     key_value = DictBasedKeyValue(dict_key_value_data)
     await key_value.set("gamma", 3)  # type: ignore[arg-type]
     await key_value.pop("alpha")  # type: ignore[arg-type]
     assert dict_key_value_data == {"alpha": 1, "beta": 2}
+
+
+@pytest.mark.asyncio()
+async def test_inmemory_atomic_read_only_skips_lock() -> None:
+    collections = memory_module.InMemoryLightningCollections(lock_type="asyncio")
+
+    class FailingLock:
+        async def __aenter__(self) -> None:
+            raise AssertionError("read-only atomic block should not acquire the lock")
+
+        async def __aexit__(self, *args: Any, **kwargs: Any) -> None:
+            return None
+
+    collections._lock = {"default": FailingLock()}  # type: ignore[attr-defined]
+
+    async with collections.atomic(mode="r", snapshot=False):
+        # Should complete without touching the failing lock.
+        assert collections.rollouts is not None
+
+
+@pytest.mark.asyncio()
+async def test_inmemory_atomic_snapshot_or_write_acquires_lock() -> None:
+    collections = memory_module.InMemoryLightningCollections(lock_type="asyncio")
+
+    class RecordingLock:
+        def __init__(self) -> None:
+            self.enter_count = 0
+            self.exit_count = 0
+
+        async def __aenter__(self) -> None:
+            self.enter_count += 1
+
+        async def __aexit__(self, *args: Any, **kwargs: Any) -> None:
+            self.exit_count += 1
+
+    lock = RecordingLock()
+    collections._lock = {"default": lock}  # type: ignore[attr-defined]
+
+    async with collections.atomic(mode="rw", snapshot=False):
+        assert collections.attempts is not None
+
+    assert (lock.enter_count, lock.exit_count) == (1, 1)
+
+    lock.enter_count = lock.exit_count = 0
+
+    async with collections.atomic(mode="r", snapshot=True):
+        assert collections.spans is not None
+
+    assert (lock.enter_count, lock.exit_count) == (1, 1)
 
 
 @pytest.mark.mongo
@@ -745,7 +1221,9 @@ async def test_mongo_based_sanity_check(temporary_mongo_database: AsyncDatabase[
         MongoClientPool,
     )
 
-    async with MongoClientPool(temporary_mongo_database.client) as client_pool:
+    async with MongoClientPool[Mapping[str, Any]](
+        mongo_uri=mongo_uri, mongo_client_kwargs=mongo_client_kwargs
+    ) as client_pool:
         collection = MongoBasedCollection[Any](
             client_pool, temporary_mongo_database.name, "test", "test-123", ["rollout_id"], Rollout
         )
@@ -786,38 +1264,15 @@ async def test_mongo_based_sanity_check(temporary_mongo_database: AsyncDatabase[
 
 @pytest.mark.mongo
 @pytest.mark.asyncio()
-async def test_mongo_based_collection_rejects_duplicate_payload(temporary_mongo_database: AsyncDatabase[Any]) -> None:
-    from agentlightning.store.collection.mongo import MongoBasedCollection, MongoClientPool
-
-    async with MongoClientPool(temporary_mongo_database.client) as client_pool:
-        collection = MongoBasedCollection[Any](
-            client_pool,
-            temporary_mongo_database.name,
-            f"duplicate-check-{uuid4().hex}",
-            "partition-dup",
-            ["rollout_id"],
-            Rollout,
-        )
-        await collection.ensure_collection()
-        start_time = time.time()
-        first = Rollout(rollout_id="dup-rollout", input="payload", start_time=start_time, status="running")
-        duplicate = Rollout(rollout_id="dup-rollout", input="payload", start_time=start_time, status="running")
-
-        with pytest.raises(ValueError, match="duplicate primary key"):
-            await collection.insert([first, duplicate])
-
-        assert await collection.size() == 0
-
-
-@pytest.mark.mongo
-@pytest.mark.asyncio()
 async def test_mongo_ensure_collection_creates_partition_scoped_index(
     temporary_mongo_database: AsyncDatabase[Any],
 ) -> None:
     from agentlightning.store.collection.mongo import MongoBasedCollection, MongoClientPool
 
     collection_name = f"ensure-{uuid4().hex}"
-    async with MongoClientPool(temporary_mongo_database.client) as client_pool:
+    async with MongoClientPool[Mapping[str, Any]](
+        mongo_uri=mongo_uri, mongo_client_kwargs=mongo_client_kwargs
+    ) as client_pool:
         collection = MongoBasedCollection[Any](
             client_pool,
             temporary_mongo_database.name,
@@ -847,7 +1302,9 @@ async def test_mongo_ensure_collection_survives_concurrent_calls(temporary_mongo
     collection_name = f"ensure-{uuid4().hex}"
 
     async def ensure_once() -> None:
-        async with MongoClientPool(temporary_mongo_database.client) as client_pool:
+        async with MongoClientPool[Mapping[str, Any]](
+            mongo_uri=mongo_uri, mongo_client_kwargs=mongo_client_kwargs
+        ) as client_pool:
             collection = MongoBasedCollection(
                 client_pool,
                 temporary_mongo_database.name,
@@ -878,7 +1335,9 @@ async def test_mongo_ensure_collection_repeats_without_altering_indexes(
     from agentlightning.store.collection.mongo import MongoBasedCollection, MongoClientPool
 
     collection_name = f"ensure-{uuid4().hex}"
-    async with MongoClientPool(temporary_mongo_database.client) as client_pool:
+    async with MongoClientPool[Mapping[str, Any]](
+        mongo_uri=mongo_uri, mongo_client_kwargs=mongo_client_kwargs
+    ) as client_pool:
         collection = MongoBasedCollection(
             client_pool, temporary_mongo_database.name, collection_name, "partition-repeat", ["index"], SampleItem
         )
@@ -891,3 +1350,112 @@ async def test_mongo_ensure_collection_repeats_without_altering_indexes(
                 unique_indexes.append((index["name"], list(index["key"].items())))  # type: ignore
 
         assert unique_indexes == [("uniq_partition_index", [("partition_id", 1), ("index", 1)])]
+
+
+async def _with_mongo_collections(
+    db: AsyncDatabase[Any],
+    callback: Callable[[MongoLightningCollections], Awaitable[Any]],
+) -> Any:
+    from agentlightning.store.collection.mongo import MongoClientPool, MongoLightningCollections
+
+    async with MongoClientPool[Mapping[str, Any]](
+        mongo_uri=mongo_uri, mongo_client_kwargs=mongo_client_kwargs
+    ) as client_pool:
+        collections = MongoLightningCollections(
+            client_pool=client_pool,
+            database_name=db.name,
+            partition_id=f"partition-{uuid4().hex}",
+        )
+        return await callback(collections)
+
+
+async def _initialize_counter(collections: MongoLightningCollections, key: str) -> None:
+    async def _init(coll: MongoLightningCollections) -> None:
+        await coll.span_sequence_ids.set(key, 0)
+
+    await collections.execute(_init, commit=False)
+
+
+async def _read_counter(collections: MongoLightningCollections, key: str) -> int:
+    async def _read(coll: MongoLightningCollections) -> int:
+        value = await coll.span_sequence_ids.get(key)
+        assert value is not None
+        return value
+
+    return await collections.execute(_read, commit=False)
+
+
+async def _contention_run(
+    collections: MongoLightningCollections,
+    *,
+    key: str,
+    commit: bool,
+    concurrency: int,
+) -> int:
+    read_lock = asyncio.Lock()
+    ready = asyncio.Event()
+    readers_seen = 0
+
+    async def _barrier() -> None:
+        nonlocal readers_seen
+        async with read_lock:
+            readers_seen += 1
+            if readers_seen == concurrency:
+                ready.set()
+        await ready.wait()
+
+    async def worker(_: int) -> None:
+        first_attempt = True
+
+        async def callback(coll: MongoLightningCollections) -> None:
+            nonlocal first_attempt
+            value = await coll.span_sequence_ids.get(key)
+            assert value is not None
+            if first_attempt:
+                await _barrier()
+                first_attempt = False
+            await asyncio.sleep(0)
+            await coll.span_sequence_ids.set(key, value + 1)
+
+        await collections.execute(callback, commit=commit, snapshot=True, mode="rw")
+
+    await asyncio.gather(*(worker(i) for i in range(concurrency)))
+    return await _read_counter(collections, key)
+
+
+@pytest.mark.mongo
+@pytest.mark.asyncio()
+async def test_mongo_execute_without_commit_allows_lost_updates(
+    temporary_mongo_database: AsyncDatabase[Any],
+) -> None:
+    async def scenario(collections: MongoLightningCollections) -> None:
+        counter_key = f"counter-{uuid4().hex}"
+        await _initialize_counter(collections, counter_key)
+        final_value = await _contention_run(
+            collections,
+            key=counter_key,
+            commit=False,
+            concurrency=6,
+        )
+        assert final_value == 1
+
+    await _with_mongo_collections(temporary_mongo_database, scenario)
+
+
+@pytest.mark.mongo
+@pytest.mark.asyncio()
+async def test_mongo_execute_with_commit_retries_until_success(
+    temporary_mongo_database: AsyncDatabase[Any],
+) -> None:
+    async def scenario(collections: MongoLightningCollections) -> None:
+        counter_key = f"counter-{uuid4().hex}"
+        await _initialize_counter(collections, counter_key)
+        final_value = await _contention_run(
+            collections,
+            key=counter_key,
+            commit=True,
+            concurrency=6,
+        )
+        assert final_value == 6
+
+    await _with_mongo_collections(temporary_mongo_database, scenario)

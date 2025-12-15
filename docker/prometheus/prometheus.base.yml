@@ -1,11 +1,11 @@
 global:
-  scrape_interval: 2s
-  evaluation_interval: 2s
+  scrape_interval: 5s
+  evaluation_interval: 5s
 
 scrape_configs:
   - job_name: app
     static_configs:
-      - targets: ["app:4747"]
+      - targets: ["app-exporter:4748"]
     metrics_path: /v1/prometheus/
 
   - job_name: node

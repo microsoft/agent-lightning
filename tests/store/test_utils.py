@@ -2,11 +2,11 @@
 
 import time
 from typing import List, Optional, cast
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
 
-from agentlightning.store.utils import healthcheck, propagate_status
+from agentlightning.store.utils import rollout_status_from_attempt, scan_unhealthy_rollouts
 from agentlightning.types import (
     Attempt,
     AttemptedRollout,
@@ -14,11 +14,13 @@ from agentlightning.types import (
     RolloutConfig,
 )
 
-# Tests for propagate_status function
+pytestmark = [pytest.mark.store]
+
+# Tests for rollout_status_from_attempt function
 
 
 @pytest.mark.parametrize(
-    "status,expected_call",
+    "status,expected_status",
     [
         ("preparing", "preparing"),
         ("running", "running"),
@@ -26,21 +28,22 @@ from agentlightning.types import (
     ],
 )
 @pytest.mark.asyncio
-async def test_propagate_status_direct_statuses(status: AttemptStatus, expected_call: AttemptStatus) -> None:
-    """Test propagate_status directly propagates preparing/running/succeeded statuses."""
+async def test_rollout_status_from_attempt_direct_statuses(
+    status: AttemptStatus, expected_status: AttemptStatus
+) -> None:
+    """Test rollout_status_from_attempt directly propagates preparing/running/succeeded statuses."""
     attempt = Attempt(
         rollout_id="test-rollout", attempt_id="test-attempt", sequence_id=1, start_time=time.time(), status=status
     )
     config = RolloutConfig()
-    update_rollout_mock = AsyncMock()
 
-    await propagate_status(update_rollout_mock, attempt, config)
+    result = await rollout_status_from_attempt(attempt, config)
 
-    update_rollout_mock.assert_called_once_with("test-rollout", expected_call)
+    assert result == expected_status
 
 
 @pytest.mark.parametrize(
-    "status,in_retry_condition,sequence_id,max_attempts,expected_call",
+    "status,in_retry_condition,sequence_id,max_attempts,expected_status",
     [
         ("failed", True, 1, 3, "requeuing"),  # Should retry
         ("failed", True, 3, 3, "failed"),  # Max attempts reached
@@ -51,10 +54,10 @@ async def test_propagate_status_direct_statuses(status: AttemptStatus, expected_
     ],
 )
 @pytest.mark.asyncio
-async def test_propagate_status_retry_logic(
-    status: AttemptStatus, in_retry_condition: bool, sequence_id: int, max_attempts: int, expected_call: AttemptStatus
+async def test_rollout_status_from_attempt_retry_logic(
+    status: AttemptStatus, in_retry_condition: bool, sequence_id: int, max_attempts: int, expected_status: AttemptStatus
 ) -> None:
-    """Test propagate_status retry logic for different combinations."""
+    """Test rollout_status_from_attempt retry logic for different combinations."""
     attempt = Attempt(
         rollout_id="test-rollout",
         attempt_id="test-attempt",
@@ -65,16 +68,15 @@ async def test_propagate_status_retry_logic(
 
     retry_condition: List[AttemptStatus] = [status] if in_retry_condition else []
     config = RolloutConfig(max_attempts=max_attempts, retry_condition=retry_condition)
-    update_rollout_mock = AsyncMock()
 
-    await propagate_status(update_rollout_mock, attempt, config)
+    result = await rollout_status_from_attempt(attempt, config)
 
-    update_rollout_mock.assert_called_once_with("test-rollout", expected_call)
+    assert result == expected_status
 
 
 @pytest.mark.asyncio
-async def test_propagate_status_invalid_status() -> None:
-    """Test propagate_status raises error for invalid status."""
+async def test_rollout_status_from_attempt_invalid_status() -> None:
+    """Test rollout_status_from_attempt raises error for invalid status."""
     # Create a valid attempt first, then modify its status
     attempt = Attempt(
         rollout_id="test-rollout", attempt_id="test-attempt", sequence_id=1, start_time=time.time(), status="failed"
@@ -83,31 +85,25 @@ async def test_propagate_status_invalid_status() -> None:
     attempt.status = cast(AttemptStatus, "invalid_status")  # Invalid status
 
     config = RolloutConfig()
-    update_rollout_mock = AsyncMock()
 
     with pytest.raises(ValueError, match="Invalid attempt status: invalid_status"):
-        await propagate_status(update_rollout_mock, attempt, config)
+        await rollout_status_from_attempt(attempt, config)
 
 
-# Tests for healthcheck function
-
-
-@pytest.mark.asyncio
-async def test_healthcheck_empty_rollouts_list() -> None:
-    """Test healthcheck handles empty rollouts list gracefully."""
-    update_rollout_mock = AsyncMock()
-    update_attempt_mock = AsyncMock()
-
-    await healthcheck([], update_rollout_mock, update_attempt_mock)
-
-    # Should not call any updates
-    update_rollout_mock.assert_not_called()
-    update_attempt_mock.assert_not_called()
+# Tests for scan_unhealthy_rollouts function
 
 
 @pytest.mark.asyncio
-async def test_healthcheck_multiple_rollouts_different_timeouts() -> None:
-    """Test healthcheck handles multiple rollouts with different timeout configs."""
+async def test_scan_unhealthy_rollouts_empty_list() -> None:
+    """Test scan_unhealthy_rollouts handles empty rollouts list gracefully."""
+    updates = await scan_unhealthy_rollouts([])
+
+    assert updates == {}
+
+
+@pytest.mark.asyncio
+async def test_scan_unhealthy_rollouts_multiple_rollouts_different_timeouts() -> None:
+    """Test scan_unhealthy_rollouts handles multiple rollouts with different timeout configs."""
     current_time = time.time()
 
     # Rollout 1: Short timeout, should timeout
@@ -146,14 +142,11 @@ async def test_healthcheck_multiple_rollouts_different_timeouts() -> None:
         attempt=attempt2,
     )
 
-    update_rollout_mock = AsyncMock()
-    update_attempt_mock = AsyncMock()
-
     with patch("time.time", return_value=current_time):
-        await healthcheck([rollout1, rollout2], update_rollout_mock, update_attempt_mock)
+        updates = await scan_unhealthy_rollouts([rollout1, rollout2])
 
     # Only rollout1 should be marked as timeout
-    update_attempt_mock.assert_called_once_with("rollout-1", "attempt-1", "timeout")
+    assert updates == {("rollout-1", "attempt-1"): "timeout"}
 
 
 @pytest.mark.parametrize(
@@ -167,13 +160,13 @@ async def test_healthcheck_multiple_rollouts_different_timeouts() -> None:
     ],
 )
 @pytest.mark.asyncio
-async def test_healthcheck_timeout_configurations(
+async def test_scan_unhealthy_rollouts_timeout_configurations(
     timeout_seconds: Optional[float],
     unresponsive_seconds: Optional[float],
     should_timeout: bool,
     should_unresponsive: bool,
 ) -> None:
-    """Test healthcheck with various timeout configurations."""
+    """Test scan_unhealthy_rollouts with various timeout configurations."""
     current_time = time.time()
 
     config = RolloutConfig(timeout_seconds=timeout_seconds, unresponsive_seconds=unresponsive_seconds)
@@ -196,22 +189,20 @@ async def test_healthcheck_timeout_configurations(
         attempt=attempt,
     )
 
-    update_rollout_mock = AsyncMock()
-    update_attempt_mock = AsyncMock()
-
     with patch("time.time", return_value=current_time):
-        await healthcheck([rollout], update_rollout_mock, update_attempt_mock)
+        updates = await scan_unhealthy_rollouts([rollout])
 
+    expected_updates = {}
     if should_timeout:
-        update_attempt_mock.assert_called_once_with("test-rollout", "test-attempt", "timeout")
+        expected_updates[("test-rollout", "test-attempt")] = "timeout"
     elif should_unresponsive:
-        update_attempt_mock.assert_called_once_with("test-rollout", "test-attempt", "unresponsive")
-    else:
-        update_attempt_mock.assert_not_called()
+        expected_updates[("test-rollout", "test-attempt")] = "unresponsive"
+
+    assert updates == expected_updates
 
 
 @pytest.mark.asyncio
-async def test_healthcheck_unresponsive_with_heartbeat_timing() -> None:
+async def test_scan_unhealthy_rollouts_unresponsive_with_heartbeat_timing() -> None:
     """Test unresponsive detection considers heartbeat timing correctly."""
     current_time = time.time()
     config = RolloutConfig(unresponsive_seconds=1.0)
@@ -252,51 +243,16 @@ async def test_healthcheck_unresponsive_with_heartbeat_timing() -> None:
         attempt=attempt_old,
     )
 
-    update_rollout_mock = AsyncMock()
-    update_attempt_mock = AsyncMock()
-
     with patch("time.time", return_value=current_time):
-        await healthcheck([rollout_recent, rollout_old], update_rollout_mock, update_attempt_mock)
+        updates = await scan_unhealthy_rollouts([rollout_recent, rollout_old])
 
     # Only the old heartbeat should trigger unresponsive
-    update_attempt_mock.assert_called_once_with("rollout-old", "attempt-old", "unresponsive")
+    assert updates == {("rollout-old", "attempt-old"): "unresponsive"}
 
 
 @pytest.mark.asyncio
-async def test_healthcheck_preparing_with_heartbeat_promotion() -> None:
-    """Test healthcheck promotes preparing attempts with heartbeat to running."""
-    current_time = time.time()
-
-    config = RolloutConfig()
-    attempt = Attempt(
-        rollout_id="test-rollout",
-        attempt_id="test-attempt",
-        sequence_id=1,
-        start_time=current_time,
-        status="preparing",
-        last_heartbeat_time=current_time,  # Has heartbeat
-    )
-    rollout = AttemptedRollout(
-        rollout_id="test-rollout",
-        input={"test": 1},
-        status="preparing",
-        start_time=current_time,
-        config=config,
-        attempt=attempt,
-    )
-
-    update_rollout_mock = AsyncMock()
-    update_attempt_mock = AsyncMock()
-
-    await healthcheck([rollout], update_rollout_mock, update_attempt_mock)
-
-    # Should promote to running
-    update_attempt_mock.assert_called_once_with("test-rollout", "test-attempt", "running")
-
-
-@pytest.mark.asyncio
-async def test_healthcheck_skips_rollouts_without_attempts() -> None:
-    """Test healthcheck gracefully skips rollouts with no attempts."""
+async def test_scan_unhealthy_rollouts_skips_rollouts_without_attempts() -> None:
+    """Test scan_unhealthy_rollouts gracefully skips rollouts with no attempts."""
     config = RolloutConfig()
 
     # Create a valid attempt first, then set it to None
@@ -315,11 +271,7 @@ async def test_healthcheck_skips_rollouts_without_attempts() -> None:
     # Bypass Pydantic validation by directly setting the attribute
     rollout.attempt = cast(Attempt, None)  # No attempt
 
-    update_rollout_mock = AsyncMock()
-    update_attempt_mock = AsyncMock()
+    updates = await scan_unhealthy_rollouts([rollout])
 
-    await healthcheck([rollout], update_rollout_mock, update_attempt_mock)
-
-    # Should not call any updates
-    update_rollout_mock.assert_not_called()
-    update_attempt_mock.assert_not_called()
+    # Should not include rollout without attempts
+    assert updates == {}
