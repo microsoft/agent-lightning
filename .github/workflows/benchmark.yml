@@ -192,21 +192,11 @@ jobs:
         if: ${{ matrix.workload.kind == 'scenario' }}
         run: |
           set -euo pipefail
-          uv run --locked --no-sync python -m tests.benchmark.benchmark_store \
-            --store-url "$STORE_URL" \
-            ${{ matrix.workload.args }}
-
-      - name: (Micro) Run ${{ matrix.workload.display }}
-        if: ${{ matrix.workload.kind == 'micro' }}
-        run: |
-          set -euo pipefail
-          mkdir -p "$ARTIFACT_DIR"
           source .venv/bin/activate
           cd tests
-          python -m benchmark.micro_benchmark \
+          python -m benchmark.benchmark_store \
             --store-url "$STORE_URL" \
-            --summary-file "$ARTIFACT_DIR/$SUMMARY_FILE" \
-            "${{ matrix.workload.cli }}" | tee "$ARTIFACT_DIR/${{ matrix.workload.id }}.txt"
+            ${{ matrix.workload.args }}
 
       - name: Record workload end
         if: ${{ always() }}
