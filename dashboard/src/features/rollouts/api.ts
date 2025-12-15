@@ -21,57 +21,6 @@ const rawBaseQuery = fetchBaseQuery({
   baseUrl: '/',
 });
 
-type FetchErrorWithStatus = FetchBaseQueryError & { status: 'FETCH_ERROR' };
-
-const isFetchError = (error?: FetchBaseQueryError | null): error is FetchErrorWithStatus =>
-  Boolean(error && error.status === 'FETCH_ERROR');
-
-const capturePythonEnvOverrides = (): Record<string, string | undefined> | undefined => {
-  if (typeof process === 'undefined' || !process.env) {
-    return undefined;
-  }
-
-  const { VITEST_PYTHON_HOST, VITEST_PYTHON_PORT, VITEST_PYTHON_URL } = process.env;
-  return { VITEST_PYTHON_HOST, VITEST_PYTHON_PORT, VITEST_PYTHON_URL };
-};
-
-const logFetchDiagnostics = ({
-  args,
-  absoluteUrl,
-  baseUrl,
-  fallbackBaseUrl,
-  stateBaseUrl,
-  error,
-  thrown,
-}: {
-  args: FetchArgs;
-  absoluteUrl: string;
-  baseUrl: string;
-  fallbackBaseUrl: string;
-  stateBaseUrl?: string | null;
-  error?: FetchBaseQueryError;
-  thrown?: unknown;
-}): void => {
-  if (typeof console === 'undefined' || (!error && !thrown)) {
-    return;
-  }
-
-  console.error('[rolloutsApi] LightningStore request failed', {
-    request: {
-      method: args.method ?? 'GET',
-      originalPath: args.url ?? '',
-      resolvedUrl: absoluteUrl,
-      baseUrlFromState: stateBaseUrl ?? null,
-      fallbackBaseUrl: fallbackBaseUrl || null,
-      mergedBaseUrl: baseUrl,
-      hasBody: typeof args.body !== 'undefined',
-    },
-    pythonServerEnv: capturePythonEnvOverrides(),
-    error,
-    thrown,
-  });
-};
-
 const buildAbsoluteUrl = (baseUrl: string, path: string) => {
   if (path.startsWith('http://') || path.startsWith('https://')) {
     return path;
@@ -230,31 +179,7 @@ const dynamicBaseQuery: BaseQueryFn<string | FetchArgs, unknown, FetchBaseQueryE
         };
 
   const absoluteUrl = buildAbsoluteUrl(baseUrl, preparedArgs.url ?? '');
-
-  try {
-    const result = await rawBaseQuery({ ...preparedArgs, url: absoluteUrl }, api, extraOptions);
-    if (isFetchError(result.error)) {
-      logFetchDiagnostics({
-        args: preparedArgs,
-        absoluteUrl,
-        baseUrl,
-        fallbackBaseUrl,
-        stateBaseUrl,
-        error: result.error,
-      });
-    }
-    return result;
-  } catch (thrown) {
-    logFetchDiagnostics({
-      args: preparedArgs,
-      absoluteUrl,
-      baseUrl,
-      fallbackBaseUrl,
-      stateBaseUrl,
-      thrown,
-    });
-    throw thrown;
-  }
+  return rawBaseQuery({ ...preparedArgs, url: absoluteUrl }, api, extraOptions);
 };
 
 export type GetRolloutsQueryArgs = {
