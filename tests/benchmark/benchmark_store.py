@@ -317,7 +317,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
 
 def main(argv: Optional[Sequence[str]] = None) -> None:
     args = parse_args(argv)
-    agl.setup_logging()
+    agl.configure_logger()
     store = agl.LightningStoreClient(args.store_url)
     timeout_guard = _start_timeout_guard(MAX_RUNTIME_SECONDS)
     try:
