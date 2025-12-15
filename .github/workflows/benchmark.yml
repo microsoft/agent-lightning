@@ -194,6 +194,7 @@ jobs:
           set -euo pipefail
           source .venv/bin/activate
           cd tests
+          rm -rf types
           python -m benchmark.benchmark_store \
             --store-url "$STORE_URL" \
             ${{ matrix.workload.args }}
