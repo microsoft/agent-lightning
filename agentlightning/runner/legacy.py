@@ -12,7 +12,7 @@ from agentlightning.client import AgentLightningClient
 from agentlightning.litagent import LitAgent
 from agentlightning.litagent.litagent import is_v0_1_rollout_api
 from agentlightning.tracer.base import Tracer
-from agentlightning.types import RolloutLegacy, RolloutRawResultLegacy, Triplet
+from agentlightning.types import RolloutLegacy, RolloutRawResultLegacy, Span, SpanLike, Triplet
 
 from .base import Runner
 
@@ -99,7 +99,7 @@ class LegacyAgentRunner(Runner[Any]):
         trace: Any = None
         final_reward: Optional[float] = None
         triplets: Optional[List[Triplet]] = None
-        trace_spans: Optional[List[ReadableSpan]] = None
+        trace_spans: Optional[List[SpanLike]] = None
 
         # Handle different types of results from the agent
         # Case 1: result is a float (final reward)
@@ -108,10 +108,14 @@ class LegacyAgentRunner(Runner[Any]):
         # Case 2: result is a list of Triplets
         if isinstance(result, list) and all(isinstance(t, Triplet) for t in result):
             triplets = result  # type: ignore
-        # Case 3: result is a list of ReadableSpan (OpenTelemetry spans)
-        if isinstance(result, list) and all(isinstance(t, ReadableSpan) for t in result):
+        # Case 3.1: result is a list of ReadableSpan (OpenTelemetry spans)
+        if isinstance(result, list) and all(isinstance(t, (ReadableSpan)) for t in result):
             trace_spans = result  # type: ignore
             trace = [json.loads(readable_span.to_json()) for readable_span in trace_spans]  # type: ignore
+        # Case 3.2: result is a list of Span (Agent-lightning spans)
+        if isinstance(result, list) and all(isinstance(t, Span) for t in result):
+            trace_spans = result  # type: ignore
+            trace = [span.model_dump() for span in trace_spans]  # type: ignore
         # Case 4: result is a list of dict (trace JSON)
         if isinstance(result, list) and all(isinstance(t, dict) for t in result):
             trace = result
@@ -123,10 +127,9 @@ class LegacyAgentRunner(Runner[Any]):
 
         # If the agent has tracing enabled, use the tracer's last trace if not already set
         if self.tracer and (trace is None or trace_spans is None):
-            spans = self.tracer.get_last_trace()
-            if spans:
-                trace = [json.loads(readable_span.to_json()) for readable_span in spans]
-                trace_spans = spans
+            trace_spans = self.tracer.get_last_trace()  # type: ignore
+            if trace_spans:
+                trace = [cast(Span, span).model_dump() for span in trace_spans]
 
         # Always extract triplets from the trace using TracerTraceToTriplet
         if trace_spans:

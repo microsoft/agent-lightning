@@ -10,19 +10,37 @@ Prior to running this example with `--use-client` flag, please start a Lightning
 ```bash
 agl store --port 45993 --log-level DEBUG
 ```
+
+The CLI also ships an `operation` mode showing how to record a synthetic operation span with
+[`operation`][agentlightning.operation], build link attributes via
+[`make_link_attributes`][agentlightning.utils.otel.make_link_attributes], tag the
+follow-up reward with [`make_tag_attributes`][agentlightning.utils.otel.make_tag_attributes],
+emit a reward span tied back to that operation, and then verify the recorded spans by
+extracting rewards, tags, and links from the store using `agentlightning.utils.otel` helpers.
 """
 
 import argparse
 import asyncio
+import random
 import time
-from typing import Sequence
+from typing import Any, Dict, List, Sequence
+from uuid import uuid4
 
 from openai import AsyncOpenAI
 from rich.console import Console
 
-from agentlightning import AgentOpsTracer, LightningStoreClient, OtelTracer, Span, emit_reward, setup_logging
+from agentlightning import AgentOpsTracer, LightningStoreClient, OtelTracer, Span, emit_reward, operation, setup_logging
+from agentlightning.semconv import AGL_OPERATION, LightningSpanAttributes
 from agentlightning.store import InMemoryLightningStore
-from agentlightning.utils.otel import get_tracer_provider
+from agentlightning.utils.otel import (
+    extract_links_from_attributes,
+    extract_tags_from_attributes,
+    filter_and_unflatten_attributes,
+    get_tracer_provider,
+    make_link_attributes,
+    make_tag_attributes,
+    query_linked_spans,
+)
 
 console = Console()
 
@@ -173,10 +191,111 @@ async def _verify_agentops_traces(spans: Sequence[Span], use_client: bool = Fals
             assert span.attributes["agentops.span.kind"] == "session"
 
 
+async def send_operation_links(use_client: bool = False) -> None:
+    """Demonstrate operation spans wired to reward annotations and verify the stored spans."""
+
+    tracer = OtelTracer()
+    if not use_client:
+        store = InMemoryLightningStore()
+    else:
+        store = LightningStoreClient("http://localhost:45993")
+    conversation_id = "chat-42"
+    tags: Sequence[str] = ("demo.operation", "reward.positive")
+    reward_value = 0.9
+    operation_id = f"{conversation_id}-{uuid4().hex[:8]}"
+    rollout = await store.start_rollout(input={"origin": "write_traces_operation"})
+
+    with tracer.lifespan(store):
+        async with tracer.trace_context(
+            "operation-demo", store=store, rollout_id=rollout.rollout_id, attempt_id=rollout.attempt.attempt_id
+        ):
+            console.print(f"[operation] recording span conversation={conversation_id} operation_id={operation_id}")
+            with operation(conversation_id=conversation_id, operation_id=operation_id) as op_ctx:
+                op_ctx.set_input(
+                    task={"conversation_id": conversation_id},
+                    metadata={"operation_id": operation_id},
+                )
+                synthetic_payload = {
+                    "operation_id": operation_id,
+                    "status": "ok",
+                    "latency_seconds": round(random.uniform(0.05, 0.2), 3),
+                }
+                await asyncio.sleep(0.05)
+                op_ctx.set_output(synthetic_payload)
+
+            link_attrs = make_link_attributes({"conversation_id": conversation_id, "operation_id": operation_id})
+            tag_attrs = make_tag_attributes(list(tags))
+            emit_reward(
+                reward_value,
+                attributes={**link_attrs, **tag_attrs},
+            )
+
+    spans = await store.query_spans(rollout_id=rollout.rollout_id)
+    console.print(spans)
+    _verify_operation_spans(spans, conversation_id, operation_id, tags, reward_value)
+
+    if isinstance(store, LightningStoreClient):
+        await store.close()
+
+
+def _verify_operation_spans(
+    spans: Sequence[Span],
+    conversation_id: str,
+    operation_id: str,
+    tags: Sequence[str],
+    expected_reward: float,
+) -> None:
+    """Verify spans recorded by the operation demo using OTEL helpers."""
+
+    operation_spans = [span for span in spans if span.name == AGL_OPERATION]
+    if not operation_spans:
+        raise RuntimeError("No operation spans recorded.")
+    console.print(f"[verify] found {len(operation_spans)} operation spans")
+
+    reward_span: Span | None = None
+    reward_payload: List[Dict[str, Any]] = []
+    for span in spans:
+        flattened = dict(span.attributes or {})
+        reward_section = filter_and_unflatten_attributes(flattened, LightningSpanAttributes.REWARD.value)
+        if reward_section:
+            reward_span = span
+            if isinstance(reward_section, list):
+                reward_payload = [dict(item) for item in reward_section]  # type: ignore[arg-type]
+            else:
+                reward_payload = [dict(reward_section)]  # type: ignore[arg-type]
+            break
+
+    if reward_span is None or not reward_payload:
+        raise RuntimeError("No reward span recorded for operation demo.")
+
+    primary_reward = reward_payload[0].get("value")
+    console.print(f"[verify] reward dimensions: {reward_payload}")
+    if primary_reward != expected_reward:
+        raise AssertionError(f"Expected reward {expected_reward}, observed {primary_reward}")
+
+    reward_attributes = dict(reward_span.attributes or {})
+    extracted_tags = extract_tags_from_attributes(reward_attributes)
+    console.print(f"[verify] reward tags: {extracted_tags}")
+    for tag in tags:
+        if tag not in extracted_tags:
+            raise AssertionError(f"Missing tag '{tag}' on reward span")
+
+    link_models = extract_links_from_attributes(reward_attributes)
+    matches = query_linked_spans(operation_spans, link_models)
+    if not matches:
+        raise AssertionError("No operation span matched the reward links")
+    console.print(f"[verify] reward links resolved spans: {[span.span_id for span in matches]}")
+
+    linked_attrs = dict(matches[0].attributes or {})
+    if linked_attrs.get("conversation_id") != conversation_id or linked_attrs.get("operation_id") != operation_id:
+        raise AssertionError("Linked operation span attributes do not match expected identifiers")
+    console.print("[verify] linked operation span attributes validated")
+
+
 def main():
     setup_logging("DEBUG")
     parser = argparse.ArgumentParser()
-    parser.add_argument("mode", choices=["otel", "agentops"])
+    parser.add_argument("mode", choices=["otel", "agentops", "operation"])
     parser.add_argument("--use-client", action="store_true")
     args = parser.parse_args()
 
@@ -184,6 +303,8 @@ def main():
         asyncio.run(send_traces_via_otel(use_client=args.use_client))
     elif args.mode == "agentops":
         asyncio.run(send_traces_via_agentops(use_client=args.use_client))
+    elif args.mode == "operation":
+        asyncio.run(send_operation_links(use_client=args.use_client))
     else:
         raise ValueError(f"Invalid mode: {args.mode}")
 

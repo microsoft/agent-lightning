@@ -15,11 +15,9 @@ from __future__ import annotations
 
 import asyncio
 import functools
-import hashlib
 import inspect
 import logging
 import time
-import uuid
 import warnings
 from collections import defaultdict
 from types import CoroutineType
@@ -61,6 +59,7 @@ from agentlightning.types import (
     Worker,
     WorkerStatus,
 )
+from agentlightning.utils.id import generate_id
 from agentlightning.utils.metrics import MetricsBackend
 
 from .base import (
@@ -195,19 +194,16 @@ def healthcheck_before(func: T_callable) -> T_callable:
 
 
 def _generate_resources_id() -> str:
-    short_id = hashlib.sha1(uuid.uuid4().bytes).hexdigest()[:12]
-    return "rs-" + short_id
+    return "rs-" + generate_id(12)
 
 
 def _generate_rollout_id() -> str:
-    short_id = hashlib.sha1(uuid.uuid4().bytes).hexdigest()[:12]
-    return "ro-" + short_id
+    return "ro-" + generate_id(12)
 
 
 def _generate_attempt_id() -> str:
     """We don't need that long because attempts are limited to rollouts."""
-    short_id = hashlib.sha1(uuid.uuid4().bytes).hexdigest()[:8]
-    return "at-" + short_id
+    return "at-" + generate_id(8)
 
 
 class CollectionBasedLightningStore(LightningStore, Generic[T_collections]):

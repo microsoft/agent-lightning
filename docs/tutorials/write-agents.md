@@ -223,6 +223,9 @@ Here are the primary emitter functions:
 * [`emit_message(message: str)`][agentlightning.emit_message]: Records a simple log message as a span.
 * [`emit_exception(exception: BaseException)`][agentlightning.emit_exception]: Records a Python exception, including its type, message, and stack trace.
 * [`emit_object(obj: Any)`][agentlightning.emit_object]: Records any JSON-serializable object, perfect for structured data.
+
+Each helper accepts nested `attributes` (or keyword arguments, in the case of [`operation`][agentlightning.operation]) and automatically flattens/sanitizes them into dotted OpenTelemetry keys. That means you can pass ordinary dictionaries/lists without pre-processing and still get consistent attribute names such as `meta.tag` across [`emit_annotation`][agentlightning.emit_annotation], [`emit_message`][agentlightning.emit_message], [`emit_object`][agentlightning.emit_object], [`emit_exception`][agentlightning.emit_exception], [`emit_reward`][agentlightning.emit_reward], and [`operation`][agentlightning.operation]. All emitter helpers also support a `propagate` flag; setting `propagate=False` keeps the span local—useful for offline tests—while the default `True` streams spans through the active tracer/exporters.
+
 Let's see an example of an agent using these emitters to provide detailed feedback.
 
 ```python

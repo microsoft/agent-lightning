@@ -28,7 +28,7 @@ from typing import (
 from opentelemetry.sdk.trace import ReadableSpan
 from pydantic import BaseModel, Field, model_validator
 
-from .tracer import Span
+from .tracer import Span, SpanCoreFields
 
 if TYPE_CHECKING:
     from agentlightning.litagent import LitAgent
@@ -307,6 +307,7 @@ RolloutRawResult = Union[
     float,  # only final reward
     List[ReadableSpan],  # constructed OTEL spans by user
     List[Span],  # constructed Span objects by user
+    List[SpanCoreFields],  # constructed SpanCoreFields objects by user
 ]
 """Rollout result type.
 

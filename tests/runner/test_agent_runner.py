@@ -22,7 +22,7 @@ from agentlightning.semconv import AGL_ANNOTATION
 from agentlightning.store.base import UNSET, LightningStore, Unset
 from agentlightning.store.memory import InMemoryLightningStore
 from agentlightning.tracer.base import Tracer
-from agentlightning.types import LLM, Hook, NamedResources, PromptTemplate, Rollout, Span, Worker
+from agentlightning.types import LLM, Hook, NamedResources, PromptTemplate, Rollout, Span, SpanCoreFields, Worker
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -73,8 +73,9 @@ def create_agent_span(
 class DummyTracer(Tracer):
     def __init__(self) -> None:
         super().__init__()
-        self._last_trace: List[ReadableSpan] = []
+        self._last_trace: List[Span] = []
         self._contexts: List[Dict[str, Any]] = []
+        self._sequence_id = 0
 
     def init(self, *args: Any, **kwargs: Any) -> None:
         self._last_trace.clear()
@@ -82,7 +83,7 @@ class DummyTracer(Tracer):
     def teardown(self, *args: Any, **kwargs: Any) -> None:
         self._last_trace.clear()
 
-    def get_last_trace(self) -> List[ReadableSpan]:
+    def get_last_trace(self) -> List[Span]:
         return list(self._last_trace)
 
     @asynccontextmanager
@@ -93,7 +94,7 @@ class DummyTracer(Tracer):
         store: Optional[LightningStore] = None,
         rollout_id: Optional[str] = None,
         attempt_id: Optional[str] = None,
-    ) -> AsyncGenerator[List[ReadableSpan], None]:
+    ) -> AsyncGenerator[List[Span], None]:
         previous = self._contexts[-1] if self._contexts else None
         current = {
             "name": name,
@@ -112,7 +113,15 @@ class DummyTracer(Tracer):
 
     def record_span(self, name: str, attributes: Optional[Dict[str, Any]] = None) -> ReadableSpan:
         span = create_readable_span(name, attributes)
-        self._last_trace.append(span)
+        rollout_id = "rollout-dummy"
+        attempt_id = "attempt-dummy"
+        sequence_id = self._sequence_id
+        self._sequence_id += 1
+        if self._contexts:
+            current = self._contexts[-1]
+            rollout_id = current["rollout_id"]
+            attempt_id = current["attempt_id"]
+        self._last_trace.append(Span.from_opentelemetry(span, rollout_id, attempt_id, sequence_id))
         return span
 
 
@@ -309,7 +318,9 @@ async def test_step_raises_for_invalid_result_type() -> None:
 
 
 @pytest.mark.asyncio
-async def test_readable_spans_return_skip_store_when_tracer_is_otel(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_readable_spans_return_skip_store_when_tracer_is_otel(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
     class DummyTracerWithOtel(DummyTracer):
         pass
 
@@ -342,10 +353,53 @@ async def test_readable_spans_return_skip_store_when_tracer_is_otel(monkeypatch:
         attempted_rollout, spans
     )
 
-    assert result_spans == spans
-    assert store.add_otel_span_calls == 0
+    assert all(isinstance(span, Span) for span in result_spans)
+    # Warned, but still logged
+    assert [span.name for span in result_spans] == ["otel-span"]
+    assert store.add_otel_span_calls == 1
+    assert "Tracer is already an OpenTelemetry tracer" in caplog.text
 
     teardown_runner(runner)
+
+
+@pytest.mark.asyncio
+async def test_post_process_readable_spans_adds_each_span() -> None:
+    agent = HeartbeatAgent()
+    runner, store, _ = await setup_runner(agent)
+    attempted_rollout = await store.start_rollout(input={"task": "post-process"}, mode="val")
+
+    spans = [create_readable_span("case-2-span-a"), create_readable_span("case-2-span-b")]
+
+    try:
+        result_spans = await runner._post_process_rollout_result(  # pyright: ignore[reportPrivateUsage]
+            attempted_rollout, spans
+        )
+    finally:
+        teardown_runner(runner)
+
+    assert [span.name for span in result_spans] == ["case-2-span-a", "case-2-span-b"]
+    stored_spans = await store.query_spans(attempted_rollout.rollout_id, attempted_rollout.attempt.attempt_id)
+    assert [span.name for span in stored_spans] == ["case-2-span-a", "case-2-span-b"]
+
+
+@pytest.mark.asyncio
+async def test_post_process_span_core_fields_create_spans() -> None:
+    agent = HeartbeatAgent()
+    runner, store, _ = await setup_runner(agent)
+    attempted_rollout = await store.start_rollout(input={"task": "reward-list"}, mode="val")
+
+    span_core_fields = [emit_reward(0.5, propagate=False), emit_reward(-0.2, propagate=False)]
+
+    try:
+        result_spans = await runner._post_process_rollout_result(  # pyright: ignore[reportPrivateUsage]
+            attempted_rollout, span_core_fields
+        )
+    finally:
+        teardown_runner(runner)
+
+    assert all(span.name == AGL_ANNOTATION for span in result_spans)
+    stored_spans = await store.query_spans(attempted_rollout.rollout_id, attempted_rollout.attempt.attempt_id)
+    assert [span.attributes.get("agentlightning.reward.0.value") for span in stored_spans] == [0.5, -0.2]
 
 
 @pytest.mark.asyncio
@@ -585,8 +639,8 @@ async def test_agent_emits_multiple_rewards() -> None:
     class RewardListAgent(LitAgent[Dict[str, Any]]):
         def validation_rollout(
             self, task: Dict[str, Any], resources: Dict[str, Any], rollout: Any
-        ) -> List[ReadableSpan]:
-            return [emit_reward(0.2), emit_reward(0.6)]
+        ) -> List[SpanCoreFields]:
+            return [emit_reward(0.2, propagate=False), emit_reward(0.6, propagate=False)]
 
     agent = RewardListAgent()
     runner, store, _ = await setup_runner(agent)

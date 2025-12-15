@@ -22,7 +22,10 @@ import json
 import os
 import pprint
 import re
+import shutil
+import textwrap
 import time
+import warnings
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, List, Literal, Mapping, Optional, Tuple, Union
 
@@ -39,6 +42,7 @@ from autogen_ext.models.openai import OpenAIChatCompletionClient
 from autogen_ext.tools.mcp import McpWorkbench, StdioServerParams
 from fastapi import FastAPI
 from openai import OpenAI
+from opentelemetry.sdk.trace import ReadableSpan
 from pydantic import BaseModel
 
 from agentlightning.adapter.triplet import TracerTraceToTriplet, TraceTree
@@ -675,7 +679,7 @@ def assert_expected_pairs_in_tree(root_tuple: Tuple[str, List[Any]], expected_pa
 @pytest.mark.agentops
 @pytest.mark.parametrize("agent_name", list(AGENT_FUNCTIONS.keys()), ids=str)
 @pytest.mark.asyncio
-async def test_tracer_integration(agent_name: AgentName):
+async def test_tracer_integration_agentops(agent_name: AgentName):
     if ("langchain" in agent_name or "langgraph" in agent_name) and not LANGCHAIN_INSTALLED:
         pytest.skip("LangChain is not installed. Skip langchain related tests.")
 
@@ -684,17 +688,60 @@ async def test_tracer_integration(agent_name: AgentName):
         await _run_tracer_with_agent(settings, tracer, agent_name)
 
 
-async def _run_tracer_with_agent(settings: OpenAISettings, tracer: Tracer, agent_name: AgentName):
+@pytest.mark.weave
+@pytest.mark.parametrize("agent_name", list(AGENT_FUNCTIONS.keys()), ids=str)
+@pytest.mark.asyncio
+async def test_tracer_integration_weave(agent_name: AgentName):
+    if ("langchain" in agent_name or "langgraph" in agent_name) and not LANGCHAIN_INSTALLED:
+        pytest.skip("LangChain is not installed. Skip langchain related tests.")
+
+    from agentlightning.tracer.weave import WeaveTracer
+
+    async with MockOpenAICompatibleServer() as settings:
+        tracer = WeaveTracer()
+        await _run_tracer_with_agent(settings, tracer, agent_name, _skip_assert=True)
+
+
+async def _run_tracer_with_agent(
+    settings: OpenAISettings, tracer: Tracer, agent_name: AgentName, _skip_assert: bool = False
+):
     agent_func = AGENT_FUNCTIONS[agent_name]
 
     with tracer.lifespan():
         async with tracer.trace_context(name=f"test_integration_{agent_name}"):
             await agent_func(settings, tracer)
 
-        last_trace_normalized = [Span.from_opentelemetry(span, "dummy", "dummy", 0) for span in tracer.get_last_trace()]
+        last_trace_normalized = [
+            Span.from_opentelemetry(span, "dummy", "dummy", 0) if isinstance(span, ReadableSpan) else span
+            for span in tracer.get_last_trace()
+        ]
+        for span in last_trace_normalized:
+            print(">>> rollout_id =", span.rollout_id)
+            print("... attempt_id =", span.attempt_id)
+            print("... sequence_id =", span.sequence_id)
+            print("... trace_id =", span.trace_id)
+            print("... span_id =", span.span_id)
+            print("... parent_id =", span.parent_id)
+            print("... name =", span.name)
+            print("... status =", span.status)
+            print(
+                "... attributes =",
+                textwrap.indent(pprint.pformat(span.attributes, width=200, indent=4), "    ").lstrip(),
+            )
         tree = TraceTree.from_spans(last_trace_normalized)
 
+        if shutil.which("dot"):
+            # Visualize the trace tree for debug
+            debug_dir = os.path.join(os.path.dirname(__file__), "debug")
+            os.makedirs(debug_dir, exist_ok=True)
+            tree.visualize(filename=os.path.join(debug_dir, f"{tracer.__class__.__name__}_{agent_name}"))
+        else:
+            warnings.warn("dot is not installed. Skipping trace tree visualization.")
+
         tree.repair_hierarchy()
+
+        if _skip_assert:
+            return
 
         assert_expected_pairs_in_tree(tree.names_tuple(), AGENTOPS_EXPECTED_TREES[agent_name])
 
