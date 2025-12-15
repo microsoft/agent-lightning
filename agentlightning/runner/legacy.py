@@ -127,9 +127,9 @@ class LegacyAgentRunner(Runner[Any]):
 
         # If the agent has tracing enabled, use the tracer's last trace if not already set
         if self.tracer and (trace is None or trace_spans is None):
-            spans = self.tracer.get_last_trace()
-            if spans:
-                trace = [span.model_dump() for span in spans]
+            trace_spans = self.tracer.get_last_trace()  # type: ignore
+            if trace_spans:
+                trace = [cast(Span, span).model_dump() for span in trace_spans]
 
         # Always extract triplets from the trace using TracerTraceToTriplet
         if trace_spans:
