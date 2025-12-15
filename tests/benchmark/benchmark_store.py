@@ -8,6 +8,7 @@ import os
 import random
 import sys
 import threading
+import time
 from typing import Any, Dict, List, Literal, Optional, Sequence, Set, Tuple, cast
 
 from rich.console import Console
@@ -19,7 +20,9 @@ from .utils import flatten_dict, random_dict
 
 console = Console()
 
-MAX_RUNTIME_SECONDS = 30 * 60
+# Minus 10 to leave time for setting up env.
+MAX_RUNTIME_SECONDS = (int(os.getenv("GITHUB_ACTIONS_TIMEOUT_MINUTES", "30")) - 10) * 60
+MAX_STALE_SECONDS = 300
 
 
 def _abort_due_to_timeout() -> None:
@@ -157,7 +160,7 @@ class AlgorithmBatch(agl.Algorithm):
 
             pending = {rollout_id: task_name for rollout_id, task_name in batch_rollouts}
             completed_ids: Set[str] = set()
-            completed_ids_last_updated: int = 0
+            completed_ids_last_updated: float = time.perf_counter()
             while len(completed_ids) < len(batch_rollouts):
                 finished_rollouts = await store.wait_for_rollouts(
                     rollout_ids=[rollout_id for rollout_id, _ in batch_rollouts],
@@ -177,13 +180,16 @@ class AlgorithmBatch(agl.Algorithm):
 
                 # Check and warn for stale rollouts
                 if complete_ids_updated:
-                    completed_ids_last_updated = 0
+                    completed_ids_last_updated = time.perf_counter()
                 else:
-                    completed_ids_last_updated += 1
-                    if completed_ids_last_updated >= 10:
+                    if time.perf_counter() - completed_ids_last_updated > MAX_STALE_SECONDS / 2:
                         unfinished_ids = set(rollout_id for rollout_id, _ in batch_rollouts) - completed_ids
                         print(f"Stale rollouts: {unfinished_ids}")
                         completed_ids_last_updated = 0
+                    if time.perf_counter() - completed_ids_last_updated > MAX_STALE_SECONDS:
+                        current_workers = await store.query_workers()
+                        console.print(f"Current worker status: {current_workers}")
+                        raise RuntimeError("Rollout progress has stalled for too long")
 
                 await asyncio.sleep(5.0)
 
