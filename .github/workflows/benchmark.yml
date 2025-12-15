@@ -201,7 +201,9 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$ARTIFACT_DIR"
-          uv run --locked --no-sync python -m tests.benchmark.micro_benchmark \
+          source .venv/bin/activate
+          cd tests
+          python -m benchmark.micro_benchmark \
             --store-url "$STORE_URL" \
             --summary-file "$ARTIFACT_DIR/$SUMMARY_FILE" \
             "${{ matrix.workload.cli }}" | tee "$ARTIFACT_DIR/${{ matrix.workload.id }}.txt"
