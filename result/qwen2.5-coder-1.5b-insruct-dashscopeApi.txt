@@ -1,0 +1,3 @@
+INFO:__main__:Saved predictions to outputs/qwen2.5-coder-1.5b-instruct-local.jsonl
+INFO:__main__:Execution accuracy: 363/1034 = 0.351
+INFO:__main__:Token usage (approx): input=4961065 output=459465 total=5420530

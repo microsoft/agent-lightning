@@ -5,10 +5,13 @@
 from __future__ import annotations
 
 import random
+import time
 from contextlib import contextmanager
 from copy import deepcopy
+from datetime import datetime
 from pprint import pprint
 from typing import Dict, Tuple, Type
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -111,6 +114,12 @@ def compute_data_metrics(batch: DataProto, use_critic: bool = True, suffix: str 
         return_diff_var = torch.var(valid_returns - valid_values)
         return_var = torch.var(valid_returns)
 
+    def _quantiles(tensor, probs):
+        return [torch.quantile(tensor.float(), p).detach().item() for p in probs]
+
+    prompt_q50, prompt_q95 = _quantiles(prompt_length, [0.5, 0.95])
+    response_q50, response_q95 = _quantiles(response_length, [0.5, 0.95])
+
     metrics = {
         # score
         "critic/score/mean" + suffix: torch.mean(sequence_score).detach().item(),
@@ -146,12 +155,16 @@ def compute_data_metrics(batch: DataProto, use_critic: bool = True, suffix: str 
         "response_length/min" + suffix: torch.min(response_length).detach().item(),
         "response_length/clip_ratio"
         + suffix: torch.mean(torch.eq(response_length, max_response_length).float()).detach().item(),
+        "response_length/p50" + suffix: response_q50,
+        "response_length/p95" + suffix: response_q95,
         # prompt length
         "prompt_length/mean" + suffix: torch.mean(prompt_length).detach().item(),
         "prompt_length/max" + suffix: torch.max(prompt_length).detach().item(),
         "prompt_length/min" + suffix: torch.min(prompt_length).detach().item(),
         "prompt_length/clip_ratio"
         + suffix: torch.mean(torch.eq(prompt_length, max_prompt_length).float()).detach().item(),
+        "prompt_length/p50" + suffix: prompt_q50,
+        "prompt_length/p95" + suffix: prompt_q95,
     }
     return metrics
 
@@ -186,6 +199,19 @@ class AgentLightningTrainer(RayPPOTrainer):
         self.llm_proxy = llm_proxy
         self.adapter = adapter
         self.daemon_cls = daemon_cls
+        self._sequence_log_file = getattr(self.config.trainer, "sequence_log_file", None)
+        if self._sequence_log_file:
+            try:
+                path = Path(self._sequence_log_file)
+                path.parent.mkdir(parents=True, exist_ok=True)
+                if not path.exists():
+                    with path.open("w", encoding="utf-8") as f:
+                        f.write(
+                            "step,prompt_mean,prompt_p50,prompt_p95,prompt_max,"
+                            "response_mean,response_p50,response_p95,response_max\n"
+                        )
+            except Exception:
+                self._sequence_log_file = None
 
     def _validate(self):
         assert len(self.val_dataloader) == 1, "Please set val_batch_size to None for better throughput."
@@ -235,6 +261,43 @@ class AgentLightningTrainer(RayPPOTrainer):
                 "Ensure `use_reference_policy` is enabled and the VERL config exposes the ref worker."
             )
         return ref_worker.compute_ref_log_prob(batch)
+
+    def _select_val_metric(self, val_metrics: dict) -> tuple[str, float | None]:
+        """Pick a representative validation metric for logging."""
+
+        if not val_metrics:
+            return "val_reward", None
+        preferred_keys = [k for k in val_metrics if k.startswith("val-core/")]
+        fallback_keys = [k for k in val_metrics if k.startswith("val-aux/")]
+        candidate_keys = preferred_keys or fallback_keys or list(val_metrics.keys())
+        key = candidate_keys[0]
+        return key, val_metrics.get(key)
+
+    def _log_sequence_window(self, metrics: dict) -> None:
+        """Persist compact prompt/response length stats for the current logging window."""
+
+        if not self._sequence_log_file:
+            return
+        prompt_mean = metrics.get("prompt_length/mean_after_processing", metrics.get("prompt_length/mean"))
+        prompt_p50 = metrics.get("prompt_length/p50_after_processing", metrics.get("prompt_length/p50"))
+        prompt_p95 = metrics.get("prompt_length/p95_after_processing", metrics.get("prompt_length/p95"))
+        prompt_max = metrics.get("prompt_length/max_after_processing", metrics.get("prompt_length/max"))
+        response_mean = metrics.get("response_length/mean_after_processing", metrics.get("response_length/mean"))
+        response_p50 = metrics.get("response_length/p50_after_processing", metrics.get("response_length/p50"))
+        response_p95 = metrics.get("response_length/p95_after_processing", metrics.get("response_length/p95"))
+        response_max = metrics.get("response_length/max_after_processing", metrics.get("response_length/max"))
+
+        if prompt_mean is None or response_mean is None:
+            return
+
+        try:
+            with open(self._sequence_log_file, "a", encoding="utf-8") as f:
+                f.write(
+                    f"{self.global_steps},{prompt_mean},{prompt_p50},{prompt_p95},{prompt_max},"
+                    f"{response_mean},{response_p50},{response_p95},{response_max}\n"
+                )
+        except Exception:
+            return
 
     def _train_step(self, batch_dict: dict) -> dict:
         # Isolate in a separate method to automatically recycle the variables before validation.
@@ -481,6 +544,9 @@ class AgentLightningTrainer(RayPPOTrainer):
 
         # add tqdm
         progress_bar = tqdm(total=self.total_training_steps, initial=self.global_steps, desc="Training Progress")
+        n_gpus = self.resource_pool_manager.get_n_gpus()
+        self._cumulative_step_time = 0.0
+        self._cumulative_step_count = 0
 
         # we start from step 1
         self.global_steps += 1
@@ -506,6 +572,12 @@ class AgentLightningTrainer(RayPPOTrainer):
                         if is_last_step:
                             last_val_metrics = val_metrics
                     metrics.update(val_metrics)
+                    # write validation summary to progress log
+                    ts_val = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    key, val = self._select_val_metric(val_metrics)
+                    self._progress_log(
+                        f"[{ts_val}] [val] step {self.global_steps}/{self.total_training_steps} | {key}={val}"
+                    )
 
                 if self.config.trainer.save_freq > 0 and (
                     is_last_step or self.global_steps % self.config.trainer.save_freq == 0
@@ -523,6 +595,51 @@ class AgentLightningTrainer(RayPPOTrainer):
 
                 # TODO: make a canonical logger that supports various backend
                 logger.log(data=metrics, step=self.global_steps)
+
+                # Lightweight console/file summary (mirrors Ray trainer behaviour)
+                self._log_window.append(
+                    {
+                        "tokens": metrics.get("perf/total_num_tokens", 0),
+                        "step_time": metrics.get("perf/time_per_step", 0.0),
+                        "reward": metrics.get("reward/mean", metrics.get("training/reward", None)),
+                    }
+                )
+                # update cumulative step time to stabilize ETA
+                step_time = metrics.get("perf/time_per_step", None)
+                if step_time is not None:
+                    self._cumulative_step_time += float(step_time)
+                    self._cumulative_step_count += 1
+
+                if self._log_interval > 0 and (self.global_steps % self._log_interval == 0 or is_last_step):
+                    window = list(self._log_window)
+                    total_tokens = sum(m.get("tokens", 0) or 0 for m in window)
+                    total_time = sum(m.get("step_time", 0.0) or 0.0 for m in window)
+                    avg_step_window = total_time / len(window) if window else 0.0
+                    avg_step_overall = (
+                        self._cumulative_step_time / self._cumulative_step_count
+                        if self._cumulative_step_count > 0
+                        else 0.0
+                    )
+                    throughput = total_tokens / total_time if total_time > 0 else 0.0
+                    throughput_per_gpu = throughput / n_gpus if n_gpus else throughput
+                    reward_vals = [m["reward"] for m in window if m.get("reward") is not None]
+                    reward_avg = sum(reward_vals) / len(reward_vals) if reward_vals else None
+                    eta_sec = (
+                        (self.total_training_steps - self.global_steps) * avg_step_overall
+                        if avg_step_overall > 0
+                        else float("inf")
+                    )
+                    eta_str = time.strftime("%H:%M:%S", time.gmtime(eta_sec)) if eta_sec != float("inf") else "n/a"
+                    lr_val = self.config.actor_rollout_ref.actor.optim.lr
+                    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    line = (
+                        f"[{ts}] [train] step {self.global_steps}/{self.total_training_steps} | "
+                        f"eta {eta_str} | step_win {avg_step_window:.2f}s | step_avg {avg_step_overall:.2f}s | "
+                        f"toks/s {throughput/1e3:.1f}k ({throughput_per_gpu/1e3:.1f}k/gpu) | "
+                        f"reward {reward_avg if reward_avg is not None else 'n/a'} | lr {lr_val}"
+                    )
+                    self._progress_log(line)
+                    self._log_sequence_window(metrics)
 
                 if is_last_step:
                     pprint(f"Final validation metrics: {last_val_metrics}")
