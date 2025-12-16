@@ -26,7 +26,7 @@ import shutil
 import time
 import warnings
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Dict, List, Literal, Mapping, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, List, Literal, Mapping, Optional, Tuple, Union
 
 import litellm
 import pytest
@@ -40,16 +40,26 @@ from autogen_agentchat.teams import RoundRobinGroupChat
 from autogen_ext.models.openai import OpenAIChatCompletionClient
 from autogen_ext.tools.mcp import McpWorkbench, StdioServerParams
 from fastapi import FastAPI
-from langchain.agents import create_agent  # pyright: ignore[reportUnknownVariableType]
-from langchain.chat_models import init_chat_model
-from langchain_community.agent_toolkits import SQLDatabaseToolkit
-from langchain_community.utilities import SQLDatabase
-from langchain_core.messages import AIMessage
-from langchain_core.output_parsers import StrOutputParser
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.tools import tool  # pyright: ignore[reportUnknownVariableType]
-from langchain_openai import ChatOpenAI
-from langgraph.graph import END, START, MessagesState, StateGraph
+
+try:
+    import langchain  # type: ignore
+
+    LANGCHAIN_INSTALLED = True
+except ImportError:
+    LANGCHAIN_INSTALLED = False  # type: ignore
+
+if TYPE_CHECKING or LANGCHAIN_INSTALLED:
+    from langchain.agents import create_agent  # pyright: ignore[reportUnknownVariableType]
+    from langchain.chat_models import init_chat_model
+    from langchain_community.agent_toolkits import SQLDatabaseToolkit
+    from langchain_community.utilities import SQLDatabase
+    from langchain_core.messages import AIMessage
+    from langchain_core.output_parsers import StrOutputParser
+    from langchain_core.prompts import ChatPromptTemplate
+    from langchain_core.tools import tool  # pyright: ignore[reportUnknownVariableType]
+    from langchain_openai import ChatOpenAI
+    from langgraph.graph import END, START, MessagesState, StateGraph
+
 from openai import OpenAI
 from opentelemetry.sdk.trace import ReadableSpan
 from pydantic import BaseModel
@@ -709,6 +719,7 @@ async def test_tracer_integration_agentops(
 @pytest.mark.asyncio
 async def test_tracer_integration_weave(
     agent_function: Tuple[AgentName, Callable[[OpenAISettings, Tracer], Awaitable[Any]]],
+    monkeypatch: pytest.MonkeyPatch,
 ):
     from agentlightning.tracer.weave import WeaveTracer
 
@@ -716,8 +727,8 @@ async def test_tracer_integration_weave(
     skip_assert = "autogen" in name
 
     if name == "openai_agents_sdk_handoff_tool_output_type_and_reward":
-        AGENTOPS_EXPECTED_TRIPLETS_NUMBER[name] = 6  # type: ignore
-        AGENTOPS_EXPECTED_REWARDS[name] = [None, None, None, 1.0, None, None]  # type: ignore
+        monkeypatch.setitem(AGENTOPS_EXPECTED_TRIPLETS_NUMBER, name, 6)
+        monkeypatch.setitem(AGENTOPS_EXPECTED_REWARDS, name, [None, None, None, 1.0, None, None])
 
     async with MockOpenAICompatibleServer() as settings:
         tracer = WeaveTracer()
