@@ -31,25 +31,28 @@ __all__ = [
 ]
 
 
-def strict_startswith_with_log(full_ids, prefix_ids, tokenizer):
+def ids_startswith(full_ids: List[int], prefix_ids: List[int], tokenizer: Any, debug: bool = False) -> Tuple[bool, Tuple[bool, bool, bool]]:
+    is_prefix: bool
     template_mismatch, retoken_mismatch, others_mismatch = False, False, False
     if full_ids[:len(prefix_ids)] == prefix_ids:
-        merge = True
-        return template_mismatch, retoken_mismatch, others_mismatch, merge
+        is_prefix = True
+        return True, (template_mismatch, retoken_mismatch, others_mismatch)
     else:
-        merge = False
+        is_prefix = False
+    
+    if not debug:
+        return is_prefix, (template_mismatch, retoken_mismatch, others_mismatch)
 
-    def _special_token_sequence(ids):
+    def _special_token_sequence(ids: List[int]) -> List[int]:
         return [id for id in ids if id in tokenizer.all_special_ids]
 
-    def _none_special_token_sequence(ids):
+    def _none_special_token_sequence(ids: List[int]) -> List[int]:
         return [id for id in ids if id not in tokenizer.all_special_ids]
 
     # First, handle special tokens
     full_special_ids = _special_token_sequence(full_ids)
     prefix_special_ids = _special_token_sequence(prefix_ids)
-    diff_count = sum(1 for a, b in zip(full_special_ids, prefix_special_ids) if a != b)
-    if diff_count > 0:
+    if sum(1 for a, b in zip(full_special_ids, prefix_special_ids) if a != b) > 0:
         template_mismatch = True
 
     # Next, handle string content
@@ -61,24 +64,12 @@ def strict_startswith_with_log(full_ids, prefix_ids, tokenizer):
         retoken_mismatch = True
     elif full_content_ids[:len(prefix_content_ids)] != prefix_content_ids and not full_string.startswith(prefix_string):
         others_mismatch = True
-    elif full_content_ids[:len(prefix_content_ids)] == prefix_content_ids:
-        # case 1: fully match; case 2: special token mismatch only
-        # case 1: template_mismatch == False, retoken_mismatch == False, others_mismatch == False, merge == True
-        # case 2: template_mismatch == True, retoken_mismatch == False, others_mismatch == False, merge == False
-        if not ((not template_mismatch and not retoken_mismatch and not others_mismatch and merge) \
-            or (template_mismatch and not retoken_mismatch and not others_mismatch and not merge)):
-            with open("mismatch_log/bad_case_unexpected.log", "a+") as f:
-                print("-" * 20, file=f)
-                print("full_ids:", file=f)
-                print(full_ids, file=f)
-                print("prefix_ids:", file=f)
-                print(prefix_ids, file=f)
-                print(f"template_mismatch: {template_mismatch}, retoken_mismatch: {retoken_mismatch}, others_mismatch: {others_mismatch}, merge: {merge}", file=f)
-    return template_mismatch, retoken_mismatch, others_mismatch, merge
+    return is_prefix, (template_mismatch, retoken_mismatch, others_mismatch)
 
 
 # log data, only for debug testing
-def log_mismatch_detail(template_mismatch, retoken_mismatch, others_mismatch, full_ids, prefix_ids):
+def log_mismatch_detail(diagnostic, full_ids, prefix_ids):
+    template_mismatch, retoken_mismatch, others_mismatch = diagnostic
     if template_mismatch:
         with open("mismatch_log/template_mismatch.log", "a+") as f:
             print("-" * 20, file=f)
@@ -94,89 +85,6 @@ def log_mismatch_detail(template_mismatch, retoken_mismatch, others_mismatch, fu
             print("-" * 20, file=f)
             print(full_ids, file=f)
             print(prefix_ids, file=f)
-
-
-def tolerant_startswith(full_ids, prefix_ids, tokenizer, special_token_tolerance=0, string_tolerance=0):
-    def _special_token_sequence(ids):
-        return [id for id in ids if id in tokenizer.all_special_ids]
-
-    if special_token_tolerance < 0 or string_tolerance < 0:
-        raise ValueError("tolerance must be non-negative")
-
-    # First, handle special tokens
-    full_special_ids = _special_token_sequence(full_ids)
-    prefix_special_ids = _special_token_sequence(prefix_ids)
-    diff_count = sum(1 for a, b in zip(full_special_ids, prefix_special_ids) if a != b)
-    special_token_tolerance -= diff_count
-    if special_token_tolerance < 0:
-        return False
-
-    # Next, handle string content
-    full_string = tokenizer.decode(full_ids, skip_special_tokens=True)
-    prefix_string = tokenizer.decode(prefix_ids, skip_special_tokens=True)
-    full_ids = tokenizer.encode(full_string)
-    prefix_ids = tokenizer.encode(prefix_string)
-    full_string = tokenizer.decode(full_ids, skip_special_tokens=True)
-    prefix_string = tokenizer.decode(prefix_ids, skip_special_tokens=True)
-    m = len(prefix_string)
-    n = len(full_string)
-
-    if m == 0:
-        return True  # Empty B always matches (distance 0 to empty prefix)
-    if n == 0:
-        return m <= string_tolerance  # B non-empty but A empty: only match if we can delete all of B within tolerance
-    if string_tolerance == 0:
-        return full_string.startswith(prefix_string)  # exact match required
-
-    # use DP to compute edit distance with banded optimization
-    min_j = max(0, m - string_tolerance)
-    max_j = min(n, m + string_tolerance)
-    if min_j > max_j:
-        return False  # no possible prefix length
-
-    prev_start = max(0, 0 - string_tolerance)
-    prev_end = min(n, 0 + string_tolerance)
-    prev = [j for j in range(prev_start, prev_end + 1)]
-
-    for j_idx, j in enumerate(range(prev_start, prev_end + 1)):
-        if min_j <= j <= max_j and prev[j_idx] <= string_tolerance:
-            return True
-
-    for i in range(1, m + 1):
-        # valid j range for this row
-        start_j = max(0, i - string_tolerance)
-        end_j = min(n, i + string_tolerance)
-        cur_len = end_j - start_j + 1
-        cur = [0] * cur_len
-
-        for idx, j in enumerate(range(start_j, end_j + 1)):
-            del_cost = None
-            prev_start = max(0, (i - 1) - string_tolerance)
-            prev_end = min(n, (i - 1) + string_tolerance)
-            if prev_start <= j <= prev_end:
-                del_cost = prev[j - prev_start] + 1
-            else:
-                del_cost = abs((i - 1) - j) + 1  # safe over-approximation
-
-            ins_cost = None
-            if j - 1 >= start_j:
-                ins_cost = cur[idx - 1] + 1
-            else:
-                ins_cost = abs(i - (j - 1)) + 1
-
-            sub_cost = None
-            if prev_start <= (j - 1) <= prev_end:
-                sub_cost = prev[(j - 1) - prev_start] + (0 if prefix_string[i - 1] == full_string[j - 1] else 1)
-            else:
-                sub_cost = abs((i - 1) - (j - 1)) + (0 if prefix_string[i - 1] == full_string[j - 1] else 1)
-
-            cur[idx] = min(del_cost, ins_cost, sub_cost)
-
-        for idx, j in enumerate(range(start_j, end_j + 1)):
-            if min_j <= j <= max_j and cur[idx] <= string_tolerance:
-                return True
-        prev = cur
-    return False
 
 
 def get_left_padded_ids_and_attention_mask(
@@ -972,97 +880,74 @@ class AgentModeDaemon:
                     data_id_list.append(sample_info["data_id"])
                     rollout_id_list.append(rollout_id)
                     turn_index_list.append(turn_index)
-        elif self.trace_aggregator.mode.startswith("trajectory"):
+
+                    # Compute image_grid_thw for this triplet using image_urls from prompt
+                    if self._use_mrope:
+                        image_urls = trace.get("image_urls", [])
+                        image_grid_thw_list.append(self._get_image_grid_thw(image_urls))
+
+        elif self.trace_aggregator.mode == "trajectory":
             response_mask_list: List[List[int]] = []
-            unmerged_count: int = 0  # only for debug
+            unmerged_count: int = 0
             template_mismatch_count, retoken_mismatch_count, others_mismatch_count = 0, 0, 0
-            response_per_turn_list: List[int] = []  # only for debug
+            response_per_turn_list: List[int] = []
 
             for rollout_id, sample_info in finished_id_to_sample_info.items():
                 merged_trace_idx: List[List[int]] = []
                 current_merged_trace_idx: List[int] = []
                 current_context: List[int] = []
-                turn_ids: List[dict[str, List[int]]] = []  # log data, only for debug testing
                 for turn_index, trace in enumerate(sample_info["trace_list"]):
-                    # log data, only for debug testing
-                    turn_ids.append(
-                        {"nxt_turn": trace["prompt_ids"][:] + trace["response_ids"][:], "cur": current_context[:]}
-                    )
                     response_per_turn_list.append(len(trace["response_ids"]))
-                    if self.trace_aggregator.mode == "trajectory-strict":
-                        template_mismatch, retoken_mismatch, others_mismatch, merged = strict_startswith_with_log(
-                            trace["prompt_ids"] + trace["response_ids"],
-                            current_context,
-                            self.tokenizer,
-                        )
-                        template_mismatch_count += int(template_mismatch)
-                        retoken_mismatch_count += int(retoken_mismatch)
-                        others_mismatch_count += int(others_mismatch)
-                        if not merged:
-                            log_mismatch_detail(  # log data, only for debug testing
-                                template_mismatch,
-                                retoken_mismatch,
-                                others_mismatch,
-                                trace["prompt_ids"] + trace["response_ids"],
-                                current_context,
-                            )
-                    elif self.trace_aggregator.mode == "trajectory-tolerant":
-                        merged = tolerant_startswith(
-                            trace["prompt_ids"] + trace["response_ids"],
-                            current_context,
-                            self.tokenizer,
-                            special_token_tolerance=self.trace_aggregator.special_token_tolerance,
-                            string_tolerance=self.trace_aggregator.string_tolerance,
-                        )
-                    else:
-                        raise ValueError(f"Unknown trace_aggregator mode: {self.trace_aggregator.mode}")
-                    if merged:
+                    is_prefix, diagnostic = ids_startswith(
+                        trace["prompt_ids"] + trace["response_ids"],
+                        current_context,
+                        self.tokenizer,
+                        self.trace_aggregator.mode.debug,
+                    )
+                    if not is_prefix and self.trace_aggregator.mode.debug == True:
+                        template_mismatch_count += 1
+                        retoken_mismatch_count += 1
+                        others_mismatch_count += 1 # TODO: refine this
+                        log_mismatch_detail(diagnostic, trace["prompt_ids"] + trace["response_ids"], current_context, self.trace_aggregator.mode.unmatch_log_dir)
+
+                    if is_prefix:
                         current_context = trace["prompt_ids"] + trace["response_ids"]
                         current_merged_trace_idx.append(turn_index)
                     else:
                         merged_trace_idx.append(current_merged_trace_idx)
                         current_merged_trace_idx = [turn_index]
                         current_context = trace["prompt_ids"] + trace["response_ids"]
+
                 if current_merged_trace_idx not in merged_trace_idx:
                     merged_trace_idx.append(current_merged_trace_idx)
 
-                # log data, only for debug testing
                 if len(merged_trace_idx) > 1:
                     unmerged_count += 1
 
+                # merge all trace segments in merged_trace_idx into training samples
                 for current_merged_trace_idx in merged_trace_idx:
                     prompt_ids = sample_info["trace_list"][current_merged_trace_idx[0]]["prompt_ids"]
 
                     # if the merged_trace_idx doesn't start with the beginning of the prompt_ids, we need to adjust it
                     if current_merged_trace_idx[0] > 0 and len(prompt_ids) > max_prompt_length:
-                        accum_response_ids = prompt_ids[max_prompt_length:]
+                        response_ids = prompt_ids[max_prompt_length:]
                         prompt_ids = prompt_ids[:max_prompt_length]
-                        response_mask = [1] * len(accum_response_ids)
+                        response_mask = [1] * len(response_ids)
                     else:
-                        accum_response_ids = []
+                        response_ids = []
                         response_mask = []
 
                     prompt_length = len(prompt_ids)
-                    accum_response_ids += sample_info["trace_list"][current_merged_trace_idx[0]]["response_ids"]
-                    response_mask += [1] * len(accum_response_ids)
+                    response_ids += sample_info["trace_list"][current_merged_trace_idx[0]]["response_ids"]
+                    response_mask += [1] * len(response_ids)
                     for turn_index in current_merged_trace_idx[1:]:
                         trace = sample_info["trace_list"][turn_index]
-                        new_prompt_length = len(trace["prompt_ids"]) - len(accum_response_ids) - prompt_length
-                        accum_response_ids += trace["prompt_ids"][-new_prompt_length:]
-                        accum_response_ids += trace["response_ids"]
+                        new_prompt_length = len(trace["prompt_ids"]) - len(response_ids) - prompt_length
+                        response_ids += trace["prompt_ids"][-new_prompt_length:]
+                        response_ids += trace["response_ids"]
                         response_mask += [0] * new_prompt_length
                         response_mask += [1] * len(trace["response_ids"])
 
-                    # only for debug testing
-                    final_sample = sample_info["trace_list"][current_merged_trace_idx[-1]]
-                    response_ids_from_final_sample = final_sample["prompt_ids"][prompt_length:] + final_sample["response_ids"]
-                    if len(response_ids_from_final_sample) != len(accum_response_ids):
-                        with open("mismatch_log/response_ids_num_mismatch.log", "a+") as f:
-                            print("-" * 20, file=f)
-                            print(response_ids_from_final_sample, file=f)
-                            print(accum_response_ids, file=f)
-
-                    response_ids = accum_response_ids  # convert to the generating response ids, only for debug testing
                     reward_list.append(sample_info["reward"])
 
                     # Mark samples with prompts exceeding max_prompt_length to be dropped later
@@ -1100,18 +985,13 @@ class AgentModeDaemon:
         else:
             raise ValueError(f"Unknown trace_aggregator mode: {self.trace_aggregator.mode}")
 
-                # Compute image_grid_thw for this triplet using image_urls from prompt
-                if self._use_mrope:
-                    image_urls = trace.get("image_urls", [])
-                    image_grid_thw_list.append(self._get_image_grid_thw(image_urls))
-
         n_transition = len(input_ids_list)
         batch_input_ids = torch.LongTensor(input_ids_list).to(device)
         input_attention_mask = torch.LongTensor(input_attention_mask_list).to(device)
         batch_response_ids = torch.LongTensor(response_ids_list).to(device)
         response_attention_mask = torch.LongTensor(response_attention_mask_list).to(device)
         response_mask = (
-            torch.LongTensor(response_mask_list).to(device) if self.trace_aggregator.mode.startswith("trajectory") else None
+            torch.LongTensor(response_mask_list).to(device) if self.trace_aggregator.mode == "trajectory" else None
         )
 
         # Concatenate prompts and responses to form the full sequence
@@ -1163,7 +1043,7 @@ class AgentModeDaemon:
                 "position_ids": position_ids,
                 "is_drop_mask": is_drop_mask,
                 "token_level_scores": token_level_scores.contiguous(),
-                **({"response_mask": response_mask} if self.trace_aggregator.mode.startswith("trajectory") else {}),
+                **({"response_mask": response_mask} if self.trace_aggregator.mode == "trajectory" else {}),
             },
             batch_size=n_transition,
         )
@@ -1179,23 +1059,26 @@ class AgentModeDaemon:
             # log data, only for debug testing
             **({
                 "training/n_unmerged_rollouts": unmerged_count,
-                "training/n_triplets_by_turn": len(response_per_turn_list),
-                "training/avg_response_length_by_turn": np.mean(response_per_turn_list),
-                "training/max_response_length_by_turn": np.max(response_per_turn_list),
-                "training/min_response_length_by_turn": np.min(response_per_turn_list),
+                "training/n_triplets_by_turn": len(response_per_turn_list), # type: ignore
+                "training/avg_response_length_by_turn": np.mean(response_per_turn_list), # type: ignore
+                "training/max_response_length_by_turn": np.max(response_per_turn_list), # type: ignore
+                "training/min_response_length_by_turn": np.min(response_per_turn_list), # type: ignore
+            } if self.trace_aggregator.mode == "trajectory" else {}),
+            **({
                 "training/template_mismatch_triplets": template_mismatch_count,
                 "training/retoken_mismatch_triplets": retoken_mismatch_count,
                 "training/others_mismatch_triplets": others_mismatch_count,
                 "training/template_mismatch_ratio": template_mismatch_count / len(response_per_turn_list),
                 "training/retoken_mismatch_ratio": retoken_mismatch_count / len(response_per_turn_list),
                 "training/others_mismatch_ratio": others_mismatch_count / len(response_per_turn_list),
-            } if self.trace_aggregator.mode.startswith("trajectory") else {}),
+            } if self.trace_aggregator.mode == "trajectory" and self.trace_aggregator.debug else {})
         }
 
         # Add non-tensor data for advantage calculation and logging
         data_proto.non_tensor_batch["data_id_list"] = np.array(data_id_list)  # type: ignore
         data_proto.non_tensor_batch["rollout_id_list"] = np.array(rollout_id_list)  # type: ignore
-        # data_proto.non_tensor_batch["turn_index_list"] = np.array(turn_index_list)  # type: ignore
+        if self.trace_aggregator.mode == "transition":
+            data_proto.non_tensor_batch["turn_index_list"] = np.array(turn_index_list)  # type: ignore
 
         return data_proto, data_metrics
 

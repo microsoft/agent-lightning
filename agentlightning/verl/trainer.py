@@ -156,22 +156,6 @@ def compute_data_metrics(batch: DataProto, use_critic: bool = True, suffix: str 
     return metrics
 
 
-def log_step_for_mismatch_detail(step: int) -> None:
-    import os
-
-    os.makedirs("mismatch_log", exist_ok=True)
-    with open("mismatch_log/template_mismatch.log", "a+") as f:
-        print("-" * 10 + f" Step {step}" + "-" * 10, file=f)
-    with open("mismatch_log/retoken_mismatch.log", "a+") as f:
-        print("-" * 10 + f" Step {step}" + "-" * 10, file=f)
-    with open("mismatch_log/others_mismatch.log", "a+") as f:
-        print("-" * 10 + f" Step {step}" + "-" * 10, file=f)
-    with open("mismatch_log/response_ids_num_mismatch.log", "a+") as f:
-        print("-" * 10 + f" Step {step}" + "-" * 10, file=f)
-    with open("mismatch_log/bad_case_unexpected.log", "a+") as f:
-        print("-" * 10 + f" Step {step}" + "-" * 10, file=f)
-
-
 class AgentLightningTrainer(RayPPOTrainer):
     """
     Specialized PPO trainer for agent-based reinforcement learning.
@@ -515,7 +499,6 @@ class AgentLightningTrainer(RayPPOTrainer):
 
         for epoch in range(self.config.trainer.total_epochs):
             for batch_dict in self.train_dataloader:
-                log_step_for_mismatch_detail(self.global_steps)  # log data, only for debug testing
                 metrics = {}
                 timing_raw = {}
                 is_last_step = self.global_steps >= self.total_training_steps

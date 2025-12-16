@@ -20,10 +20,8 @@ actor_rollout_ref:
         path: pkg://agentlightning.verl.async_server
         name: PatchedvLLMServer
     trace_aggregator:
-      mode: transition  # transition, trajectory-strict, or trajectory-tolerant
-      special_token_tolerance: 0  # only supported in trajectory-tolerant mode, suggest to set as n_turns
-      string_tolerance: 0  # only supported in trajectory-tolerant mode, suggest to set as n_turns * 2
-      trajectory_max_prompt_length: 2048  # supported in two trajectory modes, suggest to set as max_prompt_length
-      trajectory_max_response_length: 8192  # supported in two trajectory modes, suggest to set as n_turns * (max_response_length + max_prompt_length)
-      # unmatch_log_dir: ./mismatch_log # supported in two trajectory modes, log directory for unmatch cases
-      # debug: True  # enable debug mode for trace aggregator
+      mode: transition  # transition or trajectory
+      trajectory_max_prompt_length: 2048  # supported in trajectory mode, suggest to set as max_prompt_length
+      trajectory_max_response_length: 8192  # supported in trajectory mode, suggest to set as n_turns * (max_response_length + max_prompt_length)
+      debug: False  # enable debug mode for trajectory aggregator
+      unmatch_log_dir: ./unmatch_cases  # if debug=True, save unmatch cases to this dir # TODO: mkdir
