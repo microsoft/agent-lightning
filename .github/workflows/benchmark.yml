@@ -3,6 +3,9 @@ permissions:
   contents: read
 on:
   workflow_dispatch:
+  schedule:
+    # Every Monday and Thursday at 3 AM UTC+8
+    - cron: '0 19 * * 0,3'
 
 jobs:
   benchmark:
@@ -81,7 +84,7 @@ jobs:
           - id: scenario-long-queues
             display: Long rollout queues
             kind: scenario
-            store_workers: 32
+            store_workers: 48
             runner:
               - self-hosted
               - 1ES.Pool=agl-runner-cpu
@@ -97,7 +100,7 @@ jobs:
           - id: scenario-high-concurrency
             display: High-throughput concurrent requests
             kind: scenario
-            store_workers: 32
+            store_workers: 96
             runner:
               - self-hosted
               - 1ES.Pool=agl-runner-cpu
