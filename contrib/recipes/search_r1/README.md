@@ -2,7 +2,7 @@
 
 ## Overview
 
-This example implements **Search R1** within Agent Lightning. It also serves as a demonstration of a **framework-free agent training pipeline**, showing how to run end-to-end RL training without relying on specialized frameworks. **It's tested and compatible with Agent-lightning v0.1.2**.
+This example implements **Search R1** within Agent Lightning. It also serves as a demonstration of a **framework-free agent training pipeline**, showing how to run end-to-end RL training without relying on specialized frameworks. **It's tested and compatible with Agent-lightning v0.2.x**.
 
 The example is designed to run on a single node with 8 GPUs, each having at least 40 GB of memory.
 
@@ -14,7 +14,7 @@ The example is designed to run on a single node with 8 GPUs, each having at leas
 | `retrieval_launch.sh` | Launches the retrieval service backed by the processed corpus |
 | `retrieval_server.py` | FastAPI server that powers document retrieval during training |
 | `search_r1_agent.py` | Agent-Lightning rollout script implementing the Search-R1 workflow |
-| `train.sh` | Starts the RL training server that coordinates GRPO optimization |
+| `train_search_r1_agent.py` | RL training script that coordinates GRPO optimization |
 | `qa_em.py` | Exact-match evaluation utilities for validating model predictions |
 
 ---
@@ -54,7 +54,7 @@ The retrieval server implementation is based on `search_r1/search/retrieval_serv
 
 ---
 
-## Run RL Training (GRPO) with Llama-3.2-3b-base
+## Run RL Training (GRPO) with Llama-3.2-3B-Instruct
 
 1. **Start Ray**
 
@@ -65,23 +65,14 @@ The retrieval server implementation is based on `search_r1/search/retrieval_serv
    > If you plan to use WandB for experiment tracking, set the environment variable
    > `WANDB_API_KEY` before starting Ray.
 
-2. **Launch the Agent**
-
-   ```bash
-   python search_r1_agent.py
-   ```
-
-   This script automatically launches **128 agent workers** by default. Each agent follows the Search-R1 workflow, retrieving information from the database and generating answers accordingly.
-
-
-3. **Start the Training Server**
+2. **Start the Training Server**
    In another terminal, run:
 
    ```bash
-   bash train.sh
+   python train_search_r1_agent.py llama
    ```
 
-   This script starts the RL training server.
+   This script starts the RL training. Each agent follows the Search-R1 workflow, retrieving information from the database and generating answers accordingly.
 
 ---
 
