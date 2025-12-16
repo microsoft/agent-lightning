@@ -172,11 +172,16 @@ class WeaveTracerManagedTraceServer(InMemoryWeaveTraceServer):
         super().__init__()
         self.partial_call_callback = partial_call_callback
         self.complete_call_callback = complete_call_callback
+        self._calls_already_invoked: set[str] = set()
 
     def trigger_callbacks(self, call_id: str) -> None:
         with self._call_threading_lock:
             if call_id in self.calls:
-                self.complete_call_callback(self.calls[call_id])
+                if call_id not in self._calls_already_invoked:
+                    self._calls_already_invoked.add(call_id)
+                    self.complete_call_callback(self.calls[call_id])
+                else:
+                    logger.info(f"Call {call_id} has callback already invoked. Skipping.")
             elif call_id in self.partial_calls:
                 self.partial_call_callback(self.partial_calls[call_id])
             else:
@@ -199,6 +204,9 @@ class WeaveTracerManagedTraceServer(InMemoryWeaveTraceServer):
         except Exception:
             logger.exception(f"Error calling call_end: {req}", exc_info=True)
             raise
+
+    def clear(self) -> None:
+        self._calls_already_invoked.clear()
 
 
 class WeaveTracer(Tracer):
@@ -380,6 +388,7 @@ class WeaveTracer(Tracer):
                 # Mandatory cleanup
                 self._rollout_id = None
                 self._attempt_id = None
+                self._server.clear()
 
     def create_span(
         self,
@@ -550,7 +559,12 @@ class WeaveTracer(Tracer):
             del self._partial_call_futures[call.id]
         else:
             # Fetch a new sequence ID as the call_start is somehow missing
-            logger.warning(f"Call {call.id} has no start future. Fetching a new sequence ID.")
+            if call.id in self._calls:
+                logger.warning(
+                    f"Call {call.id} is already in calls. The call is already completed. Overwriting the call."
+                )
+            else:
+                logger.warning(f"Call {call.id} has no start future. Fetching a new sequence ID.")
             sequence_id = await self._get_next_sequence_id()
 
         self._calls[call.id] = call

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from types import SimpleNamespace
-from typing import Any, Dict, List
+from typing import Any, Dict, List, cast
 
 import opentelemetry.trace as trace_api
 import pytest
@@ -371,12 +371,21 @@ def test_sanitize_attribute_value_falls_back_to_json_for_hybrid_lists(caplog: py
     assert "Failed to sanitize list attribute" in caplog.text
 
 
-def test_sanitize_attribute_value_rejects_non_serializable_objects() -> None:
+def test_sanitize_attribute_value_serializes_non_serializable_objects_when_forced() -> None:
+    class Unserializable:
+        def __str__(self) -> str:
+            return "forced-serialization"
+
+    result = sanitize_attribute_value(Unserializable())
+    assert json.loads(cast(str, result)) == "forced-serialization"
+
+
+def test_sanitize_attribute_value_respects_force_flag() -> None:
     class Unserializable:
         pass
 
     with pytest.raises(ValueError, match="Object must be JSON serializable"):
-        sanitize_attribute_value(Unserializable())
+        sanitize_attribute_value(Unserializable(), force=False)
 
 
 def test_sanitize_attributes_returns_clean_values() -> None:
@@ -394,13 +403,34 @@ def test_sanitize_attributes_returns_clean_values() -> None:
     assert result["flags"] == [True, False]
 
 
+def test_sanitize_attributes_serializes_non_serializable_values_by_default() -> None:
+    class CustomValue:
+        def __str__(self) -> str:
+            return "custom-payload"
+
+    attributes = {"payload": CustomValue()}
+
+    result = sanitize_attributes(attributes)
+    assert json.loads(cast(str, result["payload"])) == "custom-payload"
+
+
+def test_sanitize_attributes_respects_force_flag() -> None:
+    class CustomValue:
+        pass
+
+    attributes = {"payload": CustomValue()}
+
+    with pytest.raises(ValueError, match="Failed to sanitize attribute 'payload'"):
+        sanitize_attributes(attributes, force=False)
+
+
 def test_sanitize_attributes_exposes_key_in_error() -> None:
     class Bad:
         pass
 
     attributes = {"ok": "value", "bad": Bad()}
     with pytest.raises(ValueError, match="Failed to sanitize attribute 'bad'"):
-        sanitize_attributes(attributes)
+        sanitize_attributes(attributes, force=False)
 
 
 def test_format_exception_attributes_captures_metadata() -> None:
