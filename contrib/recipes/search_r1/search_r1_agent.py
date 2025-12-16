@@ -37,10 +37,10 @@ def eval(prediction: str, ground_truth: List[str]) -> float:
 
 def postprocess_response(response: str) -> str:
     """Process responses to stop at search operation or answer operation."""
-    # if "</search>" in response:
-    #     response = response.split("</search>")[0] + "</search>"
-    # elif "</answer>" in response:
-    #     response = response.split("</answer>")[0] + "</answer>"
+    if "</search>" in response:
+        response = response.split("</search>")[0] + "</search>"
+    elif "</answer>" in response:
+        response = response.split("</answer>")[0] + "</answer>"
     return response
 
 

@@ -41,11 +41,6 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
                     "tool_call_parser": "hermes",
                 }
             },
-            "trace_aggregator": {
-                "mode": "trajectory-strict",
-                "trajectory_max_prompt_length": 4096,
-                "trajectory_max_response_length": 34384,
-            }
         },
         "actor": {
             "ppo_mini_batch_size": 256,
@@ -77,23 +72,14 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
         "val_before_train": True,
         "critic_warmup": 0,
         "logger": ["console", "wandb"],
-<<<<<<<< HEAD:contrib/recipes/search_r1/train_search_r1_agent_ins.py
-        "project_name": "AgentLightning-SearchR1",
-        "experiment_name": "searchr1_minibatch256_runner32_trajectory_synced",
-========
         "project_name": "AgentLightning",
         "experiment_name": "searchr1",
->>>>>>>> dev/search_r1_v02:contrib/recipes/search_r1/train_search_r1_agent.py
         "nnodes": 1,
         "test_freq": 10,
         "save_freq": 10,
         "total_epochs": 15,
         "total_training_steps": 300,
-<<<<<<<< HEAD:contrib/recipes/search_r1/train_search_r1_agent_ins.py
-        "default_local_dir": "/mnt/teamdrive/search_r1/searchr1_checkpoints/Llama-3.2-3B-Instruct/searchr1_minibatch256_runner32_trajectory_synced/"
-========
         "default_local_dir": "checkpoints/searchr1_checkpoints/",
->>>>>>>> dev/search_r1_v02:contrib/recipes/search_r1/train_search_r1_agent.py
     },
 }
 
