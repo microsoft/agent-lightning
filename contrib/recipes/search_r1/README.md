@@ -54,7 +54,7 @@ The retrieval server implementation is based on `search_r1/search/retrieval_serv
 
 ---
 
-## Run RL Training (GRPO) with Llama-3.2-3b-base
+## Run RL Training (GRPO) with Llama-3.2-3B-Instruct
 
 1. **Start Ray**
 
