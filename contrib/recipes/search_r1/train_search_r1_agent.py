@@ -7,7 +7,7 @@ import argparse
 import os
 from copy import deepcopy
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 import pandas as pd
 from search_r1_agent import SearchR1Agent
@@ -115,14 +115,14 @@ def config_train_fast() -> Dict[str, Any]:
 
 
 def config_train_qwen() -> Dict[str, Any]:
-    """A configuration for training with Qwen-2.5B."""
+    """A configuration for training with Qwen-2.5."""
 
     config = deepcopy(RL_TRAINING_CONFIG)
     return config
 
 
 def config_train_llama() -> Dict[str, Any]:
-    """A configuration for training with LLaMA-3.2-1B-Instruct.
+    """A configuration for training with LLaMA-3.2-3B-Instruct.
 
     You will need a `HF_TOKEN` set to run with this config.
     """
@@ -148,7 +148,7 @@ def train(config: Dict[str, Any]) -> None:
 def main() -> None:
     """Main function to parse arguments and run training."""
     parser = argparse.ArgumentParser(
-        description="Train an Search-R1 agent using different model configurations"
+        description="Train a Search-R1 agent using different model configurations"
     )
 
     parser.add_argument(
