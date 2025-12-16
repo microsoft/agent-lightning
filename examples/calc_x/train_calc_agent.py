@@ -120,6 +120,7 @@ def train(
     lora: bool,
     lora_rank: int,
     lora_adapter_path: Optional[str],
+    trajectory_mode: bool = False,
 ):
     """The training entrypoint function for Calc-X agent with VERL algorithm.
 
@@ -135,6 +136,7 @@ def train(
         lora: Whether to enable LoRA training.
         lora_rank: LoRA rank to use when LoRA is enabled.
         lora_adapter_path: Optional path to a pre-trained LoRA adapter to load.
+        trajectory_mode: Whether to enable trajectory mode in trace aggregator.
     """
     # Load datasets (respect CLI file paths)
     train_dataset = cast(agl.Dataset[MathProblem], HuggingFaceDataset.from_parquet(train_file).to_list())  # type: ignore
@@ -158,6 +160,14 @@ def train(
             config["actor_rollout_ref"]["model"]["lora_adapter_path"] = lora_adapter_path
             print(f"Loading LoRA adapter from: {lora_adapter_path}")
         print("LoRA configuration will trigger verl to set ref_in_actor=True (LoRA mode)")
+
+    if trajectory_mode:
+        config["actor_rollout_ref"]["rollout"]["trace_aggregator"] = {
+            "mode": "trajectory",
+            "trajectory_max_prompt_length": 2048,
+            "trajectory_max_response_length": 8192,
+        }
+        print("Trajectory mode enabled in trace aggregator.")
 
     # CI toggle keeps everything else the same but you can tweak the lightweight bits here if desired
     if ci or ci_fast:
@@ -250,6 +260,11 @@ def main():
         default=None,
         help="Optional path to a pre-trained LoRA adapter to load when --lora is enabled",
     )
+    parser.add_argument(
+        "--trajectory-mode",
+        action="store_true",
+        help="Enable trajectory mode in trace aggregator.",
+    )
 
     args = parser.parse_args()
 
@@ -278,6 +293,7 @@ def main():
         lora=args.lora,
         lora_rank=args.lora_rank,
         lora_adapter_path=args.lora_adapter_path,
+        trajectory_mode=args.trajectory_mode,
     )
 
 
