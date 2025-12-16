@@ -43,7 +43,7 @@ def _attributes_get_ids_multiple(attributes: Dict[str, Any], keys: List[str]) ->
             if (isinstance(attributes[key], list) or isinstance(attributes[key], tuple)) and all(
                 isinstance(x, int) for x in attributes[key]
             ):
-                return attributes[key]
+                return list(attributes[key])
             else:
                 logger.warning(f"Attribute {key} is found but is not a list of integers: {attributes[key]}")
     return None
