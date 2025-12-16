@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import os
 import random
 import socket
 import threading
@@ -31,15 +32,17 @@ __all__ = [
 ]
 
 
-def ids_startswith(full_ids: List[int], prefix_ids: List[int], tokenizer: Any, debug: bool = False) -> Tuple[bool, Tuple[bool, bool, bool]]:
+def ids_startswith(
+    full_ids: List[int], prefix_ids: List[int], tokenizer: Any, debug: bool = False
+) -> Tuple[bool, Tuple[bool, bool, bool]]:
     is_prefix: bool
     template_mismatch, retoken_mismatch, others_mismatch = False, False, False
-    if full_ids[:len(prefix_ids)] == prefix_ids:
+    if full_ids[: len(prefix_ids)] == prefix_ids:
         is_prefix = True
         return True, (template_mismatch, retoken_mismatch, others_mismatch)
     else:
         is_prefix = False
-    
+
     if not debug:
         return is_prefix, (template_mismatch, retoken_mismatch, others_mismatch)
 
@@ -60,29 +63,39 @@ def ids_startswith(full_ids: List[int], prefix_ids: List[int], tokenizer: Any, d
     prefix_content_ids = _none_special_token_sequence(prefix_ids)
     full_string = tokenizer.decode(full_ids, skip_special_tokens=True)
     prefix_string = tokenizer.decode(prefix_ids, skip_special_tokens=True)
-    if full_content_ids[:len(prefix_content_ids)] != prefix_content_ids and full_string.startswith(prefix_string):
+    if full_content_ids[: len(prefix_content_ids)] != prefix_content_ids and full_string.startswith(prefix_string):
         retoken_mismatch = True
-    elif full_content_ids[:len(prefix_content_ids)] != prefix_content_ids and not full_string.startswith(prefix_string):
+    elif full_content_ids[: len(prefix_content_ids)] != prefix_content_ids and not full_string.startswith(
+        prefix_string
+    ):
         others_mismatch = True
     return is_prefix, (template_mismatch, retoken_mismatch, others_mismatch)
 
 
-# log data, only for debug testing
-def log_mismatch_detail(diagnostic, full_ids, prefix_ids):
+def log_mismatch_detail(
+    diagnostic: Tuple[bool, bool, bool],
+    full_ids: List[int],
+    prefix_ids: List[int],
+    global_steps: int,
+    rollout_id: str,
+    turn_id: int,
+    log_dir: str,
+):
+    os.makedirs(log_dir, exist_ok=True)
     template_mismatch, retoken_mismatch, others_mismatch = diagnostic
     if template_mismatch:
-        with open("mismatch_log/template_mismatch.log", "a+") as f:
-            print("-" * 20, file=f)
+        with open(os.path.join(log_dir, "template_mismatch.log"), "a+") as f:
+            print("-" * 10 + f" Global Steps: {global_steps}, Rollout ID: {rollout_id}, Turn ID: {turn_id}", file=f)
             print(full_ids, file=f)
             print(prefix_ids, file=f)
     if retoken_mismatch:
-        with open("mismatch_log/retoken_mismatch.log", "a+") as f:
-            print("-" * 20, file=f)
+        with open(os.path.join(log_dir, "retoken_mismatch.log"), "a+") as f:
+            print("-" * 10 + f" Global Steps: {global_steps}, Rollout ID: {rollout_id}, Turn ID: {turn_id}", file=f)
             print(full_ids, file=f)
             print(prefix_ids, file=f)
     if others_mismatch:
-        with open("mismatch_log/others_mismatch.log", "a+") as f:
-            print("-" * 20, file=f)
+        with open(os.path.join(log_dir, "others_mismatch.log"), "a+") as f:
+            print("-" * 10 + f" Global Steps: {global_steps}, Rollout ID: {rollout_id}, Turn ID: {turn_id}", file=f)
             print(full_ids, file=f)
             print(prefix_ids, file=f)
 
@@ -780,7 +793,9 @@ class AgentModeDaemon:
         )
         return metric_dict
 
-    def get_train_data_batch(self, max_prompt_length: int, max_response_length: int, device: torch.device):
+    def get_train_data_batch(
+        self, max_prompt_length: int, max_response_length: int, device: torch.device, global_steps: int
+    ):
         """
         Processes completed rollouts to generate a training data batch.
 
@@ -887,6 +902,8 @@ class AgentModeDaemon:
                         image_grid_thw_list.append(self._get_image_grid_thw(image_urls))
 
         elif self.trace_aggregator.mode == "trajectory":
+            assert not self._use_mrope, "M-RoPE is not supported in trajectory mode yet."
+
             response_mask_list: List[List[int]] = []
             unmerged_count: int = 0
             template_mismatch_count, retoken_mismatch_count, others_mismatch_count = 0, 0, 0
@@ -894,6 +911,8 @@ class AgentModeDaemon:
 
             for rollout_id, sample_info in finished_id_to_sample_info.items():
                 merged_trace_idx: List[List[int]] = []
+
+                # Identify which turns can be merged based on token ids prefix matching
                 current_merged_trace_idx: List[int] = []
                 current_context: List[int] = []
                 for turn_index, trace in enumerate(sample_info["trace_list"]):
@@ -905,10 +924,18 @@ class AgentModeDaemon:
                         self.trace_aggregator.mode.debug,
                     )
                     if not is_prefix and self.trace_aggregator.mode.debug == True:
-                        template_mismatch_count += 1
-                        retoken_mismatch_count += 1
-                        others_mismatch_count += 1 # TODO: refine this
-                        log_mismatch_detail(diagnostic, trace["prompt_ids"] + trace["response_ids"], current_context, self.trace_aggregator.mode.unmatch_log_dir)
+                        template_mismatch_count += diagnostic[0]
+                        retoken_mismatch_count += diagnostic[1]
+                        others_mismatch_count += diagnostic[2]
+                        log_mismatch_detail(
+                            diagnostic,
+                            trace["prompt_ids"] + trace["response_ids"],
+                            current_context,
+                            global_steps,
+                            rollout_id,
+                            turn_index,
+                            self.trace_aggregator.mode.unmatch_log_dir,
+                        )
 
                     if is_prefix:
                         current_context = trace["prompt_ids"] + trace["response_ids"]
@@ -924,7 +951,7 @@ class AgentModeDaemon:
                 if len(merged_trace_idx) > 1:
                     unmerged_count += 1
 
-                # merge all trace segments in merged_trace_idx into training samples
+                # Merge all trace segments in merged_trace_idx into training samples
                 for current_merged_trace_idx in merged_trace_idx:
                     prompt_ids = sample_info["trace_list"][current_merged_trace_idx[0]]["prompt_ids"]
 
@@ -1057,21 +1084,29 @@ class AgentModeDaemon:
             "training/n_truncated_triplets": n_trunc_sample_because_of_response,
             "training/n_triplets": n_transition,
             # log data, only for debug testing
-            **({
-                "training/n_unmerged_rollouts": unmerged_count,
-                "training/n_triplets_by_turn": len(response_per_turn_list), # type: ignore
-                "training/avg_response_length_by_turn": np.mean(response_per_turn_list), # type: ignore
-                "training/max_response_length_by_turn": np.max(response_per_turn_list), # type: ignore
-                "training/min_response_length_by_turn": np.min(response_per_turn_list), # type: ignore
-            } if self.trace_aggregator.mode == "trajectory" else {}),
-            **({
-                "training/template_mismatch_triplets": template_mismatch_count,
-                "training/retoken_mismatch_triplets": retoken_mismatch_count,
-                "training/others_mismatch_triplets": others_mismatch_count,
-                "training/template_mismatch_ratio": template_mismatch_count / len(response_per_turn_list),
-                "training/retoken_mismatch_ratio": retoken_mismatch_count / len(response_per_turn_list),
-                "training/others_mismatch_ratio": others_mismatch_count / len(response_per_turn_list),
-            } if self.trace_aggregator.mode == "trajectory" and self.trace_aggregator.debug else {})
+            **(
+                {
+                    "training/n_unmerged_rollouts": unmerged_count,
+                    "training/n_triplets_by_turn": len(response_per_turn_list),  # type: ignore
+                    "training/avg_response_length_by_turn": np.mean(response_per_turn_list),  # type: ignore
+                    "training/max_response_length_by_turn": np.max(response_per_turn_list),  # type: ignore
+                    "training/min_response_length_by_turn": np.min(response_per_turn_list),  # type: ignore
+                }
+                if self.trace_aggregator.mode == "trajectory"
+                else {}
+            ),
+            **(
+                {
+                    "training/template_mismatch_triplets": template_mismatch_count,
+                    "training/retoken_mismatch_triplets": retoken_mismatch_count,
+                    "training/others_mismatch_triplets": others_mismatch_count,
+                    "training/template_mismatch_ratio": template_mismatch_count / len(response_per_turn_list),
+                    "training/retoken_mismatch_ratio": retoken_mismatch_count / len(response_per_turn_list),
+                    "training/others_mismatch_ratio": others_mismatch_count / len(response_per_turn_list),
+                }
+                if self.trace_aggregator.mode == "trajectory" and self.trace_aggregator.debug
+                else {}
+            ),
         }
 
         # Add non-tensor data for advantage calculation and logging
