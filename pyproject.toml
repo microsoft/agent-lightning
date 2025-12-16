@@ -355,6 +355,7 @@ markers = [
   "store: tests for agentlightning.store module",
   "prometheus: tests that require Prometheus",
   "utils: tests for utility functions",
+  "langchain: tests that require LangChain",
 ]
 
 [tool.black]

@@ -274,17 +274,38 @@ class OperationContext:
 
 
 @overload
-def operation(fn: _FnType, *, propagate: bool = True, **additional_attributes: Any) -> _FnType: ...
+def operation(
+    fn: _FnType, *, propagate: bool = True, name: Optional[str] = None, **additional_attributes: Any
+) -> _FnType: ...
 
 
 @overload
-def operation(*, propagate: bool = True, **additional_attributes: Any) -> OperationContext: ...
+def operation(
+    *, propagate: bool = True, name: Optional[str] = None, **additional_attributes: Any
+) -> OperationContext: ...
+
+
+@overload
+def operation(fn: _FnType, *, name: Optional[str] = None, **additional_attributes: Any) -> _FnType: ...
+
+
+@overload
+def operation(*, name: Optional[str] = None, **additional_attributes: Any) -> OperationContext: ...
+
+
+@overload
+def operation(fn: _FnType, **additional_attributes: Any) -> _FnType: ...
+
+
+@overload
+def operation(**additional_attributes: Any) -> OperationContext: ...
 
 
 def operation(
     fn: Optional[_FnType] = None,
     *,
     propagate: bool = True,
+    name: Optional[str] = None,
     **additional_attributes: Any,
 ) -> Union[_FnType, OperationContext]:
     """Entry point for tracking operations.
@@ -320,6 +341,9 @@ def operation(
             left as `None`) and only keyword attributes are provided.
         propagate: Whether spans should use the active span processor. When False,
             spans will stay local and not be exported.
+        name: Optional alias that populates
+            [`LightningSpanAttributes.OPERATION_NAME`][agentlightning.semconv.LightningSpanAttributes.OPERATION_NAME]
+            when `additional_attributes` does not already define it.
         **additional_attributes: Additional span attributes to attach at
             creation time.
 
@@ -328,6 +352,12 @@ def operation(
         [`OperationContext`][agentlightning.emitter.annotation.OperationContext]
         (when used as a context manager factory).
     """
+
+    if name is not None:
+        if LightningSpanAttributes.OPERATION_NAME.value in additional_attributes:
+            raise ValueError("Cannot specify both `name` and `additional_attributes.operation_name`.")
+        additional_attributes[LightningSpanAttributes.OPERATION_NAME.value] = name
+
     # Case 1: Used as @operation (bare decorator or with attributes)
     if callable(fn):
         # Create context with fixed name, then immediately wrap the function
