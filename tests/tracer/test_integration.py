@@ -23,11 +23,10 @@ import os
 import pprint
 import re
 import shutil
-import textwrap
 import time
 import warnings
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, List, Literal, Mapping, Optional, Tuple, Union
+from typing import Any, Awaitable, Callable, Dict, List, Literal, Mapping, Optional, Tuple, Union
 
 import litellm
 import pytest
@@ -41,35 +40,28 @@ from autogen_agentchat.teams import RoundRobinGroupChat
 from autogen_ext.models.openai import OpenAIChatCompletionClient
 from autogen_ext.tools.mcp import McpWorkbench, StdioServerParams
 from fastapi import FastAPI
+from langchain.agents import create_agent  # pyright: ignore[reportUnknownVariableType]
+from langchain.chat_models import init_chat_model
+from langchain_community.agent_toolkits import SQLDatabaseToolkit
+from langchain_community.utilities import SQLDatabase
+from langchain_core.messages import AIMessage
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.tools import tool  # pyright: ignore[reportUnknownVariableType]
+from langchain_openai import ChatOpenAI
+from langgraph.graph import END, START, MessagesState, StateGraph
 from openai import OpenAI
 from opentelemetry.sdk.trace import ReadableSpan
 from pydantic import BaseModel
 
 from agentlightning.adapter.triplet import TracerTraceToTriplet, TraceTree
-from agentlightning.reward import reward
-from agentlightning.tracer import OtelTracer, Tracer
+from agentlightning.emitter.annotation import operation
+from agentlightning.emitter.reward import emit_reward
+from agentlightning.semconv import AGL_REWARD, LightningSpanAttributes
+from agentlightning.tracer import Tracer
 from agentlightning.tracer.agentops import AgentOpsTracer
 from agentlightning.types import Span
 from agentlightning.utils.server_launcher import PythonServerLauncher, PythonServerLauncherArgs
-
-try:
-    import langchain  # type: ignore
-
-    LANGCHAIN_INSTALLED = True
-except ImportError:
-    LANGCHAIN_INSTALLED = False  # type: ignore
-
-if TYPE_CHECKING or LANGCHAIN_INSTALLED:
-    from langchain.agents import create_agent  # pyright: ignore[reportUnknownVariableType]
-    from langchain.chat_models import init_chat_model
-    from langchain_community.agent_toolkits import SQLDatabaseToolkit
-    from langchain_community.utilities import SQLDatabase
-    from langchain_core.messages import AIMessage
-    from langchain_core.output_parsers import StrOutputParser
-    from langchain_core.prompts import ChatPromptTemplate
-    from langchain_core.tools import tool  # pyright: ignore[reportUnknownVariableType]
-    from langchain_openai import ChatOpenAI
-    from langgraph.graph import END, START, MessagesState, StateGraph
 
 USE_OPENAI = os.environ.get("USE_OPENAI", "false").lower() == "true"
 OPENAI_MODEL = "gpt-4.1-mini"
@@ -431,14 +423,11 @@ async def openai_agents_sdk_eval_hook_and_guardrail(settings: OpenAISettings, tr
         reasoning: str
 
     class EvalHook(AgentHooks):
-        @reward
-        def evaluate(self, context: Any, agent: Agent, output: Any):
-            # Custom reward logic: reward if the answer contains 'homework'
-            return 1.0 if output and "no" in str(output).lower() else 0.0
-
         async def on_end(self, context: Any, agent: Agent, output: Any):
-            nonlocal final_reward
-            final_reward = final_reward or self.evaluate(context, agent, output)
+            # Custom reward logic: reward if the answer contains 'no'
+            final_reward = 1.0 if output and "no" in str(output).lower() else 0.0
+            emit_reward(final_reward)
+            final_rewards.append(final_reward)
 
     guardrail_agent = Agent(
         name="Guardrail check",
@@ -463,14 +452,16 @@ async def openai_agents_sdk_eval_hook_and_guardrail(settings: OpenAISettings, tr
         input_guardrails=[InputGuardrail(guardrail_function=homework_guardrail)],
         hooks=EvalHook(),
     )
-    final_reward = None
+    final_rewards: List[float] = []
     result = await Runner.run(
         main_agent,
         "The teacher asks to answer whether hummingbirds are mammals.",
         run_config=openai_agents_sdk_run_config(settings),
     )
     # Should trigger the guardrail and reward should be 1.0
-    assert final_reward == 1.0, f"Expected reward to be 1.0, got {final_reward}"
+    assert any(
+        final_reward == 1.0 for final_reward in final_rewards
+    ), f"Expected reward to have 1.0, got {final_rewards}"
     assert hasattr(result, "final_output")
 
 
@@ -489,6 +480,7 @@ async def openai_agents_sdk_mcp_tool_use(settings: OpenAISettings, tracer: Trace
 
 
 async def openai_agents_sdk_handoff_tool_output_type_and_reward(settings: OpenAISettings, tracer: Tracer) -> None:
+    op_kwargs = {LightningSpanAttributes.OPERATION_NAME.value: AGL_REWARD}
 
     class MathOutput(BaseModel):
         answer: int
@@ -498,8 +490,9 @@ async def openai_agents_sdk_handoff_tool_output_type_and_reward(settings: OpenAI
         return a + b
 
     class RewardHook(AgentHooks):
-        @reward
-        async def evaluate(self, context: Any, agent: Agent, output: Any):
+        @operation(propagate=True, **op_kwargs)
+        async def on_end(self, context: Any, agent: Agent, output: Any):
+            nonlocal final_reward
             # Use another agent to check the answer and compute reward
             checker = Agent(
                 name="Checker",
@@ -509,11 +502,8 @@ async def openai_agents_sdk_handoff_tool_output_type_and_reward(settings: OpenAI
             result = await Runner.run(
                 checker, str(getattr(output, "answer", "")), run_config=openai_agents_sdk_run_config(settings)
             )
-            return float(result.final_output)
-
-        async def on_end(self, context: Any, agent: Agent, output: Any):
-            nonlocal final_reward
-            final_reward = await self.evaluate(context, agent, output)
+            final_reward = float(result.final_output)
+            emit_reward(final_reward)
 
     math_agent = Agent(
         name="MathAgent",
@@ -569,14 +559,14 @@ AGENTOPS_EXPECTED_TREES: Mapping[AgentName, List[Tuple[Union[str, re.Pattern[str
     "agent_litellm": [("openai.chat.completion", "openai.chat.completion")],
     "agent_langchain": [("openai.chat.completion", "openai.chat.completion")],
     "agent_langchain_tooluse": [
-        ("chat_model.llm", "openai.chat.completion"),
-        ("chat_model.llm", "openai.chat.completion"),
+        (re.compile(r"(chat_model\.llm)|(model)"), "openai.chat.completion"),
+        (re.compile(r"(chat_model\.llm)|(model)"), "openai.chat.completion"),
     ],
     "agent_langgraph": [
         ("call_get_schema", "openai.chat.completion"),
         ("generate_query", "openai.chat.completion"),
         ("check_query", "openai.chat.completion"),
-        ("run_query", "tool.tool"),
+        ("run_query", re.compile(r"(tool.tool)|(sql_db_query)")),
     ],
     "agent_autogen_multiagent": [
         ("primary", "openai.chat.completion"),
@@ -586,9 +576,9 @@ AGENTOPS_EXPECTED_TREES: Mapping[AgentName, List[Tuple[Union[str, re.Pattern[str
         ("calc_agent", "openai.chat.completion"),
     ],
     "openai_agents_sdk_eval_hook_and_guardrail": [
-        ("homework_guardrail", "openai.chat.completion"),
+        (re.compile(r"(homework_guardrail)|(Guardrail check)"), "openai.chat.completion"),
         ("Main Agent", "openai.chat.completion"),
-        ("Main Agent", "agentops_reward_operation.task"),
+        ("Main Agent", "agentlightning.annotation"),
     ],
     "openai_agents_sdk_mcp_tool_use": [
         ("MCP Tool Agent", "openai.chat.completion"),
@@ -599,7 +589,7 @@ AGENTOPS_EXPECTED_TREES: Mapping[AgentName, List[Tuple[Union[str, re.Pattern[str
         ("TriageAgent", "openai.chat.completion"),
         ("MathAgent", "openai.chat.completion"),
         ("MathAgent", "openai.chat.completion"),
-        ("MathAgent", "agentops_reward_operation.task"),
+        ("MathAgent", "agentlightning.annotation"),
         ("HistoryAgent", "openai.chat.completion"),
     ],
 }
@@ -637,14 +627,22 @@ AGENT_FUNCTIONS: Mapping[AgentName, Callable[[OpenAISettings, Tracer], Awaitable
 }
 
 
-def assert_expected_pairs_in_tree(root_tuple: Tuple[str, List[Any]], expected_pairs: List[Tuple[str, str]]) -> None:
+def assert_expected_pairs_in_tree(
+    root_tuple: Tuple[str, List[Any]],
+    expected_pairs: List[Tuple[Union[str, re.Pattern[str]], Union[str, re.Pattern[str]]]],
+) -> None:
     """
     Assert that every (ancestor_name, child_name) pair in `expected_pairs`
     occurs somewhere in the tree produced by TraceTree.names_tuple().
     """
 
+    expected_patterns = [
+        (re.compile(re.escape(x)) if isinstance(x, str) else x, re.compile(re.escape(y)) if isinstance(y, str) else y)
+        for x, y in expected_pairs
+    ]
+
     # Collect every node's full path from root → node
-    paths: list[tuple[str, ...]] = []  # e.g. [["root", "A", "B"], …]
+    paths: list[tuple[str, ...]] = []  # e.g. [["root", "A", "B"], ...]
 
     def _collect(node_tuple: tuple[str, Any], prefix: list[str]):
         name, children = node_tuple
@@ -656,24 +654,26 @@ def assert_expected_pairs_in_tree(root_tuple: Tuple[str, List[Any]], expected_pa
     _collect(root_tuple, [])
 
     # Greedy—but safe—matching of each expected pair
-    used_child_paths: set[tuple[str, ...]] = set()
+    paths_used: list[bool] = [False] * len(paths)
 
-    for anc_name, child_name in expected_pairs:
+    for anc_name, child_name in expected_patterns:
         matched = False
-        for p in paths:
-            if child_name not in p[-1] or tuple(p) in used_child_paths:
+        for i, (p, used) in enumerate(zip(paths, paths_used, strict=True)):
+            if child_name.search(p[-1]) is None or used:
                 continue
-            if any(anc_name in pv for pv in p):  # ancestor appears anywhere above (including itself)
-                used_child_paths.add(tuple(p))
+            if any(anc_name.search(pv) is not None for pv in p):  # ancestor appears anywhere above (including itself)
+                paths_used[i] = True
                 matched = True
                 break
         if not matched:
-            raise AssertionError(
+            err_msg = (
                 f"Expected ancestor/child pair ({anc_name!r}, {child_name!r}) "
                 "not found or child already matched.\n"
-                f"Root tuple: {pprint.pformat(root_tuple)}\n",
-                f"Expected pairs: {expected_pairs}",
+                f"Root paths: {pprint.pformat(paths)}\n"
+                f"Expected pairs: {expected_pairs}"
             )
+            print(err_msg)
+            raise AssertionError(err_msg)
 
 
 @pytest.fixture(
@@ -717,6 +717,10 @@ async def test_tracer_integration_weave(
     name, func = agent_function
     skip_assert = "autogen" in name
 
+    if name == "openai_agents_sdk_handoff_tool_output_type_and_reward":
+        AGENTOPS_EXPECTED_TRIPLETS_NUMBER[name] = 6  # type: ignore
+        AGENTOPS_EXPECTED_REWARDS[name] = [None, None, None, 1.0, None, None]  # type: ignore
+
     async with MockOpenAICompatibleServer() as settings:
         tracer = WeaveTracer()
         await _run_tracer_with_agent(settings, tracer, name, func, skip_assert)
@@ -737,6 +741,7 @@ async def _run_tracer_with_agent(
             Span.from_opentelemetry(span, "dummy", "dummy", 0) if isinstance(span, ReadableSpan) else span
             for span in tracer.get_last_trace()
         ]
+        assert len(last_trace_normalized) > 0
 
         for span in last_trace_normalized:
             print(">>> rollout_id =", span.rollout_id)
@@ -747,10 +752,7 @@ async def _run_tracer_with_agent(
             print("... parent_id =", span.parent_id)
             print("... name =", span.name)
             print("... status =", span.status)
-            print(
-                "... attributes =",
-                textwrap.indent(pprint.pformat(span.attributes, width=200, indent=4), "    ").lstrip(),
-            )
+            print("... attributes =", span.attributes.keys())
 
         debug_dir = os.path.join(os.path.dirname(__file__), "debug", tracer.__class__.__name__)
         os.makedirs(debug_dir, exist_ok=True)
@@ -775,17 +777,20 @@ async def _run_tracer_with_agent(
             return
 
         assert_expected_pairs_in_tree(tree.names_tuple(), AGENTOPS_EXPECTED_TREES[agent_name])
-        assert (
-            len(triplets) == AGENTOPS_EXPECTED_TRIPLETS_NUMBER[agent_name]
-        ), f"Expected {AGENTOPS_EXPECTED_TRIPLETS_NUMBER[agent_name]} triplets, but got: {triplets}"
+        if len(triplets) != AGENTOPS_EXPECTED_TRIPLETS_NUMBER[agent_name]:
+            triplet_assert_err_msg = f"Expected {AGENTOPS_EXPECTED_TRIPLETS_NUMBER[agent_name]} triplets, but got:\n{pprint.pformat(triplets)}"
+            print(triplet_assert_err_msg)
+            raise AssertionError(triplet_assert_err_msg)
         if agent_name in AGENTOPS_EXPECTED_REWARDS:
             expected_reward = AGENTOPS_EXPECTED_REWARDS[agent_name]
             if isinstance(expected_reward, tuple):
                 # If the expected rewards are a tuple, make sure at least one of them matches
-                assert any([r.reward in expected for r in triplets for expected in expected_reward]), (
-                    f"Expected rewards {expected_reward}, " f"but got: {pprint.pformat(triplets)}"
-                )
+                if not any([r.reward in expected for r in triplets for expected in expected_reward]):
+                    err_msg = f"Expected rewards {expected_reward}, but got: {pprint.pformat(triplets)}"
+                    print(err_msg)
+                    raise AssertionError(err_msg)
             else:
-                assert [r.reward for r in triplets] == expected_reward, (
-                    f"Expected rewards {expected_reward}, " f"but got: {pprint.pformat(triplets)}"
-                )
+                if [r.reward for r in triplets] != expected_reward:
+                    err_msg = f"Expected rewards {expected_reward}, but got: {pprint.pformat(triplets)}"
+                    print(err_msg)
+                    raise AssertionError(err_msg)

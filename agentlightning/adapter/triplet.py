@@ -12,6 +12,7 @@ from opentelemetry.sdk.trace import ReadableSpan
 from pydantic import BaseModel
 
 from agentlightning.emitter.reward import get_reward_value
+from agentlightning.semconv import AGL_OPERATION, AGL_REWARD, LightningSpanAttributes
 from agentlightning.types import Span, Triplet
 from agentlightning.utils.otel import filter_and_unflatten_attributes
 
@@ -39,7 +40,9 @@ def _attributes_get_ids_multiple(attributes: Dict[str, Any], keys: List[str]) ->
     """
     for key in keys:
         if key in attributes:
-            if isinstance(attributes[key], list) and all(isinstance(x, int) for x in attributes[key]):
+            if (isinstance(attributes[key], list) or isinstance(attributes[key], tuple)) and all(
+                isinstance(x, int) for x in attributes[key]
+            ):
                 return attributes[key]
             else:
                 logger.warning(f"Attribute {key} is found but is not a list of integers: {attributes[key]}")
@@ -348,6 +351,19 @@ class TraceTree:
         if agent_name is not None:
             return agent_name
 
+        # Case 6: Weave
+        is_agent_type = attributes.get("type") == "agent"
+        if is_agent_type:
+            agent_name = cast(Optional[str], attributes.get("agentlightning.operation.input.name"))
+            if agent_name is not None:
+                return agent_name
+
+        # Case 7: Weave + LangChain
+        if self.span.name.startswith("langchain.Chain."):
+            attributes_lc_name = cast(Optional[str], attributes.get("lc_name"))
+            if attributes_lc_name is not None:
+                return attributes_lc_name
+
     def maybe_reward_dict(self) -> dict[str, Any]:
         """Return a reward payload if the span encodes one.
 
@@ -367,7 +383,17 @@ class TraceTree:
             `True` when the span payload describes a reward, otherwise `False`.
         """
         maybe_reward = self.maybe_reward_dict()
-        return maybe_reward and maybe_reward.get("type") == "reward"  # type: ignore
+        if maybe_reward and maybe_reward.get("type") == "reward":  # type: ignore
+            return True
+
+        # Agent-lightning 0.3+
+        if (
+            self.span.name == AGL_OPERATION
+            and self.span.attributes.get(LightningSpanAttributes.OPERATION_NAME.value) == AGL_REWARD
+        ):
+            return True
+
+        return False
 
     def find_llm_calls(
         self,
@@ -588,7 +614,7 @@ class TraceTree:
                 try:
                     content = json.loads(content)  # This content should now be a list
                 except json.JSONDecodeError:
-                    logger.warning(f"Failed to parse message content as JSON: {content}")
+                    logger.debug(f"Failed to parse message content as JSON: {content}")
                     continue
             if isinstance(content, list):
                 for content_part in cast(List[Dict[str, Any]], content):

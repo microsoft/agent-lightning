@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import warnings
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Iterator, List
 
@@ -442,7 +443,11 @@ def get_entity_project_from_project_name_factory(entity_name: str) -> tuple[str,
     # Bypass the usage of API
     try:
         assert _original_get_entity_project_from_project_name is not None
-        return _original_get_entity_project_from_project_name(entity_name)
+        if _original_get_entity_project_from_project_name is not get_entity_project_from_project_name_factory:
+            return _original_get_entity_project_from_project_name(entity_name)
+        else:
+            warnings.warn("W&B integration might have been repeatedly/recursively instrumented.")
+            return "agl", "weave"
     except weave.trace.weave_init.WeaveWandbAuthenticationException:
         # In case API is not available.
         return "agl", "weave"
