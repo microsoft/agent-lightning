@@ -53,6 +53,9 @@ class LightningResourceAttributes(Enum):
     SPAN_SEQUENCE_ID = "agentlightning.span_sequence_id"
     """Resource name for span sequence ID in Agent-lightning spans."""
 
+    TRACER_NAME = "agentlightning.tracer.name"
+    """Which tracer is used to create this span."""
+
 
 class LightningSpanAttributes(Enum):
     """Attribute names that commonly appear in Agent-lightning spans.

@@ -9,12 +9,7 @@ import pytest
 
 from agentlightning.utils import system_snapshot
 
-try:
-    import torch  # type: ignore
-
-    GPU_AVAILABLE = torch.cuda.is_available()
-except Exception:
-    GPU_AVAILABLE = False  # type: ignore
+pytestmark = pytest.mark.utils
 
 
 def _patch_system_snapshot(monkeypatch: pytest.MonkeyPatch, include_gpu: bool = False) -> Optional[SimpleNamespace]:
@@ -100,6 +95,13 @@ def test_sanity_check() -> None:
 
     snapshot = system_snapshot.system_snapshot(include_gpu=True)
     assert snapshot is not None
+
+    try:
+        import torch  # type: ignore
+
+        GPU_AVAILABLE = torch.cuda.is_available()
+    except Exception:
+        GPU_AVAILABLE = False  # type: ignore
 
     if GPU_AVAILABLE:
         assert snapshot["gpus"] is not None

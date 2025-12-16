@@ -7,7 +7,7 @@ import argparse
 import os
 from copy import deepcopy
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 import pandas as pd
 from search_r1_agent import SearchR1Agent
@@ -21,7 +21,7 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
     },
     "data": {
         "train_files": "data/train.parquet",
-        "val_files": "data/agent_test_50select.parquet",
+        "val_files": "data/test.parquet",
         "train_batch_size": 512,
         "max_prompt_length": 6000,
         "max_response_length": 4096,
@@ -42,7 +42,9 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
                 }
             },
             "trace_aggregator": {
-                "mode": "transition",
+                "mode": "trajectory-strict",
+                "trajectory_max_prompt_length": 4096,
+                "trajectory_max_response_length": 34384,
             }
         },
         "actor": {
@@ -65,7 +67,7 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
             "fsdp_config": {"param_offload": True},
         },
         "model": {
-            "path": "meta-llama/Llama-3.2-3B-Instruct",
+            "path": "Qwen/Qwen2.5-Coder-1.5B-Instruct",
             "use_remove_padding": True,
             "enable_gradient_checkpointing": True,
         },
@@ -75,14 +77,23 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
         "val_before_train": True,
         "critic_warmup": 0,
         "logger": ["console", "wandb"],
+<<<<<<<< HEAD:contrib/recipes/search_r1/train_search_r1_agent_ins.py
         "project_name": "AgentLightning-SearchR1",
-        "experiment_name": "searchr1_minibatch256_runner32_transition_synced",
+        "experiment_name": "searchr1_minibatch256_runner32_trajectory_synced",
+========
+        "project_name": "AgentLightning",
+        "experiment_name": "searchr1",
+>>>>>>>> dev/search_r1_v02:contrib/recipes/search_r1/train_search_r1_agent.py
         "nnodes": 1,
         "test_freq": 10,
-        "save_freq":10,
+        "save_freq": 10,
         "total_epochs": 15,
         "total_training_steps": 300,
-        "default_local_dir": "/mnt/teamdrive/search_r1/searchr1_checkpoints/Llama-3.2-3B-Instruct/searchr1_minibatch256_runner32_transition_synced/"
+<<<<<<<< HEAD:contrib/recipes/search_r1/train_search_r1_agent_ins.py
+        "default_local_dir": "/mnt/teamdrive/search_r1/searchr1_checkpoints/Llama-3.2-3B-Instruct/searchr1_minibatch256_runner32_trajectory_synced/"
+========
+        "default_local_dir": "checkpoints/searchr1_checkpoints/",
+>>>>>>>> dev/search_r1_v02:contrib/recipes/search_r1/train_search_r1_agent.py
     },
 }
 
@@ -118,14 +129,14 @@ def config_train_fast() -> Dict[str, Any]:
 
 
 def config_train_qwen() -> Dict[str, Any]:
-    """A configuration for training with Qwen-2.5B."""
+    """A configuration for training with Qwen-2.5."""
 
     config = deepcopy(RL_TRAINING_CONFIG)
     return config
 
 
 def config_train_llama() -> Dict[str, Any]:
-    """A configuration for training with LLaMA-3.2-1B-Instruct.
+    """A configuration for training with LLaMA-3.2-3B-Instruct.
 
     You will need a `HF_TOKEN` set to run with this config.
     """
@@ -137,15 +148,11 @@ def config_train_llama() -> Dict[str, Any]:
     return config
 
 
-def train(config: Dict[str, Any], external_store_address: str = "") -> None:
+def train(config: Dict[str, Any]) -> None:
 
     agent = SearchR1Agent()
     algorithm = agl.VERL(config)
-    if external_store_address:
-        store: Optional[agl.LightningStore] = agl.LightningStoreClient(external_store_address)
-    else:
-        store = None
-    trainer = agl.Trainer(n_runners=32, algorithm=algorithm, store=store)
+    trainer = agl.Trainer(n_runners=32, algorithm=algorithm)
 
     train_data = pd.read_parquet(config["data"]["train_files"]).to_dict(orient="records")  # type: ignore
     val_data = pd.read_parquet(config["data"]["val_files"]).to_dict(orient="records")  # type: ignore
@@ -154,20 +161,12 @@ def train(config: Dict[str, Any], external_store_address: str = "") -> None:
 
 def main() -> None:
     """Main function to parse arguments and run training."""
-    parser = argparse.ArgumentParser(
-        description="Train an Search-R1 agent using different model configurations"
-    )
+    parser = argparse.ArgumentParser(description="Train a Search-R1 agent using different model configurations")
 
     parser.add_argument(
         "config",
         choices=["fast", "qwen", "llama"],
         help="Training configuration: 'fast' (CI testing), 'qwen' (Qwen-2.5-Coder-1.5B), 'llama' (LLaMA-3.2-3B-Instruct)",
-    )
-    parser.add_argument(
-        "--external-store-address",
-        type=str,
-        default="",
-        help="Connect to an external store instead of creating a new one in memory",
     )
 
     args = parser.parse_args()
@@ -179,7 +178,7 @@ def main() -> None:
 
     print(f"Starting training with '{args.config}' configuration...")
 
-    train(config, external_store_address=args.external_store_address)
+    train(config)
 
 
 if __name__ == "__main__":

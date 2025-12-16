@@ -2,22 +2,25 @@
 
 """Utilities shared for OpenTelemetry span (attributes) support."""
 
+import json
 import logging
-from typing import Any, Dict, List, Sequence, Union, cast
+import traceback
+from typing import Any, Dict, List, Sequence, Type, TypeVar, Union, cast
 from warnings import filterwarnings
 
 import opentelemetry.trace as trace_api
 from agentops.sdk.exporters import OTLPSpanExporter
-from opentelemetry.sdk.trace import ReadableSpan, SpanLimits, SynchronousMultiSpanProcessor, Tracer
+from opentelemetry.sdk.trace import ReadableSpan, SpanLimits, SpanProcessor, SynchronousMultiSpanProcessor, Tracer
 from opentelemetry.sdk.trace import TracerProvider as TracerProviderImpl
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, SimpleSpanProcessor
 from opentelemetry.sdk.util.instrumentation import InstrumentationInfo, InstrumentationScope
+from opentelemetry.semconv.attributes import exception_attributes
 from opentelemetry.trace import get_tracer_provider as otel_get_tracer_provider
 from pydantic import TypeAdapter
 
 from agentlightning.env_var import LightningEnvVar, resolve_bool_env_var
 from agentlightning.semconv import LightningSpanAttributes, LinkAttributes, LinkPydanticModel
-from agentlightning.types import SpanLike
+from agentlightning.types import Attributes, AttributeValue, SpanLike
 from agentlightning.utils.otlp import LightningStoreOTLPExporter
 
 logger = logging.getLogger(__name__)
@@ -36,6 +39,9 @@ __all__ = [
     "flatten_attributes",
     "unflatten_attributes",
 ]
+
+T_SpanLike = TypeVar("T_SpanLike", bound=SpanLike)
+T_SpanProcessor = TypeVar("T_SpanProcessor", bound=SpanProcessor)
 
 
 def full_qualified_name(obj: type) -> str:
@@ -112,6 +118,25 @@ def get_tracer_provider(inspect: bool = True) -> TracerProviderImpl:
     return tracer_provider
 
 
+def get_span_processors(
+    tracer_provider: TracerProviderImpl, expected_type: Type[T_SpanProcessor]
+) -> List[T_SpanProcessor]:
+    """Get the span processors from the tracer provider.
+
+    Args:
+        tracer_provider: The tracer provider to get the span processors from.
+        expected_type: The type of the span processors to get.
+
+    Returns:
+        A list of span processors of the expected type.
+    """
+    processors: List[T_SpanProcessor] = []
+    for processor in tracer_provider._active_span_processor._span_processors:  # pyright: ignore[reportPrivateUsage]
+        if isinstance(processor, expected_type):
+            processors.append(processor)
+    return processors
+
+
 def get_tracer(use_active_span_processor: bool = True) -> trace_api.Tracer:
     """Resolve the OpenTelemetry tracer configured for Agent Lightning.
 
@@ -166,7 +191,7 @@ def make_tag_attributes(tags: List[str]) -> Dict[str, Any]:
     ["gen_ai.model:gpt-4", "reward.extrinsic"]
     ```
     """
-    return flatten_attributes({LightningSpanAttributes.TAG.value: tags})
+    return flatten_attributes({LightningSpanAttributes.TAG.value: tags}, expand_leaf_lists=True)
 
 
 def extract_tags_from_attributes(attributes: Dict[str, Any]) -> List[str]:
@@ -196,10 +221,10 @@ def make_link_attributes(links: Dict[str, str]) -> Dict[str, Any]:
         if not isinstance(value, str):  # pyright: ignore[reportUnnecessaryIsInstance]
             raise ValueError(f"Link value must be a string, got {type(value)} for key '{key}'")
         link_list.append({LinkAttributes.KEY_MATCH.value: key, LinkAttributes.VALUE_MATCH.value: value})
-    return flatten_attributes({LightningSpanAttributes.LINK.value: link_list})
+    return flatten_attributes({LightningSpanAttributes.LINK.value: link_list}, expand_leaf_lists=True)
 
 
-def query_linked_spans(spans: Sequence[SpanLike], links: List[LinkPydanticModel]) -> List[SpanLike]:
+def query_linked_spans(spans: Sequence[T_SpanLike], links: List[LinkPydanticModel]) -> List[T_SpanLike]:
     """Query spans that are linked by the given link attributes.
 
     Args:
@@ -209,7 +234,7 @@ def query_linked_spans(spans: Sequence[SpanLike], links: List[LinkPydanticModel]
     Returns:
         A list of spans that match the given link attributes.
     """
-    matched_spans: List[SpanLike] = []
+    matched_spans: List[T_SpanLike] = []
 
     for span in spans:
         span_attributes = span.attributes or {}
@@ -294,7 +319,9 @@ def filter_and_unflatten_attributes(attributes: Dict[str, Any], prefix: str) -> 
     return unflatten_attributes(stripped_attributes)
 
 
-def flatten_attributes(nested_data: Union[Dict[str, Any], List[Any]]) -> Dict[str, Any]:
+def flatten_attributes(
+    nested_data: Union[Dict[str, Any], List[Any]], *, expand_leaf_lists: bool = False
+) -> Dict[str, Any]:
     """Flatten a nested dictionary or list into a flat dictionary with dotted keys.
 
     This function recursively traverses dictionaries and lists, producing a flat
@@ -303,18 +330,29 @@ def flatten_attributes(nested_data: Union[Dict[str, Any], List[Any]]) -> Dict[st
 
     Example:
 
-        >>> flatten_attributes({"a": {"b": 1, "c": [2, 3]}})
+        >>> flatten_attributes({"a": {"b": 1, "c": [2, 3]}}, expand_leaf_lists=True)
         {"a.b": 1, "a.c.0": 2, "a.c.1": 3}
 
     Args:
-        nested_data: A nested structure composed of dictionaries, lists, or
-            primitive values.
+        nested_data: A nested structure composed of dictionaries, lists, or primitive values.
+        expand_leaf_lists: Whether to expand lists composed only of primitive values.
+            When `False` (the default), lists of str/int/float/bool are treated as
+            leaf values and stored without enumerating their indices.
 
     Returns:
         A flat dictionary mapping dotted-string paths to primitive values.
     """
 
     flat: Dict[str, Any] = {}
+
+    def _primitive_type(value: Any) -> Union[type[str], type[int], type[float], type[bool]]:
+        if isinstance(value, bool):
+            return bool
+        if isinstance(value, int):
+            return int
+        if isinstance(value, float):
+            return float
+        return str
 
     def _walk(value: Any, prefix: str = "") -> None:
         if isinstance(value, dict):
@@ -326,7 +364,22 @@ def flatten_attributes(nested_data: Union[Dict[str, Any], List[Any]]) -> Dict[st
                 new_prefix = f"{prefix}.{k}" if prefix else k
                 _walk(v, new_prefix)
         elif isinstance(value, list):
-            for idx, item in enumerate(cast(List[Any], value)):
+            maybe_list = cast(List[Any], value)
+            is_leaf_candidate = bool(maybe_list) and all(
+                isinstance(item, (str, int, float, bool)) for item in maybe_list
+            )
+            if not expand_leaf_lists and is_leaf_candidate and prefix:
+                primitive_types = {_primitive_type(item) for item in maybe_list}
+                if len(primitive_types) == 1:
+                    flat[prefix] = maybe_list
+                    return
+                logger.warning(
+                    "List attribute '%s' contains mixed primitive types %s; expanding indexed keys instead.",
+                    prefix,
+                    primitive_types,
+                )
+
+            for idx, item in enumerate(maybe_list):
                 new_prefix = f"{prefix}.{idx}" if prefix else str(idx)
                 _walk(item, new_prefix)
         else:
@@ -399,3 +452,80 @@ def unflatten_attributes(flat_data: Dict[str, Any]) -> Union[Dict[str, Any], Lis
         return node
 
     return convert(root)
+
+
+def sanitize_attribute_value(object: Any) -> AttributeValue:
+    """Sanitize an attribute value to be a valid OpenTelemetry attribute value."""
+    if isinstance(object, (str, int, float, bool)):
+        return object
+
+    if isinstance(object, list):
+        try:
+            return sanitize_list_attribute_sanity(cast(List[Any], object))
+        except ValueError as exc:
+            logger.warning(f"Failed to sanitize list attribute. Fallback to JSON serialization: {exc}")
+
+    try:
+        # This include null, dict, etc.
+        serialized = json.dumps(object)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Object must be JSON serializable, got: {type(cast(Any, object))}.") from exc
+    return serialized
+
+
+def sanitize_attributes(attributes: Dict[str, Any]) -> Attributes:
+    """Sanitize a dictionary of attributes to be a valid OpenTelemetry attributes."""
+    result: Attributes = {}
+    for k, v in attributes.items():
+        try:
+            result[k] = sanitize_attribute_value(v)
+        except ValueError as exc:
+            raise ValueError(f"Failed to sanitize attribute '{k}': {exc}") from exc
+    return result
+
+
+def sanitize_list_attribute_sanity(maybe_list: List[Any]) -> AttributeValue:
+    """Try to sanitize a list of attributes to be a valid OpenTelemetry attribute value.
+
+    Raise error if the list contains multiple types of primitive values.
+    """
+    if all(isinstance(item, str) for item in maybe_list):
+        return list[str](maybe_list)
+    if all(isinstance(item, bool) for item in maybe_list):
+        return list[bool](maybe_list)
+    if all(isinstance(item, (int, bool)) for item in maybe_list):
+        return [int(item) for item in maybe_list]
+    if all(isinstance(item, (float, int, bool)) for item in maybe_list):
+        return [float(item) for item in maybe_list]
+
+    list_types: List[Any] = [type(item) for item in maybe_list]
+    raise ValueError(f"List must contain only one type of primitive values, got: {set(list_types)}.")
+
+
+def check_attributes_sanity(attributes: Dict[Any, Any]) -> None:
+    """Check if a dictionary of attributes is a valid OpenTelemetry attributes."""
+    for k, v in attributes.items():
+        if not isinstance(k, str):
+            raise ValueError(f"Attribute key must be a string, got {type(k)} for key '{k}'")
+        if isinstance(v, list):
+            try:
+                sanitize_list_attribute_sanity(cast(List[Any], v))
+            except ValueError as exc:
+                raise ValueError(f"Failed to sanitize list attribute '{k}': {exc}") from exc
+        elif not isinstance(v, (str, int, float, bool)):
+            raise ValueError(
+                f"Attribute value must be a string, int, float, bool, or list of these, got {type(v)} for value '{v}'"
+            )
+
+
+def format_exception_attributes(exception: BaseException) -> Attributes:
+    """Format an exception into a dictionary of attributes."""
+    stacktrace = "".join(traceback.format_exception(type(exception), exception, exception.__traceback__))
+    span_attributes: Attributes = {
+        exception_attributes.EXCEPTION_TYPE: type(exception).__name__,
+        exception_attributes.EXCEPTION_MESSAGE: str(exception),
+        exception_attributes.EXCEPTION_ESCAPED: True,
+    }
+    if stacktrace.strip():
+        span_attributes[exception_attributes.EXCEPTION_STACKTRACE] = stacktrace
+    return span_attributes

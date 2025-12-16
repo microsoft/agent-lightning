@@ -75,6 +75,27 @@ Most brand-new algorithms ultimately land as “new examples,” so read that se
 
 Have a project that builds on Agent-lightning but does not belong in the main repo? Fork it or depend on it externally, then let us know. We can showcase notable projects in [Community Projects](../index.md) and the main [README]({{ src("README.md") }}).
 
+### Agent-lightning Contrib
+
+[`contrib/`]({{ src("contrib") }}) is where work-in-progress or third-party integrations, and curated recipes live before they are hardened enough for the core runtime tree. Think of it as an incubator: additions should remain easy to consume, clearly owned, and scoped so downstream users can vendor them with minimal risk.
+
+The following types of contributions are welcome in the contrib area:
+
+- **Recipes** that assemble multiple Agent Lightning components for a narrow task (`contrib/recipes/<topic>/`). Each recipe must be self-contained, include running instructions and result reports.
+- **Runtime extensions** that would bloat the primary `agentlightning/` namespace (`contrib/agentlightning/contrib/<feature>/`). These should mirror the published wheel layout so that `import agentlightning.contrib.<feature>` works out of the box.
+- **Supporting scripts and assets** (`contrib/scripts/`) that automate dataset downloads, environment preparation, or benchmarks required by contrib modules.
+
+If you are unsure where a contribution should live, start a thread in Discord or open an issue before writing code. The [contrib README]({{ src("contrib/README.md") }}) also lists the directory expectations.
+
+A quick checklist for contributions to be accepted:
+
+1. **Document everything.** Include configuration steps, environment variables, and sample commands so contributors can reproduce the results without guesswork. Pin to a specific version of Agent-lightning and other dependencies to avoid unexpected changes if you don't want to update the recipe frequently.
+2. **Keep quality predictable.** Match the repo’s style guide, apply exhaustive type hints, and run `uv run --no-sync pyright` plus targeted `pytest` suites for any Python module you touch.
+3. **Ship reproducibility artifacts.** Store only scripts or instructions for downloading datasets, weights, or binaries. Never upload large artifacts or credentials directly.
+4. **Update ownership.** Add `CODEOWNERS` entries when new directories appear so maintainers know who can review follow-up fixes.
+
+Contrib entries do not need the same maturity level as core code, but they must still meet the baseline above. Submissions that lack documentation, hide ownership, or depend on untracked assets are typically rejected until those gaps are resolved.
+
 ### Other Contribution Ideas
 
 - **Tests.** Add or improve cases in [`tests/`]({{ src("tests") }}) (unit, integration, or end-to-end).

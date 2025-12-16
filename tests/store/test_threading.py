@@ -31,6 +31,8 @@ from agentlightning.types import (
 
 from .dummy_store import DummyLightningStore
 
+pytestmark = [pytest.mark.store]
+
 
 class SlowAttemptStore(LightningStore):
     def __init__(self) -> None:

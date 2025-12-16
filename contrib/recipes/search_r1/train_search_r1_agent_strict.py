@@ -21,8 +21,8 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
     },
     "data": {
         "train_files": "data/train.parquet",
-        "val_files": "data/test.parquet",
-        "train_batch_size": 2,
+        "val_files": "data/agent_test_50select.parquet",
+        "train_batch_size": 512,
         "max_prompt_length": 6000,
         "max_response_length": 4096,
         "truncation": "error",
@@ -30,8 +30,8 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
     "actor_rollout_ref": {
         "rollout": {
             "tensor_model_parallel_size": 1,
-            "n": 1,
-            "log_prob_micro_batch_size_per_gpu": 1,
+            "n": 5,
+            "log_prob_micro_batch_size_per_gpu": 4,
             "multi_turn": {"format": "hermes"},
             "name": "vllm",
             "gpu_memory_utilization": 0.5,
@@ -42,14 +42,14 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
                 }
             },
             "trace_aggregator": {
-                "mode": "trajectory-strict",
+                "mode": "trajectory-strict",  # only allow token ids exact match
                 "trajectory_max_prompt_length": 4096,
                 "trajectory_max_response_length": 34384,
-            }
+            },
         },
         "actor": {
-            "ppo_mini_batch_size": 1,
-            "ppo_micro_batch_size_per_gpu": 1,
+            "ppo_mini_batch_size": 256,
+            "ppo_micro_batch_size_per_gpu": 4,
             "optim": {"lr": 1e-6, "lr_warmup_steps_ratio": 0.95},
             "use_kl_loss": True,
             "kl_loss_type": "low_var_kl",
@@ -67,24 +67,24 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
             "fsdp_config": {"param_offload": True},
         },
         "model": {
-            "path": "meta-llama/Llama-3.2-3B-Instruct",
+            "path": "/home/aiscuser/Llama-3.2-3B",
             "use_remove_padding": True,
             "enable_gradient_checkpointing": True,
         },
     },
     "trainer": {
-        "n_gpus_per_node": 1,
-        "val_before_train": False,
+        "n_gpus_per_node": 8,
+        "val_before_train": True,
         "critic_warmup": 0,
         "logger": ["console", "wandb"],
-        "project_name": "AgentLightning-SearchR1",
-        "experiment_name": "searchr1_test",
+        "project_name": "AgentLightning-SearchR1-Base",
+        "experiment_name": "searchr1_minibatch256_runner32_trajectory_synced",
         "nnodes": 1,
         "test_freq": 10,
-        "save_freq":10,
+        "save_freq": 10,
         "total_epochs": 15,
         "total_training_steps": 300,
-        "default_local_dir": "./test/"
+        "default_local_dir": "/mnt/teamdrive/search_r1/searchr1_checkpoints/Llama-3.2-3B/searchr1_minibatch256_runner32_trajectory_synced/",
     },
 }
 
@@ -135,7 +135,7 @@ def config_train_llama() -> Dict[str, Any]:
     config = deepcopy(RL_TRAINING_CONFIG)
     config["actor_rollout_ref"]["rollout"]["multi_turn"]["format"] = "llama3_json"
     config["actor_rollout_ref"]["rollout"]["engine_kwargs"]["vllm"]["tool_call_parser"] = "llama3_json"
-    config["actor_rollout_ref"]["model"]["path"] = "meta-llama/Llama-3.2-3B-Instruct"
+    config["actor_rollout_ref"]["model"]["path"] = "/home/aiscuser/Llama-3.2-3B"
     return config
 
 
@@ -152,9 +152,7 @@ def train(config: Dict[str, Any]) -> None:
 
 def main() -> None:
     """Main function to parse arguments and run training."""
-    parser = argparse.ArgumentParser(
-        description="Train an Search-R1 agent using different model configurations"
-    )
+    parser = argparse.ArgumentParser(description="Train an Search-R1 agent using different model configurations")
 
     parser.add_argument(
         "config",

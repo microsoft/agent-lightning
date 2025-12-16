@@ -4,23 +4,22 @@ from __future__ import annotations
 
 import os
 import re
-import shutil
-import tempfile
 import time
-from typing import Any, Dict, List, Literal, Optional, Tuple, TypedDict, cast
+from typing import Any, Dict, List, Optional, Tuple, TypedDict, cast
 
-
+import pandas as pd
 import requests
 from openai import OpenAI
 from qa_em import compute_score_em
 
-from agentlightning import LLM, LitAgent, NamedResources, Rollout, Trainer, setup_logging, configure_logger
+from agentlightning import LLM, LitAgent, NamedResources, Rollout, Trainer, configure_logger, setup_logging
 
 setup_logging()
 logger = configure_logger(name=__name__)
 
 # Copied and adapted from https://github.com/PeterGriffinJin/Search-R1/blob/main/scripts/data_process/nq_search.py
 INSTRUCTION_FORMAT = """Answer the given question. You must conduct reasoning inside <think> and </think> first every time you get new information. After reasoning, if you find you lack some knowledge, you can call a search engine by <search> query </search> and it will return the top searched results between <information> and </information>. You can search as many times as your want. If you find no further external knowledge needed, you can directly provide the answer inside <answer> and </answer>, without detailed illustrations. For example, <answer> Beijing </answer>. Question: """
+
 
 class Document(TypedDict):
     contents: str
@@ -98,17 +97,13 @@ def passages2string(retrieval_result: List[RetrievalItem]) -> str:
 def call_llm(
     llm_client: OpenAI,
     model_name: str,
-    content: str = "",
-    messages: List[dict] = [],
+    content: str,
     temperature: float = 1.0,
     max_tokens: int = 500,
 ) -> str:
-    if not len(messages):
-        messages=[{"role": "user", "content": content}]
-    print(messages)
     response = llm_client.chat.completions.create(
         model=model_name,
-        messages=messages,
+        messages=[{"role": "user", "content": content}],
         temperature=temperature,
         max_tokens=max_tokens,
     )
@@ -149,45 +144,40 @@ class SearchR1Agent(LitAgent[Dict[str, Any]]):
         if rollout.mode == "train":
             temperature = llm.sampling_parameters.get("temperature", 1.0)
         else:
-            temperature = (
-                self.val_temperature
-                if self.val_temperature is not None
-                else 0.0
-            )
+            temperature = self.val_temperature if self.val_temperature is not None else 0.0
 
         turn_id = 0
         finished_flag = False
-        hist_messages: List[Dict[str, Any]] = [{"role": "user", "content": prompt}]
+        rollout_content: str = ""
 
         try:
             while turn_id < self.max_turns and not finished_flag:
                 turn_id += 1
                 turn_response = call_llm(
-                    client, llm.model, messages=hist_messages, temperature=temperature, max_tokens=500
+                    client, llm.model, prompt + rollout_content, temperature=temperature, max_tokens=500
                 )
                 valid_turn_response = postprocess_response(turn_response)
-                hist_messages.append({"role": "assistant", "content": valid_turn_response})
+                rollout_content += valid_turn_response
                 turn_env_feedback = execute_response(valid_turn_response)
                 if len(turn_env_feedback) == 0:
                     finished_flag = True
                 else:
-                    hist_messages.append({"role": "user", "content": turn_env_feedback})
+                    rollout_content += turn_env_feedback
                 logger.info(f"TURN ID {turn_id} | RESP: {turn_response} | ENV FEEDBACK: {turn_env_feedback}")
 
             if not finished_flag:
                 turn_response = call_llm(
-                    client, llm.model, messages=hist_messages, temperature=temperature, max_tokens=500
+                    client, llm.model, prompt + rollout_content, temperature=temperature, max_tokens=500
                 )
-                hist_messages.append({"role": "assistant", "content": turn_response})
+                rollout_content += turn_response
                 logger.info(f"LAST TURN GENERATE | RESP: {turn_response}")
 
-            last_turn_response = [msg["content"] for msg in hist_messages if msg["role"] == "assistant"][-1]
         except Exception as e:
             logger.exception(f"[Rollout {rollout_id}] Error during rollout: {e}")
             return None
 
         end_time_rollout = time.time()
-        reward_score = eval(last_turn_response, answer_list)
+        reward_score = eval(rollout_content, answer_list)
         logger.info("[Rollout %s] Reward: %s", rollout_id, reward_score)
         end_time_eval = time.time()
 
@@ -197,7 +187,7 @@ class SearchR1Agent(LitAgent[Dict[str, Any]]):
         )
         logger.info(
             "question: {} answer: {} ground_truth: {} reward: {}".format(
-                task["question"], last_turn_response, answer_list, reward_score
+                task["question"], rollout_content, answer_list, reward_score
             )
         )
         return reward_score

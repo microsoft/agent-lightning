@@ -42,10 +42,12 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
                 }
             },
             "trace_aggregator": {
-                "mode": "trajectory-strict",
+                "mode": "trajectory-tolerant",
+                "special_token_tolerance": 0,  # only allow re-token mismatches
+                "string_tolerance": 0,  # only allow re-token mismatches
                 "trajectory_max_prompt_length": 4096,
                 "trajectory_max_response_length": 34384,
-            }
+            },
         },
         "actor": {
             "ppo_mini_batch_size": 256,
@@ -67,7 +69,7 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
             "fsdp_config": {"param_offload": True},
         },
         "model": {
-            "path": "meta-llama/Llama-3.2-3B-Instruct",
+            "path": "/home/aiscuser/Llama-3.2-3B",
             "use_remove_padding": True,
             "enable_gradient_checkpointing": True,
         },
@@ -77,14 +79,14 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
         "val_before_train": True,
         "critic_warmup": 0,
         "logger": ["console", "wandb"],
-        "project_name": "AgentLightning-SearchR1",
-        "experiment_name": "searchr1_minibatch256_runner32_trajectory_synced",
+        "project_name": "AgentLightning-SearchR1-Base",
+        "experiment_name": "searchr1_minibatch256_runner32_trajectory_tolerant_synced",
         "nnodes": 1,
         "test_freq": 10,
-        "save_freq":10,
+        "save_freq": 10,
         "total_epochs": 15,
         "total_training_steps": 300,
-        "default_local_dir": "/mnt/teamdrive/search_r1/searchr1_checkpoints/Llama-3.2-3B-Instruct/searchr1_minibatch256_runner32_trajectory_synced/"
+        "default_local_dir": "/mnt/teamdrive/search_r1/searchr1_checkpoints/Llama-3.2-3B/searchr1_minibatch256_runner32_trajectory_tolerant_synced/",
     },
 }
 
@@ -135,7 +137,7 @@ def config_train_llama() -> Dict[str, Any]:
     config = deepcopy(RL_TRAINING_CONFIG)
     config["actor_rollout_ref"]["rollout"]["multi_turn"]["format"] = "llama3_json"
     config["actor_rollout_ref"]["rollout"]["engine_kwargs"]["vllm"]["tool_call_parser"] = "llama3_json"
-    config["actor_rollout_ref"]["model"]["path"] = "meta-llama/Llama-3.2-3B-Instruct"
+    config["actor_rollout_ref"]["model"]["path"] = "/home/aiscuser/Llama-3.2-3B"
     return config
 
 
@@ -152,9 +154,7 @@ def train(config: Dict[str, Any]) -> None:
 
 def main() -> None:
     """Main function to parse arguments and run training."""
-    parser = argparse.ArgumentParser(
-        description="Train an Search-R1 agent using different model configurations"
-    )
+    parser = argparse.ArgumentParser(description="Train an Search-R1 agent using different model configurations")
 
     parser.add_argument(
         "config",

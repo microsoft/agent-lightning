@@ -5,7 +5,6 @@
 import asyncio
 import functools
 import inspect
-import json
 import logging
 from types import TracebackType
 from typing import (
@@ -22,19 +21,18 @@ from typing import (
     overload,
 )
 
-from opentelemetry import trace
-from opentelemetry.sdk.trace import ReadableSpan
-from opentelemetry.trace import Status, StatusCode
-
 from agentlightning.semconv import AGL_ANNOTATION, AGL_OPERATION, LightningSpanAttributes
-from agentlightning.utils.otel import flatten_attributes, get_tracer
+from agentlightning.tracer.base import get_active_tracer
+from agentlightning.tracer.dummy import DummyTracer
+from agentlightning.types import SpanCoreFields, SpanRecordingContext, TraceStatus
+from agentlightning.utils.otel import check_attributes_sanity, flatten_attributes, sanitize_attributes
 
 _FnType = TypeVar("_FnType", bound=Callable[..., Any])
 
 logger = logging.getLogger(__name__)
 
 
-def emit_annotation(annotation: Dict[str, Any], propagate: bool = True) -> ReadableSpan:
+def emit_annotation(annotation: Dict[str, Any], propagate: bool = True) -> SpanCoreFields:
     """Emit a new annotation span.
 
     This is the underlying implementation of [`emit_reward`][agentlightning.emit_reward].
@@ -48,62 +46,46 @@ def emit_annotation(annotation: Dict[str, Any], propagate: bool = True) -> Reada
     Args:
         annotation: Dictionary containing annotation key-value pairs.
             Representatives are rewards, tags, and metadata.
-        propagate: Whether to propagate the span to exporters automatically.
+        propagate: Whether to propagate the span to tracers automatically.
     """
-    annotation_attributes = flatten_attributes(annotation)
-    if any(not isinstance(v, (str, int, float, bool, bytes)) for v in annotation_attributes.values()):
-        raise TypeError("All annotation attributes must be primitive types (str, int, float, bool, bytes)")
+    annotation_attributes = flatten_attributes(annotation, expand_leaf_lists=False)
+    check_attributes_sanity(annotation_attributes)
+    sanitized_attributes = sanitize_attributes(annotation_attributes)
+    logger.debug("Emitting annotation span with keys %s", sanitized_attributes.keys())
 
-    # TODO: this should use a tracer from current context rather than the singleton
-    tracer = get_tracer(use_active_span_processor=propagate)
-    span = tracer.start_span(
-        AGL_ANNOTATION,
-        attributes=annotation_attributes,
+    if propagate:
+        tracer = get_active_tracer()
+        if tracer is None:
+            raise RuntimeError("No active tracer found. Cannot emit annotation span.")
+    else:
+        tracer = DummyTracer()
+
+    return tracer.create_span(
+        name=AGL_ANNOTATION,
+        attributes=sanitized_attributes,
+        status=TraceStatus(status_code="OK"),
     )
-    logger.debug("Emitting annotation span with keys %s", annotation_attributes)
-    with span:
-        pass
-    if not isinstance(span, ReadableSpan):
-        raise ValueError(f"Span is not a ReadableSpan: {span}")
-
-    return span
-
-
-def _safe_json_dump(obj: Any) -> str:
-    """Serialize an object to JSON, falling back to ``str(obj)`` if needed.
-
-    Args:
-        obj: Object to be serialized.
-
-    Returns:
-        The JSON-encoded string representation of the object, or its string
-        representation if JSON encoding fails.
-    """
-    try:
-        return json.dumps(obj, default=str, ensure_ascii=False)
-    except Exception:
-        return str(obj)
 
 
 class OperationContext:
     """Context manager and decorator for tracing operations.
 
-    This class manages an OpenTelemetry span for a logical unit of work. It can
-    be used either:
+    This class manages a tracer-backed span for a logical unit of work. It can be
+    used either:
 
     * As a decorator, in which case inputs and outputs are inferred
       automatically from the wrapped function's signature.
     * As a context manager, in which case inputs and outputs can be recorded
-      explicitly via :meth:`set_input` and :meth:`set_output`.
+      explicitly via [`set_input`][agentlightning.emitter.annotation.OperationContext.set_input]
+      and [`set_output`][agentlightning.emitter.annotation.OperationContext.set_output].
 
     Attributes:
         name: Human-readable span name.
         initial_attributes: Attributes applied when the span is created.
-        tracer: OpenTelemetry tracer used to create spans.
-        span: The currently active span, if any.
+        tracer: Tracer implementation used to create spans.
     """
 
-    def __init__(self, name: str, attributes: Dict[str, Any], *, propagate: bool = True) -> None:
+    def __init__(self, name: str, attributes: Dict[str, Any], propagate: bool = True) -> None:
         """Initialize a new operation context.
 
         Args:
@@ -112,12 +94,19 @@ class OperationContext:
                 JSON-serialized where necessary.
             propagate: Whether the span should be sent to active exporters.
         """
-        self.name: str = name
-        self.initial_attributes: Dict[str, Any] = attributes
-        self.propagate: bool = propagate
-        self.tracer: trace.Tracer = get_tracer(use_active_span_processor=propagate)
-        self.span: Optional[trace.Span] = None
-        self._ctx_token: Optional[ContextManager[Any]] = None
+        self.name = name
+        self.initial_attributes = flatten_attributes(attributes, expand_leaf_lists=False)
+        self.propagate = propagate
+        if propagate:
+            tracer = get_active_tracer()
+            if tracer is None:
+                raise RuntimeError("No active tracer found. Cannot trace operation spans.")
+            self.tracer = tracer
+        else:
+            self.tracer = DummyTracer()
+        self._ctx_manager: Optional[ContextManager[SpanRecordingContext]] = None
+        self._recording_context: Optional[SpanRecordingContext] = None
+        self._span: Optional[SpanCoreFields] = None
 
     def __enter__(self) -> "OperationContext":
         """Enter the context manager and start a new span.
@@ -125,15 +114,10 @@ class OperationContext:
         Returns:
             The current :class:`OperationContext` instance with an active span.
         """
-        # 1. Start the span with initial attributes (JSON serialized)
-        sanitized_attrs = {
-            k: _safe_json_dump(v) if not isinstance(v, (str, int, float, bool)) else v
-            for k, v in self.initial_attributes.items()
-        }
-
-        self.span = self.tracer.start_span(self.name, attributes=sanitized_attrs)
-        self._ctx_token = trace.use_span(self.span, end_on_exit=True)
-        self._ctx_token.__enter__()
+        sanitized_attrs = sanitize_attributes(self.initial_attributes)
+        self._ctx_manager = self.tracer.operation_context(self.name, attributes=sanitized_attrs)
+        recording_context = self._ctx_manager.__enter__()
+        self._recording_context = recording_context
         return self
 
     def __exit__(
@@ -142,57 +126,63 @@ class OperationContext:
         exc_val: Optional[BaseException],
         exc_tb: Optional[TracebackType],
     ) -> None:
-        """Exit the context manager and finish the span.
+        """Exit the context manager and finish the span."""
+        if self._ctx_manager:
+            self._ctx_manager.__exit__(exc_type, exc_val, exc_tb)
+        if self._recording_context:
+            self._span = self._recording_context.get_recorded_span()
+        self._ctx_manager = None
+        self._recording_context = None
 
-        Any exception raised inside the context is recorded on the span and the
-        span status is set to error.
-
-        Args:
-            exc_type: Exception type, if an exception occurred.
-            exc_val: Exception instance, if an exception occurred.
-            exc_tb: Traceback object, if an exception occurred.
-        """
-        # 1. Record Exception if present
-        if exc_val and self.span:
-            self.span.record_exception(exc_val)
-            self.span.set_status(Status(StatusCode.ERROR, str(exc_val)))
-
-        # 2. Close span
-        if self._ctx_token:
-            self._ctx_token.__exit__(exc_type, exc_val, exc_tb)
+    def span(self) -> SpanCoreFields:
+        """Get the span that was created by this context manager."""
+        if self._span is None:
+            raise RuntimeError("Span is not ready yet.")
+        return self._span
 
     def set_input(self, *args: Any, **kwargs: Any) -> None:
         """Record input arguments on the current span.
 
-        Positional arguments are stored under the ``input.args`` attribute,
-        and keyword arguments are stored under ``input.<name>`` attributes.
+        Positional arguments are stored under the `input.args.<index>` attributes,
+        and keyword arguments are stored under `input.<name>` attributes.
 
-        This is intended for use inside a ``with operation(...) as op`` block.
+        This is intended for use inside a `with operation(...) as op` block.
 
         Args:
             *args: Positional arguments to record.
             **kwargs: Keyword arguments to record.
         """
-        if not self.span:
-            return
+        if not self._recording_context:
+            raise RuntimeError("No recording context found. Cannot set input.")
 
+        prefix = LightningSpanAttributes.OPERATION_INPUT.value
+        attributes: Dict[str, Any] = {}
         if args:
-            self.span.set_attribute("input.args", _safe_json_dump(args))
+            for idx, value in enumerate(args):
+                flattened = flatten_attributes({str(idx): value})
+                for nested_key, nested_value in flattened.items():
+                    attributes[f"{prefix}.args.{nested_key}"] = nested_value
         if kwargs:
-            for k, v in kwargs.items():
-                self.span.set_attribute(f"input.{k}", _safe_json_dump(v))
+            for key, value in kwargs.items():
+                flattened = flatten_attributes({key: value})
+                for nested_key, nested_value in flattened.items():
+                    attributes[f"{prefix}.{nested_key}"] = nested_value
+        if attributes:
+            self._recording_context.record_attributes(sanitize_attributes(attributes))
 
     def set_output(self, output: Any) -> None:
         """Record the output value on the current span.
 
-        This is intended for use inside a ``with operation(...) as op`` block.
+        This is intended for use inside a `with operation(...) as op` block.
 
         Args:
             output: The output value to record.
         """
-        if not self.span:
-            return
-        self.span.set_attribute("output", _safe_json_dump(output))
+        if not self._recording_context:
+            raise RuntimeError("No recording context found. Cannot set output.")
+
+        flattened = flatten_attributes({LightningSpanAttributes.OPERATION_OUTPUT.value: output})
+        self._recording_context.record_attributes(sanitize_attributes(flattened))
 
     def __call__(self, fn: _FnType) -> _FnType:
         """Wrap a callable so its execution is traced in a span.
@@ -212,60 +202,60 @@ class OperationContext:
 
         sig = inspect.signature(fn)
 
-        def _record_auto_inputs(span: trace.Span, args: Tuple[Any, ...], kwargs: Dict[str, Any]) -> None:
-            """Bind arguments to signature and log them on the span.
+        sanitized_init_attrs = sanitize_attributes(
+            {LightningSpanAttributes.OPERATION_NAME.value: function_name, **self.initial_attributes}
+        )
 
-            Args:
-                span: Span on which to record attributes.
-                args: Positional arguments passed to the wrapped callable.
-                kwargs: Keyword arguments passed to the wrapped callable.
-            """
+        def _record_auto_inputs(
+            recording_ctx: SpanRecordingContext, args: Tuple[Any, ...], kwargs: Dict[str, Any]
+        ) -> None:
+            """Bind arguments to signature and log them on the span."""
+            attributes: Dict[str, Any] = {}
             try:
                 bound = sig.bind(*args, **kwargs)
                 bound.apply_defaults()
-                for k, v in bound.arguments.items():
-                    span.set_attribute(
-                        f"{LightningSpanAttributes.OPERATION_INPUT.value}.{k}",
-                        _safe_json_dump(v),
-                    )
+                for name, value in bound.arguments.items():
+                    parameter = sig.parameters.get(name)
+                    if parameter and parameter.kind is inspect.Parameter.VAR_POSITIONAL:
+                        attr_prefix = f"{LightningSpanAttributes.OPERATION_INPUT.value}.{name}"
+                        for idx, item in enumerate(value):
+                            flattened = flatten_attributes({str(idx): item})
+                            for nested_key, nested_value in flattened.items():
+                                attributes[f"{attr_prefix}.{nested_key}"] = nested_value
+                    else:
+                        flattened = flatten_attributes({name: value})
+                        for nested_key, nested_value in flattened.items():
+                            attributes[f"{LightningSpanAttributes.OPERATION_INPUT.value}.{nested_key}"] = nested_value
             except Exception:
-                span.set_attribute(
-                    f"{LightningSpanAttributes.OPERATION_INPUT.value}.args",
-                    _safe_json_dump(args),
-                )
-                span.set_attribute(
-                    f"{LightningSpanAttributes.OPERATION_INPUT.value}.kwargs",
-                    _safe_json_dump(kwargs),
-                )
+                if args:
+                    for idx, value in enumerate(args):
+                        flattened = flatten_attributes({str(idx): value})
+                        for nested_key, nested_value in flattened.items():
+                            attributes[f"{LightningSpanAttributes.OPERATION_INPUT.value}.args.{nested_key}"] = (
+                                nested_value
+                            )
+                if kwargs:
+                    flattened = flatten_attributes({"kwargs": kwargs})
+                    for nested_key, nested_value in flattened.items():
+                        attributes[f"{LightningSpanAttributes.OPERATION_INPUT.value}.{nested_key}"] = nested_value
+            if attributes:
+                recording_ctx.record_attributes(sanitize_attributes(attributes))
+
+        def _record_auto_outputs(recording_ctx: SpanRecordingContext, result: Any) -> None:
+            """Record the output value on the span."""
+            flattened = flatten_attributes({LightningSpanAttributes.OPERATION_OUTPUT.value: result})
+            recording_ctx.record_attributes(sanitize_attributes(flattened))
 
         if asyncio.iscoroutinefunction(fn) or inspect.iscoroutinefunction(fn):
 
             @functools.wraps(fn)
             async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
                 """Async wrapper that traces the wrapped coroutine."""
-                # Reuse __enter__ logic via 'with self' would share state incorrectly
-                # across concurrent calls. We must create a new span per call.
-                # So we manually reimplement the span logic for the wrapper here.
-
-                sanitized_attrs = {
-                    k: _safe_json_dump(v) if not isinstance(v, (str, int, float, bool)) else v
-                    for k, v in self.initial_attributes.items()
-                }
-
-                with self.tracer.start_as_current_span(self.name, attributes=sanitized_attrs) as span:
-                    span.set_attribute(LightningSpanAttributes.OPERATION_NAME.value, function_name)
-                    _record_auto_inputs(span, args, kwargs)
-                    try:
-                        result = await fn(*args, **kwargs)
-                        span.set_attribute(
-                            LightningSpanAttributes.OPERATION_OUTPUT.value,
-                            _safe_json_dump(result),
-                        )
-                        return result
-                    except Exception as e:
-                        span.record_exception(e)
-                        span.set_status(Status(StatusCode.ERROR, str(e)))
-                        raise
+                with self.tracer.operation_context(self.name, attributes=sanitized_init_attrs) as recording_ctx:
+                    _record_auto_inputs(recording_ctx, args, kwargs)
+                    result = await fn(*args, **kwargs)
+                    _record_auto_outputs(recording_ctx, result)
+                    return result
 
             return cast(_FnType, async_wrapper)
 
@@ -274,25 +264,11 @@ class OperationContext:
             @functools.wraps(fn)
             def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
                 """Sync wrapper that traces the wrapped callable."""
-                sanitized_attrs = {
-                    k: _safe_json_dump(v) if not isinstance(v, (str, int, float, bool)) else v
-                    for k, v in self.initial_attributes.items()
-                }
-
-                with self.tracer.start_as_current_span(self.name, attributes=sanitized_attrs) as span:
-                    span.set_attribute(LightningSpanAttributes.OPERATION_NAME.value, function_name)
-                    _record_auto_inputs(span, args, kwargs)
-                    try:
-                        result = fn(*args, **kwargs)
-                        span.set_attribute(
-                            LightningSpanAttributes.OPERATION_OUTPUT.value,
-                            _safe_json_dump(result),
-                        )
-                        return result
-                    except Exception as e:
-                        span.record_exception(e)
-                        span.set_status(Status(StatusCode.ERROR, str(e)))
-                        raise
+                with self.tracer.operation_context(self.name, attributes=sanitized_init_attrs) as recording_ctx:
+                    _record_auto_inputs(recording_ctx, args, kwargs)
+                    result = fn(*args, **kwargs)
+                    _record_auto_outputs(recording_ctx, result)
+                    return result
 
             return cast(_FnType, sync_wrapper)
 
