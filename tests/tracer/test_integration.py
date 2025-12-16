@@ -57,7 +57,7 @@ from pydantic import BaseModel
 from agentlightning.adapter.triplet import TracerTraceToTriplet, TraceTree
 from agentlightning.emitter.annotation import operation
 from agentlightning.emitter.reward import emit_reward
-from agentlightning.semconv import AGL_REWARD, LightningSpanAttributes
+from agentlightning.semconv import AGL_REWARD
 from agentlightning.tracer import Tracer
 from agentlightning.tracer.agentops import AgentOpsTracer
 from agentlightning.types import Span
@@ -480,8 +480,6 @@ async def openai_agents_sdk_mcp_tool_use(settings: OpenAISettings, tracer: Trace
 
 
 async def openai_agents_sdk_handoff_tool_output_type_and_reward(settings: OpenAISettings, tracer: Tracer) -> None:
-    op_kwargs = {LightningSpanAttributes.OPERATION_NAME.value: AGL_REWARD}
-
     class MathOutput(BaseModel):
         answer: int
 
@@ -490,7 +488,7 @@ async def openai_agents_sdk_handoff_tool_output_type_and_reward(settings: OpenAI
         return a + b
 
     class RewardHook(AgentHooks):
-        @operation(propagate=True, **op_kwargs)
+        @operation(name=AGL_REWARD)
         async def on_end(self, context: Any, agent: Agent, output: Any):
             nonlocal final_reward
             # Use another agent to check the answer and compute reward

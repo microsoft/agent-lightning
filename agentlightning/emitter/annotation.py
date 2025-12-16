@@ -273,12 +273,43 @@ class OperationContext:
             return cast(_FnType, sync_wrapper)
 
 
-@overload
-def operation(fn: _FnType, *, propagate: bool = True, **additional_attributes: Any) -> _FnType: ...
+def _normalize_operation_attributes(attributes: Dict[str, Any]) -> Dict[str, Any]:
+    """Map friendly attribute aliases to semantic convention keys."""
+    normalized = dict(attributes)
+    name_alias = normalized.pop("name", None)
+    if name_alias is not None and LightningSpanAttributes.OPERATION_NAME.value not in normalized:
+        normalized[LightningSpanAttributes.OPERATION_NAME.value] = name_alias
+        return normalized
+
+    return attributes
 
 
 @overload
-def operation(*, propagate: bool = True, **additional_attributes: Any) -> OperationContext: ...
+def operation(
+    fn: _FnType, *, propagate: bool = True, name: Optional[str] = None, **additional_attributes: Any
+) -> _FnType: ...
+
+
+@overload
+def operation(
+    *, propagate: bool = True, name: Optional[str] = None, **additional_attributes: Any
+) -> OperationContext: ...
+
+
+@overload
+def operation(fn: _FnType, *, name: Optional[str] = None, **additional_attributes: Any) -> _FnType: ...
+
+
+@overload
+def operation(*, name: Optional[str] = None, **additional_attributes: Any) -> OperationContext: ...
+
+
+@overload
+def operation(fn: _FnType, **additional_attributes: Any) -> _FnType: ...
+
+
+@overload
+def operation(**additional_attributes: Any) -> OperationContext: ...
 
 
 def operation(
@@ -320,6 +351,9 @@ def operation(
             left as `None`) and only keyword attributes are provided.
         propagate: Whether spans should use the active span processor. When False,
             spans will stay local and not be exported.
+        name: Optional alias that populates
+            [`LightningSpanAttributes.OPERATION_NAME`][agentlightning.semconv.LightningSpanAttributes.OPERATION_NAME]
+            when `additional_attributes` does not already define it.
         **additional_attributes: Additional span attributes to attach at
             creation time.
 
@@ -328,13 +362,15 @@ def operation(
         [`OperationContext`][agentlightning.emitter.annotation.OperationContext]
         (when used as a context manager factory).
     """
+    normalized_attributes = _normalize_operation_attributes(additional_attributes)
+
     # Case 1: Used as @operation (bare decorator or with attributes)
     if callable(fn):
         # Create context with fixed name, then immediately wrap the function
-        return OperationContext(AGL_OPERATION, additional_attributes, propagate=propagate)(fn)
+        return OperationContext(AGL_OPERATION, normalized_attributes, propagate=propagate)(fn)
 
     # Case 2: Used as operation(...) / with operation(...)
     # Custom span names are intentionally not supported; use AGL_OPERATION.
     if fn is not None:
         raise ValueError("Custom span names are intentionally not supported when used as a context manager.")
-    return OperationContext(AGL_OPERATION, additional_attributes, propagate=propagate)
+    return OperationContext(AGL_OPERATION, normalized_attributes, propagate=propagate)
