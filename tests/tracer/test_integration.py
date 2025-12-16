@@ -690,7 +690,7 @@ def assert_expected_pairs_in_tree(
         "agent_litellm",
         pytest.param("agent_langchain", marks=pytest.mark.langchain),
         pytest.param("agent_langchain_tooluse", marks=pytest.mark.langchain),
-        pytest.param("agent_langgraph", marks=pytest.mark.langgraph),
+        pytest.param("agent_langgraph", marks=pytest.mark.langchain),
         "agent_autogen_multiagent",
         "agent_autogen_mcp",
         "openai_agents_sdk_eval_hook_and_guardrail",
