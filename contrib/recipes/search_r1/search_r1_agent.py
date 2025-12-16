@@ -5,15 +5,15 @@ from __future__ import annotations
 import os
 import re
 import time
-import pandas as pd
 from typing import Any, Dict, List, Optional, Tuple, TypedDict, cast
 
 
+import pandas as pd
 import requests
 from openai import OpenAI
 from qa_em import compute_score_em
 
-from agentlightning import LLM, LitAgent, NamedResources, Rollout, Trainer, setup_logging, configure_logger
+from agentlightning import LLM, LitAgent, NamedResources, Rollout, Trainer, configure_logger, setup_logging
 
 setup_logging()
 logger = configure_logger(name=__name__)
@@ -144,11 +144,7 @@ class SearchR1Agent(LitAgent[Dict[str, Any]]):
         if rollout.mode == "train":
             temperature = llm.sampling_parameters.get("temperature", 1.0)
         else:
-            temperature = (
-                self.val_temperature
-                if self.val_temperature is not None
-                else 0.0
-            )
+            temperature = self.val_temperature if self.val_temperature is not None else 0.0
 
         turn_id = 0
         finished_flag = False

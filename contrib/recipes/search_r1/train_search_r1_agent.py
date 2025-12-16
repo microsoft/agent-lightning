@@ -76,10 +76,10 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
         "experiment_name": "searchr1",
         "nnodes": 1,
         "test_freq": 10,
-        "save_freq":10,
+        "save_freq": 10,
         "total_epochs": 15,
         "total_training_steps": 300,
-        "default_local_dir": "checkpoints/searchr1_checkpoints/"
+        "default_local_dir": "checkpoints/searchr1_checkpoints/",
     },
 }
 
@@ -147,9 +147,7 @@ def train(config: Dict[str, Any]) -> None:
 
 def main() -> None:
     """Main function to parse arguments and run training."""
-    parser = argparse.ArgumentParser(
-        description="Train a Search-R1 agent using different model configurations"
-    )
+    parser = argparse.ArgumentParser(description="Train a Search-R1 agent using different model configurations")
 
     parser.add_argument(
         "config",
