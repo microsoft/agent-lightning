@@ -353,17 +353,15 @@ def test_operation_decorator_handles_complex_signature(monkeypatch: pytest.Monke
 
 
 def test_operation_name_alias_does_not_override_explicit_attribute(monkeypatch: pytest.MonkeyPatch) -> None:
-    tracer = _install_recording_tracer(monkeypatch)
+    _install_recording_tracer(monkeypatch)
 
     attrs = {
         LightningSpanAttributes.OPERATION_NAME.value: "explicit-name",
     }
 
-    with operation(name="alias-name", **attrs) as ctx:
-        ctx.set_output("done")
-
-    recording = tracer.recordings[-1]
-    assert recording.attributes[LightningSpanAttributes.OPERATION_NAME.value] == "explicit-name"
+    with pytest.raises(ValueError, match="specify both"):
+        with operation(name="alias-name", **attrs) as ctx:
+            ctx.set_output("done")
 
 
 def test_operation_decorator_records_exceptions(monkeypatch: pytest.MonkeyPatch) -> None:

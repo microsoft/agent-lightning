@@ -273,17 +273,6 @@ class OperationContext:
             return cast(_FnType, sync_wrapper)
 
 
-def _normalize_operation_attributes(attributes: Dict[str, Any]) -> Dict[str, Any]:
-    """Map friendly attribute aliases to semantic convention keys."""
-    normalized = dict(attributes)
-    name_alias = normalized.pop("name", None)
-    if name_alias is not None and LightningSpanAttributes.OPERATION_NAME.value not in normalized:
-        normalized[LightningSpanAttributes.OPERATION_NAME.value] = name_alias
-        return normalized
-
-    return attributes
-
-
 @overload
 def operation(
     fn: _FnType, *, propagate: bool = True, name: Optional[str] = None, **additional_attributes: Any
@@ -316,6 +305,7 @@ def operation(
     fn: Optional[_FnType] = None,
     *,
     propagate: bool = True,
+    name: Optional[str] = None,
     **additional_attributes: Any,
 ) -> Union[_FnType, OperationContext]:
     """Entry point for tracking operations.
@@ -362,15 +352,19 @@ def operation(
         [`OperationContext`][agentlightning.emitter.annotation.OperationContext]
         (when used as a context manager factory).
     """
-    normalized_attributes = _normalize_operation_attributes(additional_attributes)
+
+    if name is not None:
+        if LightningSpanAttributes.OPERATION_NAME.value in additional_attributes:
+            raise ValueError("Cannot specify both `name` and `additional_attributes.operation_name`.")
+        additional_attributes[LightningSpanAttributes.OPERATION_NAME.value] = name
 
     # Case 1: Used as @operation (bare decorator or with attributes)
     if callable(fn):
         # Create context with fixed name, then immediately wrap the function
-        return OperationContext(AGL_OPERATION, normalized_attributes, propagate=propagate)(fn)
+        return OperationContext(AGL_OPERATION, additional_attributes, propagate=propagate)(fn)
 
     # Case 2: Used as operation(...) / with operation(...)
     # Custom span names are intentionally not supported; use AGL_OPERATION.
     if fn is not None:
         raise ValueError("Custom span names are intentionally not supported when used as a context manager.")
-    return OperationContext(AGL_OPERATION, normalized_attributes, propagate=propagate)
+    return OperationContext(AGL_OPERATION, additional_attributes, propagate=propagate)
