@@ -85,6 +85,17 @@ The retrieval server implementation is based on `search_r1/search/retrieval_serv
 
 ---
 
-## Evaluation
+## Benchmark Results
 
-Evaluation scripts and benchmark results will be released soon.
+We evaluated Search-R1 across seven diverse question-answering benchmarks, covering both General QA (NQ, TriviaQA, PopQA) and complex multi-hop reasoning tasks (HotpotQA, 2WikiMultiHopQA, Musique, and Bamboogle).
+
+The following tables compare the performance of the original Search-R1 implementation and the Agent-Lightning version across various base models.
+
+| Model | Source | NQ | TriviaQA | PopQA | HotpotQA | 2Wiki | Musique | Bamboogle |
+| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Qwen2.5-3B-Instruct** | **Search-R1 (Original)** | 34.1 | 54.5 | 37.8 | 32.4 | 31.9 | 10.3 | 26.4 |
+| | **Agent-Lightning** | **45.3** | **61.7** | **43.8** | **42.6** | **36.4** | **17.1** | **37.6** |
+| **Qwen2.5-7B-Instruct** | **Search-R1 (Original)** | 39.3 | 61.0 | 39.7 | 37.0 | 41.4 | 14.6 | 36.8 |
+| | **Agent-Lightning** | **46.5** | **65.9** | **46.8** | **43.7** | **46.2** | **20.3** | **47.2** |
+| **Llama-3.2-3B** | **Search-R1 (Reproduced)** | 26.3 | 49.0 | 23.0 | 21.6 | 27.3 | 4.5 | 9.7 |
+| | **Agent-Lightning** | **29.6** | **51.9** | **25.7** | **23.2** | **28.3** | **5.8** | 9.6 |
