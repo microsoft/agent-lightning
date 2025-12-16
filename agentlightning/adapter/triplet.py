@@ -20,6 +20,45 @@ from .base import TraceAdapter
 logger = logging.getLogger(__name__)
 
 
+def _attributes_get_multiple(attributes: Dict[str, Any], keys: List[str]) -> Optional[str]:
+    """Get a string from the attributes, if present.
+    If there are multiple matches, the first one is returned.
+    """
+    for key in keys:
+        if key in attributes:
+            if isinstance(attributes[key], str):
+                return attributes[key]
+            else:
+                logger.warning(f"Attribute {key} is found but is not a string: {attributes[key]}")
+    return None
+
+
+def _attributes_get_ids_multiple(attributes: Dict[str, Any], keys: List[str]) -> Optional[List[int]]:
+    """Get a list of integers from the attributes, if present.
+    If there are multiple matches, the first one is returned.
+    """
+    for key in keys:
+        if key in attributes:
+            if isinstance(attributes[key], list) and all(isinstance(x, int) for x in attributes[key]):
+                return attributes[key]
+            else:
+                logger.warning(f"Attribute {key} is found but is not a list of integers: {attributes[key]}")
+    return None
+
+
+def _attributes_unflatten_multiple(
+    attributes: Dict[str, Any], keys: List[str]
+) -> Union[Dict[str, Any], List[Any], None]:
+    """Unflatten the attributes, if present.
+    If there are multiple matches, the first one is returned.
+    """
+    for key in keys:
+        result = filter_and_unflatten_attributes(attributes, key)
+        if result:
+            return result
+    return None
+
+
 class Transition(BaseModel):
     """A single transition within a reinforcement learning trajectory.
 
@@ -132,7 +171,7 @@ class TraceTree:
             if not should_visit(node):
                 return False
             agent_name = node.agent_name()
-            vis_name = node.id[:8] + " (" + node.span.name + ")"
+            vis_name = node.id[-8:] + " (" + node.span.name + ")"
             if agent_name is not None:
                 vis_name += " [" + agent_name + "]"
             dot.node(node.id, vis_name)  # type: ignore
@@ -365,7 +404,9 @@ class TraceTree:
             is_llm_call = False
         if is_llm_call:
             # Check the response id
-            response_id: Optional[str] = self.span.attributes.get("gen_ai.response.id")  # type: ignore
+            response_id = _attributes_get_multiple(
+                self.span.attributes, ["gen_ai.response.id", "agentlightning.operation.output.id"]
+            )
             if response_id is None and within_llm_call is True:
                 is_llm_call = False
             if (
@@ -567,18 +608,57 @@ class TraceTree:
         Subclass can override this method to add more fields to the triplet,
         such as chat messages and tool calls.
         """
-        prompt_token_ids = span.attributes.get("prompt_token_ids", [])  # type: ignore
-        response_token_ids = span.attributes.get("response_token_ids", [])  # type: ignore
-        response_id = span.attributes.get("gen_ai.response.id", None)  # type: ignore
-        request_metadata = filter_and_unflatten_attributes(span.attributes, "gen_ai.request")
-        response_metadata = filter_and_unflatten_attributes(span.attributes, "gen_ai.response")
-        prompt_raw_content = filter_and_unflatten_attributes(span.attributes, "gen_ai.prompt")
-        completion_raw_content = filter_and_unflatten_attributes(span.attributes, "gen_ai.completion")
-        image_urls = self.extract_prompt_image_urls(prompt_raw_content)
+        prompt_token_ids = (
+            _attributes_get_ids_multiple(
+                span.attributes,
+                [
+                    "prompt_token_ids",
+                    "agentlightning.operation.output.prompt_token_ids",  # Weave tracer
+                ],
+            )
+            or []
+        )
+        response_token_ids = (
+            _attributes_get_ids_multiple(
+                span.attributes,
+                [
+                    "response_token_ids",
+                    "agentlightning.operation.output.response_token_ids.0",  # Weave tracer
+                    "agentlightning.operation.output.choices.0.token_ids",  # Weave tracer with newer vLLM
+                    "agentlightning.operation.output.choices.0.provider_specific_fields.token_ids",  # new vLLM + new OpenAI client SDK
+                ],
+            )
+            or []
+        )
 
+        response_id = _attributes_get_multiple(
+            span.attributes, ["gen_ai.response.id", "agentlightning.operation.output.id"]
+        )
+        request_metadata = _attributes_unflatten_multiple(
+            span.attributes, ["gen_ai.request", "agentlightning.operation.input"]
+        )
+        response_metadata = _attributes_unflatten_multiple(
+            span.attributes, ["gen_ai.response", "agentlightning.operation.output"]
+        )
+        # Special handling for Weave tracer: messages are handled separately
+        if isinstance(request_metadata, dict):
+            request_metadata.pop("messages", None)
+        if isinstance(response_metadata, dict):
+            response_metadata.pop("choices", None)
+            response_metadata.pop("prompt_token_ids", None)
+            response_metadata.pop("response_token_ids", None)
+
+        prompt_raw_content = _attributes_unflatten_multiple(
+            span.attributes, ["gen_ai.prompt", "agentlightning.operation.input.messages"]
+        )
+        completion_raw_content = _attributes_unflatten_multiple(
+            span.attributes, ["gen_ai.completion", "agentlightning.operation.output.choices"]
+        )
+        image_urls = self.extract_prompt_image_urls(prompt_raw_content)
         prompt_payload = {"token_ids": prompt_token_ids, "raw_content": prompt_raw_content, "image_urls": image_urls}
         response_payload = {"token_ids": response_token_ids, "raw_content": completion_raw_content}
 
+        # FIXME: logprob doesn't support Weave tracer yet.
         logprobs_content = span.attributes.get("logprobs.content", None)  # type: ignore
         if isinstance(logprobs_content, str):
             logprobs_content = json.loads(logprobs_content)
