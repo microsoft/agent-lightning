@@ -2111,7 +2111,7 @@
 <p>Bonus points for examples that:</p>
 <ul>
 <li>Ship CI or self-test coverage so we know they still work as the core evolves.  <strong>Otherwise, we would have to mark the example as unmaintained because we won't be able to test the examples manually before each release.</strong></li>
-<li>Include a <a href="https://github.com/microsoft/agent-lightning/tree/f66d87745faec6c3293d6e841885efef8eaa1de0/docs/how-to/"><code>docs/how-to/</code></a> guide (or a detailed README if no how-to exists) without duplicating content in multiple places.</li>
+<li>Include a <a href="https://github.com/microsoft/agent-lightning/tree/e62b7ca252427694cb73407fcc377ce60f4106a1/docs/how-to/"><code>docs/how-to/</code></a> guide (or a detailed README if no how-to exists) without duplicating content in multiple places.</li>
 <li>Favor simple, dependency-light code over heavy abstractions.</li>
 <li>Ship a README that documents smoke-test instructions and includes an "Included Files" section summarizing every file and its role; keep the runnable module self-contained with a module-level docstring explaining CLI usage, plus targeted docstrings or inline comments for educational functions/classes.</li>
 </ul>
@@ -2136,16 +2136,16 @@
 </ul>
 <p>Most brand-new algorithms ultimately land as “new examples,” so read that section too. Post an issue or design doc to scope the work, reuse existing utilities, and avoid duplicating efforts. Mature, battle-tested examples graduate into the <a href="../../algorithm-zoo/">Algorithm Zoo</a>.</p>
 <h3 id="ecosystem-projects">Ecosystem Projects<a class="headerlink" href="#ecosystem-projects" title="Permanent link">&para;</a></h3>
-<p>Have a project that builds on Agent-lightning but does not belong in the main repo? Fork it or depend on it externally, then let us know. We can showcase notable projects in <a href="../../">Community Projects</a> and the main <a href="https://github.com/microsoft/agent-lightning/tree/f66d87745faec6c3293d6e841885efef8eaa1de0/README.md">README</a>.</p>
+<p>Have a project that builds on Agent-lightning but does not belong in the main repo? Fork it or depend on it externally, then let us know. We can showcase notable projects in <a href="../../">Community Projects</a> and the main <a href="https://github.com/microsoft/agent-lightning/tree/e62b7ca252427694cb73407fcc377ce60f4106a1/README.md">README</a>.</p>
 <h3 id="agent-lightning-contrib">Agent-lightning Contrib<a class="headerlink" href="#agent-lightning-contrib" title="Permanent link">&para;</a></h3>
-<p><a href="https://github.com/microsoft/agent-lightning/tree/f66d87745faec6c3293d6e841885efef8eaa1de0/contrib"><code>contrib/</code></a> is where work-in-progress or third-party integrations, and curated recipes live before they are hardened enough for the core runtime tree. Think of it as an incubator: additions should remain easy to consume, clearly owned, and scoped so downstream users can vendor them with minimal risk.</p>
+<p><a href="https://github.com/microsoft/agent-lightning/tree/e62b7ca252427694cb73407fcc377ce60f4106a1/contrib"><code>contrib/</code></a> is where work-in-progress or third-party integrations, and curated recipes live before they are hardened enough for the core runtime tree. Think of it as an incubator: additions should remain easy to consume, clearly owned, and scoped so downstream users can vendor them with minimal risk.</p>
 <p>The following types of contributions are welcome in the contrib area:</p>
 <ul>
 <li><strong>Recipes</strong> that assemble multiple Agent Lightning components for a narrow task (<code>contrib/recipes/&lt;topic&gt;/</code>). Each recipe must be self-contained, include running instructions and result reports.</li>
 <li><strong>Runtime extensions</strong> that would bloat the primary <code>agentlightning/</code> namespace (<code>contrib/agentlightning/contrib/&lt;feature&gt;/</code>). These should mirror the published wheel layout so that <code>import agentlightning.contrib.&lt;feature&gt;</code> works out of the box.</li>
 <li><strong>Supporting scripts and assets</strong> (<code>contrib/scripts/</code>) that automate dataset downloads, environment preparation, or benchmarks required by contrib modules.</li>
 </ul>
-<p>If you are unsure where a contribution should live, start a thread in Discord or open an issue before writing code. The <a href="https://github.com/microsoft/agent-lightning/tree/f66d87745faec6c3293d6e841885efef8eaa1de0/contrib/README.md">contrib README</a> also lists the directory expectations.</p>
+<p>If you are unsure where a contribution should live, start a thread in Discord or open an issue before writing code. The <a href="https://github.com/microsoft/agent-lightning/tree/e62b7ca252427694cb73407fcc377ce60f4106a1/contrib/README.md">contrib README</a> also lists the directory expectations.</p>
 <p>A quick checklist for contributions to be accepted:</p>
 <ol>
 <li><strong>Document everything.</strong> Include configuration steps, environment variables, and sample commands so contributors can reproduce the results without guesswork. Pin to a specific version of Agent-lightning and other dependencies to avoid unexpected changes if you don't want to update the recipe frequently.</li>
@@ -2156,8 +2156,8 @@
 <p>Contrib entries do not need the same maturity level as core code, but they must still meet the baseline above. Submissions that lack documentation, hide ownership, or depend on untracked assets are typically rejected until those gaps are resolved.</p>
 <h3 id="other-contribution-ideas">Other Contribution Ideas<a class="headerlink" href="#other-contribution-ideas" title="Permanent link">&para;</a></h3>
 <ul>
-<li><strong>Tests.</strong> Add or improve cases in <a href="https://github.com/microsoft/agent-lightning/tree/f66d87745faec6c3293d6e841885efef8eaa1de0/tests"><code>tests/</code></a> (unit, integration, or end-to-end).</li>
-<li><strong>Benchmarks.</strong> Expand <a href="https://github.com/microsoft/agent-lightning/tree/f66d87745faec6c3293d6e841885efef8eaa1de0/tests/benchmark"><code>tests/benchmark</code></a> to stress large-scale training or rollouts.</li>
+<li><strong>Tests.</strong> Add or improve cases in <a href="https://github.com/microsoft/agent-lightning/tree/e62b7ca252427694cb73407fcc377ce60f4106a1/tests"><code>tests/</code></a> (unit, integration, or end-to-end).</li>
+<li><strong>Benchmarks.</strong> Expand <a href="https://github.com/microsoft/agent-lightning/tree/e62b7ca252427694cb73407fcc377ce60f4106a1/tests/benchmark"><code>tests/benchmark</code></a> to stress large-scale training or rollouts.</li>
 <li><strong>Issue triage.</strong> Reproduce bugs, confirm whether they reproduce on <code>main</code>, or suggest short-term mitigations so maintainers can prioritize.</li>
 </ul>
 <h2 id="contribution-workflow">Contribution Workflow<a class="headerlink" href="#contribution-workflow" title="Permanent link">&para;</a></h2>
@@ -2241,7 +2241,7 @@
 </tr>
 </tbody>
 </table>
-<p>Remember to register new docs in <a href="https://github.com/microsoft/agent-lightning/tree/f66d87745faec6c3293d6e841885efef8eaa1de0/mkdocs.yml"><code>mkdocs.yml</code></a>, add examples to <a href="https://github.com/microsoft/agent-lightning/tree/f66d87745faec6c3293d6e841885efef8eaa1de0/examples/README.md">examples/README</a>, and update the <a href="../../how-to/examples-catalog/">Examples Catalog</a>.</p>
+<p>Remember to register new docs in <a href="https://github.com/microsoft/agent-lightning/tree/e62b7ca252427694cb73407fcc377ce60f4106a1/mkdocs.yml"><code>mkdocs.yml</code></a>, add examples to <a href="https://github.com/microsoft/agent-lightning/tree/e62b7ca252427694cb73407fcc377ce60f4106a1/examples/README.md">examples/README</a>, and update the <a href="../../how-to/examples-catalog/">Examples Catalog</a>.</p>
 </div>
 <p>Before you start coding, bring the shared coding conventions with you:</p>
 <ul>
@@ -2266,7 +2266,7 @@
 <p>If you have touched code under <code>examples/</code>, you should run the example-specific smoke tests. Each directory includes a README with example-specific smoke tests—run those too.</p>
 <div class="admonition note">
 <p class="admonition-title">Build documentation when needed</p>
-<p>Keep API references under <a href="https://github.com/microsoft/agent-lightning/tree/f66d87745faec6c3293d6e841885efef8eaa1de0/docs/reference/">docs/reference</a> up to date. Doc-only changes should still build cleanly:</p>
+<p>Keep API references under <a href="https://github.com/microsoft/agent-lightning/tree/e62b7ca252427694cb73407fcc377ce60f4106a1/docs/reference/">docs/reference</a> up to date. Doc-only changes should still build cleanly:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>uv<span class="w"> </span>run<span class="w"> </span>--no-sync<span class="w"> </span>mkdocs<span class="w"> </span>serve<span class="w"> </span>--strict<span class="w">   </span><span class="c1"># live reload</span>
 <a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>uv<span class="w"> </span>run<span class="w"> </span>--no-sync<span class="w"> </span>mkdocs<span class="w"> </span>build<span class="w"> </span>--strict<span class="w">   </span><span class="c1"># CI-equivalent</span>
 </code></pre></div>
