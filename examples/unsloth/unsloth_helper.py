@@ -75,7 +75,7 @@ def unsloth_training(model_path: str, sft_dataset: HuggingFaceDataset, next_mode
         report_to="none",  # Use this for W&B etc
     )
 
-    trainer = SFTTrainer(  # pyright: ignore[reportUnknownVariableType]
+    trainer = SFTTrainer(
         model=model,  # type: ignore
         tokenizer=tokenizer,  # type: ignore
         train_dataset=sft_dataset,
