@@ -3016,7 +3016,7 @@ both continuous iteration over tasks from the store and single-step execution.</
 
 
 <h4 id="agentlightning.LitAgentRunner.__init__" class="doc doc-heading">
-<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="fm">__init__</span><span class="p">(</span><span class="n">tracer</span><span class="p">,</span> <span class="n">max_rollouts</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">poll_interval</span><span class="o">=</span><span class="mf">5.0</span><span class="p">,</span> <span class="n">heartbeat_interval</span><span class="o">=</span><span class="mf">10.0</span><span class="p">,</span> <span class="n">interval_jitter</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span> <span class="n">heartbeat_launch_mode</span><span class="o">=</span><span class="s1">&#39;asyncio&#39;</span><span class="p">)</span></code>
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <code class="highlight language-python"><span class="fm">__init__</span><span class="p">(</span><span class="n">tracer</span><span class="p">,</span> <span class="n">max_rollouts</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">poll_interval</span><span class="o">=</span><span class="mf">5.0</span><span class="p">,</span> <span class="n">heartbeat_interval</span><span class="o">=</span><span class="mf">10.0</span><span class="p">,</span> <span class="n">interval_jitter</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span> <span class="n">heartbeat_launch_mode</span><span class="o">=</span><span class="s1">&#39;thread&#39;</span><span class="p">,</span> <span class="n">heartbeat_include_gpu</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span></code>
 
 <a href="#agentlightning.LitAgentRunner.__init__" class="headerlink" title="Permanent link">&para;</a></h4>
 
@@ -3086,12 +3086,24 @@ This is to avoid the overload caused by the synchronization of the runners.</p>
         <li class="doc-section-item field-body">
             <b><code>heartbeat_launch_mode</code></b>
               (<code><span title="typing.Literal">Literal</span>[&#39;asyncio&#39;, &#39;thread&#39;]</code>, default:
-                  <code>&#39;asyncio&#39;</code>
+                  <code>&#39;thread&#39;</code>
 )
           –
           <div class="doc-md-description">
             <p>Launch mode for the heartbeat loop. Can be "asyncio" or "thread".
-"asyncio" is the default and recommended mode. Use "thread" if you are experiencing blocking coroutines.</p>
+"thread" is the default and recommended mode as it prevents blocking the event loop
+under load. Use "asyncio" for simpler deployments with low worker counts.</p>
+          </div>
+        </li>
+        <li class="doc-section-item field-body">
+            <b><code>heartbeat_include_gpu</code></b>
+              (<code><span title="bool">bool</span></code>, default:
+                  <code>False</code>
+)
+          –
+          <div class="doc-md-description">
+            <p>Whether to include GPU stats in heartbeat snapshots.
+Querying GPU stats can be slow under load, so this is disabled by default.</p>
           </div>
         </li>
     </ul>
