@@ -27,3 +27,5 @@
 ::: agentlightning.get_active_tracer
 
 ::: agentlightning.clear_active_tracer
+
+::: agentlightning.tracer.weave.WeaveTracer

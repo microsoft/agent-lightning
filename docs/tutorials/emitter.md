@@ -91,7 +91,7 @@ Span(
     RuntimeError: No active tracer found. Cannot emit object span.
     ```
 
-    All emitter helpers also support a `propagate` flag; setting `propagate=False` keeps the span local, which is useful for offline tests. The default `True` streams spans through the active tracer/exporters.
+    The reason is that, by default, emitter function delegates to the current active tracer to create and export spans (specifically, [`Tracer.create_span`][agentlightning.Tracer.create_span] method). If you want to emit spans without an active tracer, all emitter helpers also support a `propagate` flag; setting `propagate=False` keeps the span local, which is useful for offline tests. The default `True` streams spans through the active tracer/exporters.
 
 More commonly, especially when working with [agentlightning.semconv](../reference/semconv.md), you would use utilities like [`make_tag_attributes`][agentlightning.utils.otel.make_tag_attributes] and [`make_link_attributes`][agentlightning.utils.otel.make_link_attributes] to create the attributes dictionary. For example:
 
