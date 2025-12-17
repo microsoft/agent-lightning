@@ -21,7 +21,7 @@ actor_rollout_ref:
         name: PatchedvLLMServer
     trace_aggregator:
       mode: transition  # transition or trajectory, docs refer to https://agent-lightning.github.io/posts/trajectory_mode/
-      trajectory_max_prompt_length: 2048  # supported in trajectory mode, suggest to set as max_prompt_length
-      trajectory_max_response_length: 8192  # supported in trajectory mode, suggest to set as n_turns * (max_response_length + max_prompt_length)
-      debug: False  # enable debug mode for trajectory aggregator
-      unmatch_log_dir: ./unmatch_cases  # if debug=True, all unmatched cases will be logged to this folder
+      trajectory_max_prompt_length: 2048  # supported in trajectory mode, suggest to set as maximum length for the prompt in first turn
+      trajectory_max_response_length: 8192  # supported in trajectory mode, suggest to set as maximum length for the cumulative agent responses in the full trajectory, i.e., n_turns * (max_response_length + max_prompt_length)
+      debug: False  # supported in trajectory mode, enable to diagnose trace merging failures
+      unmatch_log_dir: ./unmatch_cases  # supported in trajectory mode with debug=True, directory to store logs of unmatched cases
