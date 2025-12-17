@@ -714,7 +714,7 @@ def fmt_rate(value: Optional[float]) -> str:
 def fmt_latency(value: Optional[float]) -> str:
     if value is None or math.isnan(value):
         return "-"
-    if abs(value) < 0.5:
+    if abs(value) < 10:
         return f"{value * 1e3:.2f} ms"
     return f"{value:.2f} s"
 

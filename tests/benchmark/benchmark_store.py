@@ -189,7 +189,7 @@ class AlgorithmBatch(agl.Algorithm):
                         current_workers = await store.query_workers()
                         console.print(f"Stalled. Current worker status shown below:")
                         for worker in current_workers:
-                            console.print(f"  Worker: {worker}", width=1024)  # Avoid wrapping
+                            console.print(f"  Worker: {worker}", no_wrap=True)  # Avoid wrapping
                         raise RuntimeError("Rollout progress has stalled for too long")
 
                 await asyncio.sleep(5.0)

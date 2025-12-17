@@ -172,6 +172,7 @@ jobs:
             timeout: 15
             cli: metrics
     env:
+      PYTHONUNBUFFERED: "1"
       STORE_URL: http://localhost:4747
       STORE_API_URL: http://localhost:4747/v1/agl
       PROM_URL: http://localhost:9090
