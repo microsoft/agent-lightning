@@ -155,7 +155,7 @@ For more control, [`operation`][agentlightning.operation] can also be used as a 
 ```python
 with agl.operation(tool_name="web_search") as op:
     op.set_input(query="latest AI research", filters={"date": "2024"})
-    results = search_web(query, filters)
+    results = search_web("latest AI research", {"date": "2024"})
     op.set_output({"result_count": len(results), "top_result": results[0]})
 ```
 
