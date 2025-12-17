@@ -330,6 +330,7 @@ class LightningSpanProcessor(SpanProcessor):
         self._loop_ready = threading.Event()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._loop_thread: Optional[threading.Thread] = None
+        self._loop_init_lock = threading.Lock()
 
     def __repr__(self) -> str:
         return (
@@ -365,11 +366,19 @@ class LightningSpanProcessor(SpanProcessor):
         self._disable_store_submission = value
 
     def _ensure_loop(self) -> None:
-        if self._loop_thread is None or self._loop is None:
+        # Fast path: loop already initialized
+        if self._loop_thread is not None and self._loop is not None:
+            return
+
+        with self._loop_init_lock:
+            # Double-check after acquiring lock
+            if self._loop_thread is not None and self._loop is not None:
+                return
             self._loop_ready.clear()
             self._loop_thread = threading.Thread(target=self._loop_runner, name="otel-loop", daemon=True)
             self._loop_thread.start()
-            self._loop_ready.wait()  # loop is ready
+            if not self._loop_ready.wait(timeout=30.0):
+                raise RuntimeError("Timed out waiting for otel-loop thread to start")
 
     def _loop_runner(self):
         loop = asyncio.new_event_loop()
