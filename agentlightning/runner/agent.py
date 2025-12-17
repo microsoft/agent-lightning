@@ -382,10 +382,14 @@ class LitAgentRunner(Runner[T_task]):
 
     async def _emit_heartbeat(self, store: LightningStore) -> None:
         """Send a heartbeat tick to the store."""
+        logger.debug(f"{self._log_prefix()} Preparing to emit heartbeat.")
         worker_id = self.get_worker_id()
 
         try:
-            await store.update_worker(worker_id, system_snapshot())
+            snapshot = system_snapshot()
+            logger.debug(f"{self._log_prefix()} Heartbeat snapshot acquired.")
+            await store.update_worker(worker_id, snapshot)
+            logger.debug(f"{self._log_prefix()} Heartbeat updated successfully.")
         except asyncio.CancelledError:
             # bypass the exception
             raise
@@ -503,6 +507,8 @@ class LitAgentRunner(Runner[T_task]):
                 logger.error(f"{self._log_prefix(rollout_id)} Failed to fetch resources. Skipping.")
                 return rollout_id
 
+        logger.debug(f"{self._log_prefix(rollout_id)} Resources fetched (id={resources_update.resources_id}).")
+
         trace_spans: List[ReadableSpan] | List[Span] = []
         has_exception: bool = False
 
@@ -510,9 +516,11 @@ class LitAgentRunner(Runner[T_task]):
             await self._trigger_hooks(hook_type="on_rollout_start", agent=agent, runner=self, rollout=next_rollout)
 
             start_time = time.time()
+            logger.debug(f"{self._log_prefix(rollout_id)} Prepared for trace context.")
             async with self._tracer.trace_context(
                 name=rollout_id, rollout_id=rollout_id, attempt_id=next_rollout.attempt.attempt_id
             ):
+                logger.debug(f"{self._log_prefix(rollout_id)} Entered trace context.")
                 await self._trigger_hooks(
                     hook_type="on_trace_start", agent=agent, runner=self, tracer=self._tracer, rollout=next_rollout
                 )
@@ -524,20 +532,26 @@ class LitAgentRunner(Runner[T_task]):
                     rollout_method = (
                         agent.training_rollout_async if next_rollout.mode == "train" else agent.validation_rollout_async
                     )
+                    logger.debug(f"{self._log_prefix(rollout_id)} Starting async rollout method.")
                     result = await rollout_method(
                         next_rollout.input, resources=resources_update.resources, rollout=next_rollout
                     )
+                    logger.debug(f"{self._log_prefix(rollout_id)} Async rollout method completed.")
                 else:
                     rollout_method = (
                         agent.training_rollout if next_rollout.mode == "train" else agent.validation_rollout
                     )
+                    logger.debug(f"{self._log_prefix(rollout_id)} Starting sync rollout method.")
                     result = rollout_method(
                         next_rollout.input, resources=resources_update.resources, rollout=next_rollout
                     )
+                    logger.debug(f"{self._log_prefix(rollout_id)} Sync rollout method completed.")
 
                 await self._trigger_hooks(
                     hook_type="on_trace_end", agent=agent, runner=self, tracer=self._tracer, rollout=next_rollout
                 )
+
+            logger.debug(f"{self._log_prefix(rollout_id)} Trace context exited.")
 
             # Possible exceptions in post_process will be caught in the overall exception handler
             trace_spans = await self._post_process_rollout_result(next_rollout, result)
