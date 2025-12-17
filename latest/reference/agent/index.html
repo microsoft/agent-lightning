@@ -704,7 +704,35 @@
   <span class="md-ellipsis">
     
   
-    Working with Traces
+    Work with Traces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/emitter/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Use Emitters
   
 
     
@@ -1750,6 +1778,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../semconv/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Semantic Conventions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../store/" class="md-nav__link">
         
   
@@ -1842,6 +1898,34 @@
     
   
     RESTful
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../utilities/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Utilities
   
 
     
@@ -3358,6 +3442,19 @@ subclass needs to override defaults.</p>
 </ul>
           </div>
         </li>
+        <li class="doc-section-item field-body">
+              <code><a class="autorefs autorefs-internal" title="            agentlightning.RolloutRawResult = Union[None, float, List[ReadableSpan], List[Span], List[SpanCoreFields]]
+
+  
+      module-attribute
+   (agentlightning.types.RolloutRawResult)" href="../types/#agentlightning.RolloutRawResult">RolloutRawResult</a></code>
+          –
+          <div class="doc-md-description">
+            <ul>
+<li><code>List[SpanCoreFields]</code> with Agent Lightning spans.</li>
+</ul>
+          </div>
+        </li>
     </ul>
 
 
@@ -3664,7 +3761,7 @@ The span name is fixed to <a class="autorefs autorefs-internal" title="         
 
   
       module-attribute
-  " href="../types/#agentlightning.semconv.AGL_OPERATION"><code>AGL_OPERATION</code></a>;
+  " href="../semconv/#agentlightning.semconv.AGL_OPERATION"><code>AGL_OPERATION</code></a>;
 custom span names are not supported. Any keyword arguments are recorded as span attributes.</p>
 <p>Usage as a decorator:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nd">@operation</span>
@@ -3721,7 +3818,7 @@ spans will stay local and not be exported.</p>
   
       class-attribute
       instance-attribute
-  " href="../types/#agentlightning.semconv.LightningSpanAttributes.OPERATION_NAME"><code>LightningSpanAttributes.OPERATION_NAME</code></a>
+  " href="../semconv/#agentlightning.semconv.LightningSpanAttributes.OPERATION_NAME"><code>LightningSpanAttributes.OPERATION_NAME</code></a>
 when <code>additional_attributes</code> does not already define it.</p>
           </div>
         </li>
@@ -3783,7 +3880,7 @@ creation time.</p>
         <p>Emit a new annotation span.</p>
 <p>This is the underlying implementation of <a class="autorefs autorefs-internal" title="            agentlightning.emit_reward(reward, *, primary_key=None, attributes=None, propagate=True)" href="#agentlightning.emit_reward"><code>emit_reward</code></a>.</p>
 <p>Annotation spans are used to annotate a specific event or a part of rollout.
-See <a class="autorefs autorefs-internal" title="            agentlightning.semconv" href="../types/#agentlightning.semconv">semconv</a> for conventional annotation keys in Agent-lightning.</p>
+See <a class="autorefs autorefs-internal" title="            agentlightning.semconv" href="../semconv/#agentlightning.semconv">semconv</a> for conventional annotation keys in Agent-lightning.</p>
 <p>If annotations contain nested dicts, they will be flattened before emitting.
 Complex objects will lead to emitting failures.</p>
 
@@ -4318,7 +4415,7 @@ a TypeError is raised to indicate a programming mistake.</p>
 <p><span class="doc-section-title">Returns:</span></p>
     <ul>
         <li class="doc-section-item field-body">
-              <code><span title="typing.List">List</span>[<a class="autorefs autorefs-internal" title="            RewardPydanticModel (agentlightning.semconv.RewardPydanticModel)" href="../types/#agentlightning.semconv.RewardPydanticModel">RewardPydanticModel</a>]</code>
+              <code><span title="typing.List">List</span>[<a class="autorefs autorefs-internal" title="            RewardPydanticModel (agentlightning.semconv.RewardPydanticModel)" href="../semconv/#agentlightning.semconv.RewardPydanticModel">RewardPydanticModel</a>]</code>
           –
           <div class="doc-md-description">
             <p>A list of reward dimensions encoded in the span or an empty list when the span does not represent a reward.</p>

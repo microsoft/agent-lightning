@@ -14,7 +14,7 @@
         <link rel="prev" href="../debug/">
       
       
-        <link rel="next" href="../parallelize/">
+        <link rel="next" href="../emitter/">
       
       
         
@@ -25,7 +25,7 @@
     
     
       
-        <title>Working with Traces - Agent-lightning</title>
+        <title>Work with Traces - Agent-lightning</title>
       
     
     
@@ -123,7 +123,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Working with Traces
+              Work with Traces
             
           </span>
         </div>
@@ -713,7 +713,7 @@
   <span class="md-ellipsis">
     
   
-    Working with Traces
+    Work with Traces
   
 
     
@@ -731,7 +731,7 @@
   <span class="md-ellipsis">
     
   
-    Working with Traces
+    Work with Traces
   
 
     
@@ -784,6 +784,17 @@
     <span class="md-ellipsis">
       
         OpenTelemetry Tracer
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#weave-tracer-experimental" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Weave Tracer (Experimental)
       
     </span>
   </a>
@@ -860,6 +871,34 @@
   
 </nav>
       
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../emitter/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Use Emitters
+  
+
+    
+  </span>
+  
+  
+
+      </a>
     </li>
   
 
@@ -1391,6 +1430,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../reference/semconv/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Semantic Conventions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../reference/store/" class="md-nav__link">
         
   
@@ -1483,6 +1550,34 @@
     
   
     RESTful
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/utilities/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Utilities
   
 
     
@@ -1737,6 +1832,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#weave-tracer-experimental" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Weave Tracer (Experimental)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#llm-proxy" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1861,7 +1967,7 @@
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="November 27, 2025 17:22:42 UTC"><span class="timeago" datetime="2025-11-27T17:22:42+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="November 27, 2025 17:22:42 UTC">2025-11-27</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="December 17, 2025 17:12:50 UTC"><span class="timeago" datetime="2025-12-17T17:12:50+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="December 17, 2025 17:12:50 UTC">2025-12-17</span>
   </span>
 
     
@@ -1931,6 +2037,13 @@
 <p><a href="https://github.com/microsoft/agent-framework">Microsoft Agent Framework</a> is a typical example with built-in OpenTelemetry support. Once you set <code>OBSERVABILITY_SETTINGS.enable_otel = True</code>, the framework will automatically emit OpenTelemetry spans, and <a class="autorefs autorefs-internal" title="            agentlightning.OtelTracer" href="../../reference/runner/#agentlightning.OtelTracer"><code>OtelTracer</code></a> will be able to capture them. No extra instrumentation is needed.</p>
 </div>
 <p>Inside your agent you can call <code>opentelemetry.trace.get_trace_provider().get_tracer("my-agent")</code> and use that tracer to <a href="https://opentelemetry.io/docs/languages/python/cookbook/">create spans</a> exactly as you would in any OpenTelemetry application. The Lightning span processor attached by <a class="autorefs autorefs-internal" title="            agentlightning.OtelTracer" href="../../reference/runner/#agentlightning.OtelTracer"><code>OtelTracer</code></a> guarantees that every span is sequenced, converted, and written to the store. The same applies for emitted rewards (<a class="autorefs autorefs-internal" title="            agentlightning.emit_reward(reward, *, primary_key=None, attributes=None, propagate=True)" href="../../reference/agent/#agentlightning.emit_reward"><code>emit_reward</code></a>) and other emitter signals, which are just a special case of manually-created spans.</p>
+<h3 id="weave-tracer-experimental">Weave Tracer (Experimental)<a class="headerlink" href="#weave-tracer-experimental" title="Permanent link">&para;</a></h3>
+<p><a class="autorefs autorefs-internal" title="            agentlightning.tracer.weave.WeaveTracer" href="../../reference/runner/#agentlightning.tracer.weave.WeaveTracer"><code>WeaveTracer</code></a> is an experimental tracer that integrates with the <a href="https://docs.wandb.ai/weave">Weave Python SDK</a>. Use it as a substitute for <a class="autorefs autorefs-internal" title="            agentlightning.AgentOpsTracer" href="../../reference/runner/#agentlightning.AgentOpsTracer"><code>AgentOpsTracer</code></a> when the AgentOps SDK does not fit your environment.</p>
+<p>The Weave SDK instruments LLM calls and agent libraries directly. Unlike <a class="autorefs autorefs-internal" title="            agentlightning.AgentOpsTracer" href="../../reference/runner/#agentlightning.AgentOpsTracer"><code>AgentOpsTracer</code></a>, Weave does not rely on OpenTelemetry to export spans; it routes everything through a dedicated Weave Trace Server. Agent-lightning implements a custom Weave Trace Server so every call captured by the Weave SDK can be persisted to the <a class="autorefs autorefs-internal" title="            agentlightning.LightningStore" href="../../reference/store/#agentlightning.LightningStore"><code>LightningStore</code></a>.</p>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p><a class="autorefs autorefs-internal" title="            agentlightning.tracer.weave.WeaveTracer" href="../../reference/runner/#agentlightning.tracer.weave.WeaveTracer"><code>WeaveTracer</code></a> remains experimental and has not been tested as thoroughly as <a class="autorefs autorefs-internal" title="            agentlightning.AgentOpsTracer" href="../../reference/runner/#agentlightning.AgentOpsTracer"><code>AgentOpsTracer</code></a>. It may conflict with libraries that ship OpenTelemetry instrumentation by default (for example, LiteLLM-based LLM proxies). Use the tracer with caution and report any issues to the Agent-lightning team.</p>
+</div>
 <h3 id="llm-proxy">LLM Proxy<a class="headerlink" href="#llm-proxy" title="Permanent link">&para;</a></h3>
 <p>Sometimes the runner can’t observe the agent directly — because it’s in another language or running remotely. <a class="autorefs autorefs-internal" title="            agentlightning.LLMProxy" href="../../reference/algorithm/#agentlightning.LLMProxy"><code>LLMProxy</code></a> bridges that gap by instrumenting the server side of LLM calls. It wraps <a href="https://docs.litellm.ai/">LiteLLM</a> and adds middleware that accepts prefixed routes like <code>/rollout/{rid}/attempt/{aid}/v1/chat/completions</code>. Before forwarding, the middleware rewrites the path to <code>/v1/chat/completions</code>, fetches a monotonic <code>sequence_id</code> from the <code>LightningStore</code>, injects <code>x-rollout-id</code>, <code>x-attempt-id</code>, and <code>x-sequence-id</code> into the request headers, and then forwards the request to the backend LLM endpoint.</p>
 <p>LiteLLM produces OpenTelemetry spans for the request/response. A custom <code>LightningSpanExporter</code> reads the rollout/attempt/sequence identifiers from the recorded request headers and persists each span to the store. Because the <code>sequence_id</code> is allocated at the start of the request, traces stay in strict order even across machines with skewed clocks or asynchronous responses.</p>
@@ -2006,7 +2119,7 @@
 
   
       module-attribute
-  " href="../../reference/types/#agentlightning.semconv.AGL_ANNOTATION"><code>agentlightning.annotation</code></a>. Emitting a reward through <a class="autorefs autorefs-internal" title="            agentlightning.emit_reward(reward, *, primary_key=None, attributes=None, propagate=True)" href="../../reference/agent/#agentlightning.emit_reward"><code>emit_reward</code></a> or <a class="autorefs autorefs-internal" title="            agentlightning.emit_annotation(annotation, propagate=True)" href="../../reference/agent/#agentlightning.emit_annotation"><code>emit_annotation</code></a> ensures the value is stored in the span’s <code>attributes</code>. To audit rewards, fetch spans from the store and use the helper utilities in <a href="../../reference/agent/"><code>agentlightning.emitter</code></a>:</p>
+  " href="../../reference/semconv/#agentlightning.semconv.AGL_ANNOTATION"><code>agentlightning.annotation</code></a>. Emitting a reward through <a class="autorefs autorefs-internal" title="            agentlightning.emit_reward(reward, *, primary_key=None, attributes=None, propagate=True)" href="../../reference/agent/#agentlightning.emit_reward"><code>emit_reward</code></a> or <a class="autorefs autorefs-internal" title="            agentlightning.emit_annotation(annotation, propagate=True)" href="../../reference/agent/#agentlightning.emit_annotation"><code>emit_annotation</code></a> ensures the value is stored in the span’s <code>attributes</code>. To audit rewards, fetch spans from the store and use the helper utilities in <a href="../../reference/agent/"><code>agentlightning.emitter</code></a>:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">agentlightning.emitter</span><span class="w"> </span><span class="kn">import</span> <span class="n">find_final_reward</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">spans</span> <span class="o">=</span> <span class="k">await</span> <span class="n">store</span><span class="o">.</span><span class="n">query_spans</span><span class="p">(</span><span class="n">rollout_id</span><span class="p">)</span>

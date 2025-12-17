@@ -89,6 +89,10 @@
          <lastmod>2025-12-17</lastmod>
     </url>
     <url>
+         <loc>https://microsoft.github.io/agent-lightning/latest/reference/semconv/</loc>
+         <lastmod>2025-12-17</lastmod>
+    </url>
+    <url>
          <loc>https://microsoft.github.io/agent-lightning/latest/reference/store/</loc>
          <lastmod>2025-12-17</lastmod>
     </url>
@@ -101,7 +105,15 @@
          <lastmod>2025-12-17</lastmod>
     </url>
     <url>
+         <loc>https://microsoft.github.io/agent-lightning/latest/reference/utilities/</loc>
+         <lastmod>2025-12-17</lastmod>
+    </url>
+    <url>
          <loc>https://microsoft.github.io/agent-lightning/latest/tutorials/debug/</loc>
+         <lastmod>2025-12-17</lastmod>
+    </url>
+    <url>
+         <loc>https://microsoft.github.io/agent-lightning/latest/tutorials/emitter/</loc>
          <lastmod>2025-12-17</lastmod>
     </url>
     <url>
