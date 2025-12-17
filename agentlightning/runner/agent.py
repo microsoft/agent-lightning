@@ -533,9 +533,16 @@ class LitAgentRunner(Runner[T_task]):
                         snap = latest_snapshot
                         ts = latest_ts
 
+                    wait_interval = max(
+                        self._heartbeat_interval
+                        + self._random_state.uniform(-self._interval_jitter, self._interval_jitter),
+                        0.01,
+                    )
+
                     if snap is None:
                         # probably just started
                         logger.debug("%s Heartbeat consumer: no snapshot yet; skipping update.", self._log_prefix())
+                        stop_evt.wait(wait_interval)
                         continue
 
                     age = time.monotonic() - ts
@@ -549,6 +556,7 @@ class LitAgentRunner(Runner[T_task]):
                                 stale_after,
                             )
                             last_warned_ts = ts
+                        stop_evt.wait(wait_interval)
                         continue
 
                     try:
@@ -569,10 +577,7 @@ class LitAgentRunner(Runner[T_task]):
                     except Exception:
                         logger.warning("%s Heartbeat consumer: update failed.", self._log_prefix(), exc_info=True)
 
-                    interval = self._heartbeat_interval + self._random_state.uniform(
-                        -self._interval_jitter, self._interval_jitter
-                    )
-                    stop_evt.wait(max(interval, 0.01))
+                    stop_evt.wait(wait_interval)
             finally:
                 with suppress(Exception):
                     loop.stop()
