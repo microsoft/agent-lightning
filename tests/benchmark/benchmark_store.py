@@ -361,6 +361,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--n-runners", type=int, default=32, help="Number of runner processes to launch.")
     parser.add_argument("--max-rounds", type=int, default=10, help="Maximum number of rounds for each rollout.")
     parser.add_argument("--sleep-seconds", type=float, default=1.0, help="Sleep seconds for each rollout.")
+    parser.add_argument("--debug", action="store_true", help="Enable verbose debug logging.")
     args = parser.parse_args(argv)
 
     if args.total_tasks <= 0:
@@ -383,7 +384,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
 
 def main(argv: Optional[Sequence[str]] = None) -> None:
     args = parse_args(argv)
-    agl.setup_logging()
+    agl.setup_logging("DEBUG" if args.debug else "INFO")
     store = agl.LightningStoreClient(args.store_url)
     timeout_guard = _start_timeout_guard(MAX_RUNTIME_SECONDS)
     try:

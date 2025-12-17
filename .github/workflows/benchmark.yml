@@ -243,7 +243,7 @@ jobs:
         run: |
           set -euo pipefail
           uv run --locked --no-sync python -m tests.benchmark.benchmark_store \
-            --store-url "$STORE_URL" \
+            --store-url "$STORE_URL" --debug \
             ${{ matrix.workload.args }}
 
       - name: (Micro) Run ${{ matrix.workload.display }}
