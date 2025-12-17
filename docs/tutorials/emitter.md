@@ -93,13 +93,83 @@ Span(
 
     All emitter helpers also support a `propagate` flag; setting `propagate=False` keeps the span local, which is useful for offline tests. The default `True` streams spans through the active tracer/exporters.
 
+More commonly, especially when working with [agentlightning.semconv](../reference/semconv.md), you would use utilities like [`make_tag_attributes`][agentlightning.utils.otel.make_tag_attributes] and [`make_link_attributes`][agentlightning.utils.otel.make_link_attributes] to create the attributes dictionary. For example:
+
+```python
+from agentlightning.utils.otel import make_tag_attributes
+
+emit_annotation(make_tag_attributes(["tool", "calculator", "fast", "good"]))
+```
+
+The above code will send a span with the following attributes to the backend:
+
+```json
+{
+    "agentlightning.tag.0": "tool",
+    "agentlightning.tag.1": "calculator",
+    "agentlightning.tag.2": "fast",
+    "agentlightning.tag.3": "good"
+}
+```
+
+A counterpart utility function [`extract_tags_from_attributes`][agentlightning.utils.otel.extract_tags_from_attributes] is also available to extract the tags from the attributes dictionary.
+
 ### Operations
 
-TBD
+The [`operation`][agentlightning.operation] helper tracks logical units of work within your agent, capturing inputs, outputs, timing, and success/failure status. Unlike point-in-time emitters, operations create a span representing a time interval. Use operations for tool calls, multi-step workflows, debugging, and performance monitoring. [`operation][agentlightning.operation] can be used either as a decorator or a context manager.
+
+The decorator automatically captures function arguments as inputs and the return value as output:
+
+```python
+import agentlightning as agl
+
+@agl.operation
+def search_documents(query: str, max_results: int = 10) -> list[dict]:
+    results = perform_search(query, max_results)
+    return results
+
+@agl.operation(category="tool", priority="high")
+def execute_calculation(expression: str) -> float:
+    return eval_safely(expression)
+```
+
+The example above will send a span with attribute `{"category": "tool", "priority": "high"}` to the backend. It will also send the input and output of the function as attributes via [OPERATION_INPUT][agentlightning.semconv.LightningSpanAttributes.OPERATION_INPUT] and [OPERATION_OUTPUT][agentlightning.semconv.LightningSpanAttributes.OPERATION_OUTPUT]. It works with async functions too:
+
+```python
+@agl.operation
+async def async_api_call(endpoint: str, payload: dict) -> dict:
+    response = await http_client.post(endpoint, json=payload)
+    return response.json()
+```
+
+Override the operation name if needed:
+
+```python
+@agl.operation(name="custom-name")
+def any_weird_name_i_dont_want():
+    pass
+```
+
+For more control, [`operation`][agentlightning.operation] can also be used as a context manager to explicitly record inputs and outputs:
+
+```python
+with agl.operation(tool_name="web_search") as op:
+    op.set_input(query="latest AI research", filters={"date": "2024"})
+    results = search_web(query, filters)
+    op.set_output({"result_count": len(results), "top_result": results[0]})
+```
+
+`propagate=False` also applies to [`operation`][agentlightning.operation] to keep operations local without requiring an active tracer:
+
+```python
+@agl.operation(propagate=False)
+def local_test():
+    return "Not sent to backend"
+```
 
 ### Linking to Other Spans
 
-Sometimes a span should explicitly point back to another span that produced the input it is working on (for example, linking a reward annotation to the `"agentlightning.operation"` span that generated a response). Agent-lightning encodes these relationships through flattened link attributes. The helper [`make_link_attributes`][agentlightning.utils.otel.make_link_attributes] converts a dictionary of keys—such as `trace_id`, `span_id`, or any custom attribute—into the `"agentlightning.link.*"` fields expected by the backend. Later on, [`query_linked_spans`][agentlightning.utils.otel.query_linked_spans] can be used to recover the original span(s) from those link descriptors.
+Sometimes a span should explicitly point back to another span that produced the input it is working on (for example, linking a reward annotation to the [`agentlightning.operation`][agentlightning.operation] span that generated a response). Agent-lightning encodes these relationships through flattened link attributes. The helper [`make_link_attributes`][agentlightning.utils.otel.make_link_attributes] converts a dictionary of keys, such as `trace_id`, `span_id`, or any custom attribute, into the `"agentlightning.link.*"` ([LightningSpanAttributes.LINK][agentlightning.semconv.LightningSpanAttributes.LINK]) fields expected by the backend. Later on, [`query_linked_spans`][agentlightning.utils.otel.query_linked_spans] can be used to recover the original span(s) from those link descriptors.
 
 ```python
 import opentelemetry.trace as trace_api
@@ -108,7 +178,6 @@ from agentlightning.utils.otel import make_link_attributes, make_tag_attributes
 
 with operation(conversation_id="chat-42") as op:
     # ... perform the work ...
-    span_ctx = op.span.get_span_context()
     link_attrs = make_link_attributes({
         "conversation_id": "chat-42",
     })
