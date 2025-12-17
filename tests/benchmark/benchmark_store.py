@@ -362,6 +362,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--max-rounds", type=int, default=10, help="Maximum number of rounds for each rollout.")
     parser.add_argument("--sleep-seconds", type=float, default=1.0, help="Sleep seconds for each rollout.")
     parser.add_argument("--debug", action="store_true", help="Enable verbose debug logging.")
+    parser.add_argument("--debug-otel", action="store_true", help="Enable verbose debug logging for OTel.")
     args = parser.parse_args(argv)
 
     if args.total_tasks <= 0:
@@ -384,7 +385,10 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
 
 def main(argv: Optional[Sequence[str]] = None) -> None:
     args = parse_args(argv)
-    agl.setup_logging("DEBUG" if args.debug else "INFO")
+    agl.setup_logging(
+        "DEBUG" if args.debug else "INFO",
+        submodule_levels={"agentlightning.utils.otel": "DEBUG" if args.debug_otel else "INFO"},
+    )
     store = agl.LightningStoreClient(args.store_url)
     timeout_guard = _start_timeout_guard(MAX_RUNTIME_SECONDS)
     try:
