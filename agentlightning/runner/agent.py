@@ -75,7 +75,8 @@ class LitAgentRunner(Runner[T_task]):
         poll_interval: float = 5.0,
         heartbeat_interval: float = 10.0,
         interval_jitter: float = 0.5,
-        heartbeat_launch_mode: Literal["asyncio", "thread"] = "asyncio",
+        heartbeat_launch_mode: Literal["asyncio", "thread"] = "thread",
+        heartbeat_include_gpu: bool = False,
     ) -> None:
         """Initialize the agent runner.
 
@@ -89,7 +90,10 @@ class LitAgentRunner(Runner[T_task]):
                 poll_interval - interval_jitter and poll_interval + interval_jitter.
                 This is to avoid the overload caused by the synchronization of the runners.
             heartbeat_launch_mode: Launch mode for the heartbeat loop. Can be "asyncio" or "thread".
-                "asyncio" is the default and recommended mode. Use "thread" if you are experiencing blocking coroutines.
+                "thread" is the default and recommended mode as it prevents blocking the event loop
+                under load. Use "asyncio" for simpler deployments with low worker counts.
+            heartbeat_include_gpu: Whether to include GPU stats in heartbeat snapshots.
+                Querying GPU stats can be slow under load, so this is disabled by default.
         """
         super().__init__()
         self._tracer = tracer
@@ -98,6 +102,7 @@ class LitAgentRunner(Runner[T_task]):
         self._heartbeat_interval = heartbeat_interval
         self._interval_jitter = interval_jitter
         self._heartbeat_launch_mode = heartbeat_launch_mode
+        self._heartbeat_include_gpu = heartbeat_include_gpu
         self._random_state = random.Random()
 
         # Set later
@@ -381,18 +386,46 @@ class LitAgentRunner(Runner[T_task]):
         return trace_spans
 
     async def _emit_heartbeat(self, store: LightningStore) -> None:
-        """Send a heartbeat tick to the store."""
+        """Send a heartbeat tick to the store.
+
+        Args:
+            store: The lightning store to update.
+        """
         logger.debug(f"{self._log_prefix()} Preparing to emit heartbeat.")
         worker_id = self.get_worker_id()
 
         try:
-            snapshot = system_snapshot()
+            snapshot = await asyncio.wait_for(
+                asyncio.to_thread(system_snapshot, self._heartbeat_include_gpu),
+                timeout=self._heartbeat_interval,
+            )
             logger.debug(f"{self._log_prefix()} Heartbeat snapshot acquired.")
-            await store.update_worker(worker_id, snapshot)
+        except asyncio.TimeoutError:
+            logger.warning(
+                "%s Heartbeat snapshot acquisition timed out after %.1fs, skipping.",
+                self._log_prefix(),
+                self._heartbeat_interval,
+            )
+            return
+        except asyncio.CancelledError:
+            # bypass the exception
+            raise
+        except Exception:
+            logger.exception("%s Unable to acquire heartbeat snapshot.", self._log_prefix())
+            return
+
+        try:
+            await asyncio.wait_for(store.update_worker(worker_id, snapshot), timeout=self._heartbeat_interval)
             logger.debug(f"{self._log_prefix()} Heartbeat updated successfully.")
         except asyncio.CancelledError:
             # bypass the exception
             raise
+        except asyncio.TimeoutError:
+            logger.warning(
+                "%s update worker heartbeat timed out after %.1fs, skipping.",
+                self._log_prefix(),
+                self._heartbeat_interval,
+            )
         except Exception:
             logger.exception("%s Unable to update worker heartbeat.", self._log_prefix())
 
@@ -407,51 +440,152 @@ class LitAgentRunner(Runner[T_task]):
             return None
 
         if self._heartbeat_launch_mode == "asyncio":
-            stop_event = asyncio.Event()
-
-            async def heartbeat_loop() -> None:
-                while not stop_event.is_set():
-                    await self._emit_heartbeat(store)
-                    with suppress(asyncio.TimeoutError):
-                        interval = self._heartbeat_interval + self._random_state.uniform(
-                            -self._interval_jitter, self._interval_jitter
-                        )
-                        interval = max(interval, 0.01)
-                        await asyncio.wait_for(stop_event.wait(), timeout=interval)
-
-            task = asyncio.create_task(heartbeat_loop(), name=f"{self.get_worker_id()}-heartbeat")
-
-            async def stop() -> None:
-                stop_event.set()
-                with suppress(asyncio.CancelledError):
-                    await task
-
-            return stop
-
+            return self._start_heartbeat_asyncio_loop(store)
         if self._heartbeat_launch_mode == "thread":
-            stop_evt = threading.Event()
+            return self._start_heartbeat_thread_loop(store)
+        raise ValueError(f"Unsupported heartbeat launch mode: {self._heartbeat_launch_mode}")
 
-            def thread_worker() -> None:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                while not stop_evt.is_set():
-                    loop.run_until_complete(self._emit_heartbeat(store))
+    def _start_heartbeat_asyncio_loop(self, store: LightningStore) -> Optional[Callable[[], Awaitable[None]]]:
+        """Start a background heartbeat loop using asyncio.
+
+        Args:
+            store: The lightning store to update.
+
+        Returns:
+            An async stopper function that can be used to stop the heartbeat loop.
+        """
+
+        stop_event = asyncio.Event()
+
+        async def heartbeat_loop() -> None:
+            while not stop_event.is_set():
+                try:
+                    # Run _emit_heartbeat in thread pool to avoid blocking the event loop.
+                    # Timeout at the interval - if it takes longer, the data is stale anyway.
+                    await self._emit_heartbeat(store)
+                except Exception:
+                    logger.exception("%s Heartbeat failed.", self._log_prefix())
+                with suppress(asyncio.TimeoutError):
                     interval = self._heartbeat_interval + self._random_state.uniform(
                         -self._interval_jitter, self._interval_jitter
                     )
                     interval = max(interval, 0.01)
-                    stop_evt.wait(interval)
+                    await asyncio.wait_for(stop_event.wait(), timeout=interval)
 
-            thread = threading.Thread(target=thread_worker, name=f"{self.get_worker_id()}-heartbeat", daemon=True)
-            thread.start()
+        task = asyncio.create_task(heartbeat_loop(), name=f"{self.get_worker_id()}-heartbeat")
 
-            async def stop() -> None:
-                stop_evt.set()
-                await asyncio.to_thread(thread.join)
+        async def stop() -> None:
+            stop_event.set()
+            with suppress(asyncio.CancelledError):
+                await task
 
-            return stop
+        return stop
 
-        raise ValueError(f"Unsupported heartbeat launch mode: {self._heartbeat_launch_mode}")
+    def _start_heartbeat_thread_loop(self, store: LightningStore) -> Optional[Callable[[], Awaitable[None]]]:
+        """Start a background heartbeat loop using threading.
+
+        It uses two threads: one to produce the snapshot and one to consume it,
+        to avoid either of them blocking the event loop.
+
+        Args:
+            store: The lightning store to update.
+
+        Returns:
+            An async stopper function that can be used to stop the heartbeat loop.
+        """
+        stop_evt = threading.Event()
+        lock = threading.Lock()
+
+        latest_snapshot = None
+        latest_ts = 0.0  # time.monotonic() when snapshot was captured
+
+        # Consider snapshot stale after ~1 interval plus jitter slack.
+        stale_after = self._heartbeat_interval + self._interval_jitter + 1.0
+
+        worker_id = self.get_worker_id()
+
+        def producer() -> None:
+            nonlocal latest_snapshot, latest_ts
+            while not stop_evt.is_set():
+                try:
+                    logger.debug(f"{self._log_prefix()} Heartbeat producer: acquiring snapshot.")
+                    snap = system_snapshot(self._heartbeat_include_gpu)  # sync
+                    logger.debug(f"{self._log_prefix()} Heartbeat producer: snapshot acquired.")
+                    ts = time.monotonic()
+                    with lock:
+                        latest_snapshot = snap
+                        latest_ts = ts
+                except Exception:
+                    logger.warning("%s Heartbeat producer: system_snapshot failed.", self._log_prefix(), exc_info=True)
+
+                interval = self._heartbeat_interval + self._random_state.uniform(
+                    -self._interval_jitter, self._interval_jitter
+                )
+                stop_evt.wait(max(interval, 0.01))
+
+        def consumer() -> None:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                while not stop_evt.is_set():
+                    with lock:
+                        snap = latest_snapshot
+                        ts = latest_ts
+
+                    if snap is None:
+                        # probably just started
+                        logger.debug("%s Heartbeat consumer: no snapshot yet; skipping update.", self._log_prefix())
+                        continue
+
+                    age = time.monotonic() - ts
+                    if age > stale_after:
+                        logger.warning(
+                            "%s Heartbeat consumer: snapshot stale (age=%.2fs > %.2fs); skipping update.",
+                            self._log_prefix(),
+                            age,
+                            stale_after,
+                        )
+                        continue
+
+                    try:
+                        logger.debug(f"{self._log_prefix()} Heartbeat consumer: updating worker.")
+                        loop.run_until_complete(
+                            asyncio.wait_for(
+                                store.update_worker(worker_id, snap),
+                                timeout=self._heartbeat_interval,
+                            )
+                        )
+                        logger.debug(f"{self._log_prefix()} Heartbeat consumer: worker updated.")
+                    except asyncio.TimeoutError:
+                        logger.warning(
+                            "%s Heartbeat consumer: update timed out after %.1fs.",
+                            self._log_prefix(),
+                            self._heartbeat_interval,
+                        )
+                    except Exception:
+                        logger.warning("%s Heartbeat consumer: update failed.", self._log_prefix(), exc_info=True)
+
+                    interval = self._heartbeat_interval + self._random_state.uniform(
+                        -self._interval_jitter, self._interval_jitter
+                    )
+                    stop_evt.wait(max(interval, 0.01))
+            finally:
+                with suppress(Exception):
+                    loop.stop()
+                with suppress(Exception):
+                    loop.close()
+
+        t_prod = threading.Thread(target=producer, name=f"{worker_id}-heartbeat-producer", daemon=True)
+        t_cons = threading.Thread(target=consumer, name=f"{worker_id}-heartbeat-consumer", daemon=True)
+        t_prod.start()
+        t_cons.start()
+
+        async def stop() -> None:
+            stop_evt.set()
+            await asyncio.to_thread(t_prod.join)
+            await asyncio.to_thread(t_cons.join)
+
+        return stop
 
     async def _sleep_until_next_poll(self, event: Optional[ExecutionEvent] = None) -> None:
         """Sleep until the next poll interval, with optional event-based interruption.

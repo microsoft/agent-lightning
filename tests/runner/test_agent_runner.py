@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import random
+import time
 from contextlib import asynccontextmanager
 from typing import Any, AsyncGenerator, Dict, List, Literal, Optional, Sequence, Tuple, cast
 
@@ -152,7 +153,8 @@ class HeartbeatAgent(LitAgent[Dict[str, Any]]):
 async def setup_heartbeat_runner(
     *,
     heartbeat_interval: float = 0.05,
-    heartbeat_launch_mode: Literal["asyncio", "thread"] = "asyncio",
+    heartbeat_launch_mode: Literal["asyncio", "thread"] = "thread",
+    heartbeat_include_gpu: bool = False,
 ) -> tuple[LitAgentRunner[Any], RecordingStore]:
     """Create a runner wired to a RecordingStore for heartbeat tests."""
 
@@ -161,6 +163,7 @@ async def setup_heartbeat_runner(
         tracer=DummyTracer(),
         heartbeat_interval=heartbeat_interval,
         heartbeat_launch_mode=heartbeat_launch_mode,
+        heartbeat_include_gpu=heartbeat_include_gpu,
     )
     agent = HeartbeatAgent()
     runner.init(agent)
@@ -913,7 +916,7 @@ async def test_iter_passes_worker_id_to_dequeue(monkeypatch: pytest.MonkeyPatch)
 @pytest.mark.asyncio
 async def test_emit_heartbeat_updates_worker_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
     snapshot = {"cpu_pct": 42.0, "mem_pct": 10.5}
-    monkeypatch.setattr("agentlightning.runner.agent.system_snapshot", lambda: snapshot)
+    monkeypatch.setattr("agentlightning.runner.agent.system_snapshot", lambda include_gpu=False: snapshot)
 
     runner, store = await setup_heartbeat_runner(heartbeat_interval=0.1)
     worker_label = runner.get_worker_id()
@@ -930,9 +933,86 @@ async def test_emit_heartbeat_updates_worker_snapshot(monkeypatch: pytest.Monkey
 
 
 @pytest.mark.asyncio
+async def test_emit_heartbeat_passes_include_gpu(monkeypatch: pytest.MonkeyPatch) -> None:
+    snapshot = {"cpu_pct": 11.1}
+    requested_flags: List[bool] = []
+
+    async def immediate_to_thread(func: Any, *args: Any, **kwargs: Any) -> Any:
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr("agentlightning.runner.agent.asyncio.to_thread", immediate_to_thread)
+
+    def fake_system_snapshot(include_gpu: bool = False) -> Dict[str, Any]:
+        requested_flags.append(include_gpu)
+        return snapshot
+
+    monkeypatch.setattr("agentlightning.runner.agent.system_snapshot", fake_system_snapshot)
+
+    runner, store = await setup_heartbeat_runner(heartbeat_interval=0.05, heartbeat_include_gpu=True)
+    worker_label = runner.get_worker_id()
+    try:
+        await runner._emit_heartbeat(store)  # pyright: ignore[reportPrivateUsage]
+    finally:
+        teardown_runner(runner)
+
+    assert requested_flags == [True]
+    assert store.worker_updates == [(worker_label, snapshot)]
+
+
+@pytest.mark.asyncio
+async def test_emit_heartbeat_skips_when_snapshot_times_out(monkeypatch: pytest.MonkeyPatch) -> None:
+    snapshot = {"cpu_pct": 9.9}
+    runner, store = await setup_heartbeat_runner(heartbeat_interval=0.05)
+    interval = runner._heartbeat_interval  # pyright: ignore[reportPrivateUsage]
+
+    async def slow_to_thread(func: Any, *args: Any, **kwargs: Any) -> Any:
+        await asyncio.sleep(interval + 0.05)
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr("agentlightning.runner.agent.asyncio.to_thread", slow_to_thread)
+    monkeypatch.setattr("agentlightning.runner.agent.system_snapshot", lambda include_gpu=False: snapshot)
+
+    try:
+        await runner._emit_heartbeat(store)  # pyright: ignore[reportPrivateUsage]
+    finally:
+        teardown_runner(runner)
+
+    assert store.worker_updates == []
+
+
+@pytest.mark.asyncio
+async def test_emit_heartbeat_skips_when_store_update_times_out(monkeypatch: pytest.MonkeyPatch) -> None:
+    snapshot = {"cpu_pct": 8.8}
+
+    async def immediate_to_thread(func: Any, *args: Any, **kwargs: Any) -> Any:
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr("agentlightning.runner.agent.asyncio.to_thread", immediate_to_thread)
+    monkeypatch.setattr("agentlightning.runner.agent.system_snapshot", lambda include_gpu=False: snapshot)
+
+    runner, store = await setup_heartbeat_runner(heartbeat_interval=0.05)
+    interval = runner._heartbeat_interval  # pyright: ignore[reportPrivateUsage]
+    original_update_worker = store.update_worker
+
+    async def slow_update_worker(*args: Any, **kwargs: Any) -> Worker:
+        await asyncio.sleep(interval + 0.05)
+        return await original_update_worker(*args, **kwargs)
+
+    monkeypatch.setattr(store, "update_worker", slow_update_worker)
+
+    try:
+        await runner._emit_heartbeat(store)  # pyright: ignore[reportPrivateUsage]
+    finally:
+        teardown_runner(runner)
+
+    assert store.worker_updates == []
+
+
+@pytest.mark.asyncio
 async def test_heartbeat_loop_runs_until_stopped(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test that heartbeat loop runs with the default launch mode until stopped."""
     snapshot = {"timestamp": 1234567890}
-    monkeypatch.setattr("agentlightning.runner.agent.system_snapshot", lambda: snapshot)
+    monkeypatch.setattr("agentlightning.runner.agent.system_snapshot", lambda include_gpu=False: snapshot)
 
     runner, store = await setup_heartbeat_runner(heartbeat_interval=0.05)
     stop_heartbeat = runner._start_heartbeat_loop(store)  # pyright: ignore[reportPrivateUsage]
@@ -951,3 +1031,256 @@ async def test_heartbeat_loop_runs_until_stopped(monkeypatch: pytest.MonkeyPatch
     assert len(store.worker_updates) == update_count
 
     teardown_runner(runner)
+
+
+@pytest.mark.asyncio
+async def test_asyncio_heartbeat_loop_runs_until_stopped(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test that asyncio heartbeat loop runs until stopped (explicit asyncio mode test)."""
+    snapshot = {"timestamp": 1234567890}
+    monkeypatch.setattr("agentlightning.runner.agent.system_snapshot", lambda include_gpu=False: snapshot)
+
+    runner, store = await setup_heartbeat_runner(heartbeat_interval=0.05, heartbeat_launch_mode="asyncio")
+    stop_heartbeat = runner._start_heartbeat_loop(store)  # pyright: ignore[reportPrivateUsage]
+    assert stop_heartbeat is not None
+
+    try:
+        await asyncio.sleep(0.12)
+    finally:
+        await stop_heartbeat()
+
+    update_count = len(store.worker_updates)
+    assert update_count >= 1
+    assert all(stats == snapshot for _, stats in store.worker_updates if stats is not None)
+
+    await asyncio.sleep(0.06)
+    assert len(store.worker_updates) == update_count
+
+    teardown_runner(runner)
+
+
+@pytest.mark.asyncio
+async def test_thread_heartbeat_loop_runs_until_stopped(monkeypatch: pytest.MonkeyPatch) -> None:
+    snapshot = {"timestamp": time.time()}
+    include_flags: List[bool] = []
+
+    def fake_system_snapshot(include_gpu: bool = False) -> Dict[str, Any]:
+        include_flags.append(include_gpu)
+        return snapshot
+
+    monkeypatch.setattr("agentlightning.runner.agent.system_snapshot", fake_system_snapshot)
+
+    runner, store = await setup_heartbeat_runner(
+        heartbeat_interval=0.05,
+        heartbeat_launch_mode="thread",
+        heartbeat_include_gpu=True,
+    )
+    stop_heartbeat = runner._start_heartbeat_loop(store)  # pyright: ignore[reportPrivateUsage]
+    assert stop_heartbeat is not None
+
+    try:
+        await asyncio.sleep(0.3)
+    finally:
+        await stop_heartbeat()
+        teardown_runner(runner)
+
+    assert len(store.worker_updates) >= 1
+    assert all(stats == snapshot for _, stats in store.worker_updates if stats is not None)
+    assert include_flags and all(include_flags)
+
+
+@pytest.mark.asyncio
+async def test_thread_heartbeat_handles_producer_exception(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Test that thread mode producer handles exceptions and continues running."""
+    call_count = 0
+
+    def fake_system_snapshot(_include_gpu: bool = False) -> Dict[str, Any]:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise RuntimeError("Simulated snapshot failure")
+        return {"cpu_pct": 25.0}
+
+    monkeypatch.setattr("agentlightning.runner.agent.system_snapshot", fake_system_snapshot)
+
+    caplog.set_level(logging.WARNING)
+    runner, store = await setup_heartbeat_runner(
+        heartbeat_interval=0.02,
+        heartbeat_launch_mode="thread",
+    )
+    runner._interval_jitter = 0.01  # pyright: ignore[reportPrivateUsage]
+    stop_heartbeat = runner._start_heartbeat_loop(store)  # pyright: ignore[reportPrivateUsage]
+    assert stop_heartbeat is not None
+
+    try:
+        # Wait long enough for at least 2 cycles (2 * (interval + jitter) + buffer)
+        await asyncio.sleep(0.15)
+    finally:
+        await stop_heartbeat()
+        teardown_runner(runner)
+
+    # Verify the producer logged the exception but continued
+    assert "system_snapshot failed" in caplog.text
+    assert call_count >= 2
+
+
+@pytest.mark.asyncio
+async def test_thread_heartbeat_handles_consumer_exception(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Test that thread mode consumer handles store update exceptions and continues."""
+    snapshot = {"cpu_pct": 33.0}
+    monkeypatch.setattr("agentlightning.runner.agent.system_snapshot", lambda include_gpu=False: snapshot)
+
+    runner, store = await setup_heartbeat_runner(
+        heartbeat_interval=0.02,
+        heartbeat_launch_mode="thread",
+    )
+    runner._interval_jitter = 0.01  # pyright: ignore[reportPrivateUsage]
+
+    update_count = 0
+    original_update_worker = store.update_worker
+
+    async def failing_update_worker(*args: Any, **kwargs: Any) -> Worker:
+        nonlocal update_count
+        update_count += 1
+        if update_count == 1:
+            raise RuntimeError("Simulated store failure")
+        return await original_update_worker(*args, **kwargs)
+
+    monkeypatch.setattr(store, "update_worker", failing_update_worker)
+
+    caplog.set_level(logging.WARNING)
+    stop_heartbeat = runner._start_heartbeat_loop(store)  # pyright: ignore[reportPrivateUsage]
+    assert stop_heartbeat is not None
+
+    try:
+        # Wait long enough for at least 2 cycles
+        await asyncio.sleep(0.15)
+    finally:
+        await stop_heartbeat()
+        teardown_runner(runner)
+
+    # Verify the consumer logged the exception but continued
+    assert "update failed" in caplog.text
+    assert update_count >= 2
+
+
+@pytest.mark.asyncio
+async def test_thread_heartbeat_waits_for_first_snapshot(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Test that thread mode consumer skips update when no snapshot is available yet."""
+    snapshot_ready = False
+
+    def fake_system_snapshot(_include_gpu: bool = False) -> Dict[str, Any]:
+        nonlocal snapshot_ready
+        if not snapshot_ready:
+            time.sleep(0.1)  # Simulate slow first snapshot
+            snapshot_ready = True
+        return {"cpu_pct": 42.0}
+
+    monkeypatch.setattr("agentlightning.runner.agent.system_snapshot", fake_system_snapshot)
+
+    caplog.set_level(logging.DEBUG)
+    runner, store = await setup_heartbeat_runner(
+        heartbeat_interval=0.05,
+        heartbeat_launch_mode="thread",
+    )
+    stop_heartbeat = runner._start_heartbeat_loop(store)  # pyright: ignore[reportPrivateUsage]
+    assert stop_heartbeat is not None
+
+    try:
+        await asyncio.sleep(0.25)
+    finally:
+        await stop_heartbeat()
+        teardown_runner(runner)
+
+    # Verify the consumer logged that no snapshot was available initially
+    assert "no snapshot yet" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_disabled_when_interval_zero() -> None:
+    """Test that heartbeat loop is not started when interval is 0 or negative."""
+    runner, store = await setup_heartbeat_runner(heartbeat_interval=0.0)
+    try:
+        stop_heartbeat = runner._start_heartbeat_loop(store)  # pyright: ignore[reportPrivateUsage]
+        assert stop_heartbeat is None
+    finally:
+        teardown_runner(runner)
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_disabled_when_no_worker_id(caplog: pytest.LogCaptureFixture) -> None:
+    """Test that heartbeat loop returns None when worker_id is not set."""
+    store = RecordingStore()
+    runner = LitAgentRunner[Any](
+        tracer=DummyTracer(),
+        heartbeat_interval=0.05,
+    )
+    agent = HeartbeatAgent()
+    runner.init(agent)
+    # Note: NOT calling init_worker, so worker_id remains None
+
+    caplog.set_level(logging.WARNING)
+    stop_heartbeat = runner._start_heartbeat_loop(store)  # pyright: ignore[reportPrivateUsage]
+    assert stop_heartbeat is None
+    assert "Cannot start heartbeat loop without worker_id" in caplog.text
+
+    teardown_runner(runner)
+
+
+@pytest.mark.asyncio
+async def test_emit_heartbeat_propagates_cancelled_error() -> None:
+    """Test that CancelledError is properly propagated in _emit_heartbeat."""
+    runner, store = await setup_heartbeat_runner(heartbeat_interval=0.1)
+
+    async def cancelling_to_thread(_func: Any, *_args: Any, **_kwargs: Any) -> Any:
+        raise asyncio.CancelledError()
+
+    original_to_thread = asyncio.to_thread
+    try:
+        asyncio.to_thread = cancelling_to_thread  # type: ignore
+        with pytest.raises(asyncio.CancelledError):
+            await runner._emit_heartbeat(store)  # pyright: ignore[reportPrivateUsage]
+    finally:
+        asyncio.to_thread = original_to_thread  # type: ignore
+        teardown_runner(runner)
+
+
+@pytest.mark.asyncio
+async def test_asyncio_heartbeat_continues_after_exception(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Test that asyncio heartbeat loop continues running after exceptions."""
+    call_count = 0
+
+    async def failing_emit_heartbeat(_self: Any, _store: Any) -> None:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise RuntimeError("Simulated heartbeat failure")
+
+    monkeypatch.setattr(LitAgentRunner, "_emit_heartbeat", failing_emit_heartbeat)
+
+    caplog.set_level(logging.ERROR)
+    runner, store = await setup_heartbeat_runner(
+        heartbeat_interval=0.02,
+        heartbeat_launch_mode="asyncio",
+    )
+    runner._interval_jitter = 0.01  # pyright: ignore[reportPrivateUsage]
+    stop_heartbeat = runner._start_heartbeat_loop(store)  # pyright: ignore[reportPrivateUsage]
+    assert stop_heartbeat is not None
+
+    try:
+        # Wait long enough for at least 2 cycles (2 * (interval + jitter) + buffer)
+        await asyncio.sleep(0.15)
+    finally:
+        await stop_heartbeat()
+        teardown_runner(runner)
+
+    # Verify the loop logged the exception but continued
+    assert "Heartbeat failed" in caplog.text
+    assert call_count >= 2
