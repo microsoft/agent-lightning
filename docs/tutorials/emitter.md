@@ -6,7 +6,7 @@ While returning a single float for the final reward is sufficient for many algor
 
 Agent-lightning provides an **emitter** module that allows you to record custom spans from within your agent's logic. Like many common operations (like LLM calls) that are automatically instrumented by [Tracer][agentlightning.Tracer], the emitter will also send a [Span][agentlightning.Span] that records an Agent-lightning-specific operation. Then algorithms can query and read those spans later. See [Working with Traces](./traces.md) for more details.
 
-For multi-step routines (function calls, tools, or adapters) you can wrap code with [`operation`][agentlightning.operation], either as a decorator or a context manager,to capture inputs, outputs, and metadata on a dedicated [`operation`][agentlightning.operation] span. This makes it easier to correlate downstream annotations (like rewards or messages) with the higher-level work that produced them.
+For multi-step routines (function calls, tools, or adapters) you can wrap code with [`operation`][agentlightning.operation], either as a decorator or a context manager, to capture inputs, outputs, and metadata on a dedicated [`operation`][agentlightning.operation] span. This makes it easier to correlate downstream annotations (like rewards or messages) with the higher-level work that produced them.
 
 You can find the emitter functions from [`agentlightning.emitter`](../reference/agent.md).
 
@@ -57,7 +57,7 @@ Each helper accepts nested `attributes` (or keyword arguments, in the case of [`
 
 ```python
 from opentelemetry.semconv.attributes import server_attributes
-from agentlightning import emit_annotation
+from agentlightning import emit_object
 
 emit_object({
     "name": "John Doe",
@@ -116,7 +116,7 @@ A counterpart utility function [`extract_tags_from_attributes`][agentlightning.u
 
 ### Operations
 
-The [`operation`][agentlightning.operation] helper tracks logical units of work within your agent, capturing inputs, outputs, timing, and success/failure status. Unlike point-in-time emitters, operations create a span representing a time interval. Use operations for tool calls, multi-step workflows, debugging, and performance monitoring. [`operation][agentlightning.operation] can be used either as a decorator or a context manager.
+The [`operation`][agentlightning.operation] helper tracks logical units of work within your agent, capturing inputs, outputs, timing, and success/failure status. Unlike point-in-time emitters, operations create a span representing a time interval. Use operations for tool calls, multi-step workflows, debugging, and performance monitoring. [`operation`][agentlightning.operation] can be used either as a decorator or a context manager.
 
 The decorator automatically captures function arguments as inputs and the return value as output:
 

@@ -107,7 +107,7 @@ nav:
     - Train SQL Agent with RL: how-to/train-sql-agent.md
   - Learning More:
     - Write Agents: tutorials/write-agents.md
-    - Debug: tutorials/debug.md
+    - Debugging: tutorials/debug.md
     - Work with Traces: tutorials/traces.md
     - Use Emitters: tutorials/emitter.md
     - Parallelize: tutorials/parallelize.md
