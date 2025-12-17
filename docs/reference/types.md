@@ -86,10 +86,6 @@
 
 ::: agentlightning.SpanRecordingContext
 
-## Semantic Conventions
-
-::: agentlightning.semconv
-
 ## Environment Variables
 
 ::: agentlightning.LightningEnvVar

@@ -13,6 +13,14 @@ from gpustat import GPUStat, GPUStatCollection
 
 
 def system_snapshot(include_gpu: bool = False) -> Dict[str, Any]:
+    """Capture a snapshot of the system's hardware and software information.
+
+    Args:
+        include_gpu: Whether to include GPU information.
+
+    Returns:
+        A dictionary containing the system's hardware and software information.
+    """
     # CPU
     cpu = {
         "cpu_name": platform.processor(),

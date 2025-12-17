@@ -1,6 +1,6 @@
 # Train SQL Agent with Agent-lightning and VERL
 
-This walkthrough builds upon the **Agent-lightning v0.2 SQL Agent** example and explains how the system components integrate: a **LangGraph-based SQL agent** wrapped as a [`LitAgent`][agentlightning.LitAgent], the **[`VERL`][agentlightning.algorithm.verl.VERL] reinforcement learning (RL) algorithm**, and the **[`Trainer`][agentlightning.Trainer]**, which coordinates both training and debugging.
+This walkthrough builds upon the **Agent-lightning SQL Agent** example and explains how the system components integrate: a **LangGraph-based SQL agent** wrapped as a [`LitAgent`][agentlightning.LitAgent], the **[`VERL`][agentlightning.algorithm.verl.VERL] reinforcement learning (RL) algorithm**, and the **[`Trainer`][agentlightning.Trainer]**, which coordinates both training and debugging.
 
 The command-line interface in [`examples/spider/train_sql_agent.py`]({{ src("examples/spider/train_sql_agent.py") }}) provides a complete runnable example. However, this document focuses on understanding the underlying architecture so you can effectively adapt the workflow to your own agents.
 

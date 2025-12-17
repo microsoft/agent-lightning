@@ -62,14 +62,6 @@
 
     [:octicons-repo-24: Browse source]({{ src("examples/rag") }})
 
--   :material-magnify:{ .lg .middle } __Search-R1 RL__
-
-    ---
-
-    Reproduction of the Search-R1 workflow that prepares its own retrieval backend, runs the rollout script, and coordinates GRPO-style training without extra orchestration layers (last validated on v0.1.x).
-
-    [:octicons-repo-24: Browse source]({{ src("examples/search_r1") }})
-
 -   :material-database:{ .lg .middle } __Spider SQL agent__
 
     ---
