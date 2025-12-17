@@ -20,12 +20,22 @@ For example, there is a very common issue that the VERL algorithm receives no to
 
 ![Dashboard Traces Page](../assets/dashboard-page-traces.png)
 
-## Debugging Log
+Depending on whether the trace span is empty or not and whether token IDs are present in the span attributes, you can narrow down the issue to either the runner (agent) side versus the algorithm side. Then, resort to the techniques below to debug the faulty side.
+
+## Debug-level Logging
+
+To avoid overwhelming the users with too much logs, starting from v0.3, many detailed information such as store server access logs, runner lifecycle logs, and detailed span information are only logged when the log level is set to `DEBUG`. You can enable debug-level logging by adding the following code snippet at the beginning of your script:
 
 ```python
 import agentlightning as agl
 
 agl.setup_logging("DEBUG")
+```
+
+Please remember to set the log level on all processes if you have multiple ones. For example, if you are [running stores in isolation][debug-with-external-store], you need to set the log level in the store process as well:
+
+```bash
+agl store --port 4747 --log-level DEBUG
 ```
 
 ## Using [`Runner`][agentlightning.Runner] in Isolation
