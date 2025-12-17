@@ -48,6 +48,10 @@ If a vendor integration behaves unexpectedly, users are encouraged to combine th
 
 Inside your agent you can call `opentelemetry.trace.get_trace_provider().get_tracer("my-agent")` and use that tracer to [create spans](https://opentelemetry.io/docs/languages/python/cookbook/) exactly as you would in any OpenTelemetry application. The Lightning span processor attached by [`OtelTracer`][agentlightning.OtelTracer] guarantees that every span is sequenced, converted, and written to the store. The same applies for emitted rewards ([`emit_reward`][agentlightning.emit_reward]) and other emitter signals, which are just a special case of manually-created spans.
 
+### Weave Tracer (Experimental)
+
+...
+
 ### LLM Proxy
 
 Sometimes the runner can’t observe the agent directly — because it’s in another language or running remotely. [`LLMProxy`][agentlightning.LLMProxy] bridges that gap by instrumenting the server side of LLM calls. It wraps [LiteLLM](https://docs.litellm.ai/) and adds middleware that accepts prefixed routes like `/rollout/{rid}/attempt/{aid}/v1/chat/completions`. Before forwarding, the middleware rewrites the path to `/v1/chat/completions`, fetches a monotonic `sequence_id` from the `LightningStore`, injects `x-rollout-id`, `x-attempt-id`, and `x-sequence-id` into the request headers, and then forwards the request to the backend LLM endpoint.

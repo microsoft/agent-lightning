@@ -1,6 +1,8 @@
-# Scaling out Algorithms and Rollouts
+# Scaling out Store, Algorithms and Rollouts
 
 Agent-lightning splits training into an **algorithm bundle** and a **runner bundle** that exchange work through the [`LightningStore`][agentlightning.LightningStore]. This tutorial shows how to increase rollout throughput, place bundles across processes or machines, and keep the algorithm side scalable with external frameworks.
+
+## Parallelizing Store
 
 ## Parallelizing Rollouts with [`Trainer`][agentlightning.Trainer]
 

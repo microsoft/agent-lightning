@@ -2,6 +2,32 @@
 
 When you train your own agent with Agent-lightning, most failures surface because the agent logic is brittle or simply incorrect. Debugging becomes easier when you peel back the stack: start by driving the rollout logic on its own, dry-run the trainer loop, and only then bring the full algorithm and runner topology online. The [`examples/apo/apo_debug.py`]({{ src("examples/apo/apo_debug.py") }}) script demonstrates these techniques; this guide expands on each approach and helps you decide when to reach for them.
 
+## Inspecting the Experiment from End-to-end
+
+If you have launched an experiment with [`Trainer.fit`][agentlightning.Trainer.fit], or you have launched an isolated store via [`agl store`](../reference/cli.md), you will see the following output in the terminal:
+
+```text
+INFO     Agent-lightning dashboard will be available at http://192.168.0.107:4747
+```
+
+Visit that URL, and you will see the Agent-lightning dashboard:
+
+![Dashboard](../assets/dashboard-page-rollouts.png)
+
+On the dashboard, you can inspect everything that is in [the store](../deep-dive/store.md). As store is the core interface for interactions between algorithms and runners, for cases like stale rollouts, unresponsive runners, empty traces, you can at least identify the side that's causing the issue.
+
+For example, there is a very common issue that the VERL algorithm receives no token IDs causing an error message like `cannot reshape tensor of 0 elements into shape [1, 0, -1, 128] because the unspecified dimension size -1 can be any value and is ambiguous` ([Issue #50](https://github.com/microsoft/agent-lightning/issues/50), [Issue #76](https://github.com/microsoft/agent-lightning/issues/76)). There could be multiple reasons that can lead to this issue: either the runner side fails to produce any trace spans, or the trace spans are produced but they contains no token IDs, or the token IDs are produced but they are not in the correct format so that the algorithm cannot process them. Inspecting the traces in the dashboard can help you identify which is your case.
+
+![Dashboard Traces Page](../assets/dashboard-page-traces.png)
+
+## Debugging Log
+
+```python
+import agentlightning as agl
+
+agl.setup_logging("DEBUG")
+```
+
 ## Using [`Runner`][agentlightning.Runner] in Isolation
 
 [`Runner`][agentlightning.Runner] is a long-lived worker that wraps your [`LitAgent`][agentlightning.LitAgent], coordinates tracing, and talks to the [`LightningStore`][agentlightning.LightningStore]. In typical training flows the trainer manages runners for you, but being able to spin one up manually is invaluable while debugging.
@@ -254,6 +280,8 @@ In a separate terminal, start the store:
 ```bash
 agl store --port 4747
 ```
+
+Add `--log-level DEBUG` to the command to see the detailed logs.
 
 Then, in your training script, create a [`LightningStoreClient`][agentlightning.LightningStoreClient] and pass it to the trainer:
 
