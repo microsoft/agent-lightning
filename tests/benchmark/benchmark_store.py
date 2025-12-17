@@ -18,7 +18,7 @@ from agentlightning.utils.otel import get_tracer
 
 from .utils import flatten_dict, random_dict
 
-console = Console()
+console = Console(width=200)
 
 # Minus 10 to leave time for setting up env.
 MAX_RUNTIME_SECONDS = (int(os.getenv("GITHUB_ACTIONS_TIMEOUT_MINUTES", "30")) - 10) * 60
@@ -58,7 +58,7 @@ class RolloutProgressTracker:
             current_workers = await store.query_workers()
             console.print("Stalled. Current worker status shown below:")
             for worker in current_workers:
-                console.print(f"  Worker: {worker}", no_wrap=True)
+                console.print(f"  Worker: {worker}", no_wrap=True, overflow="ignore", crop=False)
             raise RuntimeError("Rollout progress has stalled for too long")
 
 
