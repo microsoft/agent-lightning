@@ -903,9 +903,11 @@ class LightningStoreServer(LightningStore):
             except asyncio.CancelledError:
                 # Client disconnected (Timeout)
                 status = 499  # Standard Nginx code for "Client Closed Request"
+                server_logger.debug(f"Client disconnected (Timeout): {request.url.path}", exc_info=True)
                 raise  # Re-raise to let Uvicorn handle the cleanup
             except Exception as exc:
                 status = resolve_error_type(exc)
+                server_logger.debug(f"Server error: {request.url.path}", exc_info=True)
                 raise
             finally:
                 # This block executes NO MATTER WHAT happens above
