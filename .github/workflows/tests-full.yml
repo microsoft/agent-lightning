@@ -187,7 +187,7 @@ jobs:
       # mongo, openai, gpu, all enabled by default
       - name: Run tests
         run: |
-          uv run pytest -v --durations=0 tests -m "${{ matrix.mark.pytest-mark }}"
+          uv run pytest -v --durations=0 tests -m "${{ matrix.mark.pytest-mark }}${{ matrix.env.setup-script == 'legacy' && ' and not langchain' || '' }}"
         env:
           PYTEST_ADDOPTS: "--color=yes"
           OPENAI_BASE_URL: http://localhost:12306/

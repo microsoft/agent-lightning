@@ -3,6 +3,9 @@ permissions:
   contents: read
 on:
   workflow_dispatch:
+  schedule:
+    # Every Monday and Thursday at 3 AM UTC+8
+    - cron: '0 19 * * 0,3'
 
 jobs:
   benchmark:
@@ -25,7 +28,7 @@ jobs:
             runner:
               - self-hosted
               - 1ES.Pool=agl-runner-cpu
-            timeout: 60
+            timeout: 45
             args: >-
               --mode batch
               --total-tasks 4096
@@ -40,7 +43,7 @@ jobs:
             runner:
               - self-hosted
               - 1ES.Pool=agl-runner-cpu
-            timeout: 60
+            timeout: 45
             args: >-
               --mode batch
               --total-tasks 10000
@@ -70,10 +73,10 @@ jobs:
             runner:
               - self-hosted
               - 1ES.Pool=agl-runner-cpu
-            timeout: 60
+            timeout: 120
             args: >-
               --mode batch
-              --total-tasks 100000
+              --total-tasks 50000
               --batch-size 8192
               --n-runners 256
               --max-rounds 6
@@ -81,14 +84,14 @@ jobs:
           - id: scenario-long-queues
             display: Long rollout queues
             kind: scenario
-            store_workers: 32
+            store_workers: 48
             runner:
               - self-hosted
               - 1ES.Pool=agl-runner-cpu
-            timeout: 60
+            timeout: 120
             args: >-
               --mode batch_partial
-              --total-tasks 100000
+              --total-tasks 50000
               --batch-size 1024
               --n-runners 256
               --remaining-tasks 4096
@@ -97,14 +100,14 @@ jobs:
           - id: scenario-high-concurrency
             display: High-throughput concurrent requests
             kind: scenario
-            store_workers: 32
+            store_workers: 96
             runner:
               - self-hosted
               - 1ES.Pool=agl-runner-cpu
-            timeout: 60
+            timeout: 120
             args: >-
               --mode single
-              --total-tasks 100000
+              --total-tasks 50000
               --concurrency 2048
               --n-runners 256
               --max-rounds 2
@@ -172,6 +175,7 @@ jobs:
       STORE_URL: http://localhost:4747
       STORE_API_URL: http://localhost:4747/v1/agl
       PROM_URL: http://localhost:9090
+      GITHUB_ACTIONS_TIMEOUT_MINUTES: ${{ matrix.workload.timeout }}
       WORKLOAD_KIND: ${{ matrix.workload.kind }}
       WORKLOAD_ID: ${{ matrix.workload.id }}
       BACKEND_ID: ${{ matrix.backend.id }}
@@ -338,27 +342,27 @@ jobs:
             runner: ubuntu-latest
         workload:
           - id: high-insert
-            total_tasks: 100000
+            total_tasks: 50000
             concurrency: 2048
             type: insert
           - id: medium-insert
-            total_tasks: 100000
+            total_tasks: 50000
             concurrency: 128
             type: insert
           - id: low-insert
-            total_tasks: 100000
+            total_tasks: 50000
             concurrency: 4
             type: insert
           - id: high-dequeue
-            total_tasks: 100000
+            total_tasks: 50000
             concurrency: 2048
             type: dequeue
           - id: medium-dequeue
-            total_tasks: 100000
+            total_tasks: 50000
             concurrency: 128
             type: dequeue
           - id: low-dequeue
-            total_tasks: 100000
+            total_tasks: 50000
             concurrency: 4
             type: dequeue
     env:

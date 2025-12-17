@@ -454,7 +454,7 @@ def unflatten_attributes(flat_data: Dict[str, Any]) -> Union[Dict[str, Any], Lis
     return convert(root)
 
 
-def sanitize_attribute_value(object: Any) -> AttributeValue:
+def sanitize_attribute_value(object: Any, force: bool = True) -> AttributeValue:
     """Sanitize an attribute value to be a valid OpenTelemetry attribute value."""
     if isinstance(object, (str, int, float, bool)):
         return object
@@ -467,18 +467,23 @@ def sanitize_attribute_value(object: Any) -> AttributeValue:
 
     try:
         # This include null, dict, etc.
-        serialized = json.dumps(object)
+        serialized = json.dumps(object, default=str if force else None)
     except (TypeError, ValueError) as exc:
         raise ValueError(f"Object must be JSON serializable, got: {type(cast(Any, object))}.") from exc
     return serialized
 
 
-def sanitize_attributes(attributes: Dict[str, Any]) -> Attributes:
-    """Sanitize a dictionary of attributes to be a valid OpenTelemetry attributes."""
+def sanitize_attributes(attributes: Dict[str, Any], force: bool = True) -> Attributes:
+    """Sanitize a dictionary of attributes to be a valid OpenTelemetry attributes.
+
+    Args:
+        attributes: A dictionary of attributes to sanitize.
+        force: Whether to force sanitization even when the value is not JSON serializable.
+    """
     result: Attributes = {}
     for k, v in attributes.items():
         try:
-            result[k] = sanitize_attribute_value(v)
+            result[k] = sanitize_attribute_value(v, force=force)
         except ValueError as exc:
             raise ValueError(f"Failed to sanitize attribute '{k}': {exc}") from exc
     return result

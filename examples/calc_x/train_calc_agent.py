@@ -121,6 +121,7 @@ def train(
     lora_rank: int,
     lora_adapter_path: Optional[str],
     trajectory_mode: bool = False,
+    weave: bool,
 ):
     """The training entrypoint function for Calc-X agent with VERL algorithm.
 
@@ -137,6 +138,7 @@ def train(
         lora_rank: LoRA rank to use when LoRA is enabled.
         lora_adapter_path: Optional path to a pre-trained LoRA adapter to load.
         trajectory_mode: Whether to enable trajectory mode in trace aggregator.
+        weave: Whether to enable Weave tracing.
     """
     # Load datasets (respect CLI file paths)
     train_dataset = cast(agl.Dataset[MathProblem], HuggingFaceDataset.from_parquet(train_file).to_list())  # type: ignore
@@ -219,6 +221,11 @@ def train(
         tracer = agl.OtelTracer()  # dummy tracer for LLM Proxy
         adapter = agl.LlmProxyTraceToTriplet()
         trainer = agl.Trainer(algorithm=algorithm, n_runners=n_runners, store=store, tracer=tracer, adapter=adapter)
+    elif weave:
+        from agentlightning.tracer.weave import WeaveTracer
+
+        tracer = WeaveTracer()
+        trainer = agl.Trainer(algorithm=algorithm, n_runners=n_runners, store=store, tracer=tracer)
     else:
         trainer = agl.Trainer(algorithm=algorithm, n_runners=n_runners, store=store)
 
@@ -231,6 +238,7 @@ def main():
     parser.add_argument("--val-file", type=str, default="data/test.parquet", help="Path to val parquet file")
     parser.add_argument("--model", type=str, default=None, help="HF model id or path (optional)")
     parser.add_argument("--llm-proxy", action="store_true", help="Enable LLM Proxy tracing/adapter")
+    parser.add_argument("--weave", action="store_true", help="Enable Weave tracing")
     parser.add_argument("--ci", action="store_true", help="Run a minimal CI-style training loop")
     parser.add_argument(
         "--ci-fast", action="store_true", help="Limit the training loop to a single step (implies --ci)"
@@ -294,6 +302,7 @@ def main():
         lora_rank=args.lora_rank,
         lora_adapter_path=args.lora_adapter_path,
         trajectory_mode=args.trajectory_mode,
+        weave=args.weave,
     )
 
 

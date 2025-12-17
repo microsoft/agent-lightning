@@ -7,7 +7,7 @@ import time
 from contextlib import contextmanager
 from dataclasses import dataclass
 from types import TracebackType
-from typing import Any, ContextManager, Dict, Iterator, List, Optional, Tuple, Type
+from typing import Any, ContextManager, Dict, Iterator, List, Optional, Tuple, Type, cast
 
 import opentelemetry.trace as trace_api
 import pytest
@@ -208,17 +208,22 @@ def test_operation_context_set_input_expands_positional_attributes(monkeypatch: 
     assert recording.attributes[f"{input_prefix}.args.1"] == "beta"
 
 
-def test_operation_context_rejects_non_serializable_output(monkeypatch: pytest.MonkeyPatch) -> None:
-    _install_recording_tracer(monkeypatch)
+def test_operation_context_serializes_non_serializable_output(monkeypatch: pytest.MonkeyPatch) -> None:
+    tracer = _install_recording_tracer(monkeypatch)
 
-    class Unserializable:
-        pass
+    class CustomObject:
+        def __str__(self) -> str:
+            return "custom-output"
 
     ctx = OperationContext("ctx", {})
 
-    with pytest.raises(ValueError, match="Object must be JSON serializable"):
-        with ctx as op:
-            op.set_output(Unserializable())
+    with ctx as op:
+        op.set_output(CustomObject())
+
+    recording = tracer.recordings[-1]
+    assert (
+        json.loads(cast(str, recording.attributes[LightningSpanAttributes.OPERATION_OUTPUT.value])) == "custom-output"
+    )
 
 
 def test_operation_context_records_exceptions(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -250,6 +255,16 @@ def test_operation_factory_context_records_inputs_and_outputs(monkeypatch: pytes
     assert _resolve_attr(recording, f"{input_prefix}.args") == ["alpha"]
     assert _resolve_attr(recording, f"{input_prefix}.meta") == {"score": 0.5}
     assert _resolve_attr(recording, LightningSpanAttributes.OPERATION_OUTPUT.value) == ["beta", "gamma"]
+
+
+def test_operation_factory_aliases_name_attribute(monkeypatch: pytest.MonkeyPatch) -> None:
+    tracer = _install_recording_tracer(monkeypatch)
+
+    with operation(name="custom-operation") as ctx:
+        ctx.set_output("done")
+
+    recording = tracer.recordings[-1]
+    assert recording.attributes[LightningSpanAttributes.OPERATION_NAME.value] == "custom-operation"
 
 
 def test_operation_factory_uses_standard_span_name(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -289,6 +304,18 @@ def test_operation_decorator_sync_records_span_attributes(monkeypatch: pytest.Mo
     assert _resolve_attr(recording, LightningSpanAttributes.OPERATION_OUTPUT.value) == result
 
 
+def test_operation_decorator_aliases_operation_name_attribute(monkeypatch: pytest.MonkeyPatch) -> None:
+    tracer = _install_recording_tracer(monkeypatch)
+
+    @operation(name="explicit-name")
+    def compute(value: int) -> int:
+        return value * 2
+
+    assert compute(3) == 6
+    recording = tracer.recordings[-1]
+    assert recording.attributes[LightningSpanAttributes.OPERATION_NAME.value] == "explicit-name"
+
+
 def test_operation_decorator_handles_complex_signature(monkeypatch: pytest.MonkeyPatch) -> None:
     tracer = _install_recording_tracer(monkeypatch)
 
@@ -305,8 +332,7 @@ def test_operation_decorator_handles_complex_signature(monkeypatch: pytest.Monke
     ) -> ComplexResult:
         return ComplexResult(values=(first, len(extra), len(rest)), marker=kwonly + kwdefault + required)
 
-    with pytest.raises(ValueError):
-        complicated(1, "req", 7, 8, 9, kwonly="x", kwdefault="y", tag="value")
+    result = complicated(1, "req", 7, 8, 9, kwonly="x", kwdefault="y", tag="value")
 
     recording = tracer.recordings[-1]
     input_prefix = LightningSpanAttributes.OPERATION_INPUT.value
@@ -319,7 +345,23 @@ def test_operation_decorator_handles_complex_signature(monkeypatch: pytest.Monke
     assert _resolve_attr(recording, f"{input_prefix}.kwdefault") == "y"
     assert _resolve_attr(recording, f"{input_prefix}.rest") == {"tag": "value"}
     assert recording.attributes[LightningSpanAttributes.OPERATION_NAME.value] == "complicated"
-    assert recording.status.status_code == "ERROR"
+    assert _resolve_attr(recording, LightningSpanAttributes.OPERATION_OUTPUT.value) == (
+        "ComplexResult(values=(1, 2, 1), marker='xyreq')"
+    )
+    assert isinstance(result, ComplexResult)
+    assert recording.status.status_code == "OK"
+
+
+def test_operation_name_alias_does_not_override_explicit_attribute(monkeypatch: pytest.MonkeyPatch) -> None:
+    _install_recording_tracer(monkeypatch)
+
+    attrs = {
+        LightningSpanAttributes.OPERATION_NAME.value: "explicit-name",
+    }
+
+    with pytest.raises(ValueError, match="specify both"):
+        with operation(name="alias-name", **attrs) as ctx:
+            ctx.set_output("done")
 
 
 def test_operation_decorator_records_exceptions(monkeypatch: pytest.MonkeyPatch) -> None:

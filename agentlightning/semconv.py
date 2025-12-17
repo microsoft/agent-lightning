@@ -34,6 +34,9 @@ AGL_OPERATION = "agentlightning.operation"
 Wrap function or code-blocks as operations.
 """
 
+AGL_REWARD = "agentlightning.reward"
+"""Agent-lightning's standard span name for reward operations."""
+
 AGL_VIRTUAL = "agentlightning.virtual"
 """Agent-lightning's standard span name for virtual operations.
 
