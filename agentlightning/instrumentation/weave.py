@@ -460,6 +460,9 @@ def get_username() -> str:
         return _original_get_username()
     except RuntimeError:
         return "agl"
+    except Exception as exc:
+        warnings.warn(f"Unexpected error in get_username. Using default username. Error: {exc}")
+        return "agl"
 
 
 def instrument_weave(server: InMemoryWeaveTraceServer):
