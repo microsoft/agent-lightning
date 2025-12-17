@@ -1,16 +1,16 @@
-## Using the Emitter
+# Using the Emitter
 
 [](){ #using-emitter }
 
 While returning a single float for the final reward is sufficient for many algorithm-agent combinations, some advanced scenarios require richer feedback. For instance, an algorithm might learn more effectively if it receives intermediate rewards throughout a multi-step task, or if the agent needs to emit additional spans for debugging or analysis.
 
-Agent-lightning provides an **emitter** module that allows you to record custom spans from within your agent's logic. Like many common operations (like LLM calls) that are automatically instrumented by [Tracer][agentlightning.Tracer], the emitter will also send a [Span][agentlightning.Span] that records an Agent-lightning-specific operation. Then algorithms can query and read those spans later. See [Working with Traces](./traces.md) for more details.
+Agent-lightning provides an **emitter** module for recording custom spans inside your agent logic. Just as [Tracer][agentlightning.Tracer] automatically instruments common operations (for example, LLM calls), each emitter helper sends a [Span][agentlightning.Span] that captures Agent-lightning-specific work so downstream algorithms can query it later. See [Working with Traces](./traces.md) for more details.
 
-For multi-step routines (function calls, tools, or adapters) you can wrap code with [`operation`][agentlightning.operation], either as a decorator or a context manager, to capture inputs, outputs, and metadata on a dedicated [`operation`][agentlightning.operation] span. This makes it easier to correlate downstream annotations (like rewards or messages) with the higher-level work that produced them.
+For multi-step routines such as function calls, tools, or adapters, wrap code with [`operation`][agentlightning.operation] — either as a decorator or a context manager — to capture inputs, outputs, and metadata on a dedicated [`operation`][agentlightning.operation] span. This makes it easier to correlate downstream annotations (like rewards or messages) with the higher-level work that produced them.
 
-You can find the emitter functions from [`agentlightning.emitter`](../reference/agent.md).
+You can find the emitter functions in [`agentlightning.emitter`](../reference/agent.md).
 
-### Emitting Rewards, Messages, and More
+## Emitting Rewards, Messages, and More
 
 Here are the primary emitter functions:
 
@@ -53,7 +53,7 @@ def multi_step_agent(task: dict, prompt_template: PromptTemplate) -> float:
         return 0.0
 ```
 
-Each helper accepts nested `attributes` (or keyword arguments, in the case of [`operation`][agentlightning.operation]) and automatically flattens/sanitizes them into dotted OpenTelemetry keys. That means you can pass ordinary dictionaries/lists without pre-processing and still get consistent attribute names such as `meta.any_attribute` across all emitter operations. Although Agent-lightning doesn't enforce any assumptions over what attributes are allowed, it's generally recommended to see [OpenTelemetry's semantic conventions](https://opentelemetry.io/docs/specs/semconv/) for a list of recommended attributes. Other than that, Agent-lightning has also defined some [specific semconv](../reference/semconv.md) for its own use cases. The usage pattern is shown below:
+Each helper accepts nested `attributes` (or keyword arguments for [`operation`][agentlightning.operation]) and automatically flattens/sanitizes them into dotted OpenTelemetry keys. This means you can pass ordinary dictionaries/lists without pre-processing and still get consistent attribute names such as `meta.any_attribute` across all emitter operations. Agent-lightning does not restrict the attributes you supply, but it is best to consult [OpenTelemetry's semantic conventions](https://opentelemetry.io/docs/specs/semconv/) for recommended names. Agent-lightning also defines [specific semconv](../reference/semconv.md) for its own use cases. The pattern looks like this:
 
 ```python
 from opentelemetry.semconv.attributes import server_attributes
@@ -69,7 +69,7 @@ emit_object({
 })
 ```
 
-Directly running the above code will send the following span to the backend if you have a tracer active:
+Running the above code sends the following span to the backend if you have a tracer active:
 
 ```text
 Span(
@@ -91,9 +91,9 @@ Span(
     RuntimeError: No active tracer found. Cannot emit object span.
     ```
 
-    The reason is that, by default, emitter function delegates to the current active tracer to create and export spans (specifically, [`Tracer.create_span`][agentlightning.Tracer.create_span] method). If you want to emit spans without an active tracer, all emitter helpers also support a `propagate` flag; setting `propagate=False` keeps the span local, which is useful for offline tests. The default `True` streams spans through the active tracer/exporters.
+    By default, emitter helpers delegate to the active tracer to create and export spans (specifically via [`Tracer.create_span`][agentlightning.Tracer.create_span]). If you want to emit spans without an active tracer, set `propagate=False` to keep the span local — a useful option for offline tests. The default `True` streams spans through the active tracer/exporters.
 
-More commonly, especially when working with [agentlightning.semconv](../reference/semconv.md), you would use utilities like [`make_tag_attributes`][agentlightning.utils.otel.make_tag_attributes] and [`make_link_attributes`][agentlightning.utils.otel.make_link_attributes] to create the attributes dictionary. For example:
+When working with [agentlightning.semconv](../reference/semconv.md), you typically use utilities such as [`make_tag_attributes`][agentlightning.utils.otel.make_tag_attributes] and [`make_link_attributes`][agentlightning.utils.otel.make_link_attributes] to build the attributes dictionary. For example:
 
 ```python
 from agentlightning.utils.otel import make_tag_attributes
@@ -114,9 +114,9 @@ The above code will send a span with the following attributes to the backend:
 
 A counterpart utility function [`extract_tags_from_attributes`][agentlightning.utils.otel.extract_tags_from_attributes] is also available to extract the tags from the attributes dictionary.
 
-### Operations
+## Operations
 
-The [`operation`][agentlightning.operation] helper tracks logical units of work within your agent, capturing inputs, outputs, timing, and success/failure status. Unlike point-in-time emitters, operations create a span representing a time interval. Use operations for tool calls, multi-step workflows, debugging, and performance monitoring. [`operation`][agentlightning.operation] can be used either as a decorator or a context manager.
+The [`operation`][agentlightning.operation] helper tracks logical units of work within your agent, capturing inputs, outputs, timing, and success/failure status. Unlike point-in-time emitters, operations create a span representing a time interval. Use operations for tool calls, multi-step workflows, debugging, and performance monitoring. [`operation`][agentlightning.operation] works as either a decorator or a context manager.
 
 The decorator automatically captures function arguments as inputs and the return value as output:
 
@@ -133,7 +133,7 @@ def execute_calculation(expression: str) -> float:
     return eval_safely(expression)
 ```
 
-The example above will send a span with attribute `{"category": "tool", "priority": "high"}` to the backend. It will also send the input and output of the function as attributes via [OPERATION_INPUT][agentlightning.semconv.LightningSpanAttributes.OPERATION_INPUT] and [OPERATION_OUTPUT][agentlightning.semconv.LightningSpanAttributes.OPERATION_OUTPUT]. It works with async functions too:
+The example above emits a span with `{"category": "tool", "priority": "high"}` attributes. It also records the function input and output via [OPERATION_INPUT][agentlightning.semconv.LightningSpanAttributes.OPERATION_INPUT] and [OPERATION_OUTPUT][agentlightning.semconv.LightningSpanAttributes.OPERATION_OUTPUT]. It works with async functions too:
 
 ```python
 @agl.operation
@@ -159,7 +159,7 @@ with agl.operation(tool_name="web_search") as op:
     op.set_output({"result_count": len(results), "top_result": results[0]})
 ```
 
-`propagate=False` also applies to [`operation`][agentlightning.operation] to keep operations local without requiring an active tracer:
+The `propagate=False` flag also applies to [`operation`][agentlightning.operation] when you want to keep operations local without requiring an active tracer:
 
 ```python
 @agl.operation(propagate=False)
@@ -167,9 +167,9 @@ def local_test():
     return "Not sent to backend"
 ```
 
-### Linking to Other Spans
+## Linking to Other Spans
 
-Sometimes a span should explicitly point back to another span that produced the input it is working on (for example, linking a reward annotation to the [`agentlightning.operation`][agentlightning.operation] span that generated a response). Agent-lightning encodes these relationships through flattened link attributes. The helper [`make_link_attributes`][agentlightning.utils.otel.make_link_attributes] converts a dictionary of keys, such as `trace_id`, `span_id`, or any custom attribute, into the `"agentlightning.link.*"` ([LightningSpanAttributes.LINK][agentlightning.semconv.LightningSpanAttributes.LINK]) fields expected by the backend. Later on, [`query_linked_spans`][agentlightning.utils.otel.query_linked_spans] can be used to recover the original span(s) from those link descriptors.
+Sometimes a span should explicitly point back to another span that produced the input it is working on (for example, linking a reward annotation to the [`agentlightning.operation`][agentlightning.operation] span that generated a response). Agent-lightning encodes these relationships through flattened link attributes. The helper [`make_link_attributes`][agentlightning.utils.otel.make_link_attributes] converts a dictionary of keys such as `trace_id`, `span_id`, or any custom attribute into the `"agentlightning.link.*"` ([LightningSpanAttributes.LINK][agentlightning.semconv.LightningSpanAttributes.LINK]) fields expected by the backend. Later, [`query_linked_spans`][agentlightning.utils.otel.query_linked_spans] can recover the original span(s) from those link descriptors.
 
 ```python
 import opentelemetry.trace as trace_api

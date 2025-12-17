@@ -2,9 +2,9 @@
 
 When you train your own agent with Agent-lightning, most failures surface because the agent logic is brittle or simply incorrect. Debugging becomes easier when you peel back the stack: start by driving the rollout logic on its own, dry-run the trainer loop, and only then bring the full algorithm and runner topology online. The [`examples/apo/apo_debug.py`]({{ src("examples/apo/apo_debug.py") }}) script demonstrates these techniques; this guide expands on each approach and helps you decide when to reach for them.
 
-## Inspecting the Experiment from End-to-end
+## Debugging with Dashboard
 
-If you have launched an experiment with [`Trainer.fit`][agentlightning.Trainer.fit], or you have launched an isolated store via [`agl store`](../reference/cli.md), you will see the following output in the terminal:
+When you launch an experiment with [`Trainer.fit`][agentlightning.Trainer.fit] or start an isolated store via [`agl store`](../reference/cli.md), the terminal prints a message similar to:
 
 ```text
 INFO     Agent-lightning dashboard will be available at http://192.168.0.107:4747
@@ -14,17 +14,17 @@ Visit that URL, and you will see the Agent-lightning dashboard:
 
 ![Dashboard](../assets/dashboard-page-rollouts.png)
 
-On the dashboard, you can inspect everything that is in [the store](../deep-dive/store.md). As store is the core interface for interactions between algorithms and runners, for cases like stale rollouts, unresponsive runners, empty traces, you can at least identify the side that's causing the issue.
+The dashboard surfaces everything stored inside [the store](../deep-dive/store.md). Because the store mediates interactions between algorithms and runners, inspecting it often reveals which side is causing issues such as stale rollouts, unresponsive workers, or empty traces.
 
-For example, there is a very common issue that the VERL algorithm receives no token IDs causing an error message like `cannot reshape tensor of 0 elements into shape [1, 0, -1, 128] because the unspecified dimension size -1 can be any value and is ambiguous` ([Issue #50](https://github.com/microsoft/agent-lightning/issues/50), [Issue #76](https://github.com/microsoft/agent-lightning/issues/76)). There could be multiple reasons that can lead to this issue: either the runner side fails to produce any trace spans, or the trace spans are produced but they contains no token IDs, or the token IDs are produced but they are not in the correct format so that the algorithm cannot process them. Inspecting the traces in the dashboard can help you identify which is your case.
+For example, the VERL algorithm may receive no token IDs and emit `cannot reshape tensor of 0 elements into shape [1, 0, -1, 128] because the unspecified dimension size -1 can be any value and is ambiguous` ([Issue #50](https://github.com/microsoft/agent-lightning/issues/50), [Issue #76](https://github.com/microsoft/agent-lightning/issues/76)). Several scenarios can produce that error: the runner might not produce trace spans at all, it might produce spans without token IDs, or the IDs may be present but formatted incorrectly. Inspecting the dashboard traces helps you pinpoint which condition applies.
 
 ![Dashboard Traces Page](../assets/dashboard-page-traces.png)
 
-Depending on whether the trace span is empty or not and whether token IDs are present in the span attributes, you can narrow down the issue to either the runner (agent) side versus the algorithm side. Then, resort to the techniques below to debug the faulty side.
+By checking whether the trace span is empty and whether token IDs appear in the span attributes, you can narrow the issue to either the runner (agent) side or the algorithm side. Then apply the techniques below to debug the faulty component.
 
 ## Debug-level Logging
 
-To avoid overwhelming the users with too much logs, starting from v0.3, many detailed information such as store server access logs, runner lifecycle logs, and detailed span information are only logged when the log level is set to `DEBUG`. You can enable debug-level logging by adding the following code snippet at the beginning of your script:
+Starting from v0.3, detailed signals such as store server access logs, runner lifecycle logs, and span payloads only appear when the log level is `DEBUG` so the default output stays readable. Enable debug-level logging by adding the following snippet near the top of your script:
 
 ```python
 import agentlightning as agl
@@ -32,7 +32,7 @@ import agentlightning as agl
 agl.setup_logging("DEBUG")
 ```
 
-Please remember to set the log level on all processes if you have multiple ones. For example, if you are [running stores in isolation][debug-with-external-store], you need to set the log level in the store process as well:
+Set the log level on every process if your setup involves multiple workers. For example, when [running stores in isolation][debug-with-external-store], configure the store process explicitly:
 
 ```bash
 agl store --port 4747 --log-level DEBUG
