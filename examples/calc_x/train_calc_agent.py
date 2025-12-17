@@ -212,6 +212,9 @@ def train(
         adapter = agl.LlmProxyTraceToTriplet()
         trainer = agl.Trainer(algorithm=algorithm, n_runners=n_runners, store=store, tracer=tracer, adapter=adapter)
     elif weave:
+        # NOTE: Don't import weave anywhere else in the codebase other than this.
+        # Weave will interfere with other libraries like LiteLLM/OpenTelemetry once imported.
+        # We are still investigating the impact of importing weave by default.
         from agentlightning.tracer.weave import WeaveTracer
 
         tracer = WeaveTracer()

@@ -88,6 +88,11 @@ else:
             f"{first_trace_rollouts} -> {last_trace_rollouts}"
         )
 
+    val_mean_response = last_row["val/mean_response_length"]
+    if val_mean_response < 1:
+        print("::error::Mean response length is too short: " f"{val_mean_response} (expected >= 1)")
+        sys.exit(1)
+
     first_reward, last_reward = first_row["val/reward"], last_row["val/reward"]
     if last_reward <= first_reward:
         print(
