@@ -44,7 +44,9 @@ else:
     print(f"::error::Run with name '{run_name}' not found in project '{project}'.")
     sys.exit(1)
 
-hist = run.history(keys=["val/reward", "val/n_rollouts_w_reward", "val/n_rollouts_w_trace"], pandas=True)
+hist = run.history(
+    keys=["val/reward", "val/n_rollouts_w_reward", "val/n_rollouts_w_trace", "val/mean_response_length"], pandas=True
+)
 print("History:", hist)
 if hist.empty:
     print("::error::No history found for the run.")
@@ -90,7 +92,7 @@ else:
 
     val_mean_response = last_row["val/mean_response_length"]
     if val_mean_response < 1:
-        print("::error::Mean response length is too short: " f"{val_mean_response} (expected >= 1)")
+        print(f"::error::Mean response length is too short: {val_mean_response} (expected >= 1)")
         sys.exit(1)
 
     first_reward, last_reward = first_row["val/reward"], last_row["val/reward"]
