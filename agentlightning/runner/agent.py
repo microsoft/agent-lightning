@@ -526,6 +526,7 @@ class LitAgentRunner(Runner[T_task]):
         def consumer() -> None:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
+            last_warned_ts = None  # Track which snapshot we've already warned about
             try:
                 while not stop_evt.is_set():
                     with lock:
@@ -539,12 +540,15 @@ class LitAgentRunner(Runner[T_task]):
 
                     age = time.monotonic() - ts
                     if age > stale_after:
-                        logger.warning(
-                            "%s Heartbeat consumer: snapshot stale (age=%.2fs > %.2fs); skipping update.",
-                            self._log_prefix(),
-                            age,
-                            stale_after,
-                        )
+                        # Only warn once per stale snapshot (check if we haven't warned about this timestamp yet)
+                        if last_warned_ts != ts:
+                            logger.warning(
+                                "%s Heartbeat consumer: snapshot stale (age=%.2fs > %.2fs); skipping update.",
+                                self._log_prefix(),
+                                age,
+                                stale_after,
+                            )
+                            last_warned_ts = ts
                         continue
 
                     try:

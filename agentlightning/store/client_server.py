@@ -1520,7 +1520,7 @@ class LightningStoreClient(LightningStore):
             except aiohttp.ClientResponseError as cre:
                 # Respect app-level 4xx as final
                 # 4xx => application issue; do not retry (except 408 which is transient)
-                client_logger.debug(f"ClientResponseError: {cre.status} {cre.message}", exc_info=True)
+                client_logger.debug(f"ClientResponseError ({method} {path}): {cre.status} {cre.message}", exc_info=True)
                 if 400 <= cre.status < 500 and cre.status != 408:
                     raise
                 # 5xx and others will be retried below if they raise
@@ -1536,9 +1536,9 @@ class LightningStoreClient(LightningStore):
                 asyncio.TimeoutError,
             ) as net_exc:
                 # Network/session issue: probe health before retrying
-                client_logger.debug(f"Network/session issue: {net_exc}", exc_info=True)
+                client_logger.debug(f"Network/session issue ({method} {path}): {net_exc}", exc_info=True)
                 last_exc = net_exc
-                client_logger.info(f"Network/session issue will be retried. Retrying the request {method}: {path}")
+                client_logger.info(f"Network/session issue: {net_exc} - will retry the request {method}: {path}")
                 if not await self._wait_until_healthy(session):
                     break  # server is not healthy, do not retry
 

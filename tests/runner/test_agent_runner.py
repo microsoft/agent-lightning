@@ -1202,6 +1202,50 @@ async def test_thread_heartbeat_waits_for_first_snapshot(
 
 
 @pytest.mark.asyncio
+async def test_thread_heartbeat_logs_stale_snapshot_only_once(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Test that stale snapshot warning is only logged once per stale snapshot."""
+    call_count = 0
+
+    def fake_system_snapshot(_include_gpu: bool = False) -> Dict[str, Any]:
+        nonlocal call_count
+        call_count += 1
+        # Only create one snapshot, then hang
+        if call_count == 1:
+            return {"cpu_pct": 50.0}
+        # Simulate hung producer
+        time.sleep(10)
+        return {"cpu_pct": 99.0}
+
+    monkeypatch.setattr("agentlightning.runner.agent.system_snapshot", fake_system_snapshot)
+
+    caplog.set_level(logging.WARNING)
+    runner, store = await setup_heartbeat_runner(
+        heartbeat_interval=0.01,
+        heartbeat_launch_mode="thread",
+    )
+    runner._interval_jitter = 0.01  # pyright: ignore[reportPrivateUsage]
+
+    stop_heartbeat = runner._start_heartbeat_loop(store)  # pyright: ignore[reportPrivateUsage]
+    assert stop_heartbeat is not None
+
+    try:
+        # Wait long enough for the single snapshot to become stale
+        # and for multiple consumer iterations to check it
+        # stale_after = 0.01 + 0.01 + 1.0 = 1.02s
+        await asyncio.sleep(1.3)
+    finally:
+        await stop_heartbeat()
+        teardown_runner(runner)
+
+    # Count how many times the stale warning appears
+    stale_warnings = caplog.text.count("snapshot stale")
+    # Should only warn once, even though consumer checked multiple times
+    assert stale_warnings == 1
+
+
+@pytest.mark.asyncio
 async def test_heartbeat_disabled_when_interval_zero() -> None:
     """Test that heartbeat loop is not started when interval is 0 or negative."""
     runner, store = await setup_heartbeat_runner(heartbeat_interval=0.0)
