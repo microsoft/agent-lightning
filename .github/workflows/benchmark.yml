@@ -67,7 +67,7 @@ jobs:
             store_workers: 32
             runner:
               - self-hosted
-              - 1ES.Pool=agl-runner-cpu
+              - 1ES.Pool=agl-runner-cpu-high
             timeout: 120
             args: >-
               --mode batch
@@ -98,7 +98,7 @@ jobs:
             store_workers: 32
             runner:
               - self-hosted
-              - 1ES.Pool=agl-runner-cpu
+              - 1ES.Pool=agl-runner-cpu-high
             timeout: 120
             args: >-
               --mode single
@@ -113,7 +113,7 @@ jobs:
             store_workers: 64
             runner:
               - self-hosted
-              - 1ES.Pool=agl-runner-cpu
+              - 1ES.Pool=agl-runner-cpu-high
             timeout: 120
             args: >-
               --mode batch_partial
