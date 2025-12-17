@@ -198,6 +198,7 @@ class LitAgent(Generic[T]):
             * `float` representing the final reward.
             * `List[ReadableSpan]` with OpenTelemetry spans.
             * `List[Span]` with Agent Lightning spans.
+            * `List[SpanCoreFields]` with Agent Lightning spans.
         """
         raise NotImplementedError("Agents must implement the `rollout` method.")
 
