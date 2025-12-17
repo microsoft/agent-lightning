@@ -79,8 +79,10 @@ def log_mismatch_detail(
     global_steps: int,
     rollout_id: str,
     turn_id: int,
-    log_dir: str,
+    log_dir: str | None = None,
 ):
+    if log_dir is None:
+        return
     os.makedirs(log_dir, exist_ok=True)
     template_mismatch, retoken_mismatch, others_mismatch = diagnostic
     if template_mismatch:
@@ -215,7 +217,7 @@ class AgentModeDaemon:
         adapter: TraceToTripletBase | None = None,
         processor: Any = None,
         image_base_dir: Optional[str] = None,
-        trace_aggregator: Optional[Dict[str, Any]] = None,
+        trace_aggregator: Dict[str, Any] = {"mode": "transition"},
     ):
         self.mode = mode
         self.llm_timeout_seconds = llm_timeout_seconds
@@ -861,7 +863,7 @@ class AgentModeDaemon:
         image_grid_thw_list: List[Optional[torch.Tensor]] = []  # For Qwen2-VL mrope
         n_trunc_sample_because_of_response = 0
 
-        if self.trace_aggregator.mode == "transition":
+        if self.trace_aggregator.get("mode", "transition") == "transition":
             for rollout_id, sample_info in finished_id_to_sample_info.items():
                 for turn_index, trace in enumerate(sample_info["trace_list"]):
 
@@ -901,7 +903,7 @@ class AgentModeDaemon:
                         image_urls = trace.get("image_urls", [])
                         image_grid_thw_list.append(self._get_image_grid_thw(image_urls))
 
-        elif self.trace_aggregator.mode == "trajectory":
+        elif self.trace_aggregator.get("mode", "transition") == "trajectory":
             assert not self._use_mrope, "M-RoPE is not supported in trajectory mode yet."
 
             response_mask_list: List[List[int]] = []
@@ -921,9 +923,9 @@ class AgentModeDaemon:
                         trace["prompt_ids"] + trace["response_ids"],
                         current_context,
                         self.tokenizer,
-                        self.trace_aggregator.mode.debug,
+                        self.trace_aggregator.get("debug", False),
                     )
-                    if not is_prefix and self.trace_aggregator.mode.debug == True:
+                    if not is_prefix and self.trace_aggregator.get("debug", False) == True:
                         template_mismatch_count += diagnostic[0]
                         retoken_mismatch_count += diagnostic[1]
                         others_mismatch_count += diagnostic[2]
@@ -934,7 +936,7 @@ class AgentModeDaemon:
                             global_steps,
                             rollout_id,
                             turn_index,
-                            self.trace_aggregator.mode.unmatch_log_dir,
+                            self.trace_aggregator.get("unmatch_log_dir", None),
                         )
 
                     if is_prefix:
@@ -1010,7 +1012,7 @@ class AgentModeDaemon:
                     rollout_id_list.append(rollout_id)
                     # turn_index_list.append(current_merged_trace_idx)
         else:
-            raise ValueError(f"Unknown trace_aggregator mode: {self.trace_aggregator.mode}")
+            raise ValueError(f"Unknown trace_aggregator mode: {self.trace_aggregator.get('mode')}")
 
         n_transition = len(input_ids_list)
         batch_input_ids = torch.LongTensor(input_ids_list).to(device)
@@ -1018,7 +1020,7 @@ class AgentModeDaemon:
         batch_response_ids = torch.LongTensor(response_ids_list).to(device)
         response_attention_mask = torch.LongTensor(response_attention_mask_list).to(device)
         response_mask = (
-            torch.LongTensor(response_mask_list).to(device) if self.trace_aggregator.mode == "trajectory" else None
+            torch.LongTensor(response_mask_list).to(device) if self.trace_aggregator.get("mode", "transition") == "trajectory" else None  # type: ignore
         )
 
         # Concatenate prompts and responses to form the full sequence
@@ -1070,8 +1072,12 @@ class AgentModeDaemon:
                 "position_ids": position_ids,
                 "is_drop_mask": is_drop_mask,
                 "token_level_scores": token_level_scores.contiguous(),
-                **({"response_mask": response_mask} if self.trace_aggregator.mode == "trajectory" else {}),
-            },
+                **(
+                    {"response_mask": response_mask}
+                    if self.trace_aggregator.get("mode", "transition") == "trajectory"
+                    else {}
+                ),
+            },  # type: ignore
             batch_size=n_transition,
         )
         data_proto = DataProto(batch=batch)
@@ -1086,25 +1092,26 @@ class AgentModeDaemon:
             # log data, only for debug testing
             **(
                 {
-                    "training/n_unmerged_rollouts": unmerged_count,
+                    "training/n_unmerged_rollouts": unmerged_count,  # type: ignore
                     "training/n_triplets_by_turn": len(response_per_turn_list),  # type: ignore
                     "training/avg_response_length_by_turn": np.mean(response_per_turn_list),  # type: ignore
                     "training/max_response_length_by_turn": np.max(response_per_turn_list),  # type: ignore
                     "training/min_response_length_by_turn": np.min(response_per_turn_list),  # type: ignore
                 }
-                if self.trace_aggregator.mode == "trajectory"
+                if self.trace_aggregator.get("mode", "transition") == "trajectory"
                 else {}
             ),
             **(
                 {
-                    "training/template_mismatch_triplets": template_mismatch_count,
-                    "training/retoken_mismatch_triplets": retoken_mismatch_count,
-                    "training/others_mismatch_triplets": others_mismatch_count,
-                    "training/template_mismatch_ratio": template_mismatch_count / len(response_per_turn_list),
-                    "training/retoken_mismatch_ratio": retoken_mismatch_count / len(response_per_turn_list),
-                    "training/others_mismatch_ratio": others_mismatch_count / len(response_per_turn_list),
+                    "training/template_mismatch_triplets": template_mismatch_count,  # type: ignore
+                    "training/retoken_mismatch_triplets": retoken_mismatch_count,  # type: ignore
+                    "training/others_mismatch_triplets": others_mismatch_count,  # type: ignore
+                    "training/template_mismatch_ratio": template_mismatch_count / len(response_per_turn_list),  # type: ignore
+                    "training/retoken_mismatch_ratio": retoken_mismatch_count / len(response_per_turn_list),  # type: ignore
+                    "training/others_mismatch_ratio": others_mismatch_count / len(response_per_turn_list),  # type: ignore
                 }
-                if self.trace_aggregator.mode == "trajectory" and self.trace_aggregator.debug
+                if self.trace_aggregator.get("mode", "transition") == "trajectory"
+                and self.trace_aggregator.get("debug", False)
                 else {}
             ),
         }
@@ -1112,7 +1119,7 @@ class AgentModeDaemon:
         # Add non-tensor data for advantage calculation and logging
         data_proto.non_tensor_batch["data_id_list"] = np.array(data_id_list)  # type: ignore
         data_proto.non_tensor_batch["rollout_id_list"] = np.array(rollout_id_list)  # type: ignore
-        if self.trace_aggregator.mode == "transition":
+        if self.trace_aggregator.get("mode", "transition") == "transition":
             data_proto.non_tensor_batch["turn_index_list"] = np.array(turn_index_list)  # type: ignore
 
         return data_proto, data_metrics
