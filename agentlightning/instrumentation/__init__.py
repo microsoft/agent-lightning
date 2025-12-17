@@ -39,13 +39,6 @@ try:
 except ImportError:
     pass
 
-try:
-    from . import weave  # type: ignore
-
-    WEAVE_INSTALLED = True  # type: ignore
-except ImportError:
-    pass
-
 
 def instrument_all():
     """Instrument all the instrumentation libraries."""
