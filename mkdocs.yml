@@ -125,6 +125,7 @@ nav:
     - Command Line: reference/cli.md
     - Instrumentation: reference/instrumentation.md
     - Runner: reference/runner.md
+    - Semantic Conventions: reference/semconv.md
     - Store: reference/store.md
     - Trainer: reference/trainer.md
     - Types: reference/types.md

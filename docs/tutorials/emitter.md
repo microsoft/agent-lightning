@@ -14,14 +14,13 @@ You can find the emitter functions from [`agentlightning.emitter`](../reference/
 
 Here are the primary emitter functions:
 
-* [`emit_reward(value: float)`][agentlightning.emit_reward]: Records an intermediate reward.
+* [`emit_reward(value: float)`][agentlightning.emit_reward]: Records an intermediate/final reward, which is a convenient wrapper of [`emit_annotation`][agentlightning.emit_annotation].
+* [`emit_annotation(attributes: Dict[str, Any])`][agentlightning.emit_annotation]: Records arbitrary metadata as a span.
 * [`emit_message(message: str)`][agentlightning.emit_message]: Records a simple log message as a span.
 * [`emit_exception(exception: BaseException)`][agentlightning.emit_exception]: Records a Python exception, including its type, message, and stack trace.
 * [`emit_object(obj: Any)`][agentlightning.emit_object]: Records any JSON-serializable object, perfect for structured data.
 
-Each helper accepts nested `attributes` (or keyword arguments, in the case of [`operation`][agentlightning.operation]) and automatically flattens/sanitizes them into dotted OpenTelemetry keys. That means you can pass ordinary dictionaries/lists without pre-processing and still get consistent attribute names such as `meta.tag` across [`emit_annotation`][agentlightning.emit_annotation], [`emit_message`][agentlightning.emit_message], [`emit_object`][agentlightning.emit_object], [`emit_exception`][agentlightning.emit_exception], [`emit_reward`][agentlightning.emit_reward], and [`operation`][agentlightning.operation]. All emitter helpers also support a `propagate` flag; setting `propagate=False` keeps the span local—useful for offline tests—while the default `True` streams spans through the active tracer/exporters.
-
-Let's see an example of an agent using these emitters to provide detailed feedback.
+Let's first see an example of an agent using these emitters to provide detailed feedback.
 
 ```python
 import agentlightning as agl
@@ -54,7 +53,49 @@ def multi_step_agent(task: dict, prompt_template: PromptTemplate) -> float:
         return 0.0
 ```
 
-By using the emitter, you create a rich, detailed trace of your agent's execution. This data can be invaluable for debugging and is essential for advanced algorithms that can learn from more than just a single final score.
+Each helper accepts nested `attributes` (or keyword arguments, in the case of [`operation`][agentlightning.operation]) and automatically flattens/sanitizes them into dotted OpenTelemetry keys. That means you can pass ordinary dictionaries/lists without pre-processing and still get consistent attribute names such as `meta.any_attribute` across all emitter operations. Although Agent-lightning doesn't enforce any assumptions over what attributes are allowed, it's generally recommended to see [OpenTelemetry's semantic conventions](https://opentelemetry.io/docs/specs/semconv/) for a list of recommended attributes. Other than that, Agent-lightning has also defined some [specific semconv](../reference/semconv.md) for its own use cases. The usage pattern is shown below:
+
+```python
+from opentelemetry.semconv.attributes import server_attributes
+from agentlightning import emit_annotation
+
+emit_object({
+    "name": "John Doe",
+    "age": 30,
+    "email": "john.doe@example.com",
+}, attributes={
+    server_attributes.SERVER_ADDRESS: "127.0.0.1",
+    server_attributes.SERVER_PORT: 8080,
+})
+```
+
+Directly running the above code will send the following span to the backend if you have a tracer active:
+
+```text
+Span(
+    name='agentlightning.object',
+    attributes={
+        'agentlightning.object.type': 'dict',
+        'agentlightning.object.json': '{"name": "John Doe", "age": 30, "email": "john.doe@example.com"}',
+        'server.address': '127.0.0.1',
+        'server.port': 8080
+    }
+)
+```
+
+!!! tip
+
+    If you don't have a tracer active, the above code will raise the following error:
+
+    ```text
+    RuntimeError: No active tracer found. Cannot emit object span.
+    ```
+
+    All emitter helpers also support a `propagate` flag; setting `propagate=False` keeps the span local, which is useful for offline tests. The default `True` streams spans through the active tracer/exporters.
+
+### Operations
+
+TBD
 
 ### Linking to Other Spans
 
