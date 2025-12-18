@@ -226,7 +226,7 @@ class AgentModeDaemon:
         adapter: TraceToTripletBase | None = None,
         processor: Any = None,
         image_base_dir: Optional[str] = None,
-        trace_aggregator: Dict[str, Any] = {"mode": "transition"},
+        trace_aggregator: Dict[str, Any] = {"level": "transition"},
     ):
         self.mode = mode
         self.llm_timeout_seconds = llm_timeout_seconds
@@ -867,7 +867,7 @@ class AgentModeDaemon:
         reward_list: List[float] = []
         data_id_list: List[str] = []
         rollout_id_list: List[str] = []
-        turn_index_list: List[int] | List[List[int]] = []
+        turn_index_list: List[int] = []
         is_drop_list: List[bool] = []
         image_grid_thw_list: List[Optional[torch.Tensor]] = []  # For Qwen2-VL mrope
         n_trunc_sample_because_of_response = 0
@@ -913,7 +913,7 @@ class AgentModeDaemon:
                         image_grid_thw_list.append(self._get_image_grid_thw(image_urls))
 
         elif self.trace_aggregator.get("level", "transition") == "trajectory":
-            assert not self._use_mrope, "M-RoPE is not supported in trajectory mode yet."
+            assert not self._use_mrope, "M-RoPE is not supported in trajectory level yet."
 
             response_mask_list: List[List[int]] = []
             unmerged_count: int = 0
