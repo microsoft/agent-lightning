@@ -87,17 +87,26 @@ def log_mismatch_detail(
     template_mismatch, retoken_mismatch, others_mismatch = diagnostic
     if template_mismatch:
         with open(os.path.join(log_dir, "template_mismatch.log"), "a+") as f:
-            print("-" * 10 + f" Global Steps: {global_steps}, Rollout ID: {rollout_id}, Turn ID: {turn_id}", file=f)
+            print(
+                "-" * 10 + f" Global Steps: {global_steps}, Rollout ID: {rollout_id}, Turn ID: {turn_id} " + "-" * 10,
+                file=f,
+            )
             print(full_ids, file=f)
             print(prefix_ids, file=f)
     if retoken_mismatch:
         with open(os.path.join(log_dir, "retoken_mismatch.log"), "a+") as f:
-            print("-" * 10 + f" Global Steps: {global_steps}, Rollout ID: {rollout_id}, Turn ID: {turn_id}", file=f)
+            print(
+                "-" * 10 + f" Global Steps: {global_steps}, Rollout ID: {rollout_id}, Turn ID: {turn_id} " + "-" * 10,
+                file=f,
+            )
             print(full_ids, file=f)
             print(prefix_ids, file=f)
     if others_mismatch:
         with open(os.path.join(log_dir, "others_mismatch.log"), "a+") as f:
-            print("-" * 10 + f" Global Steps: {global_steps}, Rollout ID: {rollout_id}, Turn ID: {turn_id}", file=f)
+            print(
+                "-" * 10 + f" Global Steps: {global_steps}, Rollout ID: {rollout_id}, Turn ID: {turn_id} " + "-" * 10,
+                file=f,
+            )
             print(full_ids, file=f)
             print(prefix_ids, file=f)
 
