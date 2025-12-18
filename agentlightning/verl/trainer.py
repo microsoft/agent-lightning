@@ -257,13 +257,13 @@ class AgentLightningTrainer(RayPPOTrainer):
             with _timer("gen_postprocess", timing_raw):  # TODO@jiahang: measure time, then remove
                 batch, agent_metrics = self.agent_mode_daemon.get_train_data_batch(
                     max_prompt_length=(
-                        self.config.actor_rollout_ref.rollout.trace_aggregator.trajectory_max_prompt_length
-                        if self.config.actor_rollout_ref.rollout.trace_aggregator.mode.startswith("trajectory")
+                        self.config.agentlightning.trace_aggregator.trajectory_max_prompt_length
+                        if self.config.agentlightning.trace_aggregator.level.startswith("trajectory")
                         else self.config.data.max_prompt_length
                     ),
                     max_response_length=(
-                        self.config.actor_rollout_ref.rollout.trace_aggregator.trajectory_max_response_length
-                        if self.config.actor_rollout_ref.rollout.trace_aggregator.mode.startswith("trajectory")
+                        self.config.agentlightning.trace_aggregator.trajectory_max_response_length
+                        if self.config.agentlightning.trace_aggregator.level.startswith("trajectory")
                         else self.config.data.max_response_length
                     ),
                     device=gen_batch.batch["fake_ids"].device,
@@ -477,7 +477,7 @@ class AgentLightningTrainer(RayPPOTrainer):
             adapter=self.adapter,
             processor=self.processor,  # For Qwen2-VL mrope position_ids
             image_base_dir=getattr(self.config.data, "image_base_dir", None),
-            trace_aggregator=self.config.actor_rollout_ref.rollout.trace_aggregator,
+            trace_aggregator=self.config.agentlightning.trace_aggregator,
         )
         self.agent_mode_daemon.start()
 

@@ -164,10 +164,12 @@ def train(
         print("LoRA configuration will trigger verl to set ref_in_actor=True (LoRA mode)")
 
     if trajectory_mode:
-        config["actor_rollout_ref"]["rollout"]["trace_aggregator"] = {
-            "mode": "trajectory",
-            "trajectory_max_prompt_length": 2048,
-            "trajectory_max_response_length": 8192,
+        config["agentlightning"] = {
+            "trace_aggregator": {
+                "mode": "trajectory",
+                "trajectory_max_prompt_length": 2048,
+                "trajectory_max_response_length": 8192,
+            }
         }
         print("Trajectory mode enabled in trace aggregator.")
 

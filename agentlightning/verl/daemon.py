@@ -872,7 +872,7 @@ class AgentModeDaemon:
         image_grid_thw_list: List[Optional[torch.Tensor]] = []  # For Qwen2-VL mrope
         n_trunc_sample_because_of_response = 0
 
-        if self.trace_aggregator.get("mode", "transition") == "transition":
+        if self.trace_aggregator.get("level", "transition") == "transition":
             for rollout_id, sample_info in finished_id_to_sample_info.items():
                 for turn_index, trace in enumerate(sample_info["trace_list"]):
 
@@ -912,7 +912,7 @@ class AgentModeDaemon:
                         image_urls = trace.get("image_urls", [])
                         image_grid_thw_list.append(self._get_image_grid_thw(image_urls))
 
-        elif self.trace_aggregator.get("mode", "transition") == "trajectory":
+        elif self.trace_aggregator.get("level", "transition") == "trajectory":
             assert not self._use_mrope, "M-RoPE is not supported in trajectory mode yet."
 
             response_mask_list: List[List[int]] = []
@@ -1021,7 +1021,7 @@ class AgentModeDaemon:
                     rollout_id_list.append(rollout_id)
                     # turn_index_list.append(current_merged_trace_idx)
         else:
-            raise ValueError(f"Unknown trace_aggregator mode: {self.trace_aggregator.get('mode')}")
+            raise ValueError(f"Unknown trace_aggregator level: {self.trace_aggregator.get('level')}")
 
         n_transition = len(input_ids_list)
         batch_input_ids = torch.LongTensor(input_ids_list).to(device)
@@ -1029,7 +1029,7 @@ class AgentModeDaemon:
         batch_response_ids = torch.LongTensor(response_ids_list).to(device)
         response_attention_mask = torch.LongTensor(response_attention_mask_list).to(device)
         response_mask = (
-            torch.LongTensor(response_mask_list).to(device) if self.trace_aggregator.get("mode", "transition") == "trajectory" else None  # type: ignore
+            torch.LongTensor(response_mask_list).to(device) if self.trace_aggregator.get("level", "transition") == "trajectory" else None  # type: ignore
         )
 
         # Concatenate prompts and responses to form the full sequence
@@ -1083,7 +1083,7 @@ class AgentModeDaemon:
                 "token_level_scores": token_level_scores.contiguous(),
                 **(
                     {"response_mask": response_mask}
-                    if self.trace_aggregator.get("mode", "transition") == "trajectory"
+                    if self.trace_aggregator.get("level", "transition") == "trajectory"
                     else {}
                 ),
             },  # type: ignore
@@ -1107,7 +1107,7 @@ class AgentModeDaemon:
                     "training/max_response_length_by_turn": np.max(response_per_turn_list),  # type: ignore
                     "training/min_response_length_by_turn": np.min(response_per_turn_list),  # type: ignore
                 }
-                if self.trace_aggregator.get("mode", "transition") == "trajectory"
+                if self.trace_aggregator.get("level", "transition") == "trajectory"
                 else {}
             ),
             **(
@@ -1119,7 +1119,7 @@ class AgentModeDaemon:
                     "training/retoken_mismatch_ratio": retoken_mismatch_count / len(response_per_turn_list),  # type: ignore
                     "training/others_mismatch_ratio": others_mismatch_count / len(response_per_turn_list),  # type: ignore
                 }
-                if self.trace_aggregator.get("mode", "transition") == "trajectory"
+                if self.trace_aggregator.get("level", "transition") == "trajectory"
                 and self.trace_aggregator.get("debug", False)
                 else {}
             ),
@@ -1128,7 +1128,7 @@ class AgentModeDaemon:
         # Add non-tensor data for advantage calculation and logging
         data_proto.non_tensor_batch["data_id_list"] = np.array(data_id_list)  # type: ignore
         data_proto.non_tensor_batch["rollout_id_list"] = np.array(rollout_id_list)  # type: ignore
-        if self.trace_aggregator.get("mode", "transition") == "transition":
+        if self.trace_aggregator.get("level", "transition") == "transition":
             data_proto.non_tensor_batch["turn_index_list"] = np.array(turn_index_list)  # type: ignore
 
         return data_proto, data_metrics
