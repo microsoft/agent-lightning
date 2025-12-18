@@ -9,6 +9,11 @@ services:
 
     command: agl store --host 0.0.0.0 --port 4747
 
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+
     develop:
       watch:
         # Sync the working directory with the `/app` directory in the container

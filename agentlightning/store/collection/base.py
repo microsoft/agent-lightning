@@ -148,12 +148,12 @@ class TrackedCollection:
             yield
 
         else:
-            from agentlightning.store.collection_based import nearest_lightning_store_method_from_stack
+            from agentlightning.store.collection_based import get_current_store_methods
 
             # Enable tracking
             start_time = time.perf_counter()
             status: str = "OK"
-            public_store_method, private_store_method = nearest_lightning_store_method_from_stack()
+            public_store_method, private_store_method = get_current_store_methods()
             try:
                 yield
             except BaseException as exc:

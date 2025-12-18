@@ -39,7 +39,7 @@ verl = [
 ]
 
 weave = [
-  "weave",
+  "weave>=0.52.22",
 ]
 
 # Store-related dependencies.
@@ -174,6 +174,17 @@ tinker = [
   "wandb",
 ]
 
+# For Multi-modality supports.
+image = [
+  # NOTE: It's tied to vLLM 0.10.2 but it will blow the uv.lock file if we include it.
+  # {include-group = "vllm-0-10-2"},
+  "datasets",
+  "Pillow",
+  "pandas",
+  "pyarrow",
+  "qwen-vl-utils",
+]
+
 # Agent-related dependencies.
 autogen = [
   "autogen-agentchat",
@@ -277,6 +288,8 @@ override-dependencies = [
   # verl's numpy<2.0.0 constraint is related to Docker images, not code incompatibility
   # Lock to 2.3.0 because numba relies on numpy 2.2
   "numpy>=2.0.0,<2.3.0",
+  # vllm relies on setuptools<80, but polyfile-weave depends on setuptools>=80.9.0
+  "setuptools>=80.9.0",
 ]
 
 [tool.uv.sources]
@@ -336,11 +349,13 @@ markers = [
   "openai: tests that require OpenAI API",
   "gpu: tests that require GPU",
   "agentops: tests that require AgentOps",
+  "weave: tests that require Weave",
   "llmproxy: tests that require LiteLLM",
   "mongo: tests that require MongoDB",
   "store: tests for agentlightning.store module",
   "prometheus: tests that require Prometheus",
   "utils: tests for utility functions",
+  "langchain: tests that require LangChain",
 ]
 
 [tool.black]

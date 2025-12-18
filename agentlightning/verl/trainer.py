@@ -464,6 +464,8 @@ class AgentLightningTrainer(RayPPOTrainer):
             store=self.store,
             llm_proxy=self.llm_proxy,
             adapter=self.adapter,
+            processor=self.processor,  # For Qwen2-VL mrope position_ids
+            image_base_dir=getattr(self.config.data, "image_base_dir", None),
         )
         self.agent_mode_daemon.start()
 

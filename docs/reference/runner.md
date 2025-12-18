@@ -17,3 +17,15 @@
 ::: agentlightning.OtelTracer
 
 ::: agentlightning.Tracer
+
+::: agentlightning.tracer.weave.WeaveTracer
+
+::: agentlightning.DummyTracer
+
+::: agentlightning.set_active_tracer
+
+::: agentlightning.get_active_tracer
+
+::: agentlightning.clear_active_tracer
+
+::: agentlightning.tracer.weave.WeaveTracer

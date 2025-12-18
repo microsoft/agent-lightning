@@ -82,9 +82,9 @@
 
 ::: agentlightning.SpanLike
 
-## Semantic Conventions
+::: agentlightning.SpanCoreFields
 
-::: agentlightning.semconv
+::: agentlightning.SpanRecordingContext
 
 ## Environment Variables
 

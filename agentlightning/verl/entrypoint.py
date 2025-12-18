@@ -34,6 +34,9 @@ __all__ = [
 
 @hydra.main(config_path="pkg://agentlightning/verl", config_name="config", version_base=None)
 def main(config: Any):
+    from .daemon import AgentModeDaemon
+    from .trainer import AgentLightningTrainer
+
     run_ppo(
         config,
         train_dataset=None,

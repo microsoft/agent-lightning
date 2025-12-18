@@ -39,13 +39,6 @@ try:
 except ImportError:
     pass
 
-try:
-    from . import weave  # type: ignore
-
-    WEAVE_INSTALLED = True  # type: ignore
-except ImportError:
-    pass
-
 
 def instrument_all():
     """Instrument all the instrumentation libraries."""
@@ -119,20 +112,3 @@ def uninstrument_all():
             warnings.warn("agentops_langchain is installed but uninstrument_agentops_langchain could not be imported.")
     else:
         warnings.warn("Agentops-langchain integration is not installed. It's therefore not uninstrumented.")
-
-
-def instrument_weave():
-    if WEAVE_INSTALLED:
-        from .weave import instrument_weave
-
-        instrument_weave()
-
-
-def uninstrument_weave():
-    if WEAVE_INSTALLED:
-        try:
-            from .weave import uninstrument_weave
-
-            uninstrument_weave()
-        except ImportError:
-            warnings.warn("weave is installed but uninstrument_weave could not be imported.")
