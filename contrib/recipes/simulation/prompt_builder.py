@@ -3,10 +3,12 @@ from typing import Optional
 from autogen_core.models import AssistantMessage, UserMessage
 
 class HistoryPromptBuilder:
-    """Builds a prompt with a history of observations, actions.
+    """
+    Builds prompts using a history of observations and actions.
 
-    Maintains a configurable history of text to
-    construct prompt messages for conversational agents.
+    Supports two prompt styles:
+    - chat: multi-turn user/assistant messages
+    - single: a single formatted prompt with optional history
     """
 
     def __init__(
@@ -14,6 +16,12 @@ class HistoryPromptBuilder:
         max_history: int = -1,
         prompt_type: str = "chat"
     ):
+        """
+        Args:
+            max_history (int): Maximum number of past steps to include
+                               (-1 means unlimited).
+            prompt_type (str): Prompt style ("chat" or "single").
+        """
         self.max_history = max_history
         self.prompt_type = prompt_type
 
@@ -23,17 +31,26 @@ class HistoryPromptBuilder:
         self.step_count = 1
 
     def update_step_count(self):
+        """Increment the current step counter."""
         self.step_count += 1
 
     def update_instruction_prompt(self, instruction: str):
+        """Set the instruction/system prompt used in chat mode."""
         self.instruction = instruction
 
     def update_single_obs_template(self, single_obs_template_wo_his: str, single_obs_template: str):
+        """
+        Set templates for single-prompt mode.
+
+        Args:
+            single_obs_template_wo_his (str): Template without history.
+            single_obs_template (str): Template with history.
+        """
         self.single_obs_template_wo_his = single_obs_template_wo_his
         self.single_obs_template = single_obs_template
 
     def update_observation(self, obs: dict):
-        """Add an observation to the prompt history."""
+        """Append an observation to the event history."""
         self._events.append(
             {
                 "type": "observation",
@@ -42,7 +59,7 @@ class HistoryPromptBuilder:
         )
 
     def update_action(self, action: str):
-        """Add an action to the prompt history."""
+        """Append an action to the event history."""
         self._events.append(
             {
                 "type": "action",
@@ -51,10 +68,16 @@ class HistoryPromptBuilder:
         )
 
     def update_admissible_actions(self, admissible_actions):
+        """Update the list of admissible actions for the current step."""
         self.admissible_actions = admissible_actions
 
     def init(self, env):
-        """Clear the event history."""
+        """
+        Initialize the prompt builder at the beginning of an episode.
+
+        - Clears the event history
+        - Loads prompt instructions or templates from the environment
+        """
         self._events.clear()
 
         if self.prompt_type == "chat":
@@ -67,10 +90,11 @@ class HistoryPromptBuilder:
             raise ValueError(f"Unsupported prompt_type: {self.prompt_type}")
 
     def get_chat_prompt(self):
-        """Generate a list of Message objects representing the prompt.
+        """
+        Construct a chat-style prompt from the event history.
 
         Returns:
-            List[Message]: A list of messages constructed from the event history.
+            List[Message]: A sequence of User and Assistant messages.
         """
         if self.max_history != -1:
             events = self._events[-(self.max_history * 2 + 1) :]
@@ -85,6 +109,7 @@ class HistoryPromptBuilder:
 
             if event_type == "observation":
                 content = event.get("text", "")
+                # Attach instruction prompt to the first observation
                 if idx == 0 and self.instruction:
                     content += "\n" + self.instruction
                 message = UserMessage(source="user", content=content)
@@ -99,6 +124,12 @@ class HistoryPromptBuilder:
         return messages
 
     def get_single_prompt(self):
+        """
+        Construct a single formatted prompt using templates.
+
+        Returns:
+            List[Message]: A single User message.
+        """
         if self.max_history != -1:
             events = self._events[-(self.max_history * 2 + 1) :]
         else:
@@ -106,12 +137,15 @@ class HistoryPromptBuilder:
 
         current_obs = events[-1]["text"]
 
+        # Case 1: No history available
         if len(events) == 1:
             template = self.single_obs_template_wo_his
             kwargs = {"current_observation": current_obs}
             if "{admissible_actions}" in template:
                 kwargs["admissible_actions"] = self.admissible_actions
             single_prompt = template.format(**kwargs)
+
+        # Case 2: History exists
         else:
             template = self.single_obs_template
             history = ""
@@ -139,6 +173,9 @@ class HistoryPromptBuilder:
         return [UserMessage(source="user", content=single_prompt)]
 
     def get_prompt(self):
+        """
+        Return the final prompt based on the configured prompt type.
+        """
         if self.prompt_type == "chat":
             prompt = self.get_chat_prompt()
         elif self.prompt_type == "single":
