@@ -15,7 +15,7 @@ from agentlightning.utils.otel import make_link_attributes
 from agl_envs.simulation import make_env_manager
 from contrib.recipes.simulation.prompt_builder import HistoryPromptBuilder
 
-from utils.add_instruction import add_chat_instruction, add_single_instruction
+from add_instruction import add_chat_instruction, add_single_instruction
 
 logger = configure_logger(name=__name__, level=logging.ERROR)
 

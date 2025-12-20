@@ -46,8 +46,10 @@ bash agl_envs/simulation/setup/setup_sciworld.sh
 conda activate sciworld
 
 # Install AGL dependency
-bash install_agl.sh
+bash contrib/recipes/simulation/install_agl.sh
 ```
+
+> If you plan to use WandB for experiment tracking, log in to WandB before training.
 
 ---
 
