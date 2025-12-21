@@ -124,13 +124,21 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
         )
         self.allowed_exit_codes = tuple(allowed_exit_codes)
 
+        # This flag is set to True after server launches and False before server stops
+        # Clients check this flag when requests fail - if server is not online, silently ignore errors
+        # Be mindful of performance: all processes need to synchronously read this flag
+        ctx = multiprocessing.get_context()
+        self._server_online = ctx.Value("b", False)  # 'b' = signed char, False = 0
+
     async def _execute_algorithm(
         self, algorithm: AlgorithmBundle, store: LightningStore, stop_evt: ExecutionEvent
     ) -> None:
         wrapper_store: LightningStore | None = None
         if self.managed_store:
             logger.info("Starting LightningStore server on %s:%s", self.server_host, self.server_port)
-            wrapper_store = LightningStoreServer(store, host=self.server_host, port=self.server_port)
+            wrapper_store = LightningStoreServer(
+                store, host=self.server_host, port=self.server_port, server_online_flag=self._server_online
+            )
             server_started = False
         else:
             wrapper_store = store
@@ -169,7 +177,9 @@ class ClientServerExecutionStrategy(ExecutionStrategy):
     ) -> None:
         if self.managed_store:
             # If managed, we actually do not use the provided store
-            client_store = LightningStoreClient(f"http://{self.server_host}:{self.server_port}")
+            client_store = LightningStoreClient(
+                f"http://{self.server_host}:{self.server_port}", server_online_flag=self._server_online
+            )
         else:
             client_store = store
         try:

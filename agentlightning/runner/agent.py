@@ -33,7 +33,6 @@ from opentelemetry.sdk.trace import ReadableSpan
 from agentlightning.litagent import LitAgent
 from agentlightning.reward import emit_reward, find_final_reward
 from agentlightning.store.base import LightningStore
-from agentlightning.store.client_server import ServerShutdownError
 from agentlightning.tracer.agentops import AgentOpsTracer
 from agentlightning.tracer.base import Tracer
 from agentlightning.types import (
@@ -290,14 +289,7 @@ class LitAgentRunner(Runner[T_task]):
             # This will NOT emit another span to the tracer
             reward_span = emit_reward(raw_result, propagate=False)
             # We add it to the store manually
-            try:
-                await store.add_otel_span(rollout.rollout_id, rollout.attempt.attempt_id, reward_span)
-            except (ServerShutdownError, asyncio.CancelledError):
-                # Server is shutting down or request was cancelled - handle gracefully without traceback
-                logger.debug(
-                    f"{self._log_prefix(rollout.rollout_id)} Server is shutting down or request cancelled. "
-                    "Skipping add_otel_span for reward span."
-                )
+            await store.add_otel_span(rollout.rollout_id, rollout.attempt.attempt_id, reward_span)
             trace_spans.append(reward_span)
 
         if isinstance(raw_result, list):
@@ -312,16 +304,9 @@ class LitAgentRunner(Runner[T_task]):
                     self._tracer, AgentOpsTracer
                 ):  # TODO: this should be replaced with general OpenTelemetry tracer in next version
                     for span in raw_result:
-                        try:
-                            await store.add_otel_span(
-                                rollout.rollout_id, rollout.attempt.attempt_id, cast(ReadableSpan, span)
-                            )
-                        except (ServerShutdownError, asyncio.CancelledError):
-                            # Server is shutting down or request was cancelled - handle gracefully without traceback
-                            logger.debug(
-                                f"{self._log_prefix(rollout.rollout_id)} Server is shutting down or request cancelled. "
-                                f"Skipping add_otel_span for span: {span.name}"
-                            )
+                        await store.add_otel_span(
+                            rollout.rollout_id, rollout.attempt.attempt_id, cast(ReadableSpan, span)
+                        )
                 else:
                     logger.warning(
                         f"{self._log_prefix(rollout.rollout_id)} Tracer is already an OpenTelemetry tracer. "
@@ -543,11 +528,6 @@ class LitAgentRunner(Runner[T_task]):
                     await store.update_attempt(rollout_id, next_rollout.attempt.attempt_id, status="failed")
                 else:
                     await store.update_attempt(rollout_id, next_rollout.attempt.attempt_id, status="succeeded")
-            except (ServerShutdownError, asyncio.CancelledError):
-                # Server is shutting down or request was cancelled - handle gracefully without traceback
-                logger.debug(
-                    f"{self._log_prefix(rollout_id)} Server is shutting down or request cancelled. Skipping update_attempt."
-                )
             except Exception:
                 logger.exception(
                     f"{self._log_prefix(rollout_id)} Exception during update_attempt. Giving up the update."
@@ -602,12 +582,6 @@ class LitAgentRunner(Runner[T_task]):
                     await store.update_attempt(
                         next_rollout.rollout_id, next_rollout.attempt.attempt_id, worker_id=self.get_worker_id()
                     )
-                except (ServerShutdownError, asyncio.CancelledError):
-                    # Server is shutting down or request was cancelled - handle gracefully without traceback
-                    logger.debug(
-                        f"{self._log_prefix()} Server is shutting down or request cancelled. Skipping update_attempt for rollout claim."
-                    )
-                    continue
                 except Exception:
                     # This exception could happen if the rollout is dequeued and the other end died for some reason
                     logger.exception(f"{self._log_prefix()} Exception during update_attempt, giving up the rollout.")
