@@ -108,7 +108,8 @@ nav:
   - Learning More:
     - Write Agents: tutorials/write-agents.md
     - Debugging: tutorials/debug.md
-    - Working with Traces: tutorials/traces.md
+    - Work with Traces: tutorials/traces.md
+    - Use Emitters: tutorials/emitter.md
     - Parallelize: tutorials/parallelize.md
   - Algorithm Zoo:
     - Overview: algorithm-zoo/index.md
@@ -124,10 +125,12 @@ nav:
     - Command Line: reference/cli.md
     - Instrumentation: reference/instrumentation.md
     - Runner: reference/runner.md
+    - Semantic Conventions: reference/semconv.md
     - Store: reference/store.md
     - Trainer: reference/trainer.md
     - Types: reference/types.md
     - RESTful: reference/restful.md
+    - Utilities: reference/utilities.md
     - Internal: reference/internal.md
   - Miscellaneous:
     - Contributing Guide: community/contributing.md

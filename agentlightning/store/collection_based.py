@@ -15,11 +15,11 @@ from __future__ import annotations
 
 import asyncio
 import functools
-import inspect
 import logging
 import time
 import warnings
 from collections import defaultdict
+from contextvars import ContextVar
 from types import CoroutineType
 from typing import (
     Any,
@@ -87,6 +87,12 @@ SelfT = TypeVar("SelfT", bound="CollectionBasedLightningStore[Any]")
 
 logger = logging.getLogger(__name__)
 
+# ContextVars for tracking the current store method without expensive stack introspection.
+# These are set by the @tracked decorator and read by tracking_context in collection/base.py.
+_UNKNOWN_STORE_METHOD = "unknown"
+_current_public_store_method: ContextVar[str] = ContextVar("public_store_method", default=_UNKNOWN_STORE_METHOD)
+_current_private_store_method: ContextVar[str] = ContextVar("private_store_method", default=_UNKNOWN_STORE_METHOD)
+
 
 def _with_collections_execute(labels: Sequence[AtomicLabels]):
     """Hands over the function execution to the collections.execute method.
@@ -124,38 +130,47 @@ def tracked(name: str):
 
         @functools.wraps(func)
         async def wrapper(self: CollectionBasedLightningStore[T_collections], *args: Any, **kwargs: Any) -> Any:
-            # Backtracking where this method comes from
-            public_meth_in_stack, _ = nearest_lightning_store_method_from_stack()
+            # Get the current public method from ContextVar (set by outer tracked methods)
+            public_meth_in_stack = _current_public_store_method.get()
 
-            # For backtracking in collection methods.
-            # Only track the public methods (+healthcheck)
+            # Set ContextVars for nested calls to read. Use tokens for proper cleanup.
+            pub_token = None
+            priv_token = None
             if name in COLLECTION_STORE_PUBLIC_METHODS:
-                public_method_name = name  # pyright: ignore[reportUnusedVariable]
+                pub_token = _current_public_store_method.set(name)
                 public_meth_in_stack = name  # We are in a public method already.
             if name in COLLECTION_STORE_ALL_METHODS:
-                private_method_name = name  # pyright: ignore[reportUnusedVariable]
+                priv_token = _current_private_store_method.set(name)
 
-            if self._tracker is None:  # pyright: ignore[reportPrivateUsage]
-                # Skip the tracking because tracking is not configured
-                return await func(self, *args, **kwargs)
-
-            start_time = time.perf_counter()
-            status: str = "OK"
             try:
-                return await func(self, *args, **kwargs)
-            except BaseException as exc:
-                status = exc.__class__.__name__
-                raise
+                if self._tracker is None:  # pyright: ignore[reportPrivateUsage]
+                    # Skip the tracking because tracking is not configured
+                    return await func(self, *args, **kwargs)
+
+                start_time = time.perf_counter()
+                status: str = "OK"
+                try:
+                    return await func(self, *args, **kwargs)
+                except BaseException as exc:
+                    status = exc.__class__.__name__
+                    raise
+                finally:
+                    elapsed = time.perf_counter() - start_time
+                    await self._tracker.inc_counter(  # pyright: ignore[reportPrivateUsage]
+                        "agl.store.total",
+                        labels={"method": name, "store_pubmeth": public_meth_in_stack, "status": status},
+                    )
+                    await self._tracker.observe_histogram(  # pyright: ignore[reportPrivateUsage]
+                        "agl.store.latency",
+                        value=elapsed,
+                        labels={"method": name, "store_pubmeth": public_meth_in_stack, "status": status},
+                    )
             finally:
-                elapsed = time.perf_counter() - start_time
-                await self._tracker.inc_counter(  # pyright: ignore[reportPrivateUsage]
-                    "agl.store.total", labels={"method": name, "store_pubmeth": public_meth_in_stack, "status": status}
-                )
-                await self._tracker.observe_histogram(  # pyright: ignore[reportPrivateUsage]
-                    "agl.store.latency",
-                    value=elapsed,
-                    labels={"method": name, "store_pubmeth": public_meth_in_stack, "status": status},
-                )
+                # Reset ContextVars to their previous values
+                if pub_token is not None:
+                    _current_public_store_method.reset(pub_token)
+                if priv_token is not None:
+                    _current_private_store_method.reset(priv_token)
 
         return cast(T_callable, wrapper)
 
@@ -1748,41 +1763,14 @@ COLLECTION_STORE_PUBLIC_METHODS = frozenset(
 
 COLLECTION_STORE_ALL_METHODS = frozenset([name for name in CollectionBasedLightningStore.__dict__])
 
-_UNKNOWN_STORE_METHOD = "unknown"
 
+def get_current_store_methods() -> Tuple[str, str]:
+    """Get the current store method names from ContextVars.
 
-def nearest_lightning_store_method_from_stack() -> Tuple[str, str]:
-    """Stack introspection so that we capture the nearest public API method from the
-    call stack whenever metrics are recorded.
+    This is a fast O(1) replacement for stack introspection. The ContextVars are
+    set by the @tracked decorator when entering store methods.
 
     Returns:
-        A tuple of public method name and nearest private method name.
+        A tuple of (public_method_name, private_method_name).
     """
-    frame = inspect.currentframe()
-    final_public_method_name = final_private_method_name = _UNKNOWN_STORE_METHOD
-    try:
-        if frame is not None:
-            frame = frame.f_back
-            while frame is not None:
-                self_obj = frame.f_locals.get("self")
-                public_method_name = frame.f_locals.get("public_method_name")
-                private_method_name = frame.f_locals.get("private_method_name")
-                if (
-                    final_public_method_name == _UNKNOWN_STORE_METHOD
-                    and public_method_name in COLLECTION_STORE_PUBLIC_METHODS
-                    and isinstance(self_obj, LightningStore)
-                ):
-                    final_public_method_name = public_method_name
-                if (
-                    final_private_method_name == _UNKNOWN_STORE_METHOD
-                    and private_method_name in COLLECTION_STORE_ALL_METHODS
-                    and isinstance(self_obj, LightningStore)
-                ):
-                    final_private_method_name = private_method_name
-                frame = frame.f_back
-    except Exception as exc:
-        logger.debug("Error during stack introspection for LightningStore method: %s", exc)
-    finally:
-        del frame
-
-    return final_public_method_name, final_private_method_name
+    return _current_public_store_method.get(), _current_private_store_method.get()

@@ -38,6 +38,11 @@ __all__ = [
     "filter_and_unflatten_attributes",
     "flatten_attributes",
     "unflatten_attributes",
+    "sanitize_attribute_value",
+    "sanitize_attributes",
+    "sanitize_list_attribute_sanity",
+    "check_attributes_sanity",
+    "format_exception_attributes",
 ]
 
 T_SpanLike = TypeVar("T_SpanLike", bound=SpanLike)

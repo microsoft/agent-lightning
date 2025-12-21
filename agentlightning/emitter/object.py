@@ -40,7 +40,7 @@ def emit_object(object: Any, attributes: Optional[Dict[str, Any]] = None, propag
     if propagate:
         tracer = get_active_tracer()
         if tracer is None:
-            raise RuntimeError("No active tracer found. Cannot emit annotation span.")
+            raise RuntimeError("No active tracer found. Cannot emit object span.")
     else:
         # Do not actually propagate to any store or tracer backend.
         tracer = DummyTracer()
