@@ -120,6 +120,7 @@ def train(
     lora: bool,
     lora_rank: int,
     lora_adapter_path: Optional[str],
+    trajectory_level: bool = False,
     weave: bool,
 ):
     """The training entrypoint function for Calc-X agent with VERL algorithm.
@@ -136,6 +137,7 @@ def train(
         lora: Whether to enable LoRA training.
         lora_rank: LoRA rank to use when LoRA is enabled.
         lora_adapter_path: Optional path to a pre-trained LoRA adapter to load.
+        trajectory_level: Whether to enable trajectory level in trace aggregator.
         weave: Whether to enable Weave tracing.
     """
     # Load datasets (respect CLI file paths)
@@ -160,6 +162,16 @@ def train(
             config["actor_rollout_ref"]["model"]["lora_adapter_path"] = lora_adapter_path
             print(f"Loading LoRA adapter from: {lora_adapter_path}")
         print("LoRA configuration will trigger verl to set ref_in_actor=True (LoRA mode)")
+
+    if trajectory_level:
+        config["agentlightning"] = {
+            "trace_aggregator": {
+                "level": "trajectory",
+                "trajectory_max_prompt_length": 2048,
+                "trajectory_max_response_length": 8192,
+            }
+        }
+        print("Trajectory level enabled in trace aggregator.")
 
     # CI toggle keeps everything else the same but you can tweak the lightweight bits here if desired
     if ci or ci_fast:
@@ -261,6 +273,11 @@ def main():
         default=None,
         help="Optional path to a pre-trained LoRA adapter to load when --lora is enabled",
     )
+    parser.add_argument(
+        "--trajectory-level",
+        action="store_true",
+        help="Enable trajectory level in trace aggregator.",
+    )
 
     args = parser.parse_args()
 
@@ -289,6 +306,7 @@ def main():
         lora=args.lora,
         lora_rank=args.lora_rank,
         lora_adapter_path=args.lora_adapter_path,
+        trajectory_level=args.trajectory_level,
         weave=args.weave,
     )
 

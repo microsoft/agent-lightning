@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import os
 import random
 import socket
 import threading
@@ -29,6 +30,85 @@ __all__ = [
     "get_left_padded_ids_and_attention_mask",
     "get_right_padded_ids_and_attention_mask",
 ]
+
+
+def ids_startswith(
+    full_ids: List[int], prefix_ids: List[int], tokenizer: Any, debug: bool = False
+) -> Tuple[bool, Tuple[bool, bool, bool]]:
+    is_prefix: bool
+    template_mismatch, retoken_mismatch, others_mismatch = False, False, False
+    if full_ids[: len(prefix_ids)] == prefix_ids:
+        is_prefix = True
+        return True, (template_mismatch, retoken_mismatch, others_mismatch)
+    else:
+        is_prefix = False
+
+    if not debug:
+        return is_prefix, (template_mismatch, retoken_mismatch, others_mismatch)
+
+    def _special_token_sequence(ids: List[int]) -> List[int]:
+        return [id for id in ids if id in tokenizer.all_special_ids]
+
+    def _none_special_token_sequence(ids: List[int]) -> List[int]:
+        return [id for id in ids if id not in tokenizer.all_special_ids]
+
+    # First, handle special tokens
+    full_special_ids = _special_token_sequence(full_ids)
+    prefix_special_ids = _special_token_sequence(prefix_ids)
+    if sum(1 for a, b in zip(full_special_ids, prefix_special_ids) if a != b) > 0:
+        template_mismatch = True
+
+    # Next, handle string content
+    full_content_ids = _none_special_token_sequence(full_ids)
+    prefix_content_ids = _none_special_token_sequence(prefix_ids)
+    full_string = tokenizer.decode(full_ids, skip_special_tokens=True)
+    prefix_string = tokenizer.decode(prefix_ids, skip_special_tokens=True)
+    if full_content_ids[: len(prefix_content_ids)] != prefix_content_ids and full_string.startswith(prefix_string):
+        retoken_mismatch = True
+    elif full_content_ids[: len(prefix_content_ids)] != prefix_content_ids and not full_string.startswith(
+        prefix_string
+    ):
+        others_mismatch = True
+    return is_prefix, (template_mismatch, retoken_mismatch, others_mismatch)
+
+
+def log_mismatch_detail(
+    diagnostic: Tuple[bool, bool, bool],
+    full_ids: List[int],
+    prefix_ids: List[int],
+    global_steps: int,
+    rollout_id: str,
+    turn_id: int,
+    log_dir: str | None = None,
+):
+    if log_dir is None:
+        return
+    os.makedirs(log_dir, exist_ok=True)
+    template_mismatch, retoken_mismatch, others_mismatch = diagnostic
+    if template_mismatch:
+        with open(os.path.join(log_dir, "template_mismatch.log"), "a+") as f:
+            print(
+                "-" * 10 + f" Global Steps: {global_steps}, Rollout ID: {rollout_id}, Turn ID: {turn_id} " + "-" * 10,
+                file=f,
+            )
+            print(full_ids, file=f)
+            print(prefix_ids, file=f)
+    if retoken_mismatch:
+        with open(os.path.join(log_dir, "retoken_mismatch.log"), "a+") as f:
+            print(
+                "-" * 10 + f" Global Steps: {global_steps}, Rollout ID: {rollout_id}, Turn ID: {turn_id} " + "-" * 10,
+                file=f,
+            )
+            print(full_ids, file=f)
+            print(prefix_ids, file=f)
+    if others_mismatch:
+        with open(os.path.join(log_dir, "others_mismatch.log"), "a+") as f:
+            print(
+                "-" * 10 + f" Global Steps: {global_steps}, Rollout ID: {rollout_id}, Turn ID: {turn_id} " + "-" * 10,
+                file=f,
+            )
+            print(full_ids, file=f)
+            print(prefix_ids, file=f)
 
 
 def get_left_padded_ids_and_attention_mask(
@@ -146,6 +226,7 @@ class AgentModeDaemon:
         adapter: TraceToTripletBase | None = None,
         processor: Any = None,
         image_base_dir: Optional[str] = None,
+        trace_aggregator: Dict[str, Any] = {"level": "transition"},
     ):
         self.mode = mode
         self.llm_timeout_seconds = llm_timeout_seconds
@@ -188,6 +269,7 @@ class AgentModeDaemon:
         self.processor = processor
         self.reward_fillna_value = reward_fillna_value
         self.image_base_dir = image_base_dir
+        self.trace_aggregator = trace_aggregator
 
         # Check if model requires multimodal position_ids (e.g., Qwen2-VL)
         self._use_mrope = self._is_mrope_model()
@@ -722,7 +804,9 @@ class AgentModeDaemon:
         )
         return metric_dict
 
-    def get_train_data_batch(self, max_prompt_length: int, max_response_length: int, device: torch.device):
+    def get_train_data_batch(
+        self, max_prompt_length: int, max_response_length: int, device: torch.device, global_steps: int
+    ):
         """
         Processes completed rollouts to generate a training data batch.
 
@@ -788,50 +872,165 @@ class AgentModeDaemon:
         image_grid_thw_list: List[Optional[torch.Tensor]] = []  # For Qwen2-VL mrope
         n_trunc_sample_because_of_response = 0
 
-        for rollout_id, sample_info in finished_id_to_sample_info.items():
-            for turn_index, trace in enumerate(sample_info["trace_list"]):
+        if self.trace_aggregator.get("level", "transition") == "transition":
+            for rollout_id, sample_info in finished_id_to_sample_info.items():
+                for turn_index, trace in enumerate(sample_info["trace_list"]):
 
-                reward_list.append(sample_info["reward"])
-                prompt_ids, response_ids = trace["prompt_ids"], trace["response_ids"]
+                    reward_list.append(sample_info["reward"])
+                    prompt_ids, response_ids = trace["prompt_ids"], trace["response_ids"]
 
-                # Mark samples with prompts exceeding max_prompt_length to be dropped later
-                if len(prompt_ids) > max_prompt_length:
-                    prompt_ids = prompt_ids[:max_prompt_length]
-                    is_drop_list.append(True)
-                else:
-                    is_drop_list.append(False)
+                    # Mark samples with prompts exceeding max_prompt_length to be dropped later
+                    if len(prompt_ids) > max_prompt_length:
+                        prompt_ids = prompt_ids[:max_prompt_length]
+                        is_drop_list.append(True)
+                    else:
+                        is_drop_list.append(False)
 
-                # Truncate responses that exceed max_response_length
-                if len(response_ids) > max_response_length:
-                    response_ids = response_ids[:max_response_length]
-                    n_trunc_sample_because_of_response += 1
+                    # Truncate responses that exceed max_response_length
+                    if len(response_ids) > max_response_length:
+                        response_ids = response_ids[:max_response_length]
+                        n_trunc_sample_because_of_response += 1
 
-                # Pad prompts to the left and responses to the right
-                one_input_ids, one_input_attention_mask = get_left_padded_ids_and_attention_mask(
-                    prompt_ids, max_prompt_length, self.pad_token_id
-                )
-                one_response_ids, one_response_attention_mask = get_right_padded_ids_and_attention_mask(
-                    response_ids, max_response_length, self.pad_token_id
-                )
+                    # Pad prompts to the left and responses to the right
+                    one_input_ids, one_input_attention_mask = get_left_padded_ids_and_attention_mask(
+                        prompt_ids, max_prompt_length, self.pad_token_id
+                    )
+                    one_response_ids, one_response_attention_mask = get_right_padded_ids_and_attention_mask(
+                        response_ids, max_response_length, self.pad_token_id
+                    )
 
-                input_ids_list.append(one_input_ids)
-                input_attention_mask_list.append(one_input_attention_mask)
-                response_ids_list.append(one_response_ids)
-                response_attention_mask_list.append(one_response_attention_mask)
-                data_id_list.append(sample_info["data_id"])
-                rollout_id_list.append(rollout_id)
-                turn_index_list.append(turn_index)
+                    input_ids_list.append(one_input_ids)
+                    input_attention_mask_list.append(one_input_attention_mask)
+                    response_ids_list.append(one_response_ids)
+                    response_attention_mask_list.append(one_response_attention_mask)
+                    data_id_list.append(sample_info["data_id"])
+                    rollout_id_list.append(rollout_id)
+                    turn_index_list.append(turn_index)
 
-                # Compute image_grid_thw for this triplet using image_urls from prompt
-                if self._use_mrope:
-                    image_urls = trace.get("image_urls", [])
-                    image_grid_thw_list.append(self._get_image_grid_thw(image_urls))
+                    # Compute image_grid_thw for this triplet using image_urls from prompt
+                    if self._use_mrope:
+                        image_urls = trace.get("image_urls", [])
+                        image_grid_thw_list.append(self._get_image_grid_thw(image_urls))
+
+        elif self.trace_aggregator.get("level", "transition") == "trajectory":
+            assert not self._use_mrope, "M-RoPE is not supported in trajectory level yet."
+
+            response_mask_list: List[List[int]] = []
+            unmerged_count: int = 0
+            template_mismatch_count, retoken_mismatch_count, others_mismatch_count = 0, 0, 0
+            response_per_turn_list: List[int] = []
+
+            for rollout_id, sample_info in finished_id_to_sample_info.items():
+                merged_trace_idx: List[List[int]] = []
+
+                # Identify which turns can be merged based on token ids prefix matching
+                current_merged_trace_idx: List[int] = []
+                current_context: List[int] = []
+                for turn_index, trace in enumerate(sample_info["trace_list"]):
+                    response_per_turn_list.append(len(trace["response_ids"]))
+                    is_prefix, diagnostic = ids_startswith(
+                        trace["prompt_ids"] + trace["response_ids"],
+                        current_context,
+                        self.tokenizer,
+                        self.trace_aggregator.get("debug", False),
+                    )
+                    if not is_prefix and self.trace_aggregator.get("debug", False) == True:
+                        template_mismatch_count += diagnostic[0]
+                        retoken_mismatch_count += diagnostic[1]
+                        others_mismatch_count += diagnostic[2]
+                        log_mismatch_detail(
+                            diagnostic,
+                            trace["prompt_ids"] + trace["response_ids"],
+                            current_context,
+                            global_steps,
+                            rollout_id,
+                            turn_index,
+                            self.trace_aggregator.get("unmatch_log_dir", None),
+                        )
+
+                    if is_prefix:
+                        current_context = trace["prompt_ids"] + trace["response_ids"]
+                        current_merged_trace_idx.append(turn_index)
+                    else:
+                        merged_trace_idx.append(current_merged_trace_idx)
+                        current_merged_trace_idx = [turn_index]
+                        current_context = trace["prompt_ids"] + trace["response_ids"]
+
+                if current_merged_trace_idx not in merged_trace_idx:
+                    merged_trace_idx.append(current_merged_trace_idx)
+
+                if len(merged_trace_idx) > 1:
+                    unmerged_count += 1
+
+                # Merge all trace segments in merged_trace_idx into training samples
+                for current_merged_trace_idx in merged_trace_idx:
+                    prompt_ids = sample_info["trace_list"][current_merged_trace_idx[0]]["prompt_ids"]
+
+                    # if the merged_trace_idx doesn't start with the beginning of the prompt_ids, we need to adjust it
+                    if current_merged_trace_idx[0] > 0 and len(prompt_ids) > max_prompt_length:
+                        response_ids = prompt_ids[max_prompt_length:]
+                        prompt_ids = prompt_ids[:max_prompt_length]
+                        response_mask = [1] * len(response_ids)
+                    else:
+                        response_ids = []
+                        response_mask = []
+
+                    prompt_length = len(prompt_ids)
+                    response_ids += sample_info["trace_list"][current_merged_trace_idx[0]]["response_ids"]
+                    response_mask += [1] * len(response_ids)
+                    for turn_index in current_merged_trace_idx[1:]:
+                        trace = sample_info["trace_list"][turn_index]
+                        new_prompt_length = len(trace["prompt_ids"]) - len(response_ids) - prompt_length
+                        response_ids += trace["prompt_ids"][-new_prompt_length:]
+                        response_ids += trace["response_ids"]
+                        response_mask += [0] * new_prompt_length
+                        response_mask += [1] * len(trace["response_ids"])
+
+                    reward_list.append(sample_info["reward"])
+
+                    # Mark samples with prompts exceeding max_prompt_length to be dropped later
+                    if len(prompt_ids) > max_prompt_length:
+                        prompt_ids = prompt_ids[:max_prompt_length]
+                        is_drop_list.append(True)
+                    else:
+                        is_drop_list.append(False)
+
+                    # Truncate responses that exceed max_response_length
+                    if len(response_ids) > max_response_length:
+                        response_ids = response_ids[:max_response_length]
+                        response_mask = response_mask[:max_response_length]
+                        n_trunc_sample_because_of_response += 1
+
+                    # Pad prompts to the left and responses to the right
+                    one_input_ids, one_input_attention_mask = get_left_padded_ids_and_attention_mask(
+                        prompt_ids, max_prompt_length, self.pad_token_id
+                    )
+                    one_response_ids, one_response_attention_mask = get_right_padded_ids_and_attention_mask(
+                        response_ids, max_response_length, self.pad_token_id
+                    )
+                    one_response_mask, _ = get_right_padded_ids_and_attention_mask(
+                        response_mask, max_response_length, 0
+                    )
+
+                    input_ids_list.append(one_input_ids)
+                    input_attention_mask_list.append(one_input_attention_mask)
+                    response_ids_list.append(one_response_ids)
+                    response_attention_mask_list.append(one_response_attention_mask)
+                    response_mask_list.append(one_response_mask)
+                    data_id_list.append(sample_info["data_id"])
+                    rollout_id_list.append(rollout_id)
+                    # turn_index_list.append(current_merged_trace_idx)
+        else:
+            raise ValueError(f"Unknown trace_aggregator level: {self.trace_aggregator.get('level')}")
 
         n_transition = len(input_ids_list)
         batch_input_ids = torch.LongTensor(input_ids_list).to(device)
         input_attention_mask = torch.LongTensor(input_attention_mask_list).to(device)
         batch_response_ids = torch.LongTensor(response_ids_list).to(device)
         response_attention_mask = torch.LongTensor(response_attention_mask_list).to(device)
+        response_mask = (
+            torch.LongTensor(response_mask_list).to(device) if self.trace_aggregator.get("level", "transition") == "trajectory" else None  # type: ignore
+        )
 
         # Concatenate prompts and responses to form the full sequence
         batch_seq = torch.cat([batch_input_ids, batch_response_ids], dim=-1)
@@ -882,7 +1081,12 @@ class AgentModeDaemon:
                 "position_ids": position_ids,
                 "is_drop_mask": is_drop_mask,
                 "token_level_scores": token_level_scores.contiguous(),
-            },
+                **(
+                    {"response_mask": response_mask}
+                    if self.trace_aggregator.get("level", "transition") == "trajectory"
+                    else {}
+                ),
+            },  # type: ignore
             batch_size=n_transition,
         )
         data_proto = DataProto(batch=batch)
@@ -894,12 +1098,38 @@ class AgentModeDaemon:
             "training/n_rollouts_w_reward": sample_with_reward_count,
             "training/n_truncated_triplets": n_trunc_sample_because_of_response,
             "training/n_triplets": n_transition,
+            # log data, only for debug testing
+            **(
+                {
+                    "training/n_unmerged_rollouts": unmerged_count,  # type: ignore
+                    "training/n_triplets_by_turn": len(response_per_turn_list),  # type: ignore
+                    "training/avg_response_length_by_turn": np.mean(response_per_turn_list),  # type: ignore
+                    "training/max_response_length_by_turn": np.max(response_per_turn_list),  # type: ignore
+                    "training/min_response_length_by_turn": np.min(response_per_turn_list),  # type: ignore
+                }
+                if self.trace_aggregator.get("level", "transition") == "trajectory"
+                else {}
+            ),
+            **(
+                {
+                    "training/template_mismatch_triplets": template_mismatch_count,  # type: ignore
+                    "training/retoken_mismatch_triplets": retoken_mismatch_count,  # type: ignore
+                    "training/others_mismatch_triplets": others_mismatch_count,  # type: ignore
+                    "training/template_mismatch_ratio": template_mismatch_count / len(response_per_turn_list),  # type: ignore
+                    "training/retoken_mismatch_ratio": retoken_mismatch_count / len(response_per_turn_list),  # type: ignore
+                    "training/others_mismatch_ratio": others_mismatch_count / len(response_per_turn_list),  # type: ignore
+                }
+                if self.trace_aggregator.get("level", "transition") == "trajectory"
+                and self.trace_aggregator.get("debug", False)
+                else {}
+            ),
         }
 
         # Add non-tensor data for advantage calculation and logging
         data_proto.non_tensor_batch["data_id_list"] = np.array(data_id_list)  # type: ignore
         data_proto.non_tensor_batch["rollout_id_list"] = np.array(rollout_id_list)  # type: ignore
-        data_proto.non_tensor_batch["turn_index_list"] = np.array(turn_index_list)  # type: ignore
+        if self.trace_aggregator.get("level", "transition") == "transition":
+            data_proto.non_tensor_batch["turn_index_list"] = np.array(turn_index_list)  # type: ignore
 
         return data_proto, data_metrics
 
