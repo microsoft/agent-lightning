@@ -1,5 +1,5 @@
 
-<img src="./assets/agl_simulation.png" width="100">
+<img src="./assets/agl_simulation.png" width="120">
 
 # Simulation Example
 

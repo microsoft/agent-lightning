@@ -88,44 +88,47 @@ class TracerTraceToTripletGroup(TracerTraceToTriplet):
     def adapt_group(self, source: Sequence[Span], /) -> List[Triplet]:
         span_groups = self._extract_span_groups(source)
 
-        def get_token_ids(span, key: str) -> list:
+        def token_ids(span: Optional[Span], key: str) -> list:
             return span.attributes.get(key, []) if span else []
 
-        def get_reward_0(span) -> float:
-            if span is None:
+        def reward0(span: Optional[Span]) -> float:
+            if not span:
                 return 0.0
             return float(span.attributes.get("agentlightning.reward.0.value", 0.0))
 
-        def get_reward_1(span):
-            if span is None:
+        def reward1(span: Optional[Span]) -> Optional[float]:
+            if not span:
                 return None
             val = span.attributes.get("agentlightning.reward.1.value")
             return float(val) if val is not None else None
 
-        def get_message(span) -> str:
-            if span is None:
+        def message(span: Optional[Span]) -> Optional[str]:
+            if not span:
                 return None
             return span.attributes.get("agentlightning.object.literal")
 
         triplets: List[Triplet] = []
 
-        for key, value in span_groups.items():
-            call_span = value.get("call_span")
-            object_span = value.get("object_span")
-            annotation_span = value.get("annotation_span")
+        for group in span_groups.values():
+            call_span = group.get("call_span")
+            if not token_ids(call_span, "prompt_token_ids"):
+                continue
 
-            request_id = value.get("request_id")
+            object_span = group.get("object_span")
+            annotation_span = group.get("annotation_span")
+            request_id = group.get("request_id")
 
             triplets.append(
                 Triplet(
-                    prompt={"token_ids": get_token_ids(call_span, "prompt_token_ids")},
-                    response={"token_ids": get_token_ids(call_span, "response_token_ids")},
-                    reward=get_reward_0(annotation_span),
-                    metadata=dict(
-                        response_id=request_id,
-                        intrinsic_reward=get_reward_1(annotation_span),
-                        message=get_message(object_span),
-                    ),
+                    prompt={"token_ids": token_ids(call_span, "prompt_token_ids")},
+                    response={"token_ids": token_ids(call_span, "response_token_ids")},
+                    reward=reward0(annotation_span),
+                    metadata={
+                        "response_id": request_id,
+                        "intrinsic_reward": reward1(annotation_span),
+                        "message": message(object_span),
+                    },
                 )
             )
+
         return triplets
