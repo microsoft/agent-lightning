@@ -51,7 +51,7 @@ class VERL(Algorithm):
         should be set to the maximum length of the prompt for the first turn, and
         `trajectory_max_response_length` should be set to the maximum cumulative
         length of agent responses in the full trajectory.
-        Toggle `debug=True` plus `unmatch_log_dir` when you need to inspect
+        Toggle `debug=True` plus `mismatch_log_dir` when you need to inspect
         retokenization or chat-template mismatches. See
         [this blog post](https://agent-lightning.github.io/posts/trajectory_level_aggregation/)
 
