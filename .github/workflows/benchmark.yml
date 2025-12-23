@@ -63,13 +63,13 @@ jobs:
               --mode batch
               --total-tasks 20000
               --batch-size 2048
-              --n-runners 256
-              --max-rounds 8
+              --n-runners 300
+              --max-rounds 6
               --sleep-seconds 0.1
           - id: scenario-large-batch
             display: Large batch waves
             kind: scenario
-            store_workers: 64
+            store_workers: 96
             runner:
               - self-hosted
               - 1ES.Pool=agl-runner-cpu-high
@@ -78,8 +78,8 @@ jobs:
               --mode batch
               --total-tasks 50000
               --batch-size 8192
-              --n-runners 256
-              --max-rounds 6
+              --n-runners 1000
+              --max-rounds 3
               --sleep-seconds 0.1
           - id: scenario-long-queues
             display: Long rollout queues
@@ -115,7 +115,7 @@ jobs:
           - id: scenario-heavy-traces
             display: Heavy rollouts with deep traces
             kind: scenario
-            store_workers: 64
+            store_workers: 96
             runner:
               - self-hosted
               - 1ES.Pool=agl-runner-cpu-high
