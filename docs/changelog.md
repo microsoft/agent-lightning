@@ -2,25 +2,25 @@
 
 ## Agent-lightning v0.3.0 (12/24/2025)
 
-Agent-lightning v0.3.0 is a major release that introduces several new features and bug fixes. The release is a collaboration effort between Agent-lightning core teams and the community. Thanks to all the contributors who made this release possible.
+Agent-lightning v0.3.0 is a major release that introduces several new features and bug fixes. The release is a collaborative effort between Agent-lightning core teams and the community. Thanks to all the contributors who made this release possible.
 
 ### Highlights
 
 * **Tinker integration**: Support Tinker as an alternative backend for Reinforcement Learning (#226 #245 #264 #269 #327). See [example code](https://github.com/microsoft/agent-lightning/tree/v0.3.0/examples/tinker), [blog 1](https://medium.com/@yugez/tuning-any-ai-agent-with-tinker-agent-lightning-part-1-1d8c9a397f0e) and [blog 2](https://medium.com/@yugez/tuning-any-ai-agent-with-tinker-agent-lightning-part-2-332c5437f0dc).
 * **Azure OpenAI integration**: Support Azure OpenAI as a backend for LLM inference and supervised fine-tuning (#256 #327). [Example code](https://github.com/microsoft/agent-lightning/tree/v0.3.0/examples/azure).
-* **MongoDB based Lightning Store** is added as an alternative backend for Lightning Store (#323). [Example code](https://github.com/microsoft/agent-lightning/tree/v0.3.0/examples/mongo).
+* **MongoDB-based Lightning Store** is added as an alternative backend for Lightning Store (#323). [Example code](https://github.com/microsoft/agent-lightning/tree/v0.3.0/examples/mongo).
 * **Contrib package**: Add contrib package for community projects. Search-R1 is integrated as a contrib recipe. More coming. (#239 #396 #410 #412 #417).
 * **RESTful API**: Stabilize and document RESTful API for Lightning Store (#241 #275). [Documentation](https://microsoft.github.io/agent-lightning/v0.3.0/reference/restful/).
-* **OTel Semantic Convention** that are specifically designed for Agent-optimization areas (#340). [Documentation](http://microsoft.github.io/agent-lightning/v0.3.0/reference/semconv/).
-* *[Preview]* **Agent-lightning Dashboard** is now available (#288 #289 #291 #296 #371 #375). It's the official Web application for inspecting and debugging Agent-lightning experiments. See details [here](https://microsoft.github.io/agent-lightning/v0.3.0/tutorials/debug/).
-* *[Preview]* **Multi-modality example** featuring VERL and LangGraph agent on ChartQA dataset (#379). [Example code](https://github.com/microsoft/agent-lightning/tree/v0.3.0/examples/chartqa).
+* **OTel Semantic Conventions** that are specifically designed for Agent-optimization areas (#340). [Documentation](http://microsoft.github.io/agent-lightning/v0.3.0/reference/semconv/).
+* *[Preview]* **Agent-lightning Dashboard** is now available (#288 #289 #291 #296 #371 #375). It's the official web application for inspecting and debugging Agent-lightning experiments. See details [here](https://microsoft.github.io/agent-lightning/v0.3.0/tutorials/debug/).
+* *[Preview]* **Multi-modality example** featuring VERL and a LangGraph agent on ChartQA dataset (#379). [Example code](https://github.com/microsoft/agent-lightning/tree/v0.3.0/examples/chartqa).
 * *[Preview]* Integrate **Claude Code** as a LitAgent and support training on SWE-Bench (#332 #346 #348). [Example code](https://github.com/microsoft/agent-lightning/tree/v0.3.0/examples/claude_code).
 * *[Preview]* **Weave tracer** as a substitute for AgentOps tracer (#277 #411 #420 #423). [Documentation](https://microsoft.github.io/agent-lightning/v0.3.0/tutorials/traces/#weave-tracer-experimental).
 * *[Preview]* **Trajectory Level Aggregation** for more efficient training with VERL. See [blog](https://agent-lightning.github.io/posts/trajectory_level_aggregation/) and [documentation](https://microsoft.github.io/agent-lightning/v0.3.0/algorithm-zoo/verl/).
 
 ### Store Benchmark
 
-During this iteration, the core Lightning Store is rewritten to be more efficient and scalable (#315 #318 #328 #342 #344 #356 #380 #388 #418 #421). We show the benchmark results in the following table and compare it with the previous release (v0.2.2).
+During this iteration, the core Lightning Store was rewritten to be more efficient and scalable (#315 #318 #328 #342 #344 #356 #380 #388 #418 #421). We show the benchmark results in the following table and compare it with the previous release (v0.2.2).
 
 | Throughput (\#rollout/sec) | v0.2.2 | v0.3.0 (in-memory) | v0.3.0 (Mongo) |
 | :---- | :---- | :---- | :---- |
@@ -52,7 +52,7 @@ During this iteration, the core Lightning Store is rewritten to be more efficien
 * Patch LiteLLM root span (#341)
 * Handle ref_in_actor flag for LoRA compatibility (#386)
 * Support `with_llm_proxy` and `with_store` in algorithms (#398)
-* Support image urls export in TracerTraceToTriplets (#400)
+* Support image URL export in TracerTraceToTriplets (#400)
 * Fix match_rewards assign_to elements in TraceTree (#403)
 * Support customizing trainer and daemon in VERL (#407)
 
@@ -66,7 +66,7 @@ During this iteration, the core Lightning Store is rewritten to be more efficien
 #### Examples
 
 * Fix typos in train-first-agent.md (#263)
-* Fix room_selector example which always run the first task (#270)
+* Fix room_selector example which always runs the first task (#270)
 * Fix typo in SQL agent example (#285)
 * Add the README and script files for training SQL agent on NPU (#272)
 * Examples Catalog and Refine Contribution Guide (#331)
