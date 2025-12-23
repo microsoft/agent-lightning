@@ -2,6 +2,7 @@ from typing import Optional
 
 from autogen_core.models import AssistantMessage, UserMessage
 
+
 class HistoryPromptBuilder:
     """
     Builds prompts using a history of observations and actions.
@@ -11,11 +12,7 @@ class HistoryPromptBuilder:
     - single: a single formatted prompt with optional history
     """
 
-    def __init__(
-        self,
-        max_history: int = -1,
-        prompt_type: str = "chat"
-    ):
+    def __init__(self, max_history: int = -1, prompt_type: str = "chat"):
         """
         Args:
             max_history (int): Maximum number of past steps to include
@@ -180,5 +177,5 @@ class HistoryPromptBuilder:
             prompt = self.get_chat_prompt()
         elif self.prompt_type == "single":
             prompt = self.get_single_prompt()
-        
+
         return prompt

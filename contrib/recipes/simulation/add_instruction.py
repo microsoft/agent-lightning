@@ -18,6 +18,7 @@ INSTRUCTION_MAP = {
     "naive": NAIVE_INSTRUCTION,
 }
 
+
 def _get_instruction(type: str, env_name: str = None):
     """
     Retrieve an instruction string from INSTRUCTION_MAP based on the given type.

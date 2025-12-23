@@ -84,7 +84,7 @@ We follow the single-mode prompt for ALFWorld from [verl-agent](https://github.c
 ## Run RL Training (GRPO)
 
 ```bash
-# Run alfworld 
+# Run alfworld
 python3 contrib/recipes/simulation/train_simulation_agent.py --algorithm grpo --env alfworld
 
 # Run scienceworld single task task_num 0

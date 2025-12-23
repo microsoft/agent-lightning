@@ -340,7 +340,9 @@ class SimulationAgentLightningTrainer(RayPPOTrainer):
                     metrics.update(kl_metrics)
                 else:
                     if self.config.algorithm.use_intrinsic_reward:
-                        batch.batch["token_level_rewards"] = batch.batch["token_level_scores"] + batch.batch["token_level_intrinsic_rewards"]  # (bs, seq_len)
+                        batch.batch["token_level_rewards"] = (
+                            batch.batch["token_level_scores"] + batch.batch["token_level_intrinsic_rewards"]
+                        )  # (bs, seq_len)
                     else:
                         batch.batch["token_level_rewards"] = batch.batch["token_level_scores"]
 

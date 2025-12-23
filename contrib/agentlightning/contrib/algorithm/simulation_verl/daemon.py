@@ -20,10 +20,10 @@ from verl import DataProto
 
 from agentlightning import LLM, AgentLightningServer, NamedResources, RolloutLegacy
 from agentlightning.adapter.triplet import TraceToTripletBase
-from contrib.agentlightning.contrib.adapter.triplet_group import TracerTraceToTripletGroup
 from agentlightning.llm_proxy import LLMProxy, ModelConfig
 from agentlightning.store.base import LightningStore
 from agentlightning.types import EnqueueRolloutRequest, Rollout, RolloutConfig, Task
+from contrib.agentlightning.contrib.adapter.triplet_group import TracerTraceToTripletGroup
 
 __all__ = [
     "AgentModeDaemon",
@@ -169,7 +169,7 @@ class SimulationAgentModeDaemon:
             else:
                 # Reuse the existing LLM proxy (probably configured by user)
                 self.llm_proxy = llm_proxy
-                
+
             # if adapter is None:
             #     self.adapter = TracerTraceToTripletGroup()
             # else:
@@ -698,7 +698,7 @@ class SimulationAgentModeDaemon:
                     "response_ids": t.response.get("token_ids", []),
                     "step_reward": t.reward,
                     "step_intrinsic_reward": t.metadata.get("intrinsic_reward", 0.0),
-                    "message": t.metadata.get("message", "")
+                    "message": t.metadata.get("message", ""),
                 }
 
                 trace_list.append(trace_dict)

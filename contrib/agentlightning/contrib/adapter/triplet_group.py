@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional
 
-from agentlightning.types import Span, Triplet
 from agentlightning.adapter.triplet import TracerTraceToTriplet
+from agentlightning.types import Span, Triplet
+
 
 class TracerTraceToTripletGroup(TracerTraceToTriplet):
     """Convert tracer-emitted spans into triplet trajectories.
@@ -110,10 +111,7 @@ class TracerTraceToTripletGroup(TracerTraceToTriplet):
 
         for group in span_groups.values():
             call_span = group.get("call_span")
-            if (
-                not token_ids(call_span, "prompt_token_ids")
-                and not token_ids(call_span, "response_token_ids")
-            ):
+            if not token_ids(call_span, "prompt_token_ids") and not token_ids(call_span, "response_token_ids"):
                 continue
 
             object_span = group.get("object_span")
