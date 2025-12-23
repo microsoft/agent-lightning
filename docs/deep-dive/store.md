@@ -339,6 +339,8 @@ store = MongoLightningStore(
 
 ### Capabilities
 
+[](){ #store-capabilities }
+
 Different stores have different capabilities. Check the [`capabilities`][agentlightning.LightningStore.capabilities] property to understand what a store supports:
 
 | Capability | Description | InMemory | Mongo | Server | Client |
