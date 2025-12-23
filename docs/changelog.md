@@ -24,12 +24,18 @@ During this iteration, the core Lightning Store was rewritten to be more efficie
 
 | Throughput (\#rollout/sec) | v0.2.2 | v0.3.0 (in-memory) | v0.3.0 (Mongo) |
 | :---- | :---- | :---- | :---- |
-| Minimal (batch, #runner=32, #turns=6) | 8.53 | 9.10 | 8.73 |
-| Medium (batch, #runners=100, #turns=10) | 11.97 | 21.46 | 28.01 |
-| Mid-high (batch, #runners=256, #turns=8) | 7.26 | 22.37 | 29.50 |
-| Large (batch, #runners=256, #turns=4) | timeout (\<7.5) | 28.67 | 53.59 |
-| Long queue (FIFO queue, #runners=256, #turns=4) | timeout (\<7.5) | 29.17 | 42.16 |
-| Heavy trace (FIFO queue, #runners=512, #turns=20) | 5.79 | 12.90 | 31.95 |
+| Minimal (batch, #runner=32, #turns=6) | 8.53 | 9.06 | 8.71 |
+| Medium (batch, #runners=100, #turns=10) | 11.97 | 23.26 | 32.79 |
+| Mid-high (batch, #runners=300, #turns=6) | 7.26 | 24.42 | 40.24 |
+| Large (batch, #runners=1000, #turns=3) | timeout (\<7.5) | 14.60 | 50.05 |
+| Long queue (queue, #runners=256, #turns=4) | timeout (\<7.5) | 30.86 | 57.01 |
+| Heavy trace (queue, #runners=512, #turns=20) | 5.79 | 13.28 | 29.41 |
+
+*Notes:*
+
+1. The benchmark results were obtained on a single Standard_D32as_v4 Azure VM (Large and heavy trace used Standard_D64ads_v5 VM) via GitHub Actions.
+2. Two algorithms patterns are simulated. The batch pattern submits a batch of rollouts to the store and waits for all rollouts to complete before continuing the next batch. The queue pattern keeps a fixed maximum number of in-flight rollouts and submits new rollouts when the number of in-flight rollouts is less than the maximum. See configuration details [here](https://github.com/microsoft/agent-lightning/blob/v0.3.0/.github/workflows/benchmark.yml).
+3. The turn number is proportional to the number of spans produced by each rollout.
 
 ### Maintenance and Bug fixes
 
