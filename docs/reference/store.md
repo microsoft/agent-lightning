@@ -8,6 +8,8 @@
 
 ::: agentlightning.InMemoryLightningStore
 
+::: agentlightning.store.mongo.MongoLightningStore
+
 ::: agentlightning.CollectionBasedLightningStore
 
 ## Client-Server and Thread-safe Wrappers

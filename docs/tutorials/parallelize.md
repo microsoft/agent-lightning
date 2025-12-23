@@ -17,7 +17,7 @@ By default, Agent-lightning persists rollouts and spans in an in-memory store. [
     ulimit -n 100000
     ```
 
-For resilient runs, switch to a persistent backend such as [`MongoLightningStore`][agentlightning.MongoLightningStore], which writes data to MongoDB instead of local RAM. Agent-lightning relies on [pymongo](https://pymongo.readthedocs.io/en/stable/) to interact with MongoDB, which can be installed via:
+For resilient runs, switch to a persistent backend such as [`MongoLightningStore`][agentlightning.store.mongo.MongoLightningStore], which writes data to MongoDB instead of local RAM. Agent-lightning relies on [pymongo](https://pymongo.readthedocs.io/en/stable/) to interact with MongoDB, which can be installed via:
 
 ```bash
 pip install agentlightning[mongo]
@@ -38,7 +38,7 @@ To scale out further, launch the store server via [`agl store --backend mongo`] 
 
 !!! tip "Setting up MongoDB"
 
-    MongoDB is a popular document-oriented database. Before running Agent-lightning with [`MongoLightningStore`][agentlightning.MongoLightningStore], make sure that you've already had a MongoDB instance running. Setting up can be conveniently done via Docker Compose via [compose.mongo.yml]({{ src("docker/compose.mongo.yml") }}). Unless targeting at serious production use, we recommend creating the data folders and setting them to `777` permission to avoid permission issues.
+    MongoDB is a popular document-oriented database. Before running Agent-lightning with [`MongoLightningStore`][agentlightning.store.mongo.MongoLightningStore], make sure that you've already had a MongoDB instance running. Setting up can be conveniently done via Docker Compose via [compose.mongo.yml]({{ src("docker/compose.mongo.yml") }}). Unless targeting at serious production use, we recommend creating the data folders and setting them to `777` permission to avoid permission issues.
 
     ```bash
     mkdir -p data/mongo-host
