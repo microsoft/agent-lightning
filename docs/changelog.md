@@ -40,7 +40,7 @@ During this iteration, the core Lightning Store was rewritten to be more efficie
 * Unified PythonServerLauncher (#286 #292 #303)
 * Make health timeout configurable (#305)
 * Refactor logging (#306)
-* Support OTLP in LightningStore (313)
+* Support OTLP in LightningStore (#313)
 * Centralized metrics helper (#368)
 * Fix redundant cancel tracebacks on Ctrl+C (#370)
 
