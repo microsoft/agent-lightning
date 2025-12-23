@@ -250,9 +250,9 @@ The off-the-shelf implementations are [`InMemoryLightningCollections`][agentligh
 
 | Primitive | Purpose | Methods |
 |-----------|---------|---------|
-| [`Collection[T]`][agentlightning.store.collection.Collection] | Indexed storage with primary keys | `query()`, `get()`, `insert()`, `update()`, `upsert()`, `delete()` |
-| [`Queue[T]`][agentlightning.store.collection.Queue] | FIFO queue for task scheduling | `enqueue()`, `dequeue()`, `peek()`, `size()` |
-| [`KeyValue[K, V]`][agentlightning.store.collection.KeyValue] | Simple key-value store | `get()`, `set()`, `inc()`, `chmax()`, `pop()` |
+| [`Collection[T]`][agentlightning.store.collection.Collection] | Indexed storage with primary keys | [`query()`][agentlightning.store.collection.Collection.query], [`get()`][agentlightning.store.collection.Collection.get], [`insert()`][agentlightning.store.collection.Collection.insert], [`update()`][agentlightning.store.collection.Collection.update], [`upsert()`][agentlightning.store.collection.Collection.upsert], [`delete()`][agentlightning.store.collection.Collection.delete] |
+| [`Queue[T]`][agentlightning.store.collection.Queue] | FIFO queue for task scheduling | [`enqueue()`][agentlightning.store.collection.Queue.enqueue], [`dequeue()`][agentlightning.store.collection.Queue.dequeue], [`peek()`][agentlightning.store.collection.Queue.peek], [`size()`][agentlightning.store.collection.Queue.size] |
+| [`KeyValue[K, V]`][agentlightning.store.collection.KeyValue] | Simple key-value store | [`get()`][agentlightning.store.collection.KeyValue.get], [`set()`][agentlightning.store.collection.KeyValue.set], [`inc()`][agentlightning.store.collection.KeyValue.inc], [`chmax()`][agentlightning.store.collection.KeyValue.chmax], [`pop()`][agentlightning.store.collection.KeyValue.pop] |
 
 Every [`LightningCollections`][agentlightning.store.collection.LightningCollections] instance exposes these named collections:
 
@@ -266,7 +266,7 @@ Every [`LightningCollections`][agentlightning.store.collection.LightningCollecti
 
 ### Atomic Operations
 
-Collections support atomic operations through the `atomic()` context manager:
+Collections support atomic operations through the [`atomic()`][agentlightning.store.collection.LightningCollections.atomic] context manager:
 
 ```python
 async with collections.atomic(mode="rw", labels=["rollouts", "attempts"]) as ctx:
@@ -275,7 +275,7 @@ async with collections.atomic(mode="rw", labels=["rollouts", "attempts"]) as ctx
     await ctx.rollouts.update([updated_rollout])
 ```
 
-The `mode` parameter controls locking behavior (`"r"` for read-only, `"rw"` for read-write), while `labels` specifies which collections to lock. Acquiring locks in sorted order prevents deadlocks when multiple operations run concurrently.
+The arguments passed to [`atomic()`][agentlightning.store.collection.LightningCollections.atomic] are quite arbitrary and flexible. Different implementations may have different interpretations of the arguments. For example, to [`InMemoryLightningCollections`][agentlightning.store.collection.InMemoryLightningCollections], the `mode` parameter controls locking behavior (`"r"` for read-only, `"rw"` for read-write), while `labels` specifies which collections to lock. Acquiring locks in sorted order prevents deadlocks when multiple operations run concurrently.
 
 ### Implementing a Custom Backend
 
@@ -303,7 +303,7 @@ class MyLightningCollections(LightningCollections):
 Then instantiate your store:
 
 ```python
-from agentlightning import CollectionBasedLightningStore
+from agentlightning.store.collection_based import CollectionBasedLightningStore
 
 store = CollectionBasedLightningStore(collections=MyLightningCollections())
 ```
@@ -376,7 +376,7 @@ Database-based stores like [`MongoLightningStore`][agentlightning.store.mongo.Mo
 
 The server tracks the creator PID. In the owner process it delegates directly to the in-memory store; in other processes it lazily constructs a [`LightningStoreClient`][agentlightning.LightningStoreClient] to talk to the HTTP API. This prevents accidental cross-process mutation of the wrong memory image. When the server is pickled (e.g., via `multiprocessing`), only the minimal fields are serialized, but **NOT** the FastAPI/uvicorn objects. Subprocesses won’t accidentally carry live server state. Forked subprocess should also use [`LightningStoreClient`][agentlightning.LightningStoreClient] to communicate with the server in the main process.
 
-On the client side, the client retries network/5xx failures using a small backoff, and probes `/health` between attempts. Application exceptions inside the server are wrapped as HTTP 400 with a traceback—these are **not retried**. The client also maintains a **per-event-loop** `aiohttp.ClientSession` map so that tracer callbacks (often on separate loops/threads) don’t hang by reusing a session from another loop.
+On the client side, the client retries network/5xx failures using a small backoff, and probes `/v1/agl/health` between attempts. Application exceptions inside the server are wrapped as HTTP 400 with a traceback—these are **not retried**. The client also maintains a **per-event-loop** `aiohttp.ClientSession` map so that tracer callbacks (often on separate loops/threads) don’t hang by reusing a session from another loop.
 
 Minimal lifecycle:
 
