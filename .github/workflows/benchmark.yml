@@ -59,7 +59,7 @@ jobs:
               --total-tasks 20000
               --batch-size 2048
               --n-runners 300
-              --max-rounds 8
+              --max-rounds 6
               --sleep-seconds 0.1
           - id: scenario-large-batch
             display: Large batch waves
@@ -74,7 +74,7 @@ jobs:
               --total-tasks 50000
               --batch-size 8192
               --n-runners 1000
-              --max-rounds 6
+              --max-rounds 3
               --sleep-seconds 0.1
           - id: scenario-long-queues
             display: Long rollout queues
