@@ -54,6 +54,7 @@ class VERL(Algorithm):
         Toggle `debug=True` plus `mismatch_log_dir` when you need to inspect
         retokenization or chat-template mismatches. See
         [this blog post](https://agent-lightning.github.io/posts/trajectory_level_aggregation/)
+        for more details.
 
     Examples:
         ```python
