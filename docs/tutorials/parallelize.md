@@ -17,12 +17,20 @@ By default, Agent-lightning persists rollouts and spans in an in-memory store. [
     ulimit -n 100000
     ```
 
-For resilient runs, switch to a persistent backend such as [`MongoLightningStore`][agentlightning.MongoLightningStore], which writes data to MongoDB instead of local RAM.
+For resilient runs, switch to a persistent backend such as [`MongoLightningStore`][agentlightning.MongoLightningStore], which writes data to MongoDB instead of local RAM. Agent-lightning relies on [pymongo](https://pymongo.readthedocs.io/en/stable/) to interact with MongoDB, which can be installed via:
+
+```bash
+pip install agentlightning[mongo]
+```
+
+To use the MongoDB store, you need to pass the MongoDB URI to the store constructor. The URI should be in the format of `mongodb://<host>:<port>/<database>?replicaSet=<replicaSet>`.
 
 ```python
+from agentlightning.store.mongo import MongoLightningStore
+
 trainer = agl.Trainer(
     algorithm=algorithm,
-    store=agl.MongoLightningStore(uri="mongodb://localhost:27017"),
+    store=MongoLightningStore(mongo_uri="mongodb://localhost:27017/?replicaSet=rs0"),
 )
 ```
 
@@ -30,7 +38,13 @@ To scale out further, launch the store server via [`agl store --backend mongo`] 
 
 !!! tip "Setting up MongoDB"
 
-    MongoDB is a popular document-oriented database. Before running Agent-lightning with [`MongoLightningStore`][agentlightning.MongoLightningStore], make sure that you've already had a MongoDB instance running. Setting up can be conveniently done via Docker Compose via [compose.mongo.yml]({{ src("docker/compose.mongo.yml") }}).
+    MongoDB is a popular document-oriented database. Before running Agent-lightning with [`MongoLightningStore`][agentlightning.MongoLightningStore], make sure that you've already had a MongoDB instance running. Setting up can be conveniently done via Docker Compose via [compose.mongo.yml]({{ src("docker/compose.mongo.yml") }}). Unless targeting at serious production use, we recommend creating the data folders and setting them to `777` permission to avoid permission issues.
+
+    ```bash
+    mkdir -p data/mongo-host
+    chmod 777 data/mongo-host
+    docker compose -f compose.mongo.yml up -d
+    ```
 
     Alternatively, you can also install MongoDB manually following the [official documentation](https://www.mongodb.com/docs/manual/installation/). If you installed MongoDB manually, an important note is that you need to ensure that the MongoDB instance has enabled replica set feature, since Agent-lightning has used the transactional operations internally. The simplest approach is to use the following script (executed in the MongoDB shell) to initialize the replica set:
 
