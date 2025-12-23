@@ -2453,14 +2453,18 @@ masked training sample so GPU time is spent once per trajectory rather than N ti
 per turn. Enable it via:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">config</span><span class="p">[</span><span class="s2">&quot;agentlightning&quot;</span><span class="p">][</span><span class="s2">&quot;trace_aggregator&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="s2">&quot;level&quot;</span><span class="p">:</span> <span class="s2">&quot;trajectory&quot;</span><span class="p">,</span>
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="s2">&quot;trajectory_max_prompt_length&quot;</span><span class="p">:</span> <span class="o">...</span><span class="p">,</span>
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="s2">&quot;trajectory_max_response_length&quot;</span><span class="p">:</span> <span class="o">...</span><span class="p">,</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="s2">&quot;trajectory_max_prompt_length&quot;</span><span class="p">:</span> <span class="mi">4096</span><span class="p">,</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="s2">&quot;trajectory_max_response_length&quot;</span><span class="p">:</span> <span class="mi">34384</span><span class="p">,</span>
 <a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="p">}</span>
 </code></pre></div>
 <p>Keep conversations structured (message lists rather than manual string
-concatenation) so prefix matching can stitch traces, and toggle <code>debug=True</code> plus
-<code>unmatch_log_dir</code> when you need to inspect retokenization or chat-template
-mismatches. See <a href="https://agent-lightning.github.io/posts/trajectory_level_aggregation/">this blog post</a>
+concatenation) so prefix matching can stitch traces. <code>trajectory_max_prompt_length</code>
+should be set to the maximum length of the prompt for the first turn, and
+<code>trajectory_max_response_length</code> should be set to the maximum cumulative
+length of agent responses in the full trajectory.
+Toggle <code>debug=True</code> plus <code>mismatch_log_dir</code> when you need to inspect
+retokenization or chat-template mismatches. See
+<a href="https://agent-lightning.github.io/posts/trajectory_level_aggregation/">this blog post</a>
 for more details.</p>
 </div>
 
