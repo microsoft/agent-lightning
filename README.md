@@ -37,7 +37,7 @@ pip install agentlightning
 For the latest nightly build (cutting-edge features), you can install from Test PyPI:
 
 ```bash
-pip install --upgrade --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ agentlightning
+pip install --upgrade --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ --pre agentlightning
 ```
 
 Please refer to our [installation guide](https://microsoft.github.io/agent-lightning/stable/tutorials/installation/) for more details.
