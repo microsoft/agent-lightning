@@ -24,12 +24,12 @@ During this iteration, the core Lightning Store was rewritten to be more efficie
 
 | Throughput (\#rollout/sec) | v0.2.2 | v0.3.0 (in-memory) | v0.3.0 (Mongo) |
 | :---- | :---- | :---- | :---- |
-| Minimal (batch, #runner=32, #turns=6) | 8.53 | 9.06 | 8.71 |
-| Medium (batch, #runners=100, #turns=10) | 11.97 | 23.26 | 32.79 |
-| Mid-high (batch, #runners=300, #turns=6) | 7.26 | 24.42 | 40.24 |
-| Large (batch, #runners=1000, #turns=3) | timeout (\<7.5) | 14.60 | 50.05 |
-| Long queue (queue, #runners=256, #turns=4) | timeout (\<7.5) | 30.86 | 57.01 |
-| Heavy trace (queue, #runners=512, #turns=20) | 5.79 | 13.28 | 29.41 |
+| Minimal (batch, #runner=32, #turns=6) | 8.73 | 9.06 | 8.71 |
+| Medium (batch, #runners=100, #turns=10) | 12.03 | 23.26 | 32.79 |
+| Mid-high (batch, #runners=300, #turns=6) | 10.61 | 24.42 | 40.24 |
+| Large (batch, #runners=1000, #turns=3) | ??? | 14.60 | 50.05 |
+| Long queue (queue, #runners=256, #turns=4) | 7.42 | 30.86 | 57.01 |
+| Heavy trace (queue, #runners=512, #turns=20) | 5.93 | 13.28 | 29.41 |
 
 *Notes:*
 
