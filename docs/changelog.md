@@ -60,7 +60,7 @@ During this iteration, the core Lightning Store was rewritten to be more efficie
 
 * Refactor tracer initialization (#321)
 * Fix OpenAI Agents 0.6 compatibility (#322)
-* Operation emitter (#359)
+* `emit_operation`, `emit_annotation`, tags and links (#359)
 * Sunset HTTP tracer (#402)
 
 #### Examples
