@@ -945,7 +945,7 @@ class AgentModeDaemon:
                             global_steps,
                             rollout_id,
                             turn_index,
-                            self.trace_aggregator.get("unmatch_log_dir", None),
+                            self.trace_aggregator.get("mismatch_log_dir", None),
                         )
 
                     if is_prefix:

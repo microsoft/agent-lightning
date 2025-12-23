@@ -13,7 +13,7 @@ agentlightning:
     trajectory_max_prompt_length: 2048  # supported in trajectory level aggregation, suggest to set as maximum length for the prompt in first turn
     trajectory_max_response_length: 8192  # supported in trajectory level aggregation, suggest to set as maximum length for the cumulative agent responses in the full trajectory, i.e., n_turns * (max_response_length + max_prompt_length)
     debug: False  # supported in trajectory level aggregation, enable to diagnose trace merging failures
-    unmatch_log_dir: ./unmatch_cases  # supported in trajectory level aggregation with debug=True, directory to store logs of unmatched cases
+    mismatch_log_dir: ./mismatch_cases  # supported in trajectory level aggregation with debug=True, directory to store logs of mismatch cases
 
 data:
   filter_overlong_prompts: false

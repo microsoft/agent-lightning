@@ -328,19 +328,24 @@ include = [
   "agentlightning/**/*.yaml",
   "agentlightning/**/*.yml",
   "agentlightning/**/*.poml",
-  "agentlightning/**/*.html",
-  "agentlightning/**/*.js",
-  "agentlightning/**/*.css",
-  "agentlightning/**/*.svg",
+]
+artifacts = [
+  "agentlightning/dashboard/**",
 ]
 
 [tool.hatch.build.targets.sdist]
 exclude = [
-  "examples/**",
-  "tests/**",
-  "docs/**",
-  "scripts/**",
-  "dashboard/**",
+  "/examples/**",
+  "/tests/**",
+  "/docs/**",
+  "/scripts/**",
+  "/dashboard/**",
+  "/docker/**",
+  "/contrib/**",
+  "/.github/**",
+]
+artifacts = [
+  "agentlightning/dashboard/**",
 ]
 
 [tool.pytest.ini_options]
