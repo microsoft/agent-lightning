@@ -657,6 +657,7 @@ class SimulationAgentModeDaemon:
         max_response_length: int,
         device: torch.device,
         use_final_reward_as_step_reward: bool = True,
+        use_intrinsic_reward: bool = False,
         is_gigpo: bool = False,
     ):
         """
@@ -696,17 +697,9 @@ class SimulationAgentModeDaemon:
                     "prompt_ids": t.prompt.get("token_ids", []),
                     "response_ids": t.response.get("token_ids", []),
                     "step_reward": t.reward,
+                    "step_intrinsic_reward": t.metadata.get("intrinsic_reward", 0.0),
+                    "message": t.metadata.get("message", "")
                 }
-
-                # Optional fields
-                intrinsic = t.metadata.get("intrinsic_reward")
-                message = t.metadata.get("message")
-
-                if intrinsic is not None:
-                    trace_dict["step_intrinsic_reward"] = intrinsic
-
-                if message is not None:
-                    trace_dict["message"] = message
 
                 trace_list.append(trace_dict)
 
@@ -749,10 +742,8 @@ class SimulationAgentModeDaemon:
 
                 final_reward_list.append(sample_info["final_reward"])
                 step_reward_list.append(trace["step_reward"])
-                if "step_intrinsic_reward" in trace:
-                    step_intrinsic_reward_list.append(trace["step_intrinsic_reward"])
-                if "message" in trace:
-                    message_list.append(trace["message"])
+                step_intrinsic_reward_list.append(trace["step_intrinsic_reward"])
+                message_list.append(trace["message"])
 
                 prompt_ids, response_ids = trace["prompt_ids"], trace["response_ids"]
 
@@ -811,7 +802,7 @@ class SimulationAgentModeDaemon:
 
         # Create token-level intrinsic rewards
         token_level_intrinsic_rewards = None
-        if len(step_intrinsic_reward_list) > 0:
+        if use_intrinsic_reward:
             step_intrinsic_reward_list = [0.0 if reward is None else reward for reward in step_intrinsic_reward_list]
             intrinsic_rewards = torch.tensor(step_intrinsic_reward_list, dtype=torch.float32).to(device)
             token_level_intrinsic_rewards = torch.zeros_like(attention_mask, dtype=intrinsic_rewards.dtype)
@@ -829,7 +820,7 @@ class SimulationAgentModeDaemon:
             "token_level_scores": token_level_scores.contiguous(),
         }
         batch_dict["step_rewards"] = torch.tensor(np.array(step_reward_list), dtype=torch.float32).to(device)
-        if token_level_intrinsic_rewards is not None:
+        if use_intrinsic_reward:
             batch_dict["step_intrinsic_rewards"] = torch.tensor(
                 np.array(step_intrinsic_reward_list), dtype=torch.float32
             ).to(device)
@@ -853,7 +844,7 @@ class SimulationAgentModeDaemon:
         data_proto.non_tensor_batch["turn_index_list"] = np.array(turn_index_list)  # type: ignore
 
         data_proto.non_tensor_batch["step_rewards"] = np.array(step_reward_list)
-        if len(message_list) > 0 and is_gigpo:
+        if is_gigpo:
             data_proto.non_tensor_batch["anchor_obs"] = np.array(message_list)
 
         return data_proto, data_metrics

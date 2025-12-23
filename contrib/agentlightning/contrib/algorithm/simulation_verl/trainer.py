@@ -258,6 +258,8 @@ class SimulationAgentLightningTrainer(RayPPOTrainer):
                     max_prompt_length=self.config.data.max_prompt_length,
                     max_response_length=self.config.data.max_response_length,
                     device=gen_batch.batch["fake_ids"].device,
+                    use_final_reward_as_step_reward=self.config.algorithm.use_final_reward_as_step_reward,
+                    use_intrinsic_reward=self.config.algorithm.use_intrinsic_reward,
                 )
                 metrics.update(agent_metrics)
                 self.agent_mode_daemon.clear_data_and_server()
@@ -337,7 +339,10 @@ class SimulationAgentLightningTrainer(RayPPOTrainer):
                     )
                     metrics.update(kl_metrics)
                 else:
-                    batch.batch["token_level_rewards"] = batch.batch["token_level_scores"]
+                    if self.config.algorithm.use_intrinsic_reward:
+                        batch.batch["token_level_rewards"] = batch.batch["token_level_scores"] + batch.batch["token_level_intrinsic_rewards"]  # (bs, seq_len)
+                    else:
+                        batch.batch["token_level_rewards"] = batch.batch["token_level_scores"]
 
                 # compute advantages, executed on the driver process
 
