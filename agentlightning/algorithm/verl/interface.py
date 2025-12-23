@@ -41,14 +41,16 @@ class VERL(Algorithm):
         ```python
         config["agentlightning"]["trace_aggregator"] = {
             "level": "trajectory",
-            "trajectory_max_prompt_length": ...,
-            "trajectory_max_response_length": ...,
+            "trajectory_max_prompt_length": 4096,
+            "trajectory_max_response_length": 34384,
         }
         ```
 
         Keep conversations structured (message lists rather than manual string
-        concatenation) so prefix matching can stitch traces, and toggle `debug=True` plus
-        `unmatch_log_dir` when you need to inspect retokenization or chat-template
+        concatenation) so prefix matching can stitch traces. `trajectory_max_prompt_length`
+        and `trajectory_max_response_length` should be set to the maximum length of the prompt for the first turn
+        and the maximum length for the cumulative agent responses in the full trajectory, respectively.
+        Toggle `debug=True` plus `unmatch_log_dir` when you need to inspect retokenization or chat-template
         mismatches. See [this blog post](https://agent-lightning.github.io/posts/trajectory_level_aggregation/)
         for more details.
 
