@@ -20,7 +20,7 @@ Agent-lightning v0.3.0 is a major release that introduces several new features a
 
 ### Store Benchmark
 
-During this iteration, the core Lightning Store was rewritten to be more efficient and scalable (#315 #318 #328 #342 #344 #356 #380 #388 #418 #421). We show the benchmark results in the following table and compare it with the previous release (v0.2.2).
+During this iteration, the core Lightning Store was rewritten to be more efficient and scalable (#315 #318 #328 #342 #344 #356 #380 #388 #418 #421). The following table shows its performance on benchmarks.
 
 | Throughput (\#rollout/sec) | v0.2.2 | v0.3.0 (in-memory) | v0.3.0 (Mongo) |
 | :---- | :---- | :---- | :---- |
@@ -33,9 +33,9 @@ During this iteration, the core Lightning Store was rewritten to be more efficie
 
 *Notes:*
 
-1. The benchmark results were obtained on a single Standard_D32as_v4 Azure VM (Large and heavy trace used Standard_D64ads_v5 VM) via GitHub Actions.
-2. Two algorithms patterns are simulated. The batch pattern submits a batch of rollouts to the store and waits for all rollouts to complete before continuing the next batch. The queue pattern keeps a fixed maximum number of in-flight rollouts and submits new rollouts when the number of in-flight rollouts is less than the maximum. See configuration details [here](https://github.com/microsoft/agent-lightning/blob/v0.3.0/.github/workflows/benchmark.yml).
-3. The turn number is proportional to the number of spans produced by each rollout.
+1. Benchmarks were run on a single Standard_D32as_v4 Azure VM (Large and heavy trace tests used Standard_D64ads_v5), executed via GitHub Actions.
+2. Two algorithm patterns are evaluated: the batch pattern submits a group of rollouts and waits for all to finish before starting the next group, while the queue pattern maintains a set number of in-flight rollouts, submitting new ones as soon as capacity frees up. Configuration details are available [here](https://github.com/microsoft/agent-lightning/blob/v0.3.0/.github/workflows/benchmark.yml).
+3. The number of turns is directly proportional to the number of spans each rollout generates.
 
 ### Maintenance and Bug fixes
 
