@@ -84,7 +84,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#scaling-out-algorithms-and-rollouts" class="md-skip">
+        <a href="#scaling-out-agent-lightning" class="md-skip">
           Skip to content
         </a>
       
@@ -878,6 +878,28 @@
     <span class="md-ellipsis">
       
         Parallelizing Algorithms
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#parallelizing-lightningstore" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Parallelizing LightningStore
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#increasing-throughput-of-llm-proxy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Increasing Throughput of LLM Proxy
       
     </span>
   </a>
@@ -1830,6 +1852,28 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#parallelizing-lightningstore" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Parallelizing LightningStore
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#increasing-throughput-of-llm-proxy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Increasing Throughput of LLM Proxy
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1889,7 +1933,7 @@
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="October 25, 2025 06:16:27 UTC"><span class="timeago" datetime="2025-10-25T06:16:27+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="October 25, 2025 06:16:27 UTC">2025-10-25</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-timeago" title="December 23, 2025 06:57:24 UTC"><span class="timeago" datetime="2025-12-23T06:57:24+00:00" locale="en"></span></span><span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="December 23, 2025 06:57:24 UTC">2025-12-23</span>
   </span>
 
     
@@ -1924,7 +1968,7 @@
 
 
 <!-- Page content -->
-<h1 id="scaling-out-algorithms-and-rollouts">Scaling out Algorithms and Rollouts<a class="headerlink" href="#scaling-out-algorithms-and-rollouts" title="Permanent link">&para;</a></h1>
+<h1 id="scaling-out-agent-lightning">Scaling out Agent-lightning<a class="headerlink" href="#scaling-out-agent-lightning" title="Permanent link">&para;</a></h1>
 <p>Agent-lightning splits training into an <strong>algorithm bundle</strong> and a <strong>runner bundle</strong> that exchange work through the <a class="autorefs autorefs-internal" title="            agentlightning.LightningStore" href="../../reference/store/#agentlightning.LightningStore"><code>LightningStore</code></a>. This tutorial shows how to increase rollout throughput, place bundles across processes or machines, and keep the algorithm side scalable with external frameworks.</p>
 <h2 id="parallelizing-rollouts-with-trainer">Parallelizing Rollouts with <a class="autorefs autorefs-internal" title="            agentlightning.Trainer" href="../../reference/trainer/#agentlightning.Trainer"><code>Trainer</code></a><a class="headerlink" href="#parallelizing-rollouts-with-trainer" title="Permanent link">&para;</a></h2>
 <p>Before we dive into the details of the bundles and execution strategies, let's first revisit how to parallelize rollouts with <a class="autorefs autorefs-internal" title="            agentlightning.Trainer" href="../../reference/trainer/#agentlightning.Trainer"><code>Trainer</code></a>.</p>
@@ -1933,7 +1977,7 @@
 <p class="admonition-title">Note</p>
 <p>One of the most important features of <a class="autorefs autorefs-internal" title="            agentlightning.Trainer" href="../../reference/trainer/#agentlightning.Trainer"><code>Trainer</code></a> is the ability to abort things gracefully. For example, if you press <code>Ctrl+C</code> in the terminal, the algorithm will abort and the runners will stop executing. If the algorithm crashes, the runners will also stop executing.</p>
 </div>
-<p>Increase throughput by setting <code>n_runners</code> when constructing the trainer. The following example comes from <a href="https://github.com/microsoft/agent-lightning/tree/4235731a0d2a8523ace649a4eb9eb02ac21db8da/examples/calc_x/train_calc_agent.py">train_calc_agent.py</a>. Since backend LLMs usually use techniques like <a href="https://docs.vllm.ai/en/latest/">continuous batching</a> to increase throughput, you do not have to worry about overwhelming the backend with too many requests.</p>
+<p>Increase throughput by setting <code>n_runners</code> when constructing the trainer. The following example comes from <a href="https://github.com/microsoft/agent-lightning/tree/c1a43b6c3aa0cd766726798c8f7a82d97323809c/examples/calc_x/train_calc_agent.py">train_calc_agent.py</a>. Since backend LLMs usually use techniques like <a href="https://docs.vllm.ai/en/latest/">continuous batching</a> to increase throughput, you do not have to worry about overwhelming the backend with too many requests.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">agentlightning</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">agl</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">datasets</span><span class="w"> </span><span class="kn">import</span> <span class="n">Dataset</span> <span class="k">as</span> <span class="n">HFDataset</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">calc_agent</span><span class="w"> </span><span class="kn">import</span> <span class="n">calc_agent</span>
@@ -2087,6 +2131,90 @@ swaps in a different adapter. Passing a dict lets you tweak the init parameters 
 <div class="admonition note">
 <p class="admonition-title">Note</p>
 <p>The <a class="autorefs autorefs-internal" title="Client-server Strategy" href="../../deep-dive/birds-eye-view/#birds-eye-view-client-server-strategy">birds' eye view</a> illustrates how adapters, proxies, and stores interact when the algorithm spawns additional workers. Use that diagram as a checklist when introducing new distributed components.</p>
+</div>
+<h2 id="parallelizing-lightningstore">Parallelizing <a class="autorefs autorefs-internal" title="            agentlightning.LightningStore" href="../../reference/store/#agentlightning.LightningStore"><code>LightningStore</code></a><a class="headerlink" href="#parallelizing-lightningstore" title="Permanent link">&para;</a></h2>
+<p>By default, Agent-lightning persists rollouts and spans in an in-memory store. <a class="autorefs autorefs-internal" title="            fit(agent, train_dataset=None, *, val_dataset=None)" href="../../reference/trainer/#agentlightning.Trainer.fit"><code>Trainer.fit</code></a> spins it up automatically, or you can launch it yourself via the <a href="../../reference/cli/"><code>agl store</code> command</a>. <a class="autorefs autorefs-internal" title="            agentlightning.InMemoryLightningStore" href="../../reference/store/#agentlightning.InMemoryLightningStore"><code>InMemoryLightningStore</code></a> keeps all state inside the current process, which makes local iteration fast but introduces two production constraints:</p>
+<ol>
+<li>Spans are evicted once the process crosses its memory cap, so long runs risk data loss unless the host has abundant RAM.</li>
+<li>Although the store is well optimized via asynchronous programming, the store lives in a single process and remains bound by the GIL, preventing it from saturating multi-core machines.</li>
+</ol>
+<div class="admonition note">
+<p class="admonition-title">General note for all server-client stores</p>
+<p>If your algorithm and runners communicate through HTTP protocol (which should be the default for 99% of the cases), you need to ensure the file limit is sufficiently large to avoid the "Too many open files" error. You can set the file limit by running the following command:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="nb">ulimit</span><span class="w"> </span>-n<span class="w"> </span><span class="m">100000</span>
+</code></pre></div>
+</div>
+<p>For resilient runs, switch to a persistent backend such as <a class="autorefs autorefs-internal" title="            agentlightning.store.mongo.MongoLightningStore" href="../../reference/store/#agentlightning.store.mongo.MongoLightningStore"><code>MongoLightningStore</code></a>, which writes data to MongoDB instead of local RAM. Agent-lightning relies on <a href="https://pymongo.readthedocs.io/en/stable/">pymongo</a> to interact with MongoDB, which can be installed via:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>pip<span class="w"> </span>install<span class="w"> </span>agentlightning<span class="o">[</span>mongo<span class="o">]</span>
+</code></pre></div>
+<p>To use the MongoDB store, you need to pass the MongoDB URI to the store constructor. The URI should be in the format of <code>mongodb://&lt;host&gt;:&lt;port&gt;/&lt;database&gt;?replicaSet=&lt;replicaSet&gt;</code>.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">agentlightning.store.mongo</span><span class="w"> </span><span class="kn">import</span> <span class="n">MongoLightningStore</span>
+<a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a>
+<a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a><span class="n">trainer</span> <span class="o">=</span> <span class="n">agl</span><span class="o">.</span><span class="n">Trainer</span><span class="p">(</span>
+<a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a>    <span class="n">algorithm</span><span class="o">=</span><span class="n">algorithm</span><span class="p">,</span>
+<a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a>    <span class="n">store</span><span class="o">=</span><span class="n">MongoLightningStore</span><span class="p">(</span><span class="n">mongo_uri</span><span class="o">=</span><span class="s2">&quot;mongodb://localhost:27017/?replicaSet=rs0&quot;</span><span class="p">),</span>
+<a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a><span class="p">)</span>
+</code></pre></div>
+<div class="admonition tip">
+<p class="admonition-title">Setting up MongoDB</p>
+<p>MongoDB is a popular document-oriented database. Before running Agent-lightning with <a class="autorefs autorefs-internal" title="            agentlightning.store.mongo.MongoLightningStore" href="../../reference/store/#agentlightning.store.mongo.MongoLightningStore"><code>MongoLightningStore</code></a>, make sure that you've already had a MongoDB instance running. Setting up can be conveniently done via Docker Compose via <a href="https://github.com/microsoft/agent-lightning/tree/c1a43b6c3aa0cd766726798c8f7a82d97323809c/docker/compose.mongo.yml">compose.mongo.yml</a>. Unless targeting serious production use, we recommend creating the data folders and setting them to <code>777</code> permission to avoid permission issues.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>mkdir<span class="w"> </span>-p<span class="w"> </span>data/mongo-host
+<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a>chmod<span class="w"> </span><span class="m">777</span><span class="w"> </span>data/mongo-host
+<a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a>docker<span class="w"> </span>compose<span class="w"> </span>-f<span class="w"> </span>compose.mongo.yml<span class="w"> </span>up<span class="w"> </span>-d
+</code></pre></div>
+<p>Alternatively, you can also install MongoDB manually following the <a href="https://www.mongodb.com/docs/manual/installation/">official documentation</a>. If you installed MongoDB manually, an important note is that you need to ensure that the MongoDB instance has enabled replica set feature, since Agent-lightning uses the transactional operations internally. The simplest approach is to use the following script (executed in the MongoDB shell) to initialize the replica set:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="nx">rs</span><span class="p">.</span><span class="nx">initiate</span><span class="p">({</span>
+<a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a><span class="w">  </span><span class="nx">_id</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;rs0&quot;</span><span class="p">,</span>
+<a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a><span class="w">  </span><span class="nx">members</span><span class="o">:</span><span class="w"> </span><span class="p">[{</span><span class="w"> </span><span class="nx">_id</span><span class="o">:</span><span class="w"> </span><span class="mf">0</span><span class="p">,</span><span class="w"> </span><span class="nx">host</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;localhost:27017&quot;</span><span class="w"> </span><span class="p">}],</span>
+<a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a><span class="p">});</span>
+</code></pre></div>
+</div>
+<p>To scale out further, launch the store server via <a href="../../reference/cli/"><code>agl store --backend mongo</code></a> (see <a class="autorefs autorefs-internal" title="Debug the Algorithm-Runner Boundary" href="../debug/#debug-with-external-store">Debugging with External Store</a>). The CLI accepts <code>--n-workers</code>, which starts the server under <code>gunicorn</code> with multiple worker processes so concurrent runners can push and pull at higher throughput. This option applies only to persistent backends; an in-memory store, on the other hand, cannot be sharded across workers because its state lives inside one process.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The <code>--n-workers</code> here is the number of worker processes for the store server, NOT related to the number of rollout runners.</p>
+</div>
+<h2 id="increasing-throughput-of-llm-proxy">Increasing Throughput of LLM Proxy<a class="headerlink" href="#increasing-throughput-of-llm-proxy" title="Permanent link">&para;</a></h2>
+<p>Agent-lightning includes an optional <a class="autorefs autorefs-internal" title="            agentlightning.LLMProxy" href="../../reference/algorithm/#agentlightning.LLMProxy"><code>LLMProxy</code></a> that wraps <a href="https://docs.litellm.ai/">LiteLLM</a> to provide a unified OpenAI-compatible endpoint for your agents. When rollout throughput increases, the proxy can become a bottleneck. You can scale it out using the same pattern as the store server.</p>
+<p>To increase proxy throughput, pass <code>num_workers</code> when constructing the proxy:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">agentlightning</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">agl</span>
+<a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a>
+<a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a><span class="n">proxy</span> <span class="o">=</span> <span class="n">agl</span><span class="o">.</span><span class="n">LLMProxy</span><span class="p">(</span>
+<a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a>    <span class="n">port</span><span class="o">=</span><span class="mi">4000</span><span class="p">,</span>
+<a id="__codelineno-18-5" name="__codelineno-18-5" href="#__codelineno-18-5"></a>    <span class="n">launch_mode</span><span class="o">=</span><span class="s2">&quot;mp&quot;</span><span class="p">,</span>  <span class="c1"># multiprocessing mode</span>
+<a id="__codelineno-18-6" name="__codelineno-18-6" href="#__codelineno-18-6"></a>    <span class="n">num_workers</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span>  <span class="c1"># four gunicorn workers handle concurrent requests</span>
+<a id="__codelineno-18-7" name="__codelineno-18-7" href="#__codelineno-18-7"></a><span class="p">)</span>
+</code></pre></div>
+<p>You can also configure the proxy through <a class="autorefs autorefs-internal" title="            agentlightning.Trainer" href="../../reference/trainer/#agentlightning.Trainer"><code>Trainer</code></a>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="n">trainer</span> <span class="o">=</span> <span class="n">agl</span><span class="o">.</span><span class="n">Trainer</span><span class="p">(</span>
+<a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a>    <span class="n">algorithm</span><span class="o">=</span><span class="n">algorithm</span><span class="p">,</span>
+<a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a>    <span class="n">n_runners</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span>  <span class="c1"># The runners here is the rollout runners, not related to LLM proxy replicas</span>
+<a id="__codelineno-19-4" name="__codelineno-19-4" href="#__codelineno-19-4"></a>    <span class="n">llm_proxy</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;port&quot;</span><span class="p">:</span> <span class="mi">4000</span><span class="p">,</span> <span class="s2">&quot;num_workers&quot;</span><span class="p">:</span> <span class="mi">4</span><span class="p">},</span>  <span class="c1"># launch mode is actually mp by default</span>
+<a id="__codelineno-19-5" name="__codelineno-19-5" href="#__codelineno-19-5"></a><span class="p">)</span>
+</code></pre></div>
+<p>When <code>num_workers &gt; 1</code>, the launcher starts gunicorn with the specified number of worker processes. Each worker runs its own event loop, allowing the proxy to handle many concurrent LLM requests without being blocked by Python's GIL.</p>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p>When using <code>mp</code> launch mode, <a class="autorefs autorefs-internal" title="            agentlightning.LLMProxy" href="../../reference/algorithm/#agentlightning.LLMProxy"><code>LLMProxy</code></a> will start the server in a separate process. To make sure the proxy is still accessing the same store as the main process, you need to set the store to be <a class="autorefs autorefs-internal" title="Capabilities" href="../../deep-dive/store/#store-capabilities">zero-copy compatible</a>, which means, either the store is a native zero-copy store like <a class="autorefs autorefs-internal" title="            agentlightning.store.mongo.MongoLightningStore" href="../../reference/store/#agentlightning.store.mongo.MongoLightningStore"><code>MongoLightningStore</code></a> or the store is wrapped via <a class="autorefs autorefs-internal" title="            agentlightning.LightningStoreServer" href="../../reference/store/#agentlightning.LightningStoreServer"><code>LightningStoreServer</code></a> or <a class="autorefs autorefs-internal" title="            agentlightning.LightningStoreClient" href="../../reference/store/#agentlightning.LightningStoreClient"><code>LightningStoreClient</code></a>.</p>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Shared Server Infrastructure</p>
+<p>Both <a class="autorefs autorefs-internal" title="            agentlightning.LightningStoreServer" href="../../reference/store/#agentlightning.LightningStoreServer"><code>LightningStoreServer</code></a> and <a class="autorefs autorefs-internal" title="            agentlightning.LLMProxy" href="../../reference/algorithm/#agentlightning.LLMProxy"><code>LLMProxy</code></a> rely on a common utility called <a class="autorefs autorefs-internal" title="            agentlightning.utils.server_launcher.PythonServerLauncherArgs
+
+
+  
+      dataclass
+  " href="../../reference/utilities/#agentlightning.utils.server_launcher.PythonServerLauncherArgs"><code>PythonServerLauncherArgs</code></a>. This dataclass captures the settings needed to launch a FastAPI application:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">agentlightning.utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">PythonServerLauncherArgs</span>
+<a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a>
+<a id="__codelineno-20-3" name="__codelineno-20-3" href="#__codelineno-20-3"></a><span class="n">args</span> <span class="o">=</span> <span class="n">PythonServerLauncherArgs</span><span class="p">(</span>
+<a id="__codelineno-20-4" name="__codelineno-20-4" href="#__codelineno-20-4"></a>    <span class="n">port</span><span class="o">=</span><span class="mi">8000</span><span class="p">,</span>
+<a id="__codelineno-20-5" name="__codelineno-20-5" href="#__codelineno-20-5"></a>    <span class="n">host</span><span class="o">=</span><span class="s2">&quot;0.0.0.0&quot;</span><span class="p">,</span>
+<a id="__codelineno-20-6" name="__codelineno-20-6" href="#__codelineno-20-6"></a>    <span class="n">n_workers</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span>          <span class="c1"># spawn 4 gunicorn workers</span>
+<a id="__codelineno-20-7" name="__codelineno-20-7" href="#__codelineno-20-7"></a>    <span class="n">launch_mode</span><span class="o">=</span><span class="s2">&quot;thread&quot;</span><span class="p">,</span> <span class="c1"># or &quot;mp&quot; for multiprocessing, &quot;asyncio&quot; for in-loop</span>
+<a id="__codelineno-20-8" name="__codelineno-20-8" href="#__codelineno-20-8"></a><span class="p">)</span>
+</code></pre></div>
+<p>Under the hood, <a class="autorefs autorefs-internal" title="            agentlightning.utils.server_launcher.PythonServerLauncher" href="../../reference/utilities/#agentlightning.utils.server_launcher.PythonServerLauncher"><code>PythonServerLauncher</code></a> reads these arguments and chooses between uvicorn (single worker) and gunicorn (multiple workers) automatically.</p>
 </div>
 
 <!-- Was this page helpful? -->
