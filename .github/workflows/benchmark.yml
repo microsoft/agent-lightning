@@ -71,7 +71,7 @@ jobs:
             timeout: 640
             args: >-
               --mode batch
-              --total-tasks 50000
+              --total-tasks 16384
               --batch-size 8192
               --n-runners 1000
               --max-rounds 3
