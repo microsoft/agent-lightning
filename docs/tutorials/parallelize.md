@@ -261,7 +261,7 @@ trainer = agl.Trainer(
 
 !!! tip "Setting up MongoDB"
 
-    MongoDB is a popular document-oriented database. Before running Agent-lightning with [`MongoLightningStore`][agentlightning.store.mongo.MongoLightningStore], make sure that you've already had a MongoDB instance running. Setting up can be conveniently done via Docker Compose via [compose.mongo.yml]({{ src("docker/compose.mongo.yml") }}). Unless targeting at serious production use, we recommend creating the data folders and setting them to `777` permission to avoid permission issues.
+    MongoDB is a popular document-oriented database. Before running Agent-lightning with [`MongoLightningStore`][agentlightning.store.mongo.MongoLightningStore], make sure that you've already had a MongoDB instance running. Setting up can be conveniently done via Docker Compose via [compose.mongo.yml]({{ src("docker/compose.mongo.yml") }}). Unless targeting serious production use, we recommend creating the data folders and setting them to `777` permission to avoid permission issues.
 
     ```bash
     mkdir -p data/mongo-host
@@ -269,7 +269,7 @@ trainer = agl.Trainer(
     docker compose -f compose.mongo.yml up -d
     ```
 
-    Alternatively, you can also install MongoDB manually following the [official documentation](https://www.mongodb.com/docs/manual/installation/). If you installed MongoDB manually, an important note is that you need to ensure that the MongoDB instance has enabled replica set feature, since Agent-lightning has used the transactional operations internally. The simplest approach is to use the following script (executed in the MongoDB shell) to initialize the replica set:
+    Alternatively, you can also install MongoDB manually following the [official documentation](https://www.mongodb.com/docs/manual/installation/). If you installed MongoDB manually, an important note is that you need to ensure that the MongoDB instance has enabled replica set feature, since Agent-lightning uses the transactional operations internally. The simplest approach is to use the following script (executed in the MongoDB shell) to initialize the replica set:
 
     ```javascript
     rs.initiate({

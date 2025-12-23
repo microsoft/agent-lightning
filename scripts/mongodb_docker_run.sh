@@ -25,18 +25,18 @@ end=$((SECONDS + TIMEOUT))
 
 while [ "$SECONDS" -lt "$end" ]; do
     status="$(docker inspect -f '{{.State.Health.Status}}' "$cid")"
-echo "Current status: $status"
+    echo "Current status: $status"
 
-if [ "$status" = "healthy" ]; then
-    echo "$SERVICE_NAME is healthy ✅"
-    exit 0
-elif [ "$status" = "unhealthy" ]; then
-    echo "$SERVICE_NAME is unhealthy ❌"
-    docker logs "$cid" || true
-    exit 1
-fi
+    if [ "$status" = "healthy" ]; then
+        echo "$SERVICE_NAME is healthy ✅"
+        exit 0
+    elif [ "$status" = "unhealthy" ]; then
+        echo "$SERVICE_NAME is unhealthy ❌"
+        docker logs "$cid" || true
+        exit 1
+    fi
 
-sleep "$SLEEP"
+    sleep "$SLEEP"
 done
 
 echo "Timed out waiting for $SERVICE_NAME to become healthy after ${TIMEOUT}s"
