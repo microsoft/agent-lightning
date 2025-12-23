@@ -122,6 +122,7 @@ def train(
     lora_adapter_path: Optional[str],
     trajectory_level: bool = False,
     weave: bool,
+    mongo_uri: Optional[str],
 ):
     """The training entrypoint function for Calc-X agent with VERL algorithm.
 
@@ -139,6 +140,7 @@ def train(
         lora_adapter_path: Optional path to a pre-trained LoRA adapter to load.
         trajectory_level: Whether to enable trajectory level in trace aggregator.
         weave: Whether to enable Weave tracing.
+        mongo_uri: MongoDB URI to use for the store.
     """
     # Load datasets (respect CLI file paths)
     train_dataset = cast(agl.Dataset[MathProblem], HuggingFaceDataset.from_parquet(train_file).to_list())  # type: ignore
@@ -216,6 +218,10 @@ def train(
 
     if external_store_address:
         store: Optional[agl.LightningStore] = agl.LightningStoreClient(external_store_address)
+    elif mongo_uri:
+        from agentlightning.store.mongo import MongoLightningStore
+
+        store = MongoLightningStore(mongo_uri=mongo_uri)
     else:
         store = None
 
@@ -278,6 +284,12 @@ def main():
         action="store_true",
         help="Enable trajectory level in trace aggregator.",
     )
+    parser.add_argument(
+        "--mongo-uri",
+        type=str,
+        default=None,
+        help="MongoDB URI to use for the store.",
+    )
 
     args = parser.parse_args()
 
@@ -308,6 +320,7 @@ def main():
         lora_adapter_path=args.lora_adapter_path,
         trajectory_level=args.trajectory_level,
         weave=args.weave,
+        mongo_uri=args.mongo_uri,
     )
 
 

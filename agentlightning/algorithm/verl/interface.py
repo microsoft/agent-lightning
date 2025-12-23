@@ -32,6 +32,26 @@ class VERL(Algorithm):
         trainer_cls: Optional override for the trainer class. Experimental.
         daemon_cls: Optional override for the daemon class. Experimental.
 
+    !!! note "Trajectory aggregation (experimental)"
+
+        Trajectory-level aggregation merges an entire multi-turn rollout into a single,
+        masked training sample so GPU time is spent once per trajectory rather than N times
+        per turn. Enable it via:
+
+        ```python
+        config["agentlightning"]["trace_aggregator"] = {
+            "level": "trajectory",
+            "trajectory_max_prompt_length": ...,
+            "trajectory_max_response_length": ...,
+        }
+        ```
+
+        Keep conversations structured (message lists rather than manual string
+        concatenation) so prefix matching can stitch traces, and toggle `debug=True` plus
+        `unmatch_log_dir` when you need to inspect retokenization or chat-template
+        mismatches. See [this blog post](https://agent-lightning.github.io/posts/trajectory_level_aggregation/)
+        for more details.
+
     Examples:
         ```python
         from agentlightning.algorithm.verl import VERL
