@@ -2,6 +2,45 @@
 
 Agent-lightning splits training into an **algorithm bundle** and a **runner bundle** that exchange work through the [`LightningStore`][agentlightning.LightningStore]. This tutorial shows how to increase rollout throughput, place bundles across processes or machines, and keep the algorithm side scalable with external frameworks.
 
+## Parallelizing the Store
+
+By default, Agent-lightning persists rollouts and spans in an in-memory store. [`Trainer.fit`][agentlightning.Trainer.fit] spins it up automatically, or you can launch it yourself via the [`agl store` command](../reference/cli.md). [`InMemoryLightningStore`][agentlightning.InMemoryLightningStore] keeps all state inside the current process, which makes local iteration fast but introduces two production constraints:
+
+1. Spans are evicted once the process crosses its memory cap, so long runs risk data loss unless the host has abundant RAM.
+2. Although the store is well optimized via asynchronous programming, the store lives in a single process and remains bound by the GIL, preventing it from saturating multi-core machines.
+
+!!! note "General note for all server-client stores"
+
+    If your algorithm and runners communicate through HTTP protocol (which should be the default for 99% of the cases), you need to ensure the file limit is sufficiently large to avoid the "Too many open files" error. You can set the file limit by running the following command:
+
+    ```bash
+    ulimit -n 100000
+    ```
+
+For resilient runs, switch to a persistent backend such as [`MongoLightningStore`][agentlightning.MongoLightningStore], which writes data to MongoDB instead of local RAM.
+
+```python
+trainer = agl.Trainer(
+    algorithm=algorithm,
+    store=agl.MongoLightningStore(uri="mongodb://localhost:27017"),
+)
+```
+
+To scale out further, launch the store server via [`agl store --backend mongo`] (see [Debugging with External Store][debug-with-external-store]). The CLI accepts `--n-workers`, which starts the server under `gunicorn` with multiple worker processes so concurrent runners can push and pull at higher throughput. This option applies only to persistent backends; an in-memory store, on the other hand, cannot be sharded across workers because its state lives inside one process.
+
+!!! tip "Setting up MongoDB"
+
+    MongoDB is a popular document-oriented database. Before running Agent-lightning with [`MongoLightningStore`][agentlightning.MongoLightningStore], make sure that you've already had a MongoDB instance running. Setting up can be conveniently done via Docker Compose via [compose.mongo.yml]({{ src("docker/compose.mongo.yml") }}).
+
+    Alternatively, you can also install MongoDB manually following the [official documentation](https://www.mongodb.com/docs/manual/installation/). If you installed MongoDB manually, an important note is that you need to ensure that the MongoDB instance has enabled replica set feature, since Agent-lightning has used the transactional operations internally. The simplest approach is to use the following script (executed in the MongoDB shell) to initialize the replica set:
+
+    ```javascript
+    rs.initiate({
+      _id: "rs0",
+      members: [{ _id: 0, host: "localhost:27017" }],
+    });
+    ```
+
 ## Parallelizing Rollouts with [`Trainer`][agentlightning.Trainer]
 
 Before we dive into the details of the bundles and execution strategies, let's first revisit how to parallelize rollouts with [`Trainer`][agentlightning.Trainer].
