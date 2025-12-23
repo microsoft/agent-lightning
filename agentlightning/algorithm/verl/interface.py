@@ -48,11 +48,12 @@ class VERL(Algorithm):
 
         Keep conversations structured (message lists rather than manual string
         concatenation) so prefix matching can stitch traces. `trajectory_max_prompt_length`
-        and `trajectory_max_response_length` should be set to the maximum length of the prompt for the first turn
-        and the maximum length for the cumulative agent responses in the full trajectory, respectively.
-        Toggle `debug=True` plus `unmatch_log_dir` when you need to inspect retokenization or chat-template
-        mismatches. See [this blog post](https://agent-lightning.github.io/posts/trajectory_level_aggregation/)
-        for more details.
+        should be set to the maximum length of the prompt for the first turn, and
+        `trajectory_max_response_length` should be set to the maximum cumulative
+        length of agent responses in the full trajectory.
+        Toggle `debug=True` plus `unmatch_log_dir` when you need to inspect
+        retokenization or chat-template mismatches. See
+        [this blog post](https://agent-lightning.github.io/posts/trajectory_level_aggregation/)
 
     Examples:
         ```python
