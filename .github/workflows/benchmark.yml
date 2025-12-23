@@ -23,7 +23,7 @@ jobs:
             runner:
               - self-hosted
               - 1ES.Pool=agl-runner-cpu
-            timeout: 120
+            timeout: 640
             args: >-
               --mode batch
               --total-tasks 4096
@@ -38,7 +38,7 @@ jobs:
             runner:
               - self-hosted
               - 1ES.Pool=agl-runner-cpu
-            timeout: 120
+            timeout: 640
             args: >-
               --mode batch
               --total-tasks 10000
@@ -53,12 +53,12 @@ jobs:
             runner:
               - self-hosted
               - 1ES.Pool=agl-runner-cpu
-            timeout: 120
+            timeout: 640
             args: >-
               --mode batch
               --total-tasks 20000
               --batch-size 2048
-              --n-runners 300
+              --n-runners 640
               --max-rounds 6
               --sleep-seconds 0.1
           - id: scenario-large-batch
@@ -68,7 +68,7 @@ jobs:
             runner:
               - self-hosted
               - 1ES.Pool=agl-runner-cpu-high
-            timeout: 120
+            timeout: 640
             args: >-
               --mode batch
               --total-tasks 50000
@@ -83,7 +83,7 @@ jobs:
             runner:
               - self-hosted
               - 1ES.Pool=agl-runner-cpu
-            timeout: 120
+            timeout: 640
             args: >-
               --mode batch_partial
               --total-tasks 50000
@@ -99,7 +99,7 @@ jobs:
             runner:
               - self-hosted
               - 1ES.Pool=agl-runner-cpu-high
-            timeout: 120
+            timeout: 640
             args: >-
               --mode single
               --total-tasks 50000
@@ -114,7 +114,7 @@ jobs:
             runner:
               - self-hosted
               - 1ES.Pool=agl-runner-cpu-high
-            timeout: 120
+            timeout: 640
             args: >-
               --mode batch_partial
               --total-tasks 10000

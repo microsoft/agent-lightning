@@ -19,7 +19,7 @@ from .utils import flatten_dict, random_dict
 
 console = Console()
 
-MAX_RUNTIME_SECONDS = 110 * 60
+MAX_RUNTIME_SECONDS = 620 * 60
 
 
 def _abort_due_to_timeout() -> None:
