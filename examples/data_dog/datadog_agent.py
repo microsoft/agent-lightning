@@ -1,7 +1,7 @@
 # Copyright (c) Microsoft Corporation.
 
-
 import argparse
+import asyncio
 import os
 import sys
 import time
@@ -17,10 +17,16 @@ import agentlightning as agl
 class DataDogTracer(agl.Tracer):
     """Tracer that sends all spans to DataDog APM.
     
-    Runner automatically calls:
-    - start_span() when rollout begins
-    - add_event() when agent calls agl.emit_*()
-    - end_span() when rollout completes
+    This tracer is passed to LitAgentRunner, which manages its lifecycle:
+    - Runner calls start_span() when beginning a rollout trace
+    - Agent calls agl.emit_reward() which triggers add_event()
+    - Runner calls end_span() when completing the trace
+    
+    Usage:
+        tracer = DataDogTracer()
+        runner = agl.LitAgentRunner(tracer)
+        with runner.run_context(agent=my_agent, store=store):
+            await runner.step(task, resources=resources)
     """
 
     def __init__(self, service: str = "agent-lightning"):
@@ -30,8 +36,8 @@ class DataDogTracer(agl.Tracer):
         print(f"[DataDogTracer] Initialized for service: {service}")
 
     def start_span(self, name: str, **attributes) -> Any:
-        """Called by Runner to start tracing a rollout."""
-        print(f"[DataDogTracer] Starting span: {name}")
+        """Called by Runner when starting to trace a rollout."""
+        print(f"[DataDogTracer] start_span called by Runner: {name}")
         
         # Create DataDog span
         self.current_span = dd_tracer.trace(
@@ -50,8 +56,10 @@ class DataDogTracer(agl.Tracer):
         return self.current_span
 
     def end_span(self, span: Any) -> None:
-        """Called by Runner to finalize the span."""
+        """Called by Runner when finishing the rollout trace."""
         if span:
+            print(f"[DataDogTracer] end_span called by Runner")
+            
             # Add duration metric
             duration = time.time() - self.span_start_time
             span.set_tag("duration_seconds", duration)
@@ -61,9 +69,13 @@ class DataDogTracer(agl.Tracer):
             print(f"[DataDogTracer] Span sent to DataDog (duration: {duration:.2f}s)")
 
     def add_event(self, name: str, **attributes) -> None:
-        """Called when agent uses agl.emit_reward(), agl.emit_message(), etc."""
+        """Called when agent uses agl.emit_reward(), agl.emit_message(), etc.
+        
+        This is triggered by the agent code calling agl.emit_*() functions
+        during the rollout execution.
+        """
         if self.current_span:
-            print(f"[DataDogTracer] Adding event: {name}")
+            print(f"[DataDogTracer] add_event called (triggered by agl.emit_*): {name}")
             
             # Add event as span tag
             event_data = {k: v for k, v in attributes.items()}
@@ -80,8 +92,7 @@ class DataDogTracer(agl.Tracer):
                 self.current_span.set_tag("error.msg", attributes.get("message", ""))
 
 
-# 2. CUSTOM ADAPTER - Multi-signal reward computation
-
+# custom adapter
 
 class MultiSignalAdapter(agl.TraceAdapter[List[agl.Triplet]]):
     """Adapter that computes rewards from correctness + latency + tokens.
@@ -154,6 +165,9 @@ class MultiSignalAdapter(agl.TraceAdapter[List[agl.Triplet]]):
         return reward
 
 
+# simple agent
+
+
 @agl.rollout
 async def math_agent(task: Dict[str, str], llm: agl.LLM) -> None:
     """Simple agent that solves math problems.
@@ -162,7 +176,7 @@ async def math_agent(task: Dict[str, str], llm: agl.LLM) -> None:
     """
     client = AsyncOpenAI(
         base_url=llm.endpoint,
-        api_key=os.getenv("OPENAI_API_KEY", "token-abc123"),
+       
     )
 
     prompt = f"Solve this math problem and give only the numerical answer: {task['question']}"
@@ -205,7 +219,8 @@ async def math_agent(task: Dict[str, str], llm: agl.LLM) -> None:
           f"R: {reward:.1f} | Latency: {latency:.2f}s")
 
 
-# dataset
+# sample dataset
+
 
 def create_dataset() -> List[Dict[str, str]]:
     """Create simple math dataset for demonstration."""
@@ -219,29 +234,33 @@ def create_dataset() -> List[Dict[str, str]]:
     ]
 
 
-#debug n trainign models
+# debug n training
+
 
 async def debug_mode():
-    """Debug mode: Test agent and see DataDog spans in real-time."""
+    """Debug mode: Test agent and see DataDog spans in real-time.
+    
+    This demonstrates the correct usage pattern:
+    1. Create tracer
+    2. Pass tracer to LitAgentRunner
+    3. Runner manages tracer lifecycle during run_context()
+    """
     
     print("DEBUG MODE: DataDog Integration Test")
-    
-    
-    
-    print("\ DataDog APM at: https://app.datadoghq.com/apm/traces")
+   
+    print("\nCheck DataDog APM at: https://app.datadoghq.com/apm/traces")
 
-    # Initialize with DataDog tracer
+    # Initialize DataDog tracer
     tracer = DataDogTracer(service="agent-lightning-demo")
-    adapter = MultiSignalAdapter()
     
-    runner = agl.LitAgentRunner(tracer)
+    # Pass tracer to Runner - Runner will manage tracer lifecycle
+    runner = agl.LitAgentRunner[Dict[str, str]](tracer)
     store = agl.InMemoryLightningStore()
 
     # Get LLM configuration from environment
-    endpoint = os.getenv('OLLAMA_BASE_URL', 'http://localhost:11434/v1')
-
-    model = os.getenv('MODEL_NAME', 'qwen')
-
+    endpoint = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+    model = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-1.5B-Instruct")
+    
     print(f"Using LLM endpoint: {endpoint}")
     print(f"Using model: {model}")
     print()
@@ -254,11 +273,21 @@ async def debug_mode():
 
     test_tasks = create_dataset()[:3]
 
-    print("Running test tasks...\n")
+    print("Running test tasks...")
+    print("Watch for Runner calling tracer methods:\n")
     
+    # Runner.run_context() manages the tracer lifecycle
     with runner.run_context(agent=math_agent, store=store):
         for i, task in enumerate(test_tasks, 1):
             print(f"--- Task {i}/{len(test_tasks)} ---")
+            print("Runner will call:")
+            print("  1. tracer.start_span()")
+            print("  2. Agent executes, calls agl.emit_reward()")
+            print("     → This triggers tracer.add_event()")
+            print("  3. tracer.end_span()")
+            print()
+            
+            # Runner.step() orchestrates tracer calls
             await runner.step(task, resources={"main_llm": llm})
             print()
 
@@ -268,9 +297,14 @@ async def debug_mode():
 
 
 def train_mode():
-
     """Training mode: Full RL training with DataDog observability."""
     
+    print("TRAINING MODE: RL with DataDog Integration")
+    
+   
+    print("\nMonitor training at: https://app.datadoghq.com/apm/traces")
+    
+
     # Prepare data
     train_data = create_dataset()
     val_data = train_data[:3]
@@ -303,6 +337,7 @@ def train_mode():
     tracer = DataDogTracer(service="agent-lightning-training")
     adapter = MultiSignalAdapter()
 
+    # Trainer will pass tracer to Runner internally
     trainer = agl.Trainer(
         algorithm=algorithm,
         n_runners=3,
@@ -313,11 +348,28 @@ def train_mode():
     print("Starting training...\n")
     trainer.fit(math_agent, train_data, val_dataset=val_data)
 
-    
-    print("Training complete!")
-    print(" results in DataDog APM dashboard")
    
-#main
+    print("Training complete. View results in DataDog APM dashboard")
+    
+
+
+# main
+
+
+def check_prerequisites():
+    """Check that required environment variables are set."""
+    
+    
+    # Check DataDog API key
+    if not os.getenv("DD_API_KEY"):
+        print ( "  DD_API_KEY not set. DataDog tracing will be disabled.\n")
+    
+    # Check LLM endpoint for debug mode
+    if not os.getenv("OLLAMA_BASE_URL"):
+        print('set a LLM provider')
+    
+    
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -337,22 +389,14 @@ def main():
     args = parser.parse_args()
 
     # Check prerequisites
-    # Check DataDog API key
-    if not os.getenv("DD_API_KEY"):
-        print ( 'DD API_KEY not set')
-    
-    # Check LLM endpoint for debug mode
-    if not os.getenv("OLLAMA_BASE_URL"):
-        print ( 'No LLM provider base url')
-    
+    check_prerequisites()
 
     if args.train:
         train_mode()
     elif args.debug:
-        import asyncio
         asyncio.run(debug_mode())
     else:
-        print(" Use via cmd:")
+        print("Usage:")
         print("  python datadog_agent.py --debug   # Test integration")
         print("  python datadog_agent.py --train   # Full training")
 
